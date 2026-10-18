@@ -34,18 +34,18 @@ export const refreshCliGameTextIndex = Effect.fn("Cli.game_text.refresh")(
 		const compose = Effect.fn("Cli.game_text.prepare")(function* (
 			steps: typeof GameTextIndexSteps.Service
 		) {
-			const selected = yield* steps.openProject(request);
-			const imported = yield* steps.importTarget(selected, request);
-			const project = yield* steps.refreshProject(request);
-			return yield* steps.openTarget(yield* steps.buildTarget(project, imported, request));
+			return yield* steps.openTarget(yield* steps.prepareTarget(request));
 		});
 		const steps = yield* Effect.serviceOption(GameTextIndexSteps);
 		if (Option.isSome(steps)) return yield* compose(steps.value);
 		const provided = yield* Effect.serviceOption(GameTextIndexRefresh);
 		if (Option.isSome(provided)) return yield* provided.value.refresh(request);
-		return yield* Effect.flatMap(GameTextIndexSteps, compose).pipe(
-			Effect.provide(cliGameTextIndexLayer(reader))
+		// The shared-reader map must remain alive while the command uses the returned model.
+		const services = yield* Layer.buildWithScope(
+			cliGameTextIndexLayer(reader),
+			yield* Effect.scope
 		);
+		return yield* Effect.flatMap(GameTextIndexSteps, compose).pipe(Effect.provide(services));
 	},
 	(effect) =>
 		effect.pipe(

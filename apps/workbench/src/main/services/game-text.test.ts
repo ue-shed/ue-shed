@@ -1337,7 +1337,7 @@ function failedIndexSteps(failure: IndexFailure) {
 		GameTextIndexSteps,
 		Effect.gen(function* () {
 			const steps = yield* GameTextIndexSteps;
-			return GameTextIndexSteps.of({ ...steps, refreshProject: () => Effect.fail(failure) });
+			return GameTextIndexSteps.of({ ...steps, prepareTarget: () => Effect.fail(failure) });
 		})
 	).pipe(Layer.provide(oracleGameTextIndexLayer(() => Effect.succeed(emptyCorpus))));
 }

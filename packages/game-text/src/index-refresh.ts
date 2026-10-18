@@ -46,10 +46,7 @@ export const gameTextIndexRefreshLayer = (
 					)
 				);
 				const started = performance.now();
-				const selected = yield* steps.openProject(request);
-				const imported = yield* steps.importTarget(selected, request);
-				const project = yield* steps.refreshProject(request);
-				const target = yield* steps.buildTarget(project, imported, request);
+				const target = yield* steps.prepareTarget(request);
 				const result = yield* steps.openTarget(target);
 				yield* Metric.update(refreshes, 1);
 				yield* Metric.update(refreshDuration, performance.now() - started);

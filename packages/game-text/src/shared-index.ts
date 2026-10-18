@@ -132,6 +132,17 @@ export interface SharedIndexReader {
 	) => Effect.Effect<Awaited<ReturnType<SharedStringFiles["range"]>>, Failure>;
 }
 export interface SharedIndexWriter {
+	/** Native record replacement: nonnegative rows retain old records; -1-row selects a changed record. */
+	readonly replacePackages?: (
+		entries: readonly {
+			readonly name: string;
+			readonly key: string;
+			readonly previousKey: string;
+			readonly source: SnapshotSource;
+			readonly rows: readonly number[];
+		}[],
+		removedNames?: readonly string[]
+	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
 	readonly strings: (ids: readonly number[]) => Effect.Effect<string[], Failure>;
 	/** Intern a bounded rule-derived string batch before publishing its ID columns. */
 	readonly intern: (

@@ -1,7 +1,12 @@
 import { GameTextEngineRequest, GameTextEngineOutcome } from "./game-text-engine.js";
 import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
-import { GameTextIndexBuildRequest, GameTextIndexBuildOutcome } from "./game-text-index.js";
+import {
+	GameTextIndexBuildRequest,
+	GameTextIndexBuildOutcome,
+	GameTextIndexPreviousBuildRequest,
+	GameTextIndexPackageReplacement
+} from "./game-text-index.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
 import { AuthoringTableSnapshot } from "./authoring.js";
 import { BlueprintGraphProjection } from "./blueprint-graph.js";
@@ -418,7 +423,25 @@ export const UAssetIoRequest = Schema.Union([
 				})
 			})
 		).annotate({ identifier: "UAssetIoGameTextIndexContract" }),
-		operation: GameTextIndexOperation
+		operation: Schema.Struct({
+			...GameTextIndexOperation.fields,
+			request: GameTextIndexPreviousBuildRequest
+		})
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(16))
+				})
+			})
+		).annotate({ identifier: "UAssetIoPackageReplacementContract" }),
+		operation: Schema.Struct({
+			...GameTextIndexOperation.fields,
+			request: GameTextIndexPackageReplacement
+		})
 	}),
 	Schema.Struct({ ...RequestFields, contract: UAssetIoContract, operation: ExistingOperation }),
 	Schema.Struct({

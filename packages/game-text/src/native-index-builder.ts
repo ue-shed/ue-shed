@@ -41,7 +41,7 @@ const unavailable = (operation: string, cause: unknown) =>
 		recovery: "Install matching host and native reader versions, then open a new build session."
 	});
 
-const nativeFailure = (cause: AssetReaderError) => {
+const nativeFailure = (cause: AssetReaderError, operation = "native-index-builder") => {
 	let code: SnapshotStoreError["code"];
 	switch (cause.code) {
 		case "executable_missing":
@@ -79,7 +79,7 @@ const nativeFailure = (cause: AssetReaderError) => {
 							: "native_failed";
 	}
 	return new SnapshotStoreError({
-		operation: "native-index-builder",
+		operation,
 		code,
 		...snapshotStoreGuidance(code),
 		message:
@@ -155,7 +155,13 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				return yield* Effect.fail(
 					unavailable("native-index-session", "The build session is closed.")
 				);
-			const result = yield* client.execute(request).pipe(Effect.mapError(nativeFailure));
+			const result = yield* client
+				.execute(request)
+				.pipe(
+					Effect.mapError((cause) =>
+						nativeFailure(cause, `native-index-${request.action}`)
+					)
+				);
 			nativeIo = result.io;
 			for (const [name, seconds] of Object.entries(result.stageSeconds))
 				stageTimes[name] = (stageTimes[name] ?? 0) + seconds * 1000;
@@ -203,6 +209,28 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		}
 	);
 	const writer: SharedIndexWriter = {
+		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
+			function* (entries, removedNames) {
+				const inputs = [];
+				for (const entry of entries)
+					inputs.push({
+						name: entry.name,
+						key: entry.key,
+						previousKey: entry.previousKey,
+						file: yield* staged(entry.source),
+						rows: entry.rows
+					});
+				const result = yield* command({
+					action: "publish_packages",
+					configuration,
+					inputs,
+					...(removedNames ? { removedNames } : undefined)
+				});
+				return yield* Schema.decodeUnknownEffect(Schema.Array(LayerRecord))(
+					result.records
+				).pipe(Effect.mapError((cause) => unavailable("native-package-layer", cause)));
+			}
+		),
 		manifest: () => manifest,
 		metrics: () => ({
 			readBytes: nativeIo.storedBytes,
@@ -213,7 +241,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			probePasses: 0,
 			sortMs: 0,
 			probeMs: 0,
-			appendMs: stageTimes.publish ?? 0,
+			appendMs: (stageTimes.publish ?? 0) + (stageTimes.publish_packages ?? 0),
 			segments: manifest.segments.length,
 			timings: {
 				collectMs: 0,

@@ -27,6 +27,7 @@ import { importColdPackageTextShards } from "./package-text-cold.js";
 import { TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { StageClock } from "./stage-clock.js";
+import { replacePackageTextRecords } from "./package-text-delta.js";
 
 /** The caller supplies the Project Index's opaque package-and-sidecar signature, never a layer hash.
  * Header evidence and signatures must come from the same complete inventory generation.
@@ -149,8 +150,35 @@ export const packageTextSelectionInSlices = Effect.fn("PackageText.selection")(f
 export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function* <E, R>(
 	input: PackageTextRefreshInput<E, R>
 ) {
-	const store = yield* SharedIndex,
-		writer = yield* store.writer();
+	const store = yield* SharedIndex;
+	const leased = yield* store.writer();
+	const initial = leased.metrics();
+	const writer = {
+		...leased,
+		metrics: () => {
+			const current = leased.metrics();
+			return {
+				...current,
+				readBytes: current.readBytes - initial.readBytes,
+				indexReadBytes: current.indexReadBytes - initial.indexReadBytes,
+				appendedBytes: current.appendedBytes - initial.appendedBytes,
+				lookupStrings: current.lookupStrings - initial.lookupStrings,
+				reusedStrings: current.reusedStrings - initial.reusedStrings,
+				probePasses: current.probePasses - initial.probePasses,
+				sortMs: current.sortMs - initial.sortMs,
+				probeMs: current.probeMs - initial.probeMs,
+				appendMs: current.appendMs - initial.appendMs,
+				timings: {
+					collectMs: current.timings.collectMs - initial.timings.collectMs,
+					reuseMs: current.timings.reuseMs - initial.timings.reuseMs,
+					layerEncodeMs: current.timings.layerEncodeMs - initial.timings.layerEncodeMs,
+					layerVerifyMs: current.timings.layerVerifyMs - initial.timings.layerVerifyMs,
+					garbageMs: current.timings.garbageMs - initial.timings.garbageMs,
+					rootPublishMs: current.timings.rootPublishMs - initial.timings.rootPublishMs
+				}
+			};
+		}
+	};
 	const reportProgress = yield* GameTextIndexProgressReporter;
 	const stages = new StageClock();
 	const manifest = writer.manifest();
@@ -270,6 +298,21 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		? yield* store.open()
 		: undefined;
 	const session = yield* Effect.serviceOption(LocalizationImportSession);
+	if (
+		reader &&
+		writer.replacePackages &&
+		changed.length <= 8 &&
+		changed.every((shard) => manifest.active[shard.name]?.startsWith(`${PACKAGE_TEXT_FORMAT}:`))
+	) {
+		return yield* replacePackageTextRecords(
+			{ ...input, inventory },
+			changed,
+			removed,
+			reader,
+			writer,
+			writer.replacePackages
+		);
+	}
 	if (!reader && changed.length > 8 && inventory.length >= 256) {
 		const directory = yield* Effect.acquireRelease(
 			Effect.tryPromise({

@@ -265,6 +265,7 @@
 						"end",
 						"status",
 						"publish",
+						"publish_packages",
 						"publish_ids",
 						"intern",
 						"strings",

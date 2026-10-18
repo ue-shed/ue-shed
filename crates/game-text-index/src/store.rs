@@ -626,6 +626,91 @@ impl Store {
         self.dictionary = None;
         self.dictionary_lengths = None;
     }
+    /// Reserve the worst-case append count before callers retain any global IDs.
+    /// False selects ordinary per-domain interning instead of per-block bounded interning.
+    pub(crate) fn reserve_local_segments(
+        &mut self,
+        files: &[&Path],
+        reuse: Option<&Value>,
+    ) -> Result<bool> {
+        let mut chunks = 0usize;
+        let mut domains = 0usize;
+        let metadata = if let Some(old) = reuse {
+            require(
+                files.len() == 1 && old["storeGeneration"] == self.root["generation"],
+                "reuse preflight generation",
+            )?;
+            let mut previous = Reader::open(
+                &self
+                    .directory
+                    .join(old["file"].as_str().ok_or("previous layer file")?),
+            )?;
+            if previous
+                .entries
+                .iter()
+                .any(|entry| entry.name == "reuse.meta")
+            {
+                serde_json::from_slice::<Value>(&section(&mut previous, "reuse.meta")?)?
+            } else {
+                Value::Null
+            }
+        } else {
+            Value::Null
+        };
+        for file in files {
+            let mut reader = Reader::open(file)?;
+            let mut file_domains = BTreeSet::new();
+            for index in 0..reader.entries.len() {
+                if reader.entries[index].kind != 4 {
+                    continue;
+                }
+                let bytes = reader.load(index)?;
+                let count =
+                    u32::from_le_bytes(bytes.get(..4).ok_or("local string count")?.try_into()?)
+                        as usize;
+                require(
+                    count > 0 && count <= bytes.len().saturating_sub(8) / 4,
+                    "local string count bounds",
+                )?;
+                file_domains.insert(reader.entries[index].domain.clone());
+                let hash = digest(&bytes);
+                if metadata[&reader.entries[index].domain]
+                    .as_array()
+                    .is_some_and(|blocks| {
+                        blocks.iter().any(|block| {
+                            block["hash"].as_str() == Some(&hash)
+                                && block["count"].as_u64() == Some(count as u64)
+                        })
+                    })
+                {
+                    continue;
+                }
+                chunks = chunks
+                    .checked_add(count.div_ceil(8192))
+                    .ok_or("local segment count overflow")?;
+            }
+            domains = domains
+                .checked_add(file_domains.len())
+                .ok_or("local domain count overflow")?;
+        }
+        let count = self.root["segments"].as_array().ok_or("segments")?.len();
+        if count + chunks <= 256 {
+            return Ok(true);
+        }
+        if count + domains <= 256 {
+            return Ok(false);
+        }
+        self.compact(true)?;
+        let count = self.root["segments"].as_array().ok_or("segments")?.len();
+        if count + chunks <= 256 {
+            return Ok(true);
+        }
+        require(
+            count + domains <= 256,
+            "local publication exceeds dictionary segment capacity",
+        )?;
+        Ok(false)
+    }
     pub fn intern(&mut self, domain: &str, values: &[String]) -> Result<Vec<u32>> {
         self.intern_bytes(
             domain,
@@ -732,7 +817,7 @@ impl Store {
             .map(|_| self.root["layers"][key].clone())
             .unwrap_or(record))
     }
-    fn obsolete_bytes(&mut self, old: &Value, next: &Value) -> Result<u64> {
+    pub(crate) fn obsolete_bytes(&mut self, old: &Value, next: &Value) -> Result<u64> {
         fn ids(directory: &Path, record: &Value) -> Result<BTreeSet<u32>> {
             let mut reader =
                 Reader::open(&directory.join(record["file"].as_str().ok_or("layer file")?))?;
@@ -853,11 +938,29 @@ impl Store {
             return Ok(record);
         }
         let mut reader = Reader::open(input)?;
+        let allow_reuse =
+            if old.is_some() && reader.entries.iter().any(|entry| entry.name == "file.meta") {
+                self.reserve_local_segments(&[input], old.as_ref())?
+            } else {
+                true
+            };
+        // The capacity check may have compacted and replaced all layer files and IDs.
+        let old = self.root["active"][name]
+            .as_str()
+            .and_then(|key| self.root["layers"].get(key))
+            .cloned();
+        let reused = if let Some(old) = &old
+            && allow_reuse
+        {
+            crate::layer_reuse::mappings(self, &mut reader, name, old)?
+        } else {
+            None
+        };
         let mut local = BTreeMap::<String, Vec<Vec<u8>>>::new();
         let mut local_order = Vec::new();
         for i in 0..reader.entries.len() {
             let e = reader.entries[i].clone();
-            if e.kind == 4 {
+            if e.kind == 4 && reused.is_none() {
                 if !local.contains_key(&e.domain) {
                     local_order.push(e.domain.clone());
                 }
@@ -874,7 +977,7 @@ impl Store {
             .as_str()
             .and_then(|key| self.root["layers"].get(key))
             .cloned();
-        let mut mapping = BTreeMap::new();
+        let mut mapping = reused.unwrap_or_default();
         for domain in local_order {
             let values = local.remove(&domain).ok_or("local domain absent")?;
             mapping.insert(
@@ -940,6 +1043,20 @@ impl Store {
         retained: &BTreeMap<String, String>,
         removed: &[String],
     ) -> Result<Value> {
+        let record = self.prepare_global(name, key, columns, metadata, retained, removed)?;
+        self.publish_root()?;
+        Ok(record)
+    }
+    /// Stage global-ID columns while a coordinated batch retains the writer lease.
+    pub(crate) fn prepare_global(
+        &mut self,
+        name: &str,
+        key: &str,
+        columns: &[(String, String, Vec<u32>)],
+        metadata: &[u8],
+        retained: &BTreeMap<String, String>,
+        removed: &[String],
+    ) -> Result<Value> {
         let maximum = self.root["segments"]
             .as_array()
             .ok_or("segments")?
@@ -963,7 +1080,9 @@ impl Store {
             };
             order.push(writer.add(field, 2, "", &bytes, 1)?);
         }
-        order.push(writer.add("join.meta", 0, "", metadata, 1)?);
+        if !metadata.is_empty() {
+            order.push(writer.add("join.meta", 0, "", metadata, 1)?);
+        }
         let file = format!("layer-{}.snapshot", token());
         let mut record = json!({"file":file,"key":key,"storeGeneration":self.root["generation"],"segmentCount":self.root["segments"].as_array().ok_or("segments")?.len(),"bytes":0,"stringColumns":string_columns,"idEncoding":"delta32"});
         order.push(writer.add("shared.meta", 0, "", &serde_json::to_vec(&record)?, 1)?);
@@ -983,7 +1102,6 @@ impl Store {
         }
         self.root["layers"][key] = record.clone();
         self.root["active"][name] = json!(key);
-        self.publish_root()?;
         Ok(record)
     }
     /// The external merge builds a cold batch without per-file dictionary probes or segment growth.
@@ -1281,6 +1399,62 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn localization_capacity_counts_changed_blocks_before_reusing_ids() -> Result<()> {
+        let config = configuration();
+        let mut store = Store::writer(config.clone())?;
+        let generation = store.root["generation"].clone();
+        for version in 0..2 {
+            let file = config.cache_root.join(format!("po-{version}.snapshot"));
+            let mut writer = Writer::new(&config.cache_root.join(format!("po-{version}.payload")))?;
+            let mut order = Vec::new();
+            for block in 0..300 {
+                let value = if block == 299 {
+                    format!("edited-{version}")
+                } else {
+                    format!("retained-{block}")
+                };
+                order.push(writer.add(
+                    &format!("source.b{block}"),
+                    4,
+                    "source",
+                    &crate::snapshot::string_block(&[value])?,
+                    1,
+                )?);
+                let index = *order.last().ok_or("string block")?;
+                writer.entries[index].strings = 300;
+            }
+            order.push(writer.column("source.starts", &(0..300).collect::<Vec<_>>())?);
+            order.push(writer.add(
+                "entry.source",
+                3,
+                "source",
+                &u32_bytes(&(0..300).collect::<Vec<_>>()),
+                1,
+            )?);
+            let index = *order.last().ok_or("string IDs")?;
+            writer.entries[index].strings = 300;
+            order.push(writer.add("file.meta", 0, "", b"{}", 1)?);
+            writer.finish(&file, &order)?;
+            let record = store.publish_local("probe.po", &format!("po-{version}"), &file)?;
+            let mut reader =
+                Reader::open(&store.directory.join(record["file"].as_str().ok_or("file")?))?;
+            let ids = decode_ids(&section(&mut reader, "entry.source")?, true)?;
+            let values = dictionary_bytes(&store.directory, &store.root)?;
+            assert_eq!(
+                values[ids[299] as usize],
+                format!("edited-{version}").as_bytes()
+            );
+            assert_eq!(store.root["generation"], generation);
+            assert_eq!(
+                store.root["segments"].as_array().ok_or("segments")?.len(),
+                version + 1
+            );
+        }
+        drop(store);
+        fs::remove_dir_all(config.cache_root)?;
+        Ok(())
+    }
     #[test]
     fn batched_refresh_matches_bulk_accounting_and_forced_compaction() {
         let config = configuration();

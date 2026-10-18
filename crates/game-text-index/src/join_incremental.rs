@@ -752,6 +752,58 @@ pub(crate) fn refresh(
         };
         edits
     };
+    let mut summary = if let Some(state) = meta.get("engineSummary") {
+        crate::summary_state::SummaryState::parse(state)?
+    } else {
+        // Upgrade an older immutable view once using numeric columns, without a full join.
+        let fields = crate::summary_state::RAW_FIELDS
+            .iter()
+            .map(|field| joined.col(&format!("query.raw.{field}")))
+            .collect::<Result<Vec<_>>>()?;
+        let count = joined.col("query.raw.members")?.len();
+        let package_names = meta["packageNames"]
+            .as_array()
+            .ok_or("summary package names")?
+            .iter()
+            .map(|name| {
+                name.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| crate::Error::from("summary package name"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        crate::summary_state::SummaryState::build(
+            store,
+            &package_names,
+            fields[0].len(),
+            count,
+            |row| {
+                let mut values = [0; 7];
+                for (index, field) in fields.iter().enumerate() {
+                    values[index] = *field.get(row).ok_or("summary raw row")?;
+                }
+                Ok(values)
+            },
+        )?
+    };
+    let summary_rows = crate::summary_state::RAW_FIELDS
+        .iter()
+        .filter_map(|field| hot.get(&format!("query.raw.{field}")))
+        .flat_map(|rows| rows.keys().copied())
+        .collect::<BTreeSet<_>>();
+    for row in summary_rows {
+        let mut before = [0; 7];
+        let mut after = [0; 7];
+        for (index, field) in crate::summary_state::RAW_FIELDS.iter().enumerate() {
+            let name = format!("query.raw.{field}");
+            before[index] = joined.get(&name, row as usize)?;
+            after[index] = hot
+                .get(&name)
+                .and_then(|values| values.get(&row))
+                .copied()
+                .unwrap_or(before[index]);
+        }
+        summary.replace(before, after)?;
+    }
     let base = meta["base"].as_str().unwrap_or(&previous_key).to_owned();
     if key == base {
         // Returning to a retained immutable base is an edge/value undo, not another build.
@@ -851,6 +903,7 @@ pub(crate) fn refresh(
         ));
     }
     let mut metadata = meta.clone();
+    metadata["engineSummary"] = serde_json::to_value(summary)?;
     metadata["input"] = current;
     metadata["dependencies"] = dependencies.clone();
     metadata["base"] = json!(base);

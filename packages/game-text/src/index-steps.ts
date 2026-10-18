@@ -1,7 +1,20 @@
 import { GameTextIndexQuery } from "./index-query-native.js";
 import { randomUUID, createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
-import { Context, Effect, Layer, Schema, Semaphore, RcMap, Stream, Struct, Scope } from "effect";
+import {
+	Context,
+	Effect,
+	Layer,
+	Schema,
+	Semaphore,
+	RcMap,
+	Stream,
+	Struct,
+	Scope,
+	Option,
+	Result
+} from "effect";
+import { LocalizationImportSession } from "./localization-import-session.js";
 import {
 	readLocalizationReview,
 	emptyLocalizationReviewFile,
@@ -313,12 +326,27 @@ export const makeGameTextIndexSteps = (
 		const withSession = <A, E, R>(
 			configuration: SharedIndexOptions,
 			effect: Effect.Effect<A, E, R>,
-			files?: readonly string[]
+			files?: readonly string[],
+			sourceOnly = false
 		) => {
 			const request: GameTextIndexBuildSessionRequest = { configuration };
 			if (files !== undefined) Object.assign(request, { files });
 			return Effect.scoped(
 				Effect.gen(function* () {
+					const active = yield* Effect.serviceOption(LocalizationImportSession);
+					if (
+						Option.isSome(active) &&
+						sharedIndexDirectory(active.value.configuration) ===
+							sharedIndexDirectory(configuration) &&
+						(sourceOnly ||
+							JSON.stringify(active.value.configuration.projectView) ===
+								JSON.stringify(configuration.projectView))
+					) {
+						return yield* effect.pipe(
+							Effect.provideService(SharedIndex, active.value.index),
+							Effect.provideService(LocalizationImportSession, active.value)
+						);
+					}
 					const writer = yield* RcMap.get(
 						writers,
 						sharedIndexDirectory(configuration)
@@ -433,27 +461,16 @@ export const makeGameTextIndexSteps = (
 					if (request.changedFiles !== undefined)
 						Object.assign(result, { changedFiles: request.changedFiles });
 					return result;
-				})
+				}),
+				undefined,
+				true
 			);
 		});
 
-		const importTarget = Effect.fn("GameTextIndex.importTarget")(function* (
+		const checkRequiredManifest = Effect.fn("GameTextIndex.checkRequiredManifest")(function* (
 			project: GameTextProject,
-			input: GameTextTargetImportRequest = {}
+			request: GameTextTargetImportRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(GameTextTargetImportRequest)(
-				input
-			).pipe(
-				Effect.mapError((cause) =>
-					failure(
-						"request",
-						"The Game Text index request is invalid.",
-						"Choose a localization target.",
-						cause
-					)
-				)
-			);
-			if (project.cacheRoot !== cacheRoot) return yield* Effect.fail(stale("project"));
 			if (request.requireManifest && request.targetName !== undefined) {
 				// Validate required authored evidence before acquiring a native writer/process.
 				// The importer still validates current bytes; this presence check is not a cache hit.
@@ -480,6 +497,26 @@ export const makeGameTextIndexSteps = (
 						manifestIndexFailure(localizationError("file_missing"))
 					);
 			}
+		});
+
+		const importTarget = Effect.fn("GameTextIndex.importTarget")(function* (
+			project: GameTextProject,
+			input: GameTextTargetImportRequest = {}
+		) {
+			const request = yield* Schema.decodeUnknownEffect(GameTextTargetImportRequest)(
+				input
+			).pipe(
+				Effect.mapError((cause) =>
+					failure(
+						"request",
+						"The Game Text index request is invalid.",
+						"Choose a localization target.",
+						cause
+					)
+				)
+			);
+			if (project.cacheRoot !== cacheRoot) return yield* Effect.fail(stale("project"));
+			yield* checkRequiredManifest(project, request);
 			return yield* withSession(
 				configurationFor(cacheRoot, project.projectRoot, request.targetName),
 				Effect.gen(function* () {
@@ -642,6 +679,44 @@ export const makeGameTextIndexSteps = (
 					} satisfies GameTextTargetIndex;
 				})
 			);
+		});
+
+		/** Prepare all source inputs and the target under one coordinated writer lease. */
+		const prepareTarget = Effect.fn("GameTextIndex.prepareTarget")(function* (
+			request: GameTextIndexRefreshRequest,
+			options: { readonly fallbackToSource?: boolean } = {}
+		): Effect.fn.Return<GameTextTargetIndex, IndexFailure> {
+			const selected = yield* openProject(request);
+			const prepare = (input: GameTextIndexRefreshRequest) =>
+				Effect.gen(function* () {
+					const checked = yield* checkRequiredManifest(selected, input).pipe(
+						Effect.result
+					);
+					if (Result.isFailure(checked))
+						return { kind: "import-failed" as const, cause: checked.failure };
+					return yield* withSession(
+						configurationFor(cacheRoot, selected.projectRoot, input.targetName),
+						Effect.gen(function* () {
+							const imported = yield* Effect.result(importTarget(selected, input));
+							if (Result.isFailure(imported))
+								return { kind: "import-failed" as const, cause: imported.failure };
+							const project = yield* refreshProject(input);
+							const target = yield* buildTarget(project, imported.success, input);
+							return { kind: "prepared" as const, target };
+						}),
+						input.changedFiles
+					);
+				});
+			const result = yield* prepare(request);
+			if (result.kind === "prepared") return result.target;
+			if (!options.fallbackToSource || request.targetName === undefined)
+				return yield* Effect.fail(result.cause);
+			// Release the failed target session before attempting a different view. Native failures
+			// close their session; they must never be swallowed inside a still-leased writer.
+			const { targetName: _target, requireManifest: _manifest, ...sourceRequest } = request;
+			const source = yield* prepare(sourceRequest);
+			if (source.kind === "import-failed") return yield* Effect.fail(source.cause);
+			return source.target;
 		});
 
 		const openTarget = Effect.fn("GameTextIndex.openTarget")(function* (
@@ -815,6 +890,7 @@ export const makeGameTextIndexSteps = (
 			refreshProject: sliced(refreshProject),
 			importTarget: sliced(importTarget),
 			buildTarget: sliced(buildTarget),
+			prepareTarget: sliced(prepareTarget),
 			openTarget: sliced(openTarget),
 			invalidate: sliced(invalidate)
 		};

@@ -18,6 +18,17 @@ pub struct InputLayer {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageInput {
+    pub name: String,
+    pub key: String,
+    pub previous_key: String,
+    pub file: PathBuf,
+    /// Nonnegative rows retain previous records; -1-row selects an authored replacement.
+    pub rows: Vec<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BuildRequest {
     Capabilities,
@@ -50,6 +61,12 @@ pub enum BuildRequest {
         retained: BTreeMap<String, String>,
         #[serde(default)]
         removed: Vec<String>,
+    },
+    PublishPackages {
+        configuration: Configuration,
+        inputs: Vec<PackageInput>,
+        #[serde(rename = "removedNames", default)]
+        removed_names: Vec<String>,
     },
     Intern {
         configuration: Configuration,
@@ -113,6 +130,7 @@ impl BuildRequest {
             | Self::Status { configuration }
             | Self::Publish { configuration, .. }
             | Self::PublishIds { configuration, .. }
+            | Self::PublishPackages { configuration, .. }
             | Self::Intern { configuration, .. }
             | Self::Strings { configuration, .. }
             | Self::Join { configuration, .. }
@@ -126,6 +144,42 @@ impl BuildRequest {
             config.identity()?;
         }
         match self {
+            Self::PublishPackages {
+                inputs,
+                removed_names,
+                ..
+            } => {
+                require(
+                    inputs.len() <= 256 && removed_names.len() <= 256,
+                    "package batch limit",
+                )?;
+                let mut names = BTreeSet::new();
+                for input in inputs {
+                    require(
+                        input.name.starts_with("package-text.")
+                            && input.name.len() <= 1024
+                            && !input.key.is_empty()
+                            && input.key.len() <= 1024
+                            && !input.previous_key.is_empty()
+                            && input.previous_key.len() <= 1024
+                            && input.rows.len() <= 64_000_000
+                            && input
+                                .rows
+                                .iter()
+                                .all(|row| (-64_000_000..64_000_000).contains(row))
+                            && names.insert(&input.name),
+                        "invalid package replacement",
+                    )?;
+                }
+                require(
+                    removed_names.iter().all(|name| {
+                        name.starts_with("package-text.")
+                            && name.len() <= 1024
+                            && !names.contains(name)
+                    }),
+                    "invalid removed package shard",
+                )?;
+            }
             Self::Publish {
                 inputs,
                 removed_names,
@@ -256,6 +310,14 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
     let started = Instant::now();
     let mut outcome = BuildOutcome::new("status");
     match request {
+        BuildRequest::PublishPackages {
+            inputs,
+            removed_names,
+            ..
+        } => {
+            outcome.action = "publish_packages".into();
+            outcome.records = crate::package_delta::publish(store, inputs, removed_names)?;
+        }
         BuildRequest::Status { .. } => {}
         BuildRequest::Publish {
             inputs,

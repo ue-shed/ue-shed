@@ -217,20 +217,14 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const steps = yield* GameTextIndexSteps;
 	const refreshIndex = yield* makeRetainedGameTextIndexWith(
 		Effect.fn("GameText.workspace.prepareWorkspace")(function* (request) {
-			const opened = yield* steps.openProject(request);
 			const preferred = yield* localization
 				.preparation(request.projectRoot)
 				.pipe(Effect.scoped);
 			// A target index also contains the complete raw source projection. Importing it first
 			// lets the cold pipeline prepare one joined index for both views.
-			const imported = yield* steps
-				.importTarget(opened, preferred)
-				.pipe(Effect.catch(() => steps.importTarget(opened)));
-			const project = yield* steps.refreshProject(request);
-			const target = yield* steps.buildTarget(
-				project,
-				imported,
-				imported.view.kind === "source" ? {} : preferred
+			const target = yield* steps.prepareTarget(
+				{ ...request, ...preferred },
+				{ fallbackToSource: true }
 			);
 			return yield* steps.openTarget(target);
 		})

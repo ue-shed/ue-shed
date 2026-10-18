@@ -596,1366 +596,35 @@
 			"required": ["name", "version"],
 			"additionalProperties": false
 		},
-		"GameTextIndexBuildRequest": {
-			"anyOf": [
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["capabilities"]
-						}
-					},
-					"required": ["action"],
-					"additionalProperties": false
+		"UAssetIoPackageReplacementContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
 				},
-				{
+				"version": {
 					"type": "object",
 					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["begin"]
+						"major": {
+							"type": "number",
+							"enum": [1]
 						},
-						"configuration": {
-							"anyOf": [
+						"minor": {
+							"type": "integer",
+							"allOf": [
 								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
+									"minimum": 16
 								}
 							]
 						}
 					},
-					"required": ["action", "configuration"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["end"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						}
-					},
-					"required": ["action", "configuration"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["status"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						}
-					},
-					"required": ["action", "configuration"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["publish"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						},
-						"inputs": {
-							"type": "array",
-							"items": {
-								"type": "object",
-								"properties": {
-									"name": {
-										"type": "string",
-										"allOf": [
-											{
-												"minLength": 1
-											},
-											{
-												"maxLength": 1024
-											}
-										]
-									},
-									"key": {
-										"type": "string",
-										"allOf": [
-											{
-												"minLength": 1
-											},
-											{
-												"maxLength": 1024
-											}
-										]
-									},
-									"file": {
-										"type": "string",
-										"allOf": [
-											{
-												"minLength": 1
-											},
-											{
-												"maxLength": 32767
-											}
-										]
-									}
-								},
-								"required": ["name", "key", "file"],
-								"additionalProperties": false
-							},
-							"allOf": [
-								{
-									"maxItems": 2560
-								}
-							]
-						},
-						"cold": {
-							"type": "boolean"
-						},
-						"removedNames": {
-							"type": "array",
-							"items": {
-								"type": "string",
-								"allOf": [
-									{
-										"minLength": 1
-									},
-									{
-										"maxLength": 1024
-									}
-								]
-							},
-							"allOf": [
-								{
-									"maxItems": 2560
-								}
-							]
-						}
-					},
-					"required": ["action", "configuration", "inputs"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["publish_ids"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						},
-						"name": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 1024
-								}
-							]
-						},
-						"key": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 1024
-								}
-							]
-						},
-						"file": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 32767
-								}
-							]
-						},
-						"generation": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 1024
-								}
-							]
-						},
-						"stringColumns": {
-							"type": "object",
-							"propertyNames": {
-								"type": "string",
-								"allOf": [
-									{
-										"minLength": 1
-									},
-									{
-										"maxLength": 1024
-									}
-								]
-							},
-							"additionalProperties": {
-								"type": "string",
-								"allOf": [
-									{
-										"minLength": 1
-									},
-									{
-										"maxLength": 1024
-									}
-								]
-							}
-						},
-						"retained": {
-							"type": "object",
-							"propertyNames": {
-								"type": "string",
-								"allOf": [
-									{
-										"minLength": 1
-									},
-									{
-										"maxLength": 1024
-									}
-								]
-							},
-							"additionalProperties": {
-								"type": "string",
-								"allOf": [
-									{
-										"minLength": 1
-									},
-									{
-										"maxLength": 1024
-									}
-								]
-							}
-						},
-						"removed": {
-							"type": "array",
-							"items": {
-								"type": "string",
-								"allOf": [
-									{
-										"minLength": 1
-									},
-									{
-										"maxLength": 1024
-									}
-								]
-							},
-							"allOf": [
-								{
-									"maxItems": 2560
-								}
-							]
-						}
-					},
-					"required": [
-						"action",
-						"configuration",
-						"name",
-						"key",
-						"file",
-						"generation",
-						"stringColumns"
-					],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["intern"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						},
-						"domain": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 23
-								}
-							]
-						},
-						"file": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 32767
-								}
-							]
-						}
-					},
-					"required": ["action", "configuration", "domain", "file"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["strings"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						},
-						"ids": {
-							"type": "array",
-							"items": {
-								"type": "integer",
-								"allOf": [
-									{
-										"minimum": 0
-									},
-									{
-										"maximum": 4294967295
-									}
-								]
-							},
-							"allOf": [
-								{
-									"maxItems": 8192
-								}
-							]
-						},
-						"output": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 32767
-								}
-							]
-						}
-					},
-					"required": ["action", "configuration", "ids", "output"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["join"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						},
-						"file": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 32767
-								}
-							]
-						}
-					},
-					"required": ["action", "configuration", "file"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["compact"]
-						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						},
-						"force": {
-							"type": "boolean"
-						}
-					},
-					"required": ["action", "configuration"],
+					"required": ["major", "minor"],
 					"additionalProperties": false
 				}
-			]
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
 		},
 		"UAssetIoContract": {
 			"type": "object",
@@ -2449,7 +1118,1632 @@
 									"enum": ["game_text_index"]
 								},
 								"request": {
-									"$ref": "#/$defs/GameTextIndexBuildRequest"
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["capabilities"]
+												}
+											},
+											"required": ["action"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["begin"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												}
+											},
+											"required": ["action", "configuration"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["end"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												}
+											},
+											"required": ["action", "configuration"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["status"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												}
+											},
+											"required": ["action", "configuration"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["publish"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"inputs": {
+													"type": "array",
+													"items": {
+														"type": "object",
+														"properties": {
+															"name": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	},
+																	{
+																		"maxLength": 1024
+																	}
+																]
+															},
+															"key": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	},
+																	{
+																		"maxLength": 1024
+																	}
+																]
+															},
+															"file": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	},
+																	{
+																		"maxLength": 32767
+																	}
+																]
+															}
+														},
+														"required": ["name", "key", "file"],
+														"additionalProperties": false
+													},
+													"allOf": [
+														{
+															"maxItems": 2560
+														}
+													]
+												},
+												"cold": {
+													"type": "boolean"
+												},
+												"removedNames": {
+													"type": "array",
+													"items": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													},
+													"allOf": [
+														{
+															"maxItems": 2560
+														}
+													]
+												}
+											},
+											"required": ["action", "configuration", "inputs"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["publish_ids"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"name": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 1024
+														}
+													]
+												},
+												"key": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 1024
+														}
+													]
+												},
+												"file": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												},
+												"generation": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 1024
+														}
+													]
+												},
+												"stringColumns": {
+													"type": "object",
+													"propertyNames": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													},
+													"additionalProperties": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													}
+												},
+												"retained": {
+													"type": "object",
+													"propertyNames": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													},
+													"additionalProperties": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													}
+												},
+												"removed": {
+													"type": "array",
+													"items": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													},
+													"allOf": [
+														{
+															"maxItems": 2560
+														}
+													]
+												}
+											},
+											"required": [
+												"action",
+												"configuration",
+												"name",
+												"key",
+												"file",
+												"generation",
+												"stringColumns"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["intern"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"domain": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 23
+														}
+													]
+												},
+												"file": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												}
+											},
+											"required": [
+												"action",
+												"configuration",
+												"domain",
+												"file"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["strings"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"ids": {
+													"type": "array",
+													"items": {
+														"type": "integer",
+														"allOf": [
+															{
+																"minimum": 0
+															},
+															{
+																"maximum": 4294967295
+															}
+														]
+													},
+													"allOf": [
+														{
+															"maxItems": 8192
+														}
+													]
+												},
+												"output": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												}
+											},
+											"required": [
+												"action",
+												"configuration",
+												"ids",
+												"output"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["join"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"file": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												}
+											},
+											"required": ["action", "configuration", "file"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["compact"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"force": {
+													"type": "boolean"
+												}
+											},
+											"required": ["action", "configuration"],
+											"additionalProperties": false
+										}
+									]
+								}
+							},
+							"required": ["kind", "request"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoPackageReplacementContract"
+						},
+						"operation": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["game_text_index"]
+								},
+								"request": {
+									"type": "object",
+									"properties": {
+										"action": {
+											"type": "string",
+											"enum": ["publish_packages"]
+										},
+										"configuration": {
+											"anyOf": [
+												{
+													"type": "object",
+													"properties": {
+														"cacheRoot": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"projectKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"targetKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"sharedProject": {
+															"type": "boolean",
+															"enum": [false]
+														}
+													},
+													"required": [
+														"cacheRoot",
+														"projectKey",
+														"targetKey",
+														"sharedProject"
+													],
+													"additionalProperties": false
+												},
+												{
+													"type": "object",
+													"properties": {
+														"cacheRoot": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"projectKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"targetKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"sharedProject": {
+															"type": "boolean",
+															"enum": [true]
+														},
+														"viewPrefix": {
+															"type": "string",
+															"allOf": [
+																{
+																	"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																}
+															]
+														}
+													},
+													"required": [
+														"cacheRoot",
+														"projectKey",
+														"targetKey",
+														"sharedProject"
+													],
+													"additionalProperties": false
+												}
+											]
+										},
+										"inputs": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"name": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															},
+															{
+																"pattern": "^package-text\\."
+															}
+														]
+													},
+													"key": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													},
+													"previousKey": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													},
+													"file": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 32767
+															}
+														]
+													},
+													"rows": {
+														"type": "array",
+														"items": {
+															"type": "integer",
+															"allOf": [
+																{
+																	"minimum": -64000000
+																},
+																{
+																	"maximum": 63999999
+																}
+															]
+														},
+														"allOf": [
+															{
+																"maxItems": 64000000
+															}
+														]
+													}
+												},
+												"required": [
+													"name",
+													"key",
+													"previousKey",
+													"file",
+													"rows"
+												],
+												"additionalProperties": false
+											},
+											"allOf": [
+												{
+													"maxItems": 256
+												}
+											]
+										},
+										"removedNames": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													},
+													{
+														"maxLength": 1024
+													},
+													{
+														"pattern": "^package-text\\."
+													}
+												]
+											},
+											"allOf": [
+												{
+													"maxItems": 256
+												}
+											]
+										}
+									},
+									"required": ["action", "configuration", "inputs"],
+									"additionalProperties": false
 								}
 							},
 							"required": ["kind", "request"],

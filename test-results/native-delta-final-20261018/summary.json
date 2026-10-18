@@ -1,0 +1,1763 @@
+{
+  "provenance": {
+    "baseCommit": "1b964761403a38f953c67addd7eb48fcaf3674bd",
+    "originalTypeScriptCommit": "8631c016d1f87b1d37f7c98327c395c137bf3668",
+    "measurementExecutableSha256": "67864619633b4837ebbf426047da025d0e89491d0f8e4bd81fb4320b0a9444c7",
+    "samplesPerAfterCase": 1,
+    "method": "Same retained 1x generated inputs and mutation IDs as before. Fresh process and cloned upgraded cache for each host/edit. Serial runs with fixed CPU affinity, default Node heap, explicit main-thread GC, warm filesystem caches. Package edits mutate retained reader records; package save time is excluded. PO edits change one real msgid source byte (not a translation-only edit); original byte and mtime restored. Final follow-up only adds garbage accounting when reactivating an already cached package key; timed edit paths are unchanged. A follow-up restores required-manifest preflight before writer acquisition; benchmark edits do not require a manifest preflight.",
+    "fixture": {
+      "occurrences": 1028205,
+      "visibleUnits": 583507,
+      "inventoryPackages": 166518,
+      "textPackages": 16500,
+      "cultures": 10
+    },
+    "caveat": "Single after samples establish direction and do not estimate variance. The first CLI query now does matching formerly warmed by summary. Compare write plus first query as well as the separate stages.",
+    "finalExecutableSha256": "d535446054f03cde12473ac01485ee30c1e4eee44c2d4be8b5566e80cff0a735",
+    "evidenceFiles": [
+      "cli-cold.json.gz",
+      "cli-mixed.json.gz",
+      "cli-po.json.gz",
+      "cli-size.json.gz",
+      "cli-stable.json.gz",
+      "cli-warm.json.gz",
+      "workbench-mixed.json.gz",
+      "workbench-po.json.gz",
+      "workbench-size.json.gz",
+      "workbench-stable.json.gz",
+      "workbench-warm.json.gz"
+    ]
+  },
+  "writes": [
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "refresh-one-package",
+      "originalTypeScriptMs": {
+        "samples": 2,
+        "median": 3561.3780499999993,
+        "range": [
+          3554.1178999999993,
+          3568.6381999999994
+        ],
+        "values": [
+          3568.6381999999994,
+          3554.1178999999993
+        ]
+      },
+      "beforeMs": {
+        "samples": 2,
+        "median": 4225.907450000001,
+        "range": [
+          4161.1016,
+          4290.713300000001
+        ],
+        "values": [
+          4161.1016,
+          4290.713300000001
+        ]
+      },
+      "afterMs": 1808.5434999999998,
+      "beforePeakRssMiB": 1168.974609375,
+      "afterPeakRssMiB": 737.671875,
+      "beforeQueryMs": 210.16690000000017,
+      "afterQueryMs": 502.33679999999913,
+      "beforeSearchMs": 13.19775000000027,
+      "afterSearchMs": 13.471600000000763,
+      "beforeCombinedMs": 4436.074350000001,
+      "afterCombinedMs": 2310.880299999999,
+      "writeSpeedup": 2.336635779012228,
+      "nativeStagesMs": {
+        "close": 42.246199999999995,
+        "publish_packages": 58.876400000000004,
+        "join": 206.3769,
+        "open": 301.8202,
+        "query_projection_prepare": 175.4538,
+        "source_search_prepare": 79.4791,
+        "summary": 0.0814
+      },
+      "nativeActionMs": {
+        "close": 43.3223,
+        "begin": 52.8637,
+        "publish_packages": 61.52,
+        "join": 209.5128,
+        "end": 1.2052,
+        "open": 315.2273,
+        "summary": 0.4621
+      }
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "refresh-one-package-with-size-change",
+      "originalTypeScriptMs": {
+        "samples": 2,
+        "median": 27993.026699999995,
+        "range": [
+          27787.829699999995,
+          28198.2237
+        ],
+        "values": [
+          27787.829699999995,
+          28198.2237
+        ]
+      },
+      "beforeMs": {
+        "samples": 2,
+        "median": 4209.4977,
+        "range": [
+          4198.2451,
+          4220.7503
+        ],
+        "values": [
+          4198.2451,
+          4220.7503
+        ]
+      },
+      "afterMs": 1823.0874999999996,
+      "beforePeakRssMiB": 1137.732421875,
+      "afterPeakRssMiB": 691.27734375,
+      "beforeQueryMs": 215.69804999999997,
+      "afterQueryMs": 478.04089999999997,
+      "beforeSearchMs": 13.250750000001062,
+      "afterSearchMs": 12.61160000000018,
+      "beforeCombinedMs": 4425.19575,
+      "afterCombinedMs": 2301.1283999999996,
+      "writeSpeedup": 2.3089937811542236,
+      "nativeStagesMs": {
+        "close": 45.8279,
+        "publish_packages": 58.359,
+        "join": 204.9032,
+        "open": 290.0692,
+        "query_projection_prepare": 168.8063,
+        "source_search_prepare": 76.09349999999999,
+        "summary": 0.1453
+      },
+      "nativeActionMs": {
+        "close": 46.8518,
+        "begin": 52.4055,
+        "publish_packages": 61.5763,
+        "join": 207.5095,
+        "end": 1.2375,
+        "open": 304.1255,
+        "summary": 0.7042
+      }
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "refresh-one-po",
+      "originalTypeScriptMs": {
+        "samples": 2,
+        "median": 4301.147249999999,
+        "range": [
+          4218.171899999999,
+          4384.122599999999
+        ],
+        "values": [
+          4384.122599999999,
+          4218.171899999999
+        ]
+      },
+      "beforeMs": {
+        "samples": 2,
+        "median": 5256.5901,
+        "range": [
+          5200.3145,
+          5312.8657
+        ],
+        "values": [
+          5312.8657,
+          5200.3145
+        ]
+      },
+      "afterMs": 3169.7027,
+      "beforePeakRssMiB": 1212.259765625,
+      "afterPeakRssMiB": 412.98828125,
+      "beforeQueryMs": 208.74535000000014,
+      "afterQueryMs": 449.58710000000065,
+      "beforeSearchMs": 11.599599999999555,
+      "afterSearchMs": 12.17909999999938,
+      "beforeCombinedMs": 5465.3354500000005,
+      "afterCombinedMs": 3619.2898000000005,
+      "writeSpeedup": 1.6583858479850495,
+      "nativeStagesMs": {
+        "close": 47.478300000000004,
+        "publish": 321.7786,
+        "join": 166.819,
+        "open": 285.2524,
+        "query_projection_prepare": 166.9443,
+        "source_search_prepare": 68.79480000000001,
+        "summary": 0.079
+      },
+      "nativeActionMs": {
+        "close": 48.5167,
+        "begin": 52.9329,
+        "publish": 326.6647,
+        "join": 169.4149,
+        "end": 1.4928,
+        "open": 298.7326,
+        "summary": 0.4035
+      }
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "refresh-one-package-one-po",
+      "originalTypeScriptMs": {
+        "samples": 2,
+        "median": 5492.0593499999995,
+        "range": [
+          5468.725999999999,
+          5515.3927
+        ],
+        "values": [
+          5468.725999999999,
+          5515.3927
+        ]
+      },
+      "beforeMs": {
+        "samples": 2,
+        "median": 7600.1661,
+        "range": [
+          7576.608899999999,
+          7623.7233000000015
+        ],
+        "values": [
+          7576.608899999999,
+          7623.7233000000015
+        ]
+      },
+      "afterMs": 3470.9545000000016,
+      "beforePeakRssMiB": 1262.322265625,
+      "afterPeakRssMiB": 556.82421875,
+      "beforeQueryMs": 214.15154999999868,
+      "afterQueryMs": 457.5630999999994,
+      "beforeSearchMs": 13.098899999999048,
+      "afterSearchMs": 13.147400000001653,
+      "beforeCombinedMs": 7814.317649999999,
+      "afterCombinedMs": 3928.517600000001,
+      "writeSpeedup": 2.1896472857826272,
+      "nativeStagesMs": {
+        "close": 53.202600000000004,
+        "publish": 326.3665,
+        "publish_packages": 57.2074,
+        "join": 216.4069,
+        "open": 287.78150000000005,
+        "query_projection_prepare": 165.1413,
+        "source_search_prepare": 77.4205,
+        "summary": 0.0829
+      },
+      "nativeActionMs": {
+        "close": 54.6568,
+        "begin": 54.1223,
+        "publish": 330.9524,
+        "publish_packages": 60.6396,
+        "join": 219.1995,
+        "end": 1.5376,
+        "open": 300.8452,
+        "summary": 0.4856
+      }
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "refresh-one-package",
+      "originalTypeScriptMs": {
+        "samples": 1,
+        "median": 4980.321599999999,
+        "range": [
+          4980.321599999999,
+          4980.321599999999
+        ],
+        "values": [
+          4980.321599999999
+        ]
+      },
+      "beforeMs": {
+        "samples": 1,
+        "median": 4660.795100000001,
+        "range": [
+          4660.795100000001,
+          4660.795100000001
+        ],
+        "values": [
+          4660.795100000001
+        ]
+      },
+      "afterMs": 2510.5217000000002,
+      "beforePeakRssMiB": 1826.9375,
+      "afterPeakRssMiB": 1020.12109375,
+      "beforeQueryMs": 45.342899999999645,
+      "afterQueryMs": 44.51810000000114,
+      "beforeSearchMs": 13.46349999999984,
+      "afterSearchMs": 14.302799999999479,
+      "beforeCombinedMs": 4706.138000000001,
+      "afterCombinedMs": 2555.0398000000014,
+      "writeSpeedup": 1.8565046061940038,
+      "nativeStagesMs": {
+        "publish_packages": 59.6403,
+        "join": 215.1656,
+        "open": 294.04400000000004,
+        "query_projection_prepare": 167.9775,
+        "source_search_prepare": 79.5,
+        "summary": 0.058699999999999995,
+        "close": 56.4927,
+        "search": 516.0709999999999
+      },
+      "nativeActionMs": {
+        "begin": 168.503,
+        "publish_packages": 62.6518,
+        "join": 219.3455,
+        "end": 4.0441,
+        "open": 308.3063,
+        "summary": 0.524,
+        "close": 57.2724,
+        "search": 516.8153
+      }
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "refresh-one-package-with-size-change",
+      "originalTypeScriptMs": {
+        "samples": 2,
+        "median": 28771.26725,
+        "range": [
+          28459.244,
+          29083.290500000003
+        ],
+        "values": [
+          28459.244,
+          29083.290500000003
+        ]
+      },
+      "beforeMs": {
+        "samples": 2,
+        "median": 4685.84535,
+        "range": [
+          4661.3149,
+          4710.3758
+        ],
+        "values": [
+          4710.3758,
+          4661.3149
+        ]
+      },
+      "afterMs": 2480.0541999999996,
+      "beforePeakRssMiB": 1808.021484375,
+      "afterPeakRssMiB": 1001.25,
+      "beforeQueryMs": 45.09715000000051,
+      "afterQueryMs": 45.42419999999947,
+      "beforeSearchMs": 13.799149999999827,
+      "afterSearchMs": 13.764900000000125,
+      "beforeCombinedMs": 4730.9425,
+      "afterCombinedMs": 2525.478399999999,
+      "writeSpeedup": 1.8894124773563419,
+      "nativeStagesMs": {
+        "publish_packages": 58.3101,
+        "join": 210.76680000000002,
+        "open": 293.5057,
+        "query_projection_prepare": 168.701,
+        "source_search_prepare": 78.21730000000001,
+        "summary": 0.0583,
+        "close": 55.004999999999995,
+        "search": 512.6943
+      },
+      "nativeActionMs": {
+        "begin": 167.5004,
+        "publish_packages": 60.9978,
+        "join": 216.0369,
+        "end": 3.7988,
+        "open": 307.0643,
+        "summary": 0.471,
+        "close": 55.8248,
+        "search": 513.4113
+      }
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "refresh-one-po",
+      "originalTypeScriptMs": {
+        "samples": 2,
+        "median": 5714.0741499999995,
+        "range": [
+          5713.4974999999995,
+          5714.650799999999
+        ],
+        "values": [
+          5714.650799999999,
+          5713.4974999999995
+        ]
+      },
+      "beforeMs": {
+        "samples": 2,
+        "median": 5875.6092499999995,
+        "range": [
+          5790.8257,
+          5960.3928
+        ],
+        "values": [
+          5960.3928,
+          5790.8257
+        ]
+      },
+      "afterMs": 3840.6376,
+      "beforePeakRssMiB": 1810.69140625,
+      "afterPeakRssMiB": 1375.171875,
+      "beforeQueryMs": 46.61189999999988,
+      "afterQueryMs": 48.657100000000355,
+      "beforeSearchMs": 12.898949999999786,
+      "afterSearchMs": 14.227699999999459,
+      "beforeCombinedMs": 5922.221149999999,
+      "afterCombinedMs": 3889.2947000000004,
+      "writeSpeedup": 1.5298525562526388,
+      "nativeStagesMs": {
+        "publish": 319.3528,
+        "join": 168.4318,
+        "open": 277.24379999999996,
+        "query_projection_prepare": 166.8558,
+        "source_search_prepare": 64.843,
+        "summary": 0.057,
+        "search": 543.8516
+      },
+      "nativeActionMs": {
+        "begin": 158.87740000000002,
+        "publish": 324.0915,
+        "join": 173.1524,
+        "end": 4.0562000000000005,
+        "open": 290.8831,
+        "summary": 0.4729,
+        "search": 544.555
+      }
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "refresh-one-package-one-po",
+      "originalTypeScriptMs": {
+        "samples": 2,
+        "median": 6759.25755,
+        "range": [
+          6660.891700000002,
+          6857.623399999999
+        ],
+        "values": [
+          6660.891700000002,
+          6857.623399999999
+        ]
+      },
+      "beforeMs": {
+        "samples": 2,
+        "median": 8183.5872,
+        "range": [
+          8157.0744,
+          8210.099999999999
+        ],
+        "values": [
+          8157.0744,
+          8210.099999999999
+        ]
+      },
+      "afterMs": 4155.7533,
+      "beforePeakRssMiB": 1811.564453125,
+      "afterPeakRssMiB": 1277.13671875,
+      "beforeQueryMs": 44.907899999999245,
+      "afterQueryMs": 43.618100000001505,
+      "beforeSearchMs": 13.727449999999408,
+      "afterSearchMs": 13.727899999999863,
+      "beforeCombinedMs": 8228.4951,
+      "afterCombinedMs": 4199.371400000002,
+      "writeSpeedup": 1.9692187214289163,
+      "nativeStagesMs": {
+        "publish": 316.5512,
+        "publish_packages": 54.5755,
+        "join": 216.4152,
+        "open": 292.4093,
+        "query_projection_prepare": 169.8836,
+        "source_search_prepare": 78.0536,
+        "summary": 0.061,
+        "close": 58.3431,
+        "search": 513.3444000000001
+      },
+      "nativeActionMs": {
+        "begin": 170.4151,
+        "publish": 321.06260000000003,
+        "publish_packages": 57.059,
+        "join": 222.60670000000002,
+        "end": 3.7807999999999997,
+        "open": 305.7641,
+        "summary": 0.4733,
+        "close": 59.436,
+        "search": 514.0159
+      }
+    }
+  ],
+  "controls": {
+    "cli": {
+      "first-query": {
+        "beforeMs": 217.3954500000002,
+        "afterMs": 472.1080000000002
+      },
+      "facet": {
+        "beforeMs": 80.46879999999987,
+        "afterMs": 81.95039999999972
+      },
+      "page": {
+        "beforeMs": 35.39619999999991,
+        "afterMs": 35.94679999999971
+      },
+      "facet-repeat": {
+        "beforeMs": 4.11525000000006,
+        "afterMs": 4.219199999999546
+      },
+      "page-repeat": {
+        "beforeMs": 25.356899999999996,
+        "afterMs": 25.141099999999824
+      },
+      "search": {
+        "beforeMs": 52.92704999999978,
+        "afterMs": 52.9429999999993
+      },
+      "search-repeat": {
+        "beforeMs": 2.6330499999996846,
+        "afterMs": 2.6846000000005006
+      },
+      "empty-search": {
+        "beforeMs": 12.881999999999607,
+        "afterMs": 13.042499999999563
+      },
+      "empty-search-repeat": {
+        "beforeMs": 1.797349999999824,
+        "afterMs": 1.7854999999999563
+      },
+      "refresh-no-change": {
+        "beforeMs": 1746.6626,
+        "afterMs": 1320.4757
+      },
+      "distinctSearch": {
+        "beforeMs": 52.23085000000037,
+        "afterMs": 51.82079999999951,
+        "terms": 9
+      }
+    },
+    "workbench": {
+      "first-query": {
+        "beforeMs": 46.57310000000007,
+        "afterMs": 45.399500000000444
+      },
+      "facet": {
+        "beforeMs": 81.59040000000005,
+        "afterMs": 82.15679999999975
+      },
+      "page": {
+        "beforeMs": 34.30569999999989,
+        "afterMs": 35.385299999999916
+      },
+      "facet-repeat": {
+        "beforeMs": 4.777399999999943,
+        "afterMs": 5.0877999999993335
+      },
+      "page-repeat": {
+        "beforeMs": 26.572099999999864,
+        "afterMs": 27.348299999999654
+      },
+      "search": {
+        "beforeMs": 54.64879999999994,
+        "afterMs": 53.863900000000285
+      },
+      "search-repeat": {
+        "beforeMs": 3.131199999999808,
+        "afterMs": 3.0338000000001557
+      },
+      "empty-search": {
+        "beforeMs": 13.318499999999403,
+        "afterMs": 13.9371000000001
+      },
+      "empty-search-repeat": {
+        "beforeMs": 2.306900000000496,
+        "afterMs": 2.1699999999991633
+      },
+      "refresh-no-change": {
+        "beforeMs": 2187.0171,
+        "afterMs": 1229.4983000000002
+      },
+      "distinctSearch": {
+        "beforeMs": 52.858000000000175,
+        "afterMs": 52.1875,
+        "terms": 9
+      }
+    }
+  },
+  "canonicalComparisons": [
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:first-query",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:count",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:filter",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:facet",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:page",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:empty-search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "stable",
+      "stage": "cli:search-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:first-query",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:count",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:filter",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:facet",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:page",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:empty-search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "stage": "cli:search-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:first-query",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:count",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:filter",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:facet",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:page",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:empty-search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "stage": "cli:search-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:first-query",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:count",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:filter",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:facet",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:page",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:empty-search",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "stage": "cli:search-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:first-query",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:count",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:filter",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:facet",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:page",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:empty-search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "stable",
+      "stage": "workbench:search-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:first-query",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:count",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:filter",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:facet",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:page",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:empty-search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "size",
+      "stage": "workbench:search-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:first-query",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:count",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:filter",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:facet",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:page",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:empty-search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "po",
+      "stage": "workbench:search-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:first-query",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:count",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:filter",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:facet",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:page",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:facet-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:page-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:empty-search",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:empty-search-repeat",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-0",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-1",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-2",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-3",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-4",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-5",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-6",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-7",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-distinct-8",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:query-after-refresh",
+      "equal": true
+    },
+    {
+      "host": "workbench",
+      "case": "mixed",
+      "stage": "workbench:search-after-refresh",
+      "equal": true
+    }
+  ],
+  "fullRebuildProofs": [
+    {
+      "host": "cli",
+      "case": "stable",
+      "columns": 171,
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "size",
+      "columns": 171,
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "po",
+      "columns": 171,
+      "equal": true
+    },
+    {
+      "host": "cli",
+      "case": "mixed",
+      "columns": 171,
+      "equal": true
+    }
+  ],
+  "cold": {
+    "afterMs": 55088.3267,
+    "afterPeakRssMiB": 2526.47265625,
+    "before": {
+      "ms": {
+        "samples": 3,
+        "median": 54967.9188,
+        "range": [
+          54693.1875,
+          55206.6368
+        ],
+        "values": [
+          54693.1875,
+          54967.9188,
+          55206.6368
+        ]
+      },
+      "rssMiB": {
+        "samples": 3,
+        "median": 2483.875,
+        "range": [
+          2318.9140625,
+          2544.3125
+        ],
+        "values": [
+          2544.3125,
+          2483.875,
+          2318.9140625
+        ]
+      },
+      "maximumGapMs": {
+        "samples": 3,
+        "median": 71.5135999999984,
+        "range": [
+          70.43479999999909,
+          80.32299999999668
+        ],
+        "values": [
+          70.43479999999909,
+          71.5135999999984,
+          80.32299999999668
+        ]
+      }
+    },
+    "original": {
+      "ms": {
+        "samples": 3,
+        "median": 75000.4087,
+        "range": [
+          74903.60220000001,
+          75222.7373
+        ],
+        "values": [
+          74903.60220000001,
+          75000.4087,
+          75222.7373
+        ]
+      },
+      "rssMiB": {
+        "samples": 3,
+        "median": 2340.93359375,
+        "range": [
+          2219.015625,
+          2514.0390625
+        ],
+        "values": [
+          2514.0390625,
+          2340.93359375,
+          2219.015625
+        ]
+      },
+      "maximumGapMs": {
+        "samples": 3,
+        "median": 1447.2792000000045,
+        "range": [
+          1444.7718999999925,
+          1462.717300000004
+        ],
+        "values": [
+          1447.2792000000045,
+          1462.717300000004,
+          1444.7718999999925
+        ]
+      }
+    }
+  }
+}

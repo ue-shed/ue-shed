@@ -719,13 +719,13 @@ export async function measureGameTextHosts(
 							: "one-package"
 					: "one-po";
 				await measure(`${host}:refresh-${edit}`, refresh, (value) => value);
+				await measure(`${host}:query-after-refresh`, () => query(base), pageSummary);
+				await measure(
+					`${host}:search-after-refresh`,
+					() => query({ ...base, query: "phase6-refresh" }),
+					pageSummary
+				);
 				if (host === "cli" && !forceChangedJoin) {
-					await measure("cli:query-after-refresh", () => query(base), pageSummary);
-					await measure(
-						"cli:search-after-refresh",
-						() => query({ ...base, query: "phase6-refresh" }),
-						pageSummary
-					);
 					await measure(
 						"cli:proof-incremental-full",
 						async () => {

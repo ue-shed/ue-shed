@@ -443,7 +443,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                     input.key_change_pairs.clone().unwrap_or(Value::Null),
                     input.file_errors.clone().unwrap_or_default(),
                     input.file_provenances.clone().unwrap_or(json!({})),
-                    input.file_diagnostics.clone().unwrap_or(json!({}))
+                    input.file_diagnostics.clone().unwrap_or(json!({})),
+                    "native-summary-v1"
                 ])
                 .as_array()
                 .ok_or("join key values")?
@@ -1150,6 +1151,34 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         &query_columns,
         &file_rows,
     )?);
+    let raw_columns = crate::summary_state::RAW_FIELDS
+        .iter()
+        .map(|field| {
+            query_columns
+                .iter()
+                .find(|(name, _, _)| name == &format!("query.raw.{field}"))
+                .map(|(_, _, values)| values.as_slice())
+                .ok_or_else(|| crate::Error::from("summary raw column"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let raw_members = query_columns
+        .iter()
+        .find(|(name, _, _)| name == "query.raw.members")
+        .map(|(_, _, values)| values.len())
+        .ok_or("summary raw members")?;
+    let summary = crate::summary_state::SummaryState::build(
+        store,
+        &joined.packages.names,
+        raw_columns[0].len(),
+        raw_members,
+        |row| {
+            let mut values = [0; 7];
+            for (index, column) in raw_columns.iter().enumerate() {
+                values[index] = *column.get(row).ok_or("summary raw row")?;
+            }
+            Ok(values)
+        },
+    )?;
     let graph = crate::dependency_graph::Graph::rebuild(store, &joined, &query_columns)?;
     let first_folders = joined.line[16]
         .iter()
@@ -1234,7 +1263,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             unique_columns.push(column);
         }
     }
-    let meta = json!({"version":3,"count":joined.groups.len(),"input":input,"aliases":aliases,"chunks":chunks,"generation":generation,"dependencies":dependencies,"packageNames":joined.packages.names,"packageStarts":joined.packages.starts,"pairs":marks["pairs"],"ambiguous":marks["ambiguous"],"oldCandidates":marks["oldCandidates"],"reducedSourceChecking":joined.pos.iter().map(|f|f.loaded&&!f.has_source).collect::<Vec<_>>()});
+    let meta = json!({"version":3,"engineSummary":summary,"count":joined.groups.len(),"input":input,"aliases":aliases,"chunks":chunks,"generation":generation,"dependencies":dependencies,"packageNames":joined.packages.names,"packageStarts":joined.packages.starts,"pairs":marks["pairs"],"ambiguous":marks["ambiguous"],"oldCandidates":marks["oldCandidates"],"reducedSourceChecking":joined.pos.iter().map(|f|f.loaded&&!f.has_source).collect::<Vec<_>>()});
     let count = joined.groups.len() as u32;
     drop(joined);
     if let Some(outcome) = crate::join_overlay::publish(store, input, &key, &meta, &unique_columns)?

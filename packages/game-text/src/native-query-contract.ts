@@ -17,6 +17,11 @@ import type { LocalizationFocus, LocalizationFocusRequest } from "./localization
 export interface NativeTextQuery {
 	/** Full saved corpus, including blank units retained as provenance. */
 	readonly readCorpus: () => Effect.Effect<TextCorpus, GameTextIndexError>;
+	/** Complete joined provenance, including blank-source lines. */
+	readonly readLocalizationLines: () => Effect.Effect<
+		readonly LocalizationLine[],
+		GameTextIndexError
+	>;
 	readonly summary: () => Effect.Effect<TextCorpusQuerySummary, GameTextIndexError>;
 	readonly search: (
 		request: TextCorpusSearchRequest

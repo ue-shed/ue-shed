@@ -68,6 +68,10 @@ pub enum EngineRequest {
         reader: String,
         output: std::path::PathBuf,
     },
+    LocalizationCorpus {
+        reader: String,
+        output: std::path::PathBuf,
+    },
     Export {
         reader: String,
         payload: String,
@@ -120,6 +124,7 @@ impl EngineRequest {
             | Self::Search { reader, .. }
             | Self::Focus { reader, .. }
             | Self::Corpus { reader, .. }
+            | Self::LocalizationCorpus { reader, .. }
             | Self::Export { reader, .. }
             | Self::Rows { reader, .. }
             | Self::LocalizationFocus { reader, .. }
@@ -185,6 +190,7 @@ impl EngineRequest {
             _ => {}
         }
         if let Self::Corpus { output, .. }
+        | Self::LocalizationCorpus { output, .. }
         | Self::Export { output, .. }
         | Self::Rows { output, .. }
         | Self::LocalizationExport { output, .. }
@@ -276,6 +282,7 @@ impl EngineSession {
             | EngineRequest::Search { reader, .. }
             | EngineRequest::Focus { reader, .. }
             | EngineRequest::Corpus { reader, .. }
+            | EngineRequest::LocalizationCorpus { reader, .. }
             | EngineRequest::Export { reader, .. }
             | EngineRequest::Rows { reader, .. }
             | EngineRequest::LocalizationFocus { reader, .. }
@@ -362,8 +369,8 @@ impl EngineSession {
                         payload, output, ..
                     } => {
                         let request = parse_search_request(payload)?;
-                        let bytes =
-                            query.export_localization_to_path(&request, output, cancelled)?;
+                        let bytes = query
+                            .export_localization_to_path(&request, output, false, cancelled)?;
                         (
                             "localization_export",
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
@@ -376,6 +383,17 @@ impl EngineSession {
                             query.export_localization_focus_to_path(payload, output, cancelled)?;
                         (
                             "localization_focus_export",
+                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                        )
+                    }
+                    EngineRequest::LocalizationCorpus { output, .. } => {
+                        let request = parse_search_request(
+                            r#"{"query":"","capability":"all","pageSize":50}"#,
+                        )?;
+                        let bytes =
+                            query.export_localization_to_path(&request, output, true, cancelled)?;
+                        (
+                            "localization_corpus",
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
                         )
                     }

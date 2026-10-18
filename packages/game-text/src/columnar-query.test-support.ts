@@ -34,7 +34,7 @@ import {
 	textFileScope,
 	matchesTextKinds
 } from "./text-origin.js";
-import { validateLocalizationSelection } from "./localization-query.js";
+import { validateLocalizationSelection } from "./localization-query.test-support.js";
 import {
 	LocalizationReviewLens,
 	LocalizationUnknownReason,
@@ -1569,6 +1569,7 @@ export function columnarTextCorpusQuery(
 	};
 	return {
 		summary: () => summary,
+		readLocalizationLines: () => data.lines(data.column("query.line.order")),
 		search: cachedSearch,
 		localizationFocus: (id) => {
 			const row = findLine(id);

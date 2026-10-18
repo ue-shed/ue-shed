@@ -260,7 +260,7 @@
 					"properties": {
 						"action": {
 							"type": "string",
-							"enum": ["corpus"]
+							"enum": ["corpus", "localization_corpus"]
 						},
 						"reader": {
 							"type": "string",

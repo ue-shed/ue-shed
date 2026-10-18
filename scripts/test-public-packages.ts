@@ -157,7 +157,8 @@ try {
 		"search-worker-node",
 		"search-worker-protocol",
 		"query",
-		"columnar-query"
+		"columnar-query",
+		"localization-query"
 	])
 		assert.equal(
 			gameTextFiles.includes(`package/dist/${name}.js`),

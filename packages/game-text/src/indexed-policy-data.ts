@@ -109,7 +109,7 @@ export function reuseJoinedQueryProjection(
 /** Decoded columns and derived projections per pinned reader; they live as long as it does. */
 const readerProjections = new WeakMap<JoinedTargetReader, JoinedQueryProjection>();
 
-/** Column and bounded row access for the synchronous public API. No corpus is materialized. */
+/** Numeric and bounded evidence inputs for configurable quality policies. No search predicates. */
 export class IndexedPolicyData {
 	readonly joined: JoinedTargetReader;
 	private readonly columns: Map<string, Uint32Array>;
@@ -117,8 +117,7 @@ export class IndexedPolicyData {
 	private readonly displayedLines: ReturnType<typeof displayedLines>;
 	constructor(joined: JoinedTargetReader, projection?: JoinedQueryProjection) {
 		this.joined = synchronousJoinedTarget(joined);
-		// Views of one pinned reader share its decoded columns: the query, the corpus, the
-		// evidence and each quality scan would otherwise decode the same columns again.
+		// Policy scans of one pinned reader share decoded columns and evidence rows.
 		const shared = readerProjections.get(joined);
 		this.projection = projection ?? shared ?? { columns: new Map() };
 		if (!shared) readerProjections.set(joined, this.projection);

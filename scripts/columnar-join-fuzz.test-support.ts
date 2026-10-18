@@ -379,6 +379,7 @@ export async function compareJoinFuzzInput(
 			| undefined
 		)[];
 		readonly summary: import("../packages/game-text/src/schema.ts").TextCorpusQuerySummary;
+		readonly corpusLines: readonly import("../packages/game-text/src/localization-schema.ts").LocalizationLine[];
 		readonly exports: readonly import("../packages/game-text/src/schema.ts").TextCorpus[];
 		readonly focus: readonly (
 			| import("../packages/game-text/src/schema.ts").TextCorpusFocus
@@ -842,6 +843,11 @@ export async function compareJoinFuzzInput(
 			)
 		: undefined;
 	if (nativeResults) {
+		compare(
+			"native-engine.corpus_lines",
+			[...expected.lines].sort((a, b) => a.id.localeCompare(b.id)),
+			[...nativeResults.corpusLines].sort((a, b) => a.id.localeCompare(b.id))
+		);
 		for (const [index, request] of nativeDetails.entries())
 			compare(
 				"native-engine.detail",

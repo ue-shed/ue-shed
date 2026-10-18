@@ -63,6 +63,7 @@
 						"localization_detail",
 						"localization_export",
 						"localization_focus_export",
+						"localization_corpus",
 						"localization_page"
 					]
 				},

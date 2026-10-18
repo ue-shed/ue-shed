@@ -41,13 +41,15 @@ export function nativeEngineResponses(executable: string) {
 					const summary = yield* query.summary();
 					const exported = yield* Effect.forEach(exports, query.export);
 					const detailed = yield* Effect.forEach(details, query.localizationDetail);
+					const corpusLines = yield* query.readLocalizationLines();
 					return {
 						searches,
 						lines: localized,
 						focus: focused,
 						summary,
 						exports: exported,
-						details: detailed
+						details: detailed,
+						corpusLines
 					};
 				})
 			).pipe(

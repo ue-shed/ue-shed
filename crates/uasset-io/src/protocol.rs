@@ -867,6 +867,7 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     "localization_detail",
                     "localization_export",
                     "localization_focus_export",
+                    "localization_corpus",
                 ]
                 .contains(&outcome.action.as_str())
                 || outcome

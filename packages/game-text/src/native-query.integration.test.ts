@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LocalizationTarget } from "@ue-shed/localization";
@@ -16,6 +16,46 @@ import { TextCorpusFocusRequest } from "./schema.js";
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
 describe.skipIf(!executable)("production native Game Text queries", () => {
+	it("fails a closed native reader explicitly and opens a fresh model without substituting a JS query", async () => {
+		if (!executable) throw new Error("Native reader required");
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const fixture = yield* makeIndexRegressionFixture();
+					const implementation = nativeIndexBuilderLayer({
+						executable,
+						timeoutMs: 30000,
+						catalogTimeoutMs: 120000
+					});
+					const prepare = Effect.scoped(
+						Effect.gen(function* () {
+							const index = yield* GameTextIndexRefresh;
+							const model = yield* index.refresh(fixture.request);
+							const page = yield* model.query.search({
+								query: "",
+								capability: "all",
+								pageSize: 1
+							});
+							return { query: model.query, page };
+						})
+					).pipe(
+						Effect.provide(fixture.layer(false, fixture.source, false, implementation))
+					);
+					const closed = yield* prepare;
+					const failed = yield* closed.query
+						.search({ query: "", capability: "all", pageSize: 1 })
+						.pipe(Effect.result);
+					expect(Result.isFailure(failed)).toBe(true);
+					if (Result.isFailure(failed)) {
+						expect(failed.failure.code).toBe("index_failed");
+						expect(failed.failure.retrySafe).toBe(false);
+					}
+					const reopened = yield* prepare;
+					expect(reopened.page).toEqual(closed.page);
+				})
+			)
+		);
+	}, 120000);
 	it("pages large manifest, culture and PO context evidence in Rust and exports full provenance explicitly", async () => {
 		if (!executable) throw new Error("Native reader required");
 		await Effect.runPromise(
@@ -229,6 +269,14 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 								raw,
 								undefined,
 								joinLocalizationTarget(raw, model.evidence)
+							);
+							const fullLines = yield* model.query.readLocalizationLines();
+							expect(fullLines.some((line) => line.source.trim() === "")).toBe(true);
+							expect(fullLines.map((line) => line.id).sort()).toEqual(
+								oracle
+									.readLocalizationLines()
+									.map((line) => line.id)
+									.sort()
 							);
 							for (const localization of [
 								undefined,

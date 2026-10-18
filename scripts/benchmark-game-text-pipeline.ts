@@ -17,6 +17,7 @@ import { killBenchmarkTree } from "./game-text-scale-safety.ts";
 import { PackageTextStored } from "../packages/game-text/src/package-text-columns.ts";
 import { packageTextJsonLines } from "../packages/game-text/src/package-text-ndjson.ts";
 import { packageTextShard } from "../packages/game-text/src/package-text-layer.ts";
+import { nativeIndexQueryLayer } from "../packages/game-text/src/index-query-native.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -184,7 +185,15 @@ if (values.worker) {
 	const layer = module.gameTextIndexRefreshLayer(cacheRoot).pipe(
 		Layer.provide(source),
 		Layer.provide(builder),
-		Layer.provide(variant === "before" ? Layer.empty : selectedBuilder),
+		Layer.provide(
+			nativeIndexQueryLayer({
+				executable: resolve(
+					variant === "before" ? values["before-reader"]! : values.reader!
+				),
+				timeoutMs: 30000,
+				catalogTimeoutMs: 120000
+			})
+		),
 		Layer.provide(
 			assetReaderLayer({
 				executable: resolve(variant === "before" ? values["before-reader"] : values.reader)

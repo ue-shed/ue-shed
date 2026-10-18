@@ -75,7 +75,7 @@ import {
 	matchesLocalizationLine,
 	scopedLocalizationMarks,
 	validateLocalizationSelection
-} from "./localization-query.js";
+} from "./localization-query.test-support.js";
 
 function normalizedTerms(query: string): readonly string[] {
 	return query.toLocaleLowerCase().trim().split(/\s+/u).filter(Boolean);
@@ -158,6 +158,7 @@ function matchesLens(
  */
 export interface TextCorpusQuery {
 	readonly localizationFocus: (id: LocalizationLineId) => LocalizationLine | undefined;
+	readonly readLocalizationLines: () => readonly LocalizationLine[];
 	readonly localizationDetail: (
 		request: LocalizationFocusRequest
 	) => LocalizationFocus | undefined;
@@ -581,6 +582,7 @@ export function textCorpusQuery(
 		});
 	return {
 		localizationFocus: (id) => localization?.lines.find((line) => line.id === id),
+		readLocalizationLines: () => localization?.lines ?? [],
 		localizationDetail: (request) => {
 			if (!localization || localization.target !== request.target) return undefined;
 			const line =

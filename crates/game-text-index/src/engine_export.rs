@@ -49,13 +49,18 @@ impl EngineQuery {
         &mut self,
         request: &SearchRequest,
         path: &Path,
+        include_invisible: bool,
         cancelled: &AtomicBool,
     ) -> Result<u64> {
         require(
-            request.localization.is_some(),
+            include_invisible || request.localization.is_some(),
             crate::engine_types::invalid("Localization export requires a selected target."),
         )?;
-        let rows = self.matching(request, cancelled)?;
+        let rows = if include_invisible {
+            Projection::open(self, cancelled)?.order.clone()
+        } else {
+            self.matching(request, cancelled)?
+        };
         let file = std::fs::OpenOptions::new()
             .create_new(true)
             .write(true)

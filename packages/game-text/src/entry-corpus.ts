@@ -54,15 +54,6 @@ export {
 } from "./localization-key-changes.js";
 
 export {
-	localizationCounts,
-	localizationLinePreview,
-	localizationQueryPage,
-	matchesLocalizationLine,
-	scopedLocalizationMarks,
-	validateLocalizationSelection
-} from "./localization-query.js";
-
-export {
 	LocalizationBaseline,
 	LocalizationBaselineDelta,
 	LocalizationBaselineEntry,

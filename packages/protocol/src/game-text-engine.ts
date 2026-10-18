@@ -17,7 +17,7 @@ export const GameTextEngineRequest = Schema.Union([
 		})
 	}),
 	Schema.Struct({
-		action: Schema.Literal("corpus"),
+		action: Schema.Literals(["corpus", "localization_corpus"]),
 		reader: Reader,
 		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
 	}),
@@ -67,6 +67,7 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"localization_detail",
 		"localization_export",
 		"localization_focus_export",
+		"localization_corpus",
 		"localization_page"
 	]),
 	capabilities: Schema.Array(Schema.Literal("game_text_engine_v1")),

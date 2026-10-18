@@ -32,6 +32,8 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 				);
 				const reference = columnarTextCorpusQuery(joined);
 				const reader: Effect.Success<ReturnType<typeof openNativeTextQuery>> = {
+					readLocalizationLines: () =>
+						Effect.sync(() => reference.readLocalizationLines()),
 					readCorpus: () =>
 						Effect.sync(() => {
 							const data = new JoinedQueryData(joined),

@@ -22,6 +22,8 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 		});
 	return {
 		readCorpus: () => Effect.succeed(corpus),
+		readLocalizationLines: () =>
+			read("localization_corpus", () => query.readLocalizationLines()),
 		summary: () => read("summary", query.summary),
 		search: (request) => read("search", () => query.search(request)),
 		focus: (request) => read("focus", () => query.focus(request)),

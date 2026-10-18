@@ -192,6 +192,22 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	});
 
 	return {
+		readLocalizationLines: () =>
+			withStage((directory) =>
+				Effect.gen(function* () {
+					const output = join(directory, "localization.json");
+					yield* execute({ action: "localization_corpus", reader, output });
+					const text = yield* Effect.tryPromise({
+						try: (signal) => readFile(output, { encoding: "utf8", signal }),
+						catch: (cause) => failed("localization_corpus_read", cause)
+					});
+					return yield* Schema.decodeUnknownEffect(
+						Schema.fromJsonString(Schema.Array(LocalizationLine))
+					)(text).pipe(
+						Effect.mapError((cause) => failed("localization_corpus_decode", cause))
+					);
+				})
+			),
 		readCorpus: () => exportWithSignals(undefined).pipe(Effect.map((result) => result.corpus)),
 		summary: Effect.fn("GameTextIndex.nativeSummary")(() =>
 			response({ action: "summary", reader }, TextCorpusQuerySummary)

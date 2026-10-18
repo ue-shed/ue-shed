@@ -7,14 +7,17 @@ use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
 
-fn counts() -> Value {
-    json!({"all":0,"shared":0,"duplicate_source":0,"long":0,"unresolved":0,"conflicting":0,"editable":0,"readOnly":0,"withoutNotes":0,"origins":ORIGINS.iter().map(|label| (label.to_string(),json!(0))).collect::<serde_json::Map<_,_>>()})
-}
-fn increment(record: &mut Value, key: &str, amount: usize) -> Result<()> {
-    let value = record[key].as_u64().ok_or("Missing count field.")?;
-    record[key] = json!(value.checked_add(amount as u64).ok_or("Count overflow.")?);
-    Ok(())
-}
+const COUNT_LABELS: [&str; 9] = [
+    "all",
+    "shared",
+    "duplicate_source",
+    "long",
+    "unresolved",
+    "conflicting",
+    "editable",
+    "readOnly",
+    "withoutNotes",
+];
 fn record(labels: &[&str], values: &[usize]) -> Value {
     Value::Object(
         labels
@@ -33,27 +36,30 @@ impl EngineQuery {
         cancelled: &AtomicBool,
     ) -> Result<Value> {
         let p = Projection::open(self, cancelled)?;
-        let mut counts = counts();
+        // Accumulate numeric columns directly. Constructing JSON numbers and looking up map
+        // keys for every row made counts proportional to millions of JSON allocations.
+        let mut counts = [0usize; COUNT_LABELS.len()];
+        let mut origins = [0usize; ORIGINS.len()];
         if request.localization.is_some() {
-            counts["all"] = json!(matched.len());
+            counts[0] = matched.len();
             for (index, row) in matched.iter().enumerate() {
                 if index & 255 == 0 {
                     checkpoint(cancelled)?;
                 }
                 let row = *row as usize;
-                for (bit, label) in SIGNALS[..5].iter().enumerate() {
+                for (bit, count) in counts[1..6].iter_mut().enumerate() {
                     if p.flags[row] & (1 << bit) != 0 {
-                        increment(&mut counts, label, 1)?;
+                        *count += 1;
                     }
                 }
                 if p.editing[row] & 1 != 0 {
-                    increment(&mut counts, "editable", 1)?;
+                    counts[6] += 1;
                 }
                 if p.editing[row] & 2 != 0 {
-                    increment(&mut counts, "readOnly", 1)?;
+                    counts[7] += 1;
                 }
                 if p.notes[row] == 0 {
-                    increment(&mut counts, "withoutNotes", 1)?;
+                    counts[8] += 1;
                 }
             }
             let mut origin_request = request.clone();
@@ -62,9 +68,9 @@ impl EngineQuery {
             }
             let rows = self.matching(&origin_request, cancelled)?;
             for row in rows.iter().copied() {
-                for (bit, label) in ORIGINS.iter().enumerate() {
+                for (bit, count) in origins.iter_mut().enumerate() {
                     if p.origins[row as usize] & (1 << bit) != 0 {
-                        increment(&mut counts["origins"], label, 1)?;
+                        *count += 1;
                     }
                 }
             }
@@ -108,33 +114,35 @@ impl EngineQuery {
                 let notes = request.without_notes != Some(true) || no_notes;
                 if lens && notes && kinds {
                     if editing & 1 != 0 {
-                        increment(&mut counts, "editable", 1)?;
+                        counts[6] += 1;
                     }
                     if editing & 2 != 0 {
-                        increment(&mut counts, "readOnly", 1)?;
+                        counts[7] += 1;
                     }
                 }
                 if lens && capability && kinds && no_notes {
-                    increment(&mut counts, "withoutNotes", 1)?;
+                    counts[8] += 1;
                 }
                 if lens && capability && notes {
-                    for (bit, label) in ORIGINS.iter().enumerate() {
+                    for (bit, count) in origins.iter_mut().enumerate() {
                         if p.raw.origins[row] & (1 << bit) != 0 {
-                            increment(&mut counts["origins"], label, 1)?;
+                            *count += 1;
                         }
                     }
                 }
                 if lens && capability && notes && kinds {
-                    increment(&mut counts, "all", 1)?;
-                    for (bit, label) in SIGNALS[..5].iter().enumerate() {
+                    counts[0] += 1;
+                    for (bit, count) in counts[1..6].iter_mut().enumerate() {
                         if flags & (1 << bit) != 0 {
-                            increment(&mut counts, label, 1)?;
+                            *count += 1;
                         }
                     }
                 }
             }
         }
-        Ok(counts)
+        let mut result = record(&COUNT_LABELS, &counts);
+        result["origins"] = record(&ORIGINS, &origins);
+        Ok(result)
     }
     fn localization_counts(
         &mut self,

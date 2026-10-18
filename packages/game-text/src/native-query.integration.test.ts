@@ -1,4 +1,4 @@
-import { Effect, Result, Schema } from "effect";
+import { Deferred, Effect, Fiber, Result, Schema } from "effect";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LocalizationTarget } from "@ue-shed/localization";
@@ -22,20 +22,40 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const fixture = yield* makeIndexRegressionFixture();
+					let started = Deferred.makeUnsafe<void>();
+					let observe = false;
+					const queryPids: number[] = [];
 					const implementation = nativeIndexBuilderLayer({
 						executable,
 						timeoutMs: 30000,
-						catalogTimeoutMs: 120000
+						catalogTimeoutMs: 120000,
+						protocolObserver: (event) => {
+							if (observe && event.kind === "worker_started") {
+								queryPids.push(event.pid);
+								Deferred.doneUnsafe(started, Effect.void);
+							}
+						}
 					});
 					const prepare = Effect.scoped(
 						Effect.gen(function* () {
 							const index = yield* GameTextIndexRefresh;
 							const model = yield* index.refresh(fixture.request);
+							started = Deferred.makeUnsafe<void>();
+							queryPids.length = 0;
+							observe = true;
+							const pending = yield* model.query
+								.search({ query: "", capability: "all", pageSize: 1 })
+								.pipe(Effect.forkChild);
+							yield* Deferred.await(started);
+							yield* Fiber.interrupt(pending);
 							const page = yield* model.query.search({
 								query: "",
 								capability: "all",
 								pageSize: 1
 							});
+							observe = false;
+							expect(new Set(queryPids).size).toBe(1);
+							expect(queryPids.length).toBeGreaterThanOrEqual(2);
 							return { query: model.query, page };
 						})
 					).pipe(

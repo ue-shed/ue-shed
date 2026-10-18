@@ -25,6 +25,9 @@ while opening the model. Interactive callers use bounded search and focus; `mode
 source units as provenance; filtered exports retain their visibility rules. CSV formatting
 consumes native review signals rather than constructing another query engine.
 
+`model.localizationJoin` contains the visible lines used by policy/report views.
+`query.readLocalizationLines()` explicitly exports every joined line, including blank sources.
+
 `query.localizationDetail` selects a line or unit and pages locations, cultures and PO context
 in Rust. Ordinary text focus carries a compact localization preview. `localizationFocus` and
 `localizationLines` explicitly export complete provenance through scoped files; interactive
@@ -32,8 +35,10 @@ handlers do not hydrate a full line and slice it in JavaScript.
 
 Each opened model owns its native query process in the caller's scope. Native handles pin files
 and dictionary segments, including sections not yet read, across later publications and
-compaction. A query reader holds no writer lease. Interrupting or losing a query process cannot
-substitute a JavaScript result. Open a new model to recover; other models own separate processes.
+compaction. A query reader holds no writer lease. Canceling a caller skips its queued read or
+stops waiting for an admitted read; that read and its temporary files remain owned by the model
+until completion. Closing the model interrupts its active read. Losing a native process produces
+a typed failure. Open a new model to recover; other models own separate processes.
 Retained models require `borrow` around operations and `retain` when publishing a candidate.
 
 One write session owns one native process and writer lease. Existing TypeScript input producers

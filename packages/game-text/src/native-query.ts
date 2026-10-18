@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Schema, type Scope } from "effect";
+import { Effect, Fiber, Ref, Schema, Semaphore, type Scope } from "effect";
 import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type { GameTextEngineRequest, GameTextIndexConfiguration } from "@ue-shed/protocol";
 import { GameTextIndexError } from "./index-contract.js";
@@ -57,6 +57,35 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	NativeGameTextEngineClient | Scope.Scope
 > {
 	const engine = yield* NativeGameTextEngineClient;
+	const modelScope = yield* Effect.scope;
+	const reads = yield* Semaphore.make(1);
+	// An interrupted UI request must not abort the protocol process and discard this reader.
+	// The model owns admitted reads and their staged files. Canceled queued work is skipped;
+	// closing the model still interrupts its active read and terminates its native process.
+	const scopedRead = <A>(read: Effect.Effect<A, GameTextIndexError>) =>
+		Effect.uninterruptibleMask((restore) =>
+			Effect.gen(function* () {
+				if (modelScope.state._tag === "Closed")
+					return yield* Effect.fail(failed("read", "The native reader scope is closed."));
+				const canceled = yield* Ref.make(false);
+				const job = yield* reads
+					.withPermits(1)(
+						Effect.gen(function* () {
+							if (yield* Ref.get(canceled)) return yield* Effect.interrupt;
+							return yield* read;
+						})
+					)
+					.pipe(
+						Effect.forkIn(modelScope, {
+							uninterruptible: false,
+							startImmediately: false
+						})
+					);
+				return yield* restore(Fiber.join(job)).pipe(
+					Effect.onInterrupt(() => Ref.set(canceled, true))
+				);
+			})
+		);
 	const execute = Effect.fn("GameTextIndex.nativeCall")((request: GameTextEngineRequest) =>
 		engine.execute(request).pipe(Effect.mapError((cause) => failed(request.action, cause)))
 	);
@@ -191,7 +220,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		);
 	});
 
-	return {
+	const query: NativeIndexReader = {
 		readLocalizationLines: () =>
 			withStage((directory) =>
 				Effect.gen(function* () {
@@ -305,5 +334,18 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		),
 		exportWithSignals,
 		export: (request) => exportWithSignals(request).pipe(Effect.map((result) => result.corpus))
+	};
+	return {
+		readCorpus: () => scopedRead(query.readCorpus()),
+		readLocalizationLines: () => scopedRead(query.readLocalizationLines()),
+		summary: () => scopedRead(query.summary()),
+		search: (request) => scopedRead(query.search(request)),
+		focus: (request) => scopedRead(query.focus(request)),
+		localizationFocus: (id) => scopedRead(query.localizationFocus(id)),
+		localizationDetail: (request) => scopedRead(query.localizationDetail(request)),
+		localizationLines: (request) => scopedRead(query.localizationLines(request)),
+		localizationRows: (request) => scopedRead(query.localizationRows(request)),
+		exportWithSignals: (request) => scopedRead(query.exportWithSignals(request)),
+		export: (request) => scopedRead(query.export(request))
 	};
 });

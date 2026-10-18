@@ -721,7 +721,7 @@ export const makeGameTextIndexSteps = (
 				cultures: joined.meta.input.target.cultures
 			};
 			const localizationJoin = query
-				.readLocalizationLines()
+				.localizationLines(indexedLocalizationLinesRequest(joined))
 				.pipe(Effect.map((lines) => ({ ...localization, lines })));
 			return {
 				...result,

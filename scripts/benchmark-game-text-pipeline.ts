@@ -79,12 +79,14 @@ if (values.worker) {
 	);
 	// The historical baseline is deliberately loaded from another checkout. Its synchronous
 	// query API and exported reference builder are not part of the current package.
-	const historical = module as unknown as {
+	// SAFETY: the explicit historical module supplies the legacy builder ABI; validate the
+	// layer below before use. Retain all current module types while describing that removed export.
+	const historical = module as typeof module & {
 		readonly typeScriptIndexBuilderLayer?: Layer.Layer<
 			import("../packages/game-text/src/index-builder.ts").GameTextIndexBuilder
 		>;
 	};
-	if (variant === "before" && !historical.typeScriptIndexBuilderLayer)
+	if (variant === "before" && !Layer.isLayer(historical.typeScriptIndexBuilderLayer))
 		throw new Error(
 			"--before-module must identify a built historical checkout with the TypeScript reference builder."
 		);

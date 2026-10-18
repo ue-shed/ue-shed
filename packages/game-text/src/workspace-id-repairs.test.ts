@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { expect } from "vitest";
 import { Effect, Schema, Stream } from "effect";
@@ -14,7 +15,8 @@ import { textOccurrenceFromExtraction } from "./corpus.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import type { TextCorpusFocus } from "./schema.js";
 
-const root = "C:/Fixture";
+// A rooted path on every platform, so artifact paths resolve the same on Windows and Linux.
+const root = resolve("/Fixture").replaceAll("\\", "/");
 const original = {
 	source: "Keep the lamp lit",
 	dev_notes: "",
@@ -113,7 +115,7 @@ function setup() {
 				packages: [
 					{
 						packageName: "/Game/Notes",
-						packageFile: "C:/Fixture/Content/Notes.uasset",
+						packageFile: `${root}/Content/Notes.uasset`,
 						saved: input.mode === "apply" && !savesFail,
 						persistence: input.mode === "apply" && !savesFail ? "saved" : "unsaved"
 					}
@@ -164,7 +166,7 @@ function setup() {
 						})
 					)
 				: Stream.make({
-						...emptyPackageTextRecord("C:/Fixture/Content/Notes.uasset"),
+						...emptyPackageTextRecord(`${root}/Content/Notes.uasset`),
 						occurrences: [
 							{
 								...original,
@@ -266,7 +268,7 @@ it.effect("refuses a proposal claimed by another process before any mutation", (
 		const preview = yield* first.prepare(request);
 		if (preview.status !== "prepared") throw new Error(JSON.stringify(preview));
 		test.files.set(
-			`C:/Fixture/Saved/UEShed/GameTextActions/${preview.plan.id}.started.json`,
+			`${root}/Saved/UEShed/GameTextActions/${preview.plan.id}.started.json`,
 			new Uint8Array()
 		);
 		const second = yield* test.make;
@@ -293,7 +295,7 @@ it.effect(
 					status: "unavailable",
 					nextStep: "reconcile"
 				});
-				const receiptBytes = test.files.get(`C:/Fixture/${preview.plan.artifact}`);
+				const receiptBytes = test.files.get(`${root}/${preview.plan.artifact}`);
 				expect(receiptBytes).toBeDefined();
 				if (!receiptBytes) return;
 				const receipt = new TextDecoder().decode(receiptBytes);
@@ -317,7 +319,11 @@ it.effect("refuses changed selected projects, editor projects, sessions and stal
 			if (preview.status !== "prepared") throw new Error(JSON.stringify(preview));
 			if (kind === "stale") test.stale();
 			else test[kind]("different");
-			expect((yield* service.apply(preview.plan.id)).status).toBe("unavailable");
+			const result = yield* service.apply(preview.plan.id);
+			expect(result.status).toBe("unavailable");
+			// Refusals before any mutation keep their own guidance instead of demanding reconciliation.
+			if (kind === "editor" || kind === "stale")
+				expect(result).toMatchObject({ retrySafe: true, nextStep: "fix_input" });
 			expect(test.mutations()).toBe(0);
 		}
 	})

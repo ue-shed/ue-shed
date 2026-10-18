@@ -214,8 +214,11 @@ export function GameTextIdRepairs(props: {
 								].join(" ")
 					});
 					if (ok) setPlan(undefined);
-				} else if (result.status === "unavailable")
+				} else if (result.status === "unavailable") {
+					// Nothing was mutated, so the reviewed fix may be applied again.
+					if (result.retrySafe) setLocked(false);
 					setMessage({ text: `${result.message} ${result.recovery}`, failed: true });
+				}
 			},
 			onFailure: (cause) => {
 				if (generation !== revision) return;

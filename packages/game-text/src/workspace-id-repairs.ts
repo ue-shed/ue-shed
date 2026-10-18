@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
-import { Effect, Schema, Semaphore } from "effect";
+import { Effect, Option, Schema, Semaphore } from "effect";
 import { inspectUnrealProducer, RemoteControlClient } from "@ue-shed/unreal-connection";
 import { AssetReader, extractProjectTextPackages } from "@ue-shed/unreal-assets";
 import { Stream } from "effect";
@@ -45,6 +45,12 @@ class RepairError extends Schema.TaggedError<RepairError>()("TextIdRepairError",
 	retrySafe: Schema.Boolean,
 	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
 }) {}
+
+/** Recovery guidance carried by typed failures from the editor, reader and this workflow. */
+const Guidance = Schema.Struct({
+	retrySafe: Schema.Boolean,
+	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
+});
 
 const unavailable = (error: {
 	readonly message: string;
@@ -357,7 +363,10 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 						paths: [...new Set(resolved.map((item) => item.place.packageFile))]
 					})
 				);
-				const records = events.filter((event) => event.event === "text_package_record");
+				// The reader may report project-relative paths; compare them as absolute files.
+				const records = events
+					.filter((event) => event.event === "text_package_record")
+					.map((record) => ({ ...record, path: resolve(root, record.path) }));
 				const verification = verifyGameTextActions(
 					request,
 					{
@@ -416,15 +425,23 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 	const failure = (
 		error: Effect.Error<ReturnType<typeof apply>> | Effect.Error<ReturnType<typeof prepare>>,
 		mutation: boolean
-	) =>
-		unavailable({
+	) => {
+		// Keep each failure's own guidance; only unguided failures fall back to the phase default.
+		const guidance = Schema.decodeUnknownOption(Guidance)(error);
+		return unavailable({
 			message: error.message,
 			recovery:
 				"recovery" in error
 					? error.recovery
 					: "Inspect the editor and saved repair receipt before retrying.",
-			nextStep: mutation ? "reconcile" : "fix_input"
+			retrySafe: Option.isSome(guidance) ? guidance.value.retrySafe : false,
+			nextStep: Option.isSome(guidance)
+				? guidance.value.nextStep
+				: mutation
+					? "reconcile"
+					: "fix_input"
 		});
+	};
 	return {
 		prepare: (request: TextIdRepairRequest) =>
 			gate.withPermit(prepare(request)).pipe(

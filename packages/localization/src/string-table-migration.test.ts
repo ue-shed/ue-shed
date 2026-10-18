@@ -64,12 +64,15 @@ describe("String Table migration planning", () => {
 				config
 			);
 	});
-	it("rejects an existing different destination", () => {
+	it.each([
+		`(StringTable="${migration.tableId}",OldKey="Welcome",NewKey="Elsewhere")`,
+		`(StringTable=${migration.tableId},OldKey=Welcome,NewKey=Elsewhere)`
+	])("rejects an existing different destination %s", (value) => {
 		const result = planStringTableKeyMigration(migration);
 		if (result.status !== "ready") throw new Error("Expected a plan");
 		expect(
 			prepareStringTableRedirectConfig(
-				`[Core.StringTable]\n+StringTableRedirects=(StringTable="${migration.tableId}",OldKey="Welcome",NewKey="Elsewhere")\n`,
+				`[Core.StringTable]\n+StringTableRedirects=${value}\n`,
 				result.plan.redirect
 			).status
 		).toBe("invalid");

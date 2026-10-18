@@ -173,8 +173,14 @@ export function prepareStringTableRedirectConfig(
 			: effective.kind === "scalar"
 				? [effective.value]
 				: [];
-	const field = (value: string, name: string) =>
-		new RegExp(String.raw`(?:^|[,(\s])${name}\s*=\s*"([^"\r\n]*)"`, "iu").exec(value)?.[1];
+	// Unreal reads struct fields quoted or unquoted, so both must count as an existing redirect.
+	const field = (value: string, name: string) => {
+		const match = new RegExp(
+			String.raw`(?:^|[,(\s])${name}\s*=\s*(?:"([^"\r\n]*)"|([^,)\s"]*))`,
+			"iu"
+		).exec(value);
+		return match?.[1] ?? match?.[2];
+	};
 	for (const value of values) {
 		if (
 			field(value, "StringTable")?.toLowerCase() !== redirect.tableId.toLowerCase() ||

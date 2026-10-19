@@ -19,7 +19,9 @@
 #include "LevelEditorViewport.h"
 #include "Misc/App.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
 #include "StaticMeshCompiler.h"
@@ -1087,11 +1089,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraRenderContractTest, "UEShed.Camera
 
 bool FUEShedCameraRenderContractTest::RunTest(const FString &Parameters)
 {
-	const FString Directory =
+	FString Directory =
 		Parameters.IsEmpty()
 			? FPaths::ConvertRelativePathToFull(FPaths::Combine(
 				  FPaths::ProjectDir(), TEXT("../../packages/protocol/contracts/cameras/render/v1/fixtures")))
 			: Parameters;
+	FParse::Value(FCommandLine::Get(), TEXT("UEShedCameraRenderContractFixtures="), Directory);
 	TArray<FString> Files;
 	IFileManager::Get().FindFiles(Files, *FPaths::Combine(Directory, TEXT("*.json")), true, false);
 	if (Files.IsEmpty())

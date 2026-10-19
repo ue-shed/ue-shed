@@ -1,4 +1,5 @@
-// Sequential, disposable UE4 acceptance. Invoked by test-unreal-game-text-actions.ts.
+// Sequential key-repair/source-edit acceptance using fresh saves on each selected engine.
+// The legacy fixture is source-compatible with UE4 and UE5; UE5 loads the full plugin bundle.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -24,14 +25,19 @@ import {
 	prepareUnrealPlugins,
 	repositoryRoot,
 	runProcess,
-	unrealEngineTools
+	unrealEngineTools,
+	unrealEngineVersion,
+	ueShedPluginIds
 } from "./unreal-plugin-host.ts";
 
 const engineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT!;
+const version = unrealEngineVersion(engineRoot)!;
+const isLegacy = version.major === 4;
+const pluginIds = isLegacy ? GAME_TEXT_PLUGIN_IDS : ueShedPluginIds;
 const tools = unrealEngineTools(engineRoot);
 const run = resolve(
 	process.argv.slice(2).find((arg) => !arg.startsWith("--")) ??
-		join(repositoryRoot, "out/game-text-actions", `4.27-${Date.now()}`)
+		join(repositoryRoot, "out/game-text-actions", `${version.label}-${Date.now()}`)
 );
 mkdirSync(dirname(run), { recursive: true });
 mkdirSync(run, { recursive: false });
@@ -58,8 +64,8 @@ const descriptors = prepareUnrealPlugins({
 	engineRoot,
 	projectPath: projectFile,
 	tools,
-	pluginIds: GAME_TEXT_PLUGIN_IDS,
-	coreRuntimeOnly: true
+	pluginIds,
+	coreRuntimeOnly: isLegacy
 });
 
 function commandlet(name: string, args: readonly string[], label: string) {
@@ -69,9 +75,10 @@ function commandlet(name: string, args: readonly string[], label: string) {
 			projectFile,
 			`-run=${name}`,
 			...descriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
-			`-EnablePlugins=${GAME_TEXT_PLUGIN_IDS.join(",")}`,
+			`-EnablePlugins=${pluginIds.join(",")}`,
 			...args,
 			"-Unattended",
+			"-nop4",
 			"-NoSound",
 			"-NullRHI",
 			"-NoSplash",
@@ -92,10 +99,14 @@ commandlet("UEShedGameText", [`-Manifest=${manifestFile}`], "capabilities");
 const producer = Schema.decodeUnknownSync(CompanionCapabilityManifest)(
 	parseJson(readFileSync(manifestFile, "utf8"))
 );
-assert.deepEqual(producer.capabilities, [
-	"game-text.actions.v1",
-	"game-text.actions.key-repairs.v1"
-]);
+assert.ok(producer.capabilities.includes("game-text.actions.v1"));
+assert.equal(producer.capabilities.includes("game-text.actions.key-repairs.v1"), isLegacy);
+assert.equal(producer.capabilities.includes("game-text.actions.authoring.v1"), !isLegacy);
+if (isLegacy)
+	assert.deepEqual(producer.capabilities, [
+		"game-text.actions.v1",
+		"game-text.actions.key-repairs.v1"
+	]);
 const projectIdentity = parseJsonObject(readFileSync(manifestFile, "utf8")).projectRoot;
 assert.ok(projectIdentity !== undefined && isJsonString(projectIdentity));
 assert.equal(resolve(projectIdentity), resolve(project));
@@ -104,11 +115,30 @@ assert.equal(
 		.flatMap((plugin) => plugin.loadedModules)
 		.sort()
 		.join(","),
-	"UEShedCore,UEShedGameText"
+	(isLegacy
+		? ["UEShedCore", "UEShedGameText"]
+		: pluginIds.flatMap((id) => {
+				const descriptor = parseJsonObject(
+					readFileSync(
+						join(repositoryRoot, "unreal/Plugins", id, `${id}.uplugin`),
+						"utf8"
+					)
+				);
+				assert.ok(Array.isArray(descriptor.Modules));
+				return descriptor.Modules.map((module) => {
+					assert.ok(isJsonObject(module) && isJsonString(module.Name));
+					return module.Name;
+				});
+			})
+	)
+		.sort()
+		.join(",")
 );
-assert.equal(producer.worldControlObjectPath, undefined);
-assert.equal(producer.assetNavigationObjectPath, undefined);
-assert.equal(producer.authoringObjectPath, undefined);
+if (isLegacy) {
+	assert.equal(producer.worldControlObjectPath, undefined);
+	assert.equal(producer.assetNavigationObjectPath, undefined);
+	assert.equal(producer.authoringObjectPath, undefined);
+}
 
 const Place = Schema.Struct({
 	kind: Schema.Literals(["object", "data_table_cell", "graph_pin"]),
@@ -252,7 +282,10 @@ files.forEach((file, index) =>
 	assert.ok(readFileSync(file).equals(diskBefore[index]!), "Dry run changed saved bytes")
 );
 const receipt = apply("apply", "apply");
+assert.ok(receipt.actions.every((item) => item.status === "applied"));
+assert.equal(receipt.packages.length, files.length);
 assert.ok(receipt.packages.every((item) => item.saved && item.persistence === "saved"));
+assert.equal(receipt.blueprints.length, 1);
 assert.ok(receipt.blueprints.every((item) => item.compiled));
 const reloadFile = join(run, "reload.json");
 commandlet("UEShedLegacyTextActions", [`-Evidence=${reloadFile}`], "reload");
@@ -282,7 +315,7 @@ const verification = verifyGameTextActions(
 	{ ...receipt, actions: receipt.actions.filter((item) => !offlineSkipped.includes(item.id)) },
 	records
 		.filter((event) => event.event === "text_package_record")
-		.filter((event) => !event.path.endsWith("BP_Keys.uasset"))
+		.filter((event) => !offlineSkipped.length || !event.path.endsWith("BP_Keys.uasset"))
 );
 writeFileSync(join(run, "offline-verification.json"), JSON.stringify(verification, null, 2));
 assert.equal(verification.complete, true);
@@ -345,6 +378,7 @@ writeFileSync(
 	)
 );
 let sourceEdits = "not_run";
+let sourceOfflineVerified: number | undefined;
 if (process.argv.includes("--source-edits")) {
 	const sourceActions: GameTextAction[] = receipt.actions.map((outcome) => ({
 		id: outcome.id,
@@ -360,6 +394,11 @@ if (process.argv.includes("--source-edits")) {
 	apply("dry_run", "source-dry-run", sourceActions);
 	files.forEach((file, index) => assert.ok(readFileSync(file).equals(sourceBefore[index]!)));
 	const sourceReceipt = apply("apply", "source-apply", sourceActions);
+	assert.ok(sourceReceipt.actions.every((item) => item.status === "applied"));
+	assert.equal(sourceReceipt.packages.length, files.length);
+	assert.ok(sourceReceipt.packages.every((item) => item.saved && item.persistence === "saved"));
+	assert.equal(sourceReceipt.blueprints.length, 1);
+	assert.ok(sourceReceipt.blueprints.every((item) => item.compiled));
 	const sourceReload = join(run, "source-reload.json");
 	commandlet("UEShedLegacyTextActions", [`-Evidence=${sourceReload}`], "source-reload");
 	for (const outcome of sourceReceipt.actions) {
@@ -389,7 +428,7 @@ if (process.argv.includes("--source-edits")) {
 		},
 		sourceRecords
 			.filter((event) => event.event === "text_package_record")
-			.filter((event) => !event.path.endsWith("BP_Keys.uasset"))
+			.filter((event) => !offlineSkipped.length || !event.path.endsWith("BP_Keys.uasset"))
 	);
 	writeFileSync(
 		join(run, "source-offline-verification.json"),
@@ -398,6 +437,7 @@ if (process.argv.includes("--source-edits")) {
 	assert.equal(sourceVerification.complete, true);
 	assert.equal(sourceVerification.verified, sourceActions.length - offlineSkipped.length);
 	assert.deepEqual(sourceVerification.mismatches, []);
+	sourceOfflineVerified = sourceVerification.verified;
 	commandlet("GatherText", [`-config=${gatherConfig}`], "source-gather");
 	gathered.length = 0;
 	visit(json(join(gatherRoot, "KeyRepairs.manifest")));
@@ -414,14 +454,16 @@ writeFileSync(
 	join(run, "results.json"),
 	JSON.stringify(
 		{
-			engine: "4.27",
+			engine: version.label,
 			keyRepairs: "passed_native",
 			offlineVerified: verification.verified,
 			offlineSkipped,
-			offlineSkipReason:
-				"Legacy Blueprint graph pin projection is not available; package reader reports partial coverage.",
+			offlineSkipReason: offlineSkipped.length
+				? "The saved-package text projection emitted no Blueprint pin occurrences; native reload and gather are checked separately."
+				: undefined,
 			cases: receipt.actions.map((item) => item.id),
 			sourceEdits,
+			sourceOfflineVerified,
 			stringTableMigrations: "not_run",
 			transport: "commandlet",
 			evidence: basename(run)
@@ -431,5 +473,5 @@ writeFileSync(
 	)
 );
 console.log(
-	`Unreal 4.27: ${actions.length} native key repairs; ${verification.verified} offline verified, ${offlineSkipped.length} pin reads skipped; GatherText checked: ${run}`
+	`Unreal ${version.label}: ${actions.length} native key repairs; ${verification.verified} offline verified, ${offlineSkipped.length} pin reads skipped; GatherText checked: ${run}`
 );

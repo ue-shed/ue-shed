@@ -1,5 +1,25 @@
 # @ue-shed/blueprints
 
+## 0.17.0
+
+### Patch Changes
+
+- Updated dependencies [2bae469]
+- Updated dependencies [bb9d55e]
+- Updated dependencies [f403f84]
+- Updated dependencies [ba669e3]
+- Updated dependencies [a8adf03]
+- Updated dependencies [d585b1a]
+- Updated dependencies [9ce62ee]
+- Updated dependencies [0e2a894]
+- Updated dependencies [a33fffb]
+- Updated dependencies [13ed5b7]
+- Updated dependencies [9370ea6]
+- Updated dependencies [70dec0a]
+- Updated dependencies [2f9469b]
+- Updated dependencies [2747ae8]
+    - @ue-shed/protocol@0.17.0
+
 ## 0.16.2
 
 ### Patch Changes

@@ -1,5 +1,106 @@
 # @ue-shed/unreal-assets
 
+## 0.17.0
+
+### Minor Changes
+
+- 49cf8f0: `gameTextIndexSourceNodeLayer` now splits a read into reader requests that each fit the native reader's 4 MiB request frame, so a host can hand it every selected package of a large project without batching the paths itself. Each batch is signature-verified before and after its own read and emits its own `text_summary`.
+
+    `@ue-shed/unreal-assets` exports the frame limit as `MAX_PROTOCOL_REQUEST_BYTES`, the default per-request path budget as `MAX_PROTOCOL_PATH_BYTES`, and `batchProtocolPaths(paths, maximumPathBytes?)`, which splits package paths into ordered batches that fit one request.
+
+    The oversized-request `contract` error now says `split package paths with batchProtocolPaths`.
+
+    Migration: hosts that batched paths before calling the Game Text index source can pass the whole selection instead. Hosts that call `extractProjectTextPackages` directly with many paths can use `batchProtocolPaths` instead of their own limit.
+
+- a8adf03: **Breaking:** tagged errors in `@ue-shed/unreal-connection`, `@ue-shed/unreal-assets` and `@ue-shed/cameras` share one shape: `message`, `recovery`, `retrySafe` and a typed `nextStep` (`"fix_input" | "retry" | "reconcile" | "escalate"`) beside their existing context fields.
+    - `@ue-shed/protocol` exports `ErrorGuidanceFields` and `ErrorNextStep` for that shape.
+    - `RemoteControlClientError`, `UnrealConnectionError`, `UnrealCapabilityError`, `AssetReaderError`, `InvestigationError`, the six `ProjectIndex*` errors and the camera, capture, map-tile and review errors now carry `recovery` and `nextStep`. Errors that had no `retrySafe` gain it.
+    - `nextStep: "retry"` appears only when `retrySafe` is true. Mutations whose outcome is unknown after a transport failure report `reconcile`.
+    - Low-level `RemoteControlClient.request` defaults to non-idempotent. Set `idempotent: true` only for reads or operations with a proven replay guarantee. A lost response, timeout or server failure can occur after applying a mutation; it is never proof that replay is safe.
+    - Renderer reads preserve typed connection guidance, and malformed capability/preflight responses require escalation instead of transient retries.
+    - `EditorConnectionError` also adopts the shared guidance fields. Editor readiness preserves upstream recovery instructions and polls only transient failures with `nextStep: "retry"`; permanent refusals and malformed responses fail immediately even when repeating the read is safe.
+    - Malformed outer HTTP JSON follows the same recovery rules as malformed Remote Control envelopes: reconcile uncertain mutations and escalate read protocol failures.
+
+    Migration: read `nextStep` instead of parsing `message` or branching on `kind`/`code` to decide what to do next. Code that constructs these errors itself (test doubles, custom reader or Remote Control layers) must pass `recovery`, `nextStep` and, where new, `retrySafe`.
+
+- d585b1a: Error messages no longer embed a stringified cause (`String(cause)` or `Cause.pretty`). Each message says what failed and which ids are involved; the original failure is kept on the error's `cause` field (`ErrorCauseFields` from `@ue-shed/protocol`), so message text changes across these packages and several apps.
+    - Game Text's cache failures are classified by filesystem code instead of reporting every failure as "unavailable, retry": `ENOENT` is `missing`, `EBUSY` is `busy`, and `EACCES`, `EPERM` and `ENOSPC` keep `unavailable` with a specific recovery.
+    - `TextCorpusScanError` and `TextCorpusPublicError` gain the `invalid_options` code for malformed scan options, which were reported as `scan_limit_exceeded`.
+    - The camera render `artifact_invalid` failure is split into codes that say which artifact check failed.
+
+    Migration: match on codes and `nextStep`, not on message text. Read `cause` when you need the underlying failure for diagnostics. Handle `invalid_options` wherever you switch on Game Text scan error codes.
+
+    The CLI prints retained input schema issues below classified messages, including the offending row-ID element and expected type. Game Text refresh and invalidation retain configuration keys and issues as their cause. New native-index and worker boundaries retain original failures alongside classified messages.
+
+- d8e2f99: Errors are translated on purpose instead of being caught wholesale or matched with `instanceof`.
+    - **Breaking (`@ue-shed/host`):** authoring session failures no longer expose an internal error tag as their public `code`. The codes are `session_live_failed`, `session_storage_failed`, `session_transition_refused`, `draft_intent_rejected`, `invalid_session_id`, `session_corrupt`, `session_not_found`, `editor_capability_missing` and `editor_connection_failed`; `authoring_session_failure` remains the default. Every session pipe names the failures it translates, so a new failure type is a compile error instead of a silently caught one. Live and connection failures now report their real `retrySafe`.
+    - Tagged errors are matched by tag (`Schema.is` guards such as `isSnapshotStoreError`, `isLocalizationError` and `isProjectIndexError`, `Effect.catchTag`, or `Predicate.isTagged`), never with `instanceof`, so checks keep working across package copies and after a schema round trip.
+    - The shared Game Text index decides whether to retry a racing open from the `missing` code instead of searching the message for `ENOENT`.
+
+    Migration: hosts that branched on authoring session codes such as `AuthoringSessionStorageError` should switch to the new codes. Code that matched UE Shed errors with `instanceof` should match on `_tag` or use the exported guards.
+
+- 9ce62ee: Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
+  hosts. Public schema parsers now return domain errors with the original parse issues. All production
+  tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
+  and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
+  points and caller documentation, with no grandfathered raw decoder factories. Nested cause
+  stringification, direct error translations and helper adapters are covered by regression guards.
+
+    Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
+    consumer conformance use the same native implementation. The TypeScript builder became test-only later in this release. Native worker/capability failures do not silently fall back. Scoped cancellation
+    releases staging, writer leases and processes; native failures use stable codes independent of prose.
+    PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
+
+    Obsolete public `*Shape` aliases are removed from connection, asset reader/Project Index and camera
+    entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
+    `makeGameTextSearchWorker` constructors are no longer exported. See the
+    [migration guide](https://github.com/ue-shed/ue-shed/blob/main/docs/engineering/effect-audit-migration.md) for error and composition changes.
+
+    AssetReader test layers now require a complete explicit port, including configuration and projection
+    operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
+    budget/validator helpers are private to the asset-reader adapter.
+
+    Game Text and Enhanced Input distinguish `reader_failed` from `invalid_project`; Game Text workspace
+    index failures use `index_failed`. Reader recovery guidance and structured causes survive these
+    translations. Portable localization failures keep installation candidates, authored payloads and
+    secret configuration private through explicitly sanitized causes.
+
+- 13ed5b7: Publish changed package records through the native index without decoding unchanged shard
+  records in JavaScript. Reuse localization dictionary blocks, coordinate target preparation
+  under one writer session, persist incremental summary counters, and share scoped readers
+  of the same validated revision. Package replacement requires uasset-io protocol 1.16.
+- 70dec0a: Add an opt-in native Game Text index builder through the existing scoped uasset-io protocol
+  session. The builder writes the existing shared dictionary and column format, supports narrowly
+  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript remained the default builder until the native engine entry in this release. Give decoded shared-string arenas their own buffers so cache
+  accounting tracks their actual capacity.
+- 2f9469b: Move Game Text indexing and query execution into the Rust engine. Queries, counts, facets,
+  groups, focus and exports use scoped native readers; mixed authored-source, String Table and
+  localization-file updates publish incremental snapshots while existing readers remain pinned.
+
+    Game Text query methods now return Effects. Full corpus and localization evidence are explicit
+    bulk reads, and interactive localization detail is paged in Rust. Remove the public in-memory
+    query factories, TypeScript index builder, synchronous indexed projections and search worker.
+    The native executable must support protocol 1.15 and game_text_engine_v1; unavailable or
+    incompatible native readers produce typed failures without a JavaScript query fallback.
+
+### Patch Changes
+
+- Updated dependencies [2bae469]
+- Updated dependencies [bb9d55e]
+- Updated dependencies [f403f84]
+- Updated dependencies [ba669e3]
+- Updated dependencies [a8adf03]
+- Updated dependencies [d585b1a]
+- Updated dependencies [9ce62ee]
+- Updated dependencies [0e2a894]
+- Updated dependencies [a33fffb]
+- Updated dependencies [13ed5b7]
+- Updated dependencies [9370ea6]
+- Updated dependencies [70dec0a]
+- Updated dependencies [2f9469b]
+- Updated dependencies [2747ae8]
+    - @ue-shed/protocol@0.17.0
+
 ## 0.16.2
 
 ### Patch Changes

@@ -1,5 +1,142 @@
 # @ue-shed/protocol
 
+## 0.17.0
+
+### Minor Changes
+
+- 2bae469: Authoring Apply 1.3 names why a command failed. UEShedAuthoring reported every rejected command as `command_failed` plus prose. Each of its 48 command error sites now sets a stable `cause` beside the message, for example `stale_cell`, `stale_row`, `unknown_row`, `unknown_field`, `row_exists`, `rename_conflict`, `expected_enum`, `unknown_enum_value`, `string_table_entry_missing`, `generated_text_read_only` or `table_outside_plan`.
+
+    `code` stays `command_failed` so existing hosts behave the same. The apply contract minor is now 3, and the plugin bundle advertises `unreal-authoring-apply` 1.3. `AuthoringOperationError` and `contracts/authoring/v1/apply-result.schema.json` accept the optional `cause` (lower snake case, at most 64 characters). Apply 1.2 errors still decode.
+
+- bb9d55e: Authoring Save 1.2 names why a package failed. UEShedAuthoring's Save per-package failures were prose only. They now add `code`: `table_not_found` when the DataTable could not be loaded, or `save_failed` when Unreal could not save the package. The save contract minor is now 2, and the plugin bundle advertises `unreal-authoring-save` 1.2. `AuthoringSaveResult` and `contracts/authoring/v1/save-result.schema.json` accept the optional `code`. Save 1.1 results still decode. Apply's command-level causes (`command_failed`) are unchanged.
+- f403f84: Camera status, configure and provisioning failures are now valid, coded JSON. UEShedCameras used to build these responses with `Printf`, so a quote, backslash or control character in a message made the JSON invalid, and authored-preview visibility put prose into the `error` code field.
+
+    The plugin now writes failures with the JSON writer. `error` is always a stable code (visibility failures report `invalid-visibility`), prose moves to a new `message` field, and GetStatus and Configure failures gain `status: "failed"`.
+    - `@ue-shed/protocol`: `CameraControlFailure` describes the wire failure. Decoding stays inside the camera adapter so callers receive its domain error.
+    - `@ue-shed/cameras`: `getCameraStatus` and `configureCameras` turn a coded failure into a `CameraControlError` that carries `code` (new, optional), instead of reporting it as an invalid response. Provisioning errors include the plugin's `message` beside its code.
+
+    All fields are additive, and responses from older plugins still decode. No migration needed.
+
+- ba669e3: **Breaking:** the remaining packages' tagged errors gain the shared guidance shape from the first D4 slice: `message`, `recovery`, `retrySafe` and a typed `nextStep` (`"fix_input" | "retry" | "reconcile" | "escalate"`) beside their existing context fields. `nextStep: "retry"` appears only when `retrySafe` is true.
+
+    Migration: read `nextStep` instead of parsing `message`. Code that constructs these errors itself (test doubles, custom layers) must pass `recovery`, `retrySafe` and `nextStep` where they are new.
+    - Indeterminate session Apply failures require `reconcileSession` even when a lower-level port can safely replay a request. Pre-dispatch connection failures, Apply-result lookup and repeat-safe pending Save recovery retain their own guidance.
+    - Compiled plugin builds require confirmed owned-process cleanup before advertising a safe repeat. Failed cleanup reports reconciliation and retains the termination failure; pure validation failures remain repeat-safe.
+    - World preparation lease identity conflicts require reconciliation instead of retrying unchanged acquisition requirements.
+    - Editor readiness preserves the prior slice's recovery actions and retry policy. Newly merged domain-parser errors also adopt the guidance fields.
+
+- a8adf03: **Breaking:** tagged errors in `@ue-shed/unreal-connection`, `@ue-shed/unreal-assets` and `@ue-shed/cameras` share one shape: `message`, `recovery`, `retrySafe` and a typed `nextStep` (`"fix_input" | "retry" | "reconcile" | "escalate"`) beside their existing context fields.
+    - `@ue-shed/protocol` exports `ErrorGuidanceFields` and `ErrorNextStep` for that shape.
+    - `RemoteControlClientError`, `UnrealConnectionError`, `UnrealCapabilityError`, `AssetReaderError`, `InvestigationError`, the six `ProjectIndex*` errors and the camera, capture, map-tile and review errors now carry `recovery` and `nextStep`. Errors that had no `retrySafe` gain it.
+    - `nextStep: "retry"` appears only when `retrySafe` is true. Mutations whose outcome is unknown after a transport failure report `reconcile`.
+    - Low-level `RemoteControlClient.request` defaults to non-idempotent. Set `idempotent: true` only for reads or operations with a proven replay guarantee. A lost response, timeout or server failure can occur after applying a mutation; it is never proof that replay is safe.
+    - Renderer reads preserve typed connection guidance, and malformed capability/preflight responses require escalation instead of transient retries.
+    - `EditorConnectionError` also adopts the shared guidance fields. Editor readiness preserves upstream recovery instructions and polls only transient failures with `nextStep: "retry"`; permanent refusals and malformed responses fail immediately even when repeating the read is safe.
+    - Malformed outer HTTP JSON follows the same recovery rules as malformed Remote Control envelopes: reconcile uncertain mutations and escalate read protocol failures.
+
+    Migration: read `nextStep` instead of parsing `message` or branching on `kind`/`code` to decide what to do next. Code that constructs these errors itself (test doubles, custom reader or Remote Control layers) must pass `recovery`, `nextStep` and, where new, `retrySafe`.
+
+- d585b1a: Error messages no longer embed a stringified cause (`String(cause)` or `Cause.pretty`). Each message says what failed and which ids are involved; the original failure is kept on the error's `cause` field (`ErrorCauseFields` from `@ue-shed/protocol`), so message text changes across these packages and several apps.
+    - Game Text's cache failures are classified by filesystem code instead of reporting every failure as "unavailable, retry": `ENOENT` is `missing`, `EBUSY` is `busy`, and `EACCES`, `EPERM` and `ENOSPC` keep `unavailable` with a specific recovery.
+    - `TextCorpusScanError` and `TextCorpusPublicError` gain the `invalid_options` code for malformed scan options, which were reported as `scan_limit_exceeded`.
+    - The camera render `artifact_invalid` failure is split into codes that say which artifact check failed.
+
+    Migration: match on codes and `nextStep`, not on message text. Read `cause` when you need the underlying failure for diagnostics. Handle `invalid_options` wherever you switch on Game Text scan error codes.
+
+    The CLI prints retained input schema issues below classified messages, including the offending row-ID element and expected type. Game Text refresh and invalidation retain configuration keys and issues as their cause. New native-index and worker boundaries retain original failures alongside classified messages.
+
+- 9ce62ee: Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
+  hosts. Public schema parsers now return domain errors with the original parse issues. All production
+  tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
+  and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
+  points and caller documentation, with no grandfathered raw decoder factories. Nested cause
+  stringification, direct error translations and helper adapters are covered by regression guards.
+
+    Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
+    consumer conformance use the same native implementation. The TypeScript builder became test-only later in this release. Native worker/capability failures do not silently fall back. Scoped cancellation
+    releases staging, writer leases and processes; native failures use stable codes independent of prose.
+    PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
+
+    Obsolete public `*Shape` aliases are removed from connection, asset reader/Project Index and camera
+    entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
+    `makeGameTextSearchWorker` constructors are no longer exported. See the
+    [migration guide](https://github.com/ue-shed/ue-shed/blob/main/docs/engineering/effect-audit-migration.md) for error and composition changes.
+
+    AssetReader test layers now require a complete explicit port, including configuration and projection
+    operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
+    budget/validator helpers are private to the asset-reader adapter.
+
+    Game Text and Enhanced Input distinguish `reader_failed` from `invalid_project`; Game Text workspace
+    index failures use `index_failed`. Reader recovery guidance and structured causes survive these
+    translations. Portable localization failures keep installation candidates, authored payloads and
+    secret configuration private through explicitly sanitized causes.
+
+- 0e2a894: Add durable, host-neutral Game Text ID repair proposals and verified receipts. The Showcase
+  can split conflicting sources, choose shared text, and merge duplicate keys through optional
+  Unreal property and DataTable editing capabilities, with explicit preview, approval and recovery.
+
+    Expose reusable localization text actions for nested table cells, graph text pins, String Table
+    entries/references and explicit localizable conversion. Add capability-negotiated native operations
+    and durable String Table key migration with a persisted redirect, migrated references and an
+    optional, explicitly selected deletion action with saved-file verification. Migration retains the
+    old entry by default and can complete without deletion.
+
+- a33fffb: Fix text keys in assets through Unreal (ADR 0011). The new, separately enabled `UEShedGameText` editor plugin changes, regenerates and adopts text keys and retypes source in DataAsset properties, Blueprint class defaults, SCS component templates and widget trees, using the editor's own id rules. It then compiles each owning Blueprint, reads every place back and saves only when asked, over Remote Control or `-run=UEShedGameText`. Requests validate every target before editing, with dry runs, typed `key_conflict`, `stale_expected` and rollback errors carrying `recovery`, `retrySafe` and `nextStep`.
+    - `@ue-shed/protocol`: the `ue-shed-game-text-actions` 1.0 request and result schemas (`contracts/game-text/v1`) and `gameTextObjectPath` in the capability manifest.
+    - `@ue-shed/engine`: Remote Control allow-lists `UEShedGameTextLibrary` when the plugin is enabled.
+    - `@ue-shed/game-text`: `runGameTextActions`, `gameTextActionsRequest`, `gameTextActionForOccurrence(id, occurrence, edit, packageFile)` and `verifyGameTextActions` (compare a re-read with the editor's result). Keep the scanned package file with each place so a copied package never targets its original through a saved object path.
+    - Compilation and rollback suppress Save on Compile. Partial-save receipts retain applied edits and generated keys, separately report package persistence, and require reconciliation rather than mutation replay. Lost mutation replies are also unsafe to retry.
+
+    Additive; no migration needed. DataTable cells keep using Authoring Apply 1.2, and graph pins are not action places yet.
+
+- 13ed5b7: Publish changed package records through the native index without decoding unchanged shard
+  records in JavaScript. Reuse localization dictionary blocks, coordinate target preparation
+  under one writer session, persist incremental summary counters, and share scoped readers
+  of the same validated revision. Package replacement requires uasset-io protocol 1.16.
+- 9370ea6: Native error audit, part one (Rust).
+
+    **Decode errors now say where they happened.** A saved-package decode error (`SavedAssetDecodeError` in the uasset-io v1 contract, and `decode_errors` in generic inspection JSON) can carry `field`, the logical field being read (such as `Exports[3].Properties.Name`), and `offset`, the absolute byte offset. `AssetError` exposes both as `field()` and `offset()`.
+
+    **Corrected kind.** A metadata failure caused by an unsupported format or version used to be reported as `unsupported_capability`. It now keeps its own kind.
+
+    **No panics on malformed packages.** The Rust crates enable `clippy::unwrap_used` and `clippy::expect_used`:
+    - Every non-test `unwrap`/`expect` in the parser, inspection, source generator, IO and process supervisor crates is now either a typed error or an invariant stated once:
+        - checked integer conversions go through `uasset-parser`'s `convert` helpers
+        - poisoned locks recover their data
+        - a lost projection worker is a retryable `unavailable` failure
+        - a missing generated-layout field is `unsupported_capability`
+    - The few remaining invariants keep an `#[expect]` with a reason.
+    - A new regression test applies 328 deterministic truncations, bit flips and extreme-count overwrites to each fixture package under 400 KiB, then runs the parser, export decoders and projections. A malformed package must give a typed error, never a crash.
+
+    The `uasset-inspection-wasm` crate is outside the Cargo workspace and was not changed.
+
+    Protocol 1.14 negotiates the new decode-error context. New workers omit both fields on earlier
+    protocol minors, preserving strict older decoders. Public inspection and full-scan readers request
+    minor 14 and accept workers that omit the optional fields. Header scans retain their existing
+    minor negotiation. Generic inspection JSON also retains the optional context.
+
+- 70dec0a: Add an opt-in native Game Text index builder through the existing scoped uasset-io protocol
+  session. The builder writes the existing shared dictionary and column format, supports narrowly
+  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript remained the default builder until the native engine entry in this release. Give decoded shared-string arenas their own buffers so cache
+  accounting tracks their actual capacity.
+- 2f9469b: Move Game Text indexing and query execution into the Rust engine. Queries, counts, facets,
+  groups, focus and exports use scoped native readers; mixed authored-source, String Table and
+  localization-file updates publish incremental snapshots while existing readers remain pinned.
+
+    Game Text query methods now return Effects. Full corpus and localization evidence are explicit
+    bulk reads, and interactive localization detail is paged in Rust. Remove the public in-memory
+    query factories, TypeScript index builder, synchronous indexed projections and search worker.
+    The native executable must support protocol 1.15 and game_text_engine_v1; unavailable or
+    incompatible native readers produce typed failures without a JavaScript query fallback.
+
+### Patch Changes
+
+- 2747ae8: Add public-export documentation across `@ue-shed/protocol` and `@ue-shed/unreal-connection` (Plan 058 D11). The documented schemas, decoders and services explain wire or Unreal meaning, units and bounds, contract or protocol versions, and decoding failures. Failures are described in prose, not as `@throws`.
+
+    A new lint rule, `anti-slop/require-jsdoc-on-exports`, covers both packages with explicit exceptions. Re-exports are covered at their declaration, and a type or interface named after a documented schema constant shares its documentation. Four files remain outside this lint scope: `protocol/src/index.ts`, `protocol/src/error-guidance.ts`, `unreal-connection/src/index.ts` and `unreal-connection/src/remote-control-client.ts`. D11 remains in progress for those boundaries and the remaining packages.
+
+    No API changes.
+
 ## 0.16.2
 
 ## 0.16.1

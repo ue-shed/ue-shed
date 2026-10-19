@@ -47,12 +47,12 @@ const builder = GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive));
 The host supplies its ordinary source and localization evidence layers to the index/workspace.
 `AssetReaderLive` uses the installed compatible reader; explicit `assetReaderLayer(configuration)`
 is supported too. No source-checkout auto-build or executable download is introduced by the library.
-Reader capability `game_text_index` requires uasset-io protocol 1.13 or newer.
+The native engine requires uasset-io protocol 1.15 or newer with the `game_text_engine_v1`
+capability; native package replacement requires protocol 1.16.
 
-To select the reference implementation intentionally, provide `typeScriptIndexBuilderLayer` from
-the same `/index` entry point. There is no automatic writer fallback after failure. Existing cache
-format 4 remains readable; switching builder rebuilds its joined view once and reuses input layers.
-No authored assets, localization files, review state or rule documents are migrated by that switch.
+The native builder is the only public builder; the TypeScript builder is a test-only oracle and is
+not exported. An unavailable or incompatible native reader is a typed failure with no JavaScript
+fallback. No authored assets, localization files, review state or rule documents are migrated.
 
 ## Public names
 
@@ -64,8 +64,9 @@ corresponding `*Api` names. This includes `RemoteControlClientShape`, `AssetRead
 `ReviewRepositoryShape`.
 
 `columnarTextCorpusQuery` and `makeGameTextSearchWorker` are private implementation constructors.
-Use `GameTextIndexRefresh` and its retained model/query; select `searchWorker: true` in the public
-refresh-layer options. The owning scope controls the worker and pinned reader lifetime.
+Use `GameTextIndexRefresh` and its retained model/query; queries run in scoped native readers, and
+the search worker and its `searchWorker` option are removed. `qualityWorker: true` remains
+available in `GameTextIndexStepsOptions`. The owning scope controls the pinned reader lifetime.
 
 The asset-reader root no longer exposes `ProtocolOutputBudget`, `ProtocolStreamFailure`,
 `ProtocolStreamValidator` or `protocolCacheOutcome`. They belong to the private protocol adapter;

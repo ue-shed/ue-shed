@@ -1,5 +1,79 @@
 # @ue-shed/unreal-connection
 
+## 0.17.0
+
+### Minor Changes
+
+- a8adf03: **Breaking:** tagged errors in `@ue-shed/unreal-connection`, `@ue-shed/unreal-assets` and `@ue-shed/cameras` share one shape: `message`, `recovery`, `retrySafe` and a typed `nextStep` (`"fix_input" | "retry" | "reconcile" | "escalate"`) beside their existing context fields.
+    - `@ue-shed/protocol` exports `ErrorGuidanceFields` and `ErrorNextStep` for that shape.
+    - `RemoteControlClientError`, `UnrealConnectionError`, `UnrealCapabilityError`, `AssetReaderError`, `InvestigationError`, the six `ProjectIndex*` errors and the camera, capture, map-tile and review errors now carry `recovery` and `nextStep`. Errors that had no `retrySafe` gain it.
+    - `nextStep: "retry"` appears only when `retrySafe` is true. Mutations whose outcome is unknown after a transport failure report `reconcile`.
+    - Low-level `RemoteControlClient.request` defaults to non-idempotent. Set `idempotent: true` only for reads or operations with a proven replay guarantee. A lost response, timeout or server failure can occur after applying a mutation; it is never proof that replay is safe.
+    - Renderer reads preserve typed connection guidance, and malformed capability/preflight responses require escalation instead of transient retries.
+    - `EditorConnectionError` also adopts the shared guidance fields. Editor readiness preserves upstream recovery instructions and polls only transient failures with `nextStep: "retry"`; permanent refusals and malformed responses fail immediately even when repeating the read is safe.
+    - Malformed outer HTTP JSON follows the same recovery rules as malformed Remote Control envelopes: reconcile uncertain mutations and escalate read protocol failures.
+
+    Migration: read `nextStep` instead of parsing `message` or branching on `kind`/`code` to decide what to do next. Code that constructs these errors itself (test doubles, custom reader or Remote Control layers) must pass `recovery`, `nextStep` and, where new, `retrySafe`.
+
+- d585b1a: Error messages no longer embed a stringified cause (`String(cause)` or `Cause.pretty`). Each message says what failed and which ids are involved; the original failure is kept on the error's `cause` field (`ErrorCauseFields` from `@ue-shed/protocol`), so message text changes across these packages and several apps.
+    - Game Text's cache failures are classified by filesystem code instead of reporting every failure as "unavailable, retry": `ENOENT` is `missing`, `EBUSY` is `busy`, and `EACCES`, `EPERM` and `ENOSPC` keep `unavailable` with a specific recovery.
+    - `TextCorpusScanError` and `TextCorpusPublicError` gain the `invalid_options` code for malformed scan options, which were reported as `scan_limit_exceeded`.
+    - The camera render `artifact_invalid` failure is split into codes that say which artifact check failed.
+
+    Migration: match on codes and `nextStep`, not on message text. Read `cause` when you need the underlying failure for diagnostics. Handle `invalid_options` wherever you switch on Game Text scan error codes.
+
+    The CLI prints retained input schema issues below classified messages, including the offending row-ID element and expected type. Game Text refresh and invalidation retain configuration keys and issues as their cause. New native-index and worker boundaries retain original failures alongside classified messages.
+
+- 9ce62ee: Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
+  hosts. Public schema parsers now return domain errors with the original parse issues. All production
+  tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
+  and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
+  points and caller documentation, with no grandfathered raw decoder factories. Nested cause
+  stringification, direct error translations and helper adapters are covered by regression guards.
+
+    Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
+    consumer conformance use the same native implementation. The TypeScript builder became test-only later in this release. Native worker/capability failures do not silently fall back. Scoped cancellation
+    releases staging, writer leases and processes; native failures use stable codes independent of prose.
+    PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
+
+    Obsolete public `*Shape` aliases are removed from connection, asset reader/Project Index and camera
+    entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
+    `makeGameTextSearchWorker` constructors are no longer exported. See the
+    [migration guide](https://github.com/ue-shed/ue-shed/blob/main/docs/engineering/effect-audit-migration.md) for error and composition changes.
+
+    AssetReader test layers now require a complete explicit port, including configuration and projection
+    operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
+    budget/validator helpers are private to the asset-reader adapter.
+
+    Game Text and Enhanced Input distinguish `reader_failed` from `invalid_project`; Game Text workspace
+    index failures use `index_failed`. Reader recovery guidance and structured causes survive these
+    translations. Portable localization failures keep installation candidates, authored payloads and
+    secret configuration private through explicitly sanitized causes.
+
+### Patch Changes
+
+- 2747ae8: Add public-export documentation across `@ue-shed/protocol` and `@ue-shed/unreal-connection` (Plan 058 D11). The documented schemas, decoders and services explain wire or Unreal meaning, units and bounds, contract or protocol versions, and decoding failures. Failures are described in prose, not as `@throws`.
+
+    A new lint rule, `anti-slop/require-jsdoc-on-exports`, covers both packages with explicit exceptions. Re-exports are covered at their declaration, and a type or interface named after a documented schema constant shares its documentation. Four files remain outside this lint scope: `protocol/src/index.ts`, `protocol/src/error-guidance.ts`, `unreal-connection/src/index.ts` and `unreal-connection/src/remote-control-client.ts`. D11 remains in progress for those boundaries and the remaining packages.
+
+    No API changes.
+
+- Updated dependencies [2bae469]
+- Updated dependencies [bb9d55e]
+- Updated dependencies [f403f84]
+- Updated dependencies [ba669e3]
+- Updated dependencies [a8adf03]
+- Updated dependencies [d585b1a]
+- Updated dependencies [9ce62ee]
+- Updated dependencies [0e2a894]
+- Updated dependencies [a33fffb]
+- Updated dependencies [13ed5b7]
+- Updated dependencies [9370ea6]
+- Updated dependencies [70dec0a]
+- Updated dependencies [2f9469b]
+- Updated dependencies [2747ae8]
+    - @ue-shed/protocol@0.17.0
+
 ## 0.16.2
 
 ### Patch Changes

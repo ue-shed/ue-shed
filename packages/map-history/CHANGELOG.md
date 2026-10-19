@@ -1,5 +1,80 @@
 # @ue-shed/map-history
 
+## 0.17.0
+
+### Minor Changes
+
+- ba669e3: **Breaking:** the remaining packages' tagged errors gain the shared guidance shape from the first D4 slice: `message`, `recovery`, `retrySafe` and a typed `nextStep` (`"fix_input" | "retry" | "reconcile" | "escalate"`) beside their existing context fields. `nextStep: "retry"` appears only when `retrySafe` is true.
+
+    Migration: read `nextStep` instead of parsing `message`. Code that constructs these errors itself (test doubles, custom layers) must pass `recovery`, `retrySafe` and `nextStep` where they are new.
+    - Indeterminate session Apply failures require `reconcileSession` even when a lower-level port can safely replay a request. Pre-dispatch connection failures, Apply-result lookup and repeat-safe pending Save recovery retain their own guidance.
+    - Compiled plugin builds require confirmed owned-process cleanup before advertising a safe repeat. Failed cleanup reports reconciliation and retains the termination failure; pure validation failures remain repeat-safe.
+    - World preparation lease identity conflicts require reconciliation instead of retrying unchanged acquisition requirements.
+    - Editor readiness preserves the prior slice's recovery actions and retry policy. Newly merged domain-parser errors also adopt the guidance fields.
+
+- d8e2f99: Errors are translated on purpose instead of being caught wholesale or matched with `instanceof`.
+    - **Breaking (`@ue-shed/host`):** authoring session failures no longer expose an internal error tag as their public `code`. The codes are `session_live_failed`, `session_storage_failed`, `session_transition_refused`, `draft_intent_rejected`, `invalid_session_id`, `session_corrupt`, `session_not_found`, `editor_capability_missing` and `editor_connection_failed`; `authoring_session_failure` remains the default. Every session pipe names the failures it translates, so a new failure type is a compile error instead of a silently caught one. Live and connection failures now report their real `retrySafe`.
+    - Tagged errors are matched by tag (`Schema.is` guards such as `isSnapshotStoreError`, `isLocalizationError` and `isProjectIndexError`, `Effect.catchTag`, or `Predicate.isTagged`), never with `instanceof`, so checks keep working across package copies and after a schema round trip.
+    - The shared Game Text index decides whether to retry a racing open from the `missing` code instead of searching the message for `ENOENT`.
+
+    Migration: hosts that branched on authoring session codes such as `AuthoringSessionStorageError` should switch to the new codes. Code that matched UE Shed errors with `instanceof` should match on `_tag` or use the exported guards.
+
+- 2a05bc5: **Breaking:** exported raw decoders are unary domain parsers. Each package's parsers fail with its own contract error (`code: "invalid_contract"`, `message` naming the value, `recovery`, `retrySafe`, and the schema issue as `cause`) instead of Schema's parse error:
+    - `@ue-shed/map-history`: `decodePerforceMapHistoryQuery`, `decodePerforceMapHistory`, `decodePerforceFastMapHistoryQuery`, `decodePerforceFastMapHistory`, `decodeMapHistoryQuery` and `decodeMapHistoryResult` become `parse*`, failing with `MapHistoryContractError`.
+    - `@ue-shed/observatory`: `decodeWorldScoutResult` and `decodeWorldScoutFocusResult` become `parse*`, failing with `WorldScoutContractError`.
+    - `@ue-shed/project-custodian`: `decodeCustodianScanRequest`, `decodeCustodianReport`, `decodeCustodianPrepareRequest`, `decodeCustodianProposal`, `decodeCustodianExecuteRequest` and `decodeCustodianReceipt` become `parse*`, failing with `CustodianContractError`.
+
+    The private `@ue-shed/scenarios` package and the Map Capture, Content Observatory and Project Custodian extension clients get the same change, with `ScenarioContractError`, `MapCaptureContractError`, `ContentObservatoryContractError` and `CustodianClientContractError`.
+
+    Migration: rename `decode*` to `parse*`, and handle the package's contract error where you handled a `SchemaError`.
+
+### Patch Changes
+
+- 9ce62ee: Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
+  hosts. Public schema parsers now return domain errors with the original parse issues. All production
+  tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
+  and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
+  points and caller documentation, with no grandfathered raw decoder factories. Nested cause
+  stringification, direct error translations and helper adapters are covered by regression guards.
+
+    Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
+    consumer conformance use the same native implementation. The TypeScript builder became test-only later in this release. Native worker/capability failures do not silently fall back. Scoped cancellation
+    releases staging, writer leases and processes; native failures use stable codes independent of prose.
+    PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
+
+    Obsolete public `*Shape` aliases are removed from connection, asset reader/Project Index and camera
+    entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
+    `makeGameTextSearchWorker` constructors are no longer exported. See the
+    [migration guide](https://github.com/ue-shed/ue-shed/blob/main/docs/engineering/effect-audit-migration.md) for error and composition changes.
+
+    AssetReader test layers now require a complete explicit port, including configuration and projection
+    operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
+    budget/validator helpers are private to the asset-reader adapter.
+
+    Game Text and Enhanced Input distinguish `reader_failed` from `invalid_project`; Game Text workspace
+    index failures use `index_failed`. Reader recovery guidance and structured causes survive these
+    translations. Portable localization failures keep installation candidates, authored payloads and
+    secret configuration private through explicitly sanitized causes.
+
+- Updated dependencies [2bae469]
+- Updated dependencies [bb9d55e]
+- Updated dependencies [f403f84]
+- Updated dependencies [49cf8f0]
+- Updated dependencies [ba669e3]
+- Updated dependencies [a8adf03]
+- Updated dependencies [d585b1a]
+- Updated dependencies [d8e2f99]
+- Updated dependencies [9ce62ee]
+- Updated dependencies [0e2a894]
+- Updated dependencies [a33fffb]
+- Updated dependencies [13ed5b7]
+- Updated dependencies [9370ea6]
+- Updated dependencies [70dec0a]
+- Updated dependencies [2f9469b]
+- Updated dependencies [2747ae8]
+    - @ue-shed/protocol@0.17.0
+    - @ue-shed/unreal-assets@0.17.0
+
 ## 0.16.2
 
 ### Patch Changes

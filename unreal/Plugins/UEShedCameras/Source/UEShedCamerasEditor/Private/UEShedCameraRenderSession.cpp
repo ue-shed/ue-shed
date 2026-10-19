@@ -1,4 +1,5 @@
 #include "UEShedCameraRenderSession.h"
+#include "UEShedCameraEngine.h"
 #include "UEShedCameraVisibility.h"
 #include "UEShedCameraEditorOwnership.h"
 #include "Camera/CameraActor.h"
@@ -94,14 +95,6 @@ bool Number(const TSharedPtr<FJsonObject> &Value, const TCHAR *Key, double Minim
 	double N;
 	return Value && Value->TryGetNumberField(Key, N) && FMath::IsFinite(N) && N >= Minimum && N <= Maximum &&
 		   (!Integer || N == FMath::FloorToDouble(N));
-}
-void SetScreenshotWarmupValue(IConsoleVariable *Variable, int32 Value)
-{
-	// ReplaceCurrent refuses constructor values. Preserve the priority/tag for configured values.
-	if ((Variable->GetFlags() & ECVF_SetByMask) == ECVF_SetByConstructor)
-		Variable->Set(Value, ECVF_SetByConstructor);
-	else
-		Variable->ReplaceCurrentPriorityAndTag(Value);
 }
 bool Boolean(const TSharedPtr<FJsonObject> &Value, const TCHAR *Key)
 {
@@ -541,7 +534,7 @@ struct FUEShedCameraRenderSession::FState
 		AppliedScreenshotWarmup = Renderer->GetIntegerField(TEXT("screenshotWarmupFrames"));
 		ScreenshotWarmupChanged = false;
 		ScreenshotWarmupApplied = true;
-		SetScreenshotWarmupValue(Variable, AppliedScreenshotWarmup);
+		UEShedCameraEngine::SetScreenshotWarmupValue(Variable, AppliedScreenshotWarmup);
 		if (!OwnsScreenshotWarmup())
 			return false;
 		ScreenshotWarmupVariable = Variable;
@@ -562,7 +555,7 @@ struct FUEShedCameraRenderSession::FState
 		ScreenshotWarmupChangeHandle.Reset();
 		if (Owned)
 		{
-			SetScreenshotWarmupValue(Variable, SavedScreenshotWarmup);
+			UEShedCameraEngine::RestoreScreenshotWarmupValue(Variable, SavedScreenshotWarmup);
 			if (Variable->GetInt() != SavedScreenshotWarmup ||
 			    Variable->GetFlags() != SavedScreenshotWarmupFlags)
 				Restored = false;

@@ -13,6 +13,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
+#include "UEShedCameraEngine.h"
 #include "HAL/PlatformProcess.h"
 #include "HighResScreenshot.h"
 #include "ImageUtils.h"
@@ -304,6 +305,24 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraScreenshotWarmupTest,
 
 bool FUEShedCameraScreenshotWarmupTest::RunTest(const FString &Parameters)
 {
+	auto& Manager = IConsoleManager::Get();
+	const TCHAR* HistoryVariableName = TEXT("UEShed.Tests.ScreenshotWarmupHistory");
+	auto* HistoryVariable = Manager.RegisterConsoleVariable(HistoryVariableName, 1, TEXT("Warmup history test"));
+	ON_SCOPE_EXIT { Manager.UnregisterConsoleObject(HistoryVariableName, false); };
+	const FName OriginalTag(TEXT("UEShedWarmupHistoryTest"));
+	for (const auto Priority : { ECVF_SetByScalability, ECVF_SetByPluginLowPriority,
+		ECVF_SetByDeviceProfile, ECVF_SetByPluginHighPriority, ECVF_SetByHotfix, ECVF_SetByPreview })
+	{
+		HistoryVariable->Set(4, Priority, OriginalTag);
+		UEShedCameraEngine::SetScreenshotWarmupValue(HistoryVariable, 32);
+		TestEqual(TEXT("Tagged warmup applied"), HistoryVariable->GetInt(), 32);
+		TestEqual(TEXT("Tagged priority preserved"), HistoryVariable->GetFlags() & ECVF_SetByMask,
+			static_cast<uint32>(Priority));
+		UEShedCameraEngine::RestoreScreenshotWarmupValue(HistoryVariable, 4);
+		TestEqual(TEXT("Tagged warmup restored"), HistoryVariable->GetInt(), 4);
+		HistoryVariable->Unset(Priority, OriginalTag);
+		TestEqual(TEXT("No temporary tag remains after restoration"), HistoryVariable->GetInt(), 1);
+	}
 	auto *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	auto *Client = GCurrentLevelEditingViewportClient;
 	auto *Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HighResScreenshotDelay"));

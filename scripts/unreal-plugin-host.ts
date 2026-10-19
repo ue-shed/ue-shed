@@ -270,6 +270,9 @@ export function prepareUnrealPlugins({
 		)}\n`
 	);
 	const sourceEngine = !existsSync(join(engineRoot, "Engine", "Build", "InstalledBuild.txt"));
+	// Build only the requested UE5 modules, including on installed engines. Optional engine
+	// plugins can otherwise enter the target-wide action graph and require engine changes.
+	const moduleOnly = sourceEngine || version.major >= 5;
 	const modules = descriptors.flatMap((descriptor) => {
 		// SAFETY: these are the same plugin descriptors consumed by UnrealBuildTool.
 		const plugin = JSON.parse(readFileSync(descriptor, "utf8")) as UnrealPluginDescriptor;
@@ -282,16 +285,14 @@ export function prepareUnrealPlugins({
 		"Win64",
 		`${editorTarget}.modules`
 	);
-	const engineManifestBefore = sourceEngine
-		? readFileSync(engineManifestPath, "utf8")
-		: undefined;
+	const engineManifestBefore = moduleOnly ? readFileSync(engineManifestPath, "utf8") : undefined;
 	runProcess(tools.build, [
 		editorTarget,
 		"Win64",
 		"Development",
 		`-Project=${hostProject}`,
 		`-AdditionalPlugins=${[...pluginIds, ...additionalPluginDescriptors.map((descriptor) => basename(descriptor, ".uplugin"))].join("+")}`,
-		...(sourceEngine ? [`-Module=${modules.join("+")}`] : []),
+		...(moduleOnly ? modules.map((name) => `-Module=${name}`) : []),
 		"-NoUBTMakefiles",
 		"-ForceHeaderGeneration",
 		"-NoEngineChanges",

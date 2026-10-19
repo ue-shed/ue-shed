@@ -98,6 +98,9 @@ const result = spawnSync(
 		"/Engine/Maps/Templates/Template_Default",
 		...descriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
 		`-EnablePlugins=${pluginIds.join(",")}`,
+		// Synthetic PIE delegates in the lifecycle tests have no real telemetry session.
+		// UE5.6 EditorTelemetry dereferences that absent session during PreBeginPIE.
+		...(version.major === 5 && version.minor === 6 ? ["-DisablePlugins=EditorTelemetry"] : []),
 		`-ExecCmds=Automation RunTests ${tests.join("+")}`,
 		"-TestExit=Automation Test Queue Empty",
 		`-ReportExportPath=${report}`,

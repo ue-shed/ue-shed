@@ -16,6 +16,7 @@
 #include "SceneViewExtension.h"
 #include "UEShedCameraRenderSession.h"
 #include "UEShedCameraVisibility.h"
+#include "UEShedCameraEngine.h"
 #include "UEShedTransientCapture.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraVisibilityProofTest, "UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
@@ -118,7 +119,7 @@ bool FUEShedCameraVisibilityProofTest::RunTest(const FString &Parameters)
     UStaticMesh *OriginalMesh = Column->GetStaticMeshComponent()->GetStaticMesh();
     auto *NaniteMesh = DuplicateObject<UStaticMesh>(OriginalMesh, GetTransientPackage());
     NaniteMesh->SetFlags(RF_Transient);
-    NaniteMesh->GetNaniteSettings().bEnabled = true;
+    UEShedCameraEngine::NaniteSettings(NaniteMesh).bEnabled = true;
     Column->GetStaticMeshComponent()->SetStaticMesh(NaniteMesh);
     auto Unsupported = UEShedResolveCameraVisibility(W, Visibility);
     TestFalse(TEXT("Nanite-configured geometry is refused"), Unsupported.Valid);

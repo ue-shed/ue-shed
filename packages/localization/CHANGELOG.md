@@ -1,5 +1,14 @@
 # @ue-shed/localization
 
+## 0.17.1
+
+### Patch Changes
+
+- @ue-shed/config-explorer@0.17.1
+    - @ue-shed/engine@0.17.1
+    - @ue-shed/protocol@0.17.1
+    - @ue-shed/unreal-connection@0.17.1
+
 ## 0.17.0
 
 ### Minor Changes

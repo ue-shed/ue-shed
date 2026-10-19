@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.17.0",
+	"VersionName": "0.17.1",
 	"FriendlyName": "UE Shed Automation",
 	"Description": "Explicit local-player input injection and owned CSV profiling for external tools.",
 	"Category": "UE Shed",

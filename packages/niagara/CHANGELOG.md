@@ -1,5 +1,12 @@
 # @ue-shed/niagara
 
+## 0.17.1
+
+### Patch Changes
+
+- @ue-shed/engine@0.17.1
+    - @ue-shed/protocol@0.17.1
+
 ## 0.17.0
 
 ### Minor Changes

@@ -1,5 +1,111 @@
 # @ue-shed/cameras
 
+## 0.17.0
+
+### Minor Changes
+
+- 653830e: Camera authoring bridge failures name their cause. UEShedCameraAuthoringBridge and its native setup collapsed about 50 causes into five statuses (`busy`, `stale`, `unavailable`, `invalid`, `detached`) that only the prose told apart.
+
+    Requests carrying `codedFailures: true` receive a stable `code`, for example `scope_mismatch`, `revision_conflict`, `editor_owned`, `camera_not_in_arrangement` or `setup_owned`. The status stays the same coarse category. The camera-authoring v1 request contract carries this opt-in, and `CameraBridgeResponse` accepts the optional `code` (lower snake case, at most 64 characters). `readyCameraBridge` passes it on as `CameraBridgeError.cause`.
+
+    The SDK opts in by default and respects an explicit `false`. New plugins preserve the exact legacy three-field failure shape when the flag is absent or false, including setup failures. Older plugins ignore the flag, and their responses still decode. Existing `code` categories on `CameraBridgeError` are unchanged.
+
+- f403f84: Camera status, configure and provisioning failures are now valid, coded JSON. UEShedCameras used to build these responses with `Printf`, so a quote, backslash or control character in a message made the JSON invalid, and authored-preview visibility put prose into the `error` code field.
+
+    The plugin now writes failures with the JSON writer. `error` is always a stable code (visibility failures report `invalid-visibility`), prose moves to a new `message` field, and GetStatus and Configure failures gain `status: "failed"`.
+    - `@ue-shed/protocol`: `CameraControlFailure` describes the wire failure. Decoding stays inside the camera adapter so callers receive its domain error.
+    - `@ue-shed/cameras`: `getCameraStatus` and `configureCameras` turn a coded failure into a `CameraControlError` that carries `code` (new, optional), instead of reporting it as an invalid response. Provisioning errors include the plugin's `message` beside its code.
+
+    All fields are additive, and responses from older plugins still decode. No migration needed.
+
+- a8adf03: **Breaking:** tagged errors in `@ue-shed/unreal-connection`, `@ue-shed/unreal-assets` and `@ue-shed/cameras` share one shape: `message`, `recovery`, `retrySafe` and a typed `nextStep` (`"fix_input" | "retry" | "reconcile" | "escalate"`) beside their existing context fields.
+    - `@ue-shed/protocol` exports `ErrorGuidanceFields` and `ErrorNextStep` for that shape.
+    - `RemoteControlClientError`, `UnrealConnectionError`, `UnrealCapabilityError`, `AssetReaderError`, `InvestigationError`, the six `ProjectIndex*` errors and the camera, capture, map-tile and review errors now carry `recovery` and `nextStep`. Errors that had no `retrySafe` gain it.
+    - `nextStep: "retry"` appears only when `retrySafe` is true. Mutations whose outcome is unknown after a transport failure report `reconcile`.
+    - Low-level `RemoteControlClient.request` defaults to non-idempotent. Set `idempotent: true` only for reads or operations with a proven replay guarantee. A lost response, timeout or server failure can occur after applying a mutation; it is never proof that replay is safe.
+    - Renderer reads preserve typed connection guidance, and malformed capability/preflight responses require escalation instead of transient retries.
+    - `EditorConnectionError` also adopts the shared guidance fields. Editor readiness preserves upstream recovery instructions and polls only transient failures with `nextStep: "retry"`; permanent refusals and malformed responses fail immediately even when repeating the read is safe.
+    - Malformed outer HTTP JSON follows the same recovery rules as malformed Remote Control envelopes: reconcile uncertain mutations and escalate read protocol failures.
+
+    Migration: read `nextStep` instead of parsing `message` or branching on `kind`/`code` to decide what to do next. Code that constructs these errors itself (test doubles, custom reader or Remote Control layers) must pass `recovery`, `nextStep` and, where new, `retrySafe`.
+
+- d585b1a: Error messages no longer embed a stringified cause (`String(cause)` or `Cause.pretty`). Each message says what failed and which ids are involved; the original failure is kept on the error's `cause` field (`ErrorCauseFields` from `@ue-shed/protocol`), so message text changes across these packages and several apps.
+    - Game Text's cache failures are classified by filesystem code instead of reporting every failure as "unavailable, retry": `ENOENT` is `missing`, `EBUSY` is `busy`, and `EACCES`, `EPERM` and `ENOSPC` keep `unavailable` with a specific recovery.
+    - `TextCorpusScanError` and `TextCorpusPublicError` gain the `invalid_options` code for malformed scan options, which were reported as `scan_limit_exceeded`.
+    - The camera render `artifact_invalid` failure is split into codes that say which artifact check failed.
+
+    Migration: match on codes and `nextStep`, not on message text. Read `cause` when you need the underlying failure for diagnostics. Handle `invalid_options` wherever you switch on Game Text scan error codes.
+
+    The CLI prints retained input schema issues below classified messages, including the offending row-ID element and expected type. Game Text refresh and invalidation retain configuration keys and issues as their cause. New native-index and worker boundaries retain original failures alongside classified messages.
+
+- d8e2f99: Errors are translated on purpose instead of being caught wholesale or matched with `instanceof`.
+    - **Breaking (`@ue-shed/host`):** authoring session failures no longer expose an internal error tag as their public `code`. The codes are `session_live_failed`, `session_storage_failed`, `session_transition_refused`, `draft_intent_rejected`, `invalid_session_id`, `session_corrupt`, `session_not_found`, `editor_capability_missing` and `editor_connection_failed`; `authoring_session_failure` remains the default. Every session pipe names the failures it translates, so a new failure type is a compile error instead of a silently caught one. Live and connection failures now report their real `retrySafe`.
+    - Tagged errors are matched by tag (`Schema.is` guards such as `isSnapshotStoreError`, `isLocalizationError` and `isProjectIndexError`, `Effect.catchTag`, or `Predicate.isTagged`), never with `instanceof`, so checks keep working across package copies and after a schema round trip.
+    - The shared Game Text index decides whether to retry a racing open from the `missing` code instead of searching the message for `ENOENT`.
+
+    Migration: hosts that branched on authoring session codes such as `AuthoringSessionStorageError` should switch to the new codes. Code that matched UE Shed errors with `instanceof` should match on `_tag` or use the exported guards.
+
+- 9ce62ee: Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
+  hosts. Public schema parsers now return domain errors with the original parse issues. All production
+  tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
+  and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
+  points and caller documentation, with no grandfathered raw decoder factories. Nested cause
+  stringification, direct error translations and helper adapters are covered by regression guards.
+
+    Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
+    consumer conformance use the same native implementation. The TypeScript builder remains an explicit
+    reference choice. Native worker/capability failures do not silently fall back. Scoped cancellation
+    releases staging, writer leases and processes; native failures use stable codes independent of prose.
+    PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
+
+    Obsolete public `*Shape` aliases are removed from connection, asset reader/Project Index and camera
+    entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
+    `makeGameTextSearchWorker` constructors are no longer exported. See the
+    [migration guide](../docs/engineering/effect-audit-migration.md) for error and composition changes.
+
+    AssetReader test layers now require a complete explicit port, including configuration and projection
+    operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
+    budget/validator helpers are private to the asset-reader adapter.
+
+    Game Text and Enhanced Input distinguish `reader_failed` from `invalid_project`; Game Text workspace
+    index failures use `index_failed`. Reader recovery guidance and structured causes survive these
+    translations. Portable localization failures keep installation candidates, authored payloads and
+    secret configuration private through explicitly sanitized causes.
+
+- e1d29ec: **Breaking:** layers compose through requirements, and test layers are complete fakes.
+    - `@ue-shed/authoring` (private, no release): `authoringSessionServiceLayer(config)` and `makeAuthoringSessionService(config)` no longer take an id-generator Layer. They require `AuthoringIdGenerator`.
+    - `@ue-shed/authoring-catalog` (private, no release): `authoringLiveConnectionLayer(connection)` is removed. Provide the connection as the `AuthoringLiveConnection` service.
+    - `@ue-shed/cameras`: `makeReviewRepositoryTestLayer` and `makeReviewAuthoringTestLayer` take the complete service. They no longer fill `listSets` or `inspectSubject` with a defect.
+    - `@ue-shed/game-text`: the internal project-view layer requires the `SharedIndex` it wraps instead of taking it as a Layer; `sharedIndexNodeLayer` is unchanged.
+    - Workbench (private, no release): a project test layer that supplies `recent` also supplies `openRecent`; `current` alone cannot implement opening another project.
+
+    Migration:
+    - Write `authoringSessionServiceLayer(config).pipe(Layer.provide(AuthoringIdGeneratorLive))` and `makeAuthoringSessionService(config).pipe(Effect.provide(AuthoringIdGeneratorLive))`. Tests provide `authoringIdGeneratorLayer(...)` the same way.
+    - Replace `Effect.provide(authoringLiveConnectionLayer(connection))` with `Effect.provideService(AuthoringLiveConnection, connection)`.
+    - Callers of the two cameras test layers supply `listSets` and `inspectSubject` themselves.
+    - Project test hosts with a recent list implement `openRecent` and keep `current` and selection reads consistent with the opened root.
+
+### Patch Changes
+
+- Updated dependencies [2bae469]
+- Updated dependencies [bb9d55e]
+- Updated dependencies [f403f84]
+- Updated dependencies [ba669e3]
+- Updated dependencies [a8adf03]
+- Updated dependencies [d585b1a]
+- Updated dependencies [9ce62ee]
+- Updated dependencies [0e2a894]
+- Updated dependencies [a33fffb]
+- Updated dependencies [13ed5b7]
+- Updated dependencies [9370ea6]
+- Updated dependencies [70dec0a]
+- Updated dependencies [2f9469b]
+- Updated dependencies [2747ae8]
+    - @ue-shed/protocol@0.17.0
+    - @ue-shed/world@0.17.0
+    - @ue-shed/unreal-connection@0.17.0
+    - @ue-shed/observability@0.17.0
+
 ## 0.16.2
 
 ### Patch Changes

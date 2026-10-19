@@ -1,7 +1,0 @@
----
-"@ue-shed/game-text": minor
----
-
-Describe every built-in localization check in one catalogue. `localizationCheckCatalogue` gives each check its basis (`unreal` when the finding states what Unreal does with the text, `heuristic` when it is a judgment), label, default severity, parameter schema with defaults and a condition text generated from those parameters; `localizationCheckDefaults` lists the default parameters. The thresholds and word lists of `length_outlier`, `placeholder_translation`, `placeholder_text` and `inconsistent_translation` are now catalogue parameters instead of private constants, and the package README's check table is generated from the catalogue. `localizationRuleId(id)` and `parseLocalizationRuleId(ruleId)` convert between a check and its `localization.<id>` rule ID. Findings, their severities and IDs are unchanged, except that a placeholder phrase must now start at a word boundary (`xlorem ipsum` is no longer a match).
-
-**Breaking.** `checkSeverity` and `workspaceQualityLabels` are removed. Migration: read `localizationCheckCatalogue[id].severity` instead of `checkSeverity[id]`, and `workspaceQualityLabel(filter)` (or `localizationCheckCatalogue[id].label`) instead of `workspaceQualityLabels[filter]`; the `character_budget` and `terminology` rule kinds are in `projectRuleKinds`. Replace hand-written check descriptions with `localizationCheckCatalogue[id].defaultCondition`, and string handling of `localization.<id>` rule IDs with `parseLocalizationRuleId`.

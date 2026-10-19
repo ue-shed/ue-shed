@@ -1,5 +1,249 @@
 # @ue-shed/game-text
 
+## 0.17.0
+
+### Minor Changes
+
+- e460f41: **Breaking:** `@ue-shed/game-text` has focused entry points with named exports only, and its storage internals are private.
+    - New entry points: `@ue-shed/game-text/schema`, `/rules`, `/checks`, `/labels` and `/corpus` (browser-safe), and `/index` (Node: `TextCorpus`, index steps and layers, retained index, rules-file IO, errors, progress, native builder and text actions).
+    - The root `@ue-shed/game-text` and `@ue-shed/game-text/browser` still re-export every public name, by name, and are deprecated. They will be removed in a later release.
+    - No longer exported: the compact snapshot codec (`snapshot-format`), `SnapshotStore` and its layer, `SharedIndex` and `sharedIndexNodeLayer`, the joined-target readers (`openJoinedTarget`, `hydrateJoinedTarget`, `inspectJoinedTarget`, `refreshJoinedTarget`), the package-text record, column, layer, candidate and cold-pool helpers, `decodeLocalizationSnapshot`, `defaultLocalizationImportLimits` and `localizationShippedTranslation`. `SnapshotStoreError` and `SnapshotFormatError` are still exported from `/index` because public index signatures name them.
+    - Game Text no longer re-exports other packages' types: import `InvestigationFileResult` and `InvestigationFormat` from `@ue-shed/unreal-assets/investigation`, and `LocalizationReviewFlag` from `@ue-shed/localization/browser`.
+
+    Migration: replace `@ue-shed/game-text` and `@ue-shed/game-text/browser` imports with the entry point that exports each name; the package README lists what each entry point holds. Hosts that used the private storage modules directly should go through `/index` (`gameTextIndexStepsLayer`, `gameTextIndexRefreshLayer` and the retained index) instead; open an issue if a needed capability is missing there.
+
+    The focused entry points retain the newer v3 rules, scoped/custom checks, domain parsers, unified progress, native builder and text-action APIs. Pure package text diffs are exported from `/corpus`; pass the owning reader record's file path to `/index`'s `gameTextActionForOccurrence`.
+
+- 7a2c80e: Ship the Game Text workspace as a library: `@ue-shed/game-text/workspace` exports `makeGameTextWorkspace(host)`. It is the scanning, search, quality-rules, localization, edit, review, report and investigation orchestration that Workbench used to keep to itself. A host supplies:
+    - its selected project (`project`), which the workspace reads and never changes;
+    - file hooks (`files`), so every rules file, report, line export and investigation file goes through the host's writable-file hook;
+    - `rulesRelativePath`, the rules location;
+    - `recoveryCopy`, which receives a rules file's previous bytes before it is overwritten;
+    - `localizationFiles`, the file access for PO and review writes;
+    - the `reviewer` and `changeAuthor` policies.
+
+    `makeGameTextOperations(host)` runs Unreal's localization steps (plan, run, cancel, changed files) for the same workspace, with hooks for the explicit engine root and progress notification.
+
+    A scan now belongs to the workspace's scope, so it keeps running when the request that started it is interrupted, and a later request for the same project generation joins it. Workbench now runs on this entry point.
+
+    The `WorkbenchOperation*` schemas and types are renamed `GameTextOperation*`. The old names remain as deprecated aliases in `/schema` and the deprecated root and `/browser` aggregates.
+
+    Migration: hosts that copied Workbench's Game Text services can replace them with `makeGameTextWorkspace`, and should switch `WorkbenchOperation*` imports to `GameTextOperation*`. The workspace exposes the latest presentation state through `progress()`; pipeline operations use `GameTextIndexProgressReporter`. Starter writes honor host-exclusive creation, and recovery reads/copies fail closed before replacing attached rules.
+
+- 49cf8f0: `gameTextIndexSourceNodeLayer` now splits a read into reader requests that each fit the native reader's 4 MiB request frame, so a host can hand it every selected package of a large project without batching the paths itself. Each batch is signature-verified before and after its own read and emits its own `text_summary`.
+
+    `@ue-shed/unreal-assets` exports the frame limit as `MAX_PROTOCOL_REQUEST_BYTES`, the default per-request path budget as `MAX_PROTOCOL_PATH_BYTES`, and `batchProtocolPaths(paths, maximumPathBytes?)`, which splits package paths into ordered batches that fit one request.
+
+    The oversized-request `contract` error now says `split package paths with batchProtocolPaths`.
+
+    Migration: hosts that batched paths before calling the Game Text index source can pass the whole selection instead. Hosts that call `extractProjectTextPackages` directly with many paths can use `batchProtocolPaths` instead of their own limit.
+
+- d585b1a: Error messages no longer embed a stringified cause (`String(cause)` or `Cause.pretty`). Each message says what failed and which ids are involved; the original failure is kept on the error's `cause` field (`ErrorCauseFields` from `@ue-shed/protocol`), so message text changes across these packages and several apps.
+    - Game Text's cache failures are classified by filesystem code instead of reporting every failure as "unavailable, retry": `ENOENT` is `missing`, `EBUSY` is `busy`, and `EACCES`, `EPERM` and `ENOSPC` keep `unavailable` with a specific recovery.
+    - `TextCorpusScanError` and `TextCorpusPublicError` gain the `invalid_options` code for malformed scan options, which were reported as `scan_limit_exceeded`.
+    - The camera render `artifact_invalid` failure is split into codes that say which artifact check failed.
+
+    Migration: match on codes and `nextStep`, not on message text. Read `cause` when you need the underlying failure for diagnostics. Handle `invalid_options` wherever you switch on Game Text scan error codes.
+
+    The CLI prints retained input schema issues below classified messages, including the offending row-ID element and expected type. Game Text refresh and invalidation retain configuration keys and issues as their cause. New native-index and worker boundaries retain original failures alongside classified messages.
+
+- d8e2f99: Errors are translated on purpose instead of being caught wholesale or matched with `instanceof`.
+    - **Breaking (`@ue-shed/host`):** authoring session failures no longer expose an internal error tag as their public `code`. The codes are `session_live_failed`, `session_storage_failed`, `session_transition_refused`, `draft_intent_rejected`, `invalid_session_id`, `session_corrupt`, `session_not_found`, `editor_capability_missing` and `editor_connection_failed`; `authoring_session_failure` remains the default. Every session pipe names the failures it translates, so a new failure type is a compile error instead of a silently caught one. Live and connection failures now report their real `retrySafe`.
+    - Tagged errors are matched by tag (`Schema.is` guards such as `isSnapshotStoreError`, `isLocalizationError` and `isProjectIndexError`, `Effect.catchTag`, or `Predicate.isTagged`), never with `instanceof`, so checks keep working across package copies and after a schema round trip.
+    - The shared Game Text index decides whether to retry a racing open from the `missing` code instead of searching the message for `ENOENT`.
+
+    Migration: hosts that branched on authoring session codes such as `AuthoringSessionStorageError` should switch to the new codes. Code that matched UE Shed errors with `instanceof` should match on `_tag` or use the exported guards.
+
+- 9ce62ee: Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
+  hosts. Public schema parsers now return domain errors with the original parse issues. All production
+  tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
+  and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
+  points and caller documentation, with no grandfathered raw decoder factories. Nested cause
+  stringification, direct error translations and helper adapters are covered by regression guards.
+
+    Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
+    consumer conformance use the same native implementation. The TypeScript builder remains an explicit
+    reference choice. Native worker/capability failures do not silently fall back. Scoped cancellation
+    releases staging, writer leases and processes; native failures use stable codes independent of prose.
+    PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
+
+    Obsolete public `*Shape` aliases are removed from connection, asset reader/Project Index and camera
+    entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
+    `makeGameTextSearchWorker` constructors are no longer exported. See the
+    [migration guide](../docs/engineering/effect-audit-migration.md) for error and composition changes.
+
+    AssetReader test layers now require a complete explicit port, including configuration and projection
+    operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
+    budget/validator helpers are private to the asset-reader adapter.
+
+    Game Text and Enhanced Input distinguish `reader_failed` from `invalid_project`; Game Text workspace
+    index failures use `index_failed`. Reader recovery guidance and structured causes survive these
+    translations. Portable localization failures keep installation candidates, authored payloads and
+    secret configuration private through explicitly sanitized causes.
+
+- 0e2a894: Add durable, host-neutral Game Text ID repair proposals and verified receipts. The Showcase
+  can split conflicting sources, choose shared text, and merge duplicate keys through optional
+  Unreal property and DataTable editing capabilities, with explicit preview, approval and recovery.
+
+    Expose reusable localization text actions for nested table cells, graph text pins, String Table
+    entries/references and explicit localizable conversion. Add capability-negotiated native operations
+    and durable String Table key migration with a persisted redirect, migrated references and an
+    optional, explicitly selected deletion action with saved-file verification. Migration retains the
+    old entry by default and can complete without deletion.
+
+- a33fffb: Fix text keys in assets through Unreal (ADR 0011). The new, separately enabled `UEShedGameText` editor plugin changes, regenerates and adopts text keys and retypes source in DataAsset properties, Blueprint class defaults, SCS component templates and widget trees, using the editor's own id rules. It then compiles each owning Blueprint, reads every place back and saves only when asked, over Remote Control or `-run=UEShedGameText`. Requests validate every target before editing, with dry runs, typed `key_conflict`, `stale_expected` and rollback errors carrying `recovery`, `retrySafe` and `nextStep`.
+    - `@ue-shed/protocol`: the `ue-shed-game-text-actions` 1.0 request and result schemas (`contracts/game-text/v1`) and `gameTextObjectPath` in the capability manifest.
+    - `@ue-shed/engine`: Remote Control allow-lists `UEShedGameTextLibrary` when the plugin is enabled.
+    - `@ue-shed/game-text`: `runGameTextActions`, `gameTextActionsRequest`, `gameTextActionForOccurrence(id, occurrence, edit, packageFile)` and `verifyGameTextActions` (compare a re-read with the editor's result). Keep the scanned package file with each place so a copied package never targets its original through a saved object path.
+    - Compilation and rollback suppress Save on Compile. Partial-save receipts retain applied edits and generated keys, separately report package persistence, and require reconciliation rather than mutation replay. Lost mutation replies are also unsafe to retry.
+
+    Additive; no migration needed. DataTable cells keep using Authoring Apply 1.2, and graph pins are not action places yet.
+
+- f8af84c: **Breaking:** Game Text's exported result decoders are unary domain parsers. They fail with the new `GameTextResponseError` (`code: "invalid_response"`, `message`, `recovery`, `retrySafe`, and the schema issue as `cause`) instead of Schema's parse error:
+
+    | Removed                             | Use                                |
+    | ----------------------------------- | ---------------------------------- |
+    | `decodeTextCorpusRunResult`         | `parseTextCorpusRunResult`         |
+    | `decodeTextCorpusQueryRunResult`    | `parseTextCorpusQueryRunResult`    |
+    | `decodeTextCorpusSearchResult`      | `parseTextCorpusSearchResult`      |
+    | `decodeTextCorpusFocusResult`       | `parseTextCorpusFocusResult`       |
+    | `decodeTextQualityQueryRunResult`   | `parseTextQualityQueryRunResult`   |
+    | `decodeTextQualityRuleUpdateResult` | `parseTextQualityRuleUpdateResult` |
+    | `decodeTextQualitySearchResult`     | `parseTextQualitySearchResult`     |
+    | `decodeTextQualityFocusResult`      | `parseTextQualityFocusResult`      |
+    | `decodeTextQualityReport`           | `parseTextQualityReport`           |
+
+    `TextCorpusScanOptions` limits (`concurrency`, `maximumAssets`) are the branded `TextCorpusScanLimit`. The brand carries the positive-integer check, so `TextCorpusService.scan` and `scanFromProjectIndex` no longer decode their typed options a second time. `parseTextCorpusScanOptions` checks options from an untrusted source once, and fails with `TextCorpusScanError` code `invalid_options`, not the old mislabelled `scan_limit_exceeded`.
+
+    Migration:
+    - Rename `decode*` to `parse*` from the table. Handle `GameTextResponseError` where you handled a `SchemaError`.
+    - Build scan limits with `TextCorpusScanLimit.make(n)`, or parse untrusted options with `parseTextCorpusScanOptions(...)` before calling `scan`.
+
+- a26dd7a: **Breaking:** Game Text reports progress one way. `GameTextIndexProgressReporter`, which index refreshes already used, is now the only mechanism, and `GameTextIndexProgress` gains the phases `corpus`, `localization_quality` and `source_quality` and an optional `findings` count.
+    - `localizationQuality` and `sourceQuality` no longer take an `onProgress` callback. `LocalizationQualityProgress`, `SourceQualityProgress` and `IndexedSourceQualityOptions` are removed, and `IndexedLocalizationQualityOptions` is now the check options alone.
+    - `TextCorpusService` no longer has `progress()`, which polled one shared state, so concurrent scans overwrote each other's progress. Scans now report `corpus` events instead.
+    - `localizationQuality` and `sourceQuality` are required on `GameTextIndexRefreshResult`, and both take the rule document first: `localizationQuality(ruleDocument?, options?)` and `sourceQuality(ruleDocument)`. `indexedLocalizationQuality` takes `(joined, corpus, evidence, rows, ruleDocument?, options?)`; `indexedSourceQuality` takes `(joined, corpus, ruleDocument)`.
+
+    Migration:
+    - Replace `result.localizationQuality(options, document)` with `result.localizationQuality(document, options)`, and `result.localizationQuality({ review })` with `result.localizationQuality(undefined, { review })`.
+    - Drop the `!` on `localizationQuality` and `sourceQuality`, and remove any fallback to the in-memory checks. An adapter that builds its own index result implements both, for example with `localizationQuality(checkLocalizationTarget(...), join)` and `textQualityQuery(evaluateGameTextSourceQuality(corpus, document))`.
+    - Replace `{ onProgress }` and `TextCorpusService.progress()` polling with `effect.pipe(Effect.provideService(GameTextIndexProgressReporter, (progress) => ...))`. Read `completed`, `total` and `findings` instead of `checkedLines`, `totalLines`, `checkedTextUnits` and `totalTextUnits`.
+
+- 00a0a16: Add version 3 of the Game Text rule file. A v3 file sets each built-in check's policy under `checks`, keyed by check ID: `enabled`, `severity`, `scope` (roles, cultures, object path prefixes) and `params` (the catalogue's parameters, every field defaulted), over a `preset` of `default` or `none`. Version 3 rejects unknown keys, so a misspelt check or parameter is an `invalid_structure` error, and a v3 file may hold check settings alone. Checks now read their thresholds, word lists and severity from the resolved settings: `resolveLocalizationChecks(document)` returns them, and `migrateGameTextRuleDocument(document)` rewrites a v1 or v2 file as v3 with the same behaviour. The tag and argument lists become parameters of the checks that read them (`optionalTags` on `rich_text_tags` and `rich_text_tags_added`; `optionalArguments` on those two and on `format_arguments`, `format_argument_renamed` and `rich_text_tag_case`), and `segmentSeparator` becomes `segment_separator`'s `separator`. V1 and v2 files keep loading with the same findings. Reports' `ruleDocumentVersion` can now be 3. Scope is decoded and validated (unknown roles are `unknown_role_id`) but is not applied to findings yet: that comes with scoped checks.
+
+    **Breaking.** `quality-rules-v2.ts` is renamed `game-text-rules.ts`. Package-root imports are unchanged; deep imports must follow the rename. `GameTextRuleDocument` gains a third member, `TextQualityRuleDocumentV3`, and `LocalizationLineCheckContext` replaces `segmentSeparator`, `optionalTags` and `optionalArguments` with `checks` and `lists`. `localizationTranslationVariants` takes the `inconsistent_translation` parameters as an optional third argument. The rule-file error recovery text now names version 3.
+
+    Migration: code that switches on `document.schemaVersion === 2` to read `localizationRules` should test `schemaVersion !== 1`, because v3 has them too. Code that reads `segmentSeparator`, `optionalTags`, `optionalArguments` or `disabledLocalizationChecks` from a document should read `resolveLocalizationChecks(document)[id]` instead, which covers every version. To upgrade a stored v1 or v2 file, write `migrateGameTextRuleDocument(document)`.
+
+- 815c185: Describe every built-in localization check in one catalogue. `localizationCheckCatalogue` gives each check its basis (`unreal` when the finding states what Unreal does with the text, `heuristic` when it is a judgment), label, default severity, parameter schema with defaults and a condition text generated from those parameters; `localizationCheckDefaults` lists the default parameters. The thresholds and word lists of `length_outlier`, `placeholder_translation`, `placeholder_text` and `inconsistent_translation` are now catalogue parameters instead of private constants, and the package README's check table is generated from the catalogue. `localizationRuleId(id)` and `parseLocalizationRuleId(ruleId)` convert between a check and its `localization.<id>` rule ID. Findings, their severities and IDs are unchanged, except that a placeholder phrase must now start at a word boundary (`xlorem ipsum` is no longer a match).
+
+    **Breaking.** `checkSeverity` and `workspaceQualityLabels` are removed. Migration: read `localizationCheckCatalogue[id].severity` instead of `checkSeverity[id]`, and `workspaceQualityLabel(filter)` (or `localizationCheckCatalogue[id].label`) instead of `workspaceQualityLabels[filter]`; the `character_budget` and `terminology` rule kinds are in `projectRuleKinds`. Replace hand-written check descriptions with `localizationCheckCatalogue[id].defaultCondition`, and string handling of `localization.<id>` rule IDs with `parseLocalizationRuleId`.
+
+- 13ed5b7: Publish changed package records through the native index without decoding unchanged shard
+  records in JavaScript. Reuse localization dictionary blocks, coordinate target preparation
+  under one writer session, persist incremental summary counters, and share scoped readers
+  of the same validated revision. Package replacement requires uasset-io protocol 1.16.
+- 70dec0a: Add an opt-in native Game Text index builder through the existing scoped uasset-io protocol
+  session. The builder writes the existing shared dictionary and column format, supports narrowly
+  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript
+  remains the default builder. Give decoded shared-string arenas their own buffers so cache
+  accounting tracks their actual capacity.
+- 2f9469b: Move Game Text indexing and query execution into the Rust engine. Queries, counts, facets,
+  groups, focus and exports use scoped native readers; mixed authored-source, String Table and
+  localization-file updates publish incremental snapshots while existing readers remain pinned.
+
+    Game Text query methods now return Effects. Full corpus and localization evidence are explicit
+    bulk reads, and interactive localization detail is paged in Rust. Remove the public in-memory
+    query factories, TypeScript index builder, synchronous indexed projections and search worker.
+    The native executable must support protocol 1.15 and game_text_engine_v1; unavailable or
+    incompatible native readers produce typed failures without a JavaScript query fallback.
+
+- 3d77427: Compare the text of two copies of one package. `diffPackageText(before, after)` takes two package text records (for example the depot's head revision and the local file) and reports added, removed, re-keyed and edited text place by place, matching places by their position inside the package rather than the package's saved name, and says when either copy was read only in part. Additive; no migration needed.
+- 7829db3: Apply each built-in check's rule-file scope. A v3 check's `scope` (`cultures`, `roles`, `pathPrefixes`) now limits where its findings are reported, in reports and in indexed scans alike. It is applied after the check finds something, so a line's saved places are read only for scoped findings. A finding without a saved place is outside any role or path scope. `localizationCheckInScope` exposes the same test. When one check's finding takes the place of another's, the first check now takes it only when it runs and is in scope for the line and culture, so an out-of-scope or disabled check never hides an in-scope one. The three cases are a placeholder translation instead of its `length_outlier`, missing tags instead of `rich_text_tags_added`, and a `format_argument_renamed` pair instead of a dropped and an added `format_arguments` name.
+
+    **Breaking (findings).** Unscoped files only change when a check is disabled. With `format_argument_renamed` disabled, `format_arguments` now reports the dropped and the added argument instead of nothing. With `rich_text_tags` disabled, `rich_text_tags_added` reports added tags even when tags are also missing. `LocalizationLineCheckContext` gains `roles`. Migration: a host that disabled `format_argument_renamed` or `rich_text_tags` to silence those findings should also disable `format_arguments` or `rich_text_tags_added`.
+
+- 49021d4: Store each localization finding's severity. Indexed quality scans now keep a severity column beside each finding's packed facts, and groups carry their severity. Workspace ordering (`severityAt`), `severityCounts` and summaries read the severity a finding was reported with, so a rule file's per-check `severity` shows in indexed workspace pages exactly as in reports. Before, pages re-derived severity from the check's default. Version-2 and version-3 `localizationRules` accept an optional `severity` (`normal` when absent), which their findings carry.
+
+    **Breaking.** `LocalizationFindingList` requires `severity(position)` and `LocalizationFindingGroup` requires `severity`. Migration: a host that implements its own finding list should return each finding's `severity` (`finding.severity` for localization and policy findings), and give each group the severity its findings share.
+
+- c0535da: Let a rule file define its own localization checks. Version-3 rule files take up to 512 `customChecks`, reported beside the built-in checks with the same evidence, review marks and workspace model:
+    - `pattern`: a regular expression the text matches, or does not match
+    - `length`: a minimum or maximum, in visible or code-point characters
+    - `forbidden_term`: terms matched as the terminology rules match them
+
+    Each check runs on the source or on each translation and has its own label, severity, recovery text and scope (cultures, roles, object path prefixes). Findings are the new `LocalizationCustomFinding` (`kind: "custom"`). Reports list the checks in `customChecks` and count them in `rules`.
+
+    The workspace filter list is no longer closed:
+    - `WorkspaceQualityFilter` accepts `custom.<id>` (`customQualityFilter`) beside `BuiltInQualityFilter`.
+    - Pages list the file's checks in `customFilters` and count them under `counts["custom.<id>"]`.
+    - `workspaceQualityLabel(filter, labels)` names them, and the Workbench quality view shows them as filters.
+
+    Indexed scans store each finding's rule in its own column and pack the filter into 19 bits, which lifts the 8,192-rule and 64-filter limits of the packed facts.
+
+    **Breaking.**
+    - `WorkspaceQualityFilter` is now a union, so it has no `.literals`; use `BuiltInQualityFilter.literals`.
+    - `LocalizationQualityReport.findings` and the workspace `Finding` union gain `LocalizationCustomFinding`.
+    - `WorkspaceQualityPage` requires `customFilters`.
+    - `LocalizationCheckScope` and `localizationCheckInScope` moved to `localization-check-scope.ts`, so deep imports must follow. Package-root exports are unchanged.
+    - Code that switches exhaustively on finding `kind` must handle `"custom"`.
+
+    Migration: replace `WorkspaceQualityFilter.literals` with `BuiltInQualityFilter.literals`, and add the page's `customFilters` where filters are listed. Handle `kind: "custom"` where findings are rendered: `label`, `actual.text` and `actual.matches` describe the finding.
+
+### Patch Changes
+
+- d61f66a: Read the text literals compiled into Blueprint functions. The reader now walks every saved `UFunction`'s script bytecode (UE 4.27 to 5.8) and reports each distinct `EX_TextConst` as a `ScriptBytecode[N]` place, with UE 5.8's renumbered literal types and translator notes, so Print Text and other graph literals that Unreal gathers are no longer silently missing; a script the walk cannot follow is a decode error. Function parameters of delegate and field-path types are now read too. Game Text classifies compiled literals as player text (`script_bytecode`).
+- 7770afc: Game Text scans read an external actor or object package only when its saved header says it holds gatherable text, as Unreal's gatherer does. Before, every external package and its world were read. On a large World Partition project this cuts a scan from 429,625 packages (16.4 GB) to 9,056 (4.7 GB). Projects without external packages select the same packages as before.
+- 8508a74: Index steps and the refresh layer take `qualityWorker: true`, which runs localization quality scans in a worker per opened model instead of on the host's thread. The returned `LocalizationQuality` behaves the same: facts and groups are local, and `items`, `find`, `lineOfUnit` and `sourceKeyOfUnit` read the worker's scan synchronously. Progress callbacks and interruption work as before. If the worker cannot start or fails, the scan runs on the host. The option is off by default; the Workbench turns it on. New exported type: `GameTextIndexStepsOptions`.
+- 29547d4: With `searchWorker: true`, `openTarget` no longer prepares the query on the host's thread. The search worker prepares it once, and the model's synchronous `query` methods borrow the worker's query: each call blocks until the worker answers. Before, the host prepared the same query a second time while blocking its event loop (about 1.15 s on a large project). If the worker has died, the next synchronous call prepares the query on the host instead, so an open model keeps working. Hosts without a search worker are unchanged. Join place-label lookups now read strings in batches of 1,024 instead of 8,192, so one batch no longer holds the host's event loop for long. No API changes.
+- 4ddae8e: Views of one opened index share its decoded columns and its synchronous reader. Before, the query, the corpus, the localization evidence and each quality scan each kept their own column cache and their own patch and chunk caches. Synchronous string lookups no longer rebuild the segment start list on every lookup, and a lookup in the same 64-string block as the one before reuses that block directly. Quality scans and line reads go through these lookups for every line. No API changes.
+- a99f233: The package text refresh, the full join and the localization quality scan report their stages as span attributes (`package-text.stage_ms.*`, `join.stage_ms.*`, `game_text.quality.stage_ms.*`). Each one is the wall time of one stage of that step in milliseconds, so a host's tracer can show where a build or a scan spends its time. No API changes.
+- e1d29ec: **Breaking:** layers compose through requirements, and test layers are complete fakes.
+    - `@ue-shed/authoring` (private, no release): `authoringSessionServiceLayer(config)` and `makeAuthoringSessionService(config)` no longer take an id-generator Layer. They require `AuthoringIdGenerator`.
+    - `@ue-shed/authoring-catalog` (private, no release): `authoringLiveConnectionLayer(connection)` is removed. Provide the connection as the `AuthoringLiveConnection` service.
+    - `@ue-shed/cameras`: `makeReviewRepositoryTestLayer` and `makeReviewAuthoringTestLayer` take the complete service. They no longer fill `listSets` or `inspectSubject` with a defect.
+    - `@ue-shed/game-text`: the internal project-view layer requires the `SharedIndex` it wraps instead of taking it as a Layer; `sharedIndexNodeLayer` is unchanged.
+    - Workbench (private, no release): a project test layer that supplies `recent` also supplies `openRecent`; `current` alone cannot implement opening another project.
+
+    Migration:
+    - Write `authoringSessionServiceLayer(config).pipe(Layer.provide(AuthoringIdGeneratorLive))` and `makeAuthoringSessionService(config).pipe(Effect.provide(AuthoringIdGeneratorLive))`. Tests provide `authoringIdGeneratorLayer(...)` the same way.
+    - Replace `Effect.provide(authoringLiveConnectionLayer(connection))` with `Effect.provideService(AuthoringLiveConnection, connection)`.
+    - Callers of the two cameras test layers supply `listSets` and `inspectSubject` themselves.
+    - Project test hosts with a recent list implement `openRecent` and keep `current` and selection reads consistent with the opened root.
+
+- dbdb40f: Reuse bounded native search aggregates within each immutable reader and select cursor pages from
+  ordered row IDs without copying every match. Keep namespace groups and filters consistent with
+  unresolved saved text whose localization key is empty.
+- 751afa2: Index native Game Text occurrence, source-value and String Table dependencies separately. Stable
+  text edits locate affected groups and duplicate-source dependencies through native reverse indexes;
+  reference and identity changes retain their structural rebuild path. Retained-base undo reuses the
+  immutable base without rebuilding it. Dependency transactions are tied to the published revision
+  and dictionary generation, and interrupted updates roll back or reconstruct the disposable graph.
+  Package byte-size changes retain their updated evidence without forcing a membership rebuild.
+- 75a12e4: Accelerate uncached native Game Text searches over unique folded sources and localization counts.
+  Prepare the persisted source arena before the query reader is ready, with explicit stage timing,
+  while preserving substring, Unicode, translation search and incremental snapshot behavior.
+- Updated dependencies [2bae469]
+- Updated dependencies [bb9d55e]
+- Updated dependencies [f403f84]
+- Updated dependencies [49cf8f0]
+- Updated dependencies [ba669e3]
+- Updated dependencies [a8adf03]
+- Updated dependencies [d585b1a]
+- Updated dependencies [d8e2f99]
+- Updated dependencies [9ce62ee]
+- Updated dependencies [0e2a894]
+- Updated dependencies [a33fffb]
+- Updated dependencies [13ed5b7]
+- Updated dependencies [9370ea6]
+- Updated dependencies [70dec0a]
+- Updated dependencies [2f9469b]
+- Updated dependencies [2747ae8]
+    - @ue-shed/protocol@0.17.0
+    - @ue-shed/unreal-assets@0.17.0
+    - @ue-shed/localization@0.17.0
+    - @ue-shed/unreal-connection@0.17.0
+
 ## 0.16.2
 
 ### Patch Changes

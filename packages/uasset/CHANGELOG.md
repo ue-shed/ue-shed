@@ -1,5 +1,54 @@
 # @ue-shed/uasset
 
+## 0.17.0
+
+### Minor Changes
+
+- 70dec0a: Add an opt-in native Game Text index builder through the existing scoped uasset-io protocol
+  session. The builder writes the existing shared dictionary and column format, supports narrowly
+  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript
+  remains the default builder. Give decoded shared-string arenas their own buffers so cache
+  accounting tracks their actual capacity.
+
+### Patch Changes
+
+- d61f66a: Read the text literals compiled into Blueprint functions. The reader now walks every saved `UFunction`'s script bytecode (UE 4.27 to 5.8) and reports each distinct `EX_TextConst` as a `ScriptBytecode[N]` place, with UE 5.8's renumbered literal types and translator notes, so Print Text and other graph literals that Unreal gathers are no longer silently missing; a script the walk cannot follow is a decode error. Function parameters of delegate and field-path types are now read too. Game Text classifies compiled literals as player text (`script_bytecode`).
+- a8c7c4d: Read graph pins whose default text is a String Table reference (FText history 11). The Blueprint graph reader decoded every other pin text but reported these as an unsupported history, so a Blueprint with such a pin was read only in part. It now reads them as tagged text properties are read: table ID and key, with no saved source. The Game Text identity fixture's new slice 2 (Plan 058 A4) found the gap. That slice adds String Tables, compiled literals of each saved kind, Blueprint inheritance, a level actor and a World Partition external actor, checked against Unreal 5.7's gather.
+- 9370ea6: Native error audit, part one (Rust).
+
+    **Decode errors now say where they happened.** A saved-package decode error (`SavedAssetDecodeError` in the uasset-io v1 contract, and `decode_errors` in generic inspection JSON) can carry `field`, the logical field being read (such as `Exports[3].Properties.Name`), and `offset`, the absolute byte offset. `AssetError` exposes both as `field()` and `offset()`.
+
+    **Corrected kind.** A metadata failure caused by an unsupported format or version used to be reported as `unsupported_capability`. It now keeps its own kind.
+
+    **No panics on malformed packages.** The Rust crates enable `clippy::unwrap_used` and `clippy::expect_used`:
+    - Every non-test `unwrap`/`expect` in the parser, inspection, source generator, IO and process supervisor crates is now either a typed error or an invariant stated once:
+        - checked integer conversions go through `uasset-parser`'s `convert` helpers
+        - poisoned locks recover their data
+        - a lost projection worker is a retryable `unavailable` failure
+        - a missing generated-layout field is `unsupported_capability`
+    - The few remaining invariants keep an `#[expect]` with a reason.
+    - A new regression test applies 328 deterministic truncations, bit flips and extreme-count overwrites to each fixture package under 400 KiB, then runs the parser, export decoders and projections. A malformed package must give a typed error, never a crash.
+
+    The `uasset-inspection-wasm` crate is outside the Cargo workspace and was not changed.
+
+    Protocol 1.14 negotiates the new decode-error context. New workers omit both fields on earlier
+    protocol minors, preserving strict older decoders. Public inspection and full-scan readers request
+    minor 14 and accept workers that omit the optional fields. Header scans retain their existing
+    minor negotiation. Generic inspection JSON also retains the optional context.
+
+- dbdb40f: Reuse bounded native search aggregates within each immutable reader and select cursor pages from
+  ordered row IDs without copying every match. Keep namespace groups and filters consistent with
+  unresolved saved text whose localization key is empty.
+- 751afa2: Index native Game Text occurrence, source-value and String Table dependencies separately. Stable
+  text edits locate affected groups and duplicate-source dependencies through native reverse indexes;
+  reference and identity changes retain their structural rebuild path. Retained-base undo reuses the
+  immutable base without rebuilding it. Dependency transactions are tied to the published revision
+  and dictionary generation, and interrupted updates roll back or reconstruct the disposable graph.
+  Package byte-size changes retain their updated evidence without forcing a membership rebuild.
+- 75a12e4: Accelerate uncached native Game Text searches over unique folded sources and localization counts.
+  Prepare the persisted source arena before the query reader is ready, with explicit stage timing,
+  while preserving substring, Unicode, translation search and incremental snapshot behavior.
+
 ## 0.16.2
 
 ## 0.16.1

@@ -1,7 +1,0 @@
----
-"@ue-shed/game-text": minor
----
-
-Apply each built-in check's rule-file scope. A v3 check's `scope` (`cultures`, `roles`, `pathPrefixes`) now limits where its findings are reported, in reports and in indexed scans alike. It is applied after the check finds something, so a line's saved places are read only for scoped findings. A finding without a saved place is outside any role or path scope. `localizationCheckInScope` exposes the same test. When one check's finding takes the place of another's, the first check now takes it only when it runs and is in scope for the line and culture, so an out-of-scope or disabled check never hides an in-scope one. The three cases are a placeholder translation instead of its `length_outlier`, missing tags instead of `rich_text_tags_added`, and a `format_argument_renamed` pair instead of a dropped and an added `format_arguments` name.
-
-**Breaking (findings).** Unscoped files only change when a check is disabled. With `format_argument_renamed` disabled, `format_arguments` now reports the dropped and the added argument instead of nothing. With `rich_text_tags` disabled, `rich_text_tags_added` reports added tags even when tags are also missing. `LocalizationLineCheckContext` gains `roles`. Migration: a host that disabled `format_argument_renamed` or `rich_text_tags` to silence those findings should also disable `format_arguments` or `rich_text_tags_added`.

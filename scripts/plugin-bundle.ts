@@ -124,11 +124,14 @@ export const AUTHORING_AUTOMATION_PLUGIN_IDS = Object.freeze([
 	"UEShedAuthoring",
 	"UEShedAutomation"
 ]);
-/** Camera authoring and editor DataTable authoring for a host that offers both. */
+/** Camera authoring, editor DataTable authoring and text key fixes for a host that offers them. */
 export const EDITOR_HOST_PLUGIN_IDS = Object.freeze([
 	...CAMERA_AUTHORING_PLUGIN_IDS,
-	"UEShedAuthoring"
+	"UEShedAuthoring",
+	"UEShedGameText"
 ]);
+/** Plugins shipped only in the full bundle; every other plugin must belong to a preset. */
+export const FULL_BUNDLE_ONLY_PLUGIN_IDS = Object.freeze(["UEShedAssetAudits", "UEShedScenarios"]);
 
 function bundleContracts(pluginIds: ReadonlySet<string>) {
 	const contracts: Array<{ name: string; version: { major: number; minor: number } }> = [];

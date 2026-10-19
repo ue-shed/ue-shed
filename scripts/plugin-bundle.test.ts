@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -10,6 +10,7 @@ import {
 	AUTHORING_AUTOMATION_PLUGIN_IDS,
 	CAMERA_AUTHORING_PLUGIN_IDS,
 	EDITOR_HOST_PLUGIN_IDS,
+	FULL_BUNDLE_ONLY_PLUGIN_IDS,
 	MAP_REVIEW_PLUGIN_IDS,
 	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS,
@@ -292,7 +293,7 @@ test("camera authoring preset includes the complete native dependency graph", as
 	}
 });
 
-test("editor host preset adds DataTable authoring to the camera authoring graph", async () => {
+test("editor host preset adds DataTable authoring and text key fixes to camera authoring", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-editor-host-plugins-"));
 	try {
 		const result = await buildPluginBundle({
@@ -309,6 +310,24 @@ test("editor host preset adds DataTable authoring to the camera authoring graph"
 	} finally {
 		await rm(output, { recursive: true, force: true });
 	}
+});
+
+test("every plugin belongs to a preset or is explicitly full-bundle-only", async () => {
+	const presets = new Set([
+		...MAP_REVIEW_PLUGIN_IDS,
+		...CAMERA_AUTHORING_PLUGIN_IDS,
+		...AUTHORING_AUTOMATION_PLUGIN_IDS,
+		...EDITOR_HOST_PLUGIN_IDS,
+		...NIAGARA_PLUGIN_IDS,
+		...OBSERVATORY_PLUGIN_IDS
+	]);
+	const plugins = await readdir(join(import.meta.dirname, "..", "unreal", "Plugins"));
+	// A new plugin otherwise ships only in the full bundle without anyone deciding so.
+	assert.deepEqual(
+		plugins.filter((id) => !presets.has(id)).toSorted(),
+		[...FULL_BUNDLE_ONLY_PLUGIN_IDS].toSorted()
+	);
+	for (const id of FULL_BUNDLE_ONLY_PLUGIN_IDS) assert.ok(!presets.has(id));
 });
 
 test("authoring automation source closure attests its contracts and passes release validation", async () => {

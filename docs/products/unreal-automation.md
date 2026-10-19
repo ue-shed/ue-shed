@@ -41,8 +41,9 @@ a localized namespace and key; omitting the key asks the producer to mint one in
 Producer refusals such as `invalid_request` or `operation_not_found` arrive as an
 `UnrealConnectionError` with a `code`.
 
-The `editor-host` source bundle adds `UEShedAuthoring` to the camera-authoring plugin graph for hosts
-that offer both camera and DataTable authoring in one editor.
+The `editor-host` source bundle adds `UEShedAuthoring` and `UEShedGameText` to the camera-authoring
+plugin graph for hosts that offer camera authoring, DataTable authoring and text key fixes in one
+editor.
 
 `findUnrealActorsReferencingRow({ endpoint, request })` negotiates actor-reference support
 independently of Apply. The request selects a world, table object path, row name, and explicit

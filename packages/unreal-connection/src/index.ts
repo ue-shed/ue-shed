@@ -16,6 +16,7 @@ import {
 	decodeAuthoringTableSnapshot,
 	decodeCompanionCapabilityManifest,
 	decodeEditorAssetLocateResult,
+	decodeEditorAssetOpenResult,
 	type AuthoringApplyRequest,
 	type AuthoringApplyResult,
 	type AuthoringSaveRequest,
@@ -25,7 +26,8 @@ import {
 	type AutomationInputResult,
 	type AutomationPlayersResult,
 	type CompanionCapabilityManifest,
-	type EditorAssetLocateResult
+	type EditorAssetLocateResult,
+	type EditorAssetOpenResult
 } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import {
@@ -52,6 +54,7 @@ export {
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const assetNavigationCapability = "editor.asset-navigation.v1";
+const assetOpenCapability = "editor.asset-open.v1";
 const requiredCapabilities = [
 	"authoring.snapshot.v2",
 	"authoring.table-list.v1",
@@ -543,6 +546,66 @@ export function locateUnrealAsset(options: {
 		);
 	}).pipe(
 		Effect.withSpan("unreal.asset_navigation.locate", {
+			attributes: { "unreal.endpoint": endpoint }
+		})
+	);
+}
+
+/**
+ * Asks a connected editor advertising `editor.asset-open.v1` to load a top-level asset and open
+ * its asset editor. Requires RemoteControlClient; missing or refused assets return `unavailable`,
+ * while connection, capability and result-contract failures remain typed errors. `bringToFront`
+ * requests focus of the asset editor, without guaranteeing OS foreground activation; newly opened
+ * editors follow Unreal's normal focus behavior even when false. Does not launch an editor or
+ * choose the host's project. Does not call LocateAsset or select assets in the Content Browser.
+ */
+export function openUnrealAsset(options: {
+	readonly bringToFront: boolean;
+	readonly endpoint: string;
+	readonly objectPath: string;
+}): Effect.Effect<
+	EditorAssetOpenResult,
+	UnrealConnectionError | UnrealCapabilityError,
+	RemoteControlClient
+> {
+	const endpoint = normalizedEndpoint(options.endpoint);
+	return Effect.gen(function* () {
+		const client = yield* RemoteControlClient;
+		const manifest = yield* decodeResult(
+			remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}, true),
+			endpoint,
+			"capability manifest",
+			decodeCompanionCapabilityManifest
+		);
+		if (!manifest.capabilities.includes(assetOpenCapability)) {
+			return yield* Effect.fail(
+				new UnrealCapabilityError({
+					capability: assetOpenCapability,
+					message: `Connected editor does not advertise ${assetOpenCapability}`,
+					...missingCapabilityGuidance(assetOpenCapability)
+				})
+			);
+		}
+		if (!manifest.assetNavigationObjectPath) {
+			return yield* Effect.fail(
+				new UnrealCapabilityError({
+					capability: "editor.asset-open.endpoint.v1",
+					message: "Connected editor advertises asset opening without an object path",
+					...invalidManifestGuidance
+				})
+			);
+		}
+		return yield* decodeResult(
+			remoteCall(client, endpoint, manifest.assetNavigationObjectPath, "OpenAsset", {
+				BringToFront: options.bringToFront,
+				ObjectPath: options.objectPath
+			}),
+			endpoint,
+			"asset opening",
+			decodeEditorAssetOpenResult
+		);
+	}).pipe(
+		Effect.withSpan("unreal.asset_navigation.open", {
 			attributes: { "unreal.endpoint": endpoint }
 		})
 	);

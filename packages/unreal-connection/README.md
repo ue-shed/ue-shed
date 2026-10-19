@@ -38,6 +38,42 @@ never marked safe for automatic replay.
 See [ADOPTING.md](ADOPTING.md) for native installation, contract translation, and the real host
 verification journey.
 
+## Open or locate an editor asset
+
+`locateUnrealAsset({ endpoint, objectPath, bringToFront })` reveals/selects an asset in the Content
+Browser using `editor.asset-navigation.v1`; it does not open an asset editor.
+`openUnrealAsset({ endpoint, objectPath, bringToFront })` separately negotiates
+`editor.asset-open.v1` before calling `OpenAsset` on the manifest's `assetNavigationObjectPath`.
+It requires only the Core plugin's editor module, without Authoring or Workbench.
+
+```ts
+import { Effect } from "effect";
+import { openUnrealAsset, RemoteControlClientLive } from "@ue-shed/unreal-connection";
+
+const request = openUnrealAsset({
+	endpoint: "http://127.0.0.1:30010",
+	objectPath: "/Game/Folder/Asset.Asset",
+	bringToFront: true
+}).pipe(Effect.provide(RemoteControlClientLive));
+```
+
+The result is `EditorAssetOpenResult` from `@ue-shed/protocol`: `status: "ok"` when Unreal accepts
+the request, or `status: "unavailable"` with `reason`, `message`, `recovery`, and `retrySafe`.
+Missing assets and editor refusals are unavailable values; transport, malformed replies and missing
+capabilities remain `UnrealConnectionError | UnrealCapabilityError`. A plugin supporting locate
+alone cannot open assets. Project, engine and plugin content roots are supported; use a top-level
+object path, not a package-only path or subobject.
+
+`bringToFront` requests focus of an existing asset editor; a newly opened editor follows Unreal's
+normal focus behavior even when false. Success does not confirm OS foreground activation. Hosts
+choose when to open and how to present results. The open call is never automatically retried.
+Unreal asset types retain their normal behavior, including map opening. See the
+[wire contract](../protocol/contracts/editor-asset-open/v1/README.md) for exact semantics.
+
+UE 5.8 Remote Control permissions must allow
+`/Script/UEShedCoreEditor.UEShedEditorAssetNavigationLibrary`. The engine package's
+`unrealRemoteControlPermissions(["UEShedCore"])` already includes that exact class for both methods.
+
 ## License
 
 MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or

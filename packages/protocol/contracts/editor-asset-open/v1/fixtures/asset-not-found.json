@@ -1,0 +1,9 @@
+{
+	"contract": { "name": "unreal-editor-asset-open", "version": { "major": 1, "minor": 0 } },
+	"objectPath": "/Game/Fixture/Missing.Missing",
+	"status": "unavailable",
+	"reason": "asset_not_found",
+	"message": "The Asset Registry could not find this asset.",
+	"recovery": "Confirm the connected project and asset object path, then refresh discovery.",
+	"retrySafe": true
+}

@@ -1,0 +1,167 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-editor-asset-open"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"objectPath": {
+					"type": "string"
+				},
+				"status": {
+					"type": "string",
+					"enum": ["ok"]
+				},
+				"windowActivation": {
+					"type": "object",
+					"properties": {
+						"schemaVersion": {
+							"type": "number",
+							"enum": [1]
+						},
+						"processId": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"exclusiveMaximum": 4294967295
+								}
+							]
+						},
+						"status": {
+							"type": "string",
+							"enum": [
+								"activated",
+								"blocked",
+								"unavailable",
+								"unsupported",
+								"target_changed"
+							]
+						},
+						"target": {
+							"type": "string",
+							"enum": ["main_editor", "modal", "none"]
+						},
+						"restored": {
+							"type": "boolean"
+						},
+						"message": {
+							"type": "string"
+						},
+						"recovery": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"schemaVersion",
+						"processId",
+						"status",
+						"target",
+						"restored",
+						"message",
+						"recovery"
+					],
+					"additionalProperties": false
+				}
+			},
+			"required": ["contract", "objectPath", "status"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-editor-asset-open"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"objectPath": {
+					"type": "string"
+				},
+				"status": {
+					"type": "string",
+					"enum": ["unavailable"]
+				},
+				"reason": {
+					"type": "string",
+					"enum": [
+						"invalid_object_path",
+						"editor_unavailable",
+						"asset_not_found",
+						"asset_load_failed",
+						"not_an_asset",
+						"editor_refused"
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"retrySafe": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"contract",
+				"objectPath",
+				"status",
+				"reason",
+				"message",
+				"recovery",
+				"retrySafe"
+			],
+			"additionalProperties": false
+		}
+	]
+}

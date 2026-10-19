@@ -65,6 +65,8 @@ const tests = [
 	"UEShed.Cameras.Streaming.CadenceUpdates",
 	"UEShed.Niagara.IndependentCamera",
 	"UEShed.Core.EditorWorld.AsyncOpen",
+	"UEShed.Core.EditorAssets.OpenUnavailable",
+	"UEShed.Core.EditorAssets.Open",
 	"UEShed.Core.ForegroundResponsiveness.Leases",
 	"UEShed.Core.ForegroundResponsiveness.Contract",
 	"UEShed.Core.ForegroundResponsiveness.NativeProcess",

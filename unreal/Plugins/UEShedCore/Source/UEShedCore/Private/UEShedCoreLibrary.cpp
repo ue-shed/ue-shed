@@ -137,6 +137,10 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 			TEXT("worldControlObjectPath"),
 			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWorldControlLibrary"));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
+		const UClass* AssetNavigationLibrary = FindObject<UClass>(
+			nullptr, TEXT("/Script/UEShedCoreEditor.UEShedEditorAssetNavigationLibrary"));
+		if (AssetNavigationLibrary && AssetNavigationLibrary->FindFunctionByName(TEXT("OpenAsset")))
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-open.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.async.v1")));

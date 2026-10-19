@@ -16,6 +16,7 @@ import {
 	AuthoringActorReferencesResult
 } from "../src/authoring-actor-references.js";
 import { makeAuthoringJsonSchema } from "../src/authoring.js";
+import { EditorAssetOpenResult } from "../src/editor-asset-open.js";
 import {
 	GameTextActionsRequest,
 	GameTextActionsResult,
@@ -24,6 +25,7 @@ import {
 } from "../src/game-text-actions.js";
 
 const contracts = [
+	["editor-asset-open", "result", EditorAssetOpenResult],
 	["automation", "players-request", AutomationPlayersRequest],
 	["automation", "players-result", AutomationPlayersResult],
 	["automation", "input-request", AutomationInputRequest],

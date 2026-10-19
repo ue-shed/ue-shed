@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	connectUnrealAuthoring,
 	locateUnrealAsset,
+	openUnrealAsset,
 	makeRemoteControlClient,
 	RemoteControlClientLive,
 	UnrealCapabilityError,
@@ -101,6 +102,77 @@ describe("Remote Control asset navigation adapter", () => {
 			expect(error.capability).toBe("editor.asset-navigation.v1");
 		}
 	});
+});
+
+describe("Remote Control asset-open HTTP adapter", () => {
+	for (const status of ["ok", "unavailable"]) {
+		it(`negotiates independently of locate and decodes an ${status} reply`, async () => {
+			const calls: Array<{
+				readonly functionName: string;
+				readonly objectPath: string;
+				readonly parameters: Schema.JsonObject;
+			}> = [];
+			const assetPath = "/Game/Fixture/ST_Text.ST_Text";
+			const navigationPath =
+				"/Script/UEShedCoreEditor.Default__UEShedEditorAssetNavigationLibrary";
+			const endpoint = await listen((request, response) => {
+				let body = "";
+				request.setEncoding("utf8");
+				request.on("data", (chunk: string) => (body += chunk));
+				request.on("end", () => {
+					// SAFETY: the client serializes this private request shape before it is read.
+					const call = JSON.parse(body) as (typeof calls)[number];
+					calls.push(call);
+					response.setHeader("content-type", "application/json");
+					const result = {
+						contract: {
+							name: "unreal-editor-asset-open",
+							version: { major: 1, minor: 0 }
+						},
+						objectPath: assetPath,
+						status
+					};
+					response.end(
+						resultJson(
+							call.functionName === "GetCapabilityManifest"
+								? {
+										assetNavigationObjectPath: navigationPath,
+										capabilities: ["editor.asset-open.v1"],
+										producerKind: "unreal_editor",
+										schemaVersion: 1
+									}
+								: status === "ok"
+									? result
+									: {
+											...result,
+											reason: "asset_not_found",
+											message: "The asset is missing.",
+											recovery: "Check the connected project.",
+											retrySafe: true
+										}
+						)
+					);
+				});
+			});
+			expect(
+				(
+					await runRemoteControl(
+						openUnrealAsset({ endpoint, objectPath: assetPath, bringToFront: false })
+					)
+				).status
+			).toBe(status);
+			expect(calls.map((call) => call.functionName)).toEqual([
+				"GetCapabilityManifest",
+				"OpenAsset"
+			]);
+			expect(calls[1]).toEqual({
+				functionName: "OpenAsset",
+				generateTransaction: false,
+				objectPath: navigationPath,
+				parameters: { BringToFront: false, ObjectPath: assetPath }
+			});
+		});
+	}
 });
 
 async function listen(

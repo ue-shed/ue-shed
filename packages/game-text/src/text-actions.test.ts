@@ -280,6 +280,45 @@ describe("Game Text actions API", () => {
 			{ actionId: "notes", expected: applied.actions[0]?.after }
 		]);
 	});
+
+	it("keeps an authored String Table namespace verbatim when expecting and verifying", () => {
+		const TABLE = "/Game/Text/ST_Menu.ST_Menu";
+		const entry: SavedAssetTextOccurrence = {
+			source: "Start",
+			dev_notes: "",
+			identity: { status: "resolved", namespace: "Menu [Public]", key: "START" },
+			location: { kind: "string_table_entry", object_path: TABLE, entry_key: "START" },
+			edit_capability: "source_editable"
+		};
+		const edit = { kind: "change_source", source: "Begin" } as const;
+		const action = gameTextActionForOccurrence("start", entry, edit, FILE);
+		expect(action?.expected.namespace).toBe("Menu [Public]");
+		if (!action) return;
+		const after = { namespace: "Menu [Public]", key: "START", source: "Begin" };
+		const result: GameTextActionsResult = {
+			...applied,
+			actions: [
+				{
+					id: "start",
+					place: action.place,
+					status: "applied",
+					before: action.expected,
+					after
+				}
+			]
+		};
+		const saved = {
+			...emptyPackageTextRecord(FILE),
+			occurrences: [{ ...entry, source: "Begin" }]
+		};
+		expect(
+			verifyGameTextActions(
+				gameTextActionsRequest({ mode: "apply", save: true, actions: [action] }),
+				result,
+				[saved]
+			)
+		).toMatchObject({ verified: 1, mismatches: [] });
+	});
 });
 
 describe("Game Text mutation recovery", () => {

@@ -6,7 +6,7 @@ import type {
 	GameTextActionOutcomeIdentity
 } from "@ue-shed/protocol";
 import type { SavedAssetPackageTextRecord, SavedAssetTextOccurrence } from "@ue-shed/unreal-assets";
-import { stripPackageNamespace } from "@ue-shed/localization/browser";
+import { gatheredNamespace } from "./gathered-text.js";
 
 /** Compatibility names for the shared localization editing API. */
 export {
@@ -60,7 +60,10 @@ export function gameTextActionForOccurrence(
 						: {})
 		},
 		expected: {
-			namespace: stripPackageNamespace(occurrence.identity.namespace),
+			namespace: gatheredNamespace(
+				occurrence.identity.namespace,
+				location.kind === "string_table_entry"
+			),
 			key: occurrence.identity.key,
 			source: occurrence.source
 		},
@@ -170,7 +173,10 @@ export function verifyGameTextActions(
 		const found =
 			occurrence?.identity.status === "resolved"
 				? {
-						namespace: stripPackageNamespace(occurrence.identity.namespace),
+						namespace: gatheredNamespace(
+							occurrence.identity.namespace,
+							occurrence.location.kind === "string_table_entry"
+						),
 						key: occurrence.identity.key,
 						source: occurrence.source
 					}

@@ -17,6 +17,11 @@ export function gatheredTextOccurrenceIdentity(
 	);
 }
 
+/** The gathered namespace of a saved namespace; String Table entries keep theirs verbatim. */
+export function gatheredNamespace(namespace: string, stringTableEntry: boolean): string {
+	return stringTableEntry ? namespace : stripPackageNamespace(namespace);
+}
+
 /** The gathered identity of a resolved saved identity; String Table entries keep their namespace. */
 export function gatheredIdentity(
 	namespace: string,
@@ -24,7 +29,7 @@ export function gatheredIdentity(
 	stringTableEntry: boolean
 ): typeof LocalizationIdentity.Type {
 	return decodeLocalizationIdentity({
-		namespace: stringTableEntry ? namespace : stripPackageNamespace(namespace),
+		namespace: gatheredNamespace(namespace, stringTableEntry),
 		key
 	});
 }

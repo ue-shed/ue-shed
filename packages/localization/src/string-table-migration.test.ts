@@ -66,7 +66,8 @@ describe("String Table migration planning", () => {
 	});
 	it.each([
 		`(StringTable="${migration.tableId}",OldKey="Welcome",NewKey="Elsewhere")`,
-		`(StringTable=${migration.tableId},OldKey=Welcome,NewKey=Elsewhere)`
+		`(StringTable=${migration.tableId},OldKey=Welcome,NewKey=Elsewhere)`,
+		`(StringTable="${migration.tableId}",OldKey="${migration.newKey}",NewKey="Welcome")`
 	])("rejects an existing different destination %s", (value) => {
 		const result = planStringTableKeyMigration(migration);
 		if (result.status !== "ready") throw new Error("Expected a plan");

@@ -68,6 +68,7 @@ function setup() {
 	let savesFail = false;
 	let focusValue = focus;
 	let readerFails = false;
+	let readerRetrySafe = false;
 	let lostReply = false;
 	const native = makeRemoteControlClientTestLayer((call) =>
 		Effect.gen(function* () {
@@ -161,8 +162,8 @@ function setup() {
 							operation: "extract_text_packages",
 							message: "Reader failed",
 							recovery: "Inspect the saved receipt",
-							retrySafe: false,
-							nextStep: "reconcile"
+							retrySafe: readerRetrySafe,
+							nextStep: readerRetrySafe ? "retry" : "reconcile"
 						})
 					)
 				: Stream.make({
@@ -230,8 +231,9 @@ function setup() {
 		saveFails: () => {
 			savesFail = true;
 		},
-		failReader: () => {
+		failReader: (retrySafe = false) => {
 			readerFails = true;
+			readerRetrySafe = retrySafe;
 		},
 		loseReply: () => {
 			lostReply = true;
@@ -284,15 +286,17 @@ it.effect(
 	"retains mutation outcomes when verification fails, and does not replay a lost reply",
 	() =>
 		Effect.gen(function* () {
-			for (const kind of ["reader", "reply"] as const) {
+			// A retry-safe re-read after the save still leaves the claimed repair to reconcile.
+			for (const kind of ["reader", "retry-safe reader", "reply"] as const) {
 				const test = setup();
 				const service = yield* test.make;
 				const preview = yield* service.prepare(request);
 				if (preview.status !== "prepared") throw new Error(JSON.stringify(preview));
-				if (kind === "reader") test.failReader();
-				else test.loseReply();
+				if (kind === "reply") test.loseReply();
+				else test.failReader(kind === "retry-safe reader");
 				expect(yield* service.apply(preview.plan.id)).toMatchObject({
 					status: "unavailable",
+					retrySafe: false,
 					nextStep: "reconcile"
 				});
 				const receiptBytes = test.files.get(`${root}/${preview.plan.artifact}`);
@@ -300,9 +304,9 @@ it.effect(
 				if (!receiptBytes) return;
 				const receipt = new TextDecoder().decode(receiptBytes);
 				expect(receipt).toContain(
-					kind === "reader" ? '"state":"finished"' : '"state":"started"'
+					kind === "reply" ? '"state":"started"' : '"state":"finished"'
 				);
-				if (kind === "reader") expect(receipt).toContain('"status":"applied"');
+				if (kind !== "reply") expect(receipt).toContain('"status":"applied"');
 				const restarted = yield* test.make;
 				expect((yield* restarted.apply(preview.plan.id)).status).toBe("unavailable");
 				expect(test.mutations()).toBe(1);

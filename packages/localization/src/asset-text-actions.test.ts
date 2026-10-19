@@ -81,3 +81,78 @@ it.effect("refuses extended actions on older plugins before sending a mutation",
 		expect(calls).toEqual(["GetCapabilityManifest"]);
 	})
 );
+
+it.effect(
+	"the narrow key-repairs capability admits cells and pins but refuses table migrations and source edits",
+	() =>
+		Effect.gen(function* () {
+			for (const kind of ["data_table_cell", "graph_pin", "string_table_entry"] as const) {
+				for (const edit of [
+					{ kind: "regenerate_key" } as const,
+					{ kind: "change_source", source: "New" } as const
+				]) {
+					let mutations = 0;
+					const selector =
+						kind === "data_table_cell"
+							? { kind, row: "Row" }
+							: kind === "graph_pin"
+								? { kind, index: 0 }
+								: { kind, entryKey: "Old" };
+					const request = localizationTextActionsRequest({
+						mode: "apply",
+						actions: [
+							{
+								id: "repair",
+								place: {
+									packageFile: "Content/Text.uasset",
+									objectPath: "/Game/Text.Text",
+									propertyPath: "Text",
+									selector
+								},
+								expected: { namespace: "Words", key: "Old", source: "Source" },
+								edit
+							}
+						]
+					});
+					const result = yield* Effect.result(
+						runLocalizationTextActions({ endpoint: "http://fixture", request }).pipe(
+							Effect.provide(
+								makeRemoteControlClientTestLayer((call) =>
+									Effect.sync(() => {
+										if (call.functionName === "GetCapabilityManifest")
+											return Schema.decodeUnknownSync(Schema.Json)({
+												schemaVersion: 1,
+												producerKind: "unreal_editor",
+												capabilities: [
+													"game-text.actions.v1",
+													"game-text.actions.key-repairs.v1"
+												],
+												gameTextObjectPath:
+													"/Script/UEShedGameText.Default__UEShedGameTextLibrary"
+											});
+										mutations++;
+										return Schema.decodeUnknownSync(Schema.Json)({
+											...request,
+											status: "ok",
+											rolledBack: false,
+											actions: [],
+											packages: [],
+											blueprints: [],
+											errors: []
+										});
+									})
+								)
+							)
+						)
+					);
+					const allowed = kind !== "string_table_entry" && edit.kind === "regenerate_key";
+					expect(mutations).toBe(allowed ? 1 : 0);
+					if (!allowed)
+						expect(result).toMatchObject({
+							_tag: "Failure",
+							failure: { code: "capability_missing" }
+						});
+				}
+			}
+		})
+);

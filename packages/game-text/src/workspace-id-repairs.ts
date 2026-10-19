@@ -232,9 +232,12 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 					item.occurrence.location.kind === "data_table_cell" &&
 					/^[A-Za-z_][\w ]*$/u.test(item.occurrence.location.propertyPath)
 			);
-		const table = plainTables
-			? yield* prepareTextIdTableRepair(endpoint, request, id)
-			: undefined;
+		const table =
+			plainTables &&
+			producer.capabilities.includes("authoring.snapshot.v2") &&
+			producer.authoringObjectPath
+				? yield* prepareTextIdTableRepair(endpoint, request, id)
+				: undefined;
 		const preview =
 			table?.preview ??
 			(yield* runGameTextActions({

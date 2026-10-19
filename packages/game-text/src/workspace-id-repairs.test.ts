@@ -59,24 +59,46 @@ const request = TextIdRepairRequest.make({
 	]
 });
 
-function setup() {
+function setup(dataTable = false) {
+	const extracted = dataTable
+		? {
+				...original,
+				location: {
+					kind: "data_table_cell" as const,
+					object_path: "/Game/Notes.Notes",
+					row: "Row",
+					property_path: "Text"
+				},
+				edit_capability: "source_editable" as const
+			}
+		: original;
+	const reviewed = textOccurrenceFromExtraction({
+		packageFile: "Content/Notes.uasset",
+		occurrence: extracted
+	});
+	const tableRequest = TextIdRepairRequest.make({
+		...request,
+		changes: [{ ...request.changes[0]!, occurrence: reviewed }]
+	});
+	const calls: string[] = [];
 	const files = new Map<string, Uint8Array>();
 	let currentRoot = root;
 	let editorRoot = root;
 	let session = "session-1";
 	let mutations = 0;
 	let savesFail = false;
-	let focusValue = focus;
+	let focusValue = { ...focus, occurrences: [reviewed] };
 	let readerFails = false;
 	let readerRetrySafe = false;
 	let lostReply = false;
 	const native = makeRemoteControlClientTestLayer((call) =>
 		Effect.gen(function* () {
+			calls.push(call.functionName);
 			if (call.functionName === "GetCapabilityManifest")
 				return Schema.decodeUnknownSync(Schema.Json)({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
-					capabilities: ["game-text.actions.v1"],
+					capabilities: ["game-text.actions.v1", "game-text.actions.key-repairs.v1"],
 					gameTextObjectPath: "/Script/UEShedGameText.Default__UEShedGameTextLibrary",
 					identity: {
 						engineVersion: "5.8",
@@ -170,7 +192,7 @@ function setup() {
 						...emptyPackageTextRecord(`${root}/Content/Notes.uasset`),
 						occurrences: [
 							{
-								...original,
+								...extracted,
 								identity: { status: "resolved", namespace: "Notes", key: "NewLamp" }
 							}
 						]
@@ -214,6 +236,8 @@ function setup() {
 	}).pipe(Effect.provide(native), Effect.provide(reader));
 	return {
 		make,
+		calls,
+		tableRequest,
 		files,
 		mutations: () => mutations,
 		project: (value: string) => {
@@ -378,5 +402,50 @@ it.effect("rejects duplicate or forged occurrences before any editor mutation", 
 			})).status
 		).toBe("unavailable");
 		expect(test.mutations()).toBe(0);
+	})
+);
+
+it.effect("repairs simple DataTable cells through Game Text when Authoring is absent", () =>
+	Effect.gen(function* () {
+		const test = setup(true);
+		const service = yield* test.make;
+		const preview = yield* service.prepare(test.tableRequest);
+		expect(preview.status).toBe("prepared");
+		if (preview.status !== "prepared") throw new Error(JSON.stringify(preview));
+		expect(preview.plan.authoring).toBeUndefined();
+		expect(preview.plan.preview.actions[0]?.place.selector).toEqual({
+			kind: "data_table_cell",
+			row: "Row"
+		});
+		expect(yield* service.apply(preview.plan.id)).toMatchObject({
+			status: "finished",
+			verified: true
+		});
+		expect(test.mutations()).toBe(1);
+		expect(
+			test.calls.every((name) => ["GetCapabilityManifest", "ApplyTextActions"].includes(name))
+		).toBe(true);
+		expect(
+			new TextDecoder().decode(test.files.get(`${root}/${preview.plan.artifact}`))
+		).toContain('"state":"finished"');
+	})
+);
+
+it.effect("DataTable fallback retains stale-place and saved-verification refusals", () =>
+	Effect.gen(function* () {
+		for (const kind of ["stale", "save", "reader"] as const) {
+			const test = setup(true);
+			const service = yield* test.make;
+			const preview = yield* service.prepare(test.tableRequest);
+			if (preview.status !== "prepared") throw new Error(JSON.stringify(preview));
+			if (kind === "stale") test.stale();
+			else if (kind === "save") test.saveFails();
+			else test.failReader();
+			const result = yield* service.apply(preview.plan.id);
+			if (kind === "save")
+				expect(result).toMatchObject({ status: "finished", verified: false });
+			else expect(result.status).toBe("unavailable");
+			expect(test.mutations()).toBe(kind === "stale" ? 0 : 1);
+		}
 	})
 );

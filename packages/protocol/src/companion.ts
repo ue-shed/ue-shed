@@ -65,6 +65,8 @@ export const CompanionCapabilityManifest = Schema.Struct({
 	),
 	producerKind: Schema.Literals(["unreal_editor", "unreal_runtime"]),
 	projectName: Schema.optional(Schema.String),
+	/** Absolute project directory reported by Core runtime, independent of editor-world tools. */
+	projectRoot: Schema.optionalKey(Schema.NonEmptyString),
 	schemaVersion: Schema.Literal(1)
 }).annotate({ identifier: "CompanionCapabilityManifest" });
 export type CompanionCapabilityManifest = Schema.Schema.Type<typeof CompanionCapabilityManifest>;

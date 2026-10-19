@@ -52,6 +52,9 @@ this package. `localizationTextActionsRequest` builds dry-run or apply requests;
 a mutation. The Game Text package retains its existing action names as compatibility exports.
 The base capability is `game-text.actions.v1`. Extended operations require the separately
 advertised `game-text.actions.authoring.v1`, while retaining the 1.0 wire envelope.
+`game-text.actions.key-repairs.v1` is a narrower alternative for `change_key`, `regenerate_key`
+and `adopt_key` on resolved properties, DataTable cells and graph pins. It does not authorize
+String Table operations, conversions, or cell/pin source edits.
 
 Extended places include nested DataTable row cells, writable unconnected Blueprint text input pins
 (stable pin GUID or index), and String Table entries. They can share a batch with ordinary asset
@@ -64,8 +67,11 @@ requires explicit approval of every entry, because it affects the entire table.
 
 `makeStringTableKeyMigrations(host)` prepares and executes a durable migration recipe. The host
 supplies selected-project authority, durable exclusive storage, config compare/replace, and a
-saved-package reader verifier. Provide `EditorWorldControl` and `RemoteControlClient` layers; the
-workflow pins the project, endpoint and editor session. It does not require Workbench.
+saved-package reader verifier. Provide the `RemoteControlClient` layer. Project identity comes
+from the connected Core runtime manifest's `projectRoot`, or an explicit `host.editorProject(endpoint)`
+callback for older manifests. The callback must inspect the connected editor, never echo the
+selected project. Missing or mismatched identity stops before mutation. No editor-world service
+is required; the workflow pins the project, endpoint and editor session. It does not require Workbench.
 
 ```ts
 const workflow = Effect.gen(function* () {

@@ -1,0 +1,5 @@
+{
+	"contract": { "name": "unreal-editor-asset-open", "version": { "major": 1, "minor": 0 } },
+	"objectPath": "/Game/Fixture/ST_Text.ST_Text",
+	"status": "ok"
+}

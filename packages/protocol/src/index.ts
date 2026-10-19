@@ -410,6 +410,12 @@ export {
 	EditorWorldState
 } from "./editor-world-control.js";
 export {
+	decodeEditorAssetOpenResult,
+	EditorAssetOpenContract,
+	EditorAssetOpenResult,
+	EditorAssetOpenUnavailableReason
+} from "./editor-asset-open.js";
+export {
 	decodeEditorAssetLocateResult,
 	EditorAssetLocateResult,
 	EditorAssetLocateUnavailableReason,

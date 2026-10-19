@@ -47,6 +47,14 @@ introducing old endpoint names or a second native transaction protocol:
    generated capture filename and refuses to stop an external capture; the protocol does not carry
    per-host capture identities. Poll the typed status through asynchronous starting/stopping
    transitions and retain output evidence.
+6. Use `locateUnrealAsset({ endpoint, objectPath, bringToFront })` to reveal Content Browser content
+   and `openUnrealAsset({ endpoint, objectPath, bringToFront })` to open its asset editor. Open
+   requires `editor.asset-open.v1` independently of locate's `editor.asset-navigation.v1` and uses
+   the manifest's `assetNavigationObjectPath`. Both require Core's editor module, without Authoring.
+   Preserve `unavailable` replies (missing asset, load failure or editor refusal) as host-visible
+   facts. Keep action choice in the host and do not automatically replay an uncertain open call.
+   Allow the exact `UEShedCoreEditor.UEShedEditorAssetNavigationLibrary` class in Remote Control;
+   `unrealRemoteControlPermissions(["UEShedCore"])` already covers both functions.
 
 Keep consequential operation intent and evidence in a host-owned durable record. User-facing review
 and approval remain host responsibilities. Raw Unreal access belongs behind the host's API, outside

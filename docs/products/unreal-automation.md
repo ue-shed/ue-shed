@@ -16,11 +16,21 @@ contracts live in `@ue-shed/protocol`. Workbench is not required. See the
 | `automation.input.v1`                                                       | `UEShedAutomation` | One-shot Enhanced Input injection for an explicitly selected local controller and InputAction |
 | `automation.csv.v1`                                                         | `UEShedAutomation` | Process-wide CSV profiler state and owned captures                                            |
 | `game-text.actions.v1`                                                      | `UEShedGameText`   | Text key and source edits in editor assets, compile, read-back and explicit Save (ADR 0011)   |
+| `editor.asset-navigation.v1`                                                | `UEShedCoreEditor` | Reveal/select a top-level asset in the Content Browser, without opening it                    |
+| `editor.asset-open.v1`                                                      | `UEShedCoreEditor` | Load a top-level asset and request its editor, independently of locate                        |
 
 `UEShedCore` advertises the loaded providers and their public endpoints. `UEShedAutomation` is an
 optional runtime plugin, disabled by default; enabling Authoring does not enable Automation.
 An editor advertises `unreal_editor`; a runtime producer advertises `unreal_runtime`. Capability
 advertisements, rather than plugin presence or producer kind alone, determine supported operations.
+Hosts call `openUnrealAsset({ endpoint, objectPath, bringToFront })` through
+`@ue-shed/unreal-connection`; it uses the Core manifest's `assetNavigationObjectPath` and the
+[`unreal-editor-asset-open` 1.0 result contract](../../packages/protocol/contracts/editor-asset-open/v1/README.md).
+Missing assets or refused opens return `unavailable` with recovery guidance. Success is `ok` and
+means Unreal accepted the open request, not that OS foreground activation was verified.
+`bringToFront` requests existing-editor focus; newly opened editors follow engine focus behavior.
+Host policy chooses whether to locate or open. Locate's behavior and contract are unchanged.
+
 Remote Control must be enabled and reachable in the selected producer. Packaging policy and Remote
 Control availability in a runtime build remain the consuming project's responsibility.
 

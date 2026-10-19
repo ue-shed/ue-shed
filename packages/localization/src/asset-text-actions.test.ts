@@ -82,13 +82,19 @@ it.effect("refuses extended actions on older plugins before sending a mutation",
 	})
 );
 
-it.effect(
-	"the narrow key-repairs capability admits cells and pins but refuses table migrations and source edits",
-	() =>
+for (const capability of ["game-text.actions.key-repairs.v1", "game-text.actions.authoring.v1"])
+	it.effect(`${capability} admits key repairs and preserves its authoring limits`, () =>
 		Effect.gen(function* () {
 			for (const kind of ["data_table_cell", "graph_pin", "string_table_entry"] as const) {
 				for (const edit of [
 					{ kind: "regenerate_key" } as const,
+					{ kind: "change_key", namespace: "Words", key: "New" } as const,
+					{
+						kind: "adopt_key",
+						namespace: "Words",
+						key: "New",
+						source: "Source"
+					} as const,
 					{ kind: "change_source", source: "New" } as const
 				]) {
 					let mutations = 0;
@@ -123,10 +129,7 @@ it.effect(
 											return Schema.decodeUnknownSync(Schema.Json)({
 												schemaVersion: 1,
 												producerKind: "unreal_editor",
-												capabilities: [
-													"game-text.actions.v1",
-													"game-text.actions.key-repairs.v1"
-												],
+												capabilities: ["game-text.actions.v1", capability],
 												gameTextObjectPath:
 													"/Script/UEShedGameText.Default__UEShedGameTextLibrary"
 											});
@@ -145,7 +148,9 @@ it.effect(
 							)
 						)
 					);
-					const allowed = kind !== "string_table_entry" && edit.kind === "regenerate_key";
+					const allowed =
+						capability === "game-text.actions.authoring.v1" ||
+						(kind !== "string_table_entry" && edit.kind !== "change_source");
 					expect(mutations).toBe(allowed ? 1 : 0);
 					if (!allowed)
 						expect(result).toMatchObject({
@@ -155,4 +160,4 @@ it.effect(
 				}
 			}
 		})
-);
+	);

@@ -105,8 +105,7 @@ void SetScreenshotWarmupValue(IConsoleVariable *Variable, int32 Value)
 }
 bool Boolean(const TSharedPtr<FJsonObject> &Value, const TCHAR *Key)
 {
-	bool Out;
-	return Value && Value->TryGetBoolField(Key, Out);
+	return Value && Value->HasTypedField<EJson::Boolean>(Key);
 }
 bool Identifier(const FString &Value)
 {

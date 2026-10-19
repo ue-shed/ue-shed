@@ -86,11 +86,11 @@ function archiveEntries(path: string) {
 	return result.stdout.split(/\r?\n/u).filter(Boolean);
 }
 
-test("source bundles support 5.7 and 5.8 while preserving an explicit engine range", async () => {
+test("source bundles support 5.6 through 5.8.2 while preserving an explicit engine range", async () => {
 	const fixture = await createFixture();
 	try {
 		for (const [name, unreal, expected] of [
-			["default", undefined, { minimum: "5.7", maximum: "5.8.2" }],
+			["default", undefined, { minimum: "5.6", maximum: "5.8.2" }],
 			["explicit", { minimum: "5.7" }, { minimum: "5.7", maximum: "5.7" }]
 		] as const) {
 			const result = await buildPluginBundle({

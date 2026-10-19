@@ -32,12 +32,13 @@ import { ensureUassetExecutable, repositoryRoot } from "./native-tools.ts";
 import { runProcess, unrealEngineTools } from "./unreal-plugin-host.ts";
 
 const EngineLane = Schema.Struct({
-	label: Schema.Literals(["5.7", "5.8", "4.27"]),
+	label: Schema.Literals(["5.6", "5.7", "5.8", "4.27"]),
 	root: Schema.NonEmptyString
 });
 type EngineLane = typeof EngineLane.Type;
 const configured: EngineLane[] = [];
 for (const [label, variable] of [
+	["5.6", "UE_SHED_UNREAL_56_ROOT"],
 	["5.7", "UE_SHED_UNREAL_57_ROOT"],
 	["5.8", "UE_SHED_UNREAL_58_ROOT"],
 	["4.27", "UE_SHED_UNREAL_427_ROOT"]
@@ -47,7 +48,7 @@ for (const [label, variable] of [
 }
 if (!configured.length)
 	throw new Error(
-		"Configure UE_SHED_UNREAL_57_ROOT / UE_SHED_UNREAL_58_ROOT (optional UE_SHED_UNREAL_427_ROOT). This lane never silently skips every engine."
+		"Configure UE_SHED_UNREAL_56_ROOT / UE_SHED_UNREAL_57_ROOT / UE_SHED_UNREAL_58_ROOT (optional UE_SHED_UNREAL_427_ROOT). This lane never silently skips every engine."
 	);
 // Keep the disposable project root short: UBT's intermediate paths otherwise pass Windows' 260
 // character limit inside a deep checkout. The engine matrix uses the same short shape.

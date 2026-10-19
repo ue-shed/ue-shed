@@ -4,8 +4,8 @@ The `game-text` source preset selects `UEShedCore` (Runtime module only) and
 `UEShedGameText` (Editor module). It projects the Core descriptor in the archive and excludes
 CoreEditor source. Canonical descriptors and the existing UE5 presets retain their module graphs.
 The preset declares Unreal 4.27 through 4.27.2; engine verification uses 4.27.2. This does not
-extend the full suite's UE5 compatibility window. The shared native sources also retain UE5.7/5.8
-regression coverage.
+extend the full suite's UE5 compatibility window of 5.6 through 5.8.2. The shared native sources
+also retain UE5.6/5.7/5.8 regression coverage, including cameras in the full suite.
 
 Build public sources with the same release provenance as other presets:
 
@@ -61,7 +61,8 @@ pnpm test:unreal-game-text-actions <new-acceptance-directory>
 ```
 
 The first command builds only Core runtime + GameText and requires fresh success reports for all
-four `UEShed.GameText.*` automation tests. Run it separately on 4.27, 5.7 and 5.8.
+four `UEShed.GameText.*` automation tests. On 5.6, 5.7 and 5.8, omit `--game-text` to build all
+12 plugins and run all 47 native tests, including cameras.
 
 On 4.27, the second command copies `fixtures/legacy-unreal-project`, builds its editor target and
 generates new 4.27 assets. It performs nine key repairs (split, regenerate and adopt across object

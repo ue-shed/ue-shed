@@ -5,11 +5,14 @@ precompiled Unreal Editor plugin variants. Discovering an external descriptor wi
 not compile it. An unattended host therefore requests a binary built for its exact engine identity;
 building and acquiring are separate operations.
 
-Starting with 0.7.1, portable plugin sources declare the range Unreal 5.7 through 5.8.2. The explicit
+Portable UE5 plugin sources declare the range Unreal 5.6 through 5.8.2. The explicit
 patch upper bound includes the tested 5.8.2 install; `5.8` alone would mean 5.8.0 in range checks.
 Build a separate native variant for each exact engine identity, including stock versus custom
 builds of the same version.
 Existing 0.7.0 source artifacts remain immutable and retain their original compatibility metadata.
+The full, map-review, camera-authoring, authoring-automation, editor-host, niagara and observatory
+presets share this UE5 range. The separate minimal `game-text` preset declares 4.27 through 4.27.2;
+UE5 Game Text uses the full suite. Previously published artifacts retain their declared ranges.
 
 ## Ownership boundary
 

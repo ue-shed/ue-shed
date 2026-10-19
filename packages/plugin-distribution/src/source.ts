@@ -183,13 +183,21 @@ export function mapReviewPluginReleaseAssetNames(releaseVersion: string) {
 	} as const;
 }
 
+/** Minimal runtime Core + Game Text source bundle. */
+export function gameTextPluginReleaseAssetNames(releaseVersion: string) {
+	return {
+		artifact: `ue-shed-plugins-game-text-${releaseVersion}.tar.gz`,
+		manifest: `ue-shed-plugins-game-text-${releaseVersion}.manifest.json`
+	} as const;
+}
+
 function compiledAssetStem(releaseVersion: string, request: PluginVariantRequest) {
 	if (request.kind === "source") return `ue-shed-plugins-${releaseVersion}`;
 	const buildId = createHash("sha256").update(request.engineBuildId).digest("hex").slice(0, 16);
 	return [
 		"ue-shed-plugins",
 		releaseVersion,
-		"unrealeditor",
+		request.target.toLowerCase(),
 		request.platform.toLowerCase(),
 		request.architecture.toLowerCase(),
 		request.unrealVersion,
@@ -206,6 +214,17 @@ export function variantPluginReleaseAssetNames(
 	request: PluginVariantRequest
 ) {
 	const stem = compiledAssetStem(releaseVersion, request);
+	return { artifact: `${stem}.tar.gz`, manifest: `${stem}.manifest.json` } as const;
+}
+
+export function gameTextVariantPluginReleaseAssetNames(
+	releaseVersion: string,
+	request: PluginVariantRequest
+) {
+	const stem = compiledAssetStem(releaseVersion, request).replace(
+		"ue-shed-plugins-",
+		"ue-shed-plugins-game-text-"
+	);
 	return { artifact: `${stem}.tar.gz`, manifest: `${stem}.manifest.json` } as const;
 }
 

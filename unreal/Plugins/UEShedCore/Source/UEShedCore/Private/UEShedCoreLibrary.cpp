@@ -2,6 +2,7 @@
 
 #include "Dom/JsonObject.h"
 #include "Misc/App.h"
+#include "Misc/Paths.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/EngineVersion.h"
 #include "Interfaces/IPluginManager.h"
@@ -18,7 +19,7 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 {
 	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetNumberField(TEXT("schemaVersion"), 1);
- static const FString SessionId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower);
+ static const FString SessionId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens).ToLower();
  auto Identity = MakeShared<FJsonObject>();
  Identity->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
  Identity->SetNumberField(TEXT("processId"), FPlatformProcess::GetCurrentProcessId());
@@ -30,7 +31,7 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
   TArray<TSharedPtr<FJsonValue>> Modules;
   for (const auto& Module : Plugin->GetDescriptor().Modules)
    if (FModuleManager::Get().IsModuleLoaded(Module.Name)) Modules.Add(MakeShared<FJsonValueString>(Module.Name.ToString()));
-  if (Modules.IsEmpty()) continue;
+  if (Modules.Num() == 0) continue;
   auto Entry = MakeShared<FJsonObject>();
   Entry->SetStringField(TEXT("name"), Plugin->GetName());
   Entry->SetStringField(TEXT("version"), Plugin->GetDescriptor().VersionName);
@@ -42,6 +43,7 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 	Root->SetStringField(TEXT("producerKind"),
 		GIsEditor ? TEXT("unreal_editor") : TEXT("unreal_runtime"));
 	Root->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+	Root->SetStringField(TEXT("projectRoot"), FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()));
 	TArray<TSharedPtr<FJsonValue>> Capabilities;
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedWorldEditor")))
 	{
@@ -72,7 +74,11 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Root->SetStringField(TEXT("gameTextObjectPath"),
 			TEXT("/Script/UEShedGameText.Default__UEShedGameTextLibrary"));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("game-text.actions.v1")));
+#if ENGINE_MAJOR_VERSION >= 5
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("game-text.actions.authoring.v1")));
+#else
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("game-text.actions.key-repairs.v1")));
+#endif
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedAutomation")))
 	{

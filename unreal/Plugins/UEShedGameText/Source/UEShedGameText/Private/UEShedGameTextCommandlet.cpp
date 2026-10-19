@@ -3,6 +3,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "UEShedGameTextActions.h"
+#include "UEShedCoreLibrary.h"
 
 UUEShedGameTextCommandlet::UUEShedGameTextCommandlet()
 {
@@ -14,6 +15,14 @@ UUEShedGameTextCommandlet::UUEShedGameTextCommandlet()
 
 int32 UUEShedGameTextCommandlet::Main(const FString& Params)
 {
+	FString ManifestFile;
+	if (FParse::Value(*Params, TEXT("Manifest="), ManifestFile))
+	{
+		FString Manifest;
+		UUEShedCoreLibrary::GetCapabilityManifest(Manifest);
+		return FFileHelper::SaveStringToFile(Manifest, *ManifestFile,
+			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM) ? 0 : 2;
+	}
 	FString RequestFile;
 	FString ResultFile;
 	if (!FParse::Value(*Params, TEXT("Request="), RequestFile) || !FParse::Value(*Params, TEXT("Result="), ResultFile))

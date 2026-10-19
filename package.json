@@ -61,6 +61,7 @@
 		"sync:native-versions": "node scripts/sync-native-versions.ts",
 		"release:plugins": "node scripts/release-plugin-bundle.ts full",
 		"release:plugins:authoring-automation": "node scripts/release-plugin-bundle.ts authoring-automation",
+		"release:plugins:game-text": "node scripts/release-plugin-bundle.ts game-text",
 		"release:plugins:editor-host": "node scripts/release-plugin-bundle.ts editor-host",
 		"release:plugins:map-review": "node scripts/release-plugin-bundle.ts map-review",
 		"release:plugins:niagara": "node scripts/release-plugin-bundle.ts niagara",

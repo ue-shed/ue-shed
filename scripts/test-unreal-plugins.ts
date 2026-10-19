@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { GAME_TEXT_PLUGIN_IDS } from "./plugin-bundle.ts";
 import { isJsonObject, isJsonString, parseJsonObject } from "./json.ts";
 import {
 	prepareUnrealPlugins,
@@ -28,8 +29,16 @@ writeFileSync(
 	project,
 	JSON.stringify({ FileVersion: 3, EngineAssociation: version.label }, null, "\t")
 );
-const descriptors = prepareUnrealPlugins({ engineRoot, projectPath: project, tools });
-const tests = [
+const gameTextOnly = version.major === 4 || process.argv.includes("--game-text");
+const pluginIds = gameTextOnly ? GAME_TEXT_PLUGIN_IDS : ueShedPluginIds;
+const descriptors = prepareUnrealPlugins({
+	engineRoot,
+	projectPath: project,
+	tools,
+	pluginIds,
+	coreRuntimeOnly: gameTextOnly
+});
+const allTests = [
 	"UEShed.Cameras.Authoring.NativeLifecycle",
 	"UEShed.Cameras.Authoring.FullSetEditing",
 	"UEShed.Cameras.Authoring.ScaleAndCleanup",
@@ -73,6 +82,9 @@ const tests = [
 	"UEShed.Core.ForegroundResponsiveness.PredicateCost",
 	"UEShed.Core.ForegroundResponsiveness.DelegateEntry"
 ];
+const tests = gameTextOnly
+	? allTests.filter((name) => name.startsWith("UEShed.GameText."))
+	: allTests;
 const report = join(root, "automation");
 const result = spawnSync(
 	tools.editorCommandlet,
@@ -80,7 +92,7 @@ const result = spawnSync(
 		project,
 		"/Engine/Maps/Templates/Template_Default",
 		...descriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
-		`-EnablePlugins=${ueShedPluginIds.join(",")}`,
+		`-EnablePlugins=${pluginIds.join(",")}`,
 		`-ExecCmds=Automation RunTests ${tests.join("+")}`,
 		"-TestExit=Automation Test Queue Empty",
 		`-ReportExportPath=${report}`,
@@ -131,5 +143,5 @@ if (
 	throw new Error(`Unreal plugin automation did not pass all ${tests.length} tests: ${report}`);
 }
 console.log(
-	`Unreal ${version.label}: all ${ueShedPluginIds.length} plugins built and ${recordedTests.length} tests passed.`
+	`Unreal ${version.label}: all ${pluginIds.length} plugins built and ${recordedTests.length} tests passed.`
 );

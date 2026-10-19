@@ -621,7 +621,9 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										"Engine",
 										"Binaries",
 										"DotNET",
-										"AutomationTool",
+										...(request.artifact.target === "UE4Editor"
+											? []
+											: ["AutomationTool"]),
 										"AutomationTool.exe"
 									)
 								: join(engineRoot, "Engine", "Build", "BatchFiles", "RunUAT.sh");
@@ -636,7 +638,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 							"Engine",
 							"Binaries",
 							request.artifact.platform,
-							"UnrealEditor.modules"
+							`${request.artifact.target}.modules`
 						);
 						const sourceManifestPath = resolve(request.sourceManifestPath);
 						const sourceArtifactPath = resolve(request.sourceArtifactPath);
@@ -656,7 +658,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 									);
 								await regularFile(runUat, "RunUAT");
 								await regularFile(buildVersionPath, "Engine Build.version");
-								await regularFile(editorModulesPath, "UnrealEditor.modules");
+								await regularFile(
+									editorModulesPath,
+									`${request.artifact.target}.modules`
+								);
 								await regularFile(sourceManifestPath, "Source manifest");
 								await regularFile(sourceArtifactPath, "Source artifact");
 								const manifestBytes = await readFile(sourceManifestPath);
@@ -673,6 +678,9 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 								const unrealVersion = `${buildVersion.MajorVersion}.${buildVersion.MinorVersion}.${buildVersion.PatchVersion}`;
 								if (
 									unrealVersion !== request.artifact.unrealVersion ||
+									(buildVersion.MajorVersion === 4
+										? "UE4Editor"
+										: "UnrealEditor") !== request.artifact.target ||
 									engineModules.BuildId !== request.artifact.engineBuildId
 								)
 									throw new Error(

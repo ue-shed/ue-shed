@@ -1,5 +1,7 @@
 #include "UEShedGameTextLibrary.h"
 
+#include "UEShedGameTextEngine.h"
+
 #include "UEShedGameTextActions.h"
 #include "Dom/JsonObject.h"
 #include "Internationalization/StringTable.h"
@@ -21,11 +23,11 @@ void UUEShedGameTextLibrary::ApplyTextActions(const FString& RequestJson, FStrin
 void UUEShedGameTextLibrary::VerifyStringTableRedirect(const FString& RequestJson, FString& ResultJson)
 {
 	TSharedPtr<FJsonObject> Request;
-	FString Contract, Version, Table, OldKey, NewKey, ExpectedSource;
+	FString RequestContract, Version, Table, OldKey, NewKey, ExpectedSource;
 	bool bActivate = false;
 	const bool bValid = FTCHARToUTF8(*RequestJson).Length() <= 1024 * 1024
 		&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(RequestJson), Request) && Request.IsValid()
-		&& Request->TryGetStringField(TEXT("contract"), Contract) && Contract == TEXT("ue-shed-string-table-redirect")
+		&& Request->TryGetStringField(TEXT("contract"), RequestContract) && RequestContract == TEXT("ue-shed-string-table-redirect")
 		&& Request->TryGetStringField(TEXT("version"), Version) && Version == TEXT("1.0")
 		&& Request->TryGetStringField(TEXT("tableId"), Table) && !Table.IsEmpty() && Table.Len() <= 4096
 		&& Request->TryGetStringField(TEXT("oldKey"), OldKey) && !OldKey.IsEmpty() && OldKey.Len() <= 4096
@@ -35,19 +37,19 @@ void UUEShedGameTextLibrary::VerifyStringTableRedirect(const FString& RequestJso
 	FString Status = bValid ? TEXT("inactive") : TEXT("invalid_request");
 	FString Message = bValid ? TEXT("The exact redirect and destination source have not been verified.") : TEXT("Invalid String Table redirect request.");
 	FName ActualTable(*Table);
-	FTextKey ActualKey(OldKey);
+	UEShedGameTextEngine::FTableKey ActualKey(OldKey);
 	FString ActualSource;
 	if (bValid)
 	{
 		// Loading a table is read-only. Verify its target before changing the live redirect map.
 		if (!FStringTableRegistry::Get().FindStringTable(FName(Table))) LoadObject<UStringTable>(nullptr, *Table);
 		const FStringTableConstPtr Target = FStringTableRegistry::Get().FindStringTable(FName(Table));
-		FName DestinationTable(*Table); FTextKey DestinationKey(NewKey);
+		FName DestinationTable(*Table); UEShedGameTextEngine::FTableKey DestinationKey(NewKey);
 		FStringTableRedirects::RedirectTableIdAndKey(DestinationTable, DestinationKey);
-		const bool bTarget = Target && Target->GetSourceString(FTextKey(NewKey), ActualSource) && ActualSource == ExpectedSource
-			&& DestinationTable == FName(Table) && DestinationKey == FTextKey(NewKey);
+		const bool bTarget = Target && Target->GetSourceString(UEShedGameTextEngine::FTableKey(NewKey), ActualSource) && ActualSource == ExpectedSource
+			&& DestinationTable == FName(Table) && DestinationKey == UEShedGameTextEngine::FTableKey(NewKey);
 		FStringTableRedirects::RedirectTableIdAndKey(ActualTable, ActualKey);
-		const bool bConflict = ActualTable != FName(Table) || (ActualKey != FTextKey(OldKey) && ActualKey != FTextKey(NewKey));
+		const bool bConflict = ActualTable != FName(Table) || (ActualKey != UEShedGameTextEngine::FTableKey(OldKey) && ActualKey != UEShedGameTextEngine::FTableKey(NewKey));
 		if (bActivate && bTarget && !bConflict)
 		{
 			FString ConfigFile;
@@ -69,7 +71,7 @@ void UUEShedGameTextLibrary::VerifyStringTableRedirect(const FString& RequestJso
 							&& FParse::Value(*Value, TEXT("OldKey="), ConfigOld) && ConfigOld == OldKey
 							&& FParse::Value(*Value, TEXT("NewKey="), ConfigNew) && ConfigNew == NewKey)
 						{
-							GConfig->AddUniqueToSection(TEXT("Core.StringTable"), TEXT("StringTableRedirects"), Value, GEngineIni);
+							UEShedGameTextEngine::AddRedirect(Value);
 							FStringTableRedirects::InitStringTableRedirects();
 							break;
 						}
@@ -77,9 +79,9 @@ void UUEShedGameTextLibrary::VerifyStringTableRedirect(const FString& RequestJso
 				}
 			}
 		}
-		ActualTable = FName(Table); ActualKey = FTextKey(OldKey);
+		ActualTable = FName(Table); ActualKey = UEShedGameTextEngine::FTableKey(OldKey);
 		FStringTableRedirects::RedirectTableIdAndKey(ActualTable, ActualKey);
-		if (bTarget && ActualTable == FName(Table) && ActualKey == FTextKey(NewKey))
+		if (bTarget && ActualTable == FName(Table) && ActualKey == UEShedGameTextEngine::FTableKey(NewKey))
 		{
 			const FText DynamicReference = FText::FromStringTable(FName(Table), OldKey, EStringTableLoadingPolicy::FindOrFullyLoad);
 			FName ReferenceTable; FString ReferenceKey;
@@ -95,7 +97,7 @@ void UUEShedGameTextLibrary::VerifyStringTableRedirect(const FString& RequestJso
 	Result->SetStringField(TEXT("contract"), TEXT("ue-shed-string-table-redirect"));
 	Result->SetStringField(TEXT("version"), TEXT("1.0"));
 	Result->SetStringField(TEXT("status"), Status); Result->SetStringField(TEXT("tableId"), ActualTable.ToString());
-	Result->SetStringField(TEXT("key"), ActualKey.ToString()); Result->SetStringField(TEXT("source"), ActualSource);
+	Result->SetStringField(TEXT("key"), UEShedGameTextEngine::KeyString(ActualKey)); Result->SetStringField(TEXT("source"), ActualSource);
 	Result->SetStringField(TEXT("message"), Message);
 	FJsonSerializer::Serialize(Result, TJsonWriterFactory<>::Create(&ResultJson));
 }

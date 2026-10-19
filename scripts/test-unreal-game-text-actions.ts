@@ -37,8 +37,13 @@ import { runPnpm, unrealRemoteControlLaunchArguments } from "./workbench-tools.t
 import { acceptLocalizationMigration } from "./localization-text-actions-acceptance.ts";
 
 const engineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
-if (!engineRoot) throw new Error("Set UE_SHED_UNREAL_ENGINE_ROOT to an Unreal 5.7 or 5.8 root.");
+if (!engineRoot)
+	throw new Error("Set UE_SHED_UNREAL_ENGINE_ROOT to an Unreal 4.27, 5.7 or 5.8 root.");
 const version = unrealEngineVersion(engineRoot);
+if (version?.label === "4.27") {
+	await import("./test-unreal-game-text-legacy.ts");
+	process.exit(0);
+}
 if (version?.label !== "5.7" && version?.label !== "5.8") {
 	throw new Error("The Game Text actions acceptance needs Unreal 5.7 or 5.8.");
 }

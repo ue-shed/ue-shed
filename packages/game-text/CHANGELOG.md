@@ -62,15 +62,14 @@
   stringification, direct error translations and helper adapters are covered by regression guards.
 
     Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
-    consumer conformance use the same native implementation. The TypeScript builder remains an explicit
-    reference choice. Native worker/capability failures do not silently fall back. Scoped cancellation
+    consumer conformance use the same native implementation. The TypeScript builder became test-only later in this release. Native worker/capability failures do not silently fall back. Scoped cancellation
     releases staging, writer leases and processes; native failures use stable codes independent of prose.
     PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
 
     Obsolete public `*Shape` aliases are removed from connection, asset reader/Project Index and camera
     entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
     `makeGameTextSearchWorker` constructors are no longer exported. See the
-    [migration guide](../docs/engineering/effect-audit-migration.md) for error and composition changes.
+    [migration guide](https://github.com/ue-shed/ue-shed/blob/main/docs/engineering/effect-audit-migration.md) for error and composition changes.
 
     AssetReader test layers now require a complete explicit port, including configuration and projection
     operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
@@ -145,8 +144,7 @@
   of the same validated revision. Package replacement requires uasset-io protocol 1.16.
 - 70dec0a: Add an opt-in native Game Text index builder through the existing scoped uasset-io protocol
   session. The builder writes the existing shared dictionary and column format, supports narrowly
-  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript
-  remains the default builder. Give decoded shared-string arenas their own buffers so cache
+  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript remained the default builder until the native engine entry in this release. Give decoded shared-string arenas their own buffers so cache
   accounting tracks their actual capacity.
 - 2f9469b: Move Game Text indexing and query execution into the Rust engine. Queries, counts, facets,
   groups, focus and exports use scoped native readers; mixed authored-source, String Table and
@@ -195,7 +193,7 @@
 - d61f66a: Read the text literals compiled into Blueprint functions. The reader now walks every saved `UFunction`'s script bytecode (UE 4.27 to 5.8) and reports each distinct `EX_TextConst` as a `ScriptBytecode[N]` place, with UE 5.8's renumbered literal types and translator notes, so Print Text and other graph literals that Unreal gathers are no longer silently missing; a script the walk cannot follow is a decode error. Function parameters of delegate and field-path types are now read too. Game Text classifies compiled literals as player text (`script_bytecode`).
 - 7770afc: Game Text scans read an external actor or object package only when its saved header says it holds gatherable text, as Unreal's gatherer does. Before, every external package and its world were read. On a large World Partition project this cuts a scan from 429,625 packages (16.4 GB) to 9,056 (4.7 GB). Projects without external packages select the same packages as before.
 - 8508a74: Index steps and the refresh layer take `qualityWorker: true`, which runs localization quality scans in a worker per opened model instead of on the host's thread. The returned `LocalizationQuality` behaves the same: facts and groups are local, and `items`, `find`, `lineOfUnit` and `sourceKeyOfUnit` read the worker's scan synchronously. Progress callbacks and interruption work as before. If the worker cannot start or fails, the scan runs on the host. The option is off by default; the Workbench turns it on. New exported type: `GameTextIndexStepsOptions`.
-- 29547d4: With `searchWorker: true`, `openTarget` no longer prepares the query on the host's thread. The search worker prepares it once, and the model's synchronous `query` methods borrow the worker's query: each call blocks until the worker answers. Before, the host prepared the same query a second time while blocking its event loop (about 1.15 s on a large project). If the worker has died, the next synchronous call prepares the query on the host instead, so an open model keeps working. Hosts without a search worker are unchanged. Join place-label lookups now read strings in batches of 1,024 instead of 8,192, so one batch no longer holds the host's event loop for long. No API changes.
+- 29547d4: With `searchWorker: true`, `openTarget` no longer prepares the query on the host's thread. The search worker prepares it once, and the model's synchronous `query` methods borrow the worker's query: each call blocks until the worker answers. Before, the host prepared the same query a second time while blocking its event loop (about 1.15 s on a large project). If the worker has died, the next synchronous call prepares the query on the host instead, so an open model keeps working. Hosts without a search worker are unchanged. Superseded later in this release: the search worker and `searchWorker` option are removed. Join place-label lookups now read strings in batches of 1,024 instead of 8,192, so one batch no longer holds the host's event loop for long. No API changes.
 - 4ddae8e: Views of one opened index share its decoded columns and its synchronous reader. Before, the query, the corpus, the localization evidence and each quality scan each kept their own column cache and their own patch and chunk caches. Synchronous string lookups no longer rebuild the segment start list on every lookup, and a lookup in the same 64-string block as the one before reuses that block directly. Quality scans and line reads go through these lookups for every line. No API changes.
 - a99f233: The package text refresh, the full join and the localization quality scan report their stages as span attributes (`package-text.stage_ms.*`, `join.stage_ms.*`, `game_text.quality.stage_ms.*`). Each one is the wall time of one stage of that step in milliseconds, so a host's tracer can show where a build or a scan spends its time. No API changes.
 - e1d29ec: **Breaking:** layers compose through requirements, and test layers are complete fakes.

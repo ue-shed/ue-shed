@@ -12,8 +12,10 @@ be edited, and requests its editor. It does not synchronize Content Browser sele
 
 `result.schema.json` is the language-neutral result contract. `ok` means the subsystem accepted
 the request, including an already-open editor; it does not promise a new window or OS foreground
-activation. `BringToFront` requests focus of an existing asset editor. False avoids that explicit
-focus request; newly opened editors follow Unreal's normal focus behavior.
+activation. `BringToFront` requests focus of an existing asset editor and, as locate does, then
+activates the main editor window (`core/v1/WINDOW-ACTIVATION.md`); the activation result is
+reported as `windowActivation`. Pass it only for an explicit user handoff, such as a click. False
+avoids both requests; newly opened editors follow Unreal's normal focus behavior.
 
 `unavailable` includes a stable reason, human-readable message, recovery step, and `retrySafe`.
 `editor_refused` includes assets whose type does not support editing or whose editor rejects the

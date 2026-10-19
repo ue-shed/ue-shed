@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { contractParser } from "./contract-parser.js";
+import { EditorWindowActivationResult } from "./editor-window-activation.js";
 
 /** The separately negotiated asset-open contract implemented by UEShedCoreEditor. */
 export const EditorAssetOpenContract = Schema.Struct({
@@ -33,7 +34,9 @@ const EditorAssetOpenBase = Schema.Struct({
 export const EditorAssetOpenResult = Schema.Union([
 	Schema.Struct({
 		...EditorAssetOpenBase.fields,
-		status: Schema.Literal("ok")
+		status: Schema.Literal("ok"),
+		/** With `BringToFront`, the main editor window's activation, as locate reports it. */
+		windowActivation: Schema.optionalKey(EditorWindowActivationResult)
 	}),
 	Schema.Struct({
 		...EditorAssetOpenBase.fields,

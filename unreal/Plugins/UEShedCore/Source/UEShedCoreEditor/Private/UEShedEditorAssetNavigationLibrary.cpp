@@ -140,7 +140,21 @@ void UUEShedEditorAssetNavigationLibrary::OpenAsset(
 			TEXT("Inspect the editor log for the asset editor's refusal."), false);
 		return;
 	}
-	// New editors follow Unreal's normal focus behavior; focus is a request, not an OS guarantee.
+	// As LocateAsset does: an editor tab behind another app is not visible, so raise Unreal's window.
+	// Focus is a request, not an OS guarantee.
+	if (BringToFront)
+	{
+		FString ActivationJson;
+		UUEShedEditorWindowLibrary::ActivateEditorWindow(
+			FString::Printf(TEXT("{\"expectedProcessId\":%u}"), FPlatformProcess::GetCurrentProcessId()),
+			ActivationJson);
+		TSharedPtr<FJsonObject> Activation;
+		if (!ActivationJson.IsEmpty() &&
+			FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ActivationJson), Activation))
+		{
+			Root->SetObjectField(TEXT("windowActivation"), Activation);
+		}
+	}
 	Root->SetStringField(TEXT("status"), TEXT("ok"));
 	SerializeResult(Root, ResultJson);
 }

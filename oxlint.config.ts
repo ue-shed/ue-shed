@@ -1,5 +1,7 @@
 import { defineConfig } from "oxlint";
 
+import { effectCatchAllBaseline } from "./tools/oxlint/effect-catch-all-baseline.ts";
+
 export default defineConfig({
 	ignorePatterns: [
 		".agent/**",
@@ -20,6 +22,7 @@ export default defineConfig({
 		"anti-slop/no-chained-effect-flat-map": "error",
 		"anti-slop/no-chained-type-assertions": "error",
 		"anti-slop/no-conditional-empty-object-spread": "error",
+		"anti-slop/no-effect-catch-all": "error",
 		"anti-slop/no-known-value-widening": "error",
 		"anti-slop/no-module-mocking": "error",
 		"anti-slop/no-object-parameters": "error",
@@ -39,6 +42,10 @@ export default defineConfig({
 		"anti-slop/require-safety-verification": "error"
 	},
 	overrides: [
+		{
+			files: [...effectCatchAllBaseline],
+			rules: { "anti-slop/no-effect-catch-all": "warn" }
+		},
 		{
 			files: ["packages/protocol/src/**/*.ts", "packages/unreal-connection/src/**/*.ts"],
 			rules: { "anti-slop/require-jsdoc-on-exports": "error" }

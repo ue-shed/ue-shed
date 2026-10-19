@@ -1,4 +1,4 @@
-import { stripPackageNamespace } from "@ue-shed/localization/browser";
+import { gatheredNamespace } from "./gathered-text.js";
 import type { GameTextActionEdit } from "@ue-shed/protocol";
 import type { TextIdRepairChange } from "./id-repair-schema.js";
 import type { TextCorpusFocus, TextOccurrence } from "./schema.js";
@@ -86,10 +86,13 @@ export function textIdRepairChanges(
 	return occurrences.map((occurrence) => ({ unitId, occurrence, edit }));
 }
 
-/** The namespace Unreal gathers, without its saved-package marker. */
+/** The namespace Unreal gathers: without a saved-package marker, except for String Table entries. */
 export function textIdNamespace(occurrence: TextOccurrence): string {
 	return occurrence.identity.status === "resolved"
-		? stripPackageNamespace(occurrence.identity.namespace)
+		? gatheredNamespace(
+				occurrence.identity.namespace,
+				occurrence.location.kind === "string_table_entry"
+			)
 		: "";
 }
 

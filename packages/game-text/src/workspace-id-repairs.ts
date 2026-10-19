@@ -265,6 +265,16 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 		yield* write(root, id, { state: "prepared", plan }, true);
 		return { status: "prepared", plan } satisfies TextIdRepairResult;
 	});
+	const claimed = (error: { readonly message: string; readonly recovery?: string }) =>
+		new RepairError({
+			cause: error,
+			message: error.message,
+			recovery:
+				error.recovery ??
+				"Inspect the editor and saved repair receipt before preparing another fix.",
+			retrySafe: false,
+			nextStep: "reconcile"
+		});
 	const apply = Effect.fn("GameText.idRepairs.apply")(function* (input: TextIdRepairId) {
 		const id = yield* Schema.decodeUnknownEffect(TextIdRepairId)(input).pipe(
 			Effect.mapError(
@@ -335,91 +345,100 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 				{ exclusive: true }
 			);
 			yield* write(root, id, { state: "started", plan });
-			const request = gameTextActionsRequest({
-				mode: "apply",
-				actions: resolved,
-				save: true
-			});
-			const result = plan.authoring
-				? yield* applyTextIdTableRepair(endpoint, plan.authoring, plan.preview, (result) =>
-						write(root, id, {
-							state: "finished",
-							plan,
-							result: { status: "finished", plan, result, verified: false }
+			// Once claimed, every failure leaves state to reconcile: a retry-safe read after the
+			// mutation is never permission to replay the repair.
+			return yield* Effect.gen(function* () {
+				const request = gameTextActionsRequest({
+					mode: "apply",
+					actions: resolved,
+					save: true
+				});
+				const result = plan.authoring
+					? yield* applyTextIdTableRepair(
+							endpoint,
+							plan.authoring,
+							plan.preview,
+							(result) =>
+								write(root, id, {
+									state: "finished",
+									plan,
+									result: { status: "finished", plan, result, verified: false }
+								})
+						)
+					: yield* runGameTextActions({ endpoint, request });
+				// Retain native outcomes before any re-read can fail or be interrupted.
+				yield* write(root, id, {
+					state: "finished",
+					plan,
+					result: { status: "finished", plan, result, verified: false }
+				});
+				let verified = false;
+				if (result.status === "ok" && result.packages.every((item) => item.saved)) {
+					const events = yield* Stream.runCollect(
+						extractProjectTextPackages({
+							projectRoot: root,
+							paths: [...new Set(resolved.map((item) => item.place.packageFile))]
 						})
-					)
-				: yield* runGameTextActions({ endpoint, request });
-			// Retain native outcomes before any re-read can fail or be interrupted.
-			yield* write(root, id, {
-				state: "finished",
-				plan,
-				result: { status: "finished", plan, result, verified: false }
-			});
-			let verified = false;
-			if (result.status === "ok" && result.packages.every((item) => item.saved)) {
-				const events = yield* Stream.runCollect(
-					extractProjectTextPackages({
-						projectRoot: root,
-						paths: [...new Set(resolved.map((item) => item.place.packageFile))]
-					})
-				);
-				// The reader may report project-relative paths; compare them as absolute files.
-				const records = events
-					.filter((event) => event.event === "text_package_record")
-					.map((record) => ({ ...record, path: resolve(root, record.path) }));
-				const verification = verifyGameTextActions(
-					request,
-					{
-						...result,
-						actions: result.actions.map((item) =>
-							item.status === "unchanged" ? { ...item, status: "applied" } : item
-						)
-					},
-					records
-				);
-				const tableMatches =
-					plan.authoring === undefined ||
-					plan.request.changes.every((change) => {
-						const location = change.occurrence.location;
-						const after = result.actions.find(
-							(item) => item.id === change.occurrence.id
-						)?.after;
-						if (!after || location.kind !== "data_table_cell") return false;
-						return records.some(
-							(record) =>
-								resolve(root, record.path) ===
-									resolve(root, change.occurrence.packageFile) &&
-								record.occurrences.some(
-									(item) =>
-										item.location.kind === "data_table_cell" &&
-										item.location.object_path === location.objectPath &&
-										item.location.row === location.row &&
-										item.location.property_path === location.propertyPath &&
-										item.identity.status === "resolved" &&
-										stripPackageNamespace(item.identity.namespace) ===
-											after.namespace &&
-										item.identity.key === after.key &&
-										item.source === after.source
-								)
-						);
-					});
-				verified =
-					result.actions.length === resolved.length &&
-					resolved.every((action) =>
-						result.actions.some(
-							(outcome) =>
-								outcome.id === action.id &&
-								(outcome.status === "applied" || outcome.status === "unchanged")
-						)
-					) &&
-					records.every((record) => record.status === "complete") &&
-					tableMatches &&
-					(plan.authoring !== undefined || verification.mismatches.length === 0) &&
-					records.length === new Set(resolved.map((item) => item.place.packageFile)).size;
-			}
-			const receipt: TextIdRepairResult = { status: "finished", plan, result, verified };
-			yield* write(root, id, { state: "finished", plan, result: receipt });
-			return receipt;
+					);
+					// The reader may report project-relative paths; compare them as absolute files.
+					const records = events
+						.filter((event) => event.event === "text_package_record")
+						.map((record) => ({ ...record, path: resolve(root, record.path) }));
+					const verification = verifyGameTextActions(
+						request,
+						{
+							...result,
+							actions: result.actions.map((item) =>
+								item.status === "unchanged" ? { ...item, status: "applied" } : item
+							)
+						},
+						records
+					);
+					const tableMatches =
+						plan.authoring === undefined ||
+						plan.request.changes.every((change) => {
+							const location = change.occurrence.location;
+							const after = result.actions.find(
+								(item) => item.id === change.occurrence.id
+							)?.after;
+							if (!after || location.kind !== "data_table_cell") return false;
+							return records.some(
+								(record) =>
+									resolve(root, record.path) ===
+										resolve(root, change.occurrence.packageFile) &&
+									record.occurrences.some(
+										(item) =>
+											item.location.kind === "data_table_cell" &&
+											item.location.object_path === location.objectPath &&
+											item.location.row === location.row &&
+											item.location.property_path === location.propertyPath &&
+											item.identity.status === "resolved" &&
+											stripPackageNamespace(item.identity.namespace) ===
+												after.namespace &&
+											item.identity.key === after.key &&
+											item.source === after.source
+									)
+							);
+						});
+					verified =
+						result.actions.length === resolved.length &&
+						resolved.every((action) =>
+							result.actions.some(
+								(outcome) =>
+									outcome.id === action.id &&
+									(outcome.status === "applied" || outcome.status === "unchanged")
+							)
+						) &&
+						records.every((record) => record.status === "complete") &&
+						tableMatches &&
+						(plan.authoring !== undefined || verification.mismatches.length === 0) &&
+						records.length ===
+							new Set(resolved.map((item) => item.place.packageFile)).size;
+				}
+				const receipt: TextIdRepairResult = { status: "finished", plan, result, verified };
+				yield* write(root, id, { state: "finished", plan, result: receipt });
+				return receipt;
+			}).pipe(Effect.mapError(claimed));
 		}).pipe(Effect.ensuring(host.workspace.endOperation()));
 	});
 	const failure = (

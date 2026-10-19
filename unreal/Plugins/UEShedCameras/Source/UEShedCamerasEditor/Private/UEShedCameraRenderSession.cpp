@@ -550,7 +550,11 @@ struct FUEShedCameraRenderSession::FState
 		auto *Variable =
 		    IConsoleManager::Get().FindConsoleVariable(TEXT("r.HighResScreenshotDelay"));
 		if (Variable && Variable == ScreenshotWarmupVariable)
+		{
 			Variable->OnChangedDelegate().Remove(ScreenshotWarmupChangeHandle);
+			if (!Owned)
+				UEShedCameraEngine::ReleaseScreenshotWarmupValue(Variable, SavedScreenshotWarmupFlags);
+		}
 		ScreenshotWarmupVariable = nullptr;
 		ScreenshotWarmupChangeHandle.Reset();
 		if (Owned)

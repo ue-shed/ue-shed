@@ -322,6 +322,18 @@ bool FUEShedCameraScreenshotWarmupTest::RunTest(const FString &Parameters)
 		TestEqual(TEXT("Tagged warmup restored"), HistoryVariable->GetInt(), 4);
 		HistoryVariable->Unset(Priority, OriginalTag);
 		TestEqual(TEXT("No temporary tag remains after restoration"), HistoryVariable->GetInt(), 1);
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7)
+#else
+		const FName ExternalTag(TEXT("UEShedWarmupExternalTest"));
+		HistoryVariable->Set(4, Priority, OriginalTag);
+		UEShedCameraEngine::SetScreenshotWarmupValue(HistoryVariable, 32);
+		HistoryVariable->Set(64, Priority, ExternalTag);
+		UEShedCameraEngine::ReleaseScreenshotWarmupValue(HistoryVariable, Priority);
+		TestEqual(TEXT("Takeover value survives warmup release"), HistoryVariable->GetInt(), 64);
+		HistoryVariable->Unset(Priority, ExternalTag);
+		TestEqual(TEXT("Takeover release cannot revive temporary warmup"), HistoryVariable->GetInt(), 4);
+		HistoryVariable->Unset(Priority, OriginalTag);
+#endif
 	}
 	auto *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	auto *Client = GCurrentLevelEditingViewportClient;

@@ -38,6 +38,17 @@ inline void SetScreenshotWarmupValue(IConsoleVariable* Variable, int32 Value)
 #endif
 }
 
+inline void ReleaseScreenshotWarmupValue(IConsoleVariable* Variable, uint32 OriginalFlags)
+{
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7)
+	// Newer engines replace the existing entry and do not own an additional tag.
+#else
+	const auto Priority = static_cast<EConsoleVariableFlags>(OriginalFlags & ECVF_SetByMask);
+	if (IsArrayPriority(Priority))
+		Variable->Unset(Priority, FName(TEXT("UEShedScreenshotWarmup")));
+#endif
+}
+
 inline void RestoreScreenshotWarmupValue(IConsoleVariable* Variable, int32 Value)
 {
 #if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7)
@@ -45,7 +56,7 @@ inline void RestoreScreenshotWarmupValue(IConsoleVariable* Variable, int32 Value
 #else
 	const auto Priority = static_cast<EConsoleVariableFlags>(Variable->GetFlags() & ECVF_SetByMask);
 	if (IsArrayPriority(Priority))
-		Variable->Unset(Priority, FName(TEXT("UEShedScreenshotWarmup")));
+		ReleaseScreenshotWarmupValue(Variable, Variable->GetFlags());
 	else
 		Variable->Set(Value, Priority);
 #endif

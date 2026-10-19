@@ -14,6 +14,7 @@ import {
 	realizationFramingDiagnostics
 } from "./review-framing.js";
 import { ReviewAuthoring } from "./review-authoring-live.js";
+import { isMissingFile } from "./file-failure.js";
 import { ReviewRepository } from "./review-repository.js";
 import {
 	ReviewAuthoringSession,
@@ -913,7 +914,24 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				session.pendingReviewSet === undefined
 					? yield* repository.loadSet(session.reviewSet.path).pipe(
 							Effect.map((value) => ({ reviewSet: value, status: "found" as const })),
-							Effect.catch(() => Effect.succeed({ status: "missing" as const }))
+							// Only a Review Set that is gone is "missing": one that cannot be read or does
+							// not decode keeps its own reason, so the session is not discarded for it.
+							Effect.catchIf(
+								(error) => isMissingFile(error.cause),
+								() => Effect.succeed({ status: "missing" as const })
+							),
+							Effect.mapError(
+								(cause) =>
+									new ReviewAuthoringSessionError({
+										message: cause.message,
+										cause,
+										nextStep: cause.nextStep,
+										operation: "resume",
+										path: session.reviewSet.path,
+										recovery: cause.recovery,
+										retrySafe: cause.retrySafe
+									})
+							)
 						)
 					: { reviewSet: session.pendingReviewSet, status: "found" as const };
 			if (reviewSet.status === "missing") {

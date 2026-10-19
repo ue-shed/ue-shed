@@ -102,6 +102,7 @@ function sessionLayer(args: {
 		{ readonly status: "selected" }
 	>;
 	readonly loadSet?: () => ReviewSet;
+	readonly loadSetFailure?: ReviewStorageError;
 	readonly onSave: (reviewSet: ReviewSet) => void;
 	readonly saveFailure?: boolean;
 }) {
@@ -115,7 +116,10 @@ function sessionLayer(args: {
 					listRuns: () => Effect.die("not used"),
 					listSets: () => Effect.die("not used"),
 					loadRun: () => Effect.die("not used"),
-					loadSet: () => Effect.succeed(args.loadSet?.() ?? reviewSet),
+					loadSet: () =>
+						args.loadSetFailure
+							? Effect.fail(args.loadSetFailure)
+							: Effect.succeed(args.loadSet?.() ?? reviewSet),
 					prepareRun: () => Effect.die("not used"),
 					saveSet: ({ path, reviewSet }) =>
 						args.saveFailure
@@ -204,6 +208,53 @@ describe("ReviewAuthoringSessions", () => {
 		);
 		expect(resumed).toMatchObject({ status: "resumable", session: { id: created.id } });
 		expect(savedSets).toBe(0);
+	});
+
+	it.each([
+		["ENOENT", "missing_review_set"],
+		["EACCES", "failure"]
+	])("resumes with a Review Set load failure of %s as %s", async (code, expected) => {
+		const projectRoot = await makeProjectRoot();
+		const created = await withSessions(
+			sessionLayer({ inspectSubject: () => selection, onSave: () => undefined }),
+			(sessions) =>
+				sessions.create({
+					candidates: generateFramingCandidates(selection),
+					projectRoot,
+					reviewSetPath,
+					selection,
+					sessionId: `load-failure-${code}`,
+					viewId: "structure-context"
+				})
+		);
+		const layer = sessionLayer({
+			inspectSubject: () => selection,
+			loadSetFailure: new ReviewStorageError({
+				message: `Could not load Review Set ${reviewSetPath}.`,
+				operation: "load_set",
+				path: reviewSetPath,
+				recovery: "Check the Review Set file.",
+				retrySafe: true,
+				nextStep: "fix_input",
+				cause: Object.assign(new Error(code), { code })
+			}),
+			onSave: () => undefined
+		});
+		const outcome = await Effect.runPromise(
+			Effect.gen(function* () {
+				const sessions = yield* ReviewAuthoringSessions;
+				return yield* sessions.resume({
+					endpoint: "http://127.0.0.1:30001",
+					projectRoot,
+					sessionId: created.id
+				});
+			}).pipe(Effect.provide(layer), Effect.result)
+		);
+		if (expected === "failure") {
+			expect(outcome._tag).toBe("Failure");
+		} else {
+			expect(outcome).toMatchObject({ _tag: "Success", success: { status: expected } });
+		}
 	});
 
 	it("marks stale bounds durable, refuses approval, and allows explicit reframe", async () => {

@@ -554,8 +554,11 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 		await writeAtomic(project.projectFile, projectUpdate.updated);
 		projectChanged = true;
 		if (destinationExists) {
-			backupPath = `${destination}.backup-${randomUUID()}`;
-			await rename(destination, backupPath);
+			// Recorded only once the move has happened, so a failed move never makes the rollback
+			// remove the installed plugins it was meant to restore.
+			const movedTo = `${destination}.backup-${randomUUID()}`;
+			await rename(destination, movedTo);
+			backupPath = movedTo;
 		}
 		await rename(stageDestination, destination);
 		if (backupPath) await rm(backupPath, { force: true, recursive: true });
@@ -569,12 +572,34 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 			status: priorStatus
 		};
 	} catch (cause) {
+		const rollbackFailures: string[] = [];
+		const undo = async (step: string, run: () => Promise<void>) => {
+			try {
+				await run();
+			} catch (failure) {
+				rollbackFailures.push(
+					`${step}: ${failure instanceof Error ? failure.message : String(failure)}`
+				);
+			}
+		};
 		if (backupPath) {
-			await rm(destination, { force: true, recursive: true }).catch(() => undefined);
-			await rename(backupPath, destination).catch(() => undefined);
+			const restoreFrom = backupPath;
+			await undo("remove the partly installed plugins", () =>
+				rm(destination, { force: true, recursive: true })
+			);
+			await undo("restore the previous plugins", () => rename(restoreFrom, destination));
 		}
-		if (projectChanged && projectOriginal !== undefined)
-			await writeAtomic(project.projectFile, projectOriginal).catch(() => undefined);
+		if (projectChanged && projectOriginal !== undefined) {
+			const original = projectOriginal;
+			await undo("restore the project file", () =>
+				writeAtomic(project.projectFile, original)
+			);
+		}
+		if (rollbackFailures.length > 0)
+			fail(
+				`Plugin installation failed and could not be fully undone (${rollbackFailures.join("; ")}). Check ${destination}${backupPath ? `, the previous plugins at ${backupPath},` : ""} and ${project.projectFile} before installing again.`,
+				cause
+			);
 		throw cause;
 	} finally {
 		await rm(stageRoot, { force: true, recursive: true });

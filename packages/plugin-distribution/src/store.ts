@@ -612,10 +612,16 @@ async function activeLeaseFiles(
 		for (const entry of await readdir(directory, { withFileTypes: true })) {
 			if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
 			const path = join(directory, entry.name);
+			const read = await readCacheFile(path);
+			// Released between listing and reading.
+			if (read.kind === "missing") continue;
+			// A lease that cannot be read may belong to a live consumer, so it keeps the release.
+			if (read.kind === "unreadable") {
+				active.push(path);
+				continue;
+			}
 			try {
-				const record = Schema.decodeUnknownSync(LeaseRecord)(
-					JSON.parse(await readFile(path, "utf8"))
-				);
+				const record = Schema.decodeUnknownSync(LeaseRecord)(JSON.parse(read.text));
 				const belongsToVariant =
 					record.schemaVersion === 1
 						? directory === legacyDirectory
@@ -628,11 +634,43 @@ async function activeLeaseFiles(
 					active.push(path);
 				}
 			} catch {
-				await rm(path, { force: true });
+				// Leases are written in place, so a fresh one can be read part-written. Only one
+				// that stays undecodable past the grace period is treated as abandoned.
+				if (await olderThan(path, STALE_UNREADABLE_FILE_MS))
+					await rm(path, { force: true });
+				else active.push(path);
 			}
 		}
 	}
 	return active;
+}
+
+/** How long a lease or lock may stay undecodable before it is treated as abandoned. */
+const STALE_UNREADABLE_FILE_MS = 30_000;
+
+type CacheFileRead =
+	| { readonly kind: "missing" }
+	| { readonly kind: "unreadable" }
+	| { readonly kind: "text"; readonly text: string };
+
+/** A lease or lock file's text, telling a file that is gone apart from one that cannot be read. */
+async function readCacheFile(path: string): Promise<CacheFileRead> {
+	try {
+		return { kind: "text", text: await readFile(path, "utf8") };
+	} catch (cause) {
+		return cause instanceof Error && "code" in cause && cause.code === "ENOENT"
+			? { kind: "missing" }
+			: { kind: "unreadable" };
+	}
+}
+
+/** Whether `path` was last written more than `ms` ago; `false` when it cannot be checked. */
+async function olderThan(path: string, ms: number): Promise<boolean> {
+	try {
+		return Date.now() - (await stat(path)).mtimeMs > ms;
+	} catch {
+		return false;
+	}
 }
 
 async function acquireVersionLock<A>(
@@ -653,19 +691,26 @@ async function acquireVersionLock<A>(
 		} catch (cause) {
 			if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "EEXIST")
 				throw cause;
-			try {
-				const lock = Schema.decodeUnknownSync(
-					Schema.Struct({ pid: Schema.Int.check(Schema.isGreaterThan(0)) })
-				)(JSON.parse(await readFile(path, "utf8")));
-				if (processLiveness(lock.pid) === "dead") {
-					await rm(path, { force: true });
-					continue;
-				}
-			} catch {
-				const details = await stat(path).catch(() => undefined);
-				if (details !== undefined && Date.now() - details.mtimeMs > 30_000) {
-					await rm(path, { force: true });
-					continue;
+			const read = await readCacheFile(path);
+			// Released between the failed open and the read: try again at once.
+			if (read.kind === "missing") continue;
+			// A lock that cannot be read is treated as held; its owner may still be working.
+			if (read.kind === "text") {
+				try {
+					const lock = Schema.decodeUnknownSync(
+						Schema.Struct({ pid: Schema.Int.check(Schema.isGreaterThan(0)) })
+					)(JSON.parse(read.text));
+					if (processLiveness(lock.pid) === "dead") {
+						await rm(path, { force: true });
+						continue;
+					}
+				} catch {
+					// The owner writes its pid right after creating the file, so a lock that is
+					// still undecodable after the grace period was abandoned before that write.
+					if (await olderThan(path, STALE_UNREADABLE_FILE_MS)) {
+						await rm(path, { force: true });
+						continue;
+					}
 				}
 			}
 			await new Promise<void>((complete, reject) => {

@@ -71,8 +71,7 @@
   of the same validated revision. Package replacement requires uasset-io protocol 1.16.
 - 70dec0a: Add an opt-in native Game Text index builder through the existing scoped uasset-io protocol
   session. The builder writes the existing shared dictionary and column format, supports narrowly
-  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript
-  remains the default builder. Give decoded shared-string arenas their own buffers so cache
+  eligible incremental joins, and preserves the current JavaScript query interface. TypeScript remained the default builder until the native engine entry in this release. Give decoded shared-string arenas their own buffers so cache
   accounting tracks their actual capacity.
 - 2f9469b: Move Game Text indexing and query execution into the Rust engine. Queries, counts, facets,
   groups, focus and exports use scoped native readers; mixed authored-source, String Table and

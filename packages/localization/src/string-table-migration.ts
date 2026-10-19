@@ -185,7 +185,13 @@ export function prepareStringTableRedirectConfig(
 		(value) => field(value, "StringTable")?.toLowerCase() === redirect.tableId.toLowerCase()
 	);
 	// Unreal rejects a destination that redirects elsewhere; refuse it before anything is written.
-	if (table.some((value) => field(value, "OldKey") === redirect.newKey))
+	if (
+		table.some(
+			(value) =>
+				field(value, "OldKey") === redirect.newKey &&
+				field(value, "NewKey") !== redirect.newKey
+		)
+	)
 		return {
 			status: "invalid",
 			message: "The new String Table key already redirects to another key."

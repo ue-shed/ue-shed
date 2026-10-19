@@ -64,6 +64,20 @@ describe("String Table migration planning", () => {
 				config
 			);
 	});
+	it("allows an identity redirect on the new key", () => {
+		const result = planStringTableKeyMigration(migration);
+		if (result.status !== "ready") throw new Error("Expected a plan");
+		const identity = `+StringTableRedirects=(StringTable="${migration.tableId}",OldKey="${migration.newKey}",NewKey="${migration.newKey}")\n`;
+		const config = prepareStringTableRedirectConfig(
+			`[Core.StringTable]\n${identity}`,
+			result.plan.redirect
+		);
+		expect(config.status).toBe("ready");
+		if (config.status === "ready") {
+			expect(config.after).toContain(identity);
+			expect(config.after).toContain(result.plan.redirect.value);
+		}
+	});
 	it.each([
 		`(StringTable="${migration.tableId}",OldKey="Welcome",NewKey="Elsewhere")`,
 		`(StringTable=${migration.tableId},OldKey=Welcome,NewKey=Elsewhere)`,

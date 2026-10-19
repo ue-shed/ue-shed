@@ -4,7 +4,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Dom/JsonObject.h"
 #include "Editor.h"
-#include "Engine/StringTable.h"
+#include "Internationalization/StringTable.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"

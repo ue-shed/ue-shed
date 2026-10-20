@@ -17,8 +17,14 @@ import {
 	legacyVersions,
 	readLegacyEvidence
 } from "../fixtures/legacy-unreal-project/evidence.ts";
-import { repositoryRoot, unrealEngineTools, unrealEngineVersion } from "./unreal-plugin-host.ts";
-import { installedEngineRoot, parseUnrealDescriptor } from "./unreal-project-support.ts";
+import {
+	repositoryRoot,
+	unrealEngineTools,
+	unrealEngineVersion,
+	localDerivedDataCacheArguments
+} from "./unreal-plugin-host.ts";
+import { findUnrealEngine } from "./unreal-engines.ts";
+import { parseUnrealDescriptor } from "./unreal-project-support.ts";
 
 const arguments_ = process.argv.slice(2);
 if (arguments_.some((argument) => argument !== "--update" && !argument.startsWith("--results="))) {
@@ -74,7 +80,7 @@ const results: Array<{
 }> = [];
 for (const version of legacyVersions) {
 	const variable = `UE_SHED_UNREAL_${version.replace(".", "")}_ROOT`;
-	const configured = process.env[variable] ?? installedEngineRoot({ version });
+	const configured = process.env[variable] ?? (await findUnrealEngine([version]));
 	const compilerVersion =
 		process.env[`UE_SHED_UNREAL_${version.replace(".", "")}_COMPILER_VERSION`];
 	if (!configured || !existsSync(join(configured, "Engine", "Source"))) {
@@ -122,6 +128,7 @@ for (const version of legacyVersions) {
 		const commandletArguments = [
 			"-unattended",
 			"-nop4",
+			...localDerivedDataCacheArguments,
 			"-nosplash",
 			"-NullRHI",
 			"-UTF8Output"

@@ -1,6 +1,11 @@
 import { Argument, Command, Flag } from "effect/cli";
-import { runNiagaraPreview } from "../workflows/niagara.js";
 import { optionalFlag, optionalValue, positiveIntegerFlag } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runNiagaraPreview = lazyWorkflow(
+	() => import("../workflows/niagara.js"),
+	(module) => module.runNiagaraPreview
+);
 
 function optionalNumber(value: string | undefined): number | undefined {
 	return value === undefined ? undefined : Number(value);

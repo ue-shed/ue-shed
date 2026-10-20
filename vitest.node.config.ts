@@ -21,6 +21,10 @@ export default defineProject({
 			"scripts/package-text-layer.test.ts",
 			"scripts/columnar-join.test.ts",
 			"scripts/columnar-join-fuzz.test.ts",
+			// `pnpm test:game-text:fuzz` sets this to run the seeded sweep outside the ordinary suite.
+			...(process.env.UE_SHED_JOIN_FUZZ_SWEEP === "1"
+				? ["scripts/columnar-join-fuzz-sweep.test.ts"]
+				: []),
 			"scripts/native-game-text-join.test.ts",
 			"scripts/native-game-text-fixtures.integration.test.ts",
 			"scripts/columnar-join-regressions.test.ts",

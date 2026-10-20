@@ -2,19 +2,49 @@ import { AuthoringValue } from "@ue-shed/protocol";
 import { Argument, Command, Flag } from "effect/cli";
 import { Effect, Schema } from "effect";
 import { CliCommandError, isCliCommandError } from "../cli-runtime.js";
-import {
-	runAuthoringAnalyze,
-	runAuthoringCatalog,
-	runAuthoringInspect,
-	runAuthoringJoin,
-	runAuthoringLiveInspect,
-	runAuthoringLiveTables,
-	runAuthoringParity,
-	runAuthoringRelationships,
-	runAuthoringSession,
-	runAuthoringTables
-} from "../workflows/authoring.js";
 import { nonNegativeIntegerFlag, optionalFlag, optionalValue, readerFields } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runAuthoringAnalyze = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringAnalyze
+);
+const runAuthoringCatalog = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringCatalog
+);
+const runAuthoringInspect = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringInspect
+);
+const runAuthoringJoin = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringJoin
+);
+const runAuthoringLiveInspect = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringLiveInspect
+);
+const runAuthoringLiveTables = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringLiveTables
+);
+const runAuthoringParity = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringParity
+);
+const runAuthoringRelationships = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringRelationships
+);
+const runAuthoringSession = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringSession
+);
+const runAuthoringTables = lazyWorkflow(
+	() => import("../workflows/authoring.js"),
+	(module) => module.runAuthoringTables
+);
 
 /** Decode an inline JSON flag value, classifying JSON syntax and schema failures separately. */
 function parseJsonFlag<A>(label: string, value: string, schema: Schema.Decoder<A>) {

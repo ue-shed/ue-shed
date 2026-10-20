@@ -17,6 +17,7 @@ import {
 	PROJECT_CUSTODIAN_PACKAGE_NAME,
 	WASM_PACKAGE_NAME
 } from "./pack-public-packages.ts";
+import { traceProcess } from "./process-trace.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,15 +34,17 @@ function run(command: string, args: readonly string[], cwd: string, options: Run
 	const isPnpm = command === executable("pnpm");
 	const commandArgs = isPnpm ? ["--dir", cwd, ...args] : args;
 	const isCommandShim = process.platform === "win32" && command.endsWith(".cmd");
-	const result = spawnSync(
-		isCommandShim ? (process.env.ComSpec ?? "cmd.exe") : command,
-		isCommandShim ? ["/d", "/s", "/c", command, ...commandArgs] : commandArgs,
-		{
-			cwd: isPnpm ? repositoryRoot : cwd,
-			encoding: "utf8",
-			shell: false,
-			env: options.env ?? process.env
-		}
+	const result = traceProcess(command, args, () =>
+		spawnSync(
+			isCommandShim ? (process.env.ComSpec ?? "cmd.exe") : command,
+			isCommandShim ? ["/d", "/s", "/c", command, ...commandArgs] : commandArgs,
+			{
+				cwd: isPnpm ? repositoryRoot : cwd,
+				encoding: "utf8",
+				shell: false,
+				env: options.env ?? process.env
+			}
+		)
 	);
 	if (result.error) throw result.error;
 	if (result.status !== 0) {
@@ -62,7 +65,9 @@ try {
 	const consumerDirectory = join(temporaryRoot, "consumer");
 	await mkdir(packageDirectory);
 	await mkdir(consumerDirectory);
-	const packed = await packPublicPackages({ output: packageDirectory });
+	// Packaging does not depend on optimization, and the debug executables are usually built
+	// already. `create-release-candidate` packs the release build.
+	const packed = await packPublicPackages({ output: packageDirectory, nativeProfile: "debug" });
 	assert.deepEqual(
 		packed.map((entry) => entry.name),
 		PUBLIC_PACKAGES.map((entry) => entry.name),

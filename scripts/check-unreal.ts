@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { withSpanAsync } from "./gate-trace.ts";
 import { runPnpm } from "./workbench-tools.ts";
 
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001";
@@ -85,12 +86,15 @@ try {
 			`check:unreal needs exclusive access to the fixture project, but ${endpoint} is already serving Remote Control. Close that editor and retry; the gate launches and cleans up its own editor after commandlet checks.`
 		);
 	}
+	// Commandlet lanes need the project to themselves; the live-editor lanes share one editor.
+	// Authoring runs first there: it restores the tables it edits before review starts.
 	runPnpm(["run", "test:uasset-conformance"], environment);
-	runPnpm(["run", "test:unreal-authoring"], environment);
 	runPnpm(["run", "test:unreal-niagara"], environment);
 	runPnpm(["run", "fixture:launch-authoring"], environment);
 	editorPid = ownedEditorPid();
-	await waitForRemoteControl(editorPid);
+	const launchedPid = editorPid;
+	await withSpanAsync("wait for Remote Control", {}, () => waitForRemoteControl(launchedPid));
+	runPnpm(["run", "test:unreal-authoring"], environment);
 	runPnpm(["run", "test:unreal-review"], environment);
 } finally {
 	stopOwnedEditor(editorPid);

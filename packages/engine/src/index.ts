@@ -51,12 +51,20 @@ export {
 	EngineInstallationError,
 	type EngineInstallationRequest,
 	EngineVersion,
+	makeEngineInstallationDiscoveryLayer,
 	makeEngineInstallationDiscoveryTestLayer,
 	parseUnrealProjectDescriptor,
 	ProjectDescriptor,
 	projectLabel,
 	projectRootOf
 } from "./engine-installation.js";
+export {
+	type EngineRootSources,
+	installedEngineRoots,
+	queryWindowsRegistry,
+	type RegistryQuery,
+	registeredBuildRoot
+} from "./engine-sources.js";
 export {
 	makeUnrealProjectLauncherTestLayer,
 	makeUnrealProjectProcessTestLayer,

@@ -192,10 +192,8 @@ function discoverEngineRoot(
 			);
 		}
 
-		const epicRoot = join(host.programFiles, "Epic Games");
-		const entries = yield* host.listDirectories(epicRoot).pipe(Effect.orElseSucceed(() => []));
 		const candidates = yield* Effect.forEach(
-			entries.filter((entry) => basename(entry).startsWith("UE_")),
+			yield* host.engineRoots,
 			(entry) => engineCandidate(host, entry),
 			{ concurrency: "unbounded" }
 		);

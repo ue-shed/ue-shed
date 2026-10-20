@@ -32,7 +32,8 @@ import {
 	runProcess,
 	ueShedPluginIds,
 	unrealEngineTools,
-	unrealEngineVersion
+	unrealEngineVersion,
+	localDerivedDataCacheArguments
 } from "./unreal-plugin-host.ts";
 import { runPnpm, unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 import { acceptLocalizationMigration } from "./localization-text-actions-acceptance.ts";
@@ -492,6 +493,7 @@ runProcess(tools.editorCommandlet, [
 	`-GameTextActionsEvidence=${evidenceDirectory}`,
 	"-unattended",
 	"-nop4",
+	...localDerivedDataCacheArguments,
 	"-nosplash",
 	"-NullRHI"
 ]);

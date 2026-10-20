@@ -1,29 +1,4 @@
-import { execFileSync } from "node:child_process";
 import { parseJsonObject, type JsonObject } from "./json.ts";
-
-const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
-
-export function installedEngineRoot({
-	version,
-	platform = process.platform,
-	queryRegistry = (key) =>
-		execFileSync("reg.exe", ["query", key, "/v", "InstalledDirectory"], {
-			encoding: "utf8",
-			windowsHide: true
-		})
-}: {
-	readonly version: string;
-	readonly platform?: NodeJS.Platform;
-	readonly queryRegistry?: (key: string) => string;
-}) {
-	if (platform !== "win32") return undefined;
-	try {
-		const output = queryRegistry(`HKLM\\SOFTWARE\\EpicGames\\Unreal Engine\\${version}`);
-		return output.match(/^\s*InstalledDirectory\s+REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/mu)?.[1];
-	} catch {
-		return undefined;
-	}
-}
 
 function withoutJsonComments(contents: string) {
 	let result = "";
@@ -100,31 +75,4 @@ function withoutTrailingCommas(contents: string) {
 export function parseUnrealDescriptor(contents: string): JsonObject {
 	const withoutBom = contents.charCodeAt(0) === 0xfeff ? contents.slice(1) : contents;
 	return parseJsonObject(withoutTrailingCommas(withoutJsonComments(withoutBom)));
-}
-
-export function registeredEngineRoot({
-	association,
-	platform = process.platform,
-	queryRegistry = (name) =>
-		execFileSync("reg.exe", ["query", registeredBuildsKey, "/v", name], {
-			encoding: "utf8",
-			windowsHide: true
-		})
-}: {
-	readonly association: string | undefined;
-	readonly platform?: NodeJS.Platform;
-	readonly queryRegistry?: (name: string) => string;
-}) {
-	if (platform !== "win32" || !association) return undefined;
-	let output: string;
-	try {
-		output = queryRegistry(association);
-	} catch {
-		return undefined;
-	}
-	for (const line of output.split(/\r?\n/)) {
-		const match = line.match(/^\s*(.*?)\s{2,}REG_(?:EXPAND_)?SZ\s{2,}(.+?)\s*$/);
-		if (match?.[1] === association && match[2]) return match[2];
-	}
-	return undefined;
 }

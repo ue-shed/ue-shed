@@ -48,11 +48,11 @@ const gates: readonly TestGate[] = [
 	},
 	{
 		file: "packages/authoring/src/unreal-mutation.integration.test.ts",
-		name: "real Unreal authoring mutation",
+		name: "real Unreal authoring mutation through Remote Control",
 		missing: (environment) =>
-			environment.UE_SHED_UNREAL_INTEGRATION === "1"
+			environment.UE_SHED_REMOTE_CONTROL_ENDPOINT && environment.UE_SHED_UASSET_EXECUTABLE
 				? undefined
-				: "set UE_SHED_UNREAL_INTEGRATION=1 or run pnpm test:unreal-authoring"
+				: "set UE_SHED_REMOTE_CONTROL_ENDPOINT to a fresh fixture editor (pnpm fixture:launch-authoring) or run pnpm check:unreal"
 	},
 	{
 		file: "packages/cameras/src/review-unreal.integration.test.ts",

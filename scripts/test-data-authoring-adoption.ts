@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,9 +24,16 @@ const materializer = join(
 	"adoption",
 	"materialize.mjs"
 );
-// An external workspace cannot inherit dependencies from the source checkout.
-const targetRoot = await mkdtemp(join(tmpdir(), "ue-shed-data-authoring-adoption-"));
-const cargoTargetDirectory = process.env.CARGO_TARGET_DIR ?? join(targetRoot, "target");
+// An external workspace cannot inherit dependencies from the source checkout, so it lives outside
+// it. Its path is fixed per checkout, and the materializer keeps source timestamps, so Cargo reuses
+// the reader build from the previous run while the crates are unchanged.
+const targetRoot = join(
+	tmpdir(),
+	`ue-shed-data-authoring-adoption-${createHash("sha256").update(repositoryRoot).digest("hex").slice(0, 12)}`
+);
+await rm(targetRoot, { recursive: true, force: true });
+const cargoTargetDirectory =
+	process.env.CARGO_TARGET_DIR ?? join(repositoryRoot, "target", "data-authoring-adoption");
 // Twelve authoring tables, one localization table and five Game Text fixture tables.
 const expectedFixtureTableCount = 18;
 
@@ -244,7 +251,13 @@ runPnpm(["install", "--ignore-scripts", "--frozen-lockfile=false"]);
 await rm(join(targetRoot, "node_modules"), { recursive: true, force: true });
 runPnpm(["install", "--offline", "--ignore-scripts", "--frozen-lockfile"]);
 runPnpm(["build"]);
-runPnpm(["build:reader"]);
+// This gate checks that the copied workspace builds; link-time optimization only slows that down
+// (about 3.5 instead of 1.5 minutes when the crates changed). Releases build with the full profile.
+runPnpm(["build:reader"], {
+	CARGO_TARGET_DIR: cargoTargetDirectory,
+	CARGO_PROFILE_RELEASE_LTO: "false",
+	CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+});
 const cssPath = join(targetRoot, "app", "dist", "stylex.css");
 const initialCss = await readFile(cssPath, "utf8");
 if (initialCss.length === 0) fail("initial production stylex.css is empty");

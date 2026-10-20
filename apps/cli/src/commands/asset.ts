@@ -6,15 +6,36 @@ import {
 	optionalWhereFlags,
 	optionalFilterFlags
 } from "./localization-flags.js";
-import { runSavedReview } from "../saved-review-workflows.js";
-import {
-	runAssetsScan,
-	runInputInspect,
-	runTextReview,
-	runTextRulesInit,
-	runTextScan,
-	runTextSearch
-} from "../asset-workflows.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runSavedReview = lazyWorkflow(
+	() => import("../saved-review-workflows.js"),
+	(module) => module.runSavedReview
+);
+const runAssetsScan = lazyWorkflow(
+	() => import("../asset-workflows.js"),
+	(module) => module.runAssetsScan
+);
+const runInputInspect = lazyWorkflow(
+	() => import("../asset-workflows.js"),
+	(module) => module.runInputInspect
+);
+const runTextReview = lazyWorkflow(
+	() => import("../asset-workflows.js"),
+	(module) => module.runTextReview
+);
+const runTextRulesInit = lazyWorkflow(
+	() => import("../asset-workflows.js"),
+	(module) => module.runTextRulesInit
+);
+const runTextScan = lazyWorkflow(
+	() => import("../asset-workflows.js"),
+	(module) => module.runTextScan
+);
+const runTextSearch = lazyWorkflow(
+	() => import("../asset-workflows.js"),
+	(module) => module.runTextSearch
+);
 
 const optionalFlag = (name: string) => Flag.String(name).pipe(Flag.optional);
 

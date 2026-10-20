@@ -320,8 +320,8 @@ pnpm fixture:launch-authoring
 
 ## Requirements
 
-- Unreal Engine 5.7 installed through the Epic Games Launcher, or an explicit engine root supplied
-  through `UE_SHED_UNREAL_ENGINE_ROOT`.
+- Unreal Engine 5.7 installed through the Epic Games Launcher on any drive, or an explicit engine
+  root supplied through `UE_SHED_UNREAL_ENGINE_ROOT`.
 - Visual Studio 2022 with the Unreal Engine C++ workload on Windows.
 
 The local UE 5.7 installation is a development baseline, not a runtime product default. The fixture

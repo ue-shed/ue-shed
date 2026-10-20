@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withSpan } from "./gate-trace.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -12,12 +13,18 @@ export function ensureUassetExecutable(environment: NodeJS.ProcessEnv = process.
 	}
 
 	const build = (command: string, env: NodeJS.ProcessEnv) =>
-		spawnSync(command, ["build", "--locked", "-p", "uasset-io"], {
-			cwd: repositoryRoot,
-			env,
-			stdio: "inherit",
-			windowsHide: true
-		});
+		withSpan(
+			"cargo build -p uasset-io",
+			{},
+			(span) =>
+				spawnSync(command, ["build", "--locked", "-p", "uasset-io"], {
+					cwd: repositoryRoot,
+					env: span.environment(env),
+					stdio: "inherit",
+					windowsHide: true
+				}),
+			(result) => (result.status === 0 ? "ok" : "error")
+		);
 	let result = build("cargo", environment);
 	if (result.error && "code" in result.error && result.error.code === "ENOENT") {
 		// Terminals opened before Rust was installed can retain a PATH without Cargo.

@@ -1,6 +1,19 @@
 import { optionalFlag, optionalValue } from "./options.js";
 import { Command } from "effect/cli";
-import { runDoctor, runVersion, runProducerDoctor } from "../core-workflows.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runDoctor = lazyWorkflow(
+	() => import("../core-workflows.js"),
+	(module) => module.runDoctor
+);
+const runVersion = lazyWorkflow(
+	() => import("../core-workflows.js"),
+	(module) => module.runVersion
+);
+const runProducerDoctor = lazyWorkflow(
+	() => import("../core-workflows.js"),
+	(module) => module.runProducerDoctor
+);
 
 export const versionCommand = Command.make("version", {}, runVersion).pipe(
 	Command.withDescription("Print the UE Shed and protocol versions.")

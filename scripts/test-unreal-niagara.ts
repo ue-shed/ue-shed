@@ -15,6 +15,7 @@ import {
 } from "../packages/niagara/src/index.ts";
 import { prepareUnrealPlugins, unrealEngineTools } from "./unreal-plugin-host.ts";
 import { repositoryRoot } from "./native-tools.ts";
+import { traceProcess } from "./process-trace.ts";
 
 const projectDescriptor = join(
 	repositoryRoot,
@@ -24,11 +25,13 @@ const projectDescriptor = join(
 );
 
 function run(command: string, args: readonly string[]) {
-	const result = spawnSync(command, args, {
-		cwd: repositoryRoot,
-		stdio: "inherit",
-		windowsHide: true
-	});
+	const result = traceProcess(command, args, () =>
+		spawnSync(command, args, {
+			cwd: repositoryRoot,
+			stdio: "inherit",
+			windowsHide: true
+		})
+	);
 	if (result.error) throw result.error;
 	if (result.status !== 0) {
 		throw new Error(`${command} ${args.join(" ")} exited with ${String(result.status)}.`);

@@ -1,16 +1,21 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	decodeAuthoringApplyResult as decodeAuthoringApplyResultEffect,
-	decodeAuthoringSaveResult as decodeAuthoringSaveResultEffect,
 	decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect,
 	type AuthoringApplyRequest,
 	type AuthoringCommand,
-	type AuthoringSaveRequest
+	type AuthoringSaveRequest,
+	type AuthoringTableSnapshot
 } from "@ue-shed/protocol";
+import {
+	connectUnrealAuthoring,
+	RemoteControlClientLive,
+	type UnrealAuthoringConnection
+} from "@ue-shed/unreal-connection";
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import { AuthoringIdGeneratorLive, makeAuthoringSessionService } from "./session-service.js";
@@ -19,19 +24,17 @@ import { fingerprintTable } from "./fingerprint.js";
 const sessionService = (config: Parameters<typeof makeAuthoringSessionService>[0]) =>
 	makeAuthoringSessionService(config).pipe(Effect.provide(AuthoringIdGeneratorLive));
 
-const decodeAuthoringApplyResult = <Input>(input: Input) =>
-	Effect.runSync(decodeAuthoringApplyResultEffect(input));
-const decodeAuthoringSaveResult = <Input>(input: Input) =>
-	Effect.runSync(decodeAuthoringSaveResultEffect(input));
 const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
-const enabled = process.env.UE_SHED_UNREAL_INTEGRATION === "1" && executable;
+const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
+const enabled = endpoint !== undefined && executable !== undefined;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const objectPath = "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars";
 const enumObjectPath = "/Game/Fixture/Authoring/DT_Enums.DT_Enums";
 const rowReferenceObjectPath = "/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences";
+const missingObjectPath = "/Game/Fixture/Authoring/DT_Missing.DT_Missing";
 const assetPath = join(
 	repositoryRoot,
 	"fixtures/unreal-project/Content/Fixture/Authoring/DT_Scalars.uasset"
@@ -40,14 +43,36 @@ const rowReferenceAssetPath = join(
 	repositoryRoot,
 	"fixtures/unreal-project/Content/Fixture/Authoring/DT_LeftReferences.uasset"
 );
+const authoringContent = join(repositoryRoot, "fixtures/unreal-project/Content/Fixture/Authoring");
+const applyContract = { name: "unreal-authoring-apply", version: { major: 1, minor: 0 } } as const;
+const saveContract = { name: "unreal-authoring-save", version: { major: 1, minor: 0 } } as const;
 
-function runFixture(...args: string[]): void {
-	execFileSync(process.execPath, ["scripts/unreal-fixture.ts", ...args], {
-		cwd: repositoryRoot,
-		stdio: "pipe",
-		timeout: 300_000,
-		windowsHide: true
-	});
+/**
+ * Reads the committed Authoring packages this test saves over. Restoring these bytes afterwards
+ * leaves the fixture as committed; `fixture:generate` would re-save every fixture asset instead.
+ */
+async function readAuthoringPackages(): Promise<ReadonlyMap<string, Uint8Array>> {
+	const packages = new Map<string, Uint8Array>();
+	for (const entry of await readdir(authoringContent, { recursive: true, withFileTypes: true })) {
+		if (!entry.isFile()) continue;
+		const path = join(entry.parentPath, entry.name);
+		packages.set(path, await readFile(path));
+	}
+	return packages;
+}
+
+/**
+ * Rewrites only the packages whose bytes changed: the editor keeps loaded packages it did not save
+ * (such as referenced tables) open, so writing those fails with EBUSY.
+ */
+async function restoreAuthoringPackages(packages: ReadonlyMap<string, Uint8Array>) {
+	for (const entry of await readdir(authoringContent, { recursive: true, withFileTypes: true })) {
+		const path = join(entry.parentPath, entry.name);
+		if (entry.isFile() && !packages.has(path)) await rm(path, { force: true });
+	}
+	for (const [path, bytes] of packages) {
+		if (!Buffer.from(bytes).equals(await readFile(path))) await writeFile(path, bytes);
+	}
 }
 
 function readDiskSnapshot(path = assetPath): Schema.Json {
@@ -61,27 +86,28 @@ function readDiskSnapshot(path = assetPath): Schema.Json {
 	);
 }
 
-async function json(path: string): Promise<Schema.Json> {
-	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
+function snapshotOf(snapshots: readonly AuthoringTableSnapshot[], path: string) {
+	const snapshot = snapshots.find((entry) => entry.table.objectPath === path);
+	if (snapshot === undefined) throw new Error(`No snapshot for ${path}`);
+	return snapshot;
 }
 
-describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
+describe.skipIf(!enabled)("real Unreal authoring mutation through Remote Control", () => {
 	it("rolls back a failed batch, commits all command shapes, caches the result, and saves separately", async () => {
+		const connection: UnrealAuthoringConnection = await Effect.runPromise(
+			connectUnrealAuthoring(endpoint!).pipe(Effect.provide(RemoteControlClientLive))
+		);
+		const run = (operation: string) => `${randomUUID().slice(0, 8)}-${operation}`;
 		const directory = await mkdtemp(join(tmpdir(), "ue-shed-authoring-"));
+		const committedPackages = await readAuthoringPackages();
+		let restore: AuthoringApplyRequest | undefined;
 		try {
-			runFixture("generate");
-			const snapshots = join(directory, "snapshots");
-			runFixture("snapshot", snapshots);
-			const base = decodeAuthoringTableSnapshot(
-				await json(join(snapshots, "DT_Scalars.json"))
-			);
-			const enumBase = decodeAuthoringTableSnapshot(
-				await json(join(snapshots, "DT_Enums.json"))
-			);
-			const rowReferenceBase = decodeAuthoringTableSnapshot(
-				await json(join(snapshots, "DT_LeftReferences.json"))
-			);
+			const readLive = (path: string) => Effect.runPromise(connection.getTableSnapshot(path));
+			const base = await readLive(objectPath);
+			const enumBase = await readLive(enumObjectPath);
+			const rowReferenceBase = await readLive(rowReferenceObjectPath);
 			for (const snapshot of [base, enumBase, rowReferenceBase]) {
+				expect(snapshot.authority.kind).toBe("live_editor");
 				expect("fingerprint" in snapshot).toBe(true);
 				if ("fingerprint" in snapshot) {
 					expect(snapshot.fingerprint.status).toBe("available");
@@ -95,17 +121,19 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			const enabledField = alpha.fields.find((field) => field.name === "Enabled")!;
 			const enumRow = enumBase.table.rows[0]!;
 			const enumField = enumRow.fields[0]!;
+			const enumChangedValue = enumBase.table.rows[1]!.fields[0]!.value;
 			const rowReferenceRow = rowReferenceBase.table.rows[0]!;
 			const rowReferenceField = rowReferenceRow.fields[0]!;
+			const rightBeta = {
+				kind: "row_reference" as const,
+				rowName: "Right_Beta",
+				tableObjectPath: "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+			};
 			const changedValue = { kind: "bool", value: false } as const;
-			const applyContract = {
-				name: "unreal-authoring-apply",
-				version: { major: 1, minor: 0 }
-			} as const;
 
 			const rollbackRequest: AuthoringApplyRequest = {
 				contract: applyContract,
-				operationId: "rollback-probe",
+				operationId: run("rollback-probe"),
 				tables: [
 					{ expectedFingerprint: fingerprintTable(base), objectPath },
 					{ expectedFingerprint: fingerprintTable(enumBase), objectPath: enumObjectPath }
@@ -135,55 +163,30 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 					}
 				]
 			};
-			const rollbackInput = join(directory, "rollback-request.json");
-			const rollbackOutput = join(directory, "rollback-result.json");
-			await writeFile(rollbackInput, JSON.stringify(rollbackRequest), "utf8");
-			runFixture("apply", rollbackInput, rollbackOutput);
-			const rollback = decodeAuthoringApplyResult(await json(rollbackOutput));
+			const rollback = await Effect.runPromise(connection.apply(rollbackRequest));
 			expect(rollback.status, JSON.stringify(rollback.errors)).toBe("rolled_back");
-			expect(
-				fingerprintTable(
-					rollback.snapshots.find((entry) => entry.table.objectPath === objectPath)!
-				)
-			).toBe(fingerprintTable(base));
-			expect(
-				fingerprintTable(
-					rollback.snapshots.find((entry) => entry.table.objectPath === enumObjectPath)!
-				)
-			).toBe(fingerprintTable(enumBase));
+			expect(fingerprintTable(snapshotOf(rollback.snapshots, objectPath))).toBe(
+				fingerprintTable(base)
+			);
+			expect(fingerprintTable(snapshotOf(rollback.snapshots, enumObjectPath))).toBe(
+				fingerprintTable(enumBase)
+			);
 
-			const collisionInput = join(directory, "collision-request.json");
-			const collisionOutput = join(directory, "collision-result.json");
-			await writeFile(
-				collisionInput,
-				JSON.stringify({ ...rollbackRequest, commands: [], operationId: "rollback-probe" }),
-				"utf8"
+			// The editor remembers the operation, so reusing its ID with another payload collides.
+			const collision = await Effect.runPromise(
+				connection.apply({ ...rollbackRequest, commands: [] })
 			);
-			runFixture(
-				"apply-pair",
-				rollbackInput,
-				rollbackOutput,
-				collisionInput,
-				collisionOutput
-			);
-			const collision = decodeAuthoringApplyResult(await json(collisionOutput));
 			expect(collision.status).toBe("rejected");
 			expect(collision.errors[0]?.code).toBe("operation_id_collision");
 
-			const driftInput = join(directory, "drift-request.json");
-			const driftOutput = join(directory, "drift-result.json");
-			await writeFile(
-				driftInput,
-				JSON.stringify({
+			const drift = await Effect.runPromise(
+				connection.apply({
 					commands: [],
 					contract: applyContract,
-					operationId: "drift-probe",
+					operationId: run("drift-probe"),
 					tables: [{ expectedFingerprint: "sha256-v1:stale", objectPath }]
-				}),
-				"utf8"
+				})
 			);
-			runFixture("apply", driftInput, driftOutput);
-			const drift = decodeAuthoringApplyResult(await json(driftOutput));
 			expect(drift.status).toBe("rejected");
 			expect(drift.errors[0]?.code).toBe("fingerprint_mismatch");
 
@@ -220,7 +223,7 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 					body: {
 						fieldName: enumField.name,
 						kind: "set_cell" as const,
-						newValue: enumBase.table.rows[1]!.fields[0]!.value,
+						newValue: enumChangedValue,
 						oldValue: enumField.value,
 						rowId: enumRow.id
 					},
@@ -231,12 +234,7 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 					body: {
 						fieldName: rowReferenceField.name,
 						kind: "set_cell" as const,
-						newValue: {
-							kind: "row_reference" as const,
-							rowName: "Right_Beta",
-							tableObjectPath:
-								"/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
-						},
+						newValue: rightBeta,
 						oldValue: rowReferenceField.value,
 						rowId: rowReferenceRow.id
 					},
@@ -281,39 +279,82 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			if (prepared.pendingOperation.kind !== "apply") throw new Error("Apply not prepared");
 			const commitRequest = prepared.pendingOperation.request;
 			const saveRequest: AuthoringSaveRequest = {
-				contract: {
-					name: "unreal-authoring-save",
-					version: { major: 1, minor: 0 }
-				},
+				contract: saveContract,
 				objectPaths: [
 					objectPath,
 					enumObjectPath,
 					rowReferenceObjectPath,
-					"/Game/Fixture/Authoring/DT_Missing.DT_Missing"
+					missingObjectPath
 				],
-				requestId: "save-after-commit"
+				requestId: run("save-after-commit")
 			};
-			const commitInput = join(directory, "commit-request.json");
-			const commitOutput = join(directory, "commit-result.json");
-			const saveInput = join(directory, "save-request.json");
-			const saveOutput = join(directory, "save-result.json");
-			const lookupOutput = join(directory, "lookup-result.json");
-			await writeFile(commitInput, JSON.stringify(commitRequest), "utf8");
-			await writeFile(saveInput, JSON.stringify(saveRequest), "utf8");
-			runFixture(
-				"apply",
-				commitInput,
-				commitOutput,
-				saveInput,
-				saveOutput,
-				commitRequest.operationId,
-				lookupOutput
+			const committed = await Effect.runPromise(connection.apply(commitRequest));
+			expect(committed.status, JSON.stringify(committed.errors)).toBe("committed");
+			const live = snapshotOf(committed.snapshots, objectPath);
+			const addedRow = live.table.rows.find((row) => row.name === "Scalar_Added")!;
+			// Put the live editor back as found, so other tests and reruns see the committed tables.
+			restore = {
+				contract: applyContract,
+				operationId: run("restore"),
+				tables: [objectPath, enumObjectPath, rowReferenceObjectPath].map((path) => ({
+					expectedFingerprint: fingerprintTable(snapshotOf(committed.snapshots, path)),
+					objectPath: path
+				})),
+				commands: [
+					{
+						body: {
+							fieldName: "Enabled",
+							kind: "set_cell",
+							newValue: enabledField.value,
+							oldValue: changedValue,
+							rowId: alpha.id
+						},
+						id: "restore-enabled",
+						tableObjectPath: objectPath
+					},
+					{
+						body: {
+							atIndex: live.table.rows.indexOf(addedRow),
+							kind: "remove_row",
+							row: addedRow
+						},
+						id: "restore-remove-added",
+						tableObjectPath: objectPath
+					},
+					{
+						body: { atIndex: 1, kind: "add_row", row: beta },
+						id: "restore-beta",
+						tableObjectPath: objectPath
+					},
+					{
+						body: {
+							fieldName: enumField.name,
+							kind: "set_cell",
+							newValue: enumField.value,
+							oldValue: enumChangedValue,
+							rowId: enumRow.id
+						},
+						id: "restore-enum",
+						tableObjectPath: enumObjectPath
+					},
+					{
+						body: {
+							fieldName: rowReferenceField.name,
+							kind: "set_cell",
+							newValue: rowReferenceField.value,
+							oldValue: rightBeta,
+							rowId: rowReferenceRow.id
+						},
+						id: "restore-row-reference",
+						tableObjectPath: rowReferenceObjectPath
+					}
+				]
+			};
+			const lookup = await Effect.runPromise(
+				connection.lookupApplyResult(commitRequest.operationId)
 			);
-			const committed = decodeAuthoringApplyResult(await json(commitOutput));
-			const lookup = decodeAuthoringApplyResult(await json(lookupOutput));
-			const saved = decodeAuthoringSaveResult(await json(saveOutput));
-			expect(committed.status).toBe("committed");
 			expect(lookup).toEqual(committed);
+			const saved = await Effect.runPromise(connection.save(saveRequest));
 			await Effect.runPromise(service.markApplyIndeterminate("recovery", "transport lost"));
 			const restarted = await Effect.runPromise(
 				sessionService({
@@ -330,49 +371,44 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 				{ objectPath, retrySafe: true, status: "saved" },
 				{ objectPath: enumObjectPath, retrySafe: true, status: "saved" },
 				{ objectPath: rowReferenceObjectPath, retrySafe: true, status: "saved" },
-				{
-					objectPath: "/Game/Fixture/Authoring/DT_Missing.DT_Missing",
-					retrySafe: true,
-					status: "failed"
-				}
+				{ objectPath: missingObjectPath, retrySafe: true, status: "failed" }
 			]);
-			const live = committed.snapshots[0]!;
 			expect(live.table.rows.map((row) => row.name)).toEqual([
 				"Scalar_Added",
 				"Scalar_Alpha"
 			]);
 			const disk = decodeAuthoringTableSnapshot(readDiskSnapshot());
 			expect(fingerprintTable(disk)).toBe(fingerprintTable(live));
-			const rowReferenceLive = committed.snapshots.find(
-				(snapshot) => snapshot.table.objectPath === rowReferenceObjectPath
-			)!;
+			const rowReferenceLive = snapshotOf(committed.snapshots, rowReferenceObjectPath);
 			const rowReferenceDisk = decodeAuthoringTableSnapshot(
 				readDiskSnapshot(rowReferenceAssetPath)
 			);
-			expect(rowReferenceLive.table.rows[0]?.fields[0]?.value).toEqual({
-				kind: "row_reference",
-				rowName: "Right_Beta",
-				tableObjectPath: "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
-			});
+			expect(rowReferenceLive.table.rows[0]?.fields[0]?.value).toEqual(rightBeta);
 			expect(fingerprintTable(rowReferenceDisk)).toBe(fingerprintTable(rowReferenceLive));
 
-			const failedSaveInput = join(directory, "failed-save-request.json");
-			const failedSaveOutput = join(directory, "failed-save-result.json");
-			await writeFile(
-				failedSaveInput,
-				JSON.stringify({
-					contract: saveRequest.contract,
-					objectPaths: ["/Game/Fixture/Authoring/DT_Missing.DT_Missing"],
-					requestId: "all-failed"
-				}),
-				"utf8"
+			const failedSave = await Effect.runPromise(
+				connection.save({
+					contract: saveContract,
+					objectPaths: [missingObjectPath],
+					requestId: run("all-failed")
+				})
 			);
-			runFixture("save", failedSaveInput, failedSaveOutput);
-			const failedSave = decodeAuthoringSaveResult(await json(failedSaveOutput));
 			expect(failedSave.status).toBe("failed");
 			expect(failedSave.packages[0]).toMatchObject({ retrySafe: true, status: "failed" });
+
+			const restored = await Effect.runPromise(connection.apply(restore));
+			restore = undefined;
+			expect(restored.status, JSON.stringify(restored.errors)).toBe("committed");
+			for (const snapshot of [base, enumBase, rowReferenceBase]) {
+				expect(
+					fingerprintTable(snapshotOf(restored.snapshots, snapshot.table.objectPath))
+				).toBe(fingerprintTable(snapshot));
+			}
 		} finally {
-			runFixture("generate");
+			// Best effort when an assertion failed between the commit and the restore above.
+			if (restore !== undefined)
+				await Effect.runPromise(Effect.ignore(connection.apply(restore)));
+			await restoreAuthoringPackages(committedPackages);
 			await rm(directory, { force: true, recursive: true });
 		}
 	}, 600_000);

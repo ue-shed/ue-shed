@@ -1,8 +1,16 @@
+import { localDerivedDataCacheArguments } from "./unreal-plugin-host.ts";
 import { dirname, join } from "node:path";
 
 // Each entry is a fresh editor process. Never gather/export after the final two mutations.
 export function localizationFixtureSteps(project: string, evidence: string) {
-	const common = [project, "-unattended", "-nop4", "-nosplash", "-NullRHI"];
+	const common = [
+		project,
+		"-unattended",
+		"-nop4",
+		...localDerivedDataCacheArguments,
+		"-nosplash",
+		"-NullRHI"
+	];
 	const stage = (name: string) => [
 		...common,
 		"-run=UEShedBuildFixture",
@@ -43,7 +51,14 @@ export function localizationFixtureSteps(project: string, evidence: string) {
  * gather; nothing runs after them.
  */
 export function gameTextProblemsFixtureSteps(project: string) {
-	const common = [project, "-unattended", "-nop4", "-nosplash", "-NullRHI"];
+	const common = [
+		project,
+		"-unattended",
+		"-nop4",
+		...localDerivedDataCacheArguments,
+		"-nosplash",
+		"-NullRHI"
+	];
 	const stage = (name: string) => [
 		...common,
 		"-run=UEShedBuildFixture",
@@ -77,7 +92,14 @@ export function gameTextProblemsFixtureSteps(project: string) {
  * a plain file copy. Evidence is recorded last, from the saved packages.
  */
 export function gameTextActionsFixtureSteps(project: string, evidence: string) {
-	const common = [project, "-unattended", "-nop4", "-nosplash", "-NullRHI"];
+	const common = [
+		project,
+		"-unattended",
+		"-nop4",
+		...localDerivedDataCacheArguments,
+		"-nosplash",
+		"-NullRHI"
+	];
 	const stage = (name: string, ...extra: string[]) => [
 		...common,
 		"-run=UEShedBuildFixture",

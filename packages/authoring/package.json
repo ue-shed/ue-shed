@@ -29,5 +29,8 @@
 		"@ue-shed/observability": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
 		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@ue-shed/unreal-connection": "workspace:*"
 	}
 }

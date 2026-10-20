@@ -6,8 +6,14 @@ import { ConfigProvider, Effect } from "effect";
 import { expect } from "vitest";
 import {
 	EngineInstallationDiscovery,
-	EngineInstallationDiscoveryLive
+	EngineInstallationDiscoveryLive,
+	makeEngineInstallationDiscoveryLayer
 } from "./engine-installation.js";
+
+/** Discovery that sees only the engines a test creates, not this machine's registry. */
+const discoveryWithoutRegistry = makeEngineInstallationDiscoveryLayer(() =>
+	Effect.succeed(undefined)
+);
 
 it.effect("preserves JSON and filesystem causes during explicit discovery", () =>
 	Effect.gen(function* () {
@@ -109,7 +115,7 @@ it.effect.skipIf(process.platform !== "win32")(
 			const installation = yield* Effect.flatMap(EngineInstallationDiscovery, (discovery) =>
 				discovery.resolve({ projectDescriptor: descriptor })
 			).pipe(
-				Effect.provide(EngineInstallationDiscoveryLive),
+				Effect.provide(discoveryWithoutRegistry),
 				Effect.provide(
 					ConfigProvider.layer(
 						ConfigProvider.fromUnknown({
@@ -143,7 +149,7 @@ it.effect.skipIf(process.platform !== "win32")(
 			const installation = yield* Effect.flatMap(EngineInstallationDiscovery, (discovery) =>
 				discovery.resolve({ projectDescriptor: descriptor })
 			).pipe(
-				Effect.provide(EngineInstallationDiscoveryLive),
+				Effect.provide(discoveryWithoutRegistry),
 				Effect.provide(
 					ConfigProvider.layer(
 						ConfigProvider.fromUnknown({

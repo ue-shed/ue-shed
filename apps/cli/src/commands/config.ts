@@ -1,6 +1,15 @@
 import { Argument, Command, Flag } from "effect/cli";
-import { runConfigCompare, runConfigExplain } from "../workflows/config.js";
 import { optionalFlag, optionalValue } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runConfigCompare = lazyWorkflow(
+	() => import("../workflows/config.js"),
+	(module) => module.runConfigCompare
+);
+const runConfigExplain = lazyWorkflow(
+	() => import("../workflows/config.js"),
+	(module) => module.runConfigExplain
+);
 
 const common = {
 	project: Argument.String("project"),

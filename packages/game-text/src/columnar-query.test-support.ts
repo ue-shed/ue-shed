@@ -394,6 +394,14 @@ export function columnarTextCorpusQuery(
 				case "namespace":
 					has = clause.labels.has(namespaceOf(kind, row));
 					break;
+				case "translation_key":
+					has =
+						kind === "raw"
+							? clause.translation!.raw.has(row)
+							: clause.translation!.lines.has(
+									kind === "line" ? row : c("query.slice.line")[row]!
+								);
+					break;
 			}
 			if (clause.is ? !has : has) return false;
 		}
@@ -756,9 +764,34 @@ export function columnarTextCorpusQuery(
 			mask: number;
 			labels: ReadonlySet<number>;
 			prefixes: readonly PathPredicate[];
+			translation?: { lines: ReadonlySet<number>; raw: ReadonlySet<number> };
 		}[];
 		path?: PathPredicate;
 		files?: ReadonlySet<number>;
+	};
+	// Lines carry their gathered identity; a saved unit has the keys of its slices' lines.
+	const translationRows = (values: readonly string[]) => {
+		const wanted = new Map<number, Set<string>>();
+		for (const value of values) {
+			// SAFETY: TextTranslationKey admits only JSON.stringify([namespace, key]).
+			const [namespace, key] = JSON.parse(value) as [string, string];
+			const label = places.findLabel(namespace);
+			if (label >= 0) wanted.set(label, (wanted.get(label) ?? new Set()).add(key));
+		}
+		const lines = new Set<number>(),
+			raw = new Set<number>();
+		if (wanted.size === 0) return { lines, raw };
+		const keys = c("line.key");
+		for (let row = 0; row + 1 < lineStarts.length; row++) {
+			checkpoint();
+			const keyed = wanted.get(namespaceOf("line", row));
+			if (keyed?.has(data.strings([keys[row]!])[0]!)) lines.add(row);
+		}
+		const sliceRaw = c("query.slice.raw"),
+			sliceLine = c("query.slice.line");
+		for (let sr = 0; sr < sliceLine.length; sr++)
+			if (lines.has(sliceLine[sr]!)) raw.add(sliceRaw[sr]!);
+		return { lines, raw };
 	};
 	const preparedPredicates = new WeakMap<Request, Predicates>();
 	const predicatesOf = (request: Request) => {
@@ -800,7 +833,10 @@ export function columnarTextCorpusQuery(
 					prefixes:
 						clause.field === "folder"
 							? clause.values.map((value) => places.prefix(value))
-							: []
+							: [],
+					...(clause.field === "translation_key"
+						? { translation: translationRows(clause.values) }
+						: undefined)
 				})),
 				...(request.where?.pathPrefix === undefined
 					? undefined

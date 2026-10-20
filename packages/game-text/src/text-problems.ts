@@ -30,6 +30,11 @@ export interface TextFacts {
 	readonly notes: TextNotes;
 	/** Player if any saved place is player text, else unknown if any is, else editor. */
 	readonly audience: TextAudience;
+	/**
+	 * The translation keys (`gatheredIdentityKey`) the text is gathered under: a line's own, or
+	 * every key a unit's occurrences gather to. Absent or empty matches no `translation_key`.
+	 */
+	readonly translationKeys?: readonly string[];
 }
 
 /**
@@ -135,6 +140,8 @@ function clauseHas(facts: TextFacts, clause: TextFilterClause): boolean {
 			return clause.values.includes(facts.notes);
 		case "audience":
 			return clause.values.includes(facts.audience);
+		case "translation_key":
+			return clause.values.some((value) => facts.translationKeys?.includes(value) === true);
 	}
 }
 

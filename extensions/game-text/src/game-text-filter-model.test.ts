@@ -12,6 +12,15 @@ import {
 import { migratePreferences } from "./game-text-preferences.js";
 
 describe("filter pills", () => {
+	it("reads translation keys as namespace and key, the key alone in the empty namespace", () => {
+		const keys = [JSON.stringify(["", "Title"]), JSON.stringify(["UI", "Menu, Back"])];
+		expect(clauseParts({ field: "translation_key", op: "is", values: keys })).toEqual({
+			field: "Translation key",
+			op: "is any of",
+			values: "Title, UI, Menu, Back"
+		});
+	});
+
 	it("keeps one pill per field: values leave or join it under its operator", () => {
 		const excluded: TextFilter = [
 			{ field: "translation", op: "is_not", values: ["missing", "to_update"] }

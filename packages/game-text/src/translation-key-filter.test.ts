@@ -1,0 +1,222 @@
+import { describe, expect, it } from "vitest";
+import { Effect, Schema } from "effect";
+import { LocalizationEvidence } from "@ue-shed/localization";
+import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
+import { GameTextIndexRefresh } from "./index-refresh.js";
+import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+import { joinLocalizationTarget } from "./localization.js";
+import { nativeIndexBuilderLayer } from "./native-index-builder.js";
+import { textCorpusQuery } from "./query.test-support.js";
+import {
+	TextFilterClause,
+	type TextCorpus,
+	type TextCorpusSearchPage,
+	type TextCorpusSearchRequest,
+	type TextFilter
+} from "./schema.js";
+import { gatheredIdentity, gatheredIdentityKey } from "./gathered-text.js";
+
+type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
+
+const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
+
+const text = (namespace: string, key: string, source: string, property: string): Occurrence => ({
+	source,
+	dev_notes: "",
+	identity: { status: "resolved", namespace, key },
+	location: {
+		kind: "asset_property",
+		object_path: "/Game/Text/Table.Table",
+		class_path: "/Script/Engine.DataAsset",
+		property_path: property
+	},
+	edit_capability: "read_only"
+});
+
+const markers = [
+	"[029AE8344B5E8A6F3C1D2E4F5A6B7C8D]",
+	"[1B2C3D4E5F60718293A4B5C6D7E8F901]",
+	"[2C3D4E5F60718293A4B5C6D7E8F90123]"
+] as const;
+
+// Three copies of one Blueprint: their saved namespaces differ only by package marker, so Unreal
+// gathers and translates all three as ("", "Title"). Each copy keeps its own saved unit.
+const saved: Occurrence[] = [
+	text(markers[0], "Title", "Mushroom", "CopyA"),
+	text(markers[1], "Title", "Fungus", "CopyB"),
+	text(markers[2], "Title", "Toadstool", "CopyC"),
+	text(markers[0], "Subtitle", "Spores", "CopyA.Subtitle"),
+	// A String Table entry keeps its table namespace: the same key text is another key.
+	{
+		...text("Funguys", "Title", "Mushroom table", "Title"),
+		location: {
+			kind: "string_table_entry",
+			object_path: "/Game/Text/Table.Table",
+			entry_key: "Title"
+		}
+	}
+];
+
+// The marker strips away: every copy's translation key is ["", "Title"].
+const title = gatheredIdentityKey(gatheredIdentity(markers[1], "Title", false));
+const subtitle = JSON.stringify(["", "Subtitle"]);
+const tableTitle = JSON.stringify(["Funguys", "Title"]);
+
+const keyClause = (op: "is" | "is_not", values: readonly string[]): TextFilter[number] => ({
+	field: "translation_key",
+	op,
+	values
+});
+
+const unitKeys = (corpus: TextCorpus, page: TextCorpusSearchPage) =>
+	page.units
+		.map((unit) => {
+			const found = corpus.units.find((item) => item.id === unit.id)!;
+			return found.identity.status === "resolved"
+				? `${found.identity.namespace}/${found.identity.key}`
+				: found.id;
+		})
+		.sort();
+
+const lineKeys = (page: TextCorpusSearchPage) =>
+	(page.localization?.lines ?? [])
+		.map((line) =>
+			line.identity ? `${line.identity.namespace}/${line.identity.key}` : line.id
+		)
+		.sort();
+
+/** What a filter decides on a page: rows, totals and per-problem counts. */
+const decided = (corpus: TextCorpus, page: TextCorpusSearchPage) => ({
+	total: page.total,
+	units: unitKeys(corpus, page),
+	lines: lineKeys(page),
+	problems: page.problems,
+	counts: page.counts,
+	origins: page.facets?.origins
+});
+
+const builders = [
+	["columnar reference", typeScriptIndexBuilderLayer],
+	...(executable
+		? [
+				[
+					"native engine",
+					nativeIndexBuilderLayer({
+						executable,
+						timeoutMs: 30000,
+						catalogTimeoutMs: 120000
+					})
+				] as const
+			]
+		: [])
+] as const;
+
+describe("translation_key filter", () => {
+	it("accepts only JSON [namespace, key] values with a key", () => {
+		const valid = Schema.is(TextFilterClause);
+		expect(title).toBe('["","Title"]');
+		expect(valid(keyClause("is", [title]))).toBe(true);
+		for (const value of ['["","Title"] ', '["", "Title"]', '["UI",""]', '["UI"]', "UI,Title"])
+			expect(valid(keyClause("is", [value])), value).toBe(false);
+	});
+
+	for (const [name, builder] of builders)
+		it(`selects lines by gathered identity through the ${name}`, async () => {
+			await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const fixture = yield* makeIndexRegressionFixture();
+						fixture.update(saved);
+						yield* Effect.gen(function* () {
+							const result = yield* (yield* GameTextIndexRefresh).refresh(
+								fixture.request
+							);
+							const memory = fixture.raw();
+							const evidence = yield* Effect.gen(function* () {
+								return yield* (yield* LocalizationEvidence).read({
+									projectRoot: fixture.projectRoot,
+									target: fixture.target
+								});
+							}).pipe(Effect.provide(fixture.evidence));
+							const inMemory = textCorpusQuery(
+								memory,
+								undefined,
+								joinLocalizationTarget(memory, evidence)
+							);
+							const localization = { target: fixture.target.name };
+							const search = (filter: TextFilter, scoped: boolean) => {
+								const request: TextCorpusSearchRequest = {
+									query: "",
+									capability: "all",
+									pageSize: 50,
+									filter,
+									facets: { origins: true },
+									...(scoped ? { localization } : undefined)
+								};
+								return result.search(request).pipe(
+									Effect.map((page) => {
+										const indexed = decided(memory, page);
+										expect(indexed, JSON.stringify(request)).toEqual(
+											decided(memory, inMemory.search(request))
+										);
+										return indexed;
+									})
+								);
+							};
+							const copies = markers.map((marker) => `${marker}/Title`);
+
+							// Without a target, every saved copy gathered under the key.
+							const units = yield* search([keyClause("is", [title])], false);
+							expect(units.units).toEqual(copies);
+							// With one, the single line Unreal translates them by, which conflicts.
+							const lines = yield* search([keyClause("is", [title])], true);
+							expect(lines.lines).toEqual(["/Title"]);
+							expect(lines.problems?.conflicting_source).toBe(1);
+
+							// Another key and the String Table entry stay out, and is_not keeps them.
+							expect(
+								(yield* search([keyClause("is_not", [title])], false)).units
+							).toEqual(["Funguys/Title", `${markers[0]}/Subtitle`]);
+							expect(
+								(yield* search([keyClause("is_not", [title])], true)).lines
+							).toEqual(["/Subtitle", "Funguys/Title", "UI/K"]);
+							expect(
+								(yield* search([keyClause("is", [subtitle, tableTitle])], true))
+									.lines
+							).toEqual(["/Subtitle", "Funguys/Title"]);
+
+							// Combined with other clauses, every clause must match.
+							const conflicting = {
+								field: "problem",
+								op: "is",
+								values: ["conflicting_source"]
+							} as const;
+							expect(
+								(yield* search([keyClause("is", [title]), conflicting], false))
+									.units
+							).toEqual(copies);
+							expect(
+								(yield* search([keyClause("is", [title]), conflicting], true)).lines
+							).toEqual(["/Title"]);
+							expect(
+								(yield* search([keyClause("is", [subtitle]), conflicting], true))
+									.total
+							).toBe(0);
+							expect(
+								(yield* search(
+									[
+										keyClause("is", [title, subtitle]),
+										{ field: "namespace", op: "is", values: [""] }
+									],
+									true
+								)).lines
+							).toEqual(["/Subtitle", "/Title"]);
+						}).pipe(
+							Effect.provide(fixture.layer(false, fixture.source, false, builder))
+						);
+					})
+				)
+			);
+		}, 120000);
+});

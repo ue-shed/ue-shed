@@ -1,3 +1,4 @@
+import { Option, Schema } from "effect";
 import { TEXT_AUDIENCE_LABELS } from "@ue-shed/game-text/schema";
 import { TEXT_ORIGIN_LABELS, TEXT_PROBLEM_LABELS } from "@ue-shed/game-text/labels";
 import {
@@ -7,6 +8,7 @@ import {
 	TextNotes,
 	TextOriginKind,
 	TextProblem,
+	TextTranslationKey,
 	TextTranslationState,
 	type LocalizationState,
 	type TextCapabilityFilter,
@@ -50,7 +52,8 @@ export const FIELD_LABELS = {
 	namespace: "Namespace",
 	editing: "Editing",
 	notes: "Translator notes",
-	audience: "Audience"
+	audience: "Audience",
+	translation_key: "Translation key"
 } satisfies Record<TextFilterField, string>;
 
 /** Fields whose values are a fixed list, with how each value reads. */
@@ -69,11 +72,29 @@ export function isChoiceField(field: TextFilterField): field is ChoiceField {
 	return Object.hasOwn(CHOICE_FIELDS, field);
 }
 
-/** How one value reads in a pill or a menu. Folders, assets and namespaces read as written. */
+/**
+ * How one value reads in a pill or a menu. Folders, assets and namespaces read as written; a
+ * translation key reads `Namespace, Key`, or the key alone in the empty namespace.
+ */
 export function valueLabel(field: TextFilterField, value: string): string {
+	if (field === "translation_key") return translationKeyLabel(value);
 	if (!isChoiceField(field)) return value;
 	const labels: Readonly<Record<string, string>> = CHOICE_FIELDS[field].labels;
 	return labels[value] ?? value;
+}
+
+/** Whether a value is a translation key, `JSON.stringify([namespace, key])`. */
+export const isTranslationKey = Schema.is(TextTranslationKey);
+
+const translationKeyParts = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String]))
+);
+
+function translationKeyLabel(value: string): string {
+	return Option.match(translationKeyParts(value), {
+		onNone: () => value,
+		onSome: ([namespace, key]) => (namespace === "" ? key : `${namespace}, ${key}`)
+	});
 }
 
 /** "Problem is any of Key changed, Not gathered yet" as its three parts. */
@@ -201,6 +222,10 @@ function withValues(
 		case "asset":
 		case "namespace":
 			return values.length === 0 ? undefined : { ...clause, values };
+		case "translation_key": {
+			const kept = values.filter(isTranslationKey);
+			return kept.length === 0 ? undefined : { ...clause, values: kept };
+		}
 	}
 }
 

@@ -15,6 +15,7 @@ import {
 	clauseParts,
 	flipClause,
 	hasValue,
+	isTranslationKey,
 	toggleValue,
 	type ChoiceField
 } from "./game-text-filter-model.js";
@@ -437,6 +438,8 @@ function makeClause(field: TextFilterField, value: string): TextFilterClause | u
 		case "asset":
 		case "namespace":
 			return { field, op: "is", values: [value] };
+		case "translation_key":
+			return isTranslationKey(value) ? { field, op: "is", values: [value] } : undefined;
 		default: {
 			const clause = fromChoice(field, value);
 			return clause.values.length === 0 ? undefined : clause;

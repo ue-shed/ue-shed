@@ -197,6 +197,8 @@ pub(crate) struct Projection {
     empty_ids: Arc<std::collections::BTreeSet<u32>>,
     pub raw: Rows,
     pub slice: Rows,
+    slice_raw: Column,
+    slice_line: Column,
     pub starts: Column,
     pub order: Column,
     pub source: Column,
@@ -280,6 +282,8 @@ impl Projection {
             empty_ids: query.reader.empty_string_ids()?,
             raw,
             slice,
+            slice_raw,
+            slice_line,
             starts,
             source,
             flags,
@@ -403,12 +407,19 @@ impl Projection {
     }
 }
 
+/// Rows whose gathered identity is one of a translation-key clause's values.
+#[derive(Default)]
+struct TranslationRows {
+    lines: HashSet<u32>,
+    raw: HashSet<u32>,
+}
 struct PreparedClause {
     field: FilterField,
     op: FilterOp,
     mask: u32,
     labels: HashSet<u32>,
     prefixes: Vec<Prefix>,
+    translation: TranslationRows,
 }
 struct Predicates {
     clauses: Vec<PreparedClause>,
@@ -416,7 +427,13 @@ struct Predicates {
     files: Option<HashSet<u32>>,
 }
 impl Predicates {
-    fn new(request: &SearchRequest, places: &Places) -> Result<Self> {
+    fn new(
+        query: &mut EngineQuery,
+        projection: &Projection,
+        request: &SearchRequest,
+        places: &Places,
+        cancelled: &AtomicBool,
+    ) -> Result<Self> {
         let mut clauses = Vec::new();
         for clause in request.filter.as_deref().unwrap_or(&[]) {
             let labels: &[&str] = match clause.field {
@@ -442,6 +459,11 @@ impl Predicates {
                         .collect::<Result<_>>()?
                 } else {
                     Vec::new()
+                },
+                translation: if clause.field == FilterField::TranslationKey {
+                    projection.translation_rows(query, places, &clause.values, cancelled)?
+                } else {
+                    TranslationRows::default()
                 },
             });
         }
@@ -557,6 +579,59 @@ impl Projection {
         }
         Ok(false)
     }
+    /// Lines are keyed by gathered identity, so a key selects lines by their own namespace and
+    /// key. A saved unit has a key when one of its slices belongs to such a line.
+    fn translation_rows(
+        &self,
+        query: &mut EngineQuery,
+        places: &Places,
+        values: &[String],
+        cancelled: &AtomicBool,
+    ) -> Result<TranslationRows> {
+        // A resolved line's ID ends with its identity's JSON, so keys compare as bytes rather
+        // than decoding every key string in a namespace.
+        let mut wanted = std::collections::HashMap::<u32, Vec<Vec<u8>>>::new();
+        for value in values {
+            let (namespace, key) = translation_key(value)?;
+            let identity = crate::wtf8::view_json(&serde_json::json!([namespace, key]))?;
+            for label in places.labels(&[namespace], false) {
+                wanted
+                    .entry(label)
+                    .or_default()
+                    .push(crate::wtf8::Wtf8Buf::from_utf8(&identity).into_bytes());
+            }
+        }
+        let mut rows = TranslationRows::default();
+        if wanted.is_empty() {
+            return Ok(rows);
+        }
+        let starts = query.identity_starts("line")?;
+        let ids = query.reader.bytes("query.line.id_utf8")?;
+        for row in 0..self.source.len() {
+            if row & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            // Only resolved lines have a namespace; unresolved IDs never end in an identity.
+            let Some(identities) = self
+                .namespace(places, Kind::Line, row)?
+                .and_then(|label| wanted.get(&label))
+            else {
+                continue;
+            };
+            let id = ids
+                .get(starts[row] as usize..starts[row + 1] as usize)
+                .ok_or("Invalid identity byte range.")?;
+            if identities.iter().any(|identity| id.ends_with(identity)) {
+                rows.lines.insert(row as u32);
+            }
+        }
+        for (raw, line) in self.slice_raw.iter().zip(self.slice_line.iter()) {
+            if rows.lines.contains(line) {
+                rows.raw.insert(*raw);
+            }
+        }
+        Ok(rows)
+    }
     pub fn namespace(&self, places: &Places, kind: Kind, row: usize) -> Result<Option<u32>> {
         let (defined, id) = if matches!(kind, Kind::Line) {
             (
@@ -665,6 +740,11 @@ impl Projection {
                 FilterField::Namespace => self
                     .namespace(places, kind, row)?
                     .is_some_and(|value| clause.labels.contains(&value)),
+                FilterField::TranslationKey => match kind {
+                    Kind::Line => clause.translation.lines.contains(&(row as u32)),
+                    Kind::Slice => clause.translation.lines.contains(&self.slice_line[row]),
+                    Kind::Raw => clause.translation.raw.contains(&(row as u32)),
+                },
             };
             if (clause.op == FilterOp::Is && !has) || (clause.op == FilterOp::IsNot && has) {
                 return Ok(false);
@@ -790,7 +870,7 @@ impl EngineQuery {
         let scope = self.culture_scope(request.localization.as_ref())?;
         let projection = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
-        let prepared = Predicates::new(request, &places)?;
+        let prepared = Predicates::new(self, &projection, request, &places, cancelled)?;
         let wanted = request
             .query
             .to_lowercase()

@@ -34,6 +34,11 @@ export function gatheredIdentity(
 	});
 }
 
+/**
+ * One string per gathered identity, `JSON.stringify([namespace, key])`: a localization line's ID
+ * suffix and a `translation_key` filter value. Pass `gatheredTextIdentity(unit)` or a line's
+ * identity, never a saved namespace that may still carry a package marker.
+ */
 export function gatheredIdentityKey(identity: typeof LocalizationIdentity.Type): string {
 	return JSON.stringify([identity.namespace, identity.key]);
 }

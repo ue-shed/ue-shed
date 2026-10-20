@@ -150,6 +150,7 @@ export {
 	TextRepresentationCopy,
 	TextReviewLens,
 	TextReviewSignal,
+	TextTranslationKey,
 	TextTranslationState,
 	TextUnit,
 	TextUnitContext,

@@ -279,6 +279,25 @@ translation, differing PO translation, PO context, and manifest locations and me
 cultures use their archive as evidence. String Table `Comment` metadata and 5.8 developer notes
 both reach `devNotes`; distinct notes are separated by a blank line.
 
+A `translation_key` clause selects text by the gathered namespace and key Unreal translates it by:
+saved FText without its package marker, String Table entries with their table namespace. Values are
+`gatheredIdentityKey` strings, `JSON.stringify([namespace, key])` with a nonempty key. With a target
+it matches that line; without one, every saved unit with an occurrence gathered under the key, such
+as Blueprint copies saved under different package markers. Counts, facets and groups intersect it
+like any other clause.
+
+```ts
+// Every place Unreal translates as ("", "Title"), whatever package marker each copy saved.
+// gatheredTextIdentity is null when a unit's occurrences gather under different keys.
+const key = gatheredIdentityKey(gatheredTextIdentity(unit)!); // '["","Title"]'
+query.search({
+	query: "",
+	capability: "all",
+	pageSize: 50,
+	filter: [{ field: "translation_key", op: "is", values: [key] }]
+});
+```
+
 Supply the join as `textCorpusQuery(corpus, scannedAt, joined)`'s optional third argument. Search
 requests accept `localization: { target, culture?, state?, searchTranslations? }`. Translation
 search requires a selected culture and explicit opt-in. `page.localization.lines` is the unified,

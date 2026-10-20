@@ -134,7 +134,7 @@ function hostQuality(
 
 type Pending = {
 	readonly onProgress: (progress: GameTextIndexProgress) => void;
-	readonly resolve: (findings: QualityWorkerFindings) => void;
+	readonly resolve: (findings: QualityWorkerFindings, timings: Record<string, number>) => void;
 	readonly reject: (cause: QualityWorkerFailure) => void;
 };
 
@@ -223,7 +223,7 @@ const acquireGameTextQualityWorker = Effect.fn("GameTextIndex.qualityWorker.acqu
 				return;
 			}
 			pending.delete(reply.id);
-			if (reply.kind === "done") scan.resolve(reply.findings);
+			if (reply.kind === "done") scan.resolve(reply.findings, reply.timings);
 			else scan.reject(reply.error);
 		} catch (cause) {
 			fail(cause);
@@ -243,53 +243,59 @@ const acquireGameTextQualityWorker = Effect.fn("GameTextIndex.qualityWorker.acqu
 		const options = request.options ?? {};
 		const onProgress = yield* GameTextIndexProgressReporter;
 		const scanned = performance.now();
-		const findings = yield* Effect.callback<QualityWorkerFindings, QualityWorkerFailure>(
-			(resume) => {
-				if (failed) {
-					resume(Effect.fail(failed));
-					return;
-				}
-				pending.set(id, {
-					onProgress,
-					resolve: (findings) => resume(Effect.succeed(findings)),
-					reject: (cause) => resume(Effect.fail(cause))
-				});
-				try {
-					// A copy the worker owns; the query keeps its cached rows.
-					const rows = request.rows.slice();
-					worker.postMessage(
-						Schema.encodeSync(QualityWorkerTask)({
-							kind: "scan",
-							id,
-							corpus: {
-								status: request.corpus.status,
-								coverage: request.corpus.coverage
-							},
-							rows,
-							options,
-							...(request.ruleDocument === undefined
-								? undefined
-								: { ruleDocument: request.ruleDocument })
-						}),
-						[rows.buffer]
-					);
-				} catch (cause) {
-					pending.delete(id);
-					resume(Effect.fail(qualityWorkerFailure("quality.worker.scan", cause)));
-				}
-				// Interrupted: the worker stops the scan, and its late replies are ignored.
-				return Effect.sync(() => {
-					if (!pending.delete(id) || failed) return;
-					worker.postMessage(
-						Schema.encodeSync(QualityWorkerTask)({ kind: "cancel", id })
-					);
-				});
+		const { findings, timings } = yield* Effect.callback<
+			{ findings: QualityWorkerFindings; timings: Record<string, number> },
+			QualityWorkerFailure
+		>((resume) => {
+			if (failed) {
+				resume(Effect.fail(failed));
+				return;
 			}
-		);
+			pending.set(id, {
+				onProgress,
+				resolve: (findings, timings) => resume(Effect.succeed({ findings, timings })),
+				reject: (cause) => resume(Effect.fail(cause))
+			});
+			try {
+				// A copy the worker owns; the query keeps its cached rows.
+				const rows = request.rows.slice();
+				worker.postMessage(
+					Schema.encodeSync(QualityWorkerTask)({
+						kind: "scan",
+						id,
+						corpus: {
+							status: request.corpus.status,
+							coverage: request.corpus.coverage
+						},
+						rows,
+						options,
+						...(request.ruleDocument === undefined
+							? undefined
+							: { ruleDocument: request.ruleDocument })
+					}),
+					[rows.buffer]
+				);
+			} catch (cause) {
+				pending.delete(id);
+				resume(Effect.fail(qualityWorkerFailure("quality.worker.scan", cause)));
+			}
+			// Interrupted: the worker stops the scan, and its late replies are ignored.
+			return Effect.sync(() => {
+				if (!pending.delete(id) || failed) return;
+				worker.postMessage(Schema.encodeSync(QualityWorkerTask)({ kind: "cancel", id }));
+			});
+		});
 		yield* Metric.update(scans, 1);
 		yield* Effect.annotateCurrentSpan({
 			"game_text.quality.worker_scan_ms": performance.now() - scanned,
-			"game_text.quality.findings": findings.length
+			"game_text.quality.findings": findings.length,
+			// The worker's own spans and stages, which its thread could not trace.
+			...Object.fromEntries(
+				Object.entries(timings).map(([name, ms]) => [
+					name.startsWith("game_text.") ? name : `game_text.quality.worker.${name}`,
+					ms
+				])
+			)
 		});
 		const quality = hostQuality(
 			calls,

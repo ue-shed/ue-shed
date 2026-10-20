@@ -35,3 +35,7 @@ CLI no longer export the corpus or the join to answer them. The whole-input func
 `makeGameTextWorkspaceLocalization` now takes the current model's `revision` as its first argument
 instead of the corpus read: pass `() => Effect.succeed(model.revision)` where you passed the lazy
 corpus.
+
+The localization quality worker sends its spans' and stages' timings back with its findings, and the
+host adds them to its `GameTextIndex.qualityWorker.scan` span, so a host's trace shows where a
+worker scan spends its time.

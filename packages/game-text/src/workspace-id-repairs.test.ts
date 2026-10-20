@@ -59,7 +59,7 @@ const request = TextIdRepairRequest.make({
 	]
 });
 
-function setup(dataTable = false) {
+function setup(dataTable = false, authoring = false) {
 	const extracted = dataTable
 		? {
 				...original,
@@ -98,7 +98,17 @@ function setup(dataTable = false) {
 				return Schema.decodeUnknownSync(Schema.Json)({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
-					capabilities: ["game-text.actions.v1", "game-text.actions.key-repairs.v1"],
+					capabilities: [
+						"game-text.actions.v1",
+						"game-text.actions.key-repairs.v1",
+						...(authoring ? ["authoring.snapshot.v2"] : [])
+					],
+					...(authoring
+						? {
+								authoringObjectPath:
+									"/Script/UEShedAuthoring.Default__UEShedAuthoringLibrary"
+							}
+						: undefined),
 					gameTextObjectPath: "/Script/UEShedGameText.Default__UEShedGameTextLibrary",
 					identity: {
 						engineVersion: "5.8",
@@ -428,6 +438,31 @@ it.effect("repairs simple DataTable cells through Game Text when Authoring is ab
 		expect(
 			new TextDecoder().decode(test.files.get(`${root}/${preview.plan.artifact}`))
 		).toContain('"state":"finished"');
+	})
+);
+
+it.effect("regenerates cell keys through Game Text even when Authoring is present", () =>
+	Effect.gen(function* () {
+		const test = setup(true, true);
+		const service = yield* test.make;
+		const preview = yield* service.prepare({
+			...test.tableRequest,
+			changes: test.tableRequest.changes.map((change) => ({
+				...change,
+				edit: { kind: "regenerate_key" as const }
+			}))
+		});
+		expect(preview.status).toBe("prepared");
+		if (preview.status !== "prepared") throw new Error(JSON.stringify(preview));
+		expect(preview.plan.authoring).toBeUndefined();
+		expect(yield* service.apply(preview.plan.id)).toMatchObject({
+			status: "finished",
+			verified: true
+		});
+		expect(test.mutations()).toBe(1);
+		expect(
+			test.calls.every((name) => ["GetCapabilityManifest", "ApplyTextActions"].includes(name))
+		).toBe(true);
 	})
 );
 

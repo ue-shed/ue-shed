@@ -230,6 +230,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			request.changes.every(
 				(item) =>
 					item.occurrence.location.kind === "data_table_cell" &&
+					["change_source", "change_key", "adopt_key"].includes(item.edit.kind) &&
 					/^[A-Za-z_][\w ]*$/u.test(item.occurrence.location.propertyPath)
 			);
 		const table =

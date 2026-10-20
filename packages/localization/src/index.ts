@@ -158,6 +158,7 @@ export {
 export {
 	LOCALIZATION_TEXT_ACTIONS_CAPABILITY,
 	LOCALIZATION_TEXT_AUTHORING_CAPABILITY,
+	LOCALIZATION_TEXT_KEY_REPAIRS_CAPABILITY,
 	LocalizationTextActionsError,
 	localizationTextActionsRequest,
 	runLocalizationTextActions,

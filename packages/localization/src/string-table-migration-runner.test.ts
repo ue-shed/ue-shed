@@ -1,7 +1,6 @@
 import { it } from "@effect/vitest";
 import { expect } from "vitest";
 import { Effect, Schema } from "effect";
-import { makeEditorWorldControlTestLayer } from "@ue-shed/engine";
 import { GameTextActionsRequest, type GameTextActionsResult } from "@ue-shed/protocol";
 import {
 	makeRemoteControlClientTestLayer,
@@ -40,12 +39,14 @@ const input: StringTableKeyMigrationRequest = {
 	]
 };
 
-function setup() {
+function setup(useCallback = false) {
 	let record: StringTableKeyMigrationRecord | undefined;
 	let claimed = false;
 	let config: string | undefined;
 	let session = "session-1";
 	let selected = input.projectRoot;
+	let editorRoot: string | undefined = input.projectRoot;
+	let callbackRoot: string | undefined = input.projectRoot;
 	let redirectActive = true;
 	let rejectVerification = "";
 	let lostDeleteReply = false;
@@ -54,6 +55,7 @@ function setup() {
 	const verifications: string[] = [];
 	const fail = (message: string) => ({ message, recovery: "Inspect the journal." });
 	const host: StringTableKeyMigrationHostApi = {
+		...(useCallback ? { editorProject: () => Effect.succeed(callbackRoot) } : undefined),
 		current: () => Effect.succeed({ projectRoot: selected, endpoint: "http://fixture" }),
 		store: {
 			create: (value) =>
@@ -95,6 +97,7 @@ function setup() {
 				return Schema.decodeUnknownSync(Schema.Json)({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
+					...(editorRoot ? { projectRoot: editorRoot } : undefined),
 					capabilities: ["game-text.actions.v1", "game-text.actions.authoring.v1"],
 					gameTextObjectPath: "/Script/UEShedGameText.Default__UEShedGameTextLibrary",
 					identity: {
@@ -157,22 +160,15 @@ function setup() {
 			return Schema.decodeUnknownSync(Schema.Json)(result);
 		})
 	);
-	const world = makeEditorWorldControlTestLayer({
-		snapshot: () =>
-			Effect.succeed({
-				contract: { name: "unreal-editor-world-control", version: { major: 1, minor: 0 } },
-				projectName: "Fixture",
-				projectRoot: input.projectRoot,
-				snapshot: { dirtyWorldPackages: [], playSessionActive: false }
-			}),
-		open: () => Effect.die("Unused")
-	});
 	return {
-		make: makeStringTableKeyMigrations(host).pipe(
-			Effect.provide(transport),
-			Effect.provide(world)
-		),
+		make: makeStringTableKeyMigrations(host).pipe(Effect.provide(transport)),
 		writes,
+		callbackProject: (value: string | undefined) => {
+			callbackRoot = value;
+		},
+		editorProject: (value: string | undefined) => {
+			editorRoot = value;
+		},
 		verifications,
 		record: () => record,
 		redirect: (value: boolean) => {
@@ -305,5 +301,35 @@ it.effect("retains an unverified deletion receipt and never reports completion",
 			step: "delete_old_entry",
 			verified: false
 		});
+	})
+);
+
+it.effect(
+	"refuses missing or different Core project identity without requiring world control",
+	() =>
+		Effect.gen(function* () {
+			for (const editor of [undefined, "C:/Other"]) {
+				const test = setup();
+				test.editorProject(editor);
+				const api = yield* test.make;
+				const result = yield* Effect.result(api.prepare(input));
+				expect(result).toMatchObject({ _tag: "Failure" });
+				expect(test.writes).toEqual([]);
+			}
+		})
+);
+
+it.effect("an explicit project identity callback supports old Core without a world service", () =>
+	Effect.gen(function* () {
+		const test = setup(true);
+		test.editorProject(undefined);
+		const api = yield* test.make;
+		const prepared = yield* api.prepare(input);
+		expect(prepared.state.status).toBe("prepared");
+		test.callbackProject("C:/Other");
+		expect(yield* Effect.result(api.execute({ id: input.id }))).toMatchObject({
+			_tag: "Failure"
+		});
+		expect(test.writes).toEqual([]);
 	})
 );

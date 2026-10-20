@@ -4,7 +4,6 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Effect, Stream } from "effect";
-import { EditorWorldControlLive } from "../packages/engine/dist/index.js";
 import {
 	makeStringTableKeyMigrations,
 	StringTableKeyMigrationId,
@@ -152,7 +151,7 @@ export async function acceptLocalizationMigration(options: {
 			);
 			assert.equal(prepared.plan.remove.edit.kind, "remove_string_table_entry");
 			return yield* migrations.execute({ id });
-		}).pipe(Effect.provide(EditorWorldControlLive), Effect.provide(RemoteControlClientLive))
+		}).pipe(Effect.provide(RemoteControlClientLive))
 	);
 	assert.equal(record.state.status, "complete");
 	assert.equal(

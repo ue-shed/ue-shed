@@ -128,7 +128,12 @@ hook that verifies the editor's actual project directory. Supply Remote Control 
 services. Expose the schema-validated `prepare` and explicitly approved `apply` methods to the UI;
 retain the proposal and receipt under `Saved/UEShed/GameTextActions`. Never replay a started ID,
 including after a lost reply. Property edits require `UEShedGameText`; top-level DataTable text
-cells use Authoring. Keep manual instructions for unsupported places, and stage translation moves
+cells use Authoring when advertised and otherwise use Game Text's `data_table_cell` selector.
+The narrow `game-text.actions.key-repairs.v1` capability admits ID edits on resolved object
+properties, table cells and Blueprint pins; it does not admit table migrations or conversions.
+The broader `game-text.actions.authoring.v1` still admits the whole extended surface. Supply the
+ID-repair `editorProject` hook from Core's actual `projectRoot` fact or another trusted editor
+identity adapter, without requiring navigation or world control. Keep manual instructions for unsupported places, and stage translation moves
 only after verified saved-file success. See the [product contract](../../docs/products/game-text.md#fixing-keys-in-assets).
 
 ## Acceptance journey

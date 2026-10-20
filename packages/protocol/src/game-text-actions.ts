@@ -42,7 +42,7 @@ export const GameTextActionPlace = Schema.Struct({
 	packageFile: NonEmptyField,
 	objectPath: NonEmptyField,
 	propertyPath: NonEmptyField,
-	/** Additional authored locations require game-text.actions.authoring.v1. */
+	/** Authored locations require authoring.v1; data_table_cell and graph_pin key edits also accept key-repairs.v1. */
 	selector: Schema.optionalKey(
 		Schema.Union([
 			Schema.Struct({ kind: Schema.Literal("data_table_cell"), row: NonEmptyField }),

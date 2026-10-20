@@ -19,6 +19,8 @@ import { Effect, Schema } from "effect";
 export const LOCALIZATION_TEXT_ACTIONS_CAPABILITY = "game-text.actions.v1";
 /** Capability for graph pins, table entries/cells, reference migration and explicit conversion. */
 export const LOCALIZATION_TEXT_AUTHORING_CAPABILITY = "game-text.actions.authoring.v1";
+/** Key identity changes on object properties, DataTable cells and Blueprint pins only. */
+export const LOCALIZATION_TEXT_KEY_REPAIRS_CAPABILITY = "game-text.actions.key-repairs.v1";
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 
 /**
@@ -149,15 +151,25 @@ export const runLocalizationTextActions = Effect.fn("game_text.actions.run")(fun
 			endpoint
 		});
 	}
-	const extended = request.actions.some(
-		(action) =>
-			action.place.selector !== undefined ||
-			"tableId" in action.expected ||
-			"unresolved" in action.expected ||
-			!["change_key", "regenerate_key", "adopt_key", "change_source"].includes(
-				action.edit.kind
-			)
-	);
+	const keyRepairs = manifest.capabilities.includes(LOCALIZATION_TEXT_KEY_REPAIRS_CAPABILITY);
+	const extended = request.actions.some((action) => {
+		const keyRepair =
+			keyRepairs &&
+			["change_key", "regenerate_key", "adopt_key"].includes(action.edit.kind) &&
+			!("tableId" in action.expected) &&
+			!("unresolved" in action.expected) &&
+			(action.place.selector === undefined ||
+				["data_table_cell", "graph_pin"].includes(action.place.selector.kind));
+		return (
+			!keyRepair &&
+			(action.place.selector !== undefined ||
+				"tableId" in action.expected ||
+				"unresolved" in action.expected ||
+				!["change_key", "regenerate_key", "adopt_key", "change_source"].includes(
+					action.edit.kind
+				))
+		);
+	});
 	if (extended && !manifest.capabilities.includes(LOCALIZATION_TEXT_AUTHORING_CAPABILITY))
 		return yield* new LocalizationTextActionsError({
 			code: "capability_missing",

@@ -1,5 +1,4 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { EditorWorldControl } from "@ue-shed/engine";
 import { inspectUnrealProducer, RemoteControlClient } from "@ue-shed/unreal-connection";
 import {
 	ErrorGuidanceFields,
@@ -71,6 +70,9 @@ type HostFailure = { readonly message: string; readonly recovery: string };
 
 /** Host-owned selection, durable atomic storage, config compare/replace and saved-reader authority. */
 export interface StringTableKeyMigrationHostApi {
+	/** Optional project identity adapter for older Core manifests. Read the connected editor,
+	 * never echo the host's selected project. New Core runtime manifests supply projectRoot. */
+	readonly editorProject?: (endpoint: string) => Effect.Effect<string | undefined, HostFailure>;
 	readonly current: () => Effect.Effect<
 		{ readonly projectRoot: string; readonly endpoint: string } | undefined,
 		HostFailure
@@ -124,7 +126,6 @@ const failure = (message: string, cause?: unknown) =>
 export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.migrations.make")(
 	function* (host: StringTableKeyMigrationHostApi) {
 		const client = yield* RemoteControlClient;
-		const worlds = yield* EditorWorldControl;
 		const gate = yield* Semaphore.make(1);
 		const selected = Effect.fn("Localization.stringTable.migrations.selected")(function* (
 			root: string,
@@ -138,10 +139,14 @@ export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.
 				(endpoint && current.endpoint !== endpoint)
 			)
 				return yield* failure("The selected project or editor connection changed.");
-			const editor = yield* worlds.snapshot(current.endpoint);
-			if (!editor.projectRoot || relative(resolve(root), resolve(editor.projectRoot)) !== "")
-				return yield* failure("The connected editor belongs to another project.");
 			const producer = yield* inspectUnrealProducer(current.endpoint);
+			const editorRoot = host.editorProject
+				? yield* host.editorProject(current.endpoint)
+				: producer.projectRoot;
+			if (!editorRoot || relative(resolve(root), resolve(editorRoot)) !== "")
+				return yield* failure(
+					"The connected editor's project identity is missing or differs from the reviewed project."
+				);
 			if (
 				!producer.identity ||
 				producer.producerKind !== "unreal_editor" ||
@@ -429,7 +434,7 @@ export class StringTableKeyMigrations extends Context.Service<
 	StringTableKeyMigrations,
 	Effect.Success<ReturnType<typeof makeStringTableKeyMigrations>>
 >()("@ue-shed/localization/StringTableKeyMigrations") {}
-/** Compose with an explicit host, editor-world control and Remote Control client. */
+/** Compose with an explicit host and Remote Control client. */
 export const StringTableKeyMigrationsLive = Layer.effect(
 	StringTableKeyMigrations,
 	Effect.gen(function* () {

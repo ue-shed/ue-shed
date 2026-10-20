@@ -78,9 +78,3 @@ slowest shard and publish time on its span.
 query contract. Aggregates no longer allocate per row: keys are fixed arrays and culture marks
 refill their slots, so the progress report's five aggregates over a real 14-culture target take
 2.5 s instead of 4.4 s (0.7 s instead of 2.1 s after the first one counts its words).
-
-`GameTextIndexSteps.prepareTargetFiles(project, request)` parses a target's localization files
-into staging without the index's writer, for as long as the caller's scope is open. An
-`importTarget` of the same target in that scope publishes the staged files of files whose size and
-time have not changed and parses only the rest, so a host can parse localization while
-`refreshProject` holds the writer: 32 s of a 14-culture cold scan no longer waits for the packages.

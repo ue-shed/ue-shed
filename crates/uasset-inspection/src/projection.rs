@@ -164,11 +164,14 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
         DecodedAsset::UObject(object) => {
             // If a graph's Nodes array itself was rejected, none of its pin streams can be
             // proven covered. Gather tables need not contain those editor-only occurrences.
-            if object.class_path.as_str() == uasset_parser::asset::ED_GRAPH_CLASS
-                && object.properties.records.iter().any(|property| {
-                    package.resolve_name(property.name).as_deref() == Some("Nodes")
-                        && !matches!(property.value, PropertyValue::Array(_))
-                })
+            if object.properties.records.iter().any(|property| {
+                package.resolve_name(property.name).as_deref() == Some("Nodes")
+                    && !matches!(property.value, PropertyValue::Array(_))
+            }) && (object.class_path.as_str() == uasset_parser::asset::ED_GRAPH_CLASS
+                || package.exports.iter().any(|export| {
+                    export.object_path == object.object_path
+                        && uasset_parser::asset::is_blueprint_owned_export(package, export)
+                }))
             {
                 output.coverage_gaps.push(TextCoverageGap {
                     object_path: object.object_path.to_string(),
@@ -522,6 +525,12 @@ pub fn text_feature_version_gap(
             .class_path
             .as_ref()
             .is_some_and(|class_path| class_path.as_str() == uasset_parser::asset::ED_GRAPH_CLASS)
+        // An unreadable Blueprint-owned container can hide custom graph membership entirely.
+        // Its children cannot be proven unrelated to native pins without reading Nodes.
+        || (uasset_parser::asset::is_blueprint_owned_export(package, export)
+            && package.exports.iter().any(|child| {
+                package.resolve_index_str(child.outer_index) == Some(export.object_path.as_str())
+            }))
     {
         return Some(TextCoverageGap {
             object_path: export.object_path.to_string(),

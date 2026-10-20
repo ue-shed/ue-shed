@@ -25,6 +25,10 @@ use uasset_parser::{Package, PackageError, PackageErrorKind, PackageSummary};
 use wasm_bindgen::prelude::*;
 
 #[cfg(test)]
+#[path = "../../uasset-inspection/tests/support/custom_graph.rs"]
+mod custom_graph_support;
+
+#[cfg(test)]
 use uasset_parser::{archive, package, version};
 #[cfg(test)]
 #[allow(dead_code)]
@@ -1134,6 +1138,37 @@ mod tests {
                     assert_eq!(output["status"], "complete", "UE {engine}");
                 }
             }
+        }
+    }
+
+    use super::custom_graph_support;
+
+    #[test]
+    fn custom_graph_membership_gaps_override_complete_runtime_gather() {
+        for damage in ["decoded", "rejected", "unreadable"] {
+            let (bytes, package) = custom_graph_support::custom_graph_fixture(damage);
+            let output: serde_json::Value = serde_json::from_str(
+                &super::extract_text_from_package("Content/BP_Keys.uasset", &bytes, &package),
+            )
+            .unwrap();
+            assert_eq!(
+                output["status"],
+                if damage == "decoded" {
+                    "complete"
+                } else {
+                    "partial"
+                },
+                "{damage}: {output}"
+            );
+            assert_eq!(
+                output["coverage_gaps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|gap| gap["property_path"] == "Pins"),
+                damage != "decoded",
+                "{damage}: {output}"
+            );
         }
     }
 

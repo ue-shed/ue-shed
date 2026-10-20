@@ -128,28 +128,8 @@ pub fn is_blueprint_graph_node_export(context: &AssetDecodeContext<'_>, export: 
     let Some(outer) = package.exports.get(index as usize) else {
         return false;
     };
-    // Restrict the membership probe to Blueprint-owned objects. Ordinary level/asset exports
-    // keep their compact decode path, without repeatedly decoding their outer's properties.
-    let mut owner = Some(outer);
-    let mut blueprint_owned = false;
-    for _ in 0..MAX_FIELD_DEPTH {
-        let Some(object) = owner else { break };
-        if object.class_path.as_ref().is_some_and(|class_path| {
-            class_path
-                .as_str()
-                .rsplit('.')
-                .next()
-                .is_some_and(|name| name.ends_with("Blueprint"))
-        }) {
-            blueprint_owned = true;
-            break;
-        }
-        owner = match object.outer_index {
-            PackageIndex::Export(index) => package.exports.get(index as usize),
-            _ => None,
-        };
-    }
-    if !blueprint_owned {
+    // Ordinary level/asset exports avoid repeatedly decoding their outer's properties.
+    if !is_blueprint_owned_export(package, outer) {
         return false;
     }
     let Ok((properties, _)) = decode_uobject_properties(outer, context) else {
@@ -161,6 +141,29 @@ pub fn is_blueprint_graph_node_export(context: &AssetDecodeContext<'_>, export: 
                 matches!(node, PropertyValue::ObjectRef(index)
                     if package.resolve_index_str(*index) == Some(export.object_path.as_str()))))
     })
+}
+
+/// Whether an export belongs to a Blueprint, including custom graphs and their nodes.
+#[must_use]
+pub fn is_blueprint_owned_export(package: &Package, export: &Export) -> bool {
+    let mut owner = Some(export);
+    for _ in 0..MAX_FIELD_DEPTH {
+        let Some(object) = owner else { break };
+        if object.class_path.as_ref().is_some_and(|class_path| {
+            class_path
+                .as_str()
+                .rsplit('.')
+                .next()
+                .is_some_and(|name| name.ends_with("Blueprint"))
+        }) {
+            return true;
+        }
+        owner = match object.outer_index {
+            PackageIndex::Export(index) => package.exports.get(index as usize),
+            _ => None,
+        };
+    }
+    false
 }
 
 /// Returns whether a package uses a saved revision covered by the Blueprint graph decoder.

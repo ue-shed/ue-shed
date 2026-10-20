@@ -11,6 +11,9 @@ use uasset_inspection::projection::{TextIdentity, TextLocation, project_text_ass
 use uasset_parser::Package;
 use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
 
+#[path = "support/custom_graph.rs"]
+mod support;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Expected {
@@ -138,26 +141,12 @@ fn unknown_graph_revision_has_a_named_pin_coverage_gap() {
 
 #[test]
 fn graph_owned_plugin_nodes_do_not_fall_back_to_an_opaque_uobject() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/graph-pin-text/5.7/BP_Keys.uasset");
-    let bytes = fs::read(path).unwrap();
-    let mut package = Package::parse(&bytes).unwrap();
+    let (bytes, package) = support::custom_graph_fixture("decoded");
     let index = package
         .exports
         .iter()
         .position(|export| export.object_path.as_str().ends_with("EventGraph.split"))
         .unwrap();
-    // Keep the real native stream and graph ownership, changing only the resolved class metadata.
-    package.exports[index].class_path = Some(uasset_parser::package::ObjectPath::new(
-        "/Script/Plugin.CustomGraphNode",
-    ));
-    let uasset_parser::package::PackageIndex::Export(graph) = package.exports[index].outer_index
-    else {
-        panic!("saved node belongs to a graph");
-    };
-    package.exports[graph as usize].class_path = Some(uasset_parser::package::ObjectPath::new(
-        "/Script/Plugin.CustomGraph",
-    ));
     let context = AssetDecodeContext {
         source: &bytes,
         package: &package,
@@ -185,4 +174,31 @@ fn graph_owned_plugin_nodes_do_not_fall_back_to_an_opaque_uobject() {
             .iter()
             .any(|gap| gap.is_graph_pin_gap())
     );
+}
+
+#[test]
+fn custom_graph_membership_failures_keep_named_pin_gaps() {
+    for damage in ["decoded", "rejected", "unreadable"] {
+        let (bytes, package) = support::custom_graph_fixture(damage);
+        let context = AssetDecodeContext {
+            source: &bytes,
+            package: &package,
+            schemas: uasset_parser::schema::embedded_source_model(),
+        };
+        let mut gaps = Vec::new();
+        for export in &package.exports {
+            match decode_export(export, &context) {
+                Ok(Some(asset)) => gaps.extend(project_text_asset(&package, &asset).coverage_gaps),
+                Err(error) => gaps.extend(uasset_inspection::projection::text_feature_version_gap(
+                    &context, export, &error,
+                )),
+                Ok(None) => {}
+            }
+        }
+        assert_eq!(
+            gaps.iter().any(|gap| gap.property_path == "Pins"),
+            damage != "decoded",
+            "{damage}: {gaps:?}"
+        );
+    }
 }

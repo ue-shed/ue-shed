@@ -902,11 +902,21 @@ fn project_one_path(
             });
         }
     };
+    project_parsed_package(kind, path_string, &bytes, &package, cancellation)
+}
+
+fn project_parsed_package(
+    kind: ProjectionKind,
+    path_string: String,
+    bytes: &[u8],
+    package: &Package,
+    cancellation: &CancellationToken,
+) -> Result<ProjectionWorkResult, Failure> {
     checkpoint(cancellation, "parsing")?;
     checkpoint(cancellation, "inspection")?;
     let context = AssetDecodeContext {
-        source: &bytes,
-        package: &package,
+        source: bytes,
+        package,
         schemas: embedded_source_model(),
     };
     let mut results = Vec::new();
@@ -946,11 +956,11 @@ fn project_one_path(
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text | ProjectionKind::TextPackages => {
                     if matches!(kind, ProjectionKind::TextPackages)
-                        && let Some(classes) = blueprint_classes(&package, &asset)
+                        && let Some(classes) = blueprint_classes(package, &asset)
                     {
                         record.blueprint_classes.push(classes);
                     }
-                    let projection = project_text_asset(&package, &asset);
+                    let projection = project_text_asset(package, &asset);
                     graph_text_incomplete |= projection
                         .coverage_gaps
                         .iter()
@@ -965,8 +975,7 @@ fn project_one_path(
                         .extend(projection.coverage_gaps);
                 }
                 ProjectionKind::Texture => {
-                    if let Some(record) =
-                        project_texture_asset(&package, &asset, bytes.len() as u64)
+                    if let Some(record) = project_texture_asset(package, &asset, bytes.len() as u64)
                     {
                         checkpoint(cancellation, "inspection")?;
                         texture_count += 1;
@@ -1009,7 +1018,7 @@ fn project_one_path(
     // text coverage is partial only if a runtime entry from that table was not decoded.
     let table = matches!(kind, ProjectionKind::Text | ProjectionKind::TextPackages)
         .then(|| {
-            gather_table(&bytes, &package, &path_string, &decoded_keys)
+            gather_table(bytes, package, &path_string, &decoded_keys)
                 .ok()
                 .flatten()
         })
@@ -1615,6 +1624,10 @@ pub(crate) fn saved_world_with_options(
         options,
     )
 }
+
+#[cfg(test)]
+#[path = "../../../uasset-inspection/tests/support/custom_graph.rs"]
+mod custom_graph_support;
 
 #[cfg(test)]
 pub(crate) fn saved_world_with_cancellation(
@@ -2239,6 +2252,55 @@ fn text_coverage_partial(
 
 #[cfg(test)]
 mod tests {
+    use super::custom_graph_support;
+
+    #[test]
+    fn custom_graph_membership_gaps_override_complete_runtime_gather() {
+        for damage in ["decoded", "rejected", "unreadable"] {
+            let (bytes, package) = custom_graph_support::custom_graph_fixture(damage);
+            for kind in [
+                super::ProjectionKind::Text,
+                super::ProjectionKind::TextPackages,
+            ] {
+                let output = super::project_parsed_package(
+                    kind,
+                    "Content/BP_Keys.uasset".to_owned(),
+                    &bytes,
+                    &package,
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+                assert_eq!(output.partial, damage != "decoded", "{damage}");
+                let results = serde_json::to_value(&output.results).unwrap();
+                let events: Vec<_> = results
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|result| &result["event"])
+                    .collect();
+                let status = if damage == "decoded" {
+                    "complete"
+                } else {
+                    "partial"
+                };
+                assert!(
+                    events.iter().any(|event| event["status"] == status),
+                    "{damage}: {results}"
+                );
+                if damage != "decoded" {
+                    assert!(
+                        events.iter().any(|event| {
+                            event["coverage_gap"]["property_path"] == "Pins"
+                                || event["gapSamples"].as_array().is_some_and(|samples| {
+                                    samples.iter().any(|gap| gap["property_path"] == "Pins")
+                                })
+                        }),
+                        "{damage}: {results}"
+                    );
+                }
+            }
+        }
+    }
     use super::{saved_world_with_cancellation, scan_header_cache_needs_write};
     use crate::cancellation::CancellationToken;
     use crate::protocol::Request;

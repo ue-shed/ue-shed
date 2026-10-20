@@ -282,6 +282,16 @@ impl EngineSession {
                     "query_projection_prepare".into(),
                     projection_started.elapsed().as_secs_f64(),
                 );
+                // Focus, cursors, picked lines and line details look rows up by ID; index the
+                // packed IDs and each unit's line once so none of them scans every row.
+                let index_started = Instant::now();
+                query.id_index("raw")?;
+                query.id_index("line")?;
+                query.unit_lines(cancelled)?;
+                outcome.stage_seconds.insert(
+                    "id_index_prepare".into(),
+                    index_started.elapsed().as_secs_f64(),
+                );
                 let reader = token();
                 outcome.action = "open".into();
                 outcome.reader = Some(reader.clone());
@@ -510,6 +520,10 @@ mod tests {
             columns.push((format!("line.{field}"), String::new(), vec![]));
         }
         columns.push(("query.line.starts".into(), String::new(), vec![0]));
+        for kind in ["raw", "line"] {
+            columns.push((format!("query.{kind}.id_starts"), String::new(), vec![0]));
+            columns.push((format!("query.{kind}.id_utf8"), String::new(), vec![]));
+        }
         columns.push(("query.line.order".into(), String::new(), vec![]));
         columns.push(("facet.files".into(), String::new(), vec![]));
         columns.push(("manifest.rows".into(), String::new(), vec![]));

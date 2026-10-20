@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_PAGE: usize = 50;
 pub const MAX_GROUPS: usize = 200;
+/// Values in one `source` clause, and the UTF-16 length of each: the bound on a stored ID, so a
+/// source group's key can always be opened again.
+pub const MAX_SOURCE_VALUES: usize = 50;
+pub const MAX_SOURCE_LENGTH: u32 = 32767;
 pub const STATES: [&str; 10] = [
     "translated",
     "not_translated",
@@ -81,6 +85,8 @@ pub enum GroupBy {
     Origin,
     Namespace,
     Audience,
+    /// Exact source text: a line's source, or a unit's first source in UTF-16 order.
+    Source,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -98,6 +104,8 @@ pub enum FilterField {
     Audience,
     /// A line's gathered namespace and key, written as the JSON array `[namespace, key]`.
     TranslationKey,
+    /// Exact source text, compared as stored: case-sensitive, untrimmed, UTF-16 exact.
+    Source,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -161,6 +169,8 @@ pub struct SearchRequest {
     pub filter: Option<Vec<Clause>>,
     pub lines: Option<Vec<String>>,
     pub group: Option<GroupBy>,
+    /// Only groups holding at least this many matching rows; requires `group`.
+    pub min_group_size: Option<usize>,
     pub open_group: Option<String>,
     pub facets: Option<Facets>,
 }
@@ -334,7 +344,7 @@ impl SearchRequest {
             for clause in filters {
                 let (allowed, max, length): (&[&str], usize, u32) = match clause.field {
                     FilterField::Problem => (&PROBLEMS, 7, 64),
-                    FilterField::Finding => (&SIGNALS[..4], 4, 64),
+                    FilterField::Finding => (&SIGNALS, SIGNALS.len(), 64),
                     FilterField::Translation => (&["missing", "to_update", "not_synced"], 3, 64),
                     FilterField::Origin => (&ORIGINS, 5, 64),
                     FilterField::Editing => (&["editable", "read_only"], 2, 64),
@@ -344,6 +354,7 @@ impl SearchRequest {
                     FilterField::Asset => (&[], 200, 1024),
                     FilterField::Namespace => (&[], 50, 1024),
                     FilterField::TranslationKey => (&[], 200, 4096),
+                    FilterField::Source => (&[], MAX_SOURCE_VALUES, MAX_SOURCE_LENGTH),
                 };
                 list(&clause.values, max, length, "Invalid filter clause bounds.")?;
                 require(
@@ -367,7 +378,17 @@ impl SearchRequest {
             list(lines, 5000, 32767, "Invalid line selection.")?;
         }
         if let Some(group) = &self.open_group {
-            bounded(group, 1024, "Group key exceeds its bound.")?;
+            bounded(group, MAX_SOURCE_LENGTH, "Group key exceeds its bound.")?;
+        }
+        if let Some(size) = self.min_group_size {
+            require(
+                self.group.is_some(),
+                invalid("A minimum group size needs a group."),
+            )?;
+            require(
+                (1..=u32::MAX as usize).contains(&size),
+                invalid("Minimum group size must be at least 1."),
+            )?;
         }
         if let Some(facets) = &self.facets
             && let Some(folder) = &facets.folder
@@ -422,6 +443,7 @@ impl SearchRequest {
     pub(crate) fn matching_key(&self) -> Result<String> {
         let mut result = self.without_page();
         result.group = None;
+        result.min_group_size = None;
         result.facets = None;
         Ok(serde_json::to_string(&result)?)
     }
@@ -543,6 +565,59 @@ mod tests {
         let mut unknown = request;
         unknown["sql"] = json!("not an engine operation");
         assert!(serde_json::from_value::<SearchRequest>(unknown).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn source_clauses_signals_and_minimum_group_sizes_are_bounded() -> Result<()> {
+        let base = json!({"query":"", "capability":"all", "pageSize":50});
+        let with = |patch: serde_json::Value| -> Result<SearchRequest> {
+            let mut request = base.clone();
+            for (key, value) in patch.as_object().ok_or("object")? {
+                request[key] = value.clone();
+            }
+            parse_search_request(&request.to_string())
+        };
+        let long = "x".repeat(MAX_SOURCE_LENGTH as usize);
+        for valid in [
+            json!({"filter":[{"field":"source","op":"is","values":["Mushroom", " Mushroom ", long]}]}),
+            json!({"filter":[{"field":"finding","op":"is","values":SIGNALS}]}),
+            json!({"group":"source","minGroupSize":2,"openGroup":long}),
+            json!({"group":"asset","minGroupSize":1}),
+        ] {
+            with(valid)?;
+        }
+        let many = (0..=MAX_SOURCE_VALUES)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>();
+        for invalid in [
+            json!({"filter":[{"field":"source","op":"is","values":[""]}]}),
+            json!({"filter":[{"field":"source","op":"is","values":[]}]}),
+            json!({"filter":[{"field":"source","op":"is","values":many}]}),
+            json!({"filter":[{"field":"source","op":"is","values":[long.clone() + "x"]}]}),
+            json!({"filter":[{"field":"finding","op":"is","values":["up_to_date"]}]}),
+            json!({"minGroupSize":2}),
+            json!({"group":"source","minGroupSize":0}),
+            json!({"group":"source","minGroupSize":-1}),
+            json!({"group":"source","openGroup":long.clone() + "x"}),
+        ] {
+            assert_eq!(
+                with(invalid.clone())
+                    .err()
+                    .ok_or(format!("{invalid}"))?
+                    .code,
+                ErrorCode::InvalidInput,
+                "{invalid}"
+            );
+        }
+        // A minimum size changes the groups listed, never the rows that match.
+        let grouped = with(json!({"group":"source","minGroupSize":3}))?;
+        let plain = with(json!({}))?;
+        assert_eq!(grouped.matching_key()?, plain.matching_key()?);
+        assert_ne!(
+            serde_json::to_string(&grouped.without_page())?,
+            serde_json::to_string(&with(json!({"group":"source"}))?.without_page())?
+        );
         Ok(())
     }
 

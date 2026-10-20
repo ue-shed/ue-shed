@@ -294,17 +294,12 @@ impl EngineQuery {
             if p.raw.visible[raw] == 0 {
                 return Ok(Value::Null);
             }
-            for (index, candidate) in p.order.iter().enumerate() {
-                if index & 255 == 0 {
-                    checkpoint(cancelled)?;
-                }
-                let candidate = *candidate as usize;
-                if raws[p.starts[candidate] as usize..p.starts[candidate + 1] as usize]
-                    .contains(&(raw as u32))
-                {
-                    line = Some(candidate);
-                }
-            }
+            line = self
+                .unit_lines(cancelled)?
+                .get(raw)
+                .copied()
+                .filter(|line| *line != u32::MAX)
+                .map(|line| line as usize);
         }
         let Some(row) = row else {
             return Ok(Value::Null);

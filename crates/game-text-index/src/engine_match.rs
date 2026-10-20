@@ -420,6 +420,7 @@ struct PreparedClause {
     labels: HashSet<u32>,
     prefixes: Vec<Prefix>,
     translation: TranslationRows,
+    sources: HashSet<u32>,
 }
 struct Predicates {
     clauses: Vec<PreparedClause>,
@@ -438,7 +439,7 @@ impl Predicates {
         for clause in request.filter.as_deref().unwrap_or(&[]) {
             let labels: &[&str] = match clause.field {
                 FilterField::Problem => &PROBLEMS,
-                FilterField::Finding => &SIGNALS[..4],
+                FilterField::Finding => &SIGNALS,
                 FilterField::Translation => &["", "missing", "to_update", "not_synced"],
                 FilterField::Origin => &ORIGINS,
                 FilterField::Editing => &["editable", "read_only"],
@@ -464,6 +465,12 @@ impl Predicates {
                     projection.translation_rows(query, places, &clause.values, cancelled)?
                 } else {
                     TranslationRows::default()
+                },
+                // Each value is looked up in the dictionary once; rows then compare string IDs.
+                sources: if clause.field == FilterField::Source {
+                    query.source_ids(&clause.values)?
+                } else {
+                    HashSet::new()
                 },
             });
         }
@@ -745,6 +752,16 @@ impl Projection {
                     Kind::Slice => clause.translation.lines.contains(&self.slice_line[row]),
                     Kind::Raw => clause.translation.raw.contains(&(row as u32)),
                 },
+                // A unit with conflicting sources has each of them.
+                FilterField::Source => {
+                    if line {
+                        clause.sources.contains(&self.source[row])
+                    } else {
+                        rows.sources(row)
+                            .iter()
+                            .any(|id| clause.sources.contains(id))
+                    }
+                }
             };
             if (clause.op == FilterOp::Is && !has) || (clause.op == FilterOp::IsNot && has) {
                 return Ok(false);

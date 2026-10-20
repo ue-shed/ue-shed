@@ -108,7 +108,7 @@ pub fn parse_aggregate_request(payload: &str) -> Result<AggregateRequest> {
         )?;
     }
     value["pageSize"] = json!(1);
-    let search = parse_search_request(&value.to_string())?;
+    let search = parse_search_request(&crate::wtf8::view_json(&value)?)?;
     require(
         (1..=4).contains(&by.len()),
         invalid("An aggregate groups by one to four dimensions."),
@@ -715,7 +715,7 @@ pub fn parse_line_export(payload: &str) -> Result<(SearchRequest, Option<Vec<&'s
         invalid("An export request is an object."),
     )?;
     let fields: Option<Vec<String>> = take(&mut value, "fields")?;
-    let request = parse_search_request(&value.to_string())?;
+    let request = parse_search_request(&crate::wtf8::view_json(&value)?)?;
     Ok((request, fields.as_deref().map(line_fields).transpose()?))
 }
 
@@ -742,7 +742,10 @@ pub fn parse_corpus_export(payload: &str) -> Result<(SearchRequest, Option<Vec<S
             )?;
         }
     }
-    Ok((parse_search_request(&value.to_string())?, units))
+    Ok((
+        parse_search_request(&crate::wtf8::view_json(&value)?)?,
+        units,
+    ))
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { TextCorpusReportHeader } from "./corpus-summary.js";
 import { join } from "node:path";
-import { Effect, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
+import { Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
 import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type {
 	GameTextEngineOutcome,
@@ -176,11 +176,19 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			? Effect.succeed(interactive)
 			: yield* Effect.cached(
 					Effect.gen(function* () {
-						const client = yield* bulkEngine;
-						// Failing to open here (a newer snapshot was published, no process) only
-						// keeps bulk reads on the interactive reader; this model stays valid.
-						const reader = yield* openReader(executeOn(client, false));
-						return { reader, execute: executeOn(client) } satisfies Lane;
+						const laneScope = yield* Scope.fork(modelScope);
+						return yield* Effect.gen(function* () {
+							const client = yield* bulkEngine;
+							// Failing to open here (a newer snapshot was published, no process) only
+							// keeps bulk reads on the interactive reader; this model stays valid.
+							const reader = yield* openReader(executeOn(client, false));
+							return { reader, execute: executeOn(client) } satisfies Lane;
+						}).pipe(
+							Effect.provideService(Scope.Scope, laneScope),
+							Effect.onExit((exit) =>
+								Exit.isFailure(exit) ? Scope.close(laneScope, exit) : Effect.void
+							)
+						);
 					}).pipe(
 						Effect.provideService(Scope.Scope, modelScope),
 						// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Any failure to open a second lane leaves the first serving every read, as before.

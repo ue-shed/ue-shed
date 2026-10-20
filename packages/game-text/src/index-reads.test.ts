@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
+import { textCorpusReportHeader } from "./corpus-summary.js";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
@@ -255,6 +256,81 @@ describe("index reads", () => {
 		expect(Schema.is(LocalizationLineField)("places")).toBe(true);
 		expect(Schema.is(LocalizationLineField)("occurrences")).toBe(false);
 	});
+
+	for (const [name, builder] of builders)
+		it(`preserves exact UTF-16 filters and report diagnostics through the ${name}`, async () => {
+			await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const fixture = yield* makeIndexRegressionFixture();
+						const sources = [
+							"a\ud800 b",
+							"a\udc00 b",
+							"a\u{f0000}\u{f0001}\u{f0800} b"
+						];
+						fixture.update(
+							sources.map((source, i) => text("UI", `Utf${i}`, source, `Label${i}`))
+						);
+						fixture.patchRecord({
+							status: "partial",
+							gapSamples: sources.map((source) => ({
+								object_path: "/Game/Text/Table.Table",
+								property_path: `Label${source}`,
+								reason: "property_decoder_rejected"
+							})),
+							gapCounts: {
+								unsupported_text_history: 0,
+								legacy_container_element_without_type_information: 0,
+								feature_unavailable_for_engine_version: 0,
+								property_decoder_rejected: sources.length
+							}
+						});
+						yield* Effect.gen(function* () {
+							const model = yield* (yield* GameTextIndexRefresh).refresh(
+								fixture.request
+							);
+							for (const source of sources) {
+								const matching: Matching = {
+									query: "",
+									capability: "all",
+									localization: { target: fixture.target.name },
+									filter: [{ field: "source", op: "is", values: [source] }]
+								};
+								expect(
+									(yield* model.query.search({ ...matching, pageSize: 50 })).total
+								).toBe(1);
+								expect(
+									(yield* model.query.aggregate({ ...matching, by: ["source"] }))
+										.lines
+								).toBe(1);
+								expect(
+									(yield* model.query.selectLocalizationLines(matching, [
+										"source"
+									])).map((line) => line.source)
+								).toEqual([source]);
+								expect(
+									(yield* model.query.localizationLines(matching)).map(
+										(line) => line.source
+									)
+								).toEqual([source]);
+								expect(
+									(yield* model.query.export(matching)).units.map(
+										(unit) => unit.source
+									)
+								).toEqual([{ status: "consistent", value: source }]);
+							}
+							const header = yield* model.query.readCorpusHeader();
+							expect(header.diagnostics.length).toBeGreaterThan(0);
+							expect(yield* model.query.readCorpusReportHeader()).toEqual(
+								textCorpusReportHeader(header)
+							);
+						}).pipe(
+							Effect.provide(fixture.layer(false, fixture.source, false, builder))
+						);
+					})
+				)
+			);
+		});
 
 	for (const [name, builder] of builders)
 		it(`answers aggregates, line fields, the header and fingerprint, and the reports built on them through the ${name}`, async () => {

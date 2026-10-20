@@ -425,7 +425,7 @@ impl EngineSession {
                     }
                     EngineRequest::CorpusReportHeader { .. } => (
                         "corpus_report_header",
-                        serde_json::to_string(
+                        crate::wtf8::view_json(
                             &query.corpus_report_header(REPORT_PREVIEW_ITEMS, cancelled)?,
                         )?,
                     ),

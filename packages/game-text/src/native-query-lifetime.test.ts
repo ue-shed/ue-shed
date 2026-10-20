@@ -211,6 +211,47 @@ describe("bulk reads", () => {
 		);
 	});
 
+	it("releases an acquired bulk process immediately when its reader cannot open", async () => {
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const calls: string[] = [];
+					let releases = 0;
+					const bulk = client("bulk", calls);
+					const query = yield* openNativeTextQuery({
+						configuration,
+						generation: "generation",
+						joinedKey: "joined",
+						bulkEngine: Effect.acquireRelease(
+							Effect.succeed(
+								NativeGameTextEngineClient.of({
+									execute: (operation) =>
+										operation.action === "open"
+											? Effect.succeed({
+													...outcome(operation, null),
+													generation: "stale"
+												})
+											: bulk.execute(operation)
+								})
+							),
+							() =>
+								Effect.sync(() => {
+									releases++;
+								})
+						)
+					}).pipe(
+						Effect.provideService(NativeGameTextEngineClient, client("main", calls))
+					);
+					expect(yield* query.readLocalizationLines()).toEqual([]);
+					expect(releases).toBe(1);
+					expect(yield* query.readLocalizationLines()).toEqual([]);
+					expect(releases).toBe(1);
+					expect(yield* query.search(request)).toEqual(page);
+				})
+			)
+		);
+	});
+
 	it("share the interactive reader when the bulk process cannot open", async () => {
 		await Effect.runPromise(
 			Effect.scoped(

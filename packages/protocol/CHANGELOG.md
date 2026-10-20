@@ -1,5 +1,22 @@
 # @ue-shed/protocol
 
+## 0.18.0
+
+### Minor Changes
+
+- b267701: Add the independently negotiated `editor.asset-open.v1` capability in UEShedCoreEditor and
+  `openUnrealAsset({ endpoint, objectPath, bringToFront })` for trusted hosts. The separate
+  `unreal-editor-asset-open` 1.0 contract reports accepted opens as `ok`, and missing assets, load
+  failures and editor refusals as `unavailable` with recovery guidance. Locate continues to reveal
+  Content Browser assets without opening them. Core's existing Remote Control class permission covers
+  the new function. Hosts retain action choice and focus policy.
+- fc109a5: Route simple DataTable ID repairs through native Game Text when Authoring is absent. Use native
+  Game Text for cell-key regeneration even when Authoring is present, since Authoring's cell commands
+  cannot generate new keys. Admit the narrow key-repair capability independently of full localization
+  authoring. String-table migration
+  project checks use Core's projectRoot fact or an explicit host callback without editor-world
+  control. Preserve receipts, expected-value checks, session binding and saved-file verification.
+
 ## 0.17.1
 
 ## 0.17.0

@@ -1,5 +1,24 @@
 # @ue-shed/plugin-distribution
 
+## 0.18.0
+
+### Minor Changes
+
+- 75d8605: Support exact UE4Editor compiled variants, UE4 AutomationTool discovery and minimal Game Text
+  release asset names. Add a separate 4.27 Game Text source preset with runtime-only Core, shared
+  engine adapters and sequential engine verification scripts. Extend the full UE5 suite and its
+  existing presets to Unreal 5.6 through 5.8.2, including camera support.
+
+### Patch Changes
+
+- 760610f: Failures no longer read as success or as something they are not:
+    - **Plugin store:**
+        - A lease that cannot be read, or is still being written, keeps its release from being pruned. Only a lease that stays undecodable for 30 seconds is treated as abandoned.
+        - A cache lock that cannot be read is treated as held.
+    - **Resuming a review authoring session:** the Review Set is reported missing only when its file is gone. A Review Set that cannot be read or does not decode fails with its own reason and recovery, so a recoverable session is not discarded.
+
+- @ue-shed/engine@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

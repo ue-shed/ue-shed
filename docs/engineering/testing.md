@@ -255,6 +255,23 @@ gate is reported as `RUN` or `SKIP`, and skipped gates include the exact environ
 specialized command that enables them. The final Vitest skipped count should agree with this list;
 an unexplained skip is a test-infrastructure defect.
 
+Launcher registry entries can be missing or stale: an installed engine may have no entry, and an
+entry may point at a removed installation. When discovery disagrees with the disk, set the explicit
+`UE_SHED_UNREAL_*_ROOT` variables.
+
+### Real-project scale testing
+
+Fixtures cannot reach every size limit or content quirk that a production project does. Real-project
+runs have found bugs the fixtures never hit, such as file size limits, `%LOCPROJECTROOT%` gather
+filters and U+2028 in PO files. Contributors may run read-only scale tests against a local copy of a
+real project. These rules apply:
+
+- Treat the project as read-only. Never write to it, run Unreal gathers or commandlets that modify
+  it, or change its source-control state. Use read-only source-control queries only.
+- Put probe output under the gitignored `test-results/<project>/`.
+- Never put the project's name, paths, content or measurements that identify it into commits,
+  fixtures, docs or tests. Turn findings into generic fixture cases and regression tests.
+
 ### Solid component interactions
 
 Run Solid component interaction tests independently with:

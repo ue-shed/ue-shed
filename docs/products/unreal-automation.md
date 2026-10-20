@@ -66,6 +66,14 @@ ownership through their own shared policy. Responses distinguish `idle`, `starti
 are asynchronous engine transitions; inspect status until the transition resolves. Do not treat a
 successful stop submission as evidence that the CSV file has finished writing.
 
+Performance measurement belongs to Unreal's own profilers: the CSV profiler, Insights traces, and
+CsvTools/PerfReportTool. The game must not stream per-frame samples or custom telemetry to UE Shed.
+UE Shed controls the capture lifecycle, places engine markers (`CSV_EVENT`, `CSV_METADATA`,
+`TRACE_BOOKMARK`), and analyses the artifacts after the run finishes. Live events stay low-volume and
+lifecycle-only: run, phase, capture and artifact-ready, for example for recording apps. The target
+build configuration is **Test**, where the CSV profiler, Insights and every `-csv*` switch are
+available; Shipping is not supported.
+
 ## Host contract and recovery
 
 The host owns project and endpoint selection, user-facing review, transport composition, and durable

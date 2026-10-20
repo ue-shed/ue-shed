@@ -21,6 +21,21 @@ layer.
   [base, not constraints](docs/vision-and-architecture.md#base-not-constraints).
 - Treat existing internal tooling as behavioral reference, not source code or architecture to copy.
 - Keep Unreal integrations capability-driven and separately enabled.
+- Unreal owns writes to project content. Headless code detects and plans; native APIs or a UE Shed
+  editor plugin apply. See
+  [Unreal owns content writes](docs/vision-and-architecture.md#unreal-owns-content-writes).
+- Follow the [visual density](docs/engineering/stylex.md#visual-density) rules for UI: compact
+  summary rows, no stat tiles, no coloured left-border accents.
+
+## Delegating to Codex
+
+Implement directly by default. Delegate implementation to Codex only when the user asks, and then
+for the whole task they named. The orchestrating agent writes each phase brief, reviews the diff,
+runs the verification itself (targeted checks, Node 24 and 26, UE 5.7 and 5.8 for Unreal work,
+real-app screenshots for UI) and makes the commits; Codex does not commit. Launch
+`codex exec -m gpt-6.1-sol -c model_reasoning_effort="high"` from a script file, because
+worktree-isolated sessions reject an inline `codex exec`, and tell Codex it may read files with the
+shell.
 
 ## Commands
 

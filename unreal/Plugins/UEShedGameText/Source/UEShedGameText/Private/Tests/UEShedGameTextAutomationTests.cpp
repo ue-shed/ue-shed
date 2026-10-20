@@ -409,7 +409,9 @@ bool FUEShedGameTextAuthoringTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The reference remains a reference"), FTextInspector::GetTableIdAndKey(Notes->Title, ReferenceTable, ReferenceKey));
 	TestEqual(TEXT("Reference migrated to reviewed key"), ReferenceKey, FString(TEXT("New")));
 
-	const FString RedirectFile = FPaths::Combine(FPaths::ProjectConfigDir(), FGuid::NewGuid().ToString(EGuidFormats::Digits) + TEXT(".ini"));
+	// The request resolves relative config paths from ProjectDir, while ProjectConfigDir may
+	// itself be relative to the process working directory. Pass the persisted file unambiguously.
+	const FString RedirectFile = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectConfigDir(), FGuid::NewGuid().ToString(EGuidFormats::Digits) + TEXT(".ini")));
 	const TSharedRef<FJsonObject> RedirectRequest = MakeShared<FJsonObject>();
 	RedirectRequest->SetStringField(TEXT("contract"), TEXT("ue-shed-string-table-redirect"));
 	RedirectRequest->SetStringField(TEXT("version"), TEXT("1.0"));

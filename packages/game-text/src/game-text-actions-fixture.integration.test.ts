@@ -365,14 +365,33 @@ describe("Game Text identity cases in the saved fixture", () => {
 				)
 			);
 			expect(new Set(locked.map((occurrence) => occurrence.id)).size).toBe(2);
+			const matches = textCorpusQuery(corpus).search({
+				capability: "all",
+				lens: "duplicate_source",
+				pageSize: 50,
+				query: "The door is locked"
+			}).units;
+			// Both compiled keys now also have saved pin places. The pins retain the package
+			// namespace that compiled bytecode strips, so the raw corpus has four distinct units.
+			const evidence = await readEvidence(fixtureEngine);
+			const packageNamespace = evidence.packages.find(
+				(entry) => entry.package === `${ROOT}BP_ActionSign_Duplicate`
+			)!.packageNamespace;
+			expect(matches).toHaveLength(4);
 			expect(
-				textCorpusQuery(corpus).search({
-					capability: "all",
-					lens: "duplicate_source",
-					pageSize: 50,
-					query: "The door is locked"
-				}).units
-			).toHaveLength(2);
+				matches
+					.map((unit) =>
+						unit.identity.status === "resolved" ? unit.identity.namespace : undefined
+					)
+					.sort()
+			).toEqual(["", "", `[${packageNamespace}]`, `[${packageNamespace}]`]);
+			expect(
+				new Set(
+					matches.map((unit) =>
+						unit.identity.status === "resolved" ? unit.identity.key : undefined
+					)
+				).size
+			).toBe(2);
 		}
 	);
 });

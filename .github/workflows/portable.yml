@@ -82,6 +82,10 @@ jobs:
                   set -o pipefail
                   mkdir -p evidence
                   pnpm run check:repository 2>&1 | tee evidence/portable-check.log
+            - name: Run Game Text join fuzz sweep
+              env:
+                  UE_SHED_JOIN_FUZZ_SEEDS: "100"
+              run: pnpm test:game-text:fuzz
             - name: Upload portable evidence
               if: always() && steps.repository_gate.outcome != 'skipped'
               uses: actions/upload-artifact@v7

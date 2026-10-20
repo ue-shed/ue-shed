@@ -1,14 +1,35 @@
 import { Argument, Command, Flag } from "effect/cli";
-import {
-	runMapCaptureSelection,
-	runMapCaptureReadiness,
-	runMapCapturePlanFromSelection,
-	runMapCaptureInspect,
-	runMapCapturePlanValidate,
-	runMapCaptureRun,
-	runMapCaptureRuns
-} from "../workflows/map-capture.js";
 import { nonNegativeIntegerFlag, optionalFlag, optionalValue } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runMapCaptureSelection = lazyWorkflow(
+	() => import("../workflows/map-capture.js"),
+	(module) => module.runMapCaptureSelection
+);
+const runMapCaptureReadiness = lazyWorkflow(
+	() => import("../workflows/map-capture.js"),
+	(module) => module.runMapCaptureReadiness
+);
+const runMapCapturePlanFromSelection = lazyWorkflow(
+	() => import("../workflows/map-capture.js"),
+	(module) => module.runMapCapturePlanFromSelection
+);
+const runMapCaptureInspect = lazyWorkflow(
+	() => import("../workflows/map-capture.js"),
+	(module) => module.runMapCaptureInspect
+);
+const runMapCapturePlanValidate = lazyWorkflow(
+	() => import("../workflows/map-capture.js"),
+	(module) => module.runMapCapturePlanValidate
+);
+const runMapCaptureRun = lazyWorkflow(
+	() => import("../workflows/map-capture.js"),
+	(module) => module.runMapCaptureRun
+);
+const runMapCaptureRuns = lazyWorkflow(
+	() => import("../workflows/map-capture.js"),
+	(module) => module.runMapCaptureRuns
+);
 
 const mapCapturePlanValidateCommand = Command.make(
 	"validate",

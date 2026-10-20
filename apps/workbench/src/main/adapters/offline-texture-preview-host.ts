@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
+import { installedEngineRoots, queryWindowsRegistry } from "@ue-shed/engine";
 import { Context, Effect, Exit, Layer, Schema } from "effect";
 
 export class OfflineTexturePreviewHostError extends Schema.TaggedError<OfflineTexturePreviewHostError>()(
@@ -15,7 +16,6 @@ export class OfflineTexturePreviewHostError extends Schema.TaggedError<OfflineTe
 		message: Schema.String,
 		operation: Schema.Literals([
 			"create_directory",
-			"list_directories",
 			"list_project_files",
 			"read_file",
 			"run_commandlet",
@@ -44,15 +44,13 @@ export interface OfflineTexturePreviewHostRunResult {
 }
 
 export interface OfflineTexturePreviewHostApi {
+	/** Folders that may hold an installed engine; see `installedEngineRoots`. */
+	readonly engineRoots: Effect.Effect<ReadonlyArray<string>>;
 	readonly exists: (path: string) => Effect.Effect<boolean>;
-	readonly listDirectories: (
-		path: string
-	) => Effect.Effect<ReadonlyArray<string>, OfflineTexturePreviewHostError>;
 	readonly listProjectFiles: (
 		path: string
 	) => Effect.Effect<ReadonlyArray<string>, OfflineTexturePreviewHostError>;
 	readonly makeDirectory: (path: string) => Effect.Effect<void, OfflineTexturePreviewHostError>;
-	readonly programFiles: string;
 	readonly readFile: (
 		path: string,
 		maxBytes: number
@@ -105,18 +103,14 @@ export const offlineTexturePreviewHostLayer = (
 	Layer.succeed(
 		OfflineTexturePreviewHost,
 		OfflineTexturePreviewHost.of({
+			engineRoots: installedEngineRoots({
+				platform: process.platform,
+				programData: environment.ProgramData ?? "C:\\ProgramData",
+				programFiles: environment.ProgramFiles ?? "C:\\Program Files",
+				queryRegistry: queryWindowsRegistry
+			}).pipe(Effect.withSpan("Workbench.OfflineTexturePreviewHost.engineRoots")),
 			exists: Effect.fn("Workbench.OfflineTexturePreviewHost.exists")((path: string) =>
 				Effect.sync(() => existsSync(path))
-			),
-			listDirectories: Effect.fn("Workbench.OfflineTexturePreviewHost.listDirectories")(
-				(path: string) =>
-					Effect.tryPromise({
-						try: async () =>
-							(await readdir(path, { withFileTypes: true }))
-								.filter((entry) => entry.isDirectory())
-								.map((entry) => join(path, entry.name)),
-						catch: (cause) => hostError("list_directories", path, cause)
-					})
 			),
 			listProjectFiles: Effect.fn("Workbench.OfflineTexturePreviewHost.listProjectFiles")(
 				(path: string) =>
@@ -139,7 +133,6 @@ export const offlineTexturePreviewHostLayer = (
 						catch: (cause) => hostError("create_directory", path, cause)
 					})
 			),
-			programFiles: environment.ProgramFiles ?? "C:\\Program Files",
 			readFile: Effect.fn("Workbench.OfflineTexturePreviewHost.readFile")(
 				(path: string, maxBytes: number) =>
 					Effect.tryPromise({

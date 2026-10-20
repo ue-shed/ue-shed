@@ -33,7 +33,11 @@ import {
 } from "../packages/game-text/src/text-actions.ts";
 import type { TextCorpusFocus } from "../packages/game-text/src/schema.ts";
 import { ensureUassetExecutable } from "./native-tools.ts";
-import { runProcess, unrealEngineTools } from "./unreal-plugin-host.ts";
+import {
+	runProcess,
+	unrealEngineTools,
+	localDerivedDataCacheArguments
+} from "./unreal-plugin-host.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 
 const [engineArgument, outputArgument] = process.argv.slice(2);
@@ -133,6 +137,7 @@ if (!existsSync(baselinePath)) {
 			`-Evidence=${baselinePath}`,
 			"-Unattended",
 			"-nop4",
+			...localDerivedDataCacheArguments,
 			"-NullRHI",
 			"-NoSound",
 			"-NoSplash",
@@ -236,7 +241,9 @@ const program = Effect.scoped(
 				"-Unattended",
 				"-nop4",
 				"-NoSound",
-				...(legacy ? ["-NullRHI"] : ["-RenderOffscreen"]),
+				...(legacy
+					? [...localDerivedDataCacheArguments, "-NullRHI"]
+					: ["-RenderOffscreen"]),
 				"-NoSplash",
 				"-nosync",
 				`-abslog=${join(output, "editor.log")}`

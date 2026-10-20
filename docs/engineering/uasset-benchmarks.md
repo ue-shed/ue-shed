@@ -127,8 +127,9 @@ Useful options:
 --unreal               Include the fresh Unreal commandlet lane
 ```
 
-`UE_SHED_UNREAL_ENGINE_ROOT` selects the Unreal installation. Without it, the Windows harness uses
-the fixture contract to discover a matching Epic Games Launcher installation.
+`UE_SHED_UNREAL_ENGINE_ROOT` selects the Unreal installation. Without it, the Windows harness finds
+an installed engine matching the fixture contract, from the Epic Games Launcher's records on any
+drive or `Program Files\Epic Games`.
 
 ## Workloads
 

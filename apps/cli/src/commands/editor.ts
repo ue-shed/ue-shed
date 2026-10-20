@@ -1,10 +1,19 @@
 import { Argument, Command } from "effect/cli";
 import { optionalFlag, optionalValue } from "./options.js";
-import {
-	runEditorPlaySession,
-	runEditorProjectLaunch,
-	runEditorWorldOpen
-} from "../workflows/editor.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runEditorPlaySession = lazyWorkflow(
+	() => import("../workflows/editor.js"),
+	(module) => module.runEditorPlaySession
+);
+const runEditorProjectLaunch = lazyWorkflow(
+	() => import("../workflows/editor.js"),
+	(module) => module.runEditorProjectLaunch
+);
+const runEditorWorldOpen = lazyWorkflow(
+	() => import("../workflows/editor.js"),
+	(module) => module.runEditorWorldOpen
+);
 
 const playActions = ["status", "start", "simulate", "pause", "resume", "stop"] as const;
 type PlayAction = (typeof playActions)[number];

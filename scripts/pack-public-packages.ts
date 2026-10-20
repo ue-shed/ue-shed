@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.ts";
 import { assertCleanReleaseSource } from "./release-source.ts";
+import { traceProcess } from "./process-trace.ts";
 
 export interface PublicPackage {
 	readonly name: string;
@@ -110,14 +111,16 @@ function executable(name: string) {
 
 function run(command: string, args: readonly string[], options: RunOptions = {}) {
 	const isCommandShim = process.platform === "win32" && command.endsWith(".cmd");
-	const result = spawnSync(
-		isCommandShim ? (process.env.ComSpec ?? "cmd.exe") : command,
-		isCommandShim ? ["/d", "/s", "/c", command, ...args] : args,
-		{
-			cwd: options.cwd ?? repositoryRoot,
-			encoding: "utf8",
-			shell: false
-		}
+	const result = traceProcess(command, args, () =>
+		spawnSync(
+			isCommandShim ? (process.env.ComSpec ?? "cmd.exe") : command,
+			isCommandShim ? ["/d", "/s", "/c", command, ...args] : args,
+			{
+				cwd: options.cwd ?? repositoryRoot,
+				encoding: "utf8",
+				shell: false
+			}
+		)
 	);
 	if (result.error) throw result.error;
 	if (result.status !== 0) {
@@ -601,10 +604,16 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 
 export async function packPublicPackages({
 	output,
-	build = true
+	build = true,
+	nativeProfile = "release"
 }: {
 	readonly output: string;
 	readonly build?: boolean;
+	/**
+	 * Cargo profile of the bundled native executables. Releases use `release`; packaging tests can
+	 * use the `debug` build the repository checks already made.
+	 */
+	readonly nativeProfile?: "release" | "debug";
 }): Promise<PackedPackage[]> {
 	const outputDirectory = resolve(output);
 	await ensureEmptyOutput(outputDirectory);
@@ -614,7 +623,7 @@ export async function packPublicPackages({
 		const nativeBuildArgs = [
 			"build",
 			"--locked",
-			"--release",
+			...(nativeProfile === "release" ? ["--release"] : []),
 			...(windowsTarget === undefined ? [] : ["--target", windowsTarget]),
 			"-p",
 			"uasset-io",
@@ -628,7 +637,7 @@ export async function packPublicPackages({
 		const nativeReleaseDirectory = join(
 			cargoTargetDirectory,
 			...(windowsTarget === undefined ? [] : [windowsTarget]),
-			"release"
+			nativeProfile
 		);
 		const assembleArgs = (packageName: string, executableName: string) => [
 			"--filter",

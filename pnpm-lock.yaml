@@ -852,6 +852,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.4
+    devDependencies:
+      '@ue-shed/unreal-connection':
+        specifier: workspace:*
+        version: link:../unreal-connection
 
   packages/authoring-catalog:
     dependencies:

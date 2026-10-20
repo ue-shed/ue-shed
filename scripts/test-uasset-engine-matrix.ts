@@ -19,18 +19,33 @@ import {
 	canonicalLocalizationEvidence
 } from "./localization-fixture-evidence.ts";
 import { ensureUassetExecutable } from "./native-tools.ts";
-import { repositoryRoot, unrealEngineTools, unrealEngineVersion } from "./unreal-plugin-host.ts";
+import { findUnrealEngine } from "./unreal-engines.ts";
+import {
+	repositoryRoot,
+	unrealEngineTools,
+	unrealEngineVersion,
+	localDerivedDataCacheArguments
+} from "./unreal-plugin-host.ts";
+import { traceProcess } from "./process-trace.ts";
 
 // Require both engines before starting work. The ordinary fixture command remains the
 // committed 5.7 baseline; this lane generates disposable assets for each engine.
-const engines = ["5.7", "5.8"].map((version) => {
+const engines: { readonly version: string; readonly root: string }[] = [];
+for (const version of ["5.7", "5.8"]) {
 	const variable = `UE_SHED_UNREAL_${version.replace(".", "")}_ROOT`;
-	const configured = process.env[variable] ?? process.env.UE_SHED_UNREAL_ENGINE_ROOT;
+	const shared = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
+	const configured =
+		process.env[variable] ??
+		(shared !== undefined && unrealEngineVersion(shared)?.label === version
+			? shared
+			: await findUnrealEngine([version]));
 	if (!configured || unrealEngineVersion(configured)?.label !== version) {
-		throw new Error(`Set ${variable} to an Unreal ${version} installation with Engine/Source.`);
+		throw new Error(
+			`Could not discover Unreal ${version}. Install it or set ${variable} to its root.`
+		);
 	}
-	return { version, root: resolve(configured) };
-});
+	engines.push({ version, root: resolve(configured) });
+}
 
 const outputParent = resolve(
 	process.env.UE_SHED_UASSET_ENGINE_MATRIX_OUTPUT_ROOT ?? join(repositoryRoot, "out")
@@ -52,14 +67,16 @@ function run(
 		: command;
 	const descriptor = openSync(log, "w");
 	try {
-		const result = spawnSync(executable, batch ? [] : args, {
-			cwd: repositoryRoot,
-			env,
-			shell: batch,
-			stdio: ["ignore", descriptor, descriptor],
-			windowsHide: true,
-			timeout: 900_000
-		});
+		const result = traceProcess(command, args, () =>
+			spawnSync(executable, batch ? [] : args, {
+				cwd: repositoryRoot,
+				env,
+				shell: batch,
+				stdio: ["ignore", descriptor, descriptor],
+				windowsHide: true,
+				timeout: 900_000
+			})
+		);
 		if (result.error) throw result.error;
 		if (result.status !== 0) {
 			throw new Error(`${basename(command)} failed (${result.status}); see ${log}`);
@@ -221,6 +238,7 @@ for (const engine of engines) {
 					`-SavedReviewEvidence=${evidence}`,
 					"-unattended",
 					"-nop4",
+					...localDerivedDataCacheArguments,
 					"-NullRHI",
 					"-nosplash"
 				]);
@@ -299,6 +317,7 @@ for (const engine of engines) {
 				"-NativeParserOnly",
 				"-unattended",
 				"-nop4",
+				...localDerivedDataCacheArguments,
 				"-NullRHI",
 				"-nosplash"
 			];

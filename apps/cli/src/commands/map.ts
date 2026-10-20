@@ -1,8 +1,13 @@
 import { Argument, Command, Flag } from "effect/cli";
 import { Effect } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
-import { runMapHistory } from "../workflows/map.js";
 import { optionalFlag, optionalValue, positiveIntegerFlag } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runMapHistory = lazyWorkflow(
+	() => import("../workflows/map.js"),
+	(module) => module.runMapHistory
+);
 
 const mapHistoryCommand = Command.make(
 	"history",

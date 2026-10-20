@@ -51,7 +51,11 @@ async function copyRelative(entry, destinationRoot = targetRoot) {
 	}
 	const destination = join(destinationRoot, entry);
 	await mkdir(dirname(destination), { recursive: true });
-	await cp(source, destination, { recursive: (await stat(source)).isDirectory() });
+	// Keep timestamps so build tools such as Cargo treat unchanged copied sources as unchanged.
+	await cp(source, destination, {
+		recursive: (await stat(source)).isDirectory(),
+		preserveTimestamps: true
+	});
 }
 
 const templateRoot = resolve(sourceRoot, manifest.consumerTemplate);

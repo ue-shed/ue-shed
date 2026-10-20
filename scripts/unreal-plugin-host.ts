@@ -13,6 +13,8 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GAME_TEXT_PLUGIN_IDS } from "./plugin-bundle.ts";
 import { isJsonString, parseJsonObject } from "./json.ts";
+import { buildInputStamp, buildUnlessUnchanged, engineBuildIdentity } from "./build-stamp.ts";
+import { traceProcess } from "./process-trace.ts";
 
 export interface UnrealEngineVersion {
 	readonly major: number;
@@ -79,17 +81,29 @@ export function unrealEngineTools(engineRoot: string): UnrealEngineTools {
 	};
 }
 
+/**
+ * Derived-data cache arguments for the repository's `-NullRHI` Unreal processes. `-ddc=NoShared`
+ * skips shared caches: tests must not depend on a studio cache, and an unreachable one (such as
+ * `UE-ZenSharedDataCacheHost` while off the network) stalls every engine startup for about 10 s.
+ * Unreal 4.27, 5.7 and 5.8 all define the `NoShared` graph. Never pass it to a rendering editor:
+ * in 5.7 that graph drops the engine shader pak and leaves the local file cache delete-only, so the
+ * editor recompiles engine shaders for minutes before Remote Control starts.
+ */
+export const localDerivedDataCacheArguments = ["-ddc=NoShared"] as const;
+
 export function runProcess(command: string, args: readonly string[]) {
 	const isBatchFile = command.endsWith(".bat") || command.endsWith(".cmd");
 	const executable = isBatchFile
 		? [command, ...args].map((arg) => `"${arg.replaceAll('"', '""')}"`).join(" ")
 		: command;
-	const result = spawnSync(executable, isBatchFile ? [] : args, {
-		cwd: repositoryRoot,
-		shell: isBatchFile,
-		stdio: "inherit",
-		windowsHide: true
-	});
+	const result = traceProcess(command, args, () =>
+		spawnSync(executable, isBatchFile ? [] : args, {
+			cwd: repositoryRoot,
+			shell: isBatchFile,
+			stdio: "inherit",
+			windowsHide: true
+		})
+	);
 	if (result.error) throw result.error;
 	if (result.status !== 0) {
 		throw new Error(
@@ -286,7 +300,7 @@ export function prepareUnrealPlugins({
 		`${editorTarget}.modules`
 	);
 	const engineManifestBefore = moduleOnly ? readFileSync(engineManifestPath, "utf8") : undefined;
-	runProcess(tools.build, [
+	const buildArgs = [
 		editorTarget,
 		"Win64",
 		"Development",
@@ -298,7 +312,30 @@ export function prepareUnrealPlugins({
 		"-NoEngineChanges",
 		"-NoHotReload",
 		"-WaitMutex"
-	]);
+	];
+	if (moduleOnly) {
+		// The staged copies are rewritten every run, so fingerprint the canonical plugin sources.
+		buildUnlessUnchanged({
+			stampFile: join(hostRoot, "build-inputs.sha256"),
+			stamp: buildInputStamp(
+				[
+					...ueShedPluginDescriptors(pluginIds).map((descriptor) => dirname(descriptor)),
+					...additionalPluginDescriptors.map((descriptor) => dirname(descriptor))
+				],
+				[
+					...engineBuildIdentity(engineRoot, editorTarget),
+					...buildArgs,
+					String(coreRuntimeOnly)
+				]
+			),
+			outputs: modules.map((name) =>
+				join(hostRoot, "Binaries", "Win64", `${editorTarget}-${name}.dll`)
+			),
+			build: () => runProcess(tools.build, buildArgs)
+		});
+	} else {
+		runProcess(tools.build, buildArgs);
+	}
 	if (engineManifestBefore !== undefined) {
 		if (readFileSync(engineManifestPath, "utf8") !== engineManifestBefore) {
 			throw new Error(

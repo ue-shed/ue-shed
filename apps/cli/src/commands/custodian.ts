@@ -1,11 +1,23 @@
 import { CustodianTargetId } from "@ue-shed/project-custodian";
 import { Argument, Command, Flag } from "effect/cli";
-import {
-	runCustodianApply,
-	runCustodianPlan,
-	runCustodianPrepare,
-	runCustodianReport
-} from "../workflows/custodian.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runCustodianApply = lazyWorkflow(
+	() => import("../workflows/custodian.js"),
+	(module) => module.runCustodianApply
+);
+const runCustodianPlan = lazyWorkflow(
+	() => import("../workflows/custodian.js"),
+	(module) => module.runCustodianPlan
+);
+const runCustodianPrepare = lazyWorkflow(
+	() => import("../workflows/custodian.js"),
+	(module) => module.runCustodianPrepare
+);
+const runCustodianReport = lazyWorkflow(
+	() => import("../workflows/custodian.js"),
+	(module) => module.runCustodianReport
+);
 
 const report = Command.make("report", { root: Argument.String("root") }, ({ root }) =>
 	runCustodianReport({ _tag: "CustodianReport", root })

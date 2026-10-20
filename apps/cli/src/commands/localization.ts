@@ -8,14 +8,6 @@ import {
 	LocalizationState,
 	TextOriginKind
 } from "@ue-shed/game-text/schema";
-import { runLocalizationCheck } from "../workflows/localization-check.js";
-import { runLocalizationGate } from "../workflows/localization-gate.js";
-import { runLocalizationReport } from "../workflows/localization-report.js";
-import {
-	runLocalizationExport,
-	runLocalizationStatus,
-	runLocalizationTargets
-} from "../workflows/localization.js";
 import {
 	localizationFlags,
 	optionalLocalizationFlags,
@@ -24,9 +16,44 @@ import {
 	optionalFilterFlags
 } from "./localization-flags.js";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
-import { runLocalizationReview } from "../workflows/localization-review.js";
-import { runLocalizationOperation } from "../workflows/localization-run.js";
-import { applyLocalizationChanges } from "../workflows/localization-apply.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runLocalizationCheck = lazyWorkflow(
+	() => import("../workflows/localization-check.js"),
+	(module) => module.runLocalizationCheck
+);
+const runLocalizationGate = lazyWorkflow(
+	() => import("../workflows/localization-gate.js"),
+	(module) => module.runLocalizationGate
+);
+const runLocalizationReport = lazyWorkflow(
+	() => import("../workflows/localization-report.js"),
+	(module) => module.runLocalizationReport
+);
+const runLocalizationExport = lazyWorkflow(
+	() => import("../workflows/localization.js"),
+	(module) => module.runLocalizationExport
+);
+const runLocalizationStatus = lazyWorkflow(
+	() => import("../workflows/localization.js"),
+	(module) => module.runLocalizationStatus
+);
+const runLocalizationTargets = lazyWorkflow(
+	() => import("../workflows/localization.js"),
+	(module) => module.runLocalizationTargets
+);
+const runLocalizationReview = lazyWorkflow(
+	() => import("../workflows/localization-review.js"),
+	(module) => module.runLocalizationReview
+);
+const runLocalizationOperation = lazyWorkflow(
+	() => import("../workflows/localization-run.js"),
+	(module) => module.runLocalizationOperation
+);
+const applyLocalizationChanges = lazyWorkflow(
+	() => import("../workflows/localization-apply.js"),
+	(module) => module.applyLocalizationChanges
+);
 
 export const localizationCommand = Command.make("loc").pipe(
 	Command.withDescription("Read saved Unreal localization targets."),

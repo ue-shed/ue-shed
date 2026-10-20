@@ -1,8 +1,14 @@
-import { readdir, readFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { Config, Context, Effect, Layer, Schema } from "effect";
+import {
+	installedEngineRoots,
+	queryWindowsRegistry,
+	registeredBuildRoot,
+	type EngineRootSources,
+	type RegistryQuery
+} from "./engine-sources.js";
 
 /**
  * Non-negative Unreal major, minor and patch numbers read from Build.version. This identifies
@@ -35,15 +41,6 @@ export const ProjectDescriptor = Schema.Struct({
  * files.
  */
 export interface ProjectDescriptor extends Schema.Schema.Type<typeof ProjectDescriptor> {}
-
-const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
-
-/** The Epic Games Launcher's record of what it installed, wherever the user put it. */
-const LauncherInstalled = Schema.Struct({
-	InstallationList: Schema.Array(
-		Schema.Struct({ AppName: Schema.String, InstallLocation: Schema.String })
-	)
-});
 
 /**
  * Discovered or explicitly configured engine root with its Build.version identity. Discovery
@@ -288,79 +285,15 @@ function associationOf(
 	});
 }
 
-function registeredEngineRoot(association: string | undefined): Effect.Effect<string | undefined> {
-	if (process.platform !== "win32" || association === undefined) {
-		return Effect.succeed(undefined);
-	}
-	return Effect.callback<string | undefined>((resume) => {
-		const child = execFile(
-			"reg.exe",
-			["query", registeredBuildsKey, "/v", association],
-			{ encoding: "utf8", windowsHide: true },
-			(error, stdout) => resume(Effect.succeed(error ? undefined : stdout))
-		);
-		return Effect.sync(() => child.kill());
-	}).pipe(
-		Effect.map((output) => {
-			if (output === undefined) return undefined;
-			for (const line of output.split(/\r?\n/u)) {
-				const match = line.match(/^\s*(.*?)\s{2,}REG_(?:EXPAND_)?SZ\s{2,}(.+?)\s*$/u);
-				if (match?.[1] === association && match[2]) return resolve(match[2]);
-			}
-			return undefined;
-		})
-	);
-}
-
 function versionLabel(version: EngineVersion): string {
 	return `${version.major}.${version.minor}`;
 }
 
-function programFilesEngineRoots(programFiles: string): Effect.Effect<readonly string[]> {
-	const epicRoot = join(programFiles, "Epic Games");
-	return Effect.tryPromise(() => readdir(epicRoot, { withFileTypes: true })).pipe(
-		Effect.map((entries) =>
-			entries
-				.filter((entry) => entry.isDirectory() && entry.name.startsWith("UE_"))
-				.map((entry) => join(epicRoot, entry.name))
-		),
-		Effect.catch(() => Effect.succeed([]))
-	);
-}
-
-/** Launcher engines can live on any drive; the Launcher lists them under ProgramData. */
-function launcherEngineRoots(programData: string): Effect.Effect<readonly string[]> {
-	return readJson(
-		join(programData, "Epic", "UnrealEngineLauncher", "LauncherInstalled.dat"),
-		"engine_not_found"
-	).pipe(
-		Effect.flatMap(Schema.decodeUnknownEffect(LauncherInstalled)),
-		Effect.map((installed) =>
-			installed.InstallationList.filter((entry) => entry.AppName.startsWith("UE_")).map(
-				(entry) => entry.InstallLocation
-			)
-		),
-		Effect.catch(() => Effect.succeed([]))
-	);
-}
-
 function discoverStandardInstallations(options: {
 	readonly association?: string;
-	readonly programData: string;
-	readonly programFiles: string;
+	readonly sources: EngineRootSources;
 }): Effect.Effect<readonly EngineInstallation[]> {
-	if (process.platform !== "win32") return Effect.succeed([]);
-	return Effect.all([
-		programFilesEngineRoots(options.programFiles),
-		launcherEngineRoots(options.programData)
-	]).pipe(
-		Effect.map(([standard, launcher]) => {
-			// The Launcher also lists the Program Files engines; keep one candidate per folder.
-			const roots = new Map<string, string>();
-			for (const root of [...standard, ...launcher])
-				roots.set(resolve(root).toLocaleLowerCase("en-US"), root);
-			return [...roots.values()];
-		}),
+	return installedEngineRoots(options.sources).pipe(
 		Effect.flatMap((roots) =>
 			Effect.forEach(roots, (root) => Effect.option(installationAt(root)), {
 				concurrency: 4
@@ -382,52 +315,64 @@ const programFiles = Config.String("ProgramFiles").pipe(Config.withDefault("C:\\
 const programData = Config.String("ProgramData").pipe(Config.withDefault("C:\\ProgramData"));
 
 /**
+ * Engine discovery that reads the registry through `queryRegistry` instead of `reg.exe`, so tests
+ * see only the engines they create. `EngineInstallationDiscoveryLive` uses `reg.exe`.
+ */
+export function makeEngineInstallationDiscoveryLayer(queryRegistry: RegistryQuery) {
+	return Layer.effect(
+		EngineInstallationDiscovery,
+		Effect.gen(function* () {
+			const sources: EngineRootSources = {
+				platform: process.platform,
+				programData: yield* programData,
+				programFiles: yield* programFiles,
+				queryRegistry
+			};
+			const resolveInstallation = Effect.fn("EngineInstallationDiscovery.resolve")(function* (
+				request: EngineInstallationRequest
+			) {
+				if (request.explicitRoot !== undefined)
+					return yield* installationAt(request.explicitRoot);
+				const association = yield* associationOf(resolve(request.projectDescriptor));
+				const registeredRoot = yield* registeredBuildRoot(association, sources);
+				if (registeredRoot !== undefined) {
+					const registered = yield* Effect.option(installationAt(registeredRoot));
+					if (registered._tag === "Some") return registered.value;
+				}
+				const candidates = yield* discoverStandardInstallations({
+					sources,
+					...(association === undefined ? undefined : { association })
+				});
+				if (candidates.length === 1) return candidates[0]!;
+				if (candidates.length > 1) {
+					return yield* failure(
+						"engine_ambiguous",
+						`More than one installed engine matches ${association ?? "the project"}.`,
+						"Pass an explicit engine root.",
+						false,
+						candidates.map((candidate) => versionLabel(candidate.version))
+					);
+				}
+				return yield* failure(
+					"engine_not_found",
+					association === undefined
+						? "The project does not identify a discoverable Unreal installation."
+						: `No installed Unreal ${association} engine was discovered.`,
+					"Pass an explicit engine root.",
+					true
+				);
+			});
+			return EngineInstallationDiscovery.of({ resolve: resolveInstallation });
+		})
+	);
+}
+
+/**
  * Reads explicit engine roots and Windows registered/Launcher installations using project
  * association. Rejects missing or ambiguous matches; it does not download or build an engine.
  */
-export const EngineInstallationDiscoveryLive = Layer.effect(
-	EngineInstallationDiscovery,
-	Effect.gen(function* () {
-		const configuredProgramFiles = yield* programFiles;
-		const configuredProgramData = yield* programData;
-		const resolveInstallation = Effect.fn("EngineInstallationDiscovery.resolve")(function* (
-			request: EngineInstallationRequest
-		) {
-			if (request.explicitRoot !== undefined)
-				return yield* installationAt(request.explicitRoot);
-			const association = yield* associationOf(resolve(request.projectDescriptor));
-			const registeredRoot = yield* registeredEngineRoot(association);
-			if (registeredRoot !== undefined) {
-				const registered = yield* Effect.option(installationAt(registeredRoot));
-				if (registered._tag === "Some") return registered.value;
-			}
-			const candidates = yield* discoverStandardInstallations({
-				programData: configuredProgramData,
-				programFiles: configuredProgramFiles,
-				...(association === undefined ? undefined : { association })
-			});
-			if (candidates.length === 1) return candidates[0]!;
-			if (candidates.length > 1) {
-				return yield* failure(
-					"engine_ambiguous",
-					`More than one installed engine matches ${association ?? "the project"}.`,
-					"Pass an explicit engine root.",
-					false,
-					candidates.map((candidate) => versionLabel(candidate.version))
-				);
-			}
-			return yield* failure(
-				"engine_not_found",
-				association === undefined
-					? "The project does not identify a discoverable Unreal installation."
-					: `No installed Unreal ${association} engine was discovered.`,
-				"Pass an explicit engine root.",
-				true
-			);
-		});
-		return EngineInstallationDiscovery.of({ resolve: resolveInstallation });
-	})
-);
+export const EngineInstallationDiscoveryLive =
+	makeEngineInstallationDiscoveryLayer(queryWindowsRegistry);
 
 /**
  * Provides engine resolution from a supplied Effect function. Tests control installations and

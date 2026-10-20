@@ -1,6 +1,7 @@
 import { format } from "node:util";
 import { investigationsCommand } from "./commands/investigation.js";
-import { NodeServices } from "@effect/platform-node";
+// The package root loads every Node service module (about 0.75 s of CLI startup).
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CURRENT_PROTOCOL_VERSION } from "@ue-shed/protocol";
 import { CliError, CliOutput, Command } from "effect/cli";
 import { Cause, Console, Effect, Exit, Layer, Logger, Option } from "effect";

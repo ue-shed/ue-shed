@@ -1,12 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	prepareUnrealPlugins,
 	ueShedPluginIds,
 	unrealEngineVersion,
-	type UnrealEngineTools
+	type UnrealEngineTools,
+	localDerivedDataCacheArguments
 } from "./unreal-plugin-host.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 import {
@@ -15,6 +16,14 @@ import {
 	localizationFixtureSteps
 } from "./localization-fixture-steps.ts";
 import { retainLocalizationFixtureOutput } from "./localization-fixture-output.ts";
+import {
+	buildInputStamp,
+	buildUnlessUnchanged,
+	engineBuildIdentity,
+	moduleManifestOutputs
+} from "./build-stamp.ts";
+import { traceProcess } from "./process-trace.ts";
+import { findUnrealEngine } from "./unreal-engines.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const action = process.argv[2];
@@ -57,7 +66,7 @@ function isMatchingEngine(engineRoot: string) {
 	return version?.major === contract.engine.major && version?.minor === contract.engine.minor;
 }
 
-function discoverEngineRoot() {
+async function discoverEngineRoot() {
 	const requiredVersion =
 		action === "localization-427"
 			? "4.27"
@@ -73,19 +82,14 @@ function discoverEngineRoot() {
 		return root;
 	}
 
-	if (process.platform === "win32") {
-		const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
-		const epicRoot = join(programFiles, "Epic Games");
-		if (existsSync(epicRoot)) {
-			const candidates = readdirSync(epicRoot, { withFileTypes: true })
-				.filter((entry) => entry.isDirectory() && entry.name.startsWith("UE_"))
-				.map((entry) => join(epicRoot, entry.name))
-				.filter(isMatchingEngine);
-			if (candidates.length > 0) {
-				return candidates.sort().at(-1)!;
-			}
-		}
-	}
+	const root = await findUnrealEngine(
+		action === "localization-427"
+			? ["4.27"]
+			: isLocalization
+				? ["5.6", "5.7", "5.8"]
+				: [`${contract.engine.major}.${contract.engine.minor}`]
+	);
+	if (root !== undefined) return root;
 
 	throw new Error(
 		`Could not discover Unreal ${requiredVersion}. ` +
@@ -98,12 +102,14 @@ function run(command: string, args: readonly string[]) {
 	const executable = isBatchFile
 		? [command, ...args].map((arg) => `"${arg.replaceAll('"', '""')}"`).join(" ")
 		: command;
-	const result = spawnSync(executable, isBatchFile ? [] : args, {
-		cwd: repositoryRoot,
-		shell: isBatchFile,
-		stdio: "inherit",
-		windowsHide: true
-	});
+	const result = traceProcess(command, args, () =>
+		spawnSync(executable, isBatchFile ? [] : args, {
+			cwd: repositoryRoot,
+			shell: isBatchFile,
+			stdio: "inherit",
+			windowsHide: true
+		})
+	);
 	if (result.error) {
 		throw result.error;
 	}
@@ -129,16 +135,27 @@ function engineTools(engineRoot: string): UnrealEngineTools {
 	};
 }
 
-function build(tools: UnrealEngineTools) {
-	run(tools.build, [
-		"UEShedFixtureEditor",
-		"Win64",
-		"Development",
-		projectFile,
-		"-NoUBTMakefiles",
-		"-WaitMutex",
-		"-NoHotReloadFromIDE"
-	]);
+function build(engineRoot: string, tools: UnrealEngineTools) {
+	buildUnlessUnchanged({
+		stampFile: join(fixtureRoot, "Intermediate", "ue-shed-build-inputs.sha256"),
+		stamp: buildInputStamp(
+			[projectFile, join(fixtureRoot, "Source"), join(fixtureRoot, "Plugins")],
+			engineBuildIdentity(engineRoot)
+		),
+		outputs: moduleManifestOutputs(
+			join(fixtureRoot, "Binaries", "Win64", "UnrealEditor.modules")
+		),
+		build: () =>
+			run(tools.build, [
+				"UEShedFixtureEditor",
+				"Win64",
+				"Development",
+				projectFile,
+				"-NoUBTMakefiles",
+				"-WaitMutex",
+				"-NoHotReloadFromIDE"
+			])
+	});
 }
 
 function pluginArguments(pluginDescriptors: readonly string[]) {
@@ -161,6 +178,7 @@ function runCommandlet(
 		...pluginArguments(pluginDescriptors),
 		"-unattended",
 		"-nop4",
+		...localDerivedDataCacheArguments,
 		"-nosplash",
 		"-NullRHI"
 	]);
@@ -271,9 +289,9 @@ if (
 	);
 }
 
-const engineRoot = discoverEngineRoot();
+const engineRoot = await discoverEngineRoot();
 const tools = engineTools(engineRoot);
-if (action !== "localization-427") build(tools);
+if (action !== "localization-427") build(engineRoot, tools);
 if (action === "localization") {
 	const output = process.argv[3]
 		? resolve(process.argv[3])
@@ -359,6 +377,7 @@ if (action === "localization-427") {
 		`-config=${join(fixtureRoot, "Config", "Localization", "Fixture427.ini")}`,
 		"-unattended",
 		"-nop4",
+		...localDerivedDataCacheArguments,
 		"-nosplash",
 		"-NullRHI"
 	]);

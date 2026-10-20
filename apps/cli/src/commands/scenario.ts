@@ -1,6 +1,11 @@
 import { Argument, Command, Flag } from "effect/cli";
-import { runScenario } from "../workflows/scenario.js";
 import { optionalValue, positiveIntegerFlag } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runScenario = lazyWorkflow(
+	() => import("../workflows/scenario.js"),
+	(module) => module.runScenario
+);
 
 const runCommand = Command.make(
 	"run",

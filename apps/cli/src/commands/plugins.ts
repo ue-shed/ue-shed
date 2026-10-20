@@ -10,18 +10,42 @@ import {
 	UnrealVersion
 } from "@ue-shed/plugin-distribution";
 import { CliCommandError } from "../cli-runtime.js";
-import {
-	runPluginsCacheInstall,
-	runPluginsCacheList,
-	runPluginsCacheVerify,
-	runPluginsBuild,
-	runPluginsInstall,
-	runPluginsList,
-	runPluginsPrune,
-	runPluginsVerify
-} from "../workflows/plugins.js";
 import { optionalFlag, optionalValue } from "./options.js";
 import { positiveIntegerFlag } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runPluginsCacheInstall = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsCacheInstall
+);
+const runPluginsCacheList = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsCacheList
+);
+const runPluginsCacheVerify = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsCacheVerify
+);
+const runPluginsBuild = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsBuild
+);
+const runPluginsInstall = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsInstall
+);
+const runPluginsList = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsList
+);
+const runPluginsPrune = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsPrune
+);
+const runPluginsVerify = lazyWorkflow(
+	() => import("../workflows/plugins.js"),
+	(module) => module.runPluginsVerify
+);
 
 const pluginManifestArgument = Argument.String("manifest").pipe(Argument.optional);
 const pluginManifestFlag = optionalFlag("manifest");

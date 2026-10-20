@@ -1,6 +1,11 @@
 import { Argument, Command, Flag } from "effect/cli";
-import { runAuditTextures } from "../workflows/audit.js";
 import { optionalFlag, readerFields } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runAuditTextures = lazyWorkflow(
+	() => import("../workflows/audit.js"),
+	(module) => module.runAuditTextures
+);
 
 const auditTexturesCommand = Command.make(
 	"textures",

@@ -20,6 +20,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { createInterface } from "node:readline";
+import { findUnrealEngine } from "./unreal-engines.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const benchmarkScript = fileURLToPath(import.meta.url);
@@ -816,7 +817,9 @@ function matchingEngine(engineRoot: string, expected: Pick<EngineVersion, "major
 	return version?.major === expected.major && version?.minor === expected.minor;
 }
 
-function discoverEngineRoot(expected: Pick<EngineVersion, "major" | "minor">): string {
+async function discoverEngineRoot(
+	expected: Pick<EngineVersion, "major" | "minor">
+): Promise<string> {
 	const configured = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
 	if (configured !== undefined) {
 		const root = resolve(configured);
@@ -833,18 +836,7 @@ function discoverEngineRoot(expected: Pick<EngineVersion, "major" | "minor">): s
 				"Set UE_SHED_UNREAL_ENGINE_ROOT."
 		);
 	}
-	const epicRoot = join(process.env.ProgramFiles ?? "C:\\Program Files", "Epic Games");
-	if (!existsSync(epicRoot)) {
-		throw new Error(
-			`Could not find Unreal ${expected.major}.${expected.minor} under ${epicRoot}.`
-		);
-	}
-	const candidates = readdirSync(epicRoot, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory() && entry.name.startsWith("UE_"))
-		.map((entry) => join(epicRoot, entry.name))
-		.filter((path) => matchingEngine(path, expected))
-		.sort();
-	const root = candidates.at(-1);
+	const root = await findUnrealEngine([`${expected.major}.${expected.minor}`]);
 	if (root === undefined) {
 		throw new Error(
 			`Could not discover Unreal ${expected.major}.${expected.minor}. ` +
@@ -1309,7 +1301,7 @@ async function main(): Promise<void> {
 		const fixtureContract = JSON.parse(readFileSync(fixtureContractPath, "utf8")) as {
 			engine: Pick<EngineVersion, "major" | "minor">;
 		};
-		const engineRoot = discoverEngineRoot(fixtureContract.engine);
+		const engineRoot = await discoverEngineRoot(fixtureContract.engine);
 		const editorCommandlet = join(
 			engineRoot,
 			"Engine",

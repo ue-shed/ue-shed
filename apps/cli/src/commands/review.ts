@@ -1,16 +1,6 @@
 import { Argument, Command, Flag } from "effect/cli";
 import { Effect } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
-import {
-	runReviewAuthoring,
-	runReviewCapture,
-	runReviewFraming,
-	runReviewHistory,
-	runReviewPolicies,
-	runReviewSetValidate,
-	runReviewShow,
-	runReviewViewPut
-} from "../workflows/review.js";
 import { optionalFlag, optionalValue } from "./options.js";
 
 const reviewSetValidateCommand = Command.make(
@@ -292,3 +282,37 @@ export const reviewCommand = Command.make("review").pipe(
 	])
 );
 import { cameraArrangementCommand } from "./camera-authoring.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runReviewAuthoring = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewAuthoring
+);
+const runReviewCapture = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewCapture
+);
+const runReviewFraming = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewFraming
+);
+const runReviewHistory = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewHistory
+);
+const runReviewPolicies = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewPolicies
+);
+const runReviewSetValidate = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewSetValidate
+);
+const runReviewShow = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewShow
+);
+const runReviewViewPut = lazyWorkflow(
+	() => import("../workflows/review.js"),
+	(module) => module.runReviewViewPut
+);

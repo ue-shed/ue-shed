@@ -27,7 +27,8 @@ import {
 	runProcess,
 	unrealEngineTools,
 	unrealEngineVersion,
-	ueShedPluginIds
+	ueShedPluginIds,
+	localDerivedDataCacheArguments
 } from "./unreal-plugin-host.ts";
 
 const engineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT!;
@@ -79,6 +80,7 @@ function commandlet(name: string, args: readonly string[], label: string) {
 			...args,
 			"-Unattended",
 			"-nop4",
+			...localDerivedDataCacheArguments,
 			"-NoSound",
 			"-NullRHI",
 			"-NoSplash",

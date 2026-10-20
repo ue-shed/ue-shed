@@ -1,14 +1,32 @@
 import { Argument, Command, Flag } from "effect/cli";
 import { Option } from "effect";
-import {
-	runProjectIndexCount,
-	runProjectIndexMaps,
-	runProjectIndexQuery,
-	runProjectIndexRebuild,
-	runProjectIndexRefresh,
-	runProjectIndexStatus
-} from "../workflows/project-index.js";
 import { optionalFlag, optionalValue, positiveIntegerFlag, readerFields } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runProjectIndexCount = lazyWorkflow(
+	() => import("../workflows/project-index.js"),
+	(module) => module.runProjectIndexCount
+);
+const runProjectIndexMaps = lazyWorkflow(
+	() => import("../workflows/project-index.js"),
+	(module) => module.runProjectIndexMaps
+);
+const runProjectIndexQuery = lazyWorkflow(
+	() => import("../workflows/project-index.js"),
+	(module) => module.runProjectIndexQuery
+);
+const runProjectIndexRebuild = lazyWorkflow(
+	() => import("../workflows/project-index.js"),
+	(module) => module.runProjectIndexRebuild
+);
+const runProjectIndexRefresh = lazyWorkflow(
+	() => import("../workflows/project-index.js"),
+	(module) => module.runProjectIndexRefresh
+);
+const runProjectIndexStatus = lazyWorkflow(
+	() => import("../workflows/project-index.js"),
+	(module) => module.runProjectIndexStatus
+);
 
 const target = {
 	projectRoot: Argument.String("project-root"),

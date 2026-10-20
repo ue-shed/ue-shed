@@ -29,7 +29,11 @@ import { runCli } from "../apps/cli/src/command.ts";
 import { CliRuntime } from "../apps/cli/src/cli-runtime.ts";
 import { readerLayer } from "../apps/cli/src/cli-operation.ts";
 import { ensureUassetExecutable, repositoryRoot } from "./native-tools.ts";
-import { runProcess, unrealEngineTools } from "./unreal-plugin-host.ts";
+import {
+	runProcess,
+	unrealEngineTools,
+	localDerivedDataCacheArguments
+} from "./unreal-plugin-host.ts";
 
 const EngineLane = Schema.Struct({
 	label: Schema.Literals(["5.6", "5.7", "5.8", "4.27"]),
@@ -361,7 +365,8 @@ for (const engine of configured) {
 			"-unattended",
 			"-nullrhi",
 			"-nosplash",
-			"-nop4"
+			"-nop4",
+			...localDerivedDataCacheArguments
 		]);
 	}
 	const target = await Effect.runPromise(

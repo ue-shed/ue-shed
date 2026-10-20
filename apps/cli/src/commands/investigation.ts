@@ -1,6 +1,11 @@
 import { Argument, Command, Flag } from "effect/cli";
-import { runInvestigation } from "../workflows/investigation.js";
 import { optionalFlag, optionalValue, readerFields } from "./options.js";
+import { lazyWorkflow } from "../lazy-workflows.js";
+
+const runInvestigation = lazyWorkflow(
+	() => import("../workflows/investigation.js"),
+	(module) => module.runInvestigation
+);
 
 const run = Command.make(
 	"run",

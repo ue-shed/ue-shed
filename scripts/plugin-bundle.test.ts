@@ -7,6 +7,8 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
 	buildPluginBundle,
+	GAME_TEXT_PLUGIN_IDS,
+	GAME_TEXT_UNREAL_RANGE,
 	AUTHORING_AUTOMATION_PLUGIN_IDS,
 	CAMERA_AUTHORING_PLUGIN_IDS,
 	EDITOR_HOST_PLUGIN_IDS,
@@ -84,11 +86,11 @@ function archiveEntries(path: string) {
 	return result.stdout.split(/\r?\n/u).filter(Boolean);
 }
 
-test("source bundles support 5.7 and 5.8 while preserving an explicit engine range", async () => {
+test("source bundles support 5.6 through 5.8.2 while preserving an explicit engine range", async () => {
 	const fixture = await createFixture();
 	try {
 		for (const [name, unreal, expected] of [
-			["default", undefined, { minimum: "5.7", maximum: "5.8.2" }],
+			["default", undefined, { minimum: "5.6", maximum: "5.8.2" }],
 			["explicit", { minimum: "5.7" }, { minimum: "5.7", maximum: "5.7" }]
 		] as const) {
 			const result = await buildPluginBundle({
@@ -594,5 +596,57 @@ test("rejects a descriptor dependency that is absent from the bundle", async () 
 		);
 	} finally {
 		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("Game Text bundle projects Core runtime only and preserves the separate legacy range", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-game-text-bundle-"));
+	try {
+		const pluginRoot = join(output, "Plugins");
+		for (const id of GAME_TEXT_PLUGIN_IDS) {
+			await cp(join(import.meta.dirname, "../unreal/Plugins", id), join(pluginRoot, id), {
+				recursive: true,
+				filter: (path) => !/[/\\](Binaries|Intermediate)([/\\]|$)/u.test(path)
+			});
+		}
+		const descriptorPath = join(pluginRoot, "UEShedCore/UEShedCore.uplugin");
+		const before = await readFile(descriptorPath, "utf8");
+		const result = await buildPluginBundle({
+			output: join(output, "bundle"),
+			pluginRoot,
+			releaseVersion: PUBLIC_VERSION,
+			requestedPlugins: GAME_TEXT_PLUGIN_IDS,
+			coreRuntimeOnly: true,
+			unreal: GAME_TEXT_UNREAL_RANGE,
+			releaseAssetStem: `ue-shed-plugins-game-text-${PUBLIC_VERSION}`
+		});
+		assert.deepEqual(
+			result.manifest.plugins.map(({ id }) => id),
+			GAME_TEXT_PLUGIN_IDS
+		);
+		assert.deepEqual(
+			"unreal" in result.manifest
+				? result.manifest.unreal
+				: result.manifest.compatibility.unrealVersionRange,
+			GAME_TEXT_UNREAL_RANGE
+		);
+		const entries = archiveEntries(result.archivePath);
+		assert.ok(!entries.some((entry) => entry.includes("UEShedCoreEditor")));
+		assert.ok(
+			!entries.some((entry) => /UEShedAuthoring|UEShedWorld|UEShedCameras/u.test(entry))
+		);
+		const extracted = spawnSync(
+			"tar",
+			["-xOf", basename(result.archivePath), "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"],
+			{ cwd: dirname(result.archivePath), encoding: "utf8" }
+		);
+		assert.equal(extracted.status, 0);
+		assert.deepEqual(
+			JSON.parse(extracted.stdout).Modules.map((module: { Name: string }) => module.Name),
+			["UEShedCore"]
+		);
+		assert.equal(await readFile(descriptorPath, "utf8"), before);
+	} finally {
+		await rm(output, { recursive: true, force: true });
 	}
 });

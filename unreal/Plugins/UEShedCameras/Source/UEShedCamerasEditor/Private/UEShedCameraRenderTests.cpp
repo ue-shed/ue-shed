@@ -13,13 +13,16 @@
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
+#include "UEShedCameraEngine.h"
 #include "HAL/PlatformProcess.h"
 #include "HighResScreenshot.h"
 #include "ImageUtils.h"
 #include "LevelEditorViewport.h"
 #include "Misc/App.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
 #include "StaticMeshCompiler.h"
@@ -302,6 +305,36 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraScreenshotWarmupTest,
 
 bool FUEShedCameraScreenshotWarmupTest::RunTest(const FString &Parameters)
 {
+	auto& Manager = IConsoleManager::Get();
+	const TCHAR* HistoryVariableName = TEXT("UEShed.Tests.ScreenshotWarmupHistory");
+	auto* HistoryVariable = Manager.RegisterConsoleVariable(HistoryVariableName, 1, TEXT("Warmup history test"));
+	ON_SCOPE_EXIT { Manager.UnregisterConsoleObject(HistoryVariableName, false); };
+	const FName OriginalTag(TEXT("UEShedWarmupHistoryTest"));
+	for (const auto Priority : { ECVF_SetByScalability, ECVF_SetByPluginLowPriority,
+		ECVF_SetByDeviceProfile, ECVF_SetByPluginHighPriority, ECVF_SetByHotfix, ECVF_SetByPreview })
+	{
+		HistoryVariable->Set(4, Priority, OriginalTag);
+		UEShedCameraEngine::SetScreenshotWarmupValue(HistoryVariable, 32);
+		TestEqual(TEXT("Tagged warmup applied"), HistoryVariable->GetInt(), 32);
+		TestEqual(TEXT("Tagged priority preserved"), HistoryVariable->GetFlags() & ECVF_SetByMask,
+			static_cast<uint32>(Priority));
+		UEShedCameraEngine::RestoreScreenshotWarmupValue(HistoryVariable, 4);
+		TestEqual(TEXT("Tagged warmup restored"), HistoryVariable->GetInt(), 4);
+		HistoryVariable->Unset(Priority, OriginalTag);
+		TestEqual(TEXT("No temporary tag remains after restoration"), HistoryVariable->GetInt(), 1);
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7)
+#else
+		const FName ExternalTag(TEXT("UEShedWarmupExternalTest"));
+		HistoryVariable->Set(4, Priority, OriginalTag);
+		UEShedCameraEngine::SetScreenshotWarmupValue(HistoryVariable, 32);
+		HistoryVariable->Set(64, Priority, ExternalTag);
+		UEShedCameraEngine::ReleaseScreenshotWarmupValue(HistoryVariable, Priority);
+		TestEqual(TEXT("Takeover value survives warmup release"), HistoryVariable->GetInt(), 64);
+		HistoryVariable->Unset(Priority, ExternalTag);
+		TestEqual(TEXT("Takeover release cannot revive temporary warmup"), HistoryVariable->GetInt(), 4);
+		HistoryVariable->Unset(Priority, OriginalTag);
+#endif
+	}
 	auto *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	auto *Client = GCurrentLevelEditingViewportClient;
 	auto *Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("r.HighResScreenshotDelay"));
@@ -1087,11 +1120,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraRenderContractTest, "UEShed.Camera
 
 bool FUEShedCameraRenderContractTest::RunTest(const FString &Parameters)
 {
-	const FString Directory =
+	FString Directory =
 		Parameters.IsEmpty()
 			? FPaths::ConvertRelativePathToFull(FPaths::Combine(
 				  FPaths::ProjectDir(), TEXT("../../packages/protocol/contracts/cameras/render/v1/fixtures")))
 			: Parameters;
+	FParse::Value(FCommandLine::Get(), TEXT("UEShedCameraRenderContractFixtures="), Directory);
 	TArray<FString> Files;
 	IFileManager::Get().FindFiles(Files, *FPaths::Combine(Directory, TEXT("*.json")), true, false);
 	if (Files.IsEmpty())

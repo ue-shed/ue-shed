@@ -408,7 +408,12 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     TestEqual(TEXT("Exposure typed maximum"), ExposureSpin->GetMaxValue(), 30.);
     TestEqual(TEXT("Exposure slider minimum"), ExposureSpin->GetMinSliderValue(), -20.);
     TestEqual(TEXT("Exposure slider maximum"), ExposureSpin->GetMaxSliderValue(), 30.);
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7)
     ExposureSpin->SetValue(86.3, true);
+#else
+    // UE5.6 SetValue always fires OnValueChanged; 5.7 adds the notification argument.
+    ExposureSpin->SetValue(86.3);
+#endif
     TestEqual(TEXT("Committed exposure is bounded"), Panel->ExposureEV, 30.);
     // SetValue replaces the spinbox attribute; restore its live binding after this simulated commit.
     ExposureSpin->SetValue(TAttribute<double>::CreateLambda([PanelPtr = Panel.operator->()] { return PanelPtr->ExposureEV; }));

@@ -1,5 +1,7 @@
 #include "UEShedGameTextActions.h"
 
+#include "UEShedGameTextEngine.h"
+
 #include "Containers/StringConv.h"
 #include "Dom/JsonObject.h"
 #include "EdGraph/EdGraphNode.h"
@@ -39,7 +41,7 @@ constexpr int32 MaxActions = 256;
 constexpr int32 MaxRequestBytes = 1024 * 1024;
 constexpr int32 MaxFieldCharacters = 4096;
 
-using ETextEditAction = TextNamespaceUtil::ETextEditAction;
+using ETextEditAction = UEShedGameTextEngine::ETextEditAction;
 
 struct FTextIdentity
 {
@@ -205,15 +207,15 @@ bool ReadIdentity(const FText& Text, FTextIdentity& Out, FString& Why)
 		Why = TEXT("a String Table reference");
 		return false;
 	}
-	const FTextId Id = FTextInspector::GetTextId(Text);
+	const FTextId Id = UEShedGameTextEngine::GetTextId(Text);
 	const FString* Source = FTextInspector::GetSourceString(Text);
 	if (Id.IsEmpty() || !Source)
 	{
 		Why = Text.IsEmpty() ? TEXT("empty text") : TEXT("generated text (formatted, numeric or another derived value)");
 		return false;
 	}
-	Out.Namespace = TextNamespaceUtil::StripPackageNamespace(Id.GetNamespace().ToString());
-	Out.Key = Id.GetKey().ToString();
+	Out.Namespace = TextNamespaceUtil::StripPackageNamespace(UEShedGameTextEngine::KeyString(Id.GetNamespace()));
+	Out.Key = UEShedGameTextEngine::KeyString(Id.GetKey());
 	Out.Source = *Source;
 	return true;
 }
@@ -250,7 +252,7 @@ bool ResolveProperty(UObject* Object, const FString& Path, FPlace& Out, bool& bW
 	bWrongType = false;
 	TArray<FString> Segments;
 	Path.ParseIntoArray(Segments, TEXT("."), false);
-	if (Segments.IsEmpty()) return false;
+	if (Segments.Num() == 0) return false;
 	const UStruct* Owner = RootType ? RootType : Object->GetClass();
 	void* OwnerData = RootData ? RootData : Object;
 	const FProperty* Current = nullptr;
@@ -380,7 +382,7 @@ TOptional<FError> BindPackage(FAction& Action)
 	FPaths::CollapseRelativeDirectories(Filename);
 	FString MountedFile;
 	if (!FPackageName::TryConvertFilenameToLongPackageName(Filename, Action.PackageName)
-		|| !FPackageName::DoesPackageExist(Action.PackageName, &MountedFile)
+		|| !UEShedGameTextEngine::PackageExists(Action.PackageName, MountedFile)
 		|| !FPaths::IsSamePath(Filename, FPaths::ConvertRelativePathToFull(MountedFile)))
 	{
 		return ActionError(TEXT("package_mismatch"), Action.Id,
@@ -420,7 +422,7 @@ TOptional<FError> Resolve(const FAction& Action, FPlace& Place, const bool bAfte
 		const FString EntryKey = bAfter && Action.Kind == EEditKind::CopyStringTableEntry ? Action.Key : Action.EntryKey;
 		FString Source;
 		if (!Table || (!bRestore && !(bAfter && Action.Kind == EEditKind::RemoveStringTableEntry)
-			&& !Table->GetStringTable()->GetSourceString(FTextKey(EntryKey), Source)))
+			&& !Table->GetStringTable()->GetSourceString(UEShedGameTextEngine::FTableKey(EntryKey), Source)))
 			return ActionError(TEXT("place_not_found"), Action.Id, TEXT("The String Table entry does not exist."),
 				TEXT("Read the owning table and review its current entry key."), TEXT("reconcile"));
 		Place.Object = Object; Place.StringTable = Table; Place.EntryKey = EntryKey;
@@ -509,13 +511,13 @@ bool Edit(const FPlace& Place, const ETextEditAction EditAction, const FString& 
 	if (Place.Pin)
 	{
 		const FText Before = PlaceText(Place);
-		const FTextId Id = FTextInspector::GetTextId(Before);
+		const FTextId Id = UEShedGameTextEngine::GetTextId(Before);
 		FString Namespace, Key;
-		TextNamespaceUtil::GetTextIdForEdit(Place.Object->GetPackage(), EditAction, Value,
-			Id.GetNamespace().ToString(), Id.GetKey().ToString(), Namespace, Key);
-		return SetPlaceText(Place, FText::ChangeKey(FTextKey(Namespace), FTextKey(Key), FText::FromString(Value)));
+		UEShedGameTextEngine::GetTextIdForEdit(Place.Object->GetPackage(), EditAction, Value,
+			UEShedGameTextEngine::KeyString(Id.GetNamespace()), UEShedGameTextEngine::KeyString(Id.GetKey()), Namespace, Key);
+		return SetPlaceText(Place, FText::ChangeKey(UEShedGameTextEngine::FTableKey(Namespace), UEShedGameTextEngine::FTableKey(Key), FText::FromString(Value)));
 	}
-	return TextNamespaceUtil::EditTextProperty_Direct(Place.Object->GetPackage(), Place.Value, Place.Property, EditAction, Value);
+	return UEShedGameTextEngine::EditTextProperty_Direct(Place.Object->GetPackage(), Place.Value, Place.Property, EditAction, Value);
 }
 
 /** Resolve the requested namespace and key together, including a missing package marker. */
@@ -525,9 +527,9 @@ bool EditIdentity(const FPlace& Place, const FString& Namespace, const FString& 
 	const FString* Source = FTextInspector::GetSourceString(Text);
 	if (!Source) return false;
 	FString StableNamespace, StableKey;
-	TextNamespaceUtil::GetTextIdForEdit(Place.Object->GetPackage(), ETextEditAction::Namespace,
+	UEShedGameTextEngine::GetTextIdForEdit(Place.Object->GetPackage(), ETextEditAction::Namespace,
 		*Source, Namespace, Key, StableNamespace, StableKey);
-	return SetPlaceText(Place, FText::ChangeKey(FTextKey(StableNamespace), FTextKey(StableKey), Text));
+	return SetPlaceText(Place, FText::ChangeKey(UEShedGameTextEngine::FTableKey(StableNamespace), UEShedGameTextEngine::FTableKey(StableKey), Text));
 }
 
 /** Applies one edit with Unreal's rules, then checks Unreal kept what the action asked for. */
@@ -559,12 +561,12 @@ TOptional<FError> ApplyEdit(const FAction& Action, const FPlace& Place, FOutcome
 		const FText Reference = FText::FromStringTable(FName(Action.TableId), Action.Key);
 		const FStringTableConstPtr Table = FStringTableRegistry::Get().FindStringTable(FName(Action.TableId));
 		FString Source;
-		bEdited = Table && Table->GetSourceString(FTextKey(Action.Key), Source) && Source == Action.Source
+		bEdited = Table && Table->GetSourceString(UEShedGameTextEngine::FTableKey(Action.Key), Source) && Source == Action.Source
 			&& SetPlaceText(Place, Reference);
 		break;
 	}
 	case EEditKind::RegenerateKey:
-		bEdited = EditIdentity(Place, Outcome.Before.Namespace, TextNamespaceUtil::GenerateRandomTextKey());
+		bEdited = EditIdentity(Place, Outcome.Before.Namespace, UEShedGameTextEngine::GenerateRandomTextKey());
 		Outcome.bMinted = true;
 		break;
 	case EEditKind::ChangeSource:
@@ -659,7 +661,7 @@ public:
 			return Reject(TEXT("save must be a boolean."));
 		if (bSave && !bCompile) return Reject(TEXT("save requires compile, so saved Blueprints match their edits."));
 		const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
-		if (!Root->TryGetArrayField(TEXT("actions"), Items) || Items->IsEmpty() || Items->Num() > MaxActions)
+		if (!Root->TryGetArrayField(TEXT("actions"), Items) || (Items->Num() == 0) || Items->Num() > MaxActions)
 			return Reject(TEXT("actions must hold 1 to 256 actions."));
 		TSet<FString> Ids;
 		for (const TSharedPtr<FJsonValue>& Item : *Items)
@@ -741,7 +743,7 @@ public:
 				if (TOptional<FError> Stale = CheckExpected(Actions[Index], Place, Outcomes[Index].Before)) Errors.Add(*Stale);
 			}
 		}
-		if (!Errors.IsEmpty())
+		if (Errors.Num() > 0)
 		{
 			Status = TEXT("rejected");
 			return;
@@ -844,7 +846,7 @@ public:
 		}
 		Root->SetArrayField(TEXT("blueprints"), BlueprintResults);
 		TArray<TSharedPtr<FJsonValue>> PackageResults = Packages;
-		if (PackageResults.IsEmpty())
+		if (PackageResults.Num() == 0)
 		{
 			// A dry run, or an apply without save: the packages an apply would write.
 			TSet<FString> Seen;
@@ -912,7 +914,7 @@ private:
 			Log.bSilentMode = true;
 			FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection | EBlueprintCompileOptions::SkipSave, &Log);
 			const bool bCompiled = Log.NumErrors == 0 && Blueprint->Status != BS_Error;
-			Compiled.Add({ Blueprint->GetPathName(), bCompiled });
+			Compiled.Emplace(Blueprint->GetPathName(), bCompiled);
 			if (!bCompiled)
 			{
 				bOk = false;
@@ -1000,10 +1002,7 @@ private:
 			else
 			{
 				UObject* Asset = Package->FindAssetInPackage();
-				FSavePackageArgs Args;
-				Args.TopLevelFlags = RF_Public | RF_Standalone;
-				Args.SaveFlags = SAVE_NoError;
-				bSaved = UPackage::SavePackage(Package, Asset, *Filename, Args);
+				bSaved = UEShedGameTextEngine::SavePackage(Package, Asset, Filename);
 				if (!bSaved)
 				{
 					Errors.Add(ActionError(TEXT("save_failed"), FString(),
@@ -1015,7 +1014,7 @@ private:
 			Item->SetStringField(TEXT("persistence"), bSaved ? TEXT("saved") : Persistence);
 			Packages.Add(MakeShared<FJsonValueObject>(Item));
 		}
-		if (!Errors.IsEmpty()) Status = TEXT("failed");
+		if (Errors.Num() > 0) Status = TEXT("failed");
 	}
 };
 }

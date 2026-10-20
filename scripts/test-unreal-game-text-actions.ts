@@ -2,6 +2,7 @@
 // identity cases through the Game Text actions API over Remote Control, save, re-read the packages
 // with the saved-package reader, then compare with Unreal's own gather table (the fixture's
 // Evidence stage). The committed fixture is never written.
+// --source-edits selects the cross-version nine-place commandlet lifecycle instead.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -37,10 +38,19 @@ import { runPnpm, unrealRemoteControlLaunchArguments } from "./workbench-tools.t
 import { acceptLocalizationMigration } from "./localization-text-actions-acceptance.ts";
 
 const engineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
-if (!engineRoot) throw new Error("Set UE_SHED_UNREAL_ENGINE_ROOT to an Unreal 5.7 or 5.8 root.");
+if (!engineRoot)
+	throw new Error("Set UE_SHED_UNREAL_ENGINE_ROOT to an Unreal 4.27, 5.6, 5.7 or 5.8 root.");
 const version = unrealEngineVersion(engineRoot);
-if (version?.label !== "5.7" && version?.label !== "5.8") {
-	throw new Error("The Game Text actions acceptance needs Unreal 5.7 or 5.8.");
+if (version?.label === "4.27") {
+	await import("./test-unreal-game-text-legacy.ts");
+	process.exit(0);
+}
+if (version?.label !== "5.6" && version?.label !== "5.7" && version?.label !== "5.8") {
+	throw new Error("The Game Text actions acceptance needs Unreal 5.6, 5.7 or 5.8.");
+}
+if (process.argv.includes("--source-edits")) {
+	await import("./test-unreal-game-text-legacy.ts");
+	process.exit(0);
 }
 const tools = unrealEngineTools(engineRoot);
 const fixture = join(repositoryRoot, "fixtures", "unreal-project");

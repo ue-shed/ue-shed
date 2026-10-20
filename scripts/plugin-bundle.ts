@@ -42,6 +42,7 @@ interface PluginDescriptor {
 }
 
 interface BuildPluginBundleOptions {
+	readonly coreRuntimeOnly?: boolean | undefined;
 	readonly output: string;
 	readonly releaseVersion: string;
 	readonly pluginRoot?: string | undefined;
@@ -113,6 +114,10 @@ export async function validatePublicPluginBundle({
 		throw new Error(`Public plugin release integrity failed:\n- ${failures.join("\n- ")}`);
 	return manifest;
 }
+
+/** Localization-only graph, including a projected runtime-only Core descriptor. */
+export const GAME_TEXT_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedGameText"]);
+export const GAME_TEXT_UNREAL_RANGE = Object.freeze({ minimum: "4.27", maximum: "4.27.2" });
 
 /** Exact Unreal plugin graph for Plan 028's first Map Review vertical. */
 export const MAP_REVIEW_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedWorld", "UEShedCameras"]);
@@ -228,7 +233,7 @@ function validateCommit(value: string | null | undefined) {
 }
 
 function validateUnrealRange(unreal?: Partial<UnrealRange>): UnrealRange {
-	const minimum = unreal?.minimum ?? "5.7";
+	const minimum = unreal?.minimum ?? "5.6";
 	const maximum = unreal?.maximum ?? unreal?.minimum ?? "5.8.2";
 	if (minimum.length === 0) {
 		throw new Error("Unreal compatibility minimum must be a non-empty version string.");
@@ -411,18 +416,22 @@ function sortArchivePaths(paths: readonly string[]) {
 }
 
 async function prepareArchiveTree({
+	coreRuntimeOnly,
 	pluginRoot,
 	sourceFiles,
 	licensePath,
 	stageRoot
 }: {
 	readonly pluginRoot: string;
+	readonly coreRuntimeOnly?: boolean | undefined;
 	readonly sourceFiles: readonly string[];
 	readonly licensePath?: string | undefined;
 	readonly stageRoot: string;
 }) {
 	const archivePaths: string[] = [];
 	for (const sourceFile of sourceFiles) {
+		if (coreRuntimeOnly && sourceFile.startsWith("UEShedCore/Source/UEShedCoreEditor/"))
+			continue;
 		const relativePath = relativePluginPath(pluginRoot, join(pluginRoot, sourceFile));
 		const destination = join(stageRoot, archivePrefix, relativePath);
 		await mkdir(dirname(destination), { recursive: true });
@@ -430,7 +439,20 @@ async function prepareArchiveTree({
 		const details = await lstat(source);
 		if (!details.isFile())
 			throw new Error(`Plugin source must be a regular file: ${sourceFile}`);
-		await copyFile(source, destination);
+		if (coreRuntimeOnly && sourceFile === "UEShedCore/UEShedCore.uplugin") {
+			const descriptor = parseJsonObject(await readFile(source, "utf8"));
+			if (!Array.isArray(descriptor.Modules))
+				throw new Error("Core descriptor has no modules.");
+			const modules = descriptor.Modules.filter(
+				(module) => isJsonObject(module) && module.Name === "UEShedCore"
+			);
+			await writeFile(
+				destination,
+				`${JSON.stringify({ ...descriptor, Modules: modules }, null, "\t")}\n`
+			);
+		} else {
+			await copyFile(source, destination);
+		}
 		archivePaths.push(`${archivePrefix}/${relativePath}`);
 	}
 	if (licensePath) {
@@ -572,6 +594,7 @@ async function ensureEmptyOutput(output: string) {
  * pluginRoot is useful for fixtures and is walked with the same portability exclusions.
  */
 export async function buildPluginBundle({
+	coreRuntimeOnly,
 	output,
 	releaseVersion,
 	pluginRoot = defaultPluginRoot,
@@ -631,6 +654,7 @@ export async function buildPluginBundle({
 		const stageRoot = join(tempRoot, "tree");
 		await mkdir(stageRoot, { recursive: true });
 		const archivePaths = await prepareArchiveTree({
+			coreRuntimeOnly,
 			pluginRoot: resolvedPluginRoot,
 			sourceFiles,
 			licensePath: resolvedLicensePath,
@@ -722,7 +746,7 @@ async function main() {
 		repository: args.get("repository") ?? canonicalRepository,
 		licensePath: args.get("license"),
 		unreal: {
-			minimum: args.get("ue-minimum") ?? "5.7",
+			minimum: args.get("ue-minimum") ?? "5.6",
 			maximum: args.get("ue-maximum") ?? args.get("ue-minimum") ?? "5.8.2"
 		},
 		requestedPlugins

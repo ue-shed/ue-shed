@@ -7,7 +7,7 @@ public class UEShedLegacyFixtureEditor : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
-			"Core", "CoreUObject", "Engine", "Json", "UEShedLegacyFixture", "UnrealEd"
+			"BlueprintGraph", "Core", "CoreUObject", "Engine", "Json", "UEShedLegacyFixture", "UnrealEd"
 		});
 	}
 }

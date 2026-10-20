@@ -64,7 +64,8 @@ function digest(bytes: Uint8Array) {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-async function fixture() {
+async function fixture(legacy = false) {
+	const editorTarget = legacy ? "UE4Editor" : "UnrealEditor";
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-compiled-builder-"));
 	roots.push(root);
 	const engineRoot = join(root, "engine");
@@ -75,12 +76,18 @@ async function fixture() {
 					"Engine",
 					"Binaries",
 					"DotNET",
-					"AutomationTool",
+					...(legacy ? [] : ["AutomationTool"]),
 					"AutomationTool.exe"
 				)
 			: join(engineRoot, "Engine", "Build", "BatchFiles", "RunUAT.sh");
 	const buildVersion = join(engineRoot, "Engine", "Build", "Build.version");
-	const editorModules = join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor.modules");
+	const editorModules = join(
+		engineRoot,
+		"Engine",
+		"Binaries",
+		"Win64",
+		`${editorTarget}.modules`
+	);
 	await mkdir(dirname(runUat), { recursive: true });
 	await mkdir(dirname(buildVersion), { recursive: true });
 	await mkdir(dirname(editorModules), { recursive: true });
@@ -90,9 +97,9 @@ async function fixture() {
 		JSON.stringify({
 			Changelist: 47537391,
 			CompatibleChangelist: 47537391,
-			MajorVersion: 5,
-			MinorVersion: 7,
-			PatchVersion: 4
+			MajorVersion: legacy ? 4 : 5,
+			MinorVersion: legacy ? 27 : 7,
+			PatchVersion: legacy ? 2 : 4
 		})
 	);
 	await writeFile(
@@ -186,7 +193,10 @@ async function fixture() {
 		schemaVersion: 3,
 		compatibility: {
 			kind: "source",
-			unrealVersionRange: { maximum: "5.7", minimum: "5.7" }
+			unrealVersionRange: {
+				maximum: legacy ? "4.27.2" : "5.7",
+				minimum: legacy ? "4.27" : "5.7"
+			}
 		},
 		contracts: [{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }],
 		packages: [
@@ -211,8 +221,8 @@ async function fixture() {
 				engineBuildId: "47537391",
 				kind: "compiled",
 				platform: "Win64",
-				target: "UnrealEditor",
-				unrealVersion: "5.7.4"
+				target: editorTarget,
+				unrealVersion: legacy ? "4.27.2" : "5.7.4"
 			},
 			compiler: {
 				compiler: "MSVC",
@@ -234,8 +244,9 @@ async function fixture() {
 
 async function writeFakeUatProducts(
 	options: OwnedProcessTreeLaunchOptions,
-	settings: { readonly binaryBytes?: number } = {}
+	settings: { readonly binaryBytes?: number; readonly editorTarget?: string } = {}
 ) {
+	const editorTarget = settings.editorTarget ?? "UnrealEditor";
 	const packageArgument = options.args.find((argument) => argument.startsWith("-Package="));
 	if (packageArgument === undefined) throw new Error("Builder omitted -Package.");
 	const binaries = join(packageArgument.slice("-Package=".length), "Binaries", "Win64");
@@ -243,11 +254,11 @@ async function writeFakeUatProducts(
 	const modules = {
 		BuildId: "47537391",
 		Modules: {
-			UEShedCameras: "UnrealEditor-UEShedCameras.dll",
-			UEShedCore: "UnrealEditor-UEShedCore.dll"
+			UEShedCameras: `${editorTarget}-UEShedCameras.dll`,
+			UEShedCore: `${editorTarget}-UEShedCore.dll`
 		}
 	};
-	await writeFile(join(binaries, "UnrealEditor.modules"), JSON.stringify(modules));
+	await writeFile(join(binaries, `${editorTarget}.modules`), JSON.stringify(modules));
 	for (const binary of Object.values(modules.Modules))
 		await writeFile(
 			join(binaries, binary),
@@ -378,6 +389,30 @@ describe("compiled plugin builder", () => {
 		expect(await readdir(source.request.outputDirectory)).toEqual([
 			result.outputPath.split(/[/\\]/u).at(-1)
 		]);
+	});
+
+	it("discovers legacy AutomationTool and packages UE4Editor module names", async () => {
+		const source = await fixture(true);
+		const layer = builderLayer((options) =>
+			Effect.promise(async () => {
+				if (process.platform === "win32")
+					expect(options.executable).toBe(
+						join(source.engineRoot, "Engine/Binaries/DotNET/AutomationTool.exe")
+					);
+				await writeFakeUatProducts(options, { editorTarget: "UE4Editor" });
+				return completedHandle(0);
+			})
+		);
+		const result = await Effect.runPromise(
+			Effect.flatMap(CompiledPluginBuilder, (builder) => builder.build(source.request)).pipe(
+				Effect.provide(layer)
+			)
+		);
+		expect(result.manifest.compatibility.target).toBe("UE4Editor");
+		expect(
+			result.manifest.modules.every((module) => module.binaryPath.includes("UE4Editor-"))
+		).toBe(true);
+		expect(result.manifest.artifact.path).toContain("-ue4editor-");
 	});
 
 	it("does not launch UAT when the exact engine identity is invalid", async () => {

@@ -1,4 +1,6 @@
 #include "UEShedGameTextActions.h"
+
+#include "UEShedGameTextEngine.h"
 #include "UEShedGameTextLibrary.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -48,9 +50,9 @@ struct FId
 
 FId IdOf(const FText& Text)
 {
-	const FTextId Id = FTextInspector::GetTextId(Text);
+	const FTextId Id = UEShedGameTextEngine::GetTextId(Text);
 	const FString* Source = FTextInspector::GetSourceString(Text);
-	return { TextNamespaceUtil::StripPackageNamespace(Id.GetNamespace().ToString()), Id.GetKey().ToString(),
+	return { TextNamespaceUtil::StripPackageNamespace(UEShedGameTextEngine::KeyString(Id.GetNamespace())), UEShedGameTextEngine::KeyString(Id.GetKey()),
 		Source ? *Source : FString() };
 }
 
@@ -59,7 +61,7 @@ void Type(UPackage* Package, FText& Value, const FString& Source)
 {
 	const FTextProperty* Property = CastFieldChecked<FTextProperty>(
 		UUEShedGameTextTestObject::StaticClass()->FindPropertyByName(TEXT("Title")));
-	TextNamespaceUtil::EditTextProperty_Direct(Package, &Value, Property, TextNamespaceUtil::ETextEditAction::SourceString, Source);
+	UEShedGameTextEngine::EditTextProperty_Direct(Package, &Value, Property, UEShedGameTextEngine::ETextEditAction::SourceString, Source);
 }
 
 UPackage* TestPackage(const TCHAR* Name)
@@ -75,10 +77,7 @@ FString PackageFile(UPackage* Package)
 
 bool SaveTestPackage(UPackage* Package)
 {
-	FSavePackageArgs Args;
-	Args.TopLevelFlags = RF_Public | RF_Standalone;
-	Args.SaveFlags = SAVE_NoError;
-	return UPackage::SavePackage(Package, Package->FindAssetInPackage(), *PackageFile(Package), Args);
+	return UEShedGameTextEngine::SavePackage(Package, Package->FindAssetInPackage(), PackageFile(Package));
 }
 
 TArray<uint8> PackageBytes(UPackage* Package)
@@ -153,7 +152,7 @@ TSharedPtr<FJsonObject> Run(const TCHAR* Mode, const TArray<TSharedRef<FJsonObje
 FString FirstErrorCode(const TSharedPtr<FJsonObject>& Result)
 {
 	const TArray<TSharedPtr<FJsonValue>>* Errors = nullptr;
-	if (!Result.IsValid() || !Result->TryGetArrayField(TEXT("errors"), Errors) || Errors->IsEmpty()) return FString();
+	if (!Result.IsValid() || !Result->TryGetArrayField(TEXT("errors"), Errors) || (Errors->Num() == 0)) return FString();
 	return (*Errors)[0]->AsObject()->GetStringField(TEXT("code"));
 }
 
@@ -198,11 +197,11 @@ bool FUEShedGameTextObjectPropertiesTest::RunTest(const FString& Parameters)
 	// Saved fixtures and user-authored data may carry a namespace without a package marker.
 	// Editing an unchanged namespace first is a no-op in the details helper; the subsequent
 	// key-only edit must not silently discard that user namespace.
-	Notes->Fixed[0] = FText::ChangeKey(FTextKey(TEXT("Plain")), FTextKey(TEXT("OldPlain")), FText::FromString(TEXT("Plain source")));
+	Notes->Fixed[0] = FText::ChangeKey(UEShedGameTextEngine::FTableKey(TEXT("Plain")), UEShedGameTextEngine::FTableKey(TEXT("OldPlain")), FText::FromString(TEXT("Plain source")));
 	const FId Plain = IdOf(Notes->Fixed[0]);
 	TestEqual(TEXT("Unqualified namespace dry run"), Status(Run(TEXT("dry_run"),
 		{ Action(TEXT("plain"), Path, TEXT("Fixed[0]"), Plain, EditJson(TEXT("change_key"), TEXT("Plain"), TEXT("NewPlain"))) })), FString(TEXT("ok")));
-	TestEqual(TEXT("Dry run restores the original stored namespace"), FTextInspector::GetTextId(Notes->Fixed[0]).GetNamespace().ToString(), FString(TEXT("Plain")));
+	TestEqual(TEXT("Dry run restores the original stored namespace"), FTextInspector::GetNamespace(Notes->Fixed[0]).Get(FString()), FString(TEXT("Plain")));
 	TestEqual(TEXT("Unqualified namespace apply"), Status(Run(TEXT("apply"),
 		{ Action(TEXT("plain"), Path, TEXT("Fixed[0]"), Plain, EditJson(TEXT("change_key"), TEXT("Plain"), TEXT("NewPlain"))) })), FString(TEXT("ok")));
 	TestTrue(TEXT("Requested key and namespace survive"), Same(IdOf(Notes->Fixed[0]), { TEXT("Plain"), TEXT("NewPlain"), TEXT("Plain source") }));
@@ -233,7 +232,7 @@ bool FUEShedGameTextObjectPropertiesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("change_key status"), Status(Changed), FString(TEXT("ok")));
 	TestTrue(TEXT("change_key result"), Same(IdOf(Notes->Title), { TEXT("Notes"), TEXT("Lamp"), TEXT("Keep the lamp lit") }));
 	TestEqual(TEXT("Stored namespace keeps the package namespace"),
-		TextNamespaceUtil::ExtractPackageNamespace(FTextInspector::GetTextId(Notes->Title).GetNamespace().ToString()),
+		TextNamespaceUtil::ExtractPackageNamespace(FTextInspector::GetNamespace(Notes->Title).Get(FString())),
 		TextNamespaceUtil::GetPackageNamespace(Package));
 	TestTrue(TEXT("An apply dirties the package"), Package->IsDirty());
 
@@ -373,7 +372,7 @@ bool FUEShedGameTextAuthoringTest::RunTest(const FString& Parameters)
 	UPackage* StringsPackage = TestPackage(TEXT("Strings"));
 	UStringTable* Strings = NewObject<UStringTable>(StringsPackage, TEXT("Strings"), RF_Public | RF_Standalone | RF_Transactional);
 	Strings->GetMutableStringTable()->SetNamespace(TEXT("Menu"));
-#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
+#if UESHED_HAS_TEXT_DEV_NOTES
 	Strings->GetMutableStringTable()->SetSourceString(TEXT("Old"), TEXT("Harbor"), TEXT("Translator context"));
 #else
 	Strings->GetMutableStringTable()->SetSourceString(TEXT("Old"), TEXT("Harbor"));
@@ -403,7 +402,7 @@ bool FUEShedGameTextAuthoringTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Explicit remove removed the old entry"), Strings->GetStringTable()->GetSourceString(TEXT("Old"), Source));
 	TestTrue(TEXT("New entry saved"), Strings->GetStringTable()->GetSourceString(TEXT("New"), Source));
 	TestEqual(TEXT("Metadata survives the copy"), Strings->GetStringTable()->GetMetaData(TEXT("New"), TEXT("Comment")), FString(TEXT("Keep metadata")));
-#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
+#if UESHED_HAS_TEXT_DEV_NOTES
 	TestEqual(TEXT("Developer notes survive the copy"), Strings->GetStringTable()->FindEntry(TEXT("New"))->GetDevNotes(), FString(TEXT("Translator context")));
 #endif
 	FName ReferenceTable; FString ReferenceKey;
@@ -443,7 +442,7 @@ bool FUEShedGameTextAuthoringTest::RunTest(const FString& Parameters)
 	const TSharedRef<FJsonObject> NamespaceEdit = EditJson(TEXT("change_string_table_namespace"));
 	NamespaceEdit->SetStringField(TEXT("namespace"), TEXT("NewMenu"));
 	const TSharedRef<FJsonObject> NamespaceAction = WithSelector(Action(TEXT("namespace"), Strings->GetPathName(), TEXT("New"), { TEXT("Menu"), TEXT("New"), TEXT("Harbor") }, NamespaceEdit), TEXT("string_table_entry"), TEXT("entryKey"), TEXT("New"));
-#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
+#if UESHED_HAS_TEXT_DEV_NOTES
 	Strings->GetMutableStringTable()->SetSourceString(TEXT("Other"), TEXT("Other"), TEXT(""));
 #else
 	Strings->GetMutableStringTable()->SetSourceString(TEXT("Other"), TEXT("Other"));
@@ -453,8 +452,12 @@ bool FUEShedGameTextAuthoringTest::RunTest(const FString& Parameters)
 
 	UPackage* BlueprintPackage = TestPackage(TEXT("Pin"));
 	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(AActor::StaticClass(), BlueprintPackage, TEXT("Pin"), BPTYPE_Normal, UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
-	UEdGraph* Graph = FBlueprintEditorUtils::CreateNewGraph(Blueprint, TEXT("EventGraph"), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
-	FBlueprintEditorUtils::AddUbergraphPage(Blueprint, Graph);
+	UEdGraph* Graph = Blueprint->UbergraphPages.Num() > 0 ? Blueprint->UbergraphPages[0] : nullptr;
+	if (!Graph)
+	{
+		Graph = FBlueprintEditorUtils::CreateNewGraph(Blueprint, TEXT("EventGraph"), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+		FBlueprintEditorUtils::AddUbergraphPage(Blueprint, Graph);
+	}
 	UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
 	Node->CreateNewGuid();
 	Node->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(TEXT("PrintText")));

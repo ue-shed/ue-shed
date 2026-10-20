@@ -5,11 +5,14 @@ precompiled Unreal Editor plugin variants. Discovering an external descriptor wi
 not compile it. An unattended host therefore requests a binary built for its exact engine identity;
 building and acquiring are separate operations.
 
-Starting with 0.7.1, portable plugin sources declare the range Unreal 5.7 through 5.8.2. The explicit
+Portable UE5 plugin sources declare the range Unreal 5.6 through 5.8.2. The explicit
 patch upper bound includes the tested 5.8.2 install; `5.8` alone would mean 5.8.0 in range checks.
 Build a separate native variant for each exact engine identity, including stock versus custom
 builds of the same version.
 Existing 0.7.0 source artifacts remain immutable and retain their original compatibility metadata.
+The full, map-review, camera-authoring, authoring-automation, editor-host, niagara and observatory
+presets share this UE5 range. The separate minimal `game-text` preset declares 4.27 through 4.27.2;
+UE5 Game Text uses the full suite. Previously published artifacts retain their declared ranges.
 
 ## Ownership boundary
 
@@ -70,6 +73,38 @@ prune target the exact variant. Existing `releases/<release>` source-only cache 
 readable and verifiable; new acquisitions use `variants/`. A release-only verify or prune remains
 accepted only when it identifies one unambiguous cached variant. Entries are never silently
 repaired, replaced, or mutated.
+
+## Packaged Game Text acceptance
+
+The opt-in scripts `scripts/test-game-text-packaged.ts` and
+`scripts/test-game-text-packaged-journey.ts` exercise a real release source, AutomationTool
+BuildPlugin, compiled artifact verification, local-file installation and scoped leasing, editor
+loading, and the shared durable ID-repair workflow over HTTP Remote Control. Run them on a combined
+native/workflow candidate when testing companion capability changes. Build TypeScript packages and
+the Windows process supervisor first; provide a compatible saved-package reader or let the journey
+script build it. The caller must hold the machine's exclusive Unreal/UBT/AutomationTool lease for
+each command and wait for the previous process tree to stop.
+
+Set `UE_SHED_ACCEPTANCE_PROTOCOL_TARBALL` to a freshly packed protocol tarball and
+`UE_SHED_ACCEPTANCE_COMPILER` to JSON matching `PluginCompilerProvenance`, using the actual compiler
+and SDK selected by UBT. Optionally set `UE_SHED_ACCEPTANCE_BUILD_OUTPUT` to a short build directory
+outside the engine; UE4's temporary UAT paths can otherwise exceed its 260-character limit.
+
+```text
+node --import tsx scripts/test-game-text-packaged.ts build <engine-root> <evidence-directory>
+node --import tsx scripts/test-game-text-packaged-journey.ts <engine-root> <same-evidence-directory>
+```
+
+The build selects the minimal legacy `game-text` preset or full UE5 preset. It reuses an existing
+source manifest in the release output, so use a fresh checkout/output when native source changes.
+The local acceptance manifest pins the protocol tarball; this is not a complete npm publication.
+The journey copies the matching fixture project's source and config, generates fresh packages
+with the selected engine, and reuses the existing nine-place baseline generator. Unrelated UE5
+editor fixture generators are excluded. Six individual object/cell proposals cover split,
+regenerate and adopt, unchanged preview bytes, saved receipts, offline identity verification and
+replay refusal. Blueprint pins remain excluded while the independent reader gap is unresolved.
+Evidence includes wire requests/responses, capabilities, installation and lease records, editor
+logs, durable proposals and receipts, and saved-package readbacks.
 
 ## Build a downstream engine variant
 

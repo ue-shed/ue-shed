@@ -150,12 +150,20 @@ $env:UE_SHED_UNREAL_ENGINE_ROOT = "C:\Engines\UE_5.8"
 pnpm test:unreal-plugins out/plugins-5.8-evidence
 ```
 
-This builds all eleven plugins and runs Authoring canonical JSON, world preparation, camera authoring,
-rendering and restoration,
+On UE5 this builds all twelve plugins and runs all 47 native automation tests, including Game Text,
+Authoring canonical JSON, world preparation, camera authoring, rendering and restoration,
 map minor-version compatibility, screenshot ownership, and Niagara camera automation with real
 rendering in a disposable stock template project. Repeat for Unreal 5.7. The gate retains editor
 logs and the automation report and rejects missing, failed, or incomplete tests. It supplements
 `check:unreal`, whose saved-asset fixture contract remains on 5.7.
+
+`pnpm test:unreal-game-text-actions <new-evidence-directory> --source-edits` runs the cross-version
+commandlet lifecycle on a fresh disposable fixture: nine key repairs followed by nine source edits
+across object properties, DataTable cells and Blueprint pins. Each phase checks dry-run bytes,
+compile/save receipts, a fresh editor reload, the saved-package text reader and GatherText. UE5
+loads the full bundle; UE4 loads the minimal Game Text bundle. Missing offline pin occurrences are
+reported explicitly as skipped, even if the reader reports complete package coverage. Without
+`--source-edits`, the UE5 command retains its separate Remote Control and String Table journey.
 
 Build a portable plugin bundle into an empty directory, verify its manifest, and inspect the exact
 selection before installation:

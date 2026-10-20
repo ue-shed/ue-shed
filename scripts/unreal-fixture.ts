@@ -52,7 +52,8 @@ function engineVersion(engineRoot: string) {
 function isMatchingEngine(engineRoot: string) {
 	const version = engineVersion(engineRoot);
 	if (action === "localization-427") return version?.label === "4.27";
-	if (isLocalization) return version?.label === "5.7" || version?.label === "5.8";
+	if (isLocalization)
+		return version?.label === "5.6" || version?.label === "5.7" || version?.label === "5.8";
 	return version?.major === contract.engine.major && version?.minor === contract.engine.minor;
 }
 
@@ -61,7 +62,7 @@ function discoverEngineRoot() {
 		action === "localization-427"
 			? "4.27"
 			: isLocalization
-				? "5.7 or 5.8"
+				? "5.6, 5.7 or 5.8"
 				: `${contract.engine.major}.${contract.engine.minor}`;
 	const configured = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
 	if (configured) {

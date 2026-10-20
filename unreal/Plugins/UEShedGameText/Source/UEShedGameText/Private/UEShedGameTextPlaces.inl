@@ -23,16 +23,16 @@ FStringEntryState StringEntryState(UStringTable* Asset, const FString& Key)
 	FStringEntryState State;
 	State.Key = Key;
 	const FStringTableConstRef Table = Asset->GetStringTable();
-	State.bExists = Table->GetSourceString(FTextKey(Key), State.Source);
+	State.bExists = Table->GetSourceString(UEShedGameTextEngine::FTableKey(Key), State.Source);
 	if (State.bExists)
 	{
-		Table->EnumerateMetaData(FTextKey(Key), [&State](const FName Name, const FString& Value)
+		Table->EnumerateMetaData(UEShedGameTextEngine::FTableKey(Key), [&State](const FName Name, const FString& Value)
 		{
 			State.Metadata.Add(Name, Value);
 			return true;
 		});
-#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
-		if (const FStringTableEntryConstPtr Entry = Table->FindEntry(FTextKey(Key))) State.DevNotes = Entry->GetDevNotes();
+#if UESHED_HAS_TEXT_DEV_NOTES
+		if (const FStringTableEntryConstPtr Entry = Table->FindEntry(UEShedGameTextEngine::FTableKey(Key))) State.DevNotes = Entry->GetDevNotes();
 #endif
 	}
 	return State;
@@ -41,14 +41,14 @@ FStringEntryState StringEntryState(UStringTable* Asset, const FString& Key)
 void SetStringEntry(UStringTable* Asset, const FStringEntryState& State)
 {
 	const FStringTableRef Table = Asset->GetMutableStringTable();
-	if (!State.bExists) { Table->RemoveSourceString(FTextKey(State.Key)); return; }
-#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
-	Table->SetSourceString(FTextKey(State.Key), State.Source, State.DevNotes);
+	if (!State.bExists) { Table->RemoveSourceString(UEShedGameTextEngine::FTableKey(State.Key)); return; }
+#if UESHED_HAS_TEXT_DEV_NOTES
+	Table->SetSourceString(UEShedGameTextEngine::FTableKey(State.Key), State.Source, State.DevNotes);
 #else
-	Table->SetSourceString(FTextKey(State.Key), State.Source);
+	Table->SetSourceString(UEShedGameTextEngine::FTableKey(State.Key), State.Source);
 #endif
-	Table->ClearMetaData(FTextKey(State.Key));
-	for (const TPair<FName, FString>& Item : State.Metadata) Table->SetMetaData(FTextKey(State.Key), Item.Key, Item.Value);
+	Table->ClearMetaData(UEShedGameTextEngine::FTableKey(State.Key));
+	for (const TPair<FName, FString>& Item : State.Metadata) Table->SetMetaData(UEShedGameTextEngine::FTableKey(State.Key), Item.Key, Item.Value);
 }
 
 bool ReadPlaceIdentity(const FPlace& Place, FTextIdentity& Out, FString& Why)
@@ -58,7 +58,7 @@ bool ReadPlaceIdentity(const FPlace& Place, FTextIdentity& Out, FString& Why)
 	{
 		Out.Namespace = Place.StringTable->GetStringTable()->GetNamespace();
 		Out.Key = Place.EntryKey;
-		if (!Place.StringTable->GetStringTable()->GetSourceString(FTextKey(Place.EntryKey), Out.Source))
+		if (!Place.StringTable->GetStringTable()->GetSourceString(UEShedGameTextEngine::FTableKey(Place.EntryKey), Out.Source))
 		{
 			Why = TEXT("a missing String Table entry");
 			return false;
@@ -73,7 +73,7 @@ bool ReadPlaceIdentity(const FPlace& Place, FTextIdentity& Out, FString& Why)
 		Out.TableId = TableId.ToString();
 		Out.Key = Key;
 		const FStringTableConstPtr Table = FStringTableRegistry::Get().FindStringTable(TableId);
-		if (!Table || !Table->GetSourceString(FTextKey(Key), Out.Source))
+		if (!Table || !Table->GetSourceString(UEShedGameTextEngine::FTableKey(Key), Out.Source))
 		{
 			Why = TEXT("an unresolved String Table reference");
 			return false;
@@ -93,7 +93,7 @@ bool ReadAfterIdentity(const FAction& Action, const FPlace& Place, FTextIdentity
 	if (Place.StringTable && Action.Kind == EEditKind::RemoveStringTableEntry)
 	{
 		FString Ignored;
-		if (Place.StringTable->GetStringTable()->GetSourceString(FTextKey(Place.EntryKey), Ignored)) return false;
+		if (Place.StringTable->GetStringTable()->GetSourceString(UEShedGameTextEngine::FTableKey(Place.EntryKey), Ignored)) return false;
 		Out = Action.Expected;
 		Out.bRemoved = true;
 		return true;
@@ -108,7 +108,7 @@ void RestorePlace(const FPlace& Place, const FOutcome& Outcome)
 	if (Place.StringTable)
 	{
 		for (const FStringEntryState& Entry : Outcome.EntriesBefore) SetStringEntry(Place.StringTable, Entry);
-		if (Outcome.bRestoreNamespace) Place.StringTable->GetMutableStringTable()->SetNamespace(FTextKey(Outcome.NamespaceBefore));
+		if (Outcome.bRestoreNamespace) Place.StringTable->GetMutableStringTable()->SetNamespace(UEShedGameTextEngine::FTableKey(Outcome.NamespaceBefore));
 	}
 	else SetPlaceText(Place, Outcome.Original, true);
 }
@@ -157,7 +157,7 @@ TOptional<FError> ApplyStringTableEdit(const FAction& Action, const FPlace& Plac
 		Place.Object->Modify();
 		Outcome.bRestoreNamespace = true;
 		Outcome.NamespaceBefore = Outcome.Before.Namespace;
-		Place.StringTable->GetMutableStringTable()->SetNamespace(FTextKey(Action.Namespace));
+		Place.StringTable->GetMutableStringTable()->SetNamespace(UEShedGameTextEngine::FTableKey(Action.Namespace));
 	}
 	else
 		return ActionError(TEXT("unsupported_place"), Action.Id, TEXT("String Table entry identity changes need explicit reference migration."),

@@ -1,4 +1,5 @@
 #include "UEShedCameraRenderSession.h"
+#include "UEShedCameraEngine.h"
 #include "UEShedCameraVisibility.h"
 #include "UEShedCameraEditorOwnership.h"
 #include "Camera/CameraActor.h"
@@ -95,18 +96,9 @@ bool Number(const TSharedPtr<FJsonObject> &Value, const TCHAR *Key, double Minim
 	return Value && Value->TryGetNumberField(Key, N) && FMath::IsFinite(N) && N >= Minimum && N <= Maximum &&
 		   (!Integer || N == FMath::FloorToDouble(N));
 }
-void SetScreenshotWarmupValue(IConsoleVariable *Variable, int32 Value)
-{
-	// ReplaceCurrent refuses constructor values. Preserve the priority/tag for configured values.
-	if ((Variable->GetFlags() & ECVF_SetByMask) == ECVF_SetByConstructor)
-		Variable->Set(Value, ECVF_SetByConstructor);
-	else
-		Variable->ReplaceCurrentPriorityAndTag(Value);
-}
 bool Boolean(const TSharedPtr<FJsonObject> &Value, const TCHAR *Key)
 {
-	bool Out;
-	return Value && Value->TryGetBoolField(Key, Out);
+	return Value && Value->HasTypedField<EJson::Boolean>(Key);
 }
 bool Identifier(const FString &Value)
 {
@@ -542,7 +534,7 @@ struct FUEShedCameraRenderSession::FState
 		AppliedScreenshotWarmup = Renderer->GetIntegerField(TEXT("screenshotWarmupFrames"));
 		ScreenshotWarmupChanged = false;
 		ScreenshotWarmupApplied = true;
-		SetScreenshotWarmupValue(Variable, AppliedScreenshotWarmup);
+		UEShedCameraEngine::SetScreenshotWarmupValue(Variable, AppliedScreenshotWarmup);
 		if (!OwnsScreenshotWarmup())
 			return false;
 		ScreenshotWarmupVariable = Variable;
@@ -558,12 +550,16 @@ struct FUEShedCameraRenderSession::FState
 		auto *Variable =
 		    IConsoleManager::Get().FindConsoleVariable(TEXT("r.HighResScreenshotDelay"));
 		if (Variable && Variable == ScreenshotWarmupVariable)
+		{
 			Variable->OnChangedDelegate().Remove(ScreenshotWarmupChangeHandle);
+			if (!Owned)
+				UEShedCameraEngine::ReleaseScreenshotWarmupValue(Variable, SavedScreenshotWarmupFlags);
+		}
 		ScreenshotWarmupVariable = nullptr;
 		ScreenshotWarmupChangeHandle.Reset();
 		if (Owned)
 		{
-			SetScreenshotWarmupValue(Variable, SavedScreenshotWarmup);
+			UEShedCameraEngine::RestoreScreenshotWarmupValue(Variable, SavedScreenshotWarmup);
 			if (Variable->GetInt() != SavedScreenshotWarmup ||
 			    Variable->GetFlags() != SavedScreenshotWarmupFlags)
 				Restored = false;

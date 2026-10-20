@@ -1,4 +1,5 @@
 #include "UEShedCameraVisibility.h"
+#include "UEShedCameraEngine.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -145,7 +146,7 @@ FUEShedResolvedVisibility UEShedResolveCameraVisibility(UWorld *World, const TSh
         {
             const auto *Mesh = Cast<UStaticMeshComponent>(Component);
             if (!Mesh || Cast<UInstancedStaticMeshComponent>(Component) || !Mesh->GetStaticMesh() ||
-                Mesh->GetStaticMesh()->GetNaniteSettings().bEnabled)
+                UEShedCameraEngine::NaniteSettings(Mesh->GetStaticMesh()).bEnabled)
             {
                 Supported = false;
                 break;

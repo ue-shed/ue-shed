@@ -102,9 +102,15 @@ bool BuildFixtures()
 	UStringTable* Table = CreateAsset<UStringTable>(TEXT("ST_LegacyText"));
 	const FStringTableRef Strings = Table->GetMutableStringTable();
 	Strings->SetNamespace(TEXT("LegacyStringTable"));
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+	Strings->SetSourceString(TEXT("Continue"), TEXT("Continue onward"), FString());
+	Strings->SetSourceString(TEXT("Farewell"), TEXT("Until next time"), FString());
+	Strings->SetSourceString(TEXT("Greeting"), TEXT("Welcome back"), FString());
+#else
 	Strings->SetSourceString(TEXT("Continue"), TEXT("Continue onward"));
 	Strings->SetSourceString(TEXT("Farewell"), TEXT("Until next time"));
 	Strings->SetSourceString(TEXT("Greeting"), TEXT("Welcome back"));
+#endif
 	Strings->SetMetaData(TEXT("Continue"), TEXT("Comment"), TEXT("Navigation prompt"));
 	Strings->SetMetaData(TEXT("Farewell"), TEXT("Comment"), TEXT("Closing greeting"));
 	Strings->SetMetaData(TEXT("Greeting"), TEXT("Comment"), TEXT("Opening greeting"));
@@ -246,7 +252,9 @@ bool SortJson(const TSharedPtr<FJsonValue>& Value)
 	if (Value->Type == EJson::Object)
 	{
 		const TSharedPtr<FJsonObject> Object = Value->AsObject();
-		Object->Values.KeySort([](const FString& A, const FString& B) { return A < B; });
+		Object->Values.KeySort([](const auto& A, const auto& B) {
+			return FString(*A) < FString(*B);
+		});
 		for (const auto& Pair : Object->Values)
 			if (!SortJson(Pair.Value)) return false;
 	}

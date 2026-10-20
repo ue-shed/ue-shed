@@ -142,7 +142,7 @@ export type UnrealPlatform = typeof UnrealPlatform.Type;
 export const UnrealArchitecture = SafeIdentifier.pipe(Schema.brand("UnrealArchitecture"));
 export type UnrealArchitecture = typeof UnrealArchitecture.Type;
 
-export const PluginBuildTarget = Schema.Literal("UnrealEditor");
+export const PluginBuildTarget = Schema.Literals(["UE4Editor", "UnrealEditor"]);
 export type PluginBuildTarget = typeof PluginBuildTarget.Type;
 
 export const PluginBuildConfiguration = Schema.Literal("Development");

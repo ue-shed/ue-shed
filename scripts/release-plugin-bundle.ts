@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import {
 	buildPluginBundle,
+	GAME_TEXT_PLUGIN_IDS,
+	GAME_TEXT_UNREAL_RANGE,
 	AUTHORING_AUTOMATION_PLUGIN_IDS,
 	MAP_REVIEW_PLUGIN_IDS,
 	CAMERA_AUTHORING_PLUGIN_IDS,
@@ -21,6 +23,11 @@ function releaseArgument(name: string) {
 	return value;
 }
 const presets = {
+	"game-text": {
+		directory: "plugins-game-text",
+		plugins: GAME_TEXT_PLUGIN_IDS,
+		stem: `ue-shed-plugins-game-text-${PUBLIC_VERSION}`
+	},
 	full: { directory: "plugins", plugins: undefined, stem: `ue-shed-plugins-${PUBLIC_VERSION}` },
 	"map-review": {
 		directory: "plugins-map-review",
@@ -55,6 +62,7 @@ const presets = {
 } as const;
 
 if (
+	preset !== "game-text" &&
 	preset !== "full" &&
 	preset !== "map-review" &&
 	preset !== "camera-authoring" &&
@@ -64,7 +72,7 @@ if (
 	preset !== "observatory"
 ) {
 	throw new Error(
-		"Usage: node scripts/release-plugin-bundle.ts <full|map-review|camera-authoring|authoring-automation|editor-host|niagara|observatory>"
+		"Usage: node scripts/release-plugin-bundle.ts <game-text|full|map-review|camera-authoring|authoring-automation|editor-host|niagara|observatory>"
 	);
 }
 
@@ -74,6 +82,9 @@ const sourceCommit = releaseArgument("commit");
 const sourceRef = releaseArgument("ref");
 const result = await buildPluginBundle({
 	candidateManifest,
+	...(preset === "game-text"
+		? { coreRuntimeOnly: true, unreal: GAME_TEXT_UNREAL_RANGE }
+		: undefined),
 	output: join(repositoryRoot, "out", "releases", PUBLIC_VERSION, selected.directory),
 	releaseVersion: PUBLIC_VERSION,
 	releaseAssetStem: selected.stem,

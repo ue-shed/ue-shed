@@ -371,20 +371,36 @@ describe("Game Text identity cases in the saved fixture", () => {
 				pageSize: 50,
 				query: "The door is locked"
 			}).units;
-			// Both compiled keys now also have saved pin places. The pins retain the package
-			// namespace that compiled bytecode strips, so the raw corpus has four distinct units.
+			// Each compiled literal joins its saved pin's package-stamped identity. Unreal gathers
+			// both under the same clean namespace/key/source; both saved places remain visible.
 			const evidence = await readEvidence(fixtureEngine);
 			const packageNamespace = evidence.packages.find(
 				(entry) => entry.package === `${ROOT}BP_ActionSign_Duplicate`
 			)!.packageNamespace;
-			expect(matches).toHaveLength(4);
+			expect(matches).toHaveLength(2);
 			expect(
 				matches
 					.map((unit) =>
 						unit.identity.status === "resolved" ? unit.identity.namespace : undefined
 					)
 					.sort()
-			).toEqual(["", "", `[${packageNamespace}]`, `[${packageNamespace}]`]);
+			).toEqual([`[${packageNamespace}]`, `[${packageNamespace}]`]);
+			for (const match of matches) {
+				const unit = corpus.units.find((unit) => unit.id === match.id)!;
+				expect(unit.occurrences).toHaveLength(2);
+				expect(
+					unit.occurrences.map((occurrence) =>
+						occurrence.location.kind === "asset_property"
+							? occurrence.location.propertyPath
+							: undefined
+					)
+				).toEqual(
+					expect.arrayContaining([
+						"Pins[4].DefaultTextValue",
+						expect.stringMatching(/^ScriptBytecode\[/u)
+					])
+				);
+			}
 			expect(
 				new Set(
 					matches.map((unit) =>

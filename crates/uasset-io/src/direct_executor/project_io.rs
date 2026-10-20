@@ -8,6 +8,7 @@ use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use uasset_inspection::blueprint_classes::blueprint_classes;
+use uasset_inspection::blueprint_text::reconcile_blueprint_text;
 use uasset_inspection::gather_coverage::{DecodedTextKeys, GatherCoverage, gather_table};
 use uasset_inspection::projection::{
     TextAssetProjection, TextureRecord, project_text_asset, project_texture_asset,
@@ -927,6 +928,10 @@ fn project_one_path(
     };
     let mut decoded_keys = DecodedTextKeys::default();
     let mut graph_text_incomplete = false;
+    let mut text_projection = TextAssetProjection {
+        occurrences: Vec::new(),
+        coverage_gaps: Vec::new(),
+    };
     for export in &package.exports {
         checkpoint(cancellation, "parsing")?;
         if matches!(kind, ProjectionKind::Texture)
@@ -954,16 +959,10 @@ fn project_one_path(
                     decoded_keys.record(&projection.occurrences);
                     occurrence_count += projection.occurrences.len() as u64;
                     coverage_gap_count += projection.coverage_gaps.len() as u64;
-                    if matches!(kind, ProjectionKind::TextPackages) {
-                        record
-                            .occurrences
-                            .extend(projection.occurrences.into_iter().map(text_occurrence));
-                        for gap in projection.coverage_gaps {
-                            record.push_gap(text_coverage_gap(gap));
-                        }
-                    } else {
-                        results.extend(text_results(&path_string, bytes.len() as u64, projection));
-                    }
+                    text_projection.occurrences.extend(projection.occurrences);
+                    text_projection
+                        .coverage_gaps
+                        .extend(projection.coverage_gaps);
                 }
                 ProjectionKind::Texture => {
                     if let Some(record) =
@@ -982,24 +981,30 @@ fn project_one_path(
                 {
                     graph_text_incomplete |= gap.is_graph_pin_gap();
                     coverage_gap_count += 1;
-                    if matches!(kind, ProjectionKind::TextPackages) {
-                        record.push_gap(text_coverage_gap(gap));
-                    } else {
-                        results.extend(text_results(
-                            &path_string,
-                            bytes.len() as u64,
-                            TextAssetProjection {
-                                occurrences: Vec::new(),
-                                coverage_gaps: vec![gap],
-                            },
-                        ));
-                    }
+                    text_projection.coverage_gaps.push(gap);
                 }
                 diagnostics.push(projection_diagnostic(export, error.kind(), error.message()))
             }
         }
     }
     checkpoint(cancellation, "inspection")?;
+    reconcile_blueprint_text(&mut text_projection.occurrences);
+    if matches!(kind, ProjectionKind::TextPackages) {
+        record.occurrences = text_projection
+            .occurrences
+            .into_iter()
+            .map(text_occurrence)
+            .collect();
+        for gap in text_projection.coverage_gaps {
+            record.push_gap(text_coverage_gap(gap));
+        }
+    } else if matches!(kind, ProjectionKind::Text) {
+        results.extend(text_results(
+            &path_string,
+            bytes.len() as u64,
+            text_projection,
+        ));
+    }
     // Undecoded properties rarely hold text. When the package's own gather table can be read,
     // text coverage is partial only if a runtime entry from that table was not decoded.
     let table = matches!(kind, ProjectionKind::Text | ProjectionKind::TextPackages)

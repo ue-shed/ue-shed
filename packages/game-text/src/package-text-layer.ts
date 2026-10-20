@@ -49,8 +49,9 @@ export type PackageTextInventoryEntry = typeof PackageTextInventoryEntry.Type;
  * representation copies folded into the authored sites (`representation-copies.ts`); copies keep
  * their raw paths and text in `copy.*` columns.
  * v6: re-extract saved packages so caches built before graph pin extraction cannot retain
- * silently incomplete Blueprint text. */
-export const PACKAGE_TEXT_FORMAT = "package-text-v6";
+ * silently incomplete Blueprint text.
+ * v7: re-extract bytecode identities reconciled with saved pin package namespaces. */
+export const PACKAGE_TEXT_FORMAT = "package-text-v7";
 export const PACKAGE_TEXT_SHARDS = 256;
 export function packageTextShard(path: string) {
 	let hash = 2166136261;

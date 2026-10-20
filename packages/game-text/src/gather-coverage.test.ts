@@ -165,7 +165,8 @@ describe("gather coverage", () => {
 		"package-text-v2",
 		"package-text-v3",
 		"package-text-v4",
-		"package-text-v5"
+		"package-text-v5",
+		"package-text-v6"
 	])(
 		"reads packages again when the cache holds %s shards",
 		async (format) => {

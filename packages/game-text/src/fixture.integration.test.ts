@@ -37,12 +37,13 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 			// Native graph pins add 39 occurrences: 12 defaults (ten localized, one culture invariant,
 			// one String Table reference) and 27 friendly names. They add ten units: six localized
 			// identities retaining their package namespaces, the invariant default, and three shared
-			// K2Node friendly-name identities. The String Table pin joins its existing table/key unit.
+			// K2Node friendly-name identities. Reconciliation merges six compiled units into these
+			// pin identities without removing occurrences. The String Table pin joins its existing unit.
 			discoveredPackages: 115,
 			inspectedPackages: 115,
 			partialPackages: 1,
 			failedPackages: 0,
-			textUnits: 153,
+			textUnits: 147,
 			textOccurrences: 224,
 			resolvedOccurrences: 220,
 			unresolvedOccurrences: 4,

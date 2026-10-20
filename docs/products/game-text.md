@@ -82,7 +82,12 @@ native `graph_pin` action selector. Rejected, unavailable or partially decoded g
 force partial coverage and retain a `Pins` gap sample, even when the gather table reports no missing
 runtime sites. Other legacy Blueprint native records, Sequencer, animation/Skeleton, property bags,
 InstancedStruct, and actor/component native records retain their current version gates.
-The next refresh re-extracts package text cached before graph pin support.
+Compiled Blueprint literals join a decoded default pin's full saved namespace when their key,
+source and namespace without the package stamp match within the same package. Both occurrences
+remain visible in one unit. Different sources, missing pins and ambiguous pin namespaces retain
+their original identities; no match is inferred across packages. Unreal's gather strips the
+package stamp from both representations, so localization still uses the clean namespace.
+The next refresh re-extracts package text cached before this identity reconciliation.
 Legacy native struct map/set elements without type information report
 `legacy_container_element_without_type_information`; unsupported histories
 and unavailable engine features retain their own gap reasons. Partial coverage stays visible in

@@ -8,6 +8,7 @@ use uasset_inspection::blueprint::{
     BlueprintGraphProjection, is_control_rig_blueprint_package, project_blueprint_graphs,
     saved_blueprint_graph_node_paths,
 };
+use uasset_inspection::blueprint_text::reconcile_blueprint_text;
 use uasset_inspection::gather_coverage::{DecodedTextKeys, gather_coverage};
 use uasset_inspection::generic::{InspectionJsonError, PropertyValueOutput, write_inspection_json};
 use uasset_inspection::level_sequence::{LevelSequenceProjection, project_level_sequence};
@@ -228,6 +229,7 @@ fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> Str
             }
         }
     }
+    reconcile_blueprint_text(&mut occurrences);
     serialize_bounded_projection(
         path,
         &TextProjectionOutput {
@@ -994,6 +996,95 @@ fn exceeds_limit(current: usize, additional: usize, limit: usize) -> bool {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn compiled_literals_join_pins_only_when_the_pin_is_readable() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+        for relative in [
+            "Content/Fixture/GameTextActions/Slice2/BP_IdentityLiterals.uasset",
+            "FixtureExpected/game-text-actions/ue5.8-saved/BP_IdentityLiterals.uasset",
+        ] {
+            let original = std::fs::read(root.join(relative)).unwrap();
+            let package = uasset_parser::Package::parse(&original).unwrap();
+            let context = uasset_parser::asset::AssetDecodeContext {
+                source: &original,
+                package: &package,
+                schemas: uasset_parser::schema::embedded_source_model(),
+            };
+            let (export, namespace) = package
+                .exports
+                .iter()
+                .find_map(|export| {
+                    let uasset_parser::asset::DecodedAsset::BlueprintGraphNode(node) =
+                        uasset_parser::asset::decode_export(export, &context).ok()??
+                    else {
+                        return None;
+                    };
+                    let pin = node
+                        .pins
+                        .iter()
+                        .flatten()
+                        .find(|pin| pin.default_text_value.source == "Lamp lit")?;
+                    let uasset_parser::property::TextHistory::Base { namespace, .. } =
+                        &pin.default_text_value.history
+                    else {
+                        return None;
+                    };
+                    Some((export, namespace.clone()))
+                })
+                .unwrap();
+            for damaged in [false, true] {
+                let mut bytes = original.clone();
+                if damaged {
+                    let start = export.serial_offset.get() as usize;
+                    bytes[start..start + export.serial_size as usize].fill(0xff);
+                }
+                let output: serde_json::Value = serde_json::from_str(&super::extract_text(
+                    "Content/BP_IdentityLiterals.uasset",
+                    &bytes,
+                ))
+                .unwrap();
+                let texts = output["occurrences"].as_array().unwrap();
+                let compiled = texts
+                    .iter()
+                    .find(|text| {
+                        text["source"] == "Lamp lit"
+                            && text["location"]["property_path"]
+                                .as_str()
+                                .is_some_and(|path| path.starts_with("ScriptBytecode["))
+                    })
+                    .unwrap();
+                assert_eq!(
+                    compiled["identity"]["namespace"],
+                    if damaged {
+                        uasset_parser::gatherable_text::strip_package_namespace(&namespace)
+                    } else {
+                        &namespace
+                    }
+                );
+                if damaged {
+                    assert_eq!(output["status"], "partial");
+                    assert!(
+                        output["coverage_gaps"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|gap| gap["property_path"] == "Pins")
+                    );
+                } else {
+                    let pin = texts
+                        .iter()
+                        .find(|text| {
+                            text["source"] == "Lamp lit"
+                                && text["location"]["property_path"] == "Pins[4].DefaultTextValue"
+                        })
+                        .unwrap();
+                    assert_eq!(compiled["identity"], pin["identity"]);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn graph_pin_text_and_rejected_streams_match_native_coverage() {
         for engine in ["4.27", "5.6", "5.7", "5.8"] {
             let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1067,7 +1158,9 @@ mod tests {
                 &package,
             ))
             .unwrap();
-            assert_eq!(wasm["status"], "partial");
+            // This synthetic package has a readable, empty gather table: its four non-pin
+            // property gaps do not hide any runtime gathered text.
+            assert_eq!(wasm["status"], "complete");
             assert_eq!(
                 wasm["occurrences"],
                 serde_json::to_value(&native.occurrences).unwrap()
@@ -1239,15 +1332,19 @@ mod tests {
     }
 
     #[test]
-    fn keeps_blueprint_revision_gating_off_compact_text() {
+    fn unsupported_blueprint_revision_keeps_text_available_with_named_pin_gaps() {
         let mut package = Package::parse(BLUEPRINT_FIXTURE).expect("parse Blueprint fixture");
         package.summary.versions.ue5 = 1016;
 
         let text =
             extract_text_from_package("BP_OlderRevision.uasset", BLUEPRINT_FIXTURE, &package);
         let text: Value = serde_json::from_str(&text).expect("text projection is JSON");
-        assert_ne!(text["status"], "error");
-        assert_eq!(text["diagnostics"].as_array().map(Vec::len), Some(0));
+        assert_eq!(text["status"], "partial");
+        assert!(!text["diagnostics"].as_array().unwrap().is_empty());
+        assert!(text["coverage_gaps"].as_array().unwrap().iter().any(|gap| {
+            gap["property_path"] == "Pins"
+                && gap["reason"] == "feature_unavailable_for_engine_version"
+        }));
 
         let blueprint =
             extract_blueprints_from_package("BP_OlderRevision.uasset", BLUEPRINT_FIXTURE, &package);

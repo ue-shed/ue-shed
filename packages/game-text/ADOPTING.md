@@ -93,6 +93,35 @@ Use `query.localizationDetail(request)` for interactive evidence, including cult
 PO-context offsets. Text focus carries a localization preview. `localizationFocus(id)` and
 `localizationLines(request)` are explicit full-provenance exports through scoped files.
 
+Ask the index rather than exporting the corpus to derive facts. Every request below is one bounded
+search; keep the policy that decides what they mean in the host.
+
+```ts
+const scope = { query: "", capability: "all", pageSize: 50, localization: { target } } as const;
+// Other keys holding exactly this text (case, whitespace and lone surrogates count).
+search({ ...scope, filter: [{ field: "source", op: "is", values: [line.source] }] });
+// Keys holding several texts, and texts under several keys, project-wide.
+search({ ...scope, filter: [{ field: "finding", op: "is", values: ["conflicting"] }] });
+search({
+	...scope,
+	filter: [{ field: "finding", op: "is", values: ["duplicate_source"] }],
+	group: "source",
+	minGroupSize: 2
+});
+// One of those texts' lines.
+search({ ...scope, group: "source", minGroupSize: 2, openGroup: "Mushroom" });
+```
+
+`finding` takes every review signal. A `source` clause takes up to 50 exact texts; a unit with
+conflicting sources matches any of them. `group: "source"` keys and labels each group by its text
+and counts the matching lines holding it (units without a target, each under its first source in
+UTF-16 order). `minGroupSize` leaves smaller groups out of `groups`, including `more`; it does not
+narrow totals or `openGroup`. Key changes are on each line's `keyChange`.
+
+Bulk reads (`corpus`, exports, `readLocalizationLines`, `localizationLines`) run in a second native
+process of the model, opened on the first of them, so they never hold a search or focus. The
+model then holds two readers of the snapshot.
+
 Verify cold preparation, mixed package/PO edits, failure recovery and pinned-reader queries
 through the adopter's real packaged transport. The
 [native engine guide](../../docs/engineering/native-game-text-index.md) describes ownership,

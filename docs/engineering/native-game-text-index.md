@@ -45,6 +45,19 @@ Localization totals visit set reason bits and scan one culture's columns at a ti
 still scan source bytes and matching rows; these changes do not introduce a persisted substring
 index or turn first-use search into an indexed lookup.
 
+Opening also hashes the packed line and unit IDs and maps each unit to its last line in display
+order, reported as `id_index_prepare` (about 1 ms per 35,000 IDs, 62 ms per million). Focus,
+cursors, `lines` selections, localization focus and line details then find a row with one probe
+instead of scanning the ID arena, and focus without a localization selection no longer visits
+every line. The index borrows the reader's arenas: four bytes per slot, two slots per ID.
+
+Exact-source predicates (`source` clauses, `group: "source"`, a source `openGroup`) look each
+value up once per request in the sorted dictionary segments, one fence index read per segment and
+one block decoded per probe, and then compare string IDs per row; they never compare source
+bytes per row. A text no row holds matches nothing. Source groups are keyed by dictionary ID and
+decode their texts once, after `minGroupSize` drops small groups, to read and tie-break by the
+text. `finding` clauses take all seven stored review signals.
+
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
 only in grouping or requested facets. This reader-owned cache retains at most 64 entries and
@@ -70,6 +83,17 @@ stops waiting for an admitted read; that read and its temporary files remain own
 until completion. Closing the model interrupts its active read. Losing a native process produces
 a typed failure and invalidates the shared acquisition entry. Open a new model to recover;
 already pinned models retain their original reader.
+
+A native process answers one request at a time. Bulk reads (`readCorpus`, `export`,
+`exportWithSignals`, `readLocalizationLines`, `localizationLines` and policy rows) therefore run
+in a second process of the same model, which opens its own reader of the same snapshot on the
+first bulk read; summary, search, focus, localization focus and detail stay in the first. Each
+lane admits one read at a time, so a corpus dump never delays an interactive read. The second
+reader repeats the opening preparation and holds its own projection, so a model that has run a
+bulk read holds two. It closes with the model. If it cannot open (a newer snapshot was published
+since the model opened, or the process does not start), bulk reads queue on the first process as
+before, without invalidating the model. Hosts that call `openNativeTextQuery` directly opt in with
+`bulkEngine`; without it, every read shares one process and one queue.
 Retained models require `borrow` around operations and `retain` when publishing a candidate.
 
 One write session owns one native process and writer lease. Existing TypeScript input producers
@@ -131,7 +155,8 @@ does not scrub every unused payload.
 
 Requests and responses use validated domain schemas. UTF-16 code units, including lone
 surrogates, survive the wire and dictionary boundaries. Search returns at most 50 rows and
-200 group entries. Native response JSON is bounded to 16 MiB; bulk corpus exports use scoped
+200 group entries; `minGroupSize` drops smaller groups before that bound and before `more`.
+Group keys, `openGroup` and `source` values hold at most 32,767 UTF-16 code units. Native response JSON is bounded to 16 MiB; bulk corpus exports use scoped
 files rather than a giant protocol frame. Native operations expose stage durations and actual
 section, index and write-byte counters.
 

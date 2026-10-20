@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "UE Shed Game Text Corpus Generator",
+	"Description": "Development only. Writes a deterministic Game Text test corpus into a project folder. Not part of any UE Shed release.",
+	"Category": "Developer Tools",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "UEShedCorpusGenerator",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

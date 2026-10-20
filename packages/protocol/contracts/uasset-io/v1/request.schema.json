@@ -446,6 +446,28 @@
 					"properties": {
 						"action": {
 							"type": "string",
+							"enum": ["corpus_report_header"]
+						},
+						"reader": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								}
+							]
+						}
+					},
+					"required": ["action", "reader"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
 							"enum": ["search"]
 						},
 						"reader": {

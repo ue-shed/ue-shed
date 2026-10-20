@@ -221,16 +221,17 @@ impl EngineQuery {
             }
             output.write_all(b"]}")?;
         }
-        let (coverage, diagnostics) = self.package_lists(cancelled)?;
+        let lists = self.package_lists(cancelled)?;
+        let (coverage, diagnostics) = (&lists.0, &lists.1);
         output.write_all(b"],\"packageCoverage\":[")?;
         let mut first = true;
-        for item in &coverage {
+        for item in coverage {
             separator(output, &mut first)?;
             value(output, item)?;
         }
         output.write_all(b"],\"diagnostics\":[")?;
         let mut first = true;
-        for diagnostic in &diagnostics {
+        for diagnostic in diagnostics {
             separator(output, &mut first)?;
             value(output, diagnostic)?;
         }
@@ -240,8 +241,16 @@ impl EngineQuery {
     }
 
     /// Package coverage, excluded packages last, and diagnostics, failures first: the corpus's
-    /// package lists in export order.
-    fn package_lists(&mut self, cancelled: &AtomicBool) -> Result<(Vec<Value>, Vec<Value>)> {
+    /// package lists in export order. A reader's generation never changes, so they are read once.
+    fn package_lists(&mut self, cancelled: &AtomicBool) -> Result<Arc<(Vec<Value>, Vec<Value>)>> {
+        if let Some(lists) = &self.package_lists {
+            return Ok(Arc::clone(lists));
+        }
+        let lists = Arc::new(self.read_package_lists(cancelled)?);
+        self.package_lists = Some(Arc::clone(&lists));
+        Ok(lists)
+    }
+    fn read_package_lists(&mut self, cancelled: &AtomicBool) -> Result<(Vec<Value>, Vec<Value>)> {
         let order = self.reader.column("query.package.order")?;
         let starts = self.package_coordinates()?;
         let locate = |global: u32| -> Result<(usize, usize)> {
@@ -255,6 +264,24 @@ impl EngineQuery {
             )?;
             Ok((shard, global as usize - starts[shard]))
         };
+        // Each package's file, its path decoded once with the others in dictionary order: a
+        // lookup per package decoded a whole dictionary block and missed the block cache.
+        let mut path_ids = Vec::with_capacity(order.len());
+        for global in order.iter() {
+            let (shard, row) = locate(*global)?;
+            let paths = self.package_column(shard, "package.path")?;
+            path_ids.push(*paths.get(row).ok_or("Package row outside paths.")?);
+        }
+        let project = self.reader.meta["input"]["projectRoot"]
+            .as_str()
+            .ok_or("Missing project identity.")?
+            .to_owned();
+        let files = self
+            .reader
+            .strings_batch(&path_ids)?
+            .iter()
+            .map(|path| crate::join_policy::relative_package(&project, path))
+            .collect::<Vec<_>>();
         let mut coverage = Vec::new();
         for excluded in [false, true] {
             for (index, global) in order.iter().enumerate() {
@@ -269,7 +296,7 @@ impl EngineQuery {
                 let status = ["complete", "partial", "not_gatherable", "failed"]
                     .get(status as usize)
                     .ok_or("Unknown exported package status.")?;
-                coverage.push(json!({"packageFile":self.package_file(shard,row)?,"status":status}));
+                coverage.push(json!({"packageFile":files[index],"status":status}));
             }
         }
         let mut diagnostics = Vec::new();
@@ -282,7 +309,7 @@ impl EngineQuery {
                 if self.package_value(shard, "package.status", row)? != wanted {
                     continue;
                 }
-                let path = self.package_file(shard, row)?;
+                let path = files[index].clone();
                 match wanted {
                     1 => diagnostics.extend(self.package_diagnostics(
                         shard,
@@ -319,7 +346,8 @@ impl EngineQuery {
         cancelled: &AtomicBool,
     ) -> Result<u64> {
         let summary = self.summary(cancelled)?;
-        let (coverage, diagnostics) = self.package_lists(cancelled)?;
+        let lists = self.package_lists(cancelled)?;
+        let (coverage, diagnostics) = (&lists.0, &lists.1);
         let header = json!({"schemaVersion":1,"status":summary["status"],"coverage":summary["coverage"],"units":[],"packageCoverage":coverage,"diagnostics":diagnostics});
         let file = std::fs::OpenOptions::new()
             .create_new(true)
@@ -337,6 +365,64 @@ impl EngineQuery {
         }
         result
     }
+    /// The corpus header as a report shows it: coverage, the count of every diagnostic code and
+    /// package state, and the first `preview` diagnostics and incomplete packages. The whole
+    /// header lists every package: 67 MB for a project of 166,699 packages.
+    pub fn corpus_report_header(
+        &mut self,
+        preview: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        let summary = self.summary(cancelled)?;
+        let lists = self.package_lists(cancelled)?;
+        let (coverage, diagnostics) = (&lists.0, &lists.1);
+        let increment = |counts: &mut serde_json::Map<String, Value>, key: &str| {
+            let count = counts.get(key).and_then(Value::as_u64).unwrap_or(0);
+            counts.insert(key.into(), json!(count + 1));
+        };
+        // Codes that are absent count zero; the optional ones appear only when present.
+        let mut diagnostic_counts = serde_json::Map::new();
+        for code in [
+            "package_inspection_failed",
+            "package_partially_decoded",
+            "unsupported_text_history",
+        ] {
+            diagnostic_counts.insert(code.into(), json!(0));
+        }
+        for diagnostic in diagnostics {
+            let code = diagnostic["code"]
+                .as_str()
+                .ok_or("Diagnostic without a code.")?;
+            increment(&mut diagnostic_counts, code);
+        }
+        let mut counts = serde_json::Map::new();
+        for status in ["complete", "partial", "failed"] {
+            counts.insert(status.into(), json!(0));
+        }
+        let mut packages = Vec::new();
+        let mut omitted = 0usize;
+        for item in coverage {
+            checkpoint(cancelled)?;
+            let status = item["status"].as_str().ok_or("Package without a status.")?;
+            increment(&mut counts, status);
+            if status == "complete" {
+                continue;
+            }
+            if packages.len() < preview {
+                packages.push(json!({"packageFile":item["packageFile"],"status":status}));
+            } else {
+                omitted += 1;
+            }
+        }
+        Ok(json!({
+            "coverage": summary["coverage"],
+            "diagnostics": diagnostics.iter().take(preview).collect::<Vec<_>>(),
+            "diagnosticCount": diagnostics.len(),
+            "diagnosticCounts": diagnostic_counts,
+            "diagnosticsOmitted": diagnostics.len().saturating_sub(preview),
+            "packageCoverage": {"counts": counts, "packages": packages, "omitted": omitted}
+        }))
+    }
     /// SHA-256 over the whole corpus as `sha256-canonical-json-utf8-v1`: the corpus that
     /// `readCorpus` returns, encoded with its schema's fields, object keys in code unit order
     /// and strings escaped as JSON.stringify escapes them. Equal corpora have equal fingerprints
@@ -347,7 +433,8 @@ impl EngineQuery {
             return Ok(fingerprint.clone());
         }
         let summary = self.summary(cancelled)?;
-        let (coverage, diagnostics) = self.package_lists(cancelled)?;
+        let lists = self.package_lists(cancelled)?;
+        let (coverage, diagnostics) = (&lists.0, &lists.1);
         let mut hash = Canonical(sha2::Sha256::new());
         let keep = |value: &Value, keys: &[&str]| -> Value {
             let mut kept = serde_json::Map::new();

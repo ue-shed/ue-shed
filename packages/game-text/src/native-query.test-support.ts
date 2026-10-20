@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { textCorpusReportHeader } from "./corpus-summary.js";
 import type { NativeTextQuery } from "./native-query.js";
 import type { TextCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus } from "./schema.js";
@@ -41,6 +42,8 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 		selectLocalizationLines: (request, fields) =>
 			read("localization_lines", () => derivedLineViews(base, request, fields)),
 		readCorpusHeader: () => Effect.succeed(derivedCorpusHeader(corpus)),
+		readCorpusReportHeader: () =>
+			Effect.succeed(textCorpusReportHeader(derivedCorpusHeader(corpus))),
 		readUnits: (ids) => Effect.succeed(corpus.units.filter((unit) => ids.includes(unit.id))),
 		corpusFingerprint: () => read("corpus_fingerprint", () => derivedCorpusFingerprint(corpus)),
 		readLocalizationLines: () =>

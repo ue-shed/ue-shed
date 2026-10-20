@@ -59,6 +59,7 @@
 						"export",
 						"corpus",
 						"corpus_header",
+						"corpus_report_header",
 						"corpus_fingerprint",
 						"aggregate",
 						"rows",

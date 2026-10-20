@@ -33,6 +33,8 @@ pub struct EngineQuery {
     pub(crate) line_break_words: HashMap<u32, u32>,
     /// The corpus fingerprint, computed once per reader.
     pub(crate) fingerprint: Option<String>,
+    /// Package coverage and diagnostics, read once per reader.
+    pub(crate) package_lists: Option<Arc<(Vec<Value>, Vec<Value>)>>,
     /// Each evidence input's file metadata, read once per reader.
     pub(crate) evidence_meta: HashMap<String, Arc<Value>>,
 }
@@ -206,6 +208,7 @@ impl EngineQuery {
             unit_lines: None,
             line_break_words: HashMap::new(),
             fingerprint: None,
+            package_lists: None,
             evidence_meta: HashMap::new(),
         })
     }

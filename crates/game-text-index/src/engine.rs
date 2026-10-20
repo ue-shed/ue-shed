@@ -33,6 +33,9 @@ impl EnginePolicy {
     }
 }
 
+/// Diagnostics and incomplete packages a report header previews: `MAX_CORPUS_REPORT_ITEMS`.
+const REPORT_PREVIEW_ITEMS: usize = 200;
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EngineRequest {
@@ -75,6 +78,10 @@ pub enum EngineRequest {
     },
     /// The corpus content fingerprint.
     CorpusFingerprint {
+        reader: String,
+    },
+    /// The corpus header as a report shows it: counts and bounded previews.
+    CorpusReportHeader {
         reader: String,
     },
     /// Grouped counts of the matching rows, written to `output`.
@@ -141,6 +148,7 @@ impl EngineRequest {
             | Self::Corpus { reader, .. }
             | Self::CorpusHeader { reader, .. }
             | Self::CorpusFingerprint { reader }
+            | Self::CorpusReportHeader { reader }
             | Self::Aggregate { reader, .. }
             | Self::LocalizationCorpus { reader, .. }
             | Self::Export { reader, .. }
@@ -343,6 +351,7 @@ impl EngineSession {
             | EngineRequest::Corpus { reader, .. }
             | EngineRequest::CorpusHeader { reader, .. }
             | EngineRequest::CorpusFingerprint { reader }
+            | EngineRequest::CorpusReportHeader { reader }
             | EngineRequest::Aggregate { reader, .. }
             | EngineRequest::LocalizationCorpus { reader, .. }
             | EngineRequest::Export { reader, .. }
@@ -414,6 +423,12 @@ impl EngineSession {
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
                         )
                     }
+                    EngineRequest::CorpusReportHeader { .. } => (
+                        "corpus_report_header",
+                        serde_json::to_string(
+                            &query.corpus_report_header(REPORT_PREVIEW_ITEMS, cancelled)?,
+                        )?,
+                    ),
                     EngineRequest::CorpusFingerprint { .. } => (
                         "corpus_fingerprint",
                         serde_json::to_string(

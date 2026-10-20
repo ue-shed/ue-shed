@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { TextCorpusReportHeader } from "./corpus-summary.js";
 import { join } from "node:path";
 import { Effect, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
 import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
@@ -423,6 +424,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			(output) => ({ action: "corpus_header", reader: lane.reader, output }),
 			TextCorpusHeader
 		);
+	const readCorpusReportHeader = (lane: Lane) =>
+		response(
+			lane,
+			{ action: "corpus_report_header", reader: lane.reader },
+			TextCorpusReportHeader
+		);
 	const corpusFingerprint = (lane: Lane) =>
 		response(
 			lane,
@@ -571,6 +578,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		selectLocalizationLines: (request, fields) =>
 			bulk((lane) => selectLocalizationLines(lane, request, fields)),
 		readCorpusHeader: () => bulk(readCorpusHeader),
+		readCorpusReportHeader: () => bulk(readCorpusReportHeader),
 		readUnits: (ids) =>
 			ids.length === 0 ? Effect.succeed([]) : bulk((lane) => readUnits(lane, ids)),
 		corpusFingerprint: () => bulk(corpusFingerprint)

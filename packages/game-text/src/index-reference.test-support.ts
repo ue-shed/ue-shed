@@ -1,4 +1,5 @@
 import { JoinedQueryData } from "./joined-query-data.test-support.js";
+import { textCorpusReportHeader } from "./corpus-summary.js";
 import type { openNativeTextQuery } from "./native-query.js";
 import { Effect, Layer } from "effect";
 import { typeScriptIndexBuilderLayer as builder } from "./index-builder-reference.test-support.js";
@@ -64,6 +65,10 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 					selectLocalizationLines: (request, fields) =>
 						Effect.sync(() => derivedLineViews(base, request, fields)),
 					readCorpusHeader: () => Effect.sync(() => derivedCorpusHeader(readCorpus())),
+					readCorpusReportHeader: () =>
+						Effect.sync(() =>
+							textCorpusReportHeader(derivedCorpusHeader(readCorpus()))
+						),
 					readUnits: (ids) =>
 						Effect.sync(() =>
 							readCorpus().units.filter((unit) => ids.includes(unit.id))

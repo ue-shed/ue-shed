@@ -38,7 +38,7 @@ export const GameTextEngineRequest = Schema.Union([
 		payload: Payload,
 		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
 	}),
-	...(["close", "summary", "corpus_fingerprint"] as const).map((action) =>
+	...(["close", "summary", "corpus_fingerprint", "corpus_report_header"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader })
 	),
 	...(
@@ -68,6 +68,7 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"export",
 		"corpus",
 		"corpus_header",
+		"corpus_report_header",
 		"corpus_fingerprint",
 		"aggregate",
 		"rows",

@@ -872,6 +872,7 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     "rows",
                     "corpus",
                     "corpus_header",
+                    "corpus_report_header",
                     "corpus_fingerprint",
                     "aggregate",
                     "localization_focus",

@@ -1,4 +1,5 @@
 import type { Effect } from "effect";
+import type { TextCorpusReportHeader } from "./corpus-summary.js";
 import type {
 	TextCorpus,
 	TextCorpusQuerySummary,
@@ -73,6 +74,14 @@ export interface NativeTextQuery {
 	) => Effect.Effect<readonly TextUnit[], GameTextIndexError>;
 	/** The corpus without its units: status, coverage, package coverage and diagnostics. */
 	readonly readCorpusHeader: () => Effect.Effect<TextCorpusHeader, GameTextIndexError>;
+	/**
+	 * The corpus header as a report shows it, computed in Rust: coverage, every diagnostic and
+	 * package count, and the first `MAX_CORPUS_REPORT_ITEMS` diagnostics and incomplete packages.
+	 */
+	readonly readCorpusReportHeader: () => Effect.Effect<
+		TextCorpusReportHeader,
+		GameTextIndexError
+	>;
 	/**
 	 * SHA-256 of the whole corpus in canonical JSON (`sha256-canonical-json-utf8-v1`), computed in
 	 * Rust: equal corpora have equal fingerprints on every machine.

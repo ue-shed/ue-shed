@@ -60,3 +60,16 @@ Index refresh progress names each step it reports. `localization_publish`, `pack
 preparing the package text layer and publishing it, and `joining` now means only the join of source
 text with translations. `package_text` counts packages prepared of the packages in the inventory,
 so a cold refresh shows a count for the 37 s it spent preparing 15,445 packages instead of none.
+
+A progress report no longer holds the host's event loop. On an index model each read of an
+evidence file decoded every entry synchronously and checked it against its schema again, about
+0.8 s per archive of a 132,000-line target; the report now reads the manifest and archives page by
+page, yielding between pages, and the importer's validation is not repeated. Its longest stall on
+a generated 132,000-line target went from 1.3 s to 0.13 s and the report from 3.7 s to 2.0 s.
+`readCorpusReportHeader()` returns what a report shows of the corpus header (coverage, every
+diagnostic and package count, and the first 200 diagnostics and incomplete packages), computed in
+Rust. The whole header of a project of 166,699 packages is 67 MB and took 7 s, 3 s of it decoding
+JSON on the host; the report header takes 2.3 s in the native process the first time and 94 ms
+after, as the native reader now reads package lists once and decodes package paths in dictionary
+order. The cold package text import records its packages, shards, workers, worker busy time,
+slowest shard and publish time on its span.

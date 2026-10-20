@@ -1,8 +1,8 @@
 import {
 	TextCorpusDiagnosticSummary,
 	TextPackageCoverageSummary,
-	textCorpusDiagnosticSummary,
-	textPackageCoverageSummary
+	textCorpusReportHeader,
+	type TextCorpusReportHeader
 } from "./corpus-summary.js";
 import { Effect, Result, Schema } from "effect";
 import {
@@ -11,6 +11,8 @@ import {
 	LocalizationIdentity,
 	LocalizationTargetName,
 	type ArchiveEntry,
+	type LocalizationArchive,
+	type LocalizationManifest,
 	type ManifestEntry,
 	type LocalizationTargetEvidence
 } from "@ue-shed/localization/browser";
@@ -28,6 +30,7 @@ import { canonicalLocalizationJson, localizationFingerprint } from "./localizati
 import { manifestPlace } from "./localization-key-changes.js";
 import type { NativeTextQuery } from "./native-query-contract.js";
 import type { TextAggregateGroup } from "./index-reads.js";
+import { readEvidenceValue } from "./evidence-reads.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Words = Schema.NullOr(Count);
@@ -139,7 +142,10 @@ export function decodeLocalizationBaselineJson(
 	return Result.succeed(result.success);
 }
 /** Deduplicate locations, exclude optional contexts, and reject conflicting sources per identity. */
-function manifestEntries(evidence: LocalizationTargetEvidence): readonly ManifestEntry[] {
+function manifestEntries(
+	evidence: LocalizationTargetEvidence,
+	manifest?: LocalizationManifest
+): readonly ManifestEntry[] {
 	if (evidence.manifest.status === "failed") {
 		const error = localizationManifestFailure(
 			evidence.manifest.error,
@@ -155,7 +161,7 @@ function manifestEntries(evidence: LocalizationTargetEvidence): readonly Manifes
 		});
 	}
 	const entries = new Map<string, ManifestEntry>();
-	for (const entry of evidence.manifest.value.entries) {
+	for (const entry of (manifest ?? evidence.manifest.value).entries) {
 		if (entry.optional) continue;
 		const key = identityKey(entry);
 		const previous = entries.get(key);
@@ -251,7 +257,7 @@ export function createLocalizationBaseline(
 export interface LocalizationReportIndex {
 	readonly query: Pick<
 		NativeTextQuery,
-		"aggregate" | "readCorpusHeader" | "corpusFingerprint" | "search"
+		"aggregate" | "readCorpusReportHeader" | "corpusFingerprint" | "search"
 	>;
 	readonly localization: Pick<LocalizationJoin, "target" | "nativeCulture" | "cultures">;
 	readonly evidence: LocalizationTargetEvidence;
@@ -663,11 +669,12 @@ function manifestWords(entries: readonly ManifestEntry[]): readonly Localization
  */
 function archiveProgress(
 	manifest: ManifestFacts,
-	archive: LocalizationTargetEvidence["cultures"][number]["archive"]
+	archive: LocalizationTargetEvidence["cultures"][number]["archive"],
+	read?: LocalizationArchive
 ): ArchiveProgress {
 	if (archive.status !== "read") return noArchive;
 	// One read: on an index model each read of `value` decodes the whole archive.
-	const value = archive.value;
+	const value = read ?? archive.value;
 	// Identities with more than one archive entry match nothing.
 	const only = new Map<string, ArchiveEntry | null>();
 	for (const entry of value.entries) {
@@ -735,7 +742,7 @@ function evidenceFacts(
 
 /** Assembles the report from per-culture tallies and the manifest and archive evidence. */
 function progressReport(
-	header: Pick<TextCorpus, "coverage" | "diagnostics" | "packageCoverage">,
+	header: TextCorpusReportHeader,
 	join: Pick<LocalizationJoin, "target" | "cultures">,
 	evidence: LocalizationTargetEvidence,
 	facts: ReportEvidenceFacts,
@@ -797,14 +804,9 @@ function progressReport(
 		wordCountAlgorithm: "unicode-line-break-v1",
 		cultures,
 		wordCountDiagnostics: facts.wordCountDiagnostics,
-		coverage: header.coverage,
-		...textCorpusDiagnosticSummary(header.diagnostics),
+		...header,
 		gatherEvidence: localizationEvidenceFileStatuses(evidence)
 	};
-	if (header.packageCoverage !== undefined)
-		Object.assign(report, {
-			packageCoverage: textPackageCoverageSummary(header.packageCoverage)
-		});
 	return report;
 }
 
@@ -822,7 +824,7 @@ export function localizationProgressReport(
 	if (join.target !== evidence.target.name) throw reportError("invalid_report_context");
 	const entries = manifestEntries(evidence);
 	return progressReport(
-		corpus,
+		textCorpusReportHeader(corpus),
 		join,
 		evidence,
 		evidenceFacts(evidence, entries),
@@ -854,10 +856,19 @@ const indexedEvidenceFacts = Effect.fn("GameText.localizationReport.evidence")(f
 	const archives = new Map<CultureCode, ArchiveProgress>();
 	for (const culture of evidence.cultures) {
 		yield* Effect.yieldNow;
+		const archive = culture.archive;
+		// An index model decodes the archive page by page, yielding to other work between pages.
+		const read =
+			archive.status === "read"
+				? yield* readEvidenceValue(archive).pipe(
+						Effect.catchDefect((cause) => Effect.fail(reportFailure(failure)(cause)))
+					)
+				: undefined;
+		yield* Effect.yieldNow;
 		archives.set(
 			culture.culture,
 			yield* Effect.try({
-				try: () => archiveProgress(manifest, culture.archive),
+				try: () => archiveProgress(manifest, archive, read),
 				catch: reportFailure(failure)
 			}).pipe(
 				Effect.withSpan("GameText.localizationReport.archive", {
@@ -886,14 +897,26 @@ export const indexedLocalizationProgressReport = Effect.fn("GameText.localizatio
 		// A manifest that cannot be read fails the report before any native read.
 		const entries = cached
 			? undefined
-			: yield* Effect.try({
-					try: () => manifestEntries(model.evidence),
-					catch: reportFailure("invalid_report_context")
+			: yield* Effect.gen(function* () {
+					const manifest = model.evidence.manifest;
+					const read =
+						manifest.status === "read"
+							? yield* readEvidenceValue(manifest).pipe(
+									Effect.catchDefect((cause) =>
+										Effect.fail(reportFailure("invalid_report_context")(cause))
+									)
+								)
+							: undefined;
+					yield* Effect.yieldNow;
+					return yield* Effect.try({
+						try: () => manifestEntries(model.evidence, read),
+						catch: reportFailure("invalid_report_context")
+					});
 				}).pipe(Effect.withSpan("GameText.localizationReport.manifest"));
 		const failure = baseline ? "invalid_baseline" : "invalid_report_context";
 		const [[header, tallies], facts] = yield* Effect.all(
 			[
-				Effect.all([model.query.readCorpusHeader(), indexTallies(model)]),
+				Effect.all([model.query.readCorpusReportHeader(), indexTallies(model)]),
 				entries
 					? indexedEvidenceFacts(model.evidence, entries, failure)
 					: Effect.succeed(cached!)

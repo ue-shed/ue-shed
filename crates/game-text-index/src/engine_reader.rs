@@ -442,9 +442,8 @@ impl EngineReader {
         })
     }
 
-    /// Decode one A64 block from a bounded cache of compressed-frame expansions. All dictionary
-    /// IO uses pinned file descriptors, even after compaction unlinks old generation filenames.
-    pub fn string(&mut self, id: u32) -> Result<String> {
+    /// A string ID's segment and its index within the segment.
+    fn string_position(&self, id: u32) -> Result<(usize, usize)> {
         let segment_index = self
             .segments
             .partition_point(|segment| segment.start <= id)
@@ -458,6 +457,13 @@ impl EngineReader {
             local < segment.count as usize,
             "String ID exceeds dictionary.",
         )?;
+        Ok((segment_index, local))
+    }
+
+    /// Decode one A64 block from a bounded cache of compressed-frame expansions. All dictionary
+    /// IO uses pinned file descriptors, even after compaction unlinks old generation filenames.
+    pub fn string(&mut self, id: u32) -> Result<String> {
+        let (segment_index, local) = self.string_position(id)?;
         let values = self.block(segment_index, local / 64)?;
         Wtf8Buf::from_bytes(
             values
@@ -540,6 +546,34 @@ impl EngineReader {
 
     pub fn strings(&mut self, ids: &[u32]) -> Result<Vec<String>> {
         ids.iter().map(|id| self.string(*id)).collect()
+    }
+
+    /// The strings of many IDs, in their order. It visits them in ID order, so it decodes each
+    /// dictionary block once, where a lookup per ID decodes a block per ID.
+    pub fn strings_batch(&mut self, ids: &[u32]) -> Result<Vec<String>> {
+        let mut visit = (0..ids.len()).collect::<Vec<_>>();
+        visit.sort_unstable_by_key(|index| ids[*index]);
+        let mut result = vec![String::new(); ids.len()];
+        let mut decoded: Option<((usize, usize), Vec<Vec<u8>>)> = None;
+        for index in visit {
+            let (segment_index, local) = self.string_position(ids[index])?;
+            let block = (segment_index, local / 64);
+            if decoded.as_ref().map(|(key, _)| *key) != Some(block) {
+                decoded = Some((block, self.block(segment_index, local / 64)?));
+            }
+            let values = &decoded
+                .as_ref()
+                .ok_or("Dictionary block was not decoded.")?
+                .1;
+            result[index] = Wtf8Buf::from_bytes(
+                values
+                    .get(local % 64)
+                    .ok_or("String outside dictionary block.")?
+                    .clone(),
+            )
+            .map(Wtf8Buf::into_view)?;
+        }
+        Ok(result)
     }
 
     pub(crate) fn empty_string_ids(&mut self) -> Result<Arc<BTreeSet<u32>>> {

@@ -84,6 +84,14 @@ pub struct TextCoverageGap {
     pub reason: TextCoverageGapReason,
 }
 
+impl TextCoverageGap {
+    /// Gather tables may omit editor-only graph sites; they cannot prove skipped pins complete.
+    #[must_use]
+    pub fn is_graph_pin_gap(&self) -> bool {
+        self.property_path == "Pins" || self.property_path.starts_with("Pins[")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TextCoverageGapReason {
@@ -154,6 +162,20 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             &mut output,
         ),
         DecodedAsset::UObject(object) => {
+            // If a graph's Nodes array itself was rejected, none of its pin streams can be
+            // proven covered. Gather tables need not contain those editor-only occurrences.
+            if object.class_path.as_str() == uasset_parser::asset::ED_GRAPH_CLASS
+                && object.properties.records.iter().any(|property| {
+                    package.resolve_name(property.name).as_deref() == Some("Nodes")
+                        && !matches!(property.value, PropertyValue::Array(_))
+                })
+            {
+                output.coverage_gaps.push(TextCoverageGap {
+                    object_path: object.object_path.to_string(),
+                    property_path: "Pins".to_owned(),
+                    reason: TextCoverageGapReason::PropertyDecoderRejected,
+                });
+            }
             if package.summary.versions.uses_legacy_property_tags() && !object.tail.is_empty() {
                 output.coverage_gaps.push(TextCoverageGap {
                     object_path: object.object_path.to_string(),
@@ -213,18 +235,50 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
                 });
             }
         }
-        DecodedAsset::BlueprintGraphNode(node) => visit_text_stream(
-            package,
-            &node.properties,
-            "",
-            &|property_path| TextLocation::AssetProperty {
-                object_path: node.object_path.to_string(),
-                class_path: node.class_path.to_string(),
-                property_path: property_path.to_owned(),
-            },
-            TextEditCapability::ReadOnly,
-            &mut output,
-        ),
+        DecodedAsset::BlueprintGraphNode(node) => {
+            if !node.tail.is_empty() {
+                output.coverage_gaps.push(TextCoverageGap {
+                    object_path: node.object_path.to_string(),
+                    property_path: "Pins".to_owned(),
+                    reason: TextCoverageGapReason::PropertyDecoderRejected,
+                });
+            }
+            visit_text_stream(
+                package,
+                &node.properties,
+                "",
+                &|property_path| TextLocation::AssetProperty {
+                    object_path: node.object_path.to_string(),
+                    class_path: node.class_path.to_string(),
+                    property_path: property_path.to_owned(),
+                },
+                TextEditCapability::ReadOnly,
+                &mut output,
+            );
+            for (index, pin) in node.pins.iter().enumerate() {
+                let Some(pin) = pin else { continue };
+                for (field, text) in [
+                    ("DefaultTextValue", &pin.default_text_value),
+                    ("PinFriendlyName", &pin.friendly_name),
+                ] {
+                    // Every pin stores an empty FText, even when its type is not text.
+                    if matches!(text.history, TextHistory::None) && text.source.is_empty() {
+                        continue;
+                    }
+                    output.occurrences.push(TextOccurrence {
+                        source: text.source.clone(),
+                        dev_notes: text.dev_notes().unwrap_or_default().to_owned(),
+                        identity: identity_for_text(text),
+                        location: TextLocation::AssetProperty {
+                            object_path: node.object_path.to_string(),
+                            class_path: node.class_path.to_string(),
+                            property_path: format!("Pins[{index}].{field}"),
+                        },
+                        edit_capability: TextEditCapability::ReadOnly,
+                    });
+                }
+            }
+        }
         DecodedAsset::AnimSequence(sequence) => visit_text_stream(
             package,
             &sequence.properties,
@@ -458,10 +512,27 @@ fn visit_text_value<F>(
 
 #[must_use]
 pub fn text_feature_version_gap(
-    package: &Package,
+    context: &uasset_parser::asset::AssetDecodeContext<'_>,
     export: &uasset_parser::package::Export,
     error: &uasset_parser::asset::AssetError,
 ) -> Option<TextCoverageGap> {
+    let package = context.package;
+    if uasset_parser::asset::is_blueprint_graph_node_export(context, export)
+        || export
+            .class_path
+            .as_ref()
+            .is_some_and(|class_path| class_path.as_str() == uasset_parser::asset::ED_GRAPH_CLASS)
+    {
+        return Some(TextCoverageGap {
+            object_path: export.object_path.to_string(),
+            property_path: "Pins".to_owned(),
+            reason: if error.kind() == uasset_parser::asset::AssetErrorKind::UnsupportedVersion {
+                TextCoverageGapReason::FeatureUnavailableForEngineVersion
+            } else {
+                TextCoverageGapReason::PropertyDecoderRejected
+            },
+        });
+    }
     (package.summary.versions.uses_legacy_property_tags()
         && error.kind() == uasset_parser::asset::AssetErrorKind::UnsupportedVersion)
         .then(|| TextCoverageGap {

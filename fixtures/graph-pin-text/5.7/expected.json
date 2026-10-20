@@ -1,0 +1,32 @@
+[
+	{
+		"operation": "split",
+		"objectPath": "/Game/KeyRepairs/BP_Keys.BP_Keys:EventGraph.split",
+		"propertyPath": "DefaultTextValue",
+		"namespace": "KeyRepairs",
+		"key": "SplitAfter",
+		"source": "Reviewed split source",
+		"pinId": "FE2182634349BEA01F4FF69A2749225F",
+		"pinIndex": 4
+	},
+	{
+		"operation": "regenerate",
+		"objectPath": "/Game/KeyRepairs/BP_Keys.BP_Keys:EventGraph.regenerate",
+		"propertyPath": "DefaultTextValue",
+		"namespace": "KeyRepairs",
+		"key": "FA6AEFBF4136C9240DA708B3E1344F7A",
+		"source": "Reviewed regenerate source",
+		"pinId": "9BA7D7B34E390CFED6F0BD8CAF311352",
+		"pinIndex": 4
+	},
+	{
+		"operation": "adopt",
+		"objectPath": "/Game/KeyRepairs/BP_Keys.BP_Keys:EventGraph.adopt",
+		"propertyPath": "DefaultTextValue",
+		"namespace": "KeyRepairs",
+		"key": "FB2531314B2BF05955F5AF83DD4A77B0",
+		"source": "Reviewed adopt source",
+		"pinId": "1423AE2C43AFC6D9D382999F9239E3E8",
+		"pinIndex": 4
+	}
+]

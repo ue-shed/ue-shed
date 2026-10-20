@@ -926,6 +926,7 @@ fn project_one_path(
         blueprint_classes: Vec::new(),
     };
     let mut decoded_keys = DecodedTextKeys::default();
+    let mut graph_text_incomplete = false;
     for export in &package.exports {
         checkpoint(cancellation, "parsing")?;
         if matches!(kind, ProjectionKind::Texture)
@@ -945,6 +946,10 @@ fn project_one_path(
                         record.blueprint_classes.push(classes);
                     }
                     let projection = project_text_asset(&package, &asset);
+                    graph_text_incomplete |= projection
+                        .coverage_gaps
+                        .iter()
+                        .any(|gap| gap.is_graph_pin_gap());
                     checkpoint(cancellation, "inspection")?;
                     decoded_keys.record(&projection.occurrences);
                     occurrence_count += projection.occurrences.len() as u64;
@@ -973,8 +978,9 @@ fn project_one_path(
             Ok(None) => {}
             Err(error) => {
                 if matches!(kind, ProjectionKind::Text | ProjectionKind::TextPackages)
-                    && let Some(gap) = text_feature_version_gap(&package, export, &error)
+                    && let Some(gap) = text_feature_version_gap(&context, export, &error)
                 {
+                    graph_text_incomplete |= gap.is_graph_pin_gap();
                     coverage_gap_count += 1;
                     if matches!(kind, ProjectionKind::TextPackages) {
                         record.push_gap(text_coverage_gap(gap));
@@ -1010,8 +1016,8 @@ fn project_one_path(
         }
     }
     let gather = table.map(|table| table.coverage);
-    let partial =
-        text_coverage_partial(gather.as_ref(), !diagnostics.is_empty(), coverage_gap_count);
+    let partial = graph_text_incomplete
+        || text_coverage_partial(gather.as_ref(), !diagnostics.is_empty(), coverage_gap_count);
     record.gather_coverage = gather.map(gather_coverage_record);
     match kind {
         ProjectionKind::TextPackages => {

@@ -47,8 +47,10 @@ export type PackageTextInventoryEntry = typeof PackageTextInventoryEntry.Type;
  * packages again.
  * v5: records keep the reader's Blueprint classes (uasset-io 1.12) and are stored with their
  * representation copies folded into the authored sites (`representation-copies.ts`); copies keep
- * their raw paths and text in `copy.*` columns. */
-export const PACKAGE_TEXT_FORMAT = "package-text-v5";
+ * their raw paths and text in `copy.*` columns.
+ * v6: re-extract saved packages so caches built before graph pin extraction cannot retain
+ * silently incomplete Blueprint text. */
+export const PACKAGE_TEXT_FORMAT = "package-text-v6";
 export const PACKAGE_TEXT_SHARDS = 256;
 export function packageTextShard(path: string) {
 	let hash = 2166136261;

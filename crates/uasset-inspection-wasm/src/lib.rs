@@ -206,7 +206,7 @@ fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> Str
             }
             Ok(None) => {}
             Err(error) => {
-                if let Some(gap) = text_feature_version_gap(package, export, &error) {
+                if let Some(gap) = text_feature_version_gap(&context, export, &error) {
                     if exceeds_limit(
                         occurrences.len().saturating_add(coverage_gaps.len()),
                         1,
@@ -234,6 +234,7 @@ fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> Str
             schema_version: 1,
             // Matches native uasset-io: the package's gather table decides when it can be read.
             status: match gather_coverage(bytes, package, path, &decoded_keys) {
+                _ if coverage_gaps.iter().any(TextCoverageGap::is_graph_pin_gap) => "partial",
                 Ok(Some(gather)) if gather.missing == 0 => "complete",
                 Ok(Some(_)) => "partial",
                 Ok(None) | Err(_) if coverage_gaps.is_empty() => projection_status(&diagnostics),
@@ -992,6 +993,59 @@ fn exceeds_limit(current: usize, additional: usize, limit: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn graph_pin_text_and_rejected_streams_match_native_coverage() {
+        for engine in ["4.27", "5.6", "5.7", "5.8"] {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/graph-pin-text")
+                .join(engine);
+            let original = std::fs::read(root.join("BP_Keys.uasset")).unwrap();
+            for damaged in [false, true] {
+                let mut bytes = original.clone();
+                if damaged {
+                    let package = uasset_parser::Package::parse(&bytes).unwrap();
+                    let node = package
+                        .exports
+                        .iter()
+                        .find(|export| export.object_path.as_str().ends_with("EventGraph.split"))
+                        .unwrap();
+                    let start = node.serial_offset.get() as usize;
+                    bytes[start..start + node.serial_size as usize].fill(0xff);
+                }
+                let output: serde_json::Value =
+                    serde_json::from_str(&super::extract_text("Content/BP_Keys.uasset", &bytes))
+                        .unwrap();
+                let pins = output["occurrences"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|text| {
+                        text["location"]["property_path"] == "Pins[4].DefaultTextValue"
+                            && [
+                                "Reviewed split source",
+                                "Reviewed regenerate source",
+                                "Reviewed adopt source",
+                            ]
+                            .contains(&text["source"].as_str().unwrap())
+                    })
+                    .count();
+                assert_eq!(pins, if damaged { 2 } else { 3 }, "UE {engine}");
+                if damaged {
+                    assert_eq!(output["status"], "partial", "UE {engine}");
+                    assert!(
+                        output["coverage_gaps"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|gap| gap["property_path"] == "Pins")
+                    );
+                } else if engine != "4.27" {
+                    assert_eq!(output["status"], "complete", "UE {engine}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn synthetic_legacy_text_matches_the_native_projection_at_the_wasm_adapter() {
         for ue5 in [0, 1000, 1009, 1010, 1011] {

@@ -160,7 +160,13 @@ describe("gather coverage", () => {
 		}
 	}, 15000);
 
-	it.each(["package-text-v1", "package-text-v2", "package-text-v3"])(
+	it.each([
+		"package-text-v1",
+		"package-text-v2",
+		"package-text-v3",
+		"package-text-v4",
+		"package-text-v5"
+	])(
 		"reads packages again when the cache holds %s shards",
 		async (format) => {
 			const root = await mkdtemp(join(tmpdir(), "ue-shed-gather-upgrade-"));

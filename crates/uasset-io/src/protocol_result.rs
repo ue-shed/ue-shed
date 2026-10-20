@@ -365,7 +365,7 @@ pub struct SavedAssetPackageTextRecord {
     pub gap_counts: TextGapCounts,
     pub gap_samples: Vec<SavedAssetTextCoverageGap>,
     /// v1.10: present when the package's gatherable text table was read. When present, status
-    /// reflects missing runtime gatherable text instead of decoder gaps.
+    /// reflects missing runtime gatherable text, with undecoded graph pins always remaining partial.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gather_coverage: Option<SavedAssetGatherCoverage>,
     /// v1.12: each Blueprint in the package with the generated class, default objects and saved
@@ -393,13 +393,20 @@ impl SavedAssetPackageTextRecord {
         }
         if self.gap_samples.len() < 3 {
             self.gap_samples.push(gap);
-        } else if gap.reason == TextCoverageGapReason::UnsupportedTextHistory
+        } else if (gap.reason == TextCoverageGapReason::UnsupportedTextHistory
+            || gap.property_path == "Pins"
+            || gap.property_path.starts_with("Pins["))
             && let Some(index) = self
                 .gap_samples
                 .iter()
                 .enumerate()
                 .position(|(index, sample)| {
-                    index > 0 && sample.reason != TextCoverageGapReason::UnsupportedTextHistory
+                    index > 0
+                        && (gap.property_path == "Pins"
+                            || gap.property_path.starts_with("Pins[")
+                            || sample.reason != TextCoverageGapReason::UnsupportedTextHistory)
+                        && sample.property_path != "Pins"
+                        && !sample.property_path.starts_with("Pins[")
                 })
         {
             self.gap_samples[index] = gap;

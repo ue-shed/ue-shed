@@ -248,6 +248,82 @@ fn base_request(operation: Value) -> Value {
 }
 
 #[test]
+fn graph_pin_reads_and_rejected_streams_have_truthful_package_coverage() {
+    let fixtures =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/graph-pin-text");
+    let root = std::env::temp_dir().join(format!("ue-shed-pin-text-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("Content")).unwrap();
+    std::fs::write(root.join("Pins.uproject"), r#"{"FileVersion":3}"#).unwrap();
+    for engine in ["4.27", "5.6", "5.7", "5.8"] {
+        let original = std::fs::read(fixtures.join(engine).join("BP_Keys.uasset")).unwrap();
+        for damaged in [false, true] {
+            let mut bytes = original.clone();
+            if damaged {
+                let package = uasset_parser::Package::parse(&bytes).unwrap();
+                let node = package
+                    .exports
+                    .iter()
+                    .find(|export| export.object_path.as_str().ends_with("EventGraph.split"))
+                    .unwrap();
+                let start = node.serial_offset.get() as usize;
+                bytes[start..start + node.serial_size as usize].fill(0xff);
+            }
+            std::fs::write(root.join("Content/BP_Keys.uasset"), bytes).unwrap();
+            let mut request = base_request(serde_json::json!({
+                "kind": "extract_text_packages", "projectRoot": root,
+                "paths": ["Content/BP_Keys.uasset"]
+            }));
+            request["contract"]["version"]["minor"] = serde_json::json!(14);
+            let (success, events, stderr) = run_request(request);
+            assert!(success, "UE {engine}: {stderr}");
+            let record = events
+                .iter()
+                .map(|event| &event["result"]["event"])
+                .find(|record| record["event"] == "text_package_record")
+                .expect("package record");
+            let pins: Vec<_> = record["occurrences"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|text| {
+                    text["location"]["property_path"] == "Pins[4].DefaultTextValue"
+                        && [
+                            "Reviewed split source",
+                            "Reviewed regenerate source",
+                            "Reviewed adopt source",
+                        ]
+                        .contains(&text["source"].as_str().unwrap())
+                })
+                .collect();
+            assert_eq!(
+                pins.len(),
+                if damaged { 2 } else { 3 },
+                "UE {engine}: {record}"
+            );
+            if damaged {
+                assert_eq!(record["status"], "partial", "UE {engine}: {record}");
+                assert!(
+                    record["gapSamples"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|gap| gap["property_path"] == "Pins"
+                            && gap["object_path"]
+                                .as_str()
+                                .unwrap()
+                                .ends_with("EventGraph.split")
+                            && gap["reason"] == "property_decoder_rejected"),
+                    "UE {engine}: {record}"
+                );
+            } else if engine != "4.27" {
+                assert_eq!(record["status"], "complete", "UE {engine}: {record}");
+            }
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn package_text_requires_minor_eight_and_preserves_empty_selection() {
     let root =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");

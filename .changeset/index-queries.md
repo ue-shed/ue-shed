@@ -31,3 +31,7 @@ changes when the model does. The progress report and baseline (`indexedLocalizat
 `indexedLocalizationBaseline`), the changed-file gate (`indexedLocalizationGateTarget`), the lines
 spreadsheet, the gather key pairing and investigations use these reads, so the Workbench and the
 CLI no longer export the corpus or the join to answer them. The whole-input functions remain.
+
+`makeGameTextWorkspaceLocalization` now takes the current model's `revision` as its first argument
+instead of the corpus read: pass `() => Effect.succeed(model.revision)` where you passed the lazy
+corpus.

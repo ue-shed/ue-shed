@@ -100,6 +100,10 @@ should follow [Website and illustrated guides](engineering/website.md).
 - [Effect audit and native index rollout (2026-10-18)](research/effect-audit-native-rollout-2026-10-18.md) —
   production integration, error/API migration, repeated host measurements and acceptance evidence.
 
+- [Blueprint text diagrams and Pele (2026-10-17)](research/blueprint-diagrams-2026-10-17.md) —
+  saved-graph fidelity, dedicated/flowchart port extensions, performance/layout comparisons and
+  UE 5.7/5.8 evidence.
+
 - [p4client-ts 0.13 adoption (2026-10-14)](research/p4client-ts-0.13-consumer-trial-2026-10-14.md) —
   Map History's native Effect adapter, upstream feedback and its resolution, and real-server checks.
 - [Map screenshot pipeline revisited (2026-10-13)](research/map-capture-screenshot-pipeline-2026-10-13.md) —

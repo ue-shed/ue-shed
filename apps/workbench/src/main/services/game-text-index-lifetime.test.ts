@@ -404,12 +404,10 @@ it.live(
 				})
 			).pipe(Layer.provide(fixture.layer(true)));
 			yield* Effect.gen(function* () {
-				const raw = fixture.raw();
 				const steps = yield* GameTextIndexSteps;
 				const project = yield* steps.refreshProject({ projectRoot: fixture.projectRoot });
-				const readCorpus = Effect.succeed(raw);
 				const host = yield* makeGameTextLocalization(
-					() => Effect.succeed(readCorpus),
+					() => Effect.succeed("revision"),
 					() => Effect.succeed(project)
 				);
 				expect((yield* Effect.scoped(host.select(fixture.target.name))).status).toBe(

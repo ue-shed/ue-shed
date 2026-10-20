@@ -8,6 +8,7 @@ pub mod animation;
 pub mod authoring;
 pub mod blueprint;
 pub mod blueprint_classes;
+pub mod blueprint_text;
 pub mod gather_coverage;
 pub mod generic;
 pub mod level_sequence;

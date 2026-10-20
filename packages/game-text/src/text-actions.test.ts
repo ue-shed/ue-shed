@@ -281,6 +281,62 @@ describe("Game Text actions API", () => {
 		]);
 	});
 
+	it("verifies saved graph pin paths against Unreal's subobject paths", () => {
+		const pinPath = "/Game/Keys/BP_Keys.BP_Keys:EventGraph.split";
+		const propertyPath = "Pins[4].DefaultTextValue";
+		const pinRequest = gameTextActionsRequest({
+			mode: "apply",
+			actions: [
+				{
+					id: "pin",
+					place: {
+						...PLACE,
+						objectPath: pinPath,
+						propertyPath,
+						selector: { kind: "graph_pin", index: 4 }
+					},
+					expected: { namespace: "Notes", key: "Old", source: occurrence.source },
+					edit: { kind: "change_key", namespace: "Notes", key: "Lamp" }
+				}
+			]
+		});
+		const action = pinRequest.actions[0];
+		if (!action) throw new Error("Expected pin action");
+		const pinResult = {
+			...applied,
+			actions: [
+				{
+					id: "pin",
+					place: action.place,
+					status: "applied" as const,
+					before: action.expected,
+					after: { namespace: "Notes", key: "Lamp", source: occurrence.source }
+				}
+			]
+		};
+		for (const objectPath of [pinPath.replace(":", "."), "BP_Keys.EventGraph.split"]) {
+			const record = {
+				...emptyPackageTextRecord(FILE),
+				occurrences: [
+					{
+						...occurrence,
+						identity: { status: "resolved" as const, namespace: "Notes", key: "Lamp" },
+						location: {
+							...occurrence.location,
+							object_path: objectPath,
+							property_path: propertyPath
+						}
+					}
+				]
+			};
+			expect(verifyGameTextActions(pinRequest, pinResult, [record])).toEqual({
+				verified: 1,
+				mismatches: [],
+				complete: true
+			});
+		}
+	});
+
 	it("keeps an authored String Table namespace verbatim when expecting and verifying", () => {
 		const TABLE = "/Game/Text/ST_Menu.ST_Menu";
 		const entry: SavedAssetTextOccurrence = {

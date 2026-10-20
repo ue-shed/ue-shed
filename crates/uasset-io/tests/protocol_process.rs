@@ -248,6 +248,227 @@ fn base_request(operation: Value) -> Value {
 }
 
 #[test]
+fn graph_pin_reads_and_rejected_streams_have_truthful_package_coverage() {
+    let fixtures =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/graph-pin-text");
+    let root = std::env::temp_dir().join(format!("ue-shed-pin-text-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("Content")).unwrap();
+    std::fs::write(root.join("Pins.uproject"), r#"{"FileVersion":3}"#).unwrap();
+    for engine in ["4.27", "5.6", "5.7", "5.8"] {
+        let original = std::fs::read(fixtures.join(engine).join("BP_Keys.uasset")).unwrap();
+        for damaged in [false, true] {
+            let mut bytes = original.clone();
+            if damaged {
+                let package = uasset_parser::Package::parse(&bytes).unwrap();
+                let node = package
+                    .exports
+                    .iter()
+                    .find(|export| export.object_path.as_str().ends_with("EventGraph.split"))
+                    .unwrap();
+                let start = node.serial_offset.get() as usize;
+                bytes[start..start + node.serial_size as usize].fill(0xff);
+            }
+            std::fs::write(root.join("Content/BP_Keys.uasset"), bytes).unwrap();
+            let mut request = base_request(serde_json::json!({
+                "kind": "extract_text_packages", "projectRoot": root,
+                "paths": ["Content/BP_Keys.uasset"]
+            }));
+            request["contract"]["version"]["minor"] = serde_json::json!(14);
+            let (success, events, stderr) = run_request(request);
+            assert!(success, "UE {engine}: {stderr}");
+            let record = events
+                .iter()
+                .map(|event| &event["result"]["event"])
+                .find(|record| record["event"] == "text_package_record")
+                .expect("package record");
+            let pins: Vec<_> = record["occurrences"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|text| {
+                    text["location"]["property_path"] == "Pins[4].DefaultTextValue"
+                        && [
+                            "Reviewed split source",
+                            "Reviewed regenerate source",
+                            "Reviewed adopt source",
+                        ]
+                        .contains(&text["source"].as_str().unwrap())
+                })
+                .collect();
+            assert_eq!(
+                pins.len(),
+                if damaged { 2 } else { 3 },
+                "UE {engine}: {record}"
+            );
+            if damaged {
+                assert_eq!(record["status"], "partial", "UE {engine}: {record}");
+                assert!(
+                    record["gapSamples"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|gap| gap["property_path"] == "Pins"
+                            && gap["object_path"]
+                                .as_str()
+                                .unwrap()
+                                .ends_with("EventGraph.split")
+                            && gap["reason"] == "property_decoder_rejected"),
+                    "UE {engine}: {record}"
+                );
+            } else if engine != "4.27" {
+                assert_eq!(record["status"], "complete", "UE {engine}: {record}");
+            }
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn compiled_pin_identity_requires_a_readable_matching_pin() {
+    let fixtures =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let root = std::env::temp_dir().join(format!("ue-shed-compiled-pin-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("Content")).unwrap();
+    std::fs::write(root.join("Pins.uproject"), r#"{"FileVersion":3}"#).unwrap();
+    for relative in [
+        "Content/Fixture/GameTextActions/Slice2/BP_IdentityLiterals.uasset",
+        "FixtureExpected/game-text-actions/ue5.8-saved/BP_IdentityLiterals.uasset",
+    ] {
+        let original = std::fs::read(fixtures.join(relative)).unwrap();
+        let package = uasset_parser::Package::parse(&original).unwrap();
+        let context = uasset_parser::asset::AssetDecodeContext {
+            source: &original,
+            package: &package,
+            schemas: uasset_parser::schema::embedded_source_model(),
+        };
+        let (export, identity) = package
+            .exports
+            .iter()
+            .find_map(|export| {
+                let uasset_parser::asset::DecodedAsset::BlueprintGraphNode(node) =
+                    uasset_parser::asset::decode_export(export, &context).ok()??
+                else {
+                    return None;
+                };
+                let pin = node
+                    .pins
+                    .iter()
+                    .flatten()
+                    .find(|pin| pin.default_text_value.source == "Lamp lit")?;
+                Some((export, pin.default_text_value.history.clone()))
+            })
+            .expect("saved typed pin");
+        let uasset_parser::property::TextHistory::Base { namespace, key, .. } = identity else {
+            panic!("localized pin");
+        };
+        for state in ["matching", "different_source", "unread_pin"] {
+            let mut bytes = original.clone();
+            if state == "unread_pin" {
+                let start = export.serial_offset.get() as usize;
+                bytes[start..start + export.serial_size as usize].fill(0xff);
+            } else if state == "different_source" {
+                let mut replaced = 0;
+                for export in &package.exports {
+                    if export
+                        .class_path
+                        .as_ref()
+                        .is_none_or(|class| class.as_str() != "/Script/CoreUObject.Function")
+                    {
+                        continue;
+                    }
+                    let start = export.serial_offset.get() as usize;
+                    let end = start + export.serial_size as usize;
+                    while let Some(offset) = bytes[start..end]
+                        .windows(8)
+                        .position(|value| value == b"Lamp lit")
+                    {
+                        bytes[start + offset..start + offset + 8].copy_from_slice(b"Lamp dim");
+                        replaced += 1;
+                    }
+                }
+                assert!(
+                    replaced > 0,
+                    "compiled source was changed without changing the pin"
+                );
+            }
+            std::fs::write(root.join("Content/BP_IdentityLiterals.uasset"), bytes).unwrap();
+            for kind in ["extract_text_packages", "extract_text"] {
+                let mut request = base_request(serde_json::json!({
+                    "kind": kind, "projectRoot": root, "paths": ["Content/BP_IdentityLiterals.uasset"]
+                }));
+                request["contract"]["version"]["minor"] = serde_json::json!(14);
+                let (success, events, stderr) = run_request(request);
+                assert!(success, "{relative}: {stderr}");
+                let records: Vec<_> = events
+                    .iter()
+                    .map(|event| &event["result"]["event"])
+                    .collect();
+                let texts: Vec<_> = records
+                    .iter()
+                    .flat_map(|record| {
+                        if kind == "extract_text_packages" {
+                            record["occurrences"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .collect::<Vec<_>>()
+                        } else {
+                            record.get("occurrence").into_iter().collect()
+                        }
+                    })
+                    .collect();
+                let compiled = texts
+                    .iter()
+                    .find(|text| {
+                        text["source"]
+                            == if state == "different_source" {
+                                "Lamp dim"
+                            } else {
+                                "Lamp lit"
+                            }
+                            && text["location"]["property_path"]
+                                .as_str()
+                                .is_some_and(|path| path.starts_with("ScriptBytecode["))
+                    })
+                    .expect("compiled literal remains readable");
+                assert_eq!(compiled["identity"]["key"], key);
+                assert_eq!(
+                    compiled["identity"]["namespace"],
+                    if state != "matching" {
+                        uasset_parser::gatherable_text::strip_package_namespace(&namespace)
+                    } else {
+                        &namespace
+                    }
+                );
+                if state == "different_source" {
+                    let pin = texts
+                        .iter()
+                        .find(|text| {
+                            text["source"] == "Lamp lit"
+                                && text["location"]["property_path"] == "Pins[4].DefaultTextValue"
+                        })
+                        .unwrap();
+                    assert_eq!(pin["identity"]["key"], compiled["identity"]["key"]);
+                    assert_ne!(pin["identity"], compiled["identity"]);
+                }
+                if state == "unread_pin" {
+                    assert!(records.iter().any(|record| record["status"] == "partial"));
+                    assert!(records.iter().any(|record| {
+                        record["gapSamples"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .any(|gap| gap["property_path"] == "Pins")
+                            || record["coverage_gap"]["property_path"] == "Pins"
+                    }));
+                }
+            }
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn package_text_requires_minor_eight_and_preserves_empty_selection() {
     let root =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");

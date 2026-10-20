@@ -76,14 +76,25 @@ the reader names their objects relative to the package (`DT_Items`). Game Text c
 from the package file under `Content/`, which Unreal mounts at `/Game`, so text locations, role
 matchers and exports use the same `/Game/Data/DT_Items.DT_Items` path on every engine version.
 
-Blueprint pins, Sequencer, animation/Skeleton, property bags, InstancedStruct, and actor/component
-native records retain their current version gates. Legacy native struct map/set elements without
-type information report `legacy_container_element_without_type_information`; unsupported histories
+Saved Blueprint pin defaults and friendly names are read on engine-saved UE 4.27 and UE 5.6–5.8
+fixtures. Pin defaults use the node object path and `Pins[index].DefaultTextValue`, matching the
+native `graph_pin` action selector. Rejected, unavailable or partially decoded graph pin streams
+force partial coverage and retain a `Pins` gap sample, even when the gather table reports no missing
+runtime sites. Other legacy Blueprint native records, Sequencer, animation/Skeleton, property bags,
+InstancedStruct, and actor/component native records retain their current version gates.
+Compiled Blueprint literals join a decoded default pin's full saved namespace when their key,
+source and namespace without the package stamp match within the same package. Both occurrences
+remain visible in one unit. Different sources, missing pins and ambiguous pin namespaces retain
+their original identities; no match is inferred across packages. Unreal's gather strips the
+package stamp from both representations, so localization still uses the clean namespace.
+The next refresh re-extracts package text cached before this identity reconciliation.
+Legacy native struct map/set elements without type information report
+`legacy_container_element_without_type_information`; unsupported histories
 and unavailable engine features retain their own gap reasons. Partial coverage stays visible in
 the corpus. Each package with gaps has one `package_partially_decoded` diagnostic with
 `coverageGapCounts`, using the reader's reason literals, and its first gap's location. The scan
-retains at most three gap samples per package, preserving the first and preferring unsupported
-history samples for the remaining slots. Only those history samples produce
+retains at most three gap samples per package, preserving the first and preferring graph pin gaps
+and unsupported history samples for the remaining slots. Only those history samples produce
 `unsupported_text_history` diagnostics. `coverage.unsupportedTextProperties` counts every gap,
 including rejected decoders, unavailable engine features and legacy containers.
 

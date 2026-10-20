@@ -100,6 +100,11 @@ const projectionFixtures: ReadonlyArray<{
 	readonly root?: string;
 }> = [
 	...legacyFixtures.map((fixture) => ({ ...fixture, kind: "text" as const })),
+	...["4.27", "5.6", "5.7", "5.8"].map((engine) => ({
+		path: join(repositoryRoot, "fixtures/graph-pin-text", engine, "BP_Keys.uasset"),
+		root: join(repositoryRoot, "fixtures/graph-pin-text", engine),
+		kind: "text" as const
+	})),
 	{ path: join(fixtureRoot, "Content/Fixture/Text/DA_TextOccurrences.uasset"), kind: "text" },
 	{ path: join(fixtureRoot, "Content/Fixture/Text/E_TextDisplayNames.uasset"), kind: "text" },
 	{

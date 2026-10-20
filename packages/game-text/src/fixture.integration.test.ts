@@ -18,7 +18,7 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 
 		// One Game Text problem case is a package the reader only partly decodes.
 		expect(corpus.status).toBe("partial");
-		expect(corpus.coverage).toMatchObject({
+		expect(corpus.coverage).toEqual({
 			// The maps, World Partition external actors, animation fixture, and nested-only timeline
 			// carry no text of their own. Every InputAction and InputMappingContext carries one FText
 			// description, the text timeline contributes three localized keys, and the Blueprint graph
@@ -34,15 +34,61 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 			// shares, and three in its Content Browser duplicate, whose new keys split the shared one.
 			// Identity slice 2 adds nine packages (eight under Slice2/ and one World Partition
 			// external actor), 17 occurrences and 12 units; two occurrences are culture invariant.
+			// Native graph pins add 39 occurrences: 12 defaults (ten localized, one culture invariant,
+			// one String Table reference) and 27 friendly names. They add ten units: six localized
+			// identities retaining their package namespaces, the invariant default, and three shared
+			// K2Node friendly-name identities. Reconciliation merges six compiled units into these
+			// pin identities without removing occurrences. The String Table pin joins its existing unit.
 			discoveredPackages: 115,
 			inspectedPackages: 115,
 			partialPackages: 1,
 			failedPackages: 0,
-			textUnits: 143,
-			textOccurrences: 185,
-			resolvedOccurrences: 182,
+			textUnits: 147,
+			textOccurrences: 224,
+			resolvedOccurrences: 220,
+			unresolvedOccurrences: 4,
 			unsupportedTextProperties: 0
 		});
+		const pinOccurrences = corpus.units
+			.flatMap((unit) => unit.occurrences)
+			.filter(
+				(occurrence) =>
+					occurrence.location.kind === "asset_property" &&
+					occurrence.location.propertyPath.startsWith("Pins[")
+			);
+		const pinDefaults = pinOccurrences.filter(
+			(occurrence) =>
+				occurrence.location.kind === "asset_property" &&
+				occurrence.location.propertyPath.endsWith(".DefaultTextValue")
+		);
+		expect(pinDefaults).toHaveLength(12);
+		expect(
+			pinOccurrences.filter(
+				(occurrence) =>
+					occurrence.location.kind === "asset_property" &&
+					occurrence.location.propertyPath.endsWith(".PinFriendlyName")
+			)
+		).toHaveLength(27);
+		expect(
+			pinDefaults.filter((occurrence) => occurrence.identity.status === "unresolved")
+		).toEqual([
+			expect.objectContaining({
+				source: "v1.0",
+				identity: { status: "unresolved", reason: "culture_invariant" }
+			})
+		]);
+		expect(pinDefaults).toContainEqual(
+			expect.objectContaining({
+				source: "",
+				identity: {
+					status: "string_table",
+					tableId:
+						"/Game/Fixture/GameTextActions/Slice2/ST_IdentityTable.ST_IdentityTable",
+					key: "Farewell"
+				},
+				location: expect.objectContaining({ propertyPath: "Pins[4].DefaultTextValue" })
+			})
+		);
 		const holdMatches = searchTextCorpus(corpus, "Hold to skip");
 		expect(holdMatches).toHaveLength(2);
 		expect(holdMatches.flatMap((unit) => unit.occurrences)).toHaveLength(3);

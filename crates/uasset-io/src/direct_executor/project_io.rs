@@ -8,6 +8,7 @@ use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use uasset_inspection::blueprint_classes::blueprint_classes;
+use uasset_inspection::blueprint_text::reconcile_blueprint_text;
 use uasset_inspection::gather_coverage::{DecodedTextKeys, GatherCoverage, gather_table};
 use uasset_inspection::projection::{
     TextAssetProjection, TextureRecord, project_text_asset, project_texture_asset,
@@ -901,11 +902,21 @@ fn project_one_path(
             });
         }
     };
+    project_parsed_package(kind, path_string, &bytes, &package, cancellation)
+}
+
+fn project_parsed_package(
+    kind: ProjectionKind,
+    path_string: String,
+    bytes: &[u8],
+    package: &Package,
+    cancellation: &CancellationToken,
+) -> Result<ProjectionWorkResult, Failure> {
     checkpoint(cancellation, "parsing")?;
     checkpoint(cancellation, "inspection")?;
     let context = AssetDecodeContext {
-        source: &bytes,
-        package: &package,
+        source: bytes,
+        package,
         schemas: embedded_source_model(),
     };
     let mut results = Vec::new();
@@ -926,6 +937,11 @@ fn project_one_path(
         blueprint_classes: Vec::new(),
     };
     let mut decoded_keys = DecodedTextKeys::default();
+    let mut graph_text_incomplete = false;
+    let mut text_projection = TextAssetProjection {
+        occurrences: Vec::new(),
+        coverage_gaps: Vec::new(),
+    };
     for export in &package.exports {
         checkpoint(cancellation, "parsing")?;
         if matches!(kind, ProjectionKind::Texture)
@@ -940,29 +956,26 @@ fn project_one_path(
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text | ProjectionKind::TextPackages => {
                     if matches!(kind, ProjectionKind::TextPackages)
-                        && let Some(classes) = blueprint_classes(&package, &asset)
+                        && let Some(classes) = blueprint_classes(package, &asset)
                     {
                         record.blueprint_classes.push(classes);
                     }
-                    let projection = project_text_asset(&package, &asset);
+                    let projection = project_text_asset(package, &asset);
+                    graph_text_incomplete |= projection
+                        .coverage_gaps
+                        .iter()
+                        .any(|gap| gap.is_graph_pin_gap());
                     checkpoint(cancellation, "inspection")?;
                     decoded_keys.record(&projection.occurrences);
                     occurrence_count += projection.occurrences.len() as u64;
                     coverage_gap_count += projection.coverage_gaps.len() as u64;
-                    if matches!(kind, ProjectionKind::TextPackages) {
-                        record
-                            .occurrences
-                            .extend(projection.occurrences.into_iter().map(text_occurrence));
-                        for gap in projection.coverage_gaps {
-                            record.push_gap(text_coverage_gap(gap));
-                        }
-                    } else {
-                        results.extend(text_results(&path_string, bytes.len() as u64, projection));
-                    }
+                    text_projection.occurrences.extend(projection.occurrences);
+                    text_projection
+                        .coverage_gaps
+                        .extend(projection.coverage_gaps);
                 }
                 ProjectionKind::Texture => {
-                    if let Some(record) =
-                        project_texture_asset(&package, &asset, bytes.len() as u64)
+                    if let Some(record) = project_texture_asset(package, &asset, bytes.len() as u64)
                     {
                         checkpoint(cancellation, "inspection")?;
                         texture_count += 1;
@@ -973,32 +986,39 @@ fn project_one_path(
             Ok(None) => {}
             Err(error) => {
                 if matches!(kind, ProjectionKind::Text | ProjectionKind::TextPackages)
-                    && let Some(gap) = text_feature_version_gap(&package, export, &error)
+                    && let Some(gap) = text_feature_version_gap(&context, export, &error)
                 {
+                    graph_text_incomplete |= gap.is_graph_pin_gap();
                     coverage_gap_count += 1;
-                    if matches!(kind, ProjectionKind::TextPackages) {
-                        record.push_gap(text_coverage_gap(gap));
-                    } else {
-                        results.extend(text_results(
-                            &path_string,
-                            bytes.len() as u64,
-                            TextAssetProjection {
-                                occurrences: Vec::new(),
-                                coverage_gaps: vec![gap],
-                            },
-                        ));
-                    }
+                    text_projection.coverage_gaps.push(gap);
                 }
                 diagnostics.push(projection_diagnostic(export, error.kind(), error.message()))
             }
         }
     }
     checkpoint(cancellation, "inspection")?;
+    reconcile_blueprint_text(&mut text_projection.occurrences);
+    if matches!(kind, ProjectionKind::TextPackages) {
+        record.occurrences = text_projection
+            .occurrences
+            .into_iter()
+            .map(text_occurrence)
+            .collect();
+        for gap in text_projection.coverage_gaps {
+            record.push_gap(text_coverage_gap(gap));
+        }
+    } else if matches!(kind, ProjectionKind::Text) {
+        results.extend(text_results(
+            &path_string,
+            bytes.len() as u64,
+            text_projection,
+        ));
+    }
     // Undecoded properties rarely hold text. When the package's own gather table can be read,
     // text coverage is partial only if a runtime entry from that table was not decoded.
     let table = matches!(kind, ProjectionKind::Text | ProjectionKind::TextPackages)
         .then(|| {
-            gather_table(&bytes, &package, &path_string, &decoded_keys)
+            gather_table(bytes, package, &path_string, &decoded_keys)
                 .ok()
                 .flatten()
         })
@@ -1010,8 +1030,8 @@ fn project_one_path(
         }
     }
     let gather = table.map(|table| table.coverage);
-    let partial =
-        text_coverage_partial(gather.as_ref(), !diagnostics.is_empty(), coverage_gap_count);
+    let partial = graph_text_incomplete
+        || text_coverage_partial(gather.as_ref(), !diagnostics.is_empty(), coverage_gap_count);
     record.gather_coverage = gather.map(gather_coverage_record);
     match kind {
         ProjectionKind::TextPackages => {
@@ -1604,6 +1624,10 @@ pub(crate) fn saved_world_with_options(
         options,
     )
 }
+
+#[cfg(test)]
+#[path = "../../../uasset-inspection/tests/support/custom_graph.rs"]
+mod custom_graph_support;
 
 #[cfg(test)]
 pub(crate) fn saved_world_with_cancellation(
@@ -2228,6 +2252,55 @@ fn text_coverage_partial(
 
 #[cfg(test)]
 mod tests {
+    use super::custom_graph_support;
+
+    #[test]
+    fn custom_graph_membership_gaps_override_complete_runtime_gather() {
+        for damage in ["decoded", "rejected", "unreadable"] {
+            let (bytes, package) = custom_graph_support::custom_graph_fixture(damage);
+            for kind in [
+                super::ProjectionKind::Text,
+                super::ProjectionKind::TextPackages,
+            ] {
+                let output = super::project_parsed_package(
+                    kind,
+                    "Content/BP_Keys.uasset".to_owned(),
+                    &bytes,
+                    &package,
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+                assert_eq!(output.partial, damage != "decoded", "{damage}");
+                let results = serde_json::to_value(&output.results).unwrap();
+                let events: Vec<_> = results
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|result| &result["event"])
+                    .collect();
+                let status = if damage == "decoded" {
+                    "complete"
+                } else {
+                    "partial"
+                };
+                assert!(
+                    events.iter().any(|event| event["status"] == status),
+                    "{damage}: {results}"
+                );
+                if damage != "decoded" {
+                    assert!(
+                        events.iter().any(|event| {
+                            event["coverage_gap"]["property_path"] == "Pins"
+                                || event["gapSamples"].as_array().is_some_and(|samples| {
+                                    samples.iter().any(|gap| gap["property_path"] == "Pins")
+                                })
+                        }),
+                        "{damage}: {results}"
+                    );
+                }
+            }
+        }
+    }
     use super::{saved_world_with_cancellation, scan_header_cache_needs_write};
     use crate::cancellation::CancellationToken;
     use crate::protocol::Request;

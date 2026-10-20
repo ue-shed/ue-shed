@@ -93,6 +93,7 @@ export interface GameTextActionsVerification {
 
 /** Object paths inside the same physical file can retain an older serialized package name. */
 function packageObjectPath(objectPath: string): string {
+	objectPath = objectPath.replaceAll(":", ".");
 	if (!objectPath.startsWith("/")) return objectPath;
 	const dot = objectPath.indexOf(".");
 	return dot < 0 ? objectPath : objectPath.slice(dot + 1);

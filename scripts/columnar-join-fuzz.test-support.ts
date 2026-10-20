@@ -36,7 +36,11 @@ import {
 import { indexedLocalizationStatusReport } from "../packages/game-text/src/index-context.ts";
 import { localizationStatusReport } from "../packages/game-text/src/localization-status.ts";
 import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
-import { TextProblem, TextCorpusSearchRequest } from "../packages/game-text/src/schema.ts";
+import {
+	TextProblem,
+	TextCorpusSearchRequest,
+	TextReviewSignal
+} from "../packages/game-text/src/schema.ts";
 import { localizationStates } from "../packages/game-text/src/localization-schema.ts";
 import {
 	target,
@@ -700,6 +704,57 @@ export async function compareJoinFuzzInput(
 			{ field: "problem", op: "is", values: ["conflicting_source"] }
 		]
 	});
+	// Exact sources: present texts (including lone surrogates and conflicting copies), a case
+	// variant and an absent text. Every stored signal filters, and source groups honour a minimum.
+	const present = [
+		...new Set(
+			corpus.units.flatMap((unit) =>
+				unit.source.status === "consistent" ? [unit.source.value] : unit.source.values
+			)
+		)
+	].filter((value) => value !== "");
+	const exact = [
+		present[input.seed % Math.max(1, present.length)],
+		present[(input.seed + 3) % Math.max(1, present.length)],
+		"alpha source twenty four",
+		"lead\ud800",
+		"not-a-source"
+	].filter((value): value is string => value !== undefined);
+	for (const selection of [base, unlocalized]) {
+		for (const op of ["is", "is_not"] as const)
+			requests.push({ ...selection, filter: [{ field: "source", op, values: exact }] });
+		requests.push({
+			...selection,
+			filter: [
+				{ field: "finding", op: "is", values: [...TextReviewSignal.literals] },
+				{ field: "source", op: "is_not", values: exact.slice(0, 1) }
+			]
+		});
+		for (const signal of ["conflicting", "evidence_only", "compiled_copy_differs"] as const)
+			requests.push({
+				...selection,
+				filter: [{ field: "finding", op: "is", values: [signal] }]
+			});
+		for (const minGroupSize of [1, 2, 3]) {
+			const sourceGroups = {
+				...selection,
+				filter: [
+					{
+						field: "finding" as const,
+						op: "is" as const,
+						values: ["duplicate_source" as const]
+					}
+				],
+				group: "source" as const,
+				minGroupSize
+			};
+			requests.push(sourceGroups, { ...selection, group: "source", minGroupSize });
+			const opened = oracle.search(sourceGroups).groups?.entries[0]?.key;
+			if (opened !== undefined)
+				requests.push({ ...sourceGroups, pageSize: 1, openGroup: opened });
+		}
+		requests.push({ ...selection, group: "asset", minGroupSize: 2 });
+	}
 	const firstPage = oracle.search({ ...base, pageSize: 2 });
 	if (firstPage.localization?.nextCursor)
 		requests.push({

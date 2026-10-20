@@ -103,6 +103,8 @@ export {
 
 export {
 	MAX_TEXT_GROUPS,
+	MAX_TEXT_SOURCE_LENGTH,
+	MAX_TEXT_SOURCE_VALUES,
 	MAX_TEXT_PICKED_LINES,
 	MAX_TEXT_QUERY_PAGE_SIZE,
 	MAX_TEXT_SCOPE_FILES,
@@ -151,6 +153,7 @@ export {
 	TextReviewLens,
 	TextReviewSignal,
 	TextTranslationKey,
+	TextSourceText,
 	TextTranslationState,
 	TextUnit,
 	TextUnitContext,

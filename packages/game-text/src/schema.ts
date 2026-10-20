@@ -420,6 +420,23 @@ export const TextTranslationKey = Schema.String.check(
 );
 export type TextTranslationKey = Schema.Schema.Type<typeof TextTranslationKey>;
 
+/**
+ * The longest source text a `source` clause or a source group key holds, in UTF-16 code units:
+ * the bound on every stored ID, so any group key listed can be opened again.
+ */
+export const MAX_TEXT_SOURCE_LENGTH = 32767;
+
+/** Values in one `source` clause. */
+export const MAX_TEXT_SOURCE_VALUES = 50;
+
+/**
+ * One exact source text, as Unreal saved it: case, whitespace and every UTF-16 code unit count.
+ */
+export const TextSourceText = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH)
+);
+
 const ClauseOp = Schema.Literals(["is", "is_not"]);
 const clause = <const Field extends string, Value extends Schema.Top>(
 	field: Field,
@@ -436,10 +453,12 @@ const clause = <const Field extends string, Value extends Schema.Top>(
  * One filter pill: a line matches `is` when it has any of the values, and `is_not` when it has
  * none of them. Folders match by path prefix. A translation key selects the lines Unreal
  * translates by that key; without a target, a saved unit has the keys its occurrences gather to.
+ * `finding` takes any review signal. `source` matches exact source text: a line's source, or any
+ * of a unit's sources.
  */
 export const TextFilterClause = Schema.Union([
 	clause("problem", TextProblem, TextProblem.literals.length),
-	clause("finding", TextFinding, TextFinding.literals.length),
+	clause("finding", TextReviewSignal, TextReviewSignal.literals.length),
 	clause("translation", TextTranslationState, TextTranslationState.literals.length),
 	clause("origin", TextOriginKind, TextOriginKind.literals.length),
 	clause("folder", Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)), 50),
@@ -449,7 +468,8 @@ export const TextFilterClause = Schema.Union([
 	clause("notes", TextNotes, TextNotes.literals.length),
 	/** The line's audience: player if any of its saved places is player text, and so on. */
 	clause("audience", TextAudience, TextAudience.literals.length),
-	clause("translation_key", TextTranslationKey, 200)
+	clause("translation_key", TextTranslationKey, 200),
+	clause("source", TextSourceText, MAX_TEXT_SOURCE_VALUES)
 ]);
 export type TextFilterClause = Schema.Schema.Type<typeof TextFilterClause>;
 /**
@@ -485,7 +505,8 @@ export const MAX_TEXT_GROUPS = 200;
 
 /**
  * Supported line grouping dimensions. Folder and asset keys use normalized project-relative
- * paths; namespace and audience retain their distinct domain meanings.
+ * paths; namespace and audience retain their distinct domain meanings. `source` groups by exact
+ * source text: a line's source, or a unit's first source in UTF-16 order.
  */
 export const TextGroupBy = Schema.Literals([
 	"problem",
@@ -493,18 +514,19 @@ export const TextGroupBy = Schema.Literals([
 	"asset",
 	"origin",
 	"namespace",
-	"audience"
+	"audience",
+	"source"
 ]);
 export type TextGroupBy = Schema.Schema.Type<typeof TextGroupBy>;
 
 /**
  * One group or facet entry: its key (a problem, a normalized folder or file, an origin, a
- * namespace), how it reads, how many lines it holds, how many need work before they ship, and its
- * worst problem.
+ * namespace, a source text), how it reads, how many lines it holds, how many need work before
+ * they ship, and its worst problem. A source group's key and label are the text itself.
  */
 export const TextGroup = Schema.Struct({
-	key: Schema.String.check(Schema.isMaxLength(1024)),
-	label: Schema.String.check(Schema.isMaxLength(1024)),
+	key: Schema.String.check(Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH)),
+	label: Schema.String.check(Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH)),
 	count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	needWork: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	worst: TextProblem
@@ -699,11 +721,25 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	),
 	/** Count the matching lines in groups; the page lists the open group's lines, if any. */
 	group: Schema.optionalKey(TextGroupBy),
-	openGroup: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+	/**
+	 * List only groups holding at least this many matching lines (units without a target); 1 when
+	 * absent. Smaller groups are left out of `groups`, including its `more`. It never narrows the
+	 * matching lines, the totals or `openGroup`. Needs `group`.
+	 */
+	minGroupSize: Schema.optionalKey(
+		Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(0xffffffff))
+	),
+	openGroup: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH))),
 	facets: Schema.optionalKey(TextFacetRequest),
 	pageSize: TextQueryPageSize,
 	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512)))
-});
+}).check(
+	Schema.makeFilter((request) =>
+		request.minGroupSize === undefined || request.group !== undefined
+			? undefined
+			: "A minimum group size needs a group."
+	)
+);
 export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearchRequest>;
 
 /**

@@ -402,6 +402,28 @@ export function columnarTextCorpusQuery(
 									kind === "line" ? row : c("query.slice.line")[row]!
 								);
 					break;
+				// A unit with conflicting sources has each of them.
+				case "source": {
+					const sources = clause.sources!;
+					const holds = (id: number) => {
+						let known = sources.known.get(id);
+						if (known === undefined) {
+							known = sources.values.has(data.strings([id])[0]!);
+							sources.known.set(id, known);
+						}
+						return known;
+					};
+					has =
+						kind === "line"
+							? holds(c("line.source")[row]!)
+							: fields
+									.sources!.subarray(
+										fields.source_start![row],
+										fields.source_end![row]
+									)
+									.some(holds);
+					break;
+				}
 			}
 			if (clause.is ? !has : has) return false;
 		}
@@ -765,6 +787,8 @@ export function columnarTextCorpusQuery(
 			labels: ReadonlySet<number>;
 			prefixes: readonly PathPredicate[];
 			translation?: { lines: ReadonlySet<number>; raw: ReadonlySet<number> };
+			/** Exact source texts, with each source ID's answer once it is decoded. */
+			sources?: { values: ReadonlySet<string>; known: Map<number, boolean> };
 		}[];
 		path?: PathPredicate;
 		files?: ReadonlySet<number>;
@@ -836,6 +860,9 @@ export function columnarTextCorpusQuery(
 							: [],
 					...(clause.field === "translation_key"
 						? { translation: translationRows(clause.values) }
+						: undefined),
+					...(clause.field === "source"
+						? { sources: { values: new Set<string>(clause.values), known: new Map() } }
 						: undefined)
 				})),
 				...(request.where?.pathPrefix === undefined
@@ -944,7 +971,9 @@ export function columnarTextCorpusQuery(
 			if (mask & 31) work[key] = work[key]! + 1;
 			if (worst < worsts[key]!) worsts[key] = worst;
 		};
-		const finish = (): TextGroupList => {
+		const finish = (minSize = 1): TextGroupList => {
+			if (minSize > 1)
+				used.splice(0, used.length, ...used.filter((id) => counts[id]! >= minSize));
 			const labelRank = (key: number) =>
 				by === "problem"
 					? 0
@@ -991,6 +1020,48 @@ export function columnarTextCorpusQuery(
 		};
 		return { visit, keys, fileLabels, finish };
 	};
+	/** A line's source, or a unit's first source (sources are stored in UTF-16 order). */
+	const sourceKey = (localized: boolean, row: number) =>
+		localized ? c("line.source")[row]! : raw.sources![raw.source_start![row]!]!;
+	// Source groups are keyed by dictionary ID and read and tie-break by the text itself.
+	const sourceGroups = (rows: Uint32Array, request: Request, minSize: number): TextGroupList => {
+		const masks = request.localization
+			? problemsFor(cultureScope(request.localization))
+			: undefined;
+		const tallies = new Map<number, { count: number; work: number; worst: number }>();
+		for (const row of rows) {
+			checkpoint();
+			const flags = raw.signals![row]!;
+			const mask = masks ? masks[row]! : (flags & 16 ? 2 : 0) | (flags & 15 ? 32 : 0) || 64;
+			const worst = 31 - Math.clz32(mask & -mask);
+			const key = sourceKey(request.localization !== undefined, row);
+			const tally = tallies.get(key) ?? { count: 0, work: 0, worst };
+			tally.count++;
+			if (mask & 31) tally.work++;
+			tally.worst = Math.min(tally.worst, worst);
+			tallies.set(key, tally);
+		}
+		const sorted = [...tallies]
+			.filter(([, tally]) => tally.count >= minSize)
+			.map(([key, tally]) => ({ text: data.strings([key])[0]!, ...tally }))
+			.sort(
+				(a, b) =>
+					a.worst - b.worst ||
+					b.work - a.work ||
+					b.count - a.count ||
+					(a.text < b.text ? -1 : a.text > b.text ? 1 : 0)
+			);
+		return {
+			entries: sorted.slice(0, MAX_TEXT_GROUPS).map((tally) => ({
+				key: tally.text,
+				label: tally.text,
+				count: tally.count,
+				needWork: tally.work,
+				worst: TextProblem.literals[tally.worst]!
+			})),
+			more: Math.max(0, sorted.length - MAX_TEXT_GROUPS)
+		};
+	};
 	const aggregate = (
 		rows: Uint32Array,
 		request: Request,
@@ -998,6 +1069,8 @@ export function columnarTextCorpusQuery(
 		facet = false,
 		under = ""
 	): TextGroupList => {
+		const minSize = facet ? 1 : (request.minGroupSize ?? 1);
+		if (by === "source") return sourceGroups(rows, request, minSize);
 		const { visit, keys, fileLabels, finish } = aggregation(by, facet, under);
 		const masks = request.localization
 			? problemsFor(cultureScope(request.localization))
@@ -1044,7 +1117,7 @@ export function columnarTextCorpusQuery(
 				if (!facet && !found) visit(0, 0, stamp, mask, worst);
 			}
 		}
-		return finish();
+		return finish(minSize);
 	};
 	const combinedFacets = (rows: Uint32Array, request: Request, under: string) => {
 		const folder = aggregation("folder", true, under),
@@ -1137,7 +1210,13 @@ export function columnarTextCorpusQuery(
 		const listed =
 			group === undefined || request.openGroup === undefined
 				? matched
-				: matched.filter((row) => groupKey(row) === opened);
+				: group === "source"
+					? matched.filter(
+							(row) =>
+								data.strings([sourceKey(selection !== undefined, row)])[0] ===
+								request.openGroup
+						)
+					: matched.filter((row) => groupKey(row) === opened);
 		const cursor = selection ? request.localizationCursor : request.cursor;
 		const id = (row: number) => (selection ? data.lineId(row) : data.id(row));
 		const after = cursor

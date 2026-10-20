@@ -8,6 +8,7 @@ import {
 	TextNotes,
 	TextOriginKind,
 	TextProblem,
+	TextReviewSignal,
 	TextTranslationKey,
 	TextTranslationState,
 	type LocalizationState,
@@ -19,12 +20,19 @@ import {
 	type TextWhere
 } from "@ue-shed/game-text/schema";
 
+/**
+ * Every review signal a `finding` pill can hold. The menu offers the four findings; the others
+ * read in pills a host or a saved view sets.
+ */
 export const FINDING_LABELS = {
 	shared: "Used in several places",
 	duplicate_source: "Same text, different keys",
 	long: "Long text",
-	unresolved: "Not localizable"
-} satisfies Record<TextFinding, string>;
+	unresolved: "Not localizable",
+	conflicting: "Same key, different text",
+	evidence_only: "Only in gathered text",
+	compiled_copy_differs: "Blueprint not compiled since edit"
+} satisfies Record<TextReviewSignal, string>;
 
 export const TRANSLATION_LABELS = {
 	missing: "Not translated",
@@ -53,7 +61,8 @@ export const FIELD_LABELS = {
 	editing: "Editing",
 	notes: "Translator notes",
 	audience: "Audience",
-	translation_key: "Translation key"
+	translation_key: "Translation key",
+	source: "Source text"
 } satisfies Record<TextFilterField, string>;
 
 /** Fields whose values are a fixed list, with how each value reads. */
@@ -73,8 +82,8 @@ export function isChoiceField(field: TextFilterField): field is ChoiceField {
 }
 
 /**
- * How one value reads in a pill or a menu. Folders, assets and namespaces read as written; a
- * translation key reads `Namespace, Key`, or the key alone in the empty namespace.
+ * How one value reads in a pill or a menu. Folders, assets, namespaces and source texts read as
+ * written; a translation key reads `Namespace, Key`, or the key alone in the empty namespace.
  */
 export function valueLabel(field: TextFilterField, value: string): string {
 	if (field === "translation_key") return translationKeyLabel(value);
@@ -221,6 +230,7 @@ function withValues(
 		case "folder":
 		case "asset":
 		case "namespace":
+		case "source":
 			return values.length === 0 ? undefined : { ...clause, values };
 		case "translation_key": {
 			const kept = values.filter(isTranslationKey);
@@ -233,8 +243,8 @@ const isProblem = (value: string): value is TextProblem =>
 	TextProblem.literals.some((item) => item === value);
 const isTranslation = (value: string): value is TextTranslationState =>
 	TextTranslationState.literals.some((item) => item === value);
-const isFinding = (value: string): value is TextFinding =>
-	TextFinding.literals.some((item) => item === value);
+const isFinding = (value: string): value is TextReviewSignal =>
+	TextReviewSignal.literals.some((item) => item === value);
 const isOrigin = (value: string): value is TextOriginKind =>
 	TextOriginKind.literals.some((item) => item === value);
 const isEditing = (value: string): value is TextEditing =>

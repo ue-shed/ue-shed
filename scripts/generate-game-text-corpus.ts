@@ -22,12 +22,14 @@ import {
 	summarizeCorpusManifest
 } from "./game-text-corpus.ts";
 import { isJsonString, parseJsonObject } from "./json.ts";
-import { repositoryRoot, unrealEngineTools, unrealEngineVersion } from "./unreal-plugin-host.ts";
+import { associatedUnrealEngine } from "./unreal-engines.ts";
 import {
-	installedEngineRoot,
-	parseUnrealDescriptor,
-	registeredEngineRoot
-} from "./unreal-project-support.ts";
+	localDerivedDataCacheArguments,
+	repositoryRoot,
+	unrealEngineTools,
+	unrealEngineVersion
+} from "./unreal-plugin-host.ts";
+import { parseUnrealDescriptor } from "./unreal-project-support.ts";
 
 const pluginName = "UEShedCorpusGenerator";
 const pluginSource = join(repositoryRoot, "tools", "unreal", pluginName);
@@ -106,16 +108,12 @@ function buildPlugin(engineRoot: string, label: string) {
 	return { descriptor, built: true };
 }
 
-/** The project's engine: --engine-root, else its EngineAssociation in Unreal's registry keys. */
-function projectEngineRoot(project: string, explicitRoot: string | undefined) {
+/** The project's engine: --engine-root, else the engine its EngineAssociation names. */
+async function projectEngineRoot(project: string, explicitRoot: string | undefined) {
 	if (explicitRoot !== undefined) return explicitRoot;
 	const association = parseUnrealDescriptor(readFileSync(project, "utf8")).EngineAssociation;
 	const label = isJsonString(association) ? association : undefined;
-	// A "5.7" association names a launcher install; anything else a registered source build.
-	const root =
-		label !== undefined && /^\d+\.\d+$/u.test(label)
-			? installedEngineRoot({ version: label })
-			: registeredEngineRoot({ association: label });
+	const root = await associatedUnrealEngine(label);
 	if (root === undefined || !existsSync(root)) {
 		throw new Error(
 			`Could not find the engine for EngineAssociation "${label ?? ""}". Pass --engine-root.`
@@ -148,7 +146,7 @@ function prepareOutputFolder(folder: string, clean: boolean) {
 
 const options = parseCorpusArguments(process.argv.slice(2), userInfo().username);
 if (!existsSync(options.project)) throw new Error(`No project at ${options.project}.`);
-const engineRoot = projectEngineRoot(options.project, options.engineRoot);
+const engineRoot = await projectEngineRoot(options.project, options.engineRoot);
 const version = unrealEngineVersion(engineRoot);
 if (!version || version.major < 5) {
 	throw new Error(`The corpus generator needs Unreal Engine 5; ${engineRoot} is not.`);
@@ -183,6 +181,7 @@ run(runLog, unrealEngineTools(engineRoot).editorCommandlet, [
 	"-nullrhi",
 	"-nosplash",
 	"-nop4",
+	...localDerivedDataCacheArguments,
 	"-UTF8Output"
 ]);
 const generateSeconds = (performance.now() - generateStarted) / 1000;

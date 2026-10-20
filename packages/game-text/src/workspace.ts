@@ -279,8 +279,11 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			const labels = {
 				inventory: "Reading project asset inventory",
 				localization: "Reading localization files",
+				localization_publish: "Saving localization text",
 				packages: "Checking saved packages for text",
-				joining: "Building text index",
+				package_text: "Preparing package text",
+				package_publish: "Saving package text",
+				joining: "Joining source text and translations",
 				opening: "Opening text index",
 				corpus: "Reading saved packages",
 				localization_quality: "Checking localization quality",

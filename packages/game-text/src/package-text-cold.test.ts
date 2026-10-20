@@ -8,6 +8,7 @@ import { refreshPackageTextLayer, type PackageTextInventoryEntry } from "./packa
 import { decodePackageTextColumns } from "./package-text-columns.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { encodeWtf8 } from "./wtf8.js";
+import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 
 describe("cold package refresh", () => {
 	it("reads eligible packages once, preserves Unicode paths and excluded records, and reuses the result", async () => {
@@ -26,6 +27,7 @@ describe("cold package refresh", () => {
 			inventory.push({ ...inventory[1]!, path: `Content/${name}.uasset`, signature: name });
 		inventory.sort((a, b) => Buffer.compare(encodeWtf8(a.path), encodeWtf8(b.path)));
 		const requests: (readonly string[])[] = [];
+		const progress: GameTextIndexProgress[] = [];
 		const input = {
 			inventory,
 			read: (paths: readonly string[]) => {
@@ -37,8 +39,24 @@ describe("cold package refresh", () => {
 			await Effect.runPromise(
 				Effect.scoped(
 					Effect.gen(function* () {
-						const first = yield* Effect.scoped(refreshPackageTextLayer(input));
+						const first = yield* Effect.scoped(refreshPackageTextLayer(input)).pipe(
+							Effect.provideService(GameTextIndexProgressReporter, (event) => {
+								progress.push(event);
+							})
+						);
 						expect(first.readPackages).toBe(194);
+						const prepared = progress.filter((event) => event.phase === "package_text");
+						expect(prepared[0]).toEqual({
+							phase: "package_text",
+							completed: 0,
+							total: 258
+						});
+						expect(prepared.at(-1)).toEqual({
+							phase: "package_text",
+							completed: 258,
+							total: 258
+						});
+						expect(progress.at(-1)?.phase).toBe("package_publish");
 						expect(requests).toHaveLength(1);
 						expect(requests[0]).toHaveLength(194);
 						const reader = yield* (yield* SharedIndex).open();

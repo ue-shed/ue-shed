@@ -54,3 +54,9 @@ call on that target. It now reads them once per evidence object, while the nativ
 only the totals it needs, and further pages, the CSV and baseline comparisons (per baseline) reuse
 them: 16 s for the first report, then about a millisecond. Spans
 `GameText.localizationReport.manifest`, `.words`, `.archive` and `.assemble` show its phases.
+
+Index refresh progress names each step it reports. `localization_publish`, `package_text` and
+`package_publish` replace the `joining` events reported while publishing localization text,
+preparing the package text layer and publishing it, and `joining` now means only the join of source
+text with translations. `package_text` counts packages prepared of the packages in the inventory,
+so a cold refresh shows a count for the 37 s it spent preparing 15,445 packages instead of none.

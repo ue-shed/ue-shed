@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { availableParallelism } from "node:os";
 import { Effect, Schema } from "effect";
+import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { SharedIndex } from "./shared-index.js";
 import { openSnapshotFile, type SnapshotFileReader } from "./snapshot-file.js";
 import { snapshotStoreFailure } from "./snapshot-store.js";
@@ -41,7 +42,12 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 ) {
 	const store = yield* SharedIndex,
 		writer = yield* store.writer();
+	const reportProgress = yield* GameTextIndexProgressReporter;
 	const selection = inventorySelection.filter((shard) => shard.entries.length);
+	// Progress counts packages, so it reads on from the package read before it.
+	const total = selection.reduce((sum, shard) => sum + shard.entries.length, 0);
+	let completed = 0;
+	reportProgress({ phase: "package_text", completed, total });
 	const prepared = yield* Effect.acquireRelease(
 		Effect.tryPromise({
 			try: async (signal) => {
@@ -83,6 +89,12 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 													current.name,
 													reply.preparedStrings
 												);
+												completed += current.entries.length;
+												reportProgress({
+													phase: "package_text",
+													completed,
+													total
+												});
 												resolve();
 											} else reject(reply.error);
 										} catch (cause) {
@@ -146,6 +158,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 			}),
 		{ interruptible: true }
 	);
+	reportProgress({ phase: "package_publish", completed: 0, total: 0 });
 	const records = yield* writer.publishCold([
 		...(input.additionalSources ?? []),
 		...selection.map((shard, row) => ({

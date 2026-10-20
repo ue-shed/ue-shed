@@ -3,6 +3,13 @@ import type { NativeTextQuery } from "./native-query.js";
 import type { TextCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus } from "./schema.js";
 import { GameTextIndexError } from "./index-contract.js";
+import {
+	derivedAggregate,
+	derivedCorpusFingerprint,
+	derivedCorpusHeader,
+	derivedLineViews,
+	type DerivedReadsBase
+} from "./index-derived-reads.test-support.js";
 
 /** Adapts an independent object oracle to the asynchronous host contract, only in tests. */
 export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus): NativeTextQuery {
@@ -20,8 +27,22 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 					cause
 				})
 		});
+	const base: DerivedReadsBase = {
+		lines: (request) => query.localizationLines(request),
+		search: (request) => query.search(request),
+		corpus: () => corpus,
+		get cultures() {
+			return query.readLocalizationLines()[0]?.cultures.map((mark) => mark.culture) ?? [];
+		}
+	};
 	return {
 		readCorpus: () => Effect.succeed(corpus),
+		aggregate: (request) => read("aggregate", () => derivedAggregate(base, request)),
+		selectLocalizationLines: (request, fields) =>
+			read("localization_lines", () => derivedLineViews(base, request, fields)),
+		readCorpusHeader: () => Effect.succeed(derivedCorpusHeader(corpus)),
+		readUnits: (ids) => Effect.succeed(corpus.units.filter((unit) => ids.includes(unit.id))),
+		corpusFingerprint: () => read("corpus_fingerprint", () => derivedCorpusFingerprint(corpus)),
 		readLocalizationLines: () =>
 			read("localization_corpus", () => query.readLocalizationLines()),
 		summary: () => read("summary", query.summary),

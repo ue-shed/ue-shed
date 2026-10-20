@@ -17,6 +17,7 @@ mod engine_page;
 mod engine_places;
 mod engine_query;
 mod engine_reader;
+mod engine_rollup;
 mod engine_search;
 mod engine_summary;
 mod engine_text;
@@ -31,6 +32,9 @@ mod join_policy;
 mod join_query;
 mod json_value;
 mod layer_reuse;
+mod line_break;
+#[rustfmt::skip]
+mod line_break_tables;
 mod package_delta;
 mod package_evidence;
 mod query_cache;

@@ -4,6 +4,7 @@ use crate::engine_query::EngineQuery;
 use crate::engine_types::MAX_PAGE;
 use crate::{Result, require};
 use serde_json::{Value, json};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 impl EngineQuery {
@@ -40,7 +41,15 @@ impl EngineQuery {
         Ok(value)
     }
     pub fn evidence_entry(&mut self, name: &str, row: usize) -> Result<Value> {
-        let meta = self.reader.input_metadata(name, "file.meta")?;
+        let meta = match self.evidence_meta.get(name) {
+            Some(meta) => Arc::clone(meta),
+            None => {
+                let meta = Arc::new(self.reader.input_metadata(name, "file.meta")?);
+                self.evidence_meta
+                    .insert(name.to_owned(), Arc::clone(&meta));
+                meta
+            }
+        };
         let format = meta["format"].as_str().ok_or("Missing evidence format.")?;
         let options = self.reader.input_column(name, "entry.options")?;
         let flags = *options.get(row).ok_or("Evidence row outside options.")?;
@@ -144,6 +153,18 @@ impl EngineQuery {
             .as_object_mut()
             .ok_or("Invalid line preview.")?
             .remove("remainingLocationCount");
+        result["manifest"] = json!(self.line_manifest(&p, row, cancelled)?);
+        result["cultures"] = json!(self.line_cultures(&p, row, cancelled)?);
+        Ok(result)
+    }
+
+    /// The line's manifest entries, in manifest order.
+    pub(crate) fn line_manifest(
+        &mut self,
+        p: &Projection,
+        row: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<Value>> {
         let begin = p.manifest_start[row] as usize;
         let end = p.manifest_end[row] as usize;
         let mut manifest = Vec::new();
@@ -159,7 +180,16 @@ impl EngineQuery {
                 manifest.push(self.evidence_entry(&name, *entry as usize)?);
             }
         }
-        result["manifest"] = json!(manifest);
+        Ok(manifest)
+    }
+
+    /// Each culture's mark with its archive and PO entries and the PO translation.
+    pub(crate) fn line_cultures(
+        &mut self,
+        p: &Projection,
+        row: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<Value>> {
         let mut cultures = Vec::new();
         for ci in 0..self.cultures.len() {
             checkpoint(cancelled)?;
@@ -187,8 +217,7 @@ impl EngineQuery {
             };
             cultures.push(mark);
         }
-        result["cultures"] = json!(cultures);
-        Ok(result)
+        Ok(cultures)
     }
     pub fn localization_page(
         &mut self,

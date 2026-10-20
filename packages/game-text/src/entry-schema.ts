@@ -176,3 +176,16 @@ export {
 	TextIdRepairPlan,
 	TextIdRepairResult
 } from "./id-repair-schema.js";
+
+export {
+	LocalizationLineField,
+	LocalizationLineMark,
+	LocalizationLinePlace,
+	TextAggregate,
+	TextAggregateDimension,
+	TextAggregateGroup,
+	TextAggregateMeasure,
+	TextAggregateRequest,
+	TextCorpusHeader,
+	type LocalizationLineView
+} from "./index-reads.js";

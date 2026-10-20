@@ -12,6 +12,13 @@ import type {
 import type { LocalizationLine, LocalizationLineId } from "./localization-schema.js";
 import type { GameTextIndexError } from "./index-error.js";
 import type { LocalizationFocus, LocalizationFocusRequest } from "./localization-view.js";
+import type {
+	LocalizationLineField,
+	LocalizationLineView,
+	TextAggregate,
+	TextAggregateRequest,
+	TextCorpusHeader
+} from "./index-reads.js";
 
 /** Native queries are asynchronous process calls; this interface owns no query or column data. */
 export interface NativeTextQuery {
@@ -44,6 +51,33 @@ export interface NativeTextQuery {
 	readonly exportWithSignals: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
 	) => Effect.Effect<NativeTextExport, GameTextIndexError>;
+	/**
+	 * Grouped counts and word totals of every row a request matches, by up to four stored
+	 * dimensions. Rust counts them on the bulk lane; nothing is exported.
+	 */
+	readonly aggregate: (
+		request: TextAggregateRequest
+	) => Effect.Effect<TextAggregate, GameTextIndexError>;
+	/**
+	 * Every line a request matches with only the named fields: an explicit bulk read, written by
+	 * Rust to a scoped file. Name the fields a file export or a gate needs instead of reading
+	 * whole lines and the corpus.
+	 */
+	readonly selectLocalizationLines: <const F extends LocalizationLineField>(
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		fields: readonly F[]
+	) => Effect.Effect<readonly LocalizationLineView<F>[], GameTextIndexError>;
+	/** The named units with every occurrence (at most 5,000 IDs); IDs no unit has are left out. */
+	readonly readUnits: (
+		ids: readonly TextUnit["id"][]
+	) => Effect.Effect<readonly TextUnit[], GameTextIndexError>;
+	/** The corpus without its units: status, coverage, package coverage and diagnostics. */
+	readonly readCorpusHeader: () => Effect.Effect<TextCorpusHeader, GameTextIndexError>;
+	/**
+	 * SHA-256 of the whole corpus in canonical JSON (`sha256-canonical-json-utf8-v1`), computed in
+	 * Rust: equal corpora have equal fingerprints on every machine.
+	 */
+	readonly corpusFingerprint: () => Effect.Effect<string, GameTextIndexError>;
 	/** Explicit bulk export, assembled and serialized by Rust before the host decodes it. */
 	readonly export: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">

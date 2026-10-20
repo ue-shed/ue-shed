@@ -58,6 +58,42 @@ bytes per row. A text no row holds matches nothing. Source groups are keyed by d
 decode their texts once, after `minGroupSize` drops small groups, to read and tie-break by the
 text. `finding` clauses take all seven stored review signals.
 
+## Library reads
+
+The index answers the questions hosts used to export the corpus or the join for. Each takes the
+search request's matching fields, runs on the bulk lane and writes its answer to a scoped file.
+
+- `aggregate` groups every matching row by one to four stored dimensions and returns every group,
+  in each dimension's own order: `culture`, the culture-mark dimensions `state`, `fact`,
+  `unknown_reason`, `review` (lenses), `review_status` and `review_flag` (which need `culture`
+  before them), and `translation_key`, `source`, `namespace`, `audience`, `origin`, `problem`,
+  `finding`, `asset` and `gathered`. A row counts once under each value of a multi-valued
+  dimension and not at all when it has none. Measures are `lines`, whitespace `sourceWords` (as in
+  state counts) and `lineBreakWords`, Unreal's word count (`unicode-line-break-v1`) of the text
+  Unreal gathers for the line: its first required manifest entry's source, else its saved source.
+  Text in Thai, Lao, Khmer or Myanmar has no such count and is counted in `unknownWords`. The
+  count is a Rust port of the `linebreak` package `localizationWordCount` uses, with class tables
+  generated from it by `scripts/generate-line-break-tables.ts`; it matched the package on every
+  code point in three contexts and 400,000 random strings. Counts are cached per text per reader.
+- `localization_export` with `fields` writes each matching line with only the named fields: any
+  `LocalizationLine` field, `marks` (cultures without archive and PO entries, with the translation
+  that ships), `problems` (in the request's cultures), `signals` and `places` (the package file,
+  object path and origin of each saved place of the line's unit slices). A file export or a gate
+  names what it shows instead of reading whole lines and the corpus.
+- `corpus_header` writes the corpus without units: status, coverage, package coverage and
+  diagnostics. `export` with `units` writes the named units (up to 5,000).
+- `corpus_fingerprint` hashes the whole corpus as `sha256-canonical-json-utf8-v1`, the corpus
+  generation a localization baseline records. Rust writes the corpus's schema fields with sorted
+  keys and JavaScript string escapes straight into the digest, so the value equals the one
+  `createLocalizationBaseline` computes from an exported corpus and stays a pure function of the
+  corpus content: equal corpora fingerprint equally on every machine and cache. A cache
+  generation or revision would not: it changes with the cache and the machine. A reader computes it
+  once and keeps it, since its snapshot never changes.
+
+A model's `revision` names the opened model and its pinned snapshot, unique within the process.
+Hosts compare it to tell whether the model changed; the lazy `corpus` read is no identity token.
+`queryRevision` remains the content identity of a validated target.
+
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
 only in grouping or requested facets. This reader-owned cache retains at most 64 entries and

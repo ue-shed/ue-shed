@@ -29,6 +29,12 @@ pub struct EngineQuery {
     validated_ids: HashSet<String>,
     id_indexes: HashMap<String, Arc<IdIndex>>,
     unit_lines: Option<Arc<[u32]>>,
+    /// Unreal word counts by source text ID, filled by aggregates.
+    pub(crate) line_break_words: HashMap<u32, u32>,
+    /// The corpus fingerprint, computed once per reader.
+    pub(crate) fingerprint: Option<String>,
+    /// Each evidence input's file metadata, read once per reader.
+    pub(crate) evidence_meta: HashMap<String, Arc<Value>>,
 }
 
 /// An open-addressed hash of one packed-ID arena: each slot holds a row plus one, zero when
@@ -198,6 +204,9 @@ impl EngineQuery {
             validated_ids: HashSet::new(),
             id_indexes: HashMap::new(),
             unit_lines: None,
+            line_break_words: HashMap::new(),
+            fingerprint: None,
+            evidence_meta: HashMap::new(),
         })
     }
 

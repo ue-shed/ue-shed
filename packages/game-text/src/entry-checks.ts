@@ -47,7 +47,10 @@ export {
 	localizationGateResult,
 	localizationGateTarget,
 	localizationGateUnreadEvidence,
-	localizationGateUnreadPackages
+	localizationGateUnreadPackages,
+	indexedLocalizationGateTarget,
+	LOCALIZATION_GATE_FIELDS,
+	type LocalizationGateLine
 } from "./localization-gate.js";
 
 export {

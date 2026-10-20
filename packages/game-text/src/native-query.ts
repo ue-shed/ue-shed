@@ -21,6 +21,13 @@ import {
 import { LocalizationLine, type LocalizationLineId } from "./localization-schema.js";
 import { LocalizationFocus, LocalizationFocusRequest } from "./localization-view.js";
 import { TEXT_AUDIENCE_POLICY } from "./text-audience.js";
+import {
+	TextAggregate,
+	TextAggregateRequest,
+	TextCorpusHeader,
+	localizationLineViews,
+	type LocalizationLineField
+} from "./index-reads.js";
 
 import type { NativeTextQuery } from "./native-query-contract.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
@@ -289,6 +296,139 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			})
 		);
 	});
+	const fileRead = <A>(
+		lane: Lane,
+		operation: string,
+		request: (output: string) => GameTextEngineRequest,
+		schema: Schema.Codec<A, unknown>
+	) =>
+		withStage((directory) =>
+			Effect.gen(function* () {
+				const output = join(directory, `${operation}.json`);
+				yield* lane.execute(request(output));
+				const text = yield* Effect.tryPromise({
+					try: (signal) => readFile(output, { encoding: "utf8", signal }),
+					catch: (cause) => failed(`${operation}_read`, cause)
+				});
+				return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
+					Effect.mapError((cause) => failed(`${operation}_decode`, cause))
+				);
+			})
+		);
+	const NativeAggregate = Schema.Struct({
+		lines: Schema.Number,
+		groups: Schema.Array(
+			Schema.Struct({
+				key: Schema.Array(
+					Schema.Union([
+						Schema.String,
+						Schema.Boolean,
+						Schema.Null,
+						Schema.Tuple([Schema.String, Schema.String])
+					])
+				),
+				lines: Schema.Number,
+				sourceWords: Schema.optionalKey(Schema.Number),
+				lineBreakWords: Schema.optionalKey(Schema.Number),
+				unknownWords: Schema.optionalKey(Schema.Number)
+			})
+		)
+	});
+	const aggregate = Effect.fn("GameTextIndex.nativeAggregate")(function* (
+		lane: Lane,
+		request: TextAggregateRequest
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(TextAggregateRequest)(request).pipe(
+			Effect.mapError((cause) => failed("aggregate", cause))
+		);
+		const native = yield* fileRead(
+			lane,
+			"aggregate",
+			(output) => ({
+				action: "aggregate",
+				reader: lane.reader,
+				payload: JSON.stringify(decoded),
+				output
+			}),
+			NativeAggregate
+		);
+		// Key components read as strings: a translation key as JSON.stringify([namespace, key]).
+		return yield* Schema.decodeUnknownEffect(TextAggregate)({
+			lines: native.lines,
+			groups: native.groups.map((group) => ({
+				...group,
+				key: group.key.map((value) =>
+					value === null
+						? ""
+						: value === true || value === false
+							? String(value)
+							: Array.isArray(value)
+								? JSON.stringify(value)
+								: value
+				)
+			}))
+		}).pipe(Effect.mapError((cause) => failed("aggregate_decode", cause)));
+	});
+	const selectLocalizationLines = <F extends LocalizationLineField>(
+		lane: Lane,
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		fields: readonly F[]
+	) =>
+		Effect.gen(function* () {
+			const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+				...request,
+				pageSize: 50
+			}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
+			return yield* fileRead(
+				lane,
+				"localization_export",
+				(output) => ({
+					action: "localization_export",
+					reader: lane.reader,
+					payload: JSON.stringify({ ...decoded, fields: [...new Set(fields)] }),
+					output
+				}),
+				localizationLineViews(fields)
+			);
+		});
+	const readUnits = (lane: Lane, ids: readonly string[]) =>
+		withStage((directory) =>
+			Effect.gen(function* () {
+				const output = join(directory, "units.json");
+				yield* lane.execute({
+					action: "export",
+					reader: lane.reader,
+					payload: JSON.stringify({
+						query: "",
+						capability: "all",
+						pageSize: 50,
+						units: ids
+					}),
+					output
+				});
+				const text = yield* Effect.tryPromise({
+					try: (signal) => readFile(output, { encoding: "utf8", signal }),
+					catch: (cause) => failed("units_read", cause)
+				});
+				const file = yield* Schema.decodeUnknownEffect(
+					Schema.fromJsonString(NativeExportFile)
+				)(text).pipe(Effect.mapError((cause) => failed("units_decode", cause)));
+				return file.units.map(({ reviewSignals: _, ...unit }) => unit);
+			})
+		);
+	const readCorpusHeader = (lane: Lane) =>
+		fileRead(
+			lane,
+			"corpus_header",
+			(output) => ({ action: "corpus_header", reader: lane.reader, output }),
+			TextCorpusHeader
+		);
+	const corpusFingerprint = (lane: Lane) =>
+		response(
+			lane,
+			{ action: "corpus_fingerprint", reader: lane.reader },
+			Schema.Struct({ sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u)) })
+		).pipe(Effect.map((result) => result.sha256));
 	const readLocalizationLines = (lane: Lane) =>
 		withStage((directory) =>
 			Effect.gen(function* () {
@@ -426,7 +566,14 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		localizationLines: (request) => bulk((lane) => localizationLines(lane, request)),
 		localizationRows: (request) => bulk((lane) => localizationRows(lane, request)),
 		exportWithSignals: exported,
-		export: (request) => exported(request).pipe(Effect.map((result) => result.corpus))
+		export: (request) => exported(request).pipe(Effect.map((result) => result.corpus)),
+		aggregate: (request) => bulk((lane) => aggregate(lane, request)),
+		selectLocalizationLines: (request, fields) =>
+			bulk((lane) => selectLocalizationLines(lane, request, fields)),
+		readCorpusHeader: () => bulk(readCorpusHeader),
+		readUnits: (ids) =>
+			ids.length === 0 ? Effect.succeed([]) : bulk((lane) => readUnits(lane, ids)),
+		corpusFingerprint: () => bulk(corpusFingerprint)
 	};
 	return model;
 });

@@ -260,7 +260,7 @@
 					"properties": {
 						"action": {
 							"type": "string",
-							"enum": ["corpus", "localization_corpus"]
+							"enum": ["corpus", "corpus_header", "localization_corpus"]
 						},
 						"reader": {
 							"type": "string",
@@ -334,7 +334,12 @@
 					"properties": {
 						"action": {
 							"type": "string",
-							"enum": ["export", "localization_export", "localization_focus_export"]
+							"enum": [
+								"export",
+								"aggregate",
+								"localization_export",
+								"localization_focus_export"
+							]
 						},
 						"reader": {
 							"type": "string",
@@ -398,6 +403,28 @@
 						"action": {
 							"type": "string",
 							"enum": ["summary"]
+						},
+						"reader": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								}
+							]
+						}
+					},
+					"required": ["action", "reader"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": ["corpus_fingerprint"]
 						},
 						"reader": {
 							"type": "string",

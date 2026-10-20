@@ -31,7 +31,7 @@ const GAP_DESCRIPTIONS: [&str; 4] = [
 ];
 const COPY_KINDS: [&str; 4] = ["generated_class", "class_default", "skeleton", "instance"];
 impl EngineQuery {
-    fn package_row(&mut self, occurrence: usize) -> Result<(usize, usize)> {
+    pub(crate) fn package_row(&mut self, occurrence: usize) -> Result<(usize, usize)> {
         let (shard, row) = self.package_coordinate(occurrence)?;
         let starts = self.package_column(shard, "package.occurrence_start")?;
         let package = starts

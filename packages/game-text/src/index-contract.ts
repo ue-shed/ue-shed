@@ -76,6 +76,13 @@ export interface GameTextIndexRefreshResult {
 	 * never parse, construct or persist it as a durable identifier. Absent on legacy adapters.
 	 */
 	readonly queryRevision?: string | undefined;
+	/**
+	 * This opened model's revision, unique within the process: equal values are the same model
+	 * and pinned snapshot. Compare it to tell whether the model changed, instead of keeping
+	 * `corpus` or other lazy reads as identity tokens. Absent on legacy adapters; a retained
+	 * model always has one.
+	 */
+	readonly revision?: string | undefined;
 	readonly joined: JoinedTargetReader;
 	readonly query: NativeTextQuery;
 	readonly summary: import("./schema.js").TextCorpusQuerySummary;
@@ -86,7 +93,12 @@ export interface GameTextIndexRefreshResult {
 	readonly imported: ImportedTarget;
 	readonly packages: Effect.Success<ReturnType<typeof refreshPackageTextLayer>>;
 	readonly join: Effect.Success<ReturnType<RefreshJoinedTarget>>;
+	/**
+	 * Explicit bulk read of the whole corpus, for hosts that write it out. Facts about it come
+	 * from `query`: `aggregate`, `selectLocalizationLines`, `readCorpusHeader`, `corpusFingerprint`.
+	 */
 	readonly corpus: Effect.Effect<TextCorpus, IndexFailure>;
+	/** Explicit bulk read of every visible joined line with full evidence; see `corpus`. */
 	readonly localizationJoin: Effect.Effect<LocalizationJoin, IndexFailure>;
 	readonly localization: Omit<LocalizationJoin, "lines">;
 	readonly evidence: LocalizationTargetEvidence;

@@ -1,4 +1,3 @@
-import type { TextFilterClause } from "./schema.js";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
@@ -9,8 +8,10 @@ import {
 	localizationGateTarget,
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,
+	LOCALIZATION_GATE_FIELDS,
 	type LocalizationGateCheck
 } from "./localization-gate.js";
+import { derivedLineViews } from "./index-derived-reads.test-support.js";
 import { LocalizationError } from "@ue-shed/localization/browser";
 import { applyLocalizationKeyChanges, localizationKeyChanges } from "./localization-key-changes.js";
 import {
@@ -77,18 +78,19 @@ function gate(
 		localization: { target: join.target },
 		where: { files }
 	};
-	const having = (clause: TextFilterClause) =>
-		new Set(query.localizationLines({ ...base, filter: [clause] }).map((line) => line.id));
+	const fileScope = query.search({ ...base, pageSize: 1 }).fileScope;
 	return localizationGateTarget({
-		corpus: text,
-		selection: {
-			lines: query.localizationLines(base),
-			conflicting: having({ field: "problem", op: "is", values: ["conflicting_source"] }),
-			changed: having({ field: "problem", op: "is", values: ["changed_since_gather"] }),
-			notGathered: having({ field: "problem", op: "is", values: ["not_gathered"] }),
-			unresolved: having({ field: "finding", op: "is", values: ["unresolved"] }),
-			fileScope: query.search({ ...base, pageSize: 1 }).fileScope
-		},
+		lines: derivedLineViews(
+			{
+				lines: (request) => query.localizationLines(request),
+				search: (request) => query.search(request),
+				corpus: () => text,
+				cultures: join.cultures
+			},
+			base,
+			LOCALIZATION_GATE_FIELDS
+		),
+		...(fileScope === undefined ? undefined : { fileScope }),
 		join,
 		files,
 		failOn

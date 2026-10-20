@@ -96,7 +96,7 @@ export function spreadsheetCsv(rows: Iterable<readonly (string | number)[]>): st
 
 /** One row per searchable line's saved location. Optional context keeps scan-wide review signals. */
 export function gameTextCsv(
-	corpus: TextCorpus,
+	corpus: Pick<TextCorpus, "units">,
 	reviewSignals: ReadonlyMap<TextCorpus["units"][number]["id"], readonly TextReviewSignal[]>
 ): string {
 	return spreadsheetCsv(
@@ -171,7 +171,10 @@ export function textQualityProblem(finding: TextQualityFinding): string {
 }
 
 /** One row for each finding and affected saved location. Corpus supplies Unreal keys. */
-export function gameTextQualityCsv(report: TextQualityReport, corpus: TextCorpus): string {
+export function gameTextQualityCsv(
+	report: TextQualityReport,
+	corpus: Pick<TextCorpus, "units">
+): string {
 	const units = new Map(corpus.units.map((unit) => [unit.id, unit]));
 	return spreadsheetCsv(
 		(function* () {

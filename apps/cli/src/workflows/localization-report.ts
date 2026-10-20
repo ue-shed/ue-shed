@@ -3,16 +3,14 @@ import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import {
 	LocalizationBaseline,
 	LocalizationReportError,
-	createLocalizationBaseline,
 	decodeLocalizationBaselineJson,
-	localizationProgressReport
+	indexedLocalizationBaseline,
+	indexedLocalizationProgressReport
 } from "@ue-shed/game-text/corpus";
 import { observeCliOperation } from "../cli-operation.js";
 import { CliRuntime, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { loadLocalizationContext } from "./localization.js";
-
-const isLocalizationReportError = Schema.is(LocalizationReportError);
 
 export class LocalizationBaselineIOError extends Schema.TaggedError<LocalizationBaselineIOError>()(
 	"LocalizationBaselineIOError",
@@ -105,48 +103,24 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 			Effect.gen(function* () {
 				const result = yield* Effect.gen(function* () {
 					const context = yield* loadLocalizationContext(command);
-					const corpus = yield* context.corpus;
-					const join = yield* context.join;
-					const evidence = context.evidence;
 					const baseline = command.baseline
 						? yield* readLocalizationBaseline(command.baseline)
 						: undefined;
-					const report = yield* Effect.try({
-						try: () => localizationProgressReport(corpus, join, evidence, baseline),
-						catch: (error) =>
-							isLocalizationReportError(error)
-								? error
-								: new LocalizationReportError({
-										cause: error,
-										retrySafe: false,
-										nextStep: "fix_input",
-										code: "invalid_report_context",
-										message:
-											"The localization report could not be constructed.",
-										recovery: "Refresh corpus and target evidence and retry."
-									})
-					});
+					// Grouped counts and the corpus header come from the index; nothing is exported.
+					const report = yield* indexedLocalizationProgressReport(
+						{
+							query: context.query,
+							localization: context.localization,
+							evidence: context.evidence
+						},
+						baseline
+					);
 					if (command.saveBaseline !== undefined) {
 						const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
-						const snapshot = yield* Effect.try({
-							try: () =>
-								createLocalizationBaseline(
-									corpus,
-									evidence,
-									new Date(now).toISOString()
-								),
-							catch: (error) =>
-								isLocalizationReportError(error)
-									? error
-									: new LocalizationReportError({
-											cause: error,
-											retrySafe: false,
-											nextStep: "fix_input",
-											code: "invalid_baseline",
-											message: "The baseline could not be constructed.",
-											recovery: "Refresh manifest evidence and retry."
-										})
-						});
+						const snapshot = yield* indexedLocalizationBaseline(
+							context,
+							new Date(now).toISOString()
+						);
 						yield* writeLocalizationBaseline(command.saveBaseline, snapshot);
 					}
 					yield* Metric.update(

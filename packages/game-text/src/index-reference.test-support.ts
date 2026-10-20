@@ -7,6 +7,13 @@ import { openJoinedTarget } from "./joined-target-reader.js";
 import { sharedIndexNodeLayer } from "./shared-index.js";
 import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { GameTextIndexError } from "./index-contract.js";
+import {
+	derivedAggregate,
+	derivedCorpusFingerprint,
+	derivedCorpusHeader,
+	derivedLineViews,
+	type DerivedReadsBase
+} from "./index-derived-reads.test-support.js";
 
 /** Explicit in-process oracle for portable workflow tests; never imported by production. */
 export const typeScriptIndexBuilderLayer = Layer.merge(
@@ -31,22 +38,38 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 					)
 				);
 				const reference = columnarTextCorpusQuery(joined);
+				const readCorpus = () => {
+					const data = new JoinedQueryData(joined),
+						summary = reference.summary();
+					return {
+						...data.exportMetadata(),
+						status: summary.status,
+						coverage: summary.coverage,
+						units: Array.from(data.column("query.raw.order"), (row) =>
+							data.unit("raw", row)
+						)
+					};
+				};
+				const base: DerivedReadsBase = {
+					lines: (request) => reference.localizationLines(request),
+					search: (request) => reference.search(request),
+					corpus: readCorpus,
+					cultures: joined.meta.input.target.cultures
+				};
 				const reader: Effect.Success<ReturnType<typeof openNativeTextQuery>> = {
 					readLocalizationLines: () =>
 						Effect.sync(() => reference.readLocalizationLines()),
-					readCorpus: () =>
-						Effect.sync(() => {
-							const data = new JoinedQueryData(joined),
-								summary = reference.summary();
-							return {
-								...data.exportMetadata(),
-								status: summary.status,
-								coverage: summary.coverage,
-								units: Array.from(data.column("query.raw.order"), (row) =>
-									data.unit("raw", row)
-								)
-							};
-						}),
+					readCorpus: () => Effect.sync(readCorpus),
+					aggregate: (request) => Effect.sync(() => derivedAggregate(base, request)),
+					selectLocalizationLines: (request, fields) =>
+						Effect.sync(() => derivedLineViews(base, request, fields)),
+					readCorpusHeader: () => Effect.sync(() => derivedCorpusHeader(readCorpus())),
+					readUnits: (ids) =>
+						Effect.sync(() =>
+							readCorpus().units.filter((unit) => ids.includes(unit.id))
+						),
+					corpusFingerprint: () =>
+						Effect.sync(() => derivedCorpusFingerprint(readCorpus())),
 					summary: () => Effect.sync(reference.summary),
 					search: (request) => Effect.sync(() => reference.search(request)),
 					focus: (request) => Effect.sync(() => reference.focus(request)),

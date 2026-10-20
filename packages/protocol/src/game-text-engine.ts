@@ -17,7 +17,7 @@ export const GameTextEngineRequest = Schema.Union([
 		})
 	}),
 	Schema.Struct({
-		action: Schema.Literals(["corpus", "localization_corpus"]),
+		action: Schema.Literals(["corpus", "corpus_header", "localization_corpus"]),
 		reader: Reader,
 		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
 	}),
@@ -28,12 +28,17 @@ export const GameTextEngineRequest = Schema.Union([
 		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
 	}),
 	Schema.Struct({
-		action: Schema.Literals(["export", "localization_export", "localization_focus_export"]),
+		action: Schema.Literals([
+			"export",
+			"aggregate",
+			"localization_export",
+			"localization_focus_export"
+		]),
 		reader: Reader,
 		payload: Payload,
 		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
 	}),
-	...(["close", "summary"] as const).map((action) =>
+	...(["close", "summary", "corpus_fingerprint"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader })
 	),
 	...(
@@ -62,6 +67,9 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"focus",
 		"export",
 		"corpus",
+		"corpus_header",
+		"corpus_fingerprint",
+		"aggregate",
 		"rows",
 		"localization_focus",
 		"localization_detail",

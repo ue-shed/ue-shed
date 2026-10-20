@@ -3,10 +3,10 @@ import type { IndexFailure } from "./index-contract.js";
 import { Schema } from "effect";
 import {
 	localizationQualityWorkspaceOf,
-	localizationProgressReport,
+	indexedLocalizationProgressReport,
+	indexedLocalizationBaseline,
 	localizationReportPage,
 	localizationReportCsv,
-	createLocalizationBaseline,
 	decodeLocalizationBaselineJson,
 	LocalizationReportError,
 	type LocalizationBaseline,
@@ -20,9 +20,11 @@ import {
 	type WorkspaceReportFileRequest,
 	type WorkspaceReportFileResult,
 	localizationLinesCsv,
+	LOCALIZATION_LINES_CSV_FIELDS,
 	pickedLocalizationCultures,
 	type LocalizationLinesFileResult,
 	localizationKeyChangesAcross,
+	KEY_CHANGE_FIELDS,
 	type LocalizationKeyChangePair,
 	localizationEditChangeSet,
 	type LocalizationReviewRequest,
@@ -68,6 +70,20 @@ import { Cause, Effect, Exit, Fiber, Ref, Result, Semaphore, type Scope } from "
 import type { Layer } from "effect";
 import type { LocalizationFileAccess } from "@ue-shed/localization";
 import type { GameTextWorkspaceFileHooks } from "./workspace-host.js";
+import type { LocalizationLineView } from "./index-reads.js";
+
+/** Every line of a target's join: the lines reports and key pairing read. */
+const indexedLines = (target: LocalizationJoin["target"]) => ({
+	query: "",
+	capability: "all" as const,
+	localization: { target }
+});
+/** The selection's index reads a report needs. */
+const reportIndex = (retained: {
+	readonly model: GameTextIndexRefreshResult["query"];
+	readonly join: GameTextIndexRefreshResult["localization"];
+	readonly evidence: GameTextIndexRefreshResult["evidence"];
+}) => ({ query: retained.model, localization: retained.join, evidence: retained.evidence });
 
 function failure(code: string) {
 	return {
@@ -78,14 +94,10 @@ function failure(code: string) {
 	};
 }
 
-/** The retained corpus reference is also the scan revision: stale readers cannot publish results. */
+/** The published model's revision: readers of a replaced model cannot publish results. */
 export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.localization")(
 	function* (
-		currentCorpus: () => Effect.Effect<
-			GameTextIndexRefreshResult["corpus"] | undefined,
-			never,
-			Scope.Scope
-		>,
+		currentRevision: () => Effect.Effect<string | undefined, never, Scope.Scope>,
 		currentProject: () => Effect.Effect<GameTextProjectIndex | undefined, never, Scope.Scope>,
 		currentRules?: () => Effect.Effect<GameTextRuleDocument | undefined, never, Scope.Scope>,
 		currentIndex?: () => Effect.Effect<
@@ -160,7 +172,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		);
 		const discovery = yield* Ref.make<
 			| {
-					readonly corpus: GameTextIndexRefreshResult["corpus"];
+					readonly revision: string;
 					readonly targets: readonly LocalizationTarget[];
 					readonly result: LocalizationTargetsResult;
 			  }
@@ -169,9 +181,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		const selected = yield* Ref.make<
 			| {
 					readonly projectRoot: string;
-					readonly corpus: GameTextIndexRefreshResult["corpus"];
+					readonly revision: string;
 					readonly join: GameTextIndexRefreshResult["localization"];
-					readonly readJoin: GameTextIndexRefreshResult["localizationJoin"];
 					readonly quality: GameTextIndexRefreshResult["localizationQuality"];
 					readonly sourceQuality: GameTextIndexRefreshResult["sourceQuality"];
 					readonly evidence: LocalizationTargetEvidence;
@@ -183,12 +194,21 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			  }
 			| undefined
 		>(undefined);
-		const revision = yield* Ref.make(0);
+		/** Counts selections and resets; a stale attempt does not publish. */
+		const version = yield* Ref.make(0);
 		// Unreal's gather drops the archive translations of keys that left the manifest. The join from
 		// before a gather UE Shed runs is kept until the next selection pairs those keys with the keys
 		// that joined. The pairs live for the project, beyond the refresh that follows the gather.
 		const gatherBaseline = yield* Ref.make<
-			{ readonly root: string; readonly join: LocalizationJoin } | undefined
+			| {
+					readonly root: string;
+					readonly target: LocalizationJoin["target"];
+					readonly nativeCulture: LocalizationJoin["nativeCulture"];
+					readonly lines: readonly LocalizationLineView<
+						(typeof KEY_CHANGE_FIELDS)[number]
+					>[];
+			  }
+			| undefined
 		>(undefined);
 		const acrossGather = yield* Ref.make<
 			| {
@@ -233,10 +253,19 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		) {
 			const root = yield* currentRoot();
 			const cached = yield* current(name);
+			// The keys and translations Unreal's gather may drop, read before it runs.
 			yield* Ref.set(
 				gatherBaseline,
 				root && cached?.join.target === name
-					? { root, join: yield* cached.readJoin }
+					? {
+							root,
+							target: name,
+							nativeCulture: cached.join.nativeCulture,
+							lines: yield* cached.model.selectLocalizationLines(
+								indexedLines(name),
+								KEY_CHANGE_FIELDS
+							)
+						}
 					: undefined
 			);
 		});
@@ -244,7 +273,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		const reset = Effect.fn("GameText.workspace.localization.reset")(function* (
 			preservePrepared = false
 		) {
-			yield* Ref.update(revision, (value) => value + 1);
+			yield* Ref.update(version, (value) => value + 1);
 			yield* Ref.set(discovery, undefined);
 			yield* Ref.set(selected, undefined);
 			yield* clearQuality();
@@ -254,14 +283,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			if (!preservePrepared) yield* refreshIndex.release();
 		});
 		const targets = Effect.fn("GameText.workspace.localization.targets")(function* () {
-			const corpus = yield* currentCorpus();
+			const revision = yield* currentRevision();
 			const root = yield* currentRoot();
-			if (!corpus || !root) return { status: "not_ready" as const };
+			if (!revision || !root) return { status: "not_ready" as const };
 			const cached = yield* Ref.get(discovery);
-			if (cached?.corpus === corpus) return cached.result;
-			const version = yield* Ref.get(revision);
+			if (cached?.revision === revision) return cached.result;
+			const attempt = yield* Ref.get(version);
 			const discovered = yield* reader.discover({ projectRoot: root }).pipe(Effect.result);
-			if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
+			if ((yield* currentRevision()) !== revision || (yield* Ref.get(version)) !== attempt)
 				return { status: "not_ready" as const };
 			if (Result.isFailure(discovered)) {
 				yield* refreshIndex.release();
@@ -286,23 +315,23 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					cultures
 				}))
 			};
-			yield* Ref.set(discovery, { corpus, targets: available, result });
+			yield* Ref.set(discovery, { revision, targets: available, result });
 			yield* Effect.annotateCurrentSpan({ targetCount: available.length });
 			return result;
 		});
 		const select = Effect.fn("GameText.workspace.localization.select")(function* (
 			name: LocalizationJoin["target"]
 		) {
-			const corpus = yield* currentCorpus();
+			const revision = yield* currentRevision();
 			const root = yield* currentRoot();
-			if (!corpus || !root) return { status: "not_ready" as const };
+			if (!revision || !root) return { status: "not_ready" as const };
 			const cached = yield* Ref.get(selected);
-			if (cached?.corpus === corpus && cached.join.target === name) return cached.result;
+			if (cached?.revision === revision && cached.join.target === name) return cached.result;
 			const listed = yield* targets();
 			if (listed.status !== "ready") return listed;
 			const target = (yield* Ref.get(discovery))?.targets.find((item) => item.name === name);
 			if (!target) return failure("target_not_found");
-			const version = yield* Ref.updateAndGet(revision, (value) => value + 1);
+			const attempt = yield* Ref.updateAndGet(version, (value) => value + 1);
 			const carried = yield* Ref.get(acrossGather);
 			let indexed = yield* refreshIndex
 				.refresh({
@@ -313,15 +342,17 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						carried?.root === root && carried.target === name ? carried.pairs : []
 				})
 				.pipe(Effect.result);
-			if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
+			if ((yield* currentRevision()) !== revision || (yield* Ref.get(version)) !== attempt)
 				return { status: "not_ready" as const };
 			if (Result.isFailure(indexed))
 				return failure(
 					"operation" in indexed.failure ? indexed.failure.operation : "invalid_project"
 				);
 			const before = yield* Ref.get(gatherBaseline);
-			if (before?.root === root && before.join.target === name) {
-				const loaded = yield* indexed.success.localizationJoin.pipe(Effect.result);
+			if (before?.root === root && before.target === name) {
+				const loaded = yield* indexed.success.query
+					.selectLocalizationLines(indexedLines(name), ["identity", "source", "manifest"])
+					.pipe(Effect.result);
 				if (Result.isFailure(loaded))
 					return {
 						status: "failed" as const,
@@ -329,7 +360,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						message: loaded.failure.message,
 						recovery: loaded.failure.recovery
 					};
-				const across = localizationKeyChangesAcross(before.join, loaded.success);
+				const across = localizationKeyChangesAcross(before, { lines: loaded.success });
 				yield* Ref.set(gatherBaseline, undefined);
 				yield* Ref.set(acrossGather, { root, target: name, pairs: across.pairs });
 				indexed = yield* refreshIndex
@@ -369,7 +400,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					recovery: textCountsResult.failure.recovery
 				};
 			const textCounts = textCountsResult.success;
-			if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
+			if ((yield* currentRevision()) !== revision || (yield* Ref.get(version)) !== attempt)
 				return { status: "not_ready" as const };
 			const result: LocalizationTargetResult = {
 				status: "ready",
@@ -385,16 +416,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			return yield* Effect.uninterruptible(
 				Effect.gen(function* () {
 					if (
-						(yield* currentCorpus()) !== corpus ||
-						(yield* Ref.get(revision)) !== version
+						(yield* currentRevision()) !== revision ||
+						(yield* Ref.get(version)) !== attempt
 					)
 						return { status: "not_ready" as const };
 					if (cached?.join.target !== name) yield* Ref.set(baseline, undefined);
 					yield* Ref.set(selected, {
 						projectRoot: root,
-						corpus,
+						revision,
 						join,
-						readJoin: indexed.success.localizationJoin,
 						quality: indexed.success.localizationQuality,
 						sourceQuality: indexed.success.sourceQuality,
 						model,
@@ -422,7 +452,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			const cached = yield* Ref.get(selected);
 			if (
 				!cached ||
-				cached.corpus !== (yield* currentCorpus()) ||
+				cached.revision !== (yield* currentRevision()) ||
 				cached.join.target !== target
 			)
 				return undefined;
@@ -571,35 +601,35 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		): Effect.fn.Return<WorkspaceReportResult, never, Scope.Scope> {
 			const retained = yield* current(request.target);
 			if (!retained) return { status: "not_ready" };
-			const loaded = yield* Effect.all({
-				corpus: retained.corpus,
-				join: retained.readJoin
-			}).pipe(Effect.result);
-			if (Result.isFailure(loaded)) return reportFailure(loaded.failure);
-			const { corpus, join } = loaded.success;
 			const previous = yield* Ref.get(baseline);
-			return yield* Effect.try({
-				try: () => ({
-					status: "ready" as const,
-					page: localizationReportPage(
-						localizationProgressReport(corpus, join, retained.evidence, previous),
-						retained.join.nativeCulture,
-						request,
-						previous
-					)
-				}),
-				catch: (cause) =>
-					Schema.is(LocalizationReportError)(cause)
-						? cause
-						: new LocalizationReportError({
-								cause: cause,
-								retrySafe: false,
-								nextStep: "fix_input",
-								code: "invalid_report_context",
-								message: "Report evidence could not be read.",
-								recovery: "Rescan the selected project."
-							})
-			}).pipe(Effect.catch((error) => Effect.succeed(reportFailure(error))));
+			// Grouped counts and the corpus header, in Rust; the corpus and join are not read.
+			return yield* indexedLocalizationProgressReport(reportIndex(retained), previous).pipe(
+				Effect.flatMap((progress) =>
+					Effect.try({
+						try: () => ({
+							status: "ready" as const,
+							page: localizationReportPage(
+								progress,
+								retained.join.nativeCulture,
+								request,
+								previous
+							)
+						}),
+						catch: (cause) =>
+							Schema.is(LocalizationReportError)(cause)
+								? cause
+								: new LocalizationReportError({
+										cause: cause,
+										retrySafe: false,
+										nextStep: "fix_input",
+										code: "invalid_report_context",
+										message: "Report evidence could not be read.",
+										recovery: "Rescan the selected project."
+									})
+					})
+				),
+				Effect.catch((error) => Effect.succeed(reportFailure(error)))
+			);
 		});
 		const reportFile = Effect.fn("GameText.workspace.localization.reportFile")(function* (
 			request: WorkspaceReportFileRequest,
@@ -608,13 +638,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		): Effect.fn.Return<WorkspaceReportFileResult, never, Scope.Scope> {
 			const retained = yield* current(request.target);
 			if (!retained) return { status: "not_ready" };
-			const loaded = yield* Effect.all({
-				corpus: retained.corpus,
-				join: retained.readJoin
-			}).pipe(Effect.result);
-			if (Result.isFailure(loaded)) return reportFailure(loaded.failure);
-			const { corpus, join } = loaded.success;
 			const previous = yield* Ref.get(baseline);
+			const index = reportIndex(retained);
 			const result = yield* Effect.gen(function* () {
 				const choice =
 					request.operation === "compare_baseline"
@@ -649,26 +674,10 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					});
 					const decoded = decodeLocalizationBaselineJson(new TextDecoder().decode(bytes));
 					if (Result.isFailure(decoded)) return reportFailure(decoded.failure);
-					const progress = yield* Effect.try({
-						try: () =>
-							localizationProgressReport(
-								corpus,
-								join,
-								retained.evidence,
-								decoded.success
-							),
-						catch: (cause) =>
-							Schema.is(LocalizationReportError)(cause)
-								? cause
-								: new LocalizationReportError({
-										cause: cause,
-										retrySafe: false,
-										nextStep: "fix_input",
-										code: "invalid_baseline",
-										message: "The baseline could not be compared.",
-										recovery: "Choose a baseline for this target."
-									})
-					});
+					const progress = yield* indexedLocalizationProgressReport(
+						index,
+						decoded.success
+					);
 					if ((yield* current(request.target)) !== retained)
 						return { status: "not_ready" as const };
 					yield* Ref.set(baseline, decoded.success);
@@ -682,32 +691,23 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						)
 					};
 				}
+				const saved =
+					request.operation === "save_baseline"
+						? yield* indexedLocalizationBaseline(index, new Date().toISOString())
+						: undefined;
+				const progress =
+					saved === undefined
+						? yield* indexedLocalizationProgressReport(index, previous)
+						: undefined;
 				const contents = yield* Effect.try({
 					try: () => {
-						if (request.operation === "save_baseline")
-							return (
-								JSON.stringify(
-									createLocalizationBaseline(
-										corpus,
-										retained.evidence,
-										new Date().toISOString()
-									),
-									null,
-									2
-								) + "\n"
-							);
-						const progress = localizationProgressReport(
-							corpus,
-							join,
-							retained.evidence,
-							previous
-						);
-						const rows = progress.cultures.flatMap((_, index) =>
-							index % 50 === 0
+						if (saved !== undefined) return JSON.stringify(saved, null, 2) + "\n";
+						const rows = progress!.cultures.flatMap((_, offset) =>
+							offset % 50 === 0
 								? localizationReportPage(
-										progress,
+										progress!,
 										retained.join.nativeCulture,
-										{ target: request.target, offset: index },
+										{ target: request.target, offset },
 										previous
 									).rows
 								: []
@@ -772,13 +772,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				});
 				if (choice.status === "cancelled") return choice;
 				if ((yield* current(name)) !== retained) return { status: "not_ready" as const };
-				const corpus = yield* retained.corpus;
-				const lines = yield* retained.model.localizationLines(request);
+				// Only the fields the spreadsheet shows, on the bulk lane; the corpus is not read.
+				const lines = yield* retained.model.selectLocalizationLines(
+					request,
+					LOCALIZATION_LINES_CSV_FIELDS
+				);
 				const { csv, rows } = yield* Effect.try(() =>
 					localizationLinesCsv({
 						join: retained.join,
 						lines,
-						corpus,
 						cultures: pickedLocalizationCultures(request.localization)
 					})
 				);
@@ -964,7 +966,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						result.status === "ready"
 							? Effect.gen(function* () {
 									const cached = yield* Ref.get(discovery);
-									return cached?.corpus === (yield* currentCorpus())
+									return cached?.revision === (yield* currentRevision())
 										? cached?.targets.find((target) => target.name === name)
 										: undefined;
 								})

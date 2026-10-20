@@ -70,6 +70,7 @@ import {
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "./entry-schema.js";
+import { readFindingUnits } from "./investigation.js";
 import { makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
 import type { LocalizationTarget } from "@ue-shed/localization";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
@@ -256,7 +257,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				);
 			})
 		);
-	const retainedCorpus = (index: RetainedGameTextIndexResult) => index.corpus;
+	/** The published model's revision: a result computed for another one must not publish. */
+	const retainedRevision = (index: RetainedGameTextIndexResult) => index.revision;
 	/** Source rules over the index, page by page. */
 	const sourceQualityModel = (index: RetainedGameTextIndexResult, rules: GameTextRuleDocument) =>
 		index.sourceQuality(rules);
@@ -319,7 +321,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const investigationSnapshot = yield* Ref.make<
 		| {
 				readonly source: InvestigationSource;
-				readonly corpus: RetainedGameTextIndexResult["corpus"];
+				readonly revision: RetainedGameTextIndexResult["revision"];
 				readonly rules?: GameTextRuleDocument;
 		  }
 		| undefined
@@ -356,7 +358,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	// Review records name who set them; the host's policy decides who that is.
 	const reviewer = host.reviewer ?? (() => "game-text");
 	const localization = yield* makeGameTextWorkspaceLocalization(
-		() => currentModel(retainedCorpus),
+		() => currentModel(retainedRevision),
 		() => currentModel((index) => index.project),
 		() => currentValue(qualityDocument),
 		currentIndex,
@@ -382,7 +384,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			return yield* refreshIndex.refresh({ projectRoot }).pipe(
 				Effect.flatMap((indexed) =>
 					Effect.gen(function* () {
-						const report = indexed.corpus;
+						const modelRevision = indexed.revision;
 						/** This scan is still the latest for the selected project generation. */
 						const owned = Effect.gen(function* () {
 							const latest = yield* project.current();
@@ -451,7 +453,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 											generation: index.generation,
 											authority: "project_files"
 										},
-										corpus: report,
+										revision: modelRevision,
 										...(rules ? { rules } : undefined)
 									});
 									yield* Effect.all([
@@ -606,7 +608,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	) {
 		const index = yield* currentIndex();
 		if (index === undefined) return { status: "not_ready" as const };
-		const corpus = index.corpus;
+		const revision = index.revision;
 		const document = yield* decodeGameTextRuleDocumentJson(JSON.stringify(input)).pipe(
 			Effect.match({
 				onFailure: (error) => ({ error, status: "failed" as const }),
@@ -625,19 +627,19 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			};
 		}
 		const model = yield* sourceQualityModel(index, document.value);
-		return { corpus, document: document.value, model, status: "ready" as const };
+		return { revision, document: document.value, model, status: "ready" as const };
 	});
 
 	const publishQualityRules = Effect.fn("GameText.workspace.publishQualityRules")(
 		function* (prepared: {
 			readonly document: GameTextRuleDocument;
 			readonly model: TextQualityQuery;
-			readonly corpus: RetainedGameTextIndexResult["corpus"];
+			readonly revision: RetainedGameTextIndexResult["revision"];
 		}) {
 			const snapshot = yield* Ref.get(investigationSnapshot);
 			if (
-				snapshot?.corpus !== prepared.corpus ||
-				(yield* currentModel(retainedCorpus)) !== prepared.corpus
+				snapshot?.revision !== prepared.revision ||
+				(yield* currentModel(retainedRevision)) !== prepared.revision
 			)
 				return { status: "not_ready" as const };
 			yield* Ref.set(investigationSnapshot, { ...snapshot, rules: prepared.document });
@@ -676,7 +678,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				}
 			};
 		const current = yield* project.current();
-		if (current.status !== "ready" || !(yield* currentModel(retainedCorpus)))
+		if (current.status !== "ready" || !(yield* currentModel(retainedRevision)))
 			return { status: "not_ready" as const };
 		const root = current.project.projectRoot;
 		const path = resolve(root, rulesRelativePath);
@@ -743,8 +745,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	});
 
 	const chooseQualityRules = Effect.fn("GameText.workspace.chooseQualityRules")(function* () {
-		const corpus = yield* currentModel(retainedCorpus);
-		if (corpus === undefined) return { status: "not_ready" as const };
+		const revision = yield* currentModel(retainedRevision);
+		if (revision === undefined) return { status: "not_ready" as const };
 		const choice = yield* dialog
 			.chooseFile({
 				filters: [{ extensions: ["json"], name: "Game Text quality rules" }],
@@ -788,12 +790,12 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				status: "failed" as const
 			};
 		}
-		if ((yield* currentModel(retainedCorpus)) !== corpus)
+		if ((yield* currentModel(retainedRevision)) !== revision)
 			return { status: "not_ready" as const };
 		const prepared = yield* prepareQualityRules(document.value);
 		if (prepared.status !== "ready") return prepared;
 		const snapshot = yield* Ref.get(investigationSnapshot);
-		if (snapshot?.corpus !== prepared.corpus) return { status: "not_ready" as const };
+		if (snapshot?.revision !== prepared.revision) return { status: "not_ready" as const };
 		yield* Ref.set(qualityRulePath, {
 			path: choice.path,
 			projectRoot: snapshot.source.projectRoot
@@ -809,8 +811,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	});
 
 	const reloadQualityRules = Effect.fn("GameText.workspace.reloadQualityRules")(function* () {
-		const corpus = yield* currentModel(retainedCorpus);
-		if (!corpus) return { status: "not_ready" as const };
+		const revision = yield* currentModel(retainedRevision);
+		if (!revision) return { status: "not_ready" as const };
 		const destination = yield* Ref.get(qualityRulePath);
 		const owner = yield* Ref.get(modelSelection);
 		const path =
@@ -821,7 +823,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		return yield* Effect.gen(function* () {
 			const bytes = yield* files.readFile(path, { maxBytes: 1_048_576 });
 			const document = yield* decodeGameTextRuleDocumentJson(new TextDecoder().decode(bytes));
-			if ((yield* currentModel(retainedCorpus)) !== corpus)
+			if ((yield* currentModel(retainedRevision)) !== revision)
 				return { status: "not_ready" as const };
 			return yield* previewQualityRules(document);
 		}).pipe(
@@ -877,7 +879,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		if (prepared.status !== "ready") return prepared;
 		const snapshot = yield* Ref.get(investigationSnapshot);
 		if (
-			snapshot?.corpus !== prepared.corpus ||
+			snapshot?.revision !== prepared.revision ||
 			snapshot.source.projectRoot !== destination?.projectRoot
 		)
 			return { status: "not_ready" as const };
@@ -939,7 +941,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		const current = yield* project.current();
 		if (
 			!snapshot ||
-			(yield* currentModel(retainedCorpus)) !== snapshot.corpus ||
+			(yield* currentModel(retainedRevision)) !== snapshot.revision ||
 			current.status !== "ready" ||
 			current.project.projectRoot !== snapshot.source.projectRoot ||
 			(current.project.generation ?? 0) !== snapshot.source.generation
@@ -974,41 +976,49 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 							: undefined)
 					})
 				: undefined;
-		const corpus = yield* snapshot.corpus.pipe(
-			Effect.mapError(
-				(cause) =>
-					new InvestigationError({
-						message: cause.message,
-						recovery: cause.recovery,
-						retrySafe: cause.retrySafe,
-						nextStep: cause.nextStep,
-						cause
-					})
-			)
-		);
+		const failure = (cause: IndexFailure) =>
+			new InvestigationError({
+				message: cause.message,
+				recovery: cause.recovery,
+				retrySafe: cause.retrySafe,
+				nextStep: cause.nextStep,
+				cause
+			});
 		const selected =
 			query.mode === "corpus" && localized
-				? yield* localized.exportWithSignals(query).pipe(
-						Effect.mapError(
-							(cause) =>
-								new InvestigationError({
-									message: cause.message,
-									recovery: cause.recovery,
-									retrySafe: cause.retrySafe,
-									nextStep: cause.nextStep,
-									cause
-								})
-						)
-					)
+				? yield* localized.exportWithSignals(query).pipe(Effect.mapError(failure))
 				: undefined;
+		const index = yield* currentIndex();
+		// Source rules come from the index, page by page; the published model when it has them.
+		const published = yield* currentValue(qualityModel);
+		const publishedRules = yield* currentValue(qualityDocument);
 		const document = yield* exportGameTextInvestigation(
-			corpus,
+			{
+				sourceQuality: (rules) =>
+					published && rules === publishedRules
+						? Effect.succeed(published)
+						: index
+							? index.sourceQuality(rules)
+							: Effect.die(new Error("No current scan is available."))
+			},
 			preset,
 			snapshot.source,
 			selected ? { export: () => Effect.succeed(selected.corpus) } : localized,
 			workspace
 		);
-		return { document, corpus, reviewSignals: selected?.reviewSignals ?? new Map() };
+		// A quality CSV names each finding's key: read only the units findings name.
+		const units =
+			document.result.mode === "quality" && index
+				? yield* readFindingUnits(
+						index.query,
+						document.result.report.findings.map((finding) => finding.textUnitId)
+					).pipe(Effect.mapError(failure))
+				: [];
+		return {
+			document,
+			corpus: selected?.corpus ?? { units },
+			reviewSignals: selected?.reviewSignals ?? new Map()
+		};
 	});
 	const investigationExport = Effect.fn("GameText.workspace.investigationExport")(
 		(query: GameTextInvestigationQuery, format: InvestigationFormat) =>
@@ -1020,7 +1030,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 								? JSON.stringify(document, null, "\t") + "\n"
 								: document.result.mode === "corpus"
 									? gameTextCsv(
-											{ ...corpus, units: document.result.corpus.units },
+											{ units: document.result.corpus.units },
 											reviewSignals
 										)
 									: document.result.mode === "localization_quality"
@@ -1078,7 +1088,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				yield* Ref.set(qualityDocument, undefined);
 				yield* Ref.set(qualityModel, undefined);
 				yield* Ref.update(investigationSnapshot, (snapshot) =>
-					snapshot ? { source: snapshot.source, corpus: snapshot.corpus } : undefined
+					snapshot ? { source: snapshot.source, revision: snapshot.revision } : undefined
 				);
 			}
 			yield* Ref.set(qualityRulePath, undefined);

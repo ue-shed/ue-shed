@@ -8,7 +8,12 @@ import {
 } from "@ue-shed/localization/browser";
 import { describe, expect, it } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
-import { DEFAULT_GATE_FAILURES, localizationGateTarget } from "./localization-gate.js";
+import {
+	DEFAULT_GATE_FAILURES,
+	LOCALIZATION_GATE_FIELDS,
+	localizationGateTarget
+} from "./localization-gate.js";
+import { derivedLineViews } from "./index-derived-reads.test-support.js";
 import {
 	archiveEntry,
 	corpus,
@@ -177,50 +182,20 @@ describe("Game Text at the scale of a shipping game", () => {
 			{ length: 1000 },
 			(_, index) => `Content/Text/Folder${index % 200}/Table${index}.uasset`
 		);
+		const scoped = { ...request, where: { files } };
+		const fileScope = query.search({ ...scoped, pageSize: 1 }).fileScope;
 		const gate = localizationGateTarget({
-			corpus: text,
-			selection: {
-				lines: query.localizationLines({ ...request, where: { files } }),
-				conflicting: new Set(
-					query
-						.localizationLines({
-							...request,
-							where: { files },
-							filter: [{ field: "problem", op: "is", values: ["conflicting_source"] }]
-						})
-						.map((line) => line.id)
-				),
-				changed: new Set(
-					query
-						.localizationLines({
-							...request,
-							where: { files },
-							filter: [
-								{ field: "problem", op: "is", values: ["changed_since_gather"] }
-							]
-						})
-						.map((line) => line.id)
-				),
-				notGathered: new Set(
-					query
-						.localizationLines({
-							...request,
-							where: { files },
-							filter: [{ field: "problem", op: "is", values: ["not_gathered"] }]
-						})
-						.map((line) => line.id)
-				),
-				unresolved: new Set(
-					query
-						.localizationLines({
-							...request,
-							where: { files },
-							filter: [{ field: "finding", op: "is", values: ["unresolved"] }]
-						})
-						.map((line) => line.id)
-				),
-				fileScope: query.search({ ...request, where: { files }, pageSize: 1 }).fileScope
-			},
+			lines: derivedLineViews(
+				{
+					lines: (selected) => query.localizationLines(selected),
+					search: (selected) => query.search(selected),
+					corpus: () => text,
+					cultures: join.value.cultures
+				},
+				scoped,
+				LOCALIZATION_GATE_FIELDS
+			),
+			...(fileScope === undefined ? undefined : { fileScope }),
 			join: join.value,
 			files,
 			failOn: DEFAULT_GATE_FAILURES

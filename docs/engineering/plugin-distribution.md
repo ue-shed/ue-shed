@@ -74,6 +74,38 @@ readable and verifiable; new acquisitions use `variants/`. A release-only verify
 accepted only when it identifies one unambiguous cached variant. Entries are never silently
 repaired, replaced, or mutated.
 
+## Packaged Game Text acceptance
+
+The opt-in scripts `scripts/test-game-text-packaged.ts` and
+`scripts/test-game-text-packaged-journey.ts` exercise a real release source, AutomationTool
+BuildPlugin, compiled artifact verification, local-file installation and scoped leasing, editor
+loading, and the shared durable ID-repair workflow over HTTP Remote Control. Run them on a combined
+native/workflow candidate when testing companion capability changes. Build TypeScript packages and
+the Windows process supervisor first; provide a compatible saved-package reader or let the journey
+script build it. The caller must hold the machine's exclusive Unreal/UBT/AutomationTool lease for
+each command and wait for the previous process tree to stop.
+
+Set `UE_SHED_ACCEPTANCE_PROTOCOL_TARBALL` to a freshly packed protocol tarball and
+`UE_SHED_ACCEPTANCE_COMPILER` to JSON matching `PluginCompilerProvenance`, using the actual compiler
+and SDK selected by UBT. Optionally set `UE_SHED_ACCEPTANCE_BUILD_OUTPUT` to a short build directory
+outside the engine; UE4's temporary UAT paths can otherwise exceed its 260-character limit.
+
+```text
+node --import tsx scripts/test-game-text-packaged.ts build <engine-root> <evidence-directory>
+node --import tsx scripts/test-game-text-packaged-journey.ts <engine-root> <same-evidence-directory>
+```
+
+The build selects the minimal legacy `game-text` preset or full UE5 preset. It reuses an existing
+source manifest in the release output, so use a fresh checkout/output when native source changes.
+The local acceptance manifest pins the protocol tarball; this is not a complete npm publication.
+The journey copies the matching fixture project's source and config, generates fresh packages
+with the selected engine, and reuses the existing nine-place baseline generator. Unrelated UE5
+editor fixture generators are excluded. Six individual object/cell proposals cover split,
+regenerate and adopt, unchanged preview bytes, saved receipts, offline identity verification and
+replay refusal. Blueprint pins remain excluded while the independent reader gap is unresolved.
+Evidence includes wire requests/responses, capabilities, installation and lease records, editor
+logs, durable proposals and receipts, and saved-package readbacks.
+
 ## Build a downstream engine variant
 
 First acquire and pin the exact portable source manifest and archive. On a trusted Windows build

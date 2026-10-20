@@ -10,6 +10,7 @@ export default defineProject({
 		exclude: [...configDefaults.exclude, "**/*.component.test.tsx", "apps/workbench/e2e/**"],
 		include: [
 			"{apps,extensions,fixtures,packages,tools}/**/*.{test,spec}.{ts,tsx}",
+			"scripts/game-text-corpus.test.ts",
 			"scripts/game-text-scale.test.ts",
 			"scripts/game-text-stage-timings.test.ts",
 			"scripts/game-text-dictionary.test.ts",

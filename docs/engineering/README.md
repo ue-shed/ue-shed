@@ -38,6 +38,7 @@ UE Shed code should be functional, typed, observable, and well tested.
 | [Game Text snapshots](game-text-snapshots.md)                         | Compact domain format, bounds and Node store lifecycle             |
 | [Native Game Text preparation](native-game-text-index.md)             | Production writer, incremental joins, composition and measurements |
 | [Game Text gather coverage](game-text-gather-coverage.md)             | Saved-scan gaps, manifest evidence and Unreal gather authority     |
+| [Game Text test corpus](game-text-corpus.md)                          | Generate a deterministic corpus in a real project                  |
 | [SQLite Project Index](sqlite-project-index.md)                       | Previous Catalog and current test oracle                           |
 | [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence                                |
 | [Releases](releases.md)                                               | Local pre-1.0 releases and post-1.0 CI plan                        |

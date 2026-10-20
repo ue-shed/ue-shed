@@ -681,6 +681,25 @@ export async function compareJoinFuzzInput(
 				filter: [filters[(input.seed + offset) % filters.length]]
 			})
 		);
+	// Saved "UI [package]" text gathers as "UI"; String Table entries keep "UI [package]".
+	const translationKeys = [
+		JSON.stringify(["UI", `K${input.seed % 6}`]),
+		JSON.stringify(["UI [package]", "K1"]),
+		JSON.stringify(["Other", "K2"])
+	];
+	for (const selection of [base, unlocalized])
+		for (const op of ["is", "is_not"] as const)
+			requests.push({
+				...selection,
+				filter: [{ field: "translation_key", op, values: translationKeys }]
+			});
+	requests.push({
+		...base,
+		filter: [
+			{ field: "translation_key", op: "is", values: translationKeys },
+			{ field: "problem", op: "is", values: ["conflicting_source"] }
+		]
+	});
 	const firstPage = oracle.search({ ...base, pageSize: 2 });
 	if (firstPage.localization?.nextCursor)
 		requests.push({

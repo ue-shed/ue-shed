@@ -70,9 +70,13 @@ struct FUEShedAuthoringTestTextDefault
 	FText StringTable = FText::FromStringTable(TEXT("UEShedAuthoringDefaults"),
 		TEXT("Default"), EStringTableLoadingPolicy::Find);
 
+	// Compare identities, not text-data pointers. Two separately constructed string-table texts
+	// whose table is not registered share no pointer, so a pointer compare made default rows
+	// unequal and Unreal's struct member initialization check report Array, Set and Map.
 	bool operator==(const FUEShedAuthoringTestTextDefault& Other) const
 	{
-		return Localized.IdenticalTo(Other.Localized) && StringTable.IdenticalTo(Other.StringTable);
+		return Localized.IdenticalTo(Other.Localized, ETextIdenticalModeFlags::DeepCompare)
+			&& StringTable.IdenticalTo(Other.StringTable, ETextIdenticalModeFlags::DeepCompare);
 	}
 
 	friend uint32 GetTypeHash(const FUEShedAuthoringTestTextDefault& Value)

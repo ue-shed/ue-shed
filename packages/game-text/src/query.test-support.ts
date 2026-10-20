@@ -65,7 +65,7 @@ import type {
 } from "./localization-schema.js";
 import { GameTextLocalizationError } from "./localization-schema.js";
 import { localizationManifestNotes } from "./localization.js";
-import { gatheredTextGroups, localizationLineUnits } from "./gathered-text.js";
+import { gatheredIdentityKey, gatheredTextGroups, localizationLineUnits } from "./gathered-text.js";
 import { hasDifferingCopy } from "./text-copies.js";
 import { longestSource } from "./source-metrics.js";
 import { DuplicateSources, duplicateOccurrencePlace } from "./duplicate-sources.js";
@@ -264,7 +264,8 @@ export function textCorpusQuery(
 						: undefined,
 			editing,
 			notes: withoutNotes ? "missing" : "present",
-			audience: presentation.audience ?? "unknown"
+			audience: presentation.audience ?? "unknown",
+			translationKeys: keys.filter((key) => !key.startsWith("unresolved:"))
 		};
 		return {
 			presentation,
@@ -482,7 +483,8 @@ export function textCorpusQuery(
 			)
 				? "missing"
 				: "present",
-			audience: lineTextAudience(entries.map((entry) => entry.facts.audience))
+			audience: lineTextAudience(entries.map((entry) => entry.facts.audience)),
+			translationKeys: line.identity ? [gatheredIdentityKey(line.identity)] : []
 		};
 	}
 	const hasClause = (filter: TextFilter | undefined, field: TextFilterField) =>

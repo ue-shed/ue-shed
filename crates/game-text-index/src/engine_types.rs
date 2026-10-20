@@ -96,6 +96,8 @@ pub enum FilterField {
     Editing,
     Notes,
     Audience,
+    /// A line's gathered namespace and key, written as the JSON array `[namespace, key]`.
+    TranslationKey,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -229,6 +231,22 @@ pub fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidInput, message)
 }
 
+/// A `translation_key` clause value: the JSON array `[namespace, key]` of a gathered identity,
+/// with a nonempty key. Unreal translates text by this identity, without a package marker.
+pub fn translation_key(value: &str) -> Result<(String, String)> {
+    let malformed = || invalid("A translation key must be a JSON [namespace, key] with a key.");
+    let parsed = crate::json_value::parse_stored(value).map_err(|_| malformed())?;
+    match parsed.as_array().map(Vec::as_slice) {
+        Some(
+            [
+                serde_json::Value::String(namespace),
+                serde_json::Value::String(key),
+            ],
+        ) if !key.is_empty() => Ok((namespace.clone(), key.clone())),
+        _ => Err(malformed()),
+    }
+}
+
 /// Decode the actual JSON text before Serde, retaining every JavaScript UTF-16 code unit.
 /// Serde's ordinary String decoder intentionally rejects lone surrogates.
 pub fn parse_search_request(payload: &str) -> Result<SearchRequest> {
@@ -325,6 +343,7 @@ impl SearchRequest {
                     FilterField::Folder => (&[], 50, 512),
                     FilterField::Asset => (&[], 200, 1024),
                     FilterField::Namespace => (&[], 50, 1024),
+                    FilterField::TranslationKey => (&[], 200, 4096),
                 };
                 list(&clause.values, max, length, "Invalid filter clause bounds.")?;
                 require(
@@ -337,6 +356,11 @@ impl SearchRequest {
                         || clause.values.iter().all(|v| !v.is_empty()),
                     invalid("Filter value must not be empty."),
                 )?;
+                if clause.field == FilterField::TranslationKey {
+                    for value in &clause.values {
+                        translation_key(value)?;
+                    }
+                }
             }
         }
         if let Some(lines) = &self.lines {
@@ -432,6 +456,7 @@ impl FocusRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wtf8::Wtf8Buf;
     use serde_json::json;
 
     #[test]
@@ -518,6 +543,32 @@ mod tests {
         let mut unknown = request;
         unknown["sql"] = json!("not an engine operation");
         assert!(serde_json::from_value::<SearchRequest>(unknown).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn translation_keys_are_namespace_key_pairs_with_a_key() -> Result<()> {
+        assert_eq!(
+            translation_key(r#"["","Title"]"#)?,
+            ("".into(), "Title".into())
+        );
+        assert_eq!(
+            translation_key(r#"[ "UI" , "\ud800" ]"#)?,
+            ("UI".into(), Wtf8Buf::from_utf16(&[0xd800]).into_view())
+        );
+        for value in [
+            r#"["UI",""]"#,
+            r#"["UI"]"#,
+            r#"["UI","K",""]"#,
+            r#"{"namespace":"UI","key":"K"}"#,
+            r#"["UI",7]"#,
+            "UI,K",
+        ] {
+            assert_eq!(
+                translation_key(value).err().ok_or(value)?.code,
+                ErrorCode::InvalidInput
+            );
+        }
         Ok(())
     }
 }

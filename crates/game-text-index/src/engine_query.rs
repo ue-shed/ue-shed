@@ -172,7 +172,7 @@ impl EngineQuery {
         Ok(None)
     }
 
-    fn identity_starts(&mut self, kind: &str) -> Result<Arc<[u32]>> {
+    pub(crate) fn identity_starts(&mut self, kind: &str) -> Result<Arc<[u32]>> {
         let starts = self.column(kind, "id_starts")?;
         if !self.validated_ids.contains(kind) {
             let count = if kind == "line" {

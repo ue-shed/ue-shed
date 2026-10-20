@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { SavedAssetTextCoverageGap } from "@ue-shed/unreal-assets/text-extraction";
 import { TextUnitId, TextOccurrenceId } from "./identifiers.js";
 import {
@@ -393,6 +393,33 @@ export type TextEditing = Schema.Schema.Type<typeof TextEditing>;
 export const TextNotes = Schema.Literals(["missing", "present"]);
 export type TextNotes = Schema.Schema.Type<typeof TextNotes>;
 
+const decodeTranslationKeyParts = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.NonEmptyString]))
+);
+/** Whether a value is exactly `JSON.stringify([namespace, key])` with a nonempty key. */
+const isTranslationKey = (value: string) =>
+	Option.match(decodeTranslationKeyParts(value), {
+		onNone: () => false,
+		onSome: (parts) => JSON.stringify(parts) === value
+	});
+
+/**
+ * A translation key: the namespace and key Unreal translates a line by, spelled
+ * `JSON.stringify([namespace, key])` (`gatheredIdentityKey`). Text keeps its saved namespace
+ * without the package marker, so saved `UI [029AE834...]` is `UI` and a bare marker is `""`;
+ * String Table entries keep their table namespace. Copies whose saved namespaces differ only by
+ * package marker share one translation key.
+ */
+export const TextTranslationKey = Schema.String.check(
+	Schema.isMaxLength(4096),
+	Schema.makeFilter((value) =>
+		isTranslationKey(value)
+			? undefined
+			: "A translation key is JSON.stringify([namespace, key]) with a nonempty key."
+	)
+);
+export type TextTranslationKey = Schema.Schema.Type<typeof TextTranslationKey>;
+
 const ClauseOp = Schema.Literals(["is", "is_not"]);
 const clause = <const Field extends string, Value extends Schema.Top>(
 	field: Field,
@@ -407,7 +434,8 @@ const clause = <const Field extends string, Value extends Schema.Top>(
 
 /**
  * One filter pill: a line matches `is` when it has any of the values, and `is_not` when it has
- * none of them. Folders match by path prefix.
+ * none of them. Folders match by path prefix. A translation key selects the lines Unreal
+ * translates by that key; without a target, a saved unit has the keys its occurrences gather to.
  */
 export const TextFilterClause = Schema.Union([
 	clause("problem", TextProblem, TextProblem.literals.length),
@@ -420,7 +448,8 @@ export const TextFilterClause = Schema.Union([
 	clause("editing", TextEditing, TextEditing.literals.length),
 	clause("notes", TextNotes, TextNotes.literals.length),
 	/** The line's audience: player if any of its saved places is player text, and so on. */
-	clause("audience", TextAudience, TextAudience.literals.length)
+	clause("audience", TextAudience, TextAudience.literals.length),
+	clause("translation_key", TextTranslationKey, 200)
 ]);
 export type TextFilterClause = Schema.Schema.Type<typeof TextFilterClause>;
 /**

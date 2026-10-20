@@ -143,6 +143,8 @@ export {
 	workspaceQualitySeverity
 } from "./localization-workspace.js";
 
+export { gatheredIdentityKey } from "./gathered-text.js";
+
 export {
 	LocalizationGatherCoverage,
 	gatheredTextIdentity,

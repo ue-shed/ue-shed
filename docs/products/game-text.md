@@ -108,6 +108,12 @@ references keep the namespace exactly as authored. A mixed corpus unit joins bot
 their own occurrences. Saved corpus units and occurrences retain the full namespace and unit IDs
 for asset inspection.
 Package variants of one namespace and key share a localization line, including source conflicts.
+That gathered namespace and key is the line's **translation key**, the identity Unreal translates
+it by. A `translation_key` filter clause selects lines by it: its values are
+`JSON.stringify([namespace, key])` (`gatheredIdentityKey(gatheredTextIdentity(unit))` or a line's
+identity). With a target it matches the one line; without one it matches every saved unit gathered
+under the key, so three Blueprint copies whose saved namespaces differ only by package marker are
+one clause, not a scan of `conflicting_source` lines.
 
 Coverage is part of every corpus result. Complete and partial results distinguish discovered,
 inspected, partial, and failed packages; resolved and unresolved occurrences; and unsupported text
@@ -842,6 +848,9 @@ Gathered only, outside the target and origin are facts, not problems.
 `folder is-not Content/Prototype/` or `translation is missing`: a field (`problem`, `finding`,
 `translation`, `origin`, `folder`, `editing`, `notes`), `is` or `is-not`, and comma-separated
 values. Every clause must match; `is` matches any of its values and `is-not` none of them.
+Requests also accept `translation_key` clauses (see
+[the shipped corpus](#shipped-read-only-corpus)); the CLI does not parse them, as their values
+hold commas.
 `--cultures de,fr` limits states, counts and translation work to those cultures. Both work on
 `loc status`, `loc export` and localization-aware `text search`; a malformed clause fails with
 `invalid_selection` and the expected form. Clauses on `asset` match a file in any spelling

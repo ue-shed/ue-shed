@@ -9,6 +9,7 @@ export { unrealPluralForms } from "./unreal-plural-forms.js";
  */
 export const UnrealModifierName = Schema.Literals(["plural", "ordinal", "gender", "hpp"]);
 export type UnrealModifierName = typeof UnrealModifierName.Type;
+const isUnrealModifierName = Schema.is(UnrealModifierName);
 /**
  * A format-pattern diagnostic with a stable category, source position and any affected
  * argument/modifier/forms. Unsupported culture and parser-limit evidence remain distinct from
@@ -223,9 +224,8 @@ function parsePattern(text: string, culture: CultureCode, depth: number): Unreal
 		}
 		const prefix =
 			text[i] === "|" ? /^\|(plural|ordinal|gender|hpp)\(/u.exec(text.slice(i)) : null;
-		const nameResult = Schema.decodeUnknownOption(UnrealModifierName)(prefix?.[1]);
-		if (prefix && nameResult._tag === "Some") {
-			const name = nameResult.value;
+		const name = prefix?.[1];
+		if (prefix && isUnrealModifierName(name)) {
 			const start = i + prefix[0].length;
 			const end = modifierEnd(text, start);
 			const forms =

@@ -480,9 +480,17 @@ export const projectRuleKinds = {
 
 const RULE_ID_PREFIX = "localization.";
 
+/** Rule IDs by check; every finding names one, and making it validates the identifier. */
+const ruleIds = new Map<BuiltInCheckId, TextQualityRuleId>();
+
 /** The rule ID a built-in check's findings and review marks record: `localization.<id>`. */
 export function localizationRuleId(id: BuiltInCheckId): TextQualityRuleId {
-	return TextQualityRuleId.make(`${RULE_ID_PREFIX}${id}`);
+	let ruleId = ruleIds.get(id);
+	if (ruleId === undefined) {
+		ruleId = TextQualityRuleId.make(`${RULE_ID_PREFIX}${id}`);
+		ruleIds.set(id, ruleId);
+	}
+	return ruleId;
 }
 
 /** The built-in check a rule ID names, or undefined for a project rule or an unknown check. */

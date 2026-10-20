@@ -238,6 +238,14 @@ interface EvidenceEntryOf {
 }
 const OCCURRENCE_FIELDS = ["namespace", "key", "object", "property", "row", "identity", "location"];
 
+/** The literals whose bits are set in `mask`, in order; a page builds these for every culture. */
+function flagged<A>(literals: readonly A[], mask: number): A[] {
+	const values: A[] = [];
+	for (let index = 0; mask >>> index !== 0 && index < literals.length; index++)
+		if (mask & (1 << index)) values.push(literals[index]!);
+	return values;
+}
+
 /** Bounded hydration uses input row references, retaining all original metadata and duplicates.
  * Columns, evidence entries and strings are read once per page; the loop over lines is plain
  * synchronous code, so a large page pays no Effect or schema overhead per entry. */
@@ -474,9 +482,7 @@ export const hydrateJoinedTarget = Effect.fn("JoinedTarget.page")(function* (
 				: null;
 			const state = localizationStates[values.state![row]!];
 			snapshotCheck(state !== undefined, "join.state", "Invalid culture state");
-			const facts = localizationStates.filter(
-				(_, index) => values.facts![row]! & (1 << index)
-			);
+			const facts = flagged(localizationStates, values.facts![row]!);
 			const reviewStatus = values.review![row]!,
 				record = meta.input.review?.records[values.review_record![row]! - 1];
 			const review =
@@ -493,9 +499,7 @@ export const hydrateJoinedTarget = Effect.fn("JoinedTarget.page")(function* (
 				culture,
 				state,
 				facts,
-				unknownReasons: LocalizationUnknownReason.literals.filter(
-					(_, index) => values.reasons![row]! & (1 << index)
-				),
+				unknownReasons: flagged(LocalizationUnknownReason.literals, values.reasons![row]!),
 				reducedSourceChecking: meta.reducedSourceChecking[ci]!,
 				archive,
 				po,

@@ -44,18 +44,38 @@ export const workspaceScaleRules = Schema.decodeUnknownSync(GameTextRuleDocument
 	]
 });
 
-/** Real saved-text/index inputs, independent of Unreal and any retained project data. */
+/** The fixture's source text of line `index`. */
+export const workspaceScaleSource = (index: number) =>
+	`${["TODO", "TODO FIXME", "FIXME", "Ready"][index % 4]} label ${index} {PlayerName}`;
+
+/**
+ * Real saved-text/index inputs, independent of Unreal and any retained project data. `source`
+ * gives each line's source text, such as one many lines share.
+ */
 export const workspaceScaleFixture = Effect.fn("Test.GameText.workspaceScale")(function* (
 	count: number,
-	cultureCount = 10
+	cultureCount = 10,
+	source: (index: number) => string = workspaceScaleSource
 ) {
 	const parent = resolve("test-results/stall");
 	yield* Effect.promise(() => mkdir(parent, { recursive: true }));
 	const fixture = yield* makeIndexRegressionFixture(parent);
-	const cultures = ["en", "de", "fr", "es", "it", "ja", "ko", "zh", "pt", "pl"].slice(
-		0,
-		cultureCount
-	);
+	const cultures = [
+		"en",
+		"de",
+		"fr",
+		"es",
+		"it",
+		"ja",
+		"ko",
+		"zh",
+		"pt",
+		"pl",
+		"ru",
+		"tr",
+		"nl",
+		"sv"
+	].slice(0, cultureCount);
 	const target = Schema.decodeUnknownSync(LocalizationTarget)({
 		...fixture.target,
 		cultures,
@@ -73,7 +93,7 @@ export const workspaceScaleFixture = Effect.fn("Test.GameText.workspaceScale")(f
 	// Some placeholders are fully covered by source rules, some partly, and some not at all.
 	const entries = Array.from({ length: count }, (_, index) => ({
 		key: `K${String(index).padStart(7, "0")}`,
-		source: `${["TODO", "TODO FIXME", "FIXME", "Ready"][index % 4]} label ${index} {PlayerName}`
+		source: source(index)
 	}));
 	const records: SavedAssetPackageTextRecord[] = [];
 	for (let start = 0; start < entries.length; start += 1000) {

@@ -38,6 +38,11 @@ import {
 } from "./shared-string-codec.js";
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+/** Decoded strings a reader keeps by ID before starting over, and their total UTF-16 length. */
+const MEMO_STRINGS = 131_072,
+	MEMO_UNITS = 4 * 1024 ** 2;
+/** Longer strings are decoded on every read instead of kept. */
+const MEMO_STRING_LENGTH = 4096;
 export const maximumSharedSegments = 256;
 export const SharedSegment = Schema.Struct({
 	file: Schema.String.check(Schema.isPattern(/^strings-[a-f0-9-]+\.snapshot$/u)),
@@ -237,6 +242,13 @@ export class SharedStringFiles {
 	private decodedMisses = 0;
 	/** First IDs of the segments; appends only add segments, so the length tells it is current. */
 	private starts: number[] = [];
+	/**
+	 * Decoded strings by ID. IDs never change meaning, and bulk reads ask for the same ones over
+	 * and over: a localization line's key, source and translations recur in the manifest, every
+	 * archive and every PO file, and empty or shared values recur across lines.
+	 */
+	private readonly decodedStrings = new Map<number, string>();
+	private decodedUnits = 0;
 	/** The block the previous single lookup decoded. Lookups in ID order mostly stay in it. */
 	private lastDecoded: { segment: number; block: number; values: PackedStrings } | undefined;
 	private segmentStarts() {
@@ -419,9 +431,35 @@ export class SharedStringFiles {
 	 * Reads go in ID order so each block decodes once per call; in request order a large
 	 * lookup evicts and re-decompresses the same blocks from the bounded caches. */
 	stringsSync(ids: readonly number[]): string[] {
+		snapshotCheck(!this.closed, "strings", "Shared string scope is closed");
 		const values: string[] = Array.from({ length: ids.length });
-		const order = Array.from(ids.keys()).sort((a, b) => ids[a]! - ids[b]!);
-		for (const index of order) values[index] = decodeWtf8(this.bytesSync(ids[index]!));
+		let missing: number[] | undefined;
+		for (let index = 0; index < ids.length; index++) {
+			const value = this.decodedStrings.get(ids[index]!);
+			if (value === undefined) (missing ??= []).push(index);
+			else values[index] = value;
+		}
+		if (!missing) return values;
+		missing.sort((a, b) => ids[a]! - ids[b]!);
+		for (const index of missing) {
+			const id = ids[index]!;
+			let value = this.decodedStrings.get(id);
+			if (value === undefined) {
+				value = decodeWtf8(this.bytesSync(id));
+				if (value.length <= MEMO_STRING_LENGTH) {
+					if (
+						this.decodedStrings.size >= MEMO_STRINGS ||
+						this.decodedUnits + value.length > MEMO_UNITS
+					) {
+						this.decodedStrings.clear();
+						this.decodedUnits = 0;
+					}
+					this.decodedStrings.set(id, value);
+					this.decodedUnits += value.length;
+				}
+			}
+			values[index] = value;
+		}
 		return values;
 	}
 	/** A selected UTF-8 value for byte predicates; backed by the bounded decoded-block cache. */
@@ -1053,6 +1091,8 @@ export class SharedStringFiles {
 		this.indexes.clear();
 		this.frames.clear();
 		this.decoded.clear();
+		this.decodedStrings.clear();
+		this.decodedUnits = 0;
 		this.lastDecoded = undefined;
 	}
 }

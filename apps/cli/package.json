@@ -27,7 +27,7 @@
 		"@ue-shed/scenarios": "workspace:*",
 		"@ue-shed/unreal-assets": "workspace:*",
 		"@ue-shed/unreal-connection": "workspace:*",
-		"@ue-shed/world": "workspace:0.18.0",
+		"@ue-shed/world": "workspace:0.19.0",
 		"effect": "catalog:"
 	},
 	"devDependencies": {

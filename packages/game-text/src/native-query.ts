@@ -1,8 +1,12 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Fiber, Ref, Schema, Semaphore, type Scope } from "effect";
+import { Effect, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
 import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
-import type { GameTextEngineRequest, GameTextIndexConfiguration } from "@ue-shed/protocol";
+import type {
+	GameTextEngineOutcome,
+	GameTextEngineRequest,
+	GameTextIndexConfiguration
+} from "@ue-shed/protocol";
 import { GameTextIndexError } from "./index-contract.js";
 import {
 	TextCorpus,
@@ -14,7 +18,7 @@ import {
 	TextCorpusSearchPage,
 	TextCorpusSearchRequest
 } from "./schema.js";
-import { LocalizationLine } from "./localization-schema.js";
+import { LocalizationLine, type LocalizationLineId } from "./localization-schema.js";
 import { LocalizationFocus, LocalizationFocusRequest } from "./localization-view.js";
 import { TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 
@@ -46,6 +50,14 @@ const failed = (operation: string, cause: unknown) =>
 		cause
 	});
 
+/** One native process and the reader of this model's snapshot pinned in it. */
+interface Lane {
+	readonly reader: string;
+	readonly execute: (
+		request: GameTextEngineRequest
+	) => Effect.Effect<GameTextEngineOutcome, GameTextIndexError>;
+}
+
 /** Pin one native snapshot for the caller's scope, with no JavaScript query-engine fallback. */
 export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(function* (input: {
 	readonly configuration: GameTextIndexConfiguration;
@@ -53,6 +65,18 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	readonly joinedKey: string;
 	readonly audienceRules?: readonly string[];
 	readonly onFailure?: Effect.Effect<void>;
+	/**
+	 * A second native process for bulk reads: corpus and localization dumps, exports and policy
+	 * rows. Each native process answers one request at a time, so without it a dump holds every
+	 * search, focus and summary until it finishes. The model opens this snapshot in it on the
+	 * first bulk read and closes both with its scope. When the second process or its reader cannot
+	 * open, bulk reads share the first process as before.
+	 */
+	readonly bulkEngine?: Effect.Effect<
+		NativeGameTextEngineClient["Service"],
+		unknown,
+		Scope.Scope
+	>;
 }): Effect.fn.Return<
 	NativeIndexReader,
 	GameTextIndexError,
@@ -60,17 +84,19 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 > {
 	const engine = yield* NativeGameTextEngineClient;
 	const modelScope = yield* Effect.scope;
+	// Interactive reads and bulk reads queue separately, one at a time each.
 	const reads = yield* Semaphore.make(1);
+	const bulkReads = input.bulkEngine === undefined ? reads : yield* Semaphore.make(1);
 	// An interrupted UI request must not abort the protocol process and discard this reader.
 	// The model owns admitted reads and their staged files. Canceled queued work is skipped;
 	// closing the model still interrupts its active read and terminates its native process.
-	const scopedRead = <A>(read: Effect.Effect<A, GameTextIndexError>) =>
+	const scopedRead = <A>(lane: Semaphore.Semaphore, read: Effect.Effect<A, GameTextIndexError>) =>
 		Effect.uninterruptibleMask((restore) =>
 			Effect.gen(function* () {
 				if (modelScope.state._tag === "Closed")
 					return yield* Effect.fail(failed("read", "The native reader scope is closed."));
 				const canceled = yield* Ref.make(false);
-				const job = yield* reads
+				const job = yield* lane
 					.withPermits(1)(
 						Effect.gen(function* () {
 							if (yield* Ref.get(canceled)) return yield* Effect.interrupt;
@@ -88,47 +114,83 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				);
 			})
 		);
-	const execute = Effect.fn("GameTextIndex.nativeCall")((request: GameTextEngineRequest) =>
-		engine.execute(request).pipe(
-			Effect.mapError((cause) => failed(request.action, cause)),
-			Effect.tapError(() => input.onFailure ?? Effect.void)
-		)
-	);
-	const opened = yield* Effect.acquireRelease(
-		execute({
-			action: "open",
-			configuration: input.configuration,
-			expectedGeneration: input.generation,
-			expectedJoined: input.joinedKey,
-			policy: {
-				audienceRules: input.audienceRules ?? TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
-			}
-		}),
-		(opened) =>
-			opened.reader === null
-				? Effect.void
-				: execute({ action: "close", reader: opened.reader }).pipe(
-						Effect.catch((cause) =>
-							Effect.logDebug("Native Game Text reader cleanup failed", { cause })
-						)
-					),
-		{ interruptible: true }
-	);
-	const reader = opened.reader;
-	if (
-		reader === null ||
-		opened.generation !== input.generation ||
-		opened.joinedKey !== input.joinedKey
-	)
-		return yield* Effect.fail(
-			failed("open", "Native reader returned a different snapshot identity.")
+	const executeOn = (client: NativeGameTextEngineClient["Service"], invalidates = true) =>
+		Effect.fn("GameTextIndex.nativeCall")((request: GameTextEngineRequest) =>
+			client.execute(request).pipe(
+				Effect.mapError((cause) => failed(request.action, cause)),
+				Effect.tapError(() =>
+					invalidates ? (input.onFailure ?? Effect.void) : Effect.void
+				)
+			)
 		);
+	/** Open this snapshot in one process, closing it with the model's scope. */
+	const openReader = Effect.fn("GameTextIndex.nativeOpenReader")(function* (
+		execute: Lane["execute"]
+	) {
+		const opened = yield* Effect.acquireRelease(
+			execute({
+				action: "open",
+				configuration: input.configuration,
+				expectedGeneration: input.generation,
+				expectedJoined: input.joinedKey,
+				policy: {
+					audienceRules:
+						input.audienceRules ?? TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
+				}
+			}),
+			(opened) =>
+				opened.reader === null
+					? Effect.void
+					: execute({ action: "close", reader: opened.reader }).pipe(
+							Effect.catch((cause) =>
+								Effect.logDebug("Native Game Text reader cleanup failed", { cause })
+							)
+						),
+			{ interruptible: true }
+		);
+		const reader = opened.reader;
+		if (
+			reader === null ||
+			opened.generation !== input.generation ||
+			opened.joinedKey !== input.joinedKey
+		)
+			return yield* Effect.fail(
+				failed("open", "Native reader returned a different snapshot identity.")
+			);
+		return reader;
+	});
+	const execute = executeOn(engine);
+	const interactive: Lane = { reader: yield* openReader(execute), execute };
+	const bulkEngine = input.bulkEngine;
+	// Opened once, on the first bulk read, inside the model's scope.
+	const bulkLane: Effect.Effect<Lane> =
+		bulkEngine === undefined
+			? Effect.succeed(interactive)
+			: yield* Effect.cached(
+					Effect.gen(function* () {
+						const client = yield* bulkEngine;
+						// Failing to open here (a newer snapshot was published, no process) only
+						// keeps bulk reads on the interactive reader; this model stays valid.
+						const reader = yield* openReader(executeOn(client, false));
+						return { reader, execute: executeOn(client) } satisfies Lane;
+					}).pipe(
+						Effect.provideService(Scope.Scope, modelScope),
+						// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Any failure to open a second lane leaves the first serving every read, as before.
+						Effect.catch((cause) =>
+							Effect.logWarning(
+								"Native Game Text bulk reads share the interactive reader",
+								{ cause }
+							).pipe(Effect.as(interactive))
+						)
+					)
+				);
 	function response<S extends Schema.Codec<unknown, unknown>>(
+		lane: Lane,
 		request: GameTextEngineRequest,
 		schema: S
 	): Effect.Effect<S["Type"], GameTextIndexError> {
 		return Effect.gen(function* () {
-			const outcome = yield* execute(request);
+			const outcome = yield* lane.execute(request);
 			const parsed = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
 				outcome.payload
 			);
@@ -161,7 +223,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			})
 		);
 	const localizationLines = Effect.fn("GameTextIndex.nativeLocalizationExport")(
-		(request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) =>
+		(lane: Lane, request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) =>
 			withStage((directory) =>
 				Effect.gen(function* () {
 					const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
@@ -169,9 +231,9 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 						pageSize: 50
 					}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
 					const output = join(directory, "localization.json");
-					yield* execute({
+					yield* lane.execute({
 						action: "localization_export",
-						reader,
+						reader: lane.reader,
 						payload: JSON.stringify(decoded),
 						output
 					});
@@ -188,6 +250,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			)
 	);
 	const exportWithSignals = Effect.fn("GameTextIndex.nativeExport")(function* (
+		lane: Lane,
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined
 	) {
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
@@ -199,12 +262,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		return yield* withStage((directory) =>
 			Effect.gen(function* () {
 				const output = join(directory, "corpus.json");
-				yield* execute(
+				yield* lane.execute(
 					request === undefined
-						? { action: "corpus", reader, output }
+						? { action: "corpus", reader: lane.reader, output }
 						: {
 								action: "export",
-								reader,
+								reader: lane.reader,
 								payload: JSON.stringify(decoded),
 								output
 							}
@@ -226,91 +289,32 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			})
 		);
 	});
-
-	const query: NativeIndexReader = {
-		readLocalizationLines: () =>
-			withStage((directory) =>
-				Effect.gen(function* () {
-					const output = join(directory, "localization.json");
-					yield* execute({ action: "localization_corpus", reader, output });
-					const text = yield* Effect.tryPromise({
-						try: (signal) => readFile(output, { encoding: "utf8", signal }),
-						catch: (cause) => failed("localization_corpus_read", cause)
-					});
-					return yield* Schema.decodeUnknownEffect(
-						Schema.fromJsonString(Schema.Array(LocalizationLine))
-					)(text).pipe(
-						Effect.mapError((cause) => failed("localization_corpus_decode", cause))
-					);
-				})
-			),
-		readCorpus: () => exportWithSignals(undefined).pipe(Effect.map((result) => result.corpus)),
-		summary: Effect.fn("GameTextIndex.nativeSummary")(() =>
-			response({ action: "summary", reader }, TextCorpusQuerySummary)
-		),
-		search: Effect.fn("GameTextIndex.nativeSearch")(function* (request) {
-			const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(
-				request
-			).pipe(Effect.mapError((cause) => failed("search", cause)));
-			return yield* response(
-				{ action: "search", reader, payload: JSON.stringify(decoded) },
-				TextCorpusSearchPage
-			);
-		}),
-		focus: Effect.fn("GameTextIndex.nativeFocus")(function* (request) {
-			const decoded = yield* Schema.decodeUnknownEffect(TextCorpusFocusRequest)(request).pipe(
-				Effect.mapError((cause) => failed("focus", cause))
-			);
-			const result = yield* response(
-				{ action: "focus", reader, payload: JSON.stringify(decoded) },
-				Schema.NullOr(TextCorpusFocus)
-			);
-			return result ?? undefined;
-		}),
-		localizationFocus: Effect.fn("GameTextIndex.nativeLocalizationFocus")(function* (id) {
-			return yield* withStage((directory) =>
-				Effect.gen(function* () {
-					const output = join(directory, "line.json");
-					yield* execute({
-						action: "localization_focus_export",
-						reader,
-						payload: JSON.stringify(id),
-						output
-					});
-					const text = yield* Effect.tryPromise({
-						try: (signal) => readFile(output, { encoding: "utf8", signal }),
-						catch: (cause) => failed("localization_focus_read", cause)
-					});
-					const line = yield* Schema.decodeUnknownEffect(
-						Schema.fromJsonString(Schema.NullOr(LocalizationLine))
-					)(text).pipe(
-						Effect.mapError((cause) => failed("localization_focus_decode", cause))
-					);
-					return line ?? undefined;
-				})
-			);
-		}),
-		localizationDetail: Effect.fn("GameTextIndex.nativeLocalizationDetail")(
-			function* (request) {
-				const decoded = yield* Schema.decodeUnknownEffect(LocalizationFocusRequest)(
-					request
-				).pipe(Effect.mapError((cause) => failed("localization_detail", cause)));
-				const result = yield* response(
-					{ action: "localization_detail", reader, payload: JSON.stringify(decoded) },
-					Schema.NullOr(LocalizationFocus)
+	const readLocalizationLines = (lane: Lane) =>
+		withStage((directory) =>
+			Effect.gen(function* () {
+				const output = join(directory, "localization.json");
+				yield* lane.execute({ action: "localization_corpus", reader: lane.reader, output });
+				const text = yield* Effect.tryPromise({
+					try: (signal) => readFile(output, { encoding: "utf8", signal }),
+					catch: (cause) => failed("localization_corpus_read", cause)
+				});
+				return yield* Schema.decodeUnknownEffect(
+					Schema.fromJsonString(Schema.Array(LocalizationLine))
+				)(text).pipe(
+					Effect.mapError((cause) => failed("localization_corpus_decode", cause))
 				);
-				return result ?? undefined;
-			}
-		),
-		localizationLines,
-		localizationRows: Effect.fn("GameTextIndex.nativePolicyRows")((request) =>
+			})
+		);
+	const localizationRows = Effect.fn("GameTextIndex.nativePolicyRows")(
+		(lane: Lane, request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) =>
 			withStage((directory) =>
 				Effect.gen(function* () {
 					const output = join(directory, "rows.u32");
 					const result = yield* response(
+						lane,
 						{
 							action: "rows",
-							reader,
+							reader: lane.reader,
 							output,
 							payload: JSON.stringify({ ...request, pageSize: 50 })
 						},
@@ -338,21 +342,91 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 					return rows;
 				})
 			)
-		),
-		exportWithSignals,
-		export: (request) => exportWithSignals(request).pipe(Effect.map((result) => result.corpus))
+	);
+	const reader = interactive.reader;
+	const summary = Effect.fn("GameTextIndex.nativeSummary")(() =>
+		response(interactive, { action: "summary", reader }, TextCorpusQuerySummary)
+	);
+	const search = Effect.fn("GameTextIndex.nativeSearch")(function* (
+		request: TextCorpusSearchRequest
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
+			Effect.mapError((cause) => failed("search", cause))
+		);
+		return yield* response(
+			interactive,
+			{ action: "search", reader, payload: JSON.stringify(decoded) },
+			TextCorpusSearchPage
+		);
+	});
+	const focus = Effect.fn("GameTextIndex.nativeFocus")(function* (
+		request: TextCorpusFocusRequest
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusFocusRequest)(request).pipe(
+			Effect.mapError((cause) => failed("focus", cause))
+		);
+		const result = yield* response(
+			interactive,
+			{ action: "focus", reader, payload: JSON.stringify(decoded) },
+			Schema.NullOr(TextCorpusFocus)
+		);
+		return result ?? undefined;
+	});
+	const localizationFocus = Effect.fn("GameTextIndex.nativeLocalizationFocus")(function* (
+		id: LocalizationLineId
+	) {
+		return yield* withStage((directory) =>
+			Effect.gen(function* () {
+				const output = join(directory, "line.json");
+				yield* execute({
+					action: "localization_focus_export",
+					reader,
+					payload: JSON.stringify(id),
+					output
+				});
+				const text = yield* Effect.tryPromise({
+					try: (signal) => readFile(output, { encoding: "utf8", signal }),
+					catch: (cause) => failed("localization_focus_read", cause)
+				});
+				const line = yield* Schema.decodeUnknownEffect(
+					Schema.fromJsonString(Schema.NullOr(LocalizationLine))
+				)(text).pipe(
+					Effect.mapError((cause) => failed("localization_focus_decode", cause))
+				);
+				return line ?? undefined;
+			})
+		);
+	});
+	const localizationDetail = Effect.fn("GameTextIndex.nativeLocalizationDetail")(function* (
+		request: LocalizationFocusRequest
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(LocalizationFocusRequest)(request).pipe(
+			Effect.mapError((cause) => failed("localization_detail", cause))
+		);
+		const result = yield* response(
+			interactive,
+			{ action: "localization_detail", reader, payload: JSON.stringify(decoded) },
+			Schema.NullOr(LocalizationFocus)
+		);
+		return result ?? undefined;
+	});
+	/** A read on the bulk lane, which opens on first use. */
+	const bulk = <A>(read: (lane: Lane) => Effect.Effect<A, GameTextIndexError>) =>
+		scopedRead(bulkReads, Effect.flatMap(bulkLane, read));
+	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
+		bulk((lane) => exportWithSignals(lane, request));
+	const model: NativeIndexReader = {
+		summary: () => scopedRead(reads, summary()),
+		search: (request) => scopedRead(reads, search(request)),
+		focus: (request) => scopedRead(reads, focus(request)),
+		localizationFocus: (id) => scopedRead(reads, localizationFocus(id)),
+		localizationDetail: (request) => scopedRead(reads, localizationDetail(request)),
+		readCorpus: () => exported(undefined).pipe(Effect.map((result) => result.corpus)),
+		readLocalizationLines: () => bulk(readLocalizationLines),
+		localizationLines: (request) => bulk((lane) => localizationLines(lane, request)),
+		localizationRows: (request) => bulk((lane) => localizationRows(lane, request)),
+		exportWithSignals: exported,
+		export: (request) => exported(request).pipe(Effect.map((result) => result.corpus))
 	};
-	return {
-		readCorpus: () => scopedRead(query.readCorpus()),
-		readLocalizationLines: () => scopedRead(query.readLocalizationLines()),
-		summary: () => scopedRead(query.summary()),
-		search: (request) => scopedRead(query.search(request)),
-		focus: (request) => scopedRead(query.focus(request)),
-		localizationFocus: (id) => scopedRead(query.localizationFocus(id)),
-		localizationDetail: (request) => scopedRead(query.localizationDetail(request)),
-		localizationLines: (request) => scopedRead(query.localizationLines(request)),
-		localizationRows: (request) => scopedRead(query.localizationRows(request)),
-		exportWithSignals: (request) => scopedRead(query.exportWithSignals(request)),
-		export: (request) => scopedRead(query.export(request))
-	};
+	return model;
 });

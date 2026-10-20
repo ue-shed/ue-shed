@@ -4,9 +4,11 @@ export {
 	MAX_CORPUS_REPORT_ITEMS,
 	TextCorpusDiagnosticSummary,
 	TextCorpusReport,
+	TextCorpusReportHeader,
 	TextPackageCoverageSummary,
 	textCorpusDiagnosticSummary,
 	textCorpusReport,
+	textCorpusReportHeader,
 	textPackageCoverageSummary
 } from "./corpus-summary.js";
 

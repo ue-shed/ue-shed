@@ -9,6 +9,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 const FRAME_CACHE_BYTES: usize = 32 * 1024 * 1024;
+/// A dictionary block: its segment and its index within the segment.
+type DictionaryBlock = (usize, usize);
 const MAX_PATCH_ROWS: usize = 8192;
 
 struct Layer {
@@ -554,7 +556,8 @@ impl EngineReader {
         let mut visit = (0..ids.len()).collect::<Vec<_>>();
         visit.sort_unstable_by_key(|index| ids[*index]);
         let mut result = vec![String::new(); ids.len()];
-        let mut decoded: Option<((usize, usize), Vec<Vec<u8>>)> = None;
+        // The last decoded block: its (segment, block) and its strings.
+        let mut decoded: Option<(DictionaryBlock, Vec<Vec<u8>>)> = None;
         for index in visit {
             let (segment_index, local) = self.string_position(ids[index])?;
             let block = (segment_index, local / 64);

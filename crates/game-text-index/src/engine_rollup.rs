@@ -142,6 +142,9 @@ pub fn parse_aggregate_request(payload: &str) -> Result<AggregateRequest> {
 
 /// A key component: an index into a fixed vocabulary, or a dictionary or label ID.
 type Code = u32;
+/// A group's key: one component per dimension, at most four; the rest stay zero. A fixed array,
+/// so counting a row allocates nothing.
+type Key = [Code; 4];
 #[derive(Default)]
 struct Tally {
     lines: u64,
@@ -268,8 +271,10 @@ impl EngineQuery {
         let mut flag_names: Vec<String> = Vec::new();
         let mut identities: Vec<(u32, u32)> = Vec::new();
         let mut identity_codes: HashMap<(u32, u32), u32> = HashMap::new();
-        let mut tallies: HashMap<Vec<Code>, Tally> = HashMap::new();
+        let mut tallies: HashMap<Key, Tally> = HashMap::new();
         let culture_position = request.by.iter().position(|d| *d == Dimension::Culture);
+        // Whether the review file reviews this target: the same for every row.
+        let reviews_target = self.reader.meta["input"]["review"]["target"] == self.target["name"];
         for (index, row) in rows.iter().enumerate() {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
@@ -370,9 +375,9 @@ impl EngineQuery {
                 values.push(codes);
             }
             let mut add = |values: &[Vec<Code>]| {
-                let mut key = vec![0; values.len()];
+                let mut key: Key = [0; 4];
                 each_key(values, 0, &mut key, &mut |key| {
-                    let tally = tallies.entry(key.to_vec()).or_default();
+                    let tally = tallies.entry(*key).or_default();
                     tally.lines += 1;
                     tally.source_words += source_words;
                     if line_break == LINE_BREAK_UNKNOWN {
@@ -387,30 +392,33 @@ impl EngineQuery {
                 Some(_) => {
                     for ci in &cultures {
                         let c = &projection.cultures[*ci];
+                        // Culture-mark values refill their slots in place: no allocation per
+                        // row and culture.
                         for (position, dimension) in request.by.iter().enumerate() {
-                            values[position] = match dimension {
-                                Dimension::Culture => vec![*ci as u32],
-                                Dimension::State => vec![c.state[row]],
-                                Dimension::Fact => bits(c.facts[row]),
+                            if !dimension.per_culture() && *dimension != Dimension::Culture {
+                                continue;
+                            }
+                            let slot = &mut values[position];
+                            slot.clear();
+                            match dimension {
+                                Dimension::Culture => slot.push(*ci as u32),
+                                Dimension::State => slot.push(c.state[row]),
+                                Dimension::Fact => push_bits(slot, c.facts[row]),
                                 Dimension::UnknownReason => {
-                                    bits(c.reasons[row] & ((1 << REASONS.len()) - 1))
+                                    push_bits(slot, c.reasons[row] & ((1 << REASONS.len()) - 1))
                                 }
-                                Dimension::Review => bits(
-                                    if self.reader.meta["input"]["review"]["target"]
-                                        == self.target["name"]
-                                    {
-                                        projection.review(self, row, *ci)?
-                                    } else {
-                                        0
-                                    },
-                                ),
+                                Dimension::Review => {
+                                    if reviews_target {
+                                        push_bits(slot, projection.review(self, row, *ci)?)
+                                    }
+                                }
                                 // 1 not reviewed, 2 current, 3 changed since review.
-                                Dimension::ReviewStatus => match c.review[row] {
-                                    0 => Vec::new(),
-                                    status => vec![status],
-                                },
+                                Dimension::ReviewStatus => {
+                                    if c.review[row] != 0 {
+                                        slot.push(c.review[row])
+                                    }
+                                }
                                 Dimension::ReviewFlag => {
-                                    let mut codes = Vec::new();
                                     for flag in self.review_flags(&projection, row, *ci)? {
                                         let code = match flag_names.iter().position(|v| *v == flag)
                                         {
@@ -420,14 +428,13 @@ impl EngineQuery {
                                                 flag_names.len() - 1
                                             }
                                         } as u32;
-                                        if !codes.contains(&code) {
-                                            codes.push(code);
+                                        if !slot.contains(&code) {
+                                            slot.push(code);
                                         }
                                     }
-                                    codes
                                 }
-                                _ => continue,
-                            };
+                                _ => {}
+                            }
                         }
                         add(&values);
                     }
@@ -443,7 +450,7 @@ impl EngineQuery {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
             }
-            for (position, code) in key.iter().enumerate() {
+            for (position, code) in key.iter().take(request.by.len()).enumerate() {
                 let dimension = request.by[position];
                 if let std::collections::hash_map::Entry::Vacant(entry) =
                     texts.entry((position, *code))
@@ -514,10 +521,9 @@ impl EngineQuery {
             }
             sorted.push((key, tally));
         }
-        let rank =
-            |key: &[Code], position: usize| -> &String { &texts[&(position, key[position])].0 };
+        let rank = |key: &Key, position: usize| -> &String { &texts[&(position, key[position])].0 };
         sorted.sort_by(|(left, _), (right, _)| {
-            (0..left.len())
+            (0..request.by.len())
                 .map(|position| crate::join::ordinal(rank(left, position), rank(right, position)))
                 .find(|ordering| ordering.is_ne())
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -532,6 +538,7 @@ impl EngineQuery {
                 "key".into(),
                 json!(
                     key.iter()
+                        .take(request.by.len())
                         .enumerate()
                         .map(|(position, code)| texts[&(position, *code)].1.clone())
                         .collect::<Vec<_>>()
@@ -554,12 +561,10 @@ impl EngineQuery {
 fn bits(value: u32) -> Vec<Code> {
     (0..32).filter(|bit| value & (1 << bit) != 0).collect()
 }
-fn each_key(
-    values: &[Vec<Code>],
-    position: usize,
-    key: &mut Vec<Code>,
-    visit: &mut impl FnMut(&[Code]),
-) {
+fn push_bits(codes: &mut Vec<Code>, value: u32) {
+    codes.extend((0..32).filter(|bit| value & (1 << bit) != 0));
+}
+fn each_key(values: &[Vec<Code>], position: usize, key: &mut Key, visit: &mut impl FnMut(&Key)) {
     if position == values.len() {
         visit(key);
         return;

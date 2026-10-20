@@ -39,3 +39,18 @@ corpus.
 The localization quality worker sends its spans' and stages' timings back with its findings, and the
 host adds them to its `GameTextIndex.qualityWorker.scan` span, so a host's trace shows where a
 worker scan spends its time.
+
+Localization quality scans and progress reports over large targets are faster, with the same
+findings and reports. Measured on a generated target of 200,000 lines in 14 cultures with archives
+and PO files: a quality scan takes 55 s instead of 104 s. Hydrating its lines takes 15 s instead of
+36 s: a shared-string reader keeps strings it decoded by ID (a line's key, source and translations
+recur in the manifest and every archive and PO file), and reading manifest, archive and PO entries
+decodes only the columns of their format. Checking takes 25 s instead of 50 s, and preparing
+2 s instead of 5 s: duplicate-source places come from the occurrence location columns instead of
+whole occurrences, and column lookups, shipped translations, rule IDs and format modifiers no
+longer rebuild keys or validate values the index already typed. `indexedLocalizationProgressReport`
+read the manifest once and every archive twice from the index on each call, 44 s of JavaScript per
+call on that target. It now reads them once per evidence object, while the native reads run, keeps
+only the totals it needs, and further pages, the CSV and baseline comparisons (per baseline) reuse
+them: 16 s for the first report, then about a millisecond. Spans
+`GameText.localizationReport.manifest`, `.words`, `.archive` and `.assemble` show its phases.

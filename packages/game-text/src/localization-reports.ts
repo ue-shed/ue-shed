@@ -23,7 +23,7 @@ import {
 } from "./localization-schema.js";
 import { LocalizationFileStatus, localizationEvidenceFileStatuses } from "./localization-status.js";
 import { localizationTextMatches } from "./localization.js";
-import { localizationWordCount } from "./localization-words.js";
+import { localizationWordCount, type LocalizationWordCount } from "./localization-words.js";
 import { canonicalLocalizationJson, localizationFingerprint } from "./localization-fingerprint.js";
 import { manifestPlace } from "./localization-key-changes.js";
 import type { NativeTextQuery } from "./native-query-contract.js";
@@ -613,78 +613,155 @@ const indexTallies = Effect.fn("GameText.localizationReportTallies")(function* (
 	return { tracked: statuses.groups.length > 0, cultures } satisfies ProgressTallies;
 });
 
+/** Translation progress of one culture's archive over the manifest. */
+interface ArchiveProgress {
+	readonly translatedLines: number;
+	readonly translatedWords: Words;
+	/** The archive was read without diagnostics, so its totals are reported. */
+	readonly coverage: boolean;
+}
+const noArchive: ArchiveProgress = { translatedLines: 0, translatedWords: 0, coverage: false };
+/** The manifest's required entries, each with its identity key and word count. */
+interface ManifestFacts {
+	readonly entries: readonly ManifestEntry[];
+	readonly keys: readonly string[];
+	readonly words: readonly LocalizationWordCount[];
+}
+/**
+ * What a progress report reads from its evidence, which only the evidence decides. Hosts ask for
+ * the report once per page, for its CSV and for a baseline comparison, and on an index model
+ * every read of an evidence file decodes all its entries again.
+ */
+interface ReportEvidenceFacts {
+	readonly lines: number;
+	readonly totalWords: Words;
+	readonly wordCountDiagnostics: LocalizationProgressReport["wordCountDiagnostics"];
+	/** By culture; a culture listed twice keeps its last archive, as before. */
+	readonly archives: ReadonlyMap<CultureCode, ArchiveProgress>;
+	/** Baseline comparisons against this evidence, by baseline. */
+	readonly deltas: WeakMap<LocalizationBaseline, LocalizationBaselineDelta>;
+}
+const reportFacts = new WeakMap<LocalizationTargetEvidence, ReportEvidenceFacts>();
+
+/** Word counts of the entries' sources; a source repeated by several entries is counted once. */
+function manifestWords(entries: readonly ManifestEntry[]): readonly LocalizationWordCount[] {
+	const counted = new Map<string, LocalizationWordCount>();
+	return entries.map((entry) => {
+		let count = counted.get(entry.source.Text);
+		if (count === undefined) {
+			count = localizationWordCount(entry.source.Text);
+			counted.set(entry.source.Text, count);
+		}
+		return count;
+	});
+}
+/**
+ * Lines and words of the manifest an archive translates: its only entry for the identity has the
+ * manifest's source and a translation. GenerateTextLocalizationReport constructs its helper with
+ * an empty native culture. Its CSV checks raw manifest source for every culture, without runtime
+ * native fallback.
+ */
+function archiveProgress(
+	manifest: ManifestFacts,
+	archive: LocalizationTargetEvidence["cultures"][number]["archive"]
+): ArchiveProgress {
+	if (archive.status !== "read") return noArchive;
+	// One read: on an index model each read of `value` decodes the whole archive.
+	const value = archive.value;
+	// Identities with more than one archive entry match nothing.
+	const only = new Map<string, ArchiveEntry | null>();
+	for (const entry of value.entries) {
+		const key = identityKey(entry);
+		only.set(key, only.has(key) ? null : entry);
+	}
+	let translatedLines = 0,
+		translatedWords: Words = 0;
+	for (let index = 0; index < manifest.entries.length; index++) {
+		const archived = only.get(manifest.keys[index]!);
+		if (
+			!archived ||
+			!localizationTextMatches(archived.source, manifest.entries[index]!.source) ||
+			archived.translation.Text === ""
+		)
+			continue;
+		translatedLines++;
+		const count = manifest.words[index]!;
+		if (count.status !== "counted") translatedWords = null;
+		else if (translatedWords !== null) translatedWords += count.words;
+	}
+	return { translatedLines, translatedWords, coverage: value.diagnostics.length === 0 };
+}
+/** The evidence facts, from the manifest's facts and each culture's archive progress. */
+function reportEvidenceFacts(
+	manifest: ManifestFacts,
+	archives: ReadonlyMap<CultureCode, ArchiveProgress>
+): ReportEvidenceFacts {
+	let totalWords: Words = 0;
+	for (const count of manifest.words)
+		if (count.status !== "counted") totalWords = null;
+		else if (totalWords !== null) totalWords += count.words;
+	return {
+		lines: manifest.entries.length,
+		totalWords,
+		wordCountDiagnostics: manifest.entries.flatMap((entry, index) =>
+			manifest.words[index]!.status === "unknown"
+				? [
+						{
+							namespace: entry.namespace,
+							key: entry.key,
+							code: "dictionary_line_breaking_unavailable"
+						} satisfies LocalizationProgressReport["wordCountDiagnostics"][number]
+					]
+				: []
+		),
+		archives,
+		deltas: new WeakMap()
+	};
+}
+/**
+ * The evidence facts of a report over these manifest entries. Read afresh each time: the
+ * whole-input report is the reference the cached index report is compared with.
+ */
+function evidenceFacts(
+	evidence: LocalizationTargetEvidence,
+	entries: readonly ManifestEntry[]
+): ReportEvidenceFacts {
+	const manifest = { entries, keys: entries.map(identityKey), words: manifestWords(entries) };
+	const archives = new Map<CultureCode, ArchiveProgress>();
+	for (const culture of evidence.cultures)
+		archives.set(culture.culture, archiveProgress(manifest, culture.archive));
+	return reportEvidenceFacts(manifest, archives);
+}
+
 /** Assembles the report from per-culture tallies and the manifest and archive evidence. */
 function progressReport(
 	header: Pick<TextCorpus, "coverage" | "diagnostics" | "packageCoverage">,
 	join: Pick<LocalizationJoin, "target" | "cultures">,
 	evidence: LocalizationTargetEvidence,
-	entries: readonly ManifestEntry[],
+	facts: ReportEvidenceFacts,
 	tallies: ProgressTallies,
 	baseline: LocalizationBaseline | undefined
 ): LocalizationProgressReport {
-	const archives = new Map(
-		evidence.cultures.map((culture) => [culture.culture, culture.archive])
-	);
-	const archiveEntries = new Map(
-		evidence.cultures.map((culture) => {
-			const grouped = new Map<string, ArchiveEntry[]>();
-			if (culture.archive.status === "read")
-				for (const entry of culture.archive.value.entries) {
-					const key = identityKey(entry),
-						group = grouped.get(key) ?? [];
-					group.push(entry);
-					grouped.set(key, group);
-				}
-			return [culture.culture, grouped] satisfies readonly [
-				CultureCode,
-				Map<string, ArchiveEntry[]>
-			];
-		})
-	);
-	const archiveFor = (culture: CultureCode, entry: ManifestEntry) => {
-		const matches = archiveEntries.get(culture)?.get(identityKey(entry)) ?? [];
-		return matches.length === 1 ? matches[0] : undefined;
-	};
 	// Only the entries take part in a comparison, so the current corpus is not fingerprinted.
-	const delta = baseline
-		? diffLocalizationBaselines(baseline, {
-				...baseline,
-				target: evidence.target.name,
-				entries: baselineEntries(evidence)
-			})
-		: undefined;
-	const wordCounts = new Map(
-		entries.map((entry) => [identityKey(entry), localizationWordCount(entry.source.Text)])
-	);
+	let delta = baseline && facts.deltas.get(baseline);
+	if (baseline && !delta) {
+		delta = diffLocalizationBaselines(baseline, {
+			...baseline,
+			target: evidence.target.name,
+			entries: baselineEntries(evidence)
+		});
+		facts.deltas.set(baseline, delta);
+	}
+	const lines = facts.lines,
+		totalWords = facts.totalWords;
 	const cultures = join.cultures.map((culture): LocalizationProgressCulture => {
 		const tally = tallies.cultures.get(culture) ?? emptyTally();
-		let totalWords: number | null = 0,
-			translatedWords: number | null = 0,
-			translatedLines = 0;
-		for (const entry of entries) {
-			const count = wordCounts.get(identityKey(entry));
-			if (count?.status !== "counted") totalWords = null;
-			else if (totalWords !== null) totalWords += count.words;
-			const archived = archiveFor(culture, entry);
-			// GenerateTextLocalizationReport constructs its helper with an empty native culture.
-			// Its CSV checks raw manifest source for every culture, without runtime native fallback.
-			const matches =
-				archived !== undefined &&
-				localizationTextMatches(archived.source, entry.source) &&
-				archived.translation.Text !== "";
-			if (matches) {
-				translatedLines++;
-				if (count?.status !== "counted") translatedWords = null;
-				else if (translatedWords !== null) translatedWords += count.words;
-			}
-		}
-		const archive = archives.get(culture);
-		const translationCoverage =
-			archive?.status === "read" && archive.value.diagnostics.length === 0;
+		const { translatedLines, translatedWords, coverage } =
+			facts.archives.get(culture) ?? noArchive;
 		// Review applies to gathered lines; the share is over the same total as translation progress.
-		const review = (lines: number): LocalizationProgressCulture["reviewed"] =>
+		const review = (reviewed: number): LocalizationProgressCulture["reviewed"] =>
 			tallies.tracked
-				? { lines, percent: entries.length ? (lines / entries.length) * 100 : null }
+				? { lines: reviewed, percent: lines ? (reviewed / lines) * 100 : null }
 				: "not_tracked";
 		const result: LocalizationProgressCulture = {
 			culture,
@@ -696,18 +773,15 @@ function progressReport(
 			)(tally.unknownReasons),
 			notSynced: tally.notSynced,
 			reducedSourceChecking: tally.reducedSourceChecking,
-			total: { lines: entries.length, sourceWords: totalWords },
+			total: { lines, sourceWords: totalWords },
 			upToDateArchive: {
-				lines: translationCoverage ? translatedLines : null,
-				sourceWords: translationCoverage ? translatedWords : null
+				lines: coverage ? translatedLines : null,
+				sourceWords: coverage ? translatedWords : null
 			},
 			translatedPercent: {
-				lines:
-					translationCoverage && entries.length
-						? (translatedLines / entries.length) * 100
-						: null,
+				lines: coverage && lines ? (translatedLines / lines) * 100 : null,
 				words:
-					translationCoverage && totalWords && translatedWords !== null
+					coverage && totalWords && translatedWords !== null
 						? (translatedWords / totalWords) * 100
 						: null
 			},
@@ -722,17 +796,7 @@ function progressReport(
 		target: join.target,
 		wordCountAlgorithm: "unicode-line-break-v1",
 		cultures,
-		wordCountDiagnostics: entries.flatMap((entry) =>
-			wordCounts.get(identityKey(entry))?.status === "unknown"
-				? [
-						{
-							namespace: entry.namespace,
-							key: entry.key,
-							code: "dictionary_line_breaking_unavailable"
-						} satisfies LocalizationProgressReport["wordCountDiagnostics"][number]
-					]
-				: []
-		),
+		wordCountDiagnostics: facts.wordCountDiagnostics,
 		coverage: header.coverage,
 		...textCorpusDiagnosticSummary(header.diagnostics),
 		gatherEvidence: localizationEvidenceFileStatuses(evidence)
@@ -757,36 +821,96 @@ export function localizationProgressReport(
 ): LocalizationProgressReport {
 	if (join.target !== evidence.target.name) throw reportError("invalid_report_context");
 	const entries = manifestEntries(evidence);
-	return progressReport(corpus, join, evidence, entries, joinTallies(join, entries), baseline);
+	return progressReport(
+		corpus,
+		join,
+		evidence,
+		evidenceFacts(evidence, entries),
+		joinTallies(join, entries),
+		baseline
+	);
 }
 
 /**
+ * The rest of an index model's evidence facts after its manifest entries: word counts, then each
+ * archive, yielding between steps so native reads and other requests keep going.
+ */
+const indexedEvidenceFacts = Effect.fn("GameText.localizationReport.evidence")(function* (
+	evidence: LocalizationTargetEvidence,
+	entries: readonly ManifestEntry[],
+	failure: LocalizationReportError["code"]
+) {
+	const keys = entries.map(identityKey);
+	yield* Effect.yieldNow;
+	const words = yield* Effect.try({
+		try: () => manifestWords(entries),
+		catch: reportFailure(failure)
+	}).pipe(
+		Effect.withSpan("GameText.localizationReport.words", {
+			attributes: { "game_text.report.lines": entries.length }
+		})
+	);
+	const manifest = { entries, keys, words };
+	const archives = new Map<CultureCode, ArchiveProgress>();
+	for (const culture of evidence.cultures) {
+		yield* Effect.yieldNow;
+		archives.set(
+			culture.culture,
+			yield* Effect.try({
+				try: () => archiveProgress(manifest, culture.archive),
+				catch: reportFailure(failure)
+			}).pipe(
+				Effect.withSpan("GameText.localizationReport.archive", {
+					attributes: { "game_text.report.culture": culture.culture }
+				})
+			)
+		);
+	}
+	const facts = reportEvidenceFacts(manifest, archives);
+	reportFacts.set(evidence, facts);
+	return facts;
+});
+
+/**
  * The progress report of an index model, built from grouped counts and the corpus header in Rust
- * instead of the corpus and the join: the same report `localizationProgressReport` makes.
+ * instead of the corpus and the join: the same report `localizationProgressReport` makes. The
+ * first report of an evidence object reads its manifest and archives while the native reads run;
+ * later reports, such as further pages, the CSV and baseline comparisons, reuse what it found.
  */
 export const indexedLocalizationProgressReport = Effect.fn("GameText.localizationReport")(
 	function* (model: LocalizationReportIndex, baseline?: LocalizationBaseline) {
 		if (model.localization.target !== model.evidence.target.name)
 			return yield* Effect.fail(reportError("invalid_report_context"));
-		const entries = yield* Effect.try({
-			try: () => manifestEntries(model.evidence),
-			catch: reportFailure("invalid_report_context")
-		});
-		const [header, tallies] = yield* Effect.all([
-			model.query.readCorpusHeader(),
-			indexTallies(model)
-		]);
+		const cached = reportFacts.get(model.evidence);
+		yield* Effect.annotateCurrentSpan("game_text.report.evidence_cached", cached !== undefined);
+		// A manifest that cannot be read fails the report before any native read.
+		const entries = cached
+			? undefined
+			: yield* Effect.try({
+					try: () => manifestEntries(model.evidence),
+					catch: reportFailure("invalid_report_context")
+				}).pipe(Effect.withSpan("GameText.localizationReport.manifest"));
+		const failure = baseline ? "invalid_baseline" : "invalid_report_context";
+		const [[header, tallies], facts] = yield* Effect.all(
+			[
+				Effect.all([model.query.readCorpusHeader(), indexTallies(model)]),
+				entries
+					? indexedEvidenceFacts(model.evidence, entries, failure)
+					: Effect.succeed(cached!)
+			],
+			{ concurrency: 2 }
+		);
 		return yield* Effect.try({
 			try: () =>
 				progressReport(
 					header,
 					model.localization,
 					model.evidence,
-					entries,
+					facts,
 					tallies,
 					baseline
 				),
-			catch: reportFailure(baseline ? "invalid_baseline" : "invalid_report_context")
-		});
+			catch: reportFailure(failure)
+		}).pipe(Effect.withSpan("GameText.localizationReport.assemble"));
 	}
 );

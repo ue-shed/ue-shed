@@ -9,10 +9,11 @@ import {
 	rename,
 	rm,
 	symlink,
+	utimes,
 	writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
@@ -1254,6 +1255,47 @@ it.effect("preserves a lease when process liveness is indeterminate", () =>
 			distribution.verifyCached(source.releaseVersion)
 		).pipe(Effect.provide(layer));
 		expect(verified.releaseVersion).toBe(source.releaseVersion);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("keeps a release whose lease is still being written", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const cacheRoot = join(source.root, "partial-lease-cache");
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			cacheRoot
+		);
+		yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install(request(source.releaseVersion))
+			)
+		).pipe(Effect.provide(layer));
+		const partial = join(cacheRoot, "leases", source.releaseVersion, "partial.json");
+		yield* Effect.promise(async () => {
+			await mkdir(dirname(partial), { recursive: true });
+			// A consumer's lease caught part way through its write.
+			await writeFile(partial, '{"createdAt":"2026-');
+		});
+		const error = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution.prune(source.releaseVersion).pipe(Effect.flip)
+		).pipe(Effect.provide(layer));
+		expect(error).toBeInstanceOf(ActiveLeasePreventsPrune);
+
+		// Still undecodable well after it was written: abandoned, so it no longer blocks pruning.
+		yield* Effect.promise(() => utimes(partial, new Date(0), new Date(0)));
+		yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution.prune(source.releaseVersion)
+		).pipe(Effect.provide(layer));
+		expect(yield* Effect.promise(() => readdir(dirname(partial)))).not.toContain(
+			"partial.json"
+		);
 	}).pipe(
 		Effect.ensuring(
 			Effect.promise(async () => {

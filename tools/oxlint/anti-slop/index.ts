@@ -3,6 +3,7 @@ import { eslintCompatPlugin } from "@oxlint/plugins";
 
 import { noChainedEffectFlatMapRule } from "./rules/no-chained-effect-flat-map.ts";
 import { noChainedTypeAssertionsRule } from "./rules/no-chained-type-assertions.ts";
+import { noEffectCatchAllRule } from "./rules/no-effect-catch-all.ts";
 import { noConditionalEmptyObjectSpreadRule } from "./rules/no-conditional-empty-object-spread.ts";
 import { noKnownValueWideningRule } from "./rules/no-known-value-widening.ts";
 import { noModuleMockingRule } from "./rules/no-module-mocking.ts";
@@ -32,6 +33,7 @@ const antiSlopPlugin = eslintCompatPlugin({
 		"no-chained-effect-flat-map": noChainedEffectFlatMapRule,
 		"no-chained-type-assertions": noChainedTypeAssertionsRule,
 		"no-conditional-empty-object-spread": noConditionalEmptyObjectSpreadRule,
+		"no-effect-catch-all": noEffectCatchAllRule,
 		"no-known-value-widening": noKnownValueWideningRule,
 		"no-module-mocking": noModuleMockingRule,
 		"no-object-parameters": noObjectParametersRule,

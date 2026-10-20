@@ -4,6 +4,7 @@ import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
 
 import { noChainedEffectFlatMapRule } from "./no-chained-effect-flat-map.ts";
+import { noEffectCatchAllRule } from "./no-effect-catch-all.ts";
 import { noModuleMockingRule } from "./no-module-mocking.ts";
 import { noPlanPhaseCommentsRule } from "./no-plan-phase-comments.ts";
 import { noForbiddenTermInSymbolNamesRule } from "./no-shape-in-symbol-names.ts";
@@ -236,5 +237,33 @@ export interface Request {}`,
 			errors: [{ messageId: "missingJsdoc" }]
 		},
 		{ code: "export type Alone = string;", errors: [{ messageId: "missingJsdoc" }] }
+	]
+});
+
+ruleTester.run("no-effect-catch-all", noEffectCatchAllRule, {
+	valid: [
+		'read().pipe(Effect.catchTag("NotFound", () => Effect.succeed(undefined)));',
+		"read().pipe(Effect.catchTags({ NotFound: () => Effect.void }));",
+		'read().pipe(Effect.catchIf((error) => error.code === "missing", () => Effect.void));',
+		"const handlers = { catch: () => undefined }; handlers.catch();",
+		"promise.catch(() => undefined);"
+	],
+	invalid: [
+		{
+			code: "read().pipe(Effect.catch(() => Effect.succeed(undefined)));",
+			errors: [{ messageId: "catchAll" }]
+		},
+		{
+			code: "read().pipe(Effect.orElseSucceed(() => []));",
+			errors: [{ messageId: "catchAll" }]
+		},
+		{
+			code: "read().pipe(Effect.catchCause(() => Effect.void));",
+			errors: [{ messageId: "catchAll" }]
+		},
+		{
+			code: 'const run = Effect.fn("run")(function* () {}, Effect.orElse(() => fallback));',
+			errors: [{ messageId: "catchAll" }]
+		}
 	]
 });

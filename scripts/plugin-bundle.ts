@@ -98,8 +98,16 @@ export async function validatePublicPluginBundle({
 		const details = await stat(path).catch(() => undefined);
 		if (!details?.isFile()) failures.push(`declared ${label} release asset is missing`);
 	}
-	const archiveDigest = await sha256(archivePath).catch(() => undefined);
-	if (archiveDigest !== undefined && `sha256:${archiveDigest}` !== manifest.artifact.sha256)
+	// An archive that cannot be hashed has not been verified, so it fails the check too.
+	const archiveDigest = await sha256(archivePath).then(
+		(digest) => ({ digest }),
+		(cause: unknown) => ({ cause })
+	);
+	if ("cause" in archiveDigest)
+		failures.push(
+			`declared archive could not be hashed: ${archiveDigest.cause instanceof Error ? archiveDigest.cause.message : String(archiveDigest.cause)}`
+		);
+	else if (`sha256:${archiveDigest.digest}` !== manifest.artifact.sha256)
 		failures.push("declared archive digest does not match the release asset");
 	if (failures.length > 0)
 		throw new Error(`Public plugin release integrity failed:\n- ${failures.join("\n- ")}`);

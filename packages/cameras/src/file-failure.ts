@@ -10,6 +10,9 @@ function hasCode(cause: unknown, ...codes: ReadonlyArray<string>): boolean {
 	);
 }
 
+/** The file or its directory does not exist. */
+export const isMissingFile = (cause: unknown): boolean => hasCode(cause, "ENOENT", "ENOTDIR");
+
 /** The document was read but is not JSON or does not match its schema; retrying cannot help. */
 export const isMalformedDocument = (cause: unknown): boolean =>
 	cause instanceof SyntaxError ||

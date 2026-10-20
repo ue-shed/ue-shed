@@ -100,5 +100,60 @@ boundaries instead of attaching raw private parser, IO or configuration objects.
 UI and CLI code must not parse error text to make decisions. Translate library errors at the service
 that owns the library. Keep the useful cause.
 
+### Writing the message
+
+These rules follow dmmulroy's
+[cf-workflow-pool error design](https://github.com/dmmulroy/cf-workflow-pool/blob/73e0f2f5d3b72d85a17384638716c4b0490e16aa/docs/errors.md),
+adapted to the guidance fields above.
+
+- Name the operation that failed and the most specific safe reason known. Never write "Something
+  went wrong" when the failure has been classified.
+- Start with a specific phrase that can be searched for in the source.
+- End with a way forward: fix the input, retry, re-read and reconcile, or escalate. That is the
+  `nextStep`; `recovery` says it in words the caller can follow.
+- Make reassurance and retry advice provably true. Do not say "nothing was changed" after a step
+  that may have partly completed, such as a multi-package save or an engine call whose reply was
+  lost; say the outcome is unknown and what to re-read instead. Do not offer `retry` when a repeat
+  would run the operation a second time.
+- Keep the tone calm and plain: no jokes, apologies, alarm or blame.
+- Caller-facing text uses product vocabulary. Internal detail (library exception text, stack
+  traces, private paths, raw payloads) stays in the typed cause and logs, not in `message`.
+
+### Translating failures
+
+Translate each known failure by tag with `Effect.catchTag` or `Effect.catchTags`, or with
+`Effect.catchIf` on a discriminating field. Leave an unhandled tag in the error channel on purpose:
+a newly added failure should be a type error until someone decides how it is reported, retried and
+recovered. Do not use `instanceof` branches to tell expected failures apart. `Effect.mapError`
+remains fine when the whole error channel has one meaning.
+
+Catch-all recovery (`Effect.catch`, `catchCause`, `orElse`, `orElseFail`, `orElseSucceed`) folds
+every failure, including future ones, into one answer. `anti-slop/no-effect-catch-all` rejects it in
+new code. Where a catch-all is the deliberate contract (a best-effort probe whose answer is
+"unknown" for any failure, or the outermost boundary that turns any failure into a report), disable
+the rule on that line and say why:
+
+```ts
+// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Readiness is best effort; any failure reads as unknown.
+Effect.orElseSucceed(() => "unknown");
+```
+
+Files that already had catch-alls when the rule arrived are listed in
+`tools/oxlint/effect-catch-all-baseline.ts`, where the rule only warns. Convert a file's catch-alls
+when you work in it, then remove it from the list. Never add a file to the list.
+
+### Review checklist
+
+Before adding or changing an error, check that:
+
+1. it says what failed and the most specific safe reason;
+2. it carries typed context (tag, IDs, guidance fields) instead of facts only in prose;
+3. `nextStep` and `recovery` give a correct way forward;
+4. reassurance and `retrySafe` are provably true;
+5. the tone is calm and free of blame and implementation jargon;
+6. the message or tag can be found by searching the source;
+7. secrets, private paths and raw external data stay out of caller-facing text;
+8. every boundary translates it deliberately, not through a catch-all.
+
 Use defects only for broken invariants and unknown failures. Keep retries safe, bounded, visible, and
 cancellable.

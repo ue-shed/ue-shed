@@ -274,6 +274,35 @@ test("rejects local, unpinned, inconsistent, corrupt, or missing public plugin a
 	}
 });
 
+test("fails the integrity check when the archive cannot be hashed", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-public-plugin-unhashable-"));
+	try {
+		// A directory where the archive should be: hashing it fails.
+		const archivePath = join(output, "built.tar.gz");
+		await mkdir(archivePath);
+		const manifestPath = join(output, "built.manifest.json");
+		await writeFile(manifestPath, "{}\n");
+		await assert.rejects(
+			validatePublicPluginBundle({
+				archivePath,
+				manifestPath,
+				manifest: {
+					artifact: { path: "built.tar.gz", sha256: `sha256:${"c".repeat(64)}` },
+					plugins: [{ id: "UEShedCore", version: "0.5.0" }],
+					provenance: {
+						candidateManifest: { sha256: `sha256:${"a".repeat(64)}`, version: "0.5.0" },
+						source: { commit: "b".repeat(40), ref: "refs/tags/v0.5.0" }
+					},
+					releaseVersion: "0.5.0"
+				}
+			}),
+			/declared archive could not be hashed/
+		);
+	} finally {
+		await rm(output, { recursive: true, force: true });
+	}
+});
+
 test("camera authoring preset includes the complete native dependency graph", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-camera-authoring-plugins-"));
 	try {

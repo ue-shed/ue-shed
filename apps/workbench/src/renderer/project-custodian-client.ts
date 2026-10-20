@@ -9,9 +9,17 @@ import {
 import { Effect } from "effect";
 
 function request<A, HostValue, DecodeError>(
-	options: { readonly invoke: () => Promise<HostValue>; readonly operation: string },
+	options: {
+		readonly invoke: () => Promise<HostValue>;
+		readonly operation: string;
+		/** The operation deletes or moves project files, so a lost reply leaves its outcome unknown. */
+		readonly changesFiles?: true;
+	},
 	decode: (value: HostValue) => Effect.Effect<A, DecodeError>
 ) {
+	const unknownOutcome = options.changesFiles
+		? " The cleanup may have run: check the project files before running it again."
+		: " No files were changed.";
 	return Effect.tryPromise({
 		try: options.invoke,
 		catch: (cause) =>
@@ -22,7 +30,7 @@ function request<A, HostValue, DecodeError>(
 				code: "custodian_client_failed",
 				cause,
 				operation: options.operation,
-				recovery: "Restart Workbench and retry. No files were changed."
+				recovery: `Restart Workbench, then retry.${unknownOutcome}`
 			})
 	}).pipe(
 		Effect.flatMap(decode),
@@ -35,7 +43,7 @@ function request<A, HostValue, DecodeError>(
 					code: "custodian_client_failed",
 					cause,
 					operation: options.operation,
-					recovery: "Update paired UE Shed packages and retry. No files were changed."
+					recovery: `Update paired UE Shed packages, then retry.${unknownOutcome}`
 				})
 		)
 	);
@@ -64,7 +72,8 @@ export const projectCustodianClient: CustodianClientApi = {
 		request(
 			{
 				invoke: () => window.ueShed.projectCustodian.execute(intent),
-				operation: "projectCustodian.execute"
+				operation: "projectCustodian.execute",
+				changesFiles: true
 			},
 			parseCustodianExecutionRunResult
 		)

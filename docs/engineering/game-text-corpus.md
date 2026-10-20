@@ -43,7 +43,8 @@ variables, Blueprint graph pins and Widget Blueprint text blocks. With 10,000 li
 | Folder          | Packages                                                                                                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `StringTables/` | 20 to 60 entries each, plus one table of 400. Tables in the same area share a namespace. About 10% of entries have a `Comment`.                                                            |
-| `DataTables/`   | 8 to 25 rows of `FUEShedCorpusTextRow`, each row with a `DisplayName` and a `Description` text cell.                                                                                       |
+| `DataTables/`   | 8 to 25 rows of `S_CorpusTextRow`, each row with a `DisplayName` and a `Description` text cell.                                                                                            |
+| `Structs/`      | `S_CorpusTextRow`, the DataTables' row struct: a User Defined Struct with two `FText` members.                                                                                             |
 | `Blueprints/`   | Actor Blueprints with 1 to 4 `FText` variables set in the class defaults. They also have 1 to 4 text pin defaults: Print Text nodes wired from BeginPlay, and unwired pure To Upper nodes. |
 | `Widgets/`      | Widget Blueprints with 3 to 10 `UTextBlock`s under a vertical box.                                                                                                                         |
 
@@ -59,15 +60,15 @@ These cases are deliberate:
   Tables do this across tables that share a namespace; DataTables do it within one table.
 - **Empty and whitespace.** About 0.5% of lines are empty, and about 0.5% hold only whitespace.
 
-The DataTable row struct lives in the generator plugin. To open those DataTables in the editor, load
-the plugin, for example with `-PLUGIN=<built .uplugin>`. Without it, Unreal reports a missing struct.
-The saved-package reader does not need the plugin.
+The corpus references only engine types and its own packages. The DataTables' row struct is the
+`S_CorpusTextRow` asset the generator writes, not a C++ struct in the plugin, so every package opens
+in an editor that does not load the generator.
 
 ## Manifest
 
 `UEShedGameTextCorpus.json` sits beside the packages. It records:
 
-- the format version, seed, line count, root and `FEngineVersion`;
+- the format version, seed, line count, root, row struct path and `FEngineVersion`;
 - line counts per text kind and the duplicate counts;
 - every package, and every text in it with its kind, field, namespace, key, source and notes.
 
@@ -83,6 +84,7 @@ The packages are byte-identical too, on the same engine build. The commandlet re
 id the editor would assign with one derived from the seed:
 
 - the package localization namespace and persistent GUID;
+- the row struct's GUID and its member GUIDs, which are also part of the member names;
 - the Blueprint GUID, Simple Construction Script variable GUIDs and member variable GUIDs;
 - graph, node and pin GUIDs;
 - the Widget Blueprint's widget variable GUIDs.
@@ -109,6 +111,7 @@ not save empty text in every place, so expect some differences from the manifest
   generated class's widget tree. Each of these is a second occurrence of the same text.
 - The editor adds its own text: each variable's "Default" category, each call node's "Target" pin
   name, and each actor Blueprint's Simple Construction Script category.
+- The row struct's two members have empty, culture-invariant default text.
 
 On UE 5.7, the reader finds every non-empty line at its authored place, with the namespace, key and
 source the manifest records.

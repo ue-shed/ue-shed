@@ -102,6 +102,8 @@ export const CorpusManifest = Schema.Struct({
 	seed: Schema.Number,
 	lines: Schema.Number,
 	root: Schema.String,
+	/** Absent in corpora written before the row struct became an asset; --clean still accepts them. */
+	rowStruct: Schema.optionalKey(Schema.String),
 	engineVersion: Schema.String,
 	counts: Schema.Record(Schema.String, Schema.Number),
 	duplicates: Schema.Struct({

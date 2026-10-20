@@ -83,6 +83,7 @@ const manifestJson = JSON.stringify({
 	seed: 3,
 	lines: 4,
 	root: "/Game/Developers/me/Corpus",
+	rowStruct: "/Game/Developers/me/Corpus/Structs/S_CorpusTextRow",
 	engineVersion: "5.7.4-1+++UE5+Release-5.7",
 	counts: { stringTableEntry: 2, widgetText: 2, total: 4 },
 	duplicates: { sharedSource: 1, keyConflicts: 0, empty: 1, whitespace: 0 },

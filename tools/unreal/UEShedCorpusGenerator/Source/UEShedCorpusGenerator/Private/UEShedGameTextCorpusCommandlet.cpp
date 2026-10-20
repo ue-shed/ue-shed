@@ -25,6 +25,7 @@
 #include "Kismet/KismetTextLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/StructureEditorUtils.h"
 #include "Math/RandomStream.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/EngineVersionComparison.h"
@@ -34,10 +35,16 @@
 #include "Misc/Paths.h"
 #include "Policies/PrettyJsonPrintPolicy.h"
 #include "Serialization/JsonWriter.h"
-#include "UEShedCorpusTypes.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
+#include "UObject/StructOnScope.h"
+#include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #include "WidgetBlueprint.h"
+#if __has_include("StructUtils/UserDefinedStruct.h")
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 
 DEFINE_LOG_CATEGORY_STATIC(LogUEShedCorpus, Log, All);
 
@@ -57,6 +64,11 @@ constexpr int32 PinPercent = 10;
 constexpr int32 WidgetPercent = 10;
 // Chance that a line reuses an earlier key in the same namespace with different source text.
 constexpr float KeyConflictChance = 0.015f;
+
+/** The DataTables' row struct, a User Defined Struct written into the corpus folder. */
+const TCHAR* RowStructFolder = TEXT("Structs");
+const TCHAR* RowStructName = TEXT("S_CorpusTextRow");
+const TCHAR* DataTableColumns[] = { TEXT("DisplayName"), TEXT("Description") };
 
 const TCHAR* KindStringTable = TEXT("stringTable");
 const TCHAR* KindDataTable = TEXT("dataTable");
@@ -347,7 +359,7 @@ TArray<FCorpusPackage> PlanCorpus(int32 Lines, int32 Seed, FDuplicateCounts& Dup
 		TArray<TPair<FString, FString>> Earlier;
 		for (int32 Row = 0; Row < Rows; ++Row)
 		{
-			for (const TCHAR* Column : { TEXT("DisplayName"), TEXT("Description") })
+			for (const TCHAR* Column : DataTableColumns)
 			{
 				FCorpusText Text;
 				Text.Kind = TextDataTableCell;
@@ -507,19 +519,72 @@ bool AuthorStringTable(const FCorpusPackage& Planned, const FString& Root)
 	return Save(Asset);
 }
 
-bool AuthorDataTable(const FCorpusPackage& Planned, const FString& Root)
+FString RowStructPath(const FString& Root)
 {
+	return Root / RowStructFolder / RowStructName;
+}
+
+/**
+ * Writes the DataTables' row struct as a User Defined Struct with one FText member per column, so
+ * the DataTables open in any editor without this plugin. Its GUIDs, which also name its members,
+ * come from the seed.
+ */
+UUserDefinedStruct* AuthorRowStruct(const FString& Root, int32 Seed)
+{
+	FRandomStream Rng(static_cast<int32>(HashCombine(GetTypeHash(Seed), GetTypeHash(FString(RowStructName)))));
+	UPackage* Package = CreatePackage(*RowStructPath(Root));
+	Package->SetPersistentGuid(NextGuid(Rng));
+	UUserDefinedStruct* Struct = FStructureEditorUtils::CreateUserDefinedStruct(Package, RowStructName,
+		RF_Public | RF_Standalone | RF_Transactional);
+	if (!Struct) return nullptr;
+	FAssetRegistryModule::AssetCreated(Struct);
+
+	// A new struct starts with one Boolean member; it is replaced by the text columns.
+	const FGuid Placeholder = FStructureEditorUtils::GetVarDesc(Struct)[0].VarGuid;
+	FEdGraphPinType TextType;
+	TextType.PinCategory = UEdGraphSchema_K2::PC_Text;
+	for (const TCHAR* Column : DataTableColumns)
+	{
+		if (!FStructureEditorUtils::AddVariable(Struct, TextType)) return nullptr;
+		const FGuid Added = FStructureEditorUtils::GetVarDesc(Struct).Last().VarGuid;
+		if (!FStructureEditorUtils::RenameVariable(Struct, Added, Column)) return nullptr;
+	}
+	if (!FStructureEditorUtils::RemoveVariable(Struct, Placeholder)) return nullptr;
+
+	// Member names end in "_<member GUID>", as the editor names them; replace both with seeded ones.
+	Struct->Guid = NextGuid(Rng);
+	for (FStructVariableDescription& Variable : FStructureEditorUtils::GetVarDesc(Struct))
+	{
+		Variable.VarGuid = NextGuid(Rng);
+		const FString Name = Variable.VarName.ToString();
+		Variable.VarName = FName(Name.LeftChop(32) + Variable.VarGuid.ToString(EGuidFormats::Digits));
+	}
+	FStructureEditorUtils::OnStructureChanged(Struct);
+	if (Struct->Status != EUserDefinedStructureStatus::UDSS_UpToDate) return nullptr;
+	return Save(Struct) ? Struct : nullptr;
+}
+
+bool AuthorDataTable(const FCorpusPackage& Planned, const FString& Root, UUserDefinedStruct* RowStruct)
+{
+	TArray<FTextProperty*> Columns;
+	for (const TCHAR* Column : DataTableColumns)
+	{
+		Columns.Add(CastField<FTextProperty>(FStructureEditorUtils::GetPropertyByFriendlyName(RowStruct, Column)));
+		if (!Columns.Last()) return false;
+	}
 	UPackage* Package = CreateCorpusPackage(Planned, Root);
 	UDataTable* Asset = NewObject<UDataTable>(Package, *Planned.Name, RF_Public | RF_Standalone | RF_Transactional);
 	FAssetRegistryModule::AssetCreated(Asset);
-	Asset->RowStruct = FUEShedCorpusTextRow::StaticStruct();
+	Asset->RowStruct = RowStruct;
 	Asset->EmptyTable();
-	for (int32 Index = 0; Index + 1 < Planned.Texts.Num(); Index += 2)
+	for (int32 Index = 0; Index + Columns.Num() <= Planned.Texts.Num(); Index += Columns.Num())
 	{
-		FUEShedCorpusTextRow Row;
-		Row.DisplayName = MakeText(Planned.Texts[Index]);
-		Row.Description = MakeText(Planned.Texts[Index + 1]);
-		Asset->AddRow(FName(*Owner(Planned.Texts[Index])), Row);
+		FStructOnScope Row(RowStruct);
+		for (int32 Column = 0; Column < Columns.Num(); ++Column)
+		{
+			*Columns[Column]->ContainerPtrToValuePtr<FText>(Row.GetStructMemory()) = MakeText(Planned.Texts[Index + Column]);
+		}
+		Asset->AddRow(FName(*Owner(Planned.Texts[Index])), Row.GetStructMemory(), RowStruct);
 	}
 	return Save(Asset);
 }
@@ -639,6 +704,7 @@ FString WriteManifest(const TArray<FCorpusPackage>& Packages, const FDuplicateCo
 	Writer->WriteValue(TEXT("seed"), Seed);
 	Writer->WriteValue(TEXT("lines"), Lines);
 	Writer->WriteValue(TEXT("root"), Root);
+	Writer->WriteValue(TEXT("rowStruct"), RowStructPath(Root));
 	Writer->WriteValue(TEXT("engineVersion"), FEngineVersion::Current().ToString());
 	Writer->WriteObjectStart(TEXT("counts"));
 	for (const TPair<FString, int32>& Count : Counts) Writer->WriteValue(Count.Key, Count.Value);
@@ -747,6 +813,13 @@ int32 UUEShedGameTextCorpusCommandlet::Main(const FString& Params)
 	const TArray<FCorpusPackage> Packages = PlanCorpus(Lines, Seed, Duplicates);
 	UE_LOG(LogUEShedCorpus, Display, TEXT("Planned %d lines in %d packages under %s."), Lines, Packages.Num(), *Root);
 
+	UUserDefinedStruct* RowStruct = AuthorRowStruct(Root, Seed);
+	if (!RowStruct)
+	{
+		UE_LOG(LogUEShedCorpus, Error, TEXT("Could not author %s."), *RowStructPath(Root));
+		return 1;
+	}
+
 	for (int32 Index = 0; Index < Packages.Num(); ++Index)
 	{
 		const FCorpusPackage& Planned = Packages[Index];
@@ -754,7 +827,7 @@ int32 UUEShedGameTextCorpusCommandlet::Main(const FString& Params)
 		FRandomStream GuidRng(static_cast<int32>(GetTypeHash(Planned.PackageNamespace)));
 		bool bSaved = false;
 		if (Planned.Kind == KindStringTable) bSaved = AuthorStringTable(Planned, Root);
-		else if (Planned.Kind == KindDataTable) bSaved = AuthorDataTable(Planned, Root);
+		else if (Planned.Kind == KindDataTable) bSaved = AuthorDataTable(Planned, Root, RowStruct);
 		else if (Planned.Kind == KindBlueprint) bSaved = AuthorBlueprint(Planned, Root, GuidRng);
 		else bSaved = AuthorWidget(Planned, Root, GuidRng);
 		if (!bSaved)

@@ -97,11 +97,7 @@ impl Breaker<'_> {
                     return false;
                 }
             }
-            3 => {
-                if last != SP {
-                    return should;
-                }
-            }
+            3 if last != SP => return should,
             _ => {}
         }
         if self.lb8a {

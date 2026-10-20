@@ -158,7 +158,9 @@ export const localizationLineFieldSchemas = {
 	signals: Schema.Array(TextReviewSignal),
 	places: Schema.Array(LocalizationLinePlace)
 } as const;
+/** A field a line export can name: a `LocalizationLine` field, `marks`, `problems`, `signals` or `places`. */
 export type LocalizationLineField = keyof typeof localizationLineFieldSchemas;
+/** A field a line export can name: a `LocalizationLine` field, `marks`, `problems`, `signals` or `places`. */
 export const LocalizationLineField = Schema.Literals(
 	// SAFETY: Object.keys of the literal field table returns exactly its keys, and it has some.
 	// Verified by: index-reads.test.ts — every field decodes in the line-view parity check.

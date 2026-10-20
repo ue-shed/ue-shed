@@ -17,7 +17,6 @@ import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
 import { textQualityQuery, TextQualityFilter, type TextQualityQuery } from "./quality-query.js";
-import type { IndexFailure } from "./index-contract.js";
 import type { TextUnit } from "./schema.js";
 
 /**
@@ -123,9 +122,14 @@ export type GameTextInvestigationExport = Schema.Schema.Type<typeof GameTextInve
  * in place of a corpus the rules are evaluated over in JavaScript.
  */
 export interface IndexedInvestigationSource {
+	// The guidance an index failure carries, named structurally: the index contract is not
+	// browser code.
 	readonly sourceQuality: (
 		rules: GameTextRuleDocument
-	) => Effect.Effect<TextQualityQuery, IndexFailure>;
+	) => Effect.Effect<
+		TextQualityQuery,
+		Pick<InvestigationError, "message" | "recovery" | "retrySafe" | "nextStep">
+	>;
 }
 
 /** The units quality findings name, read by ID in batches: what a quality CSV needs. */

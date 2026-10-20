@@ -16,7 +16,12 @@ import {
 	localizationFixtureSteps
 } from "./localization-fixture-steps.ts";
 import { retainLocalizationFixtureOutput } from "./localization-fixture-output.ts";
-import { buildInputStamp, buildUnlessUnchanged, engineBuildIdentity } from "./build-stamp.ts";
+import {
+	buildInputStamp,
+	buildUnlessUnchanged,
+	engineBuildIdentity,
+	moduleManifestOutputs
+} from "./build-stamp.ts";
 import { traceProcess } from "./process-trace.ts";
 import { findUnrealEngine } from "./unreal-engines.ts";
 
@@ -137,7 +142,9 @@ function build(engineRoot: string, tools: UnrealEngineTools) {
 			[projectFile, join(fixtureRoot, "Source"), join(fixtureRoot, "Plugins")],
 			engineBuildIdentity(engineRoot)
 		),
-		outputs: [join(fixtureRoot, "Binaries", "Win64", "UnrealEditor.modules")],
+		outputs: moduleManifestOutputs(
+			join(fixtureRoot, "Binaries", "Win64", "UnrealEditor.modules")
+		),
 		build: () =>
 			run(tools.build, [
 				"UEShedFixtureEditor",

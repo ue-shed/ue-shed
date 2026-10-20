@@ -15,6 +15,7 @@ import {
 	writeFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { isJsonObject, isJsonString, type JsonValue, parseJsonObject } from "./json.ts";
 
 // Build outputs and editor state, not inputs.
 const outputDirectories = new Set(["Binaries", "Intermediate", "Saved", "DerivedDataCache", ".vs"]);
@@ -51,6 +52,26 @@ export function engineBuildIdentity(engineRoot: string, editorTarget = "UnrealEd
 		engineRoot.toLowerCase(),
 		read(join(engineRoot, "Engine", "Build", "Build.version")),
 		read(join(engineRoot, "Engine", "Binaries", "Win64", `${editorTarget}.modules`))
+	];
+}
+
+/**
+ * Lists an UnrealBuildTool module manifest (`<Target>.modules`) and the module binaries it maps, so
+ * a deleted DLL fails the output check. Only the manifest is listed while it is missing or
+ * unreadable, which already forces a build.
+ */
+export function moduleManifestOutputs(manifest: string) {
+	if (!existsSync(manifest)) return [manifest];
+	let modules: JsonValue;
+	try {
+		modules = parseJsonObject(readFileSync(manifest, "utf8")).Modules ?? null;
+	} catch {
+		return [manifest];
+	}
+	const binaries = modules !== null && isJsonObject(modules) ? Object.values(modules) : [];
+	return [
+		manifest,
+		...binaries.filter(isJsonString).map((binary) => join(dirname(manifest), binary))
 	];
 }
 

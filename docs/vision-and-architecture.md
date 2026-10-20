@@ -215,6 +215,19 @@ point that a host may replace entirely; it is not the definition of correct.
 The test: a studio can apply its own policy, stricter, looser or different, using only UE Shed's
 public packages and its own files. If that needs a UE Shed change, the boundary is wrong.
 
+## Unreal owns content writes
+
+Unreal owns package serialization and text identity, so every write to project content happens
+inside Unreal: through stock engine APIs, or a separately enabled UE Shed editor plugin when they do
+not suffice. Keeping, regenerating or merging text keys inside assets is one example; Data
+Authoring's Save through the live editor is another.
+
+UE Shed's headless libraries detect problems and plan fixes as reviewable change sets that an
+Unreal-side writer applies. They never write a package themselves, because writing outside the
+engine risks corrupt or divergent packages. Files that Unreal imports afterwards, such as the Game
+Text PO writer's `msgstr`-only output, are not package writes. See
+[ADR 0009](decisions/0009-localization-change-sets-and-review-state.md).
+
 ## Connection and protocol model
 
 UE Shed starts with stock Unreal Remote Control for request/response operations and uses the existing

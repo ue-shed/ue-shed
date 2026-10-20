@@ -27,6 +27,18 @@ Spread `stylex.attrs(...)` onto Solid DOM elements. It emits HTML `class` and se
 styles, which work with Solid 2 on both HTML and SVG. `stylex.props(...)` emits React's `className`
 and must not be spread onto Solid 2 elements.
 
+## Visual density
+
+Prefer compact, inline elements over big headers and boxed cards. The Blueprint viewer
+(`extensions/blueprint-graphs`), the Asset Inspector and the Sequencer are the reference.
+
+- Summarise with one compact row: a title, small chips and quiet inline stats (`2 rows · 5 fields`).
+  Do not split a summary into stat tiles.
+- Show properties in two-column name/value grids, not padded label-above-value stacks.
+- Never use coloured left-border "side highlight" bars on cards, callouts, value boxes or selected
+  items. Show selection or emphasis with a subtle background, a full outline or text weight.
+  Neutral indentation guides in trees are fine.
+
 ## Checks
 
 Use types and StyleX lint/compiler checks. Test variants, themes, focus, disabled state, and style

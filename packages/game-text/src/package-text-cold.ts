@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { availableParallelism } from "node:os";
 import { Effect, Schema } from "effect";
+import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { SharedIndex } from "./shared-index.js";
 import { openSnapshotFile, type SnapshotFileReader } from "./snapshot-file.js";
 import { snapshotStoreFailure } from "./snapshot-store.js";
@@ -41,7 +42,16 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 ) {
 	const store = yield* SharedIndex,
 		writer = yield* store.writer();
+	const reportProgress = yield* GameTextIndexProgressReporter;
 	const selection = inventorySelection.filter((shard) => shard.entries.length);
+	// Progress counts packages, so it reads on from the package read before it.
+	const total = selection.reduce((sum, shard) => sum + shard.entries.length, 0);
+	let completed = 0;
+	reportProgress({ phase: "package_text", completed, total });
+	// Worker time per shard: busy time near workers x wall time means the pool is CPU bound.
+	let busyMs = 0,
+		slowestShardMs = 0;
+	const prepareStarted = performance.now();
 	const prepared = yield* Effect.acquireRelease(
 		Effect.tryPromise({
 			try: async (signal) => {
@@ -68,6 +78,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 							workers.push(instance);
 							for (let shard = pending.shift(); shard; shard = pending.shift()) {
 								const current = shard;
+								const shardStarted = performance.now();
 								await new Promise<void>((resolve, reject) => {
 									const clean = () => {
 										instance.off("message", message);
@@ -83,6 +94,15 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 													current.name,
 													reply.preparedStrings
 												);
+												const shardMs = performance.now() - shardStarted;
+												busyMs += shardMs;
+												slowestShardMs = Math.max(slowestShardMs, shardMs);
+												completed += current.entries.length;
+												reportProgress({
+													phase: "package_text",
+													completed,
+													total
+												});
 												resolve();
 											} else reject(reply.error);
 										} catch (cause) {
@@ -146,6 +166,16 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 			}),
 		{ interruptible: true }
 	);
+	yield* Effect.annotateCurrentSpan({
+		"package-text.cold.packages": total,
+		"package-text.cold.shards": selection.length,
+		"package-text.cold.workers": prepared.workerCount,
+		"package-text.cold.prepare_ms": Math.round(performance.now() - prepareStarted),
+		"package-text.cold.worker_busy_ms": Math.round(busyMs),
+		"package-text.cold.slowest_shard_ms": Math.round(slowestShardMs)
+	});
+	reportProgress({ phase: "package_publish", completed: 0, total: 0 });
+	const publishStarted = performance.now();
 	const records = yield* writer.publishCold([
 		...(input.additionalSources ?? []),
 		...selection.map((shard, row) => ({
@@ -161,6 +191,10 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 			}
 		}))
 	]);
+	yield* Effect.annotateCurrentSpan(
+		"package-text.cold.publish_ms",
+		Math.round(performance.now() - publishStarted)
+	);
 	return {
 		packages: input.inventory.length,
 		shards: records.length,

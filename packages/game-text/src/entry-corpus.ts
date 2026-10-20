@@ -4,9 +4,11 @@ export {
 	MAX_CORPUS_REPORT_ITEMS,
 	TextCorpusDiagnosticSummary,
 	TextCorpusReport,
+	TextCorpusReportHeader,
 	TextPackageCoverageSummary,
 	textCorpusDiagnosticSummary,
 	textCorpusReport,
+	textCorpusReportHeader,
 	textPackageCoverageSummary
 } from "./corpus-summary.js";
 
@@ -24,6 +26,8 @@ export {
 	GameTextInvestigationPresetResult,
 	GameTextInvestigationQuery,
 	exportGameTextInvestigation,
+	readFindingUnits,
+	type IndexedInvestigationSource,
 	gameTextInvestigationCsv
 } from "./investigation.js";
 
@@ -39,12 +43,16 @@ export {
 
 export {
 	LocalizationLinesFileResult,
+	LOCALIZATION_LINES_CSV_FIELDS,
+	type LocalizationCsvLine,
 	localizationLinesCsv,
 	pickedLocalizationCultures
 } from "./localization-export.js";
 
 export {
 	LocalizationKeyChangePair,
+	KEY_CHANGE_FIELDS,
+	type KeyChangeLine,
 	type LocalizationKeyChanges,
 	applyLocalizationKeyChanges,
 	localizationKeyChanges,
@@ -64,7 +72,10 @@ export {
 	createLocalizationBaseline,
 	decodeLocalizationBaselineJson,
 	diffLocalizationBaselines,
-	localizationProgressReport
+	indexedLocalizationBaseline,
+	indexedLocalizationProgressReport,
+	localizationProgressReport,
+	type LocalizationReportIndex
 } from "./localization-reports.js";
 
 export {

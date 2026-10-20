@@ -16,7 +16,8 @@ import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
-import { textQualityQuery, TextQualityFilter } from "./quality-query.js";
+import { textQualityQuery, TextQualityFilter, type TextQualityQuery } from "./quality-query.js";
+import type { TextUnit } from "./schema.js";
 
 /**
  * Serializable corpus or quality query for a reusable investigation. Localization quality
@@ -117,12 +118,40 @@ export const GameTextInvestigationExport = Schema.Struct({
 export type GameTextInvestigationExport = Schema.Schema.Type<typeof GameTextInvestigationExport>;
 
 /**
+ * Source rules over an index model, page by page (`GameTextIndexRefreshResult["sourceQuality"]`),
+ * in place of a corpus the rules are evaluated over in JavaScript.
+ */
+export interface IndexedInvestigationSource {
+	// The guidance an index failure carries, named structurally: the index contract is not
+	// browser code.
+	readonly sourceQuality: (
+		rules: GameTextRuleDocument
+	) => Effect.Effect<
+		TextQualityQuery,
+		Pick<InvestigationError, "message" | "recovery" | "retrySafe" | "nextStep">
+	>;
+}
+
+/** The units quality findings name, read by ID in batches: what a quality CSV needs. */
+export const readFindingUnits = Effect.fn("GameText.investigation.findingUnits")(function* (
+	query: Pick<NativeTextQuery, "readUnits">,
+	ids: readonly TextUnit["id"][]
+) {
+	const unique = [...new Set(ids)];
+	const units: TextUnit[] = [];
+	for (let start = 0; start < unique.length; start += 5000)
+		units.push(...(yield* query.readUnits(unique.slice(start, start + 5000))));
+	return units;
+});
+
+/**
  * Runs a preset over a scan. A preset that names a localization target needs that target's
  * query (`localized`, built over the same corpus and the target's join), so its problem and
- * translation pills select the lines the list showed.
+ * translation pills select the lines the list showed. Pass an index model's source rules as
+ * `source`; a corpus is evaluated in JavaScript, as before.
  */
 export function exportGameTextInvestigation(
-	corpus: TextCorpus,
+	corpus: TextCorpus | IndexedInvestigationSource,
 	preset: GameTextInvestigationPreset,
 	source: InvestigationSource,
 	localized?: Pick<NativeTextQuery, "export">,
@@ -231,8 +260,20 @@ export function exportGameTextInvestigation(
 					: preset.query.mode === "quality" && rules !== undefined
 						? {
 								mode: "quality",
-								report: textQualityQuery(
-									evaluateGameTextSourceQuality(corpus, rules)
+								report: ("sourceQuality" in corpus
+									? yield* corpus.sourceQuality(rules).pipe(
+											Effect.mapError(
+												(cause) =>
+													new InvestigationError({
+														message: cause.message,
+														recovery: cause.recovery,
+														retrySafe: cause.retrySafe,
+														nextStep: cause.nextStep,
+														cause
+													})
+											)
+										)
+									: textQualityQuery(evaluateGameTextSourceQuality(corpus, rules))
 								).export(preset.query.qualityFilter)
 							}
 						: { mode: "corpus", corpus: textCorpusReport(yield* corpusExport) }

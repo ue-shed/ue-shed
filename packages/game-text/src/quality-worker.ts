@@ -1,5 +1,5 @@
 import { MessagePort, parentPort, workerData } from "node:worker_threads";
-import { Effect, Exit, Fiber, Schema } from "effect";
+import { Effect, Exit, Fiber, Schema, Tracer } from "effect";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
 import { sharedIndexNodeLayer } from "./shared-index.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
@@ -75,6 +75,27 @@ function hostFindings(quality: LocalizationQuality): QualityWorkerFindings {
 	};
 }
 
+/**
+ * Where a scan's time goes, for the host's trace: each span's total milliseconds by name
+ * (`span_ms.<name>`), and the numeric `game_text.*` attributes the scan annotates, such as its
+ * stage timings. The worker has no tracer of the host's, so it records them itself.
+ */
+function scanTimings() {
+	const timings: Record<string, number> = {};
+	const isNumber = Schema.is(Schema.Number);
+	const round = (ms: number) => Math.round(ms * 10) / 10;
+	class Timed extends Tracer.NativeSpan {
+		override end(endTime: bigint, exit: Exit.Exit<unknown, unknown>) {
+			super.end(endTime, exit);
+			const key = `span_ms.${this.name}`;
+			timings[key] = round((timings[key] ?? 0) + Number(endTime - this.startTime) / 1e6);
+			for (const [name, value] of this.attributes)
+				if (name.startsWith("game_text.") && isNumber(value)) timings[name] = value;
+		}
+	}
+	return { tracer: Tracer.make({ span: (options) => new Timed(options) }), timings };
+}
+
 /** Reads one finished scan for a synchronous call. */
 function callValue(scans: ReadonlyMap<number, LocalizationQuality>, call: QualityWorkerCall) {
 	const quality = scans.get(call.scan);
@@ -118,8 +139,9 @@ void Effect.runPromise(
 			const signal = new Int32Array(data.signal);
 			const scans = new Map<number, LocalizationQuality>();
 			const running = new Map<number, Fiber.Fiber<void>>();
-			const scan = (task: Extract<QualityWorkerTask, { kind: "scan" }>) =>
-				indexedLocalizationQuality(
+			const scan = (task: Extract<QualityWorkerTask, { kind: "scan" }>) => {
+				const recorded = scanTimings();
+				return indexedLocalizationQuality(
 					joined,
 					task.corpus,
 					evidence,
@@ -131,9 +153,15 @@ void Effect.runPromise(
 					Effect.provideService(GameTextIndexProgressReporter, (progress) =>
 						reply({ kind: "progress", id: task.id, progress })
 					),
+					Effect.withTracer(recorded.tracer),
 					Effect.map((quality) => {
 						scans.set(task.id, quality);
-						reply({ kind: "done", id: task.id, findings: hostFindings(quality) });
+						reply({
+							kind: "done",
+							id: task.id,
+							findings: hostFindings(quality),
+							timings: recorded.timings
+						});
 					}),
 					Effect.catchCause((cause) =>
 						Effect.sync(() =>
@@ -147,6 +175,7 @@ void Effect.runPromise(
 					// Slices let the worker answer calls and cancellations during a long scan.
 					withHostSlices
 				);
+			};
 			yield* Effect.callback<void>((resume) => {
 				const message = (raw: typeof QualityWorkerTask.Encoded) => {
 					const decoded = Schema.decodeUnknownExit(QualityWorkerTask)(raw);

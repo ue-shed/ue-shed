@@ -389,14 +389,14 @@ const duplicateSources = Effect.fn("GameText.localizationQuality.duplicates")(fu
 				joinPosition[row]!,
 				row,
 				() => {
-					const occurrences = [];
+					// The places `localizationDuplicatePlaces` finds, from the location columns.
+					if (occurrenceEnd[row]! === occurrenceStart[row]!)
+						return localizationDuplicatePlaces(data.line(row), []);
+					const places: string[] = [];
 					const members = data.column("occurrence.rows");
 					for (let offset = occurrenceStart[row]!; offset < occurrenceEnd[row]!; offset++)
-						occurrences.push(data.occurrence(members[offset]!));
-					return localizationDuplicatePlaces(
-						occurrences.length ? { manifest: [] } : data.line(row),
-						occurrences
-					);
+						places.push(data.occurrencePlace(members[offset]!));
+					return places;
 				}
 			);
 		}

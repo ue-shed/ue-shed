@@ -13,6 +13,7 @@ import { TEXT_ORIGIN_LABELS, manifestOrigins, textLocationOrigin } from "./text-
 import { TEXT_AUDIENCE_LABELS } from "./text-audience-schema.js";
 import { lineTextAudience, occurrenceTextAudience } from "./text-audience.js";
 import { hasSearchableSource } from "./search.js";
+import type { LocalizationLineView } from "./index-reads.js";
 
 /** The state names writers see, shared by every host that presents localization states. */
 export const LOCALIZATION_STATE_LABELS = {
@@ -35,20 +36,39 @@ export const pickedLocalizationCultures = (selection: LocalizationSelection | un
 // Code-unit order is the same on every machine, unlike locale collation.
 const byCodeUnit = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
 
+/** The line fields the all-languages CSV reads; `selectLocalizationLines` exports only these. */
+export const LOCALIZATION_LINES_CSV_FIELDS = [
+	"origin",
+	"identity",
+	"source",
+	"manifest",
+	"audience",
+	"marks",
+	"places"
+] as const;
+/** A line as the all-languages CSV reads it, from `LOCALIZATION_LINES_CSV_FIELDS`. */
+export type LocalizationCsvLine = LocalizationLineView<
+	(typeof LOCALIZATION_LINES_CSV_FIELDS)[number]
+>;
+
 /**
  * One spreadsheet with every language: a row per line and, for the native culture first and then
  * the target's culture order, the translation that ships next and its state. Missing translations
  * are empty cells, so every language lines up by key. Picked cultures limit the columns to the
  * native culture and those. The CSV is for reading and sharing; edits go through PO change sets.
+ * Pass lines read with `LOCALIZATION_LINES_CSV_FIELDS`, or whole lines and the corpus their
+ * units come from.
  */
 export function localizationLinesCsv(input: {
 	readonly join: Pick<LocalizationJoin, "nativeCulture" | "cultures">;
-	readonly lines: readonly LocalizationLine[];
+	readonly lines: readonly (LocalizationLine | LocalizationCsvLine)[];
 	readonly corpus?: TextCorpus | undefined;
 	readonly cultures?: readonly string[] | undefined;
 }) {
 	const { join, lines } = input;
 	const units = new Map(input.corpus?.units.map((unit) => [unit.id, unit]));
+	type Line = LocalizationLine | LocalizationCsvLine;
+	const wholeLine = (line: Line): line is LocalizationLine => !("places" in line);
 	const picked =
 		input.cultures === undefined || input.cultures.length === 0
 			? undefined
@@ -60,26 +80,30 @@ export function localizationLinesCsv(input: {
 				culture !== join.nativeCulture && (picked === undefined || picked.has(culture))
 		)
 	];
-	const placesOf = (line: LocalizationLine) =>
+	const placesOf = (line: Line) =>
 		line.manifest.length > 0
 			? line.manifest.map((entry) => entry.path)
-			: localizationLineUnits(line, units).flatMap((unit) =>
-					unit.occurrences.map((occurrence) => occurrence.location.objectPath)
-				);
-	const kindsOf = (line: LocalizationLine) =>
-		line.origin.kind === "corpus" && units.size > 0
-			? [
-					...new Set(
-						localizationLineUnits(line, units).flatMap((unit) =>
-							unit.occurrences.map((occurrence) =>
-								textLocationOrigin(occurrence.location)
+			: wholeLine(line)
+				? localizationLineUnits(line, units).flatMap((unit) =>
+						unit.occurrences.map((occurrence) => occurrence.location.objectPath)
+					)
+				: line.places.map((place) => place.objectPath);
+	const kindsOf = (line: Line) =>
+		line.origin.kind === "corpus" && !wholeLine(line)
+			? [...new Set(line.places.map((place) => place.origin))]
+			: line.origin.kind === "corpus" && wholeLine(line) && units.size > 0
+				? [
+						...new Set(
+							localizationLineUnits(line, units).flatMap((unit) =>
+								unit.occurrences.map((occurrence) =>
+									textLocationOrigin(occurrence.location)
+								)
 							)
 						)
-					)
-				]
-			: manifestOrigins(line.manifest.map((entry) => entry.path));
+					]
+				: manifestOrigins(line.manifest.map((entry) => entry.path));
 	// Joins record the audience; recompute it for lines from older joins when the corpus is here.
-	const audienceOf = (line: LocalizationLine) =>
+	const audienceOf = (line: Line) =>
 		line.audience ??
 		lineTextAudience(
 			localizationLineUnits(line, units)
@@ -90,6 +114,16 @@ export function localizationLinesCsv(input: {
 					)
 				)
 		);
+	const shipped = (line: Line, culture: string) => {
+		if (!wholeLine(line)) {
+			const mark = line.marks.find((item) => item.culture === culture);
+			return mark === undefined ? undefined : { value: mark.translation, state: mark.state };
+		}
+		const mark = line.cultures.find((item) => item.culture === culture);
+		return mark === undefined
+			? undefined
+			: { value: localizationShippedTranslation(mark).value, state: mark.state };
+	};
 	const sorted = [...lines].sort(
 		(left, right) =>
 			byCodeUnit(left.identity?.namespace ?? "￿", right.identity?.namespace ?? "￿") ||
@@ -119,13 +153,10 @@ export function localizationLinesCsv(input: {
 				.join(", "),
 			TEXT_AUDIENCE_LABELS[audienceOf(line)],
 			...cultures.flatMap((culture) => {
-				const mark = line.cultures.find((item) => item.culture === culture);
+				const mark = shipped(line, culture);
 				return mark === undefined
 					? ["", ""]
-					: [
-							localizationShippedTranslation(mark).value ?? "",
-							LOCALIZATION_STATE_LABELS[mark.state]
-						];
+					: [mark.value ?? "", LOCALIZATION_STATE_LABELS[mark.state]];
 			})
 		];
 	});

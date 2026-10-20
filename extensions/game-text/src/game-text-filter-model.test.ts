@@ -21,6 +21,28 @@ describe("filter pills", () => {
 		});
 	});
 
+	it("reads source texts as written and every review signal a finding pill holds", () => {
+		expect(clauseParts({ field: "source", op: "is", values: ["Mushroom", " cap "] })).toEqual({
+			field: "Source text",
+			op: "is any of",
+			values: "Mushroom,  cap "
+		});
+		expect(
+			clauseParts({ field: "finding", op: "is_not", values: ["conflicting", "long"] })
+		).toEqual({
+			field: "Finding",
+			op: "is none of",
+			values: "Same key, different text, Long text"
+		});
+		// A host-set signal stays in the pill when another value joins it.
+		const held = toggleValue([{ field: "finding", op: "is", values: ["evidence_only"] }], {
+			field: "finding",
+			op: "is",
+			values: ["shared"]
+		});
+		expect(held).toEqual([{ field: "finding", op: "is", values: ["evidence_only", "shared"] }]);
+	});
+
 	it("keeps one pill per field: values leave or join it under its operator", () => {
 		const excluded: TextFilter = [
 			{ field: "translation", op: "is_not", values: ["missing", "to_update"] }

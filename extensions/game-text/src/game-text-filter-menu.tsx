@@ -437,6 +437,7 @@ function makeClause(field: TextFilterField, value: string): TextFilterClause | u
 		case "folder":
 		case "asset":
 		case "namespace":
+		case "source":
 			return { field, op: "is", values: [value] };
 		case "translation_key":
 			return isTranslationKey(value) ? { field, op: "is", values: [value] } : undefined;

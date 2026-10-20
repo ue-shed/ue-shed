@@ -12,11 +12,15 @@ import {
  * generation alive.
  */
 export interface RetainedGameTextIndexResult extends GameTextIndexRefreshResult {
+	/** The opened model's revision; a retained legacy adapter's model gets its own. */
+	readonly revision: string;
 	/** Pin this generation in the calling operation's scope before using its lazy projections. */
 	readonly borrow: Effect.Effect<void, never, Scope.Scope>;
 	/** Call after publishing this model; outstanding users of the previous model keep their pins. */
 	readonly retain: Effect.Effect<void>;
 }
+
+let retainedModels = 0;
 
 /** Preparation belongs to the operation; publication transfers a pin to the host. */
 export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(function* (
@@ -94,6 +98,7 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 					return {
 						project: result.project,
 						queryRevision: result.queryRevision,
+						revision: result.revision ?? `retained:${++retainedModels}`,
 						get joined() {
 							return result.joined;
 						},

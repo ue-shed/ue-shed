@@ -1,10 +1,9 @@
-import type { TextFilterClause } from "@ue-shed/game-text/schema";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { Effect, Metric, Result, Schema } from "effect";
 import {
 	localizationGateFailures,
 	localizationGateResult,
-	localizationGateTarget,
+	indexedLocalizationGateTarget,
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,
 	type LocalizationGateCheck,
@@ -171,8 +170,9 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 		target: item.target.name,
 		reason: "It has no manifest; Unreal has not gathered it."
 	}));
-	const corpus = yield* indexed[0]!.corpus;
-	const unscanned = localizationGateUnreadPackages(corpus, files);
+	// Package coverage alone says which listed packages were read; the units are not exported.
+	const header = yield* indexed[0]!.query.readCorpusHeader();
+	const unscanned = localizationGateUnreadPackages(header, files);
 	if (unscanned.length > 0)
 		return yield* Effect.fail(
 			new LocalizationGateError({
@@ -188,46 +188,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 	const results = yield* Effect.forEach(checked, (item) =>
 		Effect.gen(function* () {
 			const result = indexed.find((result) => result.evidence === item)!;
-			const base = {
-				query: "",
-				capability: "all" as const,
-				localization: { target: result.localization.target },
-				where: { files }
-			};
-			const having = (clause: TextFilterClause) =>
-				result.query
-					.localizationLines({ ...base, filter: [clause] })
-					.pipe(Effect.map((lines) => new Set(lines.map((line) => line.id))));
-			return localizationGateTarget({
-				corpus: yield* result.query.export({
-					query: "",
-					capability: "all",
-					where: { files }
-				}),
-				selection: {
-					lines: yield* result.query.localizationLines(base),
-					conflicting: yield* having({
-						field: "problem",
-						op: "is",
-						values: ["conflicting_source"]
-					}),
-					changed: yield* having({
-						field: "problem",
-						op: "is",
-						values: ["changed_since_gather"]
-					}),
-					notGathered: yield* having({
-						field: "problem",
-						op: "is",
-						values: ["not_gathered"]
-					}),
-					unresolved: yield* having({
-						field: "finding",
-						op: "is",
-						values: ["unresolved"]
-					}),
-					fileScope: (yield* result.query.search({ ...base, pageSize: 1 })).fileScope
-				},
+			// One projected line read answers every check, in Rust.
+			return yield* indexedLocalizationGateTarget(result.query, {
 				join: result.localization,
 				files,
 				failOn

@@ -1,9 +1,9 @@
-import { Schema } from "effect";
-import { localizationLineUnits } from "./gathered-text.js";
+import { Effect, Schema } from "effect";
 import type { LocalizationJoin, LocalizationLine } from "./localization-schema.js";
-import { localizationShippedTranslation } from "./localization-shipped-translation.js";
 import type { TextCorpusSearchPage } from "./schema.js";
 import { TextFileScopeSummary, type TextCorpus, type TextWhere } from "./schema.js";
+import type { LocalizationLineView } from "./index-reads.js";
+import type { NativeTextQuery } from "./native-query-contract.js";
 import type { LocalizationTargetEvidence } from "@ue-shed/localization/browser";
 import { textFileKey, textFileLabel, textFileScope } from "./text-origin.js";
 
@@ -115,7 +115,10 @@ const MAX_SOURCE = 200;
 const identityText = (identity: LocalizationLine["identity"]) =>
 	identity === null ? "an unknown key" : `${identity.namespace},${identity.key}`;
 
-function guidance(check: LocalizationGateCheck, line: LocalizationLine): string {
+function guidance(
+	check: LocalizationGateCheck,
+	line: Pick<LocalizationLine, "identity" | "keyChange">
+): string {
 	switch (check) {
 		case "key_changed": {
 			const other = line.keyChange?.other ?? null;
@@ -142,37 +145,46 @@ function guidance(check: LocalizationGateCheck, line: LocalizationLine): string 
 	}
 }
 
+/** The line fields a gate reads: one `selectLocalizationLines` call answers every check. */
+export const LOCALIZATION_GATE_FIELDS = [
+	"identity",
+	"source",
+	"origin",
+	"keyChange",
+	"manifest",
+	"marks",
+	"problems",
+	"signals",
+	"places"
+] as const;
+/** A line as the gate reads it. */
+export type LocalizationGateLine = LocalizationLineView<(typeof LOCALIZATION_GATE_FIELDS)[number]>;
+
 /**
  * Judges the text that lives in a list of changed files, for one target. Each line is checked
  * against the evidence on disk now; nothing records what the files held before, so a problem
- * already in a listed file counts too.
+ * already in a listed file counts too. Read the lines with `selectLocalizationLines` and
+ * `LOCALIZATION_GATE_FIELDS` over the files, or use `indexedLocalizationGateTarget`.
  */
 export function localizationGateTarget(input: {
-	readonly corpus: TextCorpus;
-	readonly selection: {
-		readonly lines: readonly LocalizationLine[];
-		readonly conflicting: ReadonlySet<string>;
-		readonly changed: ReadonlySet<string>;
-		readonly notGathered: ReadonlySet<string>;
-		readonly unresolved: ReadonlySet<string>;
-		readonly fileScope?: TextCorpusSearchPage["fileScope"];
-	};
+	readonly lines: readonly LocalizationGateLine[];
+	readonly fileScope?: TextCorpusSearchPage["fileScope"];
 	readonly join: Pick<LocalizationJoin, "target" | "nativeCulture">;
 	readonly files: NonNullable<TextWhere["files"]>;
 	readonly failOn: readonly LocalizationGateCheck[];
 }): LocalizationGateTarget {
-	const { join } = input;
-	const { lines, conflicting, changed, notGathered, unresolved, fileScope } = input.selection;
+	const { join, lines, fileScope } = input;
 	const identityKey = (identity: LocalizationLine["identity"]) =>
 		identity === null ? "" : JSON.stringify([identity.namespace, identity.key]);
 	const listed = new Set(lines.map((line) => identityKey(line.identity)));
-	const translated = (line: LocalizationLine) =>
-		line.cultures.some((culture) => {
-			if (culture.culture === join.nativeCulture) return false;
-			const value = localizationShippedTranslation(culture).value;
-			return value !== null && value !== "";
-		});
-	const checksFor = (line: LocalizationLine): LocalizationGateCheck[] => {
+	const translated = (line: LocalizationGateLine) =>
+		line.marks.some(
+			(mark) =>
+				mark.culture !== join.nativeCulture &&
+				mark.translation !== null &&
+				mark.translation !== ""
+		);
+	const checksFor = (line: LocalizationGateLine): LocalizationGateCheck[] => {
 		const found: LocalizationGateCheck[] = [];
 		const change = line.keyChange;
 		// A key change is judged once, on its new key, unless only the earlier key's file is listed.
@@ -180,13 +192,14 @@ export function localizationGateTarget(input: {
 			change !== undefined &&
 			(change.direction === "to" || !listed.has(identityKey(change.other)));
 		if (judged && change.translations.length > 0) found.push("key_changed");
-		if (conflicting.has(line.id)) found.push("conflicting_source");
-		if (changed.has(line.id))
+		if (line.problems.includes("conflicting_source")) found.push("conflicting_source");
+		if (line.problems.includes("changed_since_gather"))
 			found.push(translated(line) ? "translated_text_changed" : "text_changed");
-		if (notGathered.has(line.id) && !found.includes("key_changed")) found.push("not_gathered");
-		if (unresolved.has(line.id)) found.push("unresolved_key");
+		if (line.problems.includes("not_gathered") && !found.includes("key_changed"))
+			found.push("not_gathered");
+		if (line.signals.includes("unresolved")) found.push("unresolved_key");
 		if (line.origin.kind === "evidence") {
-			if (line.cultures.some((culture) => culture.state === "gathered_only"))
+			if (line.marks.some((mark) => mark.state === "gathered_only"))
 				found.push("gathered_source");
 			else if (change === undefined) found.push("removed");
 		}
@@ -196,12 +209,9 @@ export function localizationGateTarget(input: {
 	// gathered paths, the first one in the list.
 	const scope = textFileScope(input.files);
 	const listedFile = (path: string) => scope?.keys.has(textFileKey(path)) ?? false;
-	const units = new Map(input.corpus.units.map((unit) => [unit.id, unit]));
-	const lineFile = (line: LocalizationLine) => {
+	const lineFile = (line: LocalizationGateLine) => {
 		const places = [
-			...localizationLineUnits(line, units).flatMap((unit) =>
-				unit.occurrences.map((occurrence) => occurrence.packageFile)
-			),
+			...line.places.map((place) => place.packageFile),
 			...line.manifest.map((entry) => entry.path)
 		];
 		return textFileLabel(places.find(listedFile) ?? places[0] ?? "");
@@ -273,7 +283,7 @@ export function localizationGateUnreadEvidence(
  * verdict that ignored them could pass new or conflicting text.
  */
 export function localizationGateUnreadPackages(
-	corpus: TextCorpus,
+	corpus: Pick<TextCorpus, "packageCoverage">,
 	files: readonly string[]
 ): readonly string[] {
 	const scope = textFileScope(files);
@@ -284,6 +294,33 @@ export function localizationGateUnreadPackages(
 			: []
 	);
 }
+
+/**
+ * Checks one target's lines in the changed files through an index model: one projected line read
+ * and one file-scope count, in Rust, instead of the corpus and five line exports.
+ */
+export const indexedLocalizationGateTarget = Effect.fn("GameText.localizationGate")(function* (
+	query: Pick<NativeTextQuery, "selectLocalizationLines" | "search">,
+	input: {
+		readonly join: Pick<LocalizationJoin, "target" | "nativeCulture">;
+		readonly files: NonNullable<TextWhere["files"]>;
+		readonly failOn: readonly LocalizationGateCheck[];
+	}
+) {
+	const base = {
+		query: "",
+		capability: "all" as const,
+		localization: { target: input.join.target },
+		where: { files: input.files }
+	};
+	const lines = yield* query.selectLocalizationLines(base, LOCALIZATION_GATE_FIELDS);
+	const page = yield* query.search({ ...base, pageSize: 1 });
+	return localizationGateTarget({
+		...input,
+		lines,
+		...(page.fileScope === undefined ? undefined : { fileScope: page.fileScope })
+	});
+});
 
 /** The whole change: failed when any target failed. */
 export function localizationGateResult(

@@ -27,6 +27,78 @@ pub struct EngineQuery {
     package_names: Vec<String>,
     package_starts: Vec<u32>,
     validated_ids: HashSet<String>,
+    id_indexes: HashMap<String, Arc<IdIndex>>,
+    unit_lines: Option<Arc<[u32]>>,
+    /// Unreal word counts by source text ID, filled by aggregates.
+    pub(crate) line_break_words: HashMap<u32, u32>,
+    /// The corpus fingerprint, computed once per reader.
+    pub(crate) fingerprint: Option<String>,
+    /// Package coverage and diagnostics, read once per reader.
+    pub(crate) package_lists: Option<Arc<(Vec<Value>, Vec<Value>)>>,
+    /// Each evidence input's file metadata, read once per reader.
+    pub(crate) evidence_meta: HashMap<String, Arc<Value>>,
+}
+
+/// An open-addressed hash of one packed-ID arena: each slot holds a row plus one, zero when
+/// empty. It borrows the reader's arena, so it costs four bytes per slot and no ID copies.
+pub(crate) struct IdIndex {
+    starts: Arc<[u32]>,
+    bytes: Arc<[u8]>,
+    slots: Vec<u32>,
+}
+
+fn id_hash(bytes: &[u8]) -> usize {
+    // FNV-1a: deterministic, and IDs are short enough that a byte loop is cheap.
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    (hash ^ (hash >> 32)) as usize
+}
+
+impl IdIndex {
+    /// `starts` are validated identity offsets ending within `bytes`.
+    fn new(starts: Arc<[u32]>, bytes: Arc<[u8]>) -> Self {
+        let count = starts.len().saturating_sub(1);
+        let mut index = Self {
+            slots: vec![0; (count * 2).max(16).next_power_of_two()],
+            starts,
+            bytes,
+        };
+        let mask = index.slots.len() - 1;
+        for row in 0..count {
+            let id = index.id(row);
+            let mut slot = id_hash(id) & mask;
+            loop {
+                match index.slots[slot] {
+                    0 => {
+                        index.slots[slot] = row as u32 + 1;
+                        break;
+                    }
+                    // Keep the first row of a repeated ID, as a forward scan would find it.
+                    other if index.id(other as usize - 1) == id => break,
+                    _ => slot = (slot + 1) & mask,
+                }
+            }
+        }
+        index
+    }
+
+    fn id(&self, row: usize) -> &[u8] {
+        &self.bytes[self.starts[row] as usize..self.starts[row + 1] as usize]
+    }
+
+    pub fn find(&self, wanted: &[u8]) -> Option<usize> {
+        let mask = self.slots.len() - 1;
+        let mut slot = id_hash(wanted) & mask;
+        loop {
+            match self.slots[slot] {
+                0 => return None,
+                row if self.id(row as usize - 1) == wanted => return Some(row as usize - 1),
+                _ => slot = (slot + 1) & mask,
+            }
+        }
+    }
 }
 
 pub fn audience(mask: u32) -> &'static str {
@@ -132,6 +204,12 @@ impl EngineQuery {
             package_names,
             package_starts,
             validated_ids: HashSet::new(),
+            id_indexes: HashMap::new(),
+            unit_lines: None,
+            line_break_words: HashMap::new(),
+            fingerprint: None,
+            package_lists: None,
+            evidence_meta: HashMap::new(),
         })
     }
 
@@ -156,20 +234,73 @@ impl EngineQuery {
         .map(Wtf8Buf::into_view)
     }
 
+    /// The first row whose packed ID equals `id`, through the reader's ID index.
     pub fn find_id(&mut self, kind: &str, id: &str) -> Result<Option<usize>> {
+        let index = self.id_index(kind)?;
+        Ok(index.find(Wtf8Buf::from_view(id).as_bytes()))
+    }
+
+    /// Hash each packed ID once per pinned reader, so every lookup costs one probe rather than a
+    /// scan of the whole identity arena.
+    pub(crate) fn id_index(&mut self, kind: &str) -> Result<Arc<IdIndex>> {
+        if let Some(index) = self.id_indexes.get(kind) {
+            return Ok(Arc::clone(index));
+        }
         let starts = self.identity_starts(kind)?;
         let bytes = self.reader.bytes(&format!("query.{kind}.id_utf8"))?;
-        let wanted = Wtf8Buf::from_view(id);
-        for (row, range) in starts.windows(2).enumerate() {
-            if bytes
-                .get(range[0] as usize..range[1] as usize)
-                .ok_or("Invalid identity byte range.")?
-                == wanted.as_bytes()
-            {
-                return Ok(Some(row));
+        require(
+            starts
+                .last()
+                .is_some_and(|end| *end as usize <= bytes.len()),
+            "Invalid identity byte range.",
+        )?;
+        let index = Arc::new(IdIndex::new(starts, bytes));
+        self.id_indexes.insert(kind.to_owned(), Arc::clone(&index));
+        Ok(index)
+    }
+
+    /// The dictionary IDs of exact source texts. A text no row holds has no ID, or an ID no source
+    /// column references, so it matches nothing.
+    pub(crate) fn source_ids(&mut self, values: &[String]) -> Result<HashSet<u32>> {
+        let mut ids = HashSet::new();
+        for value in values {
+            if let Some(id) = self.reader.find_string(value)? {
+                ids.insert(id);
             }
         }
-        Ok(None)
+        Ok(ids)
+    }
+
+    /// For each saved unit, the last line in display order holding one of its slices. Focus
+    /// without a localization selection reports that line.
+    pub(crate) fn unit_lines(
+        &mut self,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<Arc<[u32]>> {
+        if let Some(lines) = &self.unit_lines {
+            return Ok(Arc::clone(lines));
+        }
+        let p = crate::engine_match::Projection::open(self, cancelled)?;
+        let raws = self.column("slice", "raw")?;
+        require(
+            raws.len() == p.slice.visible.len(),
+            "Invalid slice-to-unit projection.",
+        )?;
+        let mut lines = vec![u32::MAX; p.raw.visible.len()];
+        for (index, line) in p.order.iter().enumerate() {
+            if index & 255 == 0 {
+                crate::engine_match::checkpoint(cancelled)?;
+            }
+            let line = *line as usize;
+            for raw in &raws[p.starts[line] as usize..p.starts[line + 1] as usize] {
+                *lines
+                    .get_mut(*raw as usize)
+                    .ok_or("Slice points outside raw units.")? = line as u32;
+            }
+        }
+        let lines: Arc<[u32]> = lines.into();
+        self.unit_lines = Some(Arc::clone(&lines));
+        Ok(lines)
     }
 
     pub(crate) fn identity_starts(&mut self, kind: &str) -> Result<Arc<[u32]>> {
@@ -555,5 +686,49 @@ impl EngineQuery {
 
     pub fn normalized_path(value: &str) -> String {
         normalized(trim(value)).to_lowercase()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arena(ids: &[&[u8]]) -> (Arc<[u32]>, Arc<[u8]>) {
+        let mut starts = vec![0u32];
+        let mut bytes = Vec::new();
+        for id in ids {
+            bytes.extend_from_slice(id);
+            starts.push(bytes.len() as u32);
+        }
+        (starts.into(), bytes.into())
+    }
+
+    #[test]
+    fn id_index_finds_the_first_row_a_forward_scan_would() {
+        let generated = (0..5000)
+            .map(|n| format!("Game:[\"NS{}\",\"Key{n}\"]", n % 7).into_bytes())
+            .collect::<Vec<_>>();
+        let mut ids = generated.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        // Repeats keep their first row; an empty ID and prefixes are distinct IDs.
+        ids.extend([
+            &b"Game:[\"NS1\",\"Key8\"]"[..],
+            b"",
+            b"Game:",
+            b"",
+            b"\xed\xa0\x80",
+        ]);
+        let (starts, bytes) = arena(&ids);
+        let index = IdIndex::new(Arc::clone(&starts), Arc::clone(&bytes));
+        let scan = |wanted: &[u8]| ids.iter().position(|id| *id == wanted);
+        for id in &ids {
+            assert_eq!(index.find(id), scan(id));
+        }
+        assert_eq!(index.find(b"Game:[\"NS1\",\"Key8\"]"), Some(8));
+        assert_eq!(index.find(b""), Some(5001));
+        for absent in [&b"Game:[\"NS1\",\"Key5000\"]"[..], b"Game", b"\xed\xa0"] {
+            assert_eq!(index.find(absent), None);
+        }
+        let (starts, bytes) = arena(&[]);
+        assert_eq!(IdIndex::new(starts, bytes).find(b""), None);
     }
 }

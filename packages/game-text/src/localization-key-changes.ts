@@ -11,6 +11,18 @@ import { LocalizationIdentity } from "@ue-shed/localization/browser";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
 import type { TextCorpus, TextLocation } from "./schema.js";
 import { textFileKey } from "./text-origin.js";
+import type { LocalizationLineMark } from "./index-reads.js";
+
+/**
+ * The line facts key-change pairing reads: its key, manifest entries, source, and translations as
+ * whole cultures or as marks (`selectLocalizationLines` with `KEY_CHANGE_FIELDS`).
+ */
+export type KeyChangeLine = Pick<LocalizationLine, "identity" | "manifest" | "source"> & {
+	readonly cultures?: LocalizationLine["cultures"];
+	readonly marks?: readonly LocalizationLineMark[];
+};
+/** The line fields that pair keys across a gather, with the translations the earlier keys had. */
+export const KEY_CHANGE_FIELDS = ["identity", "source", "manifest", "marks"] as const;
 
 /** A key that left Unreal's manifest, paired with the key that took its place. */
 export const LocalizationKeyChangePair = Schema.Struct({
@@ -71,7 +83,7 @@ function occurrencePlace(location: TextLocation): string | undefined {
 }
 
 interface Candidate {
-	readonly line: LocalizationLine;
+	readonly line: KeyChangeLine;
 	readonly places: readonly string[];
 	readonly packages: readonly string[];
 	readonly source: string;
@@ -86,10 +98,10 @@ function textCounts(sources: Iterable<string>): ReadonlyMap<string, number> {
 	return counts;
 }
 
-const manifestSource = (line: LocalizationLine) => line.manifest[0]?.source.Text ?? line.source;
+const manifestSource = (line: KeyChangeLine) => line.manifest[0]?.source.Text ?? line.source;
 const textKeys = (candidate: Candidate) => (candidate.source === "" ? [] : [candidate.source]);
 
-const identityKey = (line: LocalizationLine) =>
+const identityKey = (line: KeyChangeLine) =>
 	line.identity === null
 		? undefined
 		: JSON.stringify([line.identity.namespace, line.identity.key]);
@@ -139,8 +151,14 @@ function reachable(
 }
 
 /** The earlier key's translations that shipped, per non-native culture. */
-function carriedTranslations(line: LocalizationLine, nativeCulture: string | null) {
-	return line.cultures.flatMap((culture) => {
+function carriedTranslations(line: KeyChangeLine, nativeCulture: string | null) {
+	if (line.marks)
+		return line.marks.flatMap((mark) =>
+			mark.culture === nativeCulture || mark.translation === null || mark.translation === ""
+				? []
+				: [{ culture: mark.culture, translation: mark.translation }]
+		);
+	return (line.cultures ?? []).flatMap((culture) => {
 		if (culture.culture === nativeCulture) return [];
 		const translation = localizationShippedTranslation(culture).value;
 		return translation === null || translation === ""
@@ -197,7 +215,7 @@ function pair(
 }
 
 function manifestCandidate(texts: ReadonlyMap<string, number>) {
-	return (line: LocalizationLine): Candidate => {
+	return (line: KeyChangeLine): Candidate => {
 		const source = manifestSource(line);
 		return {
 			line,
@@ -267,10 +285,10 @@ export function localizationKeyChanges(
  * before Unreal trimmed the archives.
  */
 export function localizationKeyChangesAcross(
-	before: LocalizationJoin,
-	after: LocalizationJoin
+	before: Pick<LocalizationJoin, "nativeCulture"> & { readonly lines: readonly KeyChangeLine[] },
+	after: { readonly lines: readonly KeyChangeLine[] }
 ): LocalizationKeyChanges {
-	const gathered = (join: LocalizationJoin) =>
+	const gathered = (join: { readonly lines: readonly KeyChangeLine[] }) =>
 		join.lines.filter((line) => line.identity !== null && line.manifest.length > 0);
 	const beforeKeys = new Set(gathered(before).map(identityKey));
 	const afterKeys = new Set(gathered(after).map(identityKey));

@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber, Metric, Schema } from "effect";
+import { Effect, Exit, Fiber, Metric, Schema, Tracer } from "effect";
 import { expect, vi } from "vitest";
 import { MessagePort, Worker } from "node:worker_threads";
 import { GameTextIndexRefresh } from "./index-refresh.js";
@@ -117,9 +117,28 @@ it.live(
 			const before = (yield* Metric.value(completed)).count;
 			const host = yield* scan(false);
 			expect((yield* Metric.value(completed)).count).toBe(before);
-			const worker = yield* scan(true);
+			const traced: Map<string, unknown>[] = [];
+			class Recording extends Tracer.NativeSpan {
+				override end(endTime: bigint, exit: Exit.Exit<unknown, unknown>) {
+					super.end(endTime, exit);
+					if (this.name === "GameTextIndex.qualityWorker.scan")
+						traced.push(this.attributes);
+				}
+			}
+			const worker = yield* scan(true).pipe(
+				Effect.withTracer(Tracer.make({ span: (options) => new Recording(options) }))
+			);
 			// The worker really ran the scan, rather than falling back to the host.
 			expect((yield* Metric.value(completed)).count).toBe(before + 1);
+			// Its own spans and stages reach the host's trace.
+			expect(
+				traced[0]?.get("game_text.quality.worker.span_ms.GameText.localizationQuality")
+			).toBeGreaterThan(0);
+			expect(
+				[...(traced[0]?.keys() ?? [])].some((key) =>
+					key.startsWith("game_text.quality.stage_ms.")
+				)
+			).toBe(true);
 			expect(host.read.length).toBeGreaterThan(0);
 			expect(host.read.customChecks).toEqual([
 				{ ruleId: "custom-source", label: "Source marker" }

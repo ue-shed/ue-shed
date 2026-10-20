@@ -163,6 +163,18 @@ impl Projection {
                     .ok_or("Unknown audience.")? as u32
             }
             GroupBy::Namespace => self.namespace(places, kind, row)?.unwrap_or(0),
+            // The source's dictionary ID. Unit sources are stored in UTF-16 order.
+            GroupBy::Source => {
+                if localized {
+                    self.source[row]
+                } else {
+                    *self
+                        .raw
+                        .sources(row)
+                        .first()
+                        .ok_or("Stored unit has no source values.")?
+                }
+            }
             GroupBy::Asset | GroupBy::Folder => {
                 let mut key = 0;
                 self.each_file(kind, row, &mut |file| {
@@ -274,9 +286,41 @@ impl EngineQuery {
                 }
             }
         }
+        // Groups below the requested size are left out before ranking, and so are not counted
+        // in `more`. Facets list every value.
+        let minimum = if facet {
+            1
+        } else {
+            request.min_group_size.unwrap_or(1)
+        };
+        let tallies = tallies
+            .into_iter()
+            .filter(|(_, tally)| tally.count >= minimum)
+            .collect::<Vec<_>>();
+        // Source groups are keyed by dictionary ID; they read and tie-break by their text.
+        let mut texts = HashMap::new();
+        if by == GroupBy::Source {
+            let mut keys = Vec::with_capacity(tallies.len());
+            for (index, (key, _)) in tallies.iter().enumerate() {
+                if index & 255 == 0 {
+                    checkpoint(cancelled)?;
+                }
+                keys.push((self.reader.string(*key)?, *key));
+            }
+            keys.sort_by(|(a, _), (b, _)| crate::join::ordinal(a, b));
+            for (rank, (text, key)) in keys.into_iter().enumerate() {
+                texts.insert(key, (rank as u32, text));
+            }
+        }
         let mut entries = tallies
             .into_iter()
-            .map(|(key, tally)| Ok((places.label_rank(by, key, tally.label)?, key, tally)))
+            .map(|(key, tally)| {
+                let rank = match texts.get(&key) {
+                    Some((rank, _)) => *rank,
+                    None => places.label_rank(by, key, tally.label)?,
+                };
+                Ok((rank, key, tally))
+            })
             .collect::<Result<Vec<_>>>()?;
         entries.sort_by(|(a_rank, _, a), (b_rank, _, b)| {
             a.worst
@@ -287,7 +331,10 @@ impl EngineQuery {
         });
         let more = entries.len().saturating_sub(MAX_GROUPS);
         let entries=entries.into_iter().take(MAX_GROUPS).map(|(_,key,tally)| {
-            let (key,label)=places.display(by,key,tally.label)?;
+            let (key,label)=match texts.get(&key) {
+                Some((_, text)) => (text.clone(), text.clone()),
+                None => places.display(by,key,tally.label)?,
+            };
             Ok(json!({"key":key,"label":label,"count":tally.count,"needWork":tally.work,"worst":PROBLEMS[tally.worst as usize]}))
         }).collect::<Result<Vec<_>>>()?;
         Ok(json!({"entries":entries,"more":more}))

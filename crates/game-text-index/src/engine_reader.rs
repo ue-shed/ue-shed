@@ -1,5 +1,5 @@
 //! Read-only pinned native query view. No writer lease or JavaScript column reconstruction.
-use crate::snapshot::{Reader, integers};
+use crate::snapshot::{Reader, integers, strings_bytes};
 use crate::store::{Configuration, decode_a64_bytes, decode_ids, open_root, section};
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result, require};
@@ -9,6 +9,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 const FRAME_CACHE_BYTES: usize = 32 * 1024 * 1024;
+/// A dictionary block: its segment and its index within the segment.
+type DictionaryBlock = (usize, usize);
 const MAX_PATCH_ROWS: usize = 8192;
 
 struct Layer {
@@ -22,6 +24,8 @@ struct Segment {
     reader: Reader,
     offsets: Vec<u32>,
     frames: Vec<u32>,
+    /// First string of each 64-string block, read on the first exact lookup.
+    fences: Option<Vec<Vec<u8>>>,
 }
 
 /// Every input is selected from the same immutable joined metadata and held open until drop.
@@ -210,6 +214,7 @@ impl EngineReader {
                 reader,
                 offsets,
                 frames,
+                fences: None,
             });
         }
         Ok(Self {
@@ -439,15 +444,14 @@ impl EngineReader {
         })
     }
 
-    /// Decode one A64 block from a bounded cache of compressed-frame expansions. All dictionary
-    /// IO uses pinned file descriptors, even after compaction unlinks old generation filenames.
-    pub fn string(&mut self, id: u32) -> Result<String> {
+    /// A string ID's segment and its index within the segment.
+    fn string_position(&self, id: u32) -> Result<(usize, usize)> {
         let segment_index = self
             .segments
             .partition_point(|segment| segment.start <= id)
             .checked_sub(1)
             .ok_or("String ID precedes dictionary.")?;
-        let segment = &mut self.segments[segment_index];
+        let segment = &self.segments[segment_index];
         let local = id
             .checked_sub(segment.start)
             .ok_or("Invalid local string ID.")? as usize;
@@ -455,8 +459,64 @@ impl EngineReader {
             local < segment.count as usize,
             "String ID exceeds dictionary.",
         )?;
-        let block = local / 64;
-        let frame = segment.frames[block];
+        Ok((segment_index, local))
+    }
+
+    /// Decode one A64 block from a bounded cache of compressed-frame expansions. All dictionary
+    /// IO uses pinned file descriptors, even after compaction unlinks old generation filenames.
+    pub fn string(&mut self, id: u32) -> Result<String> {
+        let (segment_index, local) = self.string_position(id)?;
+        let values = self.block(segment_index, local / 64)?;
+        Wtf8Buf::from_bytes(
+            values
+                .get(local % 64)
+                .ok_or("String outside dictionary block.")?
+                .clone(),
+        )
+        .map(Wtf8Buf::into_view)
+    }
+
+    /// The global ID of a string equal to `value`, comparing its exact WTF-8 bytes. Each
+    /// segment is sorted, so this reads one fence index per segment once and one block per probe.
+    pub fn find_string(&mut self, value: &str) -> Result<Option<u32>> {
+        let wanted = Wtf8Buf::from_view(value).into_bytes();
+        for index in 0..self.segments.len() {
+            if self.segments[index].count == 0 {
+                continue;
+            }
+            if self.segments[index].fences.is_none() {
+                let segment = &mut self.segments[index];
+                let fences = strings_bytes(&section(&mut segment.reader, "front.fences")?)?;
+                require(
+                    fences.len() == segment.offsets.len()
+                        && fences.windows(2).all(|pair| pair[0] < pair[1]),
+                    "Invalid dictionary fences.",
+                )?;
+                segment.fences = Some(fences);
+            }
+            let position = self.segments[index]
+                .fences
+                .as_ref()
+                .ok_or("Dictionary fences are absent.")?
+                .partition_point(|fence| fence.as_slice() <= wanted.as_slice());
+            let Some(block) = position.checked_sub(1) else {
+                continue;
+            };
+            if let Ok(rank) = self.block(index, block)?.binary_search(&wanted) {
+                return Ok(Some(
+                    self.segments[index].start + u32::try_from(block * 64 + rank)?,
+                ));
+            }
+        }
+        Ok(None)
+    }
+
+    fn block(&mut self, segment_index: usize, block: usize) -> Result<Vec<Vec<u8>>> {
+        let segment = &mut self.segments[segment_index];
+        let frame = *segment
+            .frames
+            .get(block)
+            .ok_or("Dictionary block outside segment.")?;
         let cache_key = (segment_index, frame);
         let bytes = if let Some(bytes) = self.frames.get(&cache_key) {
             Arc::clone(bytes)
@@ -483,18 +543,40 @@ impl EngineReader {
         } else {
             bytes.len()
         };
-        let values = decode_a64_bytes(bytes.get(start..end).ok_or("Dictionary block range.")?)?;
-        Wtf8Buf::from_bytes(
-            values
-                .get(local % 64)
-                .ok_or("String outside dictionary block.")?
-                .clone(),
-        )
-        .map(Wtf8Buf::into_view)
+        decode_a64_bytes(bytes.get(start..end).ok_or("Dictionary block range.")?)
     }
 
     pub fn strings(&mut self, ids: &[u32]) -> Result<Vec<String>> {
         ids.iter().map(|id| self.string(*id)).collect()
+    }
+
+    /// The strings of many IDs, in their order. It visits them in ID order, so it decodes each
+    /// dictionary block once, where a lookup per ID decodes a block per ID.
+    pub fn strings_batch(&mut self, ids: &[u32]) -> Result<Vec<String>> {
+        let mut visit = (0..ids.len()).collect::<Vec<_>>();
+        visit.sort_unstable_by_key(|index| ids[*index]);
+        let mut result = vec![String::new(); ids.len()];
+        // The last decoded block: its (segment, block) and its strings.
+        let mut decoded: Option<(DictionaryBlock, Vec<Vec<u8>>)> = None;
+        for index in visit {
+            let (segment_index, local) = self.string_position(ids[index])?;
+            let block = (segment_index, local / 64);
+            if decoded.as_ref().map(|(key, _)| *key) != Some(block) {
+                decoded = Some((block, self.block(segment_index, local / 64)?));
+            }
+            let values = &decoded
+                .as_ref()
+                .ok_or("Dictionary block was not decoded.")?
+                .1;
+            result[index] = Wtf8Buf::from_bytes(
+                values
+                    .get(local % 64)
+                    .ok_or("String outside dictionary block.")?
+                    .clone(),
+            )
+            .map(Wtf8Buf::into_view)?;
+        }
+        Ok(result)
     }
 
     pub(crate) fn empty_string_ids(&mut self) -> Result<Arc<BTreeSet<u32>>> {
@@ -614,8 +696,46 @@ mod tests {
         assert_eq!(&*reader.empty_string_ids()?, &BTreeSet::from([empty]));
         assert_eq!(reader.string(empty)?, "");
         assert_eq!(&*reader.empty_string_ids()?, &BTreeSet::from([empty]));
+        // Exact lookups search every segment, including the later appended one.
+        assert_eq!(reader.find_string("")?, Some(empty));
+        assert_eq!(reader.find_string("First source")?, Some(0));
         drop(reader);
         drop(store);
+        std::fs::remove_dir_all(config.cache_root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn exact_string_lookup_compares_wtf8_bytes_across_blocks() -> Result<()> {
+        let config = configuration();
+        let (mut store, fixture_ids) = fixture(&config)?;
+        // More than one 64-string block, with case, prefix and lone-surrogate neighbours.
+        let mut values = (0..150)
+            .map(|n| format!("Spore {n:03}"))
+            .collect::<Vec<_>>();
+        values.extend(["spore 001".into(), "Spore".into(), "Spore 001 ".into()]);
+        let lone = Wtf8Buf::from_utf16(&[0xd800, 65]).into_view();
+        values.push(lone.clone());
+        let bytes = values
+            .iter()
+            .map(|value| Wtf8Buf::from_view(value).into_bytes())
+            .collect::<Vec<_>>();
+        let ids = store.intern_bytes("source", &bytes)?;
+        store.publish_root()?;
+        drop(store);
+        let mut reader = EngineReader::open(&config, None)?;
+        for (value, id) in values.iter().zip(&ids) {
+            assert_eq!(reader.find_string(value)?, Some(*id), "{value:?}");
+        }
+        assert_eq!(reader.find_string("First source")?, Some(fixture_ids[0]));
+        for absent in ["Spore 150", "spore", "", "Spore 0", "Spore 001  "] {
+            assert_eq!(reader.find_string(absent)?, None, "{absent:?}");
+        }
+        assert_eq!(
+            reader.find_string(&Wtf8Buf::from_utf16(&[0xd800]).into_view())?,
+            None
+        );
+        drop(reader);
         std::fs::remove_dir_all(config.cache_root)?;
         Ok(())
     }

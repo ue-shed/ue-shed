@@ -265,7 +265,9 @@ export function textCorpusQuery(
 			editing,
 			notes: withoutNotes ? "missing" : "present",
 			audience: presentation.audience ?? "unknown",
-			translationKeys: keys.filter((key) => !key.startsWith("unresolved:"))
+			translationKeys: keys.filter((key) => !key.startsWith("unresolved:")),
+			reviewSignals: presentation.reviewSignals,
+			sources: unit.source.status === "consistent" ? [unit.source.value] : unit.source.values
 		};
 		return {
 			presentation,
@@ -484,7 +486,9 @@ export function textCorpusQuery(
 				? "missing"
 				: "present",
 			audience: lineTextAudience(entries.map((entry) => entry.facts.audience)),
-			translationKeys: line.identity ? [gatheredIdentityKey(line.identity)] : []
+			translationKeys: line.identity ? [gatheredIdentityKey(line.identity)] : [],
+			reviewSignals: signals,
+			sources: [line.source]
 		};
 	}
 	const hasClause = (filter: TextFilter | undefined, field: TextFilterField) =>
@@ -655,7 +659,12 @@ export function textCorpusQuery(
 				const grouping =
 					group === undefined
 						? undefined
-						: { groups: { by: group, ...textGroups(matched.map(factsOf), group) } };
+						: {
+								groups: {
+									by: group,
+									...textGroups(matched.map(factsOf), group, request.minGroupSize)
+								}
+							};
 				const faceted = facetsField(
 					request.facets,
 					(field) => baseFor(field).map(factsOf),
@@ -751,7 +760,8 @@ export function textCorpusQuery(
 								by: group,
 								...textGroups(
 									matched.map((entry) => entry.facts),
-									group
+									group,
+									request.minGroupSize
 								)
 							}
 						}),

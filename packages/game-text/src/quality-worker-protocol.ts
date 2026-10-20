@@ -102,7 +102,13 @@ export const QualityWorkerReply = Schema.Union([
 		id: Count,
 		progress: GameTextIndexProgress
 	}),
-	Schema.Struct({ kind: Schema.Literal("done"), id: Count, findings: QualityWorkerFindings }),
+	Schema.Struct({
+		kind: Schema.Literal("done"),
+		id: Count,
+		findings: QualityWorkerFindings,
+		/** Where the scan's time went, in milliseconds, for the host's trace (`scanTimings`). */
+		timings: Schema.Record(Schema.String, Schema.Number)
+	}),
 	Schema.Struct({ kind: Schema.Literal("cancelled"), id: Count }),
 	Schema.Struct({
 		kind: Schema.Literal("failed"),

@@ -87,6 +87,36 @@ const fields = [
 	"ordinal"
 ] as const;
 type Field = (typeof fields)[number];
+/**
+ * The columns each format's entries are rebuilt from. A read decodes only these: a page of lines
+ * reads the manifest, every archive and every PO file, and the strings of columns its format never
+ * uses were a large share of hydrating it.
+ */
+const formatFields = {
+	manifest: [
+		"namespace",
+		"key",
+		"source",
+		"path",
+		"notes",
+		"metadata",
+		"source-extra",
+		"options",
+		"ordinal"
+	],
+	archive: [
+		"namespace",
+		"key",
+		"source",
+		"translation",
+		"metadata",
+		"source-extra",
+		"translation-extra",
+		"options",
+		"ordinal"
+	],
+	po: ["namespace", "key", "source", "translation", "path", "po-extra", "options", "ordinal"]
+} satisfies Record<typeof Meta.Type.format, readonly Field[]>;
 const domains = {
 	namespace: "identity",
 	key: "identity",
@@ -569,7 +599,7 @@ export const decodeLocalizationSnapshot = Effect.fn("LocalizationSnapshot.decode
 	const end = Math.min(meta.count, start + maximum);
 	const values: Partial<Record<Field, number[]>> = {};
 	const decoded: Partial<Record<Field, string[]>> = {};
-	for (const field of fields) {
+	for (const field of formatFields[meta.format]) {
 		const column = yield* reader.section(`entry.${field}`);
 		values[field] = Array.from(column.subarray(start, end));
 		if (field !== "options" && field !== "ordinal")
@@ -579,24 +609,29 @@ export const decodeLocalizationSnapshot = Effect.fn("LocalizationSnapshot.decode
 	// and section checksums guard its bytes, so entries are rebuilt without decoding each again;
 	// that decode took a quarter of a full quality scan.
 	const entries: (ManifestEntry | ArchiveEntry | POEntry)[] = [];
+	const strings = (field: Field) => decoded[field] ?? [];
+	const namespaces = strings("namespace"),
+		keys = strings("key"),
+		sources = strings("source"),
+		translations = strings("translation"),
+		paths = strings("path"),
+		notes = strings("notes"),
+		metadata = strings("metadata"),
+		sourceExtras = strings("source-extra"),
+		translationExtras = strings("translation-extra"),
+		poExtras = strings("po-extra"),
+		options = values.options!;
+	const json = (text: string) => stored<typeof OpaqueRecord.Type>(text, {});
 	for (let index = 0; index < end - start; index++) {
-		const string = (field: Field) => decoded[field]![index]!;
-		const json = (field: Field) => stored<typeof OpaqueRecord.Type>(string(field), {});
-		const flags = values.options![index]!;
-		const path = (flags & 1024 ? (meta.pathPrefix ?? "") : "") + string("path");
+		const flags = options[index]!;
 		const identity = {
-			namespace: TextNamespace.make(string("namespace")),
-			key: TextKey.make(string("key"))
-		};
-		const source = { Text: string("source"), ...json("source-extra") };
-		const shared = {
-			...(flags & 1 ? { optional: Boolean(flags & 2) } : undefined),
-			...(flags & 8 ? { metadata: json("metadata") } : undefined)
+			namespace: TextNamespace.make(namespaces[index]!),
+			key: TextKey.make(keys[index]!)
 		};
 		if (meta.format === "po") {
-			const extras = stored<StoredPOFields>(string("po-extra"), {});
+			const extras = stored<StoredPOFields>(poExtras[index]!, {});
 			const msgstr = { ...extras.msgstr };
-			if (flags & 64) msgstr["0"] = flags & 128 ? string("source") : string("translation");
+			if (flags & 64) msgstr["0"] = flags & 128 ? sources[index]! : translations[index]!;
 			const extracted = extras.extractedComments ?? [],
 				references = extras.referenceComments ?? [];
 			const msgctxt =
@@ -605,33 +640,46 @@ export const decodeLocalizationSnapshot = Effect.fn("LocalizationSnapshot.decode
 					: extras.msgctxt;
 			entries.push({
 				...(msgctxt === undefined ? undefined : { msgctxt }),
-				msgid: string("source"),
+				msgid: sources[index]!,
 				...(extras.msgidPlural === undefined
 					? undefined
 					: { msgidPlural: extras.msgidPlural }),
 				msgstr,
 				translatorComments: extras.translatorComments ?? [],
 				extractedComments: flags & 256 ? [`Key: ${identity.key}`, ...extracted] : extracted,
-				referenceComments: flags & 512 ? [path, ...references] : references,
+				referenceComments:
+					flags & 512
+						? [
+								(flags & 1024 ? (meta.pathPrefix ?? "") : "") + paths[index]!,
+								...references
+							]
+						: references,
 				flags: extras.flags ?? [],
 				previousMsgidLines: extras.previousMsgidLines ?? [],
 				identity: flags & 16 ? null : identity
 			});
-		} else if (meta.format === "manifest")
+			continue;
+		}
+		const source = { Text: sources[index]!, ...json(sourceExtras[index]!) };
+		const shared = {
+			...(flags & 1 ? { optional: Boolean(flags & 2) } : undefined),
+			...(flags & 8 ? { metadata: json(metadata[index]!) } : undefined)
+		};
+		if (meta.format === "manifest")
 			entries.push({
 				...identity,
 				source,
-				path,
+				path: (flags & 1024 ? (meta.pathPrefix ?? "") : "") + paths[index]!,
 				...shared,
-				...(flags & 4 ? { devNotes: string("notes") } : undefined)
+				...(flags & 4 ? { devNotes: notes[index]! } : undefined)
 			});
 		else
 			entries.push({
 				...identity,
 				source,
 				translation: {
-					Text: flags & 128 ? string("source") : string("translation"),
-					...json("translation-extra")
+					Text: flags & 128 ? sources[index]! : translations[index]!,
+					...json(translationExtras[index]!)
 				},
 				...shared
 			});

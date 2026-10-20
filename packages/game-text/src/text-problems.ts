@@ -35,6 +35,16 @@ export interface TextFacts {
 	 * every key a unit's occurrences gather to. Absent or empty matches no `translation_key`.
 	 */
 	readonly translationKeys?: readonly string[];
+	/**
+	 * Every review signal, which `finding` clauses read when present; `findings` otherwise. Absent
+	 * signals leave `finding` to the actionable subset.
+	 */
+	readonly reviewSignals?: readonly TextReviewSignal[];
+	/**
+	 * The exact source texts: a line's source, or a unit's sources in UTF-16 order. Absent matches
+	 * no `source` clause and groups under the empty text.
+	 */
+	readonly sources?: readonly string[];
 }
 
 /**
@@ -120,8 +130,10 @@ function clauseHas(facts: TextFacts, clause: TextFilterClause): boolean {
 	switch (clause.field) {
 		case "problem":
 			return clause.values.some((value) => facts.problems.includes(value));
-		case "finding":
-			return clause.values.some((value) => facts.findings.includes(value));
+		case "finding": {
+			const signals: readonly string[] = facts.reviewSignals ?? facts.findings;
+			return clause.values.some((value) => signals.includes(value));
+		}
 		case "translation":
 			return clause.values.some((value) => facts.translation.includes(value));
 		case "origin":
@@ -142,6 +154,8 @@ function clauseHas(facts: TextFacts, clause: TextFilterClause): boolean {
 			return clause.values.includes(facts.audience);
 		case "translation_key":
 			return clause.values.some((value) => facts.translationKeys?.includes(value) === true);
+		case "source":
+			return clause.values.some((value) => facts.sources?.includes(value) === true);
 	}
 }
 

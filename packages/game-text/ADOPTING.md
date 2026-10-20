@@ -93,6 +93,59 @@ Use `query.localizationDetail(request)` for interactive evidence, including cult
 PO-context offsets. Text focus carries a localization preview. `localizationFocus(id)` and
 `localizationLines(request)` are explicit full-provenance exports through scoped files.
 
+Ask the index rather than exporting the corpus to derive facts. Every request below is one bounded
+search; keep the policy that decides what they mean in the host.
+
+```ts
+const scope = { query: "", capability: "all", pageSize: 50, localization: { target } } as const;
+// Other keys holding exactly this text (case, whitespace and lone surrogates count).
+search({ ...scope, filter: [{ field: "source", op: "is", values: [line.source] }] });
+// Keys holding several texts, and texts under several keys, project-wide.
+search({ ...scope, filter: [{ field: "finding", op: "is", values: ["conflicting"] }] });
+search({
+	...scope,
+	filter: [{ field: "finding", op: "is", values: ["duplicate_source"] }],
+	group: "source",
+	minGroupSize: 2
+});
+// One of those texts' lines.
+search({ ...scope, group: "source", minGroupSize: 2, openGroup: "Mushroom" });
+```
+
+`finding` takes every review signal. A `source` clause takes up to 50 exact texts; a unit with
+conflicting sources matches any of them. `group: "source"` keys and labels each group by its text
+and counts the matching lines holding it (units without a target, each under its first source in
+UTF-16 order). `minGroupSize` leaves smaller groups out of `groups`, including `more`; it does not
+narrow totals or `openGroup`. Key changes are on each line's `keyChange`.
+
+Bulk reads (`corpus`, exports, `readLocalizationLines`, `localizationLines`) run in a second native
+process of the model, opened on the first of them, so they never hold a search or focus. The
+model then holds two readers of the snapshot.
+
+Which query answers which question:
+
+| Question                                                         | Ask                                                                                                   |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Lines, words and unknown reasons per culture and state           | `query.aggregate({ ...scope, by: ["culture", "state"], measures: ["lineBreakWords"] })`               |
+| How many lines per key, text, problem, origin, audience or asset | `query.aggregate({ ...scope, by: ["translation_key"] })`, and so on                                   |
+| A target's progress report and baseline                          | `indexedLocalizationProgressReport(model, baseline)`, `indexedLocalizationBaseline(model, createdAt)` |
+| Lines in changed files and their problems                        | `indexedLocalizationGateTarget(model.query, { join, files, failOn })`                                 |
+| A spreadsheet of every line                                      | `query.selectLocalizationLines(request, LOCALIZATION_LINES_CSV_FIELDS)` and `localizationLinesCsv`    |
+| Keys and translations before a gather                            | `query.selectLocalizationLines(request, KEY_CHANGE_FIELDS)`                                           |
+| Package coverage and diagnostics                                 | `query.readCorpusHeader()`                                                                            |
+| The units quality findings name                                  | `query.readUnits(ids)`, or `readFindingUnits`                                                         |
+| Source rules in an investigation                                 | `exportGameTextInvestigation({ sourceQuality: model.sourceQuality }, …)`                              |
+| Has the model changed?                                           | Compare `model.revision`                                                                              |
+| The whole corpus or join, to write it out                        | `model.corpus`, `query.readLocalizationLines()`, `query.export(request)`                              |
+
+`aggregate` groups by up to four dimensions; `culture` fans each line out over the cultures in
+scope and the culture-mark dimensions (`state`, `fact`, `unknown_reason`, `review`,
+`review_status`, `review_flag`) read that culture's mark. A line counts once under each value of a
+multi-valued dimension. `lineBreakWords` is the report's word count; `unknownWords` counts lines in
+scripts it cannot count. `selectLocalizationLines` fields are the `LocalizationLine` fields plus
+`marks`, `problems`, `signals` and `places`. Test doubles of `NativeTextQuery` must implement
+`aggregate`, `selectLocalizationLines`, `readCorpusHeader`, `readUnits` and `corpusFingerprint`.
+
 Verify cold preparation, mixed package/PO edits, failure recovery and pinned-reader queries
 through the adopter's real packaged transport. The
 [native engine guide](../../docs/engineering/native-game-text-index.md) describes ownership,

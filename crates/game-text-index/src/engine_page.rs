@@ -64,6 +64,7 @@ impl EngineQuery {
                 .iter()
                 .position(|value| value == opened)
                 .map(|id| id as u32),
+            GroupBy::Source => self.reader.find_string(opened)?,
             _ => places
                 .labels(std::slice::from_ref(opened), false)
                 .iter()

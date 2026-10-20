@@ -13,6 +13,7 @@ import {
 import { textCorpusQuery } from "./query.test-support.js";
 import { TextProblem, type TextFilter } from "./schema.js";
 import { matchesTextFilter, textProblems, type TextFacts } from "./text-problems.js";
+import { textGroupOf, textGroups } from "./text-groups.js";
 
 const facts: TextFacts = {
 	problems: ["not_gathered", "finding"],
@@ -59,6 +60,39 @@ describe("text problems", () => {
 		];
 		expect(is(both)).toBe(false);
 		expect(matchesTextFilter(facts, both, "problem")).toBe(true);
+	});
+
+	it("matches exact sources and every review signal, and groups by source with a minimum", () => {
+		const sourced: TextFacts = {
+			...facts,
+			reviewSignals: ["long", "conflicting"],
+			sources: ["Blue cap", "Red cap"]
+		};
+		const is = (filter: TextFilter, item = sourced) => matchesTextFilter(item, filter);
+		expect(is([{ field: "source", op: "is", values: ["Red cap"] }])).toBe(true);
+		expect(is([{ field: "source", op: "is", values: ["red cap", "Red cap "] }])).toBe(false);
+		expect(is([{ field: "source", op: "is_not", values: ["Blue cap"] }])).toBe(false);
+		expect(is([{ field: "finding", op: "is", values: ["conflicting"] }])).toBe(true);
+		// Without review signals a finding clause reads the actionable findings.
+		expect(is([{ field: "finding", op: "is", values: ["conflicting"] }], facts)).toBe(false);
+		expect(is([{ field: "finding", op: "is", values: ["long"] }], facts)).toBe(true);
+		expect(is([{ field: "source", op: "is", values: ["Red cap"] }], facts)).toBe(false);
+		const lines = ["Mushroom", "Mushroom", "Stem", "Mushroom", "Cap"].map(
+			(source): TextFacts => ({ ...facts, sources: [source] })
+		);
+		expect(textGroups(lines, "source")).toMatchObject({
+			entries: [
+				{ key: "Mushroom", label: "Mushroom", count: 3 },
+				{ key: "Cap" },
+				{ key: "Stem" }
+			],
+			more: 0
+		});
+		expect(textGroups(lines, "source", 2)).toMatchObject({
+			entries: [{ key: "Mushroom", count: 3 }],
+			more: 0
+		});
+		expect(textGroupOf(sourced, "source")).toEqual({ key: "Blue cap", label: "Blue cap" });
 	});
 });
 

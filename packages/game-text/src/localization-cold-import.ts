@@ -192,7 +192,7 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 			}
 		}));
 		const publishStarted = performance.now();
-		reportProgress({ phase: "joining", completed: 0, total: 0 });
+		reportProgress({ phase: "localization_publish", completed: 0, total: 0 });
 		const records = yield* writer.publishCold(entries);
 		const metrics = writer.metrics();
 		yield* Effect.annotateCurrentSpan({

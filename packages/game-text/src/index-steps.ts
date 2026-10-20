@@ -172,6 +172,8 @@ export interface GameTextIndexModel extends GameTextIndexRefreshResult {
 	readonly project: GameTextProjectIndex;
 }
 
+/** Models opened by this process, numbering each model's revision. */
+let openedModels = 0;
 const queryRevisionFor = (project: GameTextProject, generation: string, joinedKey: string) =>
 	JSON.stringify([project.cacheRoot, project.projectRoot, generation, joinedKey]);
 
@@ -806,6 +808,7 @@ export const makeGameTextIndexSteps = (
 					joined.reader.manifest.generation,
 					target.join.key
 				),
+				revision: `${joined.reader.manifest.generation}#${++openedModels}`,
 				joined,
 				query,
 				summary,

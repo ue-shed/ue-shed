@@ -16,8 +16,6 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 			command._tag,
 			Effect.gen(function* () {
 				const text = yield* Effect.promise(() => import("@ue-shed/game-text/corpus"));
-				const textChecks = yield* Effect.promise(() => import("@ue-shed/game-text/checks"));
-				const textRules = yield* Effect.promise(() => import("@ue-shed/game-text/rules"));
 				const textures = yield* Effect.promise(() => import("@ue-shed/asset-audits"));
 				const input = yield* readInvestigationPresetJson(command.preset);
 				const preset = yield* Schema.decodeUnknownEffect(
@@ -53,30 +51,23 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 							},
 							command.reader
 						);
-						const corpus = yield* indexed.corpus;
 						const localized = indexed.query;
-						// Replays the Workbench quality list: the same join, review file and rules.
+						// Replays the Workbench quality list: the same index checks, review file and
+						// rules, page by page, without reading the corpus or the join.
 						const workspace =
 							preset.query.mode === "quality" &&
 							preset.query.workspaceFilter !== undefined &&
-							preset.query.localization &&
-							(yield* indexed.localizationJoin)
+							preset.query.localization
 								? text
-										.localizationQualityWorkspace(
+										.localizationQualityWorkspaceOf(
 											preset.rules
-												? textRules.evaluateGameTextSourceQuality(
-														corpus,
+												? (yield* indexed.sourceQuality(
 														preset.rules
-													)
+													)).export("all")
 												: undefined,
-											textChecks.checkLocalizationTarget(
-												corpus,
-												yield* indexed.localizationJoin,
-												indexed.evidence,
-												{ review: indexed.review.file },
-												preset.rules
-											),
-											yield* indexed.localizationJoin
+											yield* indexed.localizationQuality(preset.rules, {
+												review: indexed.review.file
+											})
 										)
 										.export({
 											target: preset.query.localization.target,
@@ -87,7 +78,7 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 										})
 								: undefined;
 						const document = yield* text.exportGameTextInvestigation(
-							corpus,
+							{ sourceQuality: indexed.sourceQuality },
 							preset,
 							source,
 							localized,

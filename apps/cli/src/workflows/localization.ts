@@ -4,7 +4,11 @@ import { readChangedFiles } from "./changed-files.js";
 import { textWhere } from "../commands/localization-flags.js";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { Effect, FileSystem, Metric, Result, Schema } from "effect";
-import { localizationLinesCsv, pickedLocalizationCultures } from "@ue-shed/game-text/corpus";
+import {
+	LOCALIZATION_LINES_CSV_FIELDS,
+	localizationLinesCsv,
+	pickedLocalizationCultures
+} from "@ue-shed/game-text/corpus";
 import { indexedLocalizationStatusReport } from "@ue-shed/game-text/index";
 import {
 	GameTextLocalizationError,
@@ -119,10 +123,12 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		);
 	return {
 		joined: indexed.joined,
+		/** Whole-corpus and join reads; only `loc check` still builds its report from them. */
 		corpus: indexed.corpus,
+		join: indexed.localizationJoin,
 		evidence: indexed.evidence,
 		selection,
-		join: indexed.localizationJoin,
+		localization: indexed.localization,
 		query: indexed.query,
 		review: indexed.review,
 		keyChanges: { pairs: indexed.joined.meta.pairs, ambiguous: indexed.joined.meta.ambiguous }
@@ -246,24 +252,27 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 								recovery: "Choose a new .csv file."
 							})
 						);
-					const { corpus, join, query, selection } =
+					const { localization, query, selection } =
 						yield* loadLocalizationContext(command);
 					const files =
 						command.changedFiles === undefined
 							? undefined
 							: yield* readChangedFiles(command.changedFiles, command.projectRoot);
 					const filter = yield* filterField(command);
-					const lines = yield* query.localizationLines({
-						capability: "all",
-						query: "",
-						localization: selection,
-						...whereField(command, files),
-						...filter
-					});
+					// Only the columns the spreadsheet shows, read in Rust; the corpus is not read.
+					const lines = yield* query.selectLocalizationLines(
+						{
+							capability: "all",
+							query: "",
+							localization: selection,
+							...whereField(command, files),
+							...filter
+						},
+						LOCALIZATION_LINES_CSV_FIELDS
+					);
 					const { csv, rows } = localizationLinesCsv({
-						join: yield* join,
+						join: localization,
 						lines,
-						corpus: yield* corpus,
 						cultures: pickedLocalizationCultures(selection)
 					});
 					const fs = yield* FileSystem.FileSystem;

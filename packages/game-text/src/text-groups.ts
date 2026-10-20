@@ -23,8 +23,8 @@ interface Placed {
 }
 
 /**
- * The group a line falls in: its worst problem, first file's folder or file, origin, namespace or
- * audience.
+ * The group a line falls in: its worst problem, first file's folder or file, origin, namespace,
+ * audience or exact source text (a unit's first source in UTF-16 order).
  */
 export function textGroupOf(facts: TextFacts, by: TextGroupBy): Placed {
 	switch (by) {
@@ -53,6 +53,10 @@ export function textGroupOf(facts: TextFacts, by: TextGroupBy): Placed {
 		}
 		case "audience":
 			return { key: facts.audience, label: TEXT_AUDIENCE_LABELS[facts.audience] };
+		case "source": {
+			const source = facts.sources?.[0] ?? "";
+			return { key: source, label: source };
+		}
 	}
 }
 
@@ -82,15 +86,20 @@ class Tallies {
 		this.#byKey.set(place.key, tally);
 	}
 
-	/** Worst first, then most lines needing work, then most lines, then by label. */
-	list(max = MAX_TEXT_GROUPS): TextGroupList {
-		const sorted = [...this.#byKey.values()].sort(
-			(left, right) =>
-				left.worst - right.worst ||
-				right.needWork - left.needWork ||
-				right.count - left.count ||
-				(left.label < right.label ? -1 : left.label > right.label ? 1 : 0)
-		);
+	/**
+	 * Worst first, then most lines needing work, then most lines, then by label. Groups under
+	 * `minSize` lines are left out, and not counted in `more`.
+	 */
+	list(max = MAX_TEXT_GROUPS, minSize = 1): TextGroupList {
+		const sorted = [...this.#byKey.values()]
+			.filter((tally) => tally.count >= minSize)
+			.sort(
+				(left, right) =>
+					left.worst - right.worst ||
+					right.needWork - left.needWork ||
+					right.count - left.count ||
+					(left.label < right.label ? -1 : left.label > right.label ? 1 : 0)
+			);
 		const entries = sorted.slice(0, max).map(
 			(tally): TextGroup => ({
 				key: tally.key,
@@ -104,11 +113,15 @@ class Tallies {
 	}
 }
 
-/** Every group of the given lines. */
-export function textGroups(facts: Iterable<TextFacts>, by: TextGroupBy): TextGroupList {
+/** Every group of the given lines holding at least `minSize` of them. */
+export function textGroups(
+	facts: Iterable<TextFacts>,
+	by: TextGroupBy,
+	minSize = 1
+): TextGroupList {
 	const tallies = new Tallies();
 	for (const item of facts) tallies.add(textGroupOf(item, by), item);
-	return tallies.list();
+	return tallies.list(MAX_TEXT_GROUPS, minSize);
 }
 
 /**

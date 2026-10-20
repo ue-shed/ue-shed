@@ -1,5 +1,7 @@
 import { Deferred, Effect, Fiber, Ref, Scope, Exit } from "effect";
-import { expect, it } from "vitest";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { describe, expect, it } from "vitest";
 import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type { GameTextEngineOutcome, GameTextEngineRequest } from "@ue-shed/protocol";
 import { openNativeTextQuery } from "./native-query.js";
@@ -126,3 +128,152 @@ function outcome(request: GameTextEngineRequest, payload: string | null): GameTe
 		}
 	};
 }
+
+describe("bulk reads", () => {
+	const configuration = {
+		cacheRoot: tmpdir(),
+		projectKey: "fixture",
+		targetKey: "Game",
+		sharedProject: false
+	};
+	const page = textCorpusQuery(corpus()).search(request);
+	const client = (
+		name: string,
+		calls: string[],
+		onDump: (operation: GameTextEngineRequest) => Effect.Effect<void> = () => Effect.void
+	) =>
+		NativeGameTextEngineClient.of({
+			execute: (operation) =>
+				Effect.gen(function* () {
+					calls.push(
+						`${name}:${operation.action}:${"reader" in operation ? operation.reader : ""}`
+					);
+					if (operation.action === "localization_corpus") {
+						yield* onDump(operation);
+						yield* Effect.promise(() => writeFile(operation.output, "[]"));
+					}
+					const opened = outcome(
+						operation,
+						operation.action === "search" ? JSON.stringify(page) : null
+					);
+					return operation.action === "open"
+						? { ...opened, reader: `${name}-reader` }
+						: opened;
+				})
+		});
+
+	it("run in their own process, so a dump never holds a search", async () => {
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const entered = yield* Deferred.make<void>();
+				const release = yield* Deferred.make<void>();
+				const calls: string[] = [];
+				const scope = yield* Scope.make();
+				const query = yield* openNativeTextQuery({
+					configuration,
+					generation: "generation",
+					joinedKey: "joined",
+					bulkEngine: Effect.acquireRelease(
+						Effect.sync(() =>
+							client("bulk", calls, () =>
+								Deferred.succeed(entered, undefined).pipe(
+									Effect.andThen(Deferred.await(release))
+								)
+							)
+						),
+						() => Effect.sync(() => calls.push("bulk:process-closed"))
+					)
+				}).pipe(
+					Effect.provideService(NativeGameTextEngineClient, client("main", calls)),
+					Effect.provideService(Scope.Scope, scope)
+				);
+				const dump = yield* query.readLocalizationLines().pipe(Effect.forkChild);
+				yield* Deferred.await(entered);
+				// The dump is still running in the bulk process; the search answers anyway.
+				expect(yield* query.search(request)).toEqual(page);
+				yield* Deferred.succeed(release, undefined);
+				expect(yield* Fiber.join(dump)).toEqual([]);
+				expect(yield* query.readLocalizationLines()).toEqual([]);
+				yield* Scope.close(scope, Exit.void);
+				// One bulk reader, opened on first use, read with its own handle and closed with
+				// the model before its process.
+				expect(calls).toEqual([
+					"main:open:",
+					"bulk:open:",
+					"bulk:localization_corpus:bulk-reader",
+					"main:search:main-reader",
+					"bulk:localization_corpus:bulk-reader",
+					"bulk:close:bulk-reader",
+					"bulk:process-closed",
+					"main:close:main-reader"
+				]);
+			})
+		);
+	});
+
+	it("releases an acquired bulk process immediately when its reader cannot open", async () => {
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const calls: string[] = [];
+					let releases = 0;
+					const bulk = client("bulk", calls);
+					const query = yield* openNativeTextQuery({
+						configuration,
+						generation: "generation",
+						joinedKey: "joined",
+						bulkEngine: Effect.acquireRelease(
+							Effect.succeed(
+								NativeGameTextEngineClient.of({
+									execute: (operation) =>
+										operation.action === "open"
+											? Effect.succeed({
+													...outcome(operation, null),
+													generation: "stale"
+												})
+											: bulk.execute(operation)
+								})
+							),
+							() =>
+								Effect.sync(() => {
+									releases++;
+								})
+						)
+					}).pipe(
+						Effect.provideService(NativeGameTextEngineClient, client("main", calls))
+					);
+					expect(yield* query.readLocalizationLines()).toEqual([]);
+					expect(releases).toBe(1);
+					expect(yield* query.readLocalizationLines()).toEqual([]);
+					expect(releases).toBe(1);
+					expect(yield* query.search(request)).toEqual(page);
+				})
+			)
+		);
+	});
+
+	it("share the interactive reader when the bulk process cannot open", async () => {
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const calls: string[] = [];
+					const query = yield* openNativeTextQuery({
+						configuration,
+						generation: "generation",
+						joinedKey: "joined",
+						bulkEngine: Effect.fail("no process")
+					}).pipe(
+						Effect.provideService(NativeGameTextEngineClient, client("main", calls))
+					);
+					expect(yield* query.readLocalizationLines()).toEqual([]);
+					expect(yield* query.readLocalizationLines()).toEqual([]);
+					expect(calls).toEqual([
+						"main:open:",
+						"main:localization_corpus:main-reader",
+						"main:localization_corpus:main-reader"
+					]);
+				})
+			)
+		);
+	});
+});

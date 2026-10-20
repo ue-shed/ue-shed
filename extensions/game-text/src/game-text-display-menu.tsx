@@ -10,8 +10,14 @@ const GROUP_LABELS = {
 	asset: "Asset",
 	origin: "Origin",
 	namespace: "Namespace",
-	audience: "Audience"
+	audience: "Audience",
+	source: "Source text"
 } satisfies Record<TextGroupBy, string>;
+
+/** Source groups answer host queries (texts under several keys); the list does not offer them. */
+const MENU_GROUPS: readonly TextGroupBy[] = TextGroupBy.literals.filter(
+	(group) => group !== "source"
+);
 
 /**
  * How the list is laid out: grouped by problem (the default), folder, asset, origin, namespace or
@@ -24,7 +30,7 @@ export function DisplayMenu(props: {
 }) {
 	const id = createUniqueId();
 	const [open, setOpen] = createSignal(false);
-	const choices = [undefined, ...TextGroupBy.literals];
+	const choices = [undefined, ...MENU_GROUPS];
 	let radios: HTMLDivElement | undefined;
 	const checked = () => radios?.querySelector<HTMLButtonElement>('[aria-checked="true"]');
 	// A radio group is one stop: it opens on the current choice, and arrows change the choice.

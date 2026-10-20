@@ -849,8 +849,10 @@ Gathered only, outside the target and origin are facts, not problems.
 `translation`, `origin`, `folder`, `editing`, `notes`), `is` or `is-not`, and comma-separated
 values. Every clause must match; `is` matches any of its values and `is-not` none of them.
 Requests also accept `translation_key` clauses (see
-[the shipped corpus](#shipped-read-only-corpus)); the CLI does not parse them, as their values
-hold commas.
+[the shipped corpus](#shipped-read-only-corpus)) and `source` clauses, up to 50 exact source texts
+(case, whitespace and every UTF-16 code unit count; a unit with conflicting sources matches any of
+them); the CLI does not parse them, as their values hold commas. `finding` takes every review
+signal: `conflicting`, `evidence_only` and `compiled_copy_differs` as well as the four findings.
 `--cultures de,fr` limits states, counts and translation work to those cultures. Both work on
 `loc status`, `loc export` and localization-aware `text search`; a malformed clause fails with
 `invalid_selection` and the expected form. Clauses on `asset` match a file in any spelling
@@ -860,7 +862,11 @@ A request can **group** the matching lines by problem, folder, asset, origin or 
 (`--group folder`). The page then lists every group, worst first, with its line count, how many
 lines need work before they ship (problems worse than a finding) and its worst problem; at most
 200 groups are listed, with a count of the rest. `openGroup` pages one group's lines while the
-counts and groups stay those of the whole request. **Facets** count where the matching lines
+counts and groups stay those of the whole request. Requests can also group by exact source text
+(`group: "source"`; key and label are the text, the count is the matching lines holding it, a unit
+without a target under its first source) and list only groups of at least `minGroupSize` lines:
+`finding is duplicate_source`, `group: "source"` and `minGroupSize: 2` list the texts under several
+keys in one query. Smaller groups are left out of `more` too; totals and `openGroup` are unchanged. **Facets** count where the matching lines
 are: the folders directly under a given folder, assets, origins, and each culture's shipped,
 missing, to-update and not-synced lines. Each facet leaves out its own clauses, and the culture
 facet leaves out the picked cultures, so the picker always shows every culture.

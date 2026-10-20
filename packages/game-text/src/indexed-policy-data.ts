@@ -18,6 +18,7 @@ import {
 import { textCorpusWithExcludedPackages } from "./package-text-candidates.js";
 import { comparePackageTextPathBytes } from "./package-text-order.js";
 import { TextUnitId } from "./identifiers.js";
+import { duplicateOccurrencePlace } from "./duplicate-sources.js";
 import { hydrateJoinedTarget, type JoinedTargetReader } from "./joined-target-reader.js";
 import { synchronousJoinedTarget } from "./joined-query-reader.js";
 import { sourcePatchKind } from "./joined-source-patches.js";
@@ -112,6 +113,16 @@ const readerProjections = new WeakMap<JoinedTargetReader, JoinedQueryProjection>
 /** Numeric and bounded evidence inputs for configurable quality policies. No search predicates. */
 export class IndexedPolicyData {
 	private emptyStringIds: ReadonlySet<number> | undefined;
+	/** Project-relative package files by shard and package row. */
+	private readonly packageFiles = new Map<number, string>();
+	/**
+	 * Columns by logical name, and package columns by shard and field. Checks read them for
+	 * every line and occurrence; building the physical key each time cost more than the read.
+	 */
+	private readonly named = new Map<string, Uint32Array>();
+	private readonly shardColumns: Map<string, Uint32Array>[] = [];
+	/** Evidence file columns by file and field. */
+	private readonly fileColumns = new Map<string, Map<string, Uint32Array>>();
 	readonly joined: JoinedTargetReader;
 	private readonly columns: Map<string, Uint32Array>;
 	readonly projection: JoinedQueryProjection;
@@ -126,6 +137,8 @@ export class IndexedPolicyData {
 		this.displayedLines = displayedLines(this.joined);
 	}
 	column(name: string) {
+		const known = this.named.get(name);
+		if (known) return known;
 		// Unpatched aliases share one buffer. A patched logical column must not replace
 		// the base buffer still used by other aliases in this pinned generation.
 		const key =
@@ -138,6 +151,7 @@ export class IndexedPolicyData {
 			value = runJoinedQuery(u32(this.joined.layer, name));
 			this.columns.set(key, value);
 		}
+		this.named.set(name, value);
 		return value;
 	}
 	strings(ids: readonly number[]) {
@@ -153,6 +167,9 @@ export class IndexedPolicyData {
 		return this.emptyStringIds.has(id);
 	}
 	packageColumn(shard: number, field: string) {
+		const fields = (this.shardColumns[shard] ??= new Map());
+		const known = fields.get(field);
+		if (known) return known;
 		const dependency = this.joined.meta.dependencies[this.joined.meta.packageNames[shard]!]!;
 		const key = `layer:${dependency}\0${field}`;
 		let value = this.columns.get(key);
@@ -163,6 +180,7 @@ export class IndexedPolicyData {
 			value = column;
 			this.columns.set(key, value);
 		}
+		fields.set(field, value);
 		return value;
 	}
 	/** The package shard holding a global occurrence row, and the row within it. */
@@ -188,9 +206,48 @@ export class IndexedPolicyData {
 			if (packageStarts[mid]! <= row) low = mid;
 			else high = mid - 1;
 		}
-		const path = this.strings([this.packageColumn(shard, "package.path")[low]!])[0]!;
-		const projectRoot = this.joined.meta.input.projectRoot;
-		return relative(projectRoot, resolve(projectRoot, path));
+		// Occurrences of one package share its file; resolving the path is most of the lookup.
+		const memo = shard * 2 ** 32 + low;
+		let file = this.packageFiles.get(memo);
+		if (file === undefined) {
+			const path = this.strings([this.packageColumn(shard, "package.path")[low]!])[0]!;
+			const projectRoot = this.joined.meta.input.projectRoot;
+			file = relative(projectRoot, resolve(projectRoot, path));
+			this.packageFiles.set(memo, file);
+		}
+		return file;
+	}
+	/**
+	 * `duplicateOccurrencePlace` of a stored occurrence, from its location columns and package
+	 * file alone; building the whole occurrence also decodes its text and classifies its audience.
+	 */
+	occurrencePlace(global: number): string {
+		const { shard, row } = this.occurrenceShard(global);
+		const kind = this.packageColumn(shard, "occurrence.location")[row]!;
+		const [objectPath, propertyPath, name] = this.strings([
+			this.packageColumn(shard, "occurrence.object")[row]!,
+			this.packageColumn(shard, "occurrence.property")[row]!,
+			this.packageColumn(shard, "occurrence.row")[row]!
+		]);
+		return duplicateOccurrencePlace({
+			packageFile: this.occurrencePackageFile(shard, row),
+			location:
+				kind === 0
+					? {
+							kind: "asset_property",
+							objectPath: objectPath!,
+							classPath: "",
+							propertyPath: propertyPath!
+						}
+					: kind === 1
+						? {
+								kind: "data_table_cell",
+								objectPath: objectPath!,
+								row: name!,
+								propertyPath: propertyPath!
+							}
+						: { kind: "string_table_entry", objectPath: objectPath!, entryKey: name! }
+		});
 	}
 	occurrence(global: number): TextOccurrence {
 		const { shard, row } = this.occurrenceShard(global);
@@ -386,6 +443,10 @@ export class IndexedPolicyData {
 		return Array.from(rows, (row) => byRow.get(row)!);
 	}
 	fileColumn(name: string, field: string): Uint32Array {
+		let fields = this.fileColumns.get(name);
+		if (!fields) this.fileColumns.set(name, (fields = new Map()));
+		const known = fields.get(field);
+		if (known) return known;
 		const key = `layer:${this.joined.meta.dependencies[name]}\0entry.${field}`;
 		let value = this.columns.get(key);
 		if (!value) {
@@ -395,6 +456,7 @@ export class IndexedPolicyData {
 			this.columns.set(key, column);
 			value = column;
 		}
+		fields.set(field, value);
 		return value;
 	}
 	translationId(name: string, row: number, po = false): number | undefined {

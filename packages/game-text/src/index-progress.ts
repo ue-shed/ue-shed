@@ -10,7 +10,14 @@ export const GameTextIndexProgress = Schema.Struct({
 	phase: Schema.Literals([
 		"inventory",
 		"localization",
+		/** Publishing the parsed localization files; no count. */
+		"localization_publish",
 		"packages",
+		/** Preparing the package text layer: packages prepared of the packages in the inventory. */
+		"package_text",
+		/** Publishing the package text layer; no count. */
+		"package_publish",
+		/** Joining source text with translations; no count. */
 		"joining",
 		"opening",
 		"ready",

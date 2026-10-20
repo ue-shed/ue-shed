@@ -33,6 +33,9 @@ impl EnginePolicy {
     }
 }
 
+/// Diagnostics and incomplete packages a report header previews: `MAX_CORPUS_REPORT_ITEMS`.
+const REPORT_PREVIEW_ITEMS: usize = 200;
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EngineRequest {
@@ -66,6 +69,25 @@ pub enum EngineRequest {
     },
     Corpus {
         reader: String,
+        output: std::path::PathBuf,
+    },
+    /// The corpus without its units.
+    CorpusHeader {
+        reader: String,
+        output: std::path::PathBuf,
+    },
+    /// The corpus content fingerprint.
+    CorpusFingerprint {
+        reader: String,
+    },
+    /// The corpus header as a report shows it: counts and bounded previews.
+    CorpusReportHeader {
+        reader: String,
+    },
+    /// Grouped counts of the matching rows, written to `output`.
+    Aggregate {
+        reader: String,
+        payload: String,
         output: std::path::PathBuf,
     },
     LocalizationCorpus {
@@ -124,6 +146,10 @@ impl EngineRequest {
             | Self::Search { reader, .. }
             | Self::Focus { reader, .. }
             | Self::Corpus { reader, .. }
+            | Self::CorpusHeader { reader, .. }
+            | Self::CorpusFingerprint { reader }
+            | Self::CorpusReportHeader { reader }
+            | Self::Aggregate { reader, .. }
             | Self::LocalizationCorpus { reader, .. }
             | Self::Export { reader, .. }
             | Self::Rows { reader, .. }
@@ -139,9 +165,15 @@ impl EngineRequest {
             }
         }
         match self {
+            Self::Export { payload, .. } => {
+                require(
+                    payload.len() <= 512 * 1024,
+                    invalid("Native query payload exceeds its bound."),
+                )?;
+                crate::engine_rollup::parse_corpus_export(payload)?;
+            }
             Self::Search { payload, .. }
             | Self::Focus { payload, .. }
-            | Self::Export { payload, .. }
             | Self::Rows { payload, .. }
             | Self::LocalizationPage { payload, .. }
             | Self::LocalizationFocus { payload, .. }
@@ -185,11 +217,20 @@ impl EngineRequest {
                     payload.len() <= 512 * 1024,
                     invalid("Native query payload exceeds its bound."),
                 )?;
-                parse_search_request(payload)?;
+                crate::engine_rollup::parse_line_export(payload)?;
+            }
+            Self::Aggregate { payload, .. } => {
+                require(
+                    payload.len() <= 512 * 1024,
+                    invalid("Native query payload exceeds its bound."),
+                )?;
+                crate::engine_rollup::parse_aggregate_request(payload)?;
             }
             _ => {}
         }
         if let Self::Corpus { output, .. }
+        | Self::CorpusHeader { output, .. }
+        | Self::Aggregate { output, .. }
         | Self::LocalizationCorpus { output, .. }
         | Self::Export { output, .. }
         | Self::Rows { output, .. }
@@ -282,6 +323,16 @@ impl EngineSession {
                     "query_projection_prepare".into(),
                     projection_started.elapsed().as_secs_f64(),
                 );
+                // Focus, cursors, picked lines and line details look rows up by ID; index the
+                // packed IDs and each unit's line once so none of them scans every row.
+                let index_started = Instant::now();
+                query.id_index("raw")?;
+                query.id_index("line")?;
+                query.unit_lines(cancelled)?;
+                outcome.stage_seconds.insert(
+                    "id_index_prepare".into(),
+                    index_started.elapsed().as_secs_f64(),
+                );
                 let reader = token();
                 outcome.action = "open".into();
                 outcome.reader = Some(reader.clone());
@@ -298,6 +349,10 @@ impl EngineSession {
             | EngineRequest::Search { reader, .. }
             | EngineRequest::Focus { reader, .. }
             | EngineRequest::Corpus { reader, .. }
+            | EngineRequest::CorpusHeader { reader, .. }
+            | EngineRequest::CorpusFingerprint { reader }
+            | EngineRequest::CorpusReportHeader { reader }
+            | EngineRequest::Aggregate { reader, .. }
             | EngineRequest::LocalizationCorpus { reader, .. }
             | EngineRequest::Export { reader, .. }
             | EngineRequest::Rows { reader, .. }
@@ -354,17 +409,53 @@ impl EngineSession {
                         let request = parse_search_request(
                             r#"{"query":"","capability":"all","pageSize":50}"#,
                         )?;
-                        let bytes = query.export_to_path(&request, output, true, cancelled)?;
+                        let bytes =
+                            query.export_to_path(&request, output, true, None, cancelled)?;
                         (
                             "corpus",
+                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                        )
+                    }
+                    EngineRequest::CorpusHeader { output, .. } => {
+                        let bytes = query.export_corpus_header_to_path(output, cancelled)?;
+                        (
+                            "corpus_header",
+                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                        )
+                    }
+                    EngineRequest::CorpusReportHeader { .. } => (
+                        "corpus_report_header",
+                        crate::wtf8::view_json(
+                            &query.corpus_report_header(REPORT_PREVIEW_ITEMS, cancelled)?,
+                        )?,
+                    ),
+                    EngineRequest::CorpusFingerprint { .. } => (
+                        "corpus_fingerprint",
+                        serde_json::to_string(
+                            &serde_json::json!({"sha256":query.corpus_fingerprint(cancelled)?}),
+                        )?,
+                    ),
+                    EngineRequest::Aggregate {
+                        payload, output, ..
+                    } => {
+                        let request = crate::engine_rollup::parse_aggregate_request(payload)?;
+                        let bytes = query.aggregate_to_path(&request, output, cancelled)?;
+                        (
+                            "aggregate",
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
                         )
                     }
                     EngineRequest::Export {
                         payload, output, ..
                     } => {
-                        let request = parse_search_request(payload)?;
-                        let bytes = query.export_to_path(&request, output, false, cancelled)?;
+                        let (request, units) = crate::engine_rollup::parse_corpus_export(payload)?;
+                        let bytes = query.export_to_path(
+                            &request,
+                            output,
+                            false,
+                            units.as_deref(),
+                            cancelled,
+                        )?;
                         (
                             "export",
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
@@ -384,9 +475,14 @@ impl EngineSession {
                     EngineRequest::LocalizationExport {
                         payload, output, ..
                     } => {
-                        let request = parse_search_request(payload)?;
-                        let bytes = query
-                            .export_localization_to_path(&request, output, false, cancelled)?;
+                        let (request, fields) = crate::engine_rollup::parse_line_export(payload)?;
+                        let bytes = query.export_localization_to_path(
+                            &request,
+                            output,
+                            false,
+                            fields.as_deref(),
+                            cancelled,
+                        )?;
                         (
                             "localization_export",
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
@@ -406,8 +502,8 @@ impl EngineSession {
                         let request = parse_search_request(
                             r#"{"query":"","capability":"all","pageSize":50}"#,
                         )?;
-                        let bytes =
-                            query.export_localization_to_path(&request, output, true, cancelled)?;
+                        let bytes = query
+                            .export_localization_to_path(&request, output, true, None, cancelled)?;
                         (
                             "localization_corpus",
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
@@ -510,6 +606,10 @@ mod tests {
             columns.push((format!("line.{field}"), String::new(), vec![]));
         }
         columns.push(("query.line.starts".into(), String::new(), vec![0]));
+        for kind in ["raw", "line"] {
+            columns.push((format!("query.{kind}.id_starts"), String::new(), vec![0]));
+            columns.push((format!("query.{kind}.id_utf8"), String::new(), vec![]));
+        }
         columns.push(("query.line.order".into(), String::new(), vec![]));
         columns.push(("facet.files".into(), String::new(), vec![]));
         columns.push(("manifest.rows".into(), String::new(), vec![]));

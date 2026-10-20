@@ -53,6 +53,30 @@ export const TextPackageCoverageSummary = Schema.Struct({
 export type TextPackageCoverageSummary = typeof TextPackageCoverageSummary.Type;
 
 /**
+ * A corpus header as a report shows it: coverage, every diagnostic and package count, and bounded
+ * previews. An index answers it in Rust; the whole header lists every package.
+ */
+export const TextCorpusReportHeader = Schema.Struct({
+	coverage: TextCorpus.fields.coverage,
+	...TextCorpusDiagnosticSummary.fields,
+	packageCoverage: Schema.optionalKey(TextPackageCoverageSummary)
+});
+export type TextCorpusReportHeader = typeof TextCorpusReportHeader.Type;
+
+/** The report header of a whole corpus or its header. */
+export function textCorpusReportHeader(
+	header: Pick<TextCorpus, "coverage" | "diagnostics" | "packageCoverage">
+): TextCorpusReportHeader {
+	const result: TextCorpusReportHeader = {
+		coverage: header.coverage,
+		...textCorpusDiagnosticSummary(header.diagnostics)
+	};
+	return header.packageCoverage === undefined
+		? result
+		: { ...result, packageCoverage: textPackageCoverageSummary(header.packageCoverage) };
+}
+
+/**
  * Export corpus with bounded diagnostic and package-coverage previews. Unit data remains
  * complete for the supplied corpus; omitted preview counts retain uncertainty.
  */

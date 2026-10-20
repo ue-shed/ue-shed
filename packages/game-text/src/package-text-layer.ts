@@ -417,7 +417,6 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		});
 		// Reading includes the reader's own work and staging the records it returns.
 		stages.mark("read");
-		reportProgress({ phase: "joining", completed: 0, total: 0 });
 		const result = yield* importColdPackageTextShards(
 			{ inventory, recordDirectory: directory, stagingRoot: directory },
 			selection
@@ -567,7 +566,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	}
 	// Reading includes the reader's own work and each shard's staging.
 	stages.mark("read");
-	reportProgress({ phase: "joining", completed: 0, total: 0 });
+	reportProgress({ phase: "package_publish", completed: 0, total: 0 });
 	if (!Object.keys(manifest.layers).length || sources.length > 8)
 		yield* writer.publishCold(sources, removed);
 	else yield* writer.publishBatch(sources, removed);

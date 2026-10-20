@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/config-explorer",
-	"version": "0.17.1",
+	"version": "0.18.0",
 	"description": "Explain saved Unreal config provenance and platform differences.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -40,8 +40,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/engine": "workspace:0.17.1",
-		"@ue-shed/protocol": "workspace:0.17.1"
+		"@ue-shed/engine": "workspace:0.18.0",
+		"@ue-shed/protocol": "workspace:0.18.0"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",

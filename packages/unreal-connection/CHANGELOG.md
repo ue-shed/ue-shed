@@ -1,5 +1,22 @@
 # @ue-shed/unreal-connection
 
+## 0.18.0
+
+### Minor Changes
+
+- b267701: Add the independently negotiated `editor.asset-open.v1` capability in UEShedCoreEditor and
+  `openUnrealAsset({ endpoint, objectPath, bringToFront })` for trusted hosts. The separate
+  `unreal-editor-asset-open` 1.0 contract reports accepted opens as `ok`, and missing assets, load
+  failures and editor refusals as `unavailable` with recovery guidance. Locate continues to reveal
+  Content Browser assets without opening them. Core's existing Remote Control class permission covers
+  the new function. Hosts retain action choice and focus policy.
+
+### Patch Changes
+
+- Updated dependencies [b267701]
+- Updated dependencies [fc109a5]
+    - @ue-shed/protocol@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

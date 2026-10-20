@@ -1,5 +1,24 @@
 # @ue-shed/cameras
 
+## 0.18.0
+
+### Patch Changes
+
+- 760610f: Failures no longer read as success or as something they are not:
+    - **Plugin store:**
+        - A lease that cannot be read, or is still being written, keeps its release from being pruned. Only a lease that stays undecodable for 30 seconds is treated as abandoned.
+        - A cache lock that cannot be read is treated as held.
+    - **Resuming a review authoring session:** the Review Set is reported missing only when its file is gone. A Review Set that cannot be read or does not decode fails with its own reason and recovery, so a recoverable session is not discarded.
+
+- 8268fd1: Reject non-boolean JSON values in native camera render policies instead of coercing strings and
+  numbers. Include every native automation test in the full Unreal plugin verification gate.
+- Updated dependencies [b267701]
+- Updated dependencies [fc109a5]
+    - @ue-shed/protocol@0.18.0
+    - @ue-shed/unreal-connection@0.18.0
+    - @ue-shed/world@0.18.0
+    - @ue-shed/observability@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

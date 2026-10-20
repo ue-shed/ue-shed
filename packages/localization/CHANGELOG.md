@@ -1,5 +1,25 @@
 # @ue-shed/localization
 
+## 0.18.0
+
+### Minor Changes
+
+- fc109a5: Route simple DataTable ID repairs through native Game Text when Authoring is absent. Use native
+  Game Text for cell-key regeneration even when Authoring is present, since Authoring's cell commands
+  cannot generate new keys. Admit the narrow key-repair capability independently of full localization
+  authoring. String-table migration
+  project checks use Core's projectRoot fact or an explicit host callback without editor-world
+  control. Preserve receipts, expected-value checks, session binding and saved-file verification.
+
+### Patch Changes
+
+- Updated dependencies [b267701]
+- Updated dependencies [fc109a5]
+    - @ue-shed/protocol@0.18.0
+    - @ue-shed/unreal-connection@0.18.0
+    - @ue-shed/config-explorer@0.18.0
+    - @ue-shed/engine@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

@@ -1,5 +1,28 @@
 # @ue-shed/game-text
 
+## 0.18.0
+
+### Patch Changes
+
+- fc109a5: Route simple DataTable ID repairs through native Game Text when Authoring is absent. Use native
+  Game Text for cell-key regeneration even when Authoring is present, since Authoring's cell commands
+  cannot generate new keys. Admit the narrow key-repair capability independently of full localization
+  authoring. String-table migration
+  project checks use Core's projectRoot fact or an explicit host callback without editor-world
+  control. Preserve receipts, expected-value checks, session binding and saved-file verification.
+- 81fa128: Read saved Blueprint graph pin text on UE 4.27 and UE 5.6–5.8, retaining Unreal identities and
+  addressable pin locations. Report skipped or rejected graph pin streams as partial coverage even
+  when the package gather table omits their text. Match native subobject paths during saved repair
+  verification. Re-extract cached package text on the next refresh so existing scans gain pin text.
+  Join compiled Blueprint literals to matching saved pin identities within each package, preserving
+  both occurrences and keeping different sources or unread pins separate.
+- Updated dependencies [b267701]
+- Updated dependencies [fc109a5]
+    - @ue-shed/protocol@0.18.0
+    - @ue-shed/unreal-connection@0.18.0
+    - @ue-shed/localization@0.18.0
+    - @ue-shed/unreal-assets@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

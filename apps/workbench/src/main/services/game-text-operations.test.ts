@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import {
 	discoverLocalizationTargets,
 	planLocalizationOperation,
-	LocalizationOperations,
+	makeLocalizationOperationsTestLayer,
 	localizationOperationError,
 	LocalizationOperationError,
 	type LocalizationOperationsApi,
@@ -151,31 +151,28 @@ function environment(
 					}))
 				)
 		});
-		const runner = Layer.succeed(
-			LocalizationOperations,
-			LocalizationOperations.of({
-				plan: (request) =>
-					Ref.update(requests, (values) => [...values, request]).pipe(
-						Effect.andThen(
-							options.plan ? options.plan(request) : Effect.succeed(planned(request))
-						)
-					),
-				run:
-					options.run ??
-					((request) =>
-						Stream.fromIterable<LocalizationRunEvent>([
-							{
-								schemaVersion: 1,
-								type: "progress",
-								phase: "started",
-								stepIndex: 1,
-								stepTotal: planned(request).steps.length,
-								kind: "compile"
-							},
-							receipt(request)
-						]))
-			})
-		);
+		const runner = makeLocalizationOperationsTestLayer({
+			plan: (request) =>
+				Ref.update(requests, (values) => [...values, request]).pipe(
+					Effect.andThen(
+						options.plan ? options.plan(request) : Effect.succeed(planned(request))
+					)
+				),
+			run:
+				options.run ??
+				((request) =>
+					Stream.fromIterable<LocalizationRunEvent>([
+						{
+							schemaVersion: 1,
+							type: "progress",
+							phase: "started",
+							stepIndex: 1,
+							stepTotal: planned(request).steps.length,
+							kind: "compile"
+						},
+						receipt(request)
+					]))
+		});
 		const window = makeWorkbenchWindowTestLayer();
 		const layer = WorkbenchGameTextOperationsLive.pipe(
 			Layer.provideMerge(window),

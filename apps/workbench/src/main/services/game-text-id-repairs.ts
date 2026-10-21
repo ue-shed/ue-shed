@@ -1,4 +1,4 @@
-import { makeGameTextIdRepairs } from "@ue-shed/game-text/workspace";
+import { makeGameTextIdRepairs, type GameTextIdRepairsApi } from "@ue-shed/game-text/workspace";
 import { Context, Effect, Layer } from "effect";
 import { EditorWorldControl } from "@ue-shed/engine";
 import { LocalFiles } from "../adapters/local-files.js";
@@ -9,7 +9,7 @@ import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 /** Thin host adapter; the repair proposal and mutation lifecycle belong to Game Text. */
 export class WorkbenchGameTextIdRepairs extends Context.Service<
 	WorkbenchGameTextIdRepairs,
-	Effect.Success<ReturnType<typeof makeGameTextIdRepairs>>
+	GameTextIdRepairsApi
 >()("@ue-shed/workbench/GameTextIdRepairs") {}
 
 export const WorkbenchGameTextIdRepairsLive = Layer.effect(

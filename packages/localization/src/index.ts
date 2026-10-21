@@ -142,8 +142,12 @@ export {
 	LocalizationOperations,
 	type LocalizationOperationsApi,
 	LocalizationOperationsLive,
-	LocalizationOperationsNodeLive
+	LocalizationOperationsNodeLive,
+	type LocalizationOperationsOptions,
+	makeLocalizationOperationsLayer,
+	makeLocalizationOperationsTestLayer
 } from "./operations.js";
+export { defaultLocalizationAuditLimits, type LocalizationAuditLimits } from "./operation-io.js";
 export {
 	applyLocalizationChangeSet,
 	ApplyLocalizationChangeSetRequest,

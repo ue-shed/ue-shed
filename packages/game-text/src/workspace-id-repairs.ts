@@ -479,3 +479,11 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			)
 	};
 });
+
+/**
+ * The Game Text ID repair workflow `makeGameTextIdRepairs` builds: `prepare` writes a reviewed
+ * plan and `apply` runs an approved plan in the editor once. Both report failures as result values.
+ * Hosts name it to declare their own service tag or test implementation instead of deriving it
+ * from the constructor's return type.
+ */
+export type GameTextIdRepairsApi = Effect.Success<ReturnType<typeof makeGameTextIdRepairs>>;

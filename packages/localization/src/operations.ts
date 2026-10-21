@@ -33,6 +33,8 @@ import {
 	validateLocalizationOutputPath,
 	readLocalizationConfig,
 	snapshotLocalizationProject,
+	defaultLocalizationAuditLimits,
+	type LocalizationAuditLimits,
 	readLocalizationLogChunk,
 	localizationFileChanges
 } from "./operation-io.js";
@@ -68,341 +70,388 @@ export class LocalizationOperations extends Context.Service<
 >()("@ue-shed/localization/LocalizationOperations") {}
 
 /**
- * GatherText planner/runner over EngineInstallationDiscovery and OwnedProcessTree. Owns logs,
- * deadlines and termination, rechecks configs and audits actual writes against the reviewed
- * plan.
+ * Provides all commandlet operations from a supplied implementation, so hosts can test plan,
+ * run and apply flows without an engine. The implementation owns results and typed failures;
+ * there is no implicit production fallback.
  */
-export const LocalizationOperationsLive = Layer.effect(
-	LocalizationOperations,
-	Effect.gen(function* () {
-		const engines = yield* EngineInstallationDiscovery;
-		const processes = yield* OwnedProcessTree;
-		const prepare = Effect.fn("LocalizationOperations.plan")(function* (
-			input: LocalizationRunRequest
-		) {
-			const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(input).pipe(
-				Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
-			);
-			const projectRoot = resolve(request.projectRoot);
-			const projectDescriptor = yield* Effect.tryPromise({
-				try: () => localizationProjectDescriptor(projectRoot),
-				catch: localizationIOFailure
-			});
-			const discovery = { projectDescriptor };
-			if (request.explicitEngineRoot !== undefined)
-				Object.assign(discovery, { explicitRoot: request.explicitEngineRoot });
-			const installation = yield* engines.resolve(discovery).pipe(
-				Effect.withTracerEnabled(false),
-				Effect.mapError((error) =>
-					localizationOperationError(
-						error.code === "engine_ambiguous" ? "engine_ambiguous" : "engine_not_found",
-						// The portable failure must not reveal installation candidates or private descriptor paths.
-						{ _tag: error._tag, code: error.code }
-					)
-				)
-			);
-			const engine = yield* Schema.decodeUnknownEffect(LocalizationEngine)(
-				`${installation.version.major}.${installation.version.minor}`
-			).pipe(
-				Effect.mapError((cause) => localizationOperationError("unsupported_engine", cause))
-			);
-			const logPath = join(tmpdir(), "ue-shed-localization", randomUUID(), "Commandlet.log");
-			const plan = yield* Effect.try({
-				try: () =>
-					planLocalizationOperation({
-						operation: request.operation,
-						target: request.target,
-						engine,
-						projectDescriptor,
-						logPath
-					}),
-				catch: localizationIOFailure
-			});
-			for (const config of plan.configs) {
-				const bytes = yield* Effect.tryPromise({
-					try: () => readLocalizationConfig(projectRoot, config),
-					catch: (error) =>
-						isLocalizationFileMissing(error)
-							? localizationOperationError("missing_config")
-							: localizationIOFailure(error)
-				});
-				const parsed = yield* Effect.try({
-					try: () =>
-						parseLocalizationRecipe(
-							decodeText(bytes, defaultLocalizationLimits),
-							config
-						),
-					catch: (cause) => localizationOperationError("unsupported_config", cause)
-				});
-				if (Result.isFailure(parsed))
-					return yield* Effect.fail(localizationOperationError("unsupported_config"));
-				const prior = request.target.configs.find(
-					(recipe) => recipe.relativePath === config
+export function makeLocalizationOperationsTestLayer(
+	api: LocalizationOperationsApi
+): Layer.Layer<LocalizationOperations> {
+	return Layer.succeed(LocalizationOperations, LocalizationOperations.of(api));
+}
+
+/**
+ * Host options for commandlet runs. `auditLimits` bounds the before/after write audit; raise it
+ * for projects whose audited files exceed `defaultLocalizationAuditLimits`.
+ */
+export interface LocalizationOperationsOptions {
+	readonly auditLimits?: LocalizationAuditLimits;
+}
+
+/**
+ * GatherText planner/runner over EngineInstallationDiscovery and OwnedProcessTree, with host
+ * options. Owns logs, deadlines and termination, rechecks configs and audits actual writes
+ * against the reviewed plan.
+ */
+export const makeLocalizationOperationsLayer = (
+	options: LocalizationOperationsOptions = {}
+): Layer.Layer<LocalizationOperations, never, EngineInstallationDiscovery | OwnedProcessTree> =>
+	Layer.effect(
+		LocalizationOperations,
+		Effect.gen(function* () {
+			const auditLimits = options.auditLimits ?? defaultLocalizationAuditLimits;
+			const engines = yield* EngineInstallationDiscovery;
+			const processes = yield* OwnedProcessTree;
+			const prepare = Effect.fn("LocalizationOperations.plan")(function* (
+				input: LocalizationRunRequest
+			) {
+				const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(
+					input
+				).pipe(
+					Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 				);
-				if (JSON.stringify(parsed.success) !== JSON.stringify(prior))
-					return yield* Effect.fail(localizationOperationError("config_changed"));
-			}
-			for (const file of plan.files) {
-				if (
-					file.relativePath
-						.split("/")
-						.some((component) =>
-							plan.auditExcludedDirectories.some(
-								(directory) => directory.toLowerCase() === component.toLowerCase()
-							)
-						)
-				)
-					return yield* Effect.fail(localizationOperationError("unsupported_config"));
-				yield* Effect.tryPromise({
-					try: () => validateLocalizationOutputPath(projectRoot, file.relativePath),
+				const projectRoot = resolve(request.projectRoot);
+				const projectDescriptor = yield* Effect.tryPromise({
+					try: () => localizationProjectDescriptor(projectRoot),
 					catch: localizationIOFailure
 				});
-			}
-			yield* Effect.annotateCurrentSpan({
-				operation: plan.operation,
-				configs: plan.configs.length,
-				steps: plan.steps.length,
-				planned_files: plan.files.length
-			});
-			return { plan, installation, request };
-		});
-		const plan = Effect.fn("LocalizationOperations.planOnly")(
-			(request: LocalizationRunRequest) =>
-				prepare(request).pipe(Effect.map((prepared) => prepared.plan))
-		);
-		const execute = Effect.fn("LocalizationOperations.execute")(function* (
-			input: LocalizationRunRequest,
-			publish: (event: LocalizationRunEvent) => Effect.Effect<void>
-		) {
-			const { plan, installation, request } = yield* prepare(input);
-			const root = dirname(plan.projectDescriptor);
-			const executable = unrealEditorCommandletExecutable(
-				installation.root,
-				process.platform,
-				installation.version
-			);
-			yield* Effect.tryPromise({
-				try: () => access(executable),
-				catch: (cause) => localizationOperationError("commandlet_missing", cause)
-			});
-			// A private directory is retained for explicit receipts/failures; no project log writes.
-			yield* Effect.tryPromise({
-				try: () => mkdir(dirname(plan.logPath), { recursive: true, mode: 0o700 }),
-				catch: localizationIOFailure
-			});
-			const before = yield* Effect.tryPromise({
-				try: () => snapshotLocalizationProject(root, plan),
-				catch: localizationIOFailure
-			});
-			const started = yield* Clock.currentTimeMillis;
-			const receipt = yield* Effect.scoped(
-				Effect.gen(function* () {
-					const handle = yield* Effect.acquireRelease(
-						processes
-							.launch({
-								executable,
-								args: plan.arguments,
-								cwd: root,
-								terminationTimeout: Duration.seconds(15)
-							})
-							.pipe(
-								Effect.withTracerEnabled(false),
-								Effect.mapError((cause) =>
-									localizationOperationError("launch_failed", cause)
-								)
-							),
-						(handle) =>
-							handle.terminate("cancelled").pipe(
-								Effect.withTracerEnabled(false),
-								Effect.mapError((cause) =>
-									localizationOperationError("termination_failed", cause)
-								),
-								Effect.orDie
-							)
-					);
-					yield* publish({
-						schemaVersion: 1,
-						type: "process_started",
-						pid: handle.pid,
-						logPath: plan.logPath
-					});
-					let offset = 0;
-					const decoder = new TextDecoder();
-					let pending = "";
-					let activeConfig: string | undefined;
-					const lines: string[] = [];
-					const seen = new Set<string>();
-					const consume = Effect.fn("LocalizationOperations.tail")(function* (
-						finish = false
-					) {
-						for (;;) {
-							const chunk = yield* Effect.tryPromise({
-								try: () => readLocalizationLogChunk(plan.logPath, offset, decoder),
-								catch: localizationIOFailure
-							});
-							const exhausted = chunk.offset === offset;
-							offset = chunk.offset;
-							const text = chunk.text + (finish && exhausted ? decoder.decode() : "");
-							if (exhausted && !text && (!finish || !pending)) break;
-							pending += text;
-							const complete = pending.split(/\r?\n/u);
-							pending = complete.pop() ?? "";
-							if (finish && exhausted && pending) {
-								complete.push(pending);
-								pending = "";
-							}
-							if (pending.length > 8192) pending = pending.slice(-8192);
-							for (const line of complete) {
-								lines.push(line.slice(0, 2048));
-								if (lines.length > 40) lines.shift();
-								activeConfig =
-									/Beginning GatherText Commandlet for '([^']+)'/u.exec(
-										line
-									)?.[1] ?? activeConfig;
-								const progress = parseLocalizationProgress(
-									line,
-									plan,
-									activeConfig
-								);
-								if (!progress) continue;
-								const identity = `${progress.stepIndex}/${progress.phase}`;
-								if (seen.has(identity)) continue;
-								seen.add(identity);
-								yield* publish(progress);
-							}
-							if (exhausted) break;
-						}
-					});
-					const exit = yield* Effect.raceFirst(
-						handle.awaitExit.pipe(
-							Effect.withTracerEnabled(false),
-							Effect.mapError((cause) =>
-								localizationOperationError("commandlet_failed", cause)
-							)
-						),
-						consume().pipe(Effect.andThen(Effect.sleep("100 millis")), Effect.forever)
-					).pipe(
-						Effect.timeoutOrElse({
-							duration: Duration.seconds(request.timeoutSeconds ?? 1800),
-							orElse: () => Effect.fail(localizationOperationError("timeout"))
+				const discovery = { projectDescriptor };
+				if (request.explicitEngineRoot !== undefined)
+					Object.assign(discovery, { explicitRoot: request.explicitEngineRoot });
+				const installation = yield* engines.resolve(discovery).pipe(
+					Effect.withTracerEnabled(false),
+					Effect.mapError((error) =>
+						localizationOperationError(
+							error.code === "engine_ambiguous"
+								? "engine_ambiguous"
+								: "engine_not_found",
+							// The portable failure must not reveal installation candidates or private descriptor paths.
+							{ _tag: error._tag, code: error.code }
+						)
+					)
+				);
+				const engine = yield* Schema.decodeUnknownEffect(LocalizationEngine)(
+					`${installation.version.major}.${installation.version.minor}`
+				).pipe(
+					Effect.mapError((cause) =>
+						localizationOperationError("unsupported_engine", cause)
+					)
+				);
+				const logPath = join(
+					tmpdir(),
+					"ue-shed-localization",
+					randomUUID(),
+					"Commandlet.log"
+				);
+				const plan = yield* Effect.try({
+					try: () =>
+						planLocalizationOperation({
+							operation: request.operation,
+							target: request.target,
+							engine,
+							projectDescriptor,
+							logPath
 						}),
-						Effect.mapError(
-							(error) =>
-								new LocalizationOperationError({
-									cause: error,
-									code: error.code,
-									message: error.message,
-									recovery: error.recovery,
-									retrySafe: false,
-									nextStep: error.nextStep,
-									logExcerpt: lines.slice(-40),
-									logPath: plan.logPath
-								})
-						)
+					catch: localizationIOFailure
+				});
+				for (const config of plan.configs) {
+					const bytes = yield* Effect.tryPromise({
+						try: () => readLocalizationConfig(projectRoot, config),
+						catch: (error) =>
+							isLocalizationFileMissing(error)
+								? localizationOperationError("missing_config")
+								: localizationIOFailure(error)
+					});
+					const parsed = yield* Effect.try({
+						try: () =>
+							parseLocalizationRecipe(
+								decodeText(bytes, defaultLocalizationLimits),
+								config
+							),
+						catch: (cause) => localizationOperationError("unsupported_config", cause)
+					});
+					if (Result.isFailure(parsed))
+						return yield* Effect.fail(localizationOperationError("unsupported_config"));
+					const prior = request.target.configs.find(
+						(recipe) => recipe.relativePath === config
 					);
-					yield* consume(true);
-					if (exit.kind === "terminated")
-						return yield* Effect.fail(localizationOperationError("cancelled"));
-					if (exit.exitCode !== 0)
-						return yield* Effect.fail(
-							localizationExitFailure(exit.exitCode, lines, plan.logPath)
-						);
-					// End any owned descendants before taking the final durable-file snapshot.
-					yield* handle.terminate("cancelled").pipe(
-						Effect.withTracerEnabled(false),
-						Effect.mapError((cause) =>
-							localizationOperationError("termination_failed", cause)
-						)
-					);
-					const after = yield* Effect.tryPromise({
-						try: () => snapshotLocalizationProject(root, plan),
+					if (JSON.stringify(parsed.success) !== JSON.stringify(prior))
+						return yield* Effect.fail(localizationOperationError("config_changed"));
+				}
+				for (const file of plan.files) {
+					if (
+						file.relativePath
+							.split("/")
+							.some((component) =>
+								plan.auditExcludedDirectories.some(
+									(directory) =>
+										directory.toLowerCase() === component.toLowerCase()
+								)
+							)
+					)
+						return yield* Effect.fail(localizationOperationError("unsupported_config"));
+					yield* Effect.tryPromise({
+						try: () => validateLocalizationOutputPath(projectRoot, file.relativePath),
 						catch: localizationIOFailure
 					});
-					const changes = localizationFileChanges(before, after, plan);
-					const diagnostics = changes
-						.filter((change) => !change.planned)
-						.map(
-							(change) =>
-								({
-									code: "unplanned_file_change",
-									relativePath: change.relativePath
-								}) satisfies LocalizationOperationReceipt["diagnostics"][number]
-						);
-					const ended = yield* Clock.currentTimeMillis;
-					return LocalizationOperationReceipt.make({
-						schemaVersion: 1,
-						type: "receipt",
-						operation: plan.operation,
-						target: plan.target,
-						status: diagnostics.length ? "planning_defect" : "completed",
-						durationMs: Math.max(0, Math.round(ended - started)),
-						pid: handle.pid,
-						logPath: plan.logPath,
-						plan,
-						changes,
-						diagnostics
-					});
-				})
-			).pipe(
-				Effect.catchDefect((cause) =>
-					isLocalizationOperationError(cause) && cause.code === "termination_failed"
-						? Effect.fail(cause)
-						: Effect.die(cause)
-				)
-			);
-			yield* Effect.annotateCurrentSpan({
-				operation: receipt.operation,
-				duration_ms: receipt.durationMs,
-				changed_files: receipt.changes.length,
-				diagnostics: receipt.diagnostics.length
+				}
+				yield* Effect.annotateCurrentSpan({
+					operation: plan.operation,
+					configs: plan.configs.length,
+					steps: plan.steps.length,
+					planned_files: plan.files.length
+				});
+				return { plan, installation, request };
 			});
-			yield* Metric.update(
-				Metric.counter("localization.operations.changed_files"),
-				receipt.changes.length
+			const plan = Effect.fn("LocalizationOperations.planOnly")(
+				(request: LocalizationRunRequest) =>
+					prepare(request).pipe(Effect.map((prepared) => prepared.plan))
 			);
-			return receipt;
-		});
-		return LocalizationOperations.of({
-			plan,
-			run: (request) =>
-				Stream.callback<LocalizationRunEvent, LocalizationOperationError>(
-					(queue) =>
-						Effect.gen(function* () {
-							const receipt = yield* execute(request, (event) =>
-								Queue.offer(queue, event).pipe(Effect.asVoid)
-							).pipe(
-								// Explicit failures contain private log lines. Trace only the handled boundary.
-								Effect.withTracerEnabled(false)
-							);
-							yield* Effect.annotateCurrentSpan({
-								operation: receipt.operation,
-								duration_ms: receipt.durationMs,
-								configs: receipt.plan.configs.length,
-								steps: receipt.plan.steps.length,
-								planned_files: receipt.plan.files.length,
-								changed_files: receipt.changes.length,
-								diagnostics: receipt.diagnostics.length
-							});
-							yield* Queue.offer(queue, receipt);
-							return yield* Queue.end(queue);
-						}).pipe(
-							Effect.catch((error) =>
-								Effect.gen(function* () {
-									yield* Metric.update(
-										Metric.counter("localization.operations.failures"),
-										1
-									);
-									yield* Effect.annotateCurrentSpan({ code: error.code });
-									return yield* Queue.fail(queue, error);
+			const execute = Effect.fn("LocalizationOperations.execute")(function* (
+				input: LocalizationRunRequest,
+				publish: (event: LocalizationRunEvent) => Effect.Effect<void>
+			) {
+				const { plan, installation, request } = yield* prepare(input);
+				const root = dirname(plan.projectDescriptor);
+				const executable = unrealEditorCommandletExecutable(
+					installation.root,
+					process.platform,
+					installation.version
+				);
+				yield* Effect.tryPromise({
+					try: () => access(executable),
+					catch: (cause) => localizationOperationError("commandlet_missing", cause)
+				});
+				// A private directory is retained for explicit receipts/failures; no project log writes.
+				yield* Effect.tryPromise({
+					try: () => mkdir(dirname(plan.logPath), { recursive: true, mode: 0o700 }),
+					catch: localizationIOFailure
+				});
+				const before = yield* Effect.tryPromise({
+					try: () => snapshotLocalizationProject(root, plan, auditLimits),
+					catch: localizationIOFailure
+				});
+				const started = yield* Clock.currentTimeMillis;
+				const receipt = yield* Effect.scoped(
+					Effect.gen(function* () {
+						const handle = yield* Effect.acquireRelease(
+							processes
+								.launch({
+									executable,
+									args: plan.arguments,
+									cwd: root,
+									terminationTimeout: Duration.seconds(15)
 								})
+								.pipe(
+									Effect.withTracerEnabled(false),
+									Effect.mapError((cause) =>
+										localizationOperationError("launch_failed", cause)
+									)
+								),
+							(handle) =>
+								handle.terminate("cancelled").pipe(
+									Effect.withTracerEnabled(false),
+									Effect.mapError((cause) =>
+										localizationOperationError("termination_failed", cause)
+									),
+									Effect.orDie
+								)
+						);
+						yield* publish({
+							schemaVersion: 1,
+							type: "process_started",
+							pid: handle.pid,
+							logPath: plan.logPath
+						});
+						let offset = 0;
+						const decoder = new TextDecoder();
+						let pending = "";
+						let activeConfig: string | undefined;
+						const lines: string[] = [];
+						const seen = new Set<string>();
+						const consume = Effect.fn("LocalizationOperations.tail")(function* (
+							finish = false
+						) {
+							for (;;) {
+								const chunk = yield* Effect.tryPromise({
+									try: () =>
+										readLocalizationLogChunk(plan.logPath, offset, decoder),
+									catch: localizationIOFailure
+								});
+								const exhausted = chunk.offset === offset;
+								offset = chunk.offset;
+								const text =
+									chunk.text + (finish && exhausted ? decoder.decode() : "");
+								if (exhausted && !text && (!finish || !pending)) break;
+								pending += text;
+								const complete = pending.split(/\r?\n/u);
+								pending = complete.pop() ?? "";
+								if (finish && exhausted && pending) {
+									complete.push(pending);
+									pending = "";
+								}
+								if (pending.length > 8192) pending = pending.slice(-8192);
+								for (const line of complete) {
+									lines.push(line.slice(0, 2048));
+									if (lines.length > 40) lines.shift();
+									activeConfig =
+										/Beginning GatherText Commandlet for '([^']+)'/u.exec(
+											line
+										)?.[1] ?? activeConfig;
+									const progress = parseLocalizationProgress(
+										line,
+										plan,
+										activeConfig
+									);
+									if (!progress) continue;
+									const identity = `${progress.stepIndex}/${progress.phase}`;
+									if (seen.has(identity)) continue;
+									seen.add(identity);
+									yield* publish(progress);
+								}
+								if (exhausted) break;
+							}
+						});
+						const exit = yield* Effect.raceFirst(
+							handle.awaitExit.pipe(
+								Effect.withTracerEnabled(false),
+								Effect.mapError((cause) =>
+									localizationOperationError("commandlet_failed", cause)
+								)
 							),
-							Effect.withSpan("LocalizationOperations.run")
-						),
-					{ bufferSize: 64, strategy: "suspend" }
-				)
-		});
-	})
-);
+							consume().pipe(
+								Effect.andThen(Effect.sleep("100 millis")),
+								Effect.forever
+							)
+						).pipe(
+							Effect.timeoutOrElse({
+								duration: Duration.seconds(request.timeoutSeconds ?? 1800),
+								orElse: () => Effect.fail(localizationOperationError("timeout"))
+							}),
+							Effect.mapError(
+								(error) =>
+									new LocalizationOperationError({
+										cause: error,
+										code: error.code,
+										message: error.message,
+										recovery: error.recovery,
+										retrySafe: false,
+										nextStep: error.nextStep,
+										logExcerpt: lines.slice(-40),
+										logPath: plan.logPath
+									})
+							)
+						);
+						yield* consume(true);
+						if (exit.kind === "terminated")
+							return yield* Effect.fail(localizationOperationError("cancelled"));
+						if (exit.exitCode !== 0)
+							return yield* Effect.fail(
+								localizationExitFailure(exit.exitCode, lines, plan.logPath)
+							);
+						// End any owned descendants before taking the final durable-file snapshot.
+						yield* handle.terminate("cancelled").pipe(
+							Effect.withTracerEnabled(false),
+							Effect.mapError((cause) =>
+								localizationOperationError("termination_failed", cause)
+							)
+						);
+						const after = yield* Effect.tryPromise({
+							try: () => snapshotLocalizationProject(root, plan, auditLimits),
+							catch: localizationIOFailure
+						});
+						const changes = localizationFileChanges(before, after, plan);
+						const diagnostics = changes
+							.filter((change) => !change.planned)
+							.map(
+								(change) =>
+									({
+										code: "unplanned_file_change",
+										relativePath: change.relativePath
+									}) satisfies LocalizationOperationReceipt["diagnostics"][number]
+							);
+						const ended = yield* Clock.currentTimeMillis;
+						return LocalizationOperationReceipt.make({
+							schemaVersion: 1,
+							type: "receipt",
+							operation: plan.operation,
+							target: plan.target,
+							status: diagnostics.length ? "planning_defect" : "completed",
+							durationMs: Math.max(0, Math.round(ended - started)),
+							pid: handle.pid,
+							logPath: plan.logPath,
+							plan,
+							changes,
+							diagnostics
+						});
+					})
+				).pipe(
+					Effect.catchDefect((cause) =>
+						isLocalizationOperationError(cause) && cause.code === "termination_failed"
+							? Effect.fail(cause)
+							: Effect.die(cause)
+					)
+				);
+				yield* Effect.annotateCurrentSpan({
+					operation: receipt.operation,
+					duration_ms: receipt.durationMs,
+					changed_files: receipt.changes.length,
+					diagnostics: receipt.diagnostics.length
+				});
+				yield* Metric.update(
+					Metric.counter("localization.operations.changed_files"),
+					receipt.changes.length
+				);
+				return receipt;
+			});
+			return LocalizationOperations.of({
+				plan,
+				run: (request) =>
+					Stream.callback<LocalizationRunEvent, LocalizationOperationError>(
+						(queue) =>
+							Effect.gen(function* () {
+								const receipt = yield* execute(request, (event) =>
+									Queue.offer(queue, event).pipe(Effect.asVoid)
+								).pipe(
+									// Explicit failures contain private log lines. Trace only the handled boundary.
+									Effect.withTracerEnabled(false)
+								);
+								yield* Effect.annotateCurrentSpan({
+									operation: receipt.operation,
+									duration_ms: receipt.durationMs,
+									configs: receipt.plan.configs.length,
+									steps: receipt.plan.steps.length,
+									planned_files: receipt.plan.files.length,
+									changed_files: receipt.changes.length,
+									diagnostics: receipt.diagnostics.length
+								});
+								yield* Queue.offer(queue, receipt);
+								return yield* Queue.end(queue);
+							}).pipe(
+								Effect.catch((error) =>
+									Effect.gen(function* () {
+										yield* Metric.update(
+											Metric.counter("localization.operations.failures"),
+											1
+										);
+										yield* Effect.annotateCurrentSpan({ code: error.code });
+										return yield* Queue.fail(queue, error);
+									})
+								),
+								Effect.withSpan("LocalizationOperations.run")
+							),
+						{ bufferSize: 64, strategy: "suspend" }
+					)
+			});
+		})
+	);
+
+/**
+ * GatherText planner/runner over EngineInstallationDiscovery and OwnedProcessTree with the
+ * default audit limits. Owns logs, deadlines and termination, rechecks configs and audits actual
+ * writes against the reviewed plan.
+ */
+export const LocalizationOperationsLive = makeLocalizationOperationsLayer();
 /**
  * Node production composition for explicit localization commandlet runs, including engine
  * discovery and process-tree supervision. Requires a supported local engine and project; no

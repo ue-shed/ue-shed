@@ -31,5 +31,12 @@ reviewable corpora while keeping their headless capabilities independently usabl
 - [Game Text review workspace](game-text-review-workspace.md) — graduated to
   [`products/game-text.md`](../products/game-text.md#reviewing-text-in-workbench)
 
+## Near-term feature candidates
+
+- [Feature easy wins (2026-10-21)](feature-easy-wins-2026-10-21.md) — a ranked list of features that
+  reuse evidence and machinery UE Shed already has: a headless Content Browser, reference graph,
+  redirector and missing-reference reports, a fuller Enhanced Input scan, and cross-feature links.
+  Each entry cites the code it builds on, its effort, and whether it needs a contract or ADR.
+
 A separate [ranked catalog](catalog.md) collects a different family — corpus tools and analytical
 surfaces over authored project data. Promising entries graduate to their own vision documents.

@@ -105,11 +105,15 @@ function commandWords(commandLine: string) {
 	return [...commandLine.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? "");
 }
 
-function subprocessSpan(subprocess: Subprocess, startUs?: number) {
+/** A child's span; `launch` is the start time and parent captured when the child was created. */
+function subprocessSpan(
+	subprocess: Subprocess,
+	launch?: { readonly startUs: number; readonly traceparent: string | undefined }
+) {
 	return startSpan(
 		subprocess.name,
 		{ "process.tool": subprocess.tool, "trace.subprocess": true },
-		startUs === undefined ? {} : { startUs }
+		launch ?? {}
 	);
 }
 
@@ -194,10 +198,11 @@ function traceSubprocesses() {
 		if (!(child instanceof ChildProcess)) return;
 		// Published from the ChildProcess constructor, before it starts: read the command once the
 		// synchronous spawn has filled it in.
-		const startUs = nowUs();
+		// The parent is the span active at launch: by the next tick the script may have moved on.
+		const launch = { startUs: nowUs(), traceparent: process.env.TRACEPARENT };
 		process.nextTick(() => {
 			const subprocess = describeSubprocess(child.spawnfile, child.spawnargs.slice(1));
-			if (subprocess !== undefined) endWithChild(subprocessSpan(subprocess, startUs), child);
+			if (subprocess !== undefined) endWithChild(subprocessSpan(subprocess, launch), child);
 		});
 	});
 	process.on("exit", () => {

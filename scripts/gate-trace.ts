@@ -58,8 +58,8 @@ export function formatTraceparent(traceId: string, spanId: string) {
 	return `00-${traceId}-${spanId}-01`;
 }
 
-function currentParent() {
-	const match = traceparent.exec(process.env.TRACEPARENT ?? "");
+function parseTraceparent(value: string | undefined) {
+	const match = traceparent.exec(value ?? "");
 	return match ? { traceId: match[1]!, spanId: match[2]! } : undefined;
 }
 
@@ -72,9 +72,15 @@ export function writeSpan(record: SpanRecord) {
 export function startSpan(
 	name: string,
 	attributes: SpanAttributes = {},
-	options: { readonly parent?: Span; readonly startUs?: number } = {}
+	options: {
+		readonly parent?: Span;
+		readonly startUs?: number;
+		/** A W3C traceparent captured earlier, for a span recorded after its work began. */
+		readonly traceparent?: string | undefined;
+	} = {}
 ): Span {
-	const parent = options.parent ?? currentParent();
+	const parent =
+		options.parent ?? parseTraceparent(options.traceparent ?? process.env.TRACEPARENT);
 	const traceId = parent?.traceId ?? newTraceId();
 	const spanId = newSpanId();
 	const startUs = options.startUs ?? nowUs();

@@ -232,3 +232,45 @@ test("children join the innermost active span even through an environment copied
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("an async child belongs to the span active when it was launched", () => {
+	const root = mkdtempSync(join(tmpdir(), "ue-shed-trace-launch-"));
+	try {
+		const spansFile = join(root, "spans.jsonl");
+		const script = join(root, "launch.ts");
+		const gateTrace = pathToFileURL(join(repositoryRoot, "scripts", "gate-trace.ts")).href;
+		writeFileSync(
+			script,
+			[
+				`import { execFile } from "node:child_process";`,
+				`import { withSpan } from ${JSON.stringify(gateTrace)};`,
+				// The stage ends synchronously, before the channel subscriber's next tick.
+				`const child = withSpan("launch stage", {}, () => execFile("git", ["--version"]));`,
+				`await new Promise((done) => child.on("exit", done));`
+			].join("\n")
+		);
+		const result = spawnSync(process.execPath, [script], {
+			cwd: repositoryRoot,
+			env: {
+				...process.env,
+				NODE_OPTIONS: `--import=${preload}`,
+				TRACEPARENT: "",
+				UE_SHED_TRACE_FILE: spansFile
+			},
+			encoding: "utf8",
+			windowsHide: true
+		});
+		assert.equal(result.status, 0, result.stderr);
+		const spans = readSpans(spansFile);
+		const stage = spans.find((span) => span.name === "launch stage");
+		const git = spans.find((span) => span.name === "git --version");
+		assert.ok(stage && git, spans.map((span) => span.name).join(", "));
+		assert.equal(git.parentSpanId, stage.spanId);
+		assert.ok(
+			git.startUs <= stage.endUs,
+			"the child's span starts at launch, inside the stage"
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

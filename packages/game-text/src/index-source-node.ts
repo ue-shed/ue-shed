@@ -306,7 +306,54 @@ export function gameTextIndexSourceNodeLayer(
 					Stream.flatMap(readBatch)
 				);
 			};
-			return GameTextIndexSource.of({ inventory, read });
+			const stageProjectTextPackages = reader.stageProjectTextPackages;
+			// The same batches and verification as `read`; each batch writes its own group files.
+			const stage = stageProjectTextPackages
+				? (
+						root: string,
+						entries: readonly PackageTextInventoryEntry[],
+						staging: { readonly directory: string; readonly groups: readonly number[] }
+					) => {
+						const groups = new Map(
+							entries.map((entry, row) => [entry.path, staging.groups[row]!])
+						);
+						const stageBatch = (batch: readonly PackageTextInventoryEntry[]) =>
+							Stream.fromEffect(verify(root, batch)).pipe(
+								Stream.flatMap(() =>
+									stageProjectTextPackages({
+										projectRoot: root,
+										paths: batch.map((entry) => entry.path),
+										staging: {
+											directory: staging.directory,
+											groups: batch.map((entry) => groups.get(entry.path)!)
+										}
+									}).pipe(
+										Stream.filter(
+											(event) => event.event === "text_package_staged"
+										),
+										Stream.map((event) => ({
+											path: relative(
+												root,
+												resolve(root, event.path)
+											).replaceAll("\\", "/")
+										})),
+										Stream.mapError((cause) =>
+											failure("read", cause.message, cause)
+										),
+										Stream.concat(
+											Stream.fromEffect(verify(root, batch)).pipe(
+												Stream.drain
+											)
+										)
+									)
+								)
+							);
+						return Stream.fromIterable(packageTextReadBatches(entries)).pipe(
+							Stream.flatMap(stageBatch)
+						);
+					}
+				: undefined;
+			return GameTextIndexSource.of({ inventory, read, ...(stage ? { stage } : undefined) });
 		})
 	);
 	return Layer.unwrap(

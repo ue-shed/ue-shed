@@ -46,6 +46,13 @@ pub enum ResultFrame {
     },
     #[serde(rename = "extract_text_packages")]
     ExtractTextPackages { event: SavedAssetPackageTextEvent },
+    /// v1.19: a package's text record was written to its staging group's file.
+    #[serde(rename = "staged_text_package")]
+    StagedTextPackage {
+        path: String,
+        group: u32,
+        bytes: u64,
+    },
     #[serde(rename = "extract_texture")]
     ExtractTexture {
         event: SavedAssetTextureExtractionEvent,

@@ -183,7 +183,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			? Effect.succeed(existing)
 			: io("native-index-stage", async (signal) => {
 					const file = join(stage, `${++sequence}.snapshot`);
-					await writeSnapshotFile(file, source, 1, undefined, signal);
+					await writeSnapshotFile(file, source, 0, undefined, signal, { durable: false });
 					return file;
 				});
 	const publish: SharedIndexWriter["publishBatch"] = Effect.fn("NativeIndexBuilder.publish")(
@@ -256,6 +256,26 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		publishBatch: publish,
 		publish: (name, key, source) =>
 			publish([{ name, key, source }]).pipe(Effect.map((records) => records[0]!)),
+		publishColdFiles: Effect.fn("NativeIndexBuilder.publishColdFiles")(
+			function* (entries, removedNames) {
+				const result = yield* command({
+					action: "publish",
+					configuration,
+					inputs: entries.map((entry) => ({
+						name: entry.name,
+						key: entry.key,
+						file: manifest.layers[entry.key]
+							? join(sharedIndexDirectory(options), manifest.layers[entry.key]!.file)
+							: entry.stagedFile
+					})),
+					cold: true,
+					...(removedNames ? { removedNames } : undefined)
+				});
+				return yield* Schema.decodeUnknownEffect(Schema.Array(LayerRecord))(
+					result.records
+				).pipe(Effect.mapError((cause) => unavailable("native-index-layer", cause)));
+			}
+		),
 		publishCold: Effect.fn("NativeIndexBuilder.publishCold")(function* (entries, removedNames) {
 			const inputs = [];
 			for (const entry of entries)

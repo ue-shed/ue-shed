@@ -168,6 +168,18 @@ export interface SharedIndexWriter {
 	 * need not prepare sorted string runs for it.
 	 */
 	readonly sortsColdStrings?: boolean;
+	/**
+	 * `publishCold` for layers that exist only as staged snapshot files, for a writer that reads
+	 * them itself; callers then need not open each file to describe its columns.
+	 */
+	readonly publishColdFiles?: (
+		entries: readonly {
+			readonly name: string;
+			readonly key: string;
+			readonly stagedFile: string;
+		}[],
+		removedNames?: readonly string[]
+	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
 	/** One atomic cold target publication, with a single external dictionary sort. */
 	readonly publishCold: (
 		entries: readonly ColdLayerSource[],

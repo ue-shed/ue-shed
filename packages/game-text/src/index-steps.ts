@@ -442,6 +442,23 @@ export const makeGameTextIndexSteps = (
 					} satisfies Parameters<typeof refreshPackageTextLayer>[0];
 					if (request.changedFiles !== undefined)
 						Object.assign(packageRequest, { changedFiles: request.changedFiles });
+					const stage = source.stage;
+					if (stage)
+						Object.assign(packageRequest, {
+							stage: {
+								projectRoot,
+								read: (
+									paths: readonly string[],
+									directory: string,
+									groups: readonly number[]
+								) =>
+									stage(
+										projectRoot,
+										paths.map((path) => byPath.get(path)!),
+										{ directory, groups }
+									)
+							}
+						});
 					const packages = retainedPackages
 						? {
 								readPackages: 0,

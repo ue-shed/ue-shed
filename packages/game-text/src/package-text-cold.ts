@@ -29,6 +29,15 @@ export interface ColdPackageTextInput {
 	readonly additionalSources?: readonly ColdLayerSource[];
 	/** Workers started earlier (see `startPackageTextWorkers`); the import still terminates them. */
 	readonly workers?: readonly Worker[];
+	/**
+	 * The reader staged the selected packages' records itself (`GameTextIndexSource.stage`):
+	 * `recordDirectory/<g>.ndjson` holds group `g`'s lines, and `groups[g]` names its shards.
+	 * Each group is converted by one worker, which also adds the unselected packages.
+	 */
+	readonly staged?: {
+		readonly projectRoot: string;
+		readonly groups: readonly (readonly string[])[];
+	};
 }
 
 /**
@@ -46,7 +55,7 @@ export function packageTextWorkerCount(packages: number, shards: number) {
 		)
 	);
 }
-const PACKAGES_PER_WORKER = 500;
+const PACKAGES_PER_WORKER = 400;
 
 /**
  * Starts cold import workers before the records exist, so their module loading overlaps the
@@ -96,12 +105,56 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 						: packageTextWorkerCount(
 								selection.reduce(
 									(sum, shard) =>
-										sum + shard.entries.filter((entry) => entry.selected).length,
+										sum +
+										shard.entries.filter((entry) => entry.selected).length,
 									0
 								),
 								selection.length
 							);
-				const pending = [...selection];
+				const byName = new Map(selection.map((shard) => [shard.name, shard]));
+				const expected = (shard: (typeof selection)[number]) =>
+					shard.entries.map(({ entry, selected }) => ({
+						path: entry.path,
+						signature: entry.signature,
+						selected
+					}));
+				const prepareStrings = writer.sortsColdStrings !== true;
+				const pending = input.staged
+					? input.staged.groups.flatMap((names, group) => {
+							const shards = names.flatMap((name) => byName.get(name) ?? []);
+							return shards.length === 0
+								? []
+								: [
+										{
+											shards,
+											message: {
+												group: join(
+													input.recordDirectory,
+													`${group}.ndjson`
+												),
+												projectRoot: input.staged!.projectRoot,
+												prepareStrings,
+												shards: shards.map((shard) => ({
+													name: shard.name,
+													output: join(
+														directory,
+														`${shard.name}.snapshot`
+													),
+													expected: expected(shard)
+												}))
+											}
+										}
+									];
+						})
+					: selection.map((shard) => ({
+							shards: [shard],
+							message: {
+								input: join(input.recordDirectory, `${shard.name}.ndjson`),
+								output: join(directory, `${shard.name}.snapshot`),
+								prepareStrings,
+								expected: expected(shard)
+							}
+						}));
 				const abort = () => {
 					for (const instance of workers) void instance.terminate();
 				};
@@ -112,8 +165,8 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 						Array.from({ length: workerCount }, async (_, slot) => {
 							const instance = started[slot] ?? worker();
 							workers.push(instance);
-							for (let shard = pending.shift(); shard; shard = pending.shift()) {
-								const current = shard;
+							for (let task = pending.shift(); task; task = pending.shift()) {
+								const current = task;
 								const shardStarted = performance.now();
 								await new Promise<void>((resolve, reject) => {
 									const clean = () => {
@@ -126,15 +179,27 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 										try {
 											const reply = Schema.decodeUnknownSync(Reply)(input);
 											if (reply.ok) {
-												if (reply.preparedStrings)
-													preparedStrings.set(
-														current.name,
-														reply.preparedStrings
-													);
+												const strings =
+													"shards" in reply
+														? reply.shards
+														: [
+																{
+																	name: current.shards[0]!.name,
+																	preparedStrings:
+																		reply.preparedStrings
+																}
+															];
+												for (const shard of strings)
+													if (shard.preparedStrings)
+														preparedStrings.set(
+															shard.name,
+															shard.preparedStrings
+														);
 												const shardMs = performance.now() - shardStarted;
 												busyMs += shardMs;
 												slowestShardMs = Math.max(slowestShardMs, shardMs);
-												completed += current.entries.length;
+												for (const shard of current.shards)
+													completed += shard.entries.length;
 												reportProgress({
 													phase: "package_text",
 													completed,
@@ -157,29 +222,19 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 									instance.once("message", message);
 									instance.once("error", error);
 									instance.once("exit", exit);
-									instance.postMessage({
-										input: join(
-											input.recordDirectory,
-											`${current.name}.ndjson`
-										),
-										output: join(directory, `${current.name}.snapshot`),
-										prepareStrings: writer.sortsColdStrings !== true,
-										expected: current.entries.map(({ entry, selected }) => ({
-											path: entry.path,
-											signature: entry.signature,
-											selected
-										}))
-									});
+									instance.postMessage(current.message);
 								});
 							}
 						})
 					);
 					await Promise.all(workers.map((instance) => instance.terminate()));
 					workers.length = 0;
-					for (const shard of selection)
-						readers.push(
-							await openSnapshotFile(join(directory, `${shard.name}.snapshot`))
-						);
+					// A writer that reads staged files itself needs no readers to describe them.
+					if (!writer.publishColdFiles || input.additionalSources?.length)
+						for (const shard of selection)
+							readers.push(
+								await openSnapshotFile(join(directory, `${shard.name}.snapshot`))
+							);
 					return { directory, readers, workerCount, preparedStrings };
 				} catch (cause) {
 					await Promise.all(workers.map((instance) => instance.terminate()));
@@ -214,23 +269,33 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 	});
 	reportProgress({ phase: "package_publish", completed: 0, total: 0 });
 	const publishStarted = performance.now();
-	const records = yield* writer.publishCold([
-		...(input.additionalSources ?? []),
-		...selection.map((shard, row) => ({
-			name: shard.name,
-			key: shard.key,
-			stagedFile: join(prepared.directory, `${shard.name}.snapshot`),
-			...(prepared.preparedStrings.has(shard.name)
-				? { preparedStrings: prepared.preparedStrings.get(shard.name)! }
-				: undefined),
-			source: {
-				columns: [...prepared.readers[row]!.directory.entries.values()].map((entry) => ({
-					...entry,
-					load: () => prepared.readers[row]!.load(entry.name)
+	const records = yield* prepared.readers.length === 0 && writer.publishColdFiles
+		? writer.publishColdFiles(
+				selection.map((shard) => ({
+					name: shard.name,
+					key: shard.key,
+					stagedFile: join(prepared.directory, `${shard.name}.snapshot`)
 				}))
-			}
-		}))
-	]);
+			)
+		: writer.publishCold([
+				...(input.additionalSources ?? []),
+				...selection.map((shard, row) => ({
+					name: shard.name,
+					key: shard.key,
+					stagedFile: join(prepared.directory, `${shard.name}.snapshot`),
+					...(prepared.preparedStrings.has(shard.name)
+						? { preparedStrings: prepared.preparedStrings.get(shard.name)! }
+						: undefined),
+					source: {
+						columns: [...prepared.readers[row]!.directory.entries.values()].map(
+							(entry) => ({
+								...entry,
+								load: () => prepared.readers[row]!.load(entry.name)
+							})
+						)
+					}
+				}))
+			]);
 	yield* Effect.annotateCurrentSpan(
 		"package-text.cold.publish_ms",
 		Math.round(performance.now() - publishStarted)

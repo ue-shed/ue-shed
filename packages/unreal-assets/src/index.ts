@@ -114,6 +114,8 @@ export type {
 	ProtocolTerminalState,
 	SavedAssetExtractionOptions,
 	SavedAssetScanOptions,
+	SavedAssetStagedPackageTextEvent,
+	SavedAssetStagedTextExtractionOptions,
 	SavedTableCatalogOptions,
 	SavedWorldReadOptions
 } from "./asset-reader.js";

@@ -614,7 +614,7 @@ fn execute_direct(
             }
             Ok(output.partial)
         }
-        Operation::ExtractText { selection } | Operation::ExtractTextPackages { selection } => {
+        Operation::ExtractText { selection } | Operation::ExtractTextPackages { selection, .. } => {
             let empty_paths = selection.paths.as_deref() == Some(&[]);
             if !empty_paths {
                 emit_progress(emitter, 0, "discovering", None)?;

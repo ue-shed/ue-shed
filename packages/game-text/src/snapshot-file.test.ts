@@ -368,8 +368,10 @@ describe("file-backed lazy sections", () => {
 			await reader.close();
 		}
 	});
-	it("streams source columns in order without loading the next before the previous is written", async () => {
+	it("streams source columns in order, writing a full batch before loading the next", async () => {
 		let previousLoaded = false;
+		// Larger than one write batch, so it is on disk before the next column loads.
+		const state = new Uint8Array(4 * 1024 * 1024 + 1).fill(7);
 		const path = join(directory, "stream.snapshot");
 		const block = encodeStringBlock(["text"]);
 		const metadata = await writeSnapshotFile(
@@ -381,7 +383,7 @@ describe("file-backed lazy sections", () => {
 						kind: "u8",
 						load: async () => {
 							previousLoaded = true;
-							return new Uint8Array([7]);
+							return state;
 						}
 					},
 					{
@@ -407,6 +409,6 @@ describe("file-backed lazy sections", () => {
 			},
 			0
 		);
-		expect(metadata.entries.get("state")!.checksum).toBe(snapshotChecksum(new Uint8Array([7])));
+		expect(metadata.entries.get("state")!.checksum).toBe(snapshotChecksum(state));
 	});
 });

@@ -1085,6 +1085,60 @@
 				}
 			]
 		},
+		"UAssetIoPackageTextStagingContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 19
+								}
+							]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"UAssetIoPackageTextStaging": {
+			"type": "object",
+			"properties": {
+				"directory": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"groups": {
+					"type": "array",
+					"items": {
+						"type": "integer",
+						"allOf": [
+							{
+								"minimum": 0
+							},
+							{
+								"exclusiveMaximum": 4096
+							}
+						]
+					}
+				}
+			},
+			"required": ["directory", "groups"],
+			"additionalProperties": false
+		},
 		"UAssetIoPackageTextContract": {
 			"type": "object",
 			"properties": {
@@ -3088,6 +3142,45 @@
 							"$ref": "#/$defs/UAssetIoNonEmptyString"
 						},
 						"contract": {
+							"$ref": "#/$defs/UAssetIoPackageTextStagingContract"
+						},
+						"operation": {
+							"type": "object",
+							"properties": {
+								"paths": {
+									"type": "array",
+									"items": {
+										"$ref": "#/$defs/UAssetIoNonEmptyString"
+									}
+								},
+								"projectRoot": {
+									"$ref": "#/$defs/UAssetIoNonEmptyString"
+								},
+								"kind": {
+									"type": "string",
+									"enum": ["extract_text_packages"]
+								},
+								"staging": {
+									"$ref": "#/$defs/UAssetIoPackageTextStaging"
+								}
+							},
+							"required": ["paths", "projectRoot", "kind", "staging"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
 							"$ref": "#/$defs/UAssetIoPackageTextContract"
 						},
 						"operation": {
@@ -3105,6 +3198,9 @@
 								"kind": {
 									"type": "string",
 									"enum": ["extract_text_packages"]
+								},
+								"staging": {
+									"not": {}
 								}
 							},
 							"required": ["projectRoot", "kind"],

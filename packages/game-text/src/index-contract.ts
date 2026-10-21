@@ -44,6 +44,17 @@ export class GameTextIndexSource extends Context.Service<
 			projectRoot: string,
 			entries: readonly PackageTextInventoryEntry[]
 		) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, GameTextIndexError>;
+		/**
+		 * Optional staged read with the same verification: the reader writes each package's
+		 * record to `<directory>/<group>.ndjson`, where `groups[i]` is the group of `entries[i]`,
+		 * and the stream names each staged package by its project-relative path. Records never
+		 * pass through the host's stream, so cold imports parse each group in its own worker.
+		 */
+		readonly stage?: (
+			projectRoot: string,
+			entries: readonly PackageTextInventoryEntry[],
+			staging: { readonly directory: string; readonly groups: readonly number[] }
+		) => Stream.Stream<{ readonly path: string }, GameTextIndexError>;
 	}
 >()("@ue-shed/game-text/GameTextIndexSource") {}
 

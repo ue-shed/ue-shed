@@ -311,7 +311,28 @@ export interface UAssetIoProjectIndexDictionaryPage extends Schema.Schema.Type<
 
 const PackageTextOperation = Schema.Struct({
 	...UAssetIoProjectSelection.fields,
-	kind: Schema.Literal("extract_text_packages")
+	kind: Schema.Literal("extract_text_packages"),
+	/** Staging needs v1.19 and a request that satisfies `StagedPackageTextOperation`. */
+	staging: Schema.optionalKey(Schema.Never)
+});
+/**
+ * v1.19 package-text staging. The worker writes each requested package's `extract_text_packages`
+ * record or package error as one JSON line to `<directory>/<group>.ndjson`, where `groups[i]` is
+ * the group of `paths[i]`, and streams a `staged_text_package` result in its place. The directory
+ * must exist; the worker creates each group's file and fails if one already exists.
+ */
+export const UAssetIoPackageTextStaging = Schema.Struct({
+	directory: NonEmptyString,
+	groups: Schema.Array(
+		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThan(4096))
+	)
+}).annotate({ identifier: "UAssetIoPackageTextStaging" });
+export type UAssetIoPackageTextStaging = typeof UAssetIoPackageTextStaging.Type;
+const StagedPackageTextOperation = Schema.Struct({
+	paths: Schema.Array(NonEmptyString),
+	projectRoot: NonEmptyString,
+	kind: Schema.Literal("extract_text_packages"),
+	staging: UAssetIoPackageTextStaging
 });
 const ExistingOperation = Schema.Union([
 	Schema.Struct({
@@ -388,6 +409,7 @@ export const UAssetIoOperation = Schema.Union([
 	GameTextEngineOperation,
 	GameTextIndexOperation,
 	...ExistingOperation.members,
+	StagedPackageTextOperation,
 	PackageTextOperation
 ]).annotate({ identifier: "UAssetIoOperation" });
 export type UAssetIoOperation = Schema.Schema.Type<typeof UAssetIoOperation>;
@@ -450,6 +472,18 @@ export const UAssetIoRequest = Schema.Union([
 			Schema.fieldsAssign({
 				version: Schema.Struct({
 					major: UAssetIoContract.fields.version.fields.major,
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(19))
+				})
+			})
+		).annotate({ identifier: "UAssetIoPackageTextStagingContract" }),
+		operation: StagedPackageTextOperation
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: UAssetIoContract.fields.version.fields.major,
 					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(8))
 				})
 			})
@@ -499,6 +533,13 @@ export const UAssetIoResult = Schema.Union([
 	Schema.Struct({
 		event: SavedAssetPackageTextEvent,
 		kind: Schema.Literal("extract_text_packages")
+	}),
+	/** v1.19: one requested package's record was written to its staging group's file. */
+	Schema.Struct({
+		kind: Schema.Literal("staged_text_package"),
+		path: NonEmptyString,
+		group: NonNegativeInt,
+		bytes: NonNegativeInt
 	}),
 	Schema.Struct({
 		event: SavedAssetTextureExtractionEvent,

@@ -445,6 +445,7 @@ export {
 	UAssetIoContract,
 	UAssetIoEvent,
 	UAssetIoOperation,
+	UAssetIoPackageTextStaging,
 	type UAssetIoOperationKind,
 	UAssetIoProjectIndexCount,
 	UAssetIoProjectIndexCountResult,

@@ -487,7 +487,11 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 				stages.finishMs += performance.now() - finishStarted;
 				if (stagedFile) {
 					if (prepareSource) yield* io(file, () => prepareSource(source));
-					const written = yield* io(file, () => writeSnapshotFile(stagedFile, source, 1));
+					const written = yield* io(file, () =>
+						writeSnapshotFile(stagedFile, source, 1, undefined, undefined, {
+							durable: false
+						})
+					);
 					return { hash: content.hash, parsed: true, bytes: written.fileLength };
 				}
 				const bytes = yield* Effect.gen(function* () {

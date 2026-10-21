@@ -35,6 +35,19 @@ pub struct ResourceLimits {
     pub timeout_ms: Option<u64>,
 }
 
+/// Upper bound on staging groups a package-text request may name.
+pub const MAX_PACKAGE_TEXT_STAGING_GROUPS: u32 = 4096;
+
+/// v1.19 package-text staging: the reader writes each requested package's record as one JSON
+/// line to `<directory>/<group>.ndjson` and streams a small `staged_text_package` result instead
+/// of the record. `groups[i]` is the group of `paths[i]`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PackageTextStaging {
+    pub directory: String,
+    pub groups: Vec<u32>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectSelection {
@@ -105,6 +118,7 @@ pub enum Operation {
     ExtractTextPackages {
         #[serde(flatten)]
         selection: ProjectSelection,
+        staging: Option<PackageTextStaging>,
     },
     #[serde(rename = "extract_texture")]
     ExtractTexture {
@@ -666,13 +680,39 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
         }
         Operation::ExtractText { selection }
         | Operation::ExtractTexture { selection }
-        | Operation::ExtractTextPackages { selection } => {
+        | Operation::ExtractTextPackages { selection, .. } => {
             if matches!(request.operation, Operation::ExtractTextPackages { .. })
                 && request.contract.version.minor < 8
             {
                 return Err(ProtocolError(
                     "extract_text_packages requires uasset-io v1.8".to_owned(),
                 ));
+            }
+            if let Operation::ExtractTextPackages {
+                staging: Some(staging),
+                ..
+            } = &request.operation
+            {
+                if request.contract.version.minor < 19 {
+                    return Err(ProtocolError(
+                        "package-text staging requires uasset-io v1.19".to_owned(),
+                    ));
+                }
+                validate_non_empty(&staging.directory, "staging.directory")?;
+                if selection
+                    .paths
+                    .as_ref()
+                    .is_none_or(|paths| paths.len() != staging.groups.len())
+                    || staging
+                        .groups
+                        .iter()
+                        .any(|group| *group >= MAX_PACKAGE_TEXT_STAGING_GROUPS)
+                {
+                    return Err(ProtocolError(
+                        "package-text staging needs one group below 4096 for each requested path"
+                            .to_owned(),
+                    ));
+                }
             }
             validate_non_empty(&selection.project_root, "projectRoot")?;
             validate_optional_paths(&selection.paths)
@@ -1170,6 +1210,10 @@ mod tests {
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-text-capability-result-event.json")).unwrap();
         assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-request-old-minor.json")).is_err());
         decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-request.json")).unwrap();
+        decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-staged-request.json")).unwrap();
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-staged-result-event.json")).unwrap();
+        assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-staged-request-old-minor.json")).is_err());
+        assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-staged-request-group-limit.json")).is_err());
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-result-event.json")).unwrap();
         assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-unbounded-samples.json")).is_err());
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-gather-coverage-result-event.json")).unwrap();

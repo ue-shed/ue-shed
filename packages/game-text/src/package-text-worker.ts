@@ -4,7 +4,7 @@ import { Schema } from "effect";
 import { PackageTextStored, packageTextColumns } from "./package-text-columns.js";
 import { writeSnapshotFile } from "./snapshot-file.js";
 import { mkdir } from "node:fs/promises";
-import { prepareColdStringRuns } from "./shared-string-sort.js";
+import { prepareColdStringRuns, type PreparedColdStrings } from "./shared-string-sort.js";
 import { encodeWtf8 } from "./wtf8.js";
 import { PackageTextWorkerReply } from "./package-text-worker-protocol.js";
 import { snapshotStoreFailure } from "./snapshot-store.js";
@@ -13,6 +13,8 @@ import { snapshotFailure } from "./snapshot-format.js";
 const Request = Schema.Struct({
 	input: Schema.String,
 	output: Schema.String,
+	/** Sort the shard's string runs for a writer that publishes from prepared runs. */
+	prepareStrings: Schema.Boolean,
 	expected: Schema.Array(
 		Schema.Struct({ path: Schema.String, signature: Schema.String, selected: Schema.Boolean })
 	)
@@ -20,7 +22,8 @@ const Request = Schema.Struct({
 const decodeRecord = Schema.decodeUnknownSync(Schema.fromJsonString(PackageTextStored));
 parentPort?.on("message", async (request: typeof Request.Encoded) => {
 	try {
-		const { input, output, expected } = Schema.decodeUnknownSync(Request)(request);
+		const { input, output, expected, prepareStrings } =
+			Schema.decodeUnknownSync(Request)(request);
 		const records: PackageTextStored[] = [];
 		for await (const line of packageTextJsonLines(input)) records.push(decodeRecord(line));
 		records.sort((a, b) => Buffer.compare(encodeWtf8(a.path), encodeWtf8(b.path)));
@@ -41,11 +44,14 @@ parentPort?.on("message", async (request: typeof Request.Encoded) => {
 				"Cold records differ from their signature/header inventory."
 			);
 		const source = packageTextColumns(records);
-		const staging = `${output}.strings`;
-		await mkdir(staging);
-		const preparedStrings = await prepareColdStringRuns(source, staging);
+		let preparedStrings: PreparedColdStrings | undefined;
+		if (prepareStrings) {
+			const staging = `${output}.strings`;
+			await mkdir(staging);
+			preparedStrings = await prepareColdStringRuns(source, staging);
+		}
 		await writeSnapshotFile(output, source, 1);
-		parentPort?.postMessage({ ok: true, preparedStrings });
+		parentPort?.postMessage(preparedStrings ? { ok: true, preparedStrings } : { ok: true });
 	} catch (cause) {
 		const error = snapshotStoreFailure(
 			"package-text.worker",

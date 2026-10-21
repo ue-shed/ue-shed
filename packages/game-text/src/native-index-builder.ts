@@ -209,6 +209,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		}
 	);
 	const writer: SharedIndexWriter = {
+		sortsColdStrings: true,
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {
 				const inputs = [];

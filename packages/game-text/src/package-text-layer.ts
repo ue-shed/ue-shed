@@ -23,7 +23,11 @@ import { encodeWtf8 } from "./wtf8.js";
 import { LocalizationImportSession } from "./localization-import-session.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { writeSnapshotFile, openSnapshotFile, type SnapshotFileReader } from "./snapshot-file.js";
-import { importColdPackageTextShards } from "./package-text-cold.js";
+import {
+	importColdPackageTextShards,
+	packageTextWorkerCount,
+	startPackageTextWorkers
+} from "./package-text-cold.js";
 import { TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { StageClock } from "./stage-clock.js";
@@ -370,16 +374,24 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			});
 		const requested = new Map<string, PackageTextInventoryEntry>();
 		for (const shard of changed)
-			for (const { entry, selected } of shard.entries) {
+			for (const { entry, selected } of shard.entries)
 				if (selected) requested.set(entry.path, entry);
-				else {
-					yield* append({
-						path: entry.path,
-						signature: entry.signature,
-						evidence: { event: "not_gatherable", path: entry.path }
-					});
-					completed++;
-				}
+		// Workers load their modules while the reader extracts the packages they will convert.
+		const workers = yield* startPackageTextWorkers(
+			packageTextWorkerCount(
+				requested.size,
+				selection.filter((shard) => shard.entries.length).length
+			)
+		);
+		for (const shard of changed)
+			for (const { entry, selected } of shard.entries) {
+				if (selected) continue;
+				yield* append({
+					path: entry.path,
+					signature: entry.signature,
+					evidence: { event: "not_gatherable", path: entry.path }
+				});
+				completed++;
 			}
 		report();
 		const received = new Set<string>();
@@ -425,7 +437,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		// Reading includes the reader's own work and staging the records it returns.
 		stages.mark("read");
 		const result = yield* importColdPackageTextShards(
-			{ inventory, recordDirectory: directory, stagingRoot: directory },
+			{ inventory, recordDirectory: directory, stagingRoot: directory, workers },
 			selection
 		).pipe(
 			Effect.provideService(

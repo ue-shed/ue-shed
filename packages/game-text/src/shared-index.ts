@@ -163,6 +163,11 @@ export interface SharedIndexWriter {
 		entries: readonly ColdLayerSource[],
 		removedNames?: readonly string[]
 	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
+	/**
+	 * The writer sorts a cold batch's strings itself from the staged files, so cold importers
+	 * need not prepare sorted string runs for it.
+	 */
+	readonly sortsColdStrings?: boolean;
 	/** One atomic cold target publication, with a single external dictionary sort. */
 	readonly publishCold: (
 		entries: readonly ColdLayerSource[],

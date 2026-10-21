@@ -27,7 +27,36 @@ export interface ColdPackageTextInput {
 	readonly recordDirectory: string;
 	readonly stagingRoot: string;
 	readonly additionalSources?: readonly ColdLayerSource[];
+	/** Workers started earlier (see `startPackageTextWorkers`); the import still terminates them. */
+	readonly workers?: readonly Worker[];
 }
+
+/**
+ * Workers for a cold import of `packages` read packages in `shards` non-empty shards. Each worker
+ * loads its own module graph, which costs time and memory, so small reads use fewer.
+ */
+export function packageTextWorkerCount(packages: number, shards: number) {
+	return Math.max(
+		1,
+		Math.min(
+			8,
+			Math.max(1, availableParallelism() - 1),
+			shards,
+			Math.ceil(packages / PACKAGES_PER_WORKER)
+		)
+	);
+}
+const PACKAGES_PER_WORKER = 500;
+
+/**
+ * Starts cold import workers before the records exist, so their module loading overlaps the
+ * package read instead of following it.
+ */
+export const startPackageTextWorkers = (count: number) =>
+	Effect.acquireRelease(
+		Effect.sync(() => Array.from({ length: count }, () => worker())),
+		(workers) => Effect.promise(() => Promise.all(workers.map((item) => item.terminate())))
+	);
 
 /** Parallel bounded shard preparation; publishCold performs the one target-wide external sort.
  * Record files contain validated PackageTextStored NDJSON, already grouped by the fixed shard hash.
@@ -60,11 +89,18 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 				const workers: Worker[] = [],
 					readers: SnapshotFileReader[] = [];
 				const preparedStrings = new Map<string, PreparedColdStrings>();
-				const workerCount = Math.min(
-					8,
-					availableParallelism(),
-					Math.max(1, selection.length)
-				);
+				const started = input.workers ?? [];
+				const workerCount =
+					started.length > 0
+						? Math.min(started.length, Math.max(1, selection.length))
+						: packageTextWorkerCount(
+								selection.reduce(
+									(sum, shard) =>
+										sum + shard.entries.filter((entry) => entry.selected).length,
+									0
+								),
+								selection.length
+							);
 				const pending = [...selection];
 				const abort = () => {
 					for (const instance of workers) void instance.terminate();
@@ -73,8 +109,8 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 				try {
 					if (signal.aborted) throw new Error("Cold package import cancelled");
 					await Promise.all(
-						Array.from({ length: workerCount }, async () => {
-							const instance = worker();
+						Array.from({ length: workerCount }, async (_, slot) => {
+							const instance = started[slot] ?? worker();
 							workers.push(instance);
 							for (let shard = pending.shift(); shard; shard = pending.shift()) {
 								const current = shard;
@@ -90,10 +126,11 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 										try {
 											const reply = Schema.decodeUnknownSync(Reply)(input);
 											if (reply.ok) {
-												preparedStrings.set(
-													current.name,
-													reply.preparedStrings
-												);
+												if (reply.preparedStrings)
+													preparedStrings.set(
+														current.name,
+														reply.preparedStrings
+													);
 												const shardMs = performance.now() - shardStarted;
 												busyMs += shardMs;
 												slowestShardMs = Math.max(slowestShardMs, shardMs);
@@ -126,6 +163,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 											`${current.name}.ndjson`
 										),
 										output: join(directory, `${current.name}.snapshot`),
+										prepareStrings: writer.sortsColdStrings !== true,
 										expected: current.entries.map(({ entry, selected }) => ({
 											path: entry.path,
 											signature: entry.signature,
@@ -182,7 +220,9 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 			name: shard.name,
 			key: shard.key,
 			stagedFile: join(prepared.directory, `${shard.name}.snapshot`),
-			preparedStrings: prepared.preparedStrings.get(shard.name)!,
+			...(prepared.preparedStrings.has(shard.name)
+				? { preparedStrings: prepared.preparedStrings.get(shard.name)! }
+				: undefined),
 			source: {
 				columns: [...prepared.readers[row]!.directory.entries.values()].map((entry) => ({
 					...entry,

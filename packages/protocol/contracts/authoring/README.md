@@ -12,6 +12,11 @@ Snapshot 2.1 and mutation 1.1 add the normalized `row_reference` value for
 `FDataTableRowHandle`. It carries the table object path and row name explicitly; generic structs
 remain structurally encoded.
 
+Snapshot 2.4 adds an optional `propertyName` to field descriptors: Unreal's property FName beside
+the authored `name` that row values use. They differ for User Defined Struct members, whose saved
+packages and saved-reader property paths use the FName (`DisplayName_2_<guid>`). Live producers
+report it; the saved-package producer reports no schema. Values and fingerprints are unchanged.
+
 `v1/table-list.schema.json` is the deliberately narrow live discovery boundary. It lists canonical
 object paths; callers retrieve v2 snapshots for descriptor evidence and isolate per-table failures.
 

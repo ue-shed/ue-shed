@@ -7823,6 +7823,9 @@
 					"type": "string",
 					"enum": ["required", "optional", "unknown"]
 				},
+				"propertyName": {
+					"type": "string"
+				},
 				"type": {
 					"$ref": "#/$defs/AuthoringTypeDescriptor"
 				},

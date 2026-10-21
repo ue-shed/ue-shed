@@ -10,6 +10,12 @@ Snapshots include known field defaults from an independently initialized row str
 native constructors and authored Blueprint struct defaults. Values use the same typed codec as
 rows and Apply. Properties the codec cannot fully represent retain `unknown` defaults.
 
+Rows and field descriptors name a field by its authored name. From snapshot 2.4 each descriptor,
+nested struct members included, also carries `propertyName`: the property's FName, which saved
+packages and saved-package property paths use. The two differ for Blueprint (User Defined) struct
+members, such as `DisplayName` and `DisplayName_2_<guid>`. Commands accept either name; the FName
+resolves directly. Values and the fingerprint are unchanged.
+
 Text values carry an `identity` alongside the display string: `localized` (namespace, key, and
 source string), `string_table` (table id and key), `culture_invariant`, `none`, or `generated`.
 Apply 1.2 writes text from its identity. A localized write keeps the given namespace and key, or

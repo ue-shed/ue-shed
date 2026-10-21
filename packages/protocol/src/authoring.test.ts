@@ -12,6 +12,8 @@ import {
 	AuthoringTableSnapshotV1,
 	AuthoringTableSnapshotV2,
 	AuthoringValue,
+	type AuthoringFieldDescriptor,
+	type AuthoringTypeDescriptor,
 	classifyAuthoringSnapshot,
 	decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect,
 	editAuthoringText,
@@ -116,6 +118,69 @@ describe("authoring wire contract", () => {
 				status: "available"
 			});
 		}
+	});
+
+	it("keeps User Defined Struct property names beside authored names, nested too", () => {
+		const descriptor = (
+			name: string,
+			propertyName: string,
+			type: AuthoringTypeDescriptor
+		): AuthoringFieldDescriptor => ({
+			annotations: { deprecated: false, readOnly: false },
+			defaultValue: { status: "unknown" },
+			editability: { kind: "editable" },
+			id: `field:${name}`,
+			name,
+			presence: "required",
+			propertyName,
+			type,
+			typeName: "TextProperty"
+		});
+		const snapshot = Schema.decodeUnknownSync(AuthoringTableSnapshotV2)({
+			authority: { kind: "live_editor", producerId: "producer", sessionId: "session" },
+			completeness: "complete",
+			contract: { name: "unreal-authoring", version: { major: 2, minor: 4 } },
+			diagnostics: [],
+			fingerprint: { status: "unavailable", reason: "fixture" },
+			producer: { name: "UEShedAuthoring", version: "1" },
+			table: {
+				kind: "data_table",
+				objectPath: "/Game/DT_Items.DT_Items",
+				packageName: "/Game/DT_Items",
+				parentTables: [],
+				rows: [],
+				rowStruct: "/Game/S_Item.S_Item",
+				schema: {
+					fields: [
+						descriptor("Info", "Info_4_0A1B2C3D4E5F60718293A4B5C6D7E8F9", {
+							kind: "struct",
+							fields: [
+								descriptor(
+									"DisplayName",
+									"DisplayName_2_1F2E3D4C5B6A79808F9EADBCCBDAE9F8",
+									{ kind: "scalar", valueKind: "text" }
+								)
+							]
+						})
+					],
+					source: "live_reflection",
+					status: "available"
+				}
+			}
+		});
+		const { schema } = snapshot.table;
+		expect(schema.status === "available" && schema.fields[0]).toMatchObject({
+			name: "Info",
+			propertyName: "Info_4_0A1B2C3D4E5F60718293A4B5C6D7E8F9",
+			type: {
+				fields: [
+					{
+						name: "DisplayName",
+						propertyName: "DisplayName_2_1F2E3D4C5B6A79808F9EADBCCBDAE9F8"
+					}
+				]
+			}
+		});
 	});
 
 	it("preserves an explicit DataTable row handle", () => {

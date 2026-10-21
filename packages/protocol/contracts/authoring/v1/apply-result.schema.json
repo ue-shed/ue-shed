@@ -977,6 +977,9 @@
 				},
 				"typeName": {
 					"type": "string"
+				},
+				"propertyName": {
+					"type": "string"
 				}
 			},
 			"additionalProperties": false

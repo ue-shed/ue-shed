@@ -4,9 +4,9 @@ import { Schema } from "effect";
 
 /**
  * Newest `unreal-authoring` table snapshot version this package knows. Minor 1 added
- * `row_reference` values and minor 3 added text identity.
+ * `row_reference` values, minor 3 added text identity and minor 4 added field property names.
  */
-export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 3 } as const;
+export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 4 } as const;
 /**
  * Newest `unreal-authoring-apply` version this package sends. Minor 1 added `row_reference` values
  * and minor 2 added text identity.
@@ -285,6 +285,7 @@ export type AuthoringTypeDescriptor =
 export interface AuthoringFieldDescriptor {
 	readonly id: string;
 	readonly name: string;
+	readonly propertyName?: string;
 	readonly typeName: string;
 	readonly type: AuthoringTypeDescriptor;
 	readonly editability:
@@ -321,6 +322,11 @@ export const AuthoringTypeDescriptor: Schema.Codec<AuthoringTypeDescriptor> = Sc
  * Schema evidence for one row-struct field: type, editability, presence, Unreal metadata
  * annotations (clamp, step, and unit kept as their metadata strings), and default value. A default
  * is `unknown` when the producer cannot know it, as with saved packages; never assume zero.
+ *
+ * `name` is the authored name that row values use. `propertyName` is Unreal's property FName, which
+ * saved packages serialize and saved-reader property paths use. They differ for User Defined
+ * Struct members (`DisplayName` and `DisplayName_2_<guid>`). Live producers report it from
+ * snapshot 2.4; when it is absent, only a native property's name is known to equal its FName.
  */
 export const AuthoringFieldDescriptor: Schema.Codec<AuthoringFieldDescriptor> = Schema.Struct({
 	annotations: Schema.Struct({
@@ -350,6 +356,7 @@ export const AuthoringFieldDescriptor: Schema.Codec<AuthoringFieldDescriptor> = 
 	id: Schema.String,
 	name: Schema.String,
 	presence: Schema.Literals(["required", "optional", "unknown"]),
+	propertyName: Schema.optionalKey(Schema.String),
 	type: AuthoringTypeDescriptor,
 	typeName: Schema.String
 }).annotate({ identifier: "AuthoringFieldDescriptor" });

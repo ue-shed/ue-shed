@@ -216,6 +216,9 @@ TSharedRef<FJsonObject> DescribeField(const FProperty* Property, const void* Def
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetStringField(TEXT("id"), TEXT("field:") + Property->GetAuthoredName());
 	Result->SetStringField(TEXT("name"), Property->GetAuthoredName());
+	// Saved packages and saved-reader property paths use the FName, which differs from the
+	// authored name for User Defined Struct members (DisplayName_2_<guid>).
+	Result->SetStringField(TEXT("propertyName"), Property->GetName());
 	Result->SetStringField(TEXT("typeName"), Property->GetClass()->GetName());
 	const void* FieldDefault = Defaults ? Property->ContainerPtrToValuePtr<void>(Defaults) : nullptr;
 	Result->SetObjectField(TEXT("type"), DescribePropertyType(Property, FieldDefault));
@@ -1200,7 +1203,7 @@ TSharedRef<FJsonObject> BuildTableSnapshot(const UDataTable* Table)
 	Contract->SetStringField(TEXT("name"), TEXT("unreal-authoring"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 2);
-	Version->SetNumberField(TEXT("minor"), 3);
+	Version->SetNumberField(TEXT("minor"), 4);
 	Contract->SetObjectField(TEXT("version"), Version);
 	const TSharedRef<FJsonObject> Authority = MakeShared<FJsonObject>();
 	Authority->SetStringField(TEXT("kind"), TEXT("live_editor"));
@@ -1941,6 +1944,8 @@ bool FUEShedAuthoringDefaultsCodecTest::RunTest(const FString& Parameters)
 		{
 			const TSharedPtr<FJsonObject> Descriptor = Value->AsObject();
 			const FString Name = Descriptor->GetStringField(TEXT("name"));
+			TestEqual(TEXT("Native fields report their FName, which is their authored name: ") + Name,
+				Descriptor->GetStringField(TEXT("propertyName")), Name);
 			const TSharedPtr<FJsonObject> Default = Descriptor->GetObjectField(TEXT("defaultValue"));
 			if (!TestEqual(TEXT("Text and enclosing defaults carry identity and are known: ") + Name,
 				Default->GetStringField(TEXT("status")), FString(TEXT("known"))))
@@ -2003,6 +2008,17 @@ bool FUEShedAuthoringDefaultsCodecTest::RunTest(const FString& Parameters)
 	const TSharedPtr<FJsonObject> BlueprintSnapshot = BuildTableSnapshot(BlueprintTable);
 	const TSharedPtr<FJsonObject> Descriptor = BlueprintSnapshot->GetObjectField(TEXT("table"))
 		->GetObjectField(TEXT("schema"))->GetArrayField(TEXT("fields"))[0]->AsObject();
+	// Saved packages and the saved reader name a Blueprint struct member by its FName, so the
+	// descriptor carries it beside the authored name that row values use.
+	const FString BlueprintPropertyName = Descriptor->GetStringField(TEXT("propertyName"));
+	TestEqual(TEXT("Blueprint descriptors report the member FName"), BlueprintPropertyName,
+		FStructureEditorUtils::GetVarDesc(BlueprintStruct)[0].VarName.ToString());
+	TestNotEqual(TEXT("Blueprint member FNames differ from their authored names"),
+		BlueprintPropertyName, Descriptor->GetStringField(TEXT("name")));
+	const FProperty* AuthoredProperty =
+		FindRowProperty(BlueprintStruct, Descriptor->GetStringField(TEXT("name")));
+	TestTrue(TEXT("The FName and authored name resolve the same Blueprint member"),
+		AuthoredProperty && FindRowProperty(BlueprintStruct, BlueprintPropertyName) == AuthoredProperty);
 	const TSharedRef<FJsonObject> BlueprintField = MakeShared<FJsonObject>();
 	BlueprintField->SetStringField(TEXT("name"), Descriptor->GetStringField(TEXT("name")));
 	BlueprintField->SetField(TEXT("value"),

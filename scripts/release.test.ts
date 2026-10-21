@@ -19,6 +19,7 @@ import {
 	publicationConfirmationPhrase,
 	releaseEnvironment,
 	releaseGateCoverage,
+	validatedIntegrity,
 	runRelease,
 	verifyPackedRelease
 } from "./release.ts";
@@ -274,11 +275,20 @@ test("publishes only an untouched pack of the evidence commit", (context) => {
 		() => verifyPackedRelease(directory, "0.5.2", "d".repeat(40)),
 		/packed from c{40}, not 0\.5\.2 from d{40}/
 	);
-	writeFileSync(join(directory, packages[3]!.filename), "rebuilt");
+	const before = packages[3]!;
+	assert.equal(
+		validatedIntegrity(directory, before),
+		`sha256-${createHash("sha256")
+			.update(Buffer.from(`${before.name}@0.5.2`))
+			.digest("base64")}`
+	);
+	writeFileSync(join(directory, before.filename), "rebuilt");
 	assert.throws(
 		() => verifyPackedRelease(directory, "0.5.2", "c".repeat(40)),
 		/changed after it was packed/
 	);
+	// A tarball replaced while the confirmation prompt waits is refused at publication too.
+	assert.throws(() => validatedIntegrity(directory, before), /changed after it was validated/);
 });
 
 test("points every planned publication at its validated tarball", () => {

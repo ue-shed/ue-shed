@@ -123,6 +123,45 @@ async function portableRunPassed(sha: string) {
 	}
 }
 
+/**
+ * Whether `head` already contains the base branch's tip `base`. Pull request runs test the merge
+ * of the head into the base; when the previous head contained the current base tip, that merge was
+ * the previous head itself, so its run tested the same code a release-notes-only push now has. If
+ * the base moved on since, the new merge result has never been tested and gets the full gate.
+ */
+export function containsBase(root: string, base: string, head: string) {
+	if (!/^[0-9a-f]{40}$/.test(base) || !/^[0-9a-f]{40}$/.test(head)) return false;
+	try {
+		execFileSync("git", ["merge-base", "--is-ancestor", base, head], {
+			cwd: root,
+			stdio: "ignore",
+			windowsHide: true
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * The base GitHub merged `head` into for this run: the first parent of the checked-out test merge
+ * commit, when its second parent is `head`. Undefined when the checkout is not that merge.
+ */
+export function testedBase(root: string, head: string) {
+	const revision = (name: string) => {
+		try {
+			return execFileSync("git", ["rev-parse", "--verify", "--quiet", name], {
+				cwd: root,
+				encoding: "utf8",
+				windowsHide: true
+			}).trim();
+		} catch {
+			return undefined;
+		}
+	};
+	return revision("HEAD^2") === head ? revision("HEAD^1") : undefined;
+}
+
 export function changedFiles(root: string, base: string, head: string, pullRequest: boolean) {
 	if (!head || (pullRequest && !base))
 		throw new Error("CI scope requires explicit base/head commits.");
@@ -155,7 +194,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 	if (pullRequest && process.env.PR_ACTION === "synchronize" && before !== "") {
 		try {
 			const pushed = changedFiles(root, before, process.env.HEAD_SHA ?? "", false);
-			reusePreviousRun = releaseNotesOnly(pushed) && (await portableRunPassed(before));
+			reusePreviousRun =
+				releaseNotesOnly(pushed) &&
+				containsBase(
+					root,
+					testedBase(root, process.env.HEAD_SHA ?? "") ?? process.env.BASE_SHA ?? "",
+					before
+				) &&
+				(await portableRunPassed(before));
 		} catch {
 			reusePreviousRun = false;
 		}

@@ -32,6 +32,10 @@ test("subprocess names look through cmd shims and skip Node, pnpm and build serv
 		name: "cargo build --release",
 		tool: "cargo"
 	});
+	assert.deepEqual(describeSubprocess("/bin/sh", ["-c", "git --version"]), {
+		name: "git --version",
+		tool: "git"
+	});
 	assert.equal(describeSubprocess(process.execPath, ["script.ts"]), undefined);
 	assert.equal(describeSubprocess("cmd.exe", ["/d", "/s", "/c", "pnpm.cmd", "pack"]), undefined);
 	// pnpm runs package scripts as one command-line argument, sometimes quoted verbatim.
@@ -82,13 +86,18 @@ test("traced Node processes record spans for their non-Node subprocesses exactly
 		writeFileSync(
 			script,
 			[
-				`import { execFileSync, spawn, spawnSync } from "node:child_process";`,
+				`import { exec, execFile, execFileSync, spawn, spawnSync } from "node:child_process";`,
+				`import { promisify } from "node:util";`,
 				`import { traceProcess } from ${JSON.stringify(processTrace)};`,
 				`spawnSync("git", ["--version"]);`,
 				`execFileSync("git", ["--version"]);`,
 				`traceProcess("git", ["rev-parse", "--git-dir"], () => spawnSync("git", ["rev-parse", "--git-dir"], { encoding: "utf8" }));`,
 				`spawnSync(process.execPath, ["--version"]);`,
-				`await new Promise((done) => spawn("git", ["--version"]).on("exit", done));`
+				`await new Promise((done) => spawn("git", ["--version"]).on("exit", done));`,
+				// Node's execFile and exec use its internal spawn, not the patched export.
+				`const { stdout } = await promisify(execFile)("git", ["--version"]);`,
+				`if (!stdout.startsWith("git version")) throw new Error("promisify(execFile) changed");`,
+				`await new Promise((done) => exec("git --version", done));`
 			].join("\n")
 		);
 		const result = spawnSync(process.execPath, [script], {
@@ -111,10 +120,12 @@ test("traced Node processes record spans for their non-Node subprocesses exactly
 			"git --version",
 			"git --version",
 			"git --version",
+			"git --version",
+			"git --version",
 			"git rev-parse --git-dir"
 		]);
 		const automatic = children.filter((span) => span.attributes["trace.subprocess"] === true);
-		assert.equal(automatic.length, 3, "the explicitly traced call is not recorded twice");
+		assert.equal(automatic.length, 5, "the explicitly traced call is not recorded twice");
 		for (const span of children) {
 			assert.equal(span.status, "ok");
 			assert.ok(span.endUs >= span.startUs);

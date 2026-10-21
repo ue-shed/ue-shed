@@ -6,9 +6,11 @@ import { join } from "node:path";
 import test from "node:test";
 import {
 	changedFiles,
+	containsBase,
 	releaseNotesOnly,
 	selectCiScope,
-	siteWorkspaceDirectories
+	siteWorkspaceDirectories,
+	testedBase
 } from "./ci-scope.ts";
 import type { WorkspaceManifest } from "./workspace-manifests.ts";
 
@@ -157,4 +159,42 @@ test("only a push of release notes alone can reuse the previous passing run", ()
 	);
 	assert.equal(releaseNotesOnly(["docs/releases/assets/timeline.png"]), false);
 	assert.equal(releaseNotesOnly(["docs/releases.md"]), false);
+});
+
+test("reuse requires the previous head to contain the base its new merge result tests", () => {
+	const root = mkdtempSync(join(tmpdir(), "ue-shed-ci-base-"));
+	const git = (...args: string[]) =>
+		execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true }).trim();
+	const commit = (path: string, content: string) => {
+		mkdirSync(join(root, path, ".."), { recursive: true });
+		writeFileSync(join(root, path), content);
+		git("add", ".");
+		git("commit", "--quiet", "-m", path);
+		return git("rev-parse", "HEAD");
+	};
+	try {
+		git("init", "--quiet", "--initial-branch=main");
+		git("config", "user.name", "CI fixture");
+		git("config", "user.email", "ci-fixture@example.invalid");
+		const base = commit("src/a.ts", "a");
+		git("checkout", "--quiet", "-b", "release");
+		const before = commit("src/b.ts", "b");
+		const head = commit("docs/releases/0.21.0.md", "notes");
+		// GitHub tests the merge of the head into the base tip: base unchanged.
+		git("checkout", "--quiet", "--detach", base);
+		git("merge", "--quiet", "--no-ff", "--no-edit", head);
+		assert.equal(testedBase(root, head), base);
+		assert.equal(containsBase(root, base, before), true);
+		// The base moved on after the previous run: its merge result was never tested.
+		git("checkout", "--quiet", "main");
+		const moved = commit("src/c.ts", "c");
+		git("checkout", "--quiet", "--detach", moved);
+		git("merge", "--quiet", "--no-ff", "--no-edit", head);
+		assert.equal(testedBase(root, head), moved);
+		assert.equal(containsBase(root, moved, before), false);
+		assert.equal(testedBase(root, base), undefined);
+		assert.equal(containsBase(root, "not-a-sha", before), false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });

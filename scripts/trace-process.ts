@@ -7,24 +7,29 @@
  * It also records a span for every non-Node subprocess the process starts (git, tar, npm, Cargo,
  * Electron, native tools) unless the caller already traces it (`traceProcess` in
  * `process-trace.ts`). Node subprocesses, including pnpm and npm shims, record their own process
- * span through this preload instead.
+ * span through this preload instead. Synchronous APIs and `spawn` are wrapped, which also passes
+ * the active span to the child; `exec`, `execFile` and other asynchronous starts are recorded
+ * through Node's `child_process` diagnostics channel, which sees every ChildProcess.
  */
 
 import childProcess, {
-	type ChildProcess,
+	ChildProcess,
 	type ExecFileSyncOptions,
 	type ExecSyncOptions,
 	type SpawnOptions,
 	type SpawnSyncOptions,
 	type SpawnSyncReturns
 } from "node:child_process";
+import diagnosticsChannel from "node:diagnostics_channel";
 import { syncBuiltinESMExports } from "node:module";
 import { basename, win32 } from "node:path";
 import { isMainThread } from "node:worker_threads";
 import {
 	formatTraceparent,
 	insideExplicitProcessSpan,
+	nowUs,
 	startSpan,
+	withExplicitProcessSpan,
 	traceFile,
 	type Span
 } from "./gate-trace.ts";
@@ -79,6 +84,9 @@ export function describeSubprocess(
 		// arguments or as one verbatim string.
 		const command = /(?:^|\s)\/c\s+([\s\S]*)$/i.exec(words.slice(1).join(" "))?.[1];
 		if (command !== undefined) words = commandWords(command.replace(/^"([\s\S]*)"$/, "$1"));
+	} else if (/^(?:ba)?sh$/.test(win32.basename(words[0] ?? "")) && words[1] === "-c") {
+		// POSIX shells run `/bin/sh -c <command line>` for `shell: true` and `exec`.
+		words = commandWords(words[2] ?? "");
 	}
 	const program = words[0] ?? "";
 	const tool = win32.basename(program);
@@ -97,11 +105,12 @@ function commandWords(commandLine: string) {
 	return [...commandLine.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? "");
 }
 
-function subprocessSpan(subprocess: Subprocess) {
-	return startSpan(subprocess.name, {
-		"process.tool": subprocess.tool,
-		"trace.subprocess": true
-	});
+function subprocessSpan(subprocess: Subprocess, startUs?: number) {
+	return startSpan(
+		subprocess.name,
+		{ "process.tool": subprocess.tool, "trace.subprocess": true },
+		startUs === undefined ? {} : { startUs }
+	);
 }
 
 type ArgumentList = readonly string[];
@@ -147,8 +156,11 @@ function endReturned(span: Span) {
 }
 
 /**
- * Replaces the `child_process` exports with traced versions. `fork`, `exec` and `execFile` start
- * Node processes or call the patched functions, and Node's own internals keep the originals.
+ * Replaces the synchronous `child_process` exports and `spawn` with traced versions, and records
+ * every other asynchronous child (`exec`, `execFile`, `promisify(execFile)`) from the
+ * `child_process` diagnostics channel. Node's internals keep the original functions, so the
+ * channel is the only hook that sees those; `spawn` marks its own children so they are not
+ * recorded twice.
  */
 function traceSubprocesses() {
 	const original = {
@@ -158,6 +170,36 @@ function traceSubprocesses() {
 		execSync: childProcess.execSync
 	};
 	const open = new Set<Span>();
+	const endWithChild = (span: Span, child: ChildProcess) => {
+		open.add(span);
+		child.once("error", () => {
+			open.delete(span);
+			span.end("error");
+		});
+		child.once("exit", (code, signal) => {
+			open.delete(span);
+			span.setAttributes({
+				"process.exit_code": code ?? -1,
+				"process.signal": signal ?? undefined
+			});
+			// A process stopped by a signal was stopped on purpose (an editor or server at the end
+			// of its test); its exit code says nothing about the gate.
+			span.end(code === 0 || signal !== null ? "ok" : "error");
+		});
+	};
+	diagnosticsChannel.subscribe("child_process", (message) => {
+		if (insideExplicitProcessSpan()) return;
+		if (!(message instanceof Object) || !("process" in message)) return;
+		const child = message.process;
+		if (!(child instanceof ChildProcess)) return;
+		// Published from the ChildProcess constructor, before it starts: read the command once the
+		// synchronous spawn has filled it in.
+		const startUs = nowUs();
+		process.nextTick(() => {
+			const subprocess = describeSubprocess(child.spawnfile, child.spawnargs.slice(1));
+			if (subprocess !== undefined) endWithChild(subprocessSpan(subprocess, startUs), child);
+		});
+	});
 	process.on("exit", () => {
 		for (const span of open) {
 			span.setAttributes({ "process.still_running": true });
@@ -246,27 +288,14 @@ function traceSubprocesses() {
 			describeSubprocess(file, args, Boolean(options?.shell)),
 			(span) => {
 				const spawnOptions = { ...options, env: parentedEnvironment(options?.env, span) };
-				return args.length > 0
-					? original.spawn(file, args, spawnOptions)
-					: original.spawn(file, spawnOptions);
+				// Marked so the diagnostics channel does not record this child a second time.
+				return withExplicitProcessSpan(() =>
+					args.length > 0
+						? original.spawn(file, args, spawnOptions)
+						: original.spawn(file, spawnOptions)
+				);
 			},
-			(span, _subprocess, child) => {
-				open.add(span);
-				child.once("error", () => {
-					open.delete(span);
-					span.end("error");
-				});
-				child.once("exit", (code, signal) => {
-					open.delete(span);
-					span.setAttributes({
-						"process.exit_code": code ?? -1,
-						"process.signal": signal ?? undefined
-					});
-					// A process stopped by a signal was stopped on purpose (an editor or server at
-					// the end of its test); its exit code says nothing about the gate.
-					span.end(code === 0 || signal !== null ? "ok" : "error");
-				});
-			}
+			(span, _subprocess, child) => endWithChild(span, child)
 		);
 	}
 

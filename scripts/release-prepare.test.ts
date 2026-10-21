@@ -9,7 +9,8 @@ import {
 	gateSteps,
 	indexSpans,
 	slowestLeaves,
-	timeCategories
+	timeCategories,
+	validationMarkdown
 } from "./release-report.ts";
 
 const tree: readonly TreeEntry[] = [
@@ -135,5 +136,41 @@ test("refuses an Unreal lane checkout whose build paths would pass 260 character
 	assert.throws(
 		() => assertUnrealPathBudget(`C:/${"deep/".repeat(20)}ue-shed-unreal`),
 		/Unreal gates need at most 85/
+	);
+});
+
+test("validation never presents stale reused evidence as covering the release", () => {
+	const check = RELEASE_GATES.find((gate) => gate.id === "check")!;
+	const previous: readonly TreeEntry[] = [{ ...tree[0]!, object: "9".repeat(40) }, tree[1]!];
+	const evidenceFor = (entries: readonly TreeEntry[]): ReleaseEvidence => ({
+		schemaVersion: 1,
+		version: "0.5.2",
+		gates: {
+			check: {
+				status: "passed",
+				scope: check.scope,
+				fingerprint: gateFingerprint(check.scope, entries),
+				commit: "c".repeat(40),
+				finishedAt: "2026-10-21T00:00:00.000Z",
+				durationMs: 60_000,
+				trace: "run"
+			}
+		}
+	});
+	const validation = (evidence: ReleaseEvidence) =>
+		validationMarkdown({
+			version: "0.5.2",
+			commit: "d".repeat(40),
+			runs: [],
+			evidence,
+			gates: [check],
+			spans: [],
+			index: indexSpans([]),
+			tree
+		});
+	assert.match(validation(evidenceFor(tree)), /passed on `c{10}` \(same inputs\)/);
+	assert.match(
+		validation(evidenceFor(previous)),
+		/not rerun; its evidence from `c{10}` has different inputs and does not cover this commit/
 	);
 });

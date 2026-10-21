@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SpanRecord } from "./gate-trace.ts";
-import type { ReleaseEvidence } from "./release-evidence.ts";
+import { gateEvidenceState, type ReleaseEvidence, type TreeEntry } from "./release-evidence.ts";
 import type { ReleaseGate } from "./release-gates.ts";
 import type { GateRun } from "./release-prepare.ts";
 
@@ -178,7 +178,8 @@ export function validationMarkdown({
 	evidence,
 	gates,
 	spans,
-	index
+	index,
+	tree
 }: {
 	readonly version: string;
 	readonly commit: string;
@@ -187,6 +188,8 @@ export function validationMarkdown({
 	readonly gates: readonly ReleaseGate[];
 	readonly spans: readonly SpanRecord[];
 	readonly index: SpanIndex;
+	/** The release commit's tree, to tell reused evidence that still covers it from stale. */
+	readonly tree: readonly TreeEntry[];
 }) {
 	const lines = [
 		"## Validation",
@@ -201,6 +204,16 @@ export function validationMarkdown({
 		const result = run?.result ?? evidence.gates[gate.id];
 		if (result === undefined) {
 			lines.push(`- ${gate.title}: not run.`);
+			continue;
+		}
+		// Evidence from an earlier run covers this commit only while its inputs are unchanged.
+		const reusedState =
+			run === undefined ? gateEvidenceState(result, gate.scope, tree) : undefined;
+		if (reusedState?.kind === "stale") {
+			lines.push(
+				`- ${gate.title}: not rerun; its evidence from \`${result.commit.slice(0, 10)}\` ` +
+					"has different inputs and does not cover this commit."
+			);
 			continue;
 		}
 		const where =
@@ -312,7 +325,8 @@ export function writeReleaseReport({
 	runs,
 	evidence,
 	gates,
-	reused
+	reused,
+	tree
 }: {
 	readonly outputDirectory: string;
 	readonly version: string;
@@ -322,12 +336,22 @@ export function writeReleaseReport({
 	readonly evidence: ReleaseEvidence;
 	readonly gates: readonly ReleaseGate[];
 	readonly reused: readonly string[];
+	readonly tree: readonly TreeEntry[];
 }) {
 	const index = indexSpans(spans);
 	const root = spans.find((span) => span.parentSpanId === undefined);
 	const wall = root === undefined ? 0 : durationMs(root);
 	const failed = runs.filter((run) => run.result.status === "failed");
-	const validation = validationMarkdown({ version, commit, runs, evidence, gates, spans, index });
+	const validation = validationMarkdown({
+		version,
+		commit,
+		runs,
+		evidence,
+		gates,
+		spans,
+		index,
+		tree
+	});
 
 	const gateRows = runs
 		.map((run) => {

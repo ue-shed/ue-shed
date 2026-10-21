@@ -102,7 +102,14 @@ changelog-only edit, only `release-text` and `pack` run again; after a release-n
 (`trace.json`, for [Perfetto](https://ui.perfetto.dev)), one log per command, `report.html` (a lane
 timeline, each gate's largest steps, where the time went and the slowest commands) and
 `validation.md`, the release notes' Validation section. `--record` writes that section into
-`docs/releases/<version>.md`; commit it with the release.
+`docs/releases/<version>.md`; commit it with the release. A gate the run did not repeat is listed
+as covering the release only while its fingerprint still matches; stale evidence says so.
+
+Pushing that commit to the release pull request does not rerun the whole hosted gate when it
+changes only `docs/releases/*.md`, the previous head's Portable run passed, and that previous head
+already contained the base GitHub now merges it into. The repository lane then checks just the
+release text (`format:check`, `test:release`) and the other lanes are skipped. If `main` moved on
+since the previous run, the new merge result gets the full gate.
 
 `release:pack:clean-check` packs the committed release in a temporary worktree with no prior build
 output, which proves the pack step builds packages in workspace dependency order. With `--output`

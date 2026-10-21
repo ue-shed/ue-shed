@@ -545,7 +545,8 @@ async function main() {
 		runs,
 		evidence: updated,
 		gates: RELEASE_GATES,
-		reused: plan.filter((planned) => planned.reuse).map((planned) => planned.gate.id)
+		reused: plan.filter((planned) => planned.reuse).map((planned) => planned.gate.id),
+		tree
 	});
 	if (values.record) {
 		const notesPath = join(repositoryRoot, "docs", "releases", `${version}.md`);

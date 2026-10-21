@@ -350,16 +350,31 @@ async function confirmPublication(verification: Verification) {
 	}
 }
 
+/**
+ * The integrity Changesets records for a tarball, read at publication time and refused unless the
+ * bytes still match the digest the clean pack validated. The confirmation prompt can wait
+ * indefinitely, so the check before it does not cover what is published after it.
+ */
+export function validatedIntegrity(directory: string, entry: PublicationEntry) {
+	const digest = sha256(readFileSync(join(directory, entry.filename)));
+	if (digest.toString("hex") !== entry.sha256) {
+		throw new Error(
+			`${entry.filename} changed after it was validated (sha256 ${digest.toString("hex")}); ` +
+				"rerun pnpm release:prepare --only pack."
+		);
+	}
+	return `sha256-${digest.toString("base64")}`;
+}
+
 function publish(verification: Verification, env: NodeJS.ProcessEnv) {
 	const planPath = join(verification.packDirectory, "changesets-plan.json");
 	runPnpm(["exec", "changeset", "publish-plan", "--output", planPath], env);
 	const plan = Schema.decodeUnknownSync(Schema.fromJsonString(ChangesetsPublishPlan))(
 		readFileSync(planPath, "utf8")
 	);
-	const packed = packedPublishPlan(plan, verification.entries, (entry) => {
-		const digest = sha256(readFileSync(join(verification.packDirectory, entry.filename)));
-		return `sha256-${digest.toString("base64")}`;
-	});
+	const packed = packedPublishPlan(plan, verification.entries, (entry) =>
+		validatedIntegrity(verification.packDirectory, entry)
+	);
 	writeFileSync(
 		join(verification.packDirectory, "publish-plan.json"),
 		`${JSON.stringify(packed, undefined, 2)}\n`

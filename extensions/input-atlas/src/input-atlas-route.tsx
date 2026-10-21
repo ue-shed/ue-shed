@@ -1,12 +1,25 @@
 import * as stylex from "@stylexjs/stylex";
 import {
 	buildInputAtlas,
+	classifyInputConflicts,
+	coActivationForPlatform,
+	coActivationFromConfigAssets,
 	deviceOf,
 	findAtlasKey,
+	INPUT_CONFLICT_CLASSES,
+	inputKeyProfiles,
+	parameterLabel,
+	platformContextPaths,
+	redirectCoActivationSets,
+	reportForKeyProfile,
+	type AtlasInstancedDetail,
 	type AtlasKey,
+	type EnhancedInputHostAnalysis,
 	type EnhancedInputPublicError,
 	type EnhancedInputReport,
-	type EnhancedInputRunResult
+	type EnhancedInputRunResult,
+	type InputConflictClass,
+	type InputConflictKey
 } from "@ue-shed/enhanced-input/browser";
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
@@ -37,7 +50,43 @@ type ViewState =
 			readonly status: "ready";
 			readonly report: EnhancedInputReport;
 			readonly projectRoot: string;
+			readonly analysis: EnhancedInputHostAnalysis | undefined;
 	  };
+
+/** A view inside the selected project: every context, one platform's redirects, or a key profile. */
+type AtlasView =
+	| { readonly kind: "all" }
+	| { readonly kind: "platform"; readonly platform: string }
+	| { readonly kind: "profile"; readonly profileId: string };
+
+type ConflictFilter = "contested" | InputConflictClass;
+
+const conflictClassLabels = {
+	shadowed: "Shadowed",
+	ambiguous_priority: "Ambiguous priority",
+	qualified: "Qualified",
+	cross_context: "Cross-context"
+} as const satisfies Record<InputConflictClass, string>;
+
+function viewValue(view: AtlasView): string {
+	if (view.kind === "platform") return `platform:${view.platform}`;
+	if (view.kind === "profile") return `profile:${view.profileId}`;
+	return "all";
+}
+
+function parseView(value: string): AtlasView {
+	if (value.startsWith("platform:")) return { kind: "platform", platform: value.slice(9) };
+	if (value.startsWith("profile:")) return { kind: "profile", profileId: value.slice(8) };
+	return { kind: "all" };
+}
+
+/** `hold (HoldTimeThreshold 0.4)`; a trigger with no saved override shows its label only. */
+function detailLabel(detail: AtlasInstancedDetail): string {
+	const parameters = detail.parameters ?? [];
+	return parameters.length === 0
+		? detail.label
+		: `${detail.label} (${parameters.map(parameterLabel).join(", ")})`;
+}
 
 type FailureParts = {
 	readonly summary: string;
@@ -80,17 +129,52 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		undefined
 	);
 	const [selectedKey, setSelectedKey] = createSignal<string | null>(null);
+	const [view, setView] = createSignal<AtlasView>({ kind: "all" });
+	const [conflictFilter, setConflictFilter] = createSignal<ConflictFilter>("contested");
 
-	const report = () => {
+	const scannedReport = () => {
 		const current = state();
 		return current.status === "ready" ? current.report : undefined;
 	};
+	const analysis = () => {
+		const current = state();
+		return current.status === "ready" ? current.analysis : undefined;
+	};
+
+	const platformView = createMemo(() => {
+		const current = view();
+		return current.kind === "platform"
+			? analysis()?.platforms.find((entry) => entry.platform === current.platform)
+			: undefined;
+	});
+	const keyProfiles = createMemo(() => {
+		const current = scannedReport();
+		return current ? inputKeyProfiles(current) : [];
+	});
+
+	// A key profile swaps in its override mappings; a platform swaps redirected contexts.
+	const report = createMemo(() => {
+		const current = scannedReport();
+		const selectedView = view();
+		if (!current) return undefined;
+		return selectedView.kind === "profile"
+			? reportForKeyProfile(current, selectedView.profileId)
+			: current;
+	});
+	const viewContexts = createMemo(() => {
+		const current = report();
+		const platform = platformView();
+		return current && platform ? platformContextPaths(current, platform.redirects) : undefined;
+	});
 
 	// The unfiltered atlas answers "which contexts exist"; the filtered one drives the diagram,
 	// so deselecting a context can resolve a contest in front of you.
 	const fullAtlas = createMemo(() => {
 		const current = report();
-		return current ? buildInputAtlas(current) : undefined;
+		const contexts = viewContexts();
+		return current
+			? buildInputAtlas(current, contexts === undefined ? undefined : { contexts })
+			: undefined;
 	});
 
 	const contextPaths = createMemo(
@@ -102,19 +186,43 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		return selected === undefined ? true : selected.has(objectPath);
 	};
 
+	const activeContexts = createMemo(() => {
+		const selected = selectedContexts();
+		return selected === undefined
+			? contextPaths()
+			: contextPaths().filter((path) => selected.has(path));
+	});
+
 	const atlas = createMemo(() => {
 		const current = report();
 		if (!current) return undefined;
-		const selected = selectedContexts();
-		return buildInputAtlas(
-			current,
-			selected === undefined
-				? undefined
-				: {
-						contexts: contextPaths().filter((path) => selected.has(path))
-					}
-		);
+		return buildInputAtlas(current, { contexts: activeContexts() });
 	});
+
+	// Co-activation sets come from the host; a host that resolved none still has the scan's config
+	// assets. A platform view keeps its sets and follows its redirects.
+	const coActivationSets = createMemo(() => {
+		const current = scannedReport();
+		if (!current) return [];
+		const sets = analysis()?.coActivation.sets ?? coActivationFromConfigAssets(current);
+		const platform = platformView();
+		return platform === undefined
+			? sets
+			: redirectCoActivationSets(
+					coActivationForPlatform(sets, platform.platform),
+					platform.redirects
+				);
+	});
+
+	const conflicts = createMemo(() => {
+		const current = report();
+		return current
+			? classifyInputConflicts(current, coActivationSets(), { contexts: activeContexts() })
+			: undefined;
+	});
+
+	const conflictKey = (key: string): InputConflictKey | undefined =>
+		conflicts()?.keys.find((entry) => entry.key === key);
 
 	const toggleContext = (objectPath: string) => {
 		const paths = contextPaths();
@@ -124,6 +232,12 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 			else next.add(objectPath);
 			return next.size === paths.length ? undefined : next;
 		});
+	};
+
+	// Changing the view changes which contexts exist, so the context chips start over.
+	const chooseView = (next: AtlasView) => {
+		setView(next);
+		setSelectedContexts(undefined);
 	};
 
 	const invertContexts = () => {
@@ -148,9 +262,16 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 
 	const applyResult = (result: EnhancedInputRunResult) => {
 		if (result.status === "completed") {
-			setState({ status: "ready", report: result.report, projectRoot: result.projectRoot });
+			setState({
+				status: "ready",
+				report: result.report,
+				projectRoot: result.projectRoot,
+				analysis: result.analysis
+			});
 			setActiveProject(result.projectRoot);
 			setSelectedContexts(undefined);
+			setView({ kind: "all" });
+			setConflictFilter("contested");
 			const first = buildInputAtlas(result.report).contestedKeys[0];
 			setSelectedKey(first ?? buildInputAtlas(result.report).keys[0]?.key ?? null);
 		} else if (result.status === "failed") {
@@ -182,7 +303,12 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		return current === undefined ? undefined : findAtlasKey(current, key);
 	};
 	const isBound = (key: string): boolean => (atlasKey(key)?.claims.length ?? 0) > 0;
-	const isContested = (key: string): boolean => atlasKey(key)?.contested === true;
+	// The class filter narrows which contested keys stand out; "contested" is the base claim.
+	const isContested = (key: string): boolean => {
+		if (atlasKey(key)?.contested !== true) return false;
+		const filter = conflictFilter();
+		return filter === "contested" || (conflictKey(key)?.classes.includes(filter) ?? false);
+	};
 	const isSelected = (key: string): boolean => selectedKey() === key;
 
 	function Cap(props: { readonly cap: KeyboardCap }) {
@@ -359,6 +485,109 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 								</Show>
 							</div>
 
+							<div {...stylex.attrs(styles.toolbar)}>
+								<Show
+									when={
+										(analysis()?.platforms.length ?? 0) > 0 ||
+										keyProfiles().length > 0
+									}
+								>
+									<label {...stylex.attrs(styles.viewLabel)}>
+										View within this project
+										<select
+											aria-label="View within this project"
+											value={viewValue(view())}
+											onChange={(event) =>
+												chooseView(parseView(event.currentTarget.value))
+											}
+											{...stylex.attrs(styles.select)}
+										>
+											<option value="all">All mapping contexts</option>
+											<For each={analysis()?.platforms ?? []}>
+												{(platform) => (
+													<option value={`platform:${platform.platform}`}>
+														Platform: {platform.platform}
+														{platform.status === "resolved"
+															? ""
+															: ` (${platform.status})`}
+													</option>
+												)}
+											</For>
+											<For each={keyProfiles()}>
+												{(profile) => (
+													<option value={`profile:${profile}`}>
+														Key profile: {profile}
+													</option>
+												)}
+											</For>
+										</select>
+									</label>
+								</Show>
+								<div
+									role="group"
+									aria-label="Conflict class"
+									{...stylex.attrs(styles.filterGroup)}
+								>
+									<button
+										type="button"
+										aria-pressed={
+											conflictFilter() === "contested" ? "true" : "false"
+										}
+										onClick={() => setConflictFilter("contested")}
+										{...stylex.attrs(
+											styles.contextChip,
+											conflictFilter() === "contested" && styles.contextChipOn
+										)}
+									>
+										All contested
+										<span {...stylex.attrs(styles.chipCount)}>
+											{current().contestedKeys.length}
+										</span>
+									</button>
+									<Show when={conflicts()?.classified === true}>
+										<For each={INPUT_CONFLICT_CLASSES}>
+											{(name) => (
+												<button
+													type="button"
+													aria-pressed={
+														conflictFilter() === name ? "true" : "false"
+													}
+													onClick={() => setConflictFilter(name)}
+													{...stylex.attrs(
+														styles.contextChip,
+														conflictFilter() === name &&
+															styles.contextChipOn
+													)}
+												>
+													{conflictClassLabels[name]}
+													<span {...stylex.attrs(styles.chipCount)}>
+														{conflicts()?.counts[name] ?? 0}
+													</span>
+												</button>
+											)}
+										</For>
+									</Show>
+								</div>
+								<span {...stylex.attrs(styles.spacer)} />
+								<span {...stylex.attrs(styles.chipQuiet)}>
+									<Show
+										when={conflicts()?.classified === true}
+										fallback="No co-activation source, so only contested keys are claimed"
+									>
+										{plural(
+											coActivationSets().length,
+											"co-activation set",
+											"co-activation sets"
+										)}
+									</Show>
+								</span>
+							</div>
+							<Show when={platformView()?.diagnostics.length}>
+								<p {...stylex.attrs(styles.notice)}>
+									{platformView()?.diagnostics.join(" ")}
+								</p>
+							</Show>
+
 							<div {...stylex.attrs(styles.devices)}>
 								<div {...stylex.attrs(styles.device)}>
 									<svg
@@ -466,7 +695,15 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 								</div>
 							</div>
 
-							<KeyDetail selected={selected()} selectedKey={selectedKey()} />
+							<KeyDetail
+								selected={selected()}
+								selectedKey={selectedKey()}
+								conflicts={
+									selectedKey() === null
+										? undefined
+										: conflictKey(selectedKey() ?? "")
+								}
+							/>
 
 							<p {...stylex.attrs(styles.footer)}>
 								{plural(
@@ -495,6 +732,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 function KeyDetail(props: {
 	readonly selected: AtlasKey | undefined;
 	readonly selectedKey: string | null;
+	readonly conflicts: InputConflictKey | undefined;
 }) {
 	// A key with no claim is absent from the atlas entirely, so the detail falls back to the
 	// selected name: "nothing binds this" is an answer, not an empty panel.
@@ -540,7 +778,7 @@ function KeyDetail(props: {
 											{claim.actionName ?? "No action"}
 										</span>
 										<span {...stylex.attrs(styles.claimTags)}>
-											<For each={claim.triggers}>
+											<For each={claim.triggerDetails.map(detailLabel)}>
 												{(trigger) => (
 													<span {...stylex.attrs(styles.tag)}>
 														{trigger}
@@ -557,7 +795,7 @@ function KeyDetail(props: {
 													No trigger
 												</span>
 											</Show>
-											<For each={claim.modifiers}>
+											<For each={claim.modifierDetails.map(detailLabel)}>
 												{(modifier) => (
 													<span {...stylex.attrs(styles.tagQuiet)}>
 														{modifier}
@@ -571,6 +809,29 @@ function KeyDetail(props: {
 									</div>
 								)}
 							</For>
+						</Show>
+						<Show when={(props.conflicts?.conflicts.length ?? 0) > 0}>
+							<div {...stylex.attrs(styles.conflictList)}>
+								<For each={props.conflicts?.conflicts ?? []}>
+									{(conflict) => (
+										<div {...stylex.attrs(styles.claim)}>
+											<span {...stylex.attrs(styles.classTag)}>
+												{conflictClassLabels[conflict.classification]}
+											</span>
+											<span {...stylex.attrs(styles.claimContext)}>
+												{conflict.claims[0].contextName} ·{" "}
+												{conflict.claims[1].contextName}
+											</span>
+											<span {...stylex.attrs(styles.claimText)}>
+												{conflict.reason}
+												{conflict.setId === null
+													? ""
+													: ` Set: ${conflict.setId}.`}
+											</span>
+										</div>
+									)}
+								</For>
+							</div>
 						</Show>
 					</>
 				)}
@@ -762,6 +1023,46 @@ const styles = stylex.create({
 	capSelected: { borderColor: tokens.colorTextStrong },
 	otherKeys: { display: "flex", flexDirection: "column", gap: 4, marginTop: 8 },
 	otherLabel: { color: tokens.colorTextSubtle, fontSize: 11 },
+	conflictList: {
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		display: "flex",
+		flexDirection: "column",
+		gap: 5,
+		marginTop: 6,
+		paddingTop: 8
+	},
+	classTag: {
+		borderColor: tokens.colorWarning,
+		borderRadius: tokens.radiusBadge,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorWarning,
+		fontSize: 11,
+		minWidth: 110,
+		padding: "1px 6px",
+		textAlign: "center"
+	},
+	viewLabel: {
+		alignItems: "center",
+		color: tokens.colorTextFaint,
+		display: "inline-flex",
+		fontSize: 11,
+		gap: 6
+	},
+	select: {
+		backgroundColor: tokens.colorSurfaceInset,
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusControl,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorText,
+		fontFamily: tokens.fontBody,
+		fontSize: 11,
+		padding: "3px 6px"
+	},
+	filterGroup: { alignItems: "center", display: "inline-flex", flexWrap: "wrap", gap: 6 },
 	detail: {
 		borderTopColor: tokens.colorBorder,
 		borderTopStyle: "solid",

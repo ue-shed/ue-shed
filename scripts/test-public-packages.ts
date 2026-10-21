@@ -806,6 +806,8 @@ try {
 			"import * as mapHistory from '@ue-shed/map-history';",
 			"import { MapHistoryQuery } from '@ue-shed/map-history/contract';",
 			"import { mapHistoryPlaybackFrameAt } from '@ue-shed/map-history/playback';",
+			"import { diffSavedWorldSnapshots } from '@ue-shed/map-history/diff';",
+			"if (typeof diffSavedWorldSnapshots !== 'function') throw new Error('missing Map History diff');",
 			"if (typeof mapHistory.readPerforceMapHistory !== 'function') throw new Error('missing Map History service');",
 			"if (MapHistoryQuery === undefined) throw new Error('missing Map History contract');",
 			"const frame = mapHistoryPlaybackFrameAt({",

@@ -9,6 +9,7 @@ import type { ActorIdentity, MapChange, MapHistoryDiagnostic, MapSnapshotDiff } 
 const ZERO_GUID = /^0{8}-0{8}-0{8}-0{8}$/;
 const QUATERNION_ORIENTATION_DOT_TOLERANCE = 1e-12;
 
+/** An actor's identity across snapshots: its actor GUID when set, else its package and path. */
 export function actorIdentityOf(actor: SavedWorldActor): ActorIdentity {
 	if (actor.actorGuid !== undefined && !ZERO_GUID.test(actor.actorGuid)) {
 		return { actorGuid: actor.actorGuid, kind: "actor_guid" };
@@ -20,6 +21,7 @@ export function actorIdentityOf(actor: SavedWorldActor): ActorIdentity {
 	};
 }
 
+/** A stable string key for an actor identity, for maps and sets. */
 export function actorIdentityKey(identity: ActorIdentity): string {
 	return identity.kind === "actor_guid"
 		? `guid:${identity.actorGuid}`
@@ -52,6 +54,7 @@ function indexActors(actors: readonly SavedWorldActor[]): ActorIndex {
 	return { actors: indexed, identities, ambiguous };
 }
 
+/** Whether two saved transforms are equal; rotations compare by orientation, not raw values. */
 export function savedWorldTransformsEqual(
 	before: SavedWorldTransform,
 	after: SavedWorldTransform
@@ -200,6 +203,10 @@ function compareMatchedActor(
 	return changes;
 }
 
+/**
+ * Semantic actor changes between two saved world snapshots, matched by `actorIdentityOf`.
+ * Actors whose identity is ambiguous in either snapshot are reported as diagnostics, not changes.
+ */
 export function diffSavedWorldSnapshots(before: SavedWorld, after: SavedWorld): MapSnapshotDiff {
 	const beforeIndex = indexActors(before.actors);
 	const afterIndex = indexActors(after.actors);

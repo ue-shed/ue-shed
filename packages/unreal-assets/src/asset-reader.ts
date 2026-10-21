@@ -34,7 +34,15 @@ import {
 
 export const MAX_PROTOCOL_OUTPUT_BYTES = 10 * 1024 * 1024 * 1024;
 export const MAX_CAPTURED_STDERR_BYTES = 64 * 1024 * 1024;
+/**
+ * Default reader request timeout in milliseconds when `AssetReaderConfiguration.timeoutMs` is
+ * omitted. Applies to single-package and bounded project reads.
+ */
 export const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * Default timeout in milliseconds for project-wide catalog and saved-world reads when no
+ * `catalogTimeoutMs` is configured: 50 minutes, sized for large projects on a cold disk.
+ */
 export const DEFAULT_CATALOG_TIMEOUT_MS = 50 * 60_000;
 
 export const assetReaderQueueDuration = Metric.histogram("ue_shed_asset_reader_queue_duration_ms", {

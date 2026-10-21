@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import { InvestigationError } from "./investigation.js";
 
+/** Largest investigation preset file, in bytes, that `readInvestigationPresetJson` reads: 4 MiB. */
+export const INVESTIGATION_PRESET_MAX_BYTES = 4 * 1024 * 1024;
+/** Largest investigation export, in bytes, that `writeInvestigationFile` writes: 512 MiB. */
+export const INVESTIGATION_EXPORT_MAX_BYTES = 512 * 1024 * 1024;
+
 /**
  * Reads at most 4 MiB and parses investigation preset JSON with an owned file handle. Returns
  * untrusted JSON for domain validation; closes the handle on success or failure.
@@ -14,7 +19,7 @@ export const readInvestigationPresetJson = Effect.fn("Investigation.readPreset")
 		try: async () => {
 			const file = await open(path, "r");
 			try {
-				const limit = 4 * 1024 * 1024;
+				const limit = INVESTIGATION_PRESET_MAX_BYTES;
 				const bytes = Buffer.alloc(limit + 1);
 				let count = 0;
 				while (count < bytes.length) {
@@ -50,7 +55,7 @@ export const writeInvestigationFile = Effect.fn("Investigation.writeFile")(funct
 ) {
 	return yield* Effect.tryPromise({
 		try: async () => {
-			if (Buffer.byteLength(contents) > 512 * 1024 * 1024)
+			if (Buffer.byteLength(contents) > INVESTIGATION_EXPORT_MAX_BYTES)
 				throw new Error("Export exceeds 512 MiB.");
 			const temporary = `${path}.${randomUUID()}.tmp`;
 			try {

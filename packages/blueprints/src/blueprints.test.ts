@@ -292,6 +292,13 @@ describe("saved Blueprint tools", () => {
 			searchBlueprint({ blueprint: blueprint([graph(nodes.slice(0, -1))]), query: "match" })
 				.truncated
 		).toBe(false);
+		const capped = searchBlueprint({
+			blueprint: blueprint([graph(nodes)]),
+			query: "match",
+			maximumHits: 3
+		});
+		expect(capped.hits).toHaveLength(3);
+		expect(capped.truncated).toBe(true);
 	});
 
 	it("keeps definition and opaque metadata gaps distinct from missing topology", () => {

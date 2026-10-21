@@ -1038,6 +1038,62 @@ pub(crate) fn inventory_retains_package_and_sidecar_signatures<C: CatalogSnapsho
     assert!(matches!(page, Err(CatalogError::StaleGeneration { .. })));
 }
 
+pub(crate) fn deleting_only_a_sidecar_drops_its_signature<C: CatalogSnapshot>(
+    make: impl Fn() -> C,
+) {
+    let mut catalog = make();
+    let mut scanner = refresh_fixture();
+    let path = scanner
+        .entries
+        .iter()
+        .find(|entry| entry.kind == EntryKind::Package)
+        .unwrap()
+        .relative_path
+        .clone();
+    let sidecar_path = format!("{}.uexp", path.rsplit_once('.').unwrap().0);
+    scanner
+        .entries
+        .push(sidecar(&sidecar_path, 123, 456_000_000));
+    refresh(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .unwrap();
+    // No package changes or disappears, so only the sidecar's removal differs.
+    scanner
+        .entries
+        .retain(|entry| entry.relative_path != sidecar_path);
+    let events = refresh(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .unwrap();
+    let summary = completed_summary(&events);
+    assert_eq!((summary.changed_packages, summary.removed_packages), (0, 0));
+    assert!(
+        !catalog
+            .committed_relative_paths()
+            .unwrap()
+            .contains(&sidecar_path)
+    );
+    let inventory = collect_pages(&catalog, summary.generation, QueryKind::Inventory, 100);
+    let QueryItem::Inventory { signature, .. } = inventory
+        .iter()
+        .find(|item| item_path(item) == path)
+        .unwrap()
+    else {
+        panic!("inventory row")
+    };
+    let stamps: serde_json::Value = serde_json::from_str(signature).unwrap();
+    assert!(stamps[1].is_null(), "stale sidecar stamp: {stamps}");
+}
+
 macro_rules! catalog_conformance_tests {
     ($module:ident, $make:expr) => {
         mod $module {
@@ -1048,6 +1104,11 @@ macro_rules! catalog_conformance_tests {
             #[test]
             fn inventory_retains_package_and_sidecar_signatures() {
                 conformance::inventory_retains_package_and_sidecar_signatures($make);
+            }
+
+            #[test]
+            fn deleting_only_a_sidecar_drops_its_signature() {
+                conformance::deleting_only_a_sidecar_drops_its_signature($make);
             }
 
             #[test]

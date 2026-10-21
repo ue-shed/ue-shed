@@ -121,6 +121,7 @@ export type {
 } from "./asset-reader.js";
 export {
 	batchProtocolPaths,
+	batchStagedProtocolPaths,
 	MAX_PROTOCOL_PATH_BYTES,
 	MAX_PROTOCOL_REQUEST_BYTES
 } from "./protocol-request-limit.js";

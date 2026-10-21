@@ -79,9 +79,10 @@ export interface PackageTextRefreshInput<E, R> {
 		paths: readonly string[]
 	) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, E, R>;
 	/**
-	 * A staged read (`GameTextIndexSource.stage`) for cold imports: the reader writes the records
-	 * of `paths[i]` to `<directory>/<groups[i]>.ndjson`, so they never pass through this thread.
-	 * Workers make their paths relative to `projectRoot` and mount them, as `read` does.
+	 * A staged read (`GameTextIndexSource.stage`) for cold imports: the reader writes the record
+	 * of `paths[i]` to a file of group `groups[i]` under `directory` and names that file in its
+	 * event, so records never pass through this thread. Workers make their paths relative to
+	 * `projectRoot` and mount them, as `read` does.
 	 */
 	readonly stage?: {
 		readonly projectRoot: string;
@@ -89,7 +90,7 @@ export interface PackageTextRefreshInput<E, R> {
 			paths: readonly string[],
 			directory: string,
 			groups: readonly number[]
-		) => Stream.Stream<{ readonly path: string }, E, R>;
+		) => Stream.Stream<{ readonly path: string; readonly file: string }, E, R>;
 	};
 }
 
@@ -409,6 +410,8 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		const groups = stage
 			? Array.from({ length: PACKAGE_TEXT_SHARDS }, (_, shard) => [shardName(shard)])
 			: undefined;
+		// Each group's staged files, in the order the reader first wrote to them.
+		const groupFiles = Array.from({ length: PACKAGE_TEXT_SHARDS }, () => new Set<string>());
 		if (stage && groups) {
 			// The reader writes each group's records; unselected packages have none to write.
 			for (const shard of changed)
@@ -422,7 +425,12 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 						directory,
 						paths.map((path) => packageTextShard(path))
 					)
-					.pipe(Stream.runForEach((event) => receive(event.path)));
+					.pipe(
+						Stream.runForEach((event) => {
+							groupFiles[packageTextShard(event.path)]!.add(event.file);
+							return receive(event.path);
+						})
+					);
 		} else {
 			for (const shard of changed)
 				for (const { entry, selected } of shard.entries) {
@@ -484,7 +492,13 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 				stagingRoot: directory,
 				workers,
 				...(stage && groups
-					? { staged: { projectRoot: stage.projectRoot, groups } }
+					? {
+							staged: {
+								projectRoot: stage.projectRoot,
+								groups,
+								files: groupFiles.map((files) => [...files])
+							}
+						}
 					: undefined)
 			},
 			selection

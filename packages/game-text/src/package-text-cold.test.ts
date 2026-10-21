@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Stream } from "effect";
@@ -149,19 +149,31 @@ describe("cold package refresh", () => {
 									groups: readonly number[]
 								) => {
 									reads.push("stage");
+									// Two reader requests, each in its own directory, so every
+									// group with two or more packages spans two files.
+									const fileOf = (row: number) =>
+										join(directory, String(row % 2), `${groups[row]}.ndjson`);
 									return Stream.fromEffect(
 										Effect.promise(async () => {
+											await mkdir(join(directory, "0"));
+											await mkdir(join(directory, "1"));
 											// Out of order and absolute, as the reader writes them.
 											for (let row = paths.length - 1; row >= 0; row--)
 												await appendFile(
-													join(directory, `${groups[row]}.ndjson`),
+													fileOf(row),
 													`${JSON.stringify({ ...record(paths[row]!), path: join(root, paths[row]!) })}
 `
 												);
 										})
 									).pipe(
-										Stream.flatMap(() => Stream.fromIterable(paths)),
-										Stream.map((path) => ({ path }))
+										Stream.flatMap(() =>
+											Stream.fromIterable(
+												paths.map((path, row) => ({
+													path,
+													file: fileOf(row)
+												}))
+											)
+										)
 									);
 								}
 							}

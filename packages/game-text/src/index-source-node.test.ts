@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, writeFile, stat, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, stat, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { expect, it } from "vitest";
 import {
 	makeAssetReaderTestLayer,
@@ -17,6 +17,10 @@ import {
 import { GameTextIndexSource } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer, packageTextReadBatches } from "./index-source-node.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
+
+const StagedLine = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ path: Schema.String }))
+);
 
 it("preserves the Project Index failure and its recovery decision", async () => {
 	const cause = new ProjectIndexUnavailable({
@@ -333,3 +337,116 @@ it("batches a whole project so each reader request fits the frame limit", () => 
 	expect(packageTextReadBatches(entries.slice(0, 3))).toEqual([entries.slice(0, 3)]);
 	expect(packageTextReadBatches([])).toEqual([]);
 });
+
+it("stages a group split across reader requests into one exclusive file per request", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-staged-batches-"));
+	try {
+		// About 1 KiB per path, so a few thousand fill a request and one group straddles two.
+		const folder = Array.from({ length: 5 }, (_, depth) => `Folder${depth}_${"x".repeat(190)}`);
+		const entries = Array.from({ length: 6_000 }, (_, row) => ({
+			path: `Content/${folder.join("/")}/Package_${String(row).padStart(8, "0")}.uasset`,
+			signature: "[null,null,null,null]"
+		}));
+		const groups = entries.map((_, row) => Math.floor((row * 256) / entries.length));
+		const requests: { directory: string; groups: readonly number[] }[] = [];
+		const reader = makeAssetReaderTestLayer({
+			configuration: () =>
+				Effect.succeed({
+					executable: "uasset",
+					timeoutMs: 30_000,
+					catalogTimeoutMs: 60_000
+				}),
+			catalogProgress: () => Effect.die("unused"),
+			scanProgress: () => Effect.die("unused"),
+			savedWorldProgress: () => Effect.die("unused"),
+			readBlueprint: () => Effect.die("unused"),
+			readLevelSequence: () => Effect.die("unused"),
+			readSavedWorld: () => Effect.die("unused"),
+			extractProjectText: () => Stream.die("unused"),
+			extractProjectTextures: () => Stream.die("unused"),
+			discoverAssets: () => Effect.die("unused"),
+			discoverTables: () => Effect.die("unused"),
+			readAsset: () => Effect.die("unused"),
+			readTable: () => Effect.die("unused"),
+			source: () => Effect.succeed("configured"),
+			scanProject: () => Effect.die("unused"),
+			extractProjectTextPackages: () => Stream.die("unused"),
+			// As the native reader does: each group file of a request is created exclusively.
+			stageProjectTextPackages: (request) => {
+				requests.push(request.staging);
+				return Stream.fromEffect(
+					Effect.promise(async () => {
+						const lines = new Map<number, string[]>();
+						for (const [row, path] of request.paths.entries()) {
+							const group = request.staging.groups[row]!;
+							lines.set(group, [
+								...(lines.get(group) ?? []),
+								JSON.stringify({ path: join(root, path) })
+							]);
+						}
+						for (const [group, text] of lines)
+							await writeFile(
+								join(request.staging.directory, `${group}.ndjson`),
+								`${text.join("\n")}\n`,
+								{ flag: "wx" }
+							);
+					})
+				).pipe(
+					Stream.flatMap(() =>
+						Stream.fromIterable(
+							request.paths.map((path, row) => ({
+								event: "text_package_staged" as const,
+								path: join(root, path),
+								group: request.staging.groups[row]!,
+								bytes: 1
+							}))
+						)
+					)
+				);
+			}
+		});
+		const catalog = makeProjectIndexTestLayer({
+			rebuild: () => Stream.die("unused"),
+			refresh: () => Stream.die("unused"),
+			status: () => Effect.die("unused"),
+			query: () => Effect.die("unused")
+		});
+		const source = gameTextIndexSourceNodeLayer(root).pipe(
+			Layer.provide(Layer.merge(catalog, reader))
+		);
+		const directory = join(root, "staging");
+		await mkdir(directory);
+		const events = await Effect.runPromise(
+			Effect.gen(function* () {
+				const service = yield* GameTextIndexSource;
+				return Array.from(
+					yield* Stream.runCollect(service.stage!(root, entries, { directory, groups }))
+				);
+			}).pipe(Effect.provide(source))
+		);
+
+		expect(requests.length).toBeGreaterThan(1);
+		expect(new Set(requests.map((request) => request.directory)).size).toBe(requests.length);
+		const split = requests[0]!.groups.at(-1)!;
+		expect(requests[1]!.groups[0]).toBe(split);
+		expect(events.map((event) => event.path)).toEqual(entries.map((entry) => entry.path));
+		// Every group's files together hold exactly its packages, each once.
+		const files = new Map<number, Set<string>>();
+		for (const [row, event] of events.entries())
+			files.set(groups[row]!, (files.get(groups[row]!) ?? new Set()).add(event.file));
+		expect(files.get(split)!.size).toBe(2);
+		for (const [group, groupFiles] of files) {
+			const staged: string[] = [];
+			for (const file of groupFiles)
+				for (const line of (await readFile(file, "utf8")).split("\n").filter(Boolean))
+					staged.push(StagedLine(line).path);
+			expect(staged).toEqual(
+				entries.flatMap((entry, row) =>
+					groups[row] === group ? [join(root, entry.path)] : []
+				)
+			);
+		}
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+}, 60_000);

@@ -1,5 +1,4 @@
 import { parentPort } from "node:worker_threads";
-import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { Exit, Schema } from "effect";
@@ -26,11 +25,12 @@ const ShardRequest = Schema.Struct({
 	expected: Expected
 });
 /**
- * The shards of one reader staging group: `input` holds the reader's own record lines for the
- * group's selected packages, still absolute and unmounted; unselected packages have no line.
+ * The shards of one reader staging group: `files` together hold the reader's own record lines
+ * for the group's selected packages, still absolute and unmounted; unselected packages have no
+ * line. A group read in several requests has one file per request.
  */
 const GroupRequest = Schema.Struct({
-	group: Schema.String,
+	files: Schema.Array(Schema.String),
 	projectRoot: Schema.String,
 	prepareStrings: Schema.Boolean,
 	shards: Schema.Array(
@@ -111,8 +111,8 @@ async function convertGroup(request: typeof GroupRequest.Type) {
 		relative(request.projectRoot, resolve(request.projectRoot, path)).replaceAll("\\", "/");
 	// Lines stay text until their shard converts, so a group never holds every parsed record.
 	const lines = new Map<string, string>();
-	if (existsSync(request.group))
-		for await (const line of packageTextJsonLines(request.group)) {
+	for (const file of request.files)
+		for await (const line of packageTextJsonLines(file)) {
 			const path = relativePath(stagedLinePath(line));
 			if (lines.has(path))
 				throw snapshotFailure("package-text.read", "Unexpected or duplicate package");
@@ -150,7 +150,7 @@ async function convertGroup(request: typeof GroupRequest.Type) {
 parentPort?.on("message", async (message: typeof Request.Encoded) => {
 	try {
 		const request = Schema.decodeUnknownSync(Request)(message);
-		if ("group" in request) {
+		if ("files" in request) {
 			parentPort?.postMessage({ ok: true, shards: await convertGroup(request) });
 			return;
 		}

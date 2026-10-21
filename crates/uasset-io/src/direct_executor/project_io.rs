@@ -2654,6 +2654,59 @@ mod tests {
     }
 
     #[test]
+    fn a_group_split_across_requests_needs_a_directory_per_request() {
+        let cancellation = CancellationToken::new();
+        let root = std::env::temp_dir().join(format!(
+            "ue-shed-staged-split-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let stage = |paths: std::ops::Range<usize>, directory: &std::path::Path| {
+            std::fs::create_dir_all(directory).unwrap();
+            let mut request = text_projection_request(true);
+            request.contract.version.minor = 19;
+            let crate::protocol::Operation::ExtractTextPackages { selection, staging } =
+                &mut request.operation
+            else {
+                unreachable!("package text request");
+            };
+            let requested = selection.paths.as_mut().expect("explicit paths");
+            *requested = requested[paths].to_vec();
+            *staging = Some(crate::protocol::PackageTextStaging {
+                directory: directory.to_string_lossy().into_owned(),
+                groups: vec![5; requested.len()],
+            });
+            let mut staged = 0;
+            super::extract_text_streaming(&request, &cancellation, &mut |event| {
+                if let super::ProjectionStreamEvent::Result(_) = event {
+                    staged += 1;
+                }
+                Ok(())
+            })
+            .map(|_| staged)
+        };
+        let lines = |directory: &std::path::Path| {
+            std::fs::read(directory.join("5.ndjson"))
+                .unwrap()
+                .split_inclusive(|byte| *byte == b'\n')
+                .count()
+        };
+        // One group read in two requests: each request creates its own file for the group.
+        assert_eq!(stage(0..1, &root.join("0")).unwrap(), 1);
+        assert_eq!(stage(1..3, &root.join("1")).unwrap(), 2);
+        assert_eq!(lines(&root.join("0")) + lines(&root.join("1")), 3);
+        // Reusing a request's directory is refused instead of overwriting or mixing its lines.
+        let failure = stage(1..3, &root.join("0")).unwrap_err();
+        assert_eq!(failure.code, "staging");
+        assert!(failure.message.contains("could not create a staging file"));
+        assert_eq!(lines(&root.join("0")), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn text_records_name_the_main_asset_class() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
         let class = |path: &str| {

@@ -31,12 +31,13 @@ export interface ColdPackageTextInput {
 	readonly workers?: readonly Worker[];
 	/**
 	 * The reader staged the selected packages' records itself (`GameTextIndexSource.stage`):
-	 * `recordDirectory/<g>.ndjson` holds group `g`'s lines, and `groups[g]` names its shards.
+	 * the files `files[g]` together hold group `g`'s lines, and `groups[g]` names its shards.
 	 * Each group is converted by one worker, which also adds the unselected packages.
 	 */
 	readonly staged?: {
 		readonly projectRoot: string;
 		readonly groups: readonly (readonly string[])[];
+		readonly files: readonly (readonly string[])[];
 	};
 }
 
@@ -128,10 +129,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 										{
 											shards,
 											message: {
-												group: join(
-													input.recordDirectory,
-													`${group}.ndjson`
-												),
+												files: [...(input.staged!.files[group] ?? [])],
 												projectRoot: input.staged!.projectRoot,
 												prepareStrings,
 												shards: shards.map((shard) => ({

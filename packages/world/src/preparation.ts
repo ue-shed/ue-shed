@@ -3,6 +3,7 @@ import {
 	Cause,
 	Context,
 	Deferred,
+	Duration,
 	Effect,
 	Exit,
 	Layer,
@@ -156,13 +157,21 @@ export interface WorldPreparationApi {
 export class WorldPreparation extends Context.Service<WorldPreparation, WorldPreparationApi>()(
 	"@ue-shed/world/WorldPreparation"
 ) {}
+/**
+ * Host options for world preparation. `requestTimeout` bounds each world preparation call to the
+ * editor (default 30 seconds); raise it for large World Partition maps whose loads take longer.
+ */
+export interface WorldPreparationOptions {
+	readonly requestTimeout?: Duration.Input;
+}
 export const worldPreparationLayer = (
-	endpoint: string
+	endpoint: string,
+	options: WorldPreparationOptions = {}
 ): Layer.Layer<WorldPreparation, never, RemoteControlClient> =>
 	Layer.effect(
 		WorldPreparation,
 		Effect.gen(function* () {
-			return makeWorldPreparation(yield* RemoteControlClient, endpoint);
+			return makeWorldPreparation(yield* RemoteControlClient, endpoint, options);
 		})
 	);
 export const worldPreparationTestLayer = (
@@ -171,8 +180,10 @@ export const worldPreparationTestLayer = (
 
 export function makeWorldPreparation(
 	client: RemoteControlClientApi,
-	endpoint: string
+	endpoint: string,
+	options: WorldPreparationOptions = {}
 ): WorldPreparationApi {
+	const requestTimeout = options.requestTimeout ?? "30 seconds";
 	const execute = Effect.fn("WorldPreparation.execute")(function* (input: WorldRequest) {
 		const request = yield* decode(WorldRequest, input, input.action);
 		yield* Metric.update(operations, request.action);
@@ -217,7 +228,7 @@ export function makeWorldPreparation(
 				functionName: "ExecuteWorldPreparation",
 				parameters: { RequestJson: JSON.stringify(request) },
 				operation: `world.${request.action}`,
-				timeout: "30 seconds"
+				timeout: requestTimeout
 			})
 			.pipe(
 				Effect.mapError((cause) =>
@@ -451,17 +462,24 @@ export function makeWorldPreparation(
 	return WorldPreparation.of({ execute, describe, plan, acquire });
 }
 
-/** Run guarded work and report expected restoration failures without hiding defects or interruption. */
+/**
+ * Run guarded work and report expected restoration failures without hiding defects or interruption.
+ * `leaseOptions` passes a lease ID or duration to `acquire` (default 120 seconds).
+ */
 export const withPreparedWorld = Effect.fn("WorldPreparation.withPreparedWorld")(function* <
 	A,
 	E,
 	R
->(requirements: WorldRequirements, use: (lease: WorldLease) => Effect.Effect<A, E, R>) {
+>(
+	requirements: WorldRequirements,
+	use: (lease: WorldLease) => Effect.Effect<A, E, R>,
+	leaseOptions: { readonly leaseId?: WorldLeaseId; readonly leaseMs?: number } = {}
+) {
 	const outcome = yield* Effect.exit(
 		Effect.scoped(
 			Effect.gen(function* () {
 				const service = yield* WorldPreparation;
-				const lease = yield* service.acquire(requirements);
+				const lease = yield* service.acquire(requirements, leaseOptions);
 				return yield* lease.guard(use(lease));
 			})
 		)

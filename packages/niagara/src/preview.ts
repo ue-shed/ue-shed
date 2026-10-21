@@ -28,6 +28,7 @@ import { Clock, Context, Duration, Effect, Layer, Schema } from "effect";
 import {
 	NiagaraPreviewProducerReceipt,
 	NiagaraPreviewProducerRequest,
+	NIAGARA_PREVIEW_MAXIMUM_TOTAL_PIXELS,
 	NiagaraErrorGuidanceFields as ErrorGuidanceFields,
 	NiagaraPreviewFailure,
 	NiagaraPreviewRunManifest,
@@ -40,7 +41,6 @@ import {
 
 import { submitNiagaraSessionRequest } from "./session.js";
 
-const MAXIMUM_TOTAL_PIXELS = 268_435_456;
 const MAXIMUM_RECEIPT_BYTES = 8 * 1024 * 1024;
 const COMMANDLET_TIMEOUT = Duration.minutes(30);
 
@@ -373,13 +373,13 @@ function validateRenderBudget(
 		frameCount !== undefined &&
 		height !== undefined &&
 		width !== undefined &&
-		frameCount * height * width > MAXIMUM_TOTAL_PIXELS
+		frameCount * height * width > NIAGARA_PREVIEW_MAXIMUM_TOTAL_PIXELS
 	) {
 		return Effect.fail(
 			previewError(
 				"invalid_request",
 				"validation",
-				`The requested preview exceeds the v1 budget of ${MAXIMUM_TOTAL_PIXELS} total pixels.`,
+				`The requested preview exceeds the v1 budget of ${NIAGARA_PREVIEW_MAXIMUM_TOTAL_PIXELS} total pixels.`,
 				"Reduce dimensions or frame count.",
 				false,
 				request.runId
@@ -435,7 +435,8 @@ export function validateReceipt(
 	}
 	if (
 		receipt.frames.length !== effective.frameCount ||
-		effective.frameCount * effective.width * effective.height > MAXIMUM_TOTAL_PIXELS
+		effective.frameCount * effective.width * effective.height >
+			NIAGARA_PREVIEW_MAXIMUM_TOTAL_PIXELS
 	) {
 		return Effect.fail(
 			previewError(

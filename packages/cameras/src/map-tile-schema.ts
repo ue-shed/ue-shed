@@ -15,6 +15,13 @@ const SafeIdentifier = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveFinite = Schema.Finite.check(Schema.isGreaterThan(0));
+
+/**
+ * Most tiles one map-tile capture request, response or progress report carries. The companion
+ * plugin enforces the same bound and advertises it as `maxTilesPerRequest` in its capability
+ * manifest; batch larger tile lists across several requests.
+ */
+export const MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST = 64;
 const Sha256 = Schema.String.check(Schema.isPattern(/^sha256:[a-f0-9]{64}$/u));
 const IsoTimestamp = Schema.String.check(
 	Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u)
@@ -260,7 +267,7 @@ export const MapTileCaptureRequest = Schema.Struct({
 	tilePixelSize: Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 4_096 })),
 	tiles: Schema.Array(MapTileCaptureTileRequest).check(
 		Schema.isMinLength(1),
-		Schema.isMaxLength(64)
+		Schema.isMaxLength(MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST)
 	)
 }).pipe(
 	Schema.check(
@@ -346,7 +353,9 @@ export const MapTileCaptureResponse = Schema.Struct({
 	durationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 	failure: Schema.optionalKey(MapTileCaptureFailure),
 	operationId: MapCaptureOperationId,
-	results: Schema.Array(MapTileCaptureResult).check(Schema.isMaxLength(64)),
+	results: Schema.Array(MapTileCaptureResult).check(
+		Schema.isMaxLength(MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST)
+	),
 	status: Schema.Literals(["completed", "partial", "cancelled", "failed"]),
 	tileCounts: Schema.Struct({
 		failed: NonNegativeInteger,
@@ -376,7 +385,9 @@ export type MapTileCaptureResponse = typeof MapTileCaptureResponse.Type;
 export const MapTileCaptureProgress = Schema.Struct({
 	phase: Schema.Literals(["exposure_warmup", "tile_warmup", "capturing"]),
 	elapsedMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
-	totalTiles: NonNegativeInteger.check(Schema.isLessThanOrEqualTo(64)),
+	totalTiles: NonNegativeInteger.check(
+		Schema.isLessThanOrEqualTo(MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST)
+	),
 	currentTile: Schema.optionalKey(MapTileKeySchema)
 });
 export type MapTileCaptureProgress = typeof MapTileCaptureProgress.Type;
@@ -394,7 +405,9 @@ export const MapTileCaptureOperation = Schema.Union([
 		}).fields,
 		state: Schema.Literal("running"),
 		operationId: MapCaptureOperationId,
-		completedTiles: NonNegativeInteger.check(Schema.isLessThanOrEqualTo(64))
+		completedTiles: NonNegativeInteger.check(
+			Schema.isLessThanOrEqualTo(MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST)
+		)
 	}),
 	Schema.Struct({ state: Schema.Literal("finished"), response: MapTileCaptureResponse })
 ]);

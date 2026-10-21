@@ -108,18 +108,16 @@ function connectionError(
 	});
 }
 
-export const ObservatoryLive = Layer.effect(
+/**
+ * Observatory over the host's Remote Control client and editor window activation. Hosts that own
+ * focus (an Electron shell, a headless run that must never raise a window, or a test) provide
+ * their own `EditorWindowActivation`; `ObservatoryLive` supplies the engine's.
+ */
+export const observatoryLayer = Layer.effect(
 	Observatory,
 	Effect.gen(function* () {
 		const remote = yield* RemoteControlClient;
-		const windowActivation = yield* EditorWindowActivation.pipe(
-			Effect.provide(
-				EditorWindowActivationLive.pipe(
-					Layer.provide(EditorForegroundPermissionLive),
-					Layer.provide(Layer.succeed(RemoteControlClient, remote))
-				)
-			)
-		);
+		const windowActivation = yield* EditorWindowActivation;
 
 		const snapshot = Effect.fn("Observatory.snapshot")(function* (endpoint: string) {
 			const value = yield* remote
@@ -223,6 +221,22 @@ export const ObservatoryLive = Layer.effect(
 		return Observatory.of({ focus, observe, setObservationCadence, snapshot });
 	})
 );
+
+/** `observatoryLayer` with the engine's editor window activation and foreground permission. */
+export const ObservatoryLive: Layer.Layer<Observatory, never, RemoteControlClient> =
+	observatoryLayer.pipe(
+		Layer.provide(
+			EditorWindowActivationLive.pipe(Layer.provide(EditorForegroundPermissionLive))
+		)
+	);
+
+/**
+ * Complete test implementation of the Observatory. The supplied service owns snapshots, focus,
+ * cadence and the observation stream; no editor is contacted.
+ */
+export function makeObservatoryTestLayer(service: ObservatoryApi): Layer.Layer<Observatory> {
+	return Layer.succeed(Observatory, Observatory.of(service));
+}
 
 export * from "./spatial.js";
 export {

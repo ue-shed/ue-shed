@@ -12,8 +12,11 @@
  *
  * Each `<workbench dir>` is a built `apps/workbench` whose checkout has a release reader at
  * `target/release/uasset`. Memory is the working set of that checkout's Electron and reader
- * processes, sampled every 250 ms. `--trace <dir>` also records the main process's spans and
- * main and renderer CPU profiles; tracing slows the run, so traced timings are for profiling only.
+ * processes, sampled every 250 ms. Readiness is checked in the page every 10 ms and timed by
+ * the page's clock, so a timing is not rounded up to the next poll of this process. `--trace
+ * <dir>` also records the main process's spans, main and renderer CPU profiles of the cold scan,
+ * the rescan and the warm reopen, and each run's milestones; tracing slows the run, so traced
+ * timings are for profiling only.
  *
  * pnpm benchmark:game-text-desktop --project <project dir> \
  *   --app before=<dir> --app after=<dir> --runs 3 --output <file>
@@ -89,6 +92,9 @@ interface RunResult {
 	readonly settledBreakdownMiB: Readonly<Record<string, number>>;
 	readonly coldPeakAtMs: number;
 	readonly warmLaunchToUsableMs: number;
+	readonly warmLaunchToIndexReadyMs: number;
+	readonly warmFirstSearch: SearchTiming;
+	readonly warmMainStall: StallReport;
 	readonly warmPeakRssMiB: number;
 	readonly warmSettledRssMiB: number;
 	readonly diskBytes: Readonly<Record<string, number>>;
@@ -395,6 +401,24 @@ async function readRendererLongTasks(page: Page) {
 	return decodeStallReport(await page.evaluate(rendererLongTasksRead));
 }
 
+/** Starts main and renderer CPU profiles; the returned function writes `<prefix>-*.cpuprofile`. */
+async function startProfiles(application: ElectronApplication, page: Page) {
+	const renderer = await page.context().newCDPSession(page);
+	await renderer.send("Profiler.enable");
+	await renderer.send("Profiler.setSamplingInterval", { interval: 500 });
+	await renderer.send("Profiler.start");
+	await application.evaluate(mainProfileStart);
+	return async (prefix: string) => {
+		const { profile } = await renderer.send("Profiler.stop");
+		writeFileSync(`${prefix}-renderer.cpuprofile`, JSON.stringify(profile));
+		await renderer.detach();
+		writeFileSync(
+			`${prefix}-main.cpuprofile`,
+			Schema.decodeUnknownSync(Schema.String)(await application.evaluate(mainProfileStop))
+		);
+	};
+}
+
 const harnessStarted = performance.now();
 function step(text: string) {
 	process.stdout.write(`  [${((performance.now() - harnessStarted) / 1000).toFixed(1)} s] ${text}
@@ -417,41 +441,76 @@ async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number, lab
 						.then((text) => text.replaceAll(/\s+/gu, " ").slice(0, 600))
 						.catch(() => "")
 				: "";
-			step(`still waiting for ${label}: ${lastState} ${seen}`);
+			step(`still waiting for ${label}: ${seen}`);
 		}
 		await new Promise((done) => setTimeout(done, 50));
 	}
 	throw new Error(`Timed out waiting for ${label}`);
 }
 
-async function indexReady(page: Page) {
-	const text = await page.getByRole("main").innerText({ timeout: 1_000 });
-	return /saved maps? indexed/u.test(text);
-}
-
-async function gameTextState(page: Page) {
-	const rescan = page.getByRole("button", { name: "Rescan" });
-	const rescanEnabled = (await rescan.count()) > 0 && (await rescan.first().isEnabled());
-	const status = await page.getByLabel("Index status").innerText({ timeout: 1_000 });
-	const progress = await page.getByLabel("Index status").getByRole("progressbar").count();
-	const count = await countText(page).catch(() => "");
-	return { rescanEnabled, status, progress, count };
-}
-
-async function gameTextUsable(page: Page) {
-	const state = await gameTextState(page);
-	lastState = JSON.stringify(state);
-	// Settled: no scan readout ("… elapsed"), a line count and a search total are shown.
-	return (
-		state.rescanEnabled &&
-		state.progress === 0 &&
-		!/elapsed|Loading translations/u.test(state.status) &&
-		/lines?/u.test(state.status) &&
-		/match/u.test(state.count)
+/**
+ * Settled Game Text, checked in the page: Rescan enabled, no progress or scan readout, a line
+ * count and a search total shown. Resolves to the page's time; with `scan`, a shown "Scan
+ * project" button also ends the wait.
+ */
+const usableInPage = (scan: boolean) => `(() => {
+	const visible = (element) => element && element.getClientRects().length > 0;
+	if (${scan} && [...document.querySelectorAll("button")].some(
+		(button) => button.textContent.trim() === "Scan project" && visible(button)
+	)) return "scan";
+	const status = document.querySelector('[aria-label="Index status"]');
+	const rescan = [...document.querySelectorAll("button[aria-label]")].find((button) =>
+		button.getAttribute("aria-label").includes("Rescan")
 	);
-}
+	if (!status || !rescan || rescan.disabled) return false;
+	if (status.querySelector('[role="progressbar"]')) return false;
+	const text = status.innerText;
+	if (/elapsed|Loading translations/u.test(text) || !/lines?/u.test(text)) return false;
+	let count = document.querySelector('input[aria-label="Search game text"]')?.nextElementSibling;
+	while (count && count.getAttribute("role") !== "status") count = count.nextElementSibling;
+	return count && /match/u.test(count.innerText) ? Date.now() : false;
+})()`;
+const indexReadyInPage = `(() =>
+	/saved maps? indexed/u.test(document.querySelector("main")?.innerText ?? "") ? Date.now() : false
+)()`;
+/**
+ * After the page saw its last Rescan click (recorded by `rescanClickRecorder`), waits until the
+ * route has been busy and is usable again; resolves to the click and the usable time.
+ */
+const rescanClickRecorder = `(() => {
+	window.__ueShedRescan = { clickedAt: undefined, busy: false };
+	document.addEventListener("click", (event) => {
+		const button = event.target instanceof Element ? event.target.closest("button") : null;
+		if (button?.getAttribute("aria-label")?.includes("Rescan"))
+			window.__ueShedRescan = { clickedAt: Date.now(), busy: false };
+	}, true);
+})()`;
+const rescanUsableInPage = `(() => {
+	const rescan = window.__ueShedRescan;
+	if (!rescan || rescan.clickedAt === undefined) return false;
+	const usable = ${usableInPage(false)};
+	if (!usable) rescan.busy = true;
+	return rescan.busy && usable ? { clickedAt: rescan.clickedAt, usableAt: usable } : false;
+})()`;
+const Epoch = Schema.Number;
+const WarmState = Schema.Union([Schema.Number, Schema.Literal("scan")]);
+const RescanTiming = Schema.Struct({ clickedAt: Schema.Number, usableAt: Schema.Number });
 
-let lastState = "";
+/** Polls `script` in the page every 10 ms until it is truthy, and decodes that value. */
+async function inPage<A>(
+	page: Page,
+	script: string,
+	timeoutMs: number,
+	schema: Schema.Codec<A, unknown>
+): Promise<A> {
+	const handle = await page.waitForFunction(script, undefined, {
+		polling: 10,
+		timeout: timeoutMs
+	});
+	const value = Schema.decodeUnknownSync(schema)(await handle.jsonValue());
+	await handle.dispose();
+	return value;
+}
 
 async function lastQueryMs(page: Page): Promise<number | undefined> {
 	const footer = page.getByText(/^Last query \d+ ms$/u);
@@ -467,24 +526,38 @@ async function countText(page: Page) {
 		.innerText({ timeout: 1_000 });
 }
 
+/** The search count's text, and the time of the page's last Enter in the search box. */
+const searchRecorder = `(() => {
+	const input = document.querySelector('input[aria-label="Search game text"]');
+	let count = input?.nextElementSibling;
+	while (count && count.getAttribute("role") !== "status") count = count.nextElementSibling;
+	window.__ueShedSearch = { before: count?.innerText, pressedAt: undefined, searching: false };
+	input?.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") window.__ueShedSearch.pressedAt = Date.now();
+	}, { capture: true, once: true });
+})()`;
+const searchDoneInPage = `(() => {
+	const search = window.__ueShedSearch;
+	if (!search || search.pressedAt === undefined) return false;
+	let count = document.querySelector('input[aria-label="Search game text"]')?.nextElementSibling;
+	while (count && count.getAttribute("role") !== "status") count = count.nextElementSibling;
+	const text = count?.innerText ?? "";
+	if (text === "Searching…") search.searching = true;
+	return /match/u.test(text) && (search.searching || text !== search.before)
+		? { pressedAt: search.pressedAt, doneAt: Date.now() }
+		: false;
+})()`;
+const SearchDone = Schema.Struct({ pressedAt: Schema.Number, doneAt: Schema.Number });
+
 async function timedSearch(page: Page, query: string): Promise<SearchTiming> {
 	const search = page.getByRole("searchbox", { name: "Search game text" });
 	await search.fill(query);
-	const started = performance.now();
+	await page.evaluate(searchRecorder);
 	await search.press("Enter");
-	await waitFor(
-		async () => (await countText(page)) === "Searching…",
-		2_000,
-		"search start"
-	).catch(() => undefined);
-	const finished = await waitFor(
-		async () => /match/u.test(await countText(page)),
-		120_000,
-		`search ${query}`
-	);
+	const timing = await inPage(page, searchDoneInPage, 120_000, SearchDone);
 	return {
 		query,
-		wallMs: finished - started,
+		wallMs: timing.doneAt - timing.pressedAt,
 		reportedMs: await lastQueryMs(page),
 		total: await countText(page)
 	};
@@ -589,6 +662,8 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 	try {
 		await new Promise((done) => setTimeout(done, 1_000));
 		const launchStarted = performance.now();
+		const launchEpoch = Date.now();
+		const milestones = new Map<string, number>([["coldLaunch", launchEpoch]]);
 		const { application, page } = await launch(
 			app,
 			options.projectRoot,
@@ -601,7 +676,8 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 		observedPage = page;
 		const mainPid = application.process().pid;
 		step("launched");
-		const indexReadyAt = await waitFor(() => indexReady(page), 30 * 60_000, "project index");
+		const indexReadyEpoch = await inPage(page, indexReadyInPage, 30 * 60_000, Epoch);
+		milestones.set("coldIndexReady", indexReadyEpoch);
 		step("project index ready");
 		const nav = page.getByRole("complementary", { name: "Workbench" });
 		await nav.getByRole("link", { exact: true, name: "Game Text" }).click();
@@ -617,11 +693,14 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			await application.evaluate(mainProfileStart);
 		}
 		const scanStarted = performance.now();
+		const scanEpoch = Date.now();
+		milestones.set("scanClick", scanEpoch);
 		await scan.click();
 		step("scan clicked");
-		let usableAt: number;
+		let usableEpoch: number;
 		try {
-			usableAt = await waitFor(() => gameTextUsable(page), 60 * 60_000, "cold scan");
+			usableEpoch = await inPage(page, usableInPage(false), 60 * 60_000, Epoch);
+			milestones.set("coldUsable", usableEpoch);
 		} catch (cause) {
 			await page.screenshot({ path: `${options.output}.${app.label}-${run}-failed.png` });
 			throw cause;
@@ -649,13 +728,16 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 		await page.getByRole("searchbox", { name: "Search game text" }).fill("");
 		await startMainStallMonitor(application);
 		const rescan = page.getByRole("button", { name: "Rescan", exact: true });
-		const rescanStarted = performance.now();
+		await page.evaluate(rescanClickRecorder);
+		const stopRescanProfiles =
+			options.trace === undefined ? undefined : await startProfiles(application, page);
 		await rescan.click();
-		await waitFor(async () => !(await rescan.isEnabled()), 10_000, "rescan start").catch(
-			() => undefined
-		);
-		const rescanAt = await waitFor(() => gameTextUsable(page), 30 * 60_000, "rescan");
+		const rescanTiming = await inPage(page, rescanUsableInPage, 30 * 60_000, RescanTiming);
+		milestones.set("rescanClick", rescanTiming.clickedAt);
+		milestones.set("rescanUsable", rescanTiming.usableAt);
 		step("rescan usable");
+		if (stopRescanProfiles && options.trace !== undefined)
+			await stopRescanProfiles(join(options.trace, `${app.label}-${run}-rescan`));
 		const rescanMainStall = await readMainStall(application);
 		const coldEnd = performance.now();
 		await new Promise((done) => setTimeout(done, 2_000));
@@ -671,6 +753,8 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 		// Warm reopen of the same profile and cache.
 		await new Promise((done) => setTimeout(done, 2_000));
 		const warmStarted = performance.now();
+		const warmEpoch = Date.now();
+		milestones.set("warmLaunch", warmEpoch);
 		const warm = await launch(
 			app,
 			options.projectRoot,
@@ -679,21 +763,37 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 				? undefined
 				: join(options.trace, `${app.label}-${run}-warm.log`)
 		);
-		await waitFor(() => indexReady(warm.page), 30 * 60_000, "warm project index");
+		milestones.set("warmWindow", Date.now());
+		await startMainStallMonitor(warm.application);
+		const stopWarmProfiles =
+			options.trace === undefined
+				? undefined
+				: await startProfiles(warm.application, warm.page);
+		const warmIndexReady = await inPage(warm.page, indexReadyInPage, 30 * 60_000, Epoch);
+		milestones.set("warmIndexReady", warmIndexReady);
 		await warm.page
 			.getByRole("complementary", { name: "Workbench" })
 			.getByRole("link", { exact: true, name: "Game Text" })
 			.click();
-		const warmScan = warm.page.getByRole("button", { name: "Scan project", exact: true });
-		const warmUsable = await waitFor(
-			async () => {
-				if ((await warmScan.count()) > 0 && (await warmScan.isVisible()))
-					await warmScan.click();
-				return gameTextUsable(warm.page);
-			},
-			30 * 60_000,
-			"warm usable"
-		);
+		milestones.set("warmNavigate", Date.now());
+		let warmState = await inPage(warm.page, usableInPage(true), 30 * 60_000, WarmState);
+		if (warmState === "scan") {
+			milestones.set("warmScanShown", Date.now());
+			await warm.page.getByRole("button", { name: "Scan project", exact: true }).click();
+			warmState = await inPage(warm.page, usableInPage(false), 30 * 60_000, Epoch);
+		}
+		const warmUsableEpoch = warmState;
+		milestones.set("warmUsable", warmUsableEpoch);
+		const warmUsable = warmStarted + (warmUsableEpoch - warmEpoch);
+		const warmMainStall = await readMainStall(warm.application);
+		if (stopWarmProfiles && options.trace !== undefined)
+			await stopWarmProfiles(join(options.trace, `${app.label}-${run}-warm`));
+		const warmFirstSearch = await timedSearch(warm.page, options.queries[0] ?? "the");
+		if (options.trace !== undefined)
+			writeFileSync(
+				join(options.trace, `${app.label}-${run}-milestones.json`),
+				`${JSON.stringify(Object.fromEntries(milestones), null, "\t")}\n`
+			);
 		await new Promise((done) => setTimeout(done, 2_000));
 		const warmSettled = settled(samples, performance.now()).totalMiB;
 		const warmPeak = peak(samples, warmStarted, warmUsable);
@@ -709,22 +809,25 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			run,
 			busyBefore,
 			mainPid,
-			launchToIndexReadyMs: indexReadyAt - launchStarted,
-			coldScanMs: usableAt - scanStarted,
-			launchToUsableMs: usableAt - launchStarted,
+			launchToIndexReadyMs: indexReadyEpoch - launchEpoch,
+			coldScanMs: usableEpoch - scanEpoch,
+			launchToUsableMs: usableEpoch - launchEpoch,
 			coldScanMainStall,
 			coldScanRendererLongTasks,
 			firstResultsSummary,
 			searches,
 			facet,
-			rescanMs: rescanAt - rescanStarted,
+			rescanMs: rescanTiming.usableAt - rescanTiming.clickedAt,
 			rescanMainStall,
 			coldPeakRssMiB: coldPeak.totalMiB,
 			coldPeakBreakdownMiB: coldPeak.byName,
 			settledRssMiB: settledSample.totalMiB,
 			settledBreakdownMiB: settledSample.byName,
 			coldPeakAtMs: coldPeak.at - scanStarted,
-			warmLaunchToUsableMs: warmUsable - warmStarted,
+			warmLaunchToUsableMs: warmUsableEpoch - warmEpoch,
+			warmLaunchToIndexReadyMs: warmIndexReady - warmEpoch,
+			warmFirstSearch,
+			warmMainStall,
 			warmPeakRssMiB: warmPeak.totalMiB,
 			warmSettledRssMiB: warmSettled,
 			diskBytes,
@@ -783,6 +886,12 @@ function summarize(results: ReadonlyArray<RunResult>) {
 					launchToUsableMs: metric((result) => result.launchToUsableMs),
 					rescanMs: metric((result) => result.rescanMs),
 					warmLaunchToUsableMs: metric((result) => result.warmLaunchToUsableMs),
+					warmLaunchToIndexReadyMs: metric((result) => result.warmLaunchToIndexReadyMs),
+					warmFirstSearchReportedMs: metric(
+						(result) => result.warmFirstSearch.reportedMs
+					),
+					warmFirstSearchWallMs: metric((result) => result.warmFirstSearch.wallMs),
+					warmMainMaxStallMs: metric((result) => result.warmMainStall.maxStallMs),
 					firstSearchReportedMs: metric((result) => result.searches[0]?.reportedMs),
 					firstSearchWallMs: metric((result) => result.searches[0]?.wallMs),
 					secondSearchReportedMs: metric((result) => result.searches[1]?.reportedMs),
@@ -800,9 +909,10 @@ function summarize(results: ReadonlyArray<RunResult>) {
 					rendererMaxLongTaskMs: metric(
 						(result) => result.coldScanRendererLongTasks.maxStallMs
 					),
-					catalogBytes: metric(
-						(result) =>
-							result.diskBytes["catalogs-v5"] ?? result.diskBytes["catalogs-v6"]
+					catalogBytes: metric((result) =>
+						Object.entries(result.diskBytes)
+							.filter(([name]) => name.startsWith("catalogs"))
+							.reduce((total, [, bytes]) => total + bytes, 0)
 					),
 					gameTextBytes: metric((result) =>
 						Object.entries(result.diskBytes)

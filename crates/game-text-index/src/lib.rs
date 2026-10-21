@@ -42,6 +42,9 @@ mod query_cache;
 pub mod snapshot;
 pub mod store;
 mod summary_state;
+mod text_problem;
+#[rustfmt::skip]
+mod text_problem_rules;
 pub mod wtf8;
 
 pub type Result<T> = std::result::Result<T, Error>;

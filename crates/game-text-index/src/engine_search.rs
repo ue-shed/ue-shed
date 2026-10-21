@@ -1,7 +1,8 @@
 //! Bounded native search responses, including counts, localization and facets.
 use crate::engine_match::{Projection, checkpoint};
-use crate::engine_query::{EngineQuery, mask};
+use crate::engine_query::{EngineQuery, mask, selected_bits};
 use crate::engine_types::*;
+use crate::text_problem;
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
@@ -87,6 +88,8 @@ impl EngineQuery {
             }
         } else {
             let mut base = request.clone();
+            // Counts relax the lens, not what the request counts as a finding.
+            base.counted = Some(request.counted_findings());
             base.capability = Capability::All;
             base.lens = None;
             base.without_notes = None;
@@ -346,7 +349,8 @@ impl EngineQuery {
                     if index & 255 == 0 {
                         checkpoint(cancelled)?;
                     }
-                    let mask = p.row_problem(localized, *row as usize, &scope);
+                    let mask =
+                        p.row_problem(localized, *row as usize, &scope, request.counted_findings());
                     for (bit, count) in problems.iter_mut().enumerate() {
                         if mask & (1 << bit) != 0 {
                             *count += 1;
@@ -443,18 +447,28 @@ impl EngineQuery {
         };
         let mut result = self.search_metadata(request, &matched, cancelled)?;
         let mut units = Vec::new();
+        let counted = request.counted_findings();
+        // What put each row in its problems under this request, for hosts to show on the row.
+        let explain = |row: &mut Value, problems: u32, signals: u32| {
+            row["problems"] = json!(selected_bits(&PROBLEMS, problems));
+            row["countedFindings"] = json!(selected_bits(&SIGNALS, signals & counted));
+        };
         if localized {
             let p = Projection::open(self, cancelled)?;
+            let scope = self.culture_scope(request.localization.as_ref())?;
             let mut localization = result["localization"].take();
             let mut lines = Vec::new();
             for row in page {
                 checkpoint(cancelled)?;
                 let row = *row as usize;
-                let preview = self.preview(row)?;
+                let mut preview = self.preview(row)?;
+                explain(&mut preview, p.problem(row, &scope, counted), p.flags[row]);
                 for sr in p.starts[row] as usize..p.starts[row + 1] as usize {
                     if p.slice.visible[sr] != 0 {
                         let mut unit = self.presentation("slice", sr)?;
                         unit["localization"] = preview["cultures"].clone();
+                        unit["problems"] = preview["problems"].clone();
+                        unit["countedFindings"] = preview["countedFindings"].clone();
                         units.push(unit);
                         break;
                     }
@@ -467,9 +481,18 @@ impl EngineQuery {
             }
             result["localization"] = localization;
         } else {
+            let p = Projection::open(self, cancelled)?;
             for row in page {
                 checkpoint(cancelled)?;
-                units.push(self.presentation("raw", *row as usize)?);
+                let row = *row as usize;
+                let mut unit = self.presentation("raw", row)?;
+                let signals = p.raw.signals[row];
+                explain(
+                    &mut unit,
+                    text_problem::settle(text_problem::signals(signals, counted)),
+                    signals,
+                );
+                units.push(unit);
             }
             if let Some(next) = next {
                 result["nextCursor"] = json!(next);

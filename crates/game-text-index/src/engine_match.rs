@@ -3,6 +3,7 @@ use crate::engine_asset_types::AssetTypes;
 use crate::engine_places::{Places, Prefix};
 use crate::engine_query::{EngineQuery, audience, mask};
 use crate::engine_types::*;
+use crate::text_problem;
 use crate::{Error, ErrorCode, Result, require};
 use std::collections::HashSet;
 use std::sync::{
@@ -382,29 +383,19 @@ impl Projection {
         } | if c.review[row] == 3 { 8 } else { 0 }
             | if has("machine_translated") { 16 } else { 0 })
     }
-    pub fn problem(&self, row: usize, scope: &[usize]) -> u32 {
-        let flags = self.flags[row];
-        let mut bits = if self.key_change[row] > 0 && self.key_change[row] & 1 == 0 {
-            1
+    /// A line's problems in the cultures of `scope`, as `textProblems` reports them.
+    pub fn problem(&self, row: usize, scope: &[usize], counted: u32) -> u32 {
+        let key_change = self.key_change[row];
+        let mut bits = if key_change > 0 && key_change & 1 == 0 {
+            text_problem::KEY_CHANGED
         } else {
             0
-        } | if flags & 16 != 0 { 2 } else { 0 }
-            | if flags & 15 != 0 { 32 } else { 0 };
+        } | text_problem::signals(self.flags[row], counted);
         for ci in scope {
             let c = &self.cultures[*ci];
-            bits |= if c.reasons[row] & (1 << 11) != 0 {
-                2
-            } else {
-                0
-            } | if c.state[row] == 4 { 4 } else { 0 }
-                | if c.state[row] == 5 { 8 } else { 0 }
-                | if matches!(c.state[row], 1 | 2) || c.facts[row] & 8 != 0 {
-                    16
-                } else {
-                    0
-                };
+            bits |= text_problem::culture(c.state[row], c.facts[row], c.reasons[row]);
         }
-        if bits == 0 { 64 } else { bits }
+        text_problem::settle(bits)
     }
 }
 
@@ -429,6 +420,7 @@ struct Predicates {
     clauses: Vec<PreparedClause>,
     path: Option<Prefix>,
     files: Option<HashSet<u32>>,
+    counted: u32,
 }
 impl Predicates {
     fn new(
@@ -494,6 +486,7 @@ impl Predicates {
             files: location
                 .and_then(|scope| scope.files.as_deref())
                 .map(|values| places.labels(values, true)),
+            counted: request.counted_findings(),
         })
     }
 }
@@ -685,11 +678,9 @@ impl Projection {
             let has = match clause.field {
                 FilterField::Problem => {
                     let bits = if line {
-                        self.problem(row, scope)
+                        self.problem(row, scope, prepared.counted)
                     } else {
-                        let bits = if flags & 16 != 0 { 2 } else { 0 }
-                            | if flags & 15 != 0 { 32 } else { 0 };
-                        if bits == 0 { 64 } else { bits }
+                        text_problem::settle(text_problem::signals(flags, prepared.counted))
                     };
                     bits & clause.mask != 0
                 }

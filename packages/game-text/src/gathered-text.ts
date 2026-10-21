@@ -22,6 +22,22 @@ export function gatheredNamespace(namespace: string, stringTableEntry: boolean):
 	return stringTableEntry ? namespace : stripPackageNamespace(namespace);
 }
 
+/**
+ * The ID of the saved unit a keyed occurrence belongs to: one unit per key Unreal translates, so
+ * resolved text is keyed by its gathered namespace (no package marker; a String Table entry keeps
+ * its namespace) and a String Table reference by its table. The native join writes the same IDs.
+ */
+export function keyedUnitId(
+	stringTableReference: boolean,
+	namespace: string,
+	key: string,
+	stringTableEntry: boolean
+): string {
+	return `${stringTableReference ? "string-table" : "unreal"}:${encodeURIComponent(
+		stringTableReference ? namespace : gatheredNamespace(namespace, stringTableEntry)
+	)}:${encodeURIComponent(key)}`;
+}
+
 /** The gathered identity of a resolved saved identity; String Table entries keep their namespace. */
 export function gatheredIdentity(
 	namespace: string,

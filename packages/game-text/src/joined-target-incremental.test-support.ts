@@ -1,4 +1,10 @@
 import type { JoinedTargetInput } from "./joined-target.js";
+import {
+	FINDING_BIT,
+	KEY_CHANGED_BIT,
+	cultureProblemBits,
+	settleProblemBits
+} from "./text-problem-bits.test-support.js";
 import { Effect, Schema } from "effect";
 import { isDeepStrictEqual } from "node:util";
 import { localizationReviewFingerprint } from "@ue-shed/localization";
@@ -339,10 +345,7 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 			set("line.facts", row, structural);
 			set("line.reasons", row, reasons);
 		}
-		let problems =
-				(line.problems![row]! & (1 | 32)) |
-				(reasons & reasonBit("conflicting_source") ? 2 : 0),
-			translationProblem = false;
+		let problems = line.problems![row]! & (KEY_CHANGED_BIT | FINDING_BIT);
 		for (let ci = 0; ci < input.target.cultures.length; ci++) {
 			const culture = input.target.cultures[ci]!,
 				prefix = `c${ci}.`;
@@ -418,10 +421,7 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 			set(prefix + "facts", row, facts);
 			set(prefix + "state", row, state);
 			set(prefix + "reasons", row, unknown);
-			translationProblem ||=
-				state === 1 || state === 2 || Boolean(facts & stateBit("not_synced"));
-			if (state === 4) problems |= 4;
-			if (state === 5) problems |= 8;
+			problems |= cultureProblemBits(state, facts, unknown);
 			if (input.review?.target === input.target.name && !(reasons & ((1 << 9) | (1 << 10)))) {
 				const recordRows = yield* u32(layer, prefix + "review_record"),
 					record = input.review.records[recordRows[row]! - 1];
@@ -455,8 +455,7 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 				}
 			}
 		}
-		if (translationProblem) problems |= 16;
-		set("line.problems", row, problems || 64);
+		set("line.problems", row, settleProblemBits(problems));
 	}
 	const sourceEdits = {
 		raw: new Map<number, readonly number[]>(),

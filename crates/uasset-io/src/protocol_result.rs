@@ -352,6 +352,21 @@ pub struct TextGapCounts {
     pub property_decoder_rejected: u64,
 }
 
+impl TextGapCounts {
+    fn increment(&mut self, reason: &TextCoverageGapReason) {
+        match reason {
+            TextCoverageGapReason::UnsupportedTextHistory => self.unsupported_text_history += 1,
+            TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation => {
+                self.legacy_container_element_without_type_information += 1
+            }
+            TextCoverageGapReason::FeatureUnavailableForEngineVersion => {
+                self.feature_unavailable_for_engine_version += 1
+            }
+            TextCoverageGapReason::PropertyDecoderRejected => self.property_decoder_rejected += 1,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SavedAssetPackageTextRecord {
@@ -373,6 +388,9 @@ pub struct SavedAssetPackageTextRecord {
     pub decode_errors: u64,
     pub occurrences: Vec<SavedAssetTextOccurrence>,
     pub gap_counts: TextGapCounts,
+    /// v1.18: counts only gaps whose undecoded bytes may contain FText.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_gap_counts: Option<TextGapCounts>,
     pub gap_samples: Vec<SavedAssetTextCoverageGap>,
     /// v1.10: present when the package's gatherable text table was read. When present, status
     /// reflects missing runtime gatherable text, with undecoded graph pins always remaining partial.
@@ -386,20 +404,11 @@ pub struct SavedAssetPackageTextRecord {
 
 impl SavedAssetPackageTextRecord {
     pub fn push_gap(&mut self, gap: SavedAssetTextCoverageGap) {
-        match gap.reason {
-            TextCoverageGapReason::UnsupportedTextHistory => {
-                self.gap_counts.unsupported_text_history += 1
-            }
-            TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation => {
-                self.gap_counts
-                    .legacy_container_element_without_type_information += 1
-            }
-            TextCoverageGapReason::FeatureUnavailableForEngineVersion => {
-                self.gap_counts.feature_unavailable_for_engine_version += 1
-            }
-            TextCoverageGapReason::PropertyDecoderRejected => {
-                self.gap_counts.property_decoder_rejected += 1
-            }
+        self.gap_counts.increment(&gap.reason);
+        if gap.may_contain_text.unwrap_or(true)
+            && let Some(counts) = &mut self.text_gap_counts
+        {
+            counts.increment(&gap.reason);
         }
         if self.gap_samples.len() < 3 {
             self.gap_samples.push(gap);
@@ -538,6 +547,7 @@ mod package_text_tests {
             decode_errors: 0,
             occurrences: Vec::new(),
             gap_counts: TextGapCounts::default(),
+            text_gap_counts: Some(TextGapCounts::default()),
             gap_samples: Vec::new(),
             gather_coverage: None,
             blueprint_classes: Vec::new(),
@@ -554,6 +564,7 @@ mod package_text_tests {
         .enumerate()
         {
             record.push_gap(SavedAssetTextCoverageGap {
+                may_contain_text: Some(true),
                 object_path: "Fixture".into(),
                 property_path: index.to_string(),
                 reason,
@@ -576,5 +587,12 @@ mod package_text_tests {
                 unsupported_text_history: 3,
             }
         );
+        assert_eq!(record.text_gap_counts, Some(record.gap_counts.clone()));
+        let mut text_free = record.gap_samples[0].clone();
+        text_free.may_contain_text = Some(false);
+        let previous_text_counts = record.text_gap_counts.clone();
+        record.push_gap(text_free);
+        assert_eq!(record.gap_counts.property_decoder_rejected, 2);
+        assert_eq!(record.text_gap_counts, previous_text_counts);
     }
 }

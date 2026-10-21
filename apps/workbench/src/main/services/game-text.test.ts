@@ -155,6 +155,7 @@ const noProblems = {
 	changed_since_gather: 0,
 	translation: 0,
 	finding: 0,
+	unchecked: 0,
 	up_to_date: 0
 };
 const selectedProject = makeWorkbenchProjectTestLayer({

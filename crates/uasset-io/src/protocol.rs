@@ -1167,6 +1167,7 @@ mod tests {
 
     #[test]
     fn accepts_shared_valid_fixtures() {
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-text-capability-result-event.json")).unwrap();
         assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-request-old-minor.json")).is_err());
         decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-request.json")).unwrap();
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-result-event.json")).unwrap();
@@ -1218,6 +1219,8 @@ mod tests {
 
     #[test]
     fn rejects_shared_invalid_fixtures() {
+        assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-text-capability-type.json")).is_err());
+        assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-negative-text-gap-count.json")).is_err());
         assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/level-sequence-version.json")).is_err());
         assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/saved-world-unknown-actor-decode.json")).is_err());
         for fixture in [

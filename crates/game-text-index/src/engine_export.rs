@@ -75,9 +75,13 @@ impl EngineQuery {
                 checkpoint(cancelled)?;
                 separator(&mut output, &mut first)?;
                 let line = match fields {
-                    Some(fields) => {
-                        self.localization_line_fields(*row as usize, fields, &scope, cancelled)?
-                    }
+                    Some(fields) => self.localization_line_fields(
+                        *row as usize,
+                        fields,
+                        &scope,
+                        request.counted_findings(),
+                        cancelled,
+                    )?,
                     None => self.localization_line(*row as usize, cancelled)?,
                 };
                 value(&mut output, &line)?;

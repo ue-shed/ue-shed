@@ -1,4 +1,9 @@
 import type { JoinedTargetInput } from "./joined-target.js";
+import {
+	KEY_CHANGED_BIT,
+	cultureProblemBits,
+	settleProblemBits
+} from "./text-problem-bits.test-support.js";
 import { Effect } from "effect";
 import {
 	LocalizationIdentity,
@@ -20,7 +25,6 @@ import { localizationStates } from "./localization-schema.js";
 
 const notFound = localizationStates.indexOf("not_found");
 const notGathered = localizationStates.indexOf("not_gathered");
-const changedSinceGather = localizationStates.indexOf("changed_since_gather");
 
 const placeKey = (path: string) =>
 	path
@@ -268,20 +272,14 @@ export const finishJoinedTarget = Effect.fn("JoinedTarget.marks")(function* (
 	}
 	for (let row = 0; row < count; row++) {
 		let problems = line.problems![row]!;
-		if (line.key_change![row] && !(line.key_change![row]! & 1)) problems |= 1;
-		if (line.reasons![row]! & (1 << 11)) problems |= 2;
-		if (matches(row, notGathered)) problems |= 4;
-		if (matches(row, changedSinceGather)) problems |= 8;
-		if (
-			culture.some(
-				(marks) =>
-					marks.state![row] === 1 ||
-					marks.state![row] === 2 ||
-					marks.facts![row]! & stateBit("not_synced")
-			)
-		)
-			problems |= 16;
-		line.problems![row] = problems || 64;
+		if (line.key_change![row] && !(line.key_change![row]! & 1)) problems |= KEY_CHANGED_BIT;
+		for (const marks of culture)
+			problems |= cultureProblemBits(
+				marks.state![row]!,
+				marks.facts![row]!,
+				marks.reasons![row]!
+			);
+		line.problems![row] = settleProblemBits(problems);
 	}
 	return { pairs, ambiguous, oldCandidates: oldRows.length };
 });

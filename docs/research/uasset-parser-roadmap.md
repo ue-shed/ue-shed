@@ -120,10 +120,12 @@ instead of a false completeness claim. It does not recursively load referenced p
 Sequencer, blend channels, resolve runtime bindings, or claim semantic coverage of every track and
 channel class.
 
-Blueprint saved-graph inspection is a UE 5.7 increment under item 7. It accepts the saved package
-revisions observed in uncooked assets loadable by the current editor (UE4 522 with UE5 1012, 1013,
-1017, or 1018); that is one editor compatibility target, not general cross-engine support. It
-decodes the native `UEdGraphNode` footer and owning-node pin array, including pin types, defaults,
+Blueprint saved-graph inspection accepts UE 4.27 packages and UE5 packages (UE4 522) with saved
+revisions 1000–1018.
+The UE 5.6–5.8 source-verified serializer gates older saves by Framework/Release custom versions;
+UE5Main 50 adds the pin source index and UE5Release 36 adds its float-precision flag independently
+of the package revision. Unsupported custom-version framing remains explicit. The decoder reads
+the native `UEdGraphNode` footer and owning-node pin array, including pin types, defaults,
 localized and named-format text, hierarchy, persistent identifiers, and linked-pin references.
 Graph discovery follows saved `Nodes` arrays beneath the Blueprint root, and those membership
 references prove arbitrary engine, plugin, and project `UEdGraph`/`UEdGraphNode` subclasses without
@@ -136,7 +138,15 @@ payloads such as `FRichCurveKey`, and node-subclass native tails remain explicit
 Control Rig is deliberately rejected because its editor model is RigVM rather than the saved
 `UEdGraph` surface. This does not load referenced packages, reproduce every editor-only
 title-generation behavior, compile Blueprint bytecode, or mutate and resave a package. Other saved
-package versions remain deferred until UE Shed chooses a compatibility window.
+package versions remain deferred until their layouts are verified.
+
+Additional source-verified saved layouts cover uncooked generated-class records, DynamicCast's
+FortniteMain-85 pure-state suffix, UE5 Niagara variable records, field paths, empty persistent
+key-handle maps, and legacy spline variants. Post-process settings, HLOD simplification, font
+outlines, and Niagara variants retain their declared tagged serialization even when a container's
+binary flag comes from another element type. Numeric channels follow Sequencer-12/FortniteMain-53
+framing. New optional recipes probe without advancing the old tagged/opaque fallback on rejection;
+unknown spline implementations and unsupported class fields remain reported gaps.
 
 The next saved-review increment adds common Sequencer section settings, scoped camera cuts and
 possessable/spawnable identities, plus string and object-path channels. Blueprint definitions now

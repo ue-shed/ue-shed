@@ -44,7 +44,7 @@ pub const USERDEFINEDSTRUCT_CLASS: &str = "/Script/CoreUObject.UserDefinedStruct
 pub const SKELETON_CLASS: &str = "/Script/Engine.Skeleton";
 pub const ANIM_SEQUENCE_CLASS: &str = "/Script/Engine.AnimSequence";
 pub const ED_GRAPH_CLASS: &str = "/Script/Engine.EdGraph";
-const UE57_BLUEPRINT_PACKAGE_VERSIONS: &[i32] = &[1012, 1013, 1017, 1018];
+const BLUEPRINT_PACKAGE_VERSIONS: std::ops::RangeInclusive<i32> = 1000..=1018;
 const MAX_FIELD_DEPTH: usize = 64;
 const STRIP_EDITOR_ONLY: u8 = 1;
 
@@ -168,12 +168,40 @@ pub fn is_blueprint_owned_export(package: &Package, export: &Export) -> bool {
 
 /// Returns whether a package uses a saved revision covered by the Blueprint graph decoder.
 ///
-/// These are package serialization revisions observed in assets that the current UE 5.7 editor
-/// loads, plus the UE 4.27 native pin layout. This is not a Blueprint compilation contract.
+/// UE 5.6–5.8 EdGraphPin.cpp has the same persistent layout (new pin flags share
+/// the existing uint32), plus the separately decoded UE 4.27 native pin layout. This is not a Blueprint compilation contract.
 #[must_use]
 pub fn supports_blueprint_graph_package_version(versions: &crate::version::VersionContext) -> bool {
     versions.ue4 == crate::version::VersionContext::LATEST_SUPPORTED_UE4
-        && (versions.ue5 == 0 || UE57_BLUEPRINT_PACKAGE_VERSIONS.contains(&versions.ue5))
+        && (versions.ue5 == 0 || BLUEPRINT_PACKAGE_VERSIONS.contains(&versions.ue5))
+}
+
+/// Resolves a native serialization owner through saved Blueprint-generated classes only.
+/// Imported content classes and native subclasses with unknown serializers stay unresolved.
+#[must_use]
+pub fn saved_native_class<'a>(package: &'a Package, export: &'a Export) -> Option<&'a str> {
+    let mut class = export.class_path.as_ref()?.as_str();
+    let mut index = export.class_index;
+    for _ in 0..64 {
+        if class.starts_with("/Script/") {
+            return Some(class);
+        }
+        let PackageIndex::Export(class_index) = index else {
+            return None;
+        };
+        let generated = package.exports.get(class_index as usize)?;
+        // UE 4.27 / 5.7 BlueprintGeneratedClass.cpp, UBlueprintGeneratedClass::Serialize:
+        // a Blueprint adds reflected properties, never a new C++ instance serializer.
+        if generated.object_path.as_str() != class
+            || generated.class_path.as_ref().map(ObjectPath::as_str)
+                != Some("/Script/Engine.BlueprintGeneratedClass")
+        {
+            return None;
+        }
+        index = generated.super_index;
+        class = package.resolve_index_str(index)?;
+    }
+    None
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -208,7 +236,17 @@ pub struct DecodedBlueprintGraphNode {
     pub object_guid: Option<Guid>,
     pub properties: PropertyStream,
     pub pins: Vec<Option<EdGraphPin>>,
+    pub user_defined_pins: Vec<EdGraphUserPin>,
     pub tail: Span,
+}
+
+/// UK2Node_EditablePinBase's FUserPinInfo records (not additional FText values).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdGraphUserPin {
+    pub name: NameRef,
+    pub pin_type: EdGraphPinType,
+    pub direction: u8,
+    pub default_value: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1325,8 +1363,9 @@ fn decode_struct_members(
     // have no super, so it is null (0). Children is a TArray<UField*>; user
     // structs carry their members as ChildProperties (FFields), not UFields.
     let _super_struct = reader.read_i32(&format!("{object_path}.SuperStruct"))?;
-    let child_count = reader.read_i32(&format!("{object_path}.Children.Count"))?;
-    for index in 0..child_count.max(0) {
+    let child_count = reader.read_count(&format!("{object_path}.Children.Count"))?;
+    reader.checked_vec_capacity::<PackageIndex>(child_count, 4, object_path.as_str())?;
+    for index in 0..child_count {
         reader.read_i32(&format!("{object_path}.Children[{index}]"))?;
     }
 
@@ -1922,13 +1961,33 @@ pub fn decode_saved_blueprint_graph_node(
         return Err(AssetError::new(
             AssetErrorKind::UnsupportedVersion,
             format!(
-                "Blueprint graph pin decoding supports UE 4.27 and the UE 5.7-loadable saved package revisions (UE4 {}, UE5 {:?}); {} uses UE4 {}, UE5 {}",
+                "Blueprint graph pin decoding supports UE 4.27 and the source-verified UE 5.6–5.8 saved package revisions (UE4 {}, UE5 {:?}); {} uses UE4 {}, UE5 {}",
                 crate::version::VersionContext::LATEST_SUPPORTED_UE4,
-                UE57_BLUEPRINT_PACKAGE_VERSIONS,
+                BLUEPRINT_PACKAGE_VERSIONS,
                 export.object_path,
                 versions.ue4,
                 versions.ue5
             ),
+        ));
+    }
+    if !matches!(versions.ue5, 0 | 1012 | 1013 | 1017 | 1018)
+        && (!matches!(
+            graph_custom_version(
+                context.package,
+                [0xCFFC743F, 0x43B04480, 0x939114DF, 0x171D2073]
+            ),
+            Some(31..)
+        ) || !matches!(
+            graph_custom_version(
+                context.package,
+                [0x9C54D522, 0xA8264FBE, 0x94210746, 0x61B482D0]
+            ),
+            Some(32..)
+        ))
+    {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedVersion,
+            "graph pins require the modern Framework and Release custom versions",
         ));
     }
     if context
@@ -1957,7 +2016,22 @@ pub fn decode_saved_blueprint_graph_node(
             package: Some(context.package),
         },
     )?;
-    consume_empty_editable_user_pin_array(&mut reader, &class_path, &export.object_path)?;
+    let mut suffix = reader.clone();
+    let user_defined_pins = match read_editable_user_pin_array(
+        &mut suffix,
+        &class_path,
+        &export.object_path,
+        graph_omits_precision_flag(context.package),
+    ) {
+        Ok(pins) => {
+            reader = suffix;
+            pins
+        }
+        Err(_) => Vec::new(),
+    };
+    consume_dynamic_cast_suffix(&mut reader, &class_path, context.package);
+    // A rejected subclass suffix must not discard FText already read from the base pins.
+    // Its bytes remain in tail, keeping an explicit conservative coverage gap.
     let tail = Span::new(reader.tell(), reader.remaining()).map_err(AssetError::from)?;
 
     Ok(DecodedBlueprintGraphNode {
@@ -1966,38 +2040,111 @@ pub fn decode_saved_blueprint_graph_node(
         object_guid,
         properties,
         pins,
+        user_defined_pins,
         tail,
     })
 }
 
-fn consume_empty_editable_user_pin_array(
+fn graph_custom_version(package: &Package, words: [u32; 4]) -> Option<i32> {
+    package
+        .summary
+        .custom_versions
+        .iter()
+        .find(|v| [v.key.a, v.key.b, v.key.c, v.key.d] == words)
+        .map(|v| v.version)
+}
+
+fn graph_omits_precision_flag(package: &Package) -> bool {
+    package.summary.versions.ue5 == 0
+        || graph_custom_version(package, [0xD89B5E42, 0x24BD4D46, 0x8412ACA8, 0xDF641779]).map_or(
+            !matches!(package.summary.versions.ue5, 1012 | 1013 | 1017 | 1018),
+            |version| version < 36,
+        )
+}
+
+/// UE 5.6–5.8 K2Node_DynamicCast.cpp ::Serialize writes EPureState (uint8)
+/// from FortniteMain DynamicCastNodesUsePureStateEnum=85. Earlier saves use tagged
+/// bIsPureCast_DEPRECATED. Probe without discarding base pins or unknown suffix bytes.
+fn consume_dynamic_cast_suffix(
+    reader: &mut crate::archive::Reader<'_>,
+    class_path: &ObjectPath,
+    package: &Package,
+) {
+    if package.summary.versions.ue5 == 0
+        || class_path.as_str() != "/Script/BlueprintGraph.K2Node_DynamicCast"
+        || !package.summary.custom_versions.iter().any(|version| {
+            [version.key.a, version.key.b, version.key.c, version.key.d]
+                == [0x601D1886, 0xAC644F84, 0xAA16D3DE, 0x0DEAC7D6]
+                && version.version >= 85
+        })
+    {
+        return;
+    }
+    let mut probe = reader.clone();
+    if matches!(probe.read_u8("DynamicCast.PureState"), Ok(0..=2)) {
+        *reader = probe;
+    }
+}
+
+fn read_editable_user_pin_array(
     reader: &mut crate::archive::Reader<'_>,
     class_path: &ObjectPath,
     object_path: &ObjectPath,
-) -> Result<(), AssetError> {
-    let class_name = class_path.as_str().rsplit('.').next();
+    omit_precision: bool,
+) -> Result<Vec<EdGraphUserPin>, AssetError> {
+    let class_name = class_path.as_str().strip_prefix("/Script/BlueprintGraph.");
     if !matches!(
         class_name,
         Some(
             "K2Node_Event"
+                | "K2Node_CustomEvent"
+                | "K2Node_ComponentBoundEvent"
+                | "K2Node_ActorBoundEvent"
+                | "K2Node_InputActionEvent"
+                | "K2Node_InputAxisEvent"
+                | "K2Node_InputAxisKeyEvent"
+                | "K2Node_InputKeyEvent"
+                | "K2Node_InputTouchEvent"
                 | "K2Node_FunctionEntry"
                 | "K2Node_FunctionResult"
                 | "K2Node_FunctionTerminator"
                 | "K2Node_Tunnel"
+                | "K2Node_MacroInstance"
+                | "K2Node_Composite"
         )
     ) {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
-    // These exact current-engine classes derive from UK2Node_EditablePinBase. Its additional saved
-    // value is `TArray<FUserPinInfo>`. Consume the common empty case; preserve a non-empty array as
-    // subclass evidence until FUserPinInfo is modeled.
-    let mut probe = reader.clone();
-    let count = probe.read_count(&format!("{object_path}.UserDefinedPins.Count"))?;
-    if count == 0 {
-        *reader = probe;
+    // UE 4.27 / 5.7 BlueprintGraph/Private/K2Node_EditablePinBase.cpp,
+    // UK2Node_EditablePinBase::Serialize and operator<<(FUserPinInfo&).
+    // DesiredPinDirection is TEnumAsByte serialized as uint8 in these versions.
+    let path = format!("{object_path}.UserDefinedPins");
+    let count = reader.read_count(&format!("{path}.Count"))?;
+    let capacity = reader.checked_vec_capacity::<EdGraphUserPin>(count, 8, &path)?;
+    let mut pins = Vec::with_capacity(capacity);
+    for index in 0..count {
+        let path = format!("{path}[{index}]");
+        let name = reader.read_name_ref(&format!("{path}.PinName"))?;
+        let pin_type = read_ed_graph_pin_type(reader, &format!("{path}.PinType"), omit_precision)?;
+        let direction = reader.read_u8(&format!("{path}.DesiredPinDirection"))?;
+        // EEdGraphPinDirection also defines EGPD_MAX (2); FUserPinInfo initializes
+        // its desired direction to that sentinel and repairs it on load.
+        if direction > 2 {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("{path}: invalid pin direction {direction}"),
+            ));
+        }
+        let default_value = reader.read_fstring(&format!("{path}.PinDefaultValue"))?;
+        pins.push(EdGraphUserPin {
+            name,
+            pin_type,
+            direction,
+            default_value,
+        });
     }
-    Ok(())
+    Ok(pins)
 }
 
 fn read_ed_graph_pin_array(
@@ -2040,11 +2187,18 @@ fn read_ed_graph_pin(
 
     let name = reader.read_name_ref(&format!("{path}.PinName"))?;
     let friendly_name = read_saved_text(reader, &format!("{path}.PinFriendlyName"), text)?;
-    // UE 4.27 EdGraphPin.cpp predates UE5's EdGraphPinSourceIndex and LWC pin flag.
-    let is_ue4 = text
-        .package
-        .is_some_and(|package| package.summary.versions.ue5 == 0);
-    let source_index = if is_ue4 {
+    // UE 5.6–5.8 EdGraphPin.cpp gates SourceIndex at UE5Main=50 and the
+    // precision flag at UE5Release=36 independently of the saved package revision.
+    let omit_precision = text.package.is_some_and(graph_omits_precision_flag);
+    let has_source_index = text.package.is_none_or(|package| {
+        package.summary.versions.ue5 != 0
+            && graph_custom_version(package, [0x697DD581, 0xE64F41AB, 0xAA4A51EC, 0xBEB7B628])
+                .map_or(
+                    matches!(package.summary.versions.ue5, 1012 | 1013 | 1017 | 1018),
+                    |version| version >= 50,
+                )
+    });
+    let source_index = if !has_source_index {
         -1
     } else {
         reader.read_i32(&format!("{path}.SourceIndex"))?
@@ -2060,7 +2214,7 @@ fn read_ed_graph_pin(
             ));
         }
     };
-    let pin_type = read_ed_graph_pin_type(reader, &format!("{path}.PinType"), is_ue4)?;
+    let pin_type = read_ed_graph_pin_type(reader, &format!("{path}.PinType"), omit_precision)?;
     let default_value = read_blueprint_pin_string(reader, &format!("{path}.DefaultValue"))?;
     let autogenerated_default_value =
         read_blueprint_pin_string(reader, &format!("{path}.AutogeneratedDefaultValue"))?;
@@ -2113,7 +2267,7 @@ fn read_blueprint_pin_string(
 fn read_ed_graph_pin_type(
     reader: &mut crate::archive::Reader<'_>,
     path: &str,
-    is_ue4: bool,
+    omit_precision: bool,
 ) -> Result<EdGraphPinType, AssetError> {
     let category = reader.read_name_ref(&format!("{path}.PinCategory"))?;
     let subcategory = reader.read_name_ref(&format!("{path}.PinSubCategory"))?;
@@ -2150,8 +2304,8 @@ fn read_ed_graph_pin_type(
     };
     let is_const = read_archive_bool(reader, &format!("{path}.IsConst"))?;
     let is_uobject_wrapper = read_archive_bool(reader, &format!("{path}.IsUObjectWrapper"))?;
-    let serialize_as_single_precision_float =
-        !is_ue4 && read_archive_bool(reader, &format!("{path}.SerializeAsSinglePrecisionFloat"))?;
+    let serialize_as_single_precision_float = !omit_precision
+        && read_archive_bool(reader, &format!("{path}.SerializeAsSinglePrecisionFloat"))?;
 
     Ok(EdGraphPinType {
         category,
@@ -3131,6 +3285,10 @@ fn decode_uobject_properties<'a>(
         export.object_path.as_str(),
     )?;
     decode_property_stream_values(context.source, &mut properties, context.package)?;
+    native_data::property_guids(export, context, &mut properties);
+    if let Some(class) = saved_native_class(context.package, export) {
+        crate::codec::object_containers(context.source, &mut properties, class, context.package);
+    }
     Ok((properties, reader))
 }
 
@@ -3432,7 +3590,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_packages_keep_animation_and_blueprint_native_boundaries() {
+    fn legacy_packages_keep_animation_boundaries_and_allow_verified_graph_revisions() {
         for ue5 in [0, 1000, 1009, 1010, 1011] {
             let mut package = test_package(vec!["None".into()]);
             package.summary.versions.ue5 = ue5;
@@ -3456,11 +3614,154 @@ mod tests {
                     .kind(),
                 AssetErrorKind::UnsupportedVersion
             );
-            assert_eq!(
-                supports_blueprint_graph_package_version(&package.summary.versions),
-                ue5 == 0
-            );
+            assert!(supports_blueprint_graph_package_version(
+                &package.summary.versions
+            ));
         }
+    }
+
+    #[test]
+    fn dynamic_cast_suffix_is_versioned_and_never_discards_base_pins() {
+        let mut package = test_package(vec!["None".into()]);
+        let class = ObjectPath::new("/Script/BlueprintGraph.K2Node_DynamicCast");
+        for ue5 in [1016, 1017, 1018] {
+            package.summary.versions.ue5 = ue5;
+            for version in [84, 85] {
+                crate::test_support::text_version(&mut package, Some(version), 0);
+                for (words, version) in [
+                    ([0xCFFC743F, 0x43B04480, 0x939114DF, 0x171D2073], 31),
+                    ([0x9C54D522, 0xA8264FBE, 0x94210746, 0x61B482D0], 32),
+                ] {
+                    package
+                        .summary
+                        .custom_versions
+                        .push(crate::package::CustomVersion {
+                            key: Guid {
+                                a: words[0],
+                                b: words[1],
+                                c: words[2],
+                                d: words[3],
+                            },
+                            version,
+                            friendly_name: None,
+                        });
+                }
+
+                for state in [0, 1, 2, 3] {
+                    let mut bytes = write_uobject_export(0, &[]);
+                    push_i32(&mut bytes, 0); // inline object GUID marker
+                    push_i32(&mut bytes, 0); // owning-node pin array
+                    bytes.push(state);
+                    let export = test_export(bytes.len() as u64, "Fixture.Node", class.as_str());
+                    let context = AssetDecodeContext {
+                        source: &bytes,
+                        package: &package,
+                        schemas: &EmptySchemas,
+                    };
+                    let node = decode_saved_blueprint_graph_node(&export, &context).unwrap();
+                    assert!(node.pins.is_empty());
+                    assert_eq!(node.tail.len(), u64::from(!(version >= 85 && state <= 2)));
+                    bytes.pop(); // truncated suffix still retains the decoded node
+                    let export = test_export(bytes.len() as u64, "Fixture.Node", class.as_str());
+                    let context = AssetDecodeContext {
+                        source: &bytes,
+                        package: &package,
+                        schemas: &EmptySchemas,
+                    };
+                    assert!(
+                        decode_saved_blueprint_graph_node(&export, &context)
+                            .unwrap()
+                            .pins
+                            .is_empty()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn editable_node_user_pin_suffix_decodes_ue427_and_ue5_without_hiding_subclass_data() {
+        // K2Node_EditablePinBase.cpp operator<<(FUserPinInfo&): FName, pin type,
+        // TEnumAsByte direction, FString default. EdGraphPin.cpp FEdGraphPinType::Serialize.
+        for is_ue4 in [true, false] {
+            for class in [
+                "K2Node_CustomEvent",
+                "K2Node_ComponentBoundEvent",
+                "K2Node_FunctionEntry",
+            ] {
+                let mut bytes = Vec::new();
+                push_i32(&mut bytes, 1);
+                bytes.extend([0; 8]); // pin name
+                bytes.extend([0; 20]); // pin category, subcategory and object
+                bytes.push(0); // not a container
+                bytes.extend([0; 44]); // references, member reference, const, wrapper
+                if !is_ue4 {
+                    bytes.extend([0; 4]);
+                }
+                bytes.push(1); // desired direction, one byte
+                crate::test_support::push_fstring(&mut bytes, "Default");
+                let end = bytes.len();
+                bytes.push(0xAA); // unknown subclass payload must stay unread
+                let mut reader = Reader::new(&bytes);
+                let pins = read_editable_user_pin_array(
+                    &mut reader,
+                    &ObjectPath::new(format!("/Script/BlueprintGraph.{class}")),
+                    &ObjectPath::new("Fixture.Node"),
+                    is_ue4,
+                )
+                .unwrap();
+                assert_eq!(pins.len(), 1);
+                assert_eq!(pins[0].direction, 1);
+                assert_eq!(pins[0].default_value, "Default");
+                assert_eq!(reader.tell(), end as u64);
+                for end in 4..end {
+                    assert!(
+                        read_editable_user_pin_array(
+                            &mut Reader::new(&bytes[..end]),
+                            &ObjectPath::new(format!("/Script/BlueprintGraph.{class}")),
+                            &ObjectPath::new("Fixture.Node"),
+                            is_ue4
+                        )
+                        .is_err()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rejected_user_pin_suffix_preserves_the_decoded_base_pins() {
+        let mut bytes =
+            include_bytes!("../../../fixtures/graph-pin-text/4.27/BP_Keys.uasset").to_vec();
+        let package = Package::parse(&bytes).unwrap();
+        let export = package
+            .exports
+            .iter()
+            .find(|export| {
+                export
+                    .class_path
+                    .as_ref()
+                    .is_some_and(|class| class.as_str() == "/Script/BlueprintGraph.K2Node_Event")
+            })
+            .unwrap();
+        let context = AssetDecodeContext {
+            source: &bytes,
+            package: &package,
+            schemas: crate::schema::embedded_source_model(),
+        };
+        let original = decode_saved_blueprint_graph_node(export, &context).unwrap();
+        assert!(original.tail.is_empty());
+        let count = (export.serial_offset.get() + export.serial_size - 4) as usize;
+        assert_eq!(&bytes[count..count + 4], &[0; 4]);
+        bytes[count..count + 4].copy_from_slice(&(-1_i32).to_le_bytes());
+        let context = AssetDecodeContext {
+            source: &bytes,
+            package: &package,
+            schemas: crate::schema::embedded_source_model(),
+        };
+        let rejected = decode_saved_blueprint_graph_node(export, &context).unwrap();
+        assert_eq!(rejected.pins, original.pins);
+        assert_eq!(rejected.tail.len(), 4);
     }
 
     #[test]
@@ -3618,17 +3919,17 @@ mod tests {
     }
 
     #[test]
-    fn accepts_only_the_observed_ue57_blueprint_saved_revisions() {
-        for ue5 in UE57_BLUEPRINT_PACKAGE_VERSIONS {
+    fn accepts_only_the_verified_blueprint_saved_revisions() {
+        for ue5 in BLUEPRINT_PACKAGE_VERSIONS {
             let versions = crate::version::VersionContext {
                 ue4: crate::version::VersionContext::LATEST_SUPPORTED_UE4,
-                ue5: *ue5,
+                ue5,
                 ..crate::version::VersionContext::default()
             };
             assert!(supports_blueprint_graph_package_version(&versions));
         }
 
-        for (ue4, ue5) in [(521, 1018), (522, 1009), (522, 1016), (522, 1019)] {
+        for (ue4, ue5) in [(521, 1018), (522, 999), (522, 1019)] {
             let versions = crate::version::VersionContext {
                 ue4,
                 ue5,
@@ -3933,7 +4234,7 @@ mod tests {
     fn generic_decode_rejects_k2_nodes_outside_the_graph_revision_window() {
         let export_bytes = write_uobject_export(0, &[]);
         let mut package = test_package(vec!["None".into()]);
-        package.summary.versions.ue5 = 1016;
+        package.summary.versions.ue5 = 1019;
         let export = test_export(
             export_bytes.len() as u64,
             "/Game/Test/BP_Test.BP_Test:EventGraph.K2Node_CallFunction_0",

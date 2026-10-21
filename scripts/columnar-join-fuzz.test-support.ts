@@ -984,9 +984,12 @@ export async function compareJoinFuzzInput(
 			oracle.focus({ id: unit.id, pageSize: 2 }),
 			actual.query.rawFocus[row]
 		);
+	// Search rows add the request's problems and counted findings to the unit presentation.
 	compare(
 		"query.columns.raw",
-		oracle.search({ query: "", capability: "all", pageSize: 1000 }).units,
+		oracle
+			.search({ query: "", capability: "all", pageSize: 1000 })
+			.units.map(({ problems: _problems, countedFindings: _counted, ...unit }) => unit),
 		actual.rawPresentations
 	);
 	for (const slice of actual.slicePresentations) {

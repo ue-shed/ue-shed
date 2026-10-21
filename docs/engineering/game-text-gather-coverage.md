@@ -36,7 +36,8 @@ String Tables save their authored namespace. Decoded `FText` namespaces lose tha
 once; String Table rows keep theirs. Editor-only sites are skipped as the default gather skips
 them. Known unsupported histories, rejected decoders, unavailable engine
 features and legacy containers still produce coverage gaps, but only a missing table entry makes a
-package partial.
+package partial: an export that fails to decode can lose a place, not a gathered line. Skipped graph
+pins remain partial independently of the table.
 
 The table is only used when Unreal's gather would use it. The reader mirrors
 `UGatherTextFromAssetsCommandlet::CalculatePackageLocCacheState`: Unreal loads a package instead of
@@ -46,19 +47,23 @@ old dialogue wave, or is flagged `PKG_RequiresLocalizationGather` without a tabl
 common: `SavePackage` writes no table for packages with script bytecode (every compiled Blueprint
 and Widget Blueprint), text keyed with a stale package localization ID, or text initialized from a
 string. Those packages, packages saved before the table existed, and unreadable tables keep the
-decode-error-or-gap rule. The table does not depend on running a gather; the editor writes it on
+decode-error-or-text-capable-gap rule. uasset-io 1.18 reports `may_contain_text` on every gap and
+`textGapCounts` beside the complete per-reason `gapCounts`. Numeric values, names, object references,
+soft paths and source-proven text-free native layouts retain their gaps without forcing partial
+status. Missing type information remains text-capable. The table does not depend on running a
+gather; the editor writes it on
 every uncooked save. The project-level `SkipGatherCache` setting is not modelled.
 `complete` does not certify parity with every Unreal gather source.
 Excluded packages have `not_gatherable`, which does not prove the absence of text.
 
 The table is written with the package, so it matches the saved exports. Packages with bytecode
-have no table at all, so Blueprint text keeps the decoder-gap rule. Their compiled text literals
+have no table at all, so Blueprint text uses text-capable decoder gaps. Their compiled text literals
 are read from the bytecode itself, one `ScriptBytecode[N]` place per distinct literal in a function. UE 5.8 renumbered the saved literal types when it added translator notes; the reader takes the 5.8 numbering from FortniteMain `AddDevNotesToFText` (260), the only saved marker for that change. An unread table entry is reported with its source string and site even though the reader
 could not place it.
 
 There are also blind spots outside those counters: source files are not scanned, default inventory
 omits other mounted content, and custom callbacks are not run.
-Modern opaque export tails and generic unsupported values do not all become text-specific gaps.
+Modern opaque export tails and binary-only exports do not all become text-specific gaps.
 Zero findings or zero reported decoder gaps therefore cannot certify complete localization coverage.
 
 The scan can display culture-invariant or unresolved saved text that Unreal intentionally does not

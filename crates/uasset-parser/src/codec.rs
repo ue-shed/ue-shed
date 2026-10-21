@@ -2,7 +2,9 @@
 
 use std::fmt;
 
+mod legacy_structs;
 pub(crate) mod native_values;
+pub(crate) use legacy_structs::object_containers;
 
 use crate::archive::{Guid, Reader};
 use crate::package::{Package, PackageIndex};
@@ -133,6 +135,10 @@ fn decode_property_record_inner(
     };
 
     let legacy = package.summary.versions.uses_legacy_property_tags();
+    let new_tagged_fallback = type_name == "StructProperty"
+        && is_tagged_fallback_native_struct(package, &record.type_name)
+        && resolve_struct_type_name(package, &record.type_name).as_deref()
+            != Some("AnimNotifyEvent");
     let decoded = if record.flags.is_binary_or_native() || (legacy && type_name == "StructProperty")
     {
         match decode_binary_or_native_value(
@@ -152,7 +158,9 @@ fn decode_property_record_inner(
                 if matches!(
                     type_name.as_ref(),
                     "ArrayProperty" | "SetProperty" | "MapProperty"
-                ) || (legacy && type_name == "StructProperty") =>
+                ) || (type_name == "StructProperty"
+                    && (legacy
+                        || is_tagged_fallback_native_struct(package, &record.type_name))) =>
             {
                 match decode_typed_value(
                     source,
@@ -171,6 +179,12 @@ fn decode_property_record_inner(
                     Ok(None) => {
                         record.value = PropertyValue::Raw {
                             reason: RawReason::UnsupportedType,
+                        };
+                        return Ok(());
+                    }
+                    Err(error) if new_tagged_fallback => {
+                        record.value = PropertyValue::Raw {
+                            reason: RawReason::DecoderRejected(error.to_string()),
                         };
                         return Ok(());
                     }
@@ -287,6 +301,11 @@ fn decode_typed_value(
         "StrProperty" => Ok(Some(PropertyValue::String(
             payload.read_fstring(&format_args!("{path}.String"))?,
         ))),
+        "FieldPathProperty" => Ok(native_values::field_path(
+            payload,
+            package,
+            &path.to_string(),
+        )),
         "TextProperty" => {
             let path = path.to_string();
             decode_text_value(payload, package, &path).map(|text| text.map(PropertyValue::Text))
@@ -360,7 +379,7 @@ fn decode_typed_value(
 /// Editor packages with a package-level soft object path table store a 4-byte
 /// index into that table. Inline paths use one asset FName before 1007 and
 /// package/asset FNames from 1007, followed by the subpath string.
-fn decode_soft_object_path(
+pub(super) fn decode_soft_object_path(
     payload: &mut Reader<'_>,
     path: &str,
     package: &Package,
@@ -475,6 +494,9 @@ fn decode_binary_or_native_value(
         // wants an owned `&str`; materialize the breadcrumb once here rather
         // than per read.
         let path = path.to_string();
+        if let Some(value) = native_values::optional_struct(type_tree, payload, package, &path) {
+            return Ok(Some(value));
+        }
         if let Some(value) = native_values::math_struct(
             resolve_math_struct_name(package, type_tree)
                 .as_deref()
@@ -493,6 +515,9 @@ fn decode_binary_or_native_value(
         }
         let struct_name = resolve_struct_type_name(package, type_tree);
         if let Some(name) = &struct_name
+            && (package.summary.versions.ue5 == 0
+                || !is_niagara_variable(name)
+                || has_niagara_identity(package, type_tree))
             && let Some(value) =
                 native_values::known_struct(source, name, payload, package, &path, depth)?
         {
@@ -652,30 +677,36 @@ fn decode_array_elements(
     count: usize,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
-    let capacity = payload.checked_vec_capacity::<PropertyValue>(
-        count,
-        minimum_serialized_size(inner.name, inner.tree),
-        &format!("{path}.Count"),
-    )?;
-    let mut values = Vec::with_capacity(capacity);
-    for index in 0..count {
-        let element_path = format!("{path}[{index}]");
-        values.push(
-            decode_container_element(
-                source,
-                inner,
-                payload,
-                package,
-                &element_path,
-                depth,
-                serializer,
-            )?
-            .ok_or_else(|| {
-                unsupported_container_type(payload, &element_path, "array element", inner.name)
-            })?,
-        );
-    }
-    Ok(PropertyValue::Array(values))
+    let mut decoded_new_layout = false;
+    let is_new_layout = speculative_container_struct(package, inner.tree, serializer);
+    let result = (|| {
+        let capacity = payload.checked_vec_capacity::<PropertyValue>(
+            count,
+            minimum_serialized_size(inner.name, inner.tree),
+            &format!("{path}.Count"),
+        )?;
+        let mut values = Vec::with_capacity(capacity);
+        for index in 0..count {
+            let element_path = format!("{path}[{index}]");
+            values.push(
+                decode_container_element(
+                    source,
+                    inner,
+                    payload,
+                    package,
+                    &element_path,
+                    depth,
+                    serializer,
+                )?
+                .ok_or_else(|| {
+                    unsupported_container_type(payload, &element_path, "array element", inner.name)
+                })?,
+            );
+            decoded_new_layout |= is_new_layout;
+        }
+        Ok(PropertyValue::Array(values))
+    })();
+    result.map_err(|error| preserve_opaque_container(error, decoded_new_layout))
 }
 
 fn decode_set_value(
@@ -687,52 +718,28 @@ fn decode_set_value(
     depth: usize,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
-    let (element_type, element_name) = resolve_inner_type(package, type_tree, path, "SetProperty")?;
+    let mut decoded_new_layout = false;
+    let result = (|| {
+        let (element_type, element_name) =
+            resolve_inner_type(package, type_tree, path, "SetProperty")?;
 
-    let remove_count = payload.read_i32(&format_args!("{path}.ElementsToRemove.Count"))?;
-    if remove_count < 0 {
-        return Err(PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            Some(payload.tell()),
-            path,
-            format!("set ElementsToRemove count must be non-negative, got {remove_count}"),
-        ));
-    }
-    payload.checked_vec_capacity::<PropertyValue>(
-        crate::convert::usize_from_checked(remove_count),
-        minimum_serialized_size(&element_name, element_type),
-        &format!("{path}.ElementsToRemove.Count"),
-    )?;
-    for index in 0..remove_count {
-        let element_path = format!("{path}.ElementsToRemove[{index}]");
-        decode_container_element(
-            source,
-            TypeSpec {
-                name: &element_name,
-                tree: element_type,
-                struct_guid: None,
-            },
-            payload,
-            package,
-            &element_path,
-            depth,
-            serializer,
-        )?
-        .ok_or_else(|| {
-            unsupported_container_type(payload, &element_path, "set element", &element_name)
-        })?;
-    }
-
-    let count = payload.read_count(&format_args!("{path}.Elements.Count"))?;
-    let capacity = payload.checked_vec_capacity::<PropertyValue>(
-        count,
-        minimum_serialized_size(&element_name, element_type),
-        &format!("{path}.Elements.Count"),
-    )?;
-    let mut values = Vec::with_capacity(capacity);
-    for index in 0..count {
-        let element_path = format!("{path}.Elements[{index}]");
-        values.push(
+        let is_new_layout = speculative_container_struct(package, element_type, serializer);
+        let remove_count = payload.read_i32(&format_args!("{path}.ElementsToRemove.Count"))?;
+        if remove_count < 0 {
+            return Err(PropertyError::new(
+                crate::property::PropertyErrorKind::MalformedData,
+                Some(payload.tell()),
+                path,
+                format!("set ElementsToRemove count must be non-negative, got {remove_count}"),
+            ));
+        }
+        payload.checked_vec_capacity::<PropertyValue>(
+            crate::convert::usize_from_checked(remove_count),
+            minimum_serialized_size(&element_name, element_type),
+            &format!("{path}.ElementsToRemove.Count"),
+        )?;
+        for index in 0..remove_count {
+            let element_path = format!("{path}.ElementsToRemove[{index}]");
             decode_container_element(
                 source,
                 TypeSpec {
@@ -748,10 +755,42 @@ fn decode_set_value(
             )?
             .ok_or_else(|| {
                 unsupported_container_type(payload, &element_path, "set element", &element_name)
-            })?,
-        );
-    }
-    Ok(PropertyValue::Set(values))
+            })?;
+            decoded_new_layout |= is_new_layout;
+        }
+
+        let count = payload.read_count(&format_args!("{path}.Elements.Count"))?;
+        let capacity = payload.checked_vec_capacity::<PropertyValue>(
+            count,
+            minimum_serialized_size(&element_name, element_type),
+            &format!("{path}.Elements.Count"),
+        )?;
+        let mut values = Vec::with_capacity(capacity);
+        for index in 0..count {
+            let element_path = format!("{path}.Elements[{index}]");
+            values.push(
+                decode_container_element(
+                    source,
+                    TypeSpec {
+                        name: &element_name,
+                        tree: element_type,
+                        struct_guid: None,
+                    },
+                    payload,
+                    package,
+                    &element_path,
+                    depth,
+                    serializer,
+                )?
+                .ok_or_else(|| {
+                    unsupported_container_type(payload, &element_path, "set element", &element_name)
+                })?,
+            );
+            decoded_new_layout |= is_new_layout;
+        }
+        Ok(PropertyValue::Set(values))
+    })();
+    result.map_err(|error| preserve_opaque_container(error, decoded_new_layout))
 }
 
 fn decode_map_value(
@@ -763,19 +802,63 @@ fn decode_map_value(
     depth: usize,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
-    let (key_type, key_name) = resolve_map_key_type(package, type_tree, path)?;
-    let (value_type, value_name) = resolve_map_value_type(package, type_tree, path)?;
+    let mut decoded_new_layout = false;
+    let result = (|| {
+        let (key_type, key_name) = resolve_map_key_type(package, type_tree, path)?;
+        let (value_type, value_name) = resolve_map_value_type(package, type_tree, path)?;
 
-    let keys_to_remove = payload.read_i32(&format_args!("{path}.KeysToRemove.Count"))?;
-    if keys_to_remove > 0 {
-        payload.checked_vec_capacity::<PropertyValue>(
-            crate::convert::usize_from_checked(keys_to_remove),
-            minimum_serialized_size(&key_name, key_type),
-            &format!("{path}.KeysToRemove.Count"),
+        let new_key_layout = speculative_container_struct(package, key_type, serializer);
+        let new_value_layout = speculative_container_struct(package, value_type, serializer);
+        let keys_to_remove = payload.read_i32(&format_args!("{path}.KeysToRemove.Count"))?;
+        if keys_to_remove > 0 {
+            payload.checked_vec_capacity::<PropertyValue>(
+                crate::convert::usize_from_checked(keys_to_remove),
+                minimum_serialized_size(&key_name, key_type),
+                &format!("{path}.KeysToRemove.Count"),
+            )?;
+            for index in 0..keys_to_remove {
+                let key_path = format!("{path}.KeysToRemove[{index}]");
+                decode_container_element(
+                    source,
+                    TypeSpec {
+                        name: &key_name,
+                        tree: key_type,
+                        struct_guid: None,
+                    },
+                    payload,
+                    package,
+                    &key_path,
+                    depth,
+                    serializer,
+                )?
+                .ok_or_else(|| {
+                    unsupported_container_type(payload, &key_path, "map key", &key_name)
+                })?;
+                decoded_new_layout |= new_key_layout;
+            }
+        } else if keys_to_remove != 0 && keys_to_remove != INDEX_NONE {
+            return Err(PropertyError::new(
+                crate::property::PropertyErrorKind::MalformedData,
+                Some(payload.tell()),
+                path,
+                format!("unexpected map KeysToRemove count {keys_to_remove}"),
+            ));
+        }
+
+        let count = payload.read_count(&format_args!("{path}.Entries.Count"))?;
+        let entry_minimum = minimum_serialized_size(&key_name, key_type)
+            .saturating_add(minimum_serialized_size(&value_name, value_type));
+        let capacity = payload.checked_vec_capacity::<MapEntry>(
+            count,
+            entry_minimum,
+            &format!("{path}.Entries.Count"),
         )?;
-        for index in 0..keys_to_remove {
-            let key_path = format!("{path}.KeysToRemove[{index}]");
-            decode_container_element(
+        let mut entries = Vec::with_capacity(capacity);
+        for index in 0..count {
+            let entry_path = format!("{path}.Entries[{index}]");
+            let key_path = format!("{entry_path}.Key");
+            let value_path = format!("{entry_path}.Value");
+            let key = decode_container_element(
                 source,
                 TypeSpec {
                     name: &key_name,
@@ -789,62 +872,29 @@ fn decode_map_value(
                 serializer,
             )?
             .ok_or_else(|| unsupported_container_type(payload, &key_path, "map key", &key_name))?;
+            decoded_new_layout |= new_key_layout;
+            let value = decode_container_element(
+                source,
+                TypeSpec {
+                    name: &value_name,
+                    tree: value_type,
+                    struct_guid: None,
+                },
+                payload,
+                package,
+                &value_path,
+                depth,
+                serializer,
+            )?
+            .ok_or_else(|| {
+                unsupported_container_type(payload, &value_path, "map value", &value_name)
+            })?;
+            decoded_new_layout |= new_value_layout;
+            entries.push(MapEntry { key, value });
         }
-    } else if keys_to_remove != 0 && keys_to_remove != INDEX_NONE {
-        return Err(PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            Some(payload.tell()),
-            path,
-            format!("unexpected map KeysToRemove count {keys_to_remove}"),
-        ));
-    }
-
-    let count = payload.read_count(&format_args!("{path}.Entries.Count"))?;
-    let entry_minimum = minimum_serialized_size(&key_name, key_type)
-        .saturating_add(minimum_serialized_size(&value_name, value_type));
-    let capacity = payload.checked_vec_capacity::<MapEntry>(
-        count,
-        entry_minimum,
-        &format!("{path}.Entries.Count"),
-    )?;
-    let mut entries = Vec::with_capacity(capacity);
-    for index in 0..count {
-        let entry_path = format!("{path}.Entries[{index}]");
-        let key_path = format!("{entry_path}.Key");
-        let value_path = format!("{entry_path}.Value");
-        let key = decode_container_element(
-            source,
-            TypeSpec {
-                name: &key_name,
-                tree: key_type,
-                struct_guid: None,
-            },
-            payload,
-            package,
-            &key_path,
-            depth,
-            serializer,
-        )?
-        .ok_or_else(|| unsupported_container_type(payload, &key_path, "map key", &key_name))?;
-        let value = decode_container_element(
-            source,
-            TypeSpec {
-                name: &value_name,
-                tree: value_type,
-                struct_guid: None,
-            },
-            payload,
-            package,
-            &value_path,
-            depth,
-            serializer,
-        )?
-        .ok_or_else(|| {
-            unsupported_container_type(payload, &value_path, "map value", &value_name)
-        })?;
-        entries.push(MapEntry { key, value });
-    }
-    Ok(PropertyValue::Map(entries))
+        Ok(PropertyValue::Map(entries))
+    })();
+    result.map_err(|error| preserve_opaque_container(error, decoded_new_layout))
 }
 
 fn decode_container_element(
@@ -866,8 +916,31 @@ fn decode_container_element(
         {
             return Ok(Some(value));
         }
+        if matches!(
+            resolve_struct_type_name(package, type_spec.tree).as_deref(),
+            Some("SoftObjectPath" | "SoftClassPath")
+        ) && package.summary.versions.is_at_least_ue5(1008)
+            && !package.soft_object_paths.is_empty()
+        {
+            let mut element = payload.take_bounded(4, path)?;
+            return decode_soft_object_path(&mut element, path, package)
+                .map(PropertyValue::SoftObjectPath)
+                .map(Some);
+        }
         if let Some(value) =
             decode_container_binary_struct(math_name.as_deref().unwrap_or(""), payload, path)?
+        {
+            return Ok(Some(value));
+        }
+        // UE5 recipes probe only qualified native values. On rejection, decode restores
+        // the reader and the unchanged tagged/opaque container path below still applies.
+        if (package.summary.versions.ue5 == 0
+            || (serializer != ContainerSerializer::Tagged
+                && has_niagara_identity(package, type_spec.tree)))
+            && let Some(name) = resolve_struct_type_name(package, type_spec.tree)
+            && is_niagara_variable(&name)
+            && let Some(value) =
+                native_values::niagara::decode(source, &name, payload, package, path, depth)?
         {
             return Ok(Some(value));
         }
@@ -951,12 +1024,37 @@ fn decode_container_element(
     }
 
     if type_spec.name == "StructProperty"
+        && serializer != ContainerSerializer::Tagged
+        && !type_spec.is_user_defined_struct()
+        && let Some(value) = native_values::optional_struct(type_spec.tree, payload, package, path)
+    {
+        return Ok(Some(value));
+    }
+
+    if type_spec.name == "StructProperty"
         && let Some(struct_name) = unknown_layout_struct_name(package, type_spec.tree)
     {
         match serializer {
             // The owning tag (or a content-package struct identity) proves a tagged stream, so a
             // failure below is malformed data and propagates like any other modern payload.
             ContainerSerializer::Tagged => {}
+            _ if is_tagged_fallback_native_struct(package, type_spec.tree)
+                && struct_name != "AnimNotifyEvent" =>
+            {
+                return decode_typed_value(
+                    source,
+                    type_spec,
+                    PropertyTagFlags::default(),
+                    payload,
+                    package,
+                    path,
+                    depth,
+                )
+                .map_err(|error| {
+                    let detail = error.to_string();
+                    error.with_raw_reason(RawReason::DecoderRejected(detail))
+                });
+            }
             _ if is_user_defined_struct_identity(package, type_spec.tree)
                 || is_tagged_fallback_native_struct(package, type_spec.tree) => {}
             // Some element type is binary or native and this one has no recipe. A tagged parse
@@ -1040,12 +1138,86 @@ impl ContainerSerializer {
     }
 }
 
+/// A successful new element must not make a later malformed value/count discard
+/// an export that previously retained the entire binary container as an opaque gap.
+fn preserve_opaque_container(error: PropertyError, decoded_new_layout: bool) -> PropertyError {
+    if decoded_new_layout && error.raw_reason.is_none() {
+        let detail = error.to_string();
+        error.with_raw_reason(RawReason::DecoderRejected(detail))
+    } else {
+        error
+    }
+}
+
+fn speculative_container_struct(
+    package: &Package,
+    ty: &PropertyTypeName,
+    serializer: ContainerSerializer,
+) -> bool {
+    if serializer != ContainerSerializer::BinaryOrNative
+        || package.resolve_name_cow(ty.name).as_deref() != Some("StructProperty")
+    {
+        return false;
+    }
+    let Some(identity) = ty.parameters.first() else {
+        return false;
+    };
+    let Some(name) = package.resolve_name_cow(identity.name) else {
+        return false;
+    };
+    if name != "AnimNotifyEvent" && is_tagged_fallback_native_struct(package, ty) {
+        return true;
+    }
+    if package.summary.versions.ue5 != 0
+        && is_niagara_variable(&name)
+        && has_niagara_identity(package, ty)
+        && native_values::niagara::applies(package)
+    {
+        return true;
+    }
+    let module = identity
+        .parameters
+        .first()
+        .and_then(|module| package.resolve_name_cow(module.name));
+    module.as_deref() == Some("/Script/Engine")
+        && match name.as_ref() {
+            "KeyHandleMap" => matches!(package.summary.versions.ue5, 1000..=1018),
+            "Spline" => matches!(package.summary.versions.ue5, 1017..=1018),
+            _ => false,
+        }
+}
+
+fn is_niagara_variable(name: &str) -> bool {
+    matches!(
+        name,
+        "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset"
+    )
+}
+
+fn has_niagara_identity(package: &Package, ty: &PropertyTypeName) -> bool {
+    ty.parameters
+        .first()
+        .and_then(|identity| identity.parameters.first())
+        .and_then(|module| package.resolve_name_cow(module.name))
+        .is_some_and(|module| module == "/Script/Niagara")
+}
+
 /// Native structs whose `WithSerializer` sets the container flag but whose `Serialize` returns
 /// `false`, so `UScriptStruct::SerializeItem` falls back to tagged properties. Each entry is
 /// checked against the UE 5.7 and 5.8 source; the bytes alone cannot show the fallback.
 ///
 /// - `FAnimNotifyEvent::Serialize` (AnimTypes.cpp) only records a custom version.
-const TAGGED_FALLBACK_NATIVE_STRUCTS: &[(&str, &str)] = &[("/Script/Engine", "AnimNotifyEvent")];
+const TAGGED_FALLBACK_NATIVE_STRUCTS: &[(&str, &str)] = &[
+    ("/Script/Engine", "AnimNotifyEvent"),
+    // UE 5.6–5.8 Scene.cpp / HLODSetup.cpp / SlateFontInfo.cpp:
+    // these serializers only register versions and return false.
+    ("/Script/Engine", "PostProcessSettings"),
+    ("/Script/Engine", "HierarchicalSimplification"),
+    ("/Script/SlateCore", "FontOutlineSettings"),
+    // UE 5.6–5.8 NiagaraVariant.h has reflected fields and no native serializer.
+    // A map's binary flag may come from its NiagaraVariableBase key alone.
+    ("/Script/Niagara", "NiagaraVariant"),
+];
 
 fn is_tagged_fallback_native_struct(package: &Package, type_tree: &PropertyTypeName) -> bool {
     let Some(identity) = type_tree.parameters.first() else {
@@ -1106,7 +1278,7 @@ fn decode_container_binary_struct(
 fn unknown_layout_struct_name(package: &Package, type_tree: &PropertyTypeName) -> Option<String> {
     let name = resolve_struct_type_name(package, type_tree)?;
     if resolve_struct_type_path(package, type_tree).is_some()
-        || native_values::is_known_struct(&name)
+        || native_values::is_known_struct(&name, package)
     {
         return None;
     }
@@ -1259,6 +1431,11 @@ fn decode_struct_value(
             return Ok(value);
         }
         if let Some(name) = &struct_name
+            && !(package.summary.versions.ue5 != 0
+                && matches!(
+                    name.as_ref(),
+                    "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset"
+                ))
             && let Some(value) =
                 native_values::known_struct(source, name, payload, package, path, depth)?
         {
@@ -1268,6 +1445,9 @@ fn decode_struct_value(
     let mut stream =
         read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
     decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
+    if !type_spec.is_user_defined_struct() {
+        legacy_structs::declared_containers(source, &mut stream, type_tree, package, depth + 1);
+    }
     if !type_spec.is_user_defined_struct() && struct_name.as_deref() == Some("DataTableRowHandle") {
         return decode_data_table_row_handle(&stream, package, path);
     }
@@ -1308,22 +1488,13 @@ fn decode_data_table_row_handle(
             _ => {}
         }
     }
-    let table = table.ok_or_else(|| {
-        PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            None,
-            path,
-            "FDataTableRowHandle is missing DataTable",
-        )
-    })?;
-    let row_name = row_name.ok_or_else(|| {
-        PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            None,
-            path,
-            "FDataTableRowHandle is missing RowName",
-        )
-    })?;
+    // UE 4.27 / 5.7 DataTable.h FDataTableRowHandle() initializes null/NAME_None;
+    // PropertyStruct.cpp FStructProperty::SerializeItem also passes archetype defaults
+    // into UScriptStruct::SerializeItem/SerializeTaggedProperties (Class.cpp). Either
+    // field can be elided. Retain saved fields without inventing inherited values.
+    let (Some(table), Some(row_name)) = (table, row_name) else {
+        return Ok(PropertyValue::Struct(stream.clone()));
+    };
     Ok(PropertyValue::DataTableRowHandle(DataTableRowHandleValue {
         table,
         row_name,
@@ -1996,6 +2167,116 @@ mod tests {
     }
 
     #[test]
+    fn legacy_edited_document_arrays_decode_soft_path_structs() {
+        use crate::test_support::write_legacy_property_tag;
+        // SoftObjectPath.cpp FSoftObjectPath::SerializePath; Blueprint.h FEditedDocumentInfo.
+        for ue5 in [0, 1000, 1007] {
+            let package = versioned_package(
+                &[
+                    "None",
+                    "LastEditedDocuments",
+                    "ArrayProperty",
+                    "StructProperty",
+                    "EditedDocumentInfo",
+                    "EditedObjectPath",
+                    "SoftObjectPath",
+                    "/Game/Fixture.Asset",
+                    "Child",
+                ],
+                ue5,
+            );
+            let mut path = Vec::new();
+            if ue5 >= 1007 {
+                // FTopLevelAssetPath's two FNames, introduced in UE 5.1.
+                push_i32(&mut path, 7);
+                push_i32(&mut path, 0);
+                push_i32(&mut path, 0);
+                push_i32(&mut path, 0);
+            } else {
+                push_i32(&mut path, 7);
+                push_i32(&mut path, 0);
+            }
+            push_fstring(&mut path, "Child");
+            let mut document = Vec::new();
+            write_legacy_property_tag(&mut document, 5, 3, &legacy_extras(&[6], true, ue5), &path);
+            write_property_terminator(&mut document, 0);
+            let mut elements = document.clone();
+            elements.extend_from_slice(&document);
+            let mut payload = Vec::new();
+            push_i32(&mut payload, 2);
+            write_legacy_property_tag(
+                &mut payload,
+                1,
+                3,
+                &legacy_extras(&[4], true, ue5),
+                &elements,
+            );
+            let mut bytes = Vec::new();
+            write_legacy_property_tag(&mut bytes, 1, 2, &legacy_extras(&[3], false, ue5), &payload);
+            write_property_terminator(&mut bytes, 0);
+            let mut reader = Reader::new(&bytes);
+            let mut stream = read_tagged_property_stream(
+                &mut reader,
+                &package.summary.versions,
+                &package.names,
+                "Fixture",
+            )
+            .unwrap();
+            decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
+            let PropertyValue::Array(documents) = &stream.records[0].value else {
+                panic!("expected array");
+            };
+            assert_eq!(documents.len(), 2);
+            for document in documents {
+                let PropertyValue::Struct(fields) = document else {
+                    panic!("expected document");
+                };
+                assert_eq!(
+                    fields.records[0].value,
+                    PropertyValue::SoftObjectPath("/Game/Fixture.Asset:Child".into())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn frame_numbers_and_slate_view_offsets_use_their_fixed_numeric_layouts() {
+        for ue5 in [0, 1003, 1017] {
+            let package = versioned_package(&["StructProperty", "FrameNumber"], ue5);
+            let value = decode_record_with_package(
+                package,
+                0,
+                vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![],
+                }],
+                PropertyTagFlags(0),
+                &42_i32.to_le_bytes(),
+            )
+            .unwrap();
+            assert_eq!(value, PropertyValue::Int(42));
+        }
+        let package = versioned_package(&["StructProperty", "DeprecateSlateVector2D"], 1017);
+        let bytes = [1.25_f32.to_le_bytes(), (-2.5_f32).to_le_bytes()].concat();
+        let value = decode_record_with_package(
+            package,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: vec![],
+            }],
+            PropertyTagFlags(0),
+            &bytes,
+        )
+        .unwrap();
+        let PropertyValue::NativeStruct { fields } = value else {
+            panic!("view offset");
+        };
+        assert_eq!(fields[0].value, PropertyValue::Float(1.25));
+        assert_eq!(fields[1].value, PropertyValue::Float(-2.5));
+    }
+
+    #[test]
     fn soft_path_name_and_table_gates_include_empty_tables() {
         for ue5 in [0, 1006, 1007, 1008, 1009] {
             for table in [false, true] {
@@ -2381,6 +2662,251 @@ mod tests {
         crate::test_support::write_int_property_tag(&mut bytes, 7, 6, 99);
         write_property_terminator(&mut bytes, 0);
         (package, bytes)
+    }
+
+    #[test]
+    fn version_registration_only_serializers_use_tagged_fallback_without_new_export_errors() {
+        for (name, module) in [
+            ("PostProcessSettings", "/Script/Engine"),
+            ("HierarchicalSimplification", "/Script/Engine"),
+            ("FontOutlineSettings", "/Script/SlateCore"),
+            ("NiagaraVariant", "/Script/Niagara"),
+        ] {
+            for version in [1016, 1017, 1018] {
+                let (mut package, bytes) = unknown_struct_set(0x08, &[&[0; 8]]);
+                package.summary.versions.ue5 = version;
+                package.names[4] = name.into();
+                package.names[5] = module.into();
+                let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+                assert!(
+                    matches!(&stream.records[0].value,PropertyValue::Set(values) if matches!(&values[0],PropertyValue::Struct(_)))
+                );
+                assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+                for end in 1..8 {
+                    let (mut package, bytes) = unknown_struct_set(0x08, &[&[0; 8][..end]]);
+                    package.names[4] = name.into();
+                    package.names[5] = module.into();
+                    let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+                    assert!(matches!(stream.records[0].value, PropertyValue::Raw { .. }));
+                    assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+                }
+                let params = vec![type_tree(4, vec![type_tree(5, vec![])])];
+                let value = decode_record_with_package(
+                    package.clone(),
+                    3,
+                    params.clone(),
+                    PropertyTagFlags(0x08),
+                    &[0; 8],
+                )
+                .unwrap();
+                assert!(matches!(value, PropertyValue::Struct(_)));
+                let malformed = decode_record_with_package(
+                    package.clone(),
+                    3,
+                    params,
+                    PropertyTagFlags(0x08),
+                    &[0xFF; 8],
+                )
+                .unwrap();
+                assert!(matches!(malformed, PropertyValue::Raw { .. }));
+                package.names[5] = "/Script/Fixture".into();
+                assert!(matches!(
+                    decode_unknown_struct_stream(&package, &bytes)
+                        .unwrap()
+                        .records[0]
+                        .value,
+                    PropertyValue::Raw { .. }
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn successful_optional_map_keys_keep_later_failures_inside_the_original_opaque_property() {
+        use crate::test_support::TypeParam;
+        // A binary map formerly skipped at its first unknown native key. Decode that
+        // key successfully, then reject the value, a later entry, or the entry count.
+        for key in ["NiagaraVariableBase", "PostProcessSettings", "Spline"] {
+            let mut native_key = match key {
+                "NiagaraVariableBase" => vec![0; 16],
+                "Spline" => vec![0; 49],
+                _ => vec![0; 8],
+            };
+            if key == "Spline" {
+                native_key[0] = 1;
+            }
+
+            let mut payload = vec![];
+            push_i32(&mut payload, 0);
+            push_i32(&mut payload, 1);
+            payload.extend_from_slice(&native_key);
+            payload.push(255); // insufficient bytes for an int32 map value
+            let (mut package, bytes) = container_stream(
+                TypeParam {
+                    type_index: 8,
+                    parameters: vec![struct_param(4, 5), int_param()],
+                },
+                0x08,
+                &payload,
+            );
+            package.names[4] = key.into();
+            package.names[5] = if key == "NiagaraVariableBase" {
+                "/Script/Niagara"
+            } else {
+                "/Script/Engine"
+            }
+            .into();
+            package
+                .summary
+                .custom_versions
+                .push(crate::package::CustomVersion {
+                    key: Guid {
+                        a: 0xFCF57AFA,
+                        b: 0x50764283,
+                        c: 0xB9A9E658,
+                        d: 0xFFA02D32,
+                    },
+                    version: 64,
+                    friendly_name: None,
+                });
+            let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+            assert!(
+                matches!(stream.records[0].value, PropertyValue::Raw { .. }),
+                "{key}"
+            );
+            assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+
+            // Removal keys are native too; the following count can be truncated.
+            let mut payload = vec![];
+            push_i32(&mut payload, 1);
+            payload.extend_from_slice(&native_key);
+            payload.push(255);
+            let (_, bytes) = container_stream(
+                TypeParam {
+                    type_index: 8,
+                    parameters: vec![struct_param(4, 5), int_param()],
+                },
+                0x08,
+                &payload,
+            );
+            let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+            assert!(matches!(stream.records[0].value, PropertyValue::Raw { .. }));
+            assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+        }
+        let (mut package, _) = unknown_struct_set(0x08, &[]);
+        package.names[4] = "NiagaraVariableBase".into();
+        package.names[5] = "/Script/Niagara".into();
+        package
+            .summary
+            .custom_versions
+            .push(crate::package::CustomVersion {
+                key: Guid {
+                    a: 0xFCF57AFA,
+                    b: 0x50764283,
+                    c: 0xB9A9E658,
+                    d: 0xFFA02D32,
+                },
+                version: 64,
+                friendly_name: None,
+            });
+        let mut payload = vec![];
+        push_i32(&mut payload, 0);
+        push_i32(&mut payload, 2);
+        push_i32(&mut payload, 7);
+        payload.extend([0; 16]);
+        payload.push(255);
+        let (_, bytes) = container_stream(
+            TypeParam {
+                type_index: 8,
+                parameters: vec![int_param(), struct_param(4, 5)],
+            },
+            0x08,
+            &payload,
+        );
+        let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+        assert!(matches!(stream.records[0].value, PropertyValue::Raw { .. }));
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+        let mut payload = vec![];
+        push_i32(&mut payload, 1);
+        payload.extend([0; 16]);
+        payload.push(255);
+        let (_, bytes) = container_stream(
+            TypeParam {
+                type_index: 2,
+                parameters: vec![struct_param(4, 5)],
+            },
+            0x08,
+            &payload,
+        );
+        let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+        assert!(matches!(stream.records[0].value, PropertyValue::Raw { .. }));
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+        // Failure before reaching a new layout preserves the previous hard error.
+        let (mut package, bytes) = container_stream(
+            TypeParam {
+                type_index: 8,
+                parameters: vec![int_param(), struct_param(4, 5)],
+            },
+            0x08,
+            &[0, 0, 0, 0, 1, 0, 0, 0, 255],
+        );
+        package.names[4] = "PostProcessSettings".into();
+        package.names[5] = "/Script/Engine".into();
+        assert!(decode_unknown_struct_stream(&package, &bytes).is_err());
+    }
+
+    #[test]
+    fn ue5_niagara_recipe_cannot_claim_another_modules_struct_with_the_same_name() {
+        let (mut package, bytes) = unknown_struct_set(0x08, &[&[0; 20]]);
+        package.names[4] = "NiagaraVariable".into();
+        package.names[5] = "/Script/Fixture".into();
+        package
+            .summary
+            .custom_versions
+            .push(crate::package::CustomVersion {
+                key: Guid {
+                    a: 0xFCF57AFA,
+                    b: 0x50764283,
+                    c: 0xB9A9E658,
+                    d: 0xFFA02D32,
+                },
+                version: 64,
+                friendly_name: None,
+            });
+        let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+        assert!(matches!(stream.records[0].value, PropertyValue::Raw { .. }));
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+    }
+
+    #[test]
+    fn ue5_niagara_container_rejection_keeps_the_preexisting_tagged_or_opaque_result() {
+        for version in [63, 64] {
+            for flags in [0, 0x08] {
+                let (mut package, bytes) = unknown_struct_set(flags, &[&[0; 8]]);
+                package.names[4] = "NiagaraVariable".into();
+                package.names[5] = "/Script/Niagara".into();
+                package
+                    .summary
+                    .custom_versions
+                    .push(crate::package::CustomVersion {
+                        key: Guid {
+                            a: 0xFCF57AFA,
+                            b: 0x50764283,
+                            c: 0xB9A9E658,
+                            d: 0xFFA02D32,
+                        },
+                        version,
+                        friendly_name: None,
+                    });
+                let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+                assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+                if flags == 0 {
+                    assert!(matches!(stream.records[0].value, PropertyValue::Set(_)));
+                } else {
+                    assert!(matches!(stream.records[0].value, PropertyValue::Raw { .. }));
+                }
+            }
+        }
     }
 
     /// `TSet<Mystery>` with the given elements and container tag flags.

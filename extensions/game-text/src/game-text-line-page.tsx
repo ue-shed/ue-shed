@@ -51,6 +51,8 @@ function problemSentence(
 				? "Some cultures still need translation work."
 				: `Translation work: ${summary}.`;
 		}
+		case "unchecked":
+			return "Game Text couldn't check this line in some cultures: the evidence, such as a package it read only partly, does not prove its state.";
 		case "finding":
 		case "up_to_date":
 			return undefined;

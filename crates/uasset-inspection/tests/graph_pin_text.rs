@@ -112,12 +112,35 @@ fn saved_repaired_pins_match_fresh_unreal_reload_on_all_four_engines() {
 }
 
 #[test]
+fn ue56_pin_window_preserves_the_verified_ue57_field_layout_and_text() {
+    let bytes = include_bytes!("../../../fixtures/graph-pin-text/5.7/BP_Keys.uasset");
+    let mut package = Package::parse(bytes).unwrap();
+    let export = package
+        .exports
+        .iter()
+        .find(|export| export.object_path.as_str().ends_with("EventGraph.split"))
+        .unwrap()
+        .clone();
+    let read = |package: &Package| {
+        let context = AssetDecodeContext {
+            source: bytes,
+            package,
+            schemas: uasset_parser::schema::embedded_source_model(),
+        };
+        decode_export(&export, &context).unwrap()
+    };
+    let original = read(&package);
+    package.summary.versions.ue5 = 1016;
+    assert_eq!(read(&package), original);
+}
+
+#[test]
 fn unknown_graph_revision_has_a_named_pin_coverage_gap() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/graph-pin-text/5.7/BP_Keys.uasset");
     let bytes = fs::read(path).unwrap();
     let mut package = Package::parse(&bytes).unwrap();
-    package.summary.versions.ue5 = 1016;
+    package.summary.versions.ue5 = 1019;
     let export = package
         .exports
         .iter()

@@ -31,11 +31,16 @@ const facts: TextFacts = {
 describe("text problems", () => {
 	it("lists every problem worst first, and up to date alone when there is none", () => {
 		expect(textProblems({ signals: [], keyChanged: false })).toEqual(["up_to_date"]);
-		expect(textProblems({ signals: ["long", "conflicting"], keyChanged: true })).toEqual([
+		expect(textProblems({ signals: ["shared", "conflicting"], keyChanged: true })).toEqual([
 			"key_changed",
 			"conflicting_source",
 			"finding"
 		]);
+		// Long is a review signal; it is a finding only when the request names it.
+		expect(textProblems({ signals: ["long"], keyChanged: false })).toEqual(["up_to_date"]);
+		expect(
+			textProblems({ signals: ["long"], keyChanged: false, countedFindings: ["long"] })
+		).toEqual(["finding"]);
 		// Evidence only is a fact about where text lives, not a problem.
 		expect(textProblems({ signals: ["evidence_only"], keyChanged: false })).toEqual([
 			"up_to_date"
@@ -174,8 +179,9 @@ describe("problems in the query", () => {
 			not_gathered: 1,
 			changed_since_gather: 1,
 			translation: 1,
-			finding: 1,
-			up_to_date: 2
+			finding: 0,
+			unchecked: 0,
+			up_to_date: 3
 		});
 		for (const problem of TextProblem.literals) {
 			const filtered = query.search({
@@ -189,7 +195,16 @@ describe("problems in the query", () => {
 		expect(keys([{ field: "problem", op: "is", values: ["not_gathered"] }])).toEqual(["New"]);
 		expect(keys([{ field: "problem", op: "is", values: ["up_to_date"] }])).toEqual([
 			"Code",
-			"Done"
+			"Done",
+			"Long"
+		]);
+		// Naming long counts it as a finding for every problem in that request.
+		const long: TextFilter = [{ field: "finding", op: "is", values: ["long"] }];
+		const named = query.search({ ...request, filter: long });
+		expect(named.problems).toMatchObject({ finding: 1, up_to_date: 0 });
+		expect(named.localization?.lines.map((line) => line.countedFindings)).toEqual([["long"]]);
+		expect(keys([...long, { field: "problem", op: "is", values: ["finding"] }])).toEqual([
+			"Long"
 		]);
 	});
 
@@ -198,9 +213,9 @@ describe("problems in the query", () => {
 			{ field: "origin", op: "is_not", values: ["cpp"] },
 			{ field: "problem", op: "is", values: ["up_to_date"] }
 		];
-		expect(keys(filter)).toEqual(["Done"]);
+		expect(keys(filter)).toEqual(["Done", "Long"]);
 		const page = query.search({ ...request, filter });
-		expect(page.problems?.up_to_date).toBe(1);
+		expect(page.problems?.up_to_date).toBe(2);
 		expect(page.problems?.not_gathered).toBe(1);
 		expect(keys([{ field: "translation", op: "is", values: ["missing"] }])).toEqual([
 			"Untranslated"
@@ -236,7 +251,7 @@ describe("problems in the query", () => {
 			})
 		).toThrow(GameTextLocalizationError);
 		const corpusOnly = query.search({ query: "", capability: "all", pageSize: 50 });
-		expect(corpusOnly.problems?.finding).toBe(1);
-		expect(corpusOnly.problems?.up_to_date).toBe(4);
+		expect(corpusOnly.problems?.finding).toBe(0);
+		expect(corpusOnly.problems?.up_to_date).toBe(5);
 	});
 });

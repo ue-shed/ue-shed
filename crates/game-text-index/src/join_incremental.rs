@@ -241,7 +241,7 @@ pub(crate) fn refresh(
     let Some(previous_key) = store.root["active"]["joined"].as_str().map(str::to_owned) else {
         return fallback("no-base");
     };
-    if !previous_key.starts_with("joined-native-v2:") {
+    if !previous_key.starts_with(crate::join::JOINED_KEY_PREFIX) {
         return fallback("native-format");
     }
     let (mut header, _) = layer(store, &previous_key)?.ok_or("missing joined header")?;
@@ -562,11 +562,9 @@ pub(crate) fn refresh(
             set(&mut hot, "line.facts", row, structural);
             set(&mut hot, "line.reasons", row, row_reasons);
         }
-        let mut problems = joined.get("line.problems", row)? & (1 | 32);
-        if row_reasons & (1 << 11) != 0 {
-            problems |= 2;
-        }
-        let mut translation_problem = false;
+        // The key change and saved-signal finding carry over; the cultures are classified again.
+        let mut problems = joined.get("line.problems", row)?
+            & (crate::text_problem::KEY_CHANGED | crate::text_problem::FINDING);
         for (ci, culture) in cultures.iter().enumerate() {
             let prefix = format!("c{ci}.");
             let mut facts = (joined.get(&(prefix.clone() + "facts"), row)?
@@ -661,13 +659,7 @@ pub(crate) fn refresh(
             set(&mut hot, &(prefix.clone() + "facts"), row, facts);
             set(&mut hot, &(prefix.clone() + "state"), row, state);
             set(&mut hot, &(prefix.clone() + "reasons"), row, unknown);
-            translation_problem |= state == 1 || state == 2 || facts & (1 << 3) != 0;
-            if state == 4 {
-                problems |= 4;
-            }
-            if state == 5 {
-                problems |= 8;
-            }
+            problems |= crate::text_problem::culture(state, facts, unknown);
             if let Some(review) = &input.review
                 && review["target"] == input.target["name"]
                 && reasons[row] & ((1 << 9) | (1 << 10)) == 0
@@ -693,14 +685,11 @@ pub(crate) fn refresh(
                 }
             }
         }
-        if translation_problem {
-            problems |= 16;
-        }
         set(
             &mut hot,
             "line.problems",
             row,
-            if problems == 0 { 64 } else { problems },
+            crate::text_problem::settle(problems),
         );
     }
     if !reviews.is_empty() {

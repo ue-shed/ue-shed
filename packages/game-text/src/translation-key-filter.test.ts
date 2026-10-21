@@ -41,7 +41,8 @@ const markers = [
 ] as const;
 
 // Three copies of one Blueprint: their saved namespaces differ only by package marker, so Unreal
-// gathers and translates all three as ("", "Title"). Each copy keeps its own saved unit.
+// gathers and translates all three as ("", "Title"), and they are one saved unit named by the
+// first copy's saved identity.
 const saved: Occurrence[] = [
 	text(markers[0], "Title", "Mushroom", "CopyA"),
 	text(markers[1], "Title", "Fungus", "CopyB"),
@@ -49,7 +50,7 @@ const saved: Occurrence[] = [
 	text(markers[0], "Subtitle", "Spores", "CopyA.Subtitle"),
 	// A String Table entry keeps its table namespace: the same key text is another key.
 	{
-		...text("Funguys", "Title", "Mushroom table", "Title"),
+		...text("Mycology", "Title", "Mushroom table", "Title"),
 		location: {
 			kind: "string_table_entry",
 			object_path: "/Game/Text/Table.Table",
@@ -61,7 +62,7 @@ const saved: Occurrence[] = [
 // The marker strips away: every copy's translation key is ["", "Title"].
 const title = gatheredIdentityKey(gatheredIdentity(markers[1], "Title", false));
 const subtitle = JSON.stringify(["", "Subtitle"]);
-const tableTitle = JSON.stringify(["Funguys", "Title"]);
+const tableTitle = JSON.stringify(["Mycology", "Title"]);
 
 const keyClause = (op: "is" | "is_not", values: readonly string[]): TextFilter[number] => ({
 	field: "translation_key",
@@ -164,11 +165,12 @@ describe("translation_key filter", () => {
 									})
 								);
 							};
-							const copies = markers.map((marker) => `${marker}/Title`);
+							const copies = [`${markers[0]}/Title`];
 
-							// Without a target, every saved copy gathered under the key.
+							// Without a target, the one unit holding every saved copy of the key.
 							const units = yield* search([keyClause("is", [title])], false);
 							expect(units.units).toEqual(copies);
+							expect(units.total).toBe(1);
 							// With one, the single line Unreal translates them by, which conflicts.
 							const lines = yield* search([keyClause("is", [title])], true);
 							expect(lines.lines).toEqual(["/Title"]);
@@ -177,14 +179,14 @@ describe("translation_key filter", () => {
 							// Another key and the String Table entry stay out, and is_not keeps them.
 							expect(
 								(yield* search([keyClause("is_not", [title])], false)).units
-							).toEqual(["Funguys/Title", `${markers[0]}/Subtitle`]);
+							).toEqual(["Mycology/Title", `${markers[0]}/Subtitle`]);
 							expect(
 								(yield* search([keyClause("is_not", [title])], true)).lines
-							).toEqual(["/Subtitle", "Funguys/Title", "UI/K"]);
+							).toEqual(["/Subtitle", "Mycology/Title", "UI/K"]);
 							expect(
 								(yield* search([keyClause("is", [subtitle, tableTitle])], true))
 									.lines
-							).toEqual(["/Subtitle", "Funguys/Title"]);
+							).toEqual(["/Subtitle", "Mycology/Title"]);
 
 							// Combined with other clauses, every clause must match.
 							const conflicting = {

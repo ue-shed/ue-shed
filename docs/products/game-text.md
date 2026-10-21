@@ -105,9 +105,15 @@ occurrences with package, object, row/entry/property, and edit-capability eviden
 Localization lines use each occurrence's gathered identity: saved FText in asset properties and
 DataTable cells has its trailing package namespace marker removed; String Table definitions and
 references keep the namespace exactly as authored. A mixed corpus unit joins both identities with
-their own occurrences. Saved corpus units and occurrences retain the full namespace and unit IDs
-for asset inspection.
+their own occurrences. Saved corpus units use the same identity: one unit per key Unreal
+translates (`unreal:<gathered namespace>:<key>`), so text saved under one key in several packages
+is one unit with every place, and a key holding different text there is a `conflicting` unit.
+Occurrences keep the full saved namespace, package marker included, for asset inspection and ID
+repairs.
 Package variants of one namespace and key share a localization line, including source conflicts.
+A line's places come from the saved packages, never from the manifest's key paths: Unreal's
+manifest keeps one path per namespace and key (`FInternationalizationManifest::AddSource` adds no
+second context for the same key and source), so it names only the first place Unreal saw.
 That gathered namespace and key is the line's **translation key**, the identity Unreal translates
 it by. A `translation_key` filter clause selects lines by it: its values are
 `JSON.stringify([namespace, key])` (`gatheredIdentityKey(gatheredTextIdentity(unit))` or a line's
@@ -131,8 +137,11 @@ partial. `missingGatherableText` counts the runtime entries that were not read, 
 package lists up to three of them, with source text and Unreal site, as
 `gatherable_text_not_decoded` diagnostics. The table is used only where Unreal's gather would use
 it; Unreal saves no table for packages with Blueprint bytecode and loads them instead. Those
-packages, packages saved before the table existed, and unreadable tables keep the previous rule:
-any decode error or gap is partial. The table is written on every editor save, so no prior gather
+packages, packages saved before the table existed, and unreadable tables use declared serialization
+types to distinguish gaps that may hold text from text-free bookkeeping; for them a decode error
+or a gap that may hold text is partial. Every gap remains reported; uasset-io 1.18 adds
+`may_contain_text` to gaps and per-reason `textGapCounts` beside the unchanged `gapCounts`.
+Unknown types remain text-capable. The table is written on every editor save, so no prior gather
 is needed.
 
 Saved-scan completeness is limited to the selected package inventory and supported decoders; it
@@ -344,9 +353,23 @@ Each line is classified by what it needs, worst first:
 3. **Not gathered yet**: Unreal's manifest does not have the line.
 4. **Changed since gather**: the source differs from what Unreal gathered.
 5. **Translation work**: a culture is missing, out of date or not synced.
-6. **Finding**: used in several places, the same text under different keys, long, or not
-   localizable.
-7. **Up to date**.
+6. **Finding**: used in several places, the same text under different keys, or not localizable;
+   and any other review signal the request's filter names (below).
+7. **Couldn't check**: a culture in scope has no provable state (`unknown`), for example text in
+   a package the reader read only partly. It needs no work in the text itself.
+8. **Up to date**: every culture in scope confirmed, and no finding.
+
+"Not found in the project" counts as **Changed since gather**: Unreal gathered the key, and its
+package, read completely, no longer holds it.
+
+Which review signals make a line a finding follows the request. By default they are `shared`,
+`duplicate_source` and `unresolved`; `long` is a review signal and a filter, not a finding. A
+`finding is` clause (or the lens) that names a signal counts it as a finding for every problem in
+that request: the problem filter, problem groups, aggregates and counts. Search rows carry
+`problems` (under the request) and `countedFindings` (the signals that made them a finding), so a
+host shows on each row exactly what put it in its group. `TEXT_PROBLEM_RULES`
+(`packages/game-text/src/text-problem-rules.ts`) is the one definition: `textProblems` reads it and
+the native engine compiles a table generated from it (`node scripts/generate-text-problem-rules.ts`).
 
 A line counts once for each problem it has and is grouped under its worst. Problem groups mark
 severity: red for key problems, amber for lines waiting on Unreal and translation work, blue for

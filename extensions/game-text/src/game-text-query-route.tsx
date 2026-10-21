@@ -109,7 +109,8 @@ const localizationProblems = new Set([
 	"key_changed",
 	"not_gathered",
 	"changed_since_gather",
-	"translation"
+	"translation",
+	"unchecked"
 ]);
 
 /** Line states that are facts rather than problems; they filter through the selection. */

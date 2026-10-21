@@ -155,3 +155,11 @@ StringTable entries and compact text occurrences also carry `dev_notes`. Consume
 entry/occurrence notes from older producers to `""`. This additive evidence does not change the
 source-only authoring value contract. The package decoder gates the serialized FString on
 FortniteMain custom version >= 260 and the absence of `FILTER_EDITOR_ONLY`.
+
+Minor version 1.18 adds optional `textGapCounts` to `text_package_record`, with the same four
+reason keys and nonnegative integer counts as `gapCounts`. It counts only gaps whose undecoded
+bytes may contain FText. Gap samples and streamed `text_coverage_gap` values add optional boolean
+`may_contain_text`; absent classification from an older reader means unknown (text-capable).
+Every gap remains reported. Without a usable saved gather table, only text-capable gaps or decode
+errors make a package partial; with a usable table, only missing runtime gather entries do. Undecoded graph pins remain partial even when a runtime table is usable. The worker strips
+both new fields below minor 18, including classifications on individually streamed gaps.

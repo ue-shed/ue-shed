@@ -90,6 +90,9 @@ pub enum EditCapability {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct SavedAssetTextCoverageGap {
+    /// v1.18: absent from older producers; unknown must be treated as text-capable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub may_contain_text: Option<bool>,
     pub object_path: String,
     pub property_path: String,
     pub reason: TextCoverageGapReason,
@@ -198,6 +201,7 @@ pub fn text_occurrence(occurrence: crate::projection::TextOccurrence) -> SavedAs
 
 pub fn text_coverage_gap(gap: crate::projection::TextCoverageGap) -> SavedAssetTextCoverageGap {
     SavedAssetTextCoverageGap {
+        may_contain_text: Some(gap.may_contain_text),
         object_path: gap.object_path,
         property_path: gap.property_path,
         reason: match gap.reason {
@@ -238,6 +242,7 @@ mod tests {
             (Reason::PropertyDecoderRejected, "property_decoder_rejected"),
         ] {
             let gap = text_coverage_gap(TextCoverageGap {
+                may_contain_text: true,
                 object_path: "/Game/Fixture/Example.Example".into(),
                 property_path: "Values".into(),
                 reason,
@@ -343,6 +348,7 @@ mod tests {
         }
 
         let gap = text_coverage_gap(TextCoverageGap {
+            may_contain_text: true,
             object_path: "/Game/Fixture/DA.DA".to_owned(),
             property_path: "Text".to_owned(),
             reason: crate::projection::TextCoverageGapReason::UnsupportedTextHistory,
@@ -350,7 +356,7 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&gap).expect("coverage gap JSON"),
             concat!(
-                r#"{"object_path":"/Game/Fixture/DA.DA","property_path":"Text","#,
+                r#"{"may_contain_text":true,"object_path":"/Game/Fixture/DA.DA","property_path":"Text","#,
                 r#""reason":"unsupported_text_history"}"#
             )
         );

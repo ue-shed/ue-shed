@@ -49,15 +49,7 @@ pub const SIGNALS: [&str; 7] = [
     "evidence_only",
     "compiled_copy_differs",
 ];
-pub const PROBLEMS: [&str; 7] = [
-    "key_changed",
-    "conflicting_source",
-    "not_gathered",
-    "changed_since_gather",
-    "translation",
-    "finding",
-    "up_to_date",
-];
+pub(crate) use crate::text_problem::PROBLEMS;
 pub const ORIGINS: [&str; 5] = ["string_table", "data_table", "asset", "cpp", "other_source"];
 pub const AUDIENCES: [&str; 3] = ["player", "editor", "unknown"];
 pub const REVIEWS: [&str; 5] = [
@@ -179,6 +171,11 @@ pub struct SearchRequest {
     pub min_group_size: Option<usize>,
     pub open_group: Option<String>,
     pub facets: Option<Facets>,
+    /// Set on a request derived from another (a facet or count base without a clause or the
+    /// lens): the findings the original request counts. Never read from callers; part of the
+    /// cache key when set.
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub counted: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -349,7 +346,7 @@ impl SearchRequest {
             require(filters.len() <= 32, invalid("Too many filter clauses."))?;
             for clause in filters {
                 let (allowed, max, length): (&[&str], usize, u32) = match clause.field {
-                    FilterField::Problem => (&PROBLEMS, 7, 64),
+                    FilterField::Problem => (&PROBLEMS, PROBLEMS.len(), 64),
                     FilterField::Finding => (&SIGNALS, SIGNALS.len(), 64),
                     FilterField::Translation => (&["missing", "to_update", "not_synced"], 3, 64),
                     FilterField::Origin => (&ORIGINS, 5, 64),
@@ -426,8 +423,10 @@ impl SearchRequest {
         Ok(())
     }
 
+    /// The request without its `field` clauses. Findings it counts stay those of `self`.
     pub fn without_filter(&self, field: FilterField) -> Self {
         let mut result = self.clone();
+        result.counted = Some(self.counted_findings());
         result.filter = self.filter.as_ref().map(|clauses| {
             clauses
                 .iter()
@@ -445,6 +444,24 @@ impl SearchRequest {
         result.localization_cursor = None;
         result.open_group = None;
         result
+    }
+
+    /// The review signals that make a row a finding under this request: the defaults, and the
+    /// findings its `finding is` clauses and lens name. Every problem in the request uses them.
+    pub(crate) fn counted_findings(&self) -> u32 {
+        if let Some(counted) = self.counted {
+            return counted;
+        }
+        let clauses = self
+            .filter
+            .iter()
+            .flatten()
+            .filter(|clause| clause.field == FilterField::Finding && clause.op == FilterOp::Is);
+        crate::text_problem::counted_findings(
+            clauses
+                .flat_map(|clause| clause.values.iter().map(String::as_str))
+                .chain(self.lens.as_deref()),
+        )
     }
 
     pub(crate) fn matching_key(&self) -> Result<String> {
@@ -521,6 +538,15 @@ mod tests {
         scope = request.clone();
         scope.without_notes = Some(true);
         assert_ne!(key, scope.matching_key()?);
+        // A relaxed base keeps the original's findings and so its own cache key; callers
+        // cannot set them.
+        scope = request.clone();
+        scope.counted = Some(scope.counted_findings() | 4);
+        assert_ne!(key, scope.matching_key()?);
+        assert!(
+            parse_search_request(r#"{"query":"","capability":"all","pageSize":1,"counted":4}"#)
+                .is_err()
+        );
         Ok(())
     }
 

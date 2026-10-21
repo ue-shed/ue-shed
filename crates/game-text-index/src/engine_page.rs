@@ -77,7 +77,15 @@ impl EngineQuery {
                 if index & 255 == 0 {
                     checkpoint(cancelled)?;
                 }
-                if p.group_key(&places, localized, *row as usize, &scope, by)? == opened {
+                let key = p.group_key(
+                    &places,
+                    localized,
+                    *row as usize,
+                    &scope,
+                    by,
+                    request.counted_findings(),
+                )?;
+                if key == opened {
                     rows.push(*row);
                 }
             }

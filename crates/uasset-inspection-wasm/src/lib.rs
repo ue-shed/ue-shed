@@ -243,7 +243,9 @@ fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> Str
                 _ if coverage_gaps.iter().any(TextCoverageGap::is_graph_pin_gap) => "partial",
                 Ok(Some(gather)) if gather.missing == 0 => "complete",
                 Ok(Some(_)) => "partial",
-                Ok(None) | Err(_) if coverage_gaps.is_empty() => projection_status(&diagnostics),
+                Ok(None) | Err(_) if !coverage_gaps.iter().any(|gap| gap.may_contain_text) => {
+                    projection_status(&diagnostics)
+                }
                 Ok(None) | Err(_) => "partial",
             },
             path,

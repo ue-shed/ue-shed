@@ -1,4 +1,5 @@
 import type { LocalizationCultureMark } from "./localization-schema.js";
+import type { TextProblemRule } from "./text-problem-rules.js";
 import {
 	TextProblem,
 	type TextAudience,
@@ -14,6 +15,14 @@ import {
 	type TextTranslationState
 } from "./schema.js";
 import { matchesTextPathPrefix, textFileKey } from "./text-origin.js";
+import {
+	TEXT_FINDING_SIGNALS,
+	TEXT_PROBLEMS,
+	TEXT_PROBLEM_LABELS,
+	TEXT_PROBLEM_RULES
+} from "./text-problem-rules.js";
+
+export { TEXT_PROBLEM_LABELS };
 
 /** What a filter can ask about one line or text unit. */
 export interface TextFacts {
@@ -52,24 +61,10 @@ export interface TextFacts {
 	readonly assetTypes?: readonly string[];
 }
 
-/**
- * Display labels for stable text-problem categories. Hosts may present different wording
- * without changing stored problem codes or the policy that reports them.
- */
-export const TEXT_PROBLEM_LABELS = {
-	key_changed: "Key changed",
-	conflicting_source: "Same key, different text",
-	not_gathered: "Not gathered yet",
-	changed_since_gather: "Changed since gather",
-	translation: "Translation work",
-	finding: "Findings",
-	up_to_date: "Up to date"
-} satisfies Record<TextProblem, string>;
-
-/** Whether a line has work before it ships: any problem worse than a finding. */
+/** Whether a line has work before it ships: its worst problem is one `TEXT_PROBLEM_RULES` marks. */
 export function needsWork(problems: readonly TextProblem[]): boolean {
 	const worst = problems[0];
-	return worst !== undefined && worst !== "finding" && worst !== "up_to_date";
+	return worst !== undefined && TEXT_PROBLEM_RULES[worst].work;
 }
 
 const findingSignals = new Set<TextReviewSignal>([
@@ -81,6 +76,36 @@ const findingSignals = new Set<TextReviewSignal>([
 
 function isFinding(signal: TextReviewSignal): signal is TextFinding {
 	return findingSignals.has(signal);
+}
+
+/** A review signal a request can count as a finding. */
+export type TextCountedFinding = (typeof TEXT_FINDING_SIGNALS)[number];
+const nameable = new Set<TextReviewSignal>(TEXT_FINDING_SIGNALS);
+
+/**
+ * The review signals that make a line a finding under a request, as the engine counts them: the
+ * default findings, and every finding the filter's `finding is` clauses or the lens name.
+ */
+export function countedFindings(request: {
+	readonly filter?: TextFilter | undefined;
+	readonly lens?: string | undefined;
+}): readonly TextCountedFinding[] {
+	const named = new Set<string>(TEXT_PROBLEM_RULES.finding.signals);
+	for (const clause of request.filter ?? [])
+		if (clause.field === "finding" && clause.op === "is")
+			for (const value of clause.values) named.add(value);
+	if (request.lens !== undefined) named.add(request.lens);
+	return TEXT_FINDING_SIGNALS.filter((signal) => named.has(signal));
+}
+
+/** The review signals of `signals` that count as findings: `countedFindings`, or the defaults. */
+export function textCountedFindings(
+	signals: readonly TextReviewSignal[],
+	counted: readonly TextReviewSignal[] = TEXT_PROBLEM_RULES.finding.signals
+): readonly TextCountedFinding[] {
+	return TEXT_FINDING_SIGNALS.filter(
+		(signal) => nameable.has(signal) && counted.includes(signal) && signals.includes(signal)
+	);
 }
 
 /** Translation work in the given cultures' marks. */
@@ -98,27 +123,35 @@ export function translationStates(
 }
 
 /**
- * Every problem a line has, worst first; `up_to_date` alone when it has none. `marks` are the
- * cultures in scope, absent for text that no localization target covers.
+ * Every problem a line has, worst first; `up_to_date` alone when it has none, from
+ * `TEXT_PROBLEM_RULES`. `marks` are the cultures in scope, absent for text that no localization
+ * target covers. `countedFindings` are the signals that make a finding under the request
+ * (`countedFindings`); absent, the defaults.
  */
 export function textProblems(input: {
 	readonly signals: readonly TextReviewSignal[];
 	readonly keyChanged: boolean;
 	readonly marks?: readonly LocalizationCultureMark[];
+	readonly countedFindings?: readonly TextReviewSignal[];
 }): readonly TextProblem[] {
 	const marks = input.marks ?? [];
 	const found = new Set<TextProblem>();
 	if (input.keyChanged) found.add("key_changed");
-	if (
-		input.signals.includes("conflicting") ||
-		marks.some((mark) => mark.unknownReasons.includes("conflicting_source"))
-	)
-		found.add("conflicting_source");
-	if (marks.some((mark) => mark.state === "not_gathered")) found.add("not_gathered");
-	if (marks.some((mark) => mark.state === "changed_since_gather"))
-		found.add("changed_since_gather");
-	if (translationStates(marks).length > 0) found.add("translation");
-	if (input.signals.some(isFinding)) found.add("finding");
+	for (const problem of TEXT_PROBLEMS) {
+		const rule: TextProblemRule = TEXT_PROBLEM_RULES[problem];
+		const signals = problem === "finding" ? [] : rule.signals;
+		if (
+			signals.some((signal) => input.signals.includes(signal)) ||
+			marks.some(
+				(mark) =>
+					rule.states.includes(mark.state) ||
+					rule.facts.some((fact) => mark.facts.includes(fact)) ||
+					rule.reasons.some((reason) => mark.unknownReasons.includes(reason))
+			)
+		)
+			found.add(problem);
+	}
+	if (textCountedFindings(input.signals, input.countedFindings).length > 0) found.add("finding");
 	if (found.size === 0) return ["up_to_date"];
 	return TextProblem.literals.filter((problem) => found.has(problem));
 }
@@ -187,6 +220,7 @@ export function textProblemCounts(lines: Iterable<readonly TextProblem[]>): Text
 		changed_since_gather: 0,
 		translation: 0,
 		finding: 0,
+		unchecked: 0,
 		up_to_date: 0
 	} satisfies TextProblemCounts;
 	for (const problems of lines) for (const problem of problems) counts[problem]++;

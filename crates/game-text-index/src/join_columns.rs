@@ -303,6 +303,9 @@ impl PackageColumns {
                 .ok_or_else(|| "unit string ID".into())
         };
         if c[O_IDENTITY][row] < 2 && c[O_KEY][row] != empty {
+            // One unit per key Unreal translates: without the package marker, as gathered text
+            // has it. String Table entries and references keep their namespace or table.
+            let namespace = text(O_NS)?;
             return Ok(format!(
                 "{}:{}:{}",
                 if c[O_IDENTITY][row] == 0 {
@@ -310,7 +313,11 @@ impl PackageColumns {
                 } else {
                     "string-table"
                 },
-                uri_component(text(O_NS)?),
+                uri_component(if c[O_IDENTITY][row] == 0 && c[O_LOCATION][row] != 2 {
+                    crate::join_policy::strip_namespace(namespace)
+                } else {
+                    namespace
+                }),
                 uri_component(text(O_KEY)?)
             ));
         }

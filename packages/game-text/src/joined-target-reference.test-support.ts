@@ -1,4 +1,5 @@
 import { decodeWtf8 } from "./wtf8.js";
+import { FINDING_BIT } from "./text-problem-bits.test-support.js";
 import { createHash } from "node:crypto";
 import { Effect, Schema, Option } from "effect";
 import { stripPackageNamespace } from "@ue-shed/localization";
@@ -72,11 +73,18 @@ export interface JoinedColumns {
 	readonly empty: number;
 }
 
-function compareUnit(c: JoinPackages["occurrence"], a: number, b: number, empty: number) {
+/** Orders occurrences by unit; `unitNamespace` drops package markers as the native join does. */
+function compareUnit(
+	c: JoinPackages["occurrence"],
+	unitNamespace: Uint32Array,
+	a: number,
+	b: number,
+	empty: number
+) {
 	const ak = c.key[a]! === empty ? 2 : Math.min(2, c.identity[a]!),
 		bk = c.key[b]! === empty ? 2 : Math.min(2, c.identity[b]!);
 	if (ak !== bk) return ak - bk;
-	if (ak < 2) return c.namespace[a]! - c.namespace[b]! || c.key[a]! - c.key[b]!;
+	if (ak < 2) return unitNamespace[a]! - unitNamespace[b]! || c.key[a]! - c.key[b]!;
 	return (
 		c.object[a]! - c.object[b]! ||
 		c.location[a]! - c.location[b]! ||
@@ -274,6 +282,11 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	}
 	const namespacesByOccurrence = new Uint32Array(occurrenceCount).fill(absent),
 		keys = new Uint32Array(occurrenceCount).fill(absent);
+	const unitNamespace = Uint32Array.from({ length: occurrenceCount }, (_, row) =>
+		c.identity[row] === 0 && c.location[row] !== 2
+			? normalized[c.namespace[row]!]!
+			: c.namespace[row]!
+	);
 	for (let row = 0; row < occurrenceCount; row++) {
 		if (c.key[row] === empty) continue;
 		if (c.identity[row] === 0) {
@@ -308,7 +321,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		namespacesByOccurrence[a]! - namespacesByOccurrence[b]! ||
 		keys[a]! - keys[b]! ||
 		(namespacesByOccurrence[a] === absent
-			? compareUnit(c, a, b, empty) ||
+			? compareUnit(c, unitNamespace, a, b, empty) ||
 				(c.identity[a]! < 2 && c.key[a] !== empty
 					? 0
 					: packages.packageRow[a]! - packages.packageRow[b]!)
@@ -318,9 +331,9 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		(a, b) => compareOccurrence(a, b) || emissionOrder(a, b),
 		clock
 	);
-	// Raw membership preserves saved identity. Query facts below use only this line's slice.
+	// Raw membership is the unit's key. Query facts below use only this line's slice.
 	const rawCompare = (a: number, b: number) =>
-		compareUnit(c, a, b, empty) ||
+		compareUnit(c, unitNamespace, a, b, empty) ||
 		(c.identity[a]! < 2 && c.key[a] !== empty
 			? 0
 			: packages.packageRow[a]! - packages.packageRow[b]!);
@@ -628,11 +641,10 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 						values.add(source);
 					}
 				}
+				// Unresolved text is a finding by default; long text only when a request names it.
 				const problems =
-					length >= 40 ||
-					c.identity[representative]! >= 2 ||
-					c.key[representative] === empty
-						? 32
+					c.identity[representative]! >= 2 || c.key[representative] === empty
+						? FINDING_BIT
 						: 0;
 				emptyProblems |= problems;
 				if (searchable) {
@@ -675,7 +687,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		}
 		if (!visible) line.problems![row]! |= emptyProblems;
 		visibleLine[row] = Number(visible);
-		if (oe - os > 1) line.problems![row]! |= 32;
+		if (oe - os > 1) line.problems![row]! |= FINDING_BIT;
 		if (ns === absent)
 			reasons |= reasonBit(
 				hasReference ? "string_table_namespace_unavailable" : "unresolved_identity"
@@ -903,7 +915,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			} else unitFirstLine[representative] = row;
 			if (c.identity[occurrence] !== 0 || c.key[occurrence] === empty) continue;
 			if (duplicate[occurrence] && (visibleOccurrence[occurrence] || !visibleLine[row]))
-				line.problems![row]! |= 32;
+				line.problems![row]! |= FINDING_BIT;
 		}
 	}
 	const folderIds = new Uint32Array(folderValues.length);

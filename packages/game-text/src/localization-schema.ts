@@ -11,6 +11,7 @@ import {
 import { Schema } from "effect";
 import { TextUnitId } from "./identifiers.js";
 import { TextAudience, TextOutOfScopeReason } from "./text-audience-schema.js";
+import { TextCountedFindings, TextRowProblems } from "./text-problem-schema.js";
 
 /**
  * Primary localization state derived from saved corpus and gathered/archive/PO evidence.
@@ -266,7 +267,11 @@ export const LocalizationLinePreview = Schema.Struct({
 				translation: Schema.NullOr(Schema.String)
 			})
 		)
-	).check(Schema.isMaxLength(MAX_LOCALIZATION_CULTURES))
+	).check(Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)),
+	/** In a search page: the line's problems under the request, worst first. */
+	problems: Schema.optionalKey(TextRowProblems),
+	/** In a search page: the review signals that made the line a finding under the request. */
+	countedFindings: Schema.optionalKey(TextCountedFindings)
 });
 export type LocalizationLinePreview = typeof LocalizationLinePreview.Type;
 /**

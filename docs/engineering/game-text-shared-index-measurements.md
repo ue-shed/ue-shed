@@ -79,6 +79,71 @@ Raw results: ignored `test-results/game-text-desktop/final-2.{json,log}` (per-ru
 timelines and hashes; `final-1` is the earlier run) and `trace/*` (spans and CPU profiles of the traced runs). UE 5.8 is not
 installed on the measuring machine; no UE 5.8 measurement or check was run.
 
+### Unchanged rescan and warm relaunch (2026-10-22)
+
+The rescan and warm-relaunch pass added four changes: no typing debounce for a loaded scan's
+first page, concurrent opening of shared layers, Project Index status in the long-lived reader
+session, and pooled native writer processes. Before is `0ea457d4` (the harness commit before
+them); after is the pass. Same harness and method as above, untraced: three alternating
+fresh-process runs per build, each build with its own release reader, and no other build or test
+process running. This was a different machine from the table above, so compare only within each
+table: a 16-core Ryzen 9 5950X running Windows 11, with Node 26.5.0 for the harness. Both projects
+are local and read-only. Every run of both builds hashed identical results.
+
+A local UE 5.7 project of about 11,600 packages (40,610 result rows; it has grown since the
+table above). Builds at `0ea457d4` and `35e80ae2`:
+
+| Workbench operation (median of 3, range)     |                 Before |                  After |
+| -------------------------------------------- | ---------------------: | ---------------------: |
+| Unchanged rescan to usable results           |       950 ms (948–996) |       751 ms (692–824) |
+| Warm relaunch to usable results              | 2,412 ms (2,380–2,453) | 2,153 ms (2,121–2,187) |
+| Warm relaunch to Project Index ready         |       752 ms (745–753) |       762 ms (762–777) |
+| Warm first search, wall (engine-reported)    |             33 (28) ms |             34 (29) ms |
+| Aggregate RSS 2 s after the cold rescan      |              1,106 MiB |              1,139 MiB |
+| Main-process max stall, warm relaunch        |                  30 ms |                  30 ms |
+| Game Text cold scan, click to usable results |                 8.13 s |                 8.03 s |
+
+A local UE 4.27 project of about 167,000 packages (260,839 result rows). The warm relaunch of
+this project exposed a race that predates the pass (see below). Both builds were measured with
+its fix (`255cf7e1`): the "before" checkout had the same change applied and was not committed.
+
+| Workbench operation (median of 3, range)      |                 Before |                  After |
+| --------------------------------------------- | ---------------------: | ---------------------: |
+| Unchanged rescan to usable results            | 4,762 ms (4,679–4,822) | 4,406 ms (4,392–4,444) |
+| Warm relaunch to usable results               | 7,880 ms (7,878–7,925) | 7,482 ms (7,468–7,502) |
+| Warm relaunch to Project Index ready          | 1,098 ms (1,090–1,115) | 1,062 ms (1,041–1,075) |
+| Warm first search, wall (engine-reported)     |             48 (39) ms |             48 (39) ms |
+| Aggregate RSS 2 s after the cold rescan       |              1,591 MiB |              1,681 MiB |
+| Main-process max stall, warm relaunch         |                  62 ms |                  46 ms |
+| Main-process stall time over 50 ms, cold scan |          55 ms (0–233) |       219 ms (161–234) |
+| Game Text cold scan, click to usable results  |               115.97 s |               115.55 s |
+
+The rescan and warm-relaunch ranges do not overlap on either project. The cold scan did not
+regress. Two costs:
+
+- **Memory:** a pooled writer process stays alive after a build session. Settled RSS rises by
+  34 MiB on the smaller project and 90 MiB on the larger one.
+- **Main-process stalls:** on the larger project, the after build stalled for about 100 ms during
+  the cold scan in every run; the before build did so in two of its three runs, and its stall
+  total was lower. This is likely the concurrent layer opens finishing in one turn of the event
+  loop. It has not been profiled.
+
+Warm relaunch to Project Index ready is 10 ms slower on the smaller project, in every run.
+
+**Warm relaunch race (fixed in this PR).** A warm relaunch opens the committed index at once and
+refreshes the Project Index in the background. The harness then clicked "Scan project". That click
+started a second native refresh, which failed at once on the Catalog writer lock: "cannot acquire
+Catalog writer lock: lock acquisition failed because the operation would block". The route then
+stayed on "Scan project" behind a Retry banner. On the larger project the background refresh lasts
+about 0.6 s, long enough to lose this race in every run. The Workbench now runs one refresh per
+project at a time, and a later refresh waits for the earlier one. The smaller project's numbers
+above predate the fix. They are unaffected, because its background refresh finished before the
+click.
+
+Raw results: ignored `test-results/part2/ue57-11k.{json,log}` and
+`test-results/part2/ue427-167k.{json,log}`. `test-results/part2/trace427/` holds the traced run
+that found the race.
+
 ## Stage breakdown (Plan 058 C1): instrumentation ready, numbers pending
 
 The build and Quality scan now report their stages: `PackageText.refresh`,

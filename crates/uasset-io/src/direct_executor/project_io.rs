@@ -927,6 +927,7 @@ fn project_parsed_package(
     let mut record = SavedAssetPackageTextRecord {
         file_bytes: bytes.len() as u64,
         path: path_string.clone(),
+        package_name: Some(package.summary.package_name.clone()),
         schema_version: 1,
         status: ProjectionStatus::Complete,
         decode_errors: 0,

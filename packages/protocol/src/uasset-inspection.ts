@@ -765,12 +765,15 @@ export type SavedAssetBlueprintClasses = typeof SavedAssetBlueprintClasses.Type;
 /**
  * v1.8 opt-in package evidence. Sampling matches the legacy corpus fold exactly. From v1.10,
  * `gatherCoverage` is present when the package's gather table was read; status then reflects
- * missing runtime gatherable text rather than decoder gaps.
+ * missing runtime gatherable text rather than decoder gaps. From v1.17, `packageName` is the name
+ * the package summary serializes, which its object paths are built from. A file moved or copied
+ * outside Unreal keeps its old name there, while Unreal names the package from the file's location.
  */
 export const SavedAssetPackageTextRecord = Schema.Struct({
 	event: Schema.Literal("text_package_record"),
 	fileBytes: NonNegativeInt,
 	path: Schema.String,
+	packageName: Schema.optionalKey(Schema.String),
 	schema_version: Schema.Literal(1),
 	status: Schema.Literals(["complete", "partial"]),
 	decodeErrors: NonNegativeInt,

@@ -120,6 +120,13 @@ strict consumers retain the original error shape. Current public inspection and 
 request minor 14; their optional fields also accept older workers that omit this context. Header
 scans keep their existing minor negotiation. This does not alter decode-error counts or partial status.
 
+Minor version 1.17 adds optional `packageName` to a `text_package_record`: the package name its
+summary serializes, which the record's object paths are built from. Unreal names a package from
+its file's location, so a file moved or copied outside Unreal keeps an old name here; a host can
+compare it with the name the file's location gives and move the package's own paths. UE 4.27
+packages that save `None` report `None`, with package-relative paths. The worker strips the field
+below minor 17.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
 untyped result field.

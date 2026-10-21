@@ -73,7 +73,8 @@ export const prepareTextIdTableRepair = Effect.fn("GameText.idRepairs.tables.pre
 		request.changes.map((item) => item.occurrence.location.objectPath)
 	)) {
 		// Authoring resolves an object path, so bind it to the reviewed file before querying it.
-		// A file copy can retain another package's serialized object path.
+		// The index moves a moved or copied file's paths to its package, but a request can still
+		// carry a serialized one; the live table must also report the same package below.
 		const changes = request.changes.filter(
 			(item) => item.occurrence.location.objectPath === objectPath
 		);

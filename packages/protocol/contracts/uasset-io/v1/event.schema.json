@@ -8811,6 +8811,9 @@
 				"path": {
 					"type": "string"
 				},
+				"packageName": {
+					"type": "string"
+				},
 				"schema_version": {
 					"type": "number",
 					"enum": [1]

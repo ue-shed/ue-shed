@@ -18,6 +18,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uasset-inspection = { path = "../uasset-inspection" }
 uasset-parser = { path = "../uasset-parser" }
+zstd = "0.13"
 
 [features]
 catalog-oracle = ["dep:rusqlite"]

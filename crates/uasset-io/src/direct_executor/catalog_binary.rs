@@ -12,14 +12,20 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const CATALOG_DIRECTORY: &str = "catalogs-v5";
+const CATALOG_DIRECTORY: &str = "catalogs-v6";
 const MANIFEST_FILE: &str = "manifest.json";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
 const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 const MAX_QUARANTINE_SLOTS: u32 = 64;
-const MAGIC: &[u8; 8] = b"UESHC003";
-const HEADER_BYTES: u64 = 88;
+const MAGIC: &[u8; 8] = b"UESHC004";
+/// The magic, then each section's stored length, raw length and raw checksum.
+const HEADER_BYTES: u64 = 8 + 5 * 24;
 const MAX_SECTION_BYTES: u64 = 512 * 1024 * 1024;
+/// Sections from this index on (postings and records) are read in ranges, so they are stored as
+/// independently compressed blocks; the sections before it are read whole and stored as one frame.
+const BLOCKED_SECTIONS: usize = 3;
+const BLOCK_BYTES: u64 = 64 * 1024;
+const COMPRESSION_LEVEL: i32 = 3;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CatalogWriteCounts {
@@ -310,9 +316,12 @@ struct Snapshot {
     strings: Vec<String>,
     lexicon: Vec<u32>,
     postings: Vec<Posting>,
-    starts: [u64; 5],
+    /// Decoded length and checksum of each section.
     lengths: [u64; 5],
     hashes: [u64; 5],
+    /// File ranges of the blocks of each blocked section. Blocks are read and decoded for each
+    /// query, so a later query still detects changed or truncated bytes.
+    blocks: [Vec<(u64, u64)>; 5 - BLOCKED_SECTIONS],
 }
 
 fn read_range(file: &mut File, offset: u64, length: u64) -> Result<Vec<u8>, CatalogError> {
@@ -333,6 +342,89 @@ fn read_range(file: &mut File, offset: u64, length: u64) -> Result<Vec<u8>, Cata
     })?;
     Ok(bytes)
 }
+/// A section frame: zstd when stored shorter than its decoded length, else the bytes as stored.
+fn whole_section(stored: &[u8], length: u64) -> Result<Vec<u8>, CatalogError> {
+    if stored.len() as u64 == length {
+        return Ok(stored.to_vec());
+    }
+    let length = usize::try_from(length).map_err(|_| corrupt("section too large"))?;
+    let bytes = zstd::bulk::decompress(stored, length)
+        .map_err(|error| corrupt(format!("binary section does not decode: {error}")))?;
+    if bytes.len() != length {
+        return Err(corrupt("binary section length mismatch"));
+    }
+    Ok(bytes)
+}
+fn block_length(section_length: u64, block: usize) -> u64 {
+    (section_length - block as u64 * BLOCK_BYTES).min(BLOCK_BYTES)
+}
+/// Reads a blocked section's index: its block count, then each block's end offset relative to
+/// the first block. Returns each block's absolute file range.
+fn block_ranges(
+    file: &mut File,
+    start: u64,
+    stored: u64,
+    length: u64,
+) -> Result<Vec<(u64, u64)>, CatalogError> {
+    let count = length.div_ceil(BLOCK_BYTES);
+    let index_bytes = 4 + count * 8;
+    if stored < index_bytes {
+        return Err(corrupt("truncated block index"));
+    }
+    let index = read_range(file, start, index_bytes)?;
+    let mut d = Decoder::new(&index);
+    if u64::from(d.u32()?) != count {
+        return Err(corrupt("block count does not match the section length"));
+    }
+    let mut ranges = Vec::with_capacity(count as usize);
+    let mut previous = 0;
+    for block in 0..count as usize {
+        let end = d.u64()?;
+        if end <= previous || end - previous > block_length(length, block) {
+            return Err(corrupt("invalid block index"));
+        }
+        ranges.push((start + index_bytes + previous, end - previous));
+        previous = end;
+    }
+    d.finish()?;
+    if index_bytes + previous != stored {
+        return Err(corrupt("blocks do not fill their section"));
+    }
+    Ok(ranges)
+}
+fn read_block(
+    file: &mut File,
+    (start, stored): (u64, u64),
+    length: u64,
+) -> Result<Vec<u8>, CatalogError> {
+    whole_section(&read_range(file, start, stored)?, length)
+}
+/// A section as stored: sections read whole as one frame, later ones as independent blocks,
+/// each preceded by an index of block end offsets. A frame that compresses no smaller is raw.
+fn encode_section(index: usize, raw: &[u8]) -> Result<Vec<u8>, CatalogError> {
+    let frame = |raw: &[u8]| -> Result<Vec<u8>, CatalogError> {
+        let compressed = zstd::bulk::compress(raw, COMPRESSION_LEVEL)
+            .map_err(|error| corrupt(format!("could not encode a Catalog section: {error}")))?;
+        Ok(if compressed.len() < raw.len() {
+            compressed
+        } else {
+            raw.to_vec()
+        })
+    };
+    if index < BLOCKED_SECTIONS {
+        return frame(raw);
+    }
+    let chunks = raw.chunks(BLOCK_BYTES as usize).collect::<Vec<_>>();
+    let mut stored = Vec::with_capacity(4 + chunks.len() * 8);
+    put32(&mut stored, chunks.len())?;
+    let mut payload = Vec::new();
+    for chunk in chunks {
+        payload.extend(frame(chunk)?);
+        put64(&mut stored, payload.len() as u64);
+    }
+    stored.extend(payload);
+    Ok(stored)
+}
 fn checked_range(offset: u64, len: u64, total: u64) -> Result<(), CatalogError> {
     if offset.checked_add(len).is_none_or(|end| end > total) {
         return Err(corrupt("binary range leaves its section"));
@@ -352,56 +444,49 @@ impl Snapshot {
         if decoder.take(8)? != MAGIC {
             return Err(corrupt("unknown binary Catalog format"));
         }
+        let mut stored = [0; 5];
         let mut lengths = [0; 5];
         let mut hashes = [0; 5];
         let mut starts = [0; 5];
         let mut position = HEADER_BYTES;
         for i in 0..5 {
+            stored[i] = decoder.u64()?;
             lengths[i] = decoder.u64()?;
             hashes[i] = decoder.u64()?;
             starts[i] = position;
-            if lengths[i] > MAX_SECTION_BYTES {
+            if lengths[i] > MAX_SECTION_BYTES || stored[i] > MAX_SECTION_BYTES {
                 return Err(corrupt("oversized binary section"));
             }
             position = position
-                .checked_add(lengths[i])
+                .checked_add(stored[i])
                 .ok_or_else(|| corrupt("section overflow"))?;
         }
         if position != length {
             return Err(corrupt("snapshot length does not match its directory"));
         }
         let mut sections = Vec::new();
-        for i in 0..if verify_all { 5 } else { 3 } {
-            if i >= 3 {
-                // These sections are verified here but decoded only on demand. Keep the
-                // integrity pass bounded instead of allocating a full temporary payload.
-                file.seek(SeekFrom::Start(starts[i]))
-                    .map_err(io_unavailable("seek binary snapshot"))?;
-                let mut remaining = lengths[i];
-                let mut buffer = vec![0; (1024 * 1024).min(remaining as usize)];
-                let mut hash = crc32fast::Hasher::new();
-                while remaining > 0 {
-                    let count = buffer.len().min(remaining as usize);
-                    file.read_exact(&mut buffer[..count]).map_err(|error| {
-                        if error.kind() == std::io::ErrorKind::UnexpectedEof {
-                            corrupt(format!("truncated binary snapshot: {error}"))
-                        } else {
-                            io_unavailable("read binary snapshot")(error)
-                        }
-                    })?;
-                    hash.update(&buffer[..count]);
-                    remaining -= count as u64;
-                }
-                if u64::from(hash.finalize()) != hashes[i] {
-                    return Err(corrupt("binary section checksum mismatch"));
-                }
-                continue;
-            }
-            let bytes = read_range(&mut file, starts[i], lengths[i])?;
+        for i in 0..BLOCKED_SECTIONS {
+            let bytes = whole_section(&read_range(&mut file, starts[i], stored[i])?, lengths[i])?;
             if checksum(&bytes) != hashes[i] {
                 return Err(corrupt("binary section checksum mismatch"));
             }
             sections.push(bytes);
+        }
+        let mut blocks: [Vec<(u64, u64)>; 5 - BLOCKED_SECTIONS] = Default::default();
+        for (slot, i) in (BLOCKED_SECTIONS..5).enumerate() {
+            blocks[slot] = block_ranges(&mut file, starts[i], stored[i], lengths[i])?;
+            if verify_all {
+                // Verified here but decoded only on demand: one block at a time, never the
+                // whole payload.
+                let mut hash = crc32fast::Hasher::new();
+                for (block, range) in blocks[slot].iter().enumerate() {
+                    let raw = read_block(&mut file, *range, block_length(lengths[i], block))?;
+                    hash.update(&raw);
+                }
+                if u64::from(hash.finalize()) != hashes[i] {
+                    return Err(corrupt("binary section checksum mismatch"));
+                }
+            }
         }
         let mut d = Decoder::new(&sections[0]);
         let count = d.count(43)?;
@@ -497,21 +582,48 @@ impl Snapshot {
             strings,
             lexicon,
             postings,
-            starts,
             lengths,
             hashes,
+            blocks,
         })
     }
+    /// A whole blocked section, decoded and checked.
     fn section(&self, index: usize) -> Result<Vec<u8>, CatalogError> {
-        let bytes = read_range(
-            &mut self.file.borrow_mut(),
-            self.starts[index],
-            self.lengths[index],
-        )?;
+        let bytes = self.range(index, 0, self.lengths[index])?;
         if checksum(&bytes) != self.hashes[index] {
             return Err(corrupt("binary section checksum mismatch"));
         }
         Ok(bytes)
+    }
+    /// Decoded bytes `offset..offset + length` of a blocked section. Callers check the record
+    /// or posting checksums the range holds.
+    fn range(&self, index: usize, offset: u64, length: u64) -> Result<Vec<u8>, CatalogError> {
+        checked_range(offset, length, self.lengths[index])?;
+        let mut bytes = Vec::with_capacity(
+            usize::try_from(length).map_err(|_| corrupt("range too large for address space"))?,
+        );
+        if length == 0 {
+            return Ok(bytes);
+        }
+        for block in offset / BLOCK_BYTES..=(offset + length - 1) / BLOCK_BYTES {
+            let data = self.block(index, block)?;
+            let base = block * BLOCK_BYTES;
+            let from = offset.max(base) - base;
+            let to = (offset + length).min(base + data.len() as u64) - base;
+            bytes.extend_from_slice(&data[from as usize..to as usize]);
+        }
+        Ok(bytes)
+    }
+    fn block(&self, index: usize, block: u64) -> Result<Vec<u8>, CatalogError> {
+        let position = usize::try_from(block).map_err(|_| corrupt("invalid block"))?;
+        let range = *self.blocks[index - BLOCKED_SECTIONS]
+            .get(position)
+            .ok_or_else(|| corrupt("binary range leaves its section"))?;
+        read_block(
+            &mut self.file.borrow_mut(),
+            range,
+            block_length(self.lengths[index], position),
+        )
     }
     #[cfg(test)]
     fn packed(&self, id: usize) -> Result<PackedRecord, CatalogError> {
@@ -519,11 +631,7 @@ impl Snapshot {
             .inventory
             .get(id)
             .ok_or_else(|| corrupt("invalid inventory id"))?;
-        let bytes = read_range(
-            &mut self.file.borrow_mut(),
-            self.starts[4] + entry.offset,
-            u64::from(entry.len),
-        )?;
+        let bytes = self.range(4, entry.offset, u64::from(entry.len))?;
         self.decode_packed(id, &bytes)
     }
     fn decode_packed(&self, id: usize, bytes: &[u8]) -> Result<PackedRecord, CatalogError> {
@@ -626,11 +734,7 @@ impl Snapshot {
             }
             // A page-local window avoids one seek/read/allocation per nearby record. Nothing
             // survives the query: later queries must still detect changed or truncated bytes.
-            let bytes = read_range(
-                &mut self.file.borrow_mut(),
-                self.starts[4] + start,
-                end - start,
-            )?;
+            let bytes = self.range(4, start, end - start)?;
             for &id in &ids[first..last] {
                 let entry = &self.inventory[id];
                 let offset = (entry.offset - start) as usize;
@@ -708,11 +812,7 @@ impl Snapshot {
         let mut ids = Vec::new();
         for index in selected {
             let posting = &self.postings[index];
-            let bytes = read_range(
-                &mut self.file.borrow_mut(),
-                self.starts[3] + posting.offset,
-                u64::from(posting.len) * 4,
-            )?;
+            let bytes = self.range(3, posting.offset, u64::from(posting.len) * 4)?;
             if checksum(&bytes) != posting.checksum {
                 return Err(corrupt("posting checksum mismatch"));
             }
@@ -1408,15 +1508,20 @@ fn write_snapshot(
             put64(&mut directory, checksum(&lists[start..]));
         }
     }
-    let sections = [inventory, strings, directory, lists, payload];
+    let raw = [inventory, strings, directory, lists, payload];
     let mut header = MAGIC.to_vec();
-    for section in &sections {
+    let mut sections = Vec::with_capacity(raw.len());
+    for (index, section) in raw.iter().enumerate() {
         if section.len() as u64 > MAX_SECTION_BYTES {
             return Err(corrupt("Catalog section exceeds 512 MiB"));
         }
+        let stored = encode_section(index, section)?;
+        put64(&mut header, stored.len() as u64);
         put64(&mut header, section.len() as u64);
         put64(&mut header, checksum(section));
+        sections.push(stored);
     }
+    drop(raw);
     publication_checkpoint("snapshot_created")?;
     file.write_all(&header)
         .map_err(io_unavailable("write binary directory"))?;
@@ -1845,13 +1950,21 @@ mod tests {
         ));
         let snapshot = catalog.snapshot.borrow();
         let snapshot = snapshot.as_ref().unwrap();
-        let offset = snapshot.starts[3]
-            + snapshot
-                .postings
-                .iter()
-                .find(|p| p.kind == 0)
-                .unwrap()
-                .offset;
+        // A byte of the first class posting: in place when its block is stored raw, else the
+        // block's frame magic.
+        let posting = snapshot
+            .postings
+            .iter()
+            .find(|p| p.kind == 0)
+            .unwrap()
+            .offset;
+        let block = (posting / BLOCK_BYTES) as usize;
+        let (start, stored) = snapshot.blocks[3 - BLOCKED_SECTIONS][block];
+        let offset = if stored == block_length(snapshot.lengths[3], block) {
+            start + posting % BLOCK_BYTES
+        } else {
+            start
+        };
         let path = catalog
             .directory
             .join(&catalog.manifest.as_ref().unwrap().physical_snapshot);
@@ -2411,20 +2524,27 @@ mod tests {
             .join(&catalog.manifest.as_ref().unwrap().physical_snapshot);
         let bytes = fs::read(&path).unwrap();
         let scratch = catalog.directory.join("count-probe");
+        let field = |section: usize, slot: usize| {
+            let at = 8 + section * 24 + slot * 8;
+            u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()) as usize
+        };
         let mut offset = HEADER_BYTES as usize;
-        for section in 0..3 {
-            let mut damaged = bytes.clone();
-            let length = u64::from_le_bytes(
-                bytes[8 + section * 16..16 + section * 16]
-                    .try_into()
-                    .unwrap(),
-            ) as usize;
-            damaged[offset..offset + 4].copy_from_slice(&u32::MAX.to_le_bytes());
-            let hash = checksum(&damaged[offset..offset + length]);
-            damaged[16 + section * 16..24 + section * 16].copy_from_slice(&hash.to_le_bytes());
+        for section in 0..BLOCKED_SECTIONS {
+            let stored = field(section, 0);
+            let mut raw =
+                whole_section(&bytes[offset..offset + stored], field(section, 1) as u64).unwrap();
+            raw[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+            // A valid encoding and checksum of an impossible count.
+            let encoded = encode_section(section, &raw).unwrap();
+            let mut damaged = bytes[..offset].to_vec();
+            damaged.extend(&encoded);
+            damaged.extend(&bytes[offset + stored..]);
+            let at = 8 + section * 24;
+            damaged[at..at + 8].copy_from_slice(&(encoded.len() as u64).to_le_bytes());
+            damaged[at + 16..at + 24].copy_from_slice(&checksum(&raw).to_le_bytes());
             fs::write(&scratch, damaged).unwrap();
             assert!(Snapshot::open(&scratch, true).is_err());
-            offset += length;
+            offset += stored;
         }
     }
 

@@ -152,7 +152,7 @@ function optionValue(arguments_: readonly string[], index: number, option: strin
 	return value;
 }
 
-export function parseArguments(arguments_: readonly string[]): BenchmarkOptions | undefined {
+function parseArguments(arguments_: readonly string[]): BenchmarkOptions | undefined {
 	let mutationProjectRoot: string | undefined;
 	let output: string | undefined;
 	let projectRoot: string | undefined;

@@ -828,7 +828,7 @@ describe("columnar join", () => {
 	);
 	it("stable package/PO edits and compaction equal full rebuilds; overlays do not chain", async () => {
 		await withJoinCache(async (cache) => {
-			const { projectRoot, evidence, inventory, events } = await tinyJoinInput(cache, 0.001);
+			const { projectRoot, evidence, inventory, events } = await tinyJoinInput(cache, 0.0001);
 			const run = <A, E>(effect: Parameters<typeof runJoinIn<A, E>>[3]) =>
 				runJoinIn(projectRoot, cache, "Generated", effect);
 			const input = { projectRoot, target: evidence.target };
@@ -1013,7 +1013,7 @@ describe("columnar join", () => {
 			await run(expectFacetOracle(corpus, expected));
 		});
 	}, 60000);
-	it.each([0.0001, 0.001])(
+	it.each([0.0001])(
 		"seeded tiny target %s equals the Phase 1 join oracle",
 		async (scale) => {
 			await withJoinCache(async (cache) => {

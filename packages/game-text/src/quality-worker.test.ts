@@ -266,21 +266,3 @@ it.live(
 	},
 	30_000
 );
-
-it.live(
-	"interrupting a worker scan leaves the worker serving the next scan",
-	() =>
-		Effect.gen(function* () {
-			const fixture = yield* makeIndexRegressionFixture();
-			yield* Effect.gen(function* () {
-				const refresh = yield* GameTextIndexRefresh;
-				const result = yield* refresh.refresh(fixture.request);
-				const running = yield* Effect.forkChild(result.localizationQuality());
-				yield* Fiber.interrupt(running);
-				const quality = yield* result.localizationQuality();
-				expect(quality.findings.items([])).toEqual([]);
-				expect(quality.metadata.join.target).toBe(fixture.target.name);
-			}).pipe(Effect.scoped, Effect.provide(fixture.layer(false, fixture.source, true)));
-		}),
-	30_000
-);

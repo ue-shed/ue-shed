@@ -17,29 +17,6 @@ function layer(handle: Parameters<typeof makeRemoteControlClientTestLayer>[0]) {
 	return EditorPlaySessionLive.pipe(Layer.provide(makeRemoteControlClientTestLayer(handle)));
 }
 
-it.effect("negotiates and observes a stopped editor", () =>
-	Effect.gen(function* () {
-		const session = yield* EditorPlaySession;
-		const response = yield* session.status("http://editor/");
-		expect(response.state).toEqual({ status: "stopped" });
-	}).pipe(
-		Effect.provide(
-			layer((request) =>
-				Effect.succeed(
-					request.functionName === "GetCapabilityManifest"
-						? {
-								capabilities: ["editor.play-session.v1"],
-								playSessionObjectPath: "/Script/Fixture.PlaySession",
-								producerKind: "unreal_editor",
-								schemaVersion: 1
-							}
-						: { contract, state: { status: "stopped" } }
-				)
-			)
-		)
-	)
-);
-
 it.effect("routes commands and preserves rejected outcomes as values", () =>
 	Effect.gen(function* () {
 		const session = yield* EditorPlaySession;

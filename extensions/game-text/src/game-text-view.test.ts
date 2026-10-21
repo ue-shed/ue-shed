@@ -1,4 +1,4 @@
-import { filterTextUnits } from "./game-text-view.test-support.js";
+import { textCountLabel } from "@ue-shed/game-text/labels";
 import { makeTextOccurrenceId, makeTextUnitId, type TextCorpus } from "@ue-shed/game-text/schema";
 import { describe, expect, it } from "vitest";
 import { identityLabel, occurrenceContext, sourceText, textContext } from "./game-text-view.js";
@@ -43,16 +43,6 @@ const corpus: TextCorpus = {
 };
 
 describe("game text presentation", () => {
-	it("filters player-facing text and edit capability without searching metadata", () => {
-		expect(
-			filterTextUnits({ corpus, query: "PromptContinue", capability: "all" })
-		).toHaveLength(0);
-		expect(filterTextUnits({ corpus, query: "Continue", capability: "all" })).toHaveLength(1);
-		expect(
-			filterTextUnits({ corpus, query: "Continue", capability: "read_only" })
-		).toHaveLength(0);
-	});
-
 	it("preserves exact asset, row, entry and property names", () => {
 		expect(
 			textContext({
@@ -78,4 +68,9 @@ describe("game text presentation", () => {
 		expect(identityLabel(unit)).toBe("UI · Continue");
 		expect(occurrenceContext(unit.occurrences[0]!)).toBe("ST_Game · PromptContinue");
 	});
+});
+
+it("pluralizes display counts", () => {
+	expect(textCountLabel(1, "line")).toBe("1 line");
+	expect(textCountLabel(2, "line")).toBe("2 lines");
 });

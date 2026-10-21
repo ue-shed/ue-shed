@@ -29,7 +29,7 @@ function renderPicker(allowCustomPath = false) {
 
 describe("SavedMapPicker", () => {
 	it("searches labels and paths before selecting a map", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		const { mapPath } = renderPicker();
 
 		await user.click(screen.getByRole("combobox", { name: "Saved map" }));
@@ -46,7 +46,7 @@ describe("SavedMapPicker", () => {
 	});
 
 	it("supports keyboard selection and an explicit custom path", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		const { mapPath } = renderPicker(true);
 
 		await user.click(screen.getByRole("combobox", { name: "Saved map" }));

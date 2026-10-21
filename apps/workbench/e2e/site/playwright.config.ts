@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig } from "@playwright/test";
+import { gateTraceReporters } from "../gate-trace-reporter.ts";
 
 export default defineConfig({
 	testDir: ".",
@@ -7,7 +8,7 @@ export default defineConfig({
 	outputDir: "../../../../test-results/site",
 	forbidOnly: true,
 	workers: 1,
-	reporter: "list",
+	reporter: gateTraceReporters(),
 	use: { baseURL: "http://127.0.0.1:4175", browserName: "chromium", trace: "retain-on-failure" },
 	webServer: {
 		command:

@@ -98,34 +98,62 @@ describe("diffSavedWorldSnapshots", () => {
 	});
 
 	it.each([
-		{ status: "missing_root_component" as const },
 		{
-			parentPath: "/Game/Maps/L_Example.Parent",
-			status: "missing_attachment_parent" as const
+			before: {
+				status: "missing_attachment_parent",
+				parentPath: "/Game/Maps/L_Example.Before"
+			},
+			after: { status: "missing_attachment_parent", parentPath: "/Game/Maps/L_Example.After" }
 		},
 		{
-			componentPath: "/Game/Maps/L_Example.Cycle",
-			status: "attachment_cycle" as const
+			before: { status: "attachment_cycle", componentPath: "/Game/Maps/L_Example.Before" },
+			after: { status: "attachment_cycle", componentPath: "/Game/Maps/L_Example.After" }
 		},
 		{
-			componentPath: "/Game/Maps/L_Example.Ambiguous",
-			status: "ambiguous_component_path" as const
+			before: {
+				status: "ambiguous_component_path",
+				componentPath: "/Game/Maps/L_Example.Before"
+			},
+			after: {
+				status: "ambiguous_component_path",
+				componentPath: "/Game/Maps/L_Example.After"
+			}
 		},
 		{
-			componentPath: "/Game/Maps/L_Example.Absolute",
-			status: "unsupported_absolute_transform" as const
+			before: {
+				status: "unsupported_absolute_transform",
+				componentPath: "/Game/Maps/L_Example.Before"
+			},
+			after: {
+				status: "unsupported_absolute_transform",
+				componentPath: "/Game/Maps/L_Example.After"
+			}
 		},
 		{
-			componentPath: "/Game/Maps/L_Example.NonFinite",
-			status: "non_finite_transform" as const
+			before: {
+				status: "non_finite_transform",
+				componentPath: "/Game/Maps/L_Example.Before"
+			},
+			after: { status: "non_finite_transform", componentPath: "/Game/Maps/L_Example.After" }
 		}
-	])("reports a transition from resolved to $status", (transform) => {
-		const result = diffSavedWorldSnapshots(world([actor()]), world([actor({ transform })]));
-
-		expect(result.changes.map((change) => change.kind)).toEqual([
-			"actor_transform_resolution_changed"
-		]);
-	});
+	] as const)(
+		"reports changed paths within transform resolution $before.status",
+		({ before, after }) => {
+			const result = diffSavedWorldSnapshots(
+				world([actor({ transform: before })]),
+				world([actor({ transform: after })])
+			);
+			expect(result.changes.map((change) => change.kind)).toEqual([
+				"actor_transform_resolution_changed"
+			]);
+			expect(
+				diffSavedWorldSnapshots(
+					world([actor({ transform: before })]),
+					world([actor({ transform: before })])
+				).changes
+			).toEqual([]);
+		}
+	);
 
 	it("reports effective rotation, scale, and direct attachment changes", () => {
 		const before = actor({

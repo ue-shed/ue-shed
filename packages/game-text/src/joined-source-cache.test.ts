@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { Effect, Layer, Stream } from "effect";
 import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as sourceCache from "./joined-source-cache.test-support.js";
 import { decodeWtf8, encodeWtf8 } from "./wtf8.js";
 import { JoinStrings } from "./joined-target-input.js";
 import { SharedIndex, sharedIndexNodeLayer } from "./shared-index.js";
@@ -250,10 +251,19 @@ describe("persisted joined source cache", () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-cached-source-refresh-"));
 		let value = "originalsource zero with enough characters for a bounded source overlay",
 			signature = "first";
+		const prepare = sourceCache.prepareJoinedSourceCache;
+		const preparation = vi
+			.spyOn(sourceCache, "prepareJoinedSourceCache")
+			.mockImplementation((writer, strings, columns, options) =>
+				prepare(writer, strings, columns, {
+					minimumEntries: 8,
+					...options
+				})
+			);
 		const path = "Content/Text/Fixture.uasset";
 		const record = (): SavedAssetPackageTextRecord => ({
 			...emptyPackageTextRecord(path),
-			occurrences: Array.from({ length: 8200 }, (_, row) => ({
+			occurrences: Array.from({ length: 24 }, (_, row) => ({
 				source: row === 0 ? value : `lowercase source ${row}`,
 				dev_notes: "",
 				identity: { status: "resolved", namespace: "UI", key: `K${row}` },
@@ -335,6 +345,7 @@ describe("persisted joined source cache", () => {
 				)
 			);
 		} finally {
+			preparation.mockRestore();
 			await rm(root, { recursive: true, force: true });
 		}
 	}, 30000);

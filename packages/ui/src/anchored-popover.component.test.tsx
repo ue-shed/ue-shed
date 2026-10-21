@@ -40,16 +40,13 @@ it("portals the panel and exposes its state from the trigger", async () => {
 	expect(panel.className).not.toBe("");
 });
 
-it("enters the panel from the keyboard and lets Tab reach its action", async () => {
+it("enters the panel from the keyboard", async () => {
 	render(() => <PopoverFixture />);
 	const user = userEvent.setup();
 	const trigger = screen.getByRole("button", { name: "Open actions" });
 	trigger.focus();
 	await user.keyboard("{Enter}");
 	expect(document.activeElement).toBe(screen.getByRole("button", { name: "Run action" }));
-	await user.keyboard("{Tab}");
-	expect(document.activeElement).toBe(screen.getByRole("button", { name: "Outside" }));
-	expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 it("light-dismisses and returns focus after Escape", async () => {

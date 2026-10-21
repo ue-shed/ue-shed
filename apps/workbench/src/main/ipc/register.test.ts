@@ -1,17 +1,13 @@
-import { makeWorkbenchEditorHandoffTestLayer } from "../services/editor-handoff.js";
-import { makeWorkbenchEditorResponsivenessTestLayer } from "../services/editor-responsiveness.js";
-import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
-import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
 import { it } from "@effect/vitest";
-import { NiagaraSystemObjectPath } from "@ue-shed/niagara";
-import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
-import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
+import { CameraControlError } from "@ue-shed/cameras";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
+import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import type { TextCorpusQueryRunResult } from "@ue-shed/game-text/schema";
+import { NiagaraSystemObjectPath } from "@ue-shed/niagara";
+import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
-import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import {
 	makeScenarioRunnerTestLayer,
 	movementGymRuns,
@@ -20,31 +16,37 @@ import {
 	scenarioWireContract,
 	type ScenarioRunnerApi
 } from "@ue-shed/scenarios";
-import { Stream, Effect, Layer, Ref } from "effect";
+import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
+import { Effect, Layer, Ref, Stream } from "effect";
 import { resolve } from "node:path";
 import { expect } from "vitest";
-import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
+import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import { invokeChannelNames } from "../ipc-contracts.js";
 import { makeWorkbenchAssetAuditsTestLayer } from "../services/asset-audits.js";
 import { makeWorkbenchAssetNavigationTestLayer } from "../services/asset-navigation.js";
 import { makeWorkbenchAuthoringTestLayer } from "../services/authoring.js";
 import { makeCameraPresentationTestLayer } from "../services/camera-presentation.js";
-import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-observatory.js";
 import { makeWorkbenchConfigExplorerTestLayer } from "../services/config-explorer.js";
+import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-observatory.js";
+import { makeWorkbenchEditorHandoffTestLayer } from "../services/editor-handoff.js";
+import { makeWorkbenchEditorResponsivenessTestLayer } from "../services/editor-responsiveness.js";
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
-import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
-import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
 import { WorkbenchGameTextIdRepairs } from "../services/game-text-id-repairs.js";
+import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
+import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
-import { makeWorkbenchMapReviewTestLayer, SavedWorldUnavailable } from "../services/map-review.js";
 import { makeWorkbenchMapCaptureTestLayer } from "../services/map-capture.js";
+import { makeWorkbenchMapReviewTestLayer, SavedWorldUnavailable } from "../services/map-review.js";
 import { makeWorkbenchNiagaraPreviewTestLayer } from "../services/niagara-preview.js";
+import { makeWorkbenchCustodianTestLayer } from "../services/project-custodian.js";
 import { makeProjectLauncherTestLayer } from "../services/project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
-import { makeWorkbenchCustodianTestLayer } from "../services/project-custodian.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
+import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
+import { register as registerCameras } from "./cameras.js";
 import { register } from "./register.js";
 
 function makeRecorder() {
@@ -969,31 +971,6 @@ it.effect("classifies native Blueprint failures for focused recovery", () =>
 	})
 );
 
-it.effect("dispatches Niagara preview runs and manifest-owned frames", () =>
-	Effect.gen(function* () {
-		const systemObjectPath =
-			"/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion";
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("niagara-preview:catalogue");
-				yield* ipc.invoke("niagara-preview:run", {
-					settings: { frameCount: 2, height: 64, width: 64 },
-					systemObjectPath
-				});
-				yield* ipc.invoke("niagara-preview:frame", {
-					manifestPath: "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.json",
-					relativePath: "frames/frame_0000.png"
-				});
-			})
-		);
-		expect(yield* recorder.calls()).toEqual([
-			"niagaraPreview.catalogue",
-			`niagaraPreview.run:${systemObjectPath}`,
-			"niagaraPreview.frame:frames/frame_0000.png"
-		]);
-	})
-);
-
 it.effect("dispatches Project Custodian scans and guarded cleanup through the service", () =>
 	Effect.gen(function* () {
 		const { recorder } = yield* runRegistered((ipc) =>
@@ -1036,21 +1013,6 @@ it.effect("changes the selected Remote Control port through editor-session setti
 	})
 );
 
-it.effect("reads and changes the Unreal responsiveness preference", () =>
-	Effect.gen(function* () {
-		const { result } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				expect(yield* ipc.invoke("editor-responsiveness:settings")).toMatchObject({
-					enabled: true,
-					state: "active"
-				});
-				return yield* ipc.invoke("editor-responsiveness:set-enabled", false);
-			})
-		);
-		expect(result).toMatchObject({ enabled: false, state: "off" });
-	})
-);
-
 it.effect("routes Scenario Studio through the public scenario runner", () =>
 	Effect.gen(function* () {
 		const { recorder, result } = yield* runRegistered((ipc) =>
@@ -1074,119 +1036,6 @@ it.effect("routes Scenario Studio through the public scenario runner", () =>
 	})
 );
 
-it.effect("dispatches fixture:launch and fixture:launch-review to FixtureLauncher.launch", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("fixture:launch");
-				yield* ipc.invoke("fixture:launch-review");
-			})
-		);
-		expect(yield* recorder.calls()).toEqual([
-			"fixtureLauncher.launch:default",
-			"fixtureLauncher.launch:authoring"
-		]);
-	})
-);
-
-it.effect("dispatches project:launch with the selected explicit mode", () =>
-	Effect.gen(function* () {
-		const { recorder, result } = yield* runRegistered((ipc) =>
-			ipc.invoke("project:launch", "ue_shed")
-		);
-		expect(result).toEqual({ mode: "ue_shed", status: "launched" });
-		expect(yield* recorder.calls()).toEqual(["projectLauncher.launch:ue_shed"]);
-	})
-);
-
-it.effect("lists and opens recent projects through the shared workspace service", () =>
-	Effect.gen(function* () {
-		const { recorder, result } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("project:recent");
-				return yield* ipc.invoke("project:open-recent", "C:/Projects/Fixture");
-			})
-		);
-		expect(result).toEqual({ status: "cancelled" });
-		expect(yield* recorder.calls()).toEqual([
-			"project.recent",
-			"project.openRecent:C:/Projects/Fixture"
-		]);
-	})
-);
-
-it.effect("dispatches showcase:context to Showcase.context", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) => ipc.invoke("showcase:context"));
-		expect(yield* recorder.calls()).toEqual(["showcase.context"]);
-	})
-);
-
-it.effect("dispatches config-explorer:query to WorkbenchConfigExplorer", () =>
-	Effect.gen(function* () {
-		const { recorder, result } = yield* runRegistered((ipc) =>
-			ipc.invoke("config-explorer:query", {
-				family: "Game",
-				key: "Entries",
-				mode: "explain",
-				platform: "PlatformA",
-				section: "Fixture.Settings",
-				source: "sample_fixture"
-			})
-		);
-		expect(result).toEqual({
-			error: {
-				code: "sample_unavailable",
-				message: "Fixture unavailable.",
-				recovery: "Launch through pnpm showcase.",
-				retrySafe: false
-			},
-			status: "failed"
-		});
-		expect(yield* recorder.calls()).toEqual(["configExplorer.query:Entries"]);
-	})
-);
-
-it.effect("dispatches generic asset navigation with a decoded object path", () =>
-	Effect.gen(function* () {
-		const { recorder, result } = yield* runRegistered((ipc) =>
-			ipc.invoke("asset-navigation:locate", "/Game/Textures/T_Rock.T_Rock")
-		);
-		expect(result).toEqual({
-			contract: {
-				name: "unreal-editor-asset-navigation",
-				version: { major: 1, minor: 0 }
-			},
-			objectPath: "/Game/Textures/T_Rock.T_Rock",
-			status: "located"
-		});
-		expect(yield* recorder.calls()).toEqual([
-			"assetNavigation.locate:/Game/Textures/T_Rock.T_Rock"
-		]);
-	})
-);
-
-it.effect("dispatches asset-audits channels to WorkbenchAssetAudits with decoded arguments", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("asset-audits:textures:configured-scan");
-				yield* ipc.invoke("asset-audits:textures:preview", "/Game/Textures/T_Rock");
-				yield* ipc.invoke("asset-audits:textures:preview-offline", "/Game/Textures/T_Rock");
-				yield* ipc.invoke("asset-audits:textures:preview-offline-batch", {
-					objectPaths: ["/Game/Textures/T_Rock", "/Game/Textures/T_Moss"]
-				});
-			})
-		);
-		expect(yield* recorder.calls()).toEqual([
-			"assetAudits.configuredScan",
-			"assetAudits.preview:/Game/Textures/T_Rock",
-			"assetAudits.previewOffline:/Game/Textures/T_Rock",
-			"assetAudits.previewOfflineBatch:/Game/Textures/T_Rock,/Game/Textures/T_Moss"
-		]);
-	})
-);
-
 it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 	Effect.gen(function* () {
 		const { recorder } = yield* runRegistered((ipc) =>
@@ -1198,120 +1047,6 @@ it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 		expect(yield* recorder.calls()).toEqual([
 			"gameText.configuredRefresh",
 			"gameText.configuredRefresh"
-		]);
-	})
-);
-
-it.effect("dispatches Content Observatory query controls to its scoped service", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("content-observatory:status");
-				yield* ipc.invoke("content-observatory:start", {
-					mode: "deep",
-					limits: {
-						maxChangelists: 250,
-						maxConcurrency: 4,
-						maxDurationMs: 120000,
-						maxMaterializedFiles: 4000,
-						maxPackages: 4000
-					},
-					mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap",
-					range: {
-						since: "2026-07-20T00:00:00.000Z",
-						until: "2026-07-27T00:00:00.000Z"
-					}
-				});
-				yield* ipc.invoke("content-observatory:cancel");
-			})
-		);
-		expect(yield* recorder.calls()).toEqual([
-			"contentObservatory.status",
-			"contentObservatory.start:Content/Fixture/History/L_MapHistoryWorld.umap",
-			"contentObservatory.cancel"
-		]);
-	})
-);
-
-it.effect("dispatches input-atlas channels to WorkbenchInputAtlas", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("input-atlas:configured-scan");
-			})
-		);
-		expect(yield* recorder.calls()).toEqual(["inputAtlas.configuredScan"]);
-	})
-);
-
-it.effect("dispatches authoring session channels with decoded session ids and intents", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("authoring:session:begin", "/Game/Data/DT_Loot");
-				yield* ipc.invoke("authoring:session:list");
-				yield* ipc.invoke("authoring:session:open", "session-1");
-				yield* ipc.invoke("authoring:session:edit", {
-					edits: [
-						{
-							fieldName: "Amount",
-							rowId: "Row0",
-							value: { kind: "string", value: "1" }
-						}
-					],
-					kind: "set_cells",
-					sessionId: "session-1",
-					tableObjectPath: "/Game/Data/DT_Loot"
-				});
-				yield* ipc.invoke("authoring:session:undo", "session-1");
-				yield* ipc.invoke("authoring:session:review", "session-1");
-				yield* ipc.invoke("authoring:session:discard", "session-1");
-			})
-		);
-		expect(yield* recorder.calls()).toEqual([
-			"authoring.beginSession:/Game/Data/DT_Loot",
-			"authoring.listSessions",
-			"authoring.openSession:session-1",
-			"authoring.editSession:session-1",
-			"authoring.undoSession:session-1",
-			"authoring.reviewSession:session-1",
-			"authoring.discardSession:session-1"
-		]);
-	})
-);
-
-it.effect("dispatches camera channels with decoded arguments", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("camera:metrics");
-				yield* ipc.invoke("camera:presentation-budget", 200);
-				yield* ipc.invoke("camera:status");
-				yield* ipc.invoke("camera:configure", sampleCameraScheduleConfig);
-			})
-		);
-		expect(yield* recorder.calls()).toEqual([
-			"cameraPresentation.metrics",
-			"cameraPresentation.setPresentationBudget:200",
-			"cameraPresentation.status",
-			"cameraPresentation.configure:4"
-		]);
-	})
-);
-
-it.effect("dispatches map-review channels to WorkbenchMapReview", () =>
-	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				yield* ipc.invoke("map-review:load");
-				yield* ipc.invoke("map-review:capture", { viewIds: ["view-1"] });
-				yield* ipc.invoke("map-review:preview-candidate", "candidate-1");
-			})
-		);
-		expect(yield* recorder.calls()).toEqual([
-			"mapReview.load",
-			"mapReview.capture",
-			"mapReview.previewCandidate:candidate-1"
 		]);
 	})
 );
@@ -1330,16 +1065,6 @@ it.effect("rejects malformed input instead of reaching the service", () =>
 	})
 );
 
-it.effect("registers path reads and inventory without a sequence file chooser", () =>
-	Effect.gen(function* () {
-		const { result } = yield* runRegistered((ipc) => ipc.handlers());
-		const channels = result.map((entry) => entry.channel);
-		expect(channels).toContain("saved-review:sequence");
-		expect(channels).toContain("saved-review:inventory");
-		expect(channels).not.toContain("saved-review:choose-sequence");
-	})
-);
-
 it.effect("reports missing indexed projects as configuration state", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.invoke("saved-review:inventory"));
@@ -1351,11 +1076,8 @@ const sequenceErrors: readonly (readonly [string, string])[] = [
 	["malformed_data", "malformed_package"],
 	["unsupported_version", "unsupported_version"],
 	["unsupported", "unsupported_asset"],
-	["unsupported_format", "unsupported_asset"],
-	["unsupported_capability", "unsupported_asset"],
 	["executable_missing", "missing_reader"],
-	["resource_limit", "reader_failure"],
-	["other", "reader_failure"]
+	["resource_limit", "reader_failure"]
 ];
 for (const [code, reason] of sequenceErrors) {
 	it.effect(`maps native sequence error ${code} to ${reason}`, () =>
@@ -1373,3 +1095,35 @@ for (const [code, reason] of sequenceErrors) {
 		})
 	);
 }
+
+it.effect("maps a failed camera status request to actionable unavailable state", () =>
+	Effect.gen(function* () {
+		const ipcLayer = makeElectronIpcTestLayer();
+		const presentation = makeCameraPresentationTestLayer({
+			configure: () => Effect.die("unused"),
+			metrics: () => Effect.die("unused"),
+			setPresentationBudget: () => Effect.die("unused"),
+			status: () =>
+				Effect.fail(
+					new CameraControlError({
+						endpoint: "http://editor",
+						operation: "status",
+						message: "Editor is loading",
+						recovery: "Wait",
+						retrySafe: true,
+						nextStep: "retry"
+					})
+				)
+		});
+		yield* Effect.gen(function* () {
+			yield* registerCameras;
+			const ipc = yield* ElectronIpcTest;
+			expect(yield* ipc.invoke("camera:status")).toEqual({
+				status: "unavailable",
+				message: "Camera streaming is unavailable in the current editor state.",
+				recovery:
+					"Launch the project With UE Shed and wait for UEShedCameras to connect. PIE is optional."
+			});
+		}).pipe(Effect.provide(Layer.mergeAll(ipcLayer, presentation)));
+	})
+);

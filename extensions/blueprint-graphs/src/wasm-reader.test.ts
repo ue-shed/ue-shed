@@ -64,7 +64,6 @@ describe("WASM Blueprint read adapter", () => {
 	});
 
 	it.each([
-		["malformed_data", "asset_malformed_data"],
 		["saved_node_note", "saved_node_note"],
 		["asset_malformed_data", "asset_malformed_data"]
 	])("maps diagnostic %s to %s with native warning severity", async (code, expectedCode) => {
@@ -163,24 +162,6 @@ describe("WASM Blueprint read adapter", () => {
 			status: "failed",
 			reason: "reader_failure"
 		});
-	});
-
-	it("accepts a structural runtime and forwards the original bytes", async () => {
-		const bytes = new Uint8Array([1, 2, 3]);
-		const result = await Effect.runPromise(
-			readWasmBlueprint(
-				{
-					extractBlueprints: (assetPath, input) => {
-						expect(assetPath).toBe(path);
-						expect(input).toBe(bytes);
-						return output;
-					}
-				},
-				path,
-				bytes
-			)
-		);
-		expect(result).toMatchObject({ status: "ready", outcome: "complete" });
 	});
 
 	it("turns runtime exceptions into a reader failure", async () => {

@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Schema } from "effect";
 import { NiagaraPreviewRunManifest } from "../packages/niagara/src/schema.ts";
+import { validateNiagaraEncodingManifest } from "../packages/niagara/src/encoding-manifest.ts";
 import { snapshotNiagaraFrames } from "../packages/niagara/src/verified-frames.ts";
 import {
 	selectNiagaraPresentation,
@@ -33,23 +34,7 @@ const manifestBytes = await readFile(manifestPath);
 const manifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)(
 	JSON.parse(manifestBytes.toString("utf8"))
 );
-if (manifest.effectiveSettings.width % 2 !== 0 || manifest.effectiveSettings.height % 2 !== 0) {
-	throw new Error("H.264/yuv420p requires even capture width and height.");
-}
-if (
-	manifest.artifacts.length !== manifest.effectiveSettings.frameCount ||
-	manifest.artifacts.some(
-		(frame, index) =>
-			frame.index !== index ||
-			frame.relativePath !== `frames/frame_${String(index).padStart(4, "0")}.png` ||
-			frame.width !== manifest.effectiveSettings.width ||
-			frame.height !== manifest.effectiveSettings.height
-	)
-) {
-	throw new Error(
-		"Capture frames must form the complete ordered sequence at the effective dimensions."
-	);
-}
+validateNiagaraEncodingManifest(manifest);
 const referenceBytes = values.reference ? await readFile(resolve(values.reference)) : undefined;
 const reference = referenceBytes
 	? Schema.decodeUnknownSync(NiagaraPreviewRunManifest)(

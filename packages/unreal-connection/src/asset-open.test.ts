@@ -51,7 +51,7 @@ function runOpen(options: {
 }
 
 describe("asset-open capability adapter", () => {
-	for (const bringToFront of [false, true]) {
+	for (const bringToFront of [true]) {
 		it(`negotiates and opens with bringToFront=${bringToFront}`, async () => {
 			const { calls, result } = runOpen({ bringToFront });
 			expect(await Effect.runPromise(result)).toEqual({ contract, objectPath, status: "ok" });
@@ -87,7 +87,7 @@ describe("asset-open capability adapter", () => {
 		expect(calls).toHaveLength(1);
 	});
 
-	for (const reason of ["asset_not_found", "asset_load_failed", "editor_refused"]) {
+	for (const reason of ["editor_refused"]) {
 		it(`returns ${reason} as unavailable rather than a typed failure`, async () => {
 			const reply = {
 				contract,

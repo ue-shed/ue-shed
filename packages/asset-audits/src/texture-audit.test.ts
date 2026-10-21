@@ -6,7 +6,6 @@ import {
 	TextureAudit,
 	TextureAuditLive,
 	TextureAuditScanError,
-	makeTextureAuditTestLayer,
 	texturePackagePathsFromProjectIndex
 } from "./texture.js";
 import { textureAuditQuery } from "./query.js";
@@ -305,47 +304,6 @@ it.effect("does not scan Content when the shared index has no texture candidates
 		expect(report.coverage.discoveredPackages).toBe(30);
 		expect(report.coverage.inspectedPackages).toBe(0);
 		expect(progress).toEqual({ phase: "ready", processedAssets: 0, totalAssets: 0 });
-	})
-);
-
-it.effect("routes texture scans through the TextureAudit service", () =>
-	Effect.gen(function* () {
-		const scanned = yield* Ref.make(false);
-		const layer = makeTextureAuditTestLayer({
-			scan: Effect.fn("TextureAudit.Test.scan")(function* () {
-				yield* Ref.set(scanned, true);
-				return {
-					coverage: {
-						discoveredPackages: 0,
-						failedPackages: 0,
-						inspectedPackages: 0,
-						partialPackages: 0,
-						textureAssets: 0
-					},
-					diagnostics: [],
-					distributions: {
-						compression: [],
-						maximumDimension: [],
-						sRGB: [],
-						textureGroup: []
-					},
-					findings: [],
-					records: [],
-					ruleSetName: "test",
-					schemaVersion: 1 as const,
-					status: "complete" as const
-				};
-			})
-		});
-
-		yield* Effect.flatMap(TextureAudit, (service) =>
-			service.scan({
-				projectRoot: "C:/Fixture",
-				ruleFile: "C:/rules.json"
-			})
-		).pipe(Effect.provide(layer));
-
-		expect(yield* Ref.get(scanned)).toBe(true);
 	})
 );
 

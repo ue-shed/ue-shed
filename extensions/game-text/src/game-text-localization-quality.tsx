@@ -1,68 +1,39 @@
+import type { JSX } from "@solidjs/web";
 import * as stylex from "@stylexjs/stylex";
+import { localizationCheckCatalogue, parseLocalizationRuleId } from "@ue-shed/game-text/checks";
 import {
 	BuiltInQualityFilter,
-	type WorkspaceQualityFilter,
 	workspaceQualityLabel,
-	type WorkspaceQualityPage,
-	type WorkspaceQualityFocusResult,
+	type LocalizationFocus,
+	type LocalizationReviewChange,
 	type TextQualityFindingId,
 	type TextQualityQuerySummary,
-	type LocalizationFocus,
-	type LocalizationReviewChange
+	type WorkspaceQualityFilter,
+	type WorkspaceQualityFocusResult,
+	type WorkspaceQualityPage
 } from "@ue-shed/game-text/corpus";
-import { localizationCheckCatalogue, parseLocalizationRuleId } from "@ue-shed/game-text/checks";
 import { textCountLabel, textLocationLabel } from "@ue-shed/game-text/labels";
-import { type TextUnitId, type LocalizationCheckDiagnostic } from "@ue-shed/game-text/schema";
 import { type GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import { type LocalizationCheckDiagnostic, type TextUnitId } from "@ue-shed/game-text/schema";
 import { Button, Chip, createEffectAction } from "@ue-shed/ui";
 import { Effect } from "effect";
 import { For, Show, createEffect, createSignal, untrack } from "solid-js";
-import type { JSX } from "@solidjs/web";
+import { changeRanges } from "./game-text-change-ranges.js";
+import type { GameTextClientApi } from "./game-text-client.js";
+import { CopyButton } from "./game-text-copy-button.js";
+import type { GameTextLocalizationState } from "./game-text-localization-state.js";
+import { TranslationsDetail, unknownLabels } from "./game-text-localization-view.js";
+import { ShowInUnrealButton } from "./game-text-locate-button.js";
+import { qualityFindingFacts } from "./game-text-quality-workspace.js";
+import { GameTextRuleEditor } from "./game-text-rule-editor.js";
+import type { GameTextRuleState } from "./game-text-rule-state.js";
+import { styles } from "./game-text-styles.js";
+import { locationDetail } from "./game-text-view.js";
 
 /** A built-in check's catalogue label; a project rule keeps its own ID. */
 function ruleLabel(ruleId: string): string {
 	const check = parseLocalizationRuleId(ruleId);
 	return check ? localizationCheckCatalogue[check].label : ruleId;
-}
-import type { GameTextClientApi } from "./game-text-client.js";
-import type { GameTextLocalizationState } from "./game-text-localization-state.js";
-import type { GameTextRuleState } from "./game-text-rule-state.js";
-import { GameTextRuleEditor } from "./game-text-rule-editor.js";
-import { qualityFindingFacts } from "./game-text-quality-workspace.js";
-import { CopyButton } from "./game-text-copy-button.js";
-import { ShowInUnrealButton } from "./game-text-locate-button.js";
-import { unknownLabels, TranslationsDetail } from "./game-text-localization-view.js";
-import { styles } from "./game-text-styles.js";
-import { locationDetail } from "./game-text-view.js";
-
-function argumentRange(text: string, start: number, end: number) {
-	for (const token of text.matchAll(/\{[^{}\r\n]+\}/gu)) {
-		const tokenEnd = token.index + token[0].length;
-		const overlaps = token.index < end && tokenEnd > start;
-		const insertion = start === end && token.index < start && start < tokenEnd;
-		if (overlaps || insertion) {
-			start = Math.min(start, token.index);
-			end = Math.max(end, tokenEnd);
-		}
-	}
-	return start < end ? [{ start, end }] : [];
-}
-
-export function changeRanges(before: string, after: string) {
-	if (before === after) return { before: [], after: [] };
-	let start = 0,
-		tail = 0;
-	while (start < before.length && start < after.length && before[start] === after[start]) start++;
-	while (
-		tail < before.length - start &&
-		tail < after.length - start &&
-		before[before.length - tail - 1] === after[after.length - tail - 1]
-	)
-		tail++;
-	return {
-		before: argumentRange(before, start, before.length - tail),
-		after: argumentRange(after, start, after.length - tail)
-	};
 }
 
 const checkLimitLabels = {

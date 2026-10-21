@@ -125,7 +125,9 @@ indexedBlueprintTest(
 		await expect(summary).toContainText("1link");
 		await expect(page.getByLabel("Search project Blueprints")).toHaveValue("");
 		await expect(
-			page.getByRole("region", { name: "Saved Blueprint graph" }).locator("svg path")
+			page
+				.getByRole("region", { name: "Saved Blueprint graph" })
+				.getByRole("img", { name: /^Edge from / })
 		).toHaveCount(1);
 		await page.getByRole("button", { name: "Inspect SetActorHiddenInGame" }).click();
 		await expect(page.getByLabel("Saved pin evidence")).toContainText("bool");
@@ -134,38 +136,34 @@ indexedBlueprintTest(
 		await page.getByRole("tab", { name: "EventGraph, 5 nodes" }).click();
 
 		const graphViewport = page.getByLabel("Graph viewport");
+		await page.getByRole("button", { name: "1:1", exact: true }).click();
 		await page.getByRole("button", { name: "Zoom in" }).click();
-		await expect(page.getByLabel("Graph zoom")).toHaveText("110%");
+		const zoom = () => page.getByLabel("Graph zoom").innerText().then(Number.parseFloat);
+		await expect.poll(zoom).toBeGreaterThan(100);
 		for (let index = 0; index < 5; index += 1) {
 			await page.getByRole("button", { name: "Zoom in" }).click();
 		}
-		await expect(page.getByLabel("Graph zoom")).toHaveText("160%");
-		await expect
-			.poll(() =>
-				graphViewport.evaluate((element) => element.scrollWidth > element.clientWidth)
-			)
-			.toBe(true);
-		await graphViewport.dispatchEvent("pointerdown", {
-			button: 0,
-			clientX: 320,
-			clientY: 240,
-			pointerId: 7
+		await expect.poll(zoom).toBeGreaterThan(150);
+		const node = page.getByRole("button", { name: "Inspect SetActorHiddenInGame" });
+		const before = await node.boundingBox();
+		const viewport = await graphViewport.boundingBox();
+		if (!before || !viewport) throw new Error("The Blueprint graph has no visible bounds.");
+		await test.step("Pan the Blueprint canvas", async () => {
+			await page.mouse.move(
+				viewport.x + viewport.width / 2,
+				viewport.y + viewport.height / 2
+			);
+			await page.mouse.down({ button: "middle" });
+			await page.mouse.move(
+				viewport.x + viewport.width / 2 - 120,
+				viewport.y + viewport.height / 2 - 80,
+				{ steps: 8 }
+			);
+			await page.mouse.up({ button: "middle" });
+			await expect
+				.poll(async () => Math.abs((await node.boundingBox())!.x - before.x))
+				.toBeGreaterThan(50);
 		});
-		await graphViewport.dispatchEvent("pointermove", {
-			button: 0,
-			clientX: 180,
-			clientY: 140,
-			pointerId: 7
-		});
-		await graphViewport.dispatchEvent("pointerup", {
-			button: 0,
-			clientX: 180,
-			clientY: 140,
-			pointerId: 7
-		});
-		await expect
-			.poll(() => graphViewport.evaluate((element) => element.scrollLeft))
-			.toBeGreaterThan(0);
 
 		await page.getByText("Compare saved versions", { exact: true }).click();
 		await page.getByLabel("Baseline asset path").fill(fixturePath);

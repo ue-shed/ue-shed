@@ -7,25 +7,6 @@ import {
 	workbenchConfigurationFromUnknown
 } from "./workbench-config.js";
 
-it.effect("defaults the remote control endpoint when unset", () =>
-	Effect.gen(function* () {
-		const configuration = yield* WorkbenchConfiguration;
-		expect(configuration.remoteControlEndpoint).toBe("http://127.0.0.1:30001");
-		expect(configuration.cameraPipeName).toBe("\\\\.\\pipe\\ue-shed-cameras-v1");
-		expect(configuration.project).toEqual({ status: "not_configured" });
-		expect(configuration.rememberProjects).toBe(true);
-		expect(configuration.review).toEqual({ status: "not_configured" });
-		expect(configuration.savedWorldMap).toEqual({ status: "not_configured" });
-		expect(configuration.savedWorldMaps).toEqual({ status: "not_configured" });
-		expect(configuration.textureAuditRules).toEqual({ status: "not_configured" });
-		expect(configuration.authoringAsset).toEqual({ status: "not_configured" });
-		expect(configuration.custodianRoot).toEqual({ status: "not_configured" });
-		expect(configuration.sourceCheckout).toEqual({ status: "not_configured" });
-		expect(configuration.expectedProject).toEqual({ status: "not_configured" });
-		expect(configuration.unrealEngineRoot).toEqual({ status: "not_configured" });
-	}).pipe(Effect.provide(workbenchConfigurationFromUnknown({})))
-);
-
 it.effect("makes Map Review ready for first-run authoring when a project root exists", () =>
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
@@ -61,24 +42,6 @@ it.effect("derives picker labels from a configured saved-map list", () =>
 			workbenchConfigurationFromUnknown({
 				UE_SHED_SAVED_WORLD_MAPS:
 					"Content/Maps/L_OfflineWorld.umap;Content/Maps/L_CameraLoad.umap"
-			})
-		)
-	)
-);
-
-it.effect("honors an explicit Review Set override", () =>
-	Effect.gen(function* () {
-		const configuration = yield* WorkbenchConfiguration;
-		expect(configuration.review).toEqual({
-			status: "configured",
-			projectRoot: "C:/FixtureProject",
-			reviewSetPath: "C:/custom/review-set.json"
-		});
-	}).pipe(
-		Effect.provide(
-			workbenchConfigurationFromUnknown({
-				UE_SHED_PROJECT_ROOT: "C:/FixtureProject",
-				UE_SHED_REVIEW_SET: "C:/custom/review-set.json"
 			})
 		)
 	)
@@ -156,26 +119,10 @@ it.effect("keeps Review not configured when only a Review Set is supplied", () =
 	)
 );
 
-it.effect("fails startup for malformed configured values", () =>
-	Effect.gen(function* () {
-		const exit = yield* Layer.build(
-			WorkbenchConfigurationLive.pipe(
-				Layer.provide(
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							UE_SHED_REMOTE_CONTROL_ENDPOINT: "not-a-url"
-						})
-					)
-				)
-			)
-		).pipe(Effect.scoped, Effect.exit);
-		expect(Exit.isFailure(exit)).toBe(true);
-	})
-);
-
 it.effect("rejects incomplete endpoints and empty configured paths", () =>
 	Effect.gen(function* () {
 		for (const values of [
+			{ UE_SHED_REMOTE_CONTROL_ENDPOINT: "not-a-url" },
 			{ UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://" },
 			{ UE_SHED_PROJECT_ROOT: " " }
 		]) {

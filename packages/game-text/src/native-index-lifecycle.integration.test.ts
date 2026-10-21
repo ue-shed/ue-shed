@@ -22,7 +22,11 @@ describe.skipIf(!executable)("native index lifecycle soak", () => {
 				projectView: { kind: "source" as const }
 			};
 			try {
-				for (let round = 0; round < 8; round++) {
+				for (
+					let round = 0;
+					round < (process.env.UE_SHED_GAME_TEXT_SOAK === "1" ? 8 : 2);
+					round++
+				) {
 					let releaseStaging: (() => void) | undefined;
 					await Effect.runPromise(
 						Effect.scoped(

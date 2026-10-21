@@ -7,11 +7,10 @@ import {
 	TextNamespace,
 	LocalizationTargetName
 } from "@ue-shed/localization/browser";
-import { assetReaderLayer } from "@ue-shed/unreal-assets";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
-import { scanTextCorpus } from "./corpus.js";
+import { savedFixtureCorpus } from "./saved-corpus.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { LocalizationState } from "./localization-schema.js";
 
@@ -33,11 +32,7 @@ const fixture = useSavedFixtureProject();
 describe.skipIf(!executable)("real saved-reader localization states", () => {
 	it("matches every committed intent entry exactly with no extra scoped identities", async () => {
 		if (executable === undefined) throw new Error("The saved reader is not configured.");
-		const corpus = await Effect.runPromise(
-			scanTextCorpus({ projectRoot: fixture.root }).pipe(
-				Effect.provide(assetReaderLayer({ executable }))
-			)
-		);
+		const corpus = await Effect.runPromise(savedFixtureCorpus(fixture.root, executable));
 		const files = await Effect.runPromise(
 			Effect.gen(function* () {
 				const service = yield* LocalizationEvidence;

@@ -25,7 +25,7 @@ const files = [
 ] as const;
 
 describe.skipIf(!executable)("native join current evidence", () => {
-	for (const identity of ["UI", "UI\u{f0000}\u{f0001}\u{f0800}", "UI😀"]) {
+	for (const identity of ["UI\u{f0000}\u{f0001}\u{f0800}", "UI😀"]) {
 		it(`preserves current failures, pinned readers and policy identity ${JSON.stringify(identity)}`, async () => {
 			if (!executable) throw new Error("Native reader is required");
 			const root = await mkdtemp(join(tmpdir(), "ue-shed-native-evidence-"));

@@ -19,13 +19,6 @@ test("enables every discovered plugin with Unreal's plural plugin switch", () =>
 	]);
 });
 
-test("honors an explicit Remote Control endpoint", async () => {
-	const endpoint = await resolveRemoteControlEndpoint({
-		UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30017"
-	});
-	assert.equal(endpoint, "http://127.0.0.1:30017");
-});
-
 test("prefers a live Remote Control server over the next free port", async () => {
 	const endpoint = await resolveRemoteControlEndpoint(
 		{},

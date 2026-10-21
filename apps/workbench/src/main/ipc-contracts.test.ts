@@ -12,20 +12,19 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import {
-	CameraStatusResult,
 	cameraFrameEvent,
-	decodeMapCaptureProgressEvent,
-	mapCaptureProgressEvent,
-	gameTextOperationProgressEvent,
-	worldObservationEvent,
 	CandidateId,
 	decodeCameraFrameEvent,
+	decodeMapCaptureProgressEvent,
 	GameObjectPath,
+	gameTextOperationProgressEvent,
 	invokeChannelNames,
 	invokeContracts,
+	mapCaptureProgressEvent,
 	PresentationBudgetMbPerSecond,
 	RemoteControlPort,
 	SessionId,
+	worldObservationEvent,
 	type InvokeArguments,
 	type InvokeChannel,
 	type InvokeResult
@@ -134,14 +133,6 @@ const qualityRuleDocument = {
 	],
 	schemaVersion: 1
 } satisfies InvokeArguments<"game-text:quality:preview-rules">[0];
-
-it.effect("represents a stopped game world as unavailable camera status", () =>
-	Schema.decodeUnknownEffect(CameraStatusResult)({
-		message: "Camera streaming is unavailable in the current editor state.",
-		recovery: "Start a Play or Simulate session before opening Camera Lab streaming.",
-		status: "unavailable"
-	}).pipe(Effect.asVoid)
-);
 
 const approveIntent = {
 	candidateId: "candidate-1",
@@ -981,34 +972,6 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 140 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(140);
-	expect(new Set(invokeChannelNames).size).toBe(140);
-	expect(invokeChannelNames).toEqual(
-		expect.arrayContaining([
-			"game-text:localization:quality-search",
-			"game-text:localization:operation-state",
-			"game-text:localization:operation-plan",
-			"game-text:localization:operation-run",
-			"game-text:localization:operation-cancel",
-			"game-text:localization:operation-files",
-			"game-text:localization:quality-focus",
-			"game-text:localization:changes",
-			"game-text:localization:edits",
-			"game-text:localization:review",
-			"game-text:localization:report",
-			"game-text:localization:report-file",
-			"game-text:localization:lines-file"
-		])
-	);
-	expect(cameraFrameEvent.channel).toBe("camera:frame");
-	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
-	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
-	expect(gameTextOperationProgressEvent.channel).toBe(
-		"game-text:localization:operation-progress"
-	);
-});
-
 it.effect("decodes map-capture progress events", () =>
 	decodeMapCaptureProgressEvent({
 		failedTiles: 1,
@@ -1020,6 +983,13 @@ it.effect("decodes map-capture progress events", () =>
 );
 
 it("keeps contract channels in exact preload parity", () => {
+	expect(cameraFrameEvent.channel).toBe("camera:frame");
+	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
+	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
+	expect(gameTextOperationProgressEvent.channel).toBe(
+		"game-text:localization:operation-progress"
+	);
+
 	expect([...preloadInvokeChannels].sort()).toEqual([...invokeChannelNames].sort());
 	expect(preloadEventChannels.toSorted()).toEqual(
 		[

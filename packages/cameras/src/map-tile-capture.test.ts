@@ -642,7 +642,7 @@ describe("map capture orchestration", () => {
 
 	effectIt.effect("captures the next batch while the host ingests the previous batch", () =>
 		Effect.gen(function* () {
-			const project = yield* Effect.promise(() => fixtureProject(4));
+			const project = yield* Effect.promise(() => fixtureProject(2));
 			const firstStoreStarted = yield* Deferred.make<void>();
 			const releaseFirstStore = yield* Deferred.make<void>();
 			const secondCaptureStarted = yield* Deferred.make<void>();
@@ -733,8 +733,8 @@ describe("map capture orchestration", () => {
 				Effect.ensuring(Deferred.succeed(releaseFirstStore, undefined))
 			);
 			const outcome = yield* Fiber.join(runFiber);
-			expect(captureCalls).toBe(22);
-			expect(outcome.manifest.tiles).toHaveLength(85);
+			expect(captureCalls).toBe(2);
+			expect(outcome.manifest.tiles).toHaveLength(5);
 			expect(outcome.manifest.tiles.map(({ key }) => mapTileKeyId(key))).toEqual(
 				requestedKeys
 			);

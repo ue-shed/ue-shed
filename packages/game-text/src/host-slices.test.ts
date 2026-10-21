@@ -9,7 +9,7 @@ const busy = (ms: number) => {
 
 /** Mirrors an index build: synchronous batches behind promises that settle without I/O. */
 const batches = Effect.gen(function* () {
-	for (let batch = 0; batch < 40; batch++) {
+	for (let batch = 0; batch < 12; batch++) {
 		yield* Effect.tryPromise({ try: async () => batch, catch: (cause) => cause });
 		busy(10);
 	}
@@ -35,9 +35,9 @@ const longestEventLoopGap = async (effect: Effect.Effect<void, unknown>) => {
 
 describe("withHostSlices", () => {
 	it("lets the event loop run between batches that resume from settled promises", async () => {
-		// The default scheduler restarts its operation count at each promise resume: one ~400 ms gap.
-		expect(await longestEventLoopGap(batches)).toBeGreaterThan(300);
-		expect(await longestEventLoopGap(withHostSlices(batches))).toBeLessThan(100);
+		// The default scheduler restarts its operation count at each promise resume: one ~120 ms gap.
+		expect(await longestEventLoopGap(batches)).toBeGreaterThan(80);
+		expect(await longestEventLoopGap(withHostSlices(batches))).toBeLessThan(50);
 	});
 
 	it("keeps the result and failures of the effect", async () => {

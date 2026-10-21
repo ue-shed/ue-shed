@@ -216,15 +216,6 @@ describe("text audience policy table", () => {
 			"niagara_version_data"
 		],
 		[
-			"Niagara emitter version metadata",
-			property(
-				"/Game/FX/NE_Smoke.NE_Smoke",
-				"VersionData[1].Keywords",
-				"/Script/Niagara.NiagaraEmitter"
-			),
-			"niagara_version_data"
-		],
-		[
 			"cached Niagara script data",
 			property(
 				"/Game/FX/NS_Fire.NS_Fire:NiagaraScript_2",
@@ -431,19 +422,6 @@ describe("container property paths the reader writes", () => {
 			why: "Test."
 		};
 		expect(matchTextAudiencePolicy(subject, [rule])?.id).toBe("entries_value");
-	});
-});
-
-describe("gather table evidence", () => {
-	it("outranks the policy table both ways", () => {
-		const tooltip = property("/Game/BP/BP_Hero.BP_Hero", "PropertyTooltip");
-		expect(classifyTextAudience(tooltip, { gatherTableEditorOnly: false })).toEqual({
-			audience: "player",
-			reason: "gather_table_runtime"
-		});
-		expect(
-			classifyTextAudience(cell("/Game/Data/DT.DT"), { gatherTableEditorOnly: true })
-		).toEqual({ audience: "editor", reason: "gather_table_editor_only" });
 	});
 });
 

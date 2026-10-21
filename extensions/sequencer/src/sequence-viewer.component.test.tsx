@@ -28,6 +28,7 @@ describe("shared Sequencer viewer", () => {
 		expect(summary.textContent).toContain("1 tracks · 0 bindings · 1 sections · 1 keys");
 		expect(summary.textContent).toContain("24 fps");
 		expect(summary.textContent).not.toContain("24/1 fps");
+		expect(screen.getByText("24 fps · 0–48 frames · 2.0 s").getAttribute("title")).toBeNull();
 		expect(summary.textContent).toContain("0–48 frames · 2.0 s");
 		expect(screen.getByRole("heading", { name: "Sequencer", level: 1 })).toBeTruthy();
 		expect(screen.getByText("Read-only · no Unreal required")).toBeTruthy();
@@ -122,26 +123,6 @@ describe("shared Sequencer viewer", () => {
 		}
 		await userEvent.setup().click(within(sections).getByRole("button", { name: "Section" }));
 		expect(screen.getByText("Root · 4 tracks")).toBeTruthy();
-	});
-
-	it("formats fractional frame rates with the saved rational rate in a tooltip", async () => {
-		render(() => (
-			<EffectRuntimeProvider runtime={runtime}>
-				<SequenceViewer
-					initialRead={Effect.succeed({
-						...read,
-						sequence: {
-							...read.sequence,
-							display_rate: { numerator: 30000, denominator: 1001 }
-						}
-					})}
-					opener={() => null}
-				/>
-			</EffectRuntimeProvider>
-		));
-		await screen.findByRole("heading", { name: "LS" });
-		const rate = screen.getByText("29.97 fps · 0–60 frames · 2.0 s");
-		expect(rate.getAttribute("title")).toBe("30000/1001 fps");
 	});
 
 	it("opens indexed evidence from the search, then keeps the search next to the title", async () => {

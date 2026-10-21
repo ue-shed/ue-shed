@@ -5,6 +5,7 @@ import { parseManifest } from "@ue-shed/localization/browser";
 import { Effect, Result, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
+import { savedFixtureCorpus } from "./saved-corpus.test-support.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
 import { textCorpusQuery } from "./query.test-support.js";
 
@@ -248,14 +249,20 @@ describe("Game Text identity cases in the saved fixture", () => {
 		async () => {
 			const cases = await readCases();
 			const evidence = await readEvidence(fixtureEngine);
-			const corpus = textCorpusFromExtractionEvents({
-				projectRoot: fixture.root,
-				events: await Effect.runPromise(
-					Stream.runCollect(
-						extractProjectTextPackages({ projectRoot: fixture.root })
-					).pipe(Effect.provide(assetReaderLayer({ executable: executable! })))
-				)
-			});
+			const corpus = await Effect.runPromise(
+				generatedRoot === undefined
+					? savedFixtureCorpus(fixture.root, executable!, true)
+					: Effect.map(
+							Stream.runCollect(
+								extractProjectTextPackages({ projectRoot: fixture.root })
+							),
+							(events) =>
+								textCorpusFromExtractionEvents({
+									projectRoot: fixture.root,
+									events
+								})
+						).pipe(Effect.provide(assetReaderLayer({ executable: executable! })))
+			);
 			const fromReader = new Set<string>();
 			for (const unit of corpus.units)
 				for (const occurrence of unit.occurrences) {

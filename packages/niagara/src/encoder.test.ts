@@ -4,10 +4,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "vitest";
+import { expect, test } from "vitest";
 import { Schema } from "effect";
 import { NiagaraPreviewRunManifest } from "./schema.js";
 import { createHash } from "node:crypto";
+import { validateNiagaraEncodingManifest } from "./encoding-manifest.js";
 import { snapshotNiagaraFrames } from "./verified-frames.js";
 
 test("verified snapshot retains original frame bytes after source replacement", async () => {
@@ -34,6 +35,17 @@ test("verified snapshot retains original frame bytes after source replacement", 
 		await snapshotNiagaraFrames(source, staging, artifacts);
 		await writeFile(join(source, relativePath), "replaced after verification");
 		deepStrictEqual(await readFile(join(staging, relativePath)), original);
+		for (const [name, bytes] of [
+			["corrupt-size", Buffer.from("short")],
+			["corrupt-hash", Buffer.alloc(original.length)]
+		] as const) {
+			const corruptStaging = join(root, name);
+			await mkdir(corruptStaging);
+			await writeFile(join(source, relativePath), bytes);
+			await expect(snapshotNiagaraFrames(source, corruptStaging, artifacts)).rejects.toThrow(
+				"Frame integrity failed"
+			);
+		}
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -75,24 +87,21 @@ test("encoder rejects malformed sequences and corrupted frames before launching 
 					timeout: 15_000
 				}
 			);
-		await writeFile(
-			manifestPath,
-			JSON.stringify({
+		expect(() => validateNiagaraEncodingManifest(manifest)).not.toThrow();
+		expect(() =>
+			validateNiagaraEncodingManifest({
 				...manifest,
 				artifacts: [...manifest.artifacts].reverse()
 			})
-		);
-		const unordered = encode();
-		notEqual(unordered.status, 0);
-		match(unordered.stderr, /complete ordered sequence/u);
-		await writeFile(
-			manifestPath,
-			JSON.stringify({
-				...manifest,
-				effectiveSettings: { ...manifest.effectiveSettings, width: 63 }
-			})
-		);
-		match(encode().stderr, /requires even capture width/u);
+		).toThrow("complete ordered sequence");
+		for (const effectiveSettings of [
+			{ ...manifest.effectiveSettings, width: 63 },
+			{ ...manifest.effectiveSettings, height: 63 }
+		]) {
+			expect(() =>
+				validateNiagaraEncodingManifest({ ...manifest, effectiveSettings })
+			).toThrow("requires even capture width and height");
+		}
 		await writeFile(manifestPath, JSON.stringify(manifest));
 		await mkdir(join(root, "frames"));
 		await writeFile(join(root, "frames/frame_0000.png"), "corrupt");

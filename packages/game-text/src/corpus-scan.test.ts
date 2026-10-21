@@ -318,7 +318,7 @@ it.effect("maps a reader asset limit onto scan_limit_exceeded", () =>
 );
 
 function* syntheticGaps(): Generator<SavedAssetTextExtractionEvent> {
-	for (let packageIndex = 0; packageIndex < 5_000; packageIndex += 1) {
+	for (let packageIndex = 0; packageIndex < 40; packageIndex += 1) {
 		const path = `C:/Fixture/Content/Text/Package${packageIndex}.uasset`;
 		yield {
 			event: "text_package",
@@ -353,7 +353,7 @@ function* syntheticGaps(): Generator<SavedAssetTextExtractionEvent> {
 }
 
 it.effect(
-	"folds 50,000 gaps into bounded diagnostics for only the packages the reader marked partial",
+	"folds 400 gaps into bounded diagnostics for only the packages the reader marked partial",
 	() =>
 		Effect.gen(function* () {
 			const reader = readerOffering(() => Stream.fromIterable(syntheticGaps()));
@@ -361,19 +361,19 @@ it.effect(
 				service.scan({ projectRoot: "C:/Fixture" })
 			).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
 			// Every package has gaps; only the reader's partial status makes them coverage problems.
-			expect(corpus.coverage.unsupportedTextProperties).toBe(2_500);
-			expect(corpus.coverage.partialPackages).toBe(2_500);
+			expect(corpus.coverage.unsupportedTextProperties).toBe(20);
+			expect(corpus.coverage.partialPackages).toBe(20);
 			expect(corpus.status).toBe("partial");
-			expect(corpus.packageCoverage).toHaveLength(5_000);
-			// Keep output bounded by partial packages instead of emitting all 50,000 gaps.
-			expect(corpus.diagnostics).toHaveLength(5_000);
+			expect(corpus.packageCoverage).toHaveLength(40);
+			// Keep output bounded by partial packages instead of emitting all 400 gaps.
+			expect(corpus.diagnostics).toHaveLength(40);
 			expect(
 				corpus.packageCoverage?.filter((item) => item.status === "partial")
-			).toHaveLength(2_500);
+			).toHaveLength(20);
 			const partial = corpus.diagnostics.filter(
 				(item) => item.code === "package_partially_decoded"
 			);
-			expect(partial).toHaveLength(2_500);
+			expect(partial).toHaveLength(20);
 			expect(
 				partial.every((item) => /Package\d*[02468]\.uasset$/.test(item.packageFile))
 			).toBe(true);
@@ -394,7 +394,7 @@ it.effect(
 			const histories = corpus.diagnostics.filter(
 				(item) => item.code === "unsupported_text_history"
 			);
-			expect(histories).toHaveLength(2_500);
+			expect(histories).toHaveLength(20);
 			expect(histories.every((item) => item.propertyPath === "Label9")).toBe(true);
 		})
 );

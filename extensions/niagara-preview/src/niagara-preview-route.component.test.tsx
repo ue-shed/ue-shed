@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { NiagaraPreviewRunManifest, NiagaraSystemObjectPath } from "@ue-shed/niagara/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
@@ -11,7 +11,10 @@ import { NiagaraPreviewClientError } from "./niagara-preview-client.js";
 import { NiagaraPreviewRoute } from "./niagara-preview-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 afterAll(() => runtime.dispose());
 
 const manifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)({
@@ -166,12 +169,14 @@ describe("NiagaraPreviewRoute", () => {
 	});
 
 	it("plays the captured effect on a loop", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
 		renderRoute(makeClient());
 		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
 		await screen.findByAltText("Niagara preview frame 0");
-		await waitFor(() => expect(screen.getByAltText("Niagara preview frame 1")).toBeDefined(), {
-			timeout: 1_500
-		});
+		await vi.advanceTimersByTimeAsync(500);
+		expect(screen.getByAltText("Niagara preview frame 1")).toBeDefined();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(screen.getByAltText("Niagara preview frame 0")).toBeDefined();
 	});
 
 	it("captures the system selected from the catalogue", async () => {

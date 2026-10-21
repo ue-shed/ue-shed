@@ -304,6 +304,9 @@ export function prepareUnrealPlugins({
 		"-ForceHeaderGeneration",
 		"-NoEngineChanges",
 		"-NoHotReload",
+		// The host is its own project, so another editor's Live Coding session cannot be affected;
+		// without this flag UnrealBuildTool refuses to build while one is active.
+		"-NoHotReloadFromIDE",
 		"-WaitMutex"
 	];
 	if (moduleOnly) {

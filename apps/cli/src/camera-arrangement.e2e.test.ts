@@ -1,16 +1,12 @@
+import { decodeReviewSet } from "@ue-shed/cameras";
+import { Effect } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
-import { decodeReviewSet } from "@ue-shed/cameras";
 import { describe, expect, it } from "vitest";
-import {
-	fixtureReviewSet,
-	parseRecord,
-	runSuccessfulHeadlessCli
-} from "./cli-process.test-support.js";
+import { fixtureReviewSet, parseRecord, runSuccessfulCli } from "./cli-in-process.test-support.js";
 
-describe("camera arrangement CLI process", () => {
+describe("camera arrangement CLI commands", () => {
 	it("creates, tunes, restarts, and approves an actor-scoped camera without Unreal or Workbench", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-arrangement-cli-"));
 		try {
@@ -62,11 +58,13 @@ describe("camera arrangement CLI process", () => {
 					}
 				})
 			);
-			const run = (...args: string[]) =>
+			const run = async (...args: string[]) =>
 				parseRecord(
-					runSuccessfulHeadlessCli(["review", "authoring", "arrangement", ...args])
+					await runSuccessfulCli(["review", "authoring", "arrangement", ...args])
 				);
-			expect(run("create", draft, input)).toMatchObject({ arrangement: { revision: 0 } });
+			expect(await run("create", draft, input)).toMatchObject({
+				arrangement: { revision: 0 }
+			});
 			await writeFile(
 				patch,
 				JSON.stringify({
@@ -77,8 +75,10 @@ describe("camera arrangement CLI process", () => {
 					settings: { fieldOfViewDegrees: 40, heightOffset: 100, distanceScale: 1.25 }
 				})
 			);
-			expect(run("patch", draft, patch)).toMatchObject({ arrangement: { revision: 1 } });
-			expect(run("show", draft)).toMatchObject({
+			expect(await run("patch", draft, patch)).toMatchObject({
+				arrangement: { revision: 1 }
+			});
+			expect(await run("show", draft)).toMatchObject({
 				arrangement: { revision: 1, settings: { fieldOfViewDegrees: 40 } }
 			});
 			await writeFile(
@@ -90,8 +90,8 @@ describe("camera arrangement CLI process", () => {
 					destination
 				})
 			);
-			run("approve", draft, approval);
-			run("approve", draft, approval);
+			await run("approve", draft, approval);
+			await run("approve", draft, approval);
 			const saved = await Effect.runPromise(
 				decodeReviewSet(JSON.parse(await readFile(destination, "utf8")))
 			);
@@ -124,16 +124,20 @@ describe("camera arrangement CLI process", () => {
 					pose: { ...savedView.viewpoint.approvedPose, fieldOfViewDegrees: 55 }
 				})
 			);
-			const proposal = run("recovery-file", draft, snapshotPath);
+			const proposal = await run("recovery-file", draft, snapshotPath);
 			expect(proposal).toMatchObject({
 				expectedRevision: 1,
 				native: { pose: { fieldOfViewDegrees: 55 } }
 			});
 			await writeFile(proposalPath, JSON.stringify(proposal));
-			expect(run("recovery-file", draft, proposalPath, "--choice", "native")).toMatchObject({
+			expect(
+				await run("recovery-file", draft, proposalPath, "--choice", "native")
+			).toMatchObject({
 				arrangement: { revision: 2 }
 			});
-			expect(run("recovery-file", draft, proposalPath, "--choice", "native")).toMatchObject({
+			expect(
+				await run("recovery-file", draft, proposalPath, "--choice", "native")
+			).toMatchObject({
 				arrangement: { revision: 2 }
 			});
 			expect(

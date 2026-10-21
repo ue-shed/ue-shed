@@ -61,25 +61,14 @@ describe("map tile contracts", () => {
 		expect(Schema.decodeUnknownResult(MapCapturePlan)(input)._tag).toBe("Failure");
 	});
 
-	it("exposes the unmodified SceneCapture renderer as an explicit comparison profile", () => {
+	it.each(["seam_stable", "scene_capture_defaults"])("accepts renderer profile %s", (profile) => {
 		// SAFETY: plan-valid.json is schema-decoded in the baseline test before this mutation.
 		const input = structuredClone(fixture("plan-valid.json")) as {
 			capture: { render: { profile: string } };
 		};
-		input.capture.render.profile = "scene_capture_defaults";
+		input.capture.render.profile = profile;
 		expect(Schema.decodeUnknownSync(MapCapturePlan)(input).capture.render.profile).toBe(
-			"scene_capture_defaults"
-		);
-	});
-
-	it("accepts the seam-stable spatial renderer profile", () => {
-		// SAFETY: plan-valid.json is schema-decoded in the baseline test before this mutation.
-		const input = structuredClone(fixture("plan-valid.json")) as {
-			capture: { render: { profile: string } };
-		};
-		input.capture.render.profile = "seam_stable";
-		expect(Schema.decodeUnknownSync(MapCapturePlan)(input).capture.render.profile).toBe(
-			"seam_stable"
+			profile
 		);
 	});
 

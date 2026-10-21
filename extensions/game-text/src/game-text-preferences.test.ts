@@ -6,10 +6,11 @@ import {
 	TextQualityRuleId,
 	TextRoleId
 } from "@ue-shed/game-text/schema";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	decodeGameTextPreferences,
+	saveGameTextPreferences,
 	storedGameTextPreferences,
 	writeGameTextPreferences,
 	type GameTextPreferences
@@ -153,4 +154,51 @@ describe("Game Text preferences", () => {
 		);
 		expect(storedGameTextPreferences("p").editSession?.staged).toHaveLength(1);
 	});
+});
+
+it("recovers a 65,537-character typed translation alongside staged edits and incomplete rules", async () => {
+	const edit = LocalizationEdit.make({
+		culture: LocalizationEdit.fields.culture.make("fr"),
+		namespace: LocalizationEdit.fields.namespace.make("UI"),
+		key: LocalizationEdit.fields.key.make("K"),
+		seenTranslation: null,
+		translation: "Valid staged edit"
+	});
+	const target = LocalizationSelection.fields.target.make("Game");
+	const incomplete = {
+		...rules,
+		rules: rules.rules.map((rule) =>
+			rule.kind === "character_budget" ? { ...rule, maximumCharacters: 0 } : rule
+		)
+	};
+	const preferences: GameTextPreferences = {
+		query: "Retained query",
+		capability: "all",
+		lens: "all",
+		selectedId: undefined,
+		qualityDocument: rules,
+		qualityEditor: { draft: incomplete, savedDocument: rules },
+		editSession: {
+			staged: [{ target, edit, source: "Source" }],
+			drafts: [
+				{
+					target,
+					edit: {
+						...edit,
+						key: LocalizationEdit.fields.key.make("Long"),
+						translation: "x".repeat(65_537)
+					},
+					source: "Other source"
+				}
+			]
+		}
+	};
+	expect(await Effect.runPromise(saveGameTextPreferences("long-draft", preferences))).toBe(
+		"saved"
+	);
+	const recovered = storedGameTextPreferences("long-draft");
+	expect(recovered.query).toBe("Retained query");
+	expect(recovered.editSession?.drafts[0]?.edit.translation).toHaveLength(65_537);
+	expect(recovered.editSession?.staged[0]?.edit.translation).toBe("Valid staged edit");
+	expect(recovered.qualityEditor?.draft.rules[0]).toMatchObject({ maximumCharacters: 0 });
 });

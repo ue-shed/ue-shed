@@ -13,7 +13,7 @@ import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./ind
 describe("cold package refresh", () => {
 	it("reads eligible packages once, preserves Unicode paths and excluded records, and reuses the result", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-cold-packages-"));
-		const inventory: PackageTextInventoryEntry[] = Array.from({ length: 256 }, (_, row) => ({
+		const inventory: PackageTextInventoryEntry[] = Array.from({ length: 24 }, (_, row) => ({
 			path: `Content/Package${row}.uasset`,
 			signature: `signature-${row}`,
 			headerData: {
@@ -29,6 +29,7 @@ describe("cold package refresh", () => {
 		const requests: (readonly string[])[] = [];
 		const progress: GameTextIndexProgress[] = [];
 		const input = {
+			coldMinimumPackages: 24,
 			inventory,
 			read: (paths: readonly string[]) => {
 				requests.push(paths);
@@ -44,21 +45,21 @@ describe("cold package refresh", () => {
 								progress.push(event);
 							})
 						);
-						expect(first.readPackages).toBe(194);
+						expect(first.readPackages).toBe(20);
 						const prepared = progress.filter((event) => event.phase === "package_text");
 						expect(prepared[0]).toEqual({
 							phase: "package_text",
 							completed: 0,
-							total: 258
+							total: 26
 						});
 						expect(prepared.at(-1)).toEqual({
 							phase: "package_text",
-							completed: 258,
-							total: 258
+							completed: 26,
+							total: 26
 						});
 						expect(progress.at(-1)?.phase).toBe("package_publish");
 						expect(requests).toHaveLength(1);
-						expect(requests[0]).toHaveLength(194);
+						expect(requests[0]).toHaveLength(20);
 						const reader = yield* (yield* SharedIndex).open();
 						const records = [];
 						for (const name of Object.keys(reader.manifest.active)) {
@@ -67,10 +68,10 @@ describe("cold package refresh", () => {
 								...(yield* decodePackageTextColumns(yield* reader.layer(name)))
 							);
 						}
-						expect(records).toHaveLength(258);
+						expect(records).toHaveLength(26);
 						expect(
 							records.filter((record) => record.evidence.event === "not_gatherable")
-						).toHaveLength(64);
+						).toHaveLength(6);
 						expect(records.map((record) => record.path).sort()).toEqual(
 							inventory.map((entry) => entry.path).sort()
 						);

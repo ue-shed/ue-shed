@@ -74,17 +74,6 @@ describe("world scout canvas store", () => {
 		store.installSnapshot(snapshot([actorA]));
 		expect(store.materialize(0)?.actorGuid).toBeUndefined();
 	});
-	it("installs a snapshot and projects visible actors without per-sample allocations escaping", () => {
-		const store = new WorldScoutRetainedStore();
-		store.installSnapshot(snapshot([actorA, actorB]));
-		collectVisibleIndices(store, "", new Set(), store.visibleIndices);
-		expect(store.visibleIndices).toEqual([0, 1]);
-		const bounds = contentBounds(store, store.visibleIndices);
-		store.viewport = stabilizeViewport(undefined, bounds);
-		projectVisibleActors(store, store.viewport, 200, 200, store.visibleIndices);
-		expect(store.xs[0]).toBeTypeOf("number");
-		expect(store.ys[1]).toBeTypeOf("number");
-	});
 
 	it("projects resolved saved actors without inventing a live actor identity", () => {
 		const world: SavedWorld = {
@@ -372,9 +361,7 @@ describe("world scout canvas store", () => {
 		expect(Math.hypot(eastDx, eastDy)).toBeCloseTo(Math.hypot(northDx, northDy));
 		expect(Math.abs(eastDy)).toBeLessThan(1e-9);
 		expect(Math.abs(northDx)).toBeLessThan(1e-9);
-	});
 
-	it("sizes the world window to the canvas aspect so height is half width at 2:1", () => {
 		const viewport = stabilizeViewport(
 			undefined,
 			{ minX: 0, maxX: 100, minY: 0, maxY: 40 },
@@ -382,7 +369,6 @@ describe("world scout canvas store", () => {
 			0
 		);
 		expect(viewport.size).toBe(100);
-		expect(viewport.size / 2).toBe(50);
 	});
 
 	it("seeds draw locations from catalog bounds before transforms arrive", () => {

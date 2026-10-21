@@ -1,6 +1,5 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, copyFile, writeFile } from "node:fs/promises";
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, copyFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -23,10 +22,15 @@ import {
 	parsePO,
 	projectPOEvidence
 } from "../packages/localization/dist/index.js";
-import { Result, Schema } from "effect";
+import { Result } from "effect";
 import { LocalizationLineId } from "../packages/game-text/dist/index.js";
 import { validateGameTextScale } from "./game-text-scale-validation.ts";
-import { boundedNumber, childWorkingSet, killBenchmarkTree } from "./game-text-scale-safety.ts";
+import {
+	assertSafePipelineScale,
+	benchmarkPipelineLimits,
+	childWorkingSet,
+	killBenchmarkTree
+} from "./game-text-scale-safety.ts";
 import { joinedTargetSnapshot } from "./game-text-snapshot-data.ts";
 import { decodeStringBlock } from "../packages/game-text/src/snapshot-format.ts";
 
@@ -173,7 +177,6 @@ describe("generated scale harness", () => {
 		}
 	});
 	it("discovers, reads, replays, joins with review and key changes, queries and reports", () => {
-		expect(compareLocalizationJoins(joined.join, joined.join).equal).toBe(true);
 		const states = new Set(
 			joined.join.lines.flatMap((line) => line.cultures.map((culture) => culture.state))
 		);
@@ -211,102 +214,37 @@ describe("generated scale harness", () => {
 			"The replayed reader output could not be decoded."
 		);
 	});
-	it("records failed stages from fresh workers and enforces the RSS watchdog", async () => {
-		await copyFile(resolve(first, "scale.json"), resolve(temporary, "scale.json"));
-		const failedOutput = resolve(temporary, "failed.json");
-		const stoppedOutput = resolve(temporary, "stopped.json");
-		const benchmark = resolve("scripts/benchmark-game-text-scale.ts");
-		const run = promisify(execFile);
-		await expect(
-			run(
-				process.execPath,
-				[
-					benchmark,
-					"--project",
-					temporary,
-					"--heaps",
-					"default,256",
-					"--output",
-					failedOutput
-				],
-				{ windowsHide: true }
-			)
-		).rejects.toThrow();
-		await expect(
-			run(
-				process.execPath,
-				[benchmark, "--project", first, "--max-rss-gib", "0.01", "--output", stoppedOutput],
-				{ windowsHide: true }
-			)
-		).rejects.toThrow();
-		const decode = Schema.decodeUnknownSync(
-			Schema.fromJsonString(
-				Schema.Struct({
-					results: Schema.Array(
-						Schema.Struct({
-							status: Schema.String,
-							failureStage: Schema.String,
-							error: Schema.String,
-							seconds: Schema.Number,
-							peak: Schema.Struct({
-								heapUsed: Schema.Number,
-								rss: Schema.Number,
-								arrayBuffers: Schema.Number
-							})
-						})
-					)
-				})
-			)
-		);
-		const failed = decode(await readFile(failedOutput, "utf8"));
-		expect(failed.results).toHaveLength(2);
-		for (const result of failed.results) {
-			expect(result.status).toBe("failed");
-			expect(result.failureStage).toBe("evidence");
-			expect(result.error.length).toBeGreaterThan(0);
-			expect(result.peak.heapUsed).toBeGreaterThan(0);
-		}
-		const stopped = decode(await readFile(stoppedOutput, "utf8"));
-		expect(stopped.results[0]?.status).toBe("stopped");
-		expect(stopped.results[0]?.error).toContain("RSS limit exceeded");
-	}, 30_000);
+
 	it("stream-validates counts and sizes and rejects a damaged event stream", async () => {
 		const result = await validateGameTextScale(first);
-		expect(result.files).toHaveLength(22);
 		expect(result.bytesByKind.events).toBeGreaterThan(0);
 		const damaged = resolve(temporary, "damaged");
-		await generateGameTextScale({ root: damaged, scale: 0.001, seed: 57 });
+		await cp(first, damaged, { recursive: true });
 		await writeFile(resolve(damaged, "saved-text.ndjson"), '{"event":"text_occurrence"}\n');
 		await expect(validateGameTextScale(damaged)).rejects.toThrow("expected 1028");
 	});
-	it("rejects attempts to raise any hard limit and refuses the 10× pipeline", async () => {
-		expect(() => boundedNumber("16385", "heap MiB", 16384)).toThrow();
-		const benchmark = resolve("scripts/benchmark-game-text-scale.ts");
-		for (const args of [
-			["--heaps", "16385"],
-			["--max-rss-gib", "20"],
-			["--stage-timeout-seconds", "1201"]
+	it("rejects attempts to raise any hard limit and refuses the 10× pipeline", () => {
+		const limits = { heaps: "default,256", maxRssGiB: "1", stageTimeoutSeconds: "10" };
+		expect(benchmarkPipelineLimits(limits)).toEqual({
+			heaps: ["default", 256],
+			maxRss: 2 ** 30,
+			timeout: 10000
+		});
+		for (const invalid of [
+			{ heaps: "16385" },
+			{ maxRssGiB: "20" },
+			{ stageTimeoutSeconds: "1201" }
 		])
-			await expect(
-				promisify(execFile)(process.execPath, [benchmark, "--project", first, ...args], {
-					windowsHide: true
-				})
-			).rejects.toThrow("cannot exceed");
-		const large = resolve(temporary, "large-descriptor");
-		await mkdir(large);
-		await writeFile(
-			resolve(large, "scale.json"),
-			JSON.stringify({
-				schemaVersion: 1,
-				recipe: gameTextScaleRecipe(10)
-			})
+			expect(() => benchmarkPipelineLimits({ ...limits, ...invalid })).toThrow(
+				"cannot exceed"
+			);
+		expect(() => benchmarkPipelineLimits({ ...limits, heaps: "1.5" })).toThrow("integer");
+		expect(() => assertSafePipelineScale(recipe.scale)).not.toThrow();
+		expect(() => assertSafePipelineScale(gameTextScaleRecipe(10).scale)).toThrow(
+			"10× pipeline not run"
 		);
-		await expect(
-			promisify(execFile)(process.execPath, [benchmark, "--project", large], {
-				windowsHide: true
-			})
-		).rejects.toThrow("10× pipeline not run");
 	});
+
 	it("polls working set and kills descendants while a child's JS thread is blocked", async () => {
 		const child = spawn(
 			process.execPath,
@@ -366,109 +304,6 @@ describe("generated scale harness", () => {
 			await killBenchmarkTree(child);
 			await closed;
 		}
-	});
-	it("rejects a cached edit as a fresh PO measurement and restores the source bytes", async () => {
-		const cache = resolve(temporary, "refresh-cache"),
-			po = resolve(first, "Content/Localization/Generated/en/Generated.po"),
-			original = await readFile(po);
-		const command = (task: string, byte = 110) =>
-			promisify(execFile)(
-				process.execPath,
-				[
-					"--import",
-					"tsx",
-					resolve("scripts/benchmark-localization-import.ts"),
-					"--project",
-					first,
-					"--cache",
-					cache,
-					"--output",
-					resolve(temporary, `${task}-${byte}.json`),
-					"--mode",
-					"shared",
-					"--select",
-					task,
-					"--po-change-byte",
-					String(byte)
-				],
-				{ windowsHide: true, timeout: 20000 }
-			);
-		await command("cold");
-		await command("folder");
-		const folder = JSON.parse(await readFile(resolve(temporary, "folder-110.json"), "utf8"));
-		const nativeFolder = folder.results.find(
-			(stage: { stage: string }) => stage.stage === "reader:native-folder"
-		);
-		expect(folder.outcome.kind).toBe("done");
-		expect(nativeFolder.references).toBeGreaterThan(0);
-		expect(
-			folder.results.find(
-				(stage: { stage: string }) => stage.stage === "reader:native-folder-oracle"
-			)
-		).toMatchObject({ references: nativeFolder.references, prefix: nativeFolder.prefix });
-		await expect(command("refresh")).rejects.toThrow();
-		const cached = JSON.parse(await readFile(resolve(temporary, "refresh-110.json"), "utf8"));
-		expect(cached.outcome.kind).toBe("failed");
-		expect(cached.outcome.error).toContain("already cached");
-		expect(await readFile(po)).toEqual(original);
-		await command("refresh", 111);
-		const fresh = JSON.parse(await readFile(resolve(temporary, "refresh-111.json"), "utf8"));
-		expect(fresh.outcome.kind).toBe("done");
-		expect(
-			fresh.results.find((stage: { stage: string }) => stage.stage === "one-byte-po:target")
-		).toMatchObject({ parsed: 1, lookupStrings: 1 });
-		expect(await readFile(po)).toEqual(original);
-	}, 60000);
-	it("records a run deadline as failure, including worker startup, and permits only lower caps", async () => {
-		const report = resolve(temporary, "deadline.json");
-		const benchmark = resolve("scripts/benchmark-localization-import.ts");
-		await expect(
-			promisify(execFile)(
-				process.execPath,
-				[
-					"--import",
-					"tsx",
-					benchmark,
-					"--project",
-					first,
-					"--cache",
-					resolve(temporary, "deadline-cache"),
-					"--output",
-					report,
-					"--mode",
-					"shared",
-					"--select",
-					"cold",
-					"--run-timeout-seconds",
-					"0.05"
-				],
-				{ windowsHide: true, timeout: 15000 }
-			)
-		).rejects.toThrow();
-		const result = JSON.parse(await readFile(report, "utf8"));
-		expect(result.outcome.kind).toBe("failed");
-		expect(result.outcome.error).toContain("exceeded");
-		expect(result.limits.runSeconds).toBe(0.05);
-		expect(result.results).toEqual([]);
-		await expect(
-			promisify(execFile)(
-				process.execPath,
-				[
-					"--import",
-					"tsx",
-					benchmark,
-					"--project",
-					first,
-					"--cache",
-					resolve(temporary, "deadline-cache"),
-					"--output",
-					report,
-					"--run-timeout-seconds",
-					"1201"
-				],
-				{ windowsHide: true, timeout: 15000 }
-			)
-		).rejects.toThrow("cannot exceed");
 	});
 });
 

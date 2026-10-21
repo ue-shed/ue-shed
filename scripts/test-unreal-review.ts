@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { ensureUassetExecutable, repositoryRoot } from "./native-tools.ts";
+import { withSpanAsync } from "./gate-trace.ts";
 import { reportUnrealTestGates } from "./test-gates.ts";
 import { loadFixtureEditorMap } from "./workbench-tools.ts";
 
@@ -27,7 +28,9 @@ const environment = {
 	UE_SHED_REMOTE_CONTROL_ENDPOINT: endpoint,
 	UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
 };
-await loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad");
+await withSpanAsync("load Camera Lab map", {}, () =>
+	loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad")
+);
 const testFiles = [
 	"packages/cameras/src/review-unreal.integration.test.ts",
 	"packages/cameras/src/map-capture-tools-unreal.integration.test.ts",

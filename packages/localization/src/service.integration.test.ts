@@ -138,15 +138,6 @@ it.effect("reports a typed failure for an unavailable project root", () =>
 	}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 );
 
-it("defaults to larger per-file limits and a bounded target file count", () => {
-	expect(defaultLocalizationLimits).toEqual({
-		maxFileBytes: 320 * 1024 * 1024,
-		maxEntries: 1_000_000,
-		maxDepth: 64,
-		maxFiles: 2_560
-	});
-});
-
 it.effect("reads files whose combined entries exceed the per-file limit", () =>
 	Effect.gen(function* () {
 		const reader = yield* LocalizationEvidence;

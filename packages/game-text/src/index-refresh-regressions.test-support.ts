@@ -13,6 +13,8 @@ import { target } from "./localization.test-support.js";
 import { GameTextIndexSource, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 
+import { LocalizationImportSource } from "./localization-import.js";
+import { GameTextIndexBuilder } from "./index-builder.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
 
 export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture")(function* (
@@ -127,14 +129,31 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 		suppliedSource = source,
 		qualityWorker = false,
 		implementation = typeScriptIndexBuilderLayer
-	) =>
-		gameTextIndexRefreshLayer(join(projectRoot, "cache"), {
+	) => {
+		// Use the real positioned-file adapter, with in-process parsing for these tiny fixtures.
+		// Worker lifecycle and atomic cold staging have dedicated integration tests.
+		const files = { ...LocalizationImportSource.defaultValue() };
+		const fixtureBuilder = Layer.effect(
+			GameTextIndexBuilder,
+			Effect.map(GameTextIndexBuilder, (builder) =>
+				GameTextIndexBuilder.of({
+					...builder,
+					importLocalizationTarget: (input) =>
+						builder
+							.importLocalizationTarget(input)
+							.pipe(Effect.provideService(LocalizationImportSource, files))
+				})
+			)
+		).pipe(Layer.provide(implementation));
+		return gameTextIndexRefreshLayer(join(projectRoot, "cache"), {
 			qualityWorker
 		}).pipe(
 			Layer.provide(suppliedSource),
+			Layer.provide(fixtureBuilder),
 			Layer.provide(implementation),
 			Layer.provide(evidence)
 		);
+	};
 	return {
 		projectRoot,
 		target: authored,

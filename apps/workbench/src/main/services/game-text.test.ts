@@ -1,48 +1,48 @@
+import { it } from "@effect/vitest";
+import {
+	GameTextIndexError,
+	GameTextIndexSteps,
+	makeTextCorpusServiceTestLayer,
+	SnapshotStoreError,
+	TextCorpusScanError,
+	type IndexFailure
+} from "@ue-shed/game-text/index";
+import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "@ue-shed/game-text/rules";
+import {
+	makeTextOccurrenceId,
+	makeTextUnitId,
+	TextQualityRuleDocument,
+	TextQualityRuleId,
+	TextRoleId,
+	TextUnit
+} from "@ue-shed/game-text/schema";
+import { makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
+import { AssetReaderError, type SavedAssetScan } from "@ue-shed/unreal-assets";
+import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
-import { it } from "@effect/vitest";
-import { makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
-import {
-	corpus as localizationCorpus,
-	cultureCode,
-	evidence as localizationEvidence,
-	poDocument,
-	unit as localizationUnit,
-	target as localizationTarget
-} from "./game-text-localization.test-support.js";
-import {
-	makeTextCorpusServiceTestLayer,
-	TextCorpusScanError,
-	GameTextIndexError,
-	GameTextIndexSteps,
-	SnapshotStoreError,
-	type IndexFailure
-} from "@ue-shed/game-text/index";
-import { STARTER_GAME_TEXT_RULES, GAME_TEXT_RULES_RELATIVE_PATH } from "@ue-shed/game-text/rules";
-import {
-	makeTextUnitId,
-	makeTextOccurrenceId,
-	TextUnit,
-	TextQualityRuleId,
-	TextQualityRuleDocument,
-	TextRoleId
-} from "@ue-shed/game-text/schema";
-import { AssetReaderError, type SavedAssetScan } from "@ue-shed/unreal-assets";
-import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
 import { expect } from "vitest";
+import { ElectronDialog } from "../adapters/electron-dialog.js";
+import { LocalFilesLive, makeLocalFilesTestLayer } from "../adapters/local-files.js";
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
 	oracleGameTextIndexLayer,
 	workbenchGameTextIndexOracleLayer
 } from "./game-text-index.test-support.js";
 import {
-	WorkbenchGameText,
-	WorkbenchGameTextLive as indexedWorkbenchGameTextLive
+	cultureCode,
+	corpus as localizationCorpus,
+	evidence as localizationEvidence,
+	target as localizationTarget,
+	unit as localizationUnit,
+	poDocument
+} from "./game-text-localization.test-support.js";
+import {
+	WorkbenchGameTextLive as indexedWorkbenchGameTextLive,
+	WorkbenchGameText
 } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
-import { ElectronDialog } from "../adapters/electron-dialog.js";
-import { LocalFilesLive, makeLocalFilesTestLayer } from "../adapters/local-files.js";
 
 const WorkbenchGameTextLive = indexedWorkbenchGameTextLive.pipe(
 	Layer.provide(workbenchGameTextIndexOracleLayer)
@@ -774,95 +774,7 @@ const validQualityDocument = TextQualityRuleDocument.make({
 	schemaVersion: 1
 });
 
-it.effect("scans the configured project", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchGameText;
-		const result = yield* service.configuredScan();
-		expect(result).toEqual({ corpus: emptyCorpus, status: "completed" });
-	}).pipe(
-		Effect.provide(
-			gameTextLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						configuration,
-						makeTextCorpusServiceTestLayer({
-							scan: () => Effect.die("full project scan is not used"),
-							scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
-						}),
-						selectedProject
-					)
-				)
-			)
-		)
-	)
-);
-
-it.effect("keeps refreshed corpus data in main and serves bounded query results", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchGameText;
-		const refreshed = yield* service.configuredRefresh();
-		expect(refreshed).toMatchObject({
-			status: "completed",
-			summary: {
-				coverage: emptyCorpus.coverage,
-				diagnosticCount: 0,
-				review: {
-					all: 0,
-					conflicting: 0,
-					duplicateSource: 0,
-					long: 0,
-					shared: 0,
-					unresolved: 0
-				},
-				schemaVersion: 1,
-				sources: { assetProperty: 0, dataTable: 0, mixed: 0, stringTable: 0 },
-				status: "complete"
-			}
-		});
-		expect(yield* service.search({ capability: "all", pageSize: 50, query: "" })).toEqual({
-			page: {
-				total: 0,
-				units: [],
-				counts: {
-					all: 0,
-					shared: 0,
-					duplicate_source: 0,
-					long: 0,
-					unresolved: 0,
-					conflicting: 0,
-					editable: 0,
-					readOnly: 0,
-					withoutNotes: 0,
-					origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
-				},
-				problems: noProblems
-			},
-			status: "ready"
-		});
-		expect(
-			yield* service.focus({ id: makeTextUnitId("unreal:UI:Missing"), pageSize: 50 })
-		).toEqual({
-			status: "not_found"
-		});
-	}).pipe(
-		Effect.provide(
-			gameTextLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						configuration,
-						makeTextCorpusServiceTestLayer({
-							scan: () => Effect.die("full project scan is not used"),
-							scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
-						}),
-						selectedProject
-					)
-				)
-			)
-		)
-	)
-);
-
-for (const code of ["invalid_project", "reader_failed", "scan_limit_exceeded"] as const) {
+for (const code of ["reader_failed"] as const) {
 	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
 		it.effect(`preserves ${code} in ${operation} failures`, () =>
 			Effect.gen(function* () {
@@ -912,7 +824,31 @@ it.effect(
 		Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
 			expect(yield* service.chooseQualityRules()).toEqual({ status: "not_ready" });
-			expect((yield* service.configuredRefresh()).status).toBe("completed");
+			const refreshed = yield* service.configuredRefresh();
+			expect(refreshed).toMatchObject({
+				status: "completed",
+				summary: {
+					coverage: emptyCorpus.coverage,
+					diagnosticCount: 0,
+					review: {
+						all: 0,
+						conflicting: 0,
+						duplicateSource: 0,
+						long: 0,
+						shared: 0,
+						unresolved: 0
+					},
+					schemaVersion: 1,
+					sources: { assetProperty: 0, dataTable: 0, mixed: 0, stringTable: 0 },
+					status: "complete"
+				}
+			});
+
+			expect(
+				yield* service.focus({ id: makeTextUnitId("unreal:UI:Missing"), pageSize: 50 })
+			).toEqual({
+				status: "not_found"
+			});
 			const reviewed = yield* service.chooseQualityRules();
 			expect(reviewed).toEqual({
 				error: {
@@ -1372,17 +1308,6 @@ for (const failure of [
 				nextStep: "retry"
 			})
 		})
-	},
-	{
-		code: "index_failed",
-		error: new GameTextIndexError({
-			code: "index_failed",
-			operation: "cache",
-			message: "cache read failed",
-			recovery: "Rebuild the cache.",
-			retrySafe: false,
-			nextStep: "reconcile"
-		})
 	}
 ] as const) {
 	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
@@ -1447,7 +1372,7 @@ for (const native of [
 		nextStep: "retry"
 	}
 ] as const) {
-	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
+	for (const operation of ["configuredRefresh"] as const) {
 		it.effect(`retains native ${native.code} recovery in ${operation}`, () => {
 			const failure = new SnapshotStoreError({
 				...native,

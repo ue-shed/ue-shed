@@ -41,6 +41,7 @@
 	"scripts": {
 		"build": "node ../../scripts/clean-package-dist.ts && tsc -p tsconfig.build.json",
 		"prepack": "pnpm run build",
+		"fixtures:generate": "node --import tsx scripts/generate-fixtures.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

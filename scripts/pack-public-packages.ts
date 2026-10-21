@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.ts";
 import { assertCleanReleaseSource } from "./release-source.ts";
+import { withSpan, withSpanAsync } from "./gate-trace.ts";
 import { traceProcess } from "./process-trace.ts";
 
 export interface PublicPackage {
@@ -193,11 +194,25 @@ function listPackedFiles(tarball: string) {
 		.filter(Boolean);
 }
 
-async function packWorkspacePackage(workspacePackage: PublicPackage, outputDirectory: string) {
+const NATIVE_PACKAGE_NAMES: ReadonlySet<string> = new Set([
+	ENGINE_WINDOWS_PACKAGE_NAME,
+	"@ue-shed/uasset-win32-x64"
+]);
+
+async function packWorkspacePackage(
+	workspacePackage: PublicPackage,
+	outputDirectory: string,
+	assembled: boolean
+) {
 	const packageDirectory = join(repositoryRoot, workspacePackage.directory);
 	const before = new Set(await readdir(outputDirectory));
+	// Native packages assembled above from an explicit build must not re-assemble in `prepack`,
+	// which defaults to the release build and fails (or packs another binary) after a debug build.
+	const ignoreScripts =
+		workspacePackage.name === WASM_PACKAGE_NAME ||
+		(assembled && NATIVE_PACKAGE_NAMES.has(workspacePackage.name));
 	const packArguments = [
-		...(workspacePackage.name === WASM_PACKAGE_NAME ? ["--config.ignore-scripts=true"] : []),
+		...(ignoreScripts ? ["--config.ignore-scripts=true"] : []),
 		"pack",
 		"--pack-destination",
 		outputDirectory
@@ -602,6 +617,56 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 		throw new Error(`Invalid public package graph:\n- ${failures.join("\n- ")}`);
 }
 
+async function packAndValidate(
+	workspacePackage: PublicPackage,
+	outputDirectory: string,
+	assembled: boolean
+): Promise<PackedPackage> {
+	// SAFETY: PUBLIC_PACKAGES contains only repository-owned package manifests.
+	const workspaceManifest = JSON.parse(
+		await readFile(join(repositoryRoot, workspacePackage.directory, "package.json"), "utf8")
+	) as PackageManifest;
+	const path = await packWorkspacePackage(workspacePackage, outputDirectory, assembled);
+	const filename = basename(path);
+	const manifestRaw = readPackedFile(path, "package/package.json");
+	// SAFETY: npm pack generated this manifest from workspaceManifest and it is validated below.
+	const manifest = JSON.parse(manifestRaw) as PackageManifest;
+	const files = listPackedFiles(path);
+	const packageDirectory = join(repositoryRoot, workspacePackage.directory);
+	// Native and WASM packages either allowlist exact files or rebuild `dist` from scratch;
+	// every `tsc`-built package is checked against the sources its build currently compiles.
+	const typeScriptSources = existsSync(join(packageDirectory, "tsconfig.build.json"))
+		? listTypeScriptBuildSources(packageDirectory)
+		: undefined;
+	const failures = validatePackedManifest({
+		manifest,
+		manifestRaw,
+		expectedName: workspacePackage.name,
+		expectedVersion: workspaceManifest.version,
+		files,
+		typeScriptSources
+	});
+	if (
+		workspacePackage.name === ENGINE_WINDOWS_PACKAGE_NAME &&
+		!files.includes("package/bin/ue-shed-process-supervisor.exe")
+	) {
+		failures.push(`${ENGINE_WINDOWS_PACKAGE_NAME} must contain its Job Object supervisor`);
+	}
+	if (failures.length > 0) {
+		throw new Error(
+			`${workspacePackage.name} pack validation failed:\n- ${failures.join("\n- ")}`
+		);
+	}
+	return {
+		name: workspacePackage.name,
+		filename,
+		path,
+		manifest,
+		sha256: await digest(path),
+		bytes: (await stat(path)).size
+	};
+}
+
 export async function packPublicPackages({
 	output,
 	build = true,
@@ -630,7 +695,9 @@ export async function packPublicPackages({
 			"-p",
 			"engine-process-supervisor"
 		];
-		run("cargo", nativeBuildArgs);
+		withSpan("build native executables", { "cargo.profile": nativeProfile }, () =>
+			run("cargo", nativeBuildArgs)
+		);
 		const cargoTargetDirectory = process.env.CARGO_TARGET_DIR
 			? resolve(repositoryRoot, process.env.CARGO_TARGET_DIR)
 			: join(repositoryRoot, "target");
@@ -648,60 +715,32 @@ export async function packPublicPackages({
 			join(nativeReleaseDirectory, executableName),
 			...(process.platform === "win32" ? [] : ["--skip-version-check"])
 		];
-		run(
-			executable("pnpm"),
-			assembleArgs(ENGINE_WINDOWS_PACKAGE_NAME, "ue-shed-process-supervisor.exe")
+		withSpan("assemble native packages", {}, () => {
+			run(
+				executable("pnpm"),
+				assembleArgs(ENGINE_WINDOWS_PACKAGE_NAME, "ue-shed-process-supervisor.exe")
+			);
+			run(executable("pnpm"), assembleArgs("@ue-shed/uasset-win32-x64", "uasset.exe"));
+		});
+		withSpan("build public packages", { "packages.count": PUBLIC_PACKAGES.length }, () =>
+			run(executable("pnpm"), publicPackageBuildArgs())
 		);
-		run(executable("pnpm"), assembleArgs("@ue-shed/uasset-win32-x64", "uasset.exe"));
-		run(executable("pnpm"), publicPackageBuildArgs());
 	}
 	const packed: PackedPackage[] = [];
 	for (const workspacePackage of PUBLIC_PACKAGES) {
-		// SAFETY: PUBLIC_PACKAGES contains only repository-owned package manifests.
-		const workspaceManifest = JSON.parse(
-			await readFile(join(repositoryRoot, workspacePackage.directory, "package.json"), "utf8")
-		) as PackageManifest;
-		const path = await packWorkspacePackage(workspacePackage, outputDirectory);
-		const filename = basename(path);
-		const manifestRaw = readPackedFile(path, "package/package.json");
-		// SAFETY: npm pack generated this manifest from workspaceManifest and it is validated below.
-		const manifest = JSON.parse(manifestRaw) as PackageManifest;
-		const files = listPackedFiles(path);
-		const packageDirectory = join(repositoryRoot, workspacePackage.directory);
-		// Native and WASM packages either allowlist exact files or rebuild `dist` from scratch;
-		// every `tsc`-built package is checked against the sources its build currently compiles.
-		const typeScriptSources = existsSync(join(packageDirectory, "tsconfig.build.json"))
-			? listTypeScriptBuildSources(packageDirectory)
-			: undefined;
-		const failures = validatePackedManifest({
-			manifest,
-			manifestRaw,
-			expectedName: workspacePackage.name,
-			expectedVersion: workspaceManifest.version,
-			files,
-			typeScriptSources
-		});
-		if (
-			workspacePackage.name === ENGINE_WINDOWS_PACKAGE_NAME &&
-			!files.includes("package/bin/ue-shed-process-supervisor.exe")
-		) {
-			failures.push(`${ENGINE_WINDOWS_PACKAGE_NAME} must contain its Job Object supervisor`);
-		}
-		if (failures.length > 0) {
-			throw new Error(
-				`${workspacePackage.name} pack validation failed:\n- ${failures.join("\n- ")}`
-			);
-		}
-		packed.push({
-			name: workspacePackage.name,
-			filename,
-			path,
-			manifest,
-			sha256: await digest(path),
-			bytes: (await stat(path)).size
-		});
+		packed.push(
+			await withSpanAsync(
+				`pack ${workspacePackage.name}`,
+				{ "package.name": workspacePackage.name },
+				(span) =>
+					packAndValidate(workspacePackage, outputDirectory, build).then((entry) => {
+						span.setAttributes({ "package.bytes": entry.bytes });
+						return entry;
+					})
+			)
+		);
 	}
-	validateExactPackageGraph(packed);
+	withSpan("validate package graph", {}, () => validateExactPackageGraph(packed));
 	await writeFile(
 		join(outputDirectory, "SHA256SUMS"),
 		`${packed.map((entry) => `${entry.sha256}  ${entry.filename}`).join("\n")}\n`,

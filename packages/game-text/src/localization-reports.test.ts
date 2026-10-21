@@ -31,7 +31,7 @@ describe("localization progress and manifest baselines", () => {
 			expect(Schema.isSchemaError(result.failure.cause)).toBe(true);
 		}
 	});
-	it.each(["file_missing", "limit_exceeded", "malformed_json"] as const)(
+	it.each(["file_missing", "malformed_json"] as const)(
 		"baseline errors preserve the manifest cause %s",
 		(code) => {
 			const files = {

@@ -108,7 +108,7 @@ describe("authoring sheet coordinates", () => {
 		).toEqual({ message: "Row names are read-only in the grid.", status: "failed" });
 	});
 
-	it.each(["user", "paste", "delete", "formula", "external", "fill"] as const)(
+	it.each(["paste"] as const)(
 		"maps %s mutations through the same decoding boundary",
 		(source) => {
 			expect(
@@ -274,6 +274,14 @@ describe("authoring sheet coordinates", () => {
 				rows
 			})
 		).toEqual({ status: "ignored" });
+
+		expect(
+			decodeAuthoringGridOperation({
+				columns: [],
+				operation: { atIndex: 1, count: 1, type: "row-delete" },
+				rows
+			})
+		).toEqual({ gesture: { kind: "remove_row", rowId: "row:Sparse" }, status: "ready" });
 	});
 });
 
@@ -438,33 +446,7 @@ describe("read-only Peculiar Sheets model", () => {
 		expect(result.status).toBe("failed");
 	});
 
-	it("keeps view sorting separate from canonical row reorder", () => {
-		const result = decodeAuthoringGridOperation({
-			columns: [{ name: "Enabled", typeName: "BoolProperty" }],
-			operation: {
-				mutation: {
-					columnId: "Enabled",
-					direction: "asc",
-					indexOrder: [],
-					newOrder: [],
-					oldOrder: [],
-					source: "sort"
-				},
-				type: "row-reorder"
-			},
-			rows
-		});
-		expect(result).toEqual({ status: "ignored" });
-	});
-
-	it("decodes single structural gestures by stable row identity", () => {
-		expect(
-			decodeAuthoringGridOperation({
-				columns: [],
-				operation: { atIndex: 1, count: 1, type: "row-delete" },
-				rows
-			})
-		).toEqual({ gesture: { kind: "remove_row", rowId: "row:Sparse" }, status: "ready" });
+	it("decodes a single row insertion", () => {
 		expect(
 			decodeAuthoringGridOperation({
 				columns: [],

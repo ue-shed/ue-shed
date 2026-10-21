@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { gateTraceReporters } from "./gate-trace-reporter.ts";
 
 /** Timing-sensitive Observatory Canvas bench; invoked by `pnpm benchmark:observatory`. */
 export default defineConfig({
@@ -6,7 +7,7 @@ export default defineConfig({
 	forbidOnly: true,
 	fullyParallel: false,
 	outputDir: "../../../test-results/workbench-observatory-performance",
-	reporter: "list",
+	reporter: gateTraceReporters(),
 	testDir: ".",
 	testMatch: "observatory-performance.e2e.ts",
 	timeout: 300_000,

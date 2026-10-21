@@ -5,7 +5,9 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageSpans } from "./gate-trace.ts";
 import { parseJsonObject, type JsonObject } from "./json.ts";
+import { releaseCargoTargetDirectory } from "./release-cargo.ts";
 
 interface HostResponse {
 	readonly status?: unknown;
@@ -31,9 +33,13 @@ const targetRoot = join(
 	tmpdir(),
 	`ue-shed-data-authoring-adoption-${createHash("sha256").update(repositoryRoot).digest("hex").slice(0, 12)}`
 );
+const stages = stageSpans();
+stages.start("materialize adoption workspace");
 await rm(targetRoot, { recursive: true, force: true });
-const cargoTargetDirectory =
-	process.env.CARGO_TARGET_DIR ?? join(repositoryRoot, "target", "data-authoring-adoption");
+// Its own directory, because this build overrides the release profile (no LTO): sharing the release
+// directory would replace the release executables and make the next release build start over. It
+// sits under the main checkout's target so a new release worktree still reuses compiled crates.
+const cargoTargetDirectory = join(releaseCargoTargetDirectory(), "data-authoring-adoption");
 // Twelve authoring tables, one localization table and five Game Text fixture tables.
 const expectedFixtureTableCount = 18;
 
@@ -239,6 +245,7 @@ if (declaredEntries.some((entry) => entry.includes(".test."))) {
 	fail("materialized production closure includes source-side tests");
 }
 
+stages.start("check copied closure");
 for (const path of await filesUnder(targetRoot)) {
 	if (!/\.(?:css|html|js|json|mjs|ts|tsx|yaml)$/i.test(path)) continue;
 	const content = await readFile(path, "utf8");
@@ -247,10 +254,13 @@ for (const path of await filesUnder(targetRoot)) {
 	}
 }
 
+stages.start("install adoption workspace");
 runPnpm(["install", "--ignore-scripts", "--frozen-lockfile=false"]);
 await rm(join(targetRoot, "node_modules"), { recursive: true, force: true });
 runPnpm(["install", "--offline", "--ignore-scripts", "--frozen-lockfile"]);
+stages.start("build adoption workspace");
 runPnpm(["build"]);
+stages.start("build adoption reader", { "cargo.target_dir": cargoTargetDirectory });
 // This gate checks that the copied workspace builds; link-time optimization only slows that down
 // (about 3.5 instead of 1.5 minutes when the crates changed). Releases build with the full profile.
 runPnpm(["build:reader"], {
@@ -274,6 +284,7 @@ await writeFile(
 	initialTheme.replace(`colorAccent: "${initialAccent}"`, `colorAccent: "${divergentAccent}"`)
 );
 
+stages.start("verify theme divergence");
 runPnpm(["verify", "--", `--expected-accent=${divergentAccent}`]);
 const divergentCss = await readFile(cssPath, "utf8");
 if (digest(divergentCss) === digest(initialCss))
@@ -281,6 +292,7 @@ if (digest(divergentCss) === digest(initialCss))
 
 // This gate verifies the copied host against the saved fixture project. Keep a developer's live
 // editor from contributing tables from an unrelated project through the default endpoint.
+stages.start("verify functional host");
 const isolatedRemoteControlEndpoint = `http://127.0.0.1:${await availablePort()}`;
 const functionalHost = await verifyFunctionalHost(isolatedRemoteControlEndpoint);
 runPnpm([
@@ -295,6 +307,7 @@ runPnpm([
 	)}`,
 	`--expected-table-count=${expectedFixtureTableCount}`
 ]);
+stages.end();
 
 console.log(
 	`Data Authoring adoption conformance passed: ${declaredEntries.length} declared entries, ` +

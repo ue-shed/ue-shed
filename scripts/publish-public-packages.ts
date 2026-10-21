@@ -14,7 +14,7 @@ const tagPattern = /^[a-z0-9][a-z0-9._-]*$/u;
 export interface PublicationEntry {
 	readonly name: string;
 	readonly version: string;
-	readonly license?: string;
+	readonly license?: string | undefined;
 	readonly filename: string;
 	readonly sha256: string;
 	readonly bytes: number;
@@ -23,7 +23,7 @@ export interface PublicationEntry {
 interface PublicationManifest {
 	readonly schemaVersion: number;
 	readonly version: string;
-	readonly packages: PublicationEntry[];
+	readonly packages: readonly PublicationEntry[];
 }
 
 export interface PublishRequest {

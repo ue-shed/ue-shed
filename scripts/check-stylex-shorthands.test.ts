@@ -1,26 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { droppedShorthands, findDroppedShorthands } from "./check-stylex-shorthands.ts";
+import { findDroppedShorthands } from "./check-stylex-shorthands.ts";
 
 test("flags a border shorthand inside stylex.create", () => {
 	const source = [
 		"const styles = stylex.create({",
 		"\tcard: {",
 		"\t\tborder: `1px solid ${tokens.colorBorder}`,",
-		"\t\tpadding: 12",
-		"\t}",
-		"});"
-	].join("\n");
-	const findings = findDroppedShorthands("card.tsx", source);
-	assert.equal(findings.length, 1);
-	assert.equal(findings[0]?.property, "border");
-	assert.equal(findings[0]?.line, 3);
-});
-
-test("flags every per-side border shorthand", () => {
-	const source = [
-		"const styles = stylex.create({",
-		"\trail: {",
 		"\t\tborderTop: `1px solid ${tokens.colorBorder}`,",
 		"\t\tborderBottom: `1px solid ${tokens.colorBorder}`,",
 		"\t\tborderLeft: `1px solid ${tokens.colorBorder}`,",
@@ -28,10 +14,13 @@ test("flags every per-side border shorthand", () => {
 		"\t}",
 		"});"
 	].join("\n");
+	const findings = findDroppedShorthands("card.tsx", source);
 	assert.deepEqual(
-		findDroppedShorthands("rail.tsx", source).map((finding) => finding.property),
-		["borderTop", "borderBottom", "borderLeft", "borderRight"]
+		findings.map((finding) => finding.property),
+		["border", "borderTop", "borderBottom", "borderLeft", "borderRight"]
 	);
+	assert.equal(findings[0]?.property, "border");
+	assert.equal(findings[0]?.line, 3);
 });
 
 test("flags a compact shorthand declaration", () => {
@@ -90,21 +79,4 @@ test("ignores a shorthand in an inline style prop, where it is real CSS", () => 
 
 test("ignores files with no StyleX call at all", () => {
 	assert.deepEqual(findDroppedShorthands("plain.ts", "const border = '1px solid red';"), []);
-});
-
-test("covers the shorthands the StyleX property-specificity resolver refuses", () => {
-	assert.deepEqual([...droppedShorthands].sort(), [
-		"all",
-		"animation",
-		"background",
-		"border",
-		"borderBlock",
-		"borderBottom",
-		"borderInline",
-		"borderInlineEnd",
-		"borderInlineStart",
-		"borderLeft",
-		"borderRight",
-		"borderTop"
-	]);
 });

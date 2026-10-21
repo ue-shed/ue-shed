@@ -1,19 +1,18 @@
+import { parseTextQualityReport } from "@ue-shed/game-text/schema";
+import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } from "@ue-shed/protocol";
+import { Effect } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } from "@ue-shed/protocol";
-import { parseTextQualityReport } from "@ue-shed/game-text/schema";
-import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import {
-	repositoryRoot,
 	fixtureProject,
-	runCli,
-	runSuccessfulCli,
-	runSuccessfulHeadlessCli,
-	parseRecord
-} from "./cli-process.test-support.js";
+	parseRecord,
+	repositoryRoot,
+	runSuccessfulCli
+} from "./cli-in-process.test-support.js";
+import { runCli, runSuccessfulCli as runSuccessfulProcessCli } from "./cli-process.test-support.js";
 
 const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
@@ -26,6 +25,11 @@ const uassetTestsEnabled = process.env.UE_SHED_UASSET_AUTO_BUILD !== "0";
 const nativeIt = it.skipIf(!uassetTestsEnabled);
 
 const fixture = useSavedFixtureProject();
+const reader = process.env.UE_SHED_UASSET_EXECUTABLE;
+const runWithReader = (args: readonly string[]) => {
+	if (!reader) throw new Error("The saved reader is not configured.");
+	return runSuccessfulCli([...args, "--reader", reader]);
+};
 // Keep the relationship journey independent of unrelated DataTables added to the full fixture.
 const references = useSavedFixtureProject([
 	"UEShedFixture.uproject",
@@ -61,8 +65,8 @@ const fixtureTextQualityRules = join(
 	"quality-rules.v1.json"
 );
 
-describe("ue-shed CLI process", () => {
-	it("prints the retained schema issue for invalid row IDs", () => {
+describe("ue-shed CLI commands", () => {
+	it("prints the retained schema issue for invalid row IDs", async () => {
 		const result = runCli([
 			"authoring",
 			"sessions",
@@ -78,25 +82,16 @@ describe("ue-shed CLI process", () => {
 		expect(result.stderr).toContain("Expected string");
 		expect(result.stderr).toContain("[0]");
 	});
-	it("reports help, version, and invalid commands through the executable boundary", () => {
-		const help = runCli(["--help"]);
-		expect(help.status).toBe(0);
-		expect(help.stdout).toContain("UE Shed — External tools for Unreal Engine development.");
-		expect(help.stderr).not.toContain("ue-shed:");
-
-		const version = runCli(["--version"]);
-		expect(version.status).toBe(0);
-		expect(version.stdout).toMatch(/^ue-shed 0\.0\.0 \(protocol \d+\.\d+\)\r?\n$/);
-
+	it("maps an invalid command to usage exit status through the executable boundary", async () => {
 		const invalid = runCli(["not-a-command"]);
 		expect(invalid.status).toBe(2);
 		expect(invalid.stdout).toBe("");
 		expect(invalid.stderr).toContain('ue-shed: Unknown subcommand "not-a-command"');
 	}, 90_000);
 
-	it("explains and compares saved config provenance through the executable boundary", () => {
+	it("explains and compares saved config provenance through the command tree", async () => {
 		const explanation = parseRecord(
-			runSuccessfulHeadlessCli([
+			await runSuccessfulCli([
 				"config",
 				"explain",
 				configFixture,
@@ -115,7 +110,7 @@ describe("ue-shed CLI process", () => {
 		expect(JSON.stringify(explanation)).not.toContain(configFixture);
 
 		const comparison = parseRecord(
-			runSuccessfulHeadlessCli([
+			await runSuccessfulCli([
 				"config",
 				"compare",
 				configFixture,
@@ -135,18 +130,28 @@ describe("ue-shed CLI process", () => {
 		expect(comparison.valueChanged).toBe(true);
 	}, 30_000);
 
-	nativeIt("inspects a real saved fixture asset through the native reader", () => {
-		const inspection = parseRecord(runSuccessfulCli(["authoring", "inspect", scalarAsset]));
-		const snapshot = decodeAuthoringTableSnapshot(inspection.snapshot);
+	nativeIt("auto-builds the reader and inspects a real saved fixture through the wrapper", () => {
+		vi.stubEnv("UE_SHED_UASSET_EXECUTABLE", undefined);
+		try {
+			const inspection = parseRecord(
+				runSuccessfulProcessCli(["authoring", "inspect", scalarAsset])
+			);
+			const snapshot = decodeAuthoringTableSnapshot(inspection.snapshot);
 
-		expect(inspection.fingerprint).toMatch(/^sha256-v1:[a-f0-9]{64}$/);
-		expect(snapshot.authority.kind).toBe("project_files");
-		expect(snapshot.table.objectPath).toBe(scalarTable);
-		expect(snapshot.table.rows.map((row) => row.name)).toEqual(["Scalar_Alpha", "Scalar_Beta"]);
+			expect(inspection.fingerprint).toMatch(/^sha256-v1:[a-f0-9]{64}$/);
+			expect(snapshot.authority.kind).toBe("project_files");
+			expect(snapshot.table.objectPath).toBe(scalarTable);
+			expect(snapshot.table.rows.map((row) => row.name)).toEqual([
+				"Scalar_Alpha",
+				"Scalar_Beta"
+			]);
+		} finally {
+			vi.stubEnv("UE_SHED_UASSET_EXECUTABLE", reader);
+		}
 	});
 
-	nativeIt("runs the direct assets workflow against a real saved fixture", () => {
-		const report = parseRecord(runSuccessfulCli(["assets", "scan", scalarAsset]));
+	nativeIt("runs the direct assets workflow against a real saved fixture", async () => {
+		const report = parseRecord(await runWithReader(["assets", "scan", scalarAsset]));
 
 		expect(report.coverage).toMatchObject({
 			emittedAssets: 1,
@@ -163,9 +168,9 @@ describe("ue-shed CLI process", () => {
 
 	nativeIt(
 		"reviews the real saved text corpus with project-authored rules",
-		() => {
+		async () => {
 			const output: unknown = JSON.parse(
-				runSuccessfulCli([
+				await runWithReader([
 					"text",
 					"review",
 					fixture.root,
@@ -187,9 +192,9 @@ describe("ue-shed CLI process", () => {
 		30_000
 	);
 
-	nativeIt("resolves fixture row references through the public headless command", () => {
+	nativeIt("resolves fixture row references through the public headless command", async () => {
 		const report = parseRecord(
-			runSuccessfulCli(["authoring", "relationships", references.root])
+			await runWithReader(["authoring", "relationships", references.root])
 		);
 		expect(report.contract).toEqual({
 			name: "unreal-authoring-row-references",
@@ -215,9 +220,9 @@ describe("ue-shed CLI process", () => {
 		);
 	});
 
-	nativeIt("projects a read-only joined view through the public headless command", () => {
+	nativeIt("projects a read-only joined view through the public headless command", async () => {
 		const view = parseRecord(
-			runSuccessfulCli([
+			await runWithReader([
 				"authoring",
 				"join",
 				fixture.root,
@@ -264,9 +269,9 @@ describe("ue-shed CLI process", () => {
 
 	nativeIt(
 		"profiles a saved DataTable into suggested charts",
-		() => {
+		async () => {
 			const plan = parseRecord(
-				runSuccessfulCli(["authoring", "analyze", fixture.root, scalarTable])
+				await runWithReader(["authoring", "analyze", fixture.root, scalarTable])
 			);
 			expect(plan.contract).toEqual({
 				name: "unreal-authoring-analysis",
@@ -295,14 +300,14 @@ describe("ue-shed CLI process", () => {
 		30_000
 	);
 
-	// Every read and mutation starts a fresh CLI process; budget for the entire journey.
+	// Each command owns a fresh scope and reloads the durable session from disk.
 	nativeIt(
-		"runs the persistent session lifecycle through separate CLI processes",
+		"runs the persistent session lifecycle through independent CLI scopes",
 		async () => {
 			const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-cli-sessions-"));
 			try {
 				const created = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"create",
@@ -316,7 +321,7 @@ describe("ue-shed CLI process", () => {
 				expect(created.lifecycle).toBe("open");
 
 				const shown = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"show",
@@ -328,7 +333,7 @@ describe("ue-shed CLI process", () => {
 				expect(shown.lifecycle).toBe("open");
 
 				const edited = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"set-cell",
@@ -347,7 +352,7 @@ describe("ue-shed CLI process", () => {
 						?.fields.find((field) => field.name === "Enabled")?.value
 				).toEqual({ kind: "bool", value: false });
 				const review = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"review",
@@ -359,7 +364,7 @@ describe("ue-shed CLI process", () => {
 				expect(review.activeCommandCount).toBe(1);
 				expect(review.validation).toMatchObject({ valid: true, warningCount: 1 });
 				const diff: unknown = JSON.parse(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"diff",
@@ -372,7 +377,7 @@ describe("ue-shed CLI process", () => {
 					expect.arrayContaining([expect.objectContaining({ kind: "cell_changed" })])
 				);
 				const validation = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"validate",
@@ -383,7 +388,7 @@ describe("ue-shed CLI process", () => {
 				);
 				expect(validation).toMatchObject({ valid: true, warningCount: 1 });
 				const undone = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"undo",
@@ -394,7 +399,7 @@ describe("ue-shed CLI process", () => {
 				);
 				expect(parseRecord(JSON.stringify(undone.draft)).undoPointer).toBe(0);
 				const redone = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"redo",
@@ -406,7 +411,7 @@ describe("ue-shed CLI process", () => {
 				expect(parseRecord(JSON.stringify(redone.draft)).undoPointer).toBe(1);
 
 				const duplicated = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"duplicate-row",
@@ -424,7 +429,7 @@ describe("ue-shed CLI process", () => {
 				);
 				if (!copiedRow) throw new Error("Expected duplicated CLI row");
 				const renamed = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"rename-row",
@@ -439,7 +444,7 @@ describe("ue-shed CLI process", () => {
 				const renamedWorking = decodeAuthoringTableSnapshot(renamed.working);
 				const reversedIds = [...renamedWorking.table.rows].reverse().map((row) => row.id);
 				const reordered = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"reorder-rows",
@@ -456,7 +461,7 @@ describe("ue-shed CLI process", () => {
 					)
 				).toEqual(["Scalar_Beta", "Scalar_Renamed", "Scalar_Alpha"]);
 				const removed = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"remove-row",
@@ -472,7 +477,7 @@ describe("ue-shed CLI process", () => {
 				).toEqual(["Scalar_Beta", "Scalar_Renamed"]);
 
 				const closed = parseRecord(
-					runSuccessfulCli([
+					await runWithReader([
 						"authoring",
 						"sessions",
 						"close",
@@ -484,7 +489,7 @@ describe("ue-shed CLI process", () => {
 				expect(closed.lifecycle).toBe("closed");
 
 				const listed = parseRecord(
-					runSuccessfulCli(["authoring", "sessions", "list", "--project", projectRoot])
+					await runWithReader(["authoring", "sessions", "list", "--project", projectRoot])
 				);
 				expect(listed.sessions).toHaveLength(1);
 			} finally {
@@ -493,27 +498,4 @@ describe("ue-shed CLI process", () => {
 		},
 		120_000
 	);
-
-	it("reports malformed input and typed Remote Control failures with usage exit status", () => {
-		const malformed = runCli([
-			"authoring",
-			"sessions",
-			"set-cell",
-			"draft",
-			"/Game/Table",
-			"Row",
-			"Field",
-			"{",
-			"--project",
-			"project"
-		]);
-		expect(malformed.status).toBe(2);
-		expect(malformed.stdout).toBe("");
-		expect(malformed.stderr).toContain("ue-shed: Authoring value is not valid JSON.");
-
-		const remote = runCli(["authoring", "live", "tables", "http://127.0.0.1:1"]);
-		expect(remote.status).toBe(2);
-		expect(remote.stdout).toBe("");
-		expect(remote.stderr).toContain("ue-shed:");
-	}, 20_000);
 });

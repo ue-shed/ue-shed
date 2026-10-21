@@ -52,6 +52,9 @@ export default class VitestTraceReporter implements Reporter {
 					"vitest.project": testModule.project.name,
 					"vitest.worker": diagnostic.concurrencyId,
 					"vitest.tests": tests.length,
+					// Skipped tests have no timing, so they get no span of their own.
+					"vitest.skipped": tests.filter((test) => test.result().state === "skipped")
+						.length,
 					"vitest.setup_ms": Math.round(setupUs / 1000),
 					"vitest.environment_ms": Math.round(diagnostic.environmentSetupDuration),
 					"vitest.import_ms": Math.round(diagnostic.collectDuration),

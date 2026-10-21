@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { CultureCode, TextKey, TextNamespace } from "@ue-shed/localization/browser";
-import { assetReaderLayer, extractProjectTextPackages } from "@ue-shed/unreal-assets";
-import { Effect, Layer, Schema, Stream } from "effect";
+import { assetReaderLayer } from "@ue-shed/unreal-assets";
+import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
-import { textCorpusFromExtractionEvents } from "./corpus.js";
+import { savedFixtureCorpus } from "./saved-corpus.test-support.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
@@ -158,12 +158,11 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 					Effect.gen(function* () {
 						// In memory: the reader's package records, as the index reads them (with each
 						// Blueprint's compiled copies folded into their places), joined with Unreal's files.
-						const corpus: TextCorpus = textCorpusFromExtractionEvents({
-							projectRoot: fixture.root,
-							events: yield* Stream.runCollect(
-								extractProjectTextPackages({ projectRoot: fixture.root })
-							)
-						});
+						const corpus: TextCorpus = yield* savedFixtureCorpus(
+							fixture.root,
+							executable!,
+							true
+						);
 						const evidence = yield* Effect.gen(function* () {
 							const service = yield* LocalizationEvidence;
 							const discovery = yield* service.discover({

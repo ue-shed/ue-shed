@@ -1,18 +1,16 @@
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { cp, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { gzipSync } from "node:zlib";
 import {
 	CompiledPluginVariantRequest,
 	variantPluginReleaseAssetNames
 } from "@ue-shed/plugin-distribution";
 import { Schema } from "effect";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
+import { runInProcessCli as run } from "./cli-in-process.test-support.js";
 
-const repositoryRoot = join(import.meta.dirname, "..", "..", "..");
-const cliIndex = join(repositoryRoot, "apps", "cli", "src", "index.ts");
 const roots: string[] = [];
 
 interface TarEntry {
@@ -52,17 +50,6 @@ function archive(entries: readonly TarEntry[]) {
 	return gzipSync(Buffer.concat(blocks), { level: 9 });
 }
 
-function run(args: readonly string[]) {
-	const result = spawnSync(process.execPath, ["--import", "tsx", cliIndex, ...args], {
-		cwd: repositoryRoot,
-		encoding: "utf8",
-		timeout: 30_000,
-		windowsHide: true
-	});
-	if (result.error) throw result.error;
-	return result;
-}
-
 function digest(bytes: Uint8Array) {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
@@ -72,98 +59,6 @@ afterEach(async () => {
 });
 
 describe("compiled plugin CLI boundary", () => {
-	it("acquires an explicitly requested source graph through a real process", async () => {
-		const root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-cli-"));
-		roots.push(root);
-		const sourceRoot = join(root, "source");
-		const pluginRoot = join(root, "Plugins");
-		for (const id of ["UEShedCore", "UEShedWorld", "UEShedCameras"]) {
-			await mkdir(join(pluginRoot, id), { recursive: true });
-			await copyFile(
-				join(repositoryRoot, "unreal/Plugins", id, `${id}.uplugin`),
-				join(pluginRoot, id, `${id}.uplugin`)
-			);
-			await cp(
-				join(repositoryRoot, "unreal/Plugins", id, "Source"),
-				join(pluginRoot, id, "Source"),
-				{ recursive: true }
-			);
-		}
-		const bundle = spawnSync(
-			process.execPath,
-			[
-				join(repositoryRoot, "scripts", "plugin-bundle.ts"),
-				"bundle",
-				"--version",
-				"0.4.0",
-				"--output",
-				sourceRoot,
-				"--plugins",
-				"UEShedCore,UEShedWorld,UEShedCameras",
-				"--source-root",
-				pluginRoot,
-				"--license",
-				join(repositoryRoot, "LICENSE")
-			],
-			{ cwd: repositoryRoot, encoding: "utf8", timeout: 30_000, windowsHide: true }
-		);
-		expect(bundle.status, bundle.stderr).toBe(0);
-		const manifestPath = join(sourceRoot, "plugins.manifest.json");
-		await copyFile(manifestPath, join(sourceRoot, "ue-shed-plugins-0.4.0.manifest.json"));
-		// SAFETY: the release script just wrote this manifest; only the two asserted artifact fields are read.
-		const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-			readonly artifact: { readonly path: string; readonly sha256: string };
-		};
-		const manifestDigest = digest(await readFile(manifestPath));
-		const result = run([
-			"plugins",
-			"cache",
-			"install",
-			"--cache",
-			join(root, "cache"),
-			"--release",
-			"0.4.0",
-			"--source",
-			sourceRoot,
-			"--kind",
-			"source",
-			"--plugin",
-			"UEShedCameras",
-			"--manifest-digest",
-			manifestDigest,
-			"--artifact-digest",
-			manifest.artifact.sha256
-		]);
-		expect(result.status, result.stderr).toBe(0);
-		// SAFETY: successful CLI output is its JSON contract; every field used below is asserted.
-		const installed = JSON.parse(result.stdout) as {
-			readonly artifactKind: string;
-			readonly resolvedPluginIds: readonly string[];
-			readonly variantIdentity: string;
-		};
-		expect(installed.artifactKind).toBe("source");
-		expect(installed.resolvedPluginIds).toEqual(["UEShedCore", "UEShedWorld", "UEShedCameras"]);
-		expect(installed.variantIdentity).toMatch(/^pv2-[a-f0-9]{64}$/u);
-	}, 30_000);
-
-	it("rejects a binary request that omits exact engine identity", () => {
-		const result = run([
-			"plugins",
-			"cache",
-			"install",
-			"--cache",
-			"fixture-cache",
-			"--release",
-			"0.4.0",
-			"--kind",
-			"compiled",
-			"--plugin",
-			"UEShedCore"
-		]);
-		expect(result.status).not.toBe(0);
-		expect(result.stderr).toContain("require exact --unreal and --build-id");
-	});
-
 	it("acquires commit-qualified compiled output through default asset names", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-cli-compiled-"));
 		roots.push(root);
@@ -256,7 +151,7 @@ describe("compiled plugin CLI boundary", () => {
 			flag: "wx"
 		});
 
-		const result = run([
+		const result = await run([
 			"plugins",
 			"cache",
 			"install",

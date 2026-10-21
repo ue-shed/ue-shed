@@ -7,13 +7,25 @@ export default defineProject({
 		// running the whole suite in parallel; the slow ones already asked for 30 s one by one.
 		testTimeout: 30_000,
 		environment: "node",
-		exclude: [...configDefaults.exclude, "**/*.component.test.tsx", "apps/workbench/e2e/**"],
+		exclude: [
+			...configDefaults.exclude,
+			"**/*.component.test.tsx",
+			"**/*.recovery.test.ts",
+			"**/*.perf.test.ts",
+			"apps/workbench/e2e/**",
+			...(process.env.UE_SHED_HOST_RESPONSIVENESS === "1"
+				? []
+				: ["packages/game-text/src/host-responsiveness.test.ts"])
+		],
 		include: [
 			"{apps,extensions,fixtures,packages,tools}/**/*.{test,spec}.{ts,tsx}",
 			"scripts/game-text-corpus.test.ts",
 			"scripts/game-text-scale.test.ts",
 			"scripts/game-text-stage-timings.test.ts",
-			"scripts/game-text-dictionary.test.ts",
+			"scripts/game-text-scale-safety.test.ts",
+			...(process.env.UE_SHED_GAME_TEXT_BENCHMARK === "1"
+				? ["scripts/game-text-benchmark.integration.test.ts"]
+				: []),
 			"scripts/localization-import.test.ts",
 			"scripts/package-text-reader.test.ts",
 			"scripts/package-import-usages.test.ts",

@@ -1,7 +1,3 @@
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
 	CameraFrameRequest,
 	CameraRenderSessionRequest,
@@ -9,16 +5,20 @@ import {
 	type CameraFrameResult
 } from "@ue-shed/cameras";
 import { Schema } from "effect";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-	fixtureReviewSet,
-	runCliAsync,
 	JsonObject,
-	parseRecord
-} from "./cli-process.test-support.js";
+	fixtureReviewSet,
+	parseRecord,
+	runInProcessCli
+} from "./cli-in-process.test-support.js";
 
-describe("ue-shed Review capture CLI process", () => {
-	it("records two external-automation captures from separate CLI processes", async () => {
+describe("ue-shed Review capture CLI commands", () => {
+	it("records two external-automation captures from separate CLI commandses", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-review-external-processes-"));
 		const reviewSetPath = join(root, "review-set.json");
 		await copyFile(fixtureReviewSet, reviewSetPath);
@@ -210,8 +210,8 @@ describe("ue-shed Review capture CLI process", () => {
 				"--correlation",
 				"nightly-fixture"
 			];
-			const firstProcess = await runCliAsync(captureArgs);
-			const secondProcess = await runCliAsync(captureArgs);
+			const firstProcess = await runInProcessCli(captureArgs);
+			const secondProcess = await runInProcessCli(captureArgs);
 			expect(closedSessions).toHaveLength(2);
 			expect(new Set(closedSessions).size).toBe(2);
 			expect(sessions.size).toBe(0);

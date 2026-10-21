@@ -20,8 +20,13 @@ jobs:
     changes:
         name: Validate CI inputs and select checks
         runs-on: ubuntu-24.04
+        # actions: read lets a release-notes-only push confirm that the previous head's run passed.
+        permissions:
+            actions: read
+            contents: read
         outputs:
             catalog_oracle: ${{ steps.scope.outputs.catalog_oracle }}
+            reuse_previous_run: ${{ steps.scope.outputs.reuse_previous_run }}
             site: ${{ steps.scope.outputs.site }}
             uasset_io: ${{ steps.scope.outputs.uasset_io }}
             uasset_libraries: ${{ steps.scope.outputs.uasset_libraries }}
@@ -43,6 +48,8 @@ jobs:
               id: scope
               env:
                   EVENT_NAME: ${{ github.event_name }}
+                  PR_ACTION: ${{ github.event.action }}
+                  GITHUB_TOKEN: ${{ github.token }}
                   BEFORE_SHA: ${{ github.event.before }}
                   BASE_SHA: ${{ github.event.pull_request.base.sha }}
                   HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -64,6 +71,7 @@ jobs:
               with:
                   python-version: "3.12"
             - name: Check benchmark source snapshots
+              if: needs.changes.outputs.reuse_previous_run != 'true'
               run: python -m unittest discover -s tools/benchmarks -p 'test_source_snapshot.py' -v
             - name: Install Node.js
               uses: actions/setup-node@v6
@@ -75,14 +83,20 @@ jobs:
                   rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt,clippy --no-self-update
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile
+            # Only release notes changed since a passing run of the same code: check the release text.
+            - name: Check release notes
+              if: needs.changes.outputs.reuse_previous_run == 'true'
+              run: pnpm run format:check && pnpm run test:release
             - name: Run repository gate
               id: repository_gate
+              if: needs.changes.outputs.reuse_previous_run != 'true'
               shell: bash
               run: |
                   set -o pipefail
                   mkdir -p evidence
                   pnpm run check:repository 2>&1 | tee evidence/portable-check.log
             - name: Run Game Text join fuzz sweep
+              if: needs.changes.outputs.reuse_previous_run != 'true'
               env:
                   UE_SHED_JOIN_FUZZ_SEEDS: "100"
               run: pnpm test:game-text:fuzz
@@ -229,7 +243,7 @@ jobs:
                   pnpm run uasset:check:io 2>&1 | tee -a evidence/uasset-io-check.log
                   node scripts/test.ts \
                       apps/cli/src/index.e2e.test.ts \
-                      apps/cli/src/investigation.test.ts \
+                      apps/cli/src/localization-status.integration.test.ts \
                       packages/unreal-assets/src/fixture.integration.test.ts \
                       packages/unreal-assets/src/project-index-process.test.ts \
                       packages/game-text/src/fixture.integration.test.ts \

@@ -8,7 +8,7 @@ import type { SequenceReadResult, SequenceReadFailure } from "./contract.js";
 import { SectionInspector } from "./section-inspector.js";
 import { sequenceStats, sectionFrames, displayFrameScale } from "./sequence-summary.js";
 import { SequenceTimeline } from "./sequence-timeline.js";
-import { frameRateLabel, playbackLabel } from "./sequence-presentation.js";
+import { frameRateLabel, frameRateTooltip, playbackLabel } from "./sequence-presentation.js";
 
 export type SequenceReadEffect = Effect.Effect<SequenceReadResult, unknown>;
 export type ReadySequenceRead = Extract<SequenceReadResult, { readonly status: "ready" }>;
@@ -141,12 +141,9 @@ export function SequenceViewer(props: SequenceViewerProps) {
 		const rate = ready()?.sequence.display_rate;
 		return frameRateLabel(rate ?? null);
 	});
-	const frameRateTitle = createMemo(() => {
-		const rate = ready()?.sequence.display_rate;
-		return rate && rate.denominator !== 1
-			? `${rate.numerator}/${rate.denominator} fps`
-			: undefined;
-	});
+	const frameRateTitle = createMemo(() =>
+		frameRateTooltip(ready()?.sequence.display_rate ?? null)
+	);
 	const frameScale = createMemo(() => {
 		const read = ready();
 		return read === undefined ? 1 : displayFrameScale(read.sequence);

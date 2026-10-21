@@ -1,45 +1,15 @@
+import { it } from "@effect/vitest";
+import { movementGymRuns, movementGymScenario, type RunScenarioOptions } from "@ue-shed/scenarios";
+import { Effect, Layer, Ref } from "effect";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { it } from "@effect/vitest";
-import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
-import { CliRuntime } from "./cli-runtime.js";
 import { runTextReview } from "./asset-workflows.js";
-import { runVersion } from "./core-workflows.js";
+import { CliRuntime } from "./cli-runtime.js";
 import { runMapHistory } from "./workflows/map.js";
 import { runPluginsList } from "./workflows/plugins.js";
 import { executeScenarioCommand } from "./workflows/scenario.js";
-import { movementGymRuns, movementGymScenario, type RunScenarioOptions } from "@ue-shed/scenarios";
-
-it.effect("acquires and finalizes the CLI runtime exactly once", () =>
-	Effect.gen(function* () {
-		const acquired = yield* Ref.make(0);
-		const finalized = yield* Ref.make(0);
-		const output = yield* Ref.make("");
-		const layer = Layer.effect(
-			CliRuntime,
-			Effect.acquireRelease(
-				Ref.update(acquired, (count) => count + 1).pipe(
-					Effect.as(
-						CliRuntime.of({
-							print: (value) => Ref.update(output, (current) => current + value),
-							printError: () => Effect.void,
-							setExitCode: () => Effect.void
-						})
-					)
-				),
-				() => Ref.update(finalized, (count) => count + 1)
-			)
-		);
-
-		yield* Effect.scoped(runVersion().pipe(Effect.provide(layer)));
-
-		expect(yield* Ref.get(acquired)).toBe(1);
-		expect(yield* Ref.get(finalized)).toBe(1);
-		expect(yield* Ref.get(output)).toContain("ue-shed");
-	})
-);
 
 it.effect("executes the public plugin list command through the CLI runtime", () =>
 	Effect.gen(function* () {
@@ -106,32 +76,6 @@ it.effect("executes the public plugin list command through the CLI runtime", () 
 			expect(yield* Ref.get(output)).toContain("UEShedCore");
 			expect(yield* Ref.get(output)).toContain("0.1.0-rc.1");
 		}
-	})
-);
-
-it.effect("prints the public scenario runner result as structured JSON", () =>
-	Effect.gen(function* () {
-		const output = yield* Ref.make("");
-		const layer = Layer.succeed(
-			CliRuntime,
-			CliRuntime.of({
-				print: (value) => Ref.update(output, (current) => current + value),
-				printError: () => Effect.void,
-				setExitCode: () => Effect.void
-			})
-		);
-		const runner = {
-			cancel: () => Effect.die("unexpected cancellation"),
-			run: () => Effect.succeed(movementGymRuns[1]!)
-		};
-		yield* executeScenarioCommand(
-			{ _tag: "ScenarioRun", endpoint: "http://editor", evidenceLimit: 2 },
-			runner
-		).pipe(Effect.provide(layer));
-
-		// SAFETY: the CLI test runtime captured printJson output with a required status field.
-		const printed = JSON.parse(yield* Ref.get(output)) as { status: string };
-		expect(printed.status).toBe("completed");
 	})
 );
 

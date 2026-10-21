@@ -36,14 +36,16 @@ describe("batchProtocolPaths", () => {
 	});
 
 	it("fits a default batch of real-sized paths inside the native frame limit", () => {
+		const pathAt = (index: number) =>
+			"Content/Maps/World/_Generated_/Package_" + String(index).padStart(8, "0") + ".uasset";
+		const bytesPerPath = encodedBytes([pathAt(0)]) - 1;
 		const paths = Array.from(
-			{ length: 100_000 },
-			(_, index) =>
-				`Content/Maps/World/_Generated_/Package_${String(index).padStart(8, "0")}.uasset`
+			{ length: Math.floor(MAX_PROTOCOL_PATH_BYTES / bytesPerPath) + 1 },
+			(_, index) => pathAt(index)
 		);
 		const batches = batchProtocolPaths(paths);
 
-		expect(batches.length).toBeGreaterThan(1);
+		expect(batches).toHaveLength(2);
 		expect(batches.flat()).toHaveLength(paths.length);
 		for (const batch of batches) {
 			expect(encodedBytes(batch)).toBeLessThanOrEqual(MAX_PROTOCOL_PATH_BYTES + 1);

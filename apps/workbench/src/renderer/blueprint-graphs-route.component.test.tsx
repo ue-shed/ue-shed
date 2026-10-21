@@ -3,8 +3,8 @@ import * as extension from "@ue-shed/extension-blueprint-graphs";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkbenchRendererError, type WorkbenchRendererClient } from "./workbench-client.js";
 import { createBlueprintGraphsRoute } from "./blueprint-graphs-route.js";
+import { type WorkbenchRendererClient } from "./workbench-client.js";
 
 const host = {
 	readBlueprint: vi.fn<WorkbenchRendererClient["readBlueprint"]>(),
@@ -71,34 +71,5 @@ describe("BlueprintGraphsRoute", () => {
 		expect(
 			screen.getByText(/Choose a project in the sidebar to search its Blueprints/)
 		).toBeTruthy();
-	});
-
-	it("preserves the Workbench transport-failure copy", async () => {
-		host.readBlueprint.mockReturnValue(
-			Effect.fail(
-				new WorkbenchRendererError({
-					message: "The WorkbenchRenderer operation failed.",
-					retrySafe: false,
-					nextStep: "reconcile",
-					code: "workbench_renderer_failed",
-					cause: "IPC unavailable",
-					operation: "blueprintGraphs.read",
-					recovery: "Retry"
-				})
-			)
-		);
-		render(() => (
-			<EffectRuntimeProvider runtime={runtime}>
-				<Route initialAssetPath={assetPath} />
-			</EffectRuntimeProvider>
-		));
-		const alert = await screen.findByRole("alert");
-		expect(alert.textContent).toContain("The local reader request failed");
-		expect(alert.textContent).toContain(
-			"Workbench could not complete the local reader request."
-		);
-		expect(alert.textContent).toContain(
-			"Verify the configured uasset executable, then retry. Unreal is not required."
-		);
 	});
 });

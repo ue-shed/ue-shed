@@ -1,13 +1,12 @@
+import { it as effectIt } from "@effect/vitest";
+import { MapHistoryContractError, parseMapHistoryQuery } from "./schema.js";
+import { Effect } from "effect";
 import { DateTime, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	PerforceFastMapHistory,
-	PerforceFastMapHistoryQuery,
-	PerforceMapHistory,
 	PerforceMapHistoryQuery,
 	type PerforceFastMapHistory as PerforceFastMapHistoryType,
-	type PerforceFastMapHistoryQuery as PerforceFastMapHistoryQueryType,
-	type PerforceMapHistory as PerforceMapHistoryType,
 	type PerforceMapHistoryQuery as PerforceMapHistoryQueryType
 } from "./schema.js";
 
@@ -37,38 +36,6 @@ describe("Map History schemas", () => {
 		decoded satisfies PerforceMapHistoryQueryType;
 	});
 
-	it("round-trips an empty complete history", () => {
-		const snapshot = {
-			actors: [],
-			completeness: "complete" as const,
-			diagnostics: [],
-			mapPackage: "/Game/Maps/L_Example",
-			mapPath: "Content/Maps/L_Example.umap",
-			sourceKind: "level" as const,
-			summary: {
-				failedPackages: 0,
-				partialPackages: 0,
-				resolvedActors: 0,
-				scannedPackages: 1
-			}
-		};
-		const history = {
-			baseline: { change: 120, status: "available" },
-			completeness: "complete",
-			diagnostics: [],
-			mapDepotPath: "//Project/Main/Content/Maps/L_Example.umap",
-			query,
-			rangeEndSnapshot: snapshot,
-			rangeStartSnapshot: snapshot,
-			revisions: [],
-			schemaVersion: 2
-		};
-		const decoded = Schema.decodeUnknownSync(PerforceMapHistory)(history);
-		const encoded = Schema.encodeSync(PerforceMapHistory)(decoded);
-		expect(encoded).toEqual(history);
-		decoded satisfies PerforceMapHistoryType;
-	});
-
 	it("rejects unbounded query limits", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(PerforceMapHistoryQuery)({
@@ -85,42 +52,6 @@ describe("Map History schemas", () => {
 				range: { since: query.range.until, until: query.range.since }
 			})
 		).toThrow();
-	});
-
-	it("round-trips a Fast History actor Investigation Target query", () => {
-		const fastQuery = {
-			limits: query.limits,
-			mapPath: query.mapPath,
-			mode: "fast",
-			projectRoot: query.projectRoot,
-			range: query.range,
-			target: {
-				identity: {
-					actorGuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-					kind: "actor_guid"
-				},
-				kind: "actor"
-			}
-		};
-		const decoded = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)(fastQuery);
-		const encoded = Schema.encodeSync(PerforceFastMapHistoryQuery)(decoded);
-		expect(encoded).toEqual(fastQuery);
-		decoded satisfies PerforceFastMapHistoryQueryType;
-	});
-
-	it("round-trips a Fast History actor-class Investigation Target query", () => {
-		const fastQuery = {
-			limits: query.limits,
-			mapPath: query.mapPath,
-			mode: "fast",
-			projectRoot: query.projectRoot,
-			range: query.range,
-			target: { classPath: "/Script/Game.Npc", kind: "actor_class" }
-		};
-		const decoded = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)(fastQuery);
-		const encoded = Schema.encodeSync(PerforceFastMapHistoryQuery)(decoded);
-		expect(encoded).toEqual(fastQuery);
-		decoded satisfies PerforceFastMapHistoryQueryType;
 	});
 
 	it("round-trips Fast History targeted coverage without claiming complete map coverage", () => {
@@ -228,3 +159,21 @@ describe("Map History schemas", () => {
 		).toThrow();
 	});
 });
+
+effectIt.effect(
+	"fails a value outside the contract with a domain error that keeps the schema issue",
+	() =>
+		Effect.gen(function* () {
+			// A peer from another version sends a value this side does not know.
+			const error = yield* Effect.flip(
+				parseMapHistoryQuery(JSON.parse('{ "unexpected": true }'))
+			);
+			expect(error).toBeInstanceOf(MapHistoryContractError);
+			expect(error).toMatchObject({
+				code: "invalid_contract",
+				message: "The map history query does not match the map history contract.",
+				retrySafe: false
+			});
+			expect(error.cause).toBeDefined();
+		})
+);

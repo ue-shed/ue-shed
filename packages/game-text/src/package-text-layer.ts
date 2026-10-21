@@ -65,6 +65,8 @@ export function packageTextShard(path: string) {
 const shardName = (shard: number) => `package-text.${shard}`;
 
 export interface PackageTextRefreshInput<E, R> {
+	/** Override the cold-path inventory threshold for bounded integration fixtures. */
+	readonly coldMinimumPackages?: number;
 	readonly inventory: readonly PackageTextInventoryEntry[];
 	readonly changedFiles?: readonly string[];
 	readonly read: (
@@ -319,7 +321,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			writer.replacePackages
 		);
 	}
-	if (!reader && changed.length > 8 && inventory.length >= 256) {
+	if (!reader && changed.length > 8 && inventory.length >= (input.coldMinimumPackages ?? 256)) {
 		const directory = yield* Effect.acquireRelease(
 			Effect.tryPromise({
 				try: async () => {

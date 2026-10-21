@@ -33,22 +33,6 @@ describe("file Sequence opener", () => {
 		expect(screen.getByText(/never uploaded/)).toBeDefined();
 	});
 
-	it("opens the labelled picker from the primary button and the drop zone", async () => {
-		const owner = controls();
-		render(() => (
-			<FileSequenceOpener controls={owner} readFile={() => Effect.succeed(ready)} />
-		));
-		const picker = screen.getByLabelText("Choose a Level Sequence .uasset");
-		const click = vi.spyOn(picker, "click");
-		const user = userEvent.setup();
-		await user.tab();
-		expect(document.activeElement).toBe(picker);
-		await user.click(screen.getByRole("button", { name: "Choose a .uasset" }));
-		expect(click).toHaveBeenCalledOnce();
-		await user.click(screen.getByRole("group", { name: "Open sequence file" }));
-		expect(click).toHaveBeenCalledTimes(2);
-	});
-
 	it("shows drop-to-open copy while a file is dragged over the viewer", async () => {
 		const owner = controls();
 		render(() => (

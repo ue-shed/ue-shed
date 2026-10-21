@@ -37,6 +37,7 @@
 	"scripts": {
 		"build": "node ../../scripts/clean-package-dist.ts && tsc -p tsconfig.build.json",
 		"prepack": "pnpm run build",
+		"test:performance": "vitest run --config vitest.perf.config.ts",
 		"typecheck": "tsc --noEmit && tsc -p tsconfig.browser.json --noEmit"
 	},
 	"dependencies": {

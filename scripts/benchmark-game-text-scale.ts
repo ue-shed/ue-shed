@@ -8,10 +8,10 @@ import { getHeapStatistics } from "node:v8";
 import { Schema } from "effect";
 import { repositoryPath, readScaleRecipe } from "./game-text-scale-options.ts";
 import {
-	boundedNumber,
+	benchmarkPipelineLimits,
+	assertSafePipelineScale,
 	childWorkingSet,
 	killBenchmarkTree,
-	maximumHeapMiB,
 	maximumRssBytes,
 	maximumStageSeconds
 } from "./game-text-scale-safety.ts";
@@ -70,10 +70,7 @@ if (overIndex && (values.cache === undefined || values.records === undefined))
 	);
 const cache = values.cache === undefined ? undefined : repositoryPath(values.cache);
 const records = values.records === undefined ? undefined : repositoryPath(values.records);
-if ((await readScaleRecipe(project)).scale >= 10)
-	throw new Error(
-		"10× pipeline not run: unsafe in-memory workload. Use validate:game-text-scale."
-	);
+assertSafePipelineScale((await readScaleRecipe(project)).scale);
 const memory = (): Memory => {
 	const { heapUsed, rss, arrayBuffers } = process.memoryUsage();
 	return { heapUsed, rss, arrayBuffers };
@@ -196,20 +193,15 @@ if (values.worker) {
 		process.disconnect?.();
 	}
 } else {
-	const maxRss =
-		boundedNumber(values["max-rss-gib"], "RSS GiB", maximumRssBytes / 2 ** 30) * 2 ** 30;
-	const timeout =
-		boundedNumber(values["stage-timeout-seconds"], "stage timeout", maximumStageSeconds) * 1000;
+	const { maxRss, timeout, heaps } = benchmarkPipelineLimits({
+		heaps: values.heaps,
+		maxRssGiB: values["max-rss-gib"],
+		stageTimeoutSeconds: values["stage-timeout-seconds"]
+	});
 	const output = repositoryPath(
 		values.output ?? `test-results/game-text-scale/benchmark-${Date.now()}.json`
 	);
 	await mkdir(resolve(output, ".."), { recursive: true });
-	const heaps = values.heaps.split(",").map((heap) => {
-		if (heap === "default") return heap;
-		const limit = boundedNumber(heap, "heap MiB", maximumHeapMiB);
-		if (!Number.isSafeInteger(limit)) throw new Error("Heap MiB must be an integer.");
-		return limit;
-	});
 	const results: unknown[] = [];
 	const save = () =>
 		writeFile(

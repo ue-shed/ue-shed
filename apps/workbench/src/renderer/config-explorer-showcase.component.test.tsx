@@ -1,10 +1,10 @@
-import { ConfigExplorerQueryResult } from "../shared/ipc-contracts.js";
-import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
+import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { ConfigExplorerQuery } from "../shared/ipc-contracts.js";
+import { ConfigExplorerQueryResult } from "../shared/ipc-contracts.js";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -137,7 +137,13 @@ describe("ConfigExplorerShowcase", () => {
 			},
 			status: "failed"
 		});
-		renderShowcase({ query: () => Effect.succeed(failed) });
+		const requests: ConfigExplorerQuery[] = [];
+		renderShowcase({
+			query: (request) => {
+				requests.push(request);
+				return Effect.succeed(failed);
+			}
+		});
 
 		await userEvent.setup().click(screen.getByRole("button", { name: "Selected project" }));
 		await userEvent.setup().click(screen.getByRole("button", { name: /^Compare platforms/ }));
@@ -145,5 +151,9 @@ describe("ConfigExplorerShowcase", () => {
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain("No Workbench project is selected");
 		expect(alert.textContent).toContain("Choose a project from the Workbench header");
+		expect(requests.map((request) => request.source)).toEqual([
+			"sample_fixture",
+			"selected_project"
+		]);
 	});
 });

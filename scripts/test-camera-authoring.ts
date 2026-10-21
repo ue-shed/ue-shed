@@ -16,6 +16,7 @@ import {
 	unrealEngineTools,
 	unrealEngineVersion
 } from "./unreal-plugin-host.ts";
+import { withSpanAsync } from "./gate-trace.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 
 const engineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
@@ -64,12 +65,22 @@ async function stop() {
 	const running = editor;
 	editor = undefined;
 	if (running && running.exitCode === null)
-		await new Promise<void>((done) => {
-			running.once("exit", () => done());
-			running.kill();
-		});
+		await withSpanAsync(
+			"stop editor",
+			{},
+			() =>
+				new Promise<void>((done) => {
+					running.once("exit", () => done());
+					running.kill();
+				})
+		);
 }
 async function launch(ids: readonly string[], label: string) {
+	await withSpanAsync(`start editor ${label}`, { "unreal.plugins": ids.join(" ") }, () =>
+		startEditor(ids, label)
+	);
+}
+async function startEditor(ids: readonly string[], label: string) {
 	editor = spawn(
 		tools.editorCommandlet,
 		[

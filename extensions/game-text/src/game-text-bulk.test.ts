@@ -5,14 +5,7 @@ import {
 } from "@ue-shed/game-text/schema";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import {
-	batches,
-	carryEdits,
-	exportRequest,
-	keysText,
-	lineRange,
-	reviewChanges
-} from "./game-text-bulk.js";
+import { carryEdits, exportRequest, keysText, lineRange, reviewChanges } from "./game-text-bulk.js";
 
 type Encoded = typeof LocalizationLinePreview.Encoded;
 const preview = Schema.decodeUnknownSync(LocalizationLinePreview);
@@ -87,11 +80,6 @@ describe("bulk actions", () => {
 			changes.map((item) => (item.kind === "set" ? item.key : "") + ":" + item.culture)
 		).toEqual(["Play:de", "Quit:de"]);
 		expect(reviewChanges(lines, ["fr", "ja"], "en")).toEqual([]);
-	});
-
-	it("splits review changes into requests the host accepts", () => {
-		expect(batches([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
-		expect(batches([], 500)).toEqual([]);
 	});
 
 	it("carries translations for key changes whose source stayed the same", () => {

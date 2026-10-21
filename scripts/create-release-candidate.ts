@@ -80,7 +80,7 @@ export function validateRunId(value: string) {
 	return value;
 }
 
-export async function sha256(path: string) {
+async function sha256(path: string) {
 	const bytes = await readFile(path);
 	return createHash("sha256").update(bytes).digest("hex");
 }

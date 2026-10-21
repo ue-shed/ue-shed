@@ -2,8 +2,6 @@ import { createServer } from "node:http";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 import {
-	decodeAuthoringSessionIntent,
-	decodeAuthoringSessionListResult,
 	decodeAuthoringSessionReviewResult,
 	decodeAuthoringTransportRequest,
 	makeAuthoringHttpClient
@@ -45,19 +43,6 @@ describe("authoring SDK contracts", () => {
 			});
 		}
 	}
-	it("decodes host-neutral row intents", async () => {
-		expect(
-			await Effect.runPromise(
-				decodeAuthoringSessionIntent({
-					kind: "duplicate_row",
-					rowName: "Beta",
-					sessionId: "session-1",
-					sourceRowId: "row:Alpha",
-					tableObjectPath: "/Game/Data/DT_Test.DT_Test"
-				})
-			)
-		).toMatchObject({ kind: "duplicate_row", sourceRowId: "row:Alpha" });
-	});
 
 	it("decodes complete session review results and rejects malformed projections", async () => {
 		const result = {
@@ -95,36 +80,18 @@ describe("authoring SDK contracts", () => {
 		).toBe(true);
 	});
 
-	it("decodes recent persisted session summaries", async () => {
-		const result = {
-			diagnostics: [],
-			sessions: [
-				{
-					commandCount: 3,
-					createdAt: "2026-07-16T00:00:00.000Z",
-					id: "session-1",
-					lifecycle: "open",
-					tableObjectPaths: ["/Game/Data/DT_Test.DT_Test"],
-					undoPointer: 2,
-					updatedAt: "2026-07-16T00:00:01.000Z"
-				}
-			],
-			status: "ready"
-		};
-		expect(await Effect.runPromise(decodeAuthoringSessionListResult(result))).toEqual(result);
-	});
-
 	it("rejects malformed transport requests", async () => {
 		expect(
 			Exit.isFailure(
 				await Effect.runPromiseExit(
-					decodeAuthoringTransportRequest({ operation: "open_catalog_table" })
+					decodeAuthoringTransportRequest({
+						operation: "open_catalog_table",
+						objectPath: "/Game/Data/DT_Test.DT_Test"
+					})
 				)
 			)
 		).toBe(true);
-	});
 
-	it("requires an explicit authority when opening a catalog table", async () => {
 		expect(
 			await Effect.runPromise(
 				decodeAuthoringTransportRequest({

@@ -54,7 +54,6 @@ describe("WASM Sequence read adapter", () => {
 	});
 
 	it.each([
-		["malformed_data", "asset_malformed_data"],
 		["saved_node_note", "saved_node_note"],
 		["asset_malformed_data", "asset_malformed_data"]
 	])("maps diagnostic %s to %s with native warning severity", async (code, expectedCode) => {

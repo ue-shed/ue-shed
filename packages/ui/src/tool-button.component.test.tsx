@@ -1,10 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { createSignal } from "solid-js";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AnchoredPopover } from "./anchored-popover.js";
 import { ToolButton } from "./tool-button.js";
 import { ToolIcon } from "./tool-icon.js";
+
+beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
 
 afterEach(() => {
 	cleanup();
@@ -21,7 +23,7 @@ it("labels an icon tool and shows a dismissible tooltip on keyboard focus", asyn
 			<button type="button">Next</button>
 		</>
 	));
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	const tool = screen.getByRole("button", { name: "Filter" });
 	expect(tool.textContent).toBe("");
 	await user.tab();
@@ -46,12 +48,14 @@ it("lets the pointer through a hovered tooltip and closes it when the pointer le
 			<button type="button">Neighbour</button>
 		</>
 	));
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	await user.hover(screen.getByRole("button", { name: "Display" }));
+	vi.advanceTimersByTime(300);
 	await screen.findByRole("tooltip");
 	// The tooltip takes no pointer events (Workbench's layout e2e clicks through one), so moving
 	// toward a neighbouring control closes it.
 	await user.hover(screen.getByRole("button", { name: "Neighbour" }));
+	vi.advanceTimersByTime(300);
 	await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
 });
 
@@ -66,14 +70,17 @@ it("shows only the most recently hovered or focused tool's tooltip", async () =>
 			</ToolButton>
 		</>
 	));
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	await user.hover(screen.getByRole("button", { name: "Display" }));
+	vi.advanceTimersByTime(300);
 	await screen.findByRole("tooltip");
 	await user.tab();
 	await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("Filter"));
 	expect(screen.getAllByRole("tooltip")).toHaveLength(1);
 	await user.unhover(screen.getByRole("button", { name: "Display" }));
+	vi.advanceTimersByTime(300);
 	await user.hover(screen.getByRole("button", { name: "Display" }));
+	vi.advanceTimersByTime(300);
 	await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("Display"));
 	expect(screen.getAllByRole("tooltip")).toHaveLength(1);
 });
@@ -94,14 +101,16 @@ it("exposes toggle state and changes its tooltip after the tool is used", async 
 			</ToolButton>
 		);
 	});
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	const tool = screen.getByRole("button", { name: "Reviewed", pressed: false });
 	await user.click(tool);
 	expect(tool.getAttribute("aria-pressed")).toBe("true");
 	// Clicking dismisses the tooltip; leaving and returning reveals the new state.
 	expect(screen.queryByRole("tooltip")).toBeNull();
 	await user.unhover(tool);
+	vi.advanceTimersByTime(300);
 	await user.hover(tool);
+	vi.advanceTimersByTime(300);
 	expect((await screen.findByRole("tooltip")).textContent).toContain("On. Remove");
 });
 
@@ -119,7 +128,7 @@ it("forwards a popover's trigger ref and restores keyboard focus when its menu c
 			<button type="button">Folder</button>
 		</AnchoredPopover>
 	));
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	await user.click(screen.getByRole("button", { name: "Display" }));
 	await screen.findByRole("dialog", { name: "Display options" });
 	expect(screen.queryByRole("tooltip")).toBeNull();
@@ -140,7 +149,7 @@ it("does not open a tooltip when a pointer press focuses the tool", async () => 
 			<ToolIcon name="filter" />
 		</ToolButton>
 	));
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	const tool = screen.getByRole("button", { name: "Filter" });
 	await user.pointer({ keys: "[MouseLeft>]", target: tool });
 	expect(document.activeElement).toBe(tool);
@@ -169,12 +178,13 @@ it("explains a disabled tool on hover and names its badge", async () => {
 			</ToolButton>
 		</>
 	));
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	const exporter = screen.getByRole("button", { name: "Export" });
 	expect(exporter).toHaveProperty("disabled", true);
 	const anchor = exporter.parentElement;
 	if (!anchor) throw new Error("The disabled tool has no hover anchor.");
 	await user.hover(anchor);
+	vi.advanceTimersByTime(300);
 	expect((await screen.findByRole("tooltip")).textContent).toContain("Wait for the search");
 	expect(screen.getByRole("button", { name: "Filter, 3 active" })).toBeDefined();
 	expect(screen.getByRole("button", { name: "Files, 2" })).toBeDefined();
@@ -192,13 +202,14 @@ it("shows a visible label and keeps the tooltip to extra description", async () 
 			</ToolButton>
 		</>
 	));
-	const user = userEvent.setup();
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	const display = screen.getByRole("button", { name: "Display" });
 	expect(display.textContent).toBe("Display");
 	await user.tab();
 	expect(document.activeElement).toBe(display);
 	expect(screen.queryByRole("tooltip")).toBeNull();
 	await user.hover(screen.getByRole("button", { name: "Filter, 2" }));
+	vi.advanceTimersByTime(300);
 	const tooltip = await screen.findByRole("tooltip");
 	expect(tooltip.textContent).toBe("Narrow lines by state.");
 });
@@ -233,7 +244,7 @@ it("attaches document listeners only while open and releases them on unmount", a
 		</ToolButton>
 	));
 	expect(addDocument).not.toHaveBeenCalled();
-	await userEvent.setup().tab();
+	await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).tab();
 	await screen.findByRole("tooltip");
 	const escape = addDocument.mock.calls.find(([name]) => name === "keydown")?.[1];
 	const claim = addDocument.mock.calls.find(

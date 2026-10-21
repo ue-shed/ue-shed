@@ -1,17 +1,58 @@
+import { NodeServices } from "@effect/platform-node";
 import { it } from "@effect/vitest";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import {
+	LocalizationBaseline,
+	LocalizationProgressReport,
+	LocalizationStatusReport
+} from "@ue-shed/game-text/corpus";
+import { LocalizationQualityReport, TextProblem } from "@ue-shed/game-text/schema";
+import { LocalizationChangeSet } from "@ue-shed/localization/browser";
+import { ConfigProvider, Effect, FileSystem, Layer, ManagedRuntime, Ref, Schema } from "effect";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Effect, Layer, Ref, Schema } from "effect";
-import { describe, expect } from "vitest";
-import { LocalizationStatusReport } from "@ue-shed/game-text/corpus";
-import { TextProblem } from "@ue-shed/game-text/schema";
+import { afterAll, beforeAll, describe, expect } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { CliRuntime } from "./cli-runtime.js";
-import { runCli } from "./command.js";
+import { runCli as runCommand } from "./command.js";
+import { cliGameTextIndexLayer, refreshCliGameTextIndex } from "./workflows/game-text-index.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
+let indexed: ReturnType<typeof makeIndexRuntime>;
+let cacheRoot: string;
+function makeIndexRuntime(root: string) {
+	return ManagedRuntime.make(
+		cliGameTextIndexLayer(executable).pipe(
+			Layer.provide(
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({ UE_SHED_PROJECT_INDEX_CACHE_ROOT: root })
+				)
+			)
+		)
+	);
+}
+beforeAll(async () => {
+	cacheRoot = await mkdtemp(join(tmpdir(), "ue-shed-cli-index-"));
+	indexed = makeIndexRuntime(cacheRoot);
+	if (executable) {
+		await indexed.runPromise(
+			refreshCliGameTextIndex(
+				{ projectRoot: fixture.root, targetName: "FixtureGame" },
+				executable
+			).pipe(Effect.scoped)
+		);
+	}
+});
+afterAll(async () => {
+	await indexed.dispose();
+	await rm(cacheRoot, { recursive: true, force: true });
+});
+function runCli(args: readonly string[]) {
+	return Effect.flatMap(indexed.contextEffect, (context) =>
+		runCommand(args).pipe(Effect.provide(context))
+	);
+}
 
 describe.skipIf(!executable)("localization CLI with the real reader", () => {
 	it.effect("status and text search share culture/state filtering and counts", () =>
@@ -263,4 +304,339 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 			expect(yield* Ref.get(exitCode)).toBe(2);
 		})
 	);
+});
+
+describe.skipIf(!executable)("localization check CLI with the real reader", () => {
+	it.effect("filters culture and repeated check ids and creates only the proposal", () =>
+		Effect.gen(function* () {
+			if (executable === undefined) throw new Error("The saved reader is not configured.");
+			const fs = yield* FileSystem.FileSystem;
+			const directory = yield* fs.makeTempDirectoryScoped();
+			const changesPath = join(directory, "suggestions.json");
+			const output = yield* Ref.make("");
+			const exit = yield* Ref.make(0);
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (text) => Ref.update(output, (value) => value + text),
+					printError: () => Effect.void,
+					setExitCode: (code) => Ref.set(exit, code)
+				})
+			);
+			const paths = [
+				"Content/Localization/FixtureGame/FixtureGame.manifest",
+				"Content/Localization/FixtureGame/FixtureGame.locmeta",
+				...["en", "de", "fr"].flatMap((culture) =>
+					["archive", "po", "locres"].map(
+						(extension) =>
+							`Content/Localization/FixtureGame/${culture}/FixtureGame.${extension}`
+					)
+				)
+			];
+			const before = yield* Effect.forEach(paths, (path) =>
+				fs.readFile(join(fixture.root, path))
+			);
+			yield* runCli([
+				"loc",
+				"check",
+				fixture.root,
+				"--target",
+				"FixtureGame",
+				"--culture",
+				"de",
+				"--check",
+				"format_argument_renamed",
+				"--check",
+				"rich_text",
+				"--changes",
+				changesPath,
+				"--reader",
+				executable
+			]).pipe(Effect.provide(runtime));
+			const report = Schema.decodeUnknownSync(
+				Schema.fromJsonString(LocalizationQualityReport)
+			)(yield* Ref.get(output));
+			expect(report.findings.length).toBeGreaterThan(0);
+			expect(
+				report.findings.every(
+					(finding) =>
+						"culture" in finding &&
+						finding.culture === "de" &&
+						["format_argument_renamed", "rich_text"].includes(finding.kind)
+				)
+			).toBe(true);
+			expect(
+				report.changes.changes.some(
+					(change) =>
+						change.key === "NamedArgument" &&
+						change.translation === "Gespräch mit {PlayerName}"
+				)
+			).toBe(true);
+			expect(
+				Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationChangeSet))(
+					yield* fs.readFileString(changesPath)
+				)
+			).toEqual(report.changes);
+			expect(yield* fs.readDirectory(directory)).toEqual(["suggestions.json"]);
+			const after = yield* Effect.forEach(paths, (path) =>
+				fs.readFile(join(fixture.root, path))
+			);
+			expect(after).toEqual(before);
+			expect(yield* Ref.get(exit)).toBe(0);
+		}).pipe(Effect.provide(NodeServices.layer))
+	);
+});
+
+describe.skipIf(!executable)("loc report with the real reader", () => {
+	it.effect(
+		"reports archive progress and baseline deltas while preserving all localization outputs",
+		() =>
+			Effect.gen(function* () {
+				if (executable === undefined)
+					throw new Error("The saved reader is not configured.");
+				const fs = yield* FileSystem.FileSystem;
+				const directory = yield* fs.makeTempDirectoryScoped();
+				const baselinePath = join(directory, "baseline.json");
+				const output = yield* Ref.make("");
+				const exit = yield* Ref.make(0);
+				const runtime = Layer.succeed(
+					CliRuntime,
+					CliRuntime.of({
+						print: (value) => Ref.update(output, (text) => text + value),
+						printError: () => Effect.void,
+						setExitCode: (code) => Ref.set(exit, code)
+					})
+				);
+				const paths = [
+					"FixtureGame.manifest",
+					"FixtureGame.locmeta",
+					"FixtureGame.csv",
+					...["de", "en", "fr"].flatMap((culture) =>
+						["archive", "po", "locres"].map(
+							(extension) => `${culture}/FixtureGame.${extension}`
+						)
+					)
+				];
+				const before = yield* Effect.forEach(paths, (path) =>
+					fs.readFile(join(fixture.root, "Content/Localization/FixtureGame", path))
+				);
+				const args = [
+					"loc",
+					"report",
+					fixture.root,
+					"--target",
+					"FixtureGame",
+					"--reader",
+					executable
+				];
+				yield* runCli([...args, "--save-baseline", baselinePath]).pipe(
+					Effect.provide(runtime)
+				);
+				const report = Schema.decodeUnknownSync(
+					Schema.fromJsonString(LocalizationProgressReport)
+				)(yield* Ref.get(output));
+				expect(
+					report.cultures
+						.map((culture) => [
+							culture.culture,
+							culture.total.sourceWords,
+							culture.upToDateArchive.sourceWords
+						])
+						.sort()
+				).toEqual([
+					["de", 62, 59],
+					["en", 62, 62],
+					["fr", 62, 54]
+				]);
+				expect(
+					report.cultures.every(
+						(culture) =>
+							culture.reviewed === "not_tracked" &&
+							culture.proofread === "not_tracked"
+					)
+				).toBe(true);
+				expect(
+					report.gatherEvidence.some(
+						(file) => file.kind === "manifest" && file.provenance
+					)
+				).toBe(true);
+				const baseline = Schema.decodeUnknownSync(
+					Schema.fromJsonString(LocalizationBaseline)
+				)(yield* fs.readFileString(baselinePath));
+				expect(baseline.entries.length).toBeGreaterThan(0);
+				yield* Ref.set(output, "");
+				yield* runCli([...args, "--baseline", baselinePath]).pipe(Effect.provide(runtime));
+				const compared = Schema.decodeUnknownSync(
+					Schema.fromJsonString(LocalizationProgressReport)
+				)(yield* Ref.get(output));
+				expect(
+					compared.cultures.every(
+						(culture) =>
+							culture.baselineDelta?.addedCounts.lines === 0 &&
+							culture.baselineDelta.changedCounts.lines === 0 &&
+							culture.baselineDelta.removedCounts.lines === 0
+					)
+				).toBe(true);
+				expect(yield* Ref.get(exit)).toBe(0);
+				expect(yield* fs.readDirectory(directory)).toEqual(["baseline.json"]);
+				const after = yield* Effect.forEach(paths, (path) =>
+					fs.readFile(join(fixture.root, "Content/Localization/FixtureGame", path))
+				);
+				expect(after).toEqual(before);
+			}).pipe(Effect.provide(NodeServices.layer)),
+		60_000
+	);
+});
+
+// The repository lane deliberately runs without the native reader. The UAsset IO lane
+// supplies it and runs both real fixture replays below.
+it.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE).each(["game_text", "texture_audit"])(
+	"replays a %s preset through the CLI and native reader",
+	async (kind) => {
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-cli-investigation-"));
+		const project = fixture.root;
+		let output = "";
+		const runtime = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (value) =>
+					Effect.sync(() => {
+						output += value;
+					}),
+				printError: (value) => Effect.die(value),
+				setExitCode: (code) => Effect.die(`Unexpected exit ${code}`)
+			})
+		);
+		try {
+			const rules = JSON.parse(
+				await readFile(
+					join(
+						project,
+						"FixtureSource",
+						kind === "game_text"
+							? "Text/quality-rules.json"
+							: "Audits/texture-rules.json"
+					),
+					"utf8"
+				)
+			);
+			const preset = {
+				schemaVersion: 1,
+				kind,
+				sort: kind === "game_text" ? "domain_order" : "object_path",
+				query:
+					kind === "game_text"
+						? {
+								mode: "quality",
+								query: "",
+								capability: "all",
+								lens: "all",
+								qualityFilter: "character_budget"
+							}
+						: { findingsOnly: true, query: "" },
+				rules
+			};
+			const presetPath = join(root, "preset.json");
+			const outputPath = join(root, "export.csv");
+			await writeFile(presetPath, JSON.stringify(preset));
+			const args = ["investigations", "run", project, "--preset", presetPath];
+			await Effect.runPromise(runCli(args).pipe(Effect.provide(runtime)));
+			const exported = JSON.parse(output);
+			expect(exported.preset).toEqual(preset);
+			expect(exported.source).toEqual({
+				projectRoot: project,
+				generation: null,
+				authority: "project_files"
+			});
+			const rows =
+				kind === "game_text" ? exported.result.report.findings : exported.result.records;
+			expect(rows.length).toBeGreaterThan(0);
+			output = "";
+			await Effect.runPromise(
+				runCli([...args, "--format", "csv", "--output", outputPath]).pipe(
+					Effect.provide(runtime)
+				)
+			);
+			expect(output).toBe("");
+			const csv = await readFile(outputPath, "utf8");
+			expect(csv).toContain('"metadata"');
+			expect(csv).toContain('"record"');
+			await writeFile(presetPath, JSON.stringify({ ...preset, schemaVersion: 99 }));
+			await expect(
+				Effect.runPromise(runCli(args).pipe(Effect.provide(runtime)))
+			).rejects.toMatchObject({ _tag: "CliCommandError" });
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	},
+	60_000
+);
+
+describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality presets", () => {
+	it("replays the quality list with the target's review file, as Workbench does", async () => {
+		let output = "";
+		const runtime = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (value) =>
+					Effect.sync(() => {
+						output += value;
+					}),
+				printError: () => Effect.void,
+				setExitCode: (code) => Effect.die(`Unexpected exit ${code}`)
+			})
+		);
+		const run = async (args: readonly string[]) => {
+			output = "";
+			await Effect.runPromise(runCli(args).pipe(Effect.provide(runtime)));
+			return output;
+		};
+		const preset = {
+			schemaVersion: 2,
+			kind: "game_text",
+			sort: "domain_order",
+			query: {
+				mode: "quality",
+				query: "",
+				capability: "all",
+				lens: "all",
+				qualityFilter: "all",
+				workspaceFilter: "format_argument_renamed",
+				localization: { target: "FixtureGame", culture: "de" }
+			}
+		};
+		const presetPath = join(fixture.root, "Saved", "localization-quality.json");
+		await mkdir(dirname(presetPath), { recursive: true });
+		await writeFile(presetPath, JSON.stringify(preset));
+		const args = ["investigations", "run", fixture.root, "--preset", presetPath];
+		const before = JSON.parse(await run(args));
+		expect(before.schemaVersion).toBe(2);
+		expect(before.preset.schemaVersion).toBe(2);
+		expect(before.result).toMatchObject({
+			mode: "localization_quality",
+			report: { target: "FixtureGame", culture: "de", filter: "format_argument_renamed" }
+		});
+		expect(before.result.report.findings.length).toBeGreaterThan(0);
+		const csv = await run([...args, "--format", "csv"]);
+		expect(csv).toContain('"finding_id","kind","culture","source","problem","context"');
+		// An accepted finding leaves the replay exactly as it leaves the Workbench list.
+		await run([
+			"loc",
+			"review",
+			"accept",
+			fixture.root,
+			"--target",
+			"FixtureGame",
+			"--culture",
+			"de",
+			"--check",
+			"localization.format_argument_renamed",
+			"--line",
+			"Fixture.Localization.Table,NamedArgument"
+		]);
+		const after = JSON.parse(await run(args));
+		expect(after.result.report.findings.length).toBeLessThan(
+			before.result.report.findings.length
+		);
+	}, 60_000);
 });

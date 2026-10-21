@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync
+} from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.ts";
@@ -7,7 +15,11 @@ import { isJsonObject, isJsonString, type JsonValue } from "./json.ts";
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const crateDirectory = join(repositoryRoot, "crates", "uasset-inspection-wasm");
 const packageDirectory = join(repositoryRoot, "packages", "uasset-inspection-wasm");
-const packageDist = join(packageDirectory, "dist");
+// Build into a staging directory and swap it in at the end, so a gate reading the package while
+// another rebuilds it (the engine matrix's WASM parity, for example) never sees `dist` half-written.
+const publishedDist = join(packageDirectory, "dist");
+const packageDist = join(packageDirectory, "dist.staging");
+const replacedDist = join(packageDirectory, "dist.replaced");
 const wasmDirectory = join(packageDist, "wasm");
 // SAFETY: this repository-owned package.json supplies the build artifact identity.
 const packageManifest = JSON.parse(
@@ -112,8 +124,13 @@ const buildInfo = {
 };
 writeFileSync(join(packageDist, "build-info.json"), `${JSON.stringify(buildInfo, null, 2)}\n`);
 
+rmSync(replacedDist, { recursive: true, force: true });
+if (existsSync(publishedDist)) renameSync(publishedDist, replacedDist);
+renameSync(packageDist, publishedDist);
+rmSync(replacedDist, { recursive: true, force: true });
+
 process.stdout.write(
-	`WASM browser and Node artifacts assembled at ${packageDist} for ${packageManifest.name}@${packageManifest.version}.\n`
+	`WASM browser and Node artifacts assembled at ${publishedDist} for ${packageManifest.name}@${packageManifest.version}.\n`
 );
 
 function validateGeneratedManifest(outputDirectory: string, target: string, version: string) {

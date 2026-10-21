@@ -124,16 +124,41 @@ it.live(
 							({ summary }) =>
 								!culture || !summary.culture || summary.culture === culture
 						);
+						const severityCounts = Object.fromEntries(
+							CheckSeverity.literals.map((severity) => [
+								severity,
+								inCulture.filter(({ summary }) => summary.severity === severity)
+									.length
+							])
+						);
+						const ruleCounts = new Map<string, number>();
+						for (const { finding } of inCulture)
+							ruleCounts.set(
+								finding.ruleId,
+								(ruleCounts.get(finding.ruleId) ?? 0) + 1
+							);
+						const counts = Object.fromEntries(
+							BuiltInQualityFilter.literals.map((kind) => [
+								kind,
+								kind === "all"
+									? inCulture.length
+									: inCulture.filter(({ summary }) => summary.filter === kind)
+											.length
+							])
+						);
 						for (const filter of BuiltInQualityFilter.literals) {
 							const selected = inCulture.filter(
 								({ summary }) => filter === "all" || summary.filter === filter
 							);
-							for (const offset of [
+							const suggestedFixCount = selected.filter(({ finding }) =>
+								eligibleLocalizationChange(finding)
+							).length;
+							for (const offset of new Set([
 								0,
 								50,
 								Math.max(0, selected.length - 25),
 								selected.length
-							]) {
+							])) {
 								const request: WorkspaceQualityRequest = {
 									target: target.name,
 									filter,
@@ -148,31 +173,13 @@ it.live(
 									selected.slice(offset, offset + 50).map((item) => item.summary)
 								);
 								expect(page.total).toBe(selected.length);
-								for (const severity of CheckSeverity.literals)
-									expect(page.severityCounts[severity]).toBe(
-										inCulture.filter(
-											({ summary }) => summary.severity === severity
-										).length
-									);
+								expect(page.severityCounts).toEqual(severityCounts);
 								for (const rule of page.rules)
 									expect(rule.findingCount).toBe(
-										inCulture.filter(
-											({ finding }) => finding.ruleId === rule.ruleId
-										).length
+										ruleCounts.get(rule.ruleId) ?? 0
 									);
-								expect(page.suggestedFixCount).toBe(
-									selected.filter(({ finding }) =>
-										eligibleLocalizationChange(finding)
-									).length
-								);
-								for (const kind of BuiltInQualityFilter.literals)
-									expect(page.counts[kind]).toBe(
-										kind === "all"
-											? inCulture.length
-											: inCulture.filter(
-													({ summary }) => summary.filter === kind
-												).length
-									);
+								expect(page.suggestedFixCount).toBe(suggestedFixCount);
+								expect(page.counts).toEqual(counts);
 								const beforeFacts = facts;
 								indexed.search({ ...request, offset: offset + 50 });
 								expect(facts).toBe(beforeFacts);

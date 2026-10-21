@@ -58,6 +58,9 @@ describe("asset inspector", () => {
 		expect(summary.textContent).toContain("1.0 KB");
 		expect(summary.textContent).not.toContain("Licensee 0");
 		expect(within(summary).getByRole("button", { name: "Open another .uasset" })).toBeDefined();
+
+		expect(screen.queryByText("Related views")).toBeNull();
+		expect(screen.queryByText(/No graph view/)).toBeNull();
 	});
 
 	it("derives DataTable columns across rows and filters decoded values", async () => {
@@ -140,14 +143,6 @@ describe("asset inspector", () => {
 		fireEvent.input(screen.getByRole("searchbox"), { target: { value: "Row_204" } });
 		await waitFor(() => expect(table.textContent).toContain("Row_204"));
 		expect(within(table).getAllByRole("row").length).toBe(2);
-	});
-
-	it("shows no related-view UI for non-Blueprints", async () => {
-		mount([stringTable]);
-		await screen.findByRole("table", { name: "String table entries" });
-		expect(screen.queryByText("Related views")).toBeNull();
-		expect(screen.queryByText(/No graph view/)).toBeNull();
-		expect(screen.queryByRole("link", { name: "Open in Blueprint viewer" })).toBeNull();
 	});
 
 	it("hides both export navigators for a single export", async () => {

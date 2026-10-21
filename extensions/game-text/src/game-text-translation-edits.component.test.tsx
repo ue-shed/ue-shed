@@ -310,3 +310,64 @@ it("retains an oversized typed draft and refuses to stage it as a PO edit", asyn
 	expect(screen.getByText("Draft length 65537")).toBeDefined();
 	expect(screen.queryByRole("button", { name: "1 staged" })).toBeNull();
 });
+
+it("keeps stale edits staged and explains why nothing was written", async () => {
+	const target = LocalizationSelection.fields.target.make("Game");
+	const edit = LocalizationEdit.make({
+		culture: LocalizationEdit.fields.culture.make("fr"),
+		namespace: LocalizationEdit.fields.namespace.make("UI"),
+		key: LocalizationEdit.fields.key.make("K"),
+		seenTranslation: "Before",
+		translation: "After"
+	});
+	function StaleEdit() {
+		const model = createGameTextEdits({
+			target: () => target,
+			nativeCulture: () => "en",
+			busy: () => false,
+			onWritten: () => {
+				throw new Error("Stale edits must not be written");
+			},
+			initial: { staged: [{ target, edit, source: "Source" }], drafts: [] },
+			client: {
+				localizationEdits: (request) =>
+					Effect.succeed({
+						status: "reviewed",
+						edits: request.edits.map((item) => ({
+							culture: item.culture,
+							namespace: item.namespace,
+							key: item.key,
+							outcome: "stale_translation",
+							currentTranslation: "Changed elsewhere",
+							translation: item.translation
+						})),
+						files: [],
+						notSynced: 1
+					})
+			}
+		});
+		return (
+			<>
+				<StagedEditsButton model={model} />
+				<StagedEditsPanel model={model} />
+			</>
+		);
+	}
+	render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<StaleEdit />
+		</EffectRuntimeProvider>
+	));
+	const user = userEvent.setup({ delay: null });
+	await user.click(screen.getByRole("button", { name: "1 staged" }));
+	const panel = screen.getByRole("region", { name: "Staged translations" });
+	await user.click(within(panel).getByRole("button", { name: "Check changes" }));
+	await within(panel).findByText("The translation changed since you staged this");
+	expect(within(panel).getByRole("button", { name: "Write to PO" })).toHaveProperty(
+		"disabled",
+		true
+	);
+	expect(within(panel).getByText("After")).toBeDefined();
+	await user.click(within(panel).getByRole("button", { name: "Unstage" }));
+	expect(screen.queryByRole("region", { name: "Staged translations" })).toBeNull();
+});

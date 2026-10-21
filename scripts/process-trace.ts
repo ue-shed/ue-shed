@@ -9,23 +9,27 @@ import type { SpawnSyncReturns } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { startSpan, traceFile, withSpan, type Span } from "./gate-trace.ts";
+import {
+	startSpan,
+	traceFile,
+	withExplicitProcessSpan,
+	withSpan,
+	type Span,
+	type SpanAttributes
+} from "./gate-trace.ts";
 
 /**
  * Runs `run` (which spawns `command`) inside a span. Node processes, including pnpm, already record
  * their own process span, so they run without one here.
  */
-export function traceProcess<Output>(
+export function traceProcess<Output extends string | Buffer>(
 	command: string,
 	args: readonly string[],
 	run: () => SpawnSyncReturns<Output>
 ): SpawnSyncReturns<Output> {
-	if (
-		!traceFile() ||
-		command === process.execPath ||
-		/^(?:pnpm|npm)(?:\.cmd)?$/i.test(basename(command))
-	) {
-		return run();
+	if (!traceFile()) return run();
+	if (command === process.execPath || /^(?:pnpm|npm)(?:\.cmd)?$/i.test(basename(command))) {
+		return withExplicitProcessSpan(run);
 	}
 	const tool = basename(command);
 	const projectFile = args.find((arg) => arg.toLowerCase().endsWith(".uproject"));
@@ -36,7 +40,18 @@ export function traceProcess<Output>(
 		.join(" ");
 	const isBuild = /^build\.(?:bat|sh)$/i.test(tool);
 	if (!isBuild && projectFile === undefined) {
-		return withSpan(`${tool} ${args.join(" ")}`.slice(0, 160), {}, run, processStatus);
+		return withSpan(
+			`${tool} ${args.join(" ")}`.slice(0, 160),
+			{},
+			(span) => {
+				const result = withExplicitProcessSpan(run);
+				if (/^cargo(?:\.exe)?$/i.test(tool)) {
+					span.setAttributes(cargoAttributes(outputText(result.stderr)));
+				}
+				return result;
+			},
+			processStatus
+		);
 	}
 	const name = isBuild
 		? `UnrealBuildTool ${args[0] ?? ""}`
@@ -51,7 +66,7 @@ export function traceProcess<Output>(
 		},
 		(span) => {
 			try {
-				return run();
+				return withExplicitProcessSpan(run);
 			} finally {
 				if (isBuild) describeBuild(span);
 				else if (projectFile) describeEditorRun(span, projectFile);
@@ -59,6 +74,33 @@ export function traceProcess<Output>(
 		},
 		processStatus
 	);
+}
+
+/** Text of captured process output, or "" when it went to the terminal. */
+export function outputText(output: string | Buffer | null | undefined) {
+	if (output === null || output === undefined) return "";
+	return Buffer.isBuffer(output) ? output.toString("utf8") : output;
+}
+
+const cargoFinished = /Finished `([\w-]+)` profile .*? in (?:(\d+)m )?([\d.]+)s/g;
+
+/**
+ * Compile attributes from Cargo's output: how many crates it compiled, which profiles it built and
+ * how long building took. `cargo test` runs tests after its build finishes, so the rest of its span
+ * is test time. Empty output (inherited stdio) yields no attributes.
+ */
+export function cargoAttributes(output: string): SpanAttributes {
+	const finished = [...output.matchAll(cargoFinished)];
+	if (finished.length === 0) return {};
+	const buildMs = finished.reduce(
+		(sum, match) => sum + (Number(match[2] ?? 0) * 60 + Number(match[3])) * 1000,
+		0
+	);
+	return {
+		"cargo.compiled_crates": output.match(/^\s*Compiling /gm)?.length ?? 0,
+		"cargo.profiles": [...new Set(finished.map((match) => match[1]))].join(" "),
+		"cargo.build_ms": Math.round(buildMs)
+	};
 }
 
 function processStatus(result: SpawnSyncReturns<unknown>) {

@@ -38,7 +38,13 @@ it.skipIf(!executable)(
 	async () => {
 		if (!executable) throw new Error("Native reader is required");
 		await withJoinCache(async (cache) => {
-			for (let seed = 0; seed < 32; seed++) {
+			const count =
+				process.env.UE_SHED_JOIN_FUZZ_SWEEP === "1"
+					? Number(process.env.UE_SHED_NATIVE_JOIN_FUZZ_SEEDS ?? 32)
+					: 8;
+			if (!Number.isSafeInteger(count) || count < 1)
+				throw new Error("Native fuzz seed count must be positive.");
+			for (let seed = 0; seed < count; seed++) {
 				const directory = join(cache, String(seed));
 				await mkdir(directory);
 				const differences = await compareJoinFuzzInput(

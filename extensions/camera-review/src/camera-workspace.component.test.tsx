@@ -12,7 +12,8 @@ import type {
 	CameraWorkspaceRequest,
 	CameraWorkspaceResult
 } from "@ue-shed/cameras/review-contracts";
-import { Effect, Layer, ManagedRuntime, Stream } from "effect";
+import { Effect, ManagedRuntime, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "@testing-library/user-event";
 import {
@@ -24,7 +25,7 @@ import { CameraWorkspace } from "./camera-workspace.js";
 afterEach(cleanup);
 describe("camera workspace", () => {
 	it("reviews a conflict and submits an explicit recovery choice by keyboard", async () => {
-		const runtime = ManagedRuntime.make(Layer.empty);
+		const runtime = ManagedRuntime.make(TestClock.layer());
 		const arrangement = fixtureArrangement();
 		const panel = cameraAuthoringPanelState(
 			{ version: 1, arrangement, reviewSet: fixtureSet(), outcomes: [] },
@@ -78,7 +79,7 @@ describe("camera workspace", () => {
 				/>
 			</EffectRuntimeProvider>
 		));
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await user.click(
 			await screen.findByRole("button", { name: "Inspect pending camera edits" })
 		);
@@ -94,7 +95,7 @@ describe("camera workspace", () => {
 		await runtime.dispose();
 	});
 	it("submits first-set creation and keeps a failed create visible across background refreshes", async () => {
-		const runtime = ManagedRuntime.make(Layer.empty);
+		const runtime = ManagedRuntime.make(TestClock.layer());
 		const requests: CameraWorkspaceRequest[] = [];
 		const opened = vi.fn();
 		let failCreate = true;
@@ -136,7 +137,7 @@ describe("camera workspace", () => {
 				/>
 			</EffectRuntimeProvider>
 		));
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await user.click(await screen.findByRole("button", { name: "New camera set" }));
 		await user.type(screen.getByRole("textbox", { name: "Set name" }), "First cameras");
 		await user.selectOptions(screen.getByRole("combobox", { name: "Camera preset" }), "Orbit");
@@ -154,6 +155,7 @@ describe("camera workspace", () => {
 			}
 		});
 		const priorPolls = polls;
+		await runtime.runPromise(TestClock.adjust("750 millis"));
 		await waitFor(() => expect(polls).toBeGreaterThan(priorPolls), { timeout: 2500 });
 		expect(screen.getByRole("alert").textContent).toContain("Select one actor");
 		failCreate = false;
@@ -164,7 +166,7 @@ describe("camera workspace", () => {
 		await runtime.dispose();
 	});
 	it("loads one set, scopes edits, preserves the canvas, and saves all its views", async () => {
-		const runtime = ManagedRuntime.make(Layer.empty);
+		const runtime = ManagedRuntime.make(TestClock.layer());
 		let arrangement = fixtureArrangement();
 		arrangement = {
 			...arrangement,
@@ -257,6 +259,7 @@ describe("camera workspace", () => {
 			action: { kind: "approve", cameraIds: arrangement.cameras.map((camera) => camera.id) }
 		});
 		published++;
+		await runtime.runPromise(TestClock.adjust("750 millis"));
 		await waitFor(() => expect(saved).toBe(2), { timeout: 2500 });
 		cleanup();
 		await runtime.dispose();

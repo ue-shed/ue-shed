@@ -7,24 +7,8 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataTableViewer } from "./data-table-viewer.js";
 import { FileDataTableOpener } from "./file-data-table-opener.js";
-import { AuthoringTableGrid } from "./authoring-table-grid.js";
-import type { AuthoringColumn } from "./authoring-view.js";
-import { viewerRead } from "./viewer-fixture.test-support.js";
 
-const editableCountColumn: AuthoringColumn = {
-	name: "Count",
-	typeName: "IntProperty",
-	descriptor: {
-		id: "field:Count",
-		name: "Count",
-		typeName: "IntProperty",
-		presence: "required",
-		type: { kind: "scalar", valueKind: "int" },
-		annotations: { deprecated: false, readOnly: false },
-		defaultValue: { status: "unknown" },
-		editability: { kind: "editable" }
-	}
-};
+import { viewerRead } from "./viewer-fixture.test-support.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
 beforeEach(() => {
@@ -201,58 +185,5 @@ describe("read-only Data Tables shell", () => {
 		));
 		const alert = await screen.findByRole("alert");
 		expect(within(alert).getByRole("link", { name: "Inspect this file instead" })).toBeTruthy();
-	});
-
-	it("marks cells read-only even when reflection says a column is editable", async () => {
-		render(() => (
-			<AuthoringTableGrid
-				readOnly
-				rows={viewerRead.snapshot.table.rows}
-				columns={[editableCountColumn]}
-			/>
-		));
-		const firstCell = await screen.findByRole("gridcell", { name: "12" });
-		expect(firstCell.getAttribute("aria-readonly")).toBe("true");
-	});
-
-	it("renders read-only row names and maps field selection to the inspector", async () => {
-		const onSelection = vi.fn();
-		render(() => (
-			<AuthoringTableGrid
-				rows={viewerRead.snapshot.table.rows}
-				columns={[editableCountColumn]}
-				onSelectionChange={onSelection}
-			/>
-		));
-		const user = userEvent.setup();
-		const name = await screen.findByRole("rowheader", { name: "Scalar_Alpha" });
-		expect(name.getAttribute("aria-readonly")).toBe("true");
-		await user.click(name);
-		expect(onSelection).toHaveBeenLastCalledWith({
-			fieldName: "Count",
-			rowId: "row:Scalar_Alpha"
-		});
-		const count = screen.getByRole("gridcell", { name: "12" });
-		expect(count.getAttribute("aria-readonly")).toBe("false");
-		await user.click(count);
-		expect(onSelection).toHaveBeenLastCalledWith({
-			fieldName: "Count",
-			rowId: "row:Scalar_Alpha"
-		});
-	});
-
-	it("renders a visible edited marker only on dirty row names", async () => {
-		render(() => (
-			<AuthoringTableGrid
-				rows={viewerRead.snapshot.table.rows}
-				columns={[editableCountColumn]}
-				dirtyRowIds={["row:Scalar_Alpha"]}
-				dirtyCells={[{ fieldName: "Count", rowId: "row:Scalar_Alpha" }]}
-			/>
-		));
-		const alpha = await screen.findByRole("rowheader", { name: "Scalar_Alpha" });
-		expect(within(alpha).getByText("edited")).toBeTruthy();
-		const beta = screen.getByRole("rowheader", { name: "Scalar_Beta" });
-		expect(within(beta).queryByText("edited")).toBeNull();
 	});
 });

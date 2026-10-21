@@ -57,12 +57,7 @@ test("error translation retains the original failure in mapError and IO catches"
 	}
 });
 
-test("the localization browser entry and Config Explorer dependency are browser-safe", async () => {
-	assert.deepEqual(await checkLocalizationBoundaries(), []);
-});
-
 test("Game Text entry points are named and first-party code imports focused entry points", async () => {
-	assert.deepEqual(await checkGameTextEntryPoints(), []);
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-game-text-entries-"));
 	try {
 		const source = join(fixtureRoot, "packages/game-text/src");

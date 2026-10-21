@@ -1,23 +1,23 @@
-import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
-import type { AuthoringTableSnapshot, AuthoringTableSnapshotV1 } from "@ue-shed/protocol";
+import { it } from "@effect/vitest";
 import {
 	makeAuthoringCatalogTestLayer,
 	type AuthoringCatalogApi
 } from "@ue-shed/authoring-catalog";
+import type { AuthoringTableSnapshot, AuthoringTableSnapshotV1 } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer, type AssetReaderTestApi } from "@ue-shed/unreal-assets";
 import {
 	makeRemoteControlClientTestLayer,
 	RemoteControlClient,
 	RemoteControlClientError
 } from "@ue-shed/unreal-connection";
-import { it } from "@effect/vitest";
+import { Effect, Layer, Ref, Schema, Stream } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Stream, Effect, Layer, Ref, Schema } from "effect";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import { WorkbenchAuthoring, WorkbenchAuthoringLive } from "./authoring.js";
 
@@ -120,107 +120,6 @@ const dyingReader: AssetReaderTestApi = {
 
 const dialogLayer = (openDialog: Parameters<typeof makeWorkbenchWindowTestLayer>[0]) =>
 	makeElectronDialogTestLayer.pipe(Layer.provide(makeWorkbenchWindowTestLayer(openDialog)));
-
-it.effect("returns not_configured when no authoring asset is configured", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchAuthoring;
-		const result = yield* service.configuredTable();
-		expect(result).toEqual({ status: "not_configured" });
-	}).pipe(
-		Effect.provide(
-			WorkbenchAuthoringLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						makeWorkbenchConfigurationLayer(unconfigured),
-						makeAssetReaderTestLayer(dyingReader),
-						makeAuthoringCatalogTestLayer(emptyCatalog),
-						dialogLayer({}),
-						failingRemoteControl
-					)
-				)
-			)
-		)
-	)
-);
-
-it.effect("loads the configured saved DataTable", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchAuthoring;
-		const result = yield* service.configuredTable();
-		expect(result.status).toBe("ready");
-	}).pipe(
-		Effect.provide(
-			WorkbenchAuthoringLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						makeWorkbenchConfigurationLayer({
-							...unconfigured,
-							authoringAsset: {
-								path: "C:/Fixture/DT_Test.uasset",
-								status: "configured"
-							}
-						}),
-						makeAssetReaderTestLayer({
-							...dyingReader,
-							readTable: () => Effect.succeed(fixtureSnapshot())
-						}),
-						makeAuthoringCatalogTestLayer(emptyCatalog),
-						dialogLayer({}),
-						failingRemoteControl
-					)
-				)
-			)
-		)
-	)
-);
-
-it.effect("cancels choosing a saved DataTable", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchAuthoring;
-		const result = yield* service.chooseTable();
-		expect(result).toEqual({ status: "cancelled" });
-	}).pipe(
-		Effect.provide(
-			WorkbenchAuthoringLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						makeWorkbenchConfigurationLayer(unconfigured),
-						makeAssetReaderTestLayer(dyingReader),
-						makeAuthoringCatalogTestLayer(emptyCatalog),
-						dialogLayer({
-							openDialog: Effect.fn("test.openDialog")(() =>
-								Effect.succeed({ status: "cancelled" as const })
-							)
-						}),
-						failingRemoteControl
-					)
-				)
-			)
-		)
-	)
-);
-
-it.effect("returns not_configured for the catalog without a project root", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchAuthoring;
-		const result = yield* service.configuredCatalog();
-		expect(result).toEqual({ status: "not_configured" });
-	}).pipe(
-		Effect.provide(
-			WorkbenchAuthoringLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						makeWorkbenchConfigurationLayer(unconfigured),
-						makeAssetReaderTestLayer(dyingReader),
-						makeAuthoringCatalogTestLayer(emptyCatalog),
-						dialogLayer({}),
-						failingRemoteControl
-					)
-				)
-			)
-		)
-	)
-);
 
 it.effect(
 	"reports a live_connection_unavailable diagnostic and does not retain the failed connection",

@@ -1,54 +1,39 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { PUBLIC_PACKAGES } from "./pack-public-packages.ts";
 import {
-	assertReusableCheck,
+	gateFingerprint,
+	type GateResult,
+	type ReleaseEvidence,
+	type TreeEntry
+} from "./release-evidence.ts";
+import { RELEASE_GATES } from "./release-gates.ts";
+import {
 	assertPublicationConfirmation,
+	packedPublishPlan,
 	parseReleaseArguments,
 	publicationConfirmationPhrase,
 	releaseEnvironment,
-	runRelease
+	releaseGateCoverage,
+	validatedIntegrity,
+	runRelease,
+	verifyPackedRelease
 } from "./release.ts";
 
-test("release discovers rustup through a normalized PATH without mutating the shell", (context) => {
-	const directory = mkdtempSync(join(tmpdir(), "ue-shed-release-"));
-	context.after(() => rmSync(directory, { recursive: true, force: true }));
-	const cargoHome = join(directory, "cargo");
-	const cargoBin = join(cargoHome, "bin");
-	mkdirSync(cargoBin, { recursive: true });
-	const executable =
-		process.platform === "win32"
-			? "release-environment-probe.exe"
-			: "release-environment-probe";
-	const executablePath = join(cargoBin, executable);
-	if (process.platform === "win32") {
-		copyFileSync(process.execPath, executablePath);
-	} else {
-		writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
-		chmodSync(executablePath, 0o755);
-	}
-	const environment = { Path: "existing-tools", CARGO_HOME: cargoHome };
-	const result = releaseEnvironment(environment, directory);
+test("release puts the running Node first in one normalized PATH without mutating the shell", () => {
+	const environment = { Path: "existing-tools", OTHER: "kept" };
+	const result = releaseEnvironment(environment);
 	assert.deepEqual(
 		Object.keys(result).filter((key) => key.toLowerCase() === "path"),
 		["PATH"]
 	);
-	assert.ok(result.PATH?.split(delimiter).includes("existing-tools"));
-	assert.ok(result.PATH?.split(delimiter).includes(cargoBin));
-	assert.equal(spawnSync(executable, [], { env: result }).status, 0);
-	assert.equal(result.CARGO_TARGET_DIR, resolve(import.meta.dirname, "..", "target"));
-	assert.deepEqual(environment, { Path: "existing-tools", CARGO_HOME: cargoHome });
-});
-
-test("release respects custom Cargo installation and build output", () => {
-	const cargoHome = resolve("custom-cargo");
-	const target = resolve("shared-target");
-	const result = releaseEnvironment({ CARGO_HOME: cargoHome, CARGO_TARGET_DIR: target });
-	assert.ok(result.PATH?.split(delimiter).includes(join(cargoHome, "bin")));
-	assert.equal(result.CARGO_TARGET_DIR, target);
+	assert.deepEqual(result.PATH?.split(delimiter), [dirname(process.execPath), "existing-tools"]);
+	assert.equal(result.OTHER, "kept");
+	assert.deepEqual(environment, { Path: "existing-tools", OTHER: "kept" });
 });
 
 test("requires the exact versioned publication phrase", () => {
@@ -64,24 +49,36 @@ test("requires the exact versioned publication phrase", () => {
 	);
 });
 
-test("waits for confirmation after checks and before publication", async () => {
-	const events: string[] = [];
-	await runRelease({
+function steps(events: string[], commits: readonly string[] = ["a".repeat(40)]) {
+	let validations = 0;
+	return {
 		validateSource: () => {
 			events.push("validate-source");
-			return "a".repeat(40);
+			const commit = commits[Math.min(validations, commits.length - 1)]!;
+			validations += 1;
+			return commit;
 		},
-		check: () => events.push("check"),
+		verify: (commit: string) => {
+			events.push("verify");
+			return commit;
+		},
 		confirm: async () => {
 			events.push("confirm-start");
 			await Promise.resolve();
 			events.push("confirm-end");
 		},
-		publish: () => events.push("publish")
-	});
+		publish: () => {
+			events.push("publish");
+		}
+	};
+}
+
+test("verifies evidence, then waits for confirmation before publication", async () => {
+	const events: string[] = [];
+	await runRelease(steps(events));
 	assert.deepEqual(events, [
 		"validate-source",
-		"check",
+		"verify",
 		"confirm-start",
 		"confirm-end",
 		"validate-source",
@@ -89,69 +86,51 @@ test("waits for confirmation after checks and before publication", async () => {
 	]);
 });
 
-test("does not check or publish when the release source is dirty", async () => {
+test("does not verify or publish when the release source is dirty", async () => {
 	const events: string[] = [];
 	await assert.rejects(
 		() =>
 			runRelease({
+				...steps(events),
 				validateSource: () => {
 					events.push("validate-source");
 					throw new Error("release source is dirty");
-				},
-				check: () => events.push("check"),
-				confirm: async () => {
-					events.push("confirm");
-				},
-				publish: () => events.push("publish")
+				}
 			}),
 		/release source is dirty/
 	);
 	assert.deepEqual(events, ["validate-source"]);
 });
 
-test("does not publish when the source changes during release checks", async () => {
+test("does not publish when the source changes before publication", async () => {
 	const events: string[] = [];
-	let validationCount = 0;
 	await assert.rejects(
-		() =>
-			runRelease({
-				validateSource: () => {
-					validationCount += 1;
-					events.push("validate-source");
-					return validationCount === 1 ? "a".repeat(40) : "b".repeat(40);
-				},
-				check: () => events.push("check"),
-				confirm: async () => {
-					events.push("confirm");
-				},
-				publish: () => events.push("publish")
-			}),
+		() => runRelease(steps(events, ["a".repeat(40), "b".repeat(40)])),
 		/Release source changed from a{40} to b{40} during validation\./
 	);
-	assert.deepEqual(events, ["validate-source", "check", "confirm", "validate-source"]);
+	assert.deepEqual(events, [
+		"validate-source",
+		"verify",
+		"confirm-start",
+		"confirm-end",
+		"validate-source"
+	]);
 });
 
-test("does not request confirmation or publish when checks fail", async () => {
+test("does not request confirmation or publish when the evidence does not cover the release", async () => {
 	const events: string[] = [];
 	await assert.rejects(
 		() =>
 			runRelease({
-				validateSource: () => {
-					events.push("validate-source");
-					return "a".repeat(40);
-				},
-				check: () => {
-					events.push("check");
-					throw new Error("checks failed");
-				},
-				confirm: async () => {
-					events.push("confirm");
-				},
-				publish: () => events.push("publish")
+				...steps(events),
+				verify: () => {
+					events.push("verify");
+					throw new Error("Release evidence does not cover");
+				}
 			}),
-		/checks failed/
+		/Release evidence does not cover/
 	);
-	assert.deepEqual(events, ["validate-source", "check"]);
+	assert.deepEqual(events, ["validate-source", "verify"]);
 });
 
 test("does not publish when confirmation is blank or interrupted", async () => {
@@ -159,101 +138,231 @@ test("does not publish when confirmation is blank or interrupted", async () => {
 	await assert.rejects(
 		() =>
 			runRelease({
-				validateSource: () => {
-					events.push("validate-source");
-					return "a".repeat(40);
-				},
-				check: () => events.push("check"),
+				...steps(events),
 				confirm: async () => {
 					events.push("confirm");
 					assertPublicationConfirmation("", "0.5.2");
-				},
-				publish: () => events.push("publish")
+				}
 			}),
 		/expected the exact phrase "publish 0\.5\.2"/
 	);
-	assert.deepEqual(events, ["validate-source", "check", "confirm"]);
+	assert.deepEqual(events, ["validate-source", "verify", "confirm"]);
 });
 
-const releaseNotes = "docs/releases/0.5.2.md";
+const tree: readonly TreeEntry[] = [
+	{ path: "packages/game-text/src/index.ts", object: "1".repeat(40) },
+	{ path: "packages/game-text/CHANGELOG.md", object: "2".repeat(40) },
+	{ path: "docs/releases/0.5.2.md", object: "3".repeat(40) }
+];
 
-function reuse(commit: string, changes: readonly string[] = []) {
-	return { commit, releaseNotes, changesSince: () => changes };
+function edited(path: string): TreeEntry[] {
+	return tree.map((entry) => (entry.path === path ? { path, object: "9".repeat(40) } : entry));
 }
 
-test("skips the gate for the exact checked release commit", async () => {
-	const events: string[] = [];
-	await runRelease({
-		validateSource: () => {
-			events.push("validate-source");
-			return "a".repeat(40);
-		},
-		check: () => events.push("check"),
-		confirm: async () => {
-			events.push("confirm");
-		},
-		publish: () => events.push("publish"),
-		reuseCheck: reuse("a".repeat(40))
+function passedOn(entries: readonly TreeEntry[]): ReleaseEvidence {
+	const gates: Record<string, GateResult> = {};
+	for (const gate of RELEASE_GATES) {
+		gates[gate.id] = {
+			status: gate.id === "plugins-4.27" ? "unavailable" : "passed",
+			scope: gate.scope,
+			fingerprint: gateFingerprint(gate.scope, entries),
+			commit: "c".repeat(40),
+			finishedAt: "2026-10-21T00:00:00.000Z",
+			durationMs: 1,
+			trace: "out/release-prepare/run"
+		};
+	}
+	return { schemaVersion: 1, version: "0.5.2", gates };
+}
+
+test("evidence for the same inputs covers every required gate, including an unavailable engine", () => {
+	assert.deepEqual(releaseGateCoverage(passedOn(tree), tree).problems, []);
+});
+
+test("a changelog edit only invalidates the gates that read changelogs", () => {
+	const { problems } = releaseGateCoverage(
+		passedOn(tree),
+		edited("packages/game-text/CHANGELOG.md")
+	);
+	assert.deepEqual(problems, [
+		`release-text: inputs changed since it passed on ${"c".repeat(10)}`,
+		`pack: inputs changed since it passed on ${"c".repeat(10)}`
+	]);
+});
+
+test("a release-notes edit only invalidates the release-text gate", () => {
+	const { problems } = releaseGateCoverage(passedOn(tree), edited("docs/releases/0.5.2.md"));
+	assert.deepEqual(problems, [
+		`release-text: inputs changed since it passed on ${"c".repeat(10)}`
+	]);
+});
+
+test("a source edit invalidates every gate", () => {
+	const { problems } = releaseGateCoverage(
+		passedOn(tree),
+		edited("packages/game-text/src/index.ts")
+	);
+	// An engine recorded as unavailable is rechecked too: it may be installed by now.
+	assert.equal(problems.length, RELEASE_GATES.length);
+});
+
+test("missing and failed gates block the release; --without-unreal drops only Unreal gates", () => {
+	const evidence = passedOn(tree);
+	const { check: _check, ...withoutCheck } = evidence.gates;
+	const failedMatrix: ReleaseEvidence = {
+		...evidence,
+		gates: {
+			...withoutCheck,
+			"engine-matrix": { ...evidence.gates["engine-matrix"]!, status: "failed" }
+		}
+	};
+	assert.deepEqual(releaseGateCoverage(failedMatrix, tree).problems, [
+		"check: no evidence",
+		`engine-matrix: failed on ${"c".repeat(10)}`
+	]);
+	assert.deepEqual(
+		releaseGateCoverage(failedMatrix, tree, { withoutUnreal: "docs-only release" }).problems,
+		["check: no evidence"]
+	);
+});
+
+test("parses --without-unreal and rejects unknown release arguments", () => {
+	assert.deepEqual(parseReleaseArguments([]), { withoutUnreal: undefined });
+	assert.deepEqual(parseReleaseArguments(["--without-unreal", "docs-only release"]), {
+		withoutUnreal: "docs-only release"
 	});
-	assert.deepEqual(events, ["validate-source", "confirm", "validate-source", "publish"]);
+	assert.throws(() => parseReleaseArguments(["--without-unreal", " "]), /needs the reason/);
+	assert.throws(() => parseReleaseArguments(["--checked", "a".repeat(40)]));
 });
 
-test("reuses a check when only the release notes changed since it", () => {
-	assert.doesNotThrow(() =>
-		assertReusableCheck(reuse("b".repeat(40), [releaseNotes]), "a".repeat(40))
+function writePack(directory: string, version: string, commit: string) {
+	const packages = PUBLIC_PACKAGES.map(({ name }) => {
+		const filename = `${name.slice(1).replace("/", "-")}-${version}.tgz`;
+		const bytes = Buffer.from(`${name}@${version}`);
+		writeFileSync(join(directory, filename), bytes);
+		return {
+			name,
+			version,
+			license: "MIT",
+			filename,
+			sha256: createHash("sha256").update(bytes).digest("hex"),
+			bytes: bytes.length
+		};
+	});
+	writeFileSync(
+		join(directory, "packages-manifest.json"),
+		JSON.stringify({ schemaVersion: 1, version, packages })
 	);
-});
-
-test("does not confirm or publish when the release changed beyond its notes", async () => {
-	const events: string[] = [];
-	await assert.rejects(
-		() =>
-			runRelease({
-				validateSource: () => {
-					events.push("validate-source");
-					return "a".repeat(40);
-				},
-				check: () => events.push("check"),
-				confirm: async () => {
-					events.push("confirm");
-				},
-				publish: () => events.push("publish"),
-				reuseCheck: reuse("b".repeat(40), [releaseNotes, "scripts/release.ts"])
-			}),
-		/--checked b{40} differs from release HEAD a{40} beyond docs\/releases\/0\.5\.2\.md \(scripts\/release\.ts\); rerun pnpm check\./
+	writeFileSync(
+		join(directory, "pack-evidence.json"),
+		JSON.stringify({
+			schemaVersion: 1,
+			version,
+			commit,
+			packedAt: "2026-10-21T00:00:00.000Z",
+			node: "v26.12.0"
+		})
 	);
-	assert.deepEqual(events, ["validate-source"]);
-});
+	return packages;
+}
 
-test("does not reuse a check from a commit outside the release history", () => {
+test("publishes only an untouched pack of the evidence commit", (context) => {
+	const directory = mkdtempSync(join(tmpdir(), "ue-shed-release-pack-"));
+	context.after(() => rmSync(directory, { recursive: true, force: true }));
+	const packages = writePack(directory, "0.5.2", "c".repeat(40));
+	assert.equal(verifyPackedRelease(directory, "0.5.2", "c".repeat(40)).length, packages.length);
 	assert.throws(
-		() =>
-			assertReusableCheck(
-				{
-					commit: "b".repeat(40),
-					releaseNotes,
-					changesSince: () => {
-						throw new Error("not an ancestor");
+		() => verifyPackedRelease(directory, "0.5.2", "d".repeat(40)),
+		/packed from c{40}, not 0\.5\.2 from d{40}/
+	);
+	const before = packages[3]!;
+	assert.equal(
+		validatedIntegrity(directory, before),
+		`sha256-${createHash("sha256")
+			.update(Buffer.from(`${before.name}@0.5.2`))
+			.digest("base64")}`
+	);
+	writeFileSync(join(directory, before.filename), "rebuilt");
+	assert.throws(
+		() => verifyPackedRelease(directory, "0.5.2", "c".repeat(40)),
+		/changed after it was packed/
+	);
+	// A tarball replaced while the confirmation prompt waits is refused at publication too.
+	assert.throws(() => validatedIntegrity(directory, before), /changed after it was validated/);
+});
+
+test("points every planned publication at its validated tarball", () => {
+	const entries = PUBLIC_PACKAGES.slice(0, 2).map(({ name }, index) => ({
+		name,
+		version: "0.5.2",
+		license: "MIT",
+		filename: `package-${index}.tgz`,
+		sha256: "0".repeat(64),
+		bytes: 1
+	}));
+	const plan = packedPublishPlan(
+		{
+			version: 1,
+			plan: [
+				[
+					{
+						kind: "publish",
+						name: entries[0]!.name,
+						version: "0.5.2",
+						tag: "latest",
+						access: "public"
 					}
-				},
-				"a".repeat(40)
-			),
-		/not an ancestor/
+				],
+				[
+					{ kind: "publish", name: entries[1]!.name, version: "0.5.2", tag: "latest" },
+					{ kind: "tag-only", name: "@ue-shed/private-tool", version: "0.5.2" }
+				]
+			]
+		},
+		entries,
+		(entry) => `sha256-${entry.filename}`
 	);
-});
-
-test("requires a full lowercase commit for --checked", () => {
-	assert.throws(() => assertReusableCheck(reuse("abc1234"), "a".repeat(40)), /full 40-character/);
+	assert.deepEqual(plan.plan, [
+		[
+			{
+				kind: "publish",
+				name: entries[0]!.name,
+				version: "0.5.2",
+				tag: "latest",
+				access: "public",
+				tarball: { path: "package-0.tgz", integrity: "sha256-package-0.tgz" }
+			}
+		],
+		[
+			{
+				kind: "publish",
+				name: entries[1]!.name,
+				version: "0.5.2",
+				tag: "latest",
+				tarball: { path: "package-1.tgz", integrity: "sha256-package-1.tgz" }
+			},
+			{ kind: "tag-only", name: "@ue-shed/private-tool", version: "0.5.2" }
+		]
+	]);
 	assert.throws(
-		() => assertReusableCheck(reuse("A".repeat(40)), "a".repeat(40)),
-		/full 40-character/
+		() =>
+			packedPublishPlan(
+				{
+					version: 1,
+					plan: [
+						[
+							{
+								kind: "publish",
+								name: "@ue-shed/unpacked",
+								version: "0.5.2",
+								tag: "latest"
+							}
+						]
+					]
+				},
+				entries,
+				() => ""
+			),
+		/@ue-shed\/unpacked@0\.5\.2, which the validated pack does not contain/
 	);
-});
-
-test("parses --checked and rejects unknown release arguments", () => {
-	assert.deepEqual(parseReleaseArguments([]), { checkedCommit: undefined });
-	assert.deepEqual(parseReleaseArguments(["--checked", "a".repeat(40)]), {
-		checkedCommit: "a".repeat(40)
-	});
-	assert.throws(() => parseReleaseArguments(["--skip-check"]));
 });

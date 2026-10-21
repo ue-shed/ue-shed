@@ -1,7 +1,15 @@
 import { localDerivedDataCacheArguments } from "./unreal-plugin-host.ts";
 import { dirname, join } from "node:path";
 
-// Each entry is a fresh editor process. Never gather/export after the final two mutations.
+/**
+ * Each entry is a fresh editor process, so every fixture stage reads the packages the previous one
+ * saved. Consecutive GatherText operations share one process: GatherText splits `-config` on `;`
+ * and runs every config's steps in its phase order (manifests, archives, export, compile, reports),
+ * the order these operations would run in separately. Export and Compile leave the manifests and
+ * archives unchanged, so the gather's report is the same when it runs at the end. The engine
+ * matrix compares the resulting evidence with the committed oracles on every engine. Never
+ * gather/export after the final two mutations.
+ */
 export function localizationFixtureSteps(project: string, evidence: string) {
 	const common = [
 		project,
@@ -17,22 +25,22 @@ export function localizationFixtureSteps(project: string, evidence: string) {
 		"-LocalizationOnly",
 		`-LocalizationStage=${name}`
 	];
-	const operation = (name: string) => [
+	const operations = (...names: readonly string[]) => [
 		...common,
 		"-run=GatherText",
-		`-config=${join(dirname(project), "Config", "Localization", `FixtureGame_${name}.ini`)}`
+		`-config=${names
+			.map((name) =>
+				join(dirname(project), "Config", "Localization", `FixtureGame_${name}.ini`)
+			)
+			.join(";")}`
 	];
 	return [
 		stage("Initial"),
-		operation("Gather"),
+		operations("Gather"),
 		stage("Translate"),
-		operation("Export"),
-		operation("Compile"),
+		operations("Export", "Compile"),
 		stage("Outdate"),
-		operation("Gather"),
-		operation("Export"),
-		operation("Compile"),
-		operation("GenerateReports"),
+		operations("Gather", "Export", "Compile", "GenerateReports"),
 		stage("Unsynced"),
 		stage("AfterGather"),
 		[

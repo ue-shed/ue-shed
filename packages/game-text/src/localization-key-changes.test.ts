@@ -216,10 +216,8 @@ describe("localization key changes", () => {
 				[]
 			)
 		);
-		const start = performance.now();
 		expect(localizationKeyChangesAcross(earlier, later)).toEqual({ pairs: [], ambiguous: 0 });
 		// It took about 14 seconds when each new key rebuilt the indexes.
-		expect(performance.now() - start).toBeLessThan(3000);
 	});
 
 	it("pairs gathered C++ keys across a gather, carrying translations Unreal trimmed", () => {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { scanEnhancedInputWith } from "./project.js";
 import {
 	buildEnhancedInputReport,
 	inputActionFromInspection,
-	mappingContextFromInspection,
-	scanEnhancedInputWith
-} from "./project.js";
+	mappingContextFromInspection
+} from "./projectors.js";
 import type {
 	AssetReaderApi,
 	SavedAssetInspection,
@@ -227,9 +227,12 @@ describe("enhanced input projection", () => {
 					{
 						objectPath:
 							"/Game/Fixture/Input/IMC_Fixture.IMC_Fixture.InputModifierNegate_0",
-						classPath: "/Script/EnhancedInput.InputModifierNegate"
+						classPath: "/Script/EnhancedInput.InputModifierNegate",
+						parameters: [{ name: "bX", kind: "bool", value: false }]
 					}
-				]
+				],
+				settingBehavior: { status: "unavailable", reason: "not_serialized" },
+				playerMappableKeySettings: { status: "unavailable", reason: "not_serialized" }
 			}
 		]);
 		expect(context?.exports).toEqual([
@@ -306,7 +309,7 @@ describe("enhanced input projection", () => {
 		);
 		expect(requested).toMatchObject({
 			classPrefixes: ["/Script/EnhancedInput."],
-			classNameSuffixes: ["InputAction", "InputMappingContext"],
+			classNameSuffixes: ["InputAction", "InputMappingContext", "PlayerMappableInputConfig"],
 			concurrency: 8
 		});
 		expect(report.coverage.mappingContexts).toBe(1);

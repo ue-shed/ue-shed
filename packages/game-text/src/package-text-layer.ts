@@ -93,32 +93,6 @@ export interface PackageTextRefreshInput<E, R> {
 	};
 }
 
-/** Shards into `count` worker groups with similar numbers of packages to read; deterministic. */
-function packageTextGroups(
-	shards: readonly {
-		readonly name: string;
-		readonly entries: readonly { selected: boolean }[];
-	}[],
-	count: number
-) {
-	const groups = Array.from({ length: count }, () => ({ names: [] as string[], packages: 0 }));
-	const weighted = shards
-		.map((shard) => ({
-			name: shard.name,
-			packages: shard.entries.filter((entry) => entry.selected).length
-		}))
-		.sort(
-			(a, b) => b.packages - a.packages || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
-		);
-	for (const shard of weighted) {
-		let lightest = groups[0]!;
-		for (const group of groups) if (group.packages < lightest.packages) lightest = group;
-		lightest.names.push(shard.name);
-		lightest.packages += shard.packages;
-	}
-	return groups.map((group) => group.names);
-}
-
 /** Signature keys include eligibility, so header transitions invalidate reuse.
  * Digest framing prevents ambiguous concatenations. Inventory order is required to be path sorted.
  */
@@ -431,22 +405,22 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 				report();
 			});
 		const stage = input.stage;
-		const groups = stage ? packageTextGroups(occupied, workerCount) : undefined;
+		// One staging group per shard: a worker then holds one shard's lines at a time.
+		const groups = stage
+			? Array.from({ length: PACKAGE_TEXT_SHARDS }, (_, shard) => [shardName(shard)])
+			: undefined;
 		if (stage && groups) {
 			// The reader writes each group's records; unselected packages have none to write.
 			for (const shard of changed)
 				for (const { selected } of shard.entries) if (!selected) completed++;
 			report();
-			const groupOf = new Map(
-				groups.flatMap((names, group) => names.map((name) => [name, group] as const))
-			);
 			const paths = [...requested.keys()];
 			if (paths.length)
 				yield* stage
 					.read(
 						paths,
 						directory,
-						paths.map((path) => groupOf.get(shardName(packageTextShard(path)))!)
+						paths.map((path) => packageTextShard(path))
 					)
 					.pipe(Stream.runForEach((event) => receive(event.path)));
 		} else {

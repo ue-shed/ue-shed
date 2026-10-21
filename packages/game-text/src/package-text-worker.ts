@@ -91,37 +91,49 @@ async function writeShard(
 	return preparedStrings;
 }
 
+/**
+ * The path a staged line names, read without parsing its record: neither line shape has a nested
+ * value or an unescaped quote before its top-level `path` key. The parsed record must agree.
+ */
+function stagedLinePath(line: string): string {
+	const key = line.indexOf('"path":"');
+	if (key < 0) throw snapshotFailure("package-text.read", "A staged line names no package");
+	let end = key + 8;
+	while (end < line.length && line.charCodeAt(end) !== 0x22)
+		end += line.charCodeAt(end) === 0x5c ? 2 : 1;
+	const path: unknown = JSON.parse(line.slice(key + 7, end + 1));
+	if (typeof path !== "string")
+		throw snapshotFailure("package-text.read", "A staged line names no package");
+	return path;
+}
+
 async function convertGroup(request: typeof GroupRequest.Type) {
-	const staged = new Map<
-		string,
-		Exclude<typeof SavedAssetPackageTextEvent.Type, { readonly event: "text_summary" }>
-	>();
+	// As the host's stream does: project-relative paths, then Unreal's object paths.
+	const relativePath = (path: string) =>
+		relative(request.projectRoot, resolve(request.projectRoot, path)).replaceAll("\\", "/");
+	// Lines stay text until their shard converts, so a group never holds every parsed record.
+	const lines = new Map<string, string>();
 	if (existsSync(request.group))
 		for await (const line of packageTextJsonLines(request.group)) {
-			const event = stagedEvent(line);
-			if (event.event === "text_summary")
-				throw snapshotFailure("package-text.read", "A staged line is not a package");
-			// As the host's stream does: project-relative paths, then Unreal's object paths.
-			const path = relative(
-				request.projectRoot,
-				resolve(request.projectRoot, event.path)
-			).replaceAll("\\", "/");
-			if (staged.has(path))
+			const path = relativePath(stagedLinePath(line));
+			if (lines.has(path))
 				throw snapshotFailure("package-text.read", "Unexpected or duplicate package");
-			const mounted = mountPackageTextEvent(request.projectRoot, { ...event, path });
-			if (mounted.event === "text_summary")
-				throw snapshotFailure("package-text.read", "A staged line is not a package");
-			staged.set(path, mounted);
+			lines.set(path, line);
 		}
 	const shards: { name: string; preparedStrings?: PreparedColdStrings }[] = [];
-	let used = 0;
 	for (const shard of request.shards) {
 		const records = shard.expected.map(({ path, signature, selected }): PackageTextStored => {
 			if (!selected) return { path, signature, evidence: { event: "not_gatherable", path } };
-			const evidence = staged.get(path);
-			if (evidence === undefined)
+			const line = lines.get(path);
+			if (line === undefined)
 				throw snapshotFailure("package-text.read", "Reader omitted requested packages");
-			used++;
+			lines.delete(path);
+			const event = stagedEvent(line);
+			if (event.event === "text_summary" || relativePath(event.path) !== path)
+				throw snapshotFailure("package-text.read", "A staged line is not its package");
+			const evidence = mountPackageTextEvent(request.projectRoot, { ...event, path });
+			if (evidence.event === "text_summary")
+				throw snapshotFailure("package-text.read", "A staged line is not its package");
 			return { path, signature, evidence };
 		});
 		const preparedStrings = await writeShard(
@@ -132,7 +144,7 @@ async function convertGroup(request: typeof GroupRequest.Type) {
 		);
 		shards.push(preparedStrings ? { name: shard.name, preparedStrings } : { name: shard.name });
 	}
-	if (used !== staged.size)
+	if (lines.size !== 0)
 		throw snapshotFailure("package-text.read", "Unexpected or duplicate package");
 	return shards;
 }

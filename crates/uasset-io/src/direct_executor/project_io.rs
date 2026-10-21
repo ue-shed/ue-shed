@@ -851,7 +851,7 @@ impl PackageTextStager {
                     .map_err(|error| {
                         staging_failure(format!("could not create a staging file: {error}"))
                     })?;
-                entry.insert(io::BufWriter::with_capacity(256 * 1024, file))
+                entry.insert(io::BufWriter::with_capacity(16 * 1024, file))
             }
         };
         file.write_all(&line)

@@ -70,6 +70,7 @@ should follow [Website and illustrated guides](engineering/website.md).
 | [map-history.md](products/map-history.md)                 | Perforce-backed saved map history                       |
 | [config-explorer.md](products/config-explorer.md)         | Saved Unreal config provenance                          |
 | [game-text.md](products/game-text.md)                     | Saved text corpus, quality review and localization      |
+| [input-atlas.md](products/input-atlas.md)                 | Enhanced Input scan, conflicts, usage and platforms     |
 | [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution                             |
 | [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage                    |
 | [niagara-preview.md](products/niagara-preview.md)         | Portable Niagara preview evidence                       |

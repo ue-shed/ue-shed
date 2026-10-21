@@ -408,6 +408,16 @@ report.
 
 ### EW-01 Enhanced Input scan v2
 
+> **Implemented in PR #158.** Contract: [Input Atlas](../products/input-atlas.md). Every row of the
+> table below is projected as optional `Evidence`, triggers and modifiers carry saved `parameters`,
+> and `PlayerMappableConfigRecord` removes the false diagnostic. `ue-shed input atlas` and
+> `ue-shed input export` ship. Verified on UE 5.7 against packages Unreal saved
+> (`pnpm test:unreal-enhanced-input`); UE 5.8 was not installed, so the 5.8 check is still owed.
+> Deferred: the committed fixture gains no config asset or chord (the probe covers them in a
+> disposable project), and pre-5.3 `PlayerMappableOptions` on mappings is not projected. Two
+> corrections to the text below: the fixture has 20 actions, not 19, and the false diagnostic only
+> reached direct scans (CLI); the Workbench path filtered config packages out before decoding.
+
 What a saved action, mapping context and config asset contain, checked against UE 5.7
 (`Engine/Plugins/EnhancedInput/Source/EnhancedInput/Public`), against what the scan keeps:
 
@@ -455,6 +465,19 @@ them (`project.ts:256`) and then keeps only the class (`project.ts:150`).
 - **Contract.** None for the projection. Write `docs/products/input-atlas.md` with EW-08.
 
 ### EW-08 Enhanced Input usage and conflict analysis
+
+> **Implemented in PR #158**, without waiting for EW-02 or EW-05. Contract:
+> [Input Atlas](../products/input-atlas.md), including the co-activation document schema. Shipped:
+> the three co-activation sources, the four conflict classes over the base contested flag, "no
+> known use" and unbound mappings, Blueprint uses, platform data redirects, key-profile views and
+> device coverage, `ue-shed input conflicts|unused|platforms`, and the route's conflict-class
+> filter and in-project platform view. Blueprint use takes the documented fallback with a cheaper
+> first step: a header name-map probe for the action package names narrows the Blueprint list
+> before a bounded decode. Deferred: import-based prefiltering and missing action targets (wait on
+> EW-02 and EW-04; unresolved targets are listed as "not in the scan" meanwhile), links from the
+> atlas to the asset (EW-09), `DefaultWorldSubsystemMappingContexts`, and evaluating input-mode
+> queries. The Workbench reads default contexts for the platform it runs on and has no host
+> document input; the CLI takes both.
 
 - **Today.** "Contested" means two contexts name the same key, whether or not those contexts can ever
   be active together (`atlas.ts:167`). Nothing says which actions are unused, which Blueprints use an

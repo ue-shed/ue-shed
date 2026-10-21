@@ -60,11 +60,11 @@ bool FUEShedEditorCapabilitiesTest::RunTest(const FString& Parameters)
 	{
 		const bool bBuilt =
 			FindObject<UClass>(nullptr, *(FString(TEXT("/Script/UEShedCoreEditor.")) + Item.Class)) != nullptr;
-		TestEqual(FString(TEXT("Object path follows the class: ")) + Item.Class,
-			Manifest->HasField(Item.Field), bBuilt);
+		TestTrue(FString(TEXT("Object path follows the class: ")) + Item.Class,
+			Manifest->HasField(Item.Field) == bBuilt);
 		for (const TCHAR* Name : Item.Names)
-			TestEqual(FString(TEXT("Capability follows the class: ")) + Name,
-				Capabilities.Contains(Name), bBuilt);
+			TestTrue(FString(TEXT("Capability follows the class: ")) + Name,
+				Capabilities.Contains(Name) == bBuilt);
 	}
 	TestTrue(TEXT("Asset navigation is built on every engine"),
 		Capabilities.Contains(TEXT("editor.asset-navigation.v1")) &&

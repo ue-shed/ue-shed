@@ -1,5 +1,5 @@
 ---
-"@ue-shed/unreal-connection": patch
+"@ue-shed/unreal-connection": minor
 ---
 
 Show in Unreal and asset opening work on UE 4.27. The 4.27 Game Text plugin bundle now builds

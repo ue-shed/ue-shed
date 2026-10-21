@@ -107,6 +107,13 @@ const result = spawnSync(
 		// Synthetic PIE delegates in the lifecycle tests have no real telemetry session.
 		// UE5.6 EditorTelemetry dereferences that absent session during PreBeginPIE.
 		...(version.major === 5 && version.minor === 6 ? ["-DisablePlugins=EditorTelemetry"] : []),
+		// UE 4.27 opens asset editors in a new window by default. Offscreen, closing one saves
+		// its restored size, which the generic window aborts on; UE5 docks them in the main window.
+		...(version.major === 4
+			? [
+					"-ini:EditorPerProjectUserSettings:[/Script/EditorStyle.EditorStyleSettings]:AssetEditorOpenLocation=MainWindow"
+				]
+			: []),
 		`-ExecCmds=Automation RunTests ${tests.join("+")}`,
 		"-TestExit=Automation Test Queue Empty",
 		`-ReportExportPath=${report}`,

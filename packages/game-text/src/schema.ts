@@ -437,6 +437,14 @@ export const TextSourceText = Schema.String.check(
 	Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH)
 );
 
+/**
+ * An asset type: the class path of the main asset of the package holding the text, as Unreal's
+ * loader picks it (`/Script/Engine.DataTable`, `/Script/UMGEditor.WidgetBlueprint`, or a
+ * Blueprint class such as `/Game/Items/BP_Item.BP_Item_C`). Text in an actor saved in its own
+ * package has its world's type. C++ and other gathered sources have none.
+ */
+export const TextAssetType = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
+
 const ClauseOp = Schema.Literals(["is", "is_not"]);
 const clause = <const Field extends string, Value extends Schema.Top>(
 	field: Field,
@@ -454,7 +462,8 @@ const clause = <const Field extends string, Value extends Schema.Top>(
  * none of them. Folders match by path prefix. A translation key selects the lines Unreal
  * translates by that key; without a target, a saved unit has the keys its occurrences gather to.
  * `finding` takes any review signal. `source` matches exact source text: a line's source, or any
- * of a unit's sources.
+ * of a unit's sources. `asset_type` matches a line when any of its saved places is in a package
+ * of that type, and `is_not` when none is; text outside saved packages has no type.
  */
 export const TextFilterClause = Schema.Union([
 	clause("problem", TextProblem, TextProblem.literals.length),
@@ -469,7 +478,8 @@ export const TextFilterClause = Schema.Union([
 	/** The line's audience: player if any of its saved places is player text, and so on. */
 	clause("audience", TextAudience, TextAudience.literals.length),
 	clause("translation_key", TextTranslationKey, 200),
-	clause("source", TextSourceText, MAX_TEXT_SOURCE_VALUES)
+	clause("source", TextSourceText, MAX_TEXT_SOURCE_VALUES),
+	clause("asset_type", TextAssetType, 50)
 ]);
 export type TextFilterClause = Schema.Schema.Type<typeof TextFilterClause>;
 /**
@@ -547,7 +557,8 @@ export const TextFacetRequest = Schema.Struct({
 	assets: Schema.optionalKey(Schema.Boolean),
 	origins: Schema.optionalKey(Schema.Boolean),
 	audiences: Schema.optionalKey(Schema.Boolean),
-	cultures: Schema.optionalKey(Schema.Boolean)
+	cultures: Schema.optionalKey(Schema.Boolean),
+	assetTypes: Schema.optionalKey(Schema.Boolean)
 });
 export type TextFacetRequest = Schema.Schema.Type<typeof TextFacetRequest>;
 
@@ -572,7 +583,12 @@ export const TextFacets = Schema.Struct({
 	origins: Schema.optionalKey(TextGroupList),
 	/** Lines by audience (player, editor, unknown), over the request without its audience clauses. */
 	audiences: Schema.optionalKey(TextGroupList),
-	cultures: Schema.optionalKey(Schema.Array(TextCultureFacet).check(Schema.isMaxLength(256)))
+	cultures: Schema.optionalKey(Schema.Array(TextCultureFacet).check(Schema.isMaxLength(256))),
+	/**
+	 * Lines by asset type (`TextAssetType` keys, `textAssetTypeLabel` labels), over the request
+	 * without its asset type clauses. A line in packages of several types counts in each.
+	 */
+	assetTypes: Schema.optionalKey(TextGroupList)
 });
 export type TextFacets = Schema.Schema.Type<typeof TextFacets>;
 

@@ -927,6 +927,8 @@ fn project_parsed_package(
     let mut record = SavedAssetPackageTextRecord {
         file_bytes: bytes.len() as u64,
         path: path_string.clone(),
+        package_name: Some(package.summary.package_name.clone()),
+        asset_class: owning_asset_class(package, &path_string),
         schema_version: 1,
         status: ProjectionStatus::Complete,
         decode_errors: 0,
@@ -2143,6 +2145,44 @@ fn may_be_actor_export(package: &Package, export: &Export) -> bool {
     true
 }
 
+/// The class of the package's main asset, chosen as `LinkerLoad` does: among exports flagged as
+/// assets with an imported class, the one named after the package's file, else the first. An
+/// actor saved in its own package is an asset whose outer is its level in another package; it
+/// reports the class of that level's top-level object, the world, so its text sorts with the map.
+fn owning_asset_class(package: &Package, path: &str) -> Option<String> {
+    let leaf = Path::new(path).file_stem().and_then(|stem| stem.to_str());
+    let mut main = None;
+    for export in &package.exports {
+        if export.is_asset != Some(true) || !matches!(export.class_index, PackageIndex::Import(_)) {
+            continue;
+        }
+        if leaf.is_some() && package.resolve_name_str(export.object_name) == leaf {
+            main = Some(export);
+            break;
+        }
+        main.get_or_insert(export);
+    }
+    let main = main?;
+    let mut outer = main.outer_index;
+    let mut top = None;
+    while let PackageIndex::Import(index) = outer {
+        let import = usize::try_from(index)
+            .ok()
+            .and_then(|index| package.imports.get(index))?;
+        if matches!(import.outer_index, PackageIndex::Null) {
+            break;
+        }
+        top = Some(import);
+        outer = import.outer_index;
+    }
+    let class = match top {
+        Some(import) => import.class_path.as_str(),
+        None => main.class_path.as_ref()?.as_str(),
+    };
+    // Import class paths are rendered as `//Script/Engine.World` by the header parser.
+    Some(format!("/{}", class.trim_start_matches('/')))
+}
+
 /// Whether `export`'s outer is a `Level` export or import.
 fn outer_is_level(package: &Package, export: &Export) -> bool {
     let outer_class = match export.outer_index {
@@ -2356,6 +2396,71 @@ mod tests {
             );
             assert_eq!(progress, [(0, 3), (3, 3)]);
         }
+    }
+
+    #[test]
+    fn text_records_name_the_main_asset_class() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let class = |path: &str| {
+            let bytes = std::fs::read(root.join(path)).expect("read fixture package");
+            let package = uasset_parser::package::Package::parse(&bytes).expect("parse package");
+            super::owning_asset_class(&package, path)
+        };
+        let content = "unreal-project/Content/Fixture";
+        for (path, expected) in [
+            ("Authoring/DT_Text.uasset", "/Script/Engine.DataTable"),
+            ("Text/ST_Game.uasset", "/Script/Engine.StringTable"),
+            (
+                "Blueprints/BP_GraphFixture.uasset",
+                "/Script/Engine.Blueprint",
+            ),
+            (
+                "GameTextActions/Branched/WBP_ActionPanel.uasset",
+                "/Script/UMGEditor.WidgetBlueprint",
+            ),
+            (
+                "GameTextActions/Slice2/L_IdentityWorld.umap",
+                "/Script/Engine.World",
+            ),
+        ] {
+            assert_eq!(
+                class(&format!("{content}/{path}")).as_deref(),
+                Some(expected),
+                "{path}"
+            );
+        }
+        // An actor saved in its own package sorts with the world it belongs to.
+        let actors =
+            root.join("unreal-project/Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld");
+        let actor = walk_files(&actors)
+            .into_iter()
+            .next()
+            .expect("an external actor");
+        let actor = actor
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(class(&actor).as_deref(), Some("/Script/Engine.World"));
+        assert_eq!(
+            class("legacy-unreal-project/Generated/4.27/Content/Legacy/DT_LegacyText.uasset")
+                .as_deref(),
+            Some("/Script/Engine.DataTable")
+        );
+    }
+
+    fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut files = Vec::new();
+        for entry in std::fs::read_dir(root).expect("read fixture directory") {
+            let path = entry.expect("fixture entry").path();
+            if path.is_dir() {
+                files.extend(walk_files(&path));
+            } else {
+                files.push(path);
+            }
+        }
+        files.sort();
+        files
     }
 
     #[test]

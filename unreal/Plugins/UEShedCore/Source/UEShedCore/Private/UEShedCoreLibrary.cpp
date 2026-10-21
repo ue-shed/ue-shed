@@ -133,31 +133,52 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedCoreEditor")))
 	{
-		Root->SetStringField(
-			TEXT("assetNavigationObjectPath"),
-			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorAssetNavigationLibrary"));
-		Root->SetStringField(
-			TEXT("playSessionObjectPath"),
-			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary"));
-		Root->SetStringField(
-			TEXT("worldControlObjectPath"),
-			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWorldControlLibrary"));
-		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
-		const UClass* AssetNavigationLibrary = FindObject<UClass>(
-			nullptr, TEXT("/Script/UEShedCoreEditor.UEShedEditorAssetNavigationLibrary"));
+		// UE 4.27 builds only asset navigation and window activation into this module, so each
+		// capability follows its own class rather than the module.
+		auto EditorClass = [](const TCHAR* Name)
+		{
+			return FindObject<UClass>(nullptr, *(FString(TEXT("/Script/UEShedCoreEditor.")) + Name));
+		};
+		const UClass* AssetNavigationLibrary = EditorClass(TEXT("UEShedEditorAssetNavigationLibrary"));
+		const bool bPlaySession = EditorClass(TEXT("UEShedEditorPlaySessionLibrary")) != nullptr;
+		const bool bWorldControl = EditorClass(TEXT("UEShedEditorWorldControlLibrary")) != nullptr;
+		if (AssetNavigationLibrary)
+			Root->SetStringField(
+				TEXT("assetNavigationObjectPath"),
+				TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorAssetNavigationLibrary"));
+		if (bPlaySession)
+			Root->SetStringField(
+				TEXT("playSessionObjectPath"),
+				TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary"));
+		if (bWorldControl)
+			Root->SetStringField(
+				TEXT("worldControlObjectPath"),
+				TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWorldControlLibrary"));
+		if (AssetNavigationLibrary)
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
 		if (AssetNavigationLibrary && AssetNavigationLibrary->FindFunctionByName(TEXT("OpenAsset")))
 			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-open.v1")));
-		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
-		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.v1")));
-		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.async.v1")));
-		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-state.v1")));
-		Root->SetStringField(TEXT("windowActivationObjectPath"),
-			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWindowLibrary"));
-		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.window-activation.v1")));
+		if (bPlaySession)
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
+		if (bWorldControl)
+		{
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.v1")));
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.async.v1")));
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-state.v1")));
+		}
+		if (EditorClass(TEXT("UEShedEditorWindowLibrary")))
+		{
+			Root->SetStringField(TEXT("windowActivationObjectPath"),
+				TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWindowLibrary"));
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.window-activation.v1")));
+		}
 #if PLATFORM_WINDOWS
-		Root->SetStringField(TEXT("foregroundResponsivenessObjectPath"),
-			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorResponsivenessLibrary"));
-		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.foreground-responsiveness.v1")));
+		if (EditorClass(TEXT("UEShedEditorResponsivenessLibrary")))
+		{
+			Root->SetStringField(TEXT("foregroundResponsivenessObjectPath"),
+				TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorResponsivenessLibrary"));
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.foreground-responsiveness.v1")));
+		}
 #endif
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedScenariosEditor")))

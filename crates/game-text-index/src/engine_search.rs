@@ -396,6 +396,12 @@ impl EngineQuery {
                     GroupBy::Audience,
                     "audiences",
                 ),
+                (
+                    facets.asset_types,
+                    FilterField::AssetType,
+                    GroupBy::AssetType,
+                    "assetTypes",
+                ),
             ] {
                 if enabled == Some(true) {
                     let rows = self.matching(&request.without_filter(field), cancelled)?;

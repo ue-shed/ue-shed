@@ -110,6 +110,7 @@ export {
 	MAX_TEXT_SCOPE_FILES,
 	StringTableTextIdentity,
 	TEXT_AUDIENCE_LABELS,
+	TextAssetType,
 	TextAudience,
 	TextAudienceReason,
 	TextCapabilityFilter,

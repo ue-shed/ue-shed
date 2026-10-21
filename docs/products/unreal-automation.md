@@ -30,6 +30,12 @@ Missing assets or refused opens return `unavailable` with recovery guidance. Suc
 means Unreal accepted the open request, not that OS foreground activation was verified.
 `bringToFront` requests existing-editor focus; newly opened editors follow engine focus behavior.
 Host policy chooses whether to locate or open. Locate's behavior and contract are unchanged.
+The UE 4.27 Game Text bundle builds `UEShedCoreEditor` with asset navigation and window activation
+only, so a 4.27 editor advertises `editor.asset-navigation.v1`, `editor.asset-open.v1` and
+`editor.window-activation.v1` but no play-session, world-control or foreground-responsiveness
+capability. Core advertises each `UEShedCoreEditor` capability only when its class is built. 4.27
+has no `CanOpenEditorForAsset`, so an asset type without an editor reports `editor_refused` from
+Unreal's open request instead of its reason.
 
 Remote Control must be enabled and reachable in the selected producer. Packaging policy and Remote
 Control availability in a runtime build remain the consuming project's responsibility.

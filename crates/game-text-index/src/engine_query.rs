@@ -24,6 +24,7 @@ pub struct EngineQuery {
     pub(crate) matched: HashMap<String, Arc<[u32]>>,
     pub(crate) places: Option<Arc<crate::engine_places::Places>>,
     pub(crate) projection: Option<Arc<crate::engine_match::Projection>>,
+    pub(crate) asset_types: Option<Arc<crate::engine_asset_types::AssetTypes>>,
     package_names: Vec<String>,
     package_starts: Vec<u32>,
     validated_ids: HashSet<String>,
@@ -201,6 +202,7 @@ impl EngineQuery {
             matched: HashMap::new(),
             places: None,
             projection: None,
+            asset_types: None,
             package_names,
             package_starts,
             validated_ids: HashSet::new(),
@@ -342,6 +344,11 @@ impl EngineQuery {
             .get(shard)
             .ok_or("Unknown package shard.")?;
         self.reader.input_column(name, field)
+    }
+
+    /// The global row of a package shard's first occurrence.
+    pub(crate) fn package_occurrence_start(&self, shard: usize) -> Option<usize> {
+        self.package_starts.get(shard).map(|start| *start as usize)
     }
 
     pub(crate) fn package_count(&self) -> usize {

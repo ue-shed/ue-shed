@@ -286,6 +286,16 @@ it matches that line; without one, every saved unit with an occurrence gathered 
 as Blueprint copies saved under different package markers. Counts, facets and groups intersect it
 like any other clause.
 
+An `asset_type` clause selects text by the class of the main asset of the package holding it, which
+the saved reader reports as `assetClass` (uasset-io 1.17): `/Script/Engine.DataTable`,
+`/Script/Engine.StringTable`, `/Script/Engine.Blueprint`, `/Script/UMGEditor.WidgetBlueprint`, a
+Blueprint class path for an instance of one, and `/Script/Engine.World` for a map and the actors
+saved in their own packages. `is` matches when any saved place has a selected type, `is_not` when
+none has; text outside saved packages has no type. `facets: { assetTypes: true }` counts lines per
+type over the request without its asset type clauses, and `textAssetTypeLabel` (in
+`@ue-shed/game-text/labels`) gives the label each entry carries. Hosts can show their own names, as
+filters match the class path.
+
 ```ts
 // Every place Unreal translates as ("", "Title"), whatever package marker each copy saved.
 // gatheredTextIdentity is null when a unit's occurrences gather under different keys.

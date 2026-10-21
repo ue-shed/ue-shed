@@ -87,6 +87,9 @@ pub enum GroupBy {
     Audience,
     /// Exact source text: a line's source, or a unit's first source in UTF-16 order.
     Source,
+    /// The main asset class of a line's packages. Facets only: requests cannot group by it.
+    #[serde(skip)]
+    AssetType,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -106,6 +109,8 @@ pub enum FilterField {
     TranslationKey,
     /// Exact source text, compared as stored: case-sensitive, untrimmed, UTF-16 exact.
     Source,
+    /// The main asset class of the packages holding a line's saved places.
+    AssetType,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -151,6 +156,7 @@ pub struct Facets {
     pub origins: Option<bool>,
     pub audiences: Option<bool>,
     pub cultures: Option<bool>,
+    pub asset_types: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -355,6 +361,7 @@ impl SearchRequest {
                     FilterField::Namespace => (&[], 50, 1024),
                     FilterField::TranslationKey => (&[], 200, 4096),
                     FilterField::Source => (&[], MAX_SOURCE_VALUES, MAX_SOURCE_LENGTH),
+                    FilterField::AssetType => (&[], 50, 1024),
                 };
                 list(&clause.values, max, length, "Invalid filter clause bounds.")?;
                 require(

@@ -6,6 +6,7 @@ import {
 	GAME_TEXT_ACTIONS_VERSION,
 	ErrorGuidanceFields,
 	type AuthoringApplyRequest,
+	type AuthoringTableSnapshotV2,
 	type GameTextActionsResult,
 	type GameTextActionOutcome
 } from "@ue-shed/protocol";
@@ -22,6 +23,17 @@ export class TextIdTableRepairError extends Schema.TaggedError<TextIdTableRepair
 	}
 ) {}
 
+/** The live row struct has no column for a reviewed saved property, so no cell was compared. */
+export class TextIdTableColumnError extends Schema.TaggedError<TextIdTableColumnError>()(
+	"TextIdTableColumnError",
+	{
+		...ErrorGuidanceFields,
+		objectPath: Schema.String,
+		propertyName: Schema.String,
+		liveColumns: Schema.Array(Schema.String)
+	}
+) {}
+
 const invalid = (message: string) =>
 	new TextIdTableRepairError({
 		message,
@@ -29,6 +41,22 @@ const invalid = (message: string) =>
 		retrySafe: true,
 		nextStep: "fix_input"
 	});
+
+/**
+ * Binds a saved reader's property name to the live column. Saved packages name a User Defined
+ * Struct member by its FName (`DisplayName_2_<guid>`) while row values use its authored name, so
+ * only the schema's `propertyName` joins them. Producers before snapshot 2.4 omit it; then a
+ * column's name is its FName only for native structs, and Blueprint struct columns stay unbound.
+ */
+function liveColumn(table: AuthoringTableSnapshotV2["table"], propertyName: string) {
+	const fields = table.schema.status === "available" ? table.schema.fields : [];
+	const field = fields.find((item) => (item.propertyName ?? item.name) === propertyName);
+	return {
+		column: field && { name: field.name, propertyName: field.propertyName ?? field.name },
+		liveColumns: fields.map((item) => item.propertyName ?? item.name),
+		namesKnown: fields.length > 0 && fields.every((item) => item.propertyName !== undefined)
+	};
+}
 
 /** Prepares Authoring's guarded all-or-nothing batch without applying or saving any table. */
 export const prepareTextIdTableRepair = Effect.fn("GameText.idRepairs.tables.prepare")(function* (
@@ -45,7 +73,8 @@ export const prepareTextIdTableRepair = Effect.fn("GameText.idRepairs.tables.pre
 		request.changes.map((item) => item.occurrence.location.objectPath)
 	)) {
 		// Authoring resolves an object path, so bind it to the reviewed file before querying it.
-		// A file copy can retain another package's serialized object path.
+		// The index moves a moved or copied file's paths to its package, but a request can still
+		// carry a serialized one; the live table must also report the same package below.
 		const changes = request.changes.filter(
 			(item) => item.occurrence.location.objectPath === objectPath
 		);
@@ -79,10 +108,29 @@ export const prepareTextIdTableRepair = Effect.fn("GameText.idRepairs.tables.pre
 			if (location.kind !== "data_table_cell" || occurrence.identity.status !== "resolved")
 				return yield* invalid("Only localized DataTable text can use this repair path.");
 			const row = snapshot.table.rows.find((item) => item.name === location.row);
-			const current = row?.fields.find((item) => item.name === location.propertyPath)?.value;
+			if (!row)
+				return yield* invalid(
+					`The live table has no row ${location.row}. It may have been renamed or removed.`
+				);
+			const { column, liveColumns, namesKnown } = liveColumn(
+				snapshot.table,
+				location.propertyPath
+			);
+			const current = column && row.fields.find((item) => item.name === column.name)?.value;
+			if (!column || !current)
+				return yield* new TextIdTableColumnError({
+					message: `The live row struct has no column ${location.propertyPath}.`,
+					recovery: namesKnown
+						? "The row struct changed since the scan. Rescan and review the fix again."
+						: "This editor's UE Shed plugin does not report struct property names. Update the UE Shed plugins, restart the editor and try again.",
+					retrySafe: true,
+					nextStep: "fix_input",
+					objectPath,
+					propertyName: location.propertyPath,
+					liveColumns
+				});
 			if (
-				!row ||
-				current?.kind !== "text" ||
+				current.kind !== "text" ||
 				current.identity?.kind !== "localized" ||
 				current.value !== occurrence.source ||
 				current.identity.key !== occurrence.identity.key ||
@@ -117,7 +165,8 @@ export const prepareTextIdTableRepair = Effect.fn("GameText.idRepairs.tables.pre
 				tableObjectPath: objectPath,
 				body: {
 					kind: "set_cell",
-					fieldName: location.propertyPath,
+					// Authoring resolves an FName directly; an authored name needs its member scan.
+					fieldName: column.propertyName,
 					rowId: row.id,
 					oldValue: current,
 					newValue: {

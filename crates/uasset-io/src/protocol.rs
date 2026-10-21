@@ -1174,6 +1174,7 @@ mod tests {
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-gather-coverage-result-event.json")).unwrap();
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-gather-audience-result-event.json")).unwrap();
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-blueprint-classes-result-event.json")).unwrap();
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-package-name-result-event.json")).unwrap();
         assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-unbounded-missing-samples.json")).is_err());
         decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/level-sequence-request.json")).unwrap();
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/level-sequence-result-event.json")).unwrap();

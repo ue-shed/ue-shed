@@ -211,6 +211,41 @@ fn package_text_blueprint_classes_are_negotiated() {
     }
 }
 
+#[test]
+fn package_text_package_name_and_asset_class_are_negotiated() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    for minor in [16, 17] {
+        let mut request = base_request(serde_json::json!({
+            "kind": "extract_text_packages",
+            "paths": ["Content/Fixture/Text/DA_TextOccurrences.uasset"],
+            "projectRoot": project_root.to_string_lossy()
+        }));
+        request["contract"]["version"]["minor"] = minor.into();
+        let (success, events, stderr) = run_request(request);
+        assert!(success, "package text failed: {stderr}");
+        assert_valid_events(&events);
+        let record = &events
+            .iter()
+            .find(|event| event["result"]["event"]["event"] == "text_package_record")
+            .unwrap()["result"]["event"];
+        let name = record.get("packageName");
+        let class = record.get("assetClass");
+        if minor < 17 {
+            assert!(name.is_none() && class.is_none(), "minor {minor}: {record}");
+        } else {
+            // The summary's own name, which object paths are built from.
+            assert_eq!(name.unwrap(), "/Game/Fixture/Text/DA_TextOccurrences");
+            assert!(
+                class
+                    .unwrap()
+                    .as_str()
+                    .is_some_and(|class| !class.is_empty())
+            );
+        }
+    }
+}
+
 fn run_request(request: Value) -> (bool, Vec<Value>, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
         .arg("protocol")

@@ -45,6 +45,11 @@ export interface TextFacts {
 	 * no `source` clause and groups under the empty text.
 	 */
 	readonly sources?: readonly string[];
+	/**
+	 * The asset types (`TextAssetType`) of the packages holding the text's saved places. Absent or
+	 * empty matches no `asset_type`, so `is_not` keeps it.
+	 */
+	readonly assetTypes?: readonly string[];
 }
 
 /**
@@ -156,6 +161,8 @@ function clauseHas(facts: TextFacts, clause: TextFilterClause): boolean {
 			return clause.values.some((value) => facts.translationKeys?.includes(value) === true);
 		case "source":
 			return clause.values.some((value) => facts.sources?.includes(value) === true);
+		case "asset_type":
+			return clause.values.some((value) => facts.assetTypes?.includes(value) === true);
 	}
 }
 

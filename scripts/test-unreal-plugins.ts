@@ -36,7 +36,7 @@ const descriptors = prepareUnrealPlugins({
 	projectPath: project,
 	tools,
 	pluginIds,
-	coreRuntimeOnly: gameTextOnly
+	legacyCore: version.major === 4
 });
 const allTests = [
 	"UEShed.Cameras.Authoring.NativeLifecycle",
@@ -79,6 +79,8 @@ const allTests = [
 	"UEShed.Cameras.Streaming.CadenceUpdates",
 	"UEShed.Niagara.IndependentCamera",
 	"UEShed.Core.EditorWorld.AsyncOpen",
+	"UEShed.Core.EditorAssets.Manifest",
+	"UEShed.Core.EditorAssets.Locate",
 	"UEShed.Core.EditorAssets.OpenUnavailable",
 	"UEShed.Core.EditorAssets.Open",
 	"UEShed.Core.ForegroundResponsiveness.Leases",
@@ -87,8 +89,12 @@ const allTests = [
 	"UEShed.Core.ForegroundResponsiveness.PredicateCost",
 	"UEShed.Core.ForegroundResponsiveness.DelegateEntry"
 ];
+// The Game Text graph carries Core's asset navigation, which UE 4.27 builds too.
 const tests = gameTextOnly
-	? allTests.filter((name) => name.startsWith("UEShed.GameText."))
+	? allTests.filter(
+			(name) =>
+				name.startsWith("UEShed.GameText.") || name.startsWith("UEShed.Core.EditorAssets.")
+		)
 	: allTests;
 const report = join(root, "automation");
 const result = spawnSync(
@@ -101,6 +107,13 @@ const result = spawnSync(
 		// Synthetic PIE delegates in the lifecycle tests have no real telemetry session.
 		// UE5.6 EditorTelemetry dereferences that absent session during PreBeginPIE.
 		...(version.major === 5 && version.minor === 6 ? ["-DisablePlugins=EditorTelemetry"] : []),
+		// UE 4.27 opens asset editors in a new window by default. Offscreen, closing one saves
+		// its restored size, which the generic window aborts on; UE5 docks them in the main window.
+		...(version.major === 4
+			? [
+					"-ini:EditorPerProjectUserSettings:[/Script/EditorStyle.EditorStyleSettings]:AssetEditorOpenLocation=MainWindow"
+				]
+			: []),
 		`-ExecCmds=Automation RunTests ${tests.join("+")}`,
 		"-TestExit=Automation Test Queue Empty",
 		`-ReportExportPath=${report}`,

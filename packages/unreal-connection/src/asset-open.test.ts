@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	locateUnrealAsset,
 	makeRemoteControlClientTestLayer,
 	openUnrealAsset,
 	UnrealCapabilityError,
@@ -112,5 +113,53 @@ describe("asset-open capability adapter", () => {
 		const error = await Effect.runPromise(Effect.flip(result));
 		expect(error).toBeInstanceOf(UnrealConnectionError);
 		expect(error).toMatchObject({ operation: "asset opening", retrySafe: false });
+	});
+
+	it("locates and opens through a UE 4.27 manifest without UE5 editor features", async () => {
+		// The legacy bundle builds Core's asset navigation and window activation only.
+		const manifest = {
+			assetNavigationObjectPath: navigationObjectPath,
+			capabilities: [
+				"game-text.actions.v1",
+				"game-text.actions.key-repairs.v1",
+				"editor.asset-navigation.v1",
+				"editor.asset-open.v1",
+				"editor.window-activation.v1"
+			],
+			producerKind: "unreal_editor",
+			schemaVersion: 1,
+			windowActivationObjectPath:
+				"/Script/UEShedCoreEditor.Default__UEShedEditorWindowLibrary"
+		};
+		const calls: RemoteControlRequest[] = [];
+		const layer = makeRemoteControlClientTestLayer((request) => {
+			calls.push(request);
+			return Effect.succeed(
+				request.functionName === "GetCapabilityManifest"
+					? manifest
+					: request.functionName === "LocateAsset"
+						? {
+								contract: { ...contract, name: "unreal-editor-asset-navigation" },
+								objectPath,
+								status: "located"
+							}
+						: { contract, objectPath, status: "ok" }
+			);
+		});
+		const options = { endpoint: "http://127.0.0.1:30010", objectPath, bringToFront: true };
+		expect(
+			await Effect.runPromise(locateUnrealAsset(options).pipe(Effect.provide(layer)))
+		).toMatchObject({ status: "located" });
+		expect(
+			await Effect.runPromise(openUnrealAsset(options).pipe(Effect.provide(layer)))
+		).toMatchObject({ status: "ok" });
+		expect(
+			calls
+				.filter((call) => call.functionName !== "GetCapabilityManifest")
+				.map((call) => [call.objectPath, call.functionName])
+		).toEqual([
+			[navigationObjectPath, "LocateAsset"],
+			[navigationObjectPath, "OpenAsset"]
+		]);
 	});
 });

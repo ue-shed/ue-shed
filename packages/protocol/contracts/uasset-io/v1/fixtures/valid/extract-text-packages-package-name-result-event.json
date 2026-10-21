@@ -1,0 +1,49 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 17
+		}
+	},
+	"requestId": "package-text",
+	"sequence": 1,
+	"kind": "result",
+	"result": {
+		"kind": "extract_text_packages",
+		"event": {
+			"event": "text_package_record",
+			"fileBytes": 4096,
+			"path": "C:/Fixture/Content/Moved/DT_Tutorial.uasset",
+			"packageName": "/Game/Tutorial/DT_Tutorial",
+			"assetClass": "/Script/Engine.DataTable",
+			"schema_version": 1,
+			"status": "complete",
+			"decodeErrors": 0,
+			"occurrences": [
+				{
+					"source": "Press jump",
+					"identity": {
+						"status": "resolved",
+						"namespace": "Tutorial",
+						"key": "Jump"
+					},
+					"location": {
+						"kind": "data_table_cell",
+						"object_path": "/Game/Tutorial/DT_Tutorial.DT_Tutorial",
+						"row": "Jump",
+						"property_path": "Text"
+					},
+					"edit_capability": "source_editable"
+				}
+			],
+			"gapCounts": {
+				"unsupported_text_history": 0,
+				"legacy_container_element_without_type_information": 0,
+				"feature_unavailable_for_engine_version": 0,
+				"property_decoder_rejected": 0
+			},
+			"gapSamples": []
+		}
+	}
+}

@@ -19,6 +19,7 @@ import type {
 } from "./schema.js";
 import {
 	textAssetFacet,
+	textAssetTypeFacet,
 	textAudienceFacet,
 	textCultureFacet,
 	textFolderFacet,
@@ -175,12 +176,17 @@ export interface TextCorpusQuery {
 /**
  * Creates a retained in-memory query over a corpus and optional localization join.
  * Search/focus/export share this evidence; caller owns replacing it after a new scan.
+ * `assetClasses` maps package files to their main asset's class, which the corpus does not keep.
  */
 export function textCorpusQuery(
 	corpus: TextCorpus,
 	scannedAt?: string,
-	localization?: LocalizationJoin
+	localization?: LocalizationJoin,
+	assetClasses: ReadonlyMap<string, string> = new Map()
 ): TextCorpusQuery {
+	const assetTypes = new Map(
+		[...assetClasses].map(([file, type]) => [normalizeTextPath(file), type])
+	);
 	const units = [...corpus.units].sort((left, right) => left.id.localeCompare(right.id));
 	// Units retain saved identities; findings count the localization identities Unreal gathers.
 	const identities = new Map<TextUnit["id"], string[]>();
@@ -267,7 +273,15 @@ export function textCorpusQuery(
 			audience: presentation.audience ?? "unknown",
 			translationKeys: keys.filter((key) => !key.startsWith("unresolved:")),
 			reviewSignals: presentation.reviewSignals,
-			sources: unit.source.status === "consistent" ? [unit.source.value] : unit.source.values
+			sources: unit.source.status === "consistent" ? [unit.source.value] : unit.source.values,
+			assetTypes: [
+				...new Set(
+					unit.occurrences.flatMap((occurrence) => {
+						const type = assetTypes.get(normalizeTextPath(occurrence.packageFile));
+						return type === undefined ? [] : [type];
+					})
+				)
+			]
 		};
 		return {
 			presentation,
@@ -488,7 +502,8 @@ export function textCorpusQuery(
 			audience: lineTextAudience(entries.map((entry) => entry.facts.audience)),
 			translationKeys: line.identity ? [gatheredIdentityKey(line.identity)] : [],
 			reviewSignals: signals,
-			sources: [line.source]
+			sources: [line.source],
+			assetTypes: [...new Set(entries.flatMap((entry) => entry.facts.assetTypes ?? []))]
 		};
 	}
 	const hasClause = (filter: TextFilter | undefined, field: TextFilterField) =>
@@ -525,6 +540,9 @@ export function textCorpusQuery(
 				...(wanted.origins ? { origins: textOriginFacet(base("origin")) } : undefined),
 				...(wanted.audiences
 					? { audiences: textAudienceFacet(base("audience")) }
+					: undefined),
+				...(wanted.assetTypes
+					? { assetTypes: textAssetTypeFacet(base("asset_type")) }
 					: undefined),
 				...(wanted.cultures && cultures !== undefined
 					? { cultures: cultures() }

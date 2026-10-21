@@ -58,6 +58,7 @@ describe("uasset IO protocol v1", () => {
 					"valid/extract-text-packages-gather-coverage-result-event.json",
 					"valid/extract-text-packages-gather-audience-result-event.json",
 					"valid/extract-text-packages-blueprint-classes-result-event.json",
+					"valid/extract-text-packages-package-name-result-event.json",
 					"valid/blueprint-request.json",
 					"valid/level-sequence-request.json",
 					"valid/accepted-event.json",

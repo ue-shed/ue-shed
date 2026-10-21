@@ -7823,6 +7823,9 @@
 					"type": "string",
 					"enum": ["required", "optional", "unknown"]
 				},
+				"propertyName": {
+					"type": "string"
+				},
 				"type": {
 					"$ref": "#/$defs/AuthoringTypeDescriptor"
 				},
@@ -8806,6 +8809,12 @@
 					"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
 				},
 				"path": {
+					"type": "string"
+				},
+				"packageName": {
+					"type": "string"
+				},
+				"assetClass": {
 					"type": "string"
 				},
 				"schema_version": {

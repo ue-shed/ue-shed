@@ -9,6 +9,7 @@
 #include "IContentBrowserSingleton.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Subsystems/AssetEditorSubsystem.h"
@@ -16,6 +17,16 @@
 
 namespace
 {
+// UE 4.27's Asset Registry looks object paths up by FName; UE5 by FSoftObjectPath.
+FAssetData FindRegisteredAsset(IAssetRegistry& AssetRegistry, const FString& ObjectPath)
+{
+#if ENGINE_MAJOR_VERSION < 5
+	return AssetRegistry.GetAssetByObjectPath(FName(*ObjectPath));
+#else
+	return AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(ObjectPath));
+#endif
+}
+
 TSharedRef<FJsonObject> ContractJson()
 {
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
@@ -104,7 +115,7 @@ void UUEShedEditorAssetNavigationLibrary::OpenAsset(
 		return;
 	}
 
-	const FAssetData AssetData = AssetRegistry->Get().GetAssetByObjectPath(FSoftObjectPath(ObjectPath));
+	const FAssetData AssetData = FindRegisteredAsset(AssetRegistry->Get(), ObjectPath);
 	if (!AssetData.IsValid())
 	{
 		Unavailable(TEXT("asset_not_found"), TEXT("The Asset Registry could not find this asset."),
@@ -125,6 +136,7 @@ void UUEShedEditorAssetNavigationLibrary::OpenAsset(
 		return;
 	}
 
+#if ENGINE_MAJOR_VERSION >= 5
 	FText OpenReason;
 	if (!AssetEditors->CanOpenEditorForAsset(Asset, EAssetTypeActivationOpenedMethod::Edit, &OpenReason))
 	{
@@ -132,6 +144,8 @@ void UUEShedEditorAssetNavigationLibrary::OpenAsset(
 			TEXT("Check the asset type's editor support and the editor log before retrying."), false);
 		return;
 	}
+#endif
+	// UE 4.27 has no CanOpenEditorForAsset; its OpenEditorForAsset refusal below is the only answer.
 	// Avoid Unreal's unconditional focus of an already-open editor when BringToFront is false.
 	if (!AssetEditors->FindEditorForAsset(Asset, BringToFront) &&
 		!AssetEditors->OpenEditorForAsset(Asset, EToolkitMode::Standalone, {}, false))
@@ -180,8 +194,7 @@ void UUEShedEditorAssetNavigationLibrary::LocateAsset(
 
 	FAssetRegistryModule& AssetRegistryModule =
 		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-	const FAssetData Asset =
-		AssetRegistryModule.Get().GetAssetByObjectPath(FSoftObjectPath(ObjectPath));
+	const FAssetData Asset = FindRegisteredAsset(AssetRegistryModule.Get(), ObjectPath);
 	if (!Asset.IsValid())
 	{
 		SerializeUnavailable(

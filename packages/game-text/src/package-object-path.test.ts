@@ -135,4 +135,142 @@ describe("package object paths", () => {
 			})
 		).toMatchObject({ coverage_gap: { object_path: "/Game/Text/ST_Menu.ST_Menu" } });
 	});
+
+	describe("a package moved or copied outside Unreal", () => {
+		// The summary still names the folder the corpus generator saved the table in.
+		const saved = "/Game/Developers/Ryzen/GameTextCorpus/DataTables/DT_Tutorial_040";
+		const file = "Content/Moved/DT_Tutorial_040.uasset";
+		const moved: SavedAssetPackageTextRecord = {
+			...emptyPackageTextRecord(file),
+			packageName: saved,
+			occurrences: [
+				{
+					source: "Press jump",
+					dev_notes: "",
+					identity: { status: "resolved", namespace: "Tutorial", key: "Jump" },
+					location: {
+						kind: "data_table_cell",
+						object_path: `${saved}.DT_Tutorial_040`,
+						row: "Jump",
+						property_path: "DisplayName_2_1F2E3D4C5B6A79808F9EADBCCBDAE9F8"
+					},
+					edit_capability: "source_editable"
+				},
+				{
+					source: "Hint",
+					dev_notes: "",
+					identity: {
+						status: "string_table",
+						table_id: "/Game/Text/ST_Hints.ST_Hints",
+						key: "Hint"
+					},
+					location: {
+						kind: "asset_property",
+						object_path: `${saved}.DT_Tutorial_040:Preview.Widget`,
+						class_path: `${saved}.DT_Tutorial_040_C`,
+						property_path: "Text"
+					},
+					edit_capability: "read_only"
+				},
+				{
+					source: "Sign",
+					dev_notes: "",
+					identity: { status: "resolved", namespace: "World", key: "Sign" },
+					location: {
+						kind: "asset_property",
+						// Another package's object: not this package's to move.
+						object_path: "/Game/Maps/L_World.L_World:PersistentLevel.Sign",
+						class_path: "/Script/Engine.TextRenderActor",
+						property_path: "Text"
+					},
+					edit_capability: "read_only"
+				}
+			],
+			gapSamples: [
+				{
+					object_path: `${saved}.DT_Tutorial_040`,
+					property_path: "Notes",
+					reason: "unsupported_text_history"
+				}
+			],
+			blueprintClasses: [
+				{
+					blueprint: `${saved}.DT_Tutorial_040`,
+					generatedClass: `${saved}.DT_Tutorial_040_C`,
+					classDefault: `${saved}.Default__DT_Tutorial_040_C`
+				}
+			]
+		};
+
+		it("moves the package's own paths to the file's package and keeps the saved name", () => {
+			const mounted = mountPackageTextEvent(root, moved);
+			const at = "/Game/Moved/DT_Tutorial_040";
+			expect(mounted).toEqual({
+				...moved,
+				occurrences: [
+					{
+						...moved.occurrences[0],
+						location: {
+							...moved.occurrences[0]!.location,
+							object_path: `${at}.DT_Tutorial_040`
+						}
+					},
+					{
+						...moved.occurrences[1],
+						location: {
+							...moved.occurrences[1]!.location,
+							object_path: `${at}.DT_Tutorial_040:Preview.Widget`,
+							class_path: `${at}.DT_Tutorial_040_C`
+						}
+					},
+					moved.occurrences[2]
+				],
+				gapSamples: [{ ...moved.gapSamples[0], object_path: `${at}.DT_Tutorial_040` }],
+				blueprintClasses: [
+					{
+						blueprint: `${at}.DT_Tutorial_040`,
+						generatedClass: `${at}.DT_Tutorial_040_C`,
+						classDefault: `${at}.Default__DT_Tutorial_040_C`
+					}
+				]
+			});
+			expect(mounted).toMatchObject({ packageName: saved });
+			expect(mountPackageTextEvent(root, mounted)).toBe(mounted);
+		});
+
+		it("completes UE 4.27 `None` packages under the file's package too", () => {
+			const legacy: SavedAssetPackageTextRecord = {
+				...emptyPackageTextRecord(file),
+				packageName: "None",
+				occurrences: [
+					{
+						...moved.occurrences[0]!,
+						location: {
+							kind: "data_table_cell",
+							object_path: "DT_Tutorial_040",
+							row: "Jump",
+							property_path: "Text"
+						}
+					}
+				]
+			};
+			expect(mountPackageTextEvent(root, legacy)).toMatchObject({
+				packageName: "None",
+				occurrences: [
+					{ location: { object_path: "/Game/Moved/DT_Tutorial_040.DT_Tutorial_040" } }
+				]
+			});
+		});
+
+		it("leaves packages whose saved name matches, or is unknown, as read", () => {
+			const inPlace = {
+				...moved,
+				path: "Content/Developers/Ryzen/GameTextCorpus/DataTables/DT_Tutorial_040.uasset"
+			};
+			expect(mountPackageTextEvent(root, inPlace)).toBe(inPlace);
+			// Readers before uasset-io 1.17 omit the name; their paths cannot be told apart.
+			const { packageName: _, ...older } = moved;
+			expect(mountPackageTextEvent(root, older)).toBe(older);
+		});
+	});
 });

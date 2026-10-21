@@ -166,7 +166,8 @@ describe("gather coverage", () => {
 		"package-text-v3",
 		"package-text-v4",
 		"package-text-v5",
-		"package-text-v6"
+		"package-text-v6",
+		"package-text-v7"
 	])(
 		"reads packages again when the cache holds %s shards",
 		async (format) => {
@@ -208,11 +209,13 @@ describe("gather coverage", () => {
 				}
 			]);
 			// v1 shards were written before the gather columns existed, v1 to v3 before the
-			// occurrence audience columns.
+			// occurrence audience columns, and v1 to v7 before the serialized package name and main asset class.
 			const stale = {
 				columns: previous.columns.filter(
 					(column) =>
 						!/^occurrence\.(?:gather|audience)$/u.test(column.name) &&
+						column.name !== "package.name" &&
+						column.name !== "package.asset_class" &&
 						(format !== "package-text-v1" ||
 							!/^(?:package\.gather|package\.missing_start|missing\.)/u.test(
 								column.name

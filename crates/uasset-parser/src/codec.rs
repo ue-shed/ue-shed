@@ -686,6 +686,38 @@ fn decode_array_elements(
             &format!("{path}.Count"),
         )?;
         let mut values = Vec::with_capacity(capacity);
+        // Fixed-size scalars take decode_container_element's fixed-size branch with nothing
+        // before it applying; the element breadcrumb is rendered only if an element fails.
+        if !inner.is_user_defined_struct()
+            && inner.name != "StructProperty"
+            && let Some(byte_count) = fixed_serialized_size(inner.name, inner.tree)
+        {
+            for index in 0..count {
+                let element_path = ElementPath { path, index };
+                let mut element_payload = payload
+                    .take_bounded(crate::convert::u64_from_usize(byte_count), &element_path)?;
+                let value = decode_typed_value(
+                    source,
+                    inner,
+                    PropertyTagFlags::default(),
+                    &mut element_payload,
+                    package,
+                    &element_path,
+                    depth,
+                )?
+                .ok_or_else(|| {
+                    unsupported_container_type(
+                        payload,
+                        &element_path.to_string(),
+                        "array element",
+                        inner.name,
+                    )
+                })?;
+                values.push(value);
+                decoded_new_layout |= is_new_layout;
+            }
+            return Ok(PropertyValue::Array(values));
+        }
         for index in 0..count {
             let element_path = format!("{path}[{index}]");
             values.push(
@@ -707,6 +739,18 @@ fn decode_array_elements(
         Ok(PropertyValue::Array(values))
     })();
     result.map_err(|error| preserve_opaque_container(error, decoded_new_layout))
+}
+
+/// The `path[index]` breadcrumb of an array element, formatted only when an error needs it.
+struct ElementPath<'a> {
+    path: &'a str,
+    index: usize,
+}
+
+impl fmt::Display for ElementPath<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}[{}]", self.path, self.index)
+    }
 }
 
 fn decode_set_value(

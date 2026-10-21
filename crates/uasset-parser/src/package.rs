@@ -324,7 +324,41 @@ pub struct Package {
     pub soft_object_paths: Vec<String>,
     pub imports: Vec<Import>,
     pub exports: Vec<Export>,
+    /// Facts derived while decoding this package's exports, kept so each is computed once.
+    pub(crate) decode_memo: DecodeMemo,
 }
+
+/// Per-package memo of decode facts that several exports ask for. It never changes what a
+/// decode returns, only how often the underlying payload is read; it is not part of a
+/// package's identity, so clones start empty and comparisons ignore it.
+#[derive(Default)]
+pub(crate) struct DecodeMemo {
+    /// For an outer export: the object paths its saved `Nodes` array references, or `None`
+    /// when its properties cannot be decoded.
+    pub(crate) graph_nodes: std::sync::Mutex<
+        std::collections::HashMap<u32, Option<std::sync::Arc<std::collections::HashSet<String>>>>,
+    >,
+}
+
+impl Clone for DecodeMemo {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl fmt::Debug for DecodeMemo {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DecodeMemo")
+    }
+}
+
+impl PartialEq for DecodeMemo {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for DecodeMemo {}
 
 impl Package {
     /// Parses the package summary plus name, import, and export maps.
@@ -378,6 +412,7 @@ impl Package {
             soft_object_paths,
             imports,
             exports,
+            decode_memo: DecodeMemo::default(),
         })
     }
 
@@ -1958,6 +1993,7 @@ pub(crate) fn test_package(names: Vec<String>) -> Package {
         soft_object_paths: Vec::new(),
         imports: Vec::new(),
         exports: Vec::new(),
+        decode_memo: DecodeMemo::default(),
     }
 }
 

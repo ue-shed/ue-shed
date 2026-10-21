@@ -404,6 +404,9 @@ fn visit_text_stream<F>(
     F: Fn(&str) -> TextLocation,
 {
     for property in &stream.records {
+        if !may_hold_text_facts(&property.value) {
+            continue;
+        }
         let property_path = append_property_path(prefix, &resolve_name(package, property.name));
         if property_type_is_text(package, property)
             && matches!(
@@ -432,6 +435,40 @@ fn visit_text_stream<F>(
             edit_capability,
             output,
         );
+    }
+}
+
+/// Whether visiting `value` can record an occurrence or coverage gap. Scalar leaves cannot, so
+/// large numeric and byte arrays are skipped without building a path for every element.
+fn may_hold_text_facts(value: &PropertyValue) -> bool {
+    match value {
+        PropertyValue::Text(_)
+        | PropertyValue::Raw { .. }
+        | PropertyValue::Array(_)
+        | PropertyValue::Set(_)
+        | PropertyValue::Map(_)
+        | PropertyValue::Struct(_)
+        | PropertyValue::NativeStruct { .. } => true,
+        PropertyValue::InstancedStruct { value, .. } => value.is_some(),
+        PropertyValue::Bool(_)
+        | PropertyValue::Float(_)
+        | PropertyValue::Double(_)
+        | PropertyValue::Int(_)
+        | PropertyValue::UInt(_)
+        | PropertyValue::Name(_)
+        | PropertyValue::Enum(_)
+        | PropertyValue::String(_)
+        | PropertyValue::Vector(_)
+        | PropertyValue::IntPoint(_)
+        | PropertyValue::Rotator(_)
+        | PropertyValue::Color(_)
+        | PropertyValue::LinearColor(_)
+        | PropertyValue::DataTableRowHandle(_)
+        | PropertyValue::DateTime(_)
+        | PropertyValue::FrameRange(_)
+        | PropertyValue::ObjectRef(_)
+        | PropertyValue::Guid(_)
+        | PropertyValue::SoftObjectPath(_) => false,
     }
 }
 
@@ -508,6 +545,9 @@ fn visit_text_value<F>(
         }
         PropertyValue::Array(values) | PropertyValue::Set(values) => {
             for (index, value) in values.iter().enumerate() {
+                if !may_hold_text_facts(value) {
+                    continue;
+                }
                 visit_text_value(
                     package,
                     value,
@@ -521,6 +561,9 @@ fn visit_text_value<F>(
         }
         PropertyValue::Map(entries) => {
             for (index, entry) in entries.iter().enumerate() {
+                if !may_hold_text_facts(&entry.key) && !may_hold_text_facts(&entry.value) {
+                    continue;
+                }
                 visit_text_value(
                     package,
                     &entry.key,

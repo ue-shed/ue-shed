@@ -132,15 +132,51 @@ pub fn is_blueprint_graph_node_export(context: &AssetDecodeContext<'_>, export: 
     if !is_blueprint_owned_export(package, outer) {
         return false;
     }
-    let Ok((properties, _)) = decode_uobject_properties(outer, context) else {
-        return false;
-    };
-    properties.records.iter().any(|property| {
-        package.resolve_name(property.name).as_deref() == Some("Nodes")
-            && matches!(&property.value, PropertyValue::Array(nodes) if nodes.iter().any(|node|
-                matches!(node, PropertyValue::ObjectRef(index)
-                    if package.resolve_index_str(*index) == Some(export.object_path.as_str()))))
-    })
+    graph_node_paths(context, index, outer)
+        .is_some_and(|nodes| nodes.contains(export.object_path.as_str()))
+}
+
+/// The object paths an outer export's saved `Nodes` array references, decoded once per outer:
+/// a large Blueprint asks this for every graph and node it owns.
+fn graph_node_paths(
+    context: &AssetDecodeContext<'_>,
+    index: u32,
+    outer: &Export,
+) -> Option<std::sync::Arc<std::collections::HashSet<String>>> {
+    let package = context.package;
+    let memo = &package.decode_memo.graph_nodes;
+    if let Some(known) = memo
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&index)
+    {
+        return known.clone();
+    }
+    // Decoded outside the lock: another thread may decode the same outer, with the same result.
+    let nodes = decode_uobject_properties(outer, context)
+        .ok()
+        .map(|(properties, _)| {
+            let mut paths = std::collections::HashSet::new();
+            for property in &properties.records {
+                if package.resolve_name(property.name).as_deref() != Some("Nodes") {
+                    continue;
+                }
+                if let PropertyValue::Array(nodes) = &property.value {
+                    for node in nodes {
+                        if let PropertyValue::ObjectRef(node) = node
+                            && let Some(path) = package.resolve_index_str(*node)
+                        {
+                            paths.insert(path.to_owned());
+                        }
+                    }
+                }
+            }
+            std::sync::Arc::new(paths)
+        });
+    memo.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(index, nodes.clone());
+    nodes
 }
 
 /// Whether an export belongs to a Blueprint, including custom graphs and their nodes.

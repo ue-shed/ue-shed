@@ -70,9 +70,10 @@ export async function checkCleanReleasePack({
 	try {
 		stages.start("install dependencies");
 		run("pnpm", ["install", "--frozen-lockfile", "--prefer-offline"], worktree);
-		// Reuse the native build cache; the check is about TypeScript build order, not Rust.
-		const env = { ...process.env, CARGO_TARGET_DIR: releaseCargoTargetDirectory() };
 		stages.start("release:pack");
+		// Reuse the native build cache; the check is about TypeScript build order, not Rust. Read
+		// the environment after starting the stage so the pack nests under it.
+		const env = { ...process.env, CARGO_TARGET_DIR: releaseCargoTargetDirectory() };
 		run("pnpm", ["run", "release:pack"], worktree, env);
 		if (outputDirectory !== undefined) {
 			stages.start("keep packed release");

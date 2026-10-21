@@ -111,9 +111,25 @@ function isArgumentList(value: ArgumentList | ProcessOptions | undefined): value
 	return Array.isArray(value);
 }
 
-/** `options` with its environment naming `span` as the parent of the child's spans. */
-function parentedEnvironment(environment: NodeJS.ProcessEnv | undefined, span: Span | undefined) {
-	return span === undefined ? environment : span.environment(environment ?? process.env);
+const traceparentTrace = /^00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/;
+
+/**
+ * The child's environment: parented to `span` when the child gets one, otherwise to this
+ * process's innermost active span. Scripts often copy `process.env` before they start a span, so
+ * within one trace that copy's TRACEPARENT is stale; one naming another trace was set on purpose.
+ */
+export function parentedEnvironment(
+	environment: NodeJS.ProcessEnv | undefined,
+	span: Span | undefined,
+	current = process.env.TRACEPARENT
+) {
+	if (span !== undefined) return span.environment(environment ?? process.env);
+	const given = environment?.TRACEPARENT;
+	if (environment === undefined || current === undefined || given === undefined)
+		return environment;
+	if (given === current) return environment;
+	const sameTrace = traceparentTrace.exec(given)?.[1] === traceparentTrace.exec(current)?.[1];
+	return sameTrace ? { ...environment, TRACEPARENT: current } : environment;
 }
 
 function endSync(span: Span, subprocess: Subprocess, result: SpawnSyncReturns<string | Buffer>) {
@@ -176,11 +192,13 @@ function traceSubprocesses() {
 		const options = isArgumentList(argsOrOptions) ? maybeOptions : argsOrOptions;
 		return traced(
 			describeSubprocess(file, args, Boolean(options?.shell)),
-			(span) =>
-				original.spawnSync(file, args, {
-					...options,
-					env: parentedEnvironment(options?.env, span)
-				}),
+			(span) => {
+				const spawnOptions = { ...options, env: parentedEnvironment(options?.env, span) };
+				// Only pass arguments the caller passed: Node warns about shell commands with them.
+				return args.length > 0
+					? original.spawnSync(file, args, spawnOptions)
+					: original.spawnSync(file, spawnOptions);
+			},
 			endSync
 		);
 	}
@@ -194,11 +212,12 @@ function traceSubprocesses() {
 		const options = isArgumentList(argsOrOptions) ? maybeOptions : argsOrOptions;
 		return traced(
 			describeSubprocess(file, args, Boolean(options?.shell)),
-			(span) =>
-				original.execFileSync(file, args, {
-					...options,
-					env: parentedEnvironment(options?.env, span)
-				}),
+			(span) => {
+				const execOptions = { ...options, env: parentedEnvironment(options?.env, span) };
+				return args.length > 0
+					? original.execFileSync(file, args, execOptions)
+					: original.execFileSync(file, execOptions);
+			},
 			endReturned
 		);
 	}
@@ -224,11 +243,12 @@ function traceSubprocesses() {
 		const options = isArgumentList(argsOrOptions) ? maybeOptions : argsOrOptions;
 		return traced(
 			describeSubprocess(file, args, Boolean(options?.shell)),
-			(span) =>
-				original.spawn(file, args, {
-					...options,
-					env: parentedEnvironment(options?.env, span)
-				}),
+			(span) => {
+				const spawnOptions = { ...options, env: parentedEnvironment(options?.env, span) };
+				return args.length > 0
+					? original.spawn(file, args, spawnOptions)
+					: original.spawn(file, spawnOptions);
+			},
 			(span, _subprocess, child) => {
 				open.add(span);
 				child.once("error", () => {

@@ -7,7 +7,7 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { cargoAttributes } from "./process-trace.ts";
 import { readSpans } from "./time-gate.ts";
-import { describeSubprocess } from "./trace-process.ts";
+import { describeSubprocess, parentedEnvironment } from "./trace-process.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const preload = pathToFileURL(join(repositoryRoot, "scripts", "trace-process.ts")).href;
@@ -159,6 +159,64 @@ test("explicit spans from another copy of the tracing modules still suppress aut
 		const git = readSpans(spansFile).filter((span) => span.name === "git --version");
 		assert.equal(git.length, 1);
 		assert.equal(git[0]!.attributes["trace.subprocess"], undefined);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("children join the innermost active span even through an environment copied before it", () => {
+	const traceId = "a".repeat(32);
+	const stale = `00-${traceId}-${"1".repeat(16)}-01`;
+	const current = `00-${traceId}-${"2".repeat(16)}-01`;
+	const otherTrace = `00-${"b".repeat(32)}-${"3".repeat(16)}-01`;
+	assert.equal(
+		parentedEnvironment({ TRACEPARENT: stale }, undefined, current)?.TRACEPARENT,
+		current
+	);
+	assert.equal(
+		parentedEnvironment({ TRACEPARENT: otherTrace }, undefined, current)?.TRACEPARENT,
+		otherTrace
+	);
+	assert.equal(parentedEnvironment(undefined, undefined, current), undefined);
+
+	const root = mkdtempSync(join(tmpdir(), "ue-shed-trace-stale-"));
+	try {
+		const spansFile = join(root, "spans.jsonl");
+		const script = join(root, "stale.ts");
+		const gateTrace = pathToFileURL(join(repositoryRoot, "scripts", "gate-trace.ts")).href;
+		const child = join(root, "child.ts");
+		writeFileSync(child, "");
+		writeFileSync(
+			script,
+			[
+				`import { spawnSync } from "node:child_process";`,
+				`import { withSpan } from ${JSON.stringify(gateTrace)};`,
+				`const copied = { ...process.env };`,
+				`withSpan("stage", {}, () => spawnSync(process.execPath, [${JSON.stringify(child)}], { env: copied }));`
+			].join("\n")
+		);
+		const result = spawnSync(process.execPath, [script], {
+			cwd: repositoryRoot,
+			env: {
+				...process.env,
+				NODE_OPTIONS: `--import=${preload}`,
+				TRACEPARENT: "",
+				UE_SHED_TRACE_FILE: spansFile
+			},
+			encoding: "utf8",
+			windowsHide: true
+		});
+		assert.equal(result.status, 0, result.stderr);
+		assert.ok(!result.stderr.includes("DEP0190"), result.stderr);
+		const spans = readSpans(spansFile);
+		const stage = spans.find((span) => span.name === "stage");
+		const childSpan = spans.find((span) => span.name === "node child.ts");
+		assert.ok(stage, "the stage records a span");
+		assert.ok(
+			childSpan,
+			`the child records a span: ${spans.map((span) => span.name).join(", ")}`
+		);
+		assert.equal(childSpan.parentSpanId, stage.spanId);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

@@ -109,6 +109,7 @@ test("keeps project drafts and review preferences when the Unreal target port ch
 	workbench,
 	application
 }) => {
+	test.setTimeout(120_000);
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-e2e-target-state-"));
 	const path = join(root, "draft.json");
 	try {
@@ -136,7 +137,7 @@ test("keeps project drafts and review preferences when the Unreal target port ch
 				.flatMap((track: { clips: { id: string; startMs: number }[] }) => track.clips)
 				.find((clip: { id: string }) => clip.id === "action_jump").startMs
 		).toBe(2960);
-		await workbench.openRoute("Game Text");
+		await workbench.scanGameText();
 		const textSearch = page.getByRole("searchbox", { name: "Search game text", exact: true });
 		await textSearch.fill("Look around");
 		await changePort("39993");
@@ -159,6 +160,7 @@ test("keeps reviewed and saved Game Text rules across tabs, navigation, and pres
 	workbench,
 	application
 }) => {
+	test.setTimeout(120_000);
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-e2e-rule-state-"));
 	const rulePath = join(root, "rules.json");
 	const presetPath = join(root, "preset.json");
@@ -180,24 +182,24 @@ test("keeps reviewed and saved Game Text rules across tabs, navigation, and pres
 			},
 			{ rulePath, presetPath }
 		);
-		await workbench.openRoute("Game Text");
+		await workbench.scanGameText();
 		const page = workbench.page;
-		await page.getByRole("tab", { name: "Quality", exact: true }).click();
+		await page.getByRole("tab", { name: /^Quality checks/ }).click();
 		await page.getByRole("button", { name: "Load rules" }).click();
-		await page.getByRole("tab", { name: /^Rules/ }).click();
+		await page.getByRole("button", { name: "Edit rules", exact: true }).click();
 		const maximum = page.getByRole("spinbutton", {
 			name: "Maximum characters for fixture.prompt.characters"
 		});
 		await maximum.fill("64");
 		await page.getByRole("button", { name: "Preview", exact: true }).click();
 		await expect(page.getByText(/Changes are not saved yet/)).toBeVisible();
-		await page.getByRole("tab", { name: /^Findings/ }).click();
-		await page.getByRole("tab", { name: /^Rules/ }).click();
+		await page.getByRole("button", { name: "Close rules", exact: true }).click();
+		await page.getByRole("button", { name: "Edit rules", exact: true }).click();
 		await expect(maximum).toHaveValue("64");
 		await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
 		expect(JSON.parse(await readFile(rulePath, "utf8")).rules[0].maximumCharacters).toBe(10);
 		const toolbar = page.getByRole("region", { name: "Investigation files" });
-		await toolbar.getByRole("button", { name: "Save preset" }).click();
+		await workbench.gameTextPreset("Save preset");
 		await expect(toolbar.getByRole("status")).toContainText("Saved preset:");
 		expect(
 			JSON.parse(await readFile(presetPath, "utf8")).rules.rules[0].maximumCharacters
@@ -205,13 +207,13 @@ test("keeps reviewed and saved Game Text rules across tabs, navigation, and pres
 		await page.getByRole("button", { name: "Save", exact: true }).click();
 		await expect(page.getByText("Rule file saved.", { exact: true })).toBeVisible();
 		expect(JSON.parse(await readFile(rulePath, "utf8")).rules[0].maximumCharacters).toBe(64);
-		await page.getByRole("tab", { name: /^Findings/ }).click();
-		await page.getByRole("tab", { name: /^Rules/ }).click();
+		await page.getByRole("button", { name: "Close rules", exact: true }).click();
+		await page.getByRole("button", { name: "Edit rules", exact: true }).click();
 		await expect(maximum).toHaveValue("64");
 		await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 		await workbench.openRoute("Showcase");
 		await workbench.openRoute("Game Text");
-		await page.getByRole("tab", { name: /^Rules/ }).click();
+		await page.getByRole("button", { name: "Edit rules", exact: true }).click();
 		await expect(maximum).toHaveValue("64");
 		await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 	} finally {
@@ -225,9 +227,15 @@ test("restores Game Text and Texture Audit searches after navigating away", asyn
 }) => {
 	test.setTimeout(90_000);
 	const page = workbench.page;
-	await workbench.openRoute("Game Text");
+	await workbench.scanGameText();
 	const textSearch = page.getByRole("searchbox", { name: "Search game text", exact: true });
 	await textSearch.fill("Look around");
+	await page
+		.getByRole("region", { name: "Results" })
+		.locator("button[data-row]")
+		.filter({ hasText: "Look around" })
+		.first()
+		.click();
 	await expect(page.getByRole("complementary", { name: "Text focus" })).toContainText(
 		"Look around"
 	);
@@ -247,16 +255,16 @@ test("restores Game Text and Texture Audit searches after navigating away", asyn
 	await application.evaluate(({ dialog }, path) => {
 		dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
 	}, resolve("../../fixtures/unreal-project/FixtureSource/Text/quality-rules.json"));
-	await page.getByRole("tab", { name: "Quality", exact: true }).click();
+	await page.getByRole("tab", { name: /^Quality checks/ }).click();
 	await page.getByRole("button", { name: "Load rules", exact: true }).click();
-	await expect(page.getByRole("complementary", { name: "Quality filters" })).toBeVisible();
+	await expect(page.getByRole("button", { name: /^All findings/, pressed: true })).toBeVisible();
 	await workbench.openRoute("Showcase");
 	await workbench.openRoute("Game Text");
-	await expect(page.getByRole("tab", { name: /^Quality/ })).toHaveAttribute(
+	await expect(page.getByRole("tab", { name: /^Quality checks/ })).toHaveAttribute(
 		"aria-selected",
 		"true"
 	);
-	await expect(page.getByRole("complementary", { name: "Quality filters" })).toBeVisible();
+	await expect(page.getByRole("button", { name: /^All findings/, pressed: true })).toBeVisible();
 });
 
 for (const route of ["Game Text", "Texture Audit"] as const) {
@@ -268,14 +276,32 @@ for (const route of ["Game Text", "Texture Audit"] as const) {
 			const exportPath = join(root, "export.json");
 			const presetPath = join(root, "preset.json");
 			try {
-				await workbench.openRoute(route);
+				if (route === "Game Text") await workbench.scanGameText();
+				else await workbench.openRoute(route);
 				const page = workbench.page;
 				const toolbar = page.getByRole("region", { name: "Investigation files" });
-				await expect(toolbar.getByRole("button", { name: "Export JSON" })).toBeEnabled();
+				const exportButton = toolbar.getByRole("button", {
+					name: route === "Game Text" ? "Export" : "Export JSON",
+					exact: true
+				});
+				const exportResult = async (format: "JSON" | "CSV") => {
+					if (route === "Game Text") await workbench.exportGameText(format);
+					else
+						await toolbar
+							.getByRole("button", { name: `Export ${format}`, exact: true })
+							.click();
+				};
+				const presetAction = async (
+					action: "Save preset" | "Open preset" | "Copy CLI replay"
+				) => {
+					if (route === "Game Text") await workbench.gameTextPreset(action);
+					else await toolbar.getByRole("button", { name: action, exact: true }).click();
+				};
+				await expect(exportButton).toBeEnabled();
 				await application.evaluate(({ dialog }, path) => {
 					dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
 				}, exportPath);
-				await toolbar.getByRole("button", { name: "Export JSON" }).click();
+				await exportResult("JSON");
 				await expect(toolbar.getByRole("status")).toContainText("Exported ");
 				const exported = JSON.parse(await readFile(exportPath, "utf8"));
 				expect(exported.source.generation).toBeGreaterThanOrEqual(1);
@@ -291,12 +317,12 @@ for (const route of ["Game Text", "Texture Audit"] as const) {
 					dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
 					dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
 				}, presetPath);
-				await toolbar.getByRole("button", { name: "Save preset" }).click();
+				await presetAction("Save preset");
 				await expect(toolbar.getByRole("status")).toContainText("Saved preset:");
 				const preset = JSON.parse(await readFile(presetPath, "utf8"));
 				expect(preset.query.query).toBe(route === "Game Text" ? "Press" : "UI");
 				if (route === "Texture Audit") expect(preset.rules.rules.length).toBeGreaterThan(0);
-				await toolbar.getByRole("button", { name: "Copy CLI replay" }).click();
+				await presetAction("Copy CLI replay");
 				await expect(toolbar.getByRole("status")).toHaveText(
 					"PowerShell replay command copied."
 				);
@@ -304,19 +330,32 @@ for (const route of ["Game Text", "Texture Audit"] as const) {
 				expect(copied).toContain("pnpm ue-shed investigations run");
 				expect(copied).toContain(presetPath);
 				await search.fill("different settings");
-				await expect(toolbar.getByRole("button", { name: "Copy CLI replay" })).toHaveCount(
-					0
-				);
-				await toolbar.getByRole("button", { name: "Open preset" }).click();
+				if (route === "Game Text")
+					await toolbar.getByRole("button", { name: "Presets", exact: true }).click();
+				const replay =
+					route === "Game Text"
+						? page
+								.getByRole("dialog", { name: "Investigation presets" })
+								.getByRole("button", { name: "Copy CLI replay" })
+						: toolbar.getByRole("button", { name: "Copy CLI replay" });
+				await expect(replay).toHaveCount(0);
+				if (route === "Game Text")
+					await toolbar.getByRole("button", { name: "Presets", exact: true }).click();
+				await presetAction("Open preset");
 				await expect(search).toHaveValue(preset.query.query);
-				await expect(toolbar.getByRole("button", { name: "Export CSV" })).toBeEnabled();
+				await expect(exportButton).toBeEnabled();
 				const csvPath = join(root, "export.csv");
 				await application.evaluate(({ dialog }, path) => {
 					dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
 				}, csvPath);
-				await toolbar.getByRole("button", { name: "Export CSV" }).click();
+				await exportResult("CSV");
 				await expect(toolbar.getByRole("status")).toContainText("Exported ");
-				expect(await readFile(csvPath, "utf8")).toContain('"metadata"');
+				const csv = await readFile(csvPath, "utf8");
+				if (route === "Game Text") {
+					expect(csv).toContain('"Source","Translator notes"');
+					expect(csv).toContain('"Package file"');
+					expect(csv).toContain("Press ");
+				} else expect(csv).toContain('"metadata"');
 				if (route === "Game Text") {
 					const rules = JSON.parse(
 						await readFile(
@@ -338,21 +377,23 @@ for (const route of ["Game Text", "Texture Audit"] as const) {
 							rules
 						})
 					);
-					await toolbar.getByRole("button", { name: "Open preset" }).click();
+					await presetAction("Open preset");
 					await expect(
-						page.getByRole("button", { name: /Character budgets/, pressed: true })
+						page.getByRole("button", { name: /^Character limits/, pressed: true })
 					).toBeVisible();
 					await application.evaluate(({ dialog }, path) => {
 						dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
 					}, exportPath);
-					await toolbar.getByRole("button", { name: "Export JSON" }).click();
+					await exportResult("JSON");
 					await expect(toolbar.getByRole("status")).toContainText("Exported ");
 					const quality = JSON.parse(await readFile(exportPath, "utf8"));
-					expect(quality.result.mode).toBe("quality");
+					expect(quality.result.mode).toBe("localization_quality");
+					expect(quality.result.report.target).toBe("FixtureGame");
+					expect(quality.result.report.filter).toBe("character_budget");
 					expect(quality.result.report.findings.length).toBeGreaterThan(0);
 					expect(
 						quality.result.report.findings.every(
-							(finding: { kind: string }) => finding.kind === "character_budget"
+							(finding: { filter: string }) => finding.filter === "character_budget"
 						)
 					).toBe(true);
 				}

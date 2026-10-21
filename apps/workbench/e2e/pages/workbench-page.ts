@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 export type WorkbenchRoute =
 	| "Showcase"
@@ -60,5 +60,44 @@ export class WorkbenchPage {
 		const link = navigation.getByRole("link", { exact: true, name: route });
 		await link.click();
 		await expect(link).toHaveAttribute("aria-current", "page");
+	}
+
+	async scanGameText(): Promise<void> {
+		await test.step("Scan saved project text and await searchable results", async () => {
+			await this.openRoute("Game Text");
+			await this.page.getByRole("button", { name: "Scan project", exact: true }).click();
+			await expect(
+				this.page
+					.getByRole("region", { name: "Results" })
+					.locator("button[data-row]")
+					.first()
+			).toBeVisible({ timeout: 60_000 });
+		});
+	}
+
+	async exportGameText(format: "CSV" | "JSON"): Promise<void> {
+		await test.step(`Export Game Text as ${format}`, async () => {
+			const toolbar = this.page.getByRole("region", { name: "Investigation files" });
+			await toolbar.getByRole("button", { name: "Export", exact: true }).click();
+			await this.page
+				.getByRole("dialog", { name: "Export formats" })
+				.getByRole("button", { name: format, exact: true })
+				.click();
+		});
+	}
+
+	async gameTextPreset(action: "Save preset" | "Open preset" | "Copy CLI replay"): Promise<void> {
+		await test.step(`${action} for Game Text`, async () => {
+			const trigger = this.page.getByRole("button", { name: "Presets", exact: true });
+			await trigger.click();
+			await this.page
+				.getByRole("dialog", { name: "Investigation presets" })
+				.getByRole("button", {
+					name: action === "Copy CLI replay" ? action : `${action}…`,
+					exact: true
+				})
+				.click();
+			if (action === "Copy CLI replay") await trigger.click();
+		});
 	}
 }

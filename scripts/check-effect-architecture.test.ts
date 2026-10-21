@@ -97,6 +97,59 @@ test("package browser entries reach no Node authority or unreviewed dependency",
 	}
 });
 
+test("browser closures follow JavaScript sources and Node-only subpaths of guarded packages", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-js-"));
+	try {
+		const wasm = join(fixtureRoot, "packages/wasm");
+		const demo = join(fixtureRoot, "packages/demo");
+		const localization = join(fixtureRoot, "packages/localization");
+		for (const folder of [wasm, demo, localization])
+			await mkdir(join(folder, "src"), { recursive: true });
+		await writeFile(
+			join(wasm, "package.json"),
+			JSON.stringify({ exports: { "./browser": { import: "./dist/browser.js" } } })
+		);
+		await writeFile(join(wasm, "src/browser.js"), 'export * from "./runtime.js";\n');
+		await writeFile(
+			join(wasm, "src/runtime.js"),
+			'export { readFile } from "node:fs/promises";\n'
+		);
+		await writeFile(
+			join(demo, "package.json"),
+			JSON.stringify({ exports: { "./browser": { import: "./dist/browser.js" } } })
+		);
+		await writeFile(
+			join(demo, "src/browser.ts"),
+			[
+				'export { format } from "@ue-shed/localization/browser";',
+				'export { readFile } from "@ue-shed/localization";'
+			].join("\n")
+		);
+		await writeFile(
+			join(localization, "package.json"),
+			JSON.stringify({
+				exports: {
+					".": { import: "./dist/index.js" },
+					"./browser": { import: "./dist/browser.js" }
+				}
+			})
+		);
+		// The localization guard walks only `src/browser.ts`; the Node root is not exempt.
+		await writeFile(join(localization, "src/browser.ts"), 'import "node:path";\n');
+		await writeFile(join(localization, "src/index.ts"), 'export * from "./file-access.js";\n');
+		await writeFile(
+			join(localization, "src/file-access.ts"),
+			'export { readFile } from "node:fs/promises";\n'
+		);
+		assert.deepEqual((await checkBrowserEntryClosures(fixtureRoot)).sort(), [
+			"packages/localization/src/file-access.ts: browser closure must not import node:fs/promises",
+			"packages/wasm/src/runtime.js: browser closure must not import node:fs/promises"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
 test("Game Text entry points are named and first-party code imports focused entry points", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-game-text-entries-"));
 	try {

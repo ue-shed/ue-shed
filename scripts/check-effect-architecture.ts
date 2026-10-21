@@ -930,7 +930,28 @@ const browserSafeSubpaths = new Map([
 ]);
 const browserGuardedElsewhere = new Set(["localization", "game-text"]);
 
-/** The TypeScript source behind a workspace package's export subpath, if it has one. */
+/** The exact sources `checkLocalizationBoundaries` already walks as browser closures. */
+function sourcesGuardedElsewhere(root: string) {
+	return new Set([
+		join(root, "packages/localization/src/browser.ts"),
+		...gameTextBrowserEntries.map((entry) => join(root, "packages/game-text/src", entry))
+	]);
+}
+
+/** The source behind a `.js` module path: its TypeScript form, else the JavaScript file itself. */
+async function moduleSource(path: string) {
+	for (const candidate of /\.js$/u.test(path) ? [path.replace(/\.js$/u, ".ts"), path] : [path]) {
+		try {
+			await readFile(candidate, "utf8");
+			return candidate;
+		} catch {
+			// Try the next source form.
+		}
+	}
+	return undefined;
+}
+
+/** The TypeScript or JavaScript source behind a workspace package's export subpath, if any. */
 async function workspaceEntrySource(root: string, folder: string, subpath: string) {
 	let manifest;
 	try {
@@ -950,18 +971,7 @@ async function workspaceEntrySource(root: string, folder: string, subpath: strin
 				? (target.import ?? target.default)
 				: undefined;
 	if (file === undefined || !isJsonString(file) || !/\.(?:js|ts)$/u.test(file)) return undefined;
-	const source = join(
-		root,
-		"packages",
-		folder,
-		file.replace(/^\.\/dist\//u, "src/").replace(/\.js$/u, ".ts")
-	);
-	try {
-		await readFile(source, "utf8");
-		return source;
-	} catch {
-		return undefined;
-	}
+	return moduleSource(join(root, "packages", folder, file.replace(/^\.\/dist\//u, "src/")));
 }
 
 /**
@@ -980,6 +990,7 @@ export async function checkBrowserEntryClosures(root: string = repositoryRoot) {
 		return failures;
 	}
 	const pending: string[] = [];
+	const guardedElsewhere = sourcesGuardedElsewhere(root);
 	for (const folder of folders)
 		for (const subpath of ["./browser", ...(browserSafeSubpaths.get(folder) ?? [])]) {
 			const source = await workspaceEntrySource(root, folder, subpath);
@@ -1017,14 +1028,15 @@ export async function checkBrowserEntryClosures(root: string = repositoryRoot) {
 				)
 			)
 				failures.push(`${label}: browser closure must not import ${specifier}`);
-			else if (specifier.startsWith("."))
-				pending.push(resolve(dirname(path), specifier.replace(/\.js$/u, ".ts")));
-			else if (workspace) {
-				const folder = workspace[1]!;
-				const subpath = workspace[2] ? `.${workspace[2]}` : ".";
-				if (browserGuardedElsewhere.has(folder)) continue;
-				const source = await workspaceEntrySource(root, folder, subpath);
+			else if (specifier.startsWith(".")) {
+				const source = await moduleSource(resolve(dirname(path), specifier));
 				if (source) pending.push(source);
+			} else if (workspace) {
+				const subpath = workspace[2] ? `.${workspace[2]}` : ".";
+				const source = await workspaceEntrySource(root, workspace[1]!, subpath);
+				// Only the exact entries the localization guard walks are exempt; a Node-only
+				// subpath of the same package (its root, Game Text `/index`) is followed here.
+				if (source && !guardedElsewhere.has(source)) pending.push(source);
 			} else if (specifier !== "effect" && !specifier.startsWith("effect/"))
 				failures.push(`${label}: unreviewed browser dependency ${specifier}`);
 		}

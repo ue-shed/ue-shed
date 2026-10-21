@@ -3,9 +3,11 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	action,
+	available,
 	config,
 	context,
 	mapping,
+	notSerialized,
 	path,
 	report,
 	trigger
@@ -653,10 +655,10 @@ describe("control sheet", () => {
 		});
 		const csv = inputControlSheetCsv(sheet);
 		expect(csv.split("\r\n")[0]).toBe(
-			'"record_type","metadata_json","context","action","display_name","action_description","key","device","triggers","modifiers","contested","conflict_classes"'
+			'"record_type","metadata_json","context","action","display_name","display_name_source","action_description","key","device","triggers","modifiers","contested","conflict_classes"'
 		);
 		expect(csv).toContain(
-			'"record","","IMC_Gameplay","IA_Fire","","IA_Fire","F","keyboard","chord action (ChordAction IA_Chorded)"'
+			'"record","","IMC_Gameplay","IA_Fire","","setting_behavior_not_serialized","IA_Fire","F","keyboard","chord action (ChordAction IA_Chorded)"'
 		);
 		const markdown = inputControlSheetMarkdown(sheet);
 		expect(markdown).toContain("## IMC_Vehicle");
@@ -664,5 +666,81 @@ describe("control sheet", () => {
 			"| IA_Aim (IA_Aim) | RightMouseButton | mouse | hold |  | contested, cross context |"
 		);
 		expect(markdown).toContain("| No action | G | keyboard |");
+	});
+
+	it("picks the display name the saved SettingBehavior selects, and never guesses", () => {
+		const settings = (displayName: string) =>
+			available({
+				objectPath: `/Game/Input/Settings.${displayName}`,
+				name: available(displayName),
+				displayName: available(displayName),
+				displayCategory: notSerialized,
+				supportedKeyProfileIds: notSerialized
+			});
+		const fire = {
+			...action("IA_Fire"),
+			playerMappableKeySettings: settings("Action name")
+		};
+		const row = (settingBehavior: string | undefined) => {
+			const base = mapping("IA_Fire", "F");
+			const sheet = inputControlSheet(
+				report({
+					actions: [fire],
+					contexts: [
+						context("IMC_Gameplay", [
+							{
+								...base,
+								playerMappableKeySettings: settings("Mapping name"),
+								...(settingBehavior === undefined
+									? undefined
+									: {
+											settingBehavior: available(
+												`EPlayerMappableKeySettingBehaviors::${settingBehavior}`
+											)
+										})
+							}
+						])
+					]
+				}),
+				source
+			);
+			const first = sheet.rows[0];
+			return [first?.displayName, first?.displayNameSource];
+		};
+		expect(row("IgnoreSettings")).toEqual([null, "ignored"]);
+		expect(row("InheritSettingsFromAction")).toEqual(["Action name", "action"]);
+		expect(row("OverrideSettings")).toEqual(["Mapping name", "mapping"]);
+		expect(row(undefined)).toEqual([null, "setting_behavior_not_serialized"]);
+		expect(row("SomethingNew")).toEqual([null, "unknown_setting_behavior"]);
+	});
+
+	it("reports missing settings for the selected source instead of borrowing the other", () => {
+		const sheet = inputControlSheet(
+			report({
+				actions: [action("IA_Fire")],
+				contexts: [
+					context("IMC_Gameplay", [
+						{
+							...mapping("IA_Fire", "F"),
+							settingBehavior: available(
+								"EPlayerMappableKeySettingBehaviors::InheritSettingsFromAction"
+							),
+							playerMappableKeySettings: available({
+								objectPath: "/Game/Input/IMC_Gameplay.Stale",
+								name: available("Stale"),
+								displayName: available("Stale local name"),
+								displayCategory: notSerialized,
+								supportedKeyProfileIds: notSerialized
+							})
+						}
+					])
+				]
+			}),
+			source
+		);
+		expect(sheet.rows[0]).toMatchObject({
+			displayName: null,
+			displayNameSource: "settings_not_serialized"
+		});
 	});
 });

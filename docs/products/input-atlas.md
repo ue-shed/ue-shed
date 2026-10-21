@@ -210,8 +210,12 @@ ue-shed input export <project> [--format markdown|csv|json] [--output <file>] [c
 platform and keeps only sets that apply to it. `--co-activation` adds a host document. Each output
 is a versioned JSON document with the source statuses beside the result. `export` writes the
 control sheet, one row per mapping with triggers and parameters, through the saved-investigation
-file writer; CSV has the metadata row the other investigation exports use. Without `--platform`,
-`platforms` uses the platforms that have a project platform `Input` config.
+file writer; CSV has the metadata row the other investigation exports use. A row's display name
+follows the mapping's saved `SettingBehavior`, as `FEnhancedActionKeyMapping::GetPlayerMappableKeySettings`
+does: the action's settings when inheriting, the mapping's when overriding, none when ignoring.
+`display_name_source` says which, or that the behaviour or the selected settings are not saved;
+the sheet never borrows the other settings object. Without `--platform`, `platforms` uses the
+platforms that have a project platform `Input` config.
 
 ## Workbench route
 

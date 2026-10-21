@@ -10,6 +10,7 @@ import type { InputConflictAnalysis } from "./conflicts.js";
 import {
 	EnhancedInputReport,
 	type InputInstancedObjectRef,
+	type InputActionRecord,
 	type InputMappingRecord
 } from "./schema.js";
 
@@ -18,8 +19,9 @@ export const InputControlSheetRow = Schema.Struct({
 	contextDescription: Schema.NullOr(Schema.String),
 	action: Schema.NullOr(Schema.String),
 	actionDescription: Schema.NullOr(Schema.String),
-	/** The player-facing name from the mapping's or the action's mappable key settings. */
+	/** The player-facing name from the settings the mapping's `SettingBehavior` selects. */
 	displayName: Schema.NullOr(Schema.String),
+	displayNameSource: Schema.suspend(() => MappableDisplayNameSource),
 	key: Schema.NullOr(Schema.String),
 	device: Schema.NullOr(Schema.Literals(["gamepad", "keyboard", "mouse"])),
 	triggers: Schema.Array(Schema.String),
@@ -68,12 +70,59 @@ function labelled(
 	);
 }
 
-function displayNameOf(mapping: InputMappingRecord, actionSettings: string | null): string | null {
-	const own = mapping.playerMappableKeySettings;
-	if (own?.status === "available" && own.value.displayName.status === "available") {
-		return own.value.displayName.value;
+/**
+ * Where a row's mappable display name came from. `setting_behavior_not_serialized` means the
+ * mapping does not save `SettingBehavior`, so which settings apply is not claimed.
+ */
+export const MappableDisplayNameSource = Schema.Literals([
+	"mapping",
+	"action",
+	"ignored",
+	"settings_not_serialized",
+	"setting_behavior_not_serialized",
+	"unknown_setting_behavior"
+]);
+export type MappableDisplayNameSource = Schema.Schema.Type<typeof MappableDisplayNameSource>;
+
+/** A mapping's display name and the settings it came from. */
+export interface MappableDisplayName {
+	readonly displayName: string | null;
+	readonly source: MappableDisplayNameSource;
+}
+
+function settingsDisplayName(
+	settings: InputActionRecord["playerMappableKeySettings"],
+	source: "mapping" | "action"
+): MappableDisplayName {
+	return settings?.status === "available" && settings.value.displayName.status === "available"
+		? { displayName: settings.value.displayName.value, source }
+		: { displayName: null, source: "settings_not_serialized" };
+}
+
+/**
+ * The display name Unreal shows for a mapping, following its saved `SettingBehavior` as
+ * `FEnhancedActionKeyMapping::GetPlayerMappableKeySettings` does in UE 5.7: the action's settings
+ * when inheriting, the mapping's own when overriding, and none when ignoring. A behaviour the
+ * package does not save is reported as such rather than assumed.
+ */
+export function mappableDisplayName(
+	mapping: InputMappingRecord,
+	action: InputActionRecord | undefined
+): MappableDisplayName {
+	const behavior = mapping.settingBehavior;
+	if (behavior === undefined || behavior.status !== "available") {
+		return { displayName: null, source: "setting_behavior_not_serialized" };
 	}
-	return actionSettings;
+	switch (behavior.value.split("::").at(-1)) {
+		case "IgnoreSettings":
+			return { displayName: null, source: "ignored" };
+		case "InheritSettingsFromAction":
+			return settingsDisplayName(action?.playerMappableKeySettings, "action");
+		case "OverrideSettings":
+			return settingsDisplayName(mapping.playerMappableKeySettings, "mapping");
+		default:
+			return { displayName: null, source: "unknown_setting_behavior" };
+	}
 }
 
 /** Builds the control sheet document. Pass a conflict analysis to fill the conflict columns. */
@@ -98,7 +147,7 @@ export function inputControlSheet(
 	const rows = report.mappingContexts.flatMap((context) =>
 		context.mappings.map((mapping): InputControlSheetRow => {
 			const action = mapping.action === null ? undefined : actions.get(mapping.action);
-			const actionSettings = action?.playerMappableKeySettings;
+			const mappable = mappableDisplayName(mapping, action);
 			const key = mapping.keyName.status === "available" ? mapping.keyName.value : null;
 			return {
 				context: context.objectPath,
@@ -111,13 +160,8 @@ export function inputControlSheet(
 					action?.actionDescription.status === "available"
 						? action.actionDescription.value
 						: null,
-				displayName: displayNameOf(
-					mapping,
-					actionSettings?.status === "available" &&
-						actionSettings.value.displayName.status === "available"
-						? actionSettings.value.displayName.value
-						: null
-				),
+				displayName: mappable.displayName,
+				displayNameSource: mappable.source,
 				key,
 				device: key === null ? null : deviceOf(key),
 				triggers: [
@@ -157,6 +201,7 @@ export function inputControlSheetCsv(document: InputControlSheetExport): string 
 			"context",
 			"action",
 			"display_name",
+			"display_name_source",
 			"action_description",
 			"key",
 			"device",
@@ -169,6 +214,7 @@ export function inputControlSheetCsv(document: InputControlSheetExport): string 
 			objectName(row.context),
 			row.action === null ? null : objectName(row.action),
 			row.displayName,
+			row.displayNameSource,
 			row.actionDescription,
 			row.key,
 			row.device,

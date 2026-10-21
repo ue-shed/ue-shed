@@ -117,8 +117,14 @@ Sequences and saved worlds. Counts take up to 16 filters.
 - **Proposal.** Header profile 3, delivered in two stages.
     1. Scan-only, opt-in `dependencies: true` on a header-depth scan, mirroring `headerData: true`.
        Each package lists its distinct imported package names, split into hard (import table) and soft
-       (`soft_object_paths`) edges, with counts of object-level imports. `/Script/` packages stay as
-       class evidence, not edges. Small, local, no catalog change.
+       edges, with counts of object-level imports. `/Script/` packages stay as class evidence, not
+       edges. Soft edges are extra parser work, not only exposure: `soft_object_paths` exists only
+       from UE5 package version 1008 (`package.rs:20`, `:654`), so UE 4.27 packages lack it, and the
+       separate soft-package-reference table, which the engine reads with
+       `SerializeSoftPackageReferenceList` in `FPackageReader::ReadDependencyData`, is located
+       (`package.rs:682`) but not decoded. Soft edges need version-aware decoding of that table,
+       combined and de-duplicated with `soft_object_paths` where both exist; until then soft-edge
+       coverage is limited to 1008+ packages and says so. Otherwise small, local, no catalog change.
     2. Persisted in the Catalog as a new checked section with a reverse posting list keyed by target
        package, so "who refers to X" is a posting lookup like an exact-class query. This is the L part:
        `catalog_binary.rs` (about 2,500 lines), the memory and SQLite oracles and the conformance
@@ -308,7 +314,8 @@ generation, has a folder browser (`extensions/game-text/src/game-text-folder-bro
 --to-root`; a References pane in the Content route.
 - **Effort.** M.
 - **Unreal.** Saved-only.
-- **Risks.** Hard imports and the soft path table only; config, C++ and string references are
+- **Risks.** Hard imports and the soft tables only (soft edges for packages older than UE5 version
+  1008 need the soft-package-reference table, see EW-02); config, C++ and string references are
   missing, and editor-only edges are indistinguishable until the dependency-data section is read.
   Expansion can explode, so depth and node caps with visible truncation are required. "Path to a
   root" depends on the roots policy (EW-11).
@@ -318,9 +325,13 @@ generation, has a folder browser (`extensions/game-text/src/game-text-folder-bro
 
 - **Today.** Nothing in `crates` mentions redirectors. The list is already one command:
   `ue-shed project-index query exact-class /Script/CoreUObject.ObjectRedirector`.
-- **Proposal.** The list, then destinations from the `DestinationObject` tag (EW-06), referencers from
-  imports whose class is the redirector (EW-02), chains and loops, and folders that contain only
-  redirectors. Fixing stays in Unreal: `IAssetTools::FixupReferencers` exists in 5.7
+- **Proposal.** The list, then destinations from the `DestinationObject` tag (EW-06), referencers by
+  joining dependency and import target paths (EW-02) to each redirector's object and package
+  identity, whatever class the import saved, then chains and loops, and folders that contain only
+  redirectors. A package saved before the asset moved still imports the original class (for example
+  `Texture2D`) at the old path: `FLinkerLoad::VerifyImport` only swaps in `ObjectRedirector` while
+  resolving and restores the saved class afterwards, so filtering imports by the redirector class
+  would miss the ordinary referencers. Fixing stays in Unreal: `IAssetTools::FixupReferencers` exists in 5.7
   (`Engine/Source/Developer/AssetTools/Public/IAssetTools.h:649`), so a later, separately reviewed
   plugin action can apply a fix-up plan exactly as [ADR 0011](../decisions/0011-game-text-actions.md)
   does for text. The headless output is the plan, never the fix.
@@ -757,7 +768,13 @@ one map's actors, classes, labels and transforms from files (`packages/unreal-as
 - **Today.** Saved worlds are read one map at a time.
 - **Proposal.** Fold `readSavedWorld` over every indexed map into class counts per map, maps by actor
   count, and classes used in only one map. A thin first slice of the
-  [queryable world](catalog.md#3-queryable-world). Cache per map signature so rescans are cheap.
+  [queryable world](catalog.md#3-queryable-world). Cache so rescans are cheap, keyed on everything
+  the read depends on: for a World Partition map, `readSavedWorld` reads the map's
+  `__ExternalActors__` packages (`crates/uasset-io/src/direct_executor/project_io.rs:1690`), which
+  change without changing the `.umap` signature (`catalog.rs:401` signs one package and its
+  sidecars). The key therefore covers the external-actor subtree's membership and signatures; a
+  cache bound to the Project Index generation is an acceptable first slice that defers per-map
+  invalidation.
 - **Reuses.** `readSavedWorld`, `ProjectIndexMap` (`project-index.ts:205`), the index signature.
 - **New surface.** Library `worldCensus`; CLI `ue-shed world census`.
 - **Effort.** S to M.
@@ -792,16 +809,16 @@ one map's actors, classes, labels and transforms from files (`packages/unreal-as
 The links that make the entries above more than a sum. Each uses an existing identity (package path,
 object path) and the shared asset intent from EW-09.
 
-| From                      | To                              | Mechanism                                                          | Entry        |
-| ------------------------- | ------------------------------- | ------------------------------------------------------------------ | ------------ |
-| Game Text place           | Content details, Blueprint node | `TextLocation.objectPath` and `propertyPath`, `reveal(objectPath)` | EW-12, EW-09 |
-| Content asset             | Referencers and dependencies    | EW-02 edges, `resolveSavedReference` for property drill-down       | EW-05        |
-| Input action              | Blueprint nodes that use it     | `blueprintReferences` over imports-prefiltered Blueprints          | EW-08        |
-| Config value              | Asset or missing asset          | Config asset references joined to the inventory                    | EW-15, EW-04 |
-| Redirector                | Destination and referencers     | `DestinationObject` tag, imports of the redirector class           | EW-07        |
-| Texture or mesh audit row | Content details and references  | Same package path                                                  | EW-16, EW-09 |
-| Any finding list          | Selection in the Unreal editor  | `LocateAssets` capability, only when advertised                    | EW-24        |
-| Content asset             | Compare with depot revision     | Revision source plus domain diff                                   | EW-14        |
+| From                      | To                              | Mechanism                                                           | Entry        |
+| ------------------------- | ------------------------------- | ------------------------------------------------------------------- | ------------ |
+| Game Text place           | Content details, Blueprint node | `TextLocation.objectPath` and `propertyPath`, `reveal(objectPath)`  | EW-12, EW-09 |
+| Content asset             | Referencers and dependencies    | EW-02 edges, `resolveSavedReference` for property drill-down        | EW-05        |
+| Input action              | Blueprint nodes that use it     | `blueprintReferences` over imports-prefiltered Blueprints           | EW-08        |
+| Config value              | Asset or missing asset          | Config asset references joined to the inventory                     | EW-15, EW-04 |
+| Redirector                | Destination and referencers     | `DestinationObject` tag, imports matched to the redirector identity | EW-07        |
+| Texture or mesh audit row | Content details and references  | Same package path                                                   | EW-16, EW-09 |
+| Any finding list          | Selection in the Unreal editor  | `LocateAssets` capability, only when advertised                     | EW-24        |
+| Content asset             | Compare with depot revision     | Revision source plus domain diff                                    | EW-14        |
 
 ## Packages with no easy win identified now
 

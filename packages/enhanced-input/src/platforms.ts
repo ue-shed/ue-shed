@@ -162,6 +162,22 @@ export interface InputDeviceSet {
 	readonly devices: readonly AtlasDevice[];
 }
 
+/** A host-authored list of device sets, replacing `defaultInputDeviceSets`. */
+export const InputDeviceSetsDocument = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	kind: Schema.Literal("enhanced_input_device_sets"),
+	sets: Schema.Array(
+		Schema.Struct({
+			id: Schema.NonEmptyString,
+			label: Schema.String,
+			devices: Schema.Array(Schema.Literals(["gamepad", "keyboard", "mouse"])).check(
+				Schema.isMinLength(1)
+			)
+		})
+	).check(Schema.isMinLength(1))
+});
+export type InputDeviceSetsDocument = Schema.Schema.Type<typeof InputDeviceSetsDocument>;
+
 /** A starting point a host can replace: keyboard with mouse, and gamepad. */
 export const defaultInputDeviceSets: readonly InputDeviceSet[] = [
 	{ id: "keyboard_mouse", label: "Keyboard and mouse", devices: ["keyboard", "mouse"] },

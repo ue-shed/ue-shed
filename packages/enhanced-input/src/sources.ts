@@ -26,6 +26,7 @@ import {
 	type CoActivationSourceStatus
 } from "./coactivation.js";
 import {
+	InputDeviceSetsDocument,
 	parsePlatformInputData,
 	platformDataRedirectsFromInspection,
 	platformSettingsSection,
@@ -46,6 +47,7 @@ export class EnhancedInputAnalysisError extends Schema.TaggedError<EnhancedInput
 	{
 		code: Schema.Literals([
 			"invalid_co_activation_document",
+			"invalid_device_sets_document",
 			"project_files_unreadable",
 			"reader_failed"
 		]),
@@ -155,46 +157,62 @@ export const resolveDefaultContextsFromConfig = Effect.fn(
 	);
 });
 
-/** Documents stay small; a co-activation list is never megabytes. */
+/** Documents stay small; a co-activation or device list is never megabytes. */
 const MAXIMUM_DOCUMENT_BYTES = 1024 * 1024;
 
-const decodeCoActivationDocumentJson = Schema.decodeUnknownEffect(
-	Schema.fromJsonString(CoActivationDocument)
-);
+/** Reads one bounded JSON document and decodes it. A bad document is the caller's input error. */
+function readJsonDocument<S extends Schema.Decoder<unknown>>(
+	path: string,
+	schema: S,
+	options: {
+		readonly code: "invalid_co_activation_document" | "invalid_device_sets_document";
+		readonly label: string;
+		readonly example: string;
+	}
+) {
+	const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(schema));
+	return Effect.tryPromise({
+		try: async () => {
+			const info = await stat(path);
+			if (info.size > MAXIMUM_DOCUMENT_BYTES) throw new Error("Document exceeds 1 MiB.");
+			return await readFile(path, "utf8");
+		},
+		catch: (cause) =>
+			new EnhancedInputAnalysisError({
+				code: options.code,
+				message: `Could not read the ${options.label} ${path}.`,
+				recovery: "Choose a readable JSON document smaller than 1 MiB.",
+				retrySafe: true,
+				nextStep: "fix_input",
+				cause
+			})
+	}).pipe(
+		Effect.flatMap((text) =>
+			decode(text).pipe(
+				Effect.mapError(
+					(cause) =>
+						new EnhancedInputAnalysisError({
+							code: options.code,
+							message: `The ${options.label} ${path} is not schema 1 JSON: ${cause.message}`,
+							recovery: `Use ${options.example}.`,
+							retrySafe: false,
+							nextStep: "fix_input",
+							cause
+						})
+				)
+			)
+		)
+	);
+}
 
-/** Reads and validates a host co-activation document. A bad document is the caller's input error. */
+/** Reads and validates a host co-activation document. */
 export const readCoActivationDocument = Effect.fn("EnhancedInput.readCoActivationDocument")(
 	function* (path: string) {
-		const text = yield* Effect.tryPromise({
-			try: async () => {
-				const info = await stat(path);
-				if (info.size > MAXIMUM_DOCUMENT_BYTES) throw new Error("Document exceeds 1 MiB.");
-				return await readFile(path, "utf8");
-			},
-			catch: (cause) =>
-				new EnhancedInputAnalysisError({
-					code: "invalid_co_activation_document",
-					message: `Could not read the co-activation document ${path}.`,
-					recovery: "Choose a readable JSON document smaller than 1 MiB.",
-					retrySafe: true,
-					nextStep: "fix_input",
-					cause
-				})
+		const document = yield* readJsonDocument(path, CoActivationDocument, {
+			code: "invalid_co_activation_document",
+			label: "co-activation document",
+			example: '{ "schemaVersion": 1, "kind": "enhanced_input_co_activation", "sets": [...] }'
 		});
-		const document = yield* decodeCoActivationDocumentJson(text).pipe(
-			Effect.mapError(
-				(cause) =>
-					new EnhancedInputAnalysisError({
-						code: "invalid_co_activation_document",
-						message: `The co-activation document ${path} is not schema 1 JSON: ${cause.message}`,
-						recovery:
-							'Use { "schemaVersion": 1, "kind": "enhanced_input_co_activation", "sets": [...] }.',
-						retrySafe: false,
-						nextStep: "fix_input",
-						cause
-					})
-			)
-		);
 		const sets = coActivationFromDocument(document, path);
 		return {
 			sets,
@@ -205,6 +223,18 @@ export const readCoActivationDocument = Effect.fn("EnhancedInput.readCoActivatio
 				detail: path
 			}
 		} satisfies CoActivationResolution;
+	}
+);
+
+/** Reads and validates a host device-sets document, which replaces the default device sets. */
+export const readInputDeviceSetsDocument = Effect.fn("EnhancedInput.readInputDeviceSetsDocument")(
+	function* (path: string) {
+		const document = yield* readJsonDocument(path, InputDeviceSetsDocument, {
+			code: "invalid_device_sets_document",
+			label: "device sets document",
+			example: '{ "schemaVersion": 1, "kind": "enhanced_input_device_sets", "sets": [...] }'
+		});
+		return document.sets;
 	}
 );
 

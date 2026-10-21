@@ -19,7 +19,7 @@ import childProcess, {
 	type SpawnSyncReturns
 } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
-import { basename } from "node:path";
+import { basename, win32 } from "node:path";
 import { isMainThread } from "node:worker_threads";
 import {
 	formatTraceparent,
@@ -73,14 +73,15 @@ export function describeSubprocess(
 	shell = false
 ): Subprocess | undefined {
 	let words = shell && args.length === 0 ? commandWords(file) : [file, ...args];
-	if (/^cmd(?:\.exe)?$/i.test(basename(words[0] ?? ""))) {
+	// win32.basename splits on both separators, so Windows command paths are named on any host.
+	if (/^cmd(?:\.exe)?$/i.test(win32.basename(words[0] ?? ""))) {
 		// pnpm and the scripts' Windows shims run `cmd.exe /d /s /c <command line>`, as separate
 		// arguments or as one verbatim string.
 		const command = /(?:^|\s)\/c\s+([\s\S]*)$/i.exec(words.slice(1).join(" "))?.[1];
 		if (command !== undefined) words = commandWords(command.replace(/^"([\s\S]*)"$/, "$1"));
 	}
 	const program = words[0] ?? "";
-	const tool = basename(program);
+	const tool = win32.basename(program);
 	if (
 		program === process.execPath ||
 		/^(?:node|pnpm|npm|npx|pnpx)(?:\.exe|\.cmd)?$/i.test(tool) ||

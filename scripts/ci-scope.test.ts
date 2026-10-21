@@ -4,7 +4,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { changedFiles, selectCiScope, siteWorkspaceDirectories } from "./ci-scope.ts";
+import {
+	changedFiles,
+	releaseNotesOnly,
+	selectCiScope,
+	siteWorkspaceDirectories
+} from "./ci-scope.ts";
 import type { WorkspaceManifest } from "./workspace-manifests.ts";
 
 const none = { uasset_io: false, uasset_libraries: false, catalog_oracle: false, site: false };
@@ -140,4 +145,16 @@ test("Git change detection includes removed/renamed inputs and fails instead of 
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
+});
+
+test("only a push of release notes alone can reuse the previous passing run", () => {
+	assert.equal(releaseNotesOnly(["docs/releases/0.21.0.md"]), true);
+	assert.equal(releaseNotesOnly(["docs/releases/0.21.0.md", "docs/releases/0.20.0.md"]), true);
+	assert.equal(releaseNotesOnly([]), false);
+	assert.equal(
+		releaseNotesOnly(["docs/releases/0.21.0.md", "packages/uasset/CHANGELOG.md"]),
+		false
+	);
+	assert.equal(releaseNotesOnly(["docs/releases/assets/timeline.png"]), false);
+	assert.equal(releaseNotesOnly(["docs/releases.md"]), false);
 });

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isJsonObject } from "./json.ts";
+import { isJsonNumber, isJsonObject, parseJson } from "./json.ts";
 import { readWorkspaceManifests, type WorkspaceManifest } from "./workspace-manifests.ts";
 
 export interface CiScope {
@@ -96,6 +96,33 @@ export function selectCiScope(
 	};
 }
 
+/** Only release notes: what `pnpm release:prepare --record` changes after the gates ran. */
+export function releaseNotesOnly(files: readonly string[]) {
+	return files.length > 0 && files.every((path) => /^docs\/releases\/[^/]+\.md$/.test(path));
+}
+
+/**
+ * Whether the Portable workflow already succeeded for `sha`. Read-only: the job's token needs
+ * `actions: read`. Any failure to find out answers no.
+ */
+async function portableRunPassed(sha: string) {
+	const token = process.env.GITHUB_TOKEN;
+	const repository = process.env.GITHUB_REPOSITORY;
+	if (!token || !repository || !/^[0-9a-f]{40}$/.test(sha)) return false;
+	const api = process.env.GITHUB_API_URL ?? "https://api.github.com";
+	try {
+		const response = await fetch(
+			`${api}/repos/${repository}/actions/workflows/portable.yml/runs?head_sha=${sha}&status=success&per_page=1`,
+			{ headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}` } }
+		);
+		if (!response.ok) return false;
+		const body = parseJson(await response.text());
+		return isJsonObject(body) && isJsonNumber(body.total_count) && body.total_count > 0;
+	} catch {
+		return false;
+	}
+}
+
 export function changedFiles(root: string, base: string, head: string, pullRequest: boolean) {
 	if (!head || (pullRequest && !base))
 		throw new Error("CI scope requires explicit base/head commits.");
@@ -121,14 +148,31 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 		process.env.HEAD_SHA ?? "",
 		pullRequest
 	);
-	const scope = selectCiScope(
-		files,
-		siteWorkspaceDirectories(readWorkspaceManifests(root)),
-		!pullRequest
-	);
+	// A pull request push that only records release-notes evidence on top of a commit whose run
+	// passed reuses that run: the code is unchanged, so only the release text is checked again.
+	const before = process.env.BEFORE_SHA ?? "";
+	let reusePreviousRun = false;
+	if (pullRequest && process.env.PR_ACTION === "synchronize" && before !== "") {
+		try {
+			const pushed = changedFiles(root, before, process.env.HEAD_SHA ?? "", false);
+			reusePreviousRun = releaseNotesOnly(pushed) && (await portableRunPassed(before));
+		} catch {
+			reusePreviousRun = false;
+		}
+	}
+	const scope = reusePreviousRun
+		? { uasset_io: false, uasset_libraries: false, catalog_oracle: false, site: false }
+		: selectCiScope(
+				files,
+				siteWorkspaceDirectories(readWorkspaceManifests(root)),
+				!pullRequest
+			);
 	console.log("Changed files:\n" + files.map((path) => `  ${path}`).join("\n"));
+	if (reusePreviousRun) {
+		console.log(`Only release notes changed since ${before}, whose Portable run passed.`);
+	}
 	const outputs =
-		Object.entries(scope)
+		[...Object.entries(scope), ["reuse_previous_run", reusePreviousRun] as const]
 			.map(([name, enabled]) => `${name}=${enabled}`)
 			.join("\n") + "\n";
 	console.log(outputs);

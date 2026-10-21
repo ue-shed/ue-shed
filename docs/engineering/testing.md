@@ -222,7 +222,11 @@ performance runners. Attempts retain project, file, worker, retry, repeat, expec
 skips remain explicit, failed attempts remain visible even when a retry passes. The console summary
 lists the slowest E2E attempts. These timings come from our runner and include application launch,
 readiness waits and cleanup through Playwright's fixture/hook steps; they require no Unreal-side
-instrumentation. Ordinary runs keep the list reporter without writing gate spans. Overriding
+instrumentation. Attempt intervals use lifecycle wall time, including hooks and fixtures with
+separate timeout budgets; `playwright.reported_duration_ms` retains Playwright's own accounted
+duration. Unfinished steps retain their elapsed interval through the enclosing interruption boundary
+and are marked as errors with `playwright.incomplete: true`, rather than successful zero-time steps.
+Ordinary runs keep the list reporter without writing gate spans. Overriding
 Playwright's `--reporter` also overrides the timing reporter.
 
 Unreal runs record a span per UnrealBuildTool build and per editor or commandlet run.

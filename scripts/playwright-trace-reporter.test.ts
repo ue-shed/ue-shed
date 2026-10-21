@@ -61,8 +61,31 @@ test("passes with nested steps", async ({ journey }) => {
 test("retries the failed attempt", async ({}, info) => { expect(info.retry).toBe(1); });
 test.skip("explicitly skipped", async () => {});
 test("expected failure", async () => { test.fail(); expect(1).toBe(2); });
-test("times out", async () => { test.setTimeout(100); await new Promise(r => setTimeout(r, 1000)); });
-test("runs in parallel", async () => { await new Promise(r => setTimeout(r, 100)); });`
+const interrupted = base.extend({ cleanup: [async ({}, use) => {
+ await use();
+ await base.step("cleanup after timeout", async () => new Promise(r => setTimeout(r, 300)));
+}, { auto: true, timeout: 5000 }] });
+interrupted("times out", async () => {
+ interrupted.setTimeout(200);
+ await interrupted.step("pending outer wait", async () => {
+  await interrupted.step("pending host wait", async () => new Promise(() => {}));
+ });
+});
+test("runs in parallel", async () => { await new Promise(r => setTimeout(r, 100)); });
+const lifecycle = base.extend({ resource: [async ({}, use) => {
+ await base.step("separate fixture setup", async () => new Promise(r => setTimeout(r, 400)));
+ await use("ready");
+ await base.step("separate fixture teardown", async () => new Promise(r => setTimeout(r, 300)));
+}, { timeout: 5000 }] });
+lifecycle.describe("separate timeout slots", () => {
+ lifecycle.beforeAll(async () => {
+  await base.step("prepare suite", async () => new Promise(r => setTimeout(r, 600)));
+ });
+ lifecycle("includes lifecycle wall time", async ({ resource }) => {
+  expect(resource).toBe("ready");
+  await new Promise(r => setTimeout(r, 100));
+ });
+});`
 		);
 		const result = spawnSync(process.execPath, [playwright, "test", "--config", config], {
 			cwd: repositoryRoot,
@@ -90,7 +113,7 @@ test("runs in parallel", async () => { await new Promise(r => setTimeout(r, 100)
 		const attempts = spans.filter(
 			(span) => span.attributes["playwright.test_id"] !== undefined
 		);
-		assert.equal(attempts.length, 8);
+		assert.equal(attempts.length, 9);
 		assert.ok(attempts.every((span) => span.parentSpanId === run.spanId));
 		assert.ok(
 			attempts.every((span) => span.attributes["playwright.project"] === "trace-regression")
@@ -119,6 +142,49 @@ test("runs in parallel", async () => { await new Promise(r => setTimeout(r, 100)
 		assert.ok(spans.some((span) => span.name === "launch owned application"));
 		assert.ok(spans.some((span) => span.name === "clean up owned application"));
 		assert.ok(spans.some((span) => span.attributes["playwright.category"] === "expect"));
+		const lifecycle = attempts.find((span) =>
+			span.name.endsWith("includes lifecycle wall time")
+		);
+		assert.ok(lifecycle);
+		const lifecycleMs = (lifecycle.endUs - lifecycle.startUs) / 1000;
+		assert.ok(lifecycleMs >= 1300, `Lifecycle work took only ${lifecycleMs}ms`);
+		assert.ok(
+			lifecycleMs - Number(lifecycle.attributes["playwright.reported_duration_ms"]) >= 1100,
+			"The lifecycle interval must include work charged to separate timeout slots"
+		);
+		const pending = spans.filter((span) => span.name === "pending host wait");
+		assert.equal(pending.length, 2);
+		for (const wait of pending) {
+			assert.equal(wait.status, "error");
+			assert.equal(wait.attributes["playwright.incomplete"], true);
+			assert.ok(wait.endUs - wait.startUs >= 100_000);
+			const outer = byId.get(wait.parentSpanId!);
+			assert.ok(outer);
+			assert.equal(outer.status, "error");
+			assert.equal(outer.attributes["playwright.incomplete"], true);
+			assert.equal(wait.endUs, outer.endUs);
+			const attempt = byId.get(outer.parentSpanId!);
+			assert.ok(attempt);
+			const afterHooks = spans.find(
+				(span) => span.name === "After Hooks" && span.parentSpanId === attempt.spanId
+			);
+			assert.ok(afterHooks);
+			assert.equal(wait.endUs, afterHooks.startUs);
+			assert.ok(
+				attempt.endUs - wait.endUs >= 250_000,
+				"Pending waits must end before cleanup rather than count its extra time"
+			);
+		}
+		assert.equal(spans.filter((span) => span.name === "cleanup after timeout").length, 2);
+		for (const span of spans) {
+			const parent = byId.get(span.parentSpanId ?? "");
+			if (!parent) continue;
+			assert.ok(span.startUs >= parent.startUs, `${span.name} starts before its parent`);
+			assert.ok(
+				span.endUs <= parent.endUs,
+				`${span.name} ends ${span.endUs - parent.endUs}us after ${parent.name}`
+			);
+		}
 		assert.ok(spans.every((span) => span.endUs >= span.startUs));
 		const trace = chromeTrace(spans, run.startUs);
 		assert.ok(trace.traceEvents.some((event) => event.name === "capture scenario"));

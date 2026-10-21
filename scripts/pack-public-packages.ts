@@ -194,11 +194,25 @@ function listPackedFiles(tarball: string) {
 		.filter(Boolean);
 }
 
-async function packWorkspacePackage(workspacePackage: PublicPackage, outputDirectory: string) {
+const NATIVE_PACKAGE_NAMES: ReadonlySet<string> = new Set([
+	ENGINE_WINDOWS_PACKAGE_NAME,
+	"@ue-shed/uasset-win32-x64"
+]);
+
+async function packWorkspacePackage(
+	workspacePackage: PublicPackage,
+	outputDirectory: string,
+	assembled: boolean
+) {
 	const packageDirectory = join(repositoryRoot, workspacePackage.directory);
 	const before = new Set(await readdir(outputDirectory));
+	// Native packages assembled above from an explicit build must not re-assemble in `prepack`,
+	// which defaults to the release build and fails (or packs another binary) after a debug build.
+	const ignoreScripts =
+		workspacePackage.name === WASM_PACKAGE_NAME ||
+		(assembled && NATIVE_PACKAGE_NAMES.has(workspacePackage.name));
 	const packArguments = [
-		...(workspacePackage.name === WASM_PACKAGE_NAME ? ["--config.ignore-scripts=true"] : []),
+		...(ignoreScripts ? ["--config.ignore-scripts=true"] : []),
 		"pack",
 		"--pack-destination",
 		outputDirectory
@@ -605,13 +619,14 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 
 async function packAndValidate(
 	workspacePackage: PublicPackage,
-	outputDirectory: string
+	outputDirectory: string,
+	assembled: boolean
 ): Promise<PackedPackage> {
 	// SAFETY: PUBLIC_PACKAGES contains only repository-owned package manifests.
 	const workspaceManifest = JSON.parse(
 		await readFile(join(repositoryRoot, workspacePackage.directory, "package.json"), "utf8")
 	) as PackageManifest;
-	const path = await packWorkspacePackage(workspacePackage, outputDirectory);
+	const path = await packWorkspacePackage(workspacePackage, outputDirectory, assembled);
 	const filename = basename(path);
 	const manifestRaw = readPackedFile(path, "package/package.json");
 	// SAFETY: npm pack generated this manifest from workspaceManifest and it is validated below.
@@ -718,7 +733,7 @@ export async function packPublicPackages({
 				`pack ${workspacePackage.name}`,
 				{ "package.name": workspacePackage.name },
 				(span) =>
-					packAndValidate(workspacePackage, outputDirectory).then((entry) => {
+					packAndValidate(workspacePackage, outputDirectory, build).then((entry) => {
 						span.setAttributes({ "package.bytes": entry.bytes });
 						return entry;
 					})

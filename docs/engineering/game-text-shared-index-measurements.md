@@ -10,6 +10,70 @@ subsections below describe earlier revisions; they do not supersede the latest
 Cold/refresh results use **TypeScript builder; native builder pending**. Earlier Phase 6 cold
 discovery measurements with explicit worker heap limits are superseded by default-worker runs.
 
+## Corpus and index engine pass: actual desktop comparison (2026-10-22)
+
+Measured with `pnpm benchmark:game-text-desktop` (`apps/workbench/scripts/benchmark-game-text-desktop.ts`),
+which drives the production Electron Workbench (Electron 43.7.7) on a local UE 5.7 project of about
+11,000 packages, of which 1,380 hold text (31,061 lines). Before is the head of PR #156; after is
+this pass. Each build used its own release reader. Three runs per build alternated in fresh
+processes (before, after; after, before; before, after), each with an isolated profile and an empty
+derived cache; OS file caches were not evicted. No other build or test process ran during the
+runs (the harness waits for them and recorded none). Machine: 16-core Ryzen 9 7950X, 64 GB,
+Windows 11. Medians of three:
+
+| Actual Workbench operation (median of 3)           |      Before |       After |
+| -------------------------------------------------- | ----------: | ----------: |
+| Game Text cold scan, click to usable results       |     19.87 s |      5.29 s |
+| App launch to usable results (cold)                |     20.67 s |      6.09 s |
+| App launch to Project Index ready (empty cache)    |      0.71 s |      0.75 s |
+| Unchanged rescan to usable results                 |      0.76 s |      0.78 s |
+| Warm relaunch to usable results (same cache)       |      2.75 s |      2.76 s |
+| First search, query round trip (wall to count)     |  18 (68) ms |  18 (66) ms |
+| Second search, query round trip                    |       13 ms |       13 ms |
+| Facet filter, query round trip (wall to count)     | 23 (195) ms | 23 (206) ms |
+| Peak aggregate RSS during the cold session         |   1,611 MiB |   1,093 MiB |
+| Aggregate RSS 2 s after the cold rescan            |   1,098 MiB |   1,006 MiB |
+| Main-process event-loop max stall during the scan  |       66 ms |       22 ms |
+| Main-process stall time over 50 ms during the scan |       66 ms |        0 ms |
+| Project Index Catalog on disk                      |     9.67 MB |     1.92 MB |
+| Game Text cache on disk                            |    19.45 MB |     8.33 MB |
+
+Ranges: cold scan 18.85–19.95 s before, 5.28–5.54 s after; peak RSS 1,569–1,680 MiB before,
+1,089–1,166 MiB after. Every run of both builds hashed the same 31,061 rows, facets and problem
+groups through the production search IPC (`ec8793ff…`), and returned the same search and facet
+totals. RSS is the summed working set of the checkout's Electron and reader processes, sampled
+every 250 ms; worker threads count in the main process. The stall monitor is a 10 ms interval
+timer on the Electron main thread. The scan timer starts at the click and ends when Rescan is
+enabled, no progress is shown, the status shows the line count and the search count is shown.
+In both builds the route's initial load starts before the click, and the click's refresh then
+waits for it and makes one unchanged pass (about 1 s of each cold time).
+
+Traced stages of one cold scan (spans and native stage seconds; tracing itself adds about 0.5 s):
+
+| Stage                                            |                         Before |                         After |
+| ------------------------------------------------ | -----------------------------: | ----------------------------: |
+| Package read: native extraction and host staging |                          7.8 s |                         1.3 s |
+| Native extraction of the 1,380 packages          |                          7.5 s |                         1.1 s |
+| Cold shard conversion in workers (wall)          | 5.7 s (8 workers, 34.7 s busy) | 1.0 s (4 workers, 3.7 s busy) |
+| Native cold publication of 256 package layers    |                         2.46 s |                        0.53 s |
+| Native full join                                 |                         2.26 s |                        1.44 s |
+| Native engine open                               |                         0.19 s |                        0.20 s |
+
+Most of the gain came from five measured costs. One 32 MB Blueprint took 5.3 s to extract
+because every graph and node re-decoded its owner to prove graph membership; the reader also
+built an error breadcrumb for every element of large numeric arrays. About 82 MB of package-text
+JSON crossed the main thread to be re-staged as NDJSON and parsed again in workers; the reader now
+writes it to per-shard staging files (uasset-io 1.19) that workers validate directly. Eight workers
+each loaded the module graph and wrote 256 small snapshots with a zstd context, a sync and a write
+per section; staging is now uncompressed, unsynced and batched, and fewer workers start while the
+reader extracts. The native writer staged 256 layers serially, and the join compared texts with
+ICU per comparison. Disk shrinks because the Catalog is compressed in blocks and integer columns
+are stored byte-grouped and delta-coded (`game-text-v2`).
+
+Raw results: ignored `test-results/game-text-desktop/final-1.{json,log}` (per-run samples, memory
+timelines and hashes) and `trace/*` (spans and CPU profiles of the traced runs). UE 5.8 is not
+installed on the measuring machine; no UE 5.8 measurement or check was run.
+
 ## Stage breakdown (Plan 058 C1): instrumentation ready, numbers pending
 
 The build and Quality scan now report their stages: `PackageText.refresh`,
@@ -18,7 +82,8 @@ and `benchmark-game-text-scale.ts --stages` records them with every span's wall 
 [the scale harness](../../scripts/game-text-scale.md)). Any OpenTelemetry tracer a host installs
 receives the same attributes.
 
-**No stage numbers are recorded yet.** The large UE 4.27 project and the large UE 5 World
+**No stage numbers are recorded yet for those two projects**; a smaller local UE 5.7
+project's traced cold-scan stages are in the section above. The large UE 4.27 project and the large UE 5 World
 Partition project were not available on the machine that added the instrumentation, and other
 builds and tests ran on it at the same time. Record the breakdown for both projects here,
 without naming them, on a quiet machine with alternating fresh processes, as ADR 0010 requires.

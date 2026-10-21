@@ -91,6 +91,7 @@
 		"benchmark:game-text-scale": "node scripts/benchmark-game-text-scale.ts",
 		"validate:game-text-scale": "node scripts/validate-game-text-scale.ts",
 		"benchmark:compact-text": "pnpm --filter @ue-shed/workbench exec tsx scripts/benchmark-compact-text.ts",
+		"benchmark:game-text-desktop": "pnpm --filter @ue-shed/workbench exec tsx scripts/benchmark-game-text-desktop.ts",
 		"benchmark:uasset": "node scripts/benchmark-uasset.ts",
 		"benchmark:uasset:wasm": "pnpm run uasset:build:wasm && cargo build --locked --release -p uasset-io && node scripts/benchmark-uasset-wasm.ts",
 		"benchmark:uasset:unreal": "node scripts/benchmark-uasset.ts --unreal",

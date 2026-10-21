@@ -145,10 +145,12 @@ const { blueprint, diagnostics, outcome } = yield * readSavedBlueprint({ assetPa
 const eventGraph = blueprint.graphs.find((graph) => graph.name === "EventGraph");
 ```
 
-The operation is intentionally read-only and currently targets UE4 522 packages with UE5 saved
-revisions 1012, 1013, 1017, or 1018. Cooked/editor-filtered packages, Control Rig's separate RigVM
-model, referenced-package loading, bytecode reconstruction, and package mutation are outside this
-boundary. A non-empty `coverage_gaps` array means the topology remains useful but a reference,
+The operation is intentionally read-only and targets UE4 522 packages from UE 4.27 and UE5 saved
+revisions 1000–1018. Older saves require the source-verified Framework/Release custom-version
+framing; pin source-index and precision fields follow their independent custom-version gates.
+Cooked/editor-filtered packages, Control Rig's separate RigVM model, referenced-package loading,
+bytecode reconstruction, and package mutation are outside this boundary. A non-empty
+`coverage_gaps` array means the topology remains useful but a reference,
 native property payload, or node-subclass tail was not fully projected.
 
 ## Reading one saved map

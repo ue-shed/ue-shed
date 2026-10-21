@@ -17,7 +17,7 @@ pub(super) fn decode(
         || (package.summary.versions.ue5 != 0
             && !matches!(
                 custom_version(package, [0xD89B5E42, 0x24BD4D46, 0x8412ACA8, 0xDF641779]),
-                Some(36..)
+                Some(0..)
             ))
     {
         return Err(error(
@@ -58,7 +58,11 @@ pub(super) fn decode(
     }
     // UE 4.27 / 5.7 EdGraphPin.cpp, FEdGraphPinType::Serialize. UE4 has
     // no UE5ReleaseStream SerializeFloatPinDefaultValuesAsSinglePrecision flag.
-    let suffix = if package.summary.versions.ue5 == 0 {
+    let suffix = if package.summary.versions.ue5 == 0
+        || matches!(
+            custom_version(package, [0xD89B5E42, 0x24BD4D46, 0x8412ACA8, 0xDF641779]),
+            Some(..36)
+        ) {
         static UE4_SUFFIX: once_cell::sync::Lazy<crate::native::NativeLayout> =
             once_cell::sync::Lazy::new(|| {
                 let Some(crate::native::NativeLayout::Record { fields }) =
@@ -173,6 +177,36 @@ mod tests {
         } // two names, object and three archive booleans
         bytes.extend([0; 48]); // member reference and five archive booleans
         bytes
+    }
+
+    #[test]
+    fn ue5_pin_precision_suffix_follows_custom_version_36_in_older_saved_packages() {
+        let mut package = Package::parse(FIXTURE).unwrap();
+        package.summary.versions.ue5 = 1009;
+        for version in [35, 36] {
+            package
+                .summary
+                .custom_versions
+                .iter_mut()
+                .find(|v| {
+                    [v.key.a, v.key.b, v.key.c, v.key.d]
+                        == [0xD89B5E42, 0x24BD4D46, 0x8412ACA8, 0xDF641779]
+                })
+                .unwrap()
+                .version = version;
+            let bytes = payload(false);
+            let bytes = if version == 35 {
+                &bytes[..bytes.len() - 4]
+            } else {
+                &bytes[..]
+            };
+            let mut reader = Reader::new(bytes);
+            assert!(decode(&mut reader, &package, "Fixture").is_ok());
+            assert_eq!(reader.remaining(), 0);
+            for end in 0..bytes.len() {
+                assert!(decode(&mut Reader::new(&bytes[..end]), &package, "Fixture").is_err());
+            }
+        }
     }
 
     #[test]

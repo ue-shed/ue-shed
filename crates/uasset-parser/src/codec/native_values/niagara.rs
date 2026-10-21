@@ -1,10 +1,10 @@
-//! UE4 Niagara's custom-versioned native variable records.
+//! Custom-versioned Niagara native variable records.
 use super::*;
 
-/// Whether this package's Niagara variables use the recipe below: UE4 at
-/// VariablesUseTypeDefRegistry (64) or later. Elsewhere they decode as tagged streams.
+/// VariablesUseTypeDefRegistry (64) writes a name and a tagged type definition in
+/// UE 4.27 and UE 5.6–5.8. Unsupported versions retain tagged fallback.
 pub(in crate::codec) fn applies(package: &Package) -> bool {
-    package.summary.versions.ue5 == 0
+    matches!(package.summary.versions.ue5, 0 | 1000..=1018)
         && matches!(
             custom_version(package, [0xFCF57AFA, 0x50764283, 0xB9A9E658, 0xFFA02D32]),
             Some(64..)
@@ -19,12 +19,37 @@ pub(in crate::codec) fn decode(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
-    // UE 4.27 Niagara/Private/NiagaraModule.cpp, FNiagaraVariableBase::Serialize,
+    if package.summary.versions.ue5 != 0 {
+        if !applies(package) {
+            return Ok(None);
+        }
+        let mut probe = reader.clone();
+        return match decode_record(source, name, &mut probe, package, path, depth) {
+            Ok(value) => {
+                *reader = probe;
+                Ok(value)
+            }
+            Err(_) => Ok(None),
+        };
+    }
+    decode_record(source, name, reader, package, path, depth)
+}
+
+fn decode_record(
+    source: &[u8],
+    name: &str,
+    reader: &mut Reader<'_>,
+    package: &Package,
+    path: &str,
+    depth: usize,
+) -> Result<Option<PropertyValue>, PropertyError> {
+    // UE 4.27 / 5.6–5.8 Niagara/Private/NiagaraModule.cpp, FNiagaraVariableBase::Serialize,
     // FNiagaraVariable::Serialize and operator<<(FNiagaraTypeDefinitionHandle&);
     // NiagaraParameterStore.cpp, FNiagaraVariableWithOffset::Serialize.
     // VariablesUseTypeDefRegistry=64: FName, tagged type definition, then bytes/offset.
-    // UE 5.7 retains these serializers but changes FNiagaraTypeDefinition::Serialize;
-    // keep that version outside this recipe. Earlier revisions use tagged fallback.
+    // UE4 FNiagaraTypeDefinition::Serialize returns false for tagged fallback; UE5
+    // calls SerializeTaggedProperties directly. Reflected fields differ, but the
+    // package tag reader owns their layout in both paths.
     if !applies(package) {
         return Ok(None);
     }
@@ -85,6 +110,75 @@ mod tests {
     use super::*;
     use crate::package::{CustomVersion, test_package};
     use crate::test_support::push_i32;
+
+    #[test]
+    fn ue5_variable_recipe_is_separate_and_failures_restore_tagged_or_opaque_fallback() {
+        let mut package = test_package(vec!["None".into(), "Value".into()]);
+        package.summary.custom_versions.push(CustomVersion {
+            key: Guid {
+                a: 0xFCF57AFA,
+                b: 0x50764283,
+                c: 0xB9A9E658,
+                d: 0xFFA02D32,
+            },
+            version: 64,
+            friendly_name: None,
+        });
+        for version in [1016, 1017, 1018] {
+            package.summary.versions.ue5 = version;
+            for name in [
+                "NiagaraVariableBase",
+                "NiagaraVariable",
+                "NiagaraVariableWithOffset",
+            ] {
+                let mut bytes = vec![];
+                for word in [1, 0, 0, 0] {
+                    push_i32(&mut bytes, word);
+                }
+                if name != "NiagaraVariableBase" {
+                    push_i32(&mut bytes, 0);
+                }
+                let mut reader = Reader::new(&bytes);
+                assert!(
+                    decode(&bytes, name, &mut reader, &package, "Fixture", 0)
+                        .unwrap()
+                        .is_some()
+                );
+                assert_eq!(reader.remaining(), 0);
+                for end in 0..bytes.len() {
+                    let mut reader = Reader::new(&bytes[..end]);
+                    assert!(
+                        decode(&bytes, name, &mut reader, &package, "Fixture", 0)
+                            .unwrap()
+                            .is_none()
+                    );
+                    assert_eq!(reader.tell(), 0);
+                }
+                // Tagged NAME_None still parses exactly as before after recipe rejection.
+                let tagged = [0; 8];
+                let mut reader = Reader::new(&tagged);
+                assert!(
+                    decode(&tagged, name, &mut reader, &package, "Fixture", 0)
+                        .unwrap()
+                        .is_none()
+                );
+                assert!(
+                    read_tagged_property_stream(
+                        &mut reader,
+                        &package.summary.versions,
+                        &package.names,
+                        "Fixture"
+                    )
+                    .is_ok()
+                );
+                assert!(!is_known_struct(name, &package));
+            }
+        }
+        for version in [999, 1019] {
+            package.summary.versions.ue5 = version;
+            assert!(!applies(&package));
+        }
+    }
 
     #[test]
     fn ue427_variable_records_follow_the_custom_version_and_reject_every_truncation() {
@@ -149,7 +243,7 @@ mod tests {
             // Containers treat these as known layouts only where this recipe reads them;
             // UE5 and older UE4 revisions keep the tagged-stream fallback.
             let mut ue5 = package.clone();
-            ue5.summary.versions.ue5 = 1009;
+            ue5.summary.versions.ue5 = 1019;
             assert!(is_known_struct(name, &package));
             assert!(!is_known_struct(name, &old));
             assert!(!is_known_struct(name, &ue5));

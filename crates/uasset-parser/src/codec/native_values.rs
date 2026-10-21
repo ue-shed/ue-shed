@@ -1,6 +1,8 @@
 use super::*;
 pub(super) mod niagara;
 mod pin_type;
+mod saved_structs;
+pub(super) use saved_structs::{field_path, optional_struct};
 mod property_bag;
 use crate::native::{NativeError, NativeValue, decode_native};
 use crate::property::{NativeProperty, PropertyErrorKind};
@@ -76,14 +78,14 @@ pub(crate) fn property(value: NativeValue) -> PropertyValue {
     }
 }
 
-/// Whether [`known_struct`] has a handwritten recipe for this struct name in this package.
-/// Niagara variables have one only where [`niagara::applies`]; elsewhere they stay tagged.
+/// Whether a recipe can bypass the conservative container fallback. UE5 Niagara
+/// uses a qualified speculative probe first, without claiming the layout globally.
 pub(super) fn is_known_struct(name: &str, package: &Package) -> bool {
     if matches!(
         name,
         "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset"
     ) {
-        return niagara::applies(package);
+        return package.summary.versions.ue5 == 0 && niagara::applies(package);
     }
     matches!(
         name,
@@ -139,33 +141,55 @@ pub(super) fn known_struct(
             Ok(Some(value))
         }
         "MovieSceneFloatChannel" | "MovieSceneDoubleChannel" => {
-            if name == "MovieSceneFloatChannel"
-                && package.summary.versions.ue5 == 0
+            let show_curve = package.summary.versions.ue5 != 0
                 && matches!(
-                    custom_version(package, [0x7B5AE74C, 0xD2704C10, 0xA9585798, 0x0B212A5A]),
-                    Some(12..)
-                )
+                    custom_version(package, [0x601D1886, 0xAC644F84, 0xAA16D3DE, 0x0DEAC7D6]),
+                    Some(53..)
+                );
+            let complete = matches!(
+                custom_version(package, [0x7B5AE74C, 0xD2704C10, 0xA9585798, 0x0B212A5A]),
+                Some(12..)
+            );
+            // UE 5.6–5.8 MovieSceneCurveChannelImpl.cpp ::Serialize has the same
+            // bulk numeric arrays; Sequencer=12 OR FortniteMain=53 enables it.
+            if !matches!(package.summary.versions.ue5, 0 | 1000..=1018)
+                || (package.summary.versions.ue5 == 0 && name != "MovieSceneFloatChannel")
+                || (!complete && !show_curve)
             {
+                return Err(error(
+                    reader,
+                    path,
+                    PropertyErrorKind::UnsupportedVersion,
+                    "native numeric channels require a verified package and channel custom version",
+                ));
+            }
+            if !show_curve {
                 // UE 4.27 MovieSceneFloatChannel.cpp FMovieSceneFloatChannel::Serialize,
                 // SerializeFloatChannelCompletely=12: the same 28-byte bulk values and
                 // tick/default fields as UE5, without FortniteMain's later ShowCurve.
-                static LAYOUT: once_cell::sync::Lazy<crate::native::NativeLayout> =
+                static LAYOUTS: once_cell::sync::Lazy<Vec<crate::native::NativeLayout>> =
                     once_cell::sync::Lazy::new(|| {
-                        let Some(crate::native::NativeLayout::Record { fields }) =
-                            embedded_source_model().native_layout("FMovieSceneFloatChannel")
-                        else {
-                            unreachable!()
-                        };
-                        crate::native::NativeLayout::Record {
-                            fields: fields
-                                .iter()
-                                .filter(|field| field.name != "ShowCurve")
-                                .cloned()
-                                .collect(),
-                        }
+                        ["MovieSceneFloatChannel", "MovieSceneDoubleChannel"]
+                            .into_iter()
+                            .map(|name| {
+                                let Some(crate::native::NativeLayout::Record { fields }) =
+                                    embedded_source_model().native_layout(&format!("F{name}"))
+                                else {
+                                    unreachable!()
+                                };
+                                crate::native::NativeLayout::Record {
+                                    fields: fields
+                                        .iter()
+                                        .filter(|field| field.name != "ShowCurve")
+                                        .cloned()
+                                        .collect(),
+                                }
+                            })
+                            .collect()
                     });
+                let layout = &LAYOUTS[usize::from(name == "MovieSceneDoubleChannel")];
                 let value =
-                    decode_native(reader, &LAYOUT, path)
+                    decode_native(reader, layout, path)
                         .map(property)
                         .map_err(|failure| match failure {
                             NativeError::Archive(failure) => PropertyError::from(failure),
@@ -178,28 +202,6 @@ pub(super) fn known_struct(
                         })?;
                 validate_channel(&value, reader, path)?;
                 return Ok(Some(value));
-            }
-            if package.summary.versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
-            {
-                return Err(error(
-                    reader,
-                    path,
-                    PropertyErrorKind::UnsupportedVersion,
-                    "native numeric channels currently require the verified UE 5.7 package revision",
-                ));
-            }
-            // FortniteMain 53 introduced the persistent ShowCurve field. Earlier framing
-            // must not be guessed from the package revision alone.
-            if !matches!(
-                custom_version(package, [0x601D1886, 0xAC644F84, 0xAA16D3DE, 0x0DEAC7D6]),
-                Some(53..)
-            ) {
-                return Err(error(
-                    reader,
-                    path,
-                    PropertyErrorKind::UnsupportedVersion,
-                    "numeric channel custom version does not include ShowCurve",
-                ));
             }
             let value = property(read_layout(reader, &format!("F{name}"), path)?);
             validate_channel(&value, reader, path)?;
@@ -852,6 +854,101 @@ mod tests {
                 )
                 .is_err()
             );
+        }
+    }
+
+    #[test]
+    fn ue5_numeric_channel_versions_use_independent_complete_and_show_curve_gates() {
+        use crate::package::{CustomVersion, test_package};
+        let mut package = test_package(vec!["None".into()]);
+        for version in [1016, 1017, 1018] {
+            package.summary.versions.ue5 = version;
+            for show_curve in [false, true] {
+                for name in ["MovieSceneFloatChannel", "MovieSceneDoubleChannel"] {
+                    crate::test_support::text_version(
+                        &mut package,
+                        Some(if show_curve { 53 } else { 52 }),
+                        0,
+                    );
+                    package.summary.custom_versions.push(CustomVersion {
+                        key: Guid {
+                            a: 0x7B5AE74C,
+                            b: 0xD2704C10,
+                            c: 0xA9585798,
+                            d: 0x0B212A5A,
+                        },
+                        version: if show_curve { 11 } else { 12 },
+                        friendly_name: None,
+                    });
+                    let mut bytes = vec![0, 0];
+                    let size = if name == "MovieSceneFloatChannel" {
+                        28_i32
+                    } else {
+                        32_i32
+                    };
+                    for word in [4_i32, 0, size, 0] {
+                        bytes.extend_from_slice(&word.to_le_bytes());
+                    }
+                    bytes.extend(vec![
+                        0;
+                        if name == "MovieSceneFloatChannel" {
+                            4
+                        } else {
+                            8
+                        }
+                    ]);
+                    for word in [0_i32, 24, 1] {
+                        bytes.extend_from_slice(&word.to_le_bytes());
+                    }
+                    if show_curve {
+                        bytes.extend([0; 4]);
+                    }
+                    let mut reader = Reader::new(&bytes);
+                    assert!(
+                        known_struct(&bytes, name, &mut reader, &package, "Fixture", 0)
+                            .unwrap()
+                            .is_some()
+                    );
+                    assert_eq!(reader.remaining(), 0);
+                    for end in 0..bytes.len() {
+                        assert!(
+                            known_struct(
+                                &bytes,
+                                name,
+                                &mut Reader::new(&bytes[..end]),
+                                &package,
+                                "Fixture",
+                                0
+                            )
+                            .is_err()
+                        );
+                    }
+                }
+            }
+            crate::test_support::text_version(&mut package, Some(52), 0);
+            package.summary.custom_versions.push(CustomVersion {
+                key: Guid {
+                    a: 0x7B5AE74C,
+                    b: 0xD2704C10,
+                    c: 0xA9585798,
+                    d: 0x0B212A5A,
+                },
+                version: 11,
+                friendly_name: None,
+            });
+            let mut reader = Reader::new(&[]);
+            assert!(
+                known_struct(
+                    &[],
+                    "MovieSceneFloatChannel",
+                    &mut reader,
+                    &package,
+                    "Fixture",
+                    0
+                )
+                .is_err()
+            );
+            assert_eq!(reader.tell(), 0);
         }
     }
 

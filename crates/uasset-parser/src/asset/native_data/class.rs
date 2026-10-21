@@ -1,4 +1,4 @@
-//! Uncooked UE4 UBlueprintGeneratedClass native records. Unknown layouts remain opaque.
+//! Uncooked UBlueprintGeneratedClass native records. Unknown layouts remain opaque.
 use super::*;
 use crate::archive::Reader;
 use crate::property::NativeProperty;
@@ -105,7 +105,8 @@ pub(super) fn decode(
     // UE 4.27 CoreUObject/Private/UObject/Class.cpp, UField::Serialize,
     // UStruct::Serialize/SerializeProperties and UClass::Serialize. FProperties=4;
     // RemoveUField_Next=29. BlueprintGeneratedClass.cpp, UBlueprintGeneratedClass::Serialize
-    // adds no persistent fields. UE5 classes retain their existing opaque boundary.
+    // adds no persistent fields in unfiltered packages. UE 5.6–5.8 Class.cpp retains
+    // the same persistent UStruct/UClass fields; unknown field layouts stay opaque.
     let version = |words| {
         context
             .package
@@ -115,7 +116,13 @@ pub(super) fn decode(
             .find(|v| [v.key.a, v.key.b, v.key.c, v.key.d] == words)
             .map_or(-1, |v| v.version)
     };
-    if context.package.summary.versions.ue5 != 0
+    if !matches!(context.package.summary.versions.ue5, 0 | 1000..=1018)
+        || context
+            .package
+            .summary
+            .versions
+            .package_flags
+            .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY)
         || version([0x375EC13C, 0x06E448FB, 0xB50084F0, 0x262A717E]) < 4
         || version([0xCFFC743F, 0x43B04480, 0x939114DF, 0x171D2073]) < 29
     {
@@ -248,6 +255,70 @@ mod tests {
     use super::*;
     use crate::package::{CustomVersion, test_package};
     use crate::schema::embedded_source_model;
+
+    #[test]
+    fn ue5_class_record_retains_legacy_layout_and_rejection_falls_back_without_export_errors() {
+        let mut package = test_package(vec!["None".into()]);
+        for (words, version) in [
+            ([0x375EC13C, 0x06E448FB, 0xB50084F0, 0x262A717E], 4),
+            ([0xCFFC743F, 0x43B04480, 0x939114DF, 0x171D2073], 29),
+        ] {
+            package.summary.custom_versions.push(CustomVersion {
+                key: Guid {
+                    a: words[0],
+                    b: words[1],
+                    c: words[2],
+                    d: words[3],
+                },
+                version,
+                friendly_name: None,
+            });
+        }
+        let bytes = vec![0; 72];
+        let path = ObjectPath::new("Fixture.GeneratedClass");
+        for version in [1016, 1017, 1018] {
+            package.summary.versions.ue5 = version;
+            let context = AssetDecodeContext {
+                source: &bytes,
+                package: &package,
+                schemas: embedded_source_model(),
+            };
+            let mut reader = Reader::new(&bytes);
+            assert!(decode(&mut reader, &context, &path).is_ok());
+            assert_eq!(reader.remaining(), 0);
+            for end in 0..bytes.len() {
+                assert!(decode(&mut Reader::new(&bytes[..end]), &context, &path).is_err());
+                let export = crate::package::test_export(
+                    end as u64,
+                    path.as_str(),
+                    "/Script/Engine.BlueprintGeneratedClass",
+                );
+                let properties = PropertyStream {
+                    class_extensions: None,
+                    records: vec![],
+                    terminator: Span::default(),
+                };
+                assert!(
+                    super::super::object::decode(
+                        &export,
+                        &context,
+                        &properties,
+                        &mut Reader::new(&bytes[..end])
+                    )
+                    .is_ok()
+                );
+            }
+        }
+        for version in [999, 1019] {
+            package.summary.versions.ue5 = version;
+            let context = AssetDecodeContext {
+                source: &bytes,
+                package: &package,
+                schemas: embedded_source_model(),
+            };
+            assert!(decode(&mut Reader::new(&bytes), &context, &path).is_err());
+        }
+    }
 
     #[test]
     fn legacy_property_guids_use_the_declared_native_guid_value_layout() {

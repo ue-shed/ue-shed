@@ -181,17 +181,23 @@ pub(crate) fn package_path_order(a: &[u8], b: &[u8]) -> Ordering {
     clippy::expect_used,
     reason = "ICU ships compiled default collation data; no external locale or provider is accepted"
 )]
-pub(crate) fn locale(a: &str, b: &str) -> Ordering {
+fn collator() -> &'static icu_collator::CollatorBorrowed<'static> {
     static COLLATOR: std::sync::OnceLock<icu_collator::CollatorBorrowed<'static>> =
         std::sync::OnceLock::new();
-    let collator = COLLATOR.get_or_init(|| {
+    COLLATOR.get_or_init(|| {
         icu_collator::Collator::try_new(Default::default(), Default::default())
             .expect("compiled collation data")
-    });
-    if a.chars()
-        .chain(b.chars())
+    })
+}
+/// Text holding a WTF-8 escaped lone surrogate collates as UTF-16, as JavaScript does.
+fn has_surrogate_escape(value: &str) -> bool {
+    value
+        .chars()
         .any(|c| ('\u{f0000}'..='\u{f0800}').contains(&c))
-    {
+}
+pub(crate) fn locale(a: &str, b: &str) -> Ordering {
+    let collator = collator();
+    if has_surrogate_escape(a) || has_surrogate_escape(b) {
         collator.compare_utf16(
             &crate::wtf8::Wtf8Buf::from_view(a).to_utf16(),
             &crate::wtf8::Wtf8Buf::from_view(b).to_utf16(),
@@ -199,6 +205,27 @@ pub(crate) fn locale(a: &str, b: &str) -> Ordering {
     } else {
         collator.compare(a, b)
     }
+}
+/// The collation sort key of `value`: comparing two keys' bytes orders their texts as `locale`.
+pub(crate) fn locale_key(value: &str) -> Vec<u8> {
+    let mut key = Vec::new();
+    let Ok(()) = if has_surrogate_escape(value) {
+        collator()
+            .write_sort_key_utf16_to(&crate::wtf8::Wtf8Buf::from_view(value).to_utf16(), &mut key)
+    } else {
+        collator().write_sort_key_to(value, &mut key)
+    };
+    key
+}
+/// Stably sorts row indexes by the `locale` order of their texts. A large sort compares each
+/// text many times, so each text's sort key is built once, in parallel, and compared as bytes.
+pub(crate) fn sort_by_locale<T: AsRef<str> + Sync>(order: &mut [u32], texts: &[T]) {
+    use rayon::prelude::*;
+    let keys = texts
+        .par_iter()
+        .map(|text| locale_key(text.as_ref()))
+        .collect::<Vec<_>>();
+    order.par_sort_by(|a, b| keys[*a as usize].cmp(&keys[*b as usize]));
 }
 /// Orders occurrences by unit. `unit_ns` is each row's unit namespace: resolved keys outside
 /// String Tables without their package marker, so one key in several packages is one unit.
@@ -497,6 +524,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         return Ok(result);
     }
     crate::join_incremental::full();
+    let mut stage = std::time::Instant::now();
     let empty = store.intern("identity", &[String::new()])?[0];
     let mut strings = dictionary_bytes(&store.directory, &store.root)?
         .into_iter()
@@ -520,7 +548,9 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         archives.push(load(&paths[ci * 2 + 1])?);
         pos.push(load(&paths[ci * 2 + 2])?);
     }
+    crate::join_incremental::note_stage("dictionary", &mut stage);
     let packages = PackageColumns::load(store, &strings, &input.project_root, target)?;
+    crate::join_incremental::note_stage("load", &mut stage);
     let c = &packages.occurrence;
     let count = c[O_SOURCE].len();
     let path_bytes = packages
@@ -1162,8 +1192,10 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         .iter()
         .map(|id| folder_global[*id as usize])
         .collect::<Vec<_>>();
+    crate::join_incremental::note_stage("lines", &mut stage);
     let marks = crate::join_marks::finish(store, input, &mut joined, &cultures)?;
     store.release_dictionary();
+    crate::join_incremental::note_stage("marks", &mut stage);
     let mut query_columns =
         crate::join_query::columns(&joined, target["name"].as_str().ok_or("target name")?)?;
     query_columns.extend(crate::join_places::columns(
@@ -1199,7 +1231,9 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             Ok(values)
         },
     )?;
+    crate::join_incremental::note_stage("query", &mut stage);
     let graph = crate::dependency_graph::Graph::rebuild(store, &joined, &query_columns)?;
+    crate::join_incremental::note_stage("graph", &mut stage);
     let first_folders = joined.line[16]
         .iter()
         .enumerate()
@@ -1296,6 +1330,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         "join metadata exceeds bound",
     )?;
     graph.commit(store, &key)?;
+    crate::join_incremental::note_stage("encode", &mut stage);
     let record = store.publish_global(
         "joined",
         &key,
@@ -1304,6 +1339,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         &BTreeMap::new(),
         &["joined-base".into()],
     )?;
+    crate::join_incremental::note_stage("publish", &mut stage);
     Ok(JoinOutcome {
         rebuilt: true,
         strategy: Some("full".into()),
@@ -1313,6 +1349,103 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         key_changes: Some(marks["pairs"].as_array().ok_or("pairs")?.len() as u32),
         affected_lines: None,
     })
+}
+
+#[cfg(test)]
+mod collation_tests {
+    use super::*;
+
+    #[test]
+    fn sort_keys_order_texts_exactly_as_the_collator_compares_them() {
+        let mut texts = [
+            "",
+            " ",
+            "a",
+            "A",
+            "á",
+            "Á",
+            "ab",
+            "aB",
+            "Ab",
+            "a b",
+            "a-b",
+            "a_b",
+            "a.b",
+            "a1",
+            "a10",
+            "a2",
+            "B",
+            "b",
+            "ß",
+            "ss",
+            "Straße",
+            "strasse",
+            "ﬁle",
+            "file",
+            "Æ",
+            "ae",
+            "日本",
+            "日本語",
+            "にほん",
+            "ニホン",
+            "한국",
+            "Ω",
+            "ω",
+            "unresolved:/Game/A.A:Name",
+            "unresolved:/Game/A.A:name",
+            "Game:[\"\",\"KEY\"]",
+            "Game:[\"ns\",\"key\"]",
+            "\u{301}a",
+            "e\u{301}",
+            "é",
+            "\u{fffd}",
+            "😀",
+            "a😀",
+            "\t",
+            "\n",
+            "0",
+            "00",
+            "-1",
+        ]
+        .iter()
+        .map(|text| (*text).to_owned())
+        .collect::<Vec<_>>();
+        for bytes in [&[0xed, 0xa0, 0x80][..], &[0x61, 0xed, 0xb0, 0x80][..]] {
+            texts.push(
+                crate::wtf8::Wtf8Buf::from_bytes(bytes.to_vec())
+                    .unwrap()
+                    .into_view(),
+            );
+        }
+        let alphabet = [
+            'a', 'A', 'b', 'z', 'Z', 'é', 'e', '\u{301}', ' ', '-', '_', '.', ':', '/', '0', '9',
+            'ß', 'ø', 'Ø', 'ı', 'İ', 'ç', '日', 'ア', 'ㄱ', '😀', '\u{200b}', '"', '[',
+        ];
+        let mut seed = 0x5eed_u64;
+        for _ in 0..400 {
+            let mut text = String::new();
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            for _ in 0..(seed >> 60) {
+                seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                text.push(alphabet[(seed >> 33) as usize % alphabet.len()]);
+            }
+            texts.push(text);
+        }
+        for a in &texts {
+            for b in &texts {
+                assert_eq!(
+                    locale_key(a).cmp(&locale_key(b)),
+                    locale(a, b),
+                    "{a:?} vs {b:?}"
+                );
+            }
+        }
+        let mut order = (0..texts.len() as u32).rev().collect::<Vec<_>>();
+        let mut expected = order.clone();
+        expected.sort_by(|a, b| locale(&texts[*a as usize], &texts[*b as usize]));
+        sort_by_locale(&mut order, &texts);
+        assert_eq!(order, expected);
+    }
 }
 
 #[cfg(test)]

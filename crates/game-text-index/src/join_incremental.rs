@@ -25,6 +25,18 @@ pub(crate) fn full() {
 pub(crate) fn note(key: &str, value: Value) {
     DIAGNOSTICS.with(|state| state.borrow_mut()[key] = value);
 }
+/// Records the wall time of one full-join stage, reported as `join_<stage>` stage seconds.
+pub(crate) fn note_stage(stage: &str, started: &mut std::time::Instant) {
+    let seconds = started.elapsed().as_secs_f64();
+    *started = std::time::Instant::now();
+    DIAGNOSTICS.with(|state| {
+        let mut state = state.borrow_mut();
+        if !state["stageSeconds"].is_object() {
+            state["stageSeconds"] = json!({});
+        }
+        state["stageSeconds"][stage] = json!(seconds);
+    });
+}
 fn fallback(reason: &str) -> Result<Option<JoinOutcome>> {
     note("fallback", json!(reason));
     Ok(None)

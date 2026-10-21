@@ -39,35 +39,43 @@ pub(crate) fn skips_editor(target: &serde_json::Value) -> bool {
     reason = "serialization of tuples of strings to an owned JSON string is infallible"
 )]
 pub(crate) fn places(j: &Joined) -> Vec<u32> {
+    use rayon::prelude::*;
     let c = &j.packages.occurrence;
+    // Keys are independent per occurrence; IDs are then assigned in order, as before.
+    let keys = j
+        .order
+        .par_iter()
+        .map(|member| {
+            let i = *member as usize;
+            let file = file_key(&j.packages.relative_paths[j.packages.package_row[i] as usize]);
+            let object = j.string(c[O_OBJECT][i]);
+            if c[O_LOCATION][i] == 2 {
+                serde_json::to_string(&(
+                    file,
+                    normalized(trim(object)).to_lowercase(),
+                    j.string(c[O_ROW][i]),
+                ))
+                .unwrap()
+            } else {
+                let path = if c[O_LOCATION][i] == 1 {
+                    format!(
+                        "{object}.{}.{}",
+                        j.string(c[O_ROW][i]),
+                        j.string(c[O_PROPERTY][i])
+                    )
+                } else {
+                    format!("{object}.{}", j.string(c[O_PROPERTY][i]))
+                };
+                let place = crate::join_marks::manifest_place(&path).unwrap_or(path);
+                serde_json::to_string(&(file, place)).unwrap()
+            }
+        })
+        .collect::<Vec<_>>();
     let mut result = vec![0; j.order.len()];
     let mut ids = HashMap::<String, u32>::new();
-    for member in &j.order {
-        let i = *member as usize;
-        let file = file_key(&j.packages.relative_paths[j.packages.package_row[i] as usize]);
-        let object = j.string(c[O_OBJECT][i]);
-        let key = if c[O_LOCATION][i] == 2 {
-            serde_json::to_string(&(
-                file,
-                normalized(trim(object)).to_lowercase(),
-                j.string(c[O_ROW][i]),
-            ))
-            .unwrap()
-        } else {
-            let path = if c[O_LOCATION][i] == 1 {
-                format!(
-                    "{object}.{}.{}",
-                    j.string(c[O_ROW][i]),
-                    j.string(c[O_PROPERTY][i])
-                )
-            } else {
-                format!("{object}.{}", j.string(c[O_PROPERTY][i]))
-            };
-            let place = crate::join_marks::manifest_place(&path).unwrap_or(path);
-            serde_json::to_string(&(file, place)).unwrap()
-        };
+    for (member, key) in j.order.iter().zip(keys) {
         let next = ids.len() as u32;
-        result[i] = *ids.entry(key).or_insert(next);
+        result[*member as usize] = *ids.entry(key).or_insert(next);
     }
     result
 }

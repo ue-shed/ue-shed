@@ -332,7 +332,17 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
                     .ok_or("invalid shared root object")?
                     .is_empty()
             {
-                store.publish_cold(inputs)?;
+                let measured = store.publish_cold(inputs)?;
+                for (field, stage) in [
+                    ("collectSortSeconds", "cold_collect"),
+                    ("mergeSeconds", "cold_merge"),
+                    ("dictionaryEncodeSeconds", "cold_dictionary"),
+                    ("layerEncodeSeconds", "cold_layers"),
+                ] {
+                    if let Some(seconds) = measured[field].as_f64() {
+                        outcome.stage_seconds.insert(stage.into(), seconds);
+                    }
+                }
             } else {
                 if *cold {
                     store.prepare_batch_cold(inputs)?;
@@ -453,12 +463,20 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
                     )
                 })?;
             outcome.join = Some(crate::join::refresh(store, &input)?);
-            if let Some(seconds) =
-                crate::join_incremental::diagnostics()["dependencyGraphBuildSeconds"].as_f64()
-            {
+            let diagnostics = crate::join_incremental::diagnostics();
+            if let Some(seconds) = diagnostics["dependencyGraphBuildSeconds"].as_f64() {
                 outcome
                     .stage_seconds
                     .insert("dependency_graph_build".into(), seconds);
+            }
+            if let Some(stages) = diagnostics["stageSeconds"].as_object() {
+                for (stage, seconds) in stages {
+                    if let Some(seconds) = seconds.as_f64() {
+                        outcome
+                            .stage_seconds
+                            .insert(format!("join_{stage}"), seconds);
+                    }
+                }
             }
         }
         BuildRequest::Compact { force, .. } => {

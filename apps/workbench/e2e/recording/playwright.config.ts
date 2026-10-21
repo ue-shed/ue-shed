@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { gateTraceReporters } from "../gate-trace-reporter.ts";
 
 export default defineConfig({
 	expect: { timeout: 10_000 },
@@ -7,7 +8,7 @@ export default defineConfig({
 	outputDir:
 		process.env.UE_SHED_RECORDING_OUTPUT_DIR ??
 		"../../../../test-results/showcase/unconfigured",
-	reporter: "list",
+	reporter: gateTraceReporters(),
 	testDir: ".",
 	testMatch: [
 		"showcase.recording.ts",

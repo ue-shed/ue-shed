@@ -1,11 +1,12 @@
 import { defineConfig } from "@playwright/test";
+import { gateTraceReporters } from "./gate-trace-reporter.ts";
 
 export default defineConfig({
 	expect: { timeout: 10_000 },
 	forbidOnly: true,
 	fullyParallel: false,
 	outputDir: "../../../test-results/workbench",
-	reporter: "list",
+	reporter: gateTraceReporters(),
 	testDir: ".",
 	testIgnore: ["**/observatory-performance.e2e.ts", "**/site/**"],
 	testMatch: "**/*.e2e.ts",

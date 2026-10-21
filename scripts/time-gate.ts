@@ -457,6 +457,27 @@ function report(root: Timing, spans: readonly SpanRecord[]) {
 		}
 	}
 
+	const e2e = spans.filter((span) => span.attributes["playwright.test_id"] !== undefined);
+	if (e2e.length > 0) {
+		const runs = spans.filter((span) => span.name === "playwright e2e");
+		const wallMs = runs.reduce((sum, span) => sum + (span.endUs - span.startUs) / 1000, 0);
+		const skipped = e2e.filter((span) => span.attributes["playwright.status"] === "skipped");
+		const retries = e2e.filter((span) => Number(span.attributes["playwright.retry"]) > 0);
+		console.log(
+			`\nPlaywright E2E: ${e2e.length} attempts, ${seconds(wallMs)} runner wall; ` +
+				`${skipped.length} skipped, ${retries.length} retries`
+		);
+		console.log("Slowest E2E attempts (includes fixtures and hooks):");
+		for (const span of e2e
+			.toSorted((a, b) => b.endUs - b.startUs - (a.endUs - a.startUs))
+			.slice(0, 10)) {
+			console.log(
+				`  ${seconds((span.endUs - span.startUs) / 1000).padStart(8)}  ` +
+					`${String(span.attributes["playwright.status"])} retry ${String(span.attributes["playwright.retry"])}  ${span.name}`
+			);
+		}
+	}
+
 	const unreal = spans.filter((span) => span.attributes["unreal.tool"] !== undefined);
 	if (unreal.length > 0) {
 		console.log("\nUnreal processes (engine startup / work / shutdown):");

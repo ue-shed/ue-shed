@@ -216,7 +216,16 @@ pnpm check:time check:unreal
 
 It expands `pnpm run` steps inside `&&` chains, so the trace shows the real commands. Every Node
 process records a span, Vitest records a span per test file (split into setup, import and tests) and
-per test, and Unreal runs record a span per UnrealBuildTool build and per editor or commandlet run.
+per test, and Playwright records each E2E attempt with nested fixture, hook, assertion, browser API
+and named test steps. This includes Workbench, live Map Review flows, website, recordings and
+performance runners. Attempts retain project, file, worker, retry, repeat, expected and actual status;
+skips remain explicit, failed attempts remain visible even when a retry passes. The console summary
+lists the slowest E2E attempts. These timings come from our runner and include application launch,
+readiness waits and cleanup through Playwright's fixture/hook steps; they require no Unreal-side
+instrumentation. Ordinary runs keep the list reporter without writing gate spans. Overriding
+Playwright's `--reporter` also overrides the timing reporter.
+
+Unreal runs record a span per UnrealBuildTool build and per editor or commandlet run.
 Commandlet spans are split into engine startup, work and shutdown from the timestamps in the
 project log. Child processes join the trace through `TRACEPARENT`; see `scripts/gate-trace.ts`.
 

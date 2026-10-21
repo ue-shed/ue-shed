@@ -71,7 +71,7 @@ it.effect("exclusively creates a change-set JSON and preserves an existing propo
 	}).pipe(Effect.provide(NodeServices.layer))
 );
 
-it.effect("loc check rejects unknown targets and cultures with safe actionable failures", () =>
+it.effect("loc check rejects unsupported cultures with safe actionable failures", () =>
 	Effect.gen(function* () {
 		const output = yield* Ref.make("");
 		const exit = yield* Ref.make(0);
@@ -83,27 +83,22 @@ it.effect("loc check rejects unknown targets and cultures with safe actionable f
 				setExitCode: (code) => Ref.set(exit, code)
 			})
 		);
-		for (const [target, flags, code] of [
-			["PrivateMissingTarget", [], "target_not_found"],
-			["Fixture427", ["--culture", "zz-PrivateCulture"], "invalid_selection"]
-		] satisfies ReadonlyArray<readonly [string, readonly string[], string]>) {
-			yield* Ref.set(output, "");
-			yield* runCli([
-				"loc",
-				"check",
-				resolve("fixtures/unreal-427-localization"),
-				"--target",
-				target,
-				...flags
-			]).pipe(Effect.provide(runtime));
-			const report = Schema.decodeUnknownSync(Schema.fromJsonString(Failure))(
-				yield* Ref.get(output)
-			);
-			expect(report.error.code).toBe(code);
-			expect(report.error.message).not.toContain("Private");
-			expect(report.error.recovery.length).toBeGreaterThan(0);
-			expect(yield* Ref.get(exit)).toBe(2);
-		}
+		yield* runCli([
+			"loc",
+			"check",
+			resolve("fixtures/unreal-427-localization"),
+			"--target",
+			"Fixture427",
+			"--culture",
+			"zz-PrivateCulture"
+		]).pipe(Effect.provide(runtime));
+		const report = Schema.decodeUnknownSync(Schema.fromJsonString(Failure))(
+			yield* Ref.get(output)
+		);
+		expect(report.error.code).toBe("invalid_selection");
+		expect(report.error.message).not.toContain("Private");
+		expect(report.error.recovery.length).toBeGreaterThan(0);
+		expect(yield* Ref.get(exit)).toBe(2);
 	})
 );
 

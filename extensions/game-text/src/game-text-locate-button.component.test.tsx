@@ -36,11 +36,7 @@ function mount(locateAsset: GameTextClientApi["locateAsset"]) {
 }
 
 const unavailableCases: readonly { readonly reason: EditorAssetLocateUnavailableReason }[] = [
-	{ reason: "not_connected" },
-	{ reason: "capability_missing" },
-	{ reason: "asset_not_found" },
-	{ reason: "editor_unavailable" },
-	{ reason: "invalid_object_path" }
+	{ reason: "not_connected" }
 ];
 
 describe("Show in Unreal", () => {

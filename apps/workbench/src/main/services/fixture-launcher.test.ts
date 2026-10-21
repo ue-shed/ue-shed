@@ -1,4 +1,3 @@
-import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import {
 	makeRemoteControlClientTestLayer,
@@ -10,6 +9,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { typescriptLoader } from "../typescript-checkout.js";
 import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import {
@@ -331,54 +331,10 @@ it.effect("launch fails without spawning when the launcher script is missing on 
 	)
 );
 
-it.effect("launch runs the checkout fixture script through tsx", () =>
-	Effect.gen(function* () {
-		const recorded = yield* Ref.make<ReadonlyArray<string>>([]);
-		const launched = yield* Ref.make(false);
-		const fixtureProcess = FixtureProcess.of({
-			launch: (options) =>
-				Ref.set(recorded, options.args).pipe(
-					Effect.andThen(Ref.set(launched, true)),
-					Effect.as({ status: "ready" as const })
-				)
-		});
-		const layer = FixtureLauncherLive.pipe(
-			Layer.provide(
-				Layer.mergeAll(
-					makeWorkbenchConfigurationLayer(configuredCheckout),
-					makeFixtureHealthTestLayer({
-						check: () =>
-							Ref.get(launched).pipe(
-								Effect.map(
-									(flag): FixtureHealthResult =>
-										flag ? { status: "ready" } : { status: "not_running" }
-								)
-							)
-					}),
-					scriptOnDisk,
-					Layer.succeed(FixtureProcess, fixtureProcess)
-				)
-			)
-		);
-		const result = yield* Effect.gen(function* () {
-			const launcher = yield* FixtureLauncher;
-			const fiber = yield* Effect.forkChild(launcher.launch("default"));
-			yield* TestClock.adjust("1 second");
-			return yield* Fiber.join(fiber);
-		}).pipe(Effect.provide(layer));
-		expect(result).toEqual({ status: "ready" });
-		expect(yield* Ref.get(recorded)).toEqual([
-			"--import",
-			typescriptLoader,
-			launchScriptPath,
-			"launch"
-		]);
-	})
-);
-
 it.effect("launch spawns once and waits across poll ticks for readiness", () =>
 	Effect.gen(function* () {
 		const checks = yield* Ref.make(0);
+		const recorded = yield* Ref.make<ReadonlyArray<string>>([]);
 		const launches = yield* Ref.make(0);
 		const healthLayer = makeFixtureHealthTestLayer({
 			check: () =>
@@ -395,7 +351,13 @@ it.effect("launch spawns once and waits across poll ticks for readiness", () =>
 					makeWorkbenchConfigurationLayer(configuredCheckout),
 					healthLayer,
 					scriptOnDisk,
-					Layer.succeed(FixtureProcess, readyFixtureProcess(launches))
+					Layer.succeed(FixtureProcess, {
+						launch: (options) =>
+							Ref.set(recorded, options.args).pipe(
+								Effect.andThen(Ref.update(launches, (count) => count + 1)),
+								Effect.as({ status: "ready" as const })
+							)
+					})
 				)
 			)
 		);
@@ -407,6 +369,14 @@ it.effect("launch spawns once and waits across poll ticks for readiness", () =>
 		}).pipe(Effect.provide(layer));
 		expect(result).toEqual({ status: "ready" });
 		expect(yield* Ref.get(launches)).toBe(1);
+		expect(typescriptLoader.startsWith("file:")).toBe(true);
+		expect(typescriptLoader).toContain("tsx");
+		expect(yield* Ref.get(recorded)).toEqual([
+			"--import",
+			typescriptLoader,
+			launchScriptPath,
+			"launch"
+		]);
 	})
 );
 

@@ -2,12 +2,12 @@ import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { fixtureReviewSet, runSuccessfulCli, parseRecord } from "./cli-process.test-support.js";
+import { fixtureReviewSet, parseRecord, runSuccessfulCli } from "./cli-in-process.test-support.js";
 
-describe("ue-shed Review authoring CLI process", () => {
+describe("ue-shed Review authoring CLI commands", () => {
 	it("validates the portable fixture Review Set and lists empty local history", async () => {
 		const validation = parseRecord(
-			runSuccessfulCli(["review", "sets", "validate", fixtureReviewSet])
+			await runSuccessfulCli(["review", "sets", "validate", fixtureReviewSet])
 		);
 		expect(validation).toMatchObject({
 			id: "fixture-structure",
@@ -18,9 +18,11 @@ describe("ue-shed Review authoring CLI process", () => {
 
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-history-"));
 		try {
-			expect(parseRecord(runSuccessfulCli(["review", "history", projectRoot]))).toEqual({
-				runs: []
-			});
+			expect(parseRecord(await runSuccessfulCli(["review", "history", projectRoot]))).toEqual(
+				{
+					runs: []
+				}
+			);
 		} finally {
 			await rm(projectRoot, { force: true, recursive: true });
 		}
@@ -48,7 +50,7 @@ describe("ue-shed Review authoring CLI process", () => {
 			);
 
 			const before = parseRecord(
-				runSuccessfulCli(["review", "policies", "list", reviewSetPath])
+				await runSuccessfulCli(["review", "policies", "list", reviewSetPath])
 			);
 			expect(before.policies).toEqual([
 				expect.objectContaining({
@@ -58,7 +60,7 @@ describe("ue-shed Review authoring CLI process", () => {
 			]);
 
 			const replaced = parseRecord(
-				runSuccessfulCli([
+				await runSuccessfulCli([
 					"review",
 					"policies",
 					"replace",
@@ -74,7 +76,7 @@ describe("ue-shed Review authoring CLI process", () => {
 			});
 
 			const applied = parseRecord(
-				runSuccessfulCli([
+				await runSuccessfulCli([
 					"review",
 					"policies",
 					"apply",
@@ -132,7 +134,9 @@ describe("ue-shed Review authoring CLI process", () => {
 			};
 			await writeFile(viewPath, JSON.stringify(areaView), "utf8");
 			expect(
-				parseRecord(runSuccessfulCli(["review", "views", "put", reviewSetPath, viewPath]))
+				parseRecord(
+					await runSuccessfulCli(["review", "views", "put", reviewSetPath, viewPath])
+				)
 			).toMatchObject({
 				revision: { id: "loading-area-r1", number: 1 },
 				status: "created",
@@ -142,7 +146,9 @@ describe("ue-shed Review authoring CLI process", () => {
 			areaView.viewpoint.approvedPose.location.x = 1750;
 			await writeFile(viewPath, JSON.stringify(areaView), "utf8");
 			expect(
-				parseRecord(runSuccessfulCli(["review", "views", "put", reviewSetPath, viewPath]))
+				parseRecord(
+					await runSuccessfulCli(["review", "views", "put", reviewSetPath, viewPath])
+				)
 			).toMatchObject({
 				revision: { id: "loading-area-r2", number: 2 },
 				status: "revised",

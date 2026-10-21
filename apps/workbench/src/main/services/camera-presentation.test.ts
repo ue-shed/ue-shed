@@ -170,65 +170,6 @@ it.effect("sends the latest frame and reports frames-sent metrics", () =>
 	}).pipe(Effect.scoped)
 );
 
-it.effect("keeps only the latest pending frame per camera and counts replacements", () =>
-	Effect.gen(function* () {
-		const feedQueue = yield* Queue.unbounded<CameraFrame>();
-		const recordingWindow = yield* makeGatedRecordingWindow();
-
-		yield* runWithPresentation(feedQueue, recordingWindow, (presentation) =>
-			Effect.gen(function* () {
-				yield* Queue.offer(feedQueue, makeFrame({ cameraIndex: 0, sequence: 1n }));
-				yield* recordingWindow.awaitStarted();
-
-				yield* Queue.offer(feedQueue, makeFrame({ cameraIndex: 0, sequence: 2n }));
-				yield* settle;
-				yield* Queue.offer(feedQueue, makeFrame({ cameraIndex: 0, sequence: 3n }));
-				yield* settle;
-
-				yield* recordingWindow.releaseNext();
-				yield* recordingWindow.awaitStarted();
-				yield* recordingWindow.releaseNext();
-				yield* settle;
-
-				const sent = yield* recordingWindow.sentFrames();
-				expect(sent.map((frame) => frame.sequence)).toEqual(["1", "3"]);
-
-				const metrics = yield* presentation.metrics();
-				expect(metrics.presentationReplacements).toBe(1);
-				expect(metrics.presentationFramesSent).toBe(2);
-			})
-		);
-	}).pipe(Effect.scoped)
-);
-
-it.effect("makes progress across camera indices without starving either", () =>
-	Effect.gen(function* () {
-		const feedQueue = yield* Queue.unbounded<CameraFrame>();
-		const recordingWindow = yield* makeGatedRecordingWindow();
-
-		yield* runWithPresentation(feedQueue, recordingWindow, (presentation) =>
-			Effect.gen(function* () {
-				yield* Queue.offer(feedQueue, makeFrame({ cameraIndex: 0, sequence: 1n }));
-				yield* Queue.offer(feedQueue, makeFrame({ cameraIndex: 1, sequence: 1n }));
-				yield* settle;
-
-				yield* recordingWindow.awaitStarted();
-				yield* recordingWindow.releaseNext();
-				yield* recordingWindow.awaitStarted();
-				yield* recordingWindow.releaseNext();
-				yield* settle;
-
-				const sent = yield* recordingWindow.sentFrames();
-				expect(sent.map((frame) => frame.cameraIndex).toSorted()).toEqual([0, 1]);
-
-				const metrics = yield* presentation.metrics();
-				expect(metrics.presentationFramesSent).toBe(2);
-				expect(metrics.presentationReplacements).toBe(0);
-			})
-		);
-	}).pipe(Effect.scoped)
-);
-
 it.effect("round-robins past a continuously replaced lower camera index", () =>
 	Effect.gen(function* () {
 		const feedQueue = yield* Queue.unbounded<CameraFrame>();

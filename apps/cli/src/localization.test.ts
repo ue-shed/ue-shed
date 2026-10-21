@@ -117,35 +117,37 @@ it.effect("a manifest over the byte limit keeps its cause and recovery before sc
 	}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 );
 
-it.effect("loc status rejects an unknown target before opening the saved reader", () =>
-	Effect.gen(function* () {
-		const output = yield* Ref.make("");
-		const errors = yield* Ref.make("");
-		const exitCode = yield* Ref.make(0);
-		const runtime = Layer.succeed(
-			CliRuntime,
-			CliRuntime.of({
-				print: (text) => Ref.update(output, (value) => value + text),
-				printError: (text) => Ref.update(errors, (value) => value + text),
-				setExitCode: (code) => Ref.set(exitCode, code)
-			})
-		);
-		yield* runCli([
-			"loc",
-			"status",
-			resolve("fixtures/unreal-427-localization"),
-			"--target",
-			"PrivateTargetName"
-		]).pipe(Effect.provide(runtime));
-		const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
-			yield* Ref.get(output)
-		);
-		expect(report.error.code).toBe("target_not_found");
-		expect(report.error.message).not.toContain("PrivateTargetName");
-		expect(report.error.recovery).toContain("loc targets");
-		expect(yield* Ref.get(errors)).toBe("");
-		expect(yield* Ref.get(exitCode)).toBe(2);
-	})
+it.effect.each(["status", "report", "check"])(
+	"loc %s rejects an unknown target before opening the saved reader",
+	(command) =>
+		Effect.gen(function* () {
+			const output = yield* Ref.make("");
+			const errors = yield* Ref.make("");
+			const exitCode = yield* Ref.make(0);
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (text) => Ref.update(output, (value) => value + text),
+					printError: (text) => Ref.update(errors, (value) => value + text),
+					setExitCode: (code) => Ref.set(exitCode, code)
+				})
+			);
+			yield* runCli([
+				"loc",
+				command,
+				resolve("fixtures/unreal-427-localization"),
+				"--target",
+				"PrivateTargetName"
+			]).pipe(Effect.provide(runtime));
+			const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
+				yield* Ref.get(output)
+			);
+			expect(report.error.code).toBe("target_not_found");
+			expect(report.error.message).not.toContain("PrivateTargetName");
+			expect(report.error.recovery).toContain("loc targets");
+			expect(yield* Ref.get(errors)).toBe("");
+			expect(yield* Ref.get(exitCode)).toBe(2);
+		})
 );
 
 it.effect("loc status rejects an unsupported culture before scanning", () =>

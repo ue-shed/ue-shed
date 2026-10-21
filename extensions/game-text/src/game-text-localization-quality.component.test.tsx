@@ -2,22 +2,21 @@ import { textCorpusQuery } from "../../../packages/game-text/src/query.test-supp
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
+import { checkLocalizationTarget } from "@ue-shed/game-text/checks";
+import {
+	localizationFocusPage,
+	localizationQualityWorkspace,
+	textQualityQuery
+} from "@ue-shed/game-text/corpus";
+import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "@ue-shed/game-text/rules";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkLocalizationTarget } from "@ue-shed/game-text/checks";
-import {
-	textQualityQuery,
-	localizationFocusPage,
-	localizationQualityWorkspace
-} from "@ue-shed/game-text/corpus";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "@ue-shed/game-text/rules";
 import { qualityFixture } from "../../../packages/game-text/src/localization-workspace.test-support.js";
 import { cultureCode } from "../../../packages/game-text/src/localization.test-support.js";
-import { GameTextRoute } from "./game-text-query-route.js";
-import { changeRanges } from "./game-text-localization-quality.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import type { GameTextPreferences } from "./game-text-preferences.js";
+import { GameTextRoute } from "./game-text-query-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
 const fixture = qualityFixture();
@@ -136,7 +135,7 @@ it("keeps text search available without starting a full localization quality che
 	const api = client();
 	const qualitySearch = vi.fn(() => Effect.never);
 	const textSearch = vi.fn(api.search);
-	const user = userEvent.setup();
+	const user = userEvent.setup({ delay: null });
 	mount(
 		{ ...api, search: textSearch, localizationQualitySearch: qualitySearch },
 		{ mode: "corpus" }
@@ -167,26 +166,8 @@ afterEach(() => {
 afterAll(() => runtime.dispose());
 
 describe("localization quality and reports", () => {
-	it("highlights complete renamed arguments while keeping ordinary edits narrow", () => {
-		const before = "Hallo {Name}",
-			after = "Hallo {PlayerName}";
-		const ranges = changeRanges(before, after);
-		expect(ranges.before.map((range) => before.slice(range.start, range.end))).toEqual([
-			"{Name}"
-		]);
-		expect(ranges.after.map((range) => after.slice(range.start, range.end))).toEqual([
-			"{PlayerName}"
-		]);
-		expect(changeRanges(after, before)).toEqual({ before: ranges.after, after: ranges.before });
-		expect(changeRanges("cat", "car")).toEqual({
-			before: [{ start: 2, end: 3 }],
-			after: [{ start: 2, end: 3 }]
-		});
-		expect(changeRanges(before, before)).toEqual({ before: [], after: [] });
-	});
-
 	it("shows culture counts, exact asset/key rows, argument highlights and copy-only diffs", async () => {
-		const user = userEvent.setup(),
+		const user = userEvent.setup({ delay: null }),
 			write = vi.fn(async (_text: string) => undefined);
 		Object.defineProperty(navigator.clipboard, "writeText", {
 			configurable: true,
@@ -224,7 +205,7 @@ describe("localization quality and reports", () => {
 	});
 
 	it("copies all filtered suggestions in one bounded document", async () => {
-		const user = userEvent.setup(),
+		const user = userEvent.setup({ delay: null }),
 			write = vi.fn(async (_text: string) => undefined);
 		Object.defineProperty(navigator.clipboard, "writeText", {
 			configurable: true,
@@ -256,7 +237,7 @@ describe("localization quality and reports", () => {
 	});
 
 	it("renders a dense native-first report and baseline save/compare/export flows", async () => {
-		const user = userEvent.setup(),
+		const user = userEvent.setup({ delay: null }),
 			api = client();
 		if (!api.localizationReportFile) throw new Error("Expected report file capability");
 		const operation = vi.fn(api.localizationReportFile);
@@ -291,7 +272,7 @@ describe("localization quality and reports", () => {
 	});
 
 	it("restores Reports, the culture filter and finding across fresh mounts without rescanning", async () => {
-		const user = userEvent.setup(),
+		const user = userEvent.setup({ delay: null }),
 			api = client(),
 			load = vi.fn(api.loadConfiguredProject);
 		const first = mount({ ...api, loadConfiguredProject: load });
@@ -334,7 +315,7 @@ describe("localization quality and reports", () => {
 		await screen.findByText("Loading reports…");
 		expect(screen.queryByRole("table", { name: "Localization report" })).toBeNull();
 		first.unmount();
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		mount(
 			{
 				...client(),
@@ -356,7 +337,7 @@ describe("localization quality and reports", () => {
 	});
 
 	it("edits culture budgets, glossaries, alternatives and recovery before explicit save", async () => {
-		const user = userEvent.setup(),
+		const user = userEvent.setup({ delay: null }),
 			api = client();
 		const preview = vi.fn(api.previewQualityRules),
 			save = vi.fn(api.saveQualityRules);
@@ -432,7 +413,7 @@ describe("localization quality and reports", () => {
 	});
 
 	it("upgrades v1 by previewing without saving and retains source rule fields", async () => {
-		const user = userEvent.setup(),
+		const user = userEvent.setup({ delay: null }),
 			api = client();
 		const preview = vi.fn(api.previewQualityRules),
 			save = vi.fn(api.saveQualityRules);

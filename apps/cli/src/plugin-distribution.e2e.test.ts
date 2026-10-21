@@ -1,10 +1,12 @@
+import { Schema } from "effect";
 import { spawnSync } from "node:child_process";
-import { cp, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, cp, mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Schema } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runSuccessfulCli } from "./cli-in-process.test-support.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const cliIndex = join(repositoryRoot, "apps", "cli", "src", "index.ts");
@@ -30,14 +32,12 @@ function run(command: string, args: readonly string[], cwd = repositoryRoot) {
 	return result.stdout;
 }
 
-function runCli(args: readonly string[]) {
-	return Schema.decodeUnknownSync(Schema.Json)(
-		JSON.parse(run(process.execPath, ["--import", "tsx", cliIndex, ...args]))
-	);
+async function runCli(args: readonly string[]) {
+	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await runSuccessfulCli(args)));
 }
 
-function runCliRecord(args: readonly string[]) {
-	return Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(runCli(args));
+async function runCliRecord(args: readonly string[]) {
+	return Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(await runCli(args));
 }
 
 beforeAll(async () => {
@@ -82,26 +82,47 @@ afterAll(async () => {
 });
 
 describe("plugin distribution CLI process", () => {
-	it("installs, inspects, verifies, reuses offline, and prunes an exact release", () => {
-		const installed = runCliRecord([
-			"plugins",
-			"cache",
-			"install",
-			"--cache",
-			cache,
-			"--source",
-			source,
-			"--release",
-			releaseVersion,
-			"--plugin",
-			"UEShedCameras",
-			"--unreal",
-			"5.7"
-		]);
+	it("installs, inspects, verifies, reuses offline, and prunes an exact release", async () => {
+		const manifestPath = join(source, `ue-shed-plugins-${releaseVersion}.manifest.json`);
+		const manifestBytes = await readFile(manifestPath);
+		const manifest = Schema.decodeUnknownSync(
+			Schema.Struct({ artifact: Schema.Struct({ sha256: Schema.String }) })
+		)(JSON.parse(manifestBytes.toString("utf8")));
+		const manifestDigest = `sha256:${createHash("sha256").update(manifestBytes).digest("hex")}`;
+		const installed = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+			JSON.parse(
+				run(process.execPath, [
+					"--import",
+					"tsx",
+					cliIndex,
+					"plugins",
+					"cache",
+					"install",
+					"--cache",
+					cache,
+					"--source",
+					source,
+					"--release",
+					releaseVersion,
+					"--plugin",
+					"UEShedCameras",
+					"--unreal",
+					"5.7",
+					"--kind",
+					"source",
+					"--manifest-digest",
+					manifestDigest,
+					"--artifact-digest",
+					manifest.artifact.sha256
+				])
+			)
+		);
 		expect(installed.cacheHit).toBe(false);
+		expect(installed.artifactKind).toBe("source");
+		expect(installed.variantIdentity).toMatch(/^pv2-[a-f0-9]{64}$/u);
 		expect(installed.resolvedPluginIds).toEqual(["UEShedCore", "UEShedWorld", "UEShedCameras"]);
 
-		const cached = runCli(["plugins", "cache", "list", "--cache", cache]);
+		const cached = await runCli(["plugins", "cache", "list", "--cache", cache]);
 		expect(cached).toEqual([
 			expect.objectContaining({
 				plugins: expect.arrayContaining(["UEShedCore", "UEShedCameras"]),
@@ -109,18 +130,20 @@ describe("plugin distribution CLI process", () => {
 			})
 		]);
 		expect(
-			runCliRecord([
-				"plugins",
-				"cache",
-				"verify",
-				"--cache",
-				cache,
-				"--release",
-				releaseVersion
-			]).releaseVersion
+			(
+				await runCliRecord([
+					"plugins",
+					"cache",
+					"verify",
+					"--cache",
+					cache,
+					"--release",
+					releaseVersion
+				])
+			).releaseVersion
 		).toBe(releaseVersion);
 
-		const offline = runCliRecord([
+		const offline = await runCliRecord([
 			"plugins",
 			"cache",
 			"install",
@@ -137,16 +160,18 @@ describe("plugin distribution CLI process", () => {
 		expect(offline.cacheHit).toBe(true);
 
 		expect(
-			runCliRecord([
-				"plugins",
-				"cache",
-				"prune",
-				"--cache",
-				cache,
-				"--release",
-				releaseVersion
-			]).status
+			(
+				await runCliRecord([
+					"plugins",
+					"cache",
+					"prune",
+					"--cache",
+					cache,
+					"--release",
+					releaseVersion
+				])
+			).status
 		).toBe("pruned");
-		expect(runCli(["plugins", "cache", "list", "--cache", cache])).toEqual([]);
+		expect(await runCli(["plugins", "cache", "list", "--cache", cache])).toEqual([]);
 	}, 30_000);
 });

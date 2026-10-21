@@ -1,13 +1,13 @@
-import { createServer } from "node:http";
+import { WorldRequest, worldPreparationContract } from "@ue-shed/world";
+import { Schema } from "effect";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Schema } from "effect";
-import { WorldRequest, worldPreparationContract } from "@ue-shed/world";
 import { expect, it } from "vitest";
-import { runCliAsync, parseRecord } from "./cli-process.test-support.js";
+import { parseRecord, runInProcessCli } from "./cli-in-process.test-support.js";
 
-it("negotiates world preparation and prints native evidence through the CLI process", async () => {
+it("negotiates world preparation and prints native evidence through the CLI commands", async () => {
 	const calls: string[] = [];
 	const world = {
 		worldId: "world",
@@ -61,7 +61,7 @@ it("negotiates world preparation and prints native evidence through the CLI proc
 			path,
 			JSON.stringify({ contract: worldPreparationContract, action: "describe" })
 		);
-		const result = await runCliAsync([
+		const result = await runInProcessCli([
 			"world",
 			"request",
 			path,

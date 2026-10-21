@@ -219,18 +219,45 @@ it.effect("requires an explicit rule file for Game Text review", () =>
 	})
 );
 
-it.effect("advertises Lit capture and explicit legacy backends in map capture help", () =>
+it.effect("rejects a compiled plugin request without exact engine identity", () =>
 	Effect.gen(function* () {
 		const output = yield* Ref.make("");
 		const errors = yield* Ref.make("");
 		const exitCode = yield* Ref.make(0);
-		yield* runCli(["map-capture", "run", "--help"]).pipe(
-			Effect.provide(runtimeLayer(output, errors, exitCode))
-		);
-		expect(yield* Ref.get(output)).toContain("--backend");
-		expect(yield* Ref.get(output)).toContain("lit_camera_tiles");
-		expect(yield* Ref.get(output)).toContain("scene_capture_tiles");
-		expect(yield* Ref.get(errors)).toBe("");
-		expect(yield* Ref.get(exitCode)).toBe(0);
+		const error = yield* runCli([
+			"plugins",
+			"cache",
+			"install",
+			"--cache",
+			"fixture-cache",
+			"--release",
+			"0.4.0",
+			"--kind",
+			"compiled",
+			"--plugin",
+			"UEShedCore"
+		]).pipe(Effect.provide(runtimeLayer(output, errors, exitCode)), Effect.flip);
+		expect(error.message).toContain("require exact --unreal and --build-id");
+	})
+);
+it.effect("reports malformed authoring JSON before accessing a session", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+		const error = yield* runCli([
+			"authoring",
+			"sessions",
+			"set-cell",
+			"draft",
+			"/Game/Table",
+			"Row",
+			"Field",
+			"{",
+			"--project",
+			"project"
+		]).pipe(Effect.provide(runtimeLayer(output, errors, exitCode)), Effect.flip);
+		expect(error.message).toBe("Authoring value is not valid JSON.");
+		expect(yield* Ref.get(output)).toBe("");
 	})
 );

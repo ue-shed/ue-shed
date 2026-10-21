@@ -3,9 +3,9 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { runSuccessfulCli, runCliAsync, parseRecord } from "./cli-process.test-support.js";
+import { parseRecord, runInProcessCli, runSuccessfulCli } from "./cli-in-process.test-support.js";
 
-describe("ue-shed Review session CLI process", () => {
+describe("ue-shed Review session CLI commands", () => {
 	it("generates a permissive rig and tunes its durable session from separate CLI calls", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-review-framing-rig-"));
 		const parametersPath = join(root, "framing-parameters.json");
@@ -66,7 +66,7 @@ describe("ue-shed Review session CLI process", () => {
 			const address = server.address();
 			if (!(address instanceof Object)) throw new Error("No server port");
 			const endpoint = `http://127.0.0.1:${address.port}`;
-			const generatedProcess = await runCliAsync([
+			const generatedProcess = await runInProcessCli([
 				"review",
 				"framing",
 				"candidates",
@@ -78,7 +78,7 @@ describe("ue-shed Review session CLI process", () => {
 			const generated = parseRecord(generatedProcess.stdout);
 			expect(generated.candidates).toHaveLength(30);
 
-			const bootstrapProcess = await runCliAsync([
+			const bootstrapProcess = await runInProcessCli([
 				"review",
 				"authoring",
 				"bootstrap",
@@ -105,7 +105,7 @@ describe("ue-shed Review session CLI process", () => {
 				"utf8"
 			);
 			const tuned = parseRecord(
-				runSuccessfulCli(["review", "authoring", "tune", root, sessionId, patchPath])
+				await runSuccessfulCli(["review", "authoring", "tune", root, sessionId, patchPath])
 			);
 			expect(tuned.candidates).toHaveLength(30);
 			expect(tuned).toMatchObject({

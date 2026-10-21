@@ -1258,8 +1258,8 @@ export const gameTextOperationProgressEvent = {
 } as const;
 
 // SAFETY: invokeContracts is the sole source of keys, so Object.keys cannot produce another channel.
-// Verified by: apps/workbench/src/main/ipc-contracts.test.ts ("registers exactly 138 invoke
-// channels plus renderer events", "keeps contract channels in exact preload parity")
+// Verified by: apps/workbench/src/main/ipc-contracts.test.ts
+// ("keeps contract channels in exact preload parity")
 const invokeContractKeys = Object.keys(invokeContracts) as Array<InvokeChannel>;
 export const invokeChannelNames = invokeContractKeys;
 

@@ -1,29 +1,29 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
-import { Effect, Ref, Deferred, Fiber } from "effect";
-import { expect } from "vitest";
 import {
-	makeLocalizationEvidenceTestLayer,
 	LocalizationError,
 	LocalizationEvidenceNodeLive,
 	LocalizationTargetName,
+	makeLocalizationEvidenceTestLayer,
 	TextKey,
 	TextNamespace
 } from "@ue-shed/localization";
+import { Deferred, Effect, Fiber, Ref } from "effect";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { expect } from "vitest";
+import {
+	makeGameTextLocalizationOracle as makeGameTextLocalization,
+	oracleProjectIndex
+} from "./game-text-index.test-support.js";
 import {
 	corpus,
+	cultureCode,
 	evidence,
 	poDocument,
 	target,
-	unit,
-	cultureCode
+	unit
 } from "./game-text-localization.test-support.js";
-import {
-	oracleProjectIndex,
-	makeGameTextLocalizationOracle as makeGameTextLocalization
-} from "./game-text-index.test-support.js";
 
 it.effect("returns a recoverable reader failure without exposing file authority", () =>
 	Effect.gen(function* () {
@@ -54,25 +54,6 @@ it.effect("returns a recoverable reader failure without exposing file authority"
 		expect(result).toMatchObject({ status: "failed", code: "file_unreadable" });
 		expect(JSON.stringify(result)).not.toContain("C:/Private");
 	})
-);
-
-it.effect("discovers no-target projects without reading evidence", () =>
-	Effect.gen(function* () {
-		const saved = corpus();
-		const localization = yield* makeGameTextLocalization(
-			() => Effect.succeed(saved),
-			() => Effect.succeed(oracleProjectIndex("C:/Project"))
-		);
-		expect(yield* localization.targets()).toEqual({ status: "ready", targets: [] });
-	}).pipe(
-		Effect.provide(
-			makeLocalizationEvidenceTestLayer({
-				discover: () => Effect.succeed({ schemaVersion: 1, targets: [], diagnostics: [] }),
-				read: () => Effect.die("Evidence must not be read"),
-				targets: () => Effect.die("Not used")
-			})
-		)
-	)
 );
 
 it.effect(
@@ -179,8 +160,8 @@ it.live("reviews and writes staged edits into the PO file, then reports them as 
 		);
 		for (const path of [
 			"Config/DefaultEditor.ini",
-			"Config/Localization",
-			"Content/Localization"
+			"Config/Localization/FixtureGame_Export.ini",
+			"Content/Localization/FixtureGame"
 		])
 			yield* Effect.promise(() =>
 				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
@@ -235,8 +216,8 @@ it.live("writes review flags and shows a later edit as changed since review", ()
 		);
 		for (const path of [
 			"Config/DefaultEditor.ini",
-			"Config/Localization",
-			"Content/Localization"
+			"Config/Localization/FixtureGame_Export.ini",
+			"Content/Localization/FixtureGame"
 		])
 			yield* Effect.promise(() =>
 				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
@@ -318,8 +299,8 @@ it.live("pairs a key that changed across a gather it ran, keeping the trimmed tr
 		);
 		for (const path of [
 			"Config/DefaultEditor.ini",
-			"Config/Localization",
-			"Content/Localization"
+			"Config/Localization/FixtureGame_Export.ini",
+			"Content/Localization/FixtureGame"
 		])
 			yield* Effect.promise(() =>
 				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {

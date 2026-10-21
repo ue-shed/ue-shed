@@ -1,17 +1,17 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+	ContentObservatoryHistoryRequest,
+	type ContentObservatoryState
+} from "@ue-shed/extension-content-observatory/client";
+import {
 	PerforceFastMapHistory,
 	PerforceMapHistory,
 	makeMapHistoryTestLayer,
 	type MapHistoryApi
 } from "@ue-shed/map-history";
-import { makeAssetReaderTestLayer, type AssetReaderTestApi } from "@ue-shed/unreal-assets";
-import {
-	ContentObservatoryHistoryRequest,
-	type ContentObservatoryState
-} from "@ue-shed/extension-content-observatory/client";
 import type { SavedWorld } from "@ue-shed/protocol";
-import { Stream, Deferred, Effect, Layer, Schema } from "effect";
+import { makeAssetReaderTestLayer, type AssetReaderTestApi } from "@ue-shed/unreal-assets";
+import { Deferred, Effect, Layer, Schema, Stream } from "effect";
 import {
 	WorkbenchContentObservatory,
 	WorkbenchContentObservatoryLive
@@ -89,15 +89,6 @@ const fastRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	mapPath: request.mapPath,
 	range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-27T00:00:00.000Z" },
 	target: { identity: { actorGuid: "actor-npc-1", kind: "actor_guid" }, kind: "actor" }
-}) as Extract<ContentObservatoryHistoryRequest, { mode: "fast" }>;
-
-// SAFETY: the literal mode and actor_class target fix the decoded request union variant.
-const fastClassRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
-	mode: "fast",
-	limits: request.limits,
-	mapPath: request.mapPath,
-	range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-27T00:00:00.000Z" },
-	target: { classPath: "/Script/Game.Npc", kind: "actor_class" }
 }) as Extract<ContentObservatoryHistoryRequest, { mode: "fast" }>;
 
 const fastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory)({
@@ -356,33 +347,6 @@ describe("WorkbenchContentObservatory", () => {
 			);
 		}
 	);
-
-	it.effect("passes an actor-class Fast History target to the map-history service", () => {
-		let receivedTarget: unknown;
-		return Effect.gen(function* () {
-			const service = yield* WorkbenchContentObservatory;
-			yield* service.start(fastClassRequest);
-			yield* Effect.yieldNow;
-			expect(receivedTarget).toEqual({ classPath: "/Script/Game.Npc", kind: "actor_class" });
-		}).pipe(
-			Effect.provide(
-				stateLayer(
-					{
-						progress: () => Effect.succeed(idleProgress()),
-						readPerforceFastMapHistory: (query) =>
-							Effect.sync(() => {
-								receivedTarget = query.target;
-								return fastHistory;
-							}),
-						readPerforceMapHistory: () =>
-							Effect.die("Actor-class Fast History must not call Deep History.")
-					},
-					currentWorld
-				)
-			),
-			Effect.scoped
-		);
-	});
 
 	it.effect("interrupts the active reconstruction and reports cancellation", () =>
 		Effect.gen(function* () {

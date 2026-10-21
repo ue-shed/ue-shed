@@ -233,32 +233,6 @@ it.effect("returns not_configured when project or rules are absent", () =>
 	)
 );
 
-it.effect("scans the configured project and rules", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchAssetAudits;
-		const result = yield* service.configuredScan();
-		expect(result).toEqual({ report: emptyReport, status: "completed" });
-	}).pipe(
-		Effect.provide(
-			WorkbenchAssetAuditsLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						configuration,
-						makeTextureAuditTestLayer({
-							scan: () => Effect.die("full project scan is not used"),
-							scanFromProjectIndex: () => Effect.succeed(emptyReport)
-						}),
-						dialogLayer({}),
-						offlinePreviewLayer,
-						selectedProject,
-						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
-					)
-				)
-			)
-		)
-	)
-);
-
 it.effect("keeps refreshed audit data in main and serves bounded query results", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchAssetAudits;

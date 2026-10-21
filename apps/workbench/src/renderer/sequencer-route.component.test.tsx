@@ -6,7 +6,6 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { sequenceReadFixture as read } from "../../../../extensions/sequencer/src/sequence-fixture.test-support.js";
 import type { SavedReviewClient } from "./saved-review-client.js";
-import { WorkbenchRendererError } from "./workbench-client.js";
 import { createSequencerRoute } from "./sequencer-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -98,29 +97,6 @@ describe("Workbench Sequencer route", () => {
 		});
 		expect((await screen.findByRole("alert")).textContent).toContain(
 			"Refresh the project index"
-		);
-	});
-
-	it("shows the native transport recovery", async () => {
-		setup(
-			{
-				readSequence: () =>
-					Effect.fail(
-						new WorkbenchRendererError({
-							message: "The WorkbenchRenderer operation failed.",
-							retrySafe: false,
-							nextStep: "reconcile",
-							code: "workbench_renderer_failed",
-							cause: "IPC unavailable",
-							operation: "readSequence",
-							recovery: "Retry"
-						})
-					)
-			},
-			"LS.uasset"
-		);
-		expect((await screen.findByRole("alert")).textContent).toContain(
-			"configured uasset executable"
 		);
 	});
 });

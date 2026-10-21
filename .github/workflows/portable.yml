@@ -243,7 +243,7 @@ jobs:
                   pnpm run uasset:check:io 2>&1 | tee -a evidence/uasset-io-check.log
                   node scripts/test.ts \
                       apps/cli/src/index.e2e.test.ts \
-                      apps/cli/src/investigation.test.ts \
+                      apps/cli/src/localization-status.integration.test.ts \
                       packages/unreal-assets/src/fixture.integration.test.ts \
                       packages/unreal-assets/src/project-index-process.test.ts \
                       packages/game-text/src/fixture.integration.test.ts \

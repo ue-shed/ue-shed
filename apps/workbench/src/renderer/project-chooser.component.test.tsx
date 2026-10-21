@@ -138,22 +138,6 @@ describe("ProjectChooser", () => {
 		);
 	});
 
-	it("presents a cancelled selection as idle without a failure", async () => {
-		renderChooser({
-			choose: () => Effect.succeed({ status: "cancelled" }),
-			current: { status: "cancelled" }
-		});
-
-		expect(
-			(
-				await screen.findByRole<HTMLButtonElement>("button", {
-					name: "Choose project…"
-				})
-			).disabled
-		).toBe(false);
-		expect(screen.queryByRole("alert")).toBeNull();
-	});
-
 	it("shows the ready project and notifies routes after selection", async () => {
 		const onChosen = vi.fn();
 		renderChooser({

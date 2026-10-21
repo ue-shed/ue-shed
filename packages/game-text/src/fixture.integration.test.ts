@@ -2,7 +2,8 @@ import { AssetReader, assetReaderLayer } from "@ue-shed/unreal-assets";
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
-import { scanTextCorpus, textCorpusFromExtractionEvents } from "./corpus.js";
+import { textCorpusFromExtractionEvents } from "./corpus.js";
+import { savedFixtureCorpus } from "./saved-corpus.test-support.js";
 import { searchTextCorpus } from "./search.test-support.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -10,11 +11,7 @@ const fixture = useSavedFixtureProject();
 
 describe.skipIf(!executable)("game text fixture corpus", () => {
 	it("keeps localized and string-table identities with their occurrences", async () => {
-		const corpus = await Effect.runPromise(
-			scanTextCorpus({ projectRoot: fixture.root }).pipe(
-				Effect.provide(assetReaderLayer({ executable: executable! }))
-			)
-		);
+		const corpus = await Effect.runPromise(savedFixtureCorpus(fixture.root, executable!));
 
 		// One Game Text problem case is a package the reader only partly decodes.
 		expect(corpus.status).toBe("partial");

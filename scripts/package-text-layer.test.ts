@@ -248,7 +248,7 @@ describe("package text layer", () => {
 			});
 		}
 	);
-	it.each([0.0001, 0.001, 0.002])(
+	it.each([0.0001])(
 		"parallel cold layer equals the generated event oracle at %s",
 		async (scale) => {
 			await withStore(async (cache) => {

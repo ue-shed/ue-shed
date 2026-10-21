@@ -122,8 +122,9 @@ Expired runs kill the worker tree, exit nonzero and record `outcome.kind: "faile
 completed stages retained for diagnosis. `--run-timeout-seconds` can only lower the applicable
 limit. A parent-owned byte guard restores the PO edit even after forced termination.
 
-The dictionary experiment reads retained Phase 2 sections without importing projects or rebuilding
-the join. Run each candidate separately and serially; the same heap/RSS/stage and 10× run caps apply:
+The dictionary experiment, removed once production chose the A64 codec, is recoverable from commit
+`b6bc97b0` (`scripts/game-text-dictionary.ts`, `scripts/benchmark-game-text-dictionary.ts`). It
+read retained Phase 2 sections without importing projects or rebuilding the join. Run each candidate separately and serially; the same heap/RSS/stage and 10× run caps apply:
 
 ```powershell
 node --import tsx scripts/benchmark-game-text-dictionary.ts --input test-results/game-text-scale/snapshot-v3-final-1x-256.snapshot --output test-results/game-text-scale/dictionary-A64-1x.json --scale 1 --candidate A64

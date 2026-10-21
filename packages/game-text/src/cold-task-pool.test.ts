@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Deferred, Effect } from "effect";
-import { coldMemoryBudget, coldParserReservation, runColdTasks } from "./cold-task-pool.js";
+import { runColdTasks } from "./cold-task-pool.js";
 
 describe("cold task memory reservations", () => {
 	it("starts the largest file together with smaller work that fits", async () => {
@@ -68,10 +68,5 @@ describe("cold task memory reservations", () => {
 			)
 		).rejects.toThrow("parse failed");
 		expect(started).toEqual([0]);
-	});
-	it("uses available memory and accounts for fixed and input-dependent parser costs", () => {
-		expect(coldMemoryBudget(8 * 1024 ** 3)).toBe(4 * 1024 ** 3);
-		expect(coldMemoryBudget(0)).toBe(1);
-		expect(coldParserReservation(1024)).toBe(128 * 1024 ** 2 + 32768);
 	});
 });

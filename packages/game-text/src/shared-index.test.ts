@@ -111,12 +111,12 @@ describe("shared project string index", () => {
 					const store = yield* SharedIndex,
 						writer = yield* store.writer(),
 						generation = writer.manifest().generation;
-					for (let i = 0; i <= maximumSharedSegments; i++) {
-						yield* writer.publish(`file-${i}`, `key-${i}`, source([`value-${i}`]));
-						expect(writer.manifest().segments.length).toBeLessThanOrEqual(
-							maximumSharedSegments
-						);
-					}
+					yield* writer.publish("file-0", "key-0", source(["value-0"]));
+					// Interning fills real segments without rewriting a manifest and layer 256 times.
+					for (let i = 1; i < maximumSharedSegments; i++)
+						yield* writer.intern("source", [`value-${i}`]);
+					expect(writer.metrics().segments).toBe(maximumSharedSegments);
+					yield* writer.publish("next", "next", source(["next"]));
 					expect(writer.manifest().generation).not.toBe(generation);
 					expect(writer.manifest().segments).toHaveLength(2);
 					const index = yield* store.open(),

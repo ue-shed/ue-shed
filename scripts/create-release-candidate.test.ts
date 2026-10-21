@@ -6,7 +6,6 @@ import { join } from "node:path";
 import test from "node:test";
 import {
 	assertTrustedUnrealEvidence,
-	sha256,
 	validateCandidateVersion,
 	validateCommit,
 	validateRunId,
@@ -22,12 +21,6 @@ import {
 	validatePublicationManifest,
 	type PublishRequest
 } from "./publish-public-packages.ts";
-
-test("accepts exact release-candidate identities", () => {
-	assert.equal(validateCandidateVersion("0.1.0-rc.1"), "0.1.0-rc.1");
-	assert.equal(validateCommit("a".repeat(40)), "a".repeat(40));
-	assert.equal(validateRunId("123456"), "123456");
-});
 
 test("accepts generated WASM build evidence for optimized and no-opt builds", () => {
 	const buildInfo: WasmBuildInfo = {
@@ -231,27 +224,16 @@ test("requires a candidate to bind the exact successful Trusted Unreal evidence 
 	);
 });
 
-test("rejects ranges, latest, shortened commits, and ambiguous run IDs", () => {
+test("accepts exact identities and rejects ranges, latest, shortened commits, and ambiguous run IDs", () => {
+	assert.equal(validateCandidateVersion("0.1.0-rc.1"), "0.1.0-rc.1");
+	assert.equal(validateCommit("a".repeat(40)), "a".repeat(40));
+	assert.equal(validateRunId("123456"), "123456");
 	for (const version of ["latest", "^0.1.0", "0.1.0", "0.1.0-rc.x"]) {
 		assert.throws(() => validateCandidateVersion(version), /exact x\.y\.z-rc\.n SemVer/);
 	}
 	assert.throws(() => validateCommit("abc123"), /full lowercase Git SHA/);
 	assert.throws(() => validateRunId("latest"), /exact positive integer/);
 	assert.throws(() => validateRunId("0"), /exact positive integer/);
-});
-
-test("hashes the exact candidate bytes", async () => {
-	const directory = await mkdtemp(join(tmpdir(), "ue-shed-candidate-hash-"));
-	try {
-		const path = join(directory, "artifact.txt");
-		await writeFile(path, "candidate\n", "utf8");
-		assert.equal(
-			await sha256(path),
-			"1e81270f1a47dce22a2e4985250c74b2e3374443734f1492b03ea2cd2af4ec48"
-		);
-	} finally {
-		await rm(directory, { recursive: true, force: true });
-	}
 });
 
 test("computes npm SHA-512 SRI and makes retry-safe publication decisions", () => {

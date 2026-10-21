@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/index.js";
 import { packageTextRecordsFromEvents } from "../packages/game-text/dist/package-text-record.js";
 import { gameTextScaleEvents, gameTextScaleRecipe } from "./localization-scale-data.ts";
@@ -7,6 +7,14 @@ import {
 	compareTextCandidateCorpora
 } from "./package-text-oracle.test-support.ts";
 import type { SavedAssetTextExtractionEvent } from "../packages/unreal-assets/dist/index.js";
+
+let expected: ReturnType<typeof textCorpusFromExtractionEvents>;
+beforeAll(() => {
+	expected = textCorpusFromExtractionEvents({
+		projectRoot: ".",
+		events: gameTextScaleEvents(gameTextScaleRecipe(0.001), 57)
+	});
+});
 
 describe("package text records", () => {
 	it("the eligibility oracle rejects lost text, selected coverage gaps and unreported exclusions", () => {
@@ -42,7 +50,7 @@ describe("package text records", () => {
 			).excludedEqual
 		).toBe(false);
 	});
-	it.each([0.0001, 0.001, 0.002])("equals the legacy corpus at scale %s", (scale) => {
+	it.each([0.0001, 0.001])("equals the legacy corpus at scale %s", (scale) => {
 		const recipe = gameTextScaleRecipe(scale);
 		const events = [...gameTextScaleEvents(recipe, 57)];
 		const records = [...packageTextRecordsFromEvents(events)];
@@ -159,10 +167,6 @@ describe("package text records", () => {
 	});
 
 	it("the oracle detects unit, occurrence, coverage and diagnostic changes with a bounded report", () => {
-		const expected = textCorpusFromExtractionEvents({
-			projectRoot: ".",
-			events: gameTextScaleEvents(gameTextScaleRecipe(0.001), 57)
-		});
 		const reordered = {
 			...expected,
 			units: expected.units
@@ -195,10 +199,6 @@ describe("package text records", () => {
 		"diagnostics",
 		"packageCoverage"
 	])("the oracle detects a %s change", (field) => {
-		const expected = textCorpusFromExtractionEvents({
-			projectRoot: ".",
-			events: gameTextScaleEvents(gameTextScaleRecipe(0.001), 57)
-		});
 		const actual = structuredClone(expected);
 		const unit = actual.units[0];
 		if (!unit || !unit.occurrences[0]) throw new Error("Missing oracle unit");

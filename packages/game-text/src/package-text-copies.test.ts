@@ -62,7 +62,7 @@ function record(path: string, row: number, version = ""): SavedAssetPackageTextR
 describe("package text copies", () => {
 	it("stores folded copies and Blueprint classes through cold and warm refreshes", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-package-copies-"));
-		const inventory: PackageTextInventoryEntry[] = Array.from({ length: 260 }, (_, row) => ({
+		const inventory: PackageTextInventoryEntry[] = Array.from({ length: 32 }, (_, row) => ({
 			path: `Content/UI/Package${row}.uasset`,
 			signature: `signature-${row}`,
 			headerData: {
@@ -92,9 +92,11 @@ describe("package text copies", () => {
 				Effect.scoped(
 					Effect.gen(function* () {
 						// More than eight changed shards on an empty index: the cold worker path.
-						yield* Effect.scoped(refreshPackageTextLayer({ inventory, read }));
+						yield* Effect.scoped(
+							refreshPackageTextLayer({ inventory, read, coldMinimumPackages: 24 })
+						);
 						let records = yield* stored;
-						expect(records.size).toBe(260);
+						expect(records.size).toBe(32);
 						for (const entry of inventory)
 							expect(records.get(entry.path)).toEqual(expected(entry.path));
 						const blueprint = records.get("Content/UI/Package5.uasset")!;

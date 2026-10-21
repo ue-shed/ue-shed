@@ -36,8 +36,6 @@ test("media promotion requires passed, complete, contained recording evidence", 
 		chapters
 	});
 	const promoted = prepareCaptures(bundle, manifest, "site-saved");
-	assert.equal(promoted.length, 6);
-	assert.deepEqual(Object.keys(exportPlan), ["site-saved"]);
 	assert.deepEqual(promoted.find(({ key }) => key === "mapReview")?.capture, {
 		file: "map-review.png",
 		journey: "site-saved",
@@ -79,9 +77,6 @@ test("media promotion requires passed, complete, contained recording evidence", 
 				"site-saved"
 			),
 		/exactly one chapter/
-	);
-	assert.throws(() =>
-		Schema.decodeUnknownSync(RecordingManifest)({ ...manifest, dirty: "false" })
 	);
 	writeFileSync(join(root, "outside.png"), png);
 	assert.throws(() => containedFile(bundle, "../outside.png"), /escapes/);

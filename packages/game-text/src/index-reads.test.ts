@@ -190,30 +190,33 @@ const builders = [
  * The derived oracle reads lines through the model's own whole-line exports: one pass records the
  * requests it makes, the exports answer them, and a second pass derives from those answers.
  */
-const deriveFrom = <A>(model: GameTextIndexRefreshResult, derive: (base: DerivedReadsBase) => A) =>
+const derivedReader = (model: GameTextIndexRefreshResult) =>
 	Effect.gen(function* () {
 		const corpus = yield* model.query.readCorpus();
-		const requests = new Map<string, Matching>();
 		const answers = new Map<
 			string,
 			readonly import("./localization-schema.js").LocalizationLine[]
 		>();
-		const base = (record: boolean): DerivedReadsBase => ({
-			lines: (request) => {
-				const key = JSON.stringify(request);
-				if (record) requests.set(key, request);
-				return answers.get(key) ?? [];
-			},
-			search: () => {
-				throw new Error("The derived reads do not search.");
-			},
-			corpus: () => corpus,
-			cultures: model.localization.cultures
-		});
-		derive(base(true));
-		for (const [key, request] of requests)
-			answers.set(key, yield* model.query.localizationLines(request));
-		return derive(base(false));
+		return <A>(derive: (base: DerivedReadsBase) => A) =>
+			Effect.gen(function* () {
+				const requests = new Map<string, Matching>();
+				const base: DerivedReadsBase = {
+					lines: (request) => {
+						const key = JSON.stringify(request);
+						if (!answers.has(key)) requests.set(key, request);
+						return answers.get(key) ?? [];
+					},
+					search: () => {
+						throw new Error("The derived reads do not search.");
+					},
+					corpus: () => corpus,
+					cultures: model.localization.cultures
+				};
+				derive(base);
+				for (const [key, request] of requests)
+					answers.set(key, yield* model.query.localizationLines(request));
+				return derive(base);
+			});
 	});
 
 const dimensionSets: readonly (readonly TextAggregateDimension[])[] = [
@@ -359,6 +362,7 @@ describe("index reads", () => {
 							const model = yield* (yield* GameTextIndexRefresh).refresh(
 								fixture.request
 							);
+							const deriveFrom = yield* derivedReader(model);
 							const localization = { target: fixture.target.name };
 							const lines = { query: "", capability: "all" as const, localization };
 
@@ -379,7 +383,7 @@ describe("index reads", () => {
 											by,
 											measures: ["lines", "sourceWords", "lineBreakWords"]
 										});
-										const expected = yield* deriveFrom(model, (base) =>
+										const expected = yield* deriveFrom((base) =>
 											derivedAggregate(base, request)
 										);
 										expect(
@@ -415,7 +419,7 @@ describe("index reads", () => {
 								expect(
 									yield* model.query.selectLocalizationLines(request, fields)
 								).toEqual(
-									yield* deriveFrom(model, (base) =>
+									yield* deriveFrom((base) =>
 										derivedLineViews(base, request, fields)
 									)
 								);
@@ -475,7 +479,7 @@ describe("index reads", () => {
 								})).fileScope;
 								expect(gate).toEqual(
 									localizationGateTarget({
-										lines: yield* deriveFrom(model, (base) =>
+										lines: yield* deriveFrom((base) =>
 											derivedLineViews(base, scoped, LOCALIZATION_GATE_FIELDS)
 										),
 										...(fileScope === undefined ? undefined : { fileScope }),

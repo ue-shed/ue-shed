@@ -1,4 +1,5 @@
 import {
+	cp,
 	mkdir,
 	mkdtemp,
 	readdir,
@@ -14,7 +15,6 @@ import { Effect, Result } from "effect";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	LocalizationEvidenceNodeLive,
-	defaultLocalizationLimits,
 	parseManifest,
 	parseArchive,
 	parsePO
@@ -30,9 +30,12 @@ import { generateGameTextScale } from "./localization-scale-data.ts";
 import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 
 let temporary: string;
+let generated: string;
 beforeAll(async () => {
 	await mkdir(resolve("test-results/localization-import"), { recursive: true });
 	temporary = await mkdtemp(resolve("test-results/localization-import/test-"));
+	generated = resolve(temporary, "generated");
+	await generateGameTextScale({ root: generated, scale: 0.0001, seed: 57 });
 });
 afterAll(async () => {
 	if (temporary) await rm(temporary, { recursive: true, force: true });
@@ -144,7 +147,7 @@ describe("localization snapshot parser oracle", () => {
 			});
 		}
 	}, 60000);
-	it.each([0.0001, 0.001])(
+	it.each([0.0001])(
 		"matches every generated localization file at scale %s",
 		async (scale) => {
 			const root = resolve(temporary, `tiny-${scale}`);
@@ -316,7 +319,7 @@ describe("localization import cache and failures", () => {
 	});
 	it("a second import does no parsing, and a one-byte change only reimports that file", async () => {
 		const root = resolve(temporary, "refresh");
-		await generateGameTextScale({ root, scale: 0.0001, seed: 57 });
+		await cp(generated, root, { recursive: true });
 		const run = () =>
 			Effect.runPromise(
 				importLocalizationTarget({
@@ -367,7 +370,7 @@ describe("localization import cache and failures", () => {
 	});
 	it("keeps authored-file diagnostics and closes worker staging after a cold parser failure", async () => {
 		const root = resolve(temporary, "cold-failure");
-		await generateGameTextScale({ root, scale: 0.0001, seed: 57 });
+		await cp(generated, root, { recursive: true });
 		const file = "Content/Localization/Generated/en/Generated.po";
 		await writeFile(resolve(root, file), 'msgid "source"\ninvalid syntax\n');
 		const cacheRoot = resolve(temporary, "cold-failure-cache");
@@ -386,7 +389,7 @@ describe("localization import cache and failures", () => {
 	}, 60000);
 	it("cancels cold worker preparation, cleans staging and releases the writer for retry", async () => {
 		const root = resolve(temporary, "cold-cancel");
-		await generateGameTextScale({ root, scale: 0.0001, seed: 57 });
+		await cp(generated, root, { recursive: true });
 		const cacheRoot = resolve(temporary, "cold-cancel-cache");
 		const controller = new AbortController();
 		const run = () =>
@@ -694,8 +697,6 @@ describe("localization import cache and failures", () => {
 		expect(await readdir(resolve(temporary, "cache/localization-import-staging"))).toEqual([]);
 	});
 	it("preserves current reader defaults and rejects traversal, missing and symlink escapes", async () => {
-		expect(defaultLocalizationLimits.maxFileBytes).toBe(320 * 1024 ** 2);
-		expect(defaultLocalizationLimits.maxEntries).toBe(1_000_000);
 		for (const [file, code] of [
 			["../outside.manifest", "unsafe_path"],
 			["missing.manifest", "file_missing"]

@@ -11,7 +11,7 @@ import ts from "typescript";
  * worse than nothing, because the user agent's own button border shows through instead — a bright
  * `ButtonBorder` box under `color-scheme: dark`. Write the longhands instead.
  */
-export const droppedShorthands = [
+const droppedShorthands = [
 	"all",
 	"animation",
 	"background",

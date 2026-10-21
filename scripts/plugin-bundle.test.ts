@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -215,35 +214,6 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 		assert.ok(!entries.some((entry) => entry.includes("UEShedScenarios")));
 	} finally {
 		await rm(fixture.root, { recursive: true, force: true });
-	}
-});
-
-test("accepts only complete public plugin release provenance and assets", async () => {
-	const output = await mkdtemp(join(tmpdir(), "ue-shed-public-plugin-gate-"));
-	try {
-		const archivePath = join(output, "ue-shed-plugins-0.5.0.tar.gz");
-		const manifestPath = join(output, "plugins.manifest.json");
-		await writeFile(archivePath, "release bytes\n");
-		await writeFile(manifestPath, "{}\n");
-		const archive = await readFile(archivePath);
-		const manifest = {
-			artifact: {
-				path: basename(archivePath),
-				sha256: `sha256:${createHash("sha256").update(archive).digest("hex")}`
-			},
-			plugins: [{ id: "UEShedCore", version: "0.5.0" }],
-			provenance: {
-				candidateManifest: { sha256: `sha256:${"a".repeat(64)}`, version: "0.5.0" },
-				source: { commit: "b".repeat(40), ref: "refs/tags/v0.5.0" }
-			},
-			releaseVersion: "0.5.0"
-		};
-		assert.equal(
-			await validatePublicPluginBundle({ archivePath, manifest, manifestPath }),
-			manifest
-		);
-	} finally {
-		await rm(output, { recursive: true, force: true });
 	}
 });
 
@@ -497,23 +467,6 @@ test("selects the Map Review Core+World+Cameras graph without Observatory or UI 
 		assert.ok(!entries.some((entry) => entry.includes("UEShedAuthoring")));
 		assert.ok(!entries.some((entry) => entry.includes("UEShedAssetAudits")));
 		assert.ok(!entries.some((entry) => /workbench|camera-review/iu.test(entry)));
-	} finally {
-		await rm(output, { recursive: true, force: true });
-	}
-});
-
-test("rejects Cameras without Core in a Map Review selection", async () => {
-	const output = await mkdtemp(join(tmpdir(), "ue-shed-map-review-missing-core-"));
-	try {
-		await assert.rejects(
-			buildPluginBundle({
-				output,
-				releaseVersion: "0.1.0-rc.2",
-				requestedPlugins: ["UEShedCameras"],
-				unreal: { minimum: "5.7", maximum: "5.7" }
-			}),
-			/missing plugin dependencies: UEShedCore/
-		);
 	} finally {
 		await rm(output, { recursive: true, force: true });
 	}

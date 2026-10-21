@@ -22,6 +22,31 @@ export function boundedNumber(value: string, name: string, maximum: number): num
 	return number;
 }
 
+/** The CLI and its tests share the same hard-cap validation before launching workers. */
+export function benchmarkPipelineLimits(values: {
+	readonly heaps: string;
+	readonly maxRssGiB: string;
+	readonly stageTimeoutSeconds: string;
+}) {
+	const maxRss = boundedNumber(values.maxRssGiB, "RSS GiB", maximumRssBytes / 2 ** 30) * 2 ** 30;
+	const timeout =
+		boundedNumber(values.stageTimeoutSeconds, "stage timeout", maximumStageSeconds) * 1000;
+	const heaps = values.heaps.split(",").map((heap) => {
+		if (heap === "default") return heap;
+		const limit = boundedNumber(heap, "heap MiB", maximumHeapMiB);
+		if (!Number.isSafeInteger(limit)) throw new Error("Heap MiB must be an integer.");
+		return limit;
+	});
+	return { maxRss, timeout, heaps };
+}
+
+export function assertSafePipelineScale(scale: number) {
+	if (scale >= 10)
+		throw new Error(
+			"10× pipeline not run: unsafe in-memory workload. Use validate:game-text-scale."
+		);
+}
+
 /** OS sampling works while the child's JavaScript thread is blocked in parsing or GC. */
 export async function childWorkingSet(pid: number, includeDescendants = false): Promise<number> {
 	if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid child PID.");

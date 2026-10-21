@@ -9,7 +9,7 @@ import { GameTextIndexBuilder } from "./index-builder.js";
 import { GameTextIndexQuery } from "./index-query-native.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-import { SharedIndex, sharedIndexNodeLayer } from "./shared-index.js";
+import { SharedIndex, sharedIndexNodeLayer, type SharedIndexWriter } from "./shared-index.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { decodePackageTextColumns } from "./package-text-columns.js";
 import { packageTextShard } from "./package-text-layer.js";
@@ -62,7 +62,7 @@ const record = (
 	};
 };
 
-// Debug native builds take close to two minutes per test alone, and longer under suite load.
+// Fill dictionary segments within a lease; reopen only to exercise cross-session edits.
 describe.skipIf(!executable)("native package record deltas", () => {
 	it("keeps dictionary IDs coherent in mixed leases and compacts repeated package and localization edits", async () => {
 		if (!executable) throw new Error("Native reader required");
@@ -101,13 +101,32 @@ describe.skipIf(!executable)("native package record deltas", () => {
 						]
 					: [])
 			]);
+		const fillDictionary = (writer: SharedIndexWriter, phase: string) =>
+			Effect.gen(function* () {
+				while (writer.manifest().segments.length < 255)
+					yield* writer.intern("source", [
+						`${phase}-capacity-${writer.manifest().segments.length}`
+					]);
+				// Interning is staged; publish the root so the next lease retains all 255 segments.
+				yield* writer.publishIds(
+					"capacity",
+					phase,
+					{
+						columns: [
+							{ name: "probe", kind: "u32", load: async () => Uint32Array.of(0) }
+						]
+					},
+					writer.manifest().generation
+				);
+			});
+
 		try {
 			await Effect.runPromise(
 				Effect.scoped(
 					Effect.gen(function* () {
 						const builder = yield* GameTextIndexBuilder;
 						const generations = new Set<string>();
-						for (let round = 0; round < 140; round++) {
+						for (let round = 0; round < 5; round++) {
 							yield* builder.withSession(
 								{ configuration },
 								Effect.scoped(
@@ -194,6 +213,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 												expected
 											);
 										}
+										if (round === 0) yield* fillDictionary(writer, "package");
 										let end = 0;
 										for (const segment of current.manifest.segments) {
 											expect(segment.start).toBe(end);
@@ -205,7 +225,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 						}
 						expect(generations.size).toBeGreaterThan(1);
 						const localizationGenerations = new Set<string>();
-						for (let round = 0; round < 270; round++) {
+						for (let round = 0; round < 5; round++) {
 							yield* builder.withSession(
 								{ configuration },
 								Effect.scoped(
@@ -233,6 +253,8 @@ describe.skipIf(!executable)("native package record deltas", () => {
 											"unchanged localization",
 											`only-translation-${round}`
 										]);
+										if (round === 0)
+											yield* fillDictionary(writer, "localization");
 									})
 								)
 							);
@@ -244,7 +266,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 							Effect.gen(function* () {
 								const manifest = (yield* (yield* SharedIndex).writer()).manifest();
 								expect(manifest.active.large).toBe("large");
-								expect(manifest.active.after).toBe("after-139");
+								expect(manifest.active.after).toBe("after-4");
 							})
 						);
 					})

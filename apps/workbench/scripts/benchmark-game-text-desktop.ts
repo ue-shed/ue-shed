@@ -98,6 +98,8 @@ interface RunResult {
 	readonly warmPeakRssMiB: number;
 	readonly warmSettledRssMiB: number;
 	readonly diskBytes: Readonly<Record<string, number>>;
+	/** Page and harness times of each step, in epoch milliseconds. */
+	readonly milestones: Readonly<Record<string, number>>;
 	readonly resultHash: string;
 	readonly resultRows: number;
 	/** Memory samples of the cold session, relative to the scan click. */
@@ -401,6 +403,30 @@ async function readRendererLongTasks(page: Page) {
 	return decodeStallReport(await page.evaluate(rendererLongTasksRead));
 }
 
+/** Records each IPC invoke's channel, start and settle times in the main process (traced runs). */
+const ipcRecorderStart = `(() => {
+	const electron = process.getBuiltinModule("module").createRequire(process.execPath)("electron");
+	const handlers = electron.ipcMain._invokeHandlers;
+	const calls = [];
+	globalThis.__ueShedIpc = calls;
+	for (const [channel, handler] of handlers ?? []) {
+		if (handler.__ueShedRecorded) continue;
+		const recorded = async (...args) => {
+			const start = Date.now();
+			try {
+				return await handler(...args);
+			} finally {
+				calls.push({ call: channel, start, end: Date.now() });
+			}
+		};
+		recorded.__ueShedRecorded = true;
+		handlers.set(channel, recorded);
+	}
+})()`;
+const IpcCalls = Schema.Array(
+	Schema.Struct({ call: Schema.String, start: Schema.Number, end: Schema.Number })
+);
+
 /** Starts main and renderer CPU profiles; the returned function writes `<prefix>-*.cpuprofile`. */
 async function startProfiles(application: ElectronApplication, page: Page) {
 	const renderer = await page.context().newCDPSession(page);
@@ -408,6 +434,7 @@ async function startProfiles(application: ElectronApplication, page: Page) {
 	await renderer.send("Profiler.setSamplingInterval", { interval: 500 });
 	await renderer.send("Profiler.start");
 	await application.evaluate(mainProfileStart);
+	await application.evaluate(ipcRecorderStart);
 	return async (prefix: string) => {
 		const { profile } = await renderer.send("Profiler.stop");
 		writeFileSync(`${prefix}-renderer.cpuprofile`, JSON.stringify(profile));
@@ -416,6 +443,10 @@ async function startProfiles(application: ElectronApplication, page: Page) {
 			`${prefix}-main.cpuprofile`,
 			Schema.decodeUnknownSync(Schema.String)(await application.evaluate(mainProfileStop))
 		);
+		const calls = Schema.decodeUnknownSync(IpcCalls)(
+			await application.evaluate("globalThis.__ueShedIpc.splice(0)")
+		);
+		writeFileSync(`${prefix}-ipc.json`, `${JSON.stringify(calls, null, "\t")}\n`);
 	};
 }
 
@@ -503,13 +534,22 @@ async function inPage<A>(
 	timeoutMs: number,
 	schema: Schema.Codec<A, unknown>
 ): Promise<A> {
-	const handle = await page.waitForFunction(script, undefined, {
-		polling: 10,
-		timeout: timeoutMs
-	});
-	const value = Schema.decodeUnknownSync(schema)(await handle.jsonValue());
-	await handle.dispose();
-	return value;
+	// The page's script policy forbids eval, so the poll loop runs in one evaluated promise
+	// rather than through `waitForFunction`.
+	const poll = `new Promise((resolve, reject) => {
+	const deadline = Date.now() + ${timeoutMs};
+	const check = () => {
+		let value = false;
+		try {
+			value = ${script};
+		} catch {}
+		if (value) resolve(value);
+		else if (Date.now() > deadline) reject(new Error("Timed out in the page"));
+		else setTimeout(check, 10);
+	};
+	check();
+})`;
+	return Schema.decodeUnknownSync(schema)(await page.evaluate(poll));
 }
 
 async function lastQueryMs(page: Page): Promise<number | undefined> {
@@ -764,6 +804,28 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 				: join(options.trace, `${app.label}-${run}-warm.log`)
 		);
 		milestones.set("warmWindow", Date.now());
+		{
+			// When each process's clock started, and the page's own load events.
+			milestones.set(
+				"warmMainOrigin",
+				Schema.decodeUnknownSync(Schema.Number)(
+					await warm.application.evaluate("performance.timeOrigin")
+				)
+			);
+			const page = Schema.decodeUnknownSync(Schema.Array(Schema.Number))(
+				await warm.page.evaluate(`(() => {
+					const navigation = performance.getEntriesByType("navigation")[0];
+					return [
+						performance.timeOrigin,
+						performance.timeOrigin + (navigation?.domContentLoadedEventEnd ?? 0),
+						performance.timeOrigin + (navigation?.loadEventEnd ?? 0)
+					];
+				})()`)
+			);
+			milestones.set("warmRendererOrigin", page[0] ?? 0);
+			milestones.set("warmRendererDomContentLoaded", page[1] ?? 0);
+			milestones.set("warmRendererLoad", page[2] ?? 0);
+		}
 		await startMainStallMonitor(warm.application);
 		const stopWarmProfiles =
 			options.trace === undefined
@@ -831,6 +893,7 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			warmPeakRssMiB: warmPeak.totalMiB,
 			warmSettledRssMiB: warmSettled,
 			diskBytes,
+			milestones: Object.fromEntries(milestones),
 			resultHash: hashed.hash,
 			resultRows: hashed.rows,
 			coldTimeline: samples

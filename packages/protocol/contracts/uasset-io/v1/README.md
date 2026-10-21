@@ -173,3 +173,7 @@ order. The directory must exist and hold none of the group files; the worker cre
 writes and flushes them all before the summary. The closing `text_summary` is unchanged. Staging
 needs explicit paths and is rejected below minor 19. A host reads each group in its own worker, so
 package text never crosses the host's event stream.
+
+From 1.19, `protocol-session` also answers `project_index_status`, so a host that holds a reader
+session reads status without starting a process. Older workers fail it in a session with
+`unsupported_session_operation` before doing any work; ask them through `protocol` instead.

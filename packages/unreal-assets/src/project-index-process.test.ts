@@ -90,6 +90,10 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 					filters: [{ _tag: "Maps" }, { _tag: "Maps" }]
 				});
 				expect(count.count).toBe(warm.mapCount);
+				// Status reads through the same reader session instead of starting a process.
+				expect((yield* getProjectIndexStatus({ projectRoot: fixtureRoot })).status).toBe(
+					"ready"
+				);
 				const staleCount = yield* Effect.exit(
 					countProjectIndex({
 						projectId: warm.projectId,
@@ -121,7 +125,7 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 			}).pipe(Effect.provide(layer));
 
 			expect(new Set(queryWorkerPids).size).toBe(1);
-			expect(queryWorkerPids.length).toBe(7);
+			expect(queryWorkerPids.length).toBe(8);
 			const sessionPid = queryWorkerPids[0];
 			if (sessionPid !== undefined) {
 				expect(() => process.kill(sessionPid, 0)).toThrow();

@@ -1,5 +1,36 @@
 # @ue-shed/game-text
 
+## 0.19.0
+
+### Minor Changes
+
+- 207cc44: Extend native Game Text queries with exact source filters, every stored review signal,
+  source groups and minimum group sizes. Preserve exact UTF-16 values across filtered reads.
+- Add aggregates over matching rows, projected localization fields, named-unit reads, corpus
+  headers, bounded report headers and a cached corpus fingerprint.
+- Move progress reports, baselines, changed-file gates, CSV exports and investigations onto index
+  reads. Existing whole-input functions remain available.
+- Index line and unit IDs and use a separate bulk reader to keep interactive searches responsive.
+  Release failed bulk acquisitions immediately while retaining the interactive fallback.
+- Improve localization quality scans and evidence reads; expose stage and worker timings.
+- Hosts implementing the query contract must provide the new read methods. Pass a model revision
+  callback as the first argument to `makeGameTextWorkspaceLocalization`.
+- Export `TextCorpusReportHeader` and `textCorpusReportHeader` for host implementations.
+
+### Patch Changes
+
+- 64d95f3: Add a `translation_key` search filter clause that selects text by the gathered namespace and key
+  Unreal translates it by: saved FText without its package marker, String Table entries with their
+  table namespace. Values are `JSON.stringify([namespace, key])`, as the newly exported
+  `gatheredIdentityKey` writes them. With a target it matches that line; without one, every saved
+  unit gathered under the key, so Blueprint copies saved under different package markers no longer
+  need a client-side scan of `conflicting_source` lines. Native search, the TypeScript reference and
+  counts, facets and groups agree on it.
+- @ue-shed/localization@0.19.0
+    - @ue-shed/protocol@0.19.0
+    - @ue-shed/unreal-assets@0.19.0
+    - @ue-shed/unreal-connection@0.19.0
+
 ## 0.18.0
 
 ### Patch Changes

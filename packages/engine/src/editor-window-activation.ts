@@ -239,3 +239,23 @@ export const EditorWindowActivationLive = Layer.effect(
 		});
 	})
 );
+
+/**
+ * Complete test implementation of window activation. The supplied service owns results and typed
+ * failures; no editor is contacted and no local foreground permission is granted.
+ */
+export function makeEditorWindowActivationTestLayer(
+	service: EditorWindowActivationApi
+): Layer.Layer<EditorWindowActivation> {
+	return Layer.succeed(EditorWindowActivation, EditorWindowActivation.of(service));
+}
+
+/**
+ * Complete test implementation of the local foreground-permission handoff, for hosts that compose
+ * `EditorWindowActivationLive` in tests or run on a platform without the supervisor package.
+ */
+export function makeEditorForegroundPermissionTestLayer(service: {
+	readonly grant: (processId: number) => Effect.Effect<void, EditorWindowActivationError>;
+}): Layer.Layer<EditorForegroundPermission> {
+	return Layer.succeed(EditorForegroundPermission, EditorForegroundPermission.of(service));
+}

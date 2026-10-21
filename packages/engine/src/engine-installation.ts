@@ -222,7 +222,15 @@ export function parseUnrealProjectDescriptor(contents: string): ProjectDescripto
 	);
 }
 
-function installationAt(root: string): Effect.Effect<EngineInstallation, EngineInstallationError> {
+/**
+ * Reads the installation at an explicit engine root from its `Engine/Build/Build.version`, without
+ * consulting the registry or a project. Fails with `invalid_engine_root` when the file is missing
+ * or does not match the version contract. Hosts use it to build engine pickers or variant
+ * requests for a root they already know.
+ */
+export function readEngineInstallation(
+	root: string
+): Effect.Effect<EngineInstallation, EngineInstallationError> {
 	const normalized = resolve(root);
 	return Effect.gen(function* () {
 		const value = yield* readJson(
@@ -295,7 +303,7 @@ function discoverStandardInstallations(options: {
 }): Effect.Effect<readonly EngineInstallation[]> {
 	return installedEngineRoots(options.sources).pipe(
 		Effect.flatMap((roots) =>
-			Effect.forEach(roots, (root) => Effect.option(installationAt(root)), {
+			Effect.forEach(roots, (root) => Effect.option(readEngineInstallation(root)), {
 				concurrency: 4
 			})
 		),
@@ -332,11 +340,11 @@ export function makeEngineInstallationDiscoveryLayer(queryRegistry: RegistryQuer
 				request: EngineInstallationRequest
 			) {
 				if (request.explicitRoot !== undefined)
-					return yield* installationAt(request.explicitRoot);
+					return yield* readEngineInstallation(request.explicitRoot);
 				const association = yield* associationOf(resolve(request.projectDescriptor));
 				const registeredRoot = yield* registeredBuildRoot(association, sources);
 				if (registeredRoot !== undefined) {
-					const registered = yield* Effect.option(installationAt(registeredRoot));
+					const registered = yield* Effect.option(readEngineInstallation(registeredRoot));
 					if (registered._tag === "Some") return registered.value;
 				}
 				const candidates = yield* discoverStandardInstallations({

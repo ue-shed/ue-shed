@@ -241,6 +241,36 @@ describe("Remote Control authoring adapter", () => {
 		expect(error.retrySafe).toBe(false);
 	});
 
+	it("sends the host's Remote Control passphrase and extra headers", async () => {
+		const seen: Array<{
+			passphrase: string | string[] | undefined;
+			proxy: string | string[] | undefined;
+		}> = [];
+		const endpoint = await listen((request, response) => {
+			seen.push({
+				passphrase: request.headers.passphrase,
+				proxy: request.headers["x-studio-proxy"]
+			});
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ ResultJson: "{}" }));
+		});
+		const client = makeRemoteControlClient({
+			defaultTimeout: "1 second",
+			passphrase: "studio-secret",
+			headers: { "X-Studio-Proxy": "on" }
+		});
+		await Effect.runPromise(
+			client.request({
+				endpoint,
+				functionName: "GetCapabilityManifest",
+				objectPath: "/Script/UEShedCore.Default__UEShedCoreLibrary",
+				parameters: {}
+			})
+		);
+
+		expect(seen).toEqual([{ passphrase: "studio-secret", proxy: "on" }]);
+	});
+
 	it("does not retry Apply or Save after a transport failure", async () => {
 		const calls: string[] = [];
 		const endpoint = await listen((request, response) => {

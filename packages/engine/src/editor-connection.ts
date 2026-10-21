@@ -32,10 +32,13 @@ export class EditorConnectionError extends Schema.TaggedError<EditorConnectionEr
 /**
  * Remote Control endpoint to inspect, optionally bound to an expected project name. A name
  * mismatch fails before the manifest is accepted; this request never changes host selection.
+ * `requestTimeout` bounds each manifest request; omitted, the Remote Control client's default
+ * applies.
  */
 export interface EditorConnectionRequest {
 	readonly endpoint: string;
 	readonly expectedProjectName?: string;
+	readonly requestTimeout?: Duration.Input;
 }
 
 /**
@@ -105,7 +108,10 @@ export const EditorConnectionLive = Layer.effect(
 					idempotent: true,
 					objectPath: coreObjectPath,
 					operation: "editor.connection.connect",
-					parameters: {}
+					parameters: {},
+					...(request.requestTimeout === undefined
+						? undefined
+						: { timeout: request.requestTimeout })
 				})
 				.pipe(Effect.mapError((cause) => transportError(endpoint, cause)));
 			const manifest = yield* decodeCompanionCapabilityManifest(value).pipe(

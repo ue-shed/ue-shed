@@ -133,6 +133,16 @@ export class CompiledPluginBuilder extends Context.Service<
 	CompiledPluginBuilderApi
 >()("@ue-shed/plugin-distribution/CompiledPluginBuilder") {}
 
+/**
+ * Complete test implementation of the compiled plugin builder. The supplied service owns results
+ * and typed failures; no engine or build tool is run.
+ */
+export function makeCompiledPluginBuilderTestLayer(
+	service: CompiledPluginBuilderApi
+): Layer.Layer<CompiledPluginBuilder> {
+	return Layer.succeed(CompiledPluginBuilder, CompiledPluginBuilder.of(service));
+}
+
 const UnrealBuildVersion = Schema.Struct({
 	BuildId: Schema.optionalKey(Schema.String),
 	Changelist: Schema.Int,

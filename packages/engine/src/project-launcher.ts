@@ -3,7 +3,10 @@ import { access, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
 import { Context, Effect, Layer, Schema } from "effect";
-import { unrealRemoteControlPermissions } from "./remote-control-permissions.js";
+import {
+	RemoteControlAllowedClass,
+	unrealRemoteControlPermissions
+} from "./remote-control-permissions.js";
 import {
 	EngineInstallationDiscovery,
 	type EngineVersion,
@@ -27,13 +30,18 @@ export type UnrealLaunchPlugin = typeof UnrealLaunchPlugin.Type;
 /**
  * Normal launch or explicit plugin-enabled launch, optionally with a Remote Control HTTP
  * port. Plugin enablement is per launch rather than a persistent project-descriptor edit.
+ * `remoteControlAllowedClasses` adds a host's own Remote Control classes to the per-launch
+ * allowlist beside the enabled UE Shed plugins' classes.
  */
 export const UnrealProjectLaunchMode = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("normal") }),
 	Schema.Struct({
 		kind: Schema.Literal("with_plugins"),
 		plugins: Schema.Array(UnrealLaunchPlugin),
-		remoteControlHttpPort: Schema.optional(HttpPort)
+		remoteControlHttpPort: Schema.optional(HttpPort),
+		remoteControlAllowedClasses: Schema.optional(
+			Schema.Array(RemoteControlAllowedClass).check(Schema.isMaxLength(64))
+		)
 	})
 ]);
 export type UnrealProjectLaunchMode = typeof UnrealProjectLaunchMode.Type;
@@ -429,11 +437,12 @@ export function unrealEditorCommandletExecutable(
 /**
  * Builds per-launch plugin and Remote Control arguments, including HTTP and adjacent
  * WebSocket ports. Accepts already validated input; does not persist settings or start a
- * process.
+ * process. `allowedClasses` adds a host's own classes to the UE 5.8 Remote Control allowlist.
  */
 export function unrealRemoteControlArguments(
 	plugins: readonly UnrealLaunchPlugin[],
-	httpPort: number
+	httpPort: number,
+	allowedClasses: readonly RemoteControlAllowedClass[] = []
 ): readonly string[] {
 	const enabledPlugins = [...new Set([...plugins.map(({ id }) => id), "RemoteControl"])];
 	return [
@@ -442,7 +451,7 @@ export function unrealRemoteControlArguments(
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${httpPort}`,
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${httpPort + 1}`,
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
-		...unrealRemoteControlPermissions(enabledPlugins),
+		...unrealRemoteControlPermissions(enabledPlugins, allowedClasses),
 		"-NoLiveCoding"
 	];
 }
@@ -464,7 +473,8 @@ export function unrealProjectLaunchArguments(
 		args.push(
 			...unrealRemoteControlArguments(
 				request.mode.plugins,
-				request.mode.remoteControlHttpPort
+				request.mode.remoteControlHttpPort,
+				request.mode.remoteControlAllowedClasses
 			)
 		);
 	}

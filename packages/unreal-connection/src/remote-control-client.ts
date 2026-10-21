@@ -167,9 +167,16 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
  * Creates the Effect HTTP adapter with an explicit default timeout. Each request scopes its
  * upstream client, validates both JSON boundaries, and disables upstream retries, including for
  * idempotent calls.
+ *
+ * `passphrase` is sent as Unreal's Remote Control `Passphrase` header, for editors that enforce a
+ * passphrase for remote clients. `headers` are added to every request, for example for a proxy in
+ * front of the editor; a `Passphrase` entry there wins over `passphrase`. Omit both to keep the
+ * transport's defaults.
  */
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
+	readonly passphrase?: string;
+	readonly headers?: Readonly<Record<string, string>>;
 }): RemoteControlClientApi {
 	const request = Effect.fn("RemoteControlClient.request")(
 		function* (request: RemoteControlRequest) {
@@ -185,7 +192,13 @@ export function makeRemoteControlClient(options: {
 								validateResponses: false,
 								http: {
 									baseUrl: endpoint,
-									requestTimeoutMs: Duration.toMillis(timeout)
+									requestTimeoutMs: Duration.toMillis(timeout),
+									...(options.passphrase === undefined
+										? undefined
+										: { passphrase: options.passphrase }),
+									...(options.headers === undefined
+										? undefined
+										: { headers: { ...options.headers } })
 								},
 								retry: false
 							}),

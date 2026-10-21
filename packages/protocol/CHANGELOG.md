@@ -1,5 +1,38 @@
 # @ue-shed/protocol
 
+## 0.20.0
+
+### Minor Changes
+
+- f7e366f: Filter Game Text by asset type. uasset-io 1.17 package text records carry `assetClass`, the class of
+  the package's main asset chosen as Unreal's loader does (the export flagged as an asset and named
+  after the file, else the first one); an actor saved in its own package reports its world's class.
+  The index stores it per package under the same `package-text-v8` format, so caches rebuild once for
+  this and the moved-package fix. Search requests take an `asset_type` clause of class paths such as
+  `/Script/Engine.DataTable` or `/Script/UMGEditor.WidgetBlueprint`: `is` matches text with any saved
+  place of a selected type, `is_not` text with none. `facets: { assetTypes: true }` counts lines per
+  type over the request without its own clause, labelled by the new `textAssetTypeLabel` ("Data
+  table", "Widget blueprint", "Level"). The native engine, both views, paging totals, counts and
+  exports agree with the TypeScript references. The Workbench filter menu lists asset types.
+
+### Patch Changes
+
+- 09972f9: Fix Game Text key and source fixes on DataTable cells whose row struct is a User Defined Struct.
+  The saved reader names such a cell by the member's FName (`DisplayName_2_<guid>`), but live rows use
+  its authored name (`DisplayName`), so every fix failed with "The live cell no longer holds the
+  source and key you reviewed." Authoring snapshot 2.4 field descriptors carry `propertyName`, the
+  FName, and the UEShedAuthoring plugin reports it. Table fixes bind the reviewed cell through it and
+  send `set_cell` the FName. A column missing from the live row now fails with its own
+  `TextIdTableColumnError`, which says when the editor's plugin predates property names.
+- 68737a3: Report a package moved or copied outside Unreal at its file's location. Its summary keeps the
+  package name it was saved under, so the Game Text corpus and index stored object paths in the old
+  folder, and opening a moved DataTable in Unreal failed with "Unreal's Asset Registry has no …".
+  uasset-io 1.17 package text records carry the summary's `packageName`; when it differs from the
+  name the file's location gives, the package's own object, class and Blueprint class paths move to
+  the file's package, as Unreal resolves them, and the record keeps `packageName` as evidence. Paths
+  into other packages stay as saved. Package text shards move to `package-text-v8`, so existing
+  indexes read their packages again.
+
 ## 0.19.0
 
 ## 0.18.0

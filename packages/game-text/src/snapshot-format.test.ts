@@ -10,6 +10,7 @@ import {
 	snapshotPayload,
 	snapshotStringTableBuilder,
 	snapshotDirectoryLength,
+	unshuffleSnapshotSection,
 	SnapshotFormatError,
 	MAX_SNAPSHOT_SECTION_BYTES,
 	type SnapshotEntry
@@ -185,5 +186,20 @@ describe("snapshot format", () => {
 		expect(() => snapshotStringTableBuilder().intern("a".repeat(1024 * 1024 + 1))).toThrow(
 			SnapshotFormatError
 		);
+	});
+	it("restores integer sections written by the native byte-shuffled codecs", () => {
+		// The native writer groups each value's bytes by significance; codec 3 also stores
+		// differences. Values: 1, 258, 0xffffffff, 7.
+		const shuffled = new Uint8Array([1, 2, 255, 7, 0, 1, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0]);
+		expect([...new Uint32Array(unshuffleSnapshotSection(2, shuffled).buffer)]).toEqual([
+			1, 258, 0xffffffff, 7
+		]);
+		// Differences 5, 3, 0xffffffff (minus one, wrapping), 2 sum to 5, 8, 7, 9.
+		const deltas = new Uint8Array([5, 3, 255, 2, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0]);
+		expect([...new Uint32Array(unshuffleSnapshotSection(3, deltas).buffer)]).toEqual([
+			5, 8, 7, 9
+		]);
+		expect(unshuffleSnapshotSection(1, payload)).toBe(payload);
+		expect(() => unshuffleSnapshotSection(2, new Uint8Array(3))).toThrow(SnapshotFormatError);
 	});
 });

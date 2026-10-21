@@ -156,7 +156,7 @@ describe("snapshot store", () => {
 		await run(publish("rebuilt"));
 		expect(await run(reader())).toBe("rebuilt");
 		expect(
-			(await readdir(join(cacheRoot, "game-text-v1"))).some((name) =>
+			(await readdir(join(cacheRoot, "game-text-v2"))).some((name) =>
 				name.includes("quarantine")
 			)
 		).toBe(true);
@@ -311,16 +311,16 @@ describe("snapshot store", () => {
 						physicalSnapshot: `snapshot-${"a".repeat(129)}.snapshot`
 					})
 				);
-			const before = await readdir(join(cacheRoot, "game-text-v1"));
+			const before = await readdir(join(cacheRoot, "game-text-v2"));
 			const result = await run(Effect.result(reader()));
 			expect(Result.isFailure(result)).toBe(true);
 			if (Result.isFailure(result))
 				expect(result.failure).toBeInstanceOf(SnapshotFormatError);
-			expect(await readdir(join(cacheRoot, "game-text-v1"))).toEqual(before);
+			expect(await readdir(join(cacheRoot, "game-text-v2"))).toEqual(before);
 			await run(publish("rebuilt"));
 			expect(await run(reader())).toBe("rebuilt");
 			expect(
-				(await readdir(join(cacheRoot, "game-text-v1"))).some((name) =>
+				(await readdir(join(cacheRoot, "game-text-v2"))).some((name) =>
 					name.includes("quarantine")
 				)
 			).toBe(true);

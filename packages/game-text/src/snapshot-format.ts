@@ -75,10 +75,34 @@ export interface SnapshotColumn {
 	readonly domain?: string;
 	readonly stringCount?: number;
 }
+export type SnapshotCodec = 0 | 1 | 2 | 3;
+const isSnapshotCodec = (codec: number, kind: SnapshotKind): codec is SnapshotCodec =>
+	codec === 0 ||
+	codec === 1 ||
+	((codec === 2 || codec === 3) && (kind === "u32" || kind === "stringIds"));
+/** Raw section bytes from a decompressed section with `codec`. */
+export function unshuffleSnapshotSection(codec: SnapshotCodec, bytes: Uint8Array): Uint8Array {
+	if (codec !== 2 && codec !== 3) return bytes;
+	snapshotCheck(bytes.length % 4 === 0, "section", "Unaligned integer section");
+	const n = bytes.length / 4,
+		out = new Uint8Array(bytes.length);
+	for (let index = 0; index < n; index++)
+		for (let byte = 0; byte < 4; byte++) out[index * 4 + byte] = bytes[byte * n + index]!;
+	if (codec === 3) {
+		const values = new Uint32Array(out.buffer);
+		for (let index = 1; index < n; index++)
+			values[index] = (values[index]! + values[index - 1]!) >>> 0;
+	}
+	return out;
+}
 export interface SnapshotEntry {
 	readonly name: string;
 	readonly kind: SnapshotKind;
-	readonly codec: 0 | 1;
+	/**
+	 * 0 raw, 1 zstd; for u32 and string ID columns also 2, zstd over the values' bytes grouped by
+	 * significance, and 3, the same over the differences of a non-decreasing column.
+	 */
+	readonly codec: SnapshotCodec;
 	readonly offset: number;
 	readonly storedLength: number;
 	readonly rawLength: number;
@@ -447,7 +471,7 @@ export function decodeSnapshotDirectory(
 		const kind = kinds[view.getUint32(p + 32, true)],
 			codec = view.getUint32(p + 36, true);
 		snapshotCheck(
-			kind !== undefined && (codec === 0 || codec === 1),
+			kind !== undefined && isSnapshotCodec(codec, kind),
 			name,
 			"Unknown kind or codec"
 		);

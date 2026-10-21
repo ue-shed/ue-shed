@@ -43,7 +43,7 @@ checks revision validity and owns per-step locking, publication, and scoped quer
 
 The CLI cache is under `UE_SHED_PROJECT_INDEX_CACHE_ROOT`, defaulting to `.cache/ue-shed` in the
 user's home directory. Workbench uses `project-catalogs-v1` under its existing Electron user-data
-root. The `game-text-v1` descendants are disposable; close the affected hosts before deleting those
+root. The `game-text-v2` descendants are disposable; close the affected hosts before deleting those
 cache directories, then refresh to rebuild. This removes derived data without changing saved
 packages, localization evidence, review state or authored rules. Format version 4 preserves UTF-16
 strings with canonical WTF-8. Older cache generations are rejected and rebuilt.

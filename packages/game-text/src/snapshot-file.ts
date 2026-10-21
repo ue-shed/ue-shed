@@ -16,6 +16,7 @@ import {
 	snapshotDirectoryLength,
 	snapshotFailure,
 	snapshotPayload,
+	unshuffleSnapshotSection,
 	type SnapshotColumn,
 	type SnapshotDirectory,
 	type SnapshotEntry
@@ -339,10 +340,13 @@ export async function openSnapshotFile(
 		const unpack = (value: SnapshotEntry, stored: Uint8Array) => {
 			if (value.codec === 0) return stored;
 			try {
-				return zlib.zstdDecompressSync(stored, {
-					maxOutputLength: value.rawLength,
-					chunkSize: Math.max(64, value.rawLength)
-				});
+				return unshuffleSnapshotSection(
+					value.codec,
+					zlib.zstdDecompressSync(stored, {
+						maxOutputLength: value.rawLength,
+						chunkSize: Math.max(64, value.rawLength)
+					})
+				);
 			} catch (cause) {
 				throw snapshotFailure(
 					value.name,

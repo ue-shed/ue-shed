@@ -71,7 +71,7 @@ impl Configuration {
     pub fn directory(&self) -> Result<PathBuf> {
         Ok(self
             .cache_root
-            .join("game-text-v1")
+            .join("game-text-v2")
             .join(digest(self.identity()?.as_bytes())))
     }
 }
@@ -1186,10 +1186,10 @@ impl Store {
                 s["start"].as_u64().unwrap_or(0) + s["count"].as_u64().unwrap_or(0)
             });
         let mut writer = Writer::new(&self.directory.join(format!("{}.tmp", token())))?;
-        let mut order = Vec::new();
         let mut string_columns = serde_json::Map::new();
+        let mut encoded = Vec::with_capacity(columns.len());
         for (field, domain, values) in columns {
-            let bytes = if domain.is_empty() {
+            encoded.push(if domain.is_empty() {
                 u32_bytes(values)
             } else {
                 require(
@@ -1198,9 +1198,16 @@ impl Store {
                 )?;
                 string_columns.insert(field.clone(), json!(domain));
                 encode_ids(values)
-            };
-            order.push(writer.add(field, 2, "", &bytes, 1)?);
+            });
         }
+        let mut order = writer.add_all(
+            &columns
+                .iter()
+                .zip(&encoded)
+                .map(|((field, _, _), bytes)| (field.as_str(), 2, "", bytes.as_slice(), 1))
+                .collect::<Vec<_>>(),
+        )?;
+        drop(encoded);
         if !metadata.is_empty() {
             order.push(writer.add("join.meta", 0, "", metadata, 1)?);
         }

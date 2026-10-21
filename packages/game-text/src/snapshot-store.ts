@@ -20,7 +20,7 @@ import {
 } from "./snapshot-file.js";
 export { snapshotNodeChecksum } from "./snapshot-file.js";
 
-export const GAME_TEXT_SNAPSHOT_NAMESPACE = "game-text-v1";
+export const GAME_TEXT_SNAPSHOT_NAMESPACE = "game-text-v2";
 export const SNAPSHOT_ZSTD_LEVEL = 1;
 export const SNAPSHOT_STRING_ZSTD_LEVEL = 3;
 export const snapshotCompressionLevel = (

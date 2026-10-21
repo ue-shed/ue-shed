@@ -14,41 +14,46 @@ discovery measurements with explicit worker heap limits are superseded by defaul
 
 Measured with `pnpm benchmark:game-text-desktop` (`apps/workbench/scripts/benchmark-game-text-desktop.ts`),
 which drives the production Electron Workbench (Electron 43.7.7) on a local UE 5.7 project of about
-11,000 packages, of which 1,380 hold text (31,061 lines). Before is the head of PR #156; after is
-this pass. Each build used its own release reader. Three runs per build alternated in fresh
-processes (before, after; after, before; before, after), each with an isolated profile and an empty
-derived cache; OS file caches were not evicted. No other build or test process ran during the
-runs (the harness waits for them and recorded none). Machine: 16-core Ryzen 9 7950X, 64 GB,
-Windows 11. Medians of three:
+11,000 packages, of which about 1,380 hold text (31,110 result rows). Before is the head of
+PR #156 (`9d93fcc8`); after is this pass rebased onto it. Each build used its own release reader.
+Three runs per build alternated in fresh processes (before, after; after, before; before, after),
+each with an isolated profile and an empty derived cache; OS file caches were not evicted. No other
+build or test process ran during the runs (the harness waits for them and recorded none).
+Machine: 16-core Ryzen 9 7950X, 64 GB, Windows 11. Medians of three:
 
 | Actual Workbench operation (median of 3)           |      Before |       After |
 | -------------------------------------------------- | ----------: | ----------: |
-| Game Text cold scan, click to usable results       |     19.87 s |      5.29 s |
-| App launch to usable results (cold)                |     20.67 s |      6.09 s |
-| App launch to Project Index ready (empty cache)    |      0.71 s |      0.75 s |
-| Unchanged rescan to usable results                 |      0.76 s |      0.78 s |
-| Warm relaunch to usable results (same cache)       |      2.75 s |      2.76 s |
-| First search, query round trip (wall to count)     |  18 (68) ms |  18 (66) ms |
-| Second search, query round trip                    |       13 ms |       13 ms |
-| Facet filter, query round trip (wall to count)     | 23 (195) ms | 23 (206) ms |
-| Peak aggregate RSS during the cold session         |   1,611 MiB |   1,093 MiB |
-| Aggregate RSS 2 s after the cold rescan            |   1,098 MiB |   1,006 MiB |
+| Game Text cold scan, click to usable results       |     19.76 s |      5.43 s |
+| App launch to usable results (cold)                |     20.69 s |      6.21 s |
+| App launch to Project Index ready (empty cache)    |      0.72 s |      0.72 s |
+| Unchanged rescan to usable results                 |      0.74 s |      0.76 s |
+| Warm relaunch to usable results (same cache)       |      2.74 s |      2.78 s |
+| First search, query round trip (wall to count)     |  18 (67) ms |  18 (76) ms |
+| Second search, query round trip                    |       14 ms |       13 ms |
+| Facet filter, query round trip (wall to count)     | 24 (189) ms | 23 (205) ms |
+| Peak aggregate RSS during the cold session         |   1,656 MiB |   1,087 MiB |
+| Aggregate RSS 2 s after the cold rescan            |   1,122 MiB |   1,017 MiB |
 | Main-process event-loop max stall during the scan  |       66 ms |       22 ms |
 | Main-process stall time over 50 ms during the scan |       66 ms |        0 ms |
 | Project Index Catalog on disk                      |     9.67 MB |     1.92 MB |
-| Game Text cache on disk                            |    19.45 MB |     8.33 MB |
+| Game Text cache on disk                            |    19.48 MB |     8.34 MB |
 
-Ranges: cold scan 18.85–19.95 s before, 5.28–5.54 s after; peak RSS 1,569–1,680 MiB before,
-1,089–1,166 MiB after. Every run of both builds hashed the same 31,061 rows, facets and problem
-groups through the production search IPC (`ec8793ff…`), and returned the same search and facet
-totals. RSS is the summed working set of the checkout's Electron and reader processes, sampled
+Ranges: cold scan 19.73–19.93 s before, 5.40–5.47 s after; peak RSS 1,639–1,657 MiB before,
+1,074–1,095 MiB after. Every run of both builds hashed the same 31,110 rows, facets and problem
+groups through the production search IPC (`1135be78…`), and returned the same search and facet
+totals. The engine's reported query times are unchanged, but the wall time from submitting to
+seeing the count is 9 ms (first search) and 16 ms (facet) longer after, consistently across runs;
+that time is outside the query and was not profiled. An earlier run of the same comparison on the
+previous PR #156 head (`f77a4dfb`) gave the same picture (cold scan 19.87 s to 5.29 s, peak RSS
+1,611 to 1,093 MiB). RSS is the summed working set of the checkout's Electron and reader processes, sampled
 every 250 ms; worker threads count in the main process. The stall monitor is a 10 ms interval
 timer on the Electron main thread. The scan timer starts at the click and ends when Rescan is
 enabled, no progress is shown, the status shows the line count and the search count is shown.
 In both builds the route's initial load starts before the click, and the click's refresh then
 waits for it and makes one unchanged pass (about 1 s of each cold time).
 
-Traced stages of one cold scan (spans and native stage seconds; tracing itself adds about 0.5 s):
+Traced stages of one cold scan on the previous PR #156 head (spans and native stage seconds;
+tracing itself adds about 0.5 s):
 
 | Stage                                            |                         Before |                         After |
 | ------------------------------------------------ | -----------------------------: | ----------------------------: |
@@ -70,8 +75,8 @@ reader extracts. The native writer staged 256 layers serially, and the join comp
 ICU per comparison. Disk shrinks because the Catalog is compressed in blocks and integer columns
 are stored byte-grouped and delta-coded (`game-text-v2`).
 
-Raw results: ignored `test-results/game-text-desktop/final-1.{json,log}` (per-run samples, memory
-timelines and hashes) and `trace/*` (spans and CPU profiles of the traced runs). UE 5.8 is not
+Raw results: ignored `test-results/game-text-desktop/final-2.{json,log}` (per-run samples, memory
+timelines and hashes; `final-1` is the earlier run) and `trace/*` (spans and CPU profiles of the traced runs). UE 5.8 is not
 installed on the measuring machine; no UE 5.8 measurement or check was run.
 
 ## Stage breakdown (Plan 058 C1): instrumentation ready, numbers pending

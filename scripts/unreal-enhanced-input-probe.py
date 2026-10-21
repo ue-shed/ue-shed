@@ -141,7 +141,18 @@ gameplay.set_editor_property(
 
 vehicle.set_editor_property(
     "default_key_mappings",
-    mapping_data([mapping(brake, "SpaceBar"), mapping(aim, "RightMouseButton")]),
+    mapping_data(
+        [
+            mapping(brake, "SpaceBar"),
+            mapping(aim, "RightMouseButton"),
+            mapping(brake, "LeftMouseButton"),
+            mapping(
+                jump,
+                "J",
+                setting_behavior=unreal.PlayerMappableKeySettingBehaviors.IGNORE_SETTINGS,
+            ),
+        ]
+    ),
 )
 
 config = data_asset("PMI_Probe", unreal.PlayerMappableInputConfig)

@@ -112,6 +112,16 @@ const Conflicts = Schema.Struct({
 	)
 });
 const Usage = Schema.Struct({ noKnownUse: Schema.Array(Schema.String) });
+const ControlSheet = Schema.Struct({
+	rows: Schema.Array(
+		Schema.Struct({
+			context: Schema.String,
+			key: Schema.NullOr(Schema.String),
+			displayName: Schema.NullOr(Schema.String),
+			displayNameSource: Schema.String
+		})
+	)
+});
 const Platforms = Schema.Struct({
 	platforms: Schema.Array(
 		Schema.Struct({
@@ -311,19 +321,63 @@ function probe(engineRoot: string, executable: string) {
 		);
 		const space = conflicts.keys.find((key) => key.key === "SpaceBar");
 		check(
-			"SpaceBar is shadowed by the higher-priority default context",
+			"a higher action that saves bConsumeInput=false lets both fire",
 			(space?.conflicts ?? []).some(
 				(conflict) =>
-					conflict.classification === "shadowed" &&
+					conflict.classification === "both_fire" &&
 					conflict.consumption === "passes_through"
 			),
 			space?.conflicts
 		);
+		// Unreal does not save bConsumeInput=true (the class default), so a consuming higher action
+		// reads as "may shadow", whatever the triggers.
 		const rightMouse = conflicts.keys.find((key) => key.key === "RightMouseButton");
 		check(
-			"a differing trigger is qualified",
-			rightMouse?.classes.includes("qualified") === true,
-			rightMouse?.classes
+			"unsaved consumption may shadow, despite different triggers",
+			rightMouse?.conflicts.some(
+				(conflict) =>
+					conflict.classification === "may_shadow" &&
+					conflict.consumption === "not_serialized"
+			) === true,
+			rightMouse?.conflicts
+		);
+		const leftMouse = conflicts.keys.find((key) => key.key === "LeftMouseButton");
+		check(
+			"a chorded lower mapping under a pass-through action is qualified",
+			leftMouse?.classes.includes("qualified") === true,
+			leftMouse?.classes
+		);
+
+		const sheet = cli(ControlSheet, ["export", root, "--format", "json"], executable);
+		const rowFor = (context: string, key: string) =>
+			sheet.rows.find((row) => row.context === path(context) && row.key === key);
+		check(
+			"OverrideSettings selects the mapping's display name",
+			rowFor("IMC_ProbeGameplay", "LeftMouseButton")?.displayName === "Fire (combat)" &&
+				rowFor("IMC_ProbeGameplay", "LeftMouseButton")?.displayNameSource === "mapping",
+			rowFor("IMC_ProbeGameplay", "LeftMouseButton")
+		);
+		check(
+			"IgnoreSettings selects no display name",
+			rowFor("IMC_ProbeVehicle", "J")?.displayName === null &&
+				rowFor("IMC_ProbeVehicle", "J")?.displayNameSource === "ignored",
+			rowFor("IMC_ProbeVehicle", "J")
+		);
+		// Unreal saves SettingBehavior even at its InheritSettingsFromAction default. IA_Jump has no
+		// mappable key settings, so inheriting yields no name, and the sheet says why.
+		const jumpBehavior = gameplay?.mappings[2]?.settingBehavior;
+		check(
+			"a default mapping saves InheritSettingsFromAction",
+			jumpBehavior?.status === "available" &&
+				jumpBehavior.value.endsWith("::InheritSettingsFromAction"),
+			jumpBehavior
+		);
+		check(
+			"inheriting from an action without settings yields no name, said so",
+			rowFor("IMC_ProbeGameplay", "SpaceBar")?.displayName === null &&
+				rowFor("IMC_ProbeGameplay", "SpaceBar")?.displayNameSource ===
+					"settings_not_serialized",
+			rowFor("IMC_ProbeGameplay", "SpaceBar")
 		);
 
 		const usage = cli(Usage, ["unused", root], executable);

@@ -198,6 +198,7 @@ export interface TextOccurrence {
 }
 
 export interface TextCoverageGap {
+	readonly may_contain_text: boolean;
 	readonly object_path: string;
 	readonly property_path: string;
 	readonly reason:

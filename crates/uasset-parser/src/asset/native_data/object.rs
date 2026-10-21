@@ -129,6 +129,20 @@ pub(crate) fn decode(
     properties: &PropertyStream,
     reader: &mut Reader<'_>,
 ) -> Result<DecodedObjectTail, AssetError> {
+    if super::class::is_blueprint_class(export) {
+        let mut probe = reader.clone();
+        if let Ok((guid, data)) = super::class::decode(&mut probe, context, &export.object_path) {
+            *reader = probe;
+            return Ok((
+                guid,
+                Some(Box::new(data)),
+                Span::new(reader.tell(), reader.remaining())?,
+            ));
+        }
+        // Unsupported class scripts, field kinds and malformed native records retain every byte.
+        let (guid, tail) = consume_uobject_export_footer_lenient(reader, &export.object_path)?;
+        return Ok((guid, None, tail));
+    }
     // SavePackage routes class default objects through UClass::SerializeDefaultObject,
     // which saves properties without invoking the actor/component native serializer.
     if export.object_flags & 0x10 != 0 {
@@ -136,7 +150,17 @@ pub(crate) fn decode(
         return Ok((guid, None, tail));
     }
     let actor = class_is_a(context, export, "/Script/Engine.Actor");
-    let component = class_is_a(context, export, "/Script/Engine.ActorComponent");
+    let component = class_is_a(context, export, "/Script/Engine.ActorComponent")
+        || (context.package.summary.versions.ue5 == 0
+            && export.class_path.as_ref().is_some_and(|class| {
+                matches!(
+                    class.as_str(),
+                    "/Script/Engine.StaticMeshComponent"
+                        | "/Script/Engine.InstancedStaticMeshComponent"
+                        | "/Script/Engine.HierarchicalInstancedStaticMeshComponent"
+                        | "/Script/Engine.SplineMeshComponent"
+                )
+            }));
     if !(actor || component)
         || !supports_blueprint_graph_package_version(&context.package.summary.versions)
     {
@@ -219,6 +243,25 @@ pub(crate) fn decode(
             }
         }
     }
+    // UE 4.27 Components/StaticMeshComponent.cpp, UStaticMeshComponent::Serialize:
+    // the only native suffix is LODData. Its empty array is a count, not FText.
+    // UActorComponent/PrimitiveComponent::Serialize add no persistent native bytes on 4.27.
+    // Nonempty LOD records and subclass serializers remain opaque.
+    if context.package.summary.versions.ue5 == 0
+        && export
+            .class_path
+            .as_ref()
+            .is_some_and(|class| class.as_str() == "/Script/Engine.StaticMeshComponent")
+    {
+        let mut probe = reader.clone();
+        if probe.read_i32(&format!("{}.LODData.Count", export.object_path))? == 0 {
+            fields.push(NativeProperty {
+                name: "LODData".into(),
+                value: PropertyValue::Array(Vec::new()),
+            });
+            *reader = probe;
+        }
+    }
     let tail = Span::new(reader.tell(), reader.remaining())?;
     let data = (!fields.is_empty()).then(|| Box::new(PropertyValue::NativeStruct { fields }));
     Ok((object_guid, data, tail))
@@ -231,6 +274,34 @@ mod tests {
     use crate::property::{PropertyRecord, PropertyTagFlags, PropertyTypeName};
     use crate::schema::embedded_source_model;
     use crate::test_support::{name_ref, push_i32};
+
+    #[test]
+    fn ue427_static_mesh_component_decodes_empty_lod_array_and_retains_nonempty_data() {
+        let mut package = package();
+        package.summary.versions.ue5 = 0;
+        package.summary.custom_versions.clear();
+        let values = properties(None);
+        let bytes = vec![0; 8]; // UObject GUID marker, LODData count
+        let (_, data, tail) = read(
+            &bytes,
+            "/Script/Engine.StaticMeshComponent",
+            &package,
+            &values,
+        )
+        .unwrap();
+        assert!(tail.is_empty());
+        assert!(data.is_some());
+        let mut bytes = bytes;
+        bytes[4..8].copy_from_slice(&1_i32.to_le_bytes());
+        let (_, _, tail) = read(
+            &bytes,
+            "/Script/Engine.StaticMeshComponent",
+            &package,
+            &values,
+        )
+        .unwrap();
+        assert_eq!(tail.len(), 4);
+    }
 
     fn package() -> Package {
         let mut package = test_package(vec![

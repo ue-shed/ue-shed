@@ -14,10 +14,11 @@ pub(super) fn decode(
             custom_version(package, [0x9C54D522, 0xA8264FBE, 0x94210746, 0x61B482D0]),
             Some(32..)
         )
-        || !matches!(
-            custom_version(package, [0xD89B5E42, 0x24BD4D46, 0x8412ACA8, 0xDF641779]),
-            Some(36..)
-        )
+        || (package.summary.versions.ue5 != 0
+            && !matches!(
+                custom_version(package, [0xD89B5E42, 0x24BD4D46, 0x8412ACA8, 0xDF641779]),
+                Some(36..)
+            ))
     {
         return Err(error(
             reader,
@@ -55,7 +56,37 @@ pub(super) fn decode(
             value: PropertyValue::NativeStruct { fields: terminal },
         });
     }
-    let mut suffix = record_fields(read_layout(reader, "FEdGraphPinTypeSuffix", path)?);
+    // UE 4.27 / 5.7 EdGraphPin.cpp, FEdGraphPinType::Serialize. UE4 has
+    // no UE5ReleaseStream SerializeFloatPinDefaultValuesAsSinglePrecision flag.
+    let suffix = if package.summary.versions.ue5 == 0 {
+        static UE4_SUFFIX: once_cell::sync::Lazy<crate::native::NativeLayout> =
+            once_cell::sync::Lazy::new(|| {
+                let Some(crate::native::NativeLayout::Record { fields }) =
+                    embedded_source_model().native_layout("FEdGraphPinTypeSuffix")
+                else {
+                    unreachable!()
+                };
+                crate::native::NativeLayout::Record {
+                    fields: fields
+                        .iter()
+                        .filter(|field| field.name != "bSerializeAsSinglePrecisionFloat")
+                        .cloned()
+                        .collect(),
+                }
+            });
+        decode_native(reader, &UE4_SUFFIX, path).map_err(|failure| match failure {
+            NativeError::Archive(failure) => PropertyError::from(failure),
+            NativeError::Layout(message) => error(
+                reader,
+                path,
+                PropertyErrorKind::UnsupportedCapability,
+                message,
+            ),
+        })?
+    } else {
+        read_layout(reader, "FEdGraphPinTypeSuffix", path)?
+    };
+    let mut suffix = record_fields(suffix);
     convert_index(&mut suffix, "MemberParent");
     if let Some(field) = suffix.iter_mut().find(|v| v.name == "MemberGuid")
         && let PropertyValue::NativeStruct { fields } = &field.value
@@ -191,6 +222,30 @@ mod tests {
                     PropertyErrorKind::UnsupportedVersion
                 );
             }
+        }
+    }
+
+    #[test]
+    fn ue427_pin_type_has_no_ue5_float_precision_suffix() {
+        let mut package = Package::parse(FIXTURE).unwrap();
+        package.summary.versions.ue5 = 0;
+        package.summary.custom_versions.retain(|v| {
+            [v.key.a, v.key.b, v.key.c, v.key.d] != [0xD89B5E42, 0x24BD4D46, 0x8412ACA8, 0xDF641779]
+        });
+        for map in [false, true] {
+            let bytes = payload(map);
+            let bytes = &bytes[..bytes.len() - 4];
+            let mut reader = Reader::new(bytes);
+            assert!(decode(&mut reader, &package, "Fixture.PinType").is_ok());
+            assert_eq!(reader.remaining(), 0);
+            assert!(
+                decode(
+                    &mut Reader::new(&bytes[..bytes.len() - 1]),
+                    &package,
+                    "Fixture.PinType"
+                )
+                .is_err()
+            );
         }
     }
 }

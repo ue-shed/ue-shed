@@ -1552,7 +1552,10 @@ export function protocolProjectionStream<A>(options: {
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: options.configuration.catalogTimeoutMs
 		},
-		{ contractMinor: options.projection === "text_packages" ? 17 : 0 }
+		{
+			contractMinor:
+				options.projection === "text_packages" || options.projection === "text" ? 18 : 0
+		}
 	);
 	const telemetry = makeProtocolTelemetry(false, options.configuration.protocolObserver);
 	const controller = new AbortController();

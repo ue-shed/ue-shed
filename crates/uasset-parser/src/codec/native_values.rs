@@ -85,6 +85,10 @@ pub(super) fn is_known_struct(name: &str) -> bool {
             | "InstancedStruct"
             | "InstancedPropertyBag"
             | "EdGraphPinType"
+            | "SoftObjectPath"
+            | "SoftClassPath"
+            | "FrameNumber"
+            | "DeprecateSlateVector2D"
     )
 }
 
@@ -97,11 +101,73 @@ pub(super) fn known_struct(
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     match name {
+        // UE 5.7 SlateCore/Private/Types/SlateVector2.cpp,
+        // FDeprecateSlateVector2D::Serialize always writes FVector2f (two floats).
+        "DeprecateSlateVector2D" => Ok(Some(PropertyValue::NativeStruct {
+            fields: ["X", "Y"]
+                .into_iter()
+                .map(|name| {
+                    Ok(NativeProperty {
+                        name: name.into(),
+                        value: PropertyValue::Float(reader.read_f32(path)?),
+                    })
+                })
+                .collect::<Result<_, PropertyError>>()?,
+        })),
+        // UE 4.27 and 5.7 Core/Private/Misc/FrameNumber.cpp,
+        // FFrameNumber::Serialize: one int32, also for scalar tagged struct properties.
+        "FrameNumber" => Ok(Some(PropertyValue::Int(i64::from(reader.read_i32(path)?)))),
+        // UE 4.27 SoftObjectPath.cpp, FSoftObjectPath::SerializePath: AssetPathName
+        // (FName) followed by SubPathString. Struct properties use the same serializer
+        // as SoftObjectProperty, including nested FEditedDocumentInfo values.
+        "SoftObjectPath" | "SoftClassPath" => super::decode_soft_object_path(reader, path, package)
+            .map(PropertyValue::SoftObjectPath)
+            .map(Some),
         "RichCurveKey" => {
             let value = property(read_layout(reader, "FRichCurveKey", path)?);
             Ok(Some(value))
         }
         "MovieSceneFloatChannel" | "MovieSceneDoubleChannel" => {
+            if name == "MovieSceneFloatChannel"
+                && package.summary.versions.ue5 == 0
+                && matches!(
+                    custom_version(package, [0x7B5AE74C, 0xD2704C10, 0xA9585798, 0x0B212A5A]),
+                    Some(12..)
+                )
+            {
+                // UE 4.27 MovieSceneFloatChannel.cpp FMovieSceneFloatChannel::Serialize,
+                // SerializeFloatChannelCompletely=12: the same 28-byte bulk values and
+                // tick/default fields as UE5, without FortniteMain's later ShowCurve.
+                static LAYOUT: once_cell::sync::Lazy<crate::native::NativeLayout> =
+                    once_cell::sync::Lazy::new(|| {
+                        let Some(crate::native::NativeLayout::Record { fields }) =
+                            embedded_source_model().native_layout("FMovieSceneFloatChannel")
+                        else {
+                            unreachable!()
+                        };
+                        crate::native::NativeLayout::Record {
+                            fields: fields
+                                .iter()
+                                .filter(|field| field.name != "ShowCurve")
+                                .cloned()
+                                .collect(),
+                        }
+                    });
+                let value =
+                    decode_native(reader, &LAYOUT, path)
+                        .map(property)
+                        .map_err(|failure| match failure {
+                            NativeError::Archive(failure) => PropertyError::from(failure),
+                            NativeError::Layout(message) => error(
+                                reader,
+                                path,
+                                PropertyErrorKind::UnsupportedCapability,
+                                message,
+                            ),
+                        })?;
+                validate_channel(&value, reader, path)?;
+                return Ok(Some(value));
+            }
             if package.summary.versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
             {
                 return Err(error(
@@ -142,6 +208,9 @@ pub(super) fn known_struct(
 /// Source-generated property recipes use package-qualified identities, including when nested
 /// in containers or InstancedStruct. A project type sharing an engine short name cannot match.
 pub(super) fn property_type_path(module: &str, name: &str) -> Option<&'static str> {
+    if module == "/Script/SlateCore" && name == "DeprecateSlateVector2D" {
+        return Some("/Script/SlateCore.DeprecateSlateVector2D");
+    }
     if module == "/Script/Engine" && name == "EdGraphPinType" {
         return Some("/Script/Engine.EdGraphPinType");
     }
@@ -169,6 +238,16 @@ pub(super) fn generated_value(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_path == "/Script/SlateCore.DeprecateSlateVector2D" {
+        return known_struct(
+            source,
+            "DeprecateSlateVector2D",
+            reader,
+            package,
+            path,
+            depth,
+        );
+    }
     if let Some(name) = type_path.strip_prefix("/Script/CoreUObject.")
         && let Some(value) = math_struct(name, reader, package, path)?
     {
@@ -176,6 +255,17 @@ pub(super) fn generated_value(
     }
     if type_path == "/Script/Engine.EdGraphPinType" {
         return pin_type::decode(reader, package, path).map(Some);
+    }
+    if type_path == "/Script/CoreUObject.FrameNumber" {
+        return Ok(Some(PropertyValue::Int(i64::from(reader.read_i32(path)?))));
+    }
+    if matches!(
+        type_path,
+        "/Script/CoreUObject.SoftObjectPath" | "/Script/CoreUObject.SoftClassPath"
+    ) {
+        return super::decode_soft_object_path(reader, path, package)
+            .map(PropertyValue::SoftObjectPath)
+            .map(Some);
     }
     if type_path == "/Script/CoreUObject.InstancedPropertyBag" {
         return property_bag::decode(source, reader, package, path, depth).map(Some);
@@ -692,6 +782,68 @@ mod tests {
             PropertyErrorKind::MalformedData
         );
     }
+    #[test]
+    fn ue427_float_channel_uses_bulk_numeric_arrays_without_show_curve() {
+        let mut package = Package::parse(FIXTURE).unwrap();
+        package.summary.versions.ue5 = 0;
+        // Dev-Sequencer SerializeFloatChannelCompletely=12 (UE 4.27 source).
+        package
+            .summary
+            .custom_versions
+            .push(crate::package::CustomVersion {
+                key: Guid {
+                    a: 0x7B5AE74C,
+                    b: 0xD2704C10,
+                    c: 0xA9585798,
+                    d: 0x0B212A5A,
+                },
+                version: 12,
+                friendly_name: None,
+            });
+        let mut bytes = vec![0, 0]; // extrapolation modes
+        for word in [4_i32, 1, 42, 28, 1] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend([0; 28]); // one FMovieSceneFloatValue, including native padding
+        bytes.extend_from_slice(&1.25_f32.to_le_bytes());
+        for word in [1_i32, 24, 1] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        let mut reader = Reader::new(&bytes);
+        let value = known_struct(
+            &bytes,
+            "MovieSceneFloatChannel",
+            &mut reader,
+            &package,
+            "Fixture.Channel",
+            0,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(reader.remaining(), 0);
+        assert_eq!(
+            field(&value, "DefaultValue"),
+            Some(&PropertyValue::Float(1.25))
+        );
+        assert_eq!(
+            field(&value, "Times"),
+            Some(&PropertyValue::Array(vec![PropertyValue::Int(42)]))
+        );
+        for end in 0..bytes.len() {
+            assert!(
+                known_struct(
+                    &bytes[..end],
+                    "MovieSceneFloatChannel",
+                    &mut Reader::new(&bytes[..end]),
+                    &package,
+                    "Fixture.Channel",
+                    0
+                )
+                .is_err()
+            );
+        }
+    }
+
     #[test]
     fn instanced_struct_bounds_nulls_unknown_values_and_versions_are_explicit() {
         let package = Package::parse(FIXTURE).unwrap();

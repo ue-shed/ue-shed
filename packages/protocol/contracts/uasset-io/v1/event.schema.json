@@ -8486,6 +8486,9 @@
 		"SavedAssetTextCoverageGap": {
 			"type": "object",
 			"properties": {
+				"may_contain_text": {
+					"type": "boolean"
+				},
 				"object_path": {
 					"type": "string"
 				},
@@ -8835,6 +8838,30 @@
 					}
 				},
 				"gapCounts": {
+					"type": "object",
+					"properties": {
+						"unsupported_text_history": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"legacy_container_element_without_type_information": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"feature_unavailable_for_engine_version": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"property_decoder_rejected": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						}
+					},
+					"required": [
+						"unsupported_text_history",
+						"legacy_container_element_without_type_information",
+						"feature_unavailable_for_engine_version",
+						"property_decoder_rejected"
+					],
+					"additionalProperties": false
+				},
+				"textGapCounts": {
 					"type": "object",
 					"properties": {
 						"unsupported_text_history": {

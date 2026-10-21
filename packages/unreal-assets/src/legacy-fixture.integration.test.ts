@@ -202,6 +202,8 @@ for (const version of legacyVersions) {
 				)
 			).toEqual([
 				{
+					// Without element types the map may hold text; the gather table still decides.
+					may_contain_text: true,
 					object_path: tablePath,
 					property_path: "NativeVectors",
 					reason: "legacy_container_element_without_type_information"

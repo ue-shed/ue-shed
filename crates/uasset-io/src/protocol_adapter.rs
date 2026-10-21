@@ -271,25 +271,20 @@ impl Emitter {
             ) {
             compatible = legacy_header_result(result);
             &compatible
-        } else if self.contract.version.minor < 17
+        } else if self.contract.version.minor < 18
             && let ResultFrame::ExtractTextPackages {
                 event: SavedAssetPackageTextEvent::Package { record },
             } = result
-            && (record.package_name.is_some()
-                || record.asset_class.is_some()
-                || (self.contract.version.minor < 12
-                    && (!record.blueprint_classes.is_empty()
-                        || (self.contract.version.minor < 11
-                            && ((self.contract.version.minor < 10
-                                && record.gather_coverage.is_some())
-                                || record
-                                    .occurrences
-                                    .iter()
-                                    .any(|occurrence| occurrence.gather_editor_only.is_some()))))))
         {
             let mut record = record.clone();
-            record.package_name = None;
-            record.asset_class = None;
+            record.text_gap_counts = None;
+            for gap in &mut record.gap_samples {
+                gap.may_contain_text = None;
+            }
+            if self.contract.version.minor < 17 {
+                record.package_name = None;
+                record.asset_class = None;
+            }
             if self.contract.version.minor < 12 {
                 record.blueprint_classes.clear();
             }
@@ -303,6 +298,26 @@ impl Emitter {
             }
             compatible = ResultFrame::ExtractTextPackages {
                 event: SavedAssetPackageTextEvent::Package { record },
+            };
+            &compatible
+        } else if self.contract.version.minor < 18
+            && let ResultFrame::ExtractText {
+                event:
+                    crate::protocol_result::SavedAssetTextExtractionEvent::TextCoverageGap {
+                        schema_version,
+                        path,
+                        coverage_gap,
+                    },
+            } = result
+        {
+            let mut gap = coverage_gap.clone();
+            gap.may_contain_text = None;
+            compatible = ResultFrame::ExtractText {
+                event: crate::protocol_result::SavedAssetTextExtractionEvent::TextCoverageGap {
+                    schema_version: *schema_version,
+                    path: path.clone(),
+                    coverage_gap: gap,
+                },
             };
             &compatible
         } else {

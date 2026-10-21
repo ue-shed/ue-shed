@@ -246,6 +246,50 @@ fn package_text_package_name_and_asset_class_are_negotiated() {
     }
 }
 
+#[test]
+fn text_capable_gap_counts_and_samples_require_minor_18() {
+    // The retained generic fixture intentionally includes a native struct map without
+    // inner type information. It must stay unknown/text-capable on every engine.
+    let fixture_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    for minor in [8, 17, 18] {
+        for kind in ["extract_text_packages", "extract_text"] {
+            let mut request = base_request(serde_json::json!({
+                "kind": kind,
+                "paths": ["Content/Fixture/ParserNative/DA_Native.uasset"],
+                "projectRoot": fixture_root.to_string_lossy()
+            }));
+            request["contract"]["version"]["minor"] = minor.into();
+            let (success, events, stderr) = run_request(request);
+            assert!(success, "{stderr}");
+            assert_valid_events(&events);
+            let records: Vec<_> = events
+                .iter()
+                .filter(|event| event["result"]["event"]["event"] == "text_package_record")
+                .collect();
+            if kind == "extract_text_packages" {
+                assert_eq!(records.len(), 1, "{events:?}");
+                let record = &records[0]["result"]["event"];
+                assert_eq!(record.get("textGapCounts").is_some(), minor >= 18);
+                for gap in record["gapSamples"].as_array().unwrap() {
+                    assert_eq!(gap.get("may_contain_text").is_some(), minor >= 18);
+                }
+            }
+            for event in events
+                .iter()
+                .filter(|event| event["result"]["event"]["event"] == "text_coverage_gap")
+            {
+                assert_eq!(
+                    event["result"]["event"]["coverage_gap"]
+                        .get("may_contain_text")
+                        .is_some(),
+                    minor >= 18
+                );
+            }
+        }
+    }
+}
+
 fn run_request(request: Value) -> (bool, Vec<Value>, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
         .arg("protocol")
@@ -885,23 +929,12 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
         one_world["result"]["world"]["contract"]["version"],
         serde_json::json!({ "major": 2, "minor": 1 })
     );
-    // The fixture's world settings keep one native struct (a soft class path) the reader has no
-    // layout for. It is listed without losing an actor; only an owning actor would turn partial.
-    let package_errors = one_world["result"]["world"]["packageErrors"]
-        .as_array()
-        .expect("package errors");
-    assert_eq!(package_errors.len(), 1, "{package_errors:#?}");
-    let skipped = &package_errors[0];
-    assert_eq!(skipped["category"], "skipped_property");
-    assert_eq!(skipped["actorDropped"], false);
-    assert_eq!(skipped["count"], 1);
-    assert_eq!(skipped["exports"], 1);
-    assert!(skipped.get("export").is_none(), "aggregated per package");
+    // SoftClassPath in the world settings now uses the shared soft-path decoder.
     assert!(
-        skipped["detail"]
-            .as_str()
-            .is_some_and(|detail| detail.ends_with("by type: SoftClassPath 1")),
-        "{skipped}"
+        one_world["result"]["world"]["packageErrors"]
+            .as_array()
+            .unwrap()
+            .is_empty()
     );
     assert_eq!(one_world["result"]["world"]["completeness"], "complete");
     let conventional_actors = one_world["result"]["world"]["actors"]

@@ -12,7 +12,8 @@ use uasset_parser::asset::{
 };
 use uasset_parser::package::Package;
 use uasset_parser::property::{
-    PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory, TextValue,
+    PropertyRecord, PropertyStream, PropertyTypeName, PropertyValue, RawReason, TextHistory,
+    TextValue,
 };
 
 /// The property path of a text literal in a compiled function's script bytecode.
@@ -79,6 +80,8 @@ pub enum TextEditCapability {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TextCoverageGap {
+    /// Unknown layouts remain text-capable; false requires a declared text-free type.
+    pub may_contain_text: bool,
     pub object_path: String,
     pub property_path: String,
     pub reason: TextCoverageGapReason,
@@ -88,7 +91,8 @@ impl TextCoverageGap {
     /// Gather tables may omit editor-only graph sites; they cannot prove skipped pins complete.
     #[must_use]
     pub fn is_graph_pin_gap(&self) -> bool {
-        self.property_path == "Pins" || self.property_path.starts_with("Pins[")
+        self.may_contain_text
+            && (self.property_path == "Pins" || self.property_path.starts_with("Pins["))
     }
 }
 
@@ -174,6 +178,7 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
                 }))
             {
                 output.coverage_gaps.push(TextCoverageGap {
+                    may_contain_text: true,
                     object_path: object.object_path.to_string(),
                     property_path: "Pins".to_owned(),
                     reason: TextCoverageGapReason::PropertyDecoderRejected,
@@ -181,6 +186,7 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             }
             if package.summary.versions.uses_legacy_property_tags() && !object.tail.is_empty() {
                 output.coverage_gaps.push(TextCoverageGap {
+                    may_contain_text: legacy_tail_may_contain_text(package, object),
                     object_path: object.object_path.to_string(),
                     property_path: String::new(),
                     reason: TextCoverageGapReason::FeatureUnavailableForEngineVersion,
@@ -241,6 +247,7 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
         DecodedAsset::BlueprintGraphNode(node) => {
             if !node.tail.is_empty() {
                 output.coverage_gaps.push(TextCoverageGap {
+                    may_contain_text: true,
                     object_path: node.object_path.to_string(),
                     property_path: "Pins".to_owned(),
                     reason: TextCoverageGapReason::PropertyDecoderRejected,
@@ -392,6 +399,7 @@ fn visit_text_stream<F>(
             )
         {
             output.coverage_gaps.push(TextCoverageGap {
+                may_contain_text: true,
                 object_path: location(&property_path).object_path().to_owned(),
                 property_path: property_path.clone(),
                 reason: TextCoverageGapReason::UnsupportedTextHistory,
@@ -400,6 +408,10 @@ fn visit_text_stream<F>(
         visit_text_value(
             package,
             &property.value,
+            TextType {
+                name: Some(&property.type_name),
+                user_defined: property.struct_guid.is_some_and(|guid| !guid.is_zero()),
+            },
             &property_path,
             location,
             edit_capability,
@@ -408,9 +420,25 @@ fn visit_text_stream<F>(
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct TextType<'a> {
+    name: Option<&'a PropertyTypeName>,
+    user_defined: bool,
+}
+
+impl<'a> TextType<'a> {
+    fn element(self, index: usize) -> Self {
+        Self {
+            name: self.name.and_then(|ty| ty.parameters.get(index)),
+            user_defined: self.user_defined,
+        }
+    }
+}
+
 fn visit_text_value<F>(
     package: &Package,
     value: &PropertyValue,
+    type_info: TextType<'_>,
     path: &str,
     location: &F,
     edit_capability: TextEditCapability,
@@ -418,6 +446,10 @@ fn visit_text_value<F>(
 ) where
     F: Fn(&str) -> TextLocation,
 {
+    let TextType {
+        name: type_name,
+        user_defined,
+    } = type_info;
     match value {
         PropertyValue::Text(text) => output.occurrences.push(TextOccurrence {
             source: text.source.clone(),
@@ -440,10 +472,19 @@ fn visit_text_value<F>(
                 RawReason::LegacyDecoderRejected(_) | RawReason::DecoderRejected(_) => {
                     Some(TextCoverageGapReason::PropertyDecoderRejected)
                 }
+                RawReason::UnsupportedType
+                    if type_name.is_none_or(|ty| {
+                        package.resolve_name(ty.name).as_deref() != Some("TextProperty")
+                    }) =>
+                {
+                    Some(TextCoverageGapReason::PropertyDecoderRejected)
+                }
                 _ => None,
             };
             if let Some(reason) = reason {
                 output.coverage_gaps.push(TextCoverageGap {
+                    may_contain_text: user_defined
+                        || type_name.is_none_or(|ty| type_may_contain_text(package, ty)),
                     object_path: location(path).object_path().to_owned(),
                     property_path: path.to_owned(),
                     reason,
@@ -455,6 +496,7 @@ fn visit_text_value<F>(
                 visit_text_value(
                     package,
                     value,
+                    type_info.element(0),
                     &format!("{path}[{index}]"),
                     location,
                     edit_capability,
@@ -467,6 +509,7 @@ fn visit_text_value<F>(
                 visit_text_value(
                     package,
                     &entry.key,
+                    type_info.element(0),
                     &format!("{path}{{{index}}}.key"),
                     location,
                     edit_capability,
@@ -475,6 +518,7 @@ fn visit_text_value<F>(
                 visit_text_value(
                     package,
                     &entry.value,
+                    type_info.element(1),
                     &format!("{path}{{{index}}}.value"),
                     location,
                     edit_capability,
@@ -490,6 +534,7 @@ fn visit_text_value<F>(
                 visit_text_value(
                     package,
                     &field.value,
+                    TextType::default(),
                     &append_property_path(path, &field.name),
                     location,
                     TextEditCapability::ReadOnly,
@@ -503,6 +548,7 @@ fn visit_text_value<F>(
             visit_text_value(
                 package,
                 value,
+                TextType::default(),
                 &append_property_path(path, "Value"),
                 location,
                 TextEditCapability::ReadOnly,
@@ -510,6 +556,125 @@ fn visit_text_value<F>(
             );
         }
         _ => {}
+    }
+}
+
+fn legacy_tail_may_contain_text(package: &Package, object: &DecodedUObject) -> bool {
+    // UE 4.27 Components/StaticMeshComponent.cpp UStaticMeshComponent::Serialize and
+    // operator<<(FStaticMeshComponentLODInfo&): LOD build GUIDs, vertex colors, painted vertices;
+    // InstancedStaticMesh.cpp UInstancedStaticMeshComponent::Serialize: cooked bool and bulk
+    // numeric instance/custom data; HierarchicalInstancedStaticMesh.cpp ::Serialize: cluster
+    // tree bulk data; Components/SplineMeshComponent.cpp ::Serialize adds no saved data.
+    // Their UObject/ActorComponent/PrimitiveComponent bases add no native FText. Restrict this
+    // proof to exact engine classes and UE4: project subclasses and UE5 stay unknown.
+    !(package.summary.versions.ue5 == 0
+        && matches!(
+            object.class_path.as_str(),
+            "/Script/Engine.StaticMeshComponent"
+                | "/Script/Engine.InstancedStaticMeshComponent"
+                | "/Script/Engine.HierarchicalInstancedStaticMeshComponent"
+                | "/Script/Engine.SplineMeshComponent"
+        ))
+}
+
+/// Unknown structs stay text-capable. Core math and paths use fixed native layouts
+/// (NoExportTypes.h / SoftObjectPath.cpp, UE 4.27 and 5.7). User struct GUIDs override names.
+fn type_may_contain_text(package: &Package, ty: &PropertyTypeName) -> bool {
+    match package.resolve_name(ty.name).as_deref() {
+        Some(
+            "BoolProperty"
+            | "ByteProperty"
+            | "EnumProperty"
+            | "IntProperty"
+            | "Int8Property"
+            | "Int16Property"
+            | "Int64Property"
+            | "UInt16Property"
+            | "UInt32Property"
+            | "UInt64Property"
+            | "FloatProperty"
+            | "DoubleProperty"
+            | "NameProperty"
+            | "StrProperty"
+            | "ObjectProperty"
+            | "ClassProperty"
+            | "WeakObjectProperty"
+            | "LazyObjectProperty"
+            | "SoftObjectProperty"
+            | "SoftClassProperty"
+            | "InterfaceProperty"
+            | "DelegateProperty"
+            | "MulticastDelegateProperty"
+            | "MulticastInlineDelegateProperty"
+            | "MulticastSparseDelegateProperty"
+            | "FieldPathProperty",
+        ) => false,
+        Some("ArrayProperty" | "SetProperty" | "OptionalProperty") => ty
+            .parameters
+            .first()
+            .is_none_or(|inner| type_may_contain_text(package, inner)),
+        Some("MapProperty") => {
+            ty.parameters.len() != 2
+                || ty
+                    .parameters
+                    .iter()
+                    .any(|inner| type_may_contain_text(package, inner))
+        }
+        Some("StructProperty") => {
+            let Some(inner) = ty.parameters.first() else {
+                return true;
+            };
+            if package.resolve_name(inner.name).as_deref() == Some("MovieSceneFloatChannel")
+                && inner.parameters.first().is_none_or(|module| {
+                    package.resolve_name(module.name).as_deref() == Some("/Script/MovieScene")
+                })
+            {
+                // UE 4.27 / 5.7 MovieSceneFloatChannel.cpp ::Serialize stores numeric
+                // curves/defaults only, even if its custom version has no decoder here.
+                return false;
+            }
+            if package.resolve_name(inner.name).as_deref() == Some("EdGraphPinType")
+                && inner.parameters.first().is_none_or(|module| {
+                    package.resolve_name(module.name).as_deref() == Some("/Script/Engine")
+                })
+            {
+                // EdGraphPin.cpp FEdGraphPinType::Serialize stores types/references/flags,
+                // not the pin's separate DefaultTextValue or friendly name.
+                return false;
+            }
+            // Qualified project structs must not acquire an engine type's exemption.
+            if inner.parameters.first().is_some_and(|module| {
+                package.resolve_name(module.name).as_deref() != Some("/Script/CoreUObject")
+            }) {
+                return true;
+            }
+            !matches!(
+                package.resolve_name(inner.name).as_deref(),
+                Some(
+                    "Guid"
+                        | "SoftObjectPath"
+                        | "SoftClassPath"
+                        | "Vector"
+                        | "Vector2D"
+                        | "Vector4"
+                        | "Rotator"
+                        | "Quat"
+                        | "Plane"
+                        | "Matrix"
+                        | "Box"
+                        | "Box2D"
+                        | "IntPoint"
+                        | "IntVector"
+                        | "Color"
+                        | "LinearColor"
+                        | "DateTime"
+                        | "Timespan"
+                        | "FrameNumber"
+                        | "FrameRate"
+                )
+            )
+        }
+        _ => true,
     }
 }
 
@@ -533,6 +698,7 @@ pub fn text_feature_version_gap(
             }))
     {
         return Some(TextCoverageGap {
+            may_contain_text: true,
             object_path: export.object_path.to_string(),
             property_path: "Pins".to_owned(),
             reason: if error.kind() == uasset_parser::asset::AssetErrorKind::UnsupportedVersion {
@@ -545,6 +711,7 @@ pub fn text_feature_version_gap(
     (package.summary.versions.uses_legacy_property_tags()
         && error.kind() == uasset_parser::asset::AssetErrorKind::UnsupportedVersion)
         .then(|| TextCoverageGap {
+            may_contain_text: true,
             object_path: export.object_path.to_string(),
             property_path: String::new(),
             reason: TextCoverageGapReason::FeatureUnavailableForEngineVersion,

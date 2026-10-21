@@ -652,8 +652,9 @@ export const SavedAssetTextOccurrence = Schema.Struct({
 }).annotate({ identifier: "SavedAssetTextOccurrence" });
 export type SavedAssetTextOccurrence = Schema.Schema.Type<typeof SavedAssetTextOccurrence>;
 
-/** A property whose text could not be extracted, so text there may be missing from the result. */
+/** Undecoded saved data. v1.18 classifies whether it may hold text; absent means unknown. */
 export const SavedAssetTextCoverageGap = Schema.Struct({
+	may_contain_text: Schema.optionalKey(Schema.Boolean),
 	object_path: Schema.String,
 	property_path: Schema.String,
 	reason: Schema.Literals([
@@ -762,6 +763,13 @@ export const SavedAssetBlueprintClasses = Schema.Struct({
 }).annotate({ identifier: "SavedAssetBlueprintClasses" });
 export type SavedAssetBlueprintClasses = typeof SavedAssetBlueprintClasses.Type;
 
+const SavedAssetTextGapCounts = Schema.Struct({
+	unsupported_text_history: NonNegativeInt,
+	legacy_container_element_without_type_information: NonNegativeInt,
+	feature_unavailable_for_engine_version: NonNegativeInt,
+	property_decoder_rejected: NonNegativeInt
+});
+
 /**
  * v1.8 opt-in package evidence. Sampling matches the legacy corpus fold exactly. From v1.10,
  * `gatherCoverage` is present when the package's gather table was read; status then reflects
@@ -770,6 +778,8 @@ export type SavedAssetBlueprintClasses = typeof SavedAssetBlueprintClasses.Type;
  * outside Unreal keeps its old name there, while Unreal names the package from the file's location.
  * `assetClass` is the class of the package's main asset, chosen as Unreal's loader does; an actor
  * saved in its own package reports its world's class.
+ * v1.18 textGapCounts counts gaps that may contain text; every gap sample carries
+ * may_contain_text. Older producers omit both fields (unknown means text-capable).
  */
 export const SavedAssetPackageTextRecord = Schema.Struct({
 	event: Schema.Literal("text_package_record"),
@@ -781,12 +791,8 @@ export const SavedAssetPackageTextRecord = Schema.Struct({
 	status: Schema.Literals(["complete", "partial"]),
 	decodeErrors: NonNegativeInt,
 	occurrences: Schema.Array(SavedAssetTextOccurrence),
-	gapCounts: Schema.Struct({
-		unsupported_text_history: NonNegativeInt,
-		legacy_container_element_without_type_information: NonNegativeInt,
-		feature_unavailable_for_engine_version: NonNegativeInt,
-		property_decoder_rejected: NonNegativeInt
-	}),
+	gapCounts: SavedAssetTextGapCounts,
+	textGapCounts: Schema.optionalKey(SavedAssetTextGapCounts),
 	gapSamples: Schema.Array(SavedAssetTextCoverageGap).check(Schema.isMaxLength(3)),
 	gatherCoverage: Schema.optionalKey(SavedAssetGatherCoverage),
 	blueprintClasses: Schema.optionalKey(Schema.Array(SavedAssetBlueprintClasses))

@@ -360,7 +360,7 @@ fn decode_typed_value(
 /// Editor packages with a package-level soft object path table store a 4-byte
 /// index into that table. Inline paths use one asset FName before 1007 and
 /// package/asset FNames from 1007, followed by the subpath string.
-fn decode_soft_object_path(
+pub(super) fn decode_soft_object_path(
     payload: &mut Reader<'_>,
     path: &str,
     package: &Package,
@@ -865,6 +865,17 @@ fn decode_container_element(
             native_values::math_struct(math_name.as_deref().unwrap_or(""), payload, package, path)?
         {
             return Ok(Some(value));
+        }
+        if matches!(
+            resolve_struct_type_name(package, type_spec.tree).as_deref(),
+            Some("SoftObjectPath" | "SoftClassPath")
+        ) && package.summary.versions.is_at_least_ue5(1008)
+            && !package.soft_object_paths.is_empty()
+        {
+            let mut element = payload.take_bounded(4, path)?;
+            return decode_soft_object_path(&mut element, path, package)
+                .map(PropertyValue::SoftObjectPath)
+                .map(Some);
         }
         if let Some(value) =
             decode_container_binary_struct(math_name.as_deref().unwrap_or(""), payload, path)?
@@ -1993,6 +2004,116 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn legacy_edited_document_arrays_decode_soft_path_structs() {
+        use crate::test_support::write_legacy_property_tag;
+        // SoftObjectPath.cpp FSoftObjectPath::SerializePath; Blueprint.h FEditedDocumentInfo.
+        for ue5 in [0, 1000, 1007] {
+            let package = versioned_package(
+                &[
+                    "None",
+                    "LastEditedDocuments",
+                    "ArrayProperty",
+                    "StructProperty",
+                    "EditedDocumentInfo",
+                    "EditedObjectPath",
+                    "SoftObjectPath",
+                    "/Game/Fixture.Asset",
+                    "Child",
+                ],
+                ue5,
+            );
+            let mut path = Vec::new();
+            if ue5 >= 1007 {
+                // FTopLevelAssetPath's two FNames, introduced in UE 5.1.
+                push_i32(&mut path, 7);
+                push_i32(&mut path, 0);
+                push_i32(&mut path, 0);
+                push_i32(&mut path, 0);
+            } else {
+                push_i32(&mut path, 7);
+                push_i32(&mut path, 0);
+            }
+            push_fstring(&mut path, "Child");
+            let mut document = Vec::new();
+            write_legacy_property_tag(&mut document, 5, 3, &legacy_extras(&[6], true, ue5), &path);
+            write_property_terminator(&mut document, 0);
+            let mut elements = document.clone();
+            elements.extend_from_slice(&document);
+            let mut payload = Vec::new();
+            push_i32(&mut payload, 2);
+            write_legacy_property_tag(
+                &mut payload,
+                1,
+                3,
+                &legacy_extras(&[4], true, ue5),
+                &elements,
+            );
+            let mut bytes = Vec::new();
+            write_legacy_property_tag(&mut bytes, 1, 2, &legacy_extras(&[3], false, ue5), &payload);
+            write_property_terminator(&mut bytes, 0);
+            let mut reader = Reader::new(&bytes);
+            let mut stream = read_tagged_property_stream(
+                &mut reader,
+                &package.summary.versions,
+                &package.names,
+                "Fixture",
+            )
+            .unwrap();
+            decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
+            let PropertyValue::Array(documents) = &stream.records[0].value else {
+                panic!("expected array");
+            };
+            assert_eq!(documents.len(), 2);
+            for document in documents {
+                let PropertyValue::Struct(fields) = document else {
+                    panic!("expected document");
+                };
+                assert_eq!(
+                    fields.records[0].value,
+                    PropertyValue::SoftObjectPath("/Game/Fixture.Asset:Child".into())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn frame_numbers_and_slate_view_offsets_use_their_fixed_numeric_layouts() {
+        for ue5 in [0, 1003, 1017] {
+            let package = versioned_package(&["StructProperty", "FrameNumber"], ue5);
+            let value = decode_record_with_package(
+                package,
+                0,
+                vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![],
+                }],
+                PropertyTagFlags(0),
+                &42_i32.to_le_bytes(),
+            )
+            .unwrap();
+            assert_eq!(value, PropertyValue::Int(42));
+        }
+        let package = versioned_package(&["StructProperty", "DeprecateSlateVector2D"], 1017);
+        let bytes = [1.25_f32.to_le_bytes(), (-2.5_f32).to_le_bytes()].concat();
+        let value = decode_record_with_package(
+            package,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: vec![],
+            }],
+            PropertyTagFlags(0),
+            &bytes,
+        )
+        .unwrap();
+        let PropertyValue::NativeStruct { fields } = value else {
+            panic!("view offset");
+        };
+        assert_eq!(fields[0].value, PropertyValue::Float(1.25));
+        assert_eq!(fields[1].value, PropertyValue::Float(-2.5));
     }
 
     #[test]

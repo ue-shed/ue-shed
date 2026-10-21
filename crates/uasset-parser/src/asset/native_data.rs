@@ -1,8 +1,10 @@
 //! Semantic adapters over reusable source-modeled native layouts.
 
 use super::*;
+mod class;
 mod object;
 use crate::native::{NativeError, NativeValue, decode_native};
+pub(super) use class::property_guids;
 pub(super) use object::decode as object_tail;
 
 fn modeled_data(

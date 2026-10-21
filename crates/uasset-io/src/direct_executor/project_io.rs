@@ -923,6 +923,7 @@ fn project_parsed_package(
     let mut diagnostics = Vec::new();
     let mut occurrence_count = 0_u64;
     let mut coverage_gap_count = 0_u64;
+    let mut text_gap_count = 0_u64;
     let mut texture_count = 0_u64;
     let mut record = SavedAssetPackageTextRecord {
         file_bytes: bytes.len() as u64,
@@ -934,6 +935,7 @@ fn project_parsed_package(
         decode_errors: 0,
         occurrences: Vec::new(),
         gap_counts: TextGapCounts::default(),
+        text_gap_counts: Some(TextGapCounts::default()),
         gap_samples: Vec::new(),
         gather_coverage: None,
         blueprint_classes: Vec::new(),
@@ -971,6 +973,11 @@ fn project_parsed_package(
                     decoded_keys.record(&projection.occurrences);
                     occurrence_count += projection.occurrences.len() as u64;
                     coverage_gap_count += projection.coverage_gaps.len() as u64;
+                    text_gap_count += projection
+                        .coverage_gaps
+                        .iter()
+                        .filter(|gap| gap.may_contain_text)
+                        .count() as u64;
                     text_projection.occurrences.extend(projection.occurrences);
                     text_projection
                         .coverage_gaps
@@ -992,6 +999,7 @@ fn project_parsed_package(
                 {
                     graph_text_incomplete |= gap.is_graph_pin_gap();
                     coverage_gap_count += 1;
+                    text_gap_count += u64::from(gap.may_contain_text);
                     text_projection.coverage_gaps.push(gap);
                 }
                 diagnostics.push(projection_diagnostic(export, error.kind(), error.message()))
@@ -1033,7 +1041,7 @@ fn project_parsed_package(
     }
     let gather = table.map(|table| table.coverage);
     let partial = graph_text_incomplete
-        || text_coverage_partial(gather.as_ref(), !diagnostics.is_empty(), coverage_gap_count);
+        || text_coverage_partial(gather.as_ref(), !diagnostics.is_empty(), text_gap_count);
     record.gather_coverage = gather.map(gather_coverage_record);
     match kind {
         ProjectionKind::TextPackages => {
@@ -2277,16 +2285,17 @@ fn read_saved_world_package(
     })
 }
 
-/// With a readable gather table, only missing runtime gatherable text is partial. Packages saved
-/// before the table existed, or whose table cannot be read, keep the decode-error-or-gap rule.
+/// With a readable gather table, only missing runtime gatherable text is partial: Unreal gathers
+/// from the table, so an undecoded export can lose a place but not a line. Without one, a decode
+/// error or a gap whose undecoded data may contain text is partial.
 fn text_coverage_partial(
     gather: Option<&GatherCoverage>,
     decode_errors: bool,
-    coverage_gaps: u64,
+    text_capable_gaps: u64,
 ) -> bool {
     match gather {
         Some(gather) => gather.missing != 0,
-        None => decode_errors || coverage_gaps != 0,
+        None => decode_errors || text_capable_gaps != 0,
     }
 }
 
@@ -2611,6 +2620,62 @@ mod tests {
             .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn a_text_free_decode_gap_stays_reported_without_making_a_package_partial() {
+        use crate::protocol_result::{ResultFrame, SavedAssetPackageTextEvent};
+        use crate::test_support::{push_i32, write_legacy_property_tag, write_property_terminator};
+        for (kind, partial) in [("NameProperty", false), ("TextProperty", true)] {
+            let (_, mut package) = crate::test_support::legacy_text_package(0);
+            package.summary.gatherable_text_data = None;
+            package.names = ["None", "Value", kind]
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+            let export = &mut package.exports[0];
+            let start = export.serial_offset.get() as usize;
+            let mut source = vec![0; start];
+            // Both declarations have a rejected one-byte payload. A name cannot hold text;
+            // FText can. Recovery retains the tag boundary and every gap in both cases.
+            write_legacy_property_tag(&mut source, 1, 2, &[0], &[0xFF]);
+            write_property_terminator(&mut source, 0);
+            push_i32(&mut source, 0);
+            export.serial_size = (source.len() - start) as u64;
+            let output = super::project_parsed_package(
+                super::ProjectionKind::TextPackages,
+                "Fixture.uasset".into(),
+                &source,
+                &package,
+                &crate::cancellation::CancellationToken::new(),
+            )
+            .unwrap();
+            let ResultFrame::ExtractTextPackages {
+                event: SavedAssetPackageTextEvent::Package { record },
+            } = &output.results[0]
+            else {
+                panic!("package record");
+            };
+            assert_eq!(output.partial, partial);
+            assert_eq!(
+                record.status,
+                if partial {
+                    crate::protocol_result::ProjectionStatus::Partial
+                } else {
+                    crate::protocol_result::ProjectionStatus::Complete
+                }
+            );
+            assert_eq!(record.gap_counts.property_decoder_rejected, 1);
+            assert_eq!(
+                record
+                    .text_gap_counts
+                    .as_ref()
+                    .unwrap()
+                    .property_decoder_rejected,
+                u64::from(partial)
+            );
+            assert_eq!(record.gap_samples[0].may_contain_text, Some(partial));
+        }
     }
 
     #[test]

@@ -5,7 +5,7 @@ import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { sharedIndexNodeLayer, SharedIndex } from "./shared-index.js";
 import { refreshPackageTextLayer, type PackageTextInventoryEntry } from "./package-text-layer.js";
-import { decodePackageTextColumns } from "./package-text-columns.js";
+import { decodePackageTextColumns, type PackageTextStored } from "./package-text-columns.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { mountPackageTextEvent } from "./package-object-path.js";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
@@ -173,7 +173,7 @@ describe("cold package refresh", () => {
 					Effect.gen(function* () {
 						const result = yield* Effect.scoped(refreshPackageTextLayer(input));
 						const reader = yield* (yield* SharedIndex).open();
-						const records: Record<string, unknown> = {};
+						const records: Record<string, readonly PackageTextStored[]> = {};
 						for (const name of Object.keys(reader.manifest.active).sort())
 							records[name] = yield* decodePackageTextColumns(
 								yield* reader.layer(name)

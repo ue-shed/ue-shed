@@ -101,11 +101,9 @@ function stagedLinePath(line: string): string {
 	let end = key + 8;
 	while (end < line.length && line.charCodeAt(end) !== 0x22)
 		end += line.charCodeAt(end) === 0x5c ? 2 : 1;
-	const path: unknown = JSON.parse(line.slice(key + 7, end + 1));
-	if (typeof path !== "string")
-		throw snapshotFailure("package-text.read", "A staged line names no package");
-	return path;
+	return decodeStagedPath(line.slice(key + 7, end + 1));
 }
+const decodeStagedPath = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.String));
 
 async function convertGroup(request: typeof GroupRequest.Type) {
 	// As the host's stream does: project-relative paths, then Unreal's object paths.

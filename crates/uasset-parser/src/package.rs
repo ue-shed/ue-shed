@@ -334,9 +334,9 @@ pub struct Package {
 #[derive(Default)]
 pub(crate) struct DecodeMemo {
     /// For an outer export: the object paths its saved `Nodes` array references, or `None`
-    /// when its properties cannot be decoded.
-    pub(crate) graph_nodes: std::sync::Mutex<
-        std::collections::HashMap<u32, Option<std::sync::Arc<std::collections::HashSet<String>>>>,
+    /// when its properties cannot be decoded. Single-threaded, as the parser is portable.
+    pub(crate) graph_nodes: core::cell::RefCell<
+        std::collections::HashMap<u32, Option<std::collections::HashSet<String>>>,
     >,
 }
 

@@ -132,28 +132,26 @@ pub fn is_blueprint_graph_node_export(context: &AssetDecodeContext<'_>, export: 
     if !is_blueprint_owned_export(package, outer) {
         return false;
     }
-    graph_node_paths(context, index, outer)
-        .is_some_and(|nodes| nodes.contains(export.object_path.as_str()))
+    let memo = &package.decode_memo.graph_nodes;
+    if !memo.borrow().contains_key(&index) {
+        let nodes = graph_node_paths(context, outer);
+        memo.borrow_mut().insert(index, nodes);
+    }
+    memo.borrow().get(&index).is_some_and(|nodes| {
+        nodes
+            .as_ref()
+            .is_some_and(|nodes| nodes.contains(export.object_path.as_str()))
+    })
 }
 
-/// The object paths an outer export's saved `Nodes` array references, decoded once per outer:
-/// a large Blueprint asks this for every graph and node it owns.
+/// The object paths an outer export's saved `Nodes` array references. Callers keep the answer
+/// per outer: a large Blueprint asks for every graph and node it owns.
 fn graph_node_paths(
     context: &AssetDecodeContext<'_>,
-    index: u32,
     outer: &Export,
-) -> Option<std::sync::Arc<std::collections::HashSet<String>>> {
+) -> Option<std::collections::HashSet<String>> {
     let package = context.package;
-    let memo = &package.decode_memo.graph_nodes;
-    if let Some(known) = memo
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get(&index)
-    {
-        return known.clone();
-    }
-    // Decoded outside the lock: another thread may decode the same outer, with the same result.
-    let nodes = decode_uobject_properties(outer, context)
+    decode_uobject_properties(outer, context)
         .ok()
         .map(|(properties, _)| {
             let mut paths = std::collections::HashSet::new();
@@ -171,12 +169,8 @@ fn graph_node_paths(
                     }
                 }
             }
-            std::sync::Arc::new(paths)
-        });
-    memo.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert(index, nodes.clone());
-    nodes
+            paths
+        })
 }
 
 /// Whether an export belongs to a Blueprint, including custom graphs and their nodes.

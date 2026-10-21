@@ -368,8 +368,15 @@ export function dispatchAuthoringTransportRequest(
 	);
 }
 
+/**
+ * HTTP client settings. `headers` are sent with every request after `content-type`, for example
+ * an authorization or CSRF header a host requires. `fetch` replaces the global fetch, for a
+ * proxy, an Electron net module or a test double. Omit both to keep the defaults.
+ */
 export interface AuthoringHttpClientOptions {
 	readonly endpoint: string;
+	readonly headers?: Readonly<Record<string, string>>;
+	readonly fetch?: typeof globalThis.fetch;
 }
 
 /** Transport requests that only read host state; every other request changes a session. */
@@ -416,9 +423,9 @@ export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): Au
 				: "Reopen the session and reconcile its state before sending this change again; the host may have applied it.";
 			const response = yield* Effect.tryPromise({
 				try: (signal) =>
-					fetch(options.endpoint, {
+					(options.fetch ?? fetch)(options.endpoint, {
 						body: JSON.stringify(args.payload),
-						headers: { "content-type": "application/json" },
+						headers: { "content-type": "application/json", ...options.headers },
 						method: "POST",
 						signal
 					}),

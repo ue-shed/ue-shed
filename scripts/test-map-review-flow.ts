@@ -1,6 +1,7 @@
 import { ensureUassetExecutable } from "./native-tools.ts";
 import { readFileSync } from "node:fs";
 import { Schema } from "effect";
+import { withSpan, withSpanAsync } from "./gate-trace.ts";
 import { createWorkbenchEnvironment, loadFixtureEditorMap, runPnpm } from "./workbench-tools.ts";
 
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
@@ -14,7 +15,9 @@ if (!endpoint) {
 	process.exit(1);
 }
 
-await loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad");
+await withSpanAsync("load Camera Lab map", {}, () =>
+	loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad")
+);
 const fixture = Schema.decodeUnknownSync(
 	Schema.Struct({
 		mapReviewGallery: Schema.Struct({
@@ -31,36 +34,42 @@ const fixture = Schema.decodeUnknownSync(
 	)
 );
 
-const environment = await createWorkbenchEnvironment({
-	...process.env,
-	UE_SHED_FIXTURE_AUTHORING_MAP: "/Game/Fixture/Cameras/L_CameraLoad",
-	UE_SHED_MAP_REVIEW_FLOW_E2E: "1",
-	UE_SHED_MAP_REVIEW_AUTHORING_E2E: "1",
-	UE_SHED_CAMERA_WORKSPACE_TEST_MAP: fixture.mapReviewGallery.map,
-	UE_SHED_CAMERA_WORKSPACE_TEST_ACTOR: fixture.mapReviewGallery.subjects.compound,
-	UE_SHED_REMOTE_CONTROL_ENDPOINT: endpoint,
-	UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
-});
+const environment = await withSpanAsync("prepare Workbench environment", {}, () =>
+	createWorkbenchEnvironment({
+		...process.env,
+		UE_SHED_FIXTURE_AUTHORING_MAP: "/Game/Fixture/Cameras/L_CameraLoad",
+		UE_SHED_MAP_REVIEW_FLOW_E2E: "1",
+		UE_SHED_MAP_REVIEW_AUTHORING_E2E: "1",
+		UE_SHED_CAMERA_WORKSPACE_TEST_MAP: fixture.mapReviewGallery.map,
+		UE_SHED_CAMERA_WORKSPACE_TEST_ACTOR: fixture.mapReviewGallery.subjects.compound,
+		UE_SHED_REMOTE_CONTROL_ENDPOINT: endpoint,
+		UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
+	})
+);
 
-runPnpm(
-	["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
-	environment
+withSpan("build Workbench", {}, () =>
+	runPnpm(
+		["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
+		environment
+	)
 );
 
 process.stdout.write(
 	"[Map Review flow] RUN: camera-set creation, restart, 4/37-view capture and gallery rendering\n"
 );
-runPnpm(
-	[
-		"--filter",
-		"@ue-shed/workbench",
-		"exec",
-		"playwright",
-		"test",
-		"--config",
-		"e2e/playwright.config.ts",
-		"e2e/map-review-authoring.e2e.ts",
-		"e2e/map-review-gallery.e2e.ts"
-	],
-	environment
+withSpan("map review browser flows", {}, () =>
+	runPnpm(
+		[
+			"--filter",
+			"@ue-shed/workbench",
+			"exec",
+			"playwright",
+			"test",
+			"--config",
+			"e2e/playwright.config.ts",
+			"e2e/map-review-authoring.e2e.ts",
+			"e2e/map-review-gallery.e2e.ts"
+		],
+		environment
+	)
 );

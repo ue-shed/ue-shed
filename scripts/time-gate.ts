@@ -36,6 +36,7 @@ import {
 	parseJsonObject,
 	type JsonValue
 } from "./json.ts";
+import { cargoAttributes } from "./process-trace.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
@@ -319,8 +320,7 @@ if (import.meta.main) {
 					const status = code === 0 ? "passed" : "failed";
 					if (status === "failed") failed = true;
 					if (step.command.startsWith("cargo ")) {
-						const compiled = readFileSync(log, "utf8").match(/^\s*Compiling /gm);
-						span.setAttributes({ "cargo.compiled_crates": compiled?.length ?? 0 });
+						span.setAttributes(cargoAttributes(readFileSync(log, "utf8")));
 					}
 					span.setAttributes({ "process.exit_code": code ?? -1 });
 					span.end(status === "passed" ? "ok" : "error");

@@ -26,6 +26,7 @@ import {
 	unrealEngineVersion,
 	localDerivedDataCacheArguments
 } from "./unreal-plugin-host.ts";
+import { stageSpans } from "./gate-trace.ts";
 import { traceProcess } from "./process-trace.ts";
 
 // Require both engines before starting work. The ordinary fixture command remains the
@@ -86,6 +87,10 @@ function run(
 	}
 }
 
+// Each engine is a span and each of its phases a span inside it.
+const engineStages = stageSpans();
+const phases = stageSpans();
+engineStages.start("matrix prerequisites");
 const packageManager =
 	process.env.npm_execpath ?? (process.platform === "win32" ? "pnpm.cmd" : "pnpm");
 const packageManagerIsScript = /\.(?:c|m)?js$/iu.test(packageManager);
@@ -123,7 +128,9 @@ const omittedDirectories = new Set([
 for (const engine of engines) {
 	const root = join(output, engine.version);
 	mkdirSync(root);
+	engineStages.start(`UE ${engine.version}`, { "unreal.engine": engine.version });
 	try {
+		phases.start("source models");
 		const bagModel = parseJsonObject(
 			readFileSync(
 				join(repositoryRoot, "crates/uasset-parser/source-models/ue58-property-bags.json"),
@@ -220,6 +227,7 @@ for (const engine of engines) {
 			: join(root, "fixture");
 		const evidence = join(root, "evidence");
 		if (retainedRoot) {
+			phases.start("verify retained fixture");
 			assert.ok(
 				existsSync(join(fixture, "UEShedFixture.uproject")),
 				"Retained fixture missing"
@@ -261,6 +269,7 @@ for (const engine of engines) {
 				})
 			);
 			const tools = unrealEngineTools(engine.root);
+			phases.start("build fixture editor");
 			run(join(root, "build-fixture.log"), tools.build, [
 				"UEShedFixtureEditor",
 				"Win64",
@@ -276,10 +285,11 @@ for (const engine of engines) {
 				force: true
 			});
 			const localizationEvidence = join(root, "localization-evidence");
-			for (const [index, args] of localizationFixtureSteps(
-				project,
-				localizationEvidence
-			).entries())
+			const localizationSteps = localizationFixtureSteps(project, localizationEvidence);
+			phases.start("localization commandlets", {
+				"unreal.processes": localizationSteps.length
+			});
+			for (const [index, args] of localizationSteps.entries())
 				run(join(root, `localization-${index}.log`), tools.editorCommandlet, args);
 			const freshLocalization = parseJsonObject(
 				readFileSync(
@@ -321,6 +331,7 @@ for (const engine of engines) {
 				"-NullRHI",
 				"-nosplash"
 			];
+			phases.start("generate and verify native fixtures");
 			run(join(root, "generate.log"), tools.editorCommandlet, commandletArgs);
 			// This directory did not exist in the source copy, so stale committed evidence
 			// cannot satisfy the oracle check if the commandlet fails to produce output.
@@ -368,6 +379,7 @@ for (const engine of engines) {
 			);
 		}
 
+		phases.start("parser parity");
 		const environment = {
 			...process.env,
 			UE_SHED_UASSET_FIXTURE_ROOT: fixture,
@@ -392,15 +404,20 @@ for (const engine of engines) {
 			["--import", "tsx", "scripts/test-saved-review.ts"],
 			environment
 		);
+		phases.end();
+		engineStages.end();
 		results.push({ version: engine.version, status: "passed" });
 		process.stdout.write(`UE ${engine.version}: passed\n`);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		phases.end("error");
+		engineStages.end("error");
 		results.push({ version: engine.version, status: "failed", error: message });
 		process.stderr.write(`UE ${engine.version}: ${message}\n`);
 	}
 }
 const legacyResults = join(output, "legacy-results.json");
+engineStages.start("legacy fixtures");
 try {
 	if (!retainedRoot)
 		run(join(output, "legacy-fixtures.log"), process.execPath, [
@@ -435,5 +452,6 @@ if (existsSync(legacyResults)) {
 		});
 	}
 }
+engineStages.end();
 writeFileSync(join(output, "results.json"), JSON.stringify(results, null, "\t") + "\n");
 process.exitCode = results.some((result) => result.status === "failed") ? 1 : 0;

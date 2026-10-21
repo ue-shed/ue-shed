@@ -107,6 +107,45 @@ export function startSpan(
 	};
 }
 
+interface ExplicitProcessSpans {
+	depth: number;
+}
+
+const explicitProcessSpansKey = Symbol.for("ue-shed.gate-trace.explicit-process-spans");
+
+/**
+ * Kept on `globalThis` rather than in this module: the preload and the script it traces can load
+ * different copies of this file (a clean-pack worktree runs its own `scripts`), and both must see
+ * the same count.
+ */
+function explicitProcessSpans(): ExplicitProcessSpans {
+	// SAFETY: only this function reads or writes the property behind this registered symbol, and it
+	// always stores an ExplicitProcessSpans there.
+	const registry = globalThis as typeof globalThis & {
+		[explicitProcessSpansKey]?: ExplicitProcessSpans;
+	};
+	registry[explicitProcessSpansKey] ??= { depth: 0 };
+	return registry[explicitProcessSpansKey];
+}
+
+/**
+ * Runs `run` while a caller records its own span for the processes it spawns, so the automatic
+ * subprocess spans from `trace-process.ts` do not record the same process twice.
+ */
+export function withExplicitProcessSpan<T>(run: () => T): T {
+	const state = explicitProcessSpans();
+	state.depth += 1;
+	try {
+		return run();
+	} finally {
+		state.depth -= 1;
+	}
+}
+
+export function insideExplicitProcessSpan() {
+	return explicitProcessSpans().depth > 0;
+}
+
 function enter(span: Span) {
 	const previous = process.env.TRACEPARENT;
 	process.env.TRACEPARENT = formatTraceparent(span.traceId, span.spanId);
@@ -138,6 +177,41 @@ export function withSpan<T>(
 		leave();
 		span.end(outcome);
 	}
+}
+
+export interface Stages {
+	/** Ends the current stage and starts `name`; child processes nest under it until the next. */
+	start(name: string, attributes?: SpanAttributes): Span;
+	/** Ends the current stage, if any. */
+	end(status?: SpanStatus): void;
+}
+
+/**
+ * Spans for the consecutive stages of a long script without wrapping its body in callbacks. A
+ * stage still open when the process exits ends there, failed if the process failed.
+ */
+export function stageSpans(): Stages {
+	let current: { readonly span: Span; readonly leave: () => void } | undefined;
+	const finish = (status: SpanStatus) => {
+		if (current === undefined) return;
+		current.leave();
+		current.span.end(status);
+		current = undefined;
+	};
+	if (traceFile()) {
+		process.once("exit", (code) => finish(code === 0 ? "ok" : "error"));
+	}
+	return {
+		start(name, attributes = {}) {
+			finish("ok");
+			const span = startSpan(name, attributes);
+			current = { span, leave: enter(span) };
+			return span;
+		},
+		end(status = "ok") {
+			finish(status);
+		}
+	};
 }
 
 /** `withSpan` for async work; the span stays the parent until the promise settles. */

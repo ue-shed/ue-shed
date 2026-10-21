@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { withSpanAsync } from "./gate-trace.ts";
+import { startSpan, withSpan, withSpanAsync, type Span } from "./gate-trace.ts";
 import { runPnpm } from "./workbench-tools.ts";
 
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001";
@@ -80,6 +80,7 @@ function stopOwnedEditor(editorPid: number | undefined) {
 }
 
 let editorPid: number | undefined;
+let editorSession: Span | undefined;
 try {
 	if (await remoteControlResponds()) {
 		throw new Error(
@@ -90,13 +91,20 @@ try {
 	// Authoring runs first there: it restores the tables it edits before review starts.
 	runPnpm(["run", "test:uasset-conformance"], environment);
 	runPnpm(["run", "test:unreal-niagara"], environment);
-	runPnpm(["run", "fixture:launch-authoring"], environment);
-	editorPid = ownedEditorPid();
-	const launchedPid = editorPid;
-	await withSpanAsync("wait for Remote Control", {}, () => waitForRemoteControl(launchedPid));
-	runPnpm(["run", "test:unreal-authoring"], environment);
-	runPnpm(["run", "test:unreal-review"], environment);
+	// One span for the owned editor's lifetime, from launch to stop, with the live lanes inside it.
+	editorSession = startSpan("owned fixture editor", { "trace.lane": "unreal editor" });
+	const session = editorSession;
+	await withSpanAsync("live editor lanes", {}, async () => {
+		runPnpm(["run", "fixture:launch-authoring"], environment);
+		editorPid = ownedEditorPid();
+		session.setAttributes({ "process.pid": editorPid });
+		const launchedPid = editorPid;
+		await withSpanAsync("wait for Remote Control", {}, () => waitForRemoteControl(launchedPid));
+		runPnpm(["run", "test:unreal-authoring"], environment);
+		runPnpm(["run", "test:unreal-review"], environment);
+	});
 } finally {
-	stopOwnedEditor(editorPid);
+	withSpan("stop owned editor", {}, () => stopOwnedEditor(editorPid));
+	editorSession?.end();
 	rmSync(lifecycleRoot, { force: true, recursive: true });
 }

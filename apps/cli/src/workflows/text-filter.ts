@@ -50,7 +50,7 @@ function invalidClause(text: string, cause?: unknown) {
 		code: "invalid_selection",
 		message: `The filter "${text}" is not a valid clause.`,
 		recovery:
-			"Write a field, is or is-not, and comma-separated values, such as `problem is key-changed,not-gathered`. Fields: problem, finding, translation, origin, folder, asset, namespace, editing, notes."
+			"Write a field, is or is-not, and comma-separated values, such as `problem is key-changed,not-gathered`. Fields: problem, finding, translation, origin, folder, asset, asset_type, namespace, editing, notes."
 	});
 }
 

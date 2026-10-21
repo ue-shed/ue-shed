@@ -15,6 +15,7 @@ import {
 	textFileKey,
 	textFolderLabel
 } from "./text-origin.js";
+import { textAssetTypeLabel } from "./text-asset-type.js";
 import { TEXT_PROBLEM_LABELS, needsWork, type TextFacts } from "./text-problems.js";
 
 interface Placed {
@@ -164,6 +165,15 @@ export function textOriginFacet(facts: Iterable<TextFacts>): TextGroupList {
 	for (const item of facts)
 		for (const origin of item.origins)
 			tallies.add({ key: origin, label: TEXT_ORIGIN_LABELS[origin] }, item);
+	return tallies.list();
+}
+
+/** The asset types of the packages holding the lines; a line of several types counts in each. */
+export function textAssetTypeFacet(facts: Iterable<TextFacts>): TextGroupList {
+	const tallies = new Tallies();
+	for (const item of facts)
+		for (const type of new Set(item.assetTypes))
+			tallies.add({ key: type, label: textAssetTypeLabel(type) }, item);
 	return tallies.list();
 }
 

@@ -4,6 +4,8 @@ export { textCountLabel, textLocationLabel, textReviewSignalLabel } from "./csv.
 
 export { LOCALIZATION_STATE_LABELS } from "./localization-export.js";
 
+export { TEXT_ASSET_TYPE_LABELS, textAssetTypeLabel } from "./text-asset-type.js";
+
 export { TEXT_AUDIENCE_LABELS } from "./text-audience-schema.js";
 
 export { TEXT_ORIGIN_LABELS, textFileLabel, textFolderLabel } from "./text-origin.js";

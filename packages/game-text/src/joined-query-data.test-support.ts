@@ -31,6 +31,26 @@ export {
 
 /** Columnar query oracle, excluded from production packages. */
 export class JoinedQueryData extends IndexedPolicyData {
+	readonly #assetClasses = new Map<number, string>();
+	/** The main asset class of a global occurrence row's package, empty when it has none. */
+	occurrenceAssetClass(global: number): string {
+		const { shard, row } = this.occurrenceShard(global);
+		const packageStarts = this.packageColumn(shard, "package.occurrence_start");
+		let low = 0,
+			high = packageStarts.length - 2;
+		while (low < high) {
+			const mid = (low + high + 1) >>> 1;
+			if (packageStarts[mid]! <= row) low = mid;
+			else high = mid - 1;
+		}
+		const memo = shard * 2 ** 32 + low;
+		let type = this.#assetClasses.get(memo);
+		if (type === undefined) {
+			type = this.strings([this.packageColumn(shard, "package.asset_class")[low]!])[0]!;
+			this.#assetClasses.set(memo, type);
+		}
+		return type;
+	}
 	/** Expand encoded source bytes once. Text search never repeatedly inflates A64 blocks. */
 	prepareSources() {
 		if (this.projection.sources || !this.joined.reader.bytesSync) return;

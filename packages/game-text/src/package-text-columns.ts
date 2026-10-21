@@ -65,7 +65,9 @@ const stringFields = {
 	// The reader's `blueprintClasses` as JSON, or empty: one section, not one per field.
 	"package.blueprints": "paths",
 	// The summary's serialized package name (uasset-io 1.17), or empty when the reader omits it.
-	"package.name": "paths"
+	"package.name": "paths",
+	// The class of the package's main asset (uasset-io 1.17), or empty when the reader omits it.
+	"package.asset_class": "paths"
 } as const;
 const copyKinds = TextCopyKind.literals;
 const decodeBlueprintClasses = Schema.decodeUnknownSync(
@@ -188,6 +190,10 @@ export function packageTextColumns(records: readonly PackageTextStored[]) {
 		string(
 			"package.name",
 			record.event === "text_package_record" ? (record.packageName ?? "") : ""
+		);
+		string(
+			"package.asset_class",
+			record.event === "text_package_record" ? (record.assetClass ?? "") : ""
 		);
 		const status = record.event === "text_package_record" ? record.status : record.event;
 		number("package.status", statuses.indexOf(status));
@@ -486,6 +492,7 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 					});
 				const blueprints = string("package.blueprints", row);
 				const packageName = string("package.name", row);
+				const assetClass = string("package.asset_class", row);
 				const blueprintClasses =
 					blueprints === "" ? [] : decodeBlueprintClasses(blueprints);
 				records.push({
@@ -521,7 +528,8 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 								}
 							: undefined),
 						...(blueprintClasses.length ? { blueprintClasses } : undefined),
-						...(packageName === "" ? undefined : { packageName })
+						...(packageName === "" ? undefined : { packageName }),
+						...(assetClass === "" ? undefined : { assetClass })
 					}
 				});
 			}

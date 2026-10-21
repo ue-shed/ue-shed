@@ -124,8 +124,11 @@ Minor version 1.17 adds optional `packageName` to a `text_package_record`: the p
 summary serializes, which the record's object paths are built from. Unreal names a package from
 its file's location, so a file moved or copied outside Unreal keeps an old name here; a host can
 compare it with the name the file's location gives and move the package's own paths. UE 4.27
-packages that save `None` report `None`, with package-relative paths. The worker strips the field
-below minor 17.
+packages that save `None` report `None`, with package-relative paths. The same minor adds optional
+`assetClass`: the class of the package's main asset, chosen as Unreal's loader does (the export
+flagged as an asset and named after the package's file, else the first such export). An actor
+saved in its own package reports the class of the world it belongs to. The field is absent when no
+export is flagged as an asset. The worker strips both fields below minor 17.
 
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no

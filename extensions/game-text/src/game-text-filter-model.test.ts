@@ -21,6 +21,19 @@ describe("filter pills", () => {
 		});
 	});
 
+	it("reads asset types by their labels and keeps class paths as values", () => {
+		const types = ["/Script/UMGEditor.WidgetBlueprint", "/Script/Engine.World"];
+		expect(clauseParts({ field: "asset_type", op: "is_not", values: types })).toEqual({
+			field: "Asset type",
+			op: "is none of",
+			values: "Widget blueprint, Level"
+		});
+		const filter = toggleValue([], { field: "asset_type", op: "is", values: [types[0]!] });
+		expect(toggleValue(filter, { field: "asset_type", op: "is", values: [types[1]!] })).toEqual(
+			[{ field: "asset_type", op: "is", values: types }]
+		);
+	});
+
 	it("reads source texts as written and every review signal a finding pill holds", () => {
 		expect(clauseParts({ field: "source", op: "is", values: ["Mushroom", " cap "] })).toEqual({
 			field: "Source text",

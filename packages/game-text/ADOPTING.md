@@ -113,7 +113,9 @@ search({ ...scope, group: "source", minGroupSize: 2, openGroup: "Mushroom" });
 ```
 
 `finding` takes every review signal. A `source` clause takes up to 50 exact texts; a unit with
-conflicting sources matches any of them. `group: "source"` keys and labels each group by its text
+conflicting sources matches any of them. An `asset_type` clause takes up to 50 class paths and
+matches text whose saved places include a package with that main asset class; `facets.assetTypes`
+lists the types with readable labels. `group: "source"` keys and labels each group by its text
 and counts the matching lines holding it (units without a target, each under its first source in
 UTF-16 order). `minGroupSize` leaves smaller groups out of `groups`, including `more`; it does not
 narrow totals or `openGroup`. Key changes are on each line's `keyChange`.

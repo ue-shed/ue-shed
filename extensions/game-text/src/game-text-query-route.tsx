@@ -506,7 +506,8 @@ export function GameTextRoute(props: {
 	// The Filter menu counts each value from the current page, while no search is running.
 	const filterCounts = (): FilterCounts => {
 		const current = searching() ? undefined : page();
-		if (current === undefined) return { choices: {}, folders: undefined, assets: undefined };
+		if (current === undefined)
+			return { choices: {}, folders: undefined, assets: undefined, assetTypes: undefined };
 		const states = current.localization?.stateCounts;
 		const counts = current.counts;
 		return {
@@ -550,7 +551,8 @@ export function GameTextRoute(props: {
 						})
 			},
 			folders: current.facets?.folders,
-			assets: current.facets?.assets
+			assets: current.facets?.assets,
+			assetTypes: current.facets?.assetTypes
 		};
 	};
 	const searchRequest = createMemo((): TextCorpusSearchRequest => {
@@ -578,6 +580,7 @@ export function GameTextRoute(props: {
 				assets: true,
 				origins: true,
 				audiences: true,
+				assetTypes: true,
 				...(selected ? { cultures: true } : undefined)
 			},
 			...(selected ? { localization: selected } : undefined),

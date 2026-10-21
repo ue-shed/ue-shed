@@ -276,6 +276,7 @@ impl Emitter {
                 event: SavedAssetPackageTextEvent::Package { record },
             } = result
             && (record.package_name.is_some()
+                || record.asset_class.is_some()
                 || (self.contract.version.minor < 12
                     && (!record.blueprint_classes.is_empty()
                         || (self.contract.version.minor < 11
@@ -288,6 +289,7 @@ impl Emitter {
         {
             let mut record = record.clone();
             record.package_name = None;
+            record.asset_class = None;
             if self.contract.version.minor < 12 {
                 record.blueprint_classes.clear();
             }

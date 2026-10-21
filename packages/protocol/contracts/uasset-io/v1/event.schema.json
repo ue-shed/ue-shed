@@ -8814,6 +8814,9 @@
 				"packageName": {
 					"type": "string"
 				},
+				"assetClass": {
+					"type": "string"
+				},
 				"schema_version": {
 					"type": "number",
 					"enum": [1]

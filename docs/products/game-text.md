@@ -857,6 +857,13 @@ signal: `conflicting`, `evidence_only` and `compiled_copy_differs` as well as th
 `loc status`, `loc export` and localization-aware `text search`; a malformed clause fails with
 `invalid_selection` and the expected form. Clauses on `asset` match a file in any spelling
 (`Content/UI/WBP_Menu.uasset`, `/Game/UI/WBP_Menu`), and `namespace` matches exactly.
+`asset_type` matches the class of the main asset of the package holding the text, such as
+`asset_type is /Script/UMGEditor.WidgetBlueprint` or `/Script/Engine.DataTable`. The reader picks
+the main asset as Unreal's loader does: the export flagged as an asset and named after the
+package's file, else the first one. Text in an actor saved in its own package has its world's type
+(`/Script/Engine.World`), and a Blueprint-class asset has its class path
+(`/Game/Items/BP_Item.BP_Item_C`). `is` matches a line when any of its saved places has a selected
+type, `is-not` when none has; C++ and other gathered sources have no type, so `is-not` keeps them.
 
 A request can **group** the matching lines by problem, folder, asset, origin or namespace
 (`--group folder`). The page then lists every group, worst first, with its line count, how many
@@ -867,8 +874,10 @@ counts and groups stay those of the whole request. Requests can also group by ex
 without a target under its first source) and list only groups of at least `minGroupSize` lines:
 `finding is duplicate_source`, `group: "source"` and `minGroupSize: 2` list the texts under several
 keys in one query. Smaller groups are left out of `more` too; totals and `openGroup` are unchanged. **Facets** count where the matching lines
-are: the folders directly under a given folder, assets, origins, and each culture's shipped,
-missing, to-update and not-synced lines. Each facet leaves out its own clauses, and the culture
+are: the folders directly under a given folder, assets, asset types (`facets.assetTypes`, keyed by
+class path with a readable `textAssetTypeLabel` label such as "Widget blueprint" or "Level"; a line
+of several types counts in each), origins, and each culture's shipped, missing, to-update and
+not-synced lines. Each facet leaves out its own clauses, and the culture
 facet leaves out the picked cultures, so the picker always shows every culture.
 
 ### Checks and reports

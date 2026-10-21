@@ -212,7 +212,7 @@ fn package_text_blueprint_classes_are_negotiated() {
 }
 
 #[test]
-fn package_text_serialized_package_name_is_negotiated() {
+fn package_text_package_name_and_asset_class_are_negotiated() {
     let project_root =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
     for minor in [16, 17] {
@@ -230,11 +230,18 @@ fn package_text_serialized_package_name_is_negotiated() {
             .find(|event| event["result"]["event"]["event"] == "text_package_record")
             .unwrap()["result"]["event"];
         let name = record.get("packageName");
+        let class = record.get("assetClass");
         if minor < 17 {
-            assert!(name.is_none(), "minor {minor}: {record}");
+            assert!(name.is_none() && class.is_none(), "minor {minor}: {record}");
         } else {
             // The summary's own name, which object paths are built from.
             assert_eq!(name.unwrap(), "/Game/Fixture/Text/DA_TextOccurrences");
+            assert!(
+                class
+                    .unwrap()
+                    .as_str()
+                    .is_some_and(|class| !class.is_empty())
+            );
         }
     }
 }

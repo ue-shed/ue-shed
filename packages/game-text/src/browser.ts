@@ -92,6 +92,7 @@ export {
 	MAX_TEXT_SCOPE_FILES,
 	StringTableTextIdentity,
 	TEXT_AUDIENCE_LABELS,
+	TextAssetType,
 	TextAudience,
 	TextAudienceReason,
 	TextCapabilityFilter,
@@ -314,6 +315,8 @@ export {
 	TEXT_ORIGIN_LABELS,
 	textFileLabel,
 	textFolderLabel,
+	TEXT_ASSET_TYPE_LABELS,
+	textAssetTypeLabel,
 	TEXT_PROBLEM_LABELS
 } from "./entry-labels.js";
 

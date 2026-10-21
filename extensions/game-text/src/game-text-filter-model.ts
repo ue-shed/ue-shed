@@ -1,6 +1,10 @@
 import { Option, Schema } from "effect";
 import { TEXT_AUDIENCE_LABELS } from "@ue-shed/game-text/schema";
-import { TEXT_ORIGIN_LABELS, TEXT_PROBLEM_LABELS } from "@ue-shed/game-text/labels";
+import {
+	TEXT_ORIGIN_LABELS,
+	TEXT_PROBLEM_LABELS,
+	textAssetTypeLabel
+} from "@ue-shed/game-text/labels";
 import {
 	TextAudience,
 	TextEditing,
@@ -57,6 +61,7 @@ export const FIELD_LABELS = {
 	origin: "Origin",
 	folder: "Folder",
 	asset: "Asset",
+	asset_type: "Asset type",
 	namespace: "Namespace",
 	editing: "Editing",
 	notes: "Translator notes",
@@ -83,10 +88,12 @@ export function isChoiceField(field: TextFilterField): field is ChoiceField {
 
 /**
  * How one value reads in a pill or a menu. Folders, assets, namespaces and source texts read as
- * written; a translation key reads `Namespace, Key`, or the key alone in the empty namespace.
+ * written; a translation key reads `Namespace, Key`, or the key alone in the empty namespace; an
+ * asset type reads as its label.
  */
 export function valueLabel(field: TextFilterField, value: string): string {
 	if (field === "translation_key") return translationKeyLabel(value);
+	if (field === "asset_type") return textAssetTypeLabel(value);
 	if (!isChoiceField(field)) return value;
 	const labels: Readonly<Record<string, string>> = CHOICE_FIELDS[field].labels;
 	return labels[value] ?? value;
@@ -229,6 +236,7 @@ function withValues(
 		}
 		case "folder":
 		case "asset":
+		case "asset_type":
 		case "namespace":
 		case "source":
 			return values.length === 0 ? undefined : { ...clause, values };

@@ -362,6 +362,11 @@ pub struct SavedAssetPackageTextRecord {
     /// file's location. `None` from producers that predate it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_name: Option<String>,
+    /// v1.17: the class of the package's main asset, chosen as Unreal does: the export flagged as
+    /// an asset and named after the package, else the first one. For an actor saved in its own
+    /// package, the class of the world it belongs to. `None` when no export is an asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_class: Option<String>,
     #[serde(rename = "schema_version")]
     pub schema_version: u8,
     pub status: ProjectionStatus,
@@ -527,6 +532,7 @@ mod package_text_tests {
             file_bytes: 0,
             path: "Fixture.uasset".into(),
             package_name: None,
+            asset_class: None,
             schema_version: 1,
             status: ProjectionStatus::Partial,
             decode_errors: 0,

@@ -25,6 +25,7 @@ export interface FilterCounts {
 	readonly choices: Partial<Record<ChoiceField, Readonly<Record<string, number>>>>;
 	readonly folders: TextGroupList | undefined;
 	readonly assets: TextGroupList | undefined;
+	readonly assetTypes: TextGroupList | undefined;
 }
 
 /** A field that is not a clause yet, such as review state: one choice at a time. */
@@ -124,11 +125,16 @@ export function FilterMenu(props: {
 			});
 		}
 	});
-	const placeField = (field: "folder" | "asset"): Field => ({
+	const placeField = (field: "folder" | "asset" | "asset_type"): Field => ({
 		key: field,
 		label: FIELD_LABELS[field],
 		options: (text) => {
-			const list = field === "folder" ? props.counts.folders : props.counts.assets;
+			const list =
+				field === "folder"
+					? props.counts.folders
+					: field === "asset"
+						? props.counts.assets
+						: props.counts.assetTypes;
 			const found = (list?.entries ?? [])
 				.filter((entry) => matches(text, entry.label))
 				.map((entry): Option => {
@@ -177,7 +183,12 @@ export function FilterMenu(props: {
 	// Sections in menu order: problems, places, attributes, and fields that are not clauses yet.
 	const sections = createMemo((): readonly (readonly Field[])[] => [
 		CHOICE_ORDER.filter((field) => props.hasTarget || field !== "translation").map(choiceField),
-		[placeField("folder"), placeField("asset"), ...AFTER_PLACES.map(choiceField)],
+		[
+			placeField("folder"),
+			placeField("asset"),
+			placeField("asset_type"),
+			...AFTER_PLACES.map(choiceField)
+		],
 		ATTRIBUTES.map(choiceField),
 		(props.extraFields ?? []).map(extraField)
 	]);
@@ -436,6 +447,7 @@ function makeClause(field: TextFilterField, value: string): TextFilterClause | u
 	switch (field) {
 		case "folder":
 		case "asset":
+		case "asset_type":
 		case "namespace":
 		case "source":
 			return { field, op: "is", values: [value] };

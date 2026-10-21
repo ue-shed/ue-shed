@@ -53,7 +53,7 @@ export type PackageTextInventoryEntry = typeof PackageTextInventoryEntry.Type;
  * v7: re-extract bytecode identities reconciled with saved pin package namespaces.
  * v8: re-extract so a package moved or copied outside Unreal stores its object paths under the
  * file's package instead of the name its summary serializes, which records keep as `packageName`
- * (uasset-io 1.17). */
+ * (uasset-io 1.17), and so every package records its main asset's class as `assetClass`. */
 export const PACKAGE_TEXT_FORMAT = "package-text-v8";
 export const PACKAGE_TEXT_SHARDS = 256;
 export function packageTextShard(path: string) {

@@ -23,6 +23,7 @@ import {
 	TextUnitId
 } from "./schema.js";
 import { TEXT_PROBLEM_LABELS } from "./text-problems.js";
+import { textAssetTypeLabel } from "./text-asset-type.js";
 import { TEXT_AUDIENCE_LABELS, TextAudience } from "./text-audience-schema.js";
 import { textAudienceOfMask } from "./text-audience.js";
 import {
@@ -402,6 +403,13 @@ export function columnarTextCorpusQuery(
 									kind === "line" ? row : c("query.slice.line")[row]!
 								);
 					break;
+				case "asset_type": {
+					const wanted = clause.assetTypes!;
+					has = eachMember(kind, row, (member) =>
+						wanted.has(data.occurrenceAssetClass(member))
+					);
+					break;
+				}
 				// A unit with conflicting sources has each of them.
 				case "source": {
 					const sources = clause.sources!;
@@ -789,6 +797,7 @@ export function columnarTextCorpusQuery(
 			translation?: { lines: ReadonlySet<number>; raw: ReadonlySet<number> };
 			/** Exact source texts, with each source ID's answer once it is decoded. */
 			sources?: { values: ReadonlySet<string>; known: Map<number, boolean> };
+			assetTypes?: ReadonlySet<string>;
 		}[];
 		path?: PathPredicate;
 		files?: ReadonlySet<number>;
@@ -863,6 +872,9 @@ export function columnarTextCorpusQuery(
 						: undefined),
 					...(clause.field === "source"
 						? { sources: { values: new Set<string>(clause.values), known: new Map() } }
+						: undefined),
+					...(clause.field === "asset_type"
+						? { assetTypes: new Set<string>(clause.values) }
 						: undefined)
 				})),
 				...(request.where?.pathPrefix === undefined
@@ -884,6 +896,30 @@ export function columnarTextCorpusQuery(
 		for (let index = start; index < end; index++)
 			if (keys.has(places.asset[places.file[files[index]!]! - 1]!)) return true;
 		return false;
+	};
+	/** A row's saved places: a line's through its visible slices. Stops when `visit` is true. */
+	const eachMember = (
+		kind: "raw" | "slice" | "line",
+		row: number,
+		visit: (member: number) => boolean
+	) => {
+		if (kind === "line") {
+			for (let sr = lineStarts[row]!; sr < lineStarts[row + 1]!; sr++)
+				if (slice.visible![sr] && eachMember("slice", sr, visit)) return true;
+			return false;
+		}
+		for (const member of data.members(kind, row)) if (visit(member)) return true;
+		return false;
+	};
+	/** The asset types of a row's saved places, each once. */
+	const assetTypesOf = (kind: "raw" | "line", row: number) => {
+		const types = new Set<string>();
+		eachMember(kind, row, (member) => {
+			const type = data.occurrenceAssetClass(member);
+			if (type !== "") types.add(type);
+			return false;
+		});
+		return types;
 	};
 	const objects = c("query.place.occurrence_object"),
 		packages = c("query.place.occurrence_package");
@@ -1118,6 +1154,47 @@ export function columnarTextCorpusQuery(
 			}
 		}
 		return finish(minSize);
+	};
+	/** Lines by asset type; a line of several types counts in each, ordered as other facets. */
+	const assetTypeFacet = (rows: Uint32Array, request: Request): TextGroupList => {
+		const masks = request.localization
+			? problemsFor(cultureScope(request.localization))
+			: undefined;
+		const tallies = new Map<string, { count: number; work: number; worst: number }>();
+		for (const row of rows) {
+			checkpoint();
+			const flags = raw.signals![row]!,
+				mask = request.localization
+					? masks![row]!
+					: (flags & 16 ? 2 : 0) | (flags & 15 ? 32 : 0) || 64;
+			const worst = 31 - Math.clz32(mask & -mask);
+			for (const type of assetTypesOf(request.localization ? "line" : "raw", row)) {
+				const tally = tallies.get(type) ?? { count: 0, work: 0, worst };
+				tally.count++;
+				if (mask & 31) tally.work++;
+				tally.worst = Math.min(tally.worst, worst);
+				tallies.set(type, tally);
+			}
+		}
+		const sorted = [...tallies]
+			.map(([key, tally]) => ({ key, label: textAssetTypeLabel(key), ...tally }))
+			.sort(
+				(a, b) =>
+					a.worst - b.worst ||
+					b.work - a.work ||
+					b.count - a.count ||
+					(a.label < b.label ? -1 : a.label > b.label ? 1 : 0)
+			);
+		return {
+			entries: sorted.slice(0, MAX_TEXT_GROUPS).map((tally) => ({
+				key: tally.key,
+				label: tally.label,
+				count: tally.count,
+				needWork: tally.work,
+				worst: TextProblem.literals[tally.worst]!
+			})),
+			more: Math.max(0, sorted.length - MAX_TEXT_GROUPS)
+		};
 	};
 	const combinedFacets = (rows: Uint32Array, request: Request, under: string) => {
 		const folder = aggregation("folder", true, under),
@@ -1488,6 +1565,9 @@ export function columnarTextCorpusQuery(
 											true
 										)
 									}
+								: undefined),
+							...(facets.assetTypes
+								? { assetTypes: assetTypeFacet(base("asset_type"), request) }
 								: undefined),
 							...(facets.cultures && selection
 								? {

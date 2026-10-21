@@ -57,6 +57,16 @@ import { defaultLocalizationImportLimits } from "../packages/game-text/src/local
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
 import { snapshotColumnsSource } from "../packages/game-text/src/snapshot-file.ts";
 
+/** Main asset classes the fuzz's packages take in turn; the last package of each six has none. */
+const FUZZ_ASSET_CLASSES = [
+	"/Script/Engine.DataTable",
+	"/Script/Engine.Blueprint",
+	"/Script/UMGEditor.WidgetBlueprint",
+	"/Script/Engine.World",
+	"/Game/Text/BP_Item.BP_Item_C",
+	undefined
+] as const;
+
 const Entry = Schema.Struct({
 	namespace: Schema.String,
 	key: Schema.String,
@@ -142,6 +152,10 @@ export function joinFuzzInput(seed: number): JoinFuzzInput {
 		...emptyPackageTextRecord(
 			`Content/${row % 7 === 6 ? "L10N" : "Text"}/Package${String(row).padStart(2, "0")}.uasset`
 		),
+		// By row, so the random stream and every seed's other inputs stay as they were.
+		...(FUZZ_ASSET_CLASSES[row % FUZZ_ASSET_CLASSES.length] === undefined
+			? undefined
+			: { assetClass: FUZZ_ASSET_CLASSES[row % FUZZ_ASSET_CLASSES.length]! }),
 		status: int(8) === 0 ? ("partial" as const) : ("complete" as const),
 		// SAFETY: This empty mutable collection is populated only with schema-owned occurrences below.
 		occurrences: [] as SavedAssetPackageTextRecord["occurrences"][number][]
@@ -576,13 +590,19 @@ export async function compareJoinFuzzInput(
 	const corpus = candidateCorpusFromEvents({ projectRoot, inventory, events: records });
 	const raw = applyLocalizationReview(joinLocalizationTarget(corpus, evidence), input.review);
 	const expected = applyLocalizationKeyChanges(raw, localizationKeyChanges(raw, corpus).pairs);
-	const oracle = textCorpusQuery(corpus, undefined, expected);
+	// The corpus keeps no asset classes; the references take them from the records.
+	const assetClasses = new Map(
+		input.records.flatMap((record) =>
+			record.assetClass === undefined ? [] : [[record.path, record.assetClass] as const]
+		)
+	);
+	const oracle = textCorpusQuery(corpus, undefined, expected, assetClasses);
 	const base: TextCorpusSearchRequest = {
 		query: "",
 		capability: "all",
 		pageSize: 50,
 		localization: { target: expected.target },
-		facets: { folder: "", assets: true, origins: true, cultures: true }
+		facets: { folder: "", assets: true, origins: true, cultures: true, assetTypes: true }
 	};
 	const { localization: _selection, ...unlocalized } = base;
 	const { facets: _facets, ...withoutFacets } = base;
@@ -676,7 +696,8 @@ export async function compareJoinFuzzInput(
 		{ field: "asset", op: "is", values: [input.records[0]!.path] },
 		{ field: "namespace", op: "is", values: ["UI"] },
 		{ field: "editing", op: "is", values: ["editable"] },
-		{ field: "notes", op: "is_not", values: ["present"] }
+		{ field: "notes", op: "is_not", values: ["present"] },
+		{ field: "asset_type", op: "is", values: [FUZZ_ASSET_CLASSES[input.seed % 5]!] }
 	];
 	for (let offset = 0; offset < 3; offset++)
 		requests.push(
@@ -702,6 +723,21 @@ export async function compareJoinFuzzInput(
 		filter: [
 			{ field: "translation_key", op: "is", values: translationKeys },
 			{ field: "problem", op: "is", values: ["conflicting_source"] }
+		]
+	});
+	// A unit or line has every type its places' packages have; untyped packages have none.
+	const assetTypes = [FUZZ_ASSET_CLASSES[1]!, FUZZ_ASSET_CLASSES[3]!];
+	for (const selection of [base, unlocalized])
+		for (const op of ["is", "is_not"] as const)
+			requests.push({
+				...selection,
+				filter: [{ field: "asset_type", op, values: assetTypes }]
+			});
+	requests.push({
+		...base,
+		filter: [
+			{ field: "asset_type", op: "is", values: assetTypes },
+			{ field: "origin", op: "is_not", values: ["string_table"] }
 		]
 	});
 	// Exact sources: present texts (including lone surrogates and conflicting copies), a case
@@ -895,10 +931,15 @@ export async function compareJoinFuzzInput(
 	const comparison = compareLocalizationJoins(expected, actual.join, 100);
 	for (const difference of comparison.differences)
 		differences.push({ field: `join.${difference.field}`, detail: JSON.stringify(difference) });
-	const hydrated = textCorpusQuery(actual.corpus, undefined, {
-		...actual.join,
-		lines: [...actual.join.lines].sort((a, b) => a.id.localeCompare(b.id))
-	});
+	const hydrated = textCorpusQuery(
+		actual.corpus,
+		undefined,
+		{
+			...actual.join,
+			lines: [...actual.join.lines].sort((a, b) => a.id.localeCompare(b.id))
+		},
+		assetClasses
+	);
 	const compare = (field: string, left: OracleValue, right: OracleValue) => {
 		if (
 			/\.(facts|unknownReasons|flags)$/u.test(field) &&

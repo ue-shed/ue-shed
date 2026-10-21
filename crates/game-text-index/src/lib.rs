@@ -8,6 +8,7 @@ mod dependency_graph;
 pub mod dictionary;
 pub mod engine;
 mod engine_aggregate;
+mod engine_asset_types;
 mod engine_detail;
 mod engine_evidence;
 mod engine_export;

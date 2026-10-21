@@ -1,4 +1,5 @@
 //! Compiled native predicates. Hot scans use numeric columns, without crossing into JavaScript.
+use crate::engine_asset_types::AssetTypes;
 use crate::engine_places::{Places, Prefix};
 use crate::engine_query::{EngineQuery, audience, mask};
 use crate::engine_types::*;
@@ -421,6 +422,8 @@ struct PreparedClause {
     prefixes: Vec<Prefix>,
     translation: TranslationRows,
     sources: HashSet<u32>,
+    /// The asset types and which of them the clause names, for `asset_type` clauses.
+    asset_types: Option<(Arc<AssetTypes>, Vec<bool>)>,
 }
 struct Predicates {
     clauses: Vec<PreparedClause>,
@@ -471,6 +474,13 @@ impl Predicates {
                     query.source_ids(&clause.values)?
                 } else {
                     HashSet::new()
+                },
+                asset_types: if clause.field == FilterField::AssetType {
+                    let types = AssetTypes::open(query, cancelled)?;
+                    let wanted = types.wanted(&clause.values);
+                    Some((types, wanted))
+                } else {
+                    None
                 },
             });
         }
@@ -752,6 +762,13 @@ impl Projection {
                     Kind::Slice => clause.translation.lines.contains(&self.slice_line[row]),
                     Kind::Raw => clause.translation.raw.contains(&(row as u32)),
                 },
+                FilterField::AssetType => {
+                    let (types, wanted) = clause
+                        .asset_types
+                        .as_ref()
+                        .ok_or("Asset type clause without types.")?;
+                    types.each(self, kind, row, &mut |kind| wanted[kind as usize])?
+                }
                 // A unit with conflicting sources has each of them.
                 FilterField::Source => {
                     if line {

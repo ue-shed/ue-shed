@@ -76,6 +76,8 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 			}
 		]
 	};
+	// Further packages beside the main one; reads return the requested packages.
+	let others: SavedAssetPackageTextRecord[] = [];
 	let signature = 0;
 	let packageReads = 0;
 	let inventories = 0;
@@ -84,22 +86,30 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 	const source = Layer.succeed(GameTextIndexSource, {
 		inventory: () => {
 			inventories++;
-			return Effect.succeed([
-				{
-					path,
-					signature: String(signature),
-					headerData: {
-						packageFlags: 0x00040000,
-						gatherableTextDataCount: 1,
-						gatherableTextDataOffset: 1,
-						hasTextProperty: true
-					}
-				}
-			]);
+			return Effect.succeed(
+				// Inventories list unique paths in byte order.
+				[path, ...others.map((other) => other.path)]
+					.sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))
+					.map((file) => ({
+						path: file,
+						signature: String(signature),
+						headerData: {
+							packageFlags: 0x00040000,
+							gatherableTextDataCount: 1,
+							gatherableTextDataOffset: 1,
+							hasTextProperty: true
+						}
+					}))
+			);
 		},
-		read: () => {
+		read: (_root, entries) => {
 			packageReads++;
-			return Stream.fromEffect(readGate.pipe(Effect.as(record)));
+			const wanted = new Set(entries.map((entry) => entry.path));
+			return Stream.fromEffect(readGate).pipe(
+				Stream.flatMap(() =>
+					Stream.fromIterable([record, ...others].filter((item) => wanted.has(item.path)))
+				)
+			);
 		}
 	});
 	const evidence = Layer.effect(
@@ -149,9 +159,27 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 		raw: () =>
 			textCorpusFromExtractionEvents({
 				projectRoot,
-				discoveredPackages: 1,
-				events: [record]
+				discoveredPackages: 1 + others.length,
+				events: [record, ...others]
 			}),
+		/** Adds packages beside the main one, at project-relative paths. */
+		addPackages: (
+			records: readonly (Partial<Omit<SavedAssetPackageTextRecord, "path" | "event">> & {
+				readonly path: string;
+			})[]
+		) => {
+			others = [
+				...others,
+				...records.map(
+					(item): SavedAssetPackageTextRecord => ({
+						...emptyPackageTextRecord(join(projectRoot, item.path)),
+						...item,
+						path: join(projectRoot, item.path)
+					})
+				)
+			];
+			signature++;
+		},
 		setSource: (source: string) => {
 			record = {
 				...record,

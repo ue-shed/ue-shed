@@ -1,4 +1,5 @@
 //! Native grouping and facet aggregation over matched rows.
+use crate::engine_asset_types::AssetTypes;
 use crate::engine_match::{Kind, Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, audience};
@@ -175,6 +176,7 @@ impl Projection {
                         .ok_or("Stored unit has no source values.")?
                 }
             }
+            GroupBy::AssetType => return Err("Asset types are a facet, not a group.".into()),
             GroupBy::Asset | GroupBy::Folder => {
                 let mut key = 0;
                 self.each_file(kind, row, &mut |file| {
@@ -215,6 +217,11 @@ impl EngineQuery {
             None
         } else {
             Some(Wtf8Buf::from_view(&(parent + "/")).into_bytes())
+        };
+        let types = if by == GroupBy::AssetType {
+            Some(AssetTypes::open(self, cancelled)?)
+        } else {
+            None
         };
         let mut tallies: HashMap<u32, Tally> = HashMap::new();
         for (stamp, row) in rows.iter().enumerate() {
@@ -268,6 +275,14 @@ impl EngineQuery {
                         visit(0, 0);
                     }
                 }
+                // A line of several types counts in each.
+                GroupBy::AssetType => {
+                    let types = types.as_ref().ok_or("Asset types are not open.")?;
+                    types.each(&projection, kind, row, &mut |kind| {
+                        visit(kind, kind);
+                        false
+                    })?;
+                }
                 GroupBy::Origin if facet => {
                     let bits = if localized {
                         projection.origins[row]
@@ -315,9 +330,13 @@ impl EngineQuery {
         let mut entries = tallies
             .into_iter()
             .map(|(key, tally)| {
-                let rank = match texts.get(&key) {
-                    Some((rank, _)) => *rank,
-                    None => places.label_rank(by, key, tally.label)?,
+                let rank = match (texts.get(&key), &types) {
+                    (Some((rank, _)), _) => *rank,
+                    (None, Some(types)) => *types
+                        .ranks
+                        .get(key as usize)
+                        .ok_or("Unknown asset type rank.")?,
+                    (None, None) => places.label_rank(by, key, tally.label)?,
                 };
                 Ok((rank, key, tally))
             })
@@ -331,9 +350,13 @@ impl EngineQuery {
         });
         let more = entries.len().saturating_sub(MAX_GROUPS);
         let entries=entries.into_iter().take(MAX_GROUPS).map(|(_,key,tally)| {
-            let (key,label)=match texts.get(&key) {
-                Some((_, text)) => (text.clone(), text.clone()),
-                None => places.display(by,key,tally.label)?,
+            let (key,label)=match (texts.get(&key), &types) {
+                (Some((_, text)), _) => (text.clone(), text.clone()),
+                (None, Some(types)) => (
+                    types.names.get(key as usize).ok_or("Unknown asset type.")?.clone(),
+                    types.labels.get(key as usize).ok_or("Unknown asset type label.")?.clone(),
+                ),
+                (None, None) => places.display(by,key,tally.label)?,
             };
             Ok(json!({"key":key,"label":label,"count":tally.count,"needWork":tally.work,"worst":PROBLEMS[tally.worst as usize]}))
         }).collect::<Result<Vec<_>>>()?;

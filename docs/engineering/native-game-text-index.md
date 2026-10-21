@@ -58,6 +58,13 @@ bytes per row. A text no row holds matches nothing. Source groups are keyed by d
 decode their texts once, after `minGroupSize` drops small groups, to read and tie-break by the
 text. `finding` clauses take all seven stored review signals.
 
+Asset type clauses and the `assetTypes` facet read the package shards' `package.asset_class`
+column, not a joined column: the first request that needs them maps each global occurrence to its
+package's type once per reader, deduplicating class names that sit in several dictionary segments.
+A row has the types of its members; a line those of its visible slices. Because the column lives in
+the package shards, a new type needs no join format change, and a re-read package changes its
+type through the ordinary package delta.
+
 ## Library reads
 
 The index answers the questions hosts used to export the corpus or the join for. Each takes the

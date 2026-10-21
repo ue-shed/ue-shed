@@ -16,6 +16,7 @@
 			"fileBytes": 4096,
 			"path": "C:/Fixture/Content/Moved/DT_Tutorial.uasset",
 			"packageName": "/Game/Tutorial/DT_Tutorial",
+			"assetClass": "/Script/Engine.DataTable",
 			"schema_version": 1,
 			"status": "complete",
 			"decodeErrors": 0,

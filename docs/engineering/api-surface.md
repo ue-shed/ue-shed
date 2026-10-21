@@ -69,3 +69,11 @@ All eight reviewed SDKs now require caller-facing documentation for every export
 their manifest entry points. Deprecated transition aliases retain their migration tags. Documentation
 describes ownership, failure/recovery, units, version compatibility and policy choices; a type
 signature alone is insufficient. Guard regression fixtures cover every SDK and focused entry point.
+
+## Beyond the reviewed SDKs
+
+The [architecture and API catalog](../research/architecture-api-catalog-2026-10-21.md) repeats this
+measurement for all 25 code packages and reviews the remaining host gaps: capabilities that only
+the Workbench or CLI reach, unexported limits, hard-coded policy and missing test layers. Every
+package `./browser` entry, and each subpath documented as browser-safe, is now checked by
+`checkBrowserEntryClosures` in `scripts/check-effect-architecture.ts`.

@@ -2,6 +2,7 @@
 // are runtime arguments. These resolvers turn three optional evidence sources into one shape, so a
 // host can use any of them, combine them, or replace them with its own.
 
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 import type { EnhancedInputReport } from "./schema.js";
 
@@ -78,7 +79,10 @@ export const CoActivationDocument = Schema.Struct({
 });
 export type CoActivationDocument = Schema.Schema.Type<typeof CoActivationDocument>;
 
-export const decodeCoActivationDocument = Schema.decodeUnknownEffect(CoActivationDocument);
+export const decodeCoActivationDocument = contractParser(
+	CoActivationDocument,
+	"CoActivationDocument"
+);
 
 /**
  * The identity a context is matched by: its package path. `/Game/Input/IMC_A.IMC_A`,

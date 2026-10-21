@@ -358,7 +358,7 @@ export const discoverInputPlatforms = Effect.fn("EnhancedInput.discoverInputPlat
 	// A missing directory or file is an answer ("no platform config here"); anything else fails.
 	const list = (path: string) =>
 		Effect.tryPromise({
-			try: async (): Promise<readonly string[]> => {
+			try: async () => {
 				try {
 					const entries = await readdir(path, { withFileTypes: true });
 					return entries

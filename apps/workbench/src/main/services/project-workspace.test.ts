@@ -766,3 +766,104 @@ it.effect("recovers a candidate query when the committed generation changes", ()
 		);
 	})
 );
+
+it.effect("a refresh during a warm open's background refresh waits for it instead of failing", () =>
+	Effect.gen(function* () {
+		const projectId = ProjectIdentity.make(projectRoot);
+		const summary = (generation: number) =>
+			ProjectIndexSummary.make({
+				changedPackages: 0,
+				completeness: "complete",
+				diagnostics: [],
+				generation: ProjectIndexGeneration.make(generation),
+				mapCount: 0,
+				packageCount: 1,
+				projectId,
+				removedPackages: 0
+			});
+		const backgroundStarted = yield* Deferred.make<void>();
+		const releaseBackground = yield* Deferred.make<void>();
+		let active = 0;
+		let calls = 0;
+		let generation = 1;
+		const refresh = () =>
+			Stream.fromEffect(
+				Effect.gen(function* () {
+					calls++;
+					// Like the native Catalog, a second writer fails at once instead of waiting.
+					if (active > 0)
+						return yield* new ProjectIndexRefreshFailed({
+							message: "cannot acquire Catalog writer lock",
+							recovery: "Retry after the Catalog coordinator is available.",
+							retrySafe: true,
+							nextStep: "retry"
+						});
+					active++;
+					if (calls === 1) {
+						yield* Deferred.succeed(backgroundStarted, undefined);
+						yield* Deferred.await(releaseBackground);
+					}
+					active--;
+					return ProjectIndexRefreshEvent.cases.Completed.make({
+						summary: summary(++generation)
+					});
+				})
+			);
+		const projectIndex = makeProjectIndexTestLayer({
+			rebuild: refresh,
+			refresh,
+			query: (request) =>
+				Effect.succeed(
+					ProjectIndexPage.make({
+						generation: request.expectedGeneration,
+						items: [],
+						projectId
+					})
+				),
+			status: () => Effect.succeed({ status: "ready" as const, summary: summary(1) })
+		});
+		const assetReader = makeAssetReaderTestLayer({
+			configuration: () =>
+				Effect.succeed({
+					executable: "uasset",
+					timeoutMs: 30_000,
+					catalogTimeoutMs: 50 * 60_000
+				}),
+			catalogProgress: () => Effect.die("not used"),
+			scanProgress: () => Effect.die("not used"),
+			savedWorldProgress: () => Effect.die("not used"),
+			readBlueprint: () => Effect.die("not used"),
+			readLevelSequence: () => Effect.die("not used"),
+			readSavedWorld: () => Effect.die("not used"),
+			extractProjectText: () => Stream.die("not used"),
+			extractProjectTextPackages: () => Stream.die("not used"),
+			extractProjectTextures: () => Stream.die("not used"),
+			discoverAssets: () => Effect.die("not used"),
+			discoverTables: () => Effect.die("not used"),
+			readAsset: () => Effect.die("not used"),
+			readTable: () => Effect.die("not used"),
+			scanProject: () => Effect.die("not used"),
+			source: () => Effect.succeed("configured" as const)
+		});
+
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchProject;
+			// A committed index opens at once and refreshes in the background.
+			expect((yield* service.current()).status).toBe("ready");
+			yield* Deferred.await(backgroundStarted);
+			const scan = yield* service.refresh().pipe(Effect.forkChild);
+			for (let index = 0; index < 25; index += 1) yield* Effect.yieldNow;
+			yield* Deferred.succeed(releaseBackground, undefined);
+			expect(yield* Fiber.join(scan)).toMatchObject({
+				status: "ready",
+				project: { generation: 3 }
+			});
+			expect(calls).toBe(2);
+		}).pipe(
+			Effect.provide(WorkbenchProjectLive),
+			Effect.provide(
+				Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+			)
+		);
+	})
+);

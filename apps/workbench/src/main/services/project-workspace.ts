@@ -30,7 +30,19 @@ import {
 	type SavedAssetScan,
 	type SavedTableCatalog as SavedTableCatalogValue
 } from "@ue-shed/unreal-assets";
-import { Cache, Context, Duration, Effect, Exit, Layer, Option, Ref, Schema, Stream } from "effect";
+import {
+	Cache,
+	Context,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Ref,
+	Schema,
+	Semaphore,
+	Stream
+} from "effect";
 import { join } from "node:path";
 import {
 	WorkbenchProjectSummary,
@@ -336,7 +348,7 @@ export const WorkbenchProjectLive = Layer.effect(
 			} satisfies SavedAssetScan;
 		});
 
-		const refreshSummary = Effect.fn("Workbench.WorkbenchProject.refreshSummary")(function* (
+		const refreshSummaryNow = Effect.fn("Workbench.WorkbenchProject.refreshSummary")(function* (
 			projectRoot: string,
 			mode: "refresh" | "rebuild" = "refresh"
 		) {
@@ -417,6 +429,20 @@ export const WorkbenchProjectLive = Layer.effect(
 			}
 			return summary.value;
 		});
+		// A project's Catalog allows one writer and fails a second at once instead of waiting. A
+		// refresh can start while another runs, for example a Game Text scan during the
+		// background refresh of a warm open, so this service runs one per project at a time.
+		// Other projects have their own Catalogs and do not wait.
+		const refreshGates = new Map<string, Semaphore.Semaphore>();
+		const refreshSummary = (projectRoot: string, mode: "refresh" | "rebuild" = "refresh") =>
+			Effect.suspend(() => {
+				let gate = refreshGates.get(projectRoot);
+				if (gate === undefined) {
+					gate = Semaphore.makeUnsafe(1);
+					refreshGates.set(projectRoot, gate);
+				}
+				return gate.withPermits(1)(refreshSummaryNow(projectRoot, mode));
+			});
 
 		const inventoryFromSummary = Effect.fn("Workbench.WorkbenchProject.inventoryFromSummary")(
 			function* (projectRoot: string, summary: ProjectIndexSummary) {

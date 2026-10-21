@@ -1,5 +1,17 @@
 # @ue-shed/engine-win32-x64
 
+## 0.20.0
+
+### Patch Changes
+
+- No direct behavioral changes; version advanced for suite alignment.
+
+## 0.19.0
+
+### Patch Changes
+
+- No direct behavioral changes; version advanced for suite alignment.
+
 ## 0.18.0
 
 ## 0.17.1

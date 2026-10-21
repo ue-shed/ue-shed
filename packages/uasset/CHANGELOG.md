@@ -1,5 +1,58 @@
 # @ue-shed/uasset
 
+## 0.20.0
+
+### Minor Changes
+
+- f7e366f: Filter Game Text by asset type. uasset-io 1.17 package text records carry `assetClass`, the class of
+  the package's main asset chosen as Unreal's loader does (the export flagged as an asset and named
+  after the file, else the first one); an actor saved in its own package reports its world's class.
+  The index stores it per package under the same `package-text-v8` format, so caches rebuild once for
+  this and the moved-package fix. Search requests take an `asset_type` clause of class paths such as
+  `/Script/Engine.DataTable` or `/Script/UMGEditor.WidgetBlueprint`: `is` matches text with any saved
+  place of a selected type, `is_not` text with none. `facets: { assetTypes: true }` counts lines per
+  type over the request without its own clause, labelled by the new `textAssetTypeLabel` ("Data
+  table", "Widget blueprint", "Level"). The native engine, both views, paging totals, counts and
+  exports agree with the TypeScript references. The Workbench filter menu lists asset types.
+
+### Patch Changes
+
+- 68737a3: Report a package moved or copied outside Unreal at its file's location. Its summary keeps the
+  package name it was saved under, so the Game Text corpus and index stored object paths in the old
+  folder, and opening a moved DataTable in Unreal failed with "Unreal's Asset Registry has no …".
+  uasset-io 1.17 package text records carry the summary's `packageName`; when it differs from the
+  name the file's location gives, the package's own object, class and Blueprint class paths move to
+  the file's package, as Unreal resolves them, and the record keeps `packageName` as evidence. Paths
+  into other packages stay as saved. Package text shards move to `package-text-v8`, so existing
+  indexes read their packages again.
+
+## 0.19.0
+
+### Minor Changes
+
+- 207cc44: Extend native Game Text queries with exact source filters, every stored review signal,
+  source groups and minimum group sizes. Preserve exact UTF-16 values across filtered reads.
+- Add aggregates over matching rows, projected localization fields, named-unit reads, corpus
+  headers, bounded report headers and a cached corpus fingerprint.
+- Move progress reports, baselines, changed-file gates, CSV exports and investigations onto index
+  reads. Existing whole-input functions remain available.
+- Index line and unit IDs and use a separate bulk reader to keep interactive searches responsive.
+  Release failed bulk acquisitions immediately while retaining the interactive fallback.
+- Improve localization quality scans and evidence reads; expose stage and worker timings.
+- Hosts implementing the query contract must provide the new read methods. Pass a model revision
+  callback as the first argument to `makeGameTextWorkspaceLocalization`.
+- Export `TextCorpusReportHeader` and `textCorpusReportHeader` for host implementations.
+
+### Patch Changes
+
+- 64d95f3: Add a `translation_key` search filter clause that selects text by the gathered namespace and key
+  Unreal translates it by: saved FText without its package marker, String Table entries with their
+  table namespace. Values are `JSON.stringify([namespace, key])`, as the newly exported
+  `gatheredIdentityKey` writes them. With a target it matches that line; without one, every saved
+  unit gathered under the key, so Blueprint copies saved under different package markers no longer
+  need a client-side scan of `conflicting_source` lines. Native search, the TypeScript reference and
+  counts, facets and groups agree on it.
+
 ## 0.18.0
 
 ### Patch Changes

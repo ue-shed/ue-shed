@@ -1,5 +1,28 @@
 # @ue-shed/unreal-assets
 
+## 0.20.0
+
+### Patch Changes
+
+- 68737a3: Report a package moved or copied outside Unreal at its file's location. Its summary keeps the
+  package name it was saved under, so the Game Text corpus and index stored object paths in the old
+  folder, and opening a moved DataTable in Unreal failed with "Unreal's Asset Registry has no …".
+  uasset-io 1.17 package text records carry the summary's `packageName`; when it differs from the
+  name the file's location gives, the package's own object, class and Blueprint class paths move to
+  the file's package, as Unreal resolves them, and the record keeps `packageName` as evidence. Paths
+  into other packages stay as saved. Package text shards move to `package-text-v8`, so existing
+  indexes read their packages again.
+- Updated dependencies [09972f9]
+- Updated dependencies [f7e366f]
+- Updated dependencies [68737a3]
+    - @ue-shed/protocol@0.20.0
+
+## 0.19.0
+
+### Patch Changes
+
+- @ue-shed/protocol@0.19.0
+
 ## 0.18.0
 
 ### Patch Changes

@@ -110,13 +110,22 @@ is an input error with recovery guidance, never silently ignored.
 ## Conflict classes
 
 `classifyInputConflicts(report, sets)` takes every contested key and classifies each pair of
-claims from different contexts:
+claims from different contexts. It follows UE 5.7's
+`IEnhancedInputSubsystemInterface::RebuildControlMappings`: contexts apply from the highest
+priority down, and a mapping whose action has `bConsumeInput` keeps its key from every lower
+context unless the mapping (or its action) has a chord trigger, which never consumes. Ordinary
+trigger differences do not exempt a lower mapping.
+
+When the set states two different priorities, the higher claim comes first and `consumption` says
+what the higher action saved (`consumes`, `passes_through` or `not_serialized`):
 
 | Class                | When                                                                                                                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `qualified`          | Both contexts share a set, and a chord or combo trigger, or a different trigger list, distinguishes the claims. Likely intentional.                                         |
-| `shadowed`           | Both contexts share a set with different stated priorities. The higher claim comes first, with `consumption`: `consumes`, `passes_through` (both fire) or `not_serialized`. |
-| `ambiguous_priority` | Both contexts share a set with equal priorities, or the set does not state both.                                                                                            |
+| `shadowed`           | Different priorities, the higher mapping is not chorded, and its action saves `bConsumeInput=true`. The lower mapping never receives the key.                               |
+| `may_shadow`         | Different priorities, the higher mapping is not chorded, and its action does not save `bConsumeInput` (or is outside the scan). It hides the lower only if it consumes.     |
+| `both_fire`          | Different priorities, the higher action saves `bConsumeInput=false`, and the triggers match. Both actions fire.                                                             |
+| `qualified`          | A chorded higher mapping; or a higher action that passes input through, or equal or unstated priorities, with a chord, combo or different trigger list. Likely intentional. |
+| `ambiguous_priority` | Equal priorities, or the set does not state both, and the triggers match.                                                                                                   |
 | `cross_context`      | No set holds both contexts. Informational: the contexts are never active together according to the sources supplied.                                                        |
 
 With no co-activation set at all, the analysis reports `classified: false` and only the contested

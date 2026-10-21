@@ -8,6 +8,8 @@ import type { EnhancedInputReport, InputActionRecord } from "./schema.js";
 
 export const INPUT_CONFLICT_CLASSES = [
 	"shadowed",
+	"may_shadow",
+	"both_fire",
 	"ambiguous_priority",
 	"qualified",
 	"cross_context"
@@ -22,10 +24,10 @@ export interface InputConflict {
 	readonly classification: InputConflictClass;
 	/** The co-activation set that makes the pair co-active; null for `cross_context`. */
 	readonly setId: string | null;
-	/** For `shadowed`, the higher-priority claim comes first. */
+	/** When the set states two different priorities, the higher-priority claim comes first. */
 	readonly claims: readonly [AtlasClaim, AtlasClaim];
 	readonly priorities: readonly [number | null, number | null];
-	/** Present for `shadowed`. A higher action that passes input through does not hide the lower. */
+	/** Present when the priorities differ: what the higher action's saved `bConsumeInput` says. */
 	readonly consumption?: InputConsumption;
 	readonly reason: string;
 }
@@ -47,11 +49,34 @@ export interface InputConflictAnalysis {
 	readonly counts: Readonly<Record<InputConflictClass | "contested", number>>;
 }
 
+function className(classPath: string | null): string | undefined {
+	return classPath === null ? undefined : (classPath.split(".").at(-1) ?? classPath);
+}
+
+/**
+ * Unreal's own chord test: a `UInputTriggerChordAction`, or its `ChordBlocker` subclass, on the
+ * mapping or its action. A chorded mapping never consumes its key (UE 5.7
+ * `IEnhancedInputSubsystemInterface::RebuildControlMappings`).
+ */
+function isChord(classPath: string | null): boolean {
+	const name = className(classPath);
+	return name === "InputTriggerChordAction" || name === "InputTriggerChordBlocker";
+}
+
 /** Trigger classes whose saved reference ties a mapping to another action. */
 function isChordLike(classPath: string | null): boolean {
-	if (classPath === null) return false;
-	const name = classPath.split(".").at(-1) ?? classPath;
-	return name.includes("Chord") || name.includes("Combo");
+	const name = className(classPath);
+	return name !== undefined && (name.includes("Chord") || name.includes("Combo"));
+}
+
+function claimTriggerClasses(
+	claim: AtlasClaim,
+	action: InputActionRecord | undefined
+): readonly (string | null)[] {
+	return [
+		...claim.triggerDetails.map((detail) => detail.classPath),
+		...(action?.triggers ?? []).map((trigger) => trigger.classPath ?? null)
+	];
 }
 
 function triggerClasses(claim: AtlasClaim, action: InputActionRecord | undefined): string[] {
@@ -61,20 +86,23 @@ function triggerClasses(claim: AtlasClaim, action: InputActionRecord | undefined
 	].sort((left, right) => left.localeCompare(right));
 }
 
+function actionOf(
+	claim: AtlasClaim,
+	actions: ReadonlyMap<string, InputActionRecord>
+): InputActionRecord | undefined {
+	return claim.actionPath === null ? undefined : actions.get(claim.actionPath);
+}
+
 function qualification(
 	left: AtlasClaim,
 	right: AtlasClaim,
 	actions: ReadonlyMap<string, InputActionRecord>
 ): string | undefined {
-	const leftAction = left.actionPath === null ? undefined : actions.get(left.actionPath);
-	const rightAction = right.actionPath === null ? undefined : actions.get(right.actionPath);
-	const chord = [left, right].some(
-		(claim) =>
-			claim.triggerDetails.some((detail) => isChordLike(detail.classPath)) ||
-			((claim === left ? leftAction : rightAction)?.triggers ?? []).some((trigger) =>
-				isChordLike(trigger.classPath ?? null)
-			)
-	);
+	const leftAction = actionOf(left, actions);
+	const rightAction = actionOf(right, actions);
+	const chord =
+		claimTriggerClasses(left, leftAction).some(isChordLike) ||
+		claimTriggerClasses(right, rightAction).some(isChordLike);
 	if (chord) return "A chord or combo trigger qualifies one of the claims.";
 	const leftTriggers = triggerClasses(left, leftAction);
 	const rightTriggers = triggerClasses(right, rightAction);
@@ -87,6 +115,59 @@ function qualification(
 function consumptionOf(action: InputActionRecord | undefined): InputConsumption {
 	if (action === undefined || action.consumeInput.status !== "available") return "not_serialized";
 	return action.consumeInput.value ? "consumes" : "passes_through";
+}
+
+/**
+ * Two stated, different priorities. Unreal applies the higher context first and, unless that
+ * mapping is chorded, a higher action with `bConsumeInput` keeps the key from every lower context,
+ * whatever either mapping's triggers are.
+ */
+function classifyOrdered(options: {
+	readonly key: string;
+	readonly setId: string;
+	readonly higher: AtlasClaim;
+	readonly lower: AtlasClaim;
+	readonly priorities: readonly [number, number];
+	readonly actions: ReadonlyMap<string, InputActionRecord>;
+}): InputConflict {
+	const { key, setId, higher, lower, priorities, actions } = options;
+	const higherAction = actionOf(higher, actions);
+	const consumption = consumptionOf(higherAction);
+	const claims: readonly [AtlasClaim, AtlasClaim] = [higher, lower];
+	const base = { key, setId, claims, priorities, consumption };
+	if (claimTriggerClasses(higher, higherAction).some(isChord)) {
+		return {
+			...base,
+			classification: "qualified",
+			reason: `The ${higher.contextName} mapping is chorded, so it never consumes the key, and Unreal blocks same-key mappings while the chord holds.`
+		};
+	}
+	if (consumption === "consumes") {
+		return {
+			...base,
+			classification: "shadowed",
+			reason: `${higher.contextName} has the higher priority and its action consumes input, so the ${lower.contextName} mapping never receives the key, whatever its triggers.`
+		};
+	}
+	if (consumption === "not_serialized") {
+		return {
+			...base,
+			classification: "may_shadow",
+			reason: `${higher.contextName} has the higher priority. It hides ${lower.contextName} only if its action consumes input, and bConsumeInput is not saved for it.`
+		};
+	}
+	const qualified = qualification(higher, lower, actions);
+	return qualified === undefined
+		? {
+				...base,
+				classification: "both_fire",
+				reason: `${higher.contextName} has the higher priority but its action passes input through, so both actions fire.`
+			}
+		: {
+				...base,
+				classification: "qualified",
+				reason: `The ${higher.contextName} action passes input through. ${qualified}`
+			};
 }
 
 function priorityIn(set: CoActivationSet, contextPath: string): number | null | undefined {
@@ -124,6 +205,19 @@ function classifyPair(
 		];
 	}
 	return shared.map(({ set, leftPriority, rightPriority }): InputConflict => {
+		if (leftPriority !== null && rightPriority !== null && leftPriority !== rightPriority) {
+			const leftHigher = leftPriority > rightPriority;
+			return classifyOrdered({
+				key,
+				setId: set.id,
+				higher: leftHigher ? left : right,
+				lower: leftHigher ? right : left,
+				priorities: leftHigher
+					? [leftPriority, rightPriority]
+					: [rightPriority, leftPriority],
+				actions
+			});
+		}
 		const qualified = qualification(left, right, actions);
 		if (qualified !== undefined) {
 			return {
@@ -133,27 +227,6 @@ function classifyPair(
 				claims: [left, right],
 				priorities: [leftPriority, rightPriority],
 				reason: qualified
-			};
-		}
-		if (leftPriority !== null && rightPriority !== null && leftPriority !== rightPriority) {
-			const [higher, lower, higherPriority, lowerPriority] =
-				leftPriority > rightPriority
-					? [left, right, leftPriority, rightPriority]
-					: [right, left, rightPriority, leftPriority];
-			const consumption = consumptionOf(
-				higher.actionPath === null ? undefined : actions.get(higher.actionPath)
-			);
-			return {
-				key,
-				classification: "shadowed",
-				setId: set.id,
-				claims: [higher, lower],
-				priorities: [higherPriority, lowerPriority],
-				consumption,
-				reason:
-					consumption === "passes_through"
-						? `${higher.contextName} has the higher priority but its action passes input through, so both fire.`
-						: `${higher.contextName} has the higher priority and hides ${lower.contextName}.`
 			};
 		}
 		return {
@@ -206,6 +279,8 @@ export function classifyInputConflicts(
 	const counts = {
 		contested: keys.length,
 		shadowed: 0,
+		may_shadow: 0,
+		both_fire: 0,
 		ambiguous_priority: 0,
 		qualified: 0,
 		cross_context: 0

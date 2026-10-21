@@ -81,7 +81,7 @@ const conflicts = Command.make(
 		})
 ).pipe(
 	Command.withDescription(
-		"Classify contested keys as shadowed, ambiguous, qualified or cross-context against co-activation sets."
+		"Classify contested keys (shadowed, may shadow, both fire, ambiguous, qualified, cross-context) against co-activation sets."
 	)
 );
 

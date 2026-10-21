@@ -99,7 +99,7 @@ describe.skipIf(!executable)("Enhanced Input CLI with the real reader", () => {
 		// Throttle has the higher priority and saves bConsumeInput=false, so both actions fire.
 		expect(
 			byKey.get("W")?.conflicts.find((conflict) => conflict.setId === "host_document:driving")
-		).toMatchObject({ classification: "shadowed", consumption: "passes_through" });
+		).toMatchObject({ classification: "both_fire", consumption: "passes_through" });
 		// Jump fires on Pressed, Handbrake on Hold: likely intentional.
 		expect(byKey.get("SpaceBar")?.classes).toContain("qualified");
 		// The menu shares no set with gameplay.

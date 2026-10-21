@@ -63,6 +63,8 @@ type ConflictFilter = "contested" | InputConflictClass;
 
 const conflictClassLabels = {
 	shadowed: "Shadowed",
+	may_shadow: "May shadow",
+	both_fire: "Both fire",
 	ambiguous_priority: "Ambiguous priority",
 	qualified: "Qualified",
 	cross_context: "Cross-context"

@@ -198,13 +198,15 @@ describe("conflict classes", () => {
 		expect(analysis.counts).toEqual({
 			contested: 3,
 			shadowed: 0,
+			may_shadow: 0,
+			both_fire: 0,
 			ambiguous_priority: 0,
 			qualified: 0,
 			cross_context: 0
 		});
 	});
 
-	it("classifies shadowed, ambiguous, qualified and cross-context pairs", () => {
+	it("classifies may-shadow, both-fire, ambiguous, qualified and cross-context pairs", () => {
 		const sets = [
 			...coActivationFromDocument(document, "coactivation.json"),
 			...coActivationFromConfigAssets(scenario)
@@ -213,15 +215,18 @@ describe("conflict classes", () => {
 		const byKey = new Map(analysis.keys.map((key) => [key.key, key]));
 
 		const space = byKey.get("SpaceBar");
-		const shadowed = space?.conflicts.find(
+		// IA_Handbrake does not save bConsumeInput, so the higher vehicle mapping only may hide jump.
+		const mayShadow = space?.conflicts.find(
 			(conflict) => conflict.setId === "host_document:driving"
 		);
-		expect(shadowed).toMatchObject({
-			classification: "shadowed",
+		expect(mayShadow).toMatchObject({
+			classification: "may_shadow",
 			priorities: [5, 0],
 			consumption: "not_serialized"
 		});
-		expect(shadowed?.claims[0].contextName).toBe("IMC_Vehicle");
+		expect(mayShadow?.claims[0].contextName).toBe("IMC_Vehicle");
+		expect(mayShadow?.reason).not.toContain("and hides");
+		expect(mayShadow?.reason).toContain("only if its action consumes input");
 		expect(
 			space?.conflicts.find(
 				(conflict) => conflict.setId === `config_asset:${path("PMI_Driving")}`
@@ -235,7 +240,7 @@ describe("conflict classes", () => {
 					conflict.setId === "host_document:on_foot" &&
 					conflict.claims.some((claim) => claim.contextName === "IMC_Photo")
 			)
-		).toMatchObject({ classification: "shadowed", consumption: "passes_through" });
+		).toMatchObject({ classification: "both_fire", consumption: "passes_through" });
 		// Vehicle and photo mode are never in one set.
 		expect(
 			space?.conflicts.some(
@@ -247,7 +252,68 @@ describe("conflict classes", () => {
 
 		expect(byKey.get("LeftMouseButton")?.classes).toEqual(["qualified"]);
 		expect(byKey.get("RightMouseButton")?.classes).toEqual(["cross_context"]);
-		expect(analysis.counts).toMatchObject({ contested: 3, shadowed: 1, ambiguous_priority: 1 });
+		expect(analysis.counts).toMatchObject({
+			contested: 3,
+			shadowed: 0,
+			may_shadow: 1,
+			both_fire: 1,
+			ambiguous_priority: 1
+		});
+	});
+
+	/** One key, a higher context (priority 2) and a lower Pressed mapping (priority 1). */
+	const ordered = (consumeInput: boolean | undefined, higherTrigger: string) =>
+		classifyInputConflicts(
+			report({
+				actions: [
+					action("IA_High", consumeInput === undefined ? undefined : { consumeInput }),
+					action("IA_Low")
+				],
+				contexts: [
+					context("IMC_High", [mapping("IA_High", "E", [trigger(higherTrigger)])]),
+					context("IMC_Low", [mapping("IA_Low", "E", [trigger("InputTriggerPressed")])])
+				]
+			}),
+			[
+				{
+					id: "both",
+					label: "both",
+					source: "host_document",
+					origin: "test",
+					contexts: [
+						{ context: path("IMC_High"), priority: 2 },
+						{ context: path("IMC_Low"), priority: 1 }
+					]
+				}
+			]
+		).keys[0]?.conflicts[0];
+
+	it("shadows a lower mapping when the higher action consumes, whatever the triggers", () => {
+		const conflict = ordered(true, "InputTriggerHold");
+		expect(conflict).toMatchObject({
+			classification: "shadowed",
+			consumption: "consumes",
+			priorities: [2, 1]
+		});
+		expect(conflict?.claims[0].contextName).toBe("IMC_High");
+	});
+
+	it("keeps a chorded higher mapping qualified, since Unreal never lets a chord consume", () => {
+		expect(ordered(true, "InputTriggerChordAction")).toMatchObject({
+			classification: "qualified",
+			consumption: "consumes"
+		});
+	});
+
+	it("qualifies different triggers only when the higher action passes input through", () => {
+		expect(ordered(false, "InputTriggerHold")).toMatchObject({
+			classification: "qualified",
+			consumption: "passes_through"
+		});
+		expect(ordered(undefined, "InputTriggerHold")).toMatchObject({
+			classification: "may_shadow",
+			consumption: "not_serialized"
+		});
 	});
 });
 

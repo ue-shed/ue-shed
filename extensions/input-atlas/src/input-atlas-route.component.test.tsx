@@ -200,18 +200,22 @@ describe("InputAtlasRoute interactions", () => {
 		});
 		await screen.findByText("SpaceBar");
 		expect(screen.getByText("1 co-activation set")).toBeDefined();
-		const shadowed = screen.getByRole("button", { name: /Shadowed/ });
-		await user.click(shadowed);
-		expect(shadowed.getAttribute("aria-pressed")).toBe("true");
+		// IA_Handbrake does not save bConsumeInput, so the route says "may shadow", not "hides".
+		expect(screen.getByRole("button", { name: /^Shadowed/ }).textContent).toBe("Shadowed0");
+		const mayShadow = screen.getByRole("button", { name: /May shadow/ });
+		await user.click(mayShadow);
+		expect(mayShadow.getAttribute("aria-pressed")).toBe("true");
 		expect(
-			screen.getByText(/IMC_Vehicle has the higher priority and hides IMC_Gameplay\./)
+			screen.getByText(
+				/IMC_Vehicle has the higher priority\. It hides IMC_Gameplay only if its action consumes input/
+			)
 		).toBeDefined();
-		// SpaceBar is shadowed, not qualified: the qualified filter has nothing to show.
+		// SpaceBar may be shadowed, not qualified: the qualified filter has nothing to show.
 		const qualified = screen.getByRole("button", { name: /Qualified/ });
 		expect(qualified.textContent).toBe("Qualified0");
 		await user.click(qualified);
 		expect(qualified.getAttribute("aria-pressed")).toBe("true");
-		expect(shadowed.getAttribute("aria-pressed")).toBe("false");
+		expect(mayShadow.getAttribute("aria-pressed")).toBe("false");
 	});
 
 	it("offers platform views inside the project and applies their redirects", async () => {

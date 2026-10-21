@@ -2,7 +2,17 @@
 
 ## 0.20.0
 
+### Patch Changes
+
+- Bundle uasset-io 1.17 with main-asset class and saved package-name evidence for Game Text
+  asset-type filters and moved-package path resolution.
+
 ## 0.19.0
+
+### Patch Changes
+
+- Bundle the native Game Text reader with exact-source filters, source groups, aggregates,
+  projected localization exports, corpus headers and fingerprints, and indexed ID lookups.
 
 ## 0.18.0
 

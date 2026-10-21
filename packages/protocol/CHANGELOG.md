@@ -35,6 +35,11 @@
 
 ## 0.19.0
 
+### Patch Changes
+
+- Extend the native Game Text engine wire actions with aggregates, projected exports, corpus
+  headers, report headers and fingerprints.
+
 ## 0.18.0
 
 ### Minor Changes

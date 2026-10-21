@@ -88,6 +88,8 @@ impl EngineQuery {
             }
         } else {
             let mut base = request.clone();
+            // Counts relax the lens, not what the request counts as a finding.
+            base.counted = Some(request.counted_findings());
             base.capability = Capability::All;
             base.lens = None;
             base.without_notes = None;

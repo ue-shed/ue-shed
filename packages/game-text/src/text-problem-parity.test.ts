@@ -124,6 +124,9 @@ const variants: readonly Pick<TextCorpusSearchRequest, "filter" | "lens">[] = [
 	{ filter: [finding("long", "shared")] },
 	{ filter: [{ field: "finding", op: "is_not", values: ["long"] }] },
 	{ lens: "long" },
+	// Counts relax the lens and facets drop their own clause; neither changes what counts.
+	{ lens: "long", filter: [problem("finding")] },
+	{ lens: "long", filter: [finding("long")] },
 	{ filter: [problem("finding")] },
 	{ filter: [finding("long"), problem("finding")] },
 	{ filter: [problem("unchecked")] },
@@ -147,7 +150,7 @@ const builders = [
 		: [])
 ] as const;
 
-/** A page's row problems, row findings, counts and groups, keyed by the line or unit key. */
+/** A page's rows, totals, counts, facets, problems and groups, keyed by the line or unit key. */
 function explained(page: TextCorpusSearchPage) {
 	const rows = page.localization
 		? page.localization.lines.map((line) => ({
@@ -162,6 +165,9 @@ function explained(page: TextCorpusSearchPage) {
 			}));
 	return {
 		rows: rows.sort((left, right) => left.key.localeCompare(right.key)),
+		total: page.total,
+		counts: page.counts,
+		origins: page.facets?.origins,
 		problems: page.problems,
 		groups: page.groups?.entries.map((entry) => [entry.key, entry.count, entry.needWork])
 	};
@@ -275,6 +281,7 @@ describe("text problems in the engine and textProblems", () => {
 											query: "",
 											capability: "all",
 											pageSize: 50,
+											facets: { origins: true },
 											...variant,
 											...(group === undefined ? undefined : { group }),
 											...(scoped
@@ -314,6 +321,7 @@ describe("text problems in the engine and textProblems", () => {
 										const {
 											pageSize: _size,
 											group: _group,
+											facets: _facets,
 											...matching
 										} = request;
 										const lines = yield* result.query.selectLocalizationLines(

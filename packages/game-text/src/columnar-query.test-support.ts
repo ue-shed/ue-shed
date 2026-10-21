@@ -56,7 +56,10 @@ import {
 	LocalizationLineId
 } from "./localization-schema.js";
 
-type Request = Omit<TextCorpusSearchRequest, "cursor" | "pageSize">;
+/** `counted`: on a facet or count base, the finding bits of the request it relaxes. */
+type Request = Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> & {
+	readonly counted?: number;
+};
 const emptyCounts = () =>
 	({
 		all: 0,
@@ -661,6 +664,7 @@ export function columnarTextCorpusQuery(
 			query: request.query,
 			capability: request.capability,
 			lens: request.lens ?? "all",
+			counted: request.counted,
 			withoutNotes: request.withoutNotes ?? false,
 			where: request.where,
 			filter: request.filter,
@@ -696,7 +700,12 @@ export function columnarTextCorpusQuery(
 			...rest
 		} = request;
 		const { kinds: _kinds, ...withoutKinds } = where ?? {};
-		const baseRequest: Request = { ...rest, capability: "all", where: withoutKinds };
+		const baseRequest: Request = {
+			...rest,
+			capability: "all",
+			where: withoutKinds,
+			counted: countedFindingBits(request)
+		};
 		const wanted = terms(request.query);
 		prepareTextSearch(wanted);
 		for (const row of rawOrder) {
@@ -765,7 +774,8 @@ export function columnarTextCorpusQuery(
 	const withoutField = (request: Request, field: TextFilterField): Request => {
 		const { filter, ...rest } = request;
 		const kept = filter?.filter((clause) => clause.field !== field);
-		return kept?.length ? { ...rest, filter: kept } : rest;
+		const counted = countedFindingBits(request);
+		return kept?.length ? { ...rest, filter: kept, counted } : { ...rest, counted };
 	};
 	const visitFiles = (
 		kind: "raw" | "slice" | "line",

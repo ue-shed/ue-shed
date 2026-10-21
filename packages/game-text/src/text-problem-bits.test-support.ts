@@ -32,11 +32,15 @@ export const WORK_PROBLEM_BITS = TEXT_PROBLEMS.reduce(
 	0
 );
 
-/** The signal bits a request counts as findings. */
+/**
+ * The signal bits a request counts as findings. A request derived from another (a facet or count
+ * base) carries the original's in `counted`.
+ */
 export const countedFindingBits = (request: {
 	readonly filter?: TextFilter | undefined;
 	readonly lens?: string | undefined;
-}) => bitsOf(countedFindings(request), TextReviewSignal.literals);
+	readonly counted?: number | undefined;
+}) => request.counted ?? bitsOf(countedFindings(request), TextReviewSignal.literals);
 
 /** The problems signal bits raise, with `counted` the signals that make a finding. */
 export function signalProblemBits(signals: number, counted: number): number {

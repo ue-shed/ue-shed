@@ -86,6 +86,12 @@ function normalizedTerms(query: string): readonly string[] {
 
 const LONG_SOURCE_THRESHOLD = 40;
 
+/** `counted`: on a facet base, the findings of the request it relaxes. */
+type OracleRequest = Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> & {
+	readonly counted?: readonly TextReviewSignal[];
+};
+const countedOf = (request: OracleRequest) => request.counted ?? countedFindings(request);
+
 /** Signals with a review count; read-only and compiled-copy evidence are shown, not counted. */
 function isCountedSignal(
 	signal: TextReviewSignal
@@ -357,11 +363,8 @@ export function textCorpusQuery(
 		problems: unitFacts(entry, counted).problems,
 		countedFindings: textCountedFindings(entry.presentation.reviewSignals, counted)
 	});
-	const matching = (
-		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
-		entries = indexed
-	) => {
-		const counted = countedFindings(request);
+	const matching = (request: OracleRequest, entries = indexed) => {
+		const counted = countedOf(request);
 		const terms = normalizedTerms(request.query);
 		const counts = {
 			all: 0,
@@ -409,7 +412,7 @@ export function textCorpusQuery(
 	};
 
 	const baseline = matching({ query: "", capability: "all" }).counts;
-	const localizedMatching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
+	const localizedMatching = (request: OracleRequest) => {
 		if (!localization || !request.localization)
 			throw new GameTextLocalizationError({
 				retrySafe: false,
@@ -428,7 +431,7 @@ export function textCorpusQuery(
 		);
 		const files = textFileScope(request.where?.files);
 		const picked = request.lines === undefined ? undefined : new Set(request.lines);
-		const counted = countedFindings(request);
+		const counted = countedOf(request);
 		return localization.lines.filter((line) => {
 			if (picked !== undefined && !picked.has(line.id)) return false;
 			if (
@@ -546,15 +549,13 @@ export function textCorpusQuery(
 	const hasClause = (filter: TextFilter | undefined, field: TextFilterField) =>
 		filter?.some((clause) => clause.field === field) ?? false;
 	/** The request without one field's clauses, so that field's counts do not narrow themselves. */
-	const without = (
-		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
-		field: TextFilterField
-	): Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> => {
+	const without = (request: OracleRequest, field: TextFilterField): OracleRequest => {
 		const { filter, ...unfiltered } = request;
 		const rest = filter?.filter((clause) => clause.field !== field);
+		const counted = countedOf(request);
 		return rest === undefined || rest.length === 0
-			? unfiltered
-			: { ...unfiltered, filter: rest };
+			? { ...unfiltered, counted }
+			: { ...unfiltered, filter: rest, counted };
 	};
 	type Facts = readonly TextFacts[];
 	const facetsField = (

@@ -31,6 +31,7 @@ import {
 	resolvePlatformViews,
 	scanBlueprintInputActionUses
 } from "./sources.js";
+import { inputActionUsage } from "./usage.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
@@ -341,13 +342,109 @@ it.effect("decodes only name-probed Blueprints, within the bound, and keeps fail
 		]);
 		expect(scan.coverage).toEqual({
 			status: "scanned",
+			complete: false,
 			blueprints: 4,
 			matched: 3,
 			decoded: 1,
 			skipped: 1,
-			failed: [{ path: join("Content", "BP_Broken.uasset"), message: "Truncated package." }]
+			failed: [{ path: join("Content", "BP_Broken.uasset"), message: "Truncated package." }],
+			partial: [],
+			headerFailures: []
 		});
 	})
+);
+
+it.effect(
+	"keeps partial Blueprint reads and unreadable headers in the coverage beside no known use",
+	() =>
+		Effect.gen(function* () {
+			const partialRead: BlueprintGraphRead = {
+				blueprint: {
+					schema_version: 2,
+					object_path: "/Game/BP_Hero.BP_Hero",
+					graphs: [],
+					definition: {
+						parent_class: null,
+						variables: null,
+						default_object: null,
+						construction_script: null
+					},
+					coverage_gaps: [
+						{
+							object_path: "/Game/BP_Hero.BP_Hero:EventGraph",
+							reason: "missing_node_reference",
+							detail: "The graph's node export was not decoded."
+						}
+					]
+				},
+				diagnostics: [
+					{
+						code: "graph_partial",
+						message: "One graph was not decoded.",
+						severity: "warning"
+					}
+				],
+				outcome: "partial"
+			};
+			const index: SavedAssetScan = {
+				...headerScan([header("/Game/BP_Hero", ["/Game/Input/IA_Jump"])]),
+				failures: [
+					{
+						code: "malformed_package",
+						message: "Header truncated.",
+						path: "D:/Projects/Demo/Content/BP_Broken.uasset",
+						retrySafe: false
+					}
+				]
+			};
+			const scan = yield* scanBlueprintInputActionUses(scenario, {
+				projectRoot: "D:/Projects/Demo",
+				maximumBlueprints: 10
+			}).pipe(
+				Effect.provide(
+					reader({
+						scanProject: () => Effect.succeed(index),
+						readBlueprint: () => Effect.succeed(partialRead)
+					})
+				)
+			);
+			expect(scan.uses).toEqual([]);
+			expect(scan.coverage).toEqual({
+				status: "scanned",
+				complete: false,
+				blueprints: 1,
+				matched: 1,
+				decoded: 1,
+				skipped: 0,
+				failed: [],
+				partial: [
+					{
+						path: join("Content", "BP_Hero.uasset"),
+						blueprint: "/Game/BP_Hero.BP_Hero",
+						diagnostics: [
+							{ code: "graph_partial", message: "One graph was not decoded." }
+						],
+						coverageGaps: [
+							{
+								objectPath: "/Game/BP_Hero.BP_Hero:EventGraph",
+								reason: "missing_node_reference",
+								detail: "The graph's node export was not decoded."
+							}
+						]
+					}
+				],
+				headerFailures: [
+					{ path: join("Content", "BP_Broken.uasset"), message: "Header truncated." }
+				]
+			});
+			const usage = inputActionUsage(scenario, {
+				blueprintUses: scan.uses,
+				blueprintCoverage: scan.coverage
+			});
+			// IA_Fire has no known use, and the coverage beside it says the search was incomplete.
+			expect(usage.noKnownUse).toEqual([path("IA_Fire")]);
+			expect(usage.blueprintCoverage).toMatchObject({ status: "scanned", complete: false });
+		})
 );
 
 const platformInspection: SavedAssetInspection = {

@@ -248,6 +248,8 @@ export interface InputActionEdge {
 	/** The mapping context and key when the trigger is on a mapping; null for an action trigger. */
 	readonly contextPath: string | null;
 	readonly key: string | null;
+	/** The key profile whose `MappingProfileOverrides` mapping saves the trigger; null otherwise. */
+	readonly profileId: string | null;
 }
 
 /** `ComboActions[0].ComboStepAction` → `ComboStepAction`. */
@@ -264,7 +266,7 @@ function edgesOf(
 	from: string,
 	triggers: readonly InputInstancedObjectRef[],
 	actions: ReadonlySet<string>,
-	where: { readonly contextPath: string | null; readonly key: string | null }
+	where: Pick<InputActionEdge, "contextPath" | "key" | "profileId">
 ): InputActionEdge[] {
 	return triggers.flatMap((trigger) =>
 		(trigger.parameters ?? []).flatMap((parameter) =>
@@ -295,22 +297,48 @@ export function inputActionEdges(report: EnhancedInputReport): readonly InputAct
 		edges.push(
 			...edgesOf(action.objectPath, action.triggers ?? [], actions, {
 				contextPath: null,
-				key: null
+				key: null,
+				profileId: null
 			})
 		);
 	}
-	for (const context of report.mappingContexts) {
-		for (const mapping of context.mappings) {
-			if (mapping.action === null) continue;
-			edges.push(
-				...edgesOf(mapping.action, mapping.triggers, actions, {
-					contextPath: context.objectPath,
-					key: mapping.keyName.status === "available" ? mapping.keyName.value : null
-				})
-			);
-		}
+	for (const { context, profileId, mapping } of savedMappings(report)) {
+		if (mapping.action === null) continue;
+		edges.push(
+			...edgesOf(mapping.action, mapping.triggers, actions, {
+				contextPath: context.objectPath,
+				key: mapping.keyName.status === "available" ? mapping.keyName.value : null,
+				profileId
+			})
+		);
 	}
 	return edges;
+}
+
+/** One saved mapping with where it lives: the defaults (`profileId` null) or a profile override. */
+export interface SavedInputMapping {
+	readonly context: InputMappingContextRecord;
+	readonly profileId: string | null;
+	readonly index: number;
+	readonly mapping: InputMappingRecord;
+}
+
+/**
+ * Every mapping a report saves: each context's default mappings, then each
+ * `MappingProfileOverrides` entry's mappings, which replace the defaults for that key profile.
+ */
+export function savedMappings(report: EnhancedInputReport): readonly SavedInputMapping[] {
+	return report.mappingContexts.flatMap((context) => [
+		...context.mappings.map((mapping, index) => ({ context, profileId: null, index, mapping })),
+		...(context.profileOverrides ?? []).flatMap((override) =>
+			override.mappings.map((mapping, index) => ({
+				context,
+				profileId: override.profileId,
+				index,
+				mapping
+			}))
+		)
+	]);
 }
 
 export function findAtlasKey(atlas: InputAtlas, key: string | null): AtlasKey | undefined {

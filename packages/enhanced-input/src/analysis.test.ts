@@ -331,18 +331,81 @@ describe("usage", () => {
 			path("PMI_Driving")
 		]);
 		expect(usage.unboundMappings).toEqual([
-			{ context: path("IMC_Gameplay"), index: 4, action: null, reason: "no_action" },
 			{
 				context: path("IMC_Gameplay"),
+				profileId: null,
+				index: 4,
+				action: null,
+				reason: "no_action"
+			},
+			{
+				context: path("IMC_Gameplay"),
+				profileId: null,
 				index: 5,
 				action: path("IA_Missing"),
 				reason: "key_not_serialized"
 			}
 		]);
 		expect(usage.unresolvedActionTargets).toEqual([
-			{ context: path("IMC_Gameplay"), action: path("IA_Missing") }
+			{ context: path("IMC_Gameplay"), profileId: null, action: path("IA_Missing") }
 		]);
 		expect(usage.blueprintCoverage).toEqual({ status: "not_scanned" });
+	});
+
+	it("counts an action mapped only in a key-profile override, and its trigger edges", () => {
+		const profiled = report({
+			actions: [action("IA_ProfileOnly"), action("IA_ChordTarget"), action("IA_Unused")],
+			contexts: [
+				context("IMC_Gamepad", [], {
+					profileOverrides: [
+						{
+							profileId: "Gamepad",
+							mappings: [
+								mapping("IA_ProfileOnly", "Gamepad_FaceButton_Bottom", [
+									trigger("InputTriggerChordAction", [
+										{
+											name: "ChordAction",
+											kind: "object",
+											value: path("IA_ChordTarget")
+										}
+									])
+								]),
+								mapping("IA_Missing", null)
+							]
+						}
+					]
+				})
+			]
+		});
+		const usage = inputActionUsage(profiled);
+		expect(usage.noKnownUse).toEqual([path("IA_Unused")]);
+		expect(usage.actions.find((entry) => entry.name === "IA_ProfileOnly")).toMatchObject({
+			status: "used",
+			contexts: [],
+			profiles: [{ context: path("IMC_Gamepad"), profileId: "Gamepad" }]
+		});
+		expect(
+			usage.actions.find((entry) => entry.name === "IA_ChordTarget")?.referencedBy
+		).toEqual([
+			{
+				from: path("IA_ProfileOnly"),
+				to: path("IA_ChordTarget"),
+				triggerClass: "/Script/EnhancedInput.InputTriggerChordAction",
+				parameter: "ChordAction",
+				contextPath: path("IMC_Gamepad"),
+				key: "Gamepad_FaceButton_Bottom",
+				profileId: "Gamepad"
+			}
+		]);
+		expect(usage.unboundMappings).toEqual([
+			{
+				context: path("IMC_Gamepad"),
+				profileId: "Gamepad",
+				index: 1,
+				action: path("IA_Missing"),
+				reason: "key_not_serialized"
+			}
+		]);
 	});
 
 	it("finds Blueprint event, value and plain references to actions", () => {
@@ -391,11 +454,14 @@ describe("usage", () => {
 			blueprintUses: uses,
 			blueprintCoverage: {
 				status: "scanned",
+				complete: true,
 				blueprints: 3,
 				matched: 1,
 				decoded: 1,
 				skipped: 0,
-				failed: []
+				failed: [],
+				partial: [],
+				headerFailures: []
 			}
 		});
 		expect(usage.noKnownUse).toEqual([]);
@@ -447,7 +513,8 @@ describe("usage", () => {
 			paths: ["Content/BP_A.uasset"],
 			blueprints: 3,
 			matched: 2,
-			skipped: 1
+			skipped: 1,
+			headerFailures: []
 		});
 		expect(
 			blueprintInputCandidatePaths(index, { maximumBlueprints: 10, nameProbe: false }).paths

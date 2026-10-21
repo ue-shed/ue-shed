@@ -407,7 +407,8 @@ describe("schema 2 projection", () => {
 				triggerClass: "/Script/EnhancedInput.InputTriggerChordAction",
 				parameter: "ChordAction",
 				contextPath: context,
-				key: "LeftMouseButton"
+				key: "LeftMouseButton",
+				profileId: null
 			}
 		]);
 		const claim = buildInputAtlas(report).keys.find((key) => key.key === "RightMouseButton")

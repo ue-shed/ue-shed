@@ -2,7 +2,7 @@
 // of every use this module can see is reported as "no known use", never as "unused".
 
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
-import { inputActionEdges, objectName, type InputActionEdge } from "./atlas.js";
+import { inputActionEdges, objectName, savedMappings, type InputActionEdge } from "./atlas.js";
 import { contextIdentity } from "./coactivation.js";
 import type { EnhancedInputReport } from "./schema.js";
 
@@ -73,6 +73,12 @@ export function inputActionPackageNames(report: EnhancedInputReport): readonly s
 	);
 }
 
+/** A package the search could not read or classify. */
+export interface BlueprintSearchFailure {
+	readonly path: string;
+	readonly message: string;
+}
+
 export interface BlueprintCandidateSelection {
 	/** Package paths to decode, at most `maximumBlueprints`, in path order. */
 	readonly paths: readonly string[];
@@ -82,13 +88,16 @@ export interface BlueprintCandidateSelection {
 	readonly matched: number;
 	/** Matches beyond the decode bound, which were not decoded. */
 	readonly skipped: number;
+	/** Packages whose header could not be read, so whether they are Blueprints is unknown. */
+	readonly headerFailures: readonly BlueprintSearchFailure[];
 }
 
 /**
  * Chooses which Blueprint packages to decode from a header scan. The base is every package with a
  * `...Blueprint` export, the same set the Blueprint search catalog lists. When the header scan also
  * asked for the action package names, a package whose name map holds none of them cannot
- * reference an action and is dropped. The bound is explicit; what it cuts is reported.
+ * reference an action and is dropped. The bound is explicit; what it cuts is reported, and so are
+ * the headers the scan could not read.
  */
 export function blueprintInputCandidatePaths(
 	index: SavedAssetScan,
@@ -108,28 +117,71 @@ export function blueprintInputCandidatePaths(
 		paths: matched.slice(0, options.maximumBlueprints),
 		blueprints: blueprints.length,
 		matched: matched.length,
-		skipped: Math.max(0, matched.length - options.maximumBlueprints)
+		skipped: Math.max(0, matched.length - options.maximumBlueprints),
+		headerFailures: index.failures.map((failure) => ({
+			path: failure.path,
+			message: failure.message
+		}))
 	};
 }
 
-/** What a Blueprint scan covered, so "no known use" is read against its real coverage. */
+/** A Blueprint that decoded only in part; its uses are kept, but more may be unseen. */
+export interface BlueprintPartialRead {
+	readonly path: string;
+	readonly blueprint: string;
+	readonly diagnostics: readonly { readonly code: string; readonly message: string }[];
+	readonly coverageGaps: readonly {
+		readonly objectPath: string;
+		readonly reason: string;
+		readonly detail: string;
+	}[];
+}
+
+/**
+ * What a Blueprint scan covered, so "no known use" is read against its real coverage. `complete`
+ * is true only when every matched Blueprint decoded fully and no header failed.
+ */
 export type BlueprintUseCoverage =
 	| { readonly status: "not_scanned" }
 	| {
 			readonly status: "scanned";
+			readonly complete: boolean;
 			readonly blueprints: number;
 			readonly matched: number;
+			/** Blueprints read, fully or in part. */
 			readonly decoded: number;
 			readonly skipped: number;
-			readonly failed: readonly { readonly path: string; readonly message: string }[];
+			readonly failed: readonly BlueprintSearchFailure[];
+			readonly partial: readonly BlueprintPartialRead[];
+			readonly headerFailures: readonly BlueprintSearchFailure[];
 	  };
+
+/** Whether nothing a scan saw prevents a use from having been missed. */
+export function blueprintCoverageComplete(
+	coverage: Omit<Extract<BlueprintUseCoverage, { status: "scanned" }>, "status" | "complete">
+): boolean {
+	return (
+		coverage.skipped === 0 &&
+		coverage.failed.length === 0 &&
+		coverage.partial.length === 0 &&
+		coverage.headerFailures.length === 0
+	);
+}
+
+/** Where an action is mapped: a context's defaults (`profileId` null) or one key profile. */
+export interface InputActionMappingPlace {
+	readonly context: string;
+	readonly profileId: string | null;
+}
 
 export interface InputActionUsage {
 	readonly action: string;
 	readonly name: string;
 	readonly status: "used" | "no_known_use";
-	/** Mapping contexts with at least one mapping to this action. */
+	/** Mapping contexts whose default mappings map this action. */
 	readonly contexts: readonly string[];
+	/** Key-profile override mappings that map this action, by context and profile. */
+	readonly profiles: readonly InputActionMappingPlace[];
 	/** Config assets that hold one of those contexts. */
 	readonly configs: readonly string[];
 	/** Trigger edges that name this action, such as a chord on another action's mapping. */
@@ -139,6 +191,8 @@ export interface InputActionUsage {
 
 export interface InputUnboundMapping {
 	readonly context: string;
+	/** The key profile whose override holds the mapping; null for default mappings. */
+	readonly profileId: string | null;
 	readonly index: number;
 	readonly action: string | null;
 	readonly reason: "no_action" | "key_not_serialized";
@@ -151,12 +205,16 @@ export interface InputUsageReport {
 	/** Mapping targets that are not among the scanned actions, such as plugin content. */
 	readonly unresolvedActionTargets: readonly {
 		readonly context: string;
+		readonly profileId: string | null;
 		readonly action: string;
 	}[];
 	readonly blueprintCoverage: BlueprintUseCoverage;
 }
 
-/** Joins contexts, config assets, trigger edges and Blueprint uses onto each action. */
+/**
+ * Joins contexts (default and key-profile mappings), config assets, trigger edges and Blueprint
+ * uses onto each action.
+ */
 export function inputActionUsage(
 	report: EnhancedInputReport,
 	options?: {
@@ -165,38 +223,33 @@ export function inputActionUsage(
 	}
 ): InputUsageReport {
 	const actionPaths = new Set(report.actions.map((action) => String(action.objectPath)));
-	const contextsByAction = new Map<string, Set<string>>();
+	const placesByAction = new Map<string, Map<string, InputActionMappingPlace>>();
 	const unboundMappings: InputUnboundMapping[] = [];
-	const unresolved = new Map<string, { context: string; action: string }>();
-	for (const context of report.mappingContexts) {
-		context.mappings.forEach((mapping, index) => {
-			if (mapping.action === null) {
-				unboundMappings.push({
-					context: context.objectPath,
-					index,
-					action: null,
-					reason: "no_action"
-				});
-				return;
-			}
-			if (mapping.keyName.status !== "available") {
-				unboundMappings.push({
-					context: context.objectPath,
-					index,
-					action: mapping.action,
-					reason: "key_not_serialized"
-				});
-			}
-			if (!actionPaths.has(mapping.action)) {
-				unresolved.set(`${context.objectPath}\n${mapping.action}`, {
-					context: context.objectPath,
-					action: mapping.action
-				});
-			}
-			const contexts = contextsByAction.get(mapping.action) ?? new Set<string>();
-			contexts.add(context.objectPath);
-			contextsByAction.set(mapping.action, contexts);
-		});
+	const unresolved = new Map<
+		string,
+		{ context: string; profileId: string | null; action: string }
+	>();
+	for (const { context, profileId, index, mapping } of savedMappings(report)) {
+		const where = { context: context.objectPath, profileId };
+		if (mapping.action === null) {
+			unboundMappings.push({ ...where, index, action: null, reason: "no_action" });
+			continue;
+		}
+		if (mapping.keyName.status !== "available") {
+			unboundMappings.push({
+				...where,
+				index,
+				action: mapping.action,
+				reason: "key_not_serialized"
+			});
+		}
+		const placeKey = `${context.objectPath}\n${profileId ?? ""}`;
+		if (!actionPaths.has(mapping.action)) {
+			unresolved.set(`${placeKey}\n${mapping.action}`, { ...where, action: mapping.action });
+		}
+		const places = placesByAction.get(mapping.action) ?? new Map();
+		places.set(placeKey, where);
+		placesByAction.set(mapping.action, places);
 	}
 	const configsByContext = new Map<string, Set<string>>();
 	for (const config of report.playerMappableConfigs ?? []) {
@@ -213,11 +266,22 @@ export function inputActionUsage(
 	const blueprintUses = options?.blueprintUses ?? [];
 	const actions = report.actions.map((record): InputActionUsage => {
 		const action = String(record.objectPath);
-		const contexts = [...(contextsByAction.get(action) ?? [])].sort();
+		const places = [...(placesByAction.get(action)?.values() ?? [])];
+		const contexts = places
+			.filter((place) => place.profileId === null)
+			.map((place) => place.context)
+			.sort();
+		const profiles = places
+			.filter((place) => place.profileId !== null)
+			.sort(
+				(left, right) =>
+					left.context.localeCompare(right.context) ||
+					(left.profileId ?? "").localeCompare(right.profileId ?? "")
+			);
 		const configs = [
 			...new Set(
-				contexts.flatMap((context) => [
-					...(configsByContext.get(contextIdentity(context)) ?? [])
+				places.flatMap((place) => [
+					...(configsByContext.get(contextIdentity(place.context)) ?? [])
 				])
 			)
 		].sort();
@@ -227,10 +291,11 @@ export function inputActionUsage(
 			action,
 			name: objectName(action),
 			status:
-				contexts.length > 0 || referencedBy.length > 0 || blueprints.length > 0
+				places.length > 0 || referencedBy.length > 0 || blueprints.length > 0
 					? "used"
 					: "no_known_use",
 			contexts,
+			profiles,
 			configs,
 			referencedBy,
 			blueprints

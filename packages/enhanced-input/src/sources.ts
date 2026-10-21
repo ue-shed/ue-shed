@@ -35,10 +35,12 @@ import {
 } from "./platforms.js";
 import type { EnhancedInputReport } from "./schema.js";
 import {
+	blueprintCoverageComplete,
 	blueprintInputActionUses,
 	blueprintInputCandidatePaths,
 	inputActionPackageNames,
 	type BlueprintInputActionUse,
+	type BlueprintPartialRead,
 	type BlueprintUseCoverage
 } from "./usage.js";
 
@@ -279,11 +281,14 @@ export const scanBlueprintInputActionUses = Effect.fn("EnhancedInput.scanBluepri
 				uses: [],
 				coverage: {
 					status: "scanned",
+					complete: true,
 					blueprints: 0,
 					matched: 0,
 					decoded: 0,
 					skipped: 0,
-					failed: []
+					failed: [],
+					partial: [],
+					headerFailures: []
 				}
 			} satisfies BlueprintUseScan;
 		}
@@ -300,39 +305,70 @@ export const scanBlueprintInputActionUses = Effect.fn("EnhancedInput.scanBluepri
 			maximumBlueprints: options.maximumBlueprints,
 			nameProbe: true
 		});
+		const relativePath = (path: string) => relative(options.projectRoot, path) || path;
 		const reads = yield* Effect.forEach(
 			selection.paths,
 			(path) =>
 				reader.readBlueprint(resolve(options.projectRoot, path)).pipe(
-					Effect.map((read) => ({
-						status: "read" as const,
-						path,
-						uses: blueprintInputActionUses(
-							read.blueprint.object_path,
-							blueprintReferences(read),
-							actions
-						)
-					})),
+					Effect.map((read) => {
+						const gaps = read.blueprint.coverage_gaps;
+						// A partial read keeps the uses it found and says what it could not see.
+						const partial: BlueprintPartialRead | undefined =
+							read.outcome === "partial" || gaps.length > 0
+								? {
+										path: relativePath(path),
+										blueprint: read.blueprint.object_path,
+										diagnostics: read.diagnostics.map((diagnostic) => ({
+											code: diagnostic.code,
+											message: diagnostic.message
+										})),
+										coverageGaps: gaps.map((gap) => ({
+											objectPath: gap.object_path,
+											reason: gap.reason,
+											detail: gap.detail
+										}))
+									}
+								: undefined;
+						return {
+							status: "read" as const,
+							partial,
+							uses: blueprintInputActionUses(
+								read.blueprint.object_path,
+								blueprintReferences(read),
+								actions
+							)
+						};
+					}),
 					Effect.catchTag("AssetReaderError", (error) =>
 						Effect.succeed({ status: "failed" as const, path, message: error.message })
 					)
 				),
 			{ concurrency: Math.max(1, options.concurrency ?? 4) }
 		);
-		const relativePath = (path: string) => relative(options.projectRoot, path) || path;
+		const coverage = {
+			blueprints: selection.blueprints,
+			matched: selection.matched,
+			decoded: reads.filter((read) => read.status === "read").length,
+			skipped: selection.skipped,
+			failed: reads.flatMap((read) =>
+				read.status === "failed"
+					? [{ path: relativePath(read.path), message: read.message }]
+					: []
+			),
+			partial: reads.flatMap((read) =>
+				read.status === "read" && read.partial !== undefined ? [read.partial] : []
+			),
+			headerFailures: selection.headerFailures.map((failure) => ({
+				path: relativePath(failure.path),
+				message: failure.message
+			}))
+		};
 		return {
 			uses: reads.flatMap((read) => (read.status === "read" ? read.uses : [])),
 			coverage: {
 				status: "scanned",
-				blueprints: selection.blueprints,
-				matched: selection.matched,
-				decoded: reads.filter((read) => read.status === "read").length,
-				skipped: selection.skipped,
-				failed: reads.flatMap((read) =>
-					read.status === "failed"
-						? [{ path: relativePath(read.path), message: read.message }]
-						: []
-				)
+				complete: blueprintCoverageComplete(coverage),
+				...coverage
 			}
 		} satisfies BlueprintUseScan;
 	}

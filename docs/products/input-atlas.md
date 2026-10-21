@@ -134,11 +134,13 @@ flag. That is the honest answer when nothing says which contexts are active toge
 ## Usage
 
 `inputActionUsage(report, { blueprintUses, blueprintCoverage })` joins each action with the
-contexts that map it, the config assets holding those contexts, trigger edges that name it, and
-Blueprint uses. An action with none of them has **no known use**: C++ `BindAction` and bindings a
-game builds at runtime are invisible to saved packages. The usage report also lists mappings with
-no action or no saved key, and mapping targets that are not among the scanned actions (for example
-plugin content outside the scanned roots).
+contexts whose default mappings map it, the key-profile overrides (`MappingProfileOverrides`) that
+map it (`profiles`, by context and profile), the config assets holding those contexts, trigger
+edges that name it, and Blueprint uses. Edges saved on override mappings carry their `profileId`.
+An action with none of them has **no known use**: C++ `BindAction` and bindings a game builds at
+runtime are invisible to saved packages. The usage report also lists mappings with no action or no
+saved key, and mapping targets that are not among the scanned actions (for example plugin content
+outside the scanned roots), each with the profile it belongs to.
 
 `scanBlueprintInputActionUses` finds Blueprint uses. Package dependencies are not yet exposed in
 header evidence, so it uses the documented fallback with a cheaper first step:
@@ -146,8 +148,11 @@ header evidence, so it uses the documented fallback with a cheaper first step:
 1. One header scan lists packages with a `...Blueprint` export (the set the Blueprint search catalog
    lists) and probes each name map for the scanned actions' package names.
 2. Only Blueprints whose name map holds one of those names are decoded, in path order, up to an
-   explicit `maximumBlueprints` bound. Matches past the bound are counted as `skipped`; failures are
-   listed. Coverage is returned beside the uses so "no known use" is read against it.
+   explicit `maximumBlueprints` bound. Matches past the bound are counted as `skipped`; failed
+   reads, partial reads (with their diagnostics and coverage gaps; their uses are kept) and headers
+   the scan could not read are all listed. Coverage is returned beside the uses, and its `complete`
+   is true only when none of those happened, so "no known use" is never shown next to coverage
+   that claims more than the search saw.
 3. `blueprintReferences` walks each decoded Blueprint. A reference from a
    `K2Node_EnhancedInputAction` node is an `event_node` use, from `K2Node_GetInputActionValue` a
    `value_node` use, and any other saved reference a `reference` use.

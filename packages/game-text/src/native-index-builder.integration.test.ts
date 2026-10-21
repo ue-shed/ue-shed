@@ -402,6 +402,69 @@ describe.skipIf(!executable)("native index build capability", () => {
 		}
 	}, 120_000);
 
+	it("reuses one writer process across sessions and discards one whose lease failed", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-native-pool-"));
+		const options = {
+			cacheRoot: root,
+			projectKey: "invented",
+			targetKey: "text",
+			projectView: { kind: "source" as const }
+		};
+		const pids: number[] = [];
+		const configuration = {
+			...readerConfiguration(),
+			protocolObserver: (event: { readonly kind: string; readonly pid?: number }) => {
+				if (event.kind === "worker_started" && event.pid !== undefined)
+					pids.push(event.pid);
+			}
+		};
+		try {
+			await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const builder = yield* GameTextIndexBuilder;
+						for (let session = 0; session < 3; session++)
+							yield* builder.withSession({ configuration: options }, Effect.void);
+						expect(new Set(pids).size).toBe(1);
+						const first = pids[0];
+						// A rejected publication drops the native lease, so the session cannot end
+						// cleanly and its process must not serve another session.
+						yield* builder.withSession(
+							{ configuration: options },
+							Effect.gen(function* () {
+								const writer = yield* (yield* SharedIndex).writer();
+								const ids = yield* writer.intern("source", ["probe"]);
+								const rejected = yield* Effect.exit(
+									writer.publishIds(
+										"probe",
+										"stale",
+										{
+											columns: [
+												{
+													name: "entry.source",
+													kind: "stringIds",
+													domain: "source",
+													load: async () => ids
+												}
+											]
+										},
+										"stale-generation"
+									)
+								);
+								expect(Exit.isFailure(rejected)).toBe(true);
+							})
+						);
+						pids.length = 0;
+						yield* builder.withSession({ configuration: options }, Effect.void);
+						expect(pids.length).toBeGreaterThan(0);
+						expect(pids).not.toContain(first);
+					})
+				).pipe(Effect.provide(nativeIndexBuilderLayer(configuration)))
+			);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}, 120_000);
 	it("owns one lease, preserves WTF-8 IDs, rejects stale publication, and releases after failure", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-native-lease-"));
 		const options = {

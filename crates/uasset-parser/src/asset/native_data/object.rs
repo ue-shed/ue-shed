@@ -149,12 +149,33 @@ pub(crate) fn decode(
         let (guid, tail) = consume_uobject_export_footer_lenient(reader, &export.object_path)?;
         return Ok((guid, None, tail));
     }
+    if context.package.summary.versions.ue5 == 0
+        && export.class_path.as_ref().map(ObjectPath::as_str)
+            == Some("/Script/Niagara.NiagaraSystem")
+        && custom_version(
+            context.package,
+            [0xFCF57AFA, 0x50764283, 0xB9A9E658, 0xFFA02D32],
+        ) >= 51
+    {
+        // UE 4.27 / 5.7 NiagaraSystem.cpp, UNiagaraSystem::Serialize:
+        // ChangeEmitterCompiledDataToSharedRefs=51 adds an array of explicitly tagged records.
+        // Probe transactionally: invalid layouts retain the entire original native tail.
+        let mut probe = reader.clone();
+        if let Ok((guid, value)) = niagara_system(&mut probe, context, &export.object_path) {
+            *reader = probe;
+            return Ok((
+                guid,
+                Some(Box::new(value)),
+                Span::new(reader.tell(), reader.remaining())?,
+            ));
+        }
+    }
     let actor = class_is_a(context, export, "/Script/Engine.Actor");
     let component = class_is_a(context, export, "/Script/Engine.ActorComponent")
         || (context.package.summary.versions.ue5 == 0
-            && export.class_path.as_ref().is_some_and(|class| {
+            && saved_native_class(context.package, export).is_some_and(|class| {
                 matches!(
-                    class.as_str(),
+                    class,
                     "/Script/Engine.StaticMeshComponent"
                         | "/Script/Engine.InstancedStaticMeshComponent"
                         | "/Script/Engine.HierarchicalInstancedStaticMeshComponent"
@@ -248,10 +269,7 @@ pub(crate) fn decode(
     // UActorComponent/PrimitiveComponent::Serialize add no persistent native bytes on 4.27.
     // Nonempty LOD records and subclass serializers remain opaque.
     if context.package.summary.versions.ue5 == 0
-        && export
-            .class_path
-            .as_ref()
-            .is_some_and(|class| class.as_str() == "/Script/Engine.StaticMeshComponent")
+        && saved_native_class(context.package, export) == Some("/Script/Engine.StaticMeshComponent")
     {
         let mut probe = reader.clone();
         if probe.read_i32(&format!("{}.LODData.Count", export.object_path))? == 0 {
@@ -265,6 +283,36 @@ pub(crate) fn decode(
     let tail = Span::new(reader.tell(), reader.remaining())?;
     let data = (!fields.is_empty()).then(|| Box::new(PropertyValue::NativeStruct { fields }));
     Ok((object_guid, data, tail))
+}
+
+fn niagara_system(
+    reader: &mut Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    path: &ObjectPath,
+) -> Result<(Option<Guid>, PropertyValue), AssetError> {
+    let guid = consume_inline_object_guid_footer(reader, path)?;
+    let count = reader.read_count(path.as_str())?;
+    let capacity = reader.checked_vec_capacity::<PropertyValue>(count, 8, path.as_str())?;
+    let mut values = Vec::with_capacity(capacity);
+    for _ in 0..count {
+        let mut stream = read_tagged_property_stream(
+            reader,
+            &context.package.summary.versions,
+            &context.package.names,
+            path.as_str(),
+        )?;
+        decode_property_stream_values(context.source, &mut stream, context.package)?;
+        values.push(PropertyValue::Struct(stream));
+    }
+    Ok((
+        guid,
+        PropertyValue::NativeStruct {
+            fields: vec![NativeProperty {
+                name: "EmitterCompiledData".into(),
+                value: PropertyValue::Array(values),
+            }],
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -301,6 +349,94 @@ mod tests {
         )
         .unwrap();
         assert_eq!(tail.len(), 4);
+    }
+
+    #[test]
+    fn ue427_saved_blueprint_mesh_ancestry_is_proven_by_indices_and_cycles_are_bounded() {
+        let mut package = package();
+        package.summary.versions.ue5 = 0;
+        package.summary.custom_versions.clear();
+        package.imports[0] = test_import(
+            "/Script/Engine.StaticMeshComponent",
+            "/Script/CoreUObject.Class",
+            0,
+            None,
+        );
+        let class = "/Game/Fixture.Mesh_C";
+        let mut generated = test_export(0, class, "/Script/Engine.BlueprintGeneratedClass");
+        generated.super_index = PackageIndex::Import(0);
+        package.exports.push(generated);
+        let bytes = [0; 8];
+        let (_, native, tail) = read(&bytes, class, &package, &properties(None)).unwrap();
+        assert!(native.is_some() && tail.is_empty());
+        package.exports[0].super_index = PackageIndex::Export(0);
+        assert!(
+            read(&bytes, class, &package, &properties(None))
+                .unwrap()
+                .1
+                .is_none()
+        );
+        package.exports[0].super_index = PackageIndex::Import(0);
+        package.exports[0].class_path = Some(ObjectPath::new("/Script/Fixture.NativeClass"));
+        assert!(
+            read(&bytes, class, &package, &properties(None))
+                .unwrap()
+                .1
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn ue427_niagara_compiled_records_are_tagged_and_truncated_tails_remain_opaque() {
+        let mut package = package();
+        package.summary.versions.ue5 = 0;
+        package.summary.custom_versions.push(CustomVersion {
+            key: Guid {
+                a: 0xFCF57AFA,
+                b: 0x50764283,
+                c: 0xB9A9E658,
+                d: 0xFFA02D32,
+            },
+            version: 51,
+            friendly_name: None,
+        });
+        let bytes = [0_i32, 1, 0, 0]
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>();
+        let (_, native, tail) = read(
+            &bytes,
+            "/Script/Niagara.NiagaraSystem",
+            &package,
+            &properties(None),
+        )
+        .unwrap();
+        assert!(native.is_some() && tail.is_empty());
+        let context = AssetDecodeContext {
+            source: &bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        for end in 0..bytes.len() {
+            assert!(
+                niagara_system(
+                    &mut Reader::new(&bytes[..end]),
+                    &context,
+                    &ObjectPath::new("Fixture")
+                )
+                .is_err()
+            );
+        }
+        package.summary.custom_versions.last_mut().unwrap().version = 50;
+        let (_, native, tail) = read(
+            &bytes,
+            "/Script/Niagara.NiagaraSystem",
+            &package,
+            &properties(None),
+        )
+        .unwrap();
+        assert!(native.is_none());
+        assert_eq!(tail.len(), bytes.len() as u64);
     }
 
     fn package() -> Package {

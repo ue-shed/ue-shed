@@ -2,7 +2,9 @@
 
 use std::fmt;
 
+mod legacy_structs;
 pub(crate) mod native_values;
+pub(crate) use legacy_structs::object_containers;
 
 use crate::archive::{Guid, Reader};
 use crate::package::{Package, PackageIndex};
@@ -882,6 +884,16 @@ fn decode_container_element(
         {
             return Ok(Some(value));
         }
+        if let Some(name) = resolve_struct_type_name(package, type_spec.tree)
+            && matches!(
+                name.as_ref(),
+                "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset"
+            )
+            && let Some(value) =
+                native_values::niagara::decode(source, &name, payload, package, path, depth)?
+        {
+            return Ok(Some(value));
+        }
         // UE 4.27/5.3 PropertyMap.cpp and PropertySet.cpp omit struct identities.
         if package.summary.versions.uses_legacy_property_tags()
             && type_spec.tree.parameters.is_empty()
@@ -1117,7 +1129,7 @@ fn decode_container_binary_struct(
 fn unknown_layout_struct_name(package: &Package, type_tree: &PropertyTypeName) -> Option<String> {
     let name = resolve_struct_type_name(package, type_tree)?;
     if resolve_struct_type_path(package, type_tree).is_some()
-        || native_values::is_known_struct(&name)
+        || native_values::is_known_struct(&name, package)
     {
         return None;
     }
@@ -1279,6 +1291,9 @@ fn decode_struct_value(
     let mut stream =
         read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
     decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
+    if !type_spec.is_user_defined_struct() {
+        legacy_structs::declared_containers(source, &mut stream, type_tree, package, depth + 1);
+    }
     if !type_spec.is_user_defined_struct() && struct_name.as_deref() == Some("DataTableRowHandle") {
         return decode_data_table_row_handle(&stream, package, path);
     }
@@ -1319,22 +1334,13 @@ fn decode_data_table_row_handle(
             _ => {}
         }
     }
-    let table = table.ok_or_else(|| {
-        PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            None,
-            path,
-            "FDataTableRowHandle is missing DataTable",
-        )
-    })?;
-    let row_name = row_name.ok_or_else(|| {
-        PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            None,
-            path,
-            "FDataTableRowHandle is missing RowName",
-        )
-    })?;
+    // UE 4.27 / 5.7 DataTable.h FDataTableRowHandle() initializes null/NAME_None;
+    // PropertyStruct.cpp FStructProperty::SerializeItem also passes archetype defaults
+    // into UScriptStruct::SerializeItem/SerializeTaggedProperties (Class.cpp). Either
+    // field can be elided. Retain saved fields without inventing inherited values.
+    let (Some(table), Some(row_name)) = (table, row_name) else {
+        return Ok(PropertyValue::Struct(stream.clone()));
+    };
     Ok(PropertyValue::DataTableRowHandle(DataTableRowHandleValue {
         table,
         row_name,

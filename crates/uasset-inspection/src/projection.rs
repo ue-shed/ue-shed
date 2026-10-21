@@ -204,6 +204,21 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
                 TextEditCapability::ReadOnly,
                 &mut output,
             );
+            if let Some(native) = &object.native_data {
+                visit_text_value(
+                    package,
+                    native,
+                    TextType::default(),
+                    "NativeData",
+                    &|property_path| TextLocation::AssetProperty {
+                        object_path: object.object_path.to_string(),
+                        class_path: object.class_path.to_string(),
+                        property_path: property_path.to_owned(),
+                    },
+                    TextEditCapability::ReadOnly,
+                    &mut output,
+                );
+            }
         }
         DecodedAsset::Function(function) => {
             let object = &function.object;
@@ -566,14 +581,24 @@ fn legacy_tail_may_contain_text(package: &Package, object: &DecodedUObject) -> b
     // numeric instance/custom data; HierarchicalInstancedStaticMesh.cpp ::Serialize: cluster
     // tree bulk data; Components/SplineMeshComponent.cpp ::Serialize adds no saved data.
     // Their UObject/ActorComponent/PrimitiveComponent bases add no native FText. Restrict this
-    // proof to exact engine classes and UE4: project subclasses and UE5 stay unknown.
+    // proof to exact native owners, including saved Blueprint-only inheritance. Imported
+    // content classes and unknown native subclasses stay text-capable.
+    let native_class = package
+        .exports
+        .iter()
+        .find(|export| export.object_path == object.object_path)
+        .and_then(|export| uasset_parser::asset::saved_native_class(package, export))
+        .unwrap_or(object.class_path.as_str());
     !(package.summary.versions.ue5 == 0
         && matches!(
-            object.class_path.as_str(),
+            native_class,
             "/Script/Engine.StaticMeshComponent"
                 | "/Script/Engine.InstancedStaticMeshComponent"
                 | "/Script/Engine.HierarchicalInstancedStaticMeshComponent"
                 | "/Script/Engine.SplineMeshComponent"
+                // UE 4.27 / 5.7 World.cpp, UWorld::Serialize: persistent level and
+                // reference arrays only in saved packages (PIE viewport/origin data is numeric).
+                | "/Script/Engine.World"
         ))
 }
 

@@ -176,6 +176,34 @@ pub fn supports_blueprint_graph_package_version(versions: &crate::version::Versi
         && (versions.ue5 == 0 || UE57_BLUEPRINT_PACKAGE_VERSIONS.contains(&versions.ue5))
 }
 
+/// Resolves a native serialization owner through saved Blueprint-generated classes only.
+/// Imported content classes and native subclasses with unknown serializers stay unresolved.
+#[must_use]
+pub fn saved_native_class<'a>(package: &'a Package, export: &'a Export) -> Option<&'a str> {
+    let mut class = export.class_path.as_ref()?.as_str();
+    let mut index = export.class_index;
+    for _ in 0..64 {
+        if class.starts_with("/Script/") {
+            return Some(class);
+        }
+        let PackageIndex::Export(class_index) = index else {
+            return None;
+        };
+        let generated = package.exports.get(class_index as usize)?;
+        // UE 4.27 / 5.7 BlueprintGeneratedClass.cpp, UBlueprintGeneratedClass::Serialize:
+        // a Blueprint adds reflected properties, never a new C++ instance serializer.
+        if generated.object_path.as_str() != class
+            || generated.class_path.as_ref().map(ObjectPath::as_str)
+                != Some("/Script/Engine.BlueprintGeneratedClass")
+        {
+            return None;
+        }
+        index = generated.super_index;
+        class = package.resolve_index_str(index)?;
+    }
+    None
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataTableKind {
     Plain,
@@ -3189,6 +3217,9 @@ fn decode_uobject_properties<'a>(
     )?;
     decode_property_stream_values(context.source, &mut properties, context.package)?;
     native_data::property_guids(export, context, &mut properties);
+    if let Some(class) = saved_native_class(context.package, export) {
+        crate::codec::object_containers(context.source, &mut properties, class, context.package);
+    }
     Ok((properties, reader))
 }
 

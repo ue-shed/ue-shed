@@ -1,4 +1,5 @@
 use super::*;
+pub(super) mod niagara;
 mod pin_type;
 mod property_bag;
 use crate::native::{NativeError, NativeValue, decode_native};
@@ -75,8 +76,15 @@ pub(crate) fn property(value: NativeValue) -> PropertyValue {
     }
 }
 
-/// Whether [`known_struct`] has a handwritten recipe for this struct name in any package revision.
-pub(super) fn is_known_struct(name: &str) -> bool {
+/// Whether [`known_struct`] has a handwritten recipe for this struct name in this package.
+/// Niagara variables have one only where [`niagara::applies`]; elsewhere they stay tagged.
+pub(super) fn is_known_struct(name: &str, package: &Package) -> bool {
+    if matches!(
+        name,
+        "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset"
+    ) {
+        return niagara::applies(package);
+    }
     matches!(
         name,
         "RichCurveKey"
@@ -101,6 +109,9 @@ pub(super) fn known_struct(
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     match name {
+        "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset" => {
+            niagara::decode(source, name, reader, package, path, depth)
+        }
         // UE 5.7 SlateCore/Private/Types/SlateVector2.cpp,
         // FDeprecateSlateVector2D::Serialize always writes FVector2f (two floats).
         "DeprecateSlateVector2D" => Ok(Some(PropertyValue::NativeStruct {

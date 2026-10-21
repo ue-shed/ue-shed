@@ -1,4 +1,5 @@
 import { decodeWtf8 } from "./wtf8.js";
+import { keyedUnitId } from "./gathered-text.js";
 import { projectRelativePath } from "./project-relative-path.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { Effect, Schema } from "effect";
@@ -237,7 +238,7 @@ export function unitId(packages: JoinPackages, row: number, namespace: string, k
 	const c = packages.occurrence,
 		kind = c.identity[row]!;
 	if (kind < 2 && key !== "")
-		return `${kind === 0 ? "unreal" : "string-table"}:${encodeURIComponent(namespace)}:${encodeURIComponent(key)}`;
+		return keyedUnitId(kind === 1, namespace, key, c.location[row] === 2);
 	const location = occurrenceLocation(packages, row);
 	const suffix =
 		location.kind === "string_table_entry"

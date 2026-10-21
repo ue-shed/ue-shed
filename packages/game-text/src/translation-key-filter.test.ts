@@ -41,7 +41,8 @@ const markers = [
 ] as const;
 
 // Three copies of one Blueprint: their saved namespaces differ only by package marker, so Unreal
-// gathers and translates all three as ("", "Title"). Each copy keeps its own saved unit.
+// gathers and translates all three as ("", "Title"), and they are one saved unit named by the
+// first copy's saved identity.
 const saved: Occurrence[] = [
 	text(markers[0], "Title", "Mushroom", "CopyA"),
 	text(markers[1], "Title", "Fungus", "CopyB"),
@@ -164,11 +165,12 @@ describe("translation_key filter", () => {
 									})
 								);
 							};
-							const copies = markers.map((marker) => `${marker}/Title`);
+							const copies = [`${markers[0]}/Title`];
 
-							// Without a target, every saved copy gathered under the key.
+							// Without a target, the one unit holding every saved copy of the key.
 							const units = yield* search([keyClause("is", [title])], false);
 							expect(units.units).toEqual(copies);
+							expect(units.total).toBe(1);
 							// With one, the single line Unreal translates them by, which conflicts.
 							const lines = yield* search([keyClause("is", [title])], true);
 							expect(lines.lines).toEqual(["/Title"]);

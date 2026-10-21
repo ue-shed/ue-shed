@@ -351,7 +351,12 @@ impl EngineQuery {
                     } else {
                         projection.raw.origins[row]
                     }),
-                    Dimension::Problem => bits(projection.row_problem(localized, row, &scope)),
+                    Dimension::Problem => bits(projection.row_problem(
+                        localized,
+                        row,
+                        &scope,
+                        request.search.counted_findings(),
+                    )),
                     Dimension::Finding => bits(if localized {
                         projection.flags[row]
                     } else {
@@ -617,6 +622,7 @@ impl EngineQuery {
         row: usize,
         fields: &[&str],
         scope: &[usize],
+        counted: u32,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
         let preview = self.preview(row)?;
@@ -640,7 +646,7 @@ impl EngineQuery {
                 "problems" | "signals" => {
                     let projection = Projection::open(self, cancelled)?;
                     let (labels, value): (&[&str], u32) = if *field == "problems" {
-                        (&PROBLEMS, projection.problem(row, scope))
+                        (&PROBLEMS, projection.problem(row, scope, counted))
                     } else {
                         (&SIGNALS, projection.flags[row])
                     };

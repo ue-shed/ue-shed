@@ -27,6 +27,7 @@ import {
 	type TextPackageCoverage,
 	type TextUnit
 } from "./schema.js";
+import { keyedUnitId } from "./gathered-text.js";
 import { mountPackageTextEvent } from "./package-object-path.js";
 import {
 	classifyFoldedTextAudience,
@@ -526,13 +527,17 @@ export function textPackagePathsFromProjectIndex(index: SavedAssetScan): readonl
 }
 
 function unitKey(occurrence: TextOccurrence): string {
-	// Keep the saved namespace for asset inspection; localization joins strip the package marker.
-	if (occurrence.identity.status === "resolved") {
-		return `unreal:${encodeURIComponent(occurrence.identity.namespace)}:${encodeURIComponent(occurrence.identity.key)}`;
-	}
-	if (occurrence.identity.status === "string_table") {
-		return `string-table:${encodeURIComponent(occurrence.identity.tableId)}:${encodeURIComponent(occurrence.identity.key)}`;
-	}
+	// One unit per key Unreal translates: the namespace without its package marker, as gathered
+	// text has it; a String Table entry keeps its namespace. Occurrences keep the saved namespace.
+	if (occurrence.identity.status === "resolved")
+		return keyedUnitId(
+			false,
+			occurrence.identity.namespace,
+			occurrence.identity.key,
+			occurrence.location.kind === "string_table_entry"
+		);
+	if (occurrence.identity.status === "string_table")
+		return keyedUnitId(true, occurrence.identity.tableId, occurrence.identity.key, false);
 	return occurrence.id;
 }
 

@@ -166,6 +166,7 @@ describe("Game Text at the scale of a shipping game", () => {
 				changed_since_gather: changed,
 				translation: untranslated,
 				finding: LINES / 10,
+				unchecked: 0,
 				up_to_date: upToDate
 			});
 			// Folder0 holds every 200th line from index 0, none of them gathered yet.

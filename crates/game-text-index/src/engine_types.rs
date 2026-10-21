@@ -49,15 +49,7 @@ pub const SIGNALS: [&str; 7] = [
     "evidence_only",
     "compiled_copy_differs",
 ];
-pub const PROBLEMS: [&str; 7] = [
-    "key_changed",
-    "conflicting_source",
-    "not_gathered",
-    "changed_since_gather",
-    "translation",
-    "finding",
-    "up_to_date",
-];
+pub(crate) use crate::text_problem::PROBLEMS;
 pub const ORIGINS: [&str; 5] = ["string_table", "data_table", "asset", "cpp", "other_source"];
 pub const AUDIENCES: [&str; 3] = ["player", "editor", "unknown"];
 pub const REVIEWS: [&str; 5] = [
@@ -349,7 +341,7 @@ impl SearchRequest {
             require(filters.len() <= 32, invalid("Too many filter clauses."))?;
             for clause in filters {
                 let (allowed, max, length): (&[&str], usize, u32) = match clause.field {
-                    FilterField::Problem => (&PROBLEMS, 7, 64),
+                    FilterField::Problem => (&PROBLEMS, PROBLEMS.len(), 64),
                     FilterField::Finding => (&SIGNALS, SIGNALS.len(), 64),
                     FilterField::Translation => (&["missing", "to_update", "not_synced"], 3, 64),
                     FilterField::Origin => (&ORIGINS, 5, 64),
@@ -445,6 +437,21 @@ impl SearchRequest {
         result.localization_cursor = None;
         result.open_group = None;
         result
+    }
+
+    /// The review signals that make a row a finding under this request: the defaults, and the
+    /// findings its `finding is` clauses and lens name. Every problem in the request uses them.
+    pub(crate) fn counted_findings(&self) -> u32 {
+        let clauses = self
+            .filter
+            .iter()
+            .flatten()
+            .filter(|clause| clause.field == FilterField::Finding && clause.op == FilterOp::Is);
+        crate::text_problem::counted_findings(
+            clauses
+                .flat_map(|clause| clause.values.iter().map(String::as_str))
+                .chain(self.lens.as_deref()),
+        )
     }
 
     pub(crate) fn matching_key(&self) -> Result<String> {

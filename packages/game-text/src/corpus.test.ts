@@ -160,73 +160,65 @@ describe("game text corpus", () => {
 	});
 
 	it.each(["Hello", "Other"])(
-		"retains saved package namespaces while findings compare gathered identities (%s)",
+		"keeps one unit per gathered key with each saved package namespace (%s)",
 		(secondSource) => {
-			const outcomes = ["A", "B"].map((name, index) => ({
-				status: "inspected" as const,
-				packageFile: `Content/${name}.uasset`,
-				inspection: {
-					...inspection,
-					assets: [
-						{
-							kind: "DataTable" as const,
-							object_path: `/Game/${name}.${name}`,
-							row_struct: "/Script/Test.TextRow",
-							row_count: 1,
-							rows: [
-								{
-									name: "Greeting",
-									properties: [
-										{
-											name: "Label",
-											type: "TextProperty",
-											value_kind: "text" as const,
-											value: index === 0 ? "Hello" : secondSource,
-											history: "base" as const,
-											namespace: `UI [${name}]`,
-											key: "Greeting"
-										}
-									]
-								}
-							]
-						}
-					]
-				}
-			}));
-			const corpus = buildTextCorpus(outcomes);
-			expect(corpus.units).toHaveLength(2);
-			expect(corpus.units.map((unit) => unit.identity)).toEqual([
+			const outcomes = (secondKey: string) =>
+				["A", "B"].map((name, index) => ({
+					status: "inspected" as const,
+					packageFile: `Content/${name}.uasset`,
+					inspection: {
+						...inspection,
+						assets: [
+							{
+								kind: "DataTable" as const,
+								object_path: `/Game/${name}.${name}`,
+								row_struct: "/Script/Test.TextRow",
+								row_count: 1,
+								rows: [
+									{
+										name: "Greeting",
+										properties: [
+											{
+												name: "Label",
+												type: "TextProperty",
+												value_kind: "text" as const,
+												value: index === 0 ? "Hello" : secondSource,
+												history: "base" as const,
+												namespace: `UI [${name}]`,
+												key: index === 0 ? "Greeting" : secondKey
+											}
+										]
+									}
+								]
+							}
+						]
+					}
+				}));
+			const corpus = buildTextCorpus(outcomes("Greeting"));
+			// Unreal gathers both as UI/Greeting, so they are one unit; each place keeps its saved
+			// namespace, package marker included.
+			expect(corpus.units).toHaveLength(1);
+			const [unit] = corpus.units;
+			if (!unit) throw new Error("Missing saved text unit.");
+			expect(unit.id).toBe("unreal:UI:Greeting");
+			expect(unit.occurrences.map((occurrence) => occurrence.identity)).toEqual([
 				{ status: "resolved", namespace: "UI [A]", key: "Greeting" },
 				{ status: "resolved", namespace: "UI [B]", key: "Greeting" }
 			]);
 			const query = textCorpusQuery(corpus);
 			const page = query.search({ capability: "all", query: "", pageSize: 50 });
 			expect(page.counts.duplicate_source).toBe(0);
-			expect(page.counts.shared).toBe(2);
-			expect(page.counts.conflicting).toBe(secondSource === "Hello" ? 0 : 2);
-			const first = corpus.units[0];
-			if (!first) throw new Error("Missing saved text unit.");
-			expect(query.focus({ id: first.id, pageSize: 50 })?.unit.identity).toEqual(
-				first.identity
+			expect(page.counts.shared).toBe(1);
+			expect(page.counts.conflicting).toBe(secondSource === "Hello" ? 0 : 1);
+			expect(query.focus({ id: unit.id, pageSize: 50 })?.unit.identity).toEqual(
+				unit.identity
 			);
-			const distinct = {
-				...corpus,
-				units: corpus.units.map((unit, index) =>
-					index === 0 || unit.identity.status !== "resolved"
-						? unit
-						: {
-								...unit,
-								identity: { ...unit.identity, key: "OtherKey" },
-								occurrences: unit.occurrences.map((occurrence) => ({
-									...occurrence,
-									identity: { ...unit.identity, key: "OtherKey" }
-								}))
-							}
-				)
-			};
 			expect(
-				textCorpusQuery(distinct).search({ capability: "all", query: "", pageSize: 50 })
-					.counts.duplicate_source
+				textCorpusQuery(buildTextCorpus(outcomes("OtherKey"))).search({
+					capability: "all",
+					query: "",
+					pageSize: 50
+				}).counts.duplicate_source
 			).toBe(secondSource === "Hello" ? 2 : 0);
 		}
 	);

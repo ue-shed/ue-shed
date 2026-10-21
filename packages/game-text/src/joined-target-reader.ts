@@ -24,6 +24,8 @@ import {
 	type LocalizationJoin
 } from "./localization-schema.js";
 import { TextUnitId } from "./identifiers.js";
+import { keyedUnitId } from "./gathered-text.js";
+import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 import { TEXT_OUT_OF_SCOPE_REASONS, textAudienceOfMask } from "./text-audience.js";
 import { JoinedSourceCacheMeta } from "./joined-source-cache-contract.js";
 import { u32, type ColumnReader } from "./joined-target-input.js";
@@ -213,7 +215,7 @@ function occurrenceUnitId(
 	const kind = numbers.identity!,
 		key = values.key!;
 	if (kind < 2 && key !== "")
-		return `${kind === 0 ? "unreal" : "string-table"}:${encodeURIComponent(values.namespace!)}:${encodeURIComponent(key)}`;
+		return keyedUnitId(kind === 1, values.namespace!, key, numbers.location === 2);
 	const suffix =
 		numbers.location === 2
 			? `entry:${values.row}`
@@ -412,7 +414,7 @@ export const hydrateJoinedTarget = Effect.fn("JoinedTarget.page")(function* (
 				key = keyStrings[keyed++]!;
 			if (key !== "") {
 				unitOf.push(
-					`${identity === 0 ? "unreal" : "string-table"}:${encodeURIComponent(namespace)}:${encodeURIComponent(key)}`
+					keyedUnitId(identity === 1, namespace, key, input.location![row] === 2)
 				);
 				continue;
 			}
@@ -614,7 +616,7 @@ export const inspectJoinedTarget = Effect.fn("JoinedTarget.inspect")(function* (
 		snapshotCheck(position === maximum, prefix, "Input rows not exhausted");
 	}
 	for (const [name, mask] of [
-		["line.problems", 127],
+		["line.problems", (1 << TEXT_PROBLEMS.length) - 1],
 		["line.reasons", 131071],
 		["line.facts", 1023]
 	] as const)

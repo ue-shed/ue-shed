@@ -1,6 +1,6 @@
 //! Key-change and review marks, over gathered lines rather than raw saved units.
 use crate::Result;
-use crate::join::{JoinInput, Joined, L_KEY, L_NS, L_PROBLEMS, L_REASONS, L_SOURCE, intern};
+use crate::join::{JoinInput, Joined, L_KEY, L_NS, L_PROBLEMS, L_SOURCE, intern};
 use crate::join_columns::*;
 use crate::join_policy::*;
 use crate::store::{Store, digest};
@@ -360,26 +360,16 @@ pub(crate) fn finish(
         }
     }
     for (row, _) in paired.iter().enumerate().take(count) {
+        // The saved-signal finding from the join, the key change, and every culture's mark, as
+        // the engine classifies a line under a request that names no finding.
         let mut problems = j.line[L_PROBLEMS][row];
         if j.line[15][row] != 0 && j.line[15][row] & 1 == 0 {
-            problems |= 1;
+            problems |= crate::text_problem::KEY_CHANGED;
         }
-        if j.line[L_REASONS][row] & (1 << 11) != 0 {
-            problems |= 2;
+        for c in &j.cultures {
+            problems |= crate::text_problem::culture(c[0][row], c[1][row], c[2][row]);
         }
-        if j.matches(row, 4) {
-            problems |= 4;
-        }
-        if j.matches(row, 5) {
-            problems |= 8;
-        }
-        if j.cultures
-            .iter()
-            .any(|c| matches!(c[0][row], 1 | 2) || c[1][row] & (1 << 3) != 0)
-        {
-            problems |= 16;
-        }
-        j.line[L_PROBLEMS][row] = if problems == 0 { 64 } else { problems };
+        j.line[L_PROBLEMS][row] = crate::text_problem::settle(problems);
     }
     Ok(json!({"pairs":pairs,"ambiguous":ambiguous,"oldCandidates":old.len()}))
 }

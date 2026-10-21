@@ -65,14 +65,26 @@ export {
 } from "./quality.js";
 
 export {
+	type TextCountedFinding,
 	type TextFacts,
+	countedFindings,
 	matchesTextFilter,
 	needsWork,
+	textCountedFindings,
 	textFindings,
 	textProblemCounts,
 	textProblems,
 	translationStates
 } from "./text-problems.js";
+
+export {
+	TEXT_FINDING_SIGNALS,
+	TEXT_PROBLEMS,
+	TEXT_PROBLEM_RULES,
+	type TextProblemRule
+} from "./text-problem-rules.js";
+
+export { TextCountedFindings, TextRowProblems } from "./text-problem-schema.js";
 
 export { unrealPluralForms } from "./unreal-plural-forms.js";
 

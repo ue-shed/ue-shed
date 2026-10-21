@@ -28,7 +28,9 @@ import {
 	textOriginFacet
 } from "./text-groups.js";
 import {
+	countedFindings,
 	matchesTextFilter,
+	textCountedFindings,
 	textFindings,
 	textProblemCounts,
 	textProblems,
@@ -335,10 +337,31 @@ export function textCorpusQuery(
 			diagnostic
 		]);
 	}
+	const defaultFindings = countedFindings({});
+	const sameFindings = (counted: readonly TextReviewSignal[]) =>
+		counted.length === defaultFindings.length;
+	// A unit's facts under a request: its problems count the request's findings.
+	const unitFacts = (entry: (typeof indexed)[number], counted: readonly TextReviewSignal[]) =>
+		sameFindings(counted)
+			? entry.facts
+			: {
+					...entry.facts,
+					problems: textProblems({
+						signals: entry.presentation.reviewSignals,
+						keyChanged: false,
+						countedFindings: counted
+					})
+				};
+	const unitRow = (entry: (typeof indexed)[number], counted: readonly TextReviewSignal[]) => ({
+		...entry.presentation,
+		problems: unitFacts(entry, counted).problems,
+		countedFindings: textCountedFindings(entry.presentation.reviewSignals, counted)
+	});
 	const matching = (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
 		entries = indexed
 	) => {
+		const counted = countedFindings(request);
 		const terms = normalizedTerms(request.query);
 		const counts = {
 			all: 0,
@@ -357,7 +380,7 @@ export function textCorpusQuery(
 		for (const entry of entries) {
 			const { presentation, searchable, unit, hasEditable, hasReadOnly } = entry;
 			if (!terms.every((term) => searchable.includes(term))) continue;
-			if (!matchesTextFilter(entry.facts, request.filter)) continue;
+			if (!matchesTextFilter(unitFacts(entry, counted), request.filter)) continue;
 			if (!matchesTextPathPrefix(entry.paths, request.where?.pathPrefix)) continue;
 			if (!matchesTextFiles(entry.fileKeys, files)) continue;
 			const inKinds = matchesTextKinds(entry.origins, request.where?.kinds);
@@ -405,9 +428,13 @@ export function textCorpusQuery(
 		);
 		const files = textFileScope(request.where?.files);
 		const picked = request.lines === undefined ? undefined : new Set(request.lines);
+		const counted = countedFindings(request);
 		return localization.lines.filter((line) => {
 			if (picked !== undefined && !picked.has(line.id)) return false;
-			if (filter !== undefined && !matchesTextFilter(lineFacts(line, selection), filter))
+			if (
+				filter !== undefined &&
+				!matchesTextFilter(lineFacts(line, selection, counted), filter)
+			)
 				return false;
 			if (line.source.trim() === "") return false;
 			if (
@@ -463,13 +490,22 @@ export function textCorpusQuery(
 		...new Set(entries.flatMap((entry) => entry.presentation.reviewSignals))
 	];
 	// Counting needs only the problems, so it skips the paths, origins and notes a filter reads.
-	const lineProblems = (line: LocalizationLine, selection: LocalizationSelection) =>
+	const lineProblems = (
+		line: LocalizationLine,
+		selection: LocalizationSelection,
+		counted: readonly TextReviewSignal[]
+	) =>
 		textProblems({
 			signals: lineSignals(lineEntries(line)),
 			keyChanged: line.keyChange?.direction === "to",
-			marks: scopedLocalizationMarks(line, selection)
+			marks: scopedLocalizationMarks(line, selection),
+			countedFindings: counted
 		});
-	function lineFacts(line: LocalizationLine, selection: LocalizationSelection): TextFacts {
+	function lineFacts(
+		line: LocalizationLine,
+		selection: LocalizationSelection,
+		counted: readonly TextReviewSignal[]
+	): TextFacts {
 		const entries = lineEntries(line);
 		const signals = lineSignals(entries);
 		const marks = scopedLocalizationMarks(line, selection);
@@ -479,7 +515,8 @@ export function textCorpusQuery(
 			problems: textProblems({
 				signals,
 				keyChanged: line.keyChange?.direction === "to",
-				marks
+				marks,
+				countedFindings: counted
 			}),
 			findings: textFindings(signals),
 			translation: translationStates(marks),
@@ -644,19 +681,20 @@ export function textCorpusQuery(
 							"Load and join the selected target before querying its localization state."
 					});
 				const matched = localizedMatching(request);
+				const counted = countedFindings(request);
 				// Without a clause on a field, that field's counts cover exactly the matched lines.
 				const baseFor = (field: TextFilterField) =>
 					hasClause(request.filter, field)
 						? localizedMatching(without(request, field))
 						: matched;
 				const problems = textProblemCounts(
-					baseFor("problem").map((line) => lineProblems(line, selection))
+					baseFor("problem").map((line) => lineProblems(line, selection, counted))
 				);
 				const known = new Map<LocalizationLine, TextFacts>();
 				const factsOf = (line: LocalizationLine) => {
 					const cached = known.get(line);
 					if (cached !== undefined) return cached;
-					const facts = lineFacts(line, selection);
+					const facts = lineFacts(line, selection, counted);
 					known.set(line, facts);
 					return facts;
 				};
@@ -692,7 +730,22 @@ export function textCorpusQuery(
 							localization.cultures
 						)
 				);
-				const page = localizationQueryPage(localization, matched, request, listed);
+				const shown = localizationQueryPage(localization, matched, request, listed);
+				// What put each line in its problems under this request, as the engine reports it.
+				const explain = (id: LocalizationLine["id"]) => {
+					const line = localizationById.get(id)!;
+					return {
+						problems: lineProblems(line, selection, counted),
+						countedFindings: textCountedFindings(
+							lineSignals(lineEntries(line)),
+							counted
+						)
+					};
+				};
+				const page = {
+					...shown,
+					lines: shown.lines.map((line) => ({ ...line, ...explain(line.id) }))
+				};
 				const counts = {
 					...matching({ ...request, query: "" }).counts,
 					all: matched.length,
@@ -745,12 +798,20 @@ export function textCorpusQuery(
 						if (line.origin.kind === "evidence") return [];
 						const entry = lineEntries(line).at(0);
 						return entry
-							? [{ ...entry.presentation, localization: line.cultures }]
+							? [
+									{
+										...entry.presentation,
+										localization: line.cultures,
+										...explain(line.id)
+									}
+								]
 							: [];
 					})
 				};
 			}
 			const { matched, counts } = matching(request);
+			const counted = countedFindings(request);
+			const facts = (entry: (typeof indexed)[number]) => unitFacts(entry, counted);
 			const baseFor = (field: TextFilterField) =>
 				hasClause(request.filter, field)
 					? matching(without(request, field)).matched
@@ -759,7 +820,7 @@ export function textCorpusQuery(
 				group === undefined || request.openGroup === undefined
 					? matched
 					: matched.filter(
-							(entry) => textGroupOf(entry.facts, group).key === request.openGroup
+							(entry) => textGroupOf(facts(entry), group).key === request.openGroup
 						);
 			const afterCursor = request.cursor
 				? listed.findIndex(({ unit }) => unit.id === request.cursor) + 1
@@ -769,25 +830,19 @@ export function textCorpusQuery(
 			return {
 				counts,
 				problems: textProblemCounts(
-					baseFor("problem").map((entry) => entry.facts.problems)
+					baseFor("problem").map((entry) => facts(entry).problems)
 				),
 				...(group === undefined
 					? undefined
 					: {
 							groups: {
 								by: group,
-								...textGroups(
-									matched.map((entry) => entry.facts),
-									group,
-									request.minGroupSize
-								)
+								...textGroups(matched.map(facts), group, request.minGroupSize)
 							}
 						}),
-				...facetsField(request.facets, (field) =>
-					baseFor(field).map((entry) => entry.facts)
-				),
+				...facetsField(request.facets, (field) => baseFor(field).map(facts)),
 				total: matched.length,
-				units: page.map(({ presentation }) => presentation),
+				units: page.map((entry) => unitRow(entry, counted)),
 				...fileScopeField(request.where, () => matched.flatMap(({ fileKeys }) => fileKeys)),
 				...(final !== undefined && afterCursor + page.length < listed.length
 					? { nextCursor: final }

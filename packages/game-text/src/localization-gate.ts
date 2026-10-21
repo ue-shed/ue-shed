@@ -193,7 +193,8 @@ export function localizationGateTarget(input: {
 			(change.direction === "to" || !listed.has(identityKey(change.other)));
 		if (judged && change.translations.length > 0) found.push("key_changed");
 		if (line.problems.includes("conflicting_source")) found.push("conflicting_source");
-		if (line.problems.includes("changed_since_gather"))
+		// The state, not the problem: a line Unreal gathered whose text is gone is `removed` below.
+		if (line.marks.some((mark) => mark.state === "changed_since_gather"))
 			found.push(translated(line) ? "translated_text_changed" : "text_changed");
 		if (line.problems.includes("not_gathered") && !found.includes("key_changed"))
 			found.push("not_gathered");

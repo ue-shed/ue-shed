@@ -45,7 +45,12 @@ pub(crate) const L_NS: usize = 0;
 pub(crate) const L_KEY: usize = 1;
 pub(crate) const L_SOURCE: usize = 2;
 pub(crate) const L_REASONS: usize = 9;
+/// A line's problems under a request that names no finding, classified through `text_problem`
+/// from the shared table, as the engine does. Queries classify per request instead.
 pub(crate) const L_PROBLEMS: usize = 11;
+/// Joined layers this build writes and extends. v3: units key resolved text by the namespace
+/// without its package marker, so earlier joins carry other unit IDs.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v3:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -195,7 +200,9 @@ pub(crate) fn locale(a: &str, b: &str) -> Ordering {
         collator.compare(a, b)
     }
 }
-fn compare_unit(p: &PackageColumns, a: usize, b: usize, empty: u32) -> Ordering {
+/// Orders occurrences by unit. `unit_ns` is each row's unit namespace: resolved keys outside
+/// String Tables without their package marker, so one key in several packages is one unit.
+fn compare_unit(p: &PackageColumns, unit_ns: &[u32], a: usize, b: usize, empty: u32) -> Ordering {
     let c = &p.occurrence;
     let kind = |row: usize| {
         if c[O_KEY][row] == empty {
@@ -209,7 +216,7 @@ fn compare_unit(p: &PackageColumns, a: usize, b: usize, empty: u32) -> Ordering 
         return order;
     }
     if kind(a) < 2 {
-        (c[O_NS][a], c[O_KEY][a]).cmp(&(c[O_NS][b], c[O_KEY][b]))
+        (unit_ns[a], c[O_KEY][a]).cmp(&(unit_ns[b], c[O_KEY][b]))
     } else {
         (
             c[O_OBJECT][a],
@@ -430,7 +437,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         dependencies.insert(name.clone(), store.root["active"][&name].clone());
     }
     let key = format!(
-        "joined-native-v2:{}",
+        "{JOINED_KEY_PREFIX}{}",
         digest(
             format!(
                 "[{}]",
@@ -548,6 +555,15 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         .into_iter()
         .zip(normalized_ids)
         .collect::<HashMap<_, _>>();
+    let unit_ns = (0..count)
+        .map(|row| {
+            if c[O_IDENTITY][row] == 0 && c[O_LOCATION][row] != 2 {
+                namespace_map[&c[O_NS][row]]
+            } else {
+                c[O_NS][row]
+            }
+        })
+        .collect::<Vec<_>>();
     let mut unit_ids = Vec::with_capacity(count);
     for row in 0..count {
         unit_ids.push(packages.unit_id(row, &strings, empty)?);
@@ -590,7 +606,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             .cmp(&(gathered_ns[b], gathered_key[b]))
             .then_with(|| {
                 if gathered_ns[a] == ABSENT {
-                    compare_unit(&packages, a, b, empty)
+                    compare_unit(&packages, &unit_ns, a, b, empty)
                 } else {
                     Ordering::Equal
                 }
@@ -602,7 +618,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     });
     let mut raw_order = order.clone();
     raw_order.sort_by(|a, b| {
-        compare_unit(&packages, *a as usize, *b as usize, empty)
+        compare_unit(&packages, &unit_ns, *a as usize, *b as usize, empty)
             .then_with(|| emission(*a as usize, *b as usize))
     });
     let mut unit = vec![0; count];
@@ -612,8 +628,13 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         let mut end = start + 1;
         let first = raw_order[start];
         while end < count
-            && compare_unit(&packages, first as usize, raw_order[end] as usize, empty)
-                == Ordering::Equal
+            && compare_unit(
+                &packages,
+                &unit_ns,
+                first as usize,
+                raw_order[end] as usize,
+                empty,
+            ) == Ordering::Equal
         {
             end += 1;
         }
@@ -804,14 +825,13 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                         searchable |= !trim(value).is_empty();
                     }
                 }
-                let problems = if length >= 40
-                    || c[O_IDENTITY][representative] >= 2
-                    || c[O_KEY][representative] == empty
-                {
-                    32
-                } else {
-                    0
-                };
+                // Unresolved text is a finding by default; long text only when a request names it.
+                let problems =
+                    if c[O_IDENTITY][representative] >= 2 || c[O_KEY][representative] == empty {
+                        crate::text_problem::FINDING
+                    } else {
+                        0
+                    };
                 empty_problems |= problems;
                 if searchable {
                     visible = true;
@@ -856,7 +876,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         }
         visible_line[row] = visible;
         if g.oe - g.os > 1 {
-            joined.line[L_PROBLEMS][row] |= 32;
+            joined.line[L_PROBLEMS][row] |= crate::text_problem::FINDING;
         }
         if g.ns == ABSENT {
             reasons |= 1 << if has_reference { 10 } else { 9 };
@@ -1133,7 +1153,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 unit_first.insert(representative, row);
             }
             if duplicate[i] && (visible_occurrence[i] || !visible_line[row]) {
-                joined.line[L_PROBLEMS][row] |= 32;
+                joined.line[L_PROBLEMS][row] |= crate::text_problem::FINDING;
             }
         }
     }

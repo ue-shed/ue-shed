@@ -4,21 +4,13 @@ use crate::engine_match::{Kind, Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, audience};
 use crate::engine_types::*;
+use crate::text_problem::{self, PROBLEM_LABELS};
 use crate::wtf8::Wtf8Buf;
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
-const PROBLEM_LABELS: [&str; 7] = [
-    "Key changed",
-    "Same key, different text",
-    "Not gathered yet",
-    "Changed since gather",
-    "Translation work",
-    "Findings",
-    "Up to date",
-];
 const ORIGIN_LABELS: [&str; 5] = ["String table", "Data table", "Asset", "C++", "Other source"];
 const AUDIENCE_LABELS: [&str; 3] = ["Player text", "Editor text", "Unknown"];
 struct Tally {
@@ -121,13 +113,18 @@ impl Places {
     }
 }
 impl Projection {
-    pub(crate) fn row_problem(&self, localized: bool, row: usize, scope: &[usize]) -> u32 {
+    /// A line's problems, or a unit's (`textProblems` without marks) outside a target.
+    pub(crate) fn row_problem(
+        &self,
+        localized: bool,
+        row: usize,
+        scope: &[usize],
+        counted: u32,
+    ) -> u32 {
         if localized {
-            return self.problem(row, scope);
+            return self.problem(row, scope, counted);
         }
-        let flags = self.raw.signals[row];
-        let bits = if flags & 16 != 0 { 2 } else { 0 } | if flags & 15 != 0 { 32 } else { 0 };
-        if bits == 0 { 64 } else { bits }
+        text_problem::settle(text_problem::signals(self.raw.signals[row], counted))
     }
     pub(crate) fn group_key(
         &self,
@@ -136,10 +133,13 @@ impl Projection {
         row: usize,
         scope: &[usize],
         by: GroupBy,
+        counted: u32,
     ) -> Result<u32> {
         let kind = if localized { Kind::Line } else { Kind::Raw };
         Ok(match by {
-            GroupBy::Problem => self.row_problem(localized, row, scope).trailing_zeros(),
+            GroupBy::Problem => self
+                .row_problem(localized, row, scope, counted)
+                .trailing_zeros(),
             GroupBy::Origin => {
                 let bits = if localized {
                     self.origins[row]
@@ -229,7 +229,7 @@ impl EngineQuery {
                 checkpoint(cancelled)?;
             }
             let row = *row as usize;
-            let bits = projection.row_problem(localized, row, &scope);
+            let bits = projection.row_problem(localized, row, &scope, request.counted_findings());
             let worst = bits.trailing_zeros();
             let mut visit = |key: u32, label: u32| {
                 let tally = tallies.entry(key).or_insert(Tally {
@@ -245,7 +245,7 @@ impl EngineQuery {
                 }
                 if tally.last != stamp {
                     tally.count += 1;
-                    tally.work += usize::from(bits & 31 != 0);
+                    tally.work += usize::from(bits & text_problem::WORK != 0);
                     tally.worst = tally.worst.min(worst);
                     tally.last = stamp;
                 }
@@ -296,7 +296,14 @@ impl EngineQuery {
                     }
                 }
                 _ => {
-                    let key = projection.group_key(&places, localized, row, &scope, by)?;
+                    let key = projection.group_key(
+                        &places,
+                        localized,
+                        row,
+                        &scope,
+                        by,
+                        request.counted_findings(),
+                    )?;
                     visit(key, key);
                 }
             }

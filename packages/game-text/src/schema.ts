@@ -10,6 +10,8 @@ import {
 } from "./localization-schema.js";
 import { TextAudience, TextAudienceReason } from "./text-audience-schema.js";
 import { gameTextResponseParser } from "./response-parser.js";
+import { TextCountedFindings, TextRowProblems } from "./text-problem-schema.js";
+import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 export * from "./identifiers.js";
 export * from "./text-audience-schema.js";
 
@@ -358,17 +360,11 @@ export type TextReviewSignal = Schema.Schema.Type<typeof TextReviewSignal>;
 /**
  * What stands between a line and shipping, worst first. Key problems lose or mix up translations;
  * not gathered and changed since gather wait on Unreal; translation work waits on a culture in
- * scope; findings are worth a look but block nothing. A line with none is up to date.
+ * scope; findings are worth a look but block nothing; unchecked lines have a culture whose state
+ * the evidence could not prove. A line with none is up to date. `TEXT_PROBLEM_RULES` says what
+ * raises each.
  */
-export const TextProblem = Schema.Literals([
-	"key_changed",
-	"conflicting_source",
-	"not_gathered",
-	"changed_since_gather",
-	"translation",
-	"finding",
-	"up_to_date"
-]);
+export const TextProblem = Schema.Literals(TEXT_PROBLEMS);
 export type TextProblem = Schema.Schema.Type<typeof TextProblem>;
 
 /** Findings: reused text, the same text under different keys, long text, unlocalizable text. */
@@ -503,6 +499,7 @@ export const TextProblemCounts = Schema.Struct({
 	changed_since_gather: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	translation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	finding: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	unchecked: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	up_to_date: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
 export type TextProblemCounts = Schema.Schema.Type<typeof TextProblemCounts>;
@@ -626,6 +623,10 @@ export const TextUnitSearchResult = Schema.Struct({
 	occurrenceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	remainingContextCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	reviewSignals: Schema.Array(TextReviewSignal),
+	/** In a search page: the row's problems under the request, worst first. */
+	problems: Schema.optionalKey(TextRowProblems),
+	/** In a search page: the review signals that made the row a finding under the request. */
+	countedFindings: Schema.optionalKey(TextCountedFindings),
 	/** Whitespace-delimited words in that same longest source, never the joined variants. */
 	wordCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	/** Player if any occurrence is player text, else unknown if any is, else editor. */

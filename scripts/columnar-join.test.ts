@@ -418,7 +418,12 @@ describe("split saved identity findings regression", () => {
 				}
 			}));
 			const corpus = candidateCorpusFromEvents({ projectRoot, inventory, events: records });
-			expect(corpus.units).toHaveLength(1);
+			// One saved identity, two gathered keys: the property's namespace drops its marker and
+			// the String Table entry keeps it, so each key is its own unit.
+			expect(corpus.units.map((unit) => unit.id).sort()).toEqual([
+				`unreal:${encodeURIComponent("UI [literal]")}:T`,
+				"unreal:UI:T"
+			]);
 			const expected = joinLocalizationTarget(corpus, evidence);
 			await runJoinIn(
 				projectRoot,

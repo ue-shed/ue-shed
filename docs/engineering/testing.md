@@ -233,6 +233,17 @@ Unreal runs record a span per UnrealBuildTool build and per editor or commandlet
 Commandlet spans are split into engine startup, work and shutdown from the timestamps in the
 project log. Child processes join the trace through `TRACEPARENT`; see `scripts/gate-trace.ts`.
 
+Every non-Node subprocess a traced script starts (git, tar, npm, Cargo, `wasm-pack`, Electron,
+native tools) also records a span, without changes to the script: the preload in
+`scripts/trace-process.ts` wraps `child_process`. Calls a script already traces with
+`traceProcess` are not recorded twice. Cargo spans carry `cargo.compiled_crates`,
+`cargo.profiles` and `cargo.build_ms` when the output is captured, so compile time separates from
+test time. Long scripts mark their phases with `stageSpans()` from `gate-trace.ts`: clean packing,
+per-package packing and validation, Data Authoring adoption, each engine and phase of the UAsset
+engine matrix, the owned fixture editor's session, Map Review flows and camera editor start/stop.
+A child gets the innermost active span as its parent even when the script copied `process.env`
+before starting that span.
+
 Each run writes `out/gate-timing/<script>-<time>/` with `trace.json` (open it in
 [Perfetto](https://ui.perfetto.dev)), the raw `spans.jsonl`, `summary.json` and one log per command,
 and appends a line to `out/gate-timing/history.jsonl` for comparing runs. The console summary lists

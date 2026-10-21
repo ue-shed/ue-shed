@@ -18,7 +18,8 @@ import {
 	ReviewViewId,
 	ReviewViewRevisionId
 } from "@ue-shed/cameras";
-import { Effect, Layer, ManagedRuntime, Stream } from "effect";
+import { Effect, ManagedRuntime, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type {
 	MapReviewCaptureResult,
@@ -66,7 +67,7 @@ function completedCapture(review: Extract<MapReviewResult, { status: "ready" }>)
 }
 
 afterEach(cleanup);
-const runtime = ManagedRuntime.make(Layer.empty);
+const runtime = ManagedRuntime.make(TestClock.layer());
 afterAll(() => runtime.dispose());
 
 const offlineScout = {
@@ -319,7 +320,11 @@ describe("MapReviewRoute", () => {
 			}),
 			{ target: { value: "3" } }
 		);
-		await waitFor(() => expect(patches).toHaveLength(1), { timeout: 1_500 });
+		expect(patches).toHaveLength(0);
+		await runtime.runPromise(TestClock.adjust("399 millis"));
+		expect(patches).toHaveLength(0);
+		await runtime.runPromise(TestClock.adjust("1 millis"));
+		await waitFor(() => expect(patches).toHaveLength(1));
 		expect(patches[0]?.patch.framingParameters?.groups[0]?.pattern.count).toBe(3);
 
 		const xScrubber = screen.getByRole("button", { name: "Drag X to adjust" });
@@ -1358,6 +1363,7 @@ describe("MapReviewRoute", () => {
 		fireEvent.input(screen.getByRole("spinbutton", { name: "YAW OFFSET" }), {
 			target: { value: "12" }
 		});
+		await runtime.runPromise(TestClock.adjust("400 millis"));
 		await waitFor(() => expect(patchCount).toBe(2));
 		await waitFor(() => expect(previewCalls.length).toBe(afterHydrate + 1));
 		expect(previewCalls.at(-1)?.candidateId).toBe("facade-front");

@@ -124,7 +124,7 @@ describe("ScenarioStudioRoute", () => {
 	});
 
 	it("opening a custom document clears the previous run and recomputes seek guidance", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		renderRoute(
 			clientWith({
 				saveDocument: () => Effect.succeed({ status: "cancelled" }),
@@ -146,7 +146,7 @@ describe("ScenarioStudioRoute", () => {
 		expect(screen.getByText("Start at Patrol start, then play forward 00:00.60")).toBeDefined();
 	});
 	it("edits action timing and shows how input is replayed", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		renderRoute();
 
 		expect(screen.getByText("The Broken Bridge")).toBeDefined();
@@ -156,10 +156,6 @@ describe("ScenarioStudioRoute", () => {
 		await user.click(screen.getByRole("button", { name: "Nudge later" }));
 
 		expect(screen.getAllByText("00:02.96")).toHaveLength(2);
-	});
-
-	it("shows saved captures and run differences", async () => {
-		renderRoute();
 
 		expect(screen.getByText("Run results")).toBeDefined();
 		expect(screen.getByText("Jump happened 120 ms late")).toBeDefined();
@@ -167,7 +163,7 @@ describe("ScenarioStudioRoute", () => {
 	});
 
 	it("guides the showcase from live lanes to the same headless runner", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		renderRoute(
 			clientWith({
 				saveDocument: (document) =>
@@ -210,20 +206,8 @@ describe("ScenarioStudioRoute", () => {
 		).toBeDefined();
 	});
 
-	it("replaces preview data with a live result through the host-neutral client", async () => {
-		const user = userEvent.setup();
-		const client = clientWith();
-		renderRoute(client);
-
-		await screen.findByDisplayValue(liveHandle.endpoint);
-		await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
-
-		expect(await screen.findByText("Live result")).toBeDefined();
-		expect(screen.getByText("Structured PIE result")).toBeDefined();
-	});
-
 	it("renders live world-state evidence without inventing a camera capture", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		const worldStateEvidence = movementGymRuns[0]?.evidence.find(
 			(evidence) => evidence.type === "world_state"
 		);
@@ -263,7 +247,7 @@ describe("ScenarioStudioRoute", () => {
 	});
 
 	it("shows capability recovery without claiming live input was blocked", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		const client = clientWith({
 			start: () =>
 				Effect.fail(
@@ -289,7 +273,7 @@ describe("ScenarioStudioRoute", () => {
 	});
 
 	it("uses the selected endpoint and exposes the producer waiting state", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		let selectedEndpoint = "";
 		const client = clientWith({
 			start: ({ endpoint }) => {
@@ -320,7 +304,7 @@ describe("ScenarioStudioRoute", () => {
 	});
 
 	it("cancels an accepted live run and displays its terminal result", async () => {
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		const cancelled = { ...movementGymRuns[1]!, status: "cancelled" as const };
 		const client = clientWith({
 			cancel: () => Effect.succeed(cancelled),

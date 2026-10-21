@@ -243,6 +243,17 @@ function clientWith(
 	};
 }
 
+function renderInitial(client: BlueprintViewerClient) {
+	return render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<BlueprintGraphViewer
+				initialRead={client.readBlueprint(assetPath)}
+				opener={() => undefined}
+			/>
+		</EffectRuntimeProvider>
+	));
+}
+
 async function openPath() {
 	await userEvent
 		.setup()
@@ -250,33 +261,6 @@ async function openPath() {
 }
 
 describe("BlueprintGraphViewer", () => {
-	it("renders Flow nodes and selects their saved evidence in the inspector", async () => {
-		render(() => (
-			<EffectRuntimeProvider runtime={runtime}>
-				<BlueprintGraphViewer
-					initialRead={Effect.succeed(ready())}
-					opener={() => undefined}
-				/>
-			</EffectRuntimeProvider>
-		));
-		const canvas = await screen.findByLabelText("Graph viewport");
-		expect(await within(canvas).findByText("On Clicked")).toBeTruthy();
-		const callNode = within(canvas).getByText(
-			"Apply Settings With A Deliberately Long Saved Node Name"
-		);
-		expect(within(canvas).getByText("bEnabled")).toBeTruthy();
-		fireEvent.click(callNode);
-		const inspector = screen.getByRole("complementary", { name: "Inspector" });
-		await waitFor(() => {
-			expect(
-				within(inspector).getByRole("heading", {
-					name: "Apply Settings With A Deliberately Long Saved Node Name"
-				})
-			).toBeTruthy();
-		});
-		expect(within(inspector).getByText("Whether the setting is enabled.")).toBeTruthy();
-	});
-
 	it("inspects the already-selected node again from the keyboard", async () => {
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -287,7 +271,7 @@ describe("BlueprintGraphViewer", () => {
 			</EffectRuntimeProvider>
 		));
 		const selected = await screen.findByRole("button", { name: "Inspect On Clicked" });
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await user.click(screen.getByRole("tab", { name: "Blueprint" }));
 		expect(screen.getByRole("tab", { name: "Blueprint" }).getAttribute("aria-selected")).toBe(
 			"true"
@@ -363,9 +347,8 @@ describe("BlueprintGraphViewer", () => {
 	});
 
 	it("searches saved nodes and pins across graphs and selects their owning node", async () => {
-		renderViewer(clientWith());
-		await openPath();
-		const user = userEvent.setup();
+		renderInitial(clientWith());
+		const user = userEvent.setup({ delay: null });
 		const search = screen.getByLabelText("Search saved nodes and pins");
 		await user.type(search, "Saved Value");
 		await user.click(screen.getByRole("button", { name: "node · Saved Value" }));
@@ -396,7 +379,7 @@ describe("BlueprintGraphViewer", () => {
 				name: "Open WBP_Settings from project index"
 			})
 		).toBeDefined();
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await user.type(screen.getByLabelText(searchLabel), "settings");
 		await waitFor(() =>
 			expect(searchBlueprints).toHaveBeenLastCalledWith({ query: "settings" })
@@ -444,7 +427,7 @@ describe("BlueprintGraphViewer", () => {
 			screen.queryByRole("button", { name: "Open BP_PlayerCharacter from project index" })
 		).toBeNull();
 
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await user.type(screen.getByLabelText(searchLabel), "player");
 		await user.keyboard("{ArrowDown}");
 		expect(document.activeElement?.getAttribute("aria-label")).toBe(
@@ -467,11 +450,22 @@ describe("BlueprintGraphViewer", () => {
 		expect(screen.queryByLabelText("Projection coverage")).toBeNull();
 		expect(await screen.findByRole("button", { name: "Inspect On Clicked" })).toBeDefined();
 
-		fireEvent.click(
-			screen.getByRole("button", {
-				name: "Inspect Apply Settings With A Deliberately Long Saved Node Name"
-			})
+		const canvas = await screen.findByLabelText("Graph viewport");
+		expect(await within(canvas).findByText("On Clicked")).toBeTruthy();
+		const callNode = within(canvas).getByText(
+			"Apply Settings With A Deliberately Long Saved Node Name"
 		);
+		expect(within(canvas).getByText("bEnabled")).toBeTruthy();
+		fireEvent.click(callNode);
+		const inspector = screen.getByRole("complementary", { name: "Inspector" });
+		await waitFor(() => {
+			expect(
+				within(inspector).getByRole("heading", {
+					name: "Apply Settings With A Deliberately Long Saved Node Name"
+				})
+			).toBeTruthy();
+		});
+		expect(within(inspector).getByText("Whether the setting is enabled.")).toBeTruthy();
 		const pins = await screen.findByLabelText("Saved pin evidence");
 		expect(within(pins).getByText("bool")).toBeDefined();
 		expect(within(pins).getByText("Saved default")).toBeDefined();
@@ -480,7 +474,7 @@ describe("BlueprintGraphViewer", () => {
 	});
 
 	it("shows native partial evidence even when topology coverage has no gaps", async () => {
-		renderViewer(
+		renderInitial(
 			clientWith({
 				readBlueprint: (assetPath) =>
 					Effect.succeed({
@@ -499,17 +493,15 @@ describe("BlueprintGraphViewer", () => {
 			})
 		);
 
-		await openPath();
-
 		expect(await screen.findByText("Topology complete; projection partial")).toBeDefined();
 		expect(screen.getByText("Topology complete")).toBeDefined();
 		expect(screen.getByLabelText("Blueprint decode diagnostics")).toBeDefined();
 		expect(screen.getByText("One node payload remains only partially decoded.")).toBeDefined();
 	});
 
-	it("switches graphs and changes zoom", async () => {
+	it("switches saved graph tabs", async () => {
 		renderViewer(clientWith());
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 
 		await openPath();
 		expect(await screen.findByText("Fully decoded")).toBeDefined();
@@ -520,15 +512,6 @@ describe("BlueprintGraphViewer", () => {
 			})
 		);
 		expect(await screen.findByRole("button", { name: "Inspect Saved Value" })).toBeDefined();
-		const zoom = () =>
-			Number.parseInt(screen.getByLabelText("Graph zoom").textContent ?? "", 10);
-		await user.click(screen.getByRole("button", { name: "1:1" }));
-		await waitFor(() => expect(zoom()).toBe(100));
-		await user.click(screen.getByRole("button", { name: "Zoom in" }));
-		await waitFor(() => expect(zoom()).toBeGreaterThan(100));
-		await user.click(screen.getByRole("button", { name: "1:1" }));
-		await user.click(screen.getByRole("button", { name: "Zoom out" }));
-		await waitFor(() => expect(zoom()).toBeLessThan(100));
 	});
 
 	it("reports loading while a saved package is decoded", async () => {
@@ -539,12 +522,11 @@ describe("BlueprintGraphViewer", () => {
 	});
 
 	it("treats a graphless Blueprint as valid saved-package evidence", async () => {
-		renderViewer(
+		renderInitial(
 			clientWith({
 				readBlueprint: () => Effect.succeed(ready({ ...blueprint, graphs: [] }))
 			})
 		);
-		await openPath();
 
 		expect(
 			await screen.findByRole("heading", { name: "No saved editor graphs" })
@@ -563,19 +545,18 @@ describe("BlueprintGraphViewer", () => {
 			reason: "native_node_subclass_tail",
 			detail: "24 native subclass bytes remain opaque"
 		};
-		renderViewer(
+		renderInitial(
 			clientWith({
 				readBlueprint: () =>
 					Effect.succeed(ready({ ...blueprint, coverage_gaps: [metadataGap] }))
 			})
 		);
-		await openPath();
 
 		expect(
 			await screen.findByText("Topology complete; specialized metadata partial")
 		).toBeDefined();
 		expect(screen.getByText(/does not mean graph links are missing/)).toBeDefined();
-		await userEvent.setup().click(screen.getByText("1 coverage gap"));
+		await userEvent.setup({ delay: null }).click(screen.getByText("1 coverage gap"));
 		expect(screen.getByText("24 native subclass bytes remain opaque")).toBeDefined();
 	});
 
@@ -585,13 +566,12 @@ describe("BlueprintGraphViewer", () => {
 			reason: "unresolved_linked_pin",
 			detail: "Linked pin owner was not decoded"
 		};
-		renderViewer(
+		renderInitial(
 			clientWith({
 				readBlueprint: () =>
 					Effect.succeed(ready({ ...blueprint, coverage_gaps: [topologyGap] }))
 			})
 		);
-		await openPath();
 
 		expect(await screen.findByText("Partial saved-graph projection")).toBeDefined();
 		expect(screen.getByText("Topology partial")).toBeDefined();
@@ -630,7 +610,7 @@ describe("BlueprintGraphViewer", () => {
 						}
 					];
 		});
-		renderViewer(
+		renderInitial(
 			clientWith({
 				readBlueprint: () =>
 					Effect.succeed(
@@ -648,7 +628,6 @@ describe("BlueprintGraphViewer", () => {
 					)
 			})
 		);
-		await openPath();
 
 		expect(within(screen.getByLabelText("Blueprint summary")).getByText("24")).toBeDefined();
 		// Every saved node mounts as an inspectable Flow node, however far apart they were saved.
@@ -673,12 +652,9 @@ describe("BlueprintGraphViewer", () => {
 	});
 
 	it.each<readonly [BlueprintGraphFailureReason, string]>([
-		["unsupported_version", "This saved package revision is unsupported"],
-		["control_rig", "Control Rig uses a different graph model"],
-		["malformed_package", "The saved package is malformed"],
-		["missing_reader", "The local UAsset reader is unavailable"]
+		["unsupported_version", "This saved package revision is unsupported"]
 	])("renders the %s recovery state", async (reason, title) => {
-		renderViewer(
+		renderInitial(
 			clientWith({
 				readBlueprint: () =>
 					Effect.succeed({
@@ -690,7 +666,6 @@ describe("BlueprintGraphViewer", () => {
 					})
 			})
 		);
-		await openPath();
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain(title);

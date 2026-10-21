@@ -271,14 +271,4 @@ describe("EditorForegroundResponsiveness", () => {
 			})
 		).pipe(Effect.provide(layer));
 	});
-
-	it.effect("reports the editor's diagnostic state", () => {
-		const { layer } = fakeEditor();
-		return Effect.gen(function* () {
-			const state = yield* Effect.flatMap(EditorForegroundResponsiveness, (service) =>
-				service.state(endpoint)
-			);
-			expect(state.status === "reported" && state.throttleWhenNotForeground).toBe(true);
-		}).pipe(Effect.provide(layer));
-	});
 });

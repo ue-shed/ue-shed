@@ -28,6 +28,10 @@ export function frameRateLabel(rate: SequenceRate | null): string {
 	return `${Number((rate.numerator / rate.denominator).toFixed(2))} fps`;
 }
 
+export function frameRateTooltip(rate: SequenceRate | null): string | undefined {
+	return rate && rate.denominator !== 1 ? `${rate.numerator}/${rate.denominator} fps` : undefined;
+}
+
 export function playbackLabel(sequence: LevelSequenceProjection): string {
 	const range = sequence.playback_range;
 	if (range === null) return "Playback range not saved";

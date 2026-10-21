@@ -183,19 +183,6 @@ describe("authoring wire contract", () => {
 		});
 	});
 
-	it("preserves an explicit DataTable row handle", () => {
-		const value = Schema.decodeUnknownSync(AuthoringValue)({
-			kind: "row_reference",
-			rowName: "Right_Alpha",
-			tableObjectPath: "/Game/Fixture/DT_Right.DT_Right"
-		});
-		expect(value).toEqual({
-			kind: "row_reference",
-			rowName: "Right_Alpha",
-			tableObjectPath: "/Game/Fixture/DT_Right.DT_Right"
-		});
-	});
-
 	it("round-trips recursive authoring values through encode", () => {
 		const nested = {
 			kind: "struct" as const,
@@ -207,6 +194,11 @@ describe("authoring wire contract", () => {
 						kind: "array" as const,
 						values: [
 							{ kind: "name" as const, value: "Alpha" },
+							{
+								kind: "row_reference" as const,
+								rowName: "Right_Alpha",
+								tableObjectPath: "/Game/Fixture/DT_Right.DT_Right"
+							},
 							{
 								kind: "unsupported" as const,
 								reason: "opaque bytes",

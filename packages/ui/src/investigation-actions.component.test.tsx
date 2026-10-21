@@ -7,7 +7,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { EffectRuntimeProvider } from "./effect-solid.js";
 import { InvestigationActions } from "./investigation-actions.js";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
 it("blocks compact export and preset actions while a project operation is running", async () => {
 	const runtime = ManagedRuntime.make(Layer.empty);
@@ -181,7 +184,8 @@ it("restores presets, reports file failures and cancellation, and hides stale re
 it("keeps compact results and disabled reasons out of the toolbar flow", async () => {
 	const runtime = ManagedRuntime.make(Layer.empty);
 	const [disabled, setDisabled] = createSignal(true);
-	const user = userEvent.setup();
+	vi.useFakeTimers({ shouldAdvanceTime: true });
+	const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 	const view = render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
 			<InvestigationActions
@@ -219,6 +223,7 @@ it("keeps compact results and disabled reasons out of the toolbar flow", async (
 		const anchor = exporter.parentElement;
 		if (!anchor) throw new Error("The export tool has no hover anchor.");
 		await user.hover(anchor);
+		vi.advanceTimersByTime(300);
 		expect((await screen.findByRole("tooltip")).textContent).toContain("Wait for the search");
 		await user.unhover(anchor);
 

@@ -32,6 +32,21 @@ contract it claims to test.
 Coverage reports help find missed paths. A percentage is not the goal. Critical state machines,
 codecs, errors, and recovery need deep coverage.
 
+Observatory actor-stream tests compare encoder output with the checked-in binary contracts and
+never rewrite them. To intentionally regenerate those fixtures, run
+`pnpm --filter @ue-shed/observatory fixtures:generate`, then review the binary diff and run
+`pnpm test packages/observatory/src/actor-stream-protocol.test.ts`.
+
+The ordinary suite retains camera lock ownership guards. Process-kill camera recovery and the
+50,000-entry localization performance budget run in explicit lanes:
+
+- `pnpm --filter @ue-shed/cameras test:recovery` retains all four killed-writer boundaries.
+- `pnpm --filter @ue-shed/localization test:performance` retains the full PO/archive scale input.
+
+The Node project's default excludes `*.recovery.test.ts` and `*.perf.test.ts`; the package
+configs explicitly include them. Run these lanes when changing camera persistence or localization
+parsers respectively.
+
 ## Local verification
 
 GitHub Actions runs the portable repository checks on every pull request, including PRs targeting

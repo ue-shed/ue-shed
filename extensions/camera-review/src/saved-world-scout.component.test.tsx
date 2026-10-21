@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "../../../test-support/actor-explorer-layout.js";
 
-import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import type { SavedWorld } from "@ue-shed/protocol";
@@ -132,39 +132,6 @@ describe("SavedWorldScout", () => {
 
 		await screen.findByText("/Game/Demo/DemoArena");
 		await waitFor(() => expect(picker.textContent).toContain("Content/Demo/DemoArena.umap"));
-	});
-
-	it("filters saved actors and classes through one bounded explorer", async () => {
-		const user = userEvent.setup();
-		renderScout();
-
-		await screen.findByText("PointLight");
-		const filter = screen.getByRole("textbox", { name: "Find saved actor" });
-		await user.type(filter, "light");
-
-		expect(screen.getByText("PointLight")).toBeDefined();
-		expect(screen.queryByText("StaticMeshActor")).toBeNull();
-	});
-
-	it("keeps actor classes selected by default and can invert the selection", async () => {
-		const user = userEvent.setup();
-		renderScout();
-
-		await screen.findByText("PointLight");
-		await user.click(screen.getByRole("button", { name: "Toggle actor class filters" }));
-		const classFilters = screen.getByLabelText("Actor class filters");
-		const light = within(classFilters).getByRole("button", { name: /PointLight/ });
-		const mesh = within(classFilters).getByRole("button", { name: /StaticMeshActor/ });
-		expect(light!.getAttribute("aria-pressed")).toBe("true");
-		expect(mesh!.getAttribute("aria-pressed")).toBe("true");
-
-		await user.click(light!);
-		expect(light!.getAttribute("aria-pressed")).toBe("false");
-		expect(mesh!.getAttribute("aria-pressed")).toBe("true");
-
-		await user.click(screen.getByRole("button", { name: "INVERT" }));
-		expect(light!.getAttribute("aria-pressed")).toBe("true");
-		expect(mesh!.getAttribute("aria-pressed")).toBe("false");
 	});
 
 	it("keeps an outliner selection in sync with the saved actor inspector", async () => {

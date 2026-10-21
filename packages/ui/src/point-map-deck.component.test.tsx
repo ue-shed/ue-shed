@@ -83,6 +83,9 @@ describe("point map controllers", () => {
 			const map = probe();
 			renderers[renderer](map);
 			await waitFor(() => expect(map.views.length).toBeGreaterThan(0));
+			if (renderer === "deck") {
+				expect(screen.getByTestId("point-map-deck-root").dataset.renderer).toBe("deck.gl");
+			}
 			const controller = map.controllers.findLast((entry) => entry !== undefined);
 			expect(controller).toBeDefined();
 			if (controller === undefined) return;
@@ -100,13 +103,6 @@ describe("point map controllers", () => {
 			await waitFor(() => expect(map.views.at(-1)?.zoomFactor).toBeCloseTo(1));
 		}
 	);
-
-	it("renders the deck map without falling back when deck starts", async () => {
-		const map = probe();
-		renderers.deck(map);
-		await waitFor(() => expect(map.controllers.length).toBeGreaterThan(0));
-		expect(screen.getByTestId("point-map-deck-root").dataset.renderer).toBe("deck.gl");
-	});
 
 	it("forwards the Canvas fallback controller for focus, zoom and reset", async () => {
 		// Deliver the public renderer failure during Deck initialization.

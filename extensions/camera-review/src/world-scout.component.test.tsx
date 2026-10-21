@@ -154,6 +154,7 @@ describe("WorldScout", () => {
 		expect(refreshRates).toEqual([30]);
 		const rate = await screen.findByRole("slider", { name: "World refresh rate" });
 		expect(rate.getAttribute("max")).toBe("10");
+		expect(screen.getByText(/FALLBACK 5 HZ/)).toBeDefined();
 		fireEvent.input(rate, { target: { value: "8" } });
 		expect(refreshRates.at(-1)).toBe(8);
 
@@ -617,47 +618,5 @@ describe("WorldScout", () => {
 		);
 		expect(await screen.findByRole("button", { name: /Beta actor/ })).toBeDefined();
 		expect(screen.getByTitle("/Game/Fixture/Beta")).toBeDefined();
-	});
-
-	it("reports polling fallback cadence instead of offering the stream max", async () => {
-		const snapshot = {
-			actors: [observed],
-			capturedAt: new Date().toISOString(),
-			mapPath: "/Game/Fixture/Observatory",
-			sequence: 1,
-			worldKind: "editor" as const,
-			worldSeconds: 1
-		};
-		const paint = syncPaintScheduler();
-		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
-			focusActor: (actorId) =>
-				Effect.succeed({
-					actorId,
-					authoringSubject: "selected" as const,
-					status: "focused" as const
-				}),
-			worldObservations: () =>
-				Stream.make({
-					status: "polling_fallback" as const,
-					cadenceHz: 5,
-					message: "Named-pipe observation is unavailable on this host.",
-					snapshot
-				})
-		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
-
-		render(() => (
-			<EffectRuntimeProvider runtime={runtime}>
-				<WorldScout
-					client={client}
-					paintScheduler={paint}
-					onActorFocused={() => undefined}
-				/>
-			</EffectRuntimeProvider>
-		));
-		paint.flush();
-		const rate = await screen.findByRole("slider", { name: "World refresh rate" });
-		expect(rate.getAttribute("max")).toBe("10");
-		expect(screen.getByText(/FALLBACK 5 HZ/)).toBeDefined();
 	});
 });

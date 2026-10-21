@@ -340,7 +340,7 @@ describe("AuthoringRoute", () => {
 			</EffectRuntimeProvider>
 		));
 
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await waitFor(() =>
 			expect(requests).toEqual([{ authority: "live", objectPath: snapshot.table.objectPath }])
 		);
@@ -442,7 +442,7 @@ describe("AuthoringRoute", () => {
 				</EffectRuntimeProvider>
 			));
 
-			const user = userEvent.setup();
+			const user = userEvent.setup({ delay: null });
 			await waitFor(() =>
 				expect(requests).toEqual([
 					{ authority: "live", objectPath: snapshot.table.objectPath }
@@ -548,7 +548,9 @@ describe("AuthoringRoute", () => {
 			</EffectRuntimeProvider>
 		));
 
-		await userEvent.setup().click(await screen.findByRole("button", { name: "Sessions" }));
+		await userEvent
+			.setup({ delay: null })
+			.click(await screen.findByRole("button", { name: "Sessions" }));
 		expect(await screen.findByText("Drafts")).toBeDefined();
 		expect(screen.getByText("1 change · Open")).toBeDefined();
 		expect(screen.getByText("Unsaved live changes")).toBeDefined();
@@ -620,7 +622,7 @@ describe("AuthoringRoute", () => {
 		expect(within(inspector).getByText("row:Alpha")).toBeDefined();
 		expect(within(inspector).queryByText("Unreal type")).toBeNull();
 		expect(within(inspector).queryByText("Value kind")).toBeNull();
-		await userEvent.setup().click(screen.getByRole("tab", { name: "Charts" }));
+		await userEvent.setup({ delay: null }).click(screen.getByRole("tab", { name: "Charts" }));
 		expect(await screen.findByText("Count distribution")).toBeDefined();
 		await userEvent
 			.setup()
@@ -681,7 +683,9 @@ describe("AuthoringRoute", () => {
 				<AuthoringRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		await userEvent.setup().click(await screen.findByRole("button", { name: "Apply changes" }));
+		await userEvent
+			.setup({ delay: null })
+			.click(await screen.findByRole("button", { name: "Apply changes" }));
 		expect(
 			await screen.findByText(
 				/Apply rejected: CompositeDataTable rows are derived and cannot be mutated directly/
@@ -769,7 +773,9 @@ describe("AuthoringRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		expect(await screen.findByText("No table open.")).toBeDefined();
-		await userEvent.setup().click(screen.getByRole("button", { name: "Choose file…" }));
+		await userEvent
+			.setup({ delay: null })
+			.click(screen.getByRole("button", { name: "Choose file…" }));
 		expect(
 			await screen.findByText("No table was selected. The current table is unchanged.")
 		).toBeDefined();
@@ -882,7 +888,7 @@ describe("AuthoringRoute", () => {
 				<AuthoringRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await user.click(await screen.findByRole("button", { name: "Add row" }));
 		const rowName = screen.getByRole("textbox", { name: "Row name" });
 		await user.clear(rowName);
@@ -1021,7 +1027,7 @@ describe("AuthoringRoute", () => {
 				<AuthoringRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		await waitFor(() => expect(sheet.props().readOnly).toBe(false));
 		expect(sheet.props().columns[0]?.editable).toBe(false);
 		expect(sheet.props().columns[1]?.editable).toBe(true);
@@ -1119,7 +1125,7 @@ describe("AuthoringRoute", () => {
 			</EffectRuntimeProvider>
 		));
 
-		const user = userEvent.setup();
+		const user = userEvent.setup({ delay: null });
 		const rowPicker = await screen.findByRole("combobox", { name: "Reference target row" });
 		expect(screen.getByText(rowReferenceSnapshot.table.objectPath)).toBeDefined();
 		expect(opened).toEqual([referenceTargetPath]);

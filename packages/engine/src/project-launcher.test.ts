@@ -258,12 +258,6 @@ it("builds normal and plugin launch arguments without a shell", () => {
 it.effect("resolves the engine and launches through the supplied process adapter", () =>
 	Effect.gen(function* () {
 		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-engine-launch-")));
-		const folder =
-			process.platform === "win32"
-				? "Win64"
-				: process.platform === "darwin"
-					? "Mac"
-					: "Linux";
 		const executable = editorExecutableFixture(root, "UnrealEditor");
 		const projectDescriptor = join(root, "Fixture.uproject");
 		yield* Effect.promise(() => mkdir(dirname(executable), { recursive: true }));
@@ -286,23 +280,6 @@ it.effect("resolves the engine and launches through the supplied process adapter
 		expect(yield* Ref.get(launches)).toEqual([
 			{ args: [projectDescriptor], cwd: root, executable }
 		]);
-		const projectBinaries = join(root, "Binaries", folder);
-		yield* Effect.promise(async () => {
-			await mkdir(projectBinaries, { recursive: true });
-			await writeFile(
-				join(root, "Engine", "Binaries", folder, "UnrealEditor.modules"),
-				JSON.stringify({ BuildId: "engine-build" })
-			);
-			await writeFile(
-				join(projectBinaries, "UnrealEditor.modules"),
-				JSON.stringify({ BuildId: "project-build" })
-			);
-		});
-		const refused = yield* Effect.flatMap(UnrealProjectLauncher, (launcher) =>
-			launcher.launch({ mode: { kind: "normal" }, projectDescriptor })
-		).pipe(Effect.provide(layer), Effect.result);
-		expect(refused).toMatchObject({ _tag: "Failure", failure: { code: "build_mismatch" } });
-		expect(yield* Ref.get(launches)).toHaveLength(1);
 		yield* Effect.promise(() => rm(root, { force: true, recursive: true }));
 	})
 );

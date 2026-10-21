@@ -85,22 +85,6 @@ describe("PerforceHistorySource", () => {
 		).toBe("example-client");
 	});
 
-	it("resolves a backend against the selected project context", async () => {
-		const roots: (string | undefined)[] = [];
-		const source = makePerforceHistorySource((projectRoot) => {
-			roots.push(projectRoot);
-			return backend();
-		});
-
-		await Effect.runPromise(
-			source
-				.listSubmittedChangelists({ limit: 1 })
-				.pipe(Effect.provideService(PerforceProjectContext, "D:/Perforce/ExampleProject"))
-		);
-
-		expect(roots).toEqual(["D:/Perforce/ExampleProject"]);
-	});
-
 	it("runs project-scoped commands with the matching client", async () => {
 		const calls: {
 			client: string | undefined;

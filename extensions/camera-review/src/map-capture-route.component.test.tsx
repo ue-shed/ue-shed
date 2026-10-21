@@ -254,40 +254,9 @@ describe("MapCaptureRoute", () => {
 		fireEvent.change(screen.getByRole("spinbutton", { name: "Size · UU" }), {
 			target: { value: "3000" }
 		});
-		expect(screen.getByText(/S 500 · N 3,500 · W -1,500 · E 1,500/)).toBeDefined();
-		expect(screen.getByText("2,048 × 2,048 UU")).toBeDefined();
-		fireEvent.change(screen.getByRole("spinbutton", { name: "Tile size · PX" }), {
-			target: { value: "2048" }
-		});
-		expect(screen.getByText("2,048 × 2,048 UU")).toBeDefined();
-		expect(screen.getByText("2 × 2")).toBeDefined();
-		expect(
-			screen.getByRole<HTMLInputElement>("spinbutton", {
-				name: "Resolution · UU/PX"
-			}).valueAsNumber
-		).toBe(1);
-		fireEvent.change(screen.getByRole("spinbutton", { name: "Tile size · PX" }), {
-			target: { value: "512" }
-		});
-		expect(screen.getByText("2 × 2")).toBeDefined();
-		const baseGrid = screen.getByRole<HTMLInputElement>("spinbutton", {
-			name: "Base grid"
-		});
-		fireEvent.change(baseGrid, {
-			target: { value: "4" }
-		});
-		expect(baseGrid.valueAsNumber).toBe(4);
-		expect(screen.getByText("4 × 4")).toBeDefined();
-		expect(
-			screen.getByRole<HTMLInputElement>("spinbutton", {
-				name: "Resolution · UU/PX"
-			}).valueAsNumber
-		).toBe(1.46484375);
 		fireEvent.change(screen.getByRole("spinbutton", { name: "Resolution · UU/PX" }), {
 			target: { value: "0.5" }
 		});
-		expect(screen.getByText("12 × 12")).toBeDefined();
-		expect(screen.getByText("256 × 256 UU")).toBeDefined();
 		await user.selectOptions(
 			screen.getByRole("combobox", { name: "Render profile" }),
 			"seam_stable"

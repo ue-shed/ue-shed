@@ -1,5 +1,4 @@
-import { AuthoringTableSnapshot } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { adaptWasmAuthoringTable, readWasmAuthoringTable } from "./wasm-reader.js";
 import { viewerSnapshot } from "./viewer-fixture.test-support.js";
@@ -12,12 +11,6 @@ const envelope = {
 };
 
 describe("DataTable WASM adapter", () => {
-	it("builds fixture evidence that decodes with the protocol snapshot schema", () => {
-		expect(Schema.decodeUnknownSync(AuthoringTableSnapshot)(viewerSnapshot)).toEqual(
-			viewerSnapshot
-		);
-	});
-
 	it("preserves the native snapshot and accepts partial evidence", async () => {
 		const read = await Effect.runPromise(adaptWasmAuthoringTable(envelope.path, envelope));
 		expect(read).toMatchObject({

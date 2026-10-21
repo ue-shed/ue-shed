@@ -58,16 +58,20 @@ it.effect("updates operation traffic, error, and latency metrics", () =>
 	})
 );
 
-it.effect("provides disabled and console telemetry modes through Effect Config", () =>
-	Effect.gen(function* () {
-		const health = yield* RuntimeHealthService;
-		expect((yield* health.snapshot()).telemetry).toBe("ready");
-	}).pipe(
-		Effect.provide(runtimeObservabilityLayer({ serviceName: "ue-shed-test" })),
-		Effect.provide(
-			ConfigProvider.layer(ConfigProvider.fromUnknown({ UE_SHED_TELEMETRY_MODE: "console" }))
+it.effect.each(["disabled", "console"] as const)(
+	"provides %s telemetry through Effect Config",
+	(mode) =>
+		Effect.gen(function* () {
+			const health = yield* RuntimeHealthService;
+			expect((yield* health.snapshot()).telemetry).toBe(
+				mode === "disabled" ? "disabled" : "ready"
+			);
+		}).pipe(
+			Effect.provide(runtimeObservabilityLayer({ serviceName: "ue-shed-test" })),
+			Effect.provide(
+				ConfigProvider.layer(ConfigProvider.fromUnknown({ UE_SHED_TELEMETRY_MODE: mode }))
+			)
 		)
-	)
 );
 
 it.effect("updates Observatory packet and paint metrics", () =>

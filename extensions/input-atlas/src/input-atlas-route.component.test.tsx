@@ -89,13 +89,14 @@ describe("InputAtlasRoute interactions", () => {
 		expect(screen.getByText("Claimed by 2 contexts")).toBeDefined();
 		expect(screen.getByText("IA_Jump")).toBeDefined();
 		expect(screen.getByText("IA_Handbrake")).toBeDefined();
-	});
 
-	it("names the scanned project so a switch is visible", async () => {
-		renderRoute();
-		await screen.findByText("SpaceBar");
 		expect(screen.getByText("DemoGame")).toBeDefined();
 		expect(screen.getByText("D:/Projects/DemoGame")).toBeDefined();
+		expect(screen.getByRole("button", { name: "F12" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Backspace" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "PgDn" })).toBeDefined();
+		expect(screen.getByTitle("NumPadSeven")).toBeDefined();
+		expect(screen.getAllByText("No trigger").length).toBeGreaterThan(0);
 	});
 
 	it("keeps the route responsive while the selected project is rescanning", async () => {
@@ -160,21 +161,6 @@ describe("InputAtlasRoute interactions", () => {
 		await user.click(screen.getByRole("button", { name: "F" }));
 		expect(screen.getByText("Unbound in every enabled context.")).toBeDefined();
 		expect(screen.queryByText("IA_Jump")).toBeNull();
-	});
-
-	it("renders the full keyboard, including function, navigation, and numpad keys", async () => {
-		renderRoute();
-		await screen.findByText("SpaceBar");
-		expect(screen.getByRole("button", { name: "F12" })).toBeDefined();
-		expect(screen.getByRole("button", { name: "Backspace" })).toBeDefined();
-		expect(screen.getByRole("button", { name: "PgDn" })).toBeDefined();
-		expect(screen.getByTitle("NumPadSeven")).toBeDefined();
-	});
-
-	it("says a mapping carried no serialized trigger rather than assuming one", async () => {
-		renderRoute();
-		await screen.findByText("SpaceBar");
-		expect(screen.getAllByText("No trigger").length).toBeGreaterThan(0);
 	});
 
 	it("surfaces a failed scan with its recovery guidance", async () => {

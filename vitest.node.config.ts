@@ -10,6 +10,8 @@ export default defineProject({
 		exclude: [
 			...configDefaults.exclude,
 			"**/*.component.test.tsx",
+			"**/*.recovery.test.ts",
+			"**/*.perf.test.ts",
 			"apps/workbench/e2e/**",
 			...(process.env.UE_SHED_HOST_RESPONSIVENESS === "1"
 				? []

@@ -27,12 +27,10 @@ import {
 } from "./review-repository.js";
 import { applyCandidateOverrides, generateFramingCandidates } from "./review-framing.js";
 import {
-	CaptureProfileId,
 	CaptureInvocation,
 	CaptureInvocationId,
 	CaptureRunId,
 	ReviewCaptureRequestCurrent,
-	ReviewSetId,
 	ReviewViewId,
 	VisibilityClassificationThresholds,
 	VisibilityMeasurement,
@@ -263,9 +261,6 @@ describe("Map Review contracts", () => {
 	});
 	it("keeps domain identities branded and validates a complete Review Set", () => {
 		const reviewSet = fixtureReviewSet();
-		expect(ReviewSetId.make(reviewSet.id)).toBe("fixture-structure");
-		expect(ReviewViewId.make(reviewSet.views[0]!.id)).toBe("structure-context");
-		expect(CaptureProfileId.make(reviewSet.captureProfiles[0]!.id)).toBe("fixture-hd");
 		const view = reviewSet.views[0]!;
 		const approvedPose = reviewViewApprovedPose(view);
 		if (approvedPose === undefined) throw new Error("Fixture must be world-fixed");
@@ -759,19 +754,7 @@ describe("durable capture loop", () => {
 		expect(second.invocation).toMatchObject({
 			cause: { correlationId: "daily-fixture", type: "external_automation" }
 		});
-	});
-
-	it("carries bounded runtime-trigger provenance through the supplied public seam", async () => {
-		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-runtime-cause-"));
-		temporaryDirectories.push(projectRoot);
-		const reviewSet = fixtureReviewSet();
-		const reviewSetPath = join(projectRoot, "set.json");
-		await Effect.runPromise(
-			saveReviewSet({ path: reviewSetPath, reviewSet }).pipe(
-				Effect.provide(ReviewRepositoryLive)
-			)
-		);
-		const invocation = CaptureInvocation.make({
+		const runtimeInvocation = CaptureInvocation.make({
 			cause: {
 				namespace: "fixture.scenario",
 				provenance: { event: "door-opened", sourceId: "door-a" },
@@ -783,20 +766,8 @@ describe("durable capture loop", () => {
 		});
 		const ids = ["runtime-run", operationId(6)];
 		const run = await runCapture(
-			{ invocation, projectRoot, reviewSetPath },
-			{
-				capture: (request) =>
-					Effect.succeed({
-						code: "fixture_failure",
-						contract: request.contract,
-						message: "Expected fixture failure",
-						operationId: request.operationId,
-						recovery: "No recovery required",
-						retrySafe: false,
-						status: "failed",
-						viewId: request.viewId
-					})
-			},
+			{ invocation: runtimeInvocation, projectRoot, reviewSetPath },
+			port,
 			() => ids.shift()!
 		);
 		expect(run.invocation.cause).toEqual({

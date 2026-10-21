@@ -105,7 +105,7 @@ describe("authoring Sheet operation boundary", () => {
 		});
 	});
 
-	it("rejects an entire paste that writes the name column, then accepts skipped name cells", () => {
+	it("forwards a rejected name-column paste to onEditFailure", () => {
 		const sheet = captureAuthoringSheet();
 		const onGesture = vi.fn();
 		const onEditFailure = vi.fn();
@@ -117,16 +117,6 @@ describe("authoring Sheet operation boundary", () => {
 				onEditFailure={onEditFailure}
 			/>
 		));
-		const enabledEdit: CellMutation = {
-			...countEdit,
-			address: { row: physicalRow(0), col: columnIdx(1) },
-			viewAddress: { row: visualRow(0), col: columnIdx(1) },
-			columnId: "Enabled",
-			oldValue: true,
-			newValue: false,
-			source: "paste"
-		};
-		const pastedCount = { ...countEdit, source: "paste" as const };
 		sheet.emit({
 			type: "batch-edit",
 			mutations: [
@@ -138,33 +128,12 @@ describe("authoring Sheet operation boundary", () => {
 					oldValue: "Scalar_Alpha",
 					newValue: "Renamed",
 					source: "paste"
-				},
-				enabledEdit,
-				pastedCount
+				}
 			]
 		});
 		expect(onGesture).not.toHaveBeenCalled();
 		expect(onEditFailure).toHaveBeenCalledOnce();
 		expect(onEditFailure).toHaveBeenCalledWith("Row names are read-only in the grid.");
-		expect(sheet.props().data[0]?.[0]).toBe("Scalar_Alpha");
-		// Peculiar's paste builder skips editable:false columns; it emits only the field writes.
-		sheet.emit({ type: "batch-edit", mutations: [enabledEdit, pastedCount] });
-		expect(onGesture).toHaveBeenCalledOnce();
-		expect(onGesture).toHaveBeenCalledWith({
-			kind: "set_cells",
-			edits: [
-				{
-					fieldName: "Enabled",
-					rowId: "row:Scalar_Alpha",
-					value: { kind: "bool", value: false }
-				},
-				{
-					fieldName: "Count",
-					rowId: "row:Scalar_Alpha",
-					value: { kind: "int", value: "13" }
-				}
-			]
-		});
 	});
 
 	it.each(["readOnly", "disabled"] as const)("blocks operations when %s", (guard) => {

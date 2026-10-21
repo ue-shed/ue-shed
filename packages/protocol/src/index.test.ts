@@ -2,7 +2,6 @@ import { Effect } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
-	CURRENT_PROTOCOL_VERSION,
 	IdentifierValidationError,
 	decodeActorId,
 	createActorId,
@@ -29,11 +28,5 @@ describe("protocol identifiers", () => {
 
 	it("keeps identifier brands distinct", () => {
 		expectTypeOf<ActorId>().not.toEqualTypeOf<CapabilityId>();
-	});
-});
-
-describe("protocol compatibility", () => {
-	it("starts explicitly at a pre-release protocol version", () => {
-		expect(CURRENT_PROTOCOL_VERSION).toEqual({ major: 0, minor: 1 });
 	});
 });

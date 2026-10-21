@@ -494,7 +494,6 @@ describe("ContentObservatoryRoute", () => {
 		await user.click(within(targetExplorer).getByRole("button", { name: /North NPC/ }));
 		await user.click(screen.getByRole("button", { name: "Read history" }));
 		expect(received?.mode).toBe("fast");
-		expect(received?.mode).toBe("fast");
 		if (received?.mode === "fast" && received.target.kind === "actor") {
 			expect(received.target.identity).toEqual({
 				actorGuid: actor.actorGuid,
@@ -653,24 +652,7 @@ describe("ContentObservatoryRoute", () => {
 		await user.click(screen.getByRole("tab", { name: "Actors" }));
 		expect(screen.getByRole("heading", { name: "Key lamp" })).toBeDefined();
 		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
-	});
 
-	it("keeps a selected changelist visible while its diff map focuses an actor", async () => {
-		const complete = completeState();
-		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
-			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
-		};
-		render(() => (
-			<EffectRuntimeProvider runtime={runtime}>
-				<ContentObservatoryRoute client={client} />
-			</EffectRuntimeProvider>
-		));
-		const user = userEvent.setup();
-		await user.click(screen.getByRole("tab", { name: "Changelists" }));
-		await user.click(screen.getByRole("button", { name: "Select changelist 10" }));
-		await user.click(screen.getByRole("tab", { name: "Actors" }));
 		const pointMap = await screen.findByRole("application", {
 			name: "Top-down saved actor points map"
 		});
@@ -713,30 +695,19 @@ describe("ContentObservatoryRoute", () => {
 		expect(within(evidence).getByRole("heading", { name: "CL 10" })).toBeDefined();
 		await user.click(screen.getByRole("tab", { name: "Actors" }));
 		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
-	});
 
-	it("keeps a range-removed actor inspectable with its lifecycle evidence", async () => {
-		const complete = completeState();
-		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
-			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
-		};
-		render(() => (
-			<EffectRuntimeProvider runtime={runtime}>
-				<ContentObservatoryRoute client={client} />
-			</EffectRuntimeProvider>
-		));
-		const user = userEvent.setup();
-		const outliner = screen.getByRole("complementary", { name: "Saved actor outliner" });
+		await user.clear(screen.getByRole("textbox", { name: "Find an actor" }));
 		await user.type(screen.getByRole("textbox", { name: "Find an actor" }), "label:departed");
-		const departed = within(outliner).getByRole("button", { name: /departed npc/i });
+		const removedOutliner = screen.getByRole("complementary", { name: "Saved actor outliner" });
+		const departed = within(removedOutliner).getByRole("button", { name: /departed npc/i });
 		expect(within(departed).getByText("Removed")).toBeDefined();
 		await user.click(departed);
 
-		const inspector = screen.getByRole("complementary", { name: "Selected saved actor" });
-		expect(within(inspector).getByText("removed in range")).toBeDefined();
-		expect(within(inspector).getByText("Removed")).toBeDefined();
+		const removedInspector = screen.getByRole("complementary", {
+			name: "Selected saved actor"
+		});
+		expect(within(removedInspector).getByText("removed in range")).toBeDefined();
+		expect(within(removedInspector).getByText("Removed")).toBeDefined();
 	});
 
 	it("replays discrete saved actor frames without another history request", async () => {

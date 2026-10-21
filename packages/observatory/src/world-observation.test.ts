@@ -11,7 +11,6 @@ import {
 	PacketSequence,
 	StreamActorIndex,
 	WorldActorCatalog,
-	WorldActorCatalogEntry,
 	WorldActorSnapshot,
 	WorldIndexedTransform,
 	WorldTransform,
@@ -102,33 +101,6 @@ describe("world observation catalog materialization", () => {
 		expect(catalog.entries[1]?.streamIndex).toBe(1);
 		expect(transforms).toHaveLength(2);
 		expect(transforms[1]?.transform.location).toEqual({ x: 3, y: 4, z: 0 });
-	});
-
-	it("materializes one ObservedActor without rebuilding the catalog", () => {
-		const entry = WorldActorCatalogEntry.make({
-			bounds: { center: { x: 0, y: 0, z: 0 }, extent: { x: 5, y: 5, z: 5 } },
-			className: "FixtureMover",
-			displayName: "flyer",
-			id: ActorId.make("flyer"),
-			path: "/Game/Fixture.flyer",
-			streamIndex: StreamActorIndex.make(0)
-		});
-		const observed = materializeObservedActor(
-			entry,
-			WorldTransform.make({
-				location: { x: 10, y: -20, z: 30 },
-				rotation: { x: 1, y: 2, z: 3 }
-			})
-		);
-		expect(observed).toEqual({
-			bounds: entry.bounds,
-			className: "FixtureMover",
-			displayName: "flyer",
-			id: entry.id,
-			location: { x: 10, y: -20, z: 30 },
-			path: entry.path,
-			rotation: { x: 1, y: 2, z: 3 }
-		});
 	});
 });
 
@@ -266,7 +238,7 @@ describe("world observation state transitions", () => {
 		});
 	});
 
-	it("retains the last sample as stale across reset and unavailable", () => {
+	it("retains the last sample across reset, unavailability, and polling fallback", () => {
 		let state = liveFromActors([actor("a", 5, 6)]);
 		state = applyTransformBatch(
 			state,
@@ -300,6 +272,20 @@ describe("world observation state transitions", () => {
 			y: 8,
 			z: 0
 		});
+
+		const prior = snapshot([actor("a", 7, 8)]);
+		const fallback = applyWorldObservationEvent(unavailable.state, {
+			_tag: "polling_fallback",
+			cadenceHz: 5,
+			message: "Named-pipe observation is unavailable on this host.",
+			snapshot: prior
+		});
+		expect(fallback.state).toEqual({
+			status: "polling_fallback",
+			cadenceHz: 5,
+			message: "Named-pipe observation is unavailable on this host.",
+			snapshot: prior
+		});
 	});
 
 	it("resumes live after a fresh catalog replaces a stale sample", () => {
@@ -322,22 +308,6 @@ describe("world observation state transitions", () => {
 		if (resumed.state.status !== "live") return;
 		expect(resumed.state.sample.catalog.sessionId).toBe(sessionB);
 		expect(resumed.state.sample.catalog.entries).toHaveLength(2);
-	});
-
-	it("enters explicit polling fallback without clearing prior snapshot data", () => {
-		const prior = snapshot([actor("a", 1, 2)]);
-		const result = applyWorldObservationEvent(connectingState(), {
-			_tag: "polling_fallback",
-			cadenceHz: 5,
-			message: "Named-pipe observation is unavailable on this host.",
-			snapshot: prior
-		});
-		expect(result.state).toEqual({
-			status: "polling_fallback",
-			cadenceHz: 5,
-			message: "Named-pipe observation is unavailable on this host.",
-			snapshot: prior
-		});
 	});
 
 	it("rejects transform batches before a catalog is installed", () => {

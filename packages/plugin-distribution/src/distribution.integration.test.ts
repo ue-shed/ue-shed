@@ -82,7 +82,7 @@ function tarArchive(entries: readonly TarEntry[]): Buffer {
 		if (padding > 0) blocks.push(Buffer.alloc(padding));
 	}
 	blocks.push(Buffer.alloc(1024));
-	return gzipSync(Buffer.concat(blocks), { level: 9 });
+	return gzipSync(Buffer.concat(blocks), { level: 1 });
 }
 
 function digest(bytes: Uint8Array) {

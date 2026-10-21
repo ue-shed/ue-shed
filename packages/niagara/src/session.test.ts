@@ -1,7 +1,9 @@
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
+import { it } from "@effect/vitest";
+import { TestClock } from "effect/testing";
 import { expect, test } from "vitest";
 import { submitNiagaraSessionRequest } from "./session.js";
 
@@ -27,13 +29,37 @@ test("session transport accepts only the matching completed request", async () =
 		JSON.parse(await readFile(join(input.directory, `${runId}.request.json`), "utf8"))
 	).toEqual({ runId });
 });
-test("a timeout leaves cancellation evidence for the producer", async () => {
-	const input = await fixture();
-	await expect(
-		Effect.runPromise(submitNiagaraSessionRequest({ ...input, timeoutMs: 30 }))
-	).rejects.toThrow();
-	expect((await stat(join(input.directory, `${runId}.cancel`))).isFile()).toBe(true);
-});
+it.effect("a timeout leaves cancellation evidence for the producer", () =>
+	Effect.gen(function* () {
+		const input = yield* Effect.promise(fixture);
+		const fiber = yield* submitNiagaraSessionRequest({ ...input, timeoutMs: 30 }).pipe(
+			Effect.forkChild
+		);
+		// Publication completes before the timeout begins; wait for that real filesystem boundary.
+		yield* Effect.promise(() =>
+			expect
+				.poll(
+					async () => {
+						try {
+							return (
+								await stat(join(input.directory, runId + ".request.json"))
+							).isFile();
+						} catch {
+							return false;
+						}
+					},
+					{ interval: 1 }
+				)
+				.toBe(true)
+		);
+		yield* TestClock.adjust("30 millis");
+		const failure = yield* Effect.flip(Fiber.join(fiber));
+		expect(failure.message).toContain("timed out");
+		expect(
+			(yield* Effect.promise(() => stat(join(input.directory, runId + ".cancel")))).isFile()
+		).toBe(true);
+	})
+);
 
 test("caller interruption leaves cancellation evidence before completing", async () => {
 	const input = await fixture();

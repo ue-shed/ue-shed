@@ -1,8 +1,8 @@
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Stream } from "effect";
-import { describe, expect, it } from "vitest";
+import { Effect, ManagedRuntime, Stream } from "effect";
+import { afterAll, describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import {
 	AssetReader,
@@ -23,8 +23,9 @@ import {
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
-const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
-	Effect.runPromise(effect.pipe(Effect.provide(assetReaderLayer({ executable: executable! }))));
+const runtime = ManagedRuntime.make(assetReaderLayer({ executable: executable! }));
+afterAll(() => runtime.dispose());
+const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) => runtime.runPromise(effect);
 
 describe.skipIf(!executable)("batched project scan", () => {
 	it("reuses one scoped worker and serializes concurrent single-package reads", async () => {

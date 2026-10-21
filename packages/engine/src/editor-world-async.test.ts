@@ -176,3 +176,25 @@ it.effect("reads current editor state and rejects unrelated completion identitie
 		}).pipe(Effect.provide(testLayer));
 	})
 );
+
+it.effect("negotiates the synchronous capability and opens an explicit map", () =>
+	Effect.gen(function* () {
+		const calls: string[] = [];
+		const opened = yield* Effect.flatMap(EditorWorldControl, (control) =>
+			control.open(request)
+		).pipe(
+			Effect.provide(
+				layer((call) => {
+					calls.push(call.functionName);
+					return Effect.succeed(
+						call.functionName === "GetCapabilityManifest"
+							? { ...manifest, capabilities: ["editor.world-control.v1"] }
+							: result
+					);
+				})
+			)
+		);
+		expect(calls).toEqual(["GetCapabilityManifest", "OpenMap"]);
+		expect(opened).toEqual(result);
+	})
+);

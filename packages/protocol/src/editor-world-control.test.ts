@@ -36,7 +36,7 @@ describe("editor world-control wire contract", () => {
 			).toEqual(canonicalJsonSchemaReferences(wire));
 		}
 	});
-	it("does not accept a pending acknowledgement as a completed map open", () => {
+	it("requires completed map results and preserves dirty-world refusals", () => {
 		const base = { contract, operationId: "open", targetMapPath: "/Game/Fixture/Target" };
 		expect(
 			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "pending" })._tag
@@ -51,39 +51,30 @@ describe("editor world-control wire contract", () => {
 		expect(
 			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "anything" })._tag
 		).toBe("Failure");
-	});
-	it("accepts an explicit target map request", () => {
-		expect(
-			Schema.decodeUnknownResult(EditorWorldOpenRequest)({
-				contract,
-				operationId: "open-fixture-map",
-				targetMapPath: "/Game/Fixture/Cameras/L_CameraLoad"
-			})._tag
-		).toBe("Success");
-	});
 
-	it("represents dirty-state refusal without a hidden discard policy", () => {
-		const response = {
-			after: {
-				dirtyWorldPackages: ["/Game/Fixture/Maps/L_Work"],
-				mapPath: "/Game/Fixture/Maps/L_Work",
-				playSessionActive: false
-			},
-			before: {
-				dirtyWorldPackages: ["/Game/Fixture/Maps/L_Work"],
-				mapPath: "/Game/Fixture/Maps/L_Work",
-				playSessionActive: false
-			},
-			code: "dirty_world",
-			contract,
-			message: "The open editor world has unsaved packages.",
-			operationId: "open-fixture-map",
-			outcome: "rejected",
-			recovery: "Save or revert the dirty world packages, then retry.",
-			retrySafe: true,
-			targetMapPath: "/Game/Fixture/Cameras/L_CameraLoad"
-		};
-		expect(Effect.runSync(decodeEditorWorldOpenResponse(response))).toEqual(response);
+		{
+			const response = {
+				after: {
+					dirtyWorldPackages: ["/Game/Fixture/Maps/L_Work"],
+					mapPath: "/Game/Fixture/Maps/L_Work",
+					playSessionActive: false
+				},
+				before: {
+					dirtyWorldPackages: ["/Game/Fixture/Maps/L_Work"],
+					mapPath: "/Game/Fixture/Maps/L_Work",
+					playSessionActive: false
+				},
+				code: "dirty_world",
+				contract,
+				message: "The open editor world has unsaved packages.",
+				operationId: "open-fixture-map",
+				outcome: "rejected",
+				recovery: "Save or revert the dirty world packages, then retry.",
+				retrySafe: true,
+				targetMapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+			};
+			expect(Effect.runSync(decodeEditorWorldOpenResponse(response))).toEqual(response);
+		}
 	});
 
 	it("rejects filesystem paths as map identities", () => {

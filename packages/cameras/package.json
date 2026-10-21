@@ -48,6 +48,7 @@
 		"build": "node ../../scripts/clean-package-dist.ts && tsc -p tsconfig.build.json",
 		"contract:check": "tsx scripts/check-review-contract.ts",
 		"prepack": "pnpm run build",
+		"test:recovery": "vitest run --config vitest.recovery.config.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

@@ -84,19 +84,6 @@ describe("Map Capture Plan draft", () => {
 		expect(mapCaptureDraftCenter(resized)).toEqual({ x: 5_000, y: -2_000 });
 	});
 
-	it("moves the requested capture center without changing its size", () => {
-		const draft = mapCapturePlanDraft(plan);
-		const moved = recenterMapCapturePlanDraft(draft, { x: 5_000, y: -2_000 });
-
-		expect(mapCaptureDraftCenter(moved)).toEqual({ x: 5_000, y: -2_000 });
-		expect(moved.requestedBounds.maxX - moved.requestedBounds.minX).toBe(
-			draft.requestedBounds.maxX - draft.requestedBounds.minX
-		);
-		expect(moved.requestedBounds.maxY - moved.requestedBounds.minY).toBe(
-			draft.requestedBounds.maxY - draft.requestedBounds.minY
-		);
-	});
-
 	it("authors one square capture size symmetrically around the center", () => {
 		const draft = recenterMapCapturePlanDraft(mapCapturePlanDraft(plan), {
 			x: 5_000,

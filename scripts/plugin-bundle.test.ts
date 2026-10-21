@@ -599,7 +599,7 @@ test("rejects a descriptor dependency that is absent from the bundle", async () 
 	}
 });
 
-test("Game Text bundle projects Core runtime only and preserves the separate legacy range", async () => {
+test("Game Text bundle stages legacy Core with asset navigation and the separate legacy range", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-game-text-bundle-"));
 	try {
 		const pluginRoot = join(output, "Plugins");
@@ -616,7 +616,7 @@ test("Game Text bundle projects Core runtime only and preserves the separate leg
 			pluginRoot,
 			releaseVersion: PUBLIC_VERSION,
 			requestedPlugins: GAME_TEXT_PLUGIN_IDS,
-			coreRuntimeOnly: true,
+			legacyCore: true,
 			unreal: GAME_TEXT_UNREAL_RANGE,
 			releaseAssetStem: `ue-shed-plugins-game-text-${PUBLIC_VERSION}`
 		});
@@ -631,7 +631,26 @@ test("Game Text bundle projects Core runtime only and preserves the separate leg
 			GAME_TEXT_UNREAL_RANGE
 		);
 		const entries = archiveEntries(result.archivePath);
-		assert.ok(!entries.some((entry) => entry.includes("UEShedCoreEditor")));
+		// UE 4.27 gets asset navigation and window activation, not the UE5 editor features.
+		const editor = "UEShed/Plugins/UEShedCore/Source/UEShedCoreEditor/";
+		assert.deepEqual(
+			entries
+				.filter((entry) => entry.startsWith(editor))
+				.map((entry) => entry.slice(editor.length))
+				.sort(),
+			[
+				"Private/UEShedCoreEditorModule.cpp",
+				"Private/UEShedEditorAssetNavigationLibrary.cpp",
+				"Private/UEShedEditorAssetNavigationTests.cpp",
+				"Private/UEShedEditorWindowLibrary.cpp",
+				"Public/UEShedEditorAssetNavigationLibrary.h",
+				"Public/UEShedEditorWindowLibrary.h",
+				"UEShedCoreEditor.Build.cs"
+			]
+		);
+		assert.ok(
+			entries.includes("UEShed/Plugins/UEShedCore/Source/UEShedCore/UEShedCore.Build.cs")
+		);
 		assert.ok(
 			!entries.some((entry) => /UEShedAuthoring|UEShedWorld|UEShedCameras/u.test(entry))
 		);
@@ -641,10 +660,8 @@ test("Game Text bundle projects Core runtime only and preserves the separate leg
 			{ cwd: dirname(result.archivePath), encoding: "utf8" }
 		);
 		assert.equal(extracted.status, 0);
-		assert.deepEqual(
-			JSON.parse(extracted.stdout).Modules.map((module: { Name: string }) => module.Name),
-			["UEShedCore"]
-		);
+		// Both modules ship, so the canonical descriptor is used unchanged.
+		assert.equal(extracted.stdout, before);
 		assert.equal(await readFile(descriptorPath, "utf8"), before);
 	} finally {
 		await rm(output, { recursive: true, force: true });

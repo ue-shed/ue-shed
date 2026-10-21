@@ -82,9 +82,7 @@ const sourceCommit = releaseArgument("commit");
 const sourceRef = releaseArgument("ref");
 const result = await buildPluginBundle({
 	candidateManifest,
-	...(preset === "game-text"
-		? { coreRuntimeOnly: true, unreal: GAME_TEXT_UNREAL_RANGE }
-		: undefined),
+	...(preset === "game-text" ? { legacyCore: true, unreal: GAME_TEXT_UNREAL_RANGE } : undefined),
 	output: join(repositoryRoot, "out", "releases", PUBLIC_VERSION, selected.directory),
 	releaseVersion: PUBLIC_VERSION,
 	releaseAssetStem: selected.stem,

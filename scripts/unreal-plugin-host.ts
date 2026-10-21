@@ -7,11 +7,12 @@ import {
 	mkdirSync,
 	readFileSync,
 	realpathSync,
+	statSync,
 	writeFileSync
 } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GAME_TEXT_PLUGIN_IDS } from "./plugin-bundle.ts";
+import { GAME_TEXT_PLUGIN_IDS, isLegacyCoreSource } from "./plugin-bundle.ts";
 import { isJsonString, parseJsonObject } from "./json.ts";
 import { buildInputStamp, buildUnlessUnchanged, engineBuildIdentity } from "./build-stamp.ts";
 import { traceProcess } from "./process-trace.ts";
@@ -199,14 +200,15 @@ export function prepareUnrealPlugins({
 	pluginIds = unrealEngineVersion(engineRoot)?.major === 4
 		? GAME_TEXT_PLUGIN_IDS
 		: ueShedPluginIds,
-	coreRuntimeOnly = unrealEngineVersion(engineRoot)?.major === 4
+	legacyCore = unrealEngineVersion(engineRoot)?.major === 4
 }: {
 	readonly engineRoot: string;
 	readonly projectPath: string;
 	readonly tools: UnrealEngineTools;
 	readonly additionalPluginDescriptors?: readonly string[];
 	readonly pluginIds?: readonly string[];
-	readonly coreRuntimeOnly?: boolean;
+	/** Stage UEShedCore for UE 4.27, keeping only `isLegacyCoreSource` files. */
+	readonly legacyCore?: boolean;
 }) {
 	const version = unrealEngineVersion(engineRoot);
 	if (!version) throw new Error(`Could not read the Unreal version under ${engineRoot}.`);
@@ -229,7 +231,7 @@ export function prepareUnrealPlugins({
 			);
 	const editorTarget = version.major === 4 ? "UE4Editor" : "UnrealEditor";
 	// Stage a bounded source graph without modifying canonical descriptors.
-	const selectedRoot = join(hostRoot, coreRuntimeOnly ? "GameTextSources" : "Sources");
+	const selectedRoot = join(hostRoot, legacyCore ? "LegacySources" : "Sources");
 	mkdirSync(selectedRoot, { recursive: true });
 	const descriptors = ueShedPluginDescriptors(pluginIds).map((descriptor) => {
 		const id = basename(descriptor, ".uplugin");
@@ -238,28 +240,19 @@ export function prepareUnrealPlugins({
 			recursive: true,
 			force: true,
 			filter: (source) => {
-				const path = relative(dirname(descriptor), source).split(/[\\/]/u);
+				const path = relative(dirname(descriptor), source);
 				return (
-					!["Binaries", "Intermediate"].includes(path[0] ?? "") &&
+					!["Binaries", "Intermediate"].includes(path.split(/[\\/]/u)[0] ?? "") &&
 					!(
-						coreRuntimeOnly &&
+						legacyCore &&
 						id === "UEShedCore" &&
-						path[0] === "Source" &&
-						path[1] === "UEShedCoreEditor"
+						!statSync(source).isDirectory() &&
+						!isLegacyCoreSource(path)
 					)
 				);
 			}
 		});
-		const staged = join(destination, `${id}.uplugin`);
-		if (coreRuntimeOnly && id === "UEShedCore") {
-			// SAFETY: this is the canonical UE Shed descriptor copied immediately above.
-			const plugin = JSON.parse(readFileSync(staged, "utf8")) as UnrealPluginDescriptor;
-			writeFileIfChanged(
-				staged,
-				`${JSON.stringify({ ...plugin, Modules: plugin.Modules.filter(({ Name }) => Name === "UEShedCore") }, null, "\t")}\n`
-			);
-		}
-		return staged;
+		return join(destination, `${id}.uplugin`);
 	});
 	descriptors.push(...additionalPluginDescriptors);
 	const hostProject = join(hostRoot, "UEShedPluginHost.uproject");
@@ -322,11 +315,7 @@ export function prepareUnrealPlugins({
 					...ueShedPluginDescriptors(pluginIds).map((descriptor) => dirname(descriptor)),
 					...additionalPluginDescriptors.map((descriptor) => dirname(descriptor))
 				],
-				[
-					...engineBuildIdentity(engineRoot, editorTarget),
-					...buildArgs,
-					String(coreRuntimeOnly)
-				]
+				[...engineBuildIdentity(engineRoot, editorTarget), ...buildArgs, String(legacyCore)]
 			),
 			outputs: modules.map((name) =>
 				join(hostRoot, "Binaries", "Win64", `${editorTarget}-${name}.dll`)

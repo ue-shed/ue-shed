@@ -42,7 +42,8 @@ interface PluginDescriptor {
 }
 
 interface BuildPluginBundleOptions {
-	readonly coreRuntimeOnly?: boolean | undefined;
+	/** Stage UEShedCore for UE 4.27, keeping only `isLegacyCoreSource` files. */
+	readonly legacyCore?: boolean | undefined;
 	readonly output: string;
 	readonly releaseVersion: string;
 	readonly pluginRoot?: string | undefined;
@@ -115,8 +116,33 @@ export async function validatePublicPluginBundle({
 	return manifest;
 }
 
-/** Localization-only graph, including a projected runtime-only Core descriptor. */
+/** Localization graph for UE 4.27, with the legacy Core sources (`isLegacyCoreSource`). */
 export const GAME_TEXT_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedGameText"]);
+
+/**
+ * The UEShedCoreEditor sources UE 4.27 builds: asset navigation and the window activation it
+ * raises Unreal with. Play sessions, world control and foreground responsiveness use UE5 editor
+ * APIs and stay out of the legacy bundle; the capability manifest advertises only built classes.
+ */
+const LEGACY_CORE_EDITOR_SOURCES = new Set([
+	"UEShedCoreEditor.Build.cs",
+	"Private/UEShedCoreEditorModule.cpp",
+	"Private/UEShedEditorAssetNavigationLibrary.cpp",
+	"Private/UEShedEditorAssetNavigationTests.cpp",
+	"Private/UEShedEditorWindowLibrary.cpp",
+	"Public/UEShedEditorAssetNavigationLibrary.h",
+	"Public/UEShedEditorWindowLibrary.h"
+]);
+
+/** Whether a UEShedCore file, relative to the plugin directory, belongs to the UE 4.27 build. */
+export function isLegacyCoreSource(path: string): boolean {
+	const editor = "Source/UEShedCoreEditor/";
+	const normalized = path.replaceAll("\\", "/");
+	return (
+		!normalized.startsWith(editor) ||
+		LEGACY_CORE_EDITOR_SOURCES.has(normalized.slice(editor.length))
+	);
+}
 export const GAME_TEXT_UNREAL_RANGE = Object.freeze({ minimum: "4.27", maximum: "4.27.2" });
 
 /** Exact Unreal plugin graph for Plan 028's first Map Review vertical. */
@@ -416,21 +442,25 @@ function sortArchivePaths(paths: readonly string[]) {
 }
 
 async function prepareArchiveTree({
-	coreRuntimeOnly,
+	legacyCore,
 	pluginRoot,
 	sourceFiles,
 	licensePath,
 	stageRoot
 }: {
 	readonly pluginRoot: string;
-	readonly coreRuntimeOnly?: boolean | undefined;
+	readonly legacyCore?: boolean | undefined;
 	readonly sourceFiles: readonly string[];
 	readonly licensePath?: string | undefined;
 	readonly stageRoot: string;
 }) {
 	const archivePaths: string[] = [];
 	for (const sourceFile of sourceFiles) {
-		if (coreRuntimeOnly && sourceFile.startsWith("UEShedCore/Source/UEShedCoreEditor/"))
+		if (
+			legacyCore &&
+			sourceFile.startsWith("UEShedCore/") &&
+			!isLegacyCoreSource(sourceFile.slice("UEShedCore/".length))
+		)
 			continue;
 		const relativePath = relativePluginPath(pluginRoot, join(pluginRoot, sourceFile));
 		const destination = join(stageRoot, archivePrefix, relativePath);
@@ -439,20 +469,7 @@ async function prepareArchiveTree({
 		const details = await lstat(source);
 		if (!details.isFile())
 			throw new Error(`Plugin source must be a regular file: ${sourceFile}`);
-		if (coreRuntimeOnly && sourceFile === "UEShedCore/UEShedCore.uplugin") {
-			const descriptor = parseJsonObject(await readFile(source, "utf8"));
-			if (!Array.isArray(descriptor.Modules))
-				throw new Error("Core descriptor has no modules.");
-			const modules = descriptor.Modules.filter(
-				(module) => isJsonObject(module) && module.Name === "UEShedCore"
-			);
-			await writeFile(
-				destination,
-				`${JSON.stringify({ ...descriptor, Modules: modules }, null, "\t")}\n`
-			);
-		} else {
-			await copyFile(source, destination);
-		}
+		await copyFile(source, destination);
 		archivePaths.push(`${archivePrefix}/${relativePath}`);
 	}
 	if (licensePath) {
@@ -594,7 +611,7 @@ async function ensureEmptyOutput(output: string) {
  * pluginRoot is useful for fixtures and is walked with the same portability exclusions.
  */
 export async function buildPluginBundle({
-	coreRuntimeOnly,
+	legacyCore,
 	output,
 	releaseVersion,
 	pluginRoot = defaultPluginRoot,
@@ -654,7 +671,7 @@ export async function buildPluginBundle({
 		const stageRoot = join(tempRoot, "tree");
 		await mkdir(stageRoot, { recursive: true });
 		const archivePaths = await prepareArchiveTree({
-			coreRuntimeOnly,
+			legacyCore,
 			pluginRoot: resolvedPluginRoot,
 			sourceFiles,
 			licensePath: resolvedLicensePath,

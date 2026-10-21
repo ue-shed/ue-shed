@@ -66,7 +66,7 @@ const descriptors = prepareUnrealPlugins({
 	projectPath: projectFile,
 	tools,
 	pluginIds,
-	coreRuntimeOnly: isLegacy
+	legacyCore: isLegacy
 });
 
 function commandlet(name: string, args: readonly string[], label: string) {

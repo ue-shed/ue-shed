@@ -144,6 +144,33 @@ it("debounces source-only search, shows Searching and never flashes a false empt
 	await screen.findByText("0 matches");
 	expect(screen.getByText(/No text matches/u)).toBeDefined();
 });
+it("requests a loaded scan's first page at once and debounces only typing", async () => {
+	const query = textCorpusQuery(corpus);
+	let loadedAt = 0;
+	const searches: { query: string; at: number }[] = [];
+	const user = userEvent.setup({ delay: null });
+	mount(
+		makeClient(corpus, {
+			loadConfiguredProject: () =>
+				Effect.sync(() => {
+					loadedAt = performance.now();
+					return { status: "completed" as const, summary: query.summary() };
+				}),
+			search: (request) =>
+				Effect.sync(() => {
+					searches.push({ query: request.query, at: performance.now() });
+					return { status: "ready" as const, page: query.search(request) };
+				})
+		})
+	);
+	await screen.findByText("2 matches");
+	expect(searches[0]!.at - loadedAt).toBeLessThan(100);
+	const typedAt = performance.now();
+	await user.type(screen.getByRole("searchbox", { name: "Search game text" }), "Q");
+	await screen.findByText("1 match");
+	expect(searches.at(-1)!.query).toBe("Q");
+	expect(searches.at(-1)!.at - typedAt).toBeGreaterThanOrEqual(110);
+});
 it("drops a late response when the search request has changed", async () => {
 	const release = await runtime.runPromise(Deferred.make<void>());
 	const requested: string[] = [];

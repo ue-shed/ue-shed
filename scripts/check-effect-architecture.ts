@@ -2,7 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
-import { isJsonObject, parseJsonObject } from "./json.ts";
+import { isJsonObject, isJsonString, parseJsonObject } from "./json.ts";
 import { rawDecoderExportBaseline } from "./raw-decoder-export-baseline.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -918,6 +918,120 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 	return failures;
 }
 
+/**
+ * Entry points other than `./browser` that a package documents as browser-safe. Localization and
+ * Game Text keep their own stricter check above.
+ */
+const browserSafeSubpaths = new Map([
+	["map-history", ["./contract", "./playback", "./diff"]],
+	["observatory", ["./presentation"]],
+	["unreal-assets", ["./investigation", "./saved-review", "./text-extraction"]],
+	["cameras", ["./map-tiles"]]
+]);
+const browserGuardedElsewhere = new Set(["localization", "game-text"]);
+
+/** The TypeScript source behind a workspace package's export subpath, if it has one. */
+async function workspaceEntrySource(root: string, folder: string, subpath: string) {
+	let manifest;
+	try {
+		manifest = parseJsonObject(
+			await readFile(join(root, "packages", folder, "package.json"), "utf8")
+		);
+	} catch {
+		return undefined;
+	}
+	const exports = manifest.exports;
+	if (!exports || !isJsonObject(exports)) return undefined;
+	const target = exports[subpath];
+	const file =
+		target !== undefined && isJsonString(target)
+			? target
+			: target && isJsonObject(target)
+				? (target.import ?? target.default)
+				: undefined;
+	if (file === undefined || !isJsonString(file) || !/\.(?:js|ts)$/u.test(file)) return undefined;
+	const source = join(
+		root,
+		"packages",
+		folder,
+		file.replace(/^\.\/dist\//u, "src/").replace(/\.js$/u, ".ts")
+	);
+	try {
+		await readFile(source, "utf8");
+		return source;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Every package `./browser` entry and documented browser-safe subpath reaches only browser-safe
+ * code: no Node built-ins, Electron or `process`, and no third-party dependency other than Effect.
+ * Workspace imports are followed through their package `exports`.
+ */
+export async function checkBrowserEntryClosures(root: string = repositoryRoot) {
+	const failures: string[] = [];
+	let folders: string[];
+	try {
+		folders = (await readdir(join(root, "packages"), { withFileTypes: true }))
+			.filter((entry) => entry.isDirectory() && !browserGuardedElsewhere.has(entry.name))
+			.map((entry) => entry.name);
+	} catch {
+		return failures;
+	}
+	const pending: string[] = [];
+	for (const folder of folders)
+		for (const subpath of ["./browser", ...(browserSafeSubpaths.get(folder) ?? [])]) {
+			const source = await workspaceEntrySource(root, folder, subpath);
+			if (source) pending.push(source);
+		}
+	const visited = new Set<string>();
+	while (pending.length > 0) {
+		const path = pending.pop();
+		if (path === undefined || visited.has(path)) continue;
+		visited.add(path);
+		let text: string;
+		try {
+			text = await readFile(path, "utf8");
+		} catch {
+			continue;
+		}
+		const label = relative(root, path).replaceAll("\\", "/");
+		let usesProcess = false;
+		const findProcess = (node: ts.Node): void => {
+			if (
+				(ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+				ts.isIdentifier(node.expression) &&
+				node.expression.text === "process"
+			)
+				usesProcess = true;
+			ts.forEachChild(node, findProcess);
+		};
+		findProcess(ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true));
+		if (usesProcess) failures.push(`${label}: browser closure must not use process`);
+		for (const specifier of moduleSpecifiers(path, text)) {
+			const workspace = /^@ue-shed\/([a-z0-9-]+)(\/.+)?$/u.exec(specifier);
+			if (
+				/^(?:node:|electron(?:\/|$)|fs(?:\/|$)|path$|child_process$|process$)/u.test(
+					specifier
+				)
+			)
+				failures.push(`${label}: browser closure must not import ${specifier}`);
+			else if (specifier.startsWith("."))
+				pending.push(resolve(dirname(path), specifier.replace(/\.js$/u, ".ts")));
+			else if (workspace) {
+				const folder = workspace[1]!;
+				const subpath = workspace[2] ? `.${workspace[2]}` : ".";
+				if (browserGuardedElsewhere.has(folder)) continue;
+				const source = await workspaceEntrySource(root, folder, subpath);
+				if (source) pending.push(source);
+			} else if (specifier !== "effect" && !specifier.startsWith("effect/"))
+				failures.push(`${label}: unreviewed browser dependency ${specifier}`);
+		}
+	}
+	return failures;
+}
+
 function rawDecoderExportSites(source: ts.SourceFile) {
 	const bindings = new Map<string, ts.Expression>();
 	const exported = new Map<string, { readonly local: string; readonly node: ts.Node }>();
@@ -1339,6 +1453,7 @@ export async function checkArchitecture(root: string = repositoryRoot) {
 		...(await checkServiceStrategies(root)),
 		...(await checkDomainServices(root)),
 		...(await checkLocalizationBoundaries(root)),
+		...(await checkBrowserEntryClosures(root)),
 		...(await checkErrorGuidance(root)),
 		...(await checkErrorTranslationCauses(root)),
 		...(await checkTaggedErrorMatching(root)),

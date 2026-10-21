@@ -7,6 +7,7 @@ import {
 	checkCatalogUsage,
 	checkErrorGuidance,
 	checkErrorTranslationCauses,
+	checkBrowserEntryClosures,
 	checkGameTextEntryPoints,
 	checkCompositionPolicy,
 	checkDecoderExports,
@@ -51,6 +52,45 @@ test("error translation retains the original failure in mapError and IO catches"
 			"packages/example/src/use.ts:7: error translation must retain its original cause",
 			"packages/example/src/use.ts:11: error translation must retain its original cause",
 			"packages/example/src/use.ts:13: error translation must retain its original cause"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
+test("package browser entries reach no Node authority or unreviewed dependency", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-"));
+	try {
+		const demo = join(fixtureRoot, "packages/demo");
+		const shared = join(fixtureRoot, "packages/shared");
+		await mkdir(join(demo, "src"), { recursive: true });
+		await mkdir(join(shared, "src"), { recursive: true });
+		await writeFile(
+			join(demo, "package.json"),
+			JSON.stringify({
+				name: "@ue-shed/demo",
+				exports: { "./browser": { import: "./dist/browser.js" } }
+			})
+		);
+		await writeFile(
+			join(shared, "package.json"),
+			JSON.stringify({ name: "@ue-shed/shared", exports: { "./pure": "./src/pure.ts" } })
+		);
+		await writeFile(
+			join(demo, "src/browser.ts"),
+			[
+				'export * from "./schema.js";',
+				'import { Schema } from "effect";',
+				'import { pure } from "@ue-shed/shared/pure";',
+				'import chalk from "chalk";'
+			].join("\n")
+		);
+		await writeFile(join(demo, "src/schema.ts"), "export const root = process.cwd();\n");
+		await writeFile(join(shared, "src/pure.ts"), 'import { readFile } from "node:fs";\n');
+		assert.deepEqual((await checkBrowserEntryClosures(fixtureRoot)).sort(), [
+			"packages/demo/src/browser.ts: unreviewed browser dependency chalk",
+			"packages/demo/src/schema.ts: browser closure must not use process",
+			"packages/shared/src/pure.ts: browser closure must not import node:fs"
 		]);
 	} finally {
 		await rm(fixtureRoot, { recursive: true, force: true });

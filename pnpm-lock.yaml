@@ -950,6 +950,9 @@ importers:
 
   packages/enhanced-input:
     dependencies:
+      '@ue-shed/config-explorer':
+        specifier: workspace:*
+        version: link:../config-explorer
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../protocol

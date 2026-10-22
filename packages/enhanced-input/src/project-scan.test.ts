@@ -9,13 +9,12 @@ import {
 import { Stream, Effect, Ref } from "effect";
 import { expect } from "vitest";
 import {
-	ENHANCED_INPUT_CLASS_PREFIX,
 	EnhancedInputScanError,
 	EnhancedInputService,
 	EnhancedInputServiceLive,
-	INPUT_ACTION_CLASS,
 	scanEnhancedInputFromProjectIndex
 } from "./project.js";
+import { ENHANCED_INPUT_CLASS_PREFIX, INPUT_ACTION_CLASS } from "./projectors.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 

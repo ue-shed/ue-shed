@@ -163,6 +163,126 @@ describe("InputAtlasRoute interactions", () => {
 		expect(screen.queryByText("IA_Jump")).toBeNull();
 	});
 
+	it("claims only contested keys when the host resolved no co-activation source", async () => {
+		renderRoute();
+		await screen.findByText("SpaceBar");
+		expect(
+			screen.getByText("No co-activation source, so only contested keys are claimed")
+		).toBeDefined();
+		expect(screen.queryByRole("button", { name: /Shadowed/ })).toBeNull();
+	});
+
+	it("filters by conflict class and explains the class of the selected key", async () => {
+		const user = userEvent.setup();
+		renderRoute({
+			loadConfiguredProject: () =>
+				Effect.succeed({
+					...completed,
+					analysis: {
+						coActivation: {
+							sets: [
+								{
+									id: "host_document:driving",
+									label: "Driving",
+									source: "host_document",
+									origin: "coactivation.json",
+									contexts: [
+										{ context: "/Game/Input/IMC_Gameplay", priority: 0 },
+										{ context: "/Game/Input/IMC_Vehicle", priority: 1 }
+									]
+								}
+							],
+							sources: []
+						},
+						platforms: []
+					}
+				})
+		});
+		await screen.findByText("SpaceBar");
+		expect(screen.getByText("1 co-activation set")).toBeDefined();
+		// IA_Handbrake does not save bConsumeInput, so the route says "may shadow", not "hides".
+		expect(screen.getByRole("button", { name: /^Shadowed/ }).textContent).toBe("Shadowed0");
+		const mayShadow = screen.getByRole("button", { name: /May shadow/ });
+		await user.click(mayShadow);
+		expect(mayShadow.getAttribute("aria-pressed")).toBe("true");
+		expect(
+			screen.getByText(
+				/IMC_Vehicle has the higher priority\. It hides IMC_Gameplay only if its action consumes input/
+			)
+		).toBeDefined();
+		// SpaceBar may be shadowed, not qualified: the qualified filter has nothing to show.
+		const qualified = screen.getByRole("button", { name: /Qualified/ });
+		expect(qualified.textContent).toBe("Qualified0");
+		await user.click(qualified);
+		expect(qualified.getAttribute("aria-pressed")).toBe("true");
+		expect(mayShadow.getAttribute("aria-pressed")).toBe("false");
+	});
+
+	it("offers platform views inside the project and applies their redirects", async () => {
+		const user = userEvent.setup();
+		renderRoute({
+			loadConfiguredProject: () =>
+				Effect.succeed({
+					...completed,
+					analysis: {
+						coActivation: { sets: [], sources: [] },
+						platforms: [
+							{
+								platform: "Switch",
+								status: "resolved",
+								inputData: ["/Game/Input/BP_SwitchData.BP_SwitchData_C"],
+								redirects: [
+									{
+										from: "/Game/Input/IMC_Vehicle.IMC_Vehicle",
+										to: "/Game/Input/IMC_Gameplay.IMC_Gameplay",
+										inputData: "/Game/Input/BP_SwitchData.BP_SwitchData_C"
+									}
+								],
+								diagnostics: []
+							}
+						]
+					}
+				})
+		});
+		await screen.findByText("SpaceBar");
+		const view = screen.getByRole("combobox", { name: "View within this project" });
+		await user.selectOptions(view, "platform:Switch");
+		expect(screen.queryByRole("button", { name: /IMC_Vehicle/ })).toBeNull();
+		expect(screen.getByText("No contested keys")).toBeDefined();
+		expect(screen.queryByRole("button", { name: /Choose project/ })).toBeNull();
+	});
+
+	it("shows saved trigger parameters on a claim", async () => {
+		const withHold = Schema.decodeUnknownSync(EnhancedInputReport)({
+			...report,
+			mappingContexts: [
+				{
+					...report.mappingContexts[0],
+					mappings: [
+						{
+							...report.mappingContexts[0]!.mappings[0],
+							triggers: [
+								{
+									objectPath:
+										"/Game/Input/IMC_Gameplay.IMC_Gameplay.InputTriggerHold_0",
+									classPath: "/Script/EnhancedInput.InputTriggerHold",
+									parameters: [
+										{ name: "HoldTimeThreshold", kind: "number", value: 0.4 }
+									]
+								}
+							]
+						}
+					]
+				},
+				report.mappingContexts[1]
+			]
+		});
+		renderRoute({
+			loadConfiguredProject: () => Effect.succeed({ ...completed, report: withHold })
+		});
+		expect(await screen.findByText("hold (HoldTimeThreshold 0.4)")).toBeDefined();
+	});
+
 	it("surfaces a failed scan with its recovery guidance", async () => {
 		renderRoute({
 			loadConfiguredProject: () =>

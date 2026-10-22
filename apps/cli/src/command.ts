@@ -10,7 +10,8 @@ import {
 	CliCommand as CliCommandSchema,
 	type CliCommand as CliCommandType
 } from "./command-model.js";
-import { assetsCommand, inputCommand, textCommand } from "./commands/asset.js";
+import { assetsCommand, textCommand } from "./commands/asset.js";
+import { inputCommand } from "./commands/input.js";
 import { auditCommand } from "./commands/audit.js";
 import { authoringCommand } from "./commands/authoring.js";
 import { configCommand } from "./commands/config.js";

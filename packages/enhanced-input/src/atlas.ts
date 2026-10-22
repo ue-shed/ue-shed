@@ -5,11 +5,22 @@
 
 import type {
 	EnhancedInputReport,
+	InputInstancedObjectRef,
 	InputMappingContextRecord,
-	InputMappingRecord
+	InputMappingRecord,
+	InputObjectParameter
 } from "./schema.js";
 
 export type AtlasDevice = "gamepad" | "keyboard" | "mouse";
+
+/** A trigger or modifier on a claim, with the saved parameter overrides that make it specific. */
+export interface AtlasInstancedDetail {
+	readonly label: string;
+	readonly objectPath: string;
+	readonly classPath: string | null;
+	/** `null` when the subobject was not resolved or the report predates schema 2. */
+	readonly parameters: readonly InputObjectParameter[] | null;
+}
 
 /** One context's claim on a key. A key with more than one claim is contested. */
 export interface AtlasClaim {
@@ -21,6 +32,9 @@ export interface AtlasClaim {
 	readonly actionDescription: string | null;
 	readonly triggers: readonly string[];
 	readonly modifiers: readonly string[];
+	/** The same triggers as `triggers`, in order, with class paths and saved parameters. */
+	readonly triggerDetails: readonly AtlasInstancedDetail[];
+	readonly modifierDetails: readonly AtlasInstancedDetail[];
 }
 
 export interface AtlasKey {
@@ -78,9 +92,47 @@ export function modifierLabel(classPath: string): string {
 }
 
 export function deviceOf(key: string): AtlasDevice {
-	if (key.startsWith("Gamepad_")) return "gamepad";
+	// Unreal registers the virtual accept and back keys as gamepad keys (InputCoreTypes.cpp).
+	if (key.startsWith("Gamepad_") || key.startsWith("Virtual_Gamepad_")) return "gamepad";
 	if (key.endsWith("MouseButton") || key.startsWith("Mouse")) return "mouse";
 	return "keyboard";
+}
+
+function instancedDetail(
+	reference: InputInstancedObjectRef,
+	label: (classPath: string) => string
+): AtlasInstancedDetail {
+	return {
+		label:
+			reference.classPath === undefined
+				? objectName(reference.objectPath)
+				: label(reference.classPath),
+		objectPath: reference.objectPath,
+		classPath: reference.classPath ?? null,
+		parameters: reference.parameters ?? null
+	};
+}
+
+function numberText(value: number | null): string {
+	return value === null ? "non-finite" : String(value);
+}
+
+/** `ActuationThreshold 0.3`, `ChordAction IA_Aim`, `Scalar (2, 1, 1)`. */
+export function parameterLabel(parameter: InputObjectParameter): string {
+	switch (parameter.kind) {
+		case "bool":
+			return `${parameter.name} ${parameter.value ? "true" : "false"}`;
+		case "number":
+			return `${parameter.name} ${numberText(parameter.value)}`;
+		case "string":
+			return `${parameter.name} ${parameter.value}`;
+		case "object":
+			return `${parameter.name} ${parameter.value === null ? "None" : objectName(parameter.value)}`;
+		case "vector":
+			return `${parameter.name} (${[parameter.x, parameter.y, parameter.z].map(numberText).join(", ")})`;
+		case "unsupported":
+			return `${parameter.name} (${parameter.valueKind}, not decoded)`;
+	}
 }
 
 function claimOf(options: {
@@ -105,6 +157,12 @@ function claimOf(options: {
 			modifier.classPath === undefined
 				? objectName(modifier.objectPath)
 				: modifierLabel(modifier.classPath)
+		),
+		triggerDetails: options.mapping.triggers.map((trigger) =>
+			instancedDetail(trigger, triggerLabel)
+		),
+		modifierDetails: options.mapping.modifiers.map((modifier) =>
+			instancedDetail(modifier, modifierLabel)
 		)
 	};
 }
@@ -177,6 +235,111 @@ export function buildInputAtlas(
 		actions: report.actions.length,
 		unreadableMappings
 	};
+}
+
+/**
+ * An action-to-action edge a trigger saves: a chord names the action that must also be active, a
+ * combo names its steps. `from` is the action the trigger guards; `to` is the saved reference.
+ */
+export interface InputActionEdge {
+	readonly from: string;
+	readonly to: string;
+	readonly triggerClass: string | null;
+	readonly parameter: string;
+	/** The mapping context and key when the trigger is on a mapping; null for an action trigger. */
+	readonly contextPath: string | null;
+	readonly key: string | null;
+	/** The key profile whose `MappingProfileOverrides` mapping saves the trigger; null otherwise. */
+	readonly profileId: string | null;
+}
+
+/** `ComboActions[0].ComboStepAction` → `ComboStepAction`. */
+function leafName(parameter: string): string {
+	return (
+		parameter
+			.split(".")
+			.at(-1)
+			?.replace(/\[\d+\]$/, "") ?? parameter
+	);
+}
+
+function edgesOf(
+	from: string,
+	triggers: readonly InputInstancedObjectRef[],
+	actions: ReadonlySet<string>,
+	where: Pick<InputActionEdge, "contextPath" | "key" | "profileId">
+): InputActionEdge[] {
+	return triggers.flatMap((trigger) =>
+		(trigger.parameters ?? []).flatMap((parameter) =>
+			parameter.kind === "object" &&
+			parameter.value !== null &&
+			// A reference to a scanned action, or a trigger property named for an action, which
+			// keeps an edge to an action outside the scanned roots.
+			(actions.has(parameter.value) || leafName(parameter.name).endsWith("Action"))
+				? [
+						{
+							from,
+							to: parameter.value,
+							triggerClass: trigger.classPath ?? null,
+							parameter: parameter.name,
+							...where
+						}
+					]
+				: []
+		)
+	);
+}
+
+/** Every action-to-action edge saved in trigger parameters, on mappings and on actions. */
+export function inputActionEdges(report: EnhancedInputReport): readonly InputActionEdge[] {
+	const actions = new Set(report.actions.map((action) => String(action.objectPath)));
+	const edges: InputActionEdge[] = [];
+	for (const action of report.actions) {
+		edges.push(
+			...edgesOf(action.objectPath, action.triggers ?? [], actions, {
+				contextPath: null,
+				key: null,
+				profileId: null
+			})
+		);
+	}
+	for (const { context, profileId, mapping } of savedMappings(report)) {
+		if (mapping.action === null) continue;
+		edges.push(
+			...edgesOf(mapping.action, mapping.triggers, actions, {
+				contextPath: context.objectPath,
+				key: mapping.keyName.status === "available" ? mapping.keyName.value : null,
+				profileId
+			})
+		);
+	}
+	return edges;
+}
+
+/** One saved mapping with where it lives: the defaults (`profileId` null) or a profile override. */
+export interface SavedInputMapping {
+	readonly context: InputMappingContextRecord;
+	readonly profileId: string | null;
+	readonly index: number;
+	readonly mapping: InputMappingRecord;
+}
+
+/**
+ * Every mapping a report saves: each context's default mappings, then each
+ * `MappingProfileOverrides` entry's mappings, which replace the defaults for that key profile.
+ */
+export function savedMappings(report: EnhancedInputReport): readonly SavedInputMapping[] {
+	return report.mappingContexts.flatMap((context) => [
+		...context.mappings.map((mapping, index) => ({ context, profileId: null, index, mapping })),
+		...(context.profileOverrides ?? []).flatMap((override) =>
+			override.mappings.map((mapping, index) => ({
+				context,
+				profileId: override.profileId,
+				index,
+				mapping
+			}))
+		)
+	]);
 }
 
 export function findAtlasKey(atlas: InputAtlas, key: string | null): AtlasKey | undefined {

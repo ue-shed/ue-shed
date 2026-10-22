@@ -37,6 +37,12 @@ const ProjectIndexTarget = {
 	projectRoot: Schema.String,
 	...Reader
 };
+/** Optional co-activation sources: a host document, and project defaults read for a platform. */
+const InputCoActivationFields = {
+	coActivation: Schema.optionalKey(Schema.String),
+	platform: Schema.optionalKey(Schema.NonEmptyString),
+	engineRoot: Schema.optionalKey(Schema.String)
+};
 const SessionProject = { projectRoot: Schema.String, sessionId: Schema.String };
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const EditorPlayAction = Schema.Literals([
@@ -281,6 +287,28 @@ export const CliCommand = Schema.TaggedUnion({
 	TextReview: { ...Project, ruleFile: Schema.String, ...Reader },
 	TextRulesInit: { ...Project, output: Schema.optionalKey(Schema.String) },
 	InputInspect: { path: Schema.String, ...Reader },
+	InputAtlas: { ...Project, ...Reader },
+	InputConflicts: { ...Project, ...Reader, ...InputCoActivationFields },
+	InputUnused: {
+		...Project,
+		...Reader,
+		blueprints: Schema.Boolean,
+		maximumBlueprints: PositiveInt
+	},
+	InputPlatforms: {
+		...Project,
+		...Reader,
+		platforms: Schema.Array(Schema.NonEmptyString),
+		engineRoot: Schema.optionalKey(Schema.String),
+		deviceSets: Schema.optionalKey(Schema.String)
+	},
+	InputExport: {
+		...Project,
+		...Reader,
+		...InputCoActivationFields,
+		format: Schema.Literals(["csv", "markdown", "json"]),
+		output: Schema.optionalKey(Schema.String)
+	},
 	ProjectIndexStatus: ProjectIndexTarget,
 	ProjectIndexRefresh: ProjectIndexTarget,
 	ProjectIndexRebuild: ProjectIndexTarget,

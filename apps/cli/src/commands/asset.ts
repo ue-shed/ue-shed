@@ -16,10 +16,6 @@ const runAssetsScan = lazyWorkflow(
 	() => import("../asset-workflows.js"),
 	(module) => module.runAssetsScan
 );
-const runInputInspect = lazyWorkflow(
-	() => import("../asset-workflows.js"),
-	(module) => module.runInputInspect
-);
 const runTextReview = lazyWorkflow(
 	() => import("../asset-workflows.js"),
 	(module) => module.runTextReview
@@ -220,15 +216,4 @@ export const textCommand = Command.make("text").pipe(
 		textReviewCommand,
 		textRulesCommand
 	])
-);
-
-const inputInspectCommand = Command.make(
-	"inspect",
-	{ path: Argument.String("asset-or-project"), reader: readerFlag },
-	({ path, reader }) => runInputInspect({ _tag: "InputInspect", path, ...readerFields(reader) })
-).pipe(Command.withDescription("Inspect saved Enhanced Input assets."));
-
-export const inputCommand = Command.make("input").pipe(
-	Command.withDescription("Inspect saved Enhanced Input assets."),
-	Command.withSubcommands([inputInspectCommand])
 );

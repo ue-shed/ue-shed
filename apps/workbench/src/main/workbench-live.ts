@@ -243,7 +243,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 			Layer.provide(WorkbenchGameTextLive),
 			Layer.provide(LocalizationOperationsNodeLive)
 		),
-		WorkbenchInputAtlasLive,
+		WorkbenchInputAtlasLive.pipe(Layer.provide(ConfigExplorerNodeLive)),
 		WorkbenchCustodianLive,
 		authoring,
 		authoringClient,

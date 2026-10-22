@@ -17,6 +17,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@ue-shed/config-explorer": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/unreal-assets": "workspace:*",
 		"effect": "catalog:"

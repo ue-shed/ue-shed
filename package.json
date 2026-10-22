@@ -101,6 +101,7 @@
 		"benchmark:camera-render": "node --import tsx scripts/benchmark-camera-render.ts",
 		"test:unreal-niagara": "pnpm --filter @ue-shed/engine build && pnpm --filter @ue-shed/niagara build && node --import tsx scripts/test-unreal-niagara.ts",
 		"test:unreal-review": "node scripts/test-unreal-review.ts",
+		"test:unreal-enhanced-input": "node scripts/probe-enhanced-input-unreal.ts",
 		"test:localization-processes": "pnpm run build:typescript-packages && node --import tsx scripts/test-localization-processes.ts",
 		"test:flow:map-review": "node scripts/test-map-review-flow.ts",
 		"test:uasset-conformance": "node scripts/test-uasset-conformance.ts",

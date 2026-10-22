@@ -1800,11 +1800,11 @@ function backgroundText(
 	id: number,
 	seed: number,
 	kind: CorpusSourceKind,
-	random: ReturnType<typeof draws>
+	random: ReturnType<typeof draws>,
+	template = random.integer(0, 5)
 ): PlannedText {
 	const token = `b${seed.toString(36)}x${id.toString(36).padStart(5, "0")}`;
-	const template = random.integer(0, 5),
-		padding = "r".repeat(random.integer(0, 2));
+	const padding = "r".repeat(random.integer(0, 2));
 	// The largest constructor is <Em> + four-letter stem + token + </>, under 35 units.
 	const stem = { en: "Cove", de: "Bucht", fr: "Rive", ja: "岸辺" };
 	const render = (culture: keyof typeof stem) =>
@@ -1877,7 +1877,28 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 			)
 			.map((text) => ({ owner, text }))
 	);
-	if (candidates.length < 3) return;
+	if (candidates.length < 3) {
+		// A small corpus has too little plain DataTable background, so it gets its own edit probe and
+		// still plants every edit kind.
+		const probe: PlannedPackage = {
+			kind: "dataTable",
+			name: "EditProbe",
+			folder: "Edits",
+			path: `${plan.root}/Edits/EditProbe`,
+			packageNamespace: random.guid(),
+			persistentGuid: random.guid(),
+			tableNamespace: "Corpus.EditProbe",
+			texts: []
+		};
+		for (let i = candidates.length; i < 3; i++) {
+			const text = backgroundText(1_000_000 + i, plan.seed, "dataTableCell", random, 0);
+			text.field = `${text.key}.DisplayName`;
+			text.namespace = `[${probe.packageNamespace}]`;
+			probe.texts.push(text);
+			candidates.push({ owner: probe, text });
+		}
+		plan.packages.push(probe);
+	}
 	random.shuffle(candidates);
 	const sourceEdit = candidates[0]!,
 		poEdit = candidates[1]!,

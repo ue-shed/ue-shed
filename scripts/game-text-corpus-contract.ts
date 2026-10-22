@@ -142,11 +142,26 @@ export function diffCorpus(
 ) {
 	const wanted = new Map(expected.subjects.map((subject) => [subjectKey(subject), subject]));
 	const seen = new Set<string>();
-	const differences: { case: string; subject: string; expected: unknown; actual: unknown }[] = [];
+	const differences: {
+		case: string;
+		subject: string;
+		expected: unknown;
+		actual: unknown;
+		/** A second result for one subject. No known defect can excuse it. */
+		duplicate?: true;
+	}[] = [];
 	for (const subject of actual) {
 		const key = subjectKey(subject);
 		const intent = wanted.get(key);
-		if (seen.has(key) || !intent || !sameCorpusSubject(intent, subject, includeUnexposedStages))
+		if (seen.has(key))
+			differences.push({
+				case: intent?.case ?? "unplanned",
+				subject: key,
+				expected: intent ?? null,
+				actual: subject,
+				duplicate: true
+			});
+		else if (!intent || !sameCorpusSubject(intent, subject, includeUnexposedStages))
 			differences.push({
 				case: intent?.case ?? "unplanned",
 				subject: key,

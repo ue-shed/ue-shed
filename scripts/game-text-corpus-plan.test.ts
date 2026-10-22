@@ -259,6 +259,11 @@ test("known defects cannot hide unrelated changes or silently survive a fix", ()
 		...actual.slice(1)
 	]);
 	assert.equal(triageCorpusDifferences(drift, active).unexpected.length, 1);
+	// A second copy of a pinned result is still a failure, even when it matches the defect.
+	const twice = triageCorpusDifferences(diffCorpus(expected, [...actual, actual[0]!]), active);
+	assert.equal(twice.unexpected.length, 1);
+	assert.equal(twice.stale.length, 0);
+	assert.equal(twice.pinned.total, intent.length);
 });
 test("after-phase edits cover sources, PO, archives, additions and deletions with stable identities", () => {
 	const before = planCorpus({ ...options, lines: 10_000, density: 2 });
@@ -287,6 +292,33 @@ test("after-phase edits cover sources, PO, archives, additions and deletions wit
 			(subject) => subject.case === "edit-deleted-package" && subject.state === "not_found"
 		)
 	);
+});
+
+test("the smallest plan still plants every edit and lists every patched package", () => {
+	for (const lines of [1, 10_000]) {
+		const before = planCorpus({ ...options, lines, density: 1 });
+		const after = planCorpus({ ...options, lines, density: 1, phase: "after" });
+		assert.deepEqual(before.edits, after.edits);
+		assert.deepEqual(
+			new Set(after.edits.operations.map((edit) => edit.kind)),
+			new Set([
+				"source",
+				"po",
+				"archive",
+				"add_package",
+				"delete_package",
+				"resolve_conflict"
+			])
+		);
+		for (const path of [...after.edits.packages, ...after.edits.deletedPackages])
+			assert.ok(after.edits.changedFiles.includes(`Content/${path.slice(6)}.uasset`), path);
+		assert.ok(
+			after.expectations.subjects.some(
+				(subject) =>
+					subject.case === "edit-source" && subject.state === "changed_since_gather"
+			)
+		);
+	}
 });
 
 test("collapse-mode intent is current for unique namespace/source pairs", () => {

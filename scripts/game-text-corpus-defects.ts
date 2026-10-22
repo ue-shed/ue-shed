@@ -140,7 +140,13 @@ function sameDefectField(key: string, left: CorpusDefectValue, right: CorpusDefe
 	return isDeepStrictEqual(left, right);
 }
 
-type Difference = { case: string; subject?: string; expected: unknown; actual: unknown };
+type Difference = {
+	case: string;
+	subject?: string;
+	expected: unknown;
+	actual: unknown;
+	duplicate?: true;
+};
 export function corpusDefectsFor(
 	subjects: readonly CorpusSubject[],
 	probes: readonly Difference[] = []
@@ -296,8 +302,10 @@ export function triageCorpusDifferences(
 		defects.map((defect) => [`${defect.case}\0${defect.subject}`, defect])
 	);
 	const unexpected = differences.filter((difference) => {
+		if (difference.duplicate) return true;
 		const found = bySubject.get(`${difference.case}\0${difference.subject}`);
-		const candidates = found ? [found] : [];
+		// Each pinned defect excuses one result only.
+		const candidates = found && !matched.has(found) ? [found] : [];
 		if (
 			Schema.is(CorpusSubject)(difference.expected) &&
 			Schema.is(CorpusSubject)(difference.actual)

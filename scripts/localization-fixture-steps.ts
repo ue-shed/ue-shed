@@ -5,10 +5,13 @@ import { dirname, join } from "node:path";
  * Each entry is a fresh editor process, so every fixture stage reads the packages the previous one
  * saved. Consecutive GatherText operations share one process: GatherText splits `-config` on `;`
  * and runs every config's steps in its phase order (manifests, archives, export, compile, reports),
- * the order these operations would run in separately. Export and Compile leave the manifests and
- * archives unchanged, so the gather's report is the same when it runs at the end. The engine
- * matrix compares the resulting evidence with the committed oracles on every engine. Never
- * gather/export after the final two mutations.
+ * the order these operations would run in separately. Report steps are the exception: GatherText
+ * runs them as parallel tasks of one final phase, so two configs that write the same report must
+ * not share a process (Gather and GenerateReports both write the word count CSV, and racing on it
+ * fails the rename). Export and Compile leave the manifests and archives unchanged, so the
+ * gather's report is the same when GenerateReports runs after them. The engine matrix compares the
+ * resulting evidence with the committed oracles on every engine. Never gather/export after the
+ * final two mutations.
  */
 export function localizationFixtureSteps(project: string, evidence: string) {
 	const common = [
@@ -40,7 +43,8 @@ export function localizationFixtureSteps(project: string, evidence: string) {
 		stage("Translate"),
 		operations("Export", "Compile"),
 		stage("Outdate"),
-		operations("Gather", "Export", "Compile", "GenerateReports"),
+		operations("Gather", "Export", "Compile"),
+		operations("GenerateReports"),
 		stage("Unsynced"),
 		stage("AfterGather"),
 		[

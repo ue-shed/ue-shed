@@ -598,9 +598,10 @@ it.live("opens a committed target after restart without inventory, imports or a 
 			expect(Option.isSome(opened)).toBe(true);
 			if (Option.isNone(opened)) throw new Error("Expected committed target");
 			expect(opened.value.summary).toEqual(expected);
-			expect((yield* opened.value.search({ query: "Source", capability: "all" })).total).toBe(
-				1
-			);
+			expect(
+				(yield* opened.value.search({ query: "Source", capability: "all", pageSize: 50 }))
+					.total
+			).toBe(1);
 			expect(opened.value.packages.readPackages).toBe(0);
 			expect(fixture.inventories()).toBe(1);
 			expect(fixture.packageReads()).toBe(1);

@@ -64,7 +64,7 @@ it("shows a reopened saved index at once and rescans it behind the results", asy
 	mount(
 		makeClient(corpus, {
 			loadConfiguredProject: (refresh) => {
-				loads.push(refresh);
+				loads.push(refresh === true);
 				return refresh
 					? Deferred.await(response)
 					: Effect.succeed({

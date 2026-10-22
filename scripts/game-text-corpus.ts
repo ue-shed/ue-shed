@@ -7,16 +7,19 @@ export const corpusManifestName = "UEShedGameTextCorpus.json";
 export const corpusManifestFormat = "ue-shed-game-text-corpus";
 
 export const corpusUsage =
-	"Usage: pnpm corpus:generate --project <path.uproject> [--lines 10000] [--seed 1] " +
-	"[--root /Game/Developers/<user>/GameTextCorpus] [--engine-root <path>] [--clean]";
+	"Usage: pnpm corpus:generate --project <path.uproject> [--lines 10000] [--seed 1] [--density 2] " +
+	"[--root /Game/Developers/<user>/GameTextCorpus] [--engine-root <path>] [--clean] [--patch]";
 
 export interface CorpusArguments {
 	readonly project: string;
 	readonly lines: number;
 	readonly seed: number;
+	readonly density: number | undefined;
 	readonly root: string;
 	readonly engineRoot: string | undefined;
 	readonly clean: boolean;
+	readonly patch: boolean;
+	readonly scenario: "main" | "collapse";
 }
 
 /** Unreal's developer folder name: the user name with characters invalid in package names removed. */
@@ -43,15 +46,23 @@ export function parseCorpusArguments(argv: readonly string[], userName: string):
 			project: { type: "string" },
 			lines: { type: "string" },
 			seed: { type: "string" },
+			density: { type: "string" },
 			root: { type: "string" },
 			"engine-root": { type: "string" },
-			clean: { type: "boolean", default: false }
+			clean: { type: "boolean", default: false },
+			patch: { type: "boolean", default: false },
+			scenario: { type: "string", default: "main" }
 		}
 	});
 	if (!values.project?.toLowerCase().endsWith(".uproject")) {
 		throw new Error(`--project must name a .uproject file.\n${corpusUsage}`);
 	}
+	const density =
+		values.density === undefined ? undefined : integerOption("density", values.density, 2, 12);
+	if (density !== undefined && density < 1) throw new Error("--density must be at least 1.");
 	const lines = integerOption("lines", values.lines, 10_000, 1_000_000);
+	if (values.scenario !== "main" && values.scenario !== "collapse")
+		throw new Error("Unknown corpus scenario.");
 	if (lines < 1) throw new Error(`--lines must be at least 1.\n${corpusUsage}`);
 	const root = (
 		values.root ?? `/Game/Developers/${developerFolderName(userName)}/GameTextCorpus`
@@ -67,10 +78,13 @@ export function parseCorpusArguments(argv: readonly string[], userName: string):
 		project: resolve(values.project),
 		lines,
 		seed: integerOption("seed", values.seed, 1, 2_147_483_647),
+		density,
 		root,
 		engineRoot:
 			values["engine-root"] === undefined ? undefined : resolve(values["engine-root"]),
-		clean: values.clean
+		clean: values.clean,
+		patch: values.patch,
+		scenario: values.scenario
 	};
 }
 

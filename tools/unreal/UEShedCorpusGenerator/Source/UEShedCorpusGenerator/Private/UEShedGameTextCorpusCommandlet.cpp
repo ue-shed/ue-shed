@@ -34,6 +34,10 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Policies/PrettyJsonPrintPolicy.h"
+#include "Serialization/JsonSerializer.h"
+#include "Dom/JsonObject.h"
+#include "Internationalization/TextLocalizationResource.h"
+#include "Internationalization/StringTableRegistry.h"
 #include "Serialization/JsonWriter.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -48,400 +52,49 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogUEShedCorpus, Log, All);
 
-// The corpus is planned first, from one seeded FRandomStream, as plain data. Authoring then turns
-// each planned package into an asset, and the manifest is written from the plan alone, so it is
-// byte-identical for a given seed and line count on one engine version.
+// TypeScript owns the complete semantic plan. This commandlet only authors UE5 assets and
+// resources through Unreal APIs. Its GUID stream is serialization bookkeeping, never case selection.
 namespace
 {
 const TCHAR* ManifestName = TEXT("UEShedGameTextCorpus.json");
-const TCHAR* ManifestFormat = TEXT("ue-shed-game-text-corpus");
-constexpr int32 ManifestVersion = 1;
-constexpr int32 MaximumLines = 1000000;
-// Shares of the requested lines, in percent. String tables take the remainder.
-constexpr int32 DataTablePercent = 30;
-constexpr int32 VariablePercent = 10;
-constexpr int32 PinPercent = 10;
-constexpr int32 WidgetPercent = 10;
-// Chance that a line reuses an earlier key in the same namespace with different source text.
-constexpr float KeyConflictChance = 0.015f;
-
-/** The DataTables' row struct, a User Defined Struct written into the corpus folder. */
 const TCHAR* RowStructFolder = TEXT("Structs");
 const TCHAR* RowStructName = TEXT("S_CorpusTextRow");
-const TCHAR* DataTableColumns[] = { TEXT("DisplayName"), TEXT("Description") };
-
+const TCHAR* DataTableColumns[] = { TEXT("DisplayName") };
 const TCHAR* KindStringTable = TEXT("stringTable");
 const TCHAR* KindDataTable = TEXT("dataTable");
 const TCHAR* KindBlueprint = TEXT("blueprint");
 const TCHAR* KindWidget = TEXT("widgetBlueprint");
-
-const TCHAR* TextStringTableEntry = TEXT("stringTableEntry");
-const TCHAR* TextDataTableCell = TEXT("dataTableCell");
 const TCHAR* TextBlueprintVariable = TEXT("blueprintVariable");
 const TCHAR* TextBlueprintPin = TEXT("blueprintPin");
-const TCHAR* TextWidget = TEXT("widgetText");
-
 const FName BeginPlayName(TEXT("ReceiveBeginPlay"));
 const FName PrintTextName(TEXT("PrintText"));
 const FName TextToUpperName(TEXT("TextToUpper"));
 
-const TCHAR* CorpusAreas[] = {
-	TEXT("Menu"), TEXT("Quests"), TEXT("Dialogue"), TEXT("Items"), TEXT("Abilities"), TEXT("Tutorial"),
-	TEXT("Achievements"), TEXT("Lore"), TEXT("Settings"), TEXT("Shop"), TEXT("Map"), TEXT("Social")
-};
-
-const TCHAR* CorpusWords[] = {
-	TEXT("ancient"), TEXT("harbor"), TEXT("lantern"), TEXT("storm"), TEXT("keeper"), TEXT("crystal"),
-	TEXT("shadow"), TEXT("forge"), TEXT("river"), TEXT("ember"), TEXT("tower"), TEXT("silver"),
-	TEXT("compass"), TEXT("journey"), TEXT("signal"), TEXT("garden"), TEXT("bridge"), TEXT("cavern"),
-	TEXT("merchant"), TEXT("captain"), TEXT("village"), TEXT("frozen"), TEXT("golden"), TEXT("hidden"),
-	TEXT("broken"), TEXT("quiet"), TEXT("distant"), TEXT("bright"), TEXT("hollow"), TEXT("iron"),
-	TEXT("wander"), TEXT("gather"), TEXT("defend"), TEXT("restore"), TEXT("unlock"), TEXT("follow"),
-	TEXT("collect"), TEXT("return"), TEXT("discover"), TEXT("repair"), TEXT("travel"), TEXT("listen"),
-	TEXT("the"), TEXT("a"), TEXT("of"), TEXT("to"), TEXT("before"), TEXT("after"), TEXT("with"),
-	TEXT("beyond"), TEXT("under"), TEXT("near"), TEXT("every"), TEXT("your"), TEXT("their"),
-	TEXT("map"), TEXT("door"), TEXT("key"), TEXT("ship"), TEXT("coin"), TEXT("blade"), TEXT("shield"),
-	TEXT("potion"), TEXT("scroll"), TEXT("relic"), TEXT("beacon"), TEXT("market"), TEXT("lighthouse"),
-	TEXT("night"), TEXT("dawn"), TEXT("winter"), TEXT("summer"), TEXT("tide"), TEXT("wind"),
-	TEXT("caf\u00e9"), TEXT("na\u00efve"), TEXT("Stra\u00dfe"), TEXT("fa\u00e7ade"), TEXT("\u00e9clair"),
-	TEXT("\u65c5"), TEXT("\u5149"), TEXT("se\u00f1or"), TEXT("sm\u00f6rg\u00e5sbord")
-};
-
-const TCHAR* SharedPhrases[] = {
-	TEXT("Back"), TEXT("Continue"), TEXT("Cancel"), TEXT("Confirm"), TEXT("Yes"), TEXT("No"),
-	TEXT("OK"), TEXT("Close"), TEXT("Settings"), TEXT("Quit"), TEXT("Resume"), TEXT("Loading..."),
-	TEXT("Accept"), TEXT("Decline"), TEXT("Equip"), TEXT("Sell"), TEXT("Buy"), TEXT("Retry"),
-	TEXT("Next"), TEXT("Previous"), TEXT("Locked"), TEXT("New!"), TEXT("Level {Level}"),
-	TEXT("{Count} gold"), TEXT("Press <Key>E</> to interact")
-};
-
-const TCHAR* WhitespaceTexts[] = { TEXT(" "), TEXT("  "), TEXT("\t"), TEXT(" \n ") };
-
-const TCHAR* FormatArguments[] = { TEXT("{PlayerName}"), TEXT("{Count}"), TEXT("{ItemName}"), TEXT("{Seconds}") };
-
-const TCHAR* NoteTexts[] = {
-	TEXT("Shown on the pause menu."), TEXT("Tooltip, keep under 40 characters."),
-	TEXT("Spoken by the harbor master."), TEXT("Quest log entry."), TEXT("Button label.")
-};
-
-enum class EStyle : uint8
-{
-	Label,
-	Line,
-	Description
-};
-
 struct FCorpusText
 {
-	FString Kind;
-	/** Entry key, row and column, variable, node or widget the text belongs to. */
-	FString Field;
-	FString Namespace;
-	FString Key;
-	FString Source;
-	FString Notes;
+    FString Kind, Field, Namespace, Key, Source, Notes, Mode, Table, TableKey, CompiledSource, PreviousSource;
 };
-
 struct FCorpusPackage
 {
-	FString Kind;
-	FString Folder;
-	FString Name;
-	/** The package localization namespace, forced so saved packages do not get a random one. */
-	FString PackageNamespace;
-	FGuid PersistentGuid;
-	/** String tables only. */
-	FString TableNamespace;
-	TArray<FCorpusText> Texts;
-
-	FString PackagePath(const FString& Root) const { return Root / Folder / Name; }
+    FString Kind, Folder, Name, PackageNamespace, TableNamespace;
+    FGuid PersistentGuid;
+    TArray<FCorpusText> Texts;
+    FString PackagePath(const FString& Root) const { return Root / Folder / Name; }
 };
-
-struct FDuplicateCounts
-{
-	int32 SharedSource = 0;
-	int32 KeyConflicts = 0;
-	int32 Empty = 0;
-	int32 Whitespace = 0;
-};
-
-FString HexId(FRandomStream& Rng)
-{
-	// Evaluate in a fixed order; argument evaluation order is unspecified in C++.
-	const uint32 A = Rng.GetUnsignedInt();
-	const uint32 B = Rng.GetUnsignedInt();
-	const uint32 C = Rng.GetUnsignedInt();
-	const uint32 D = Rng.GetUnsignedInt();
-	return FString::Printf(TEXT("%08X%08X%08X%08X"), A, B, C, D);
-}
-
 FGuid NextGuid(FRandomStream& Rng)
 {
-	const uint32 A = Rng.GetUnsignedInt();
-	const uint32 B = Rng.GetUnsignedInt();
-	const uint32 C = Rng.GetUnsignedInt();
-	const uint32 D = Rng.GetUnsignedInt();
-	return FGuid(A, B, C, D);
+    const uint32 A = Rng.GetUnsignedInt();
+    const uint32 B = Rng.GetUnsignedInt();
+    const uint32 C = Rng.GetUnsignedInt();
+    const uint32 D = Rng.GetUnsignedInt();
+    return FGuid(A, B, C, D);
 }
-
-template <typename T, int32 N> const TCHAR* Pick(FRandomStream& Rng, T (&Items)[N])
-{
-	return Items[Rng.RandRange(0, N - 1)];
-}
-
-class FTextFactory
-{
-public:
-	FTextFactory(FRandomStream& InRng, FDuplicateCounts& InDuplicates) : Rng(InRng), Duplicates(InDuplicates) {}
-
-	FString Next(EStyle Style)
-	{
-		const float Roll = Rng.FRand();
-		if (Roll < 0.005f)
-		{
-			++Duplicates.Empty;
-			return FString();
-		}
-		if (Roll < 0.01f)
-		{
-			++Duplicates.Whitespace;
-			return Pick(Rng, WhitespaceTexts);
-		}
-		if (Roll < 0.05f)
-		{
-			++Duplicates.SharedSource;
-			return Pick(Rng, SharedPhrases);
-		}
-		switch (Style)
-		{
-		case EStyle::Label: return Label();
-		case EStyle::Line: return Sentence(4, 12);
-		default: return Description();
-		}
-	}
-
-	FString NextNotes() { return Rng.FRand() < 0.1f ? FString(Pick(Rng, NoteTexts)) : FString(); }
-
-private:
-	FString Word() { return Pick(Rng, CorpusWords); }
-
-	static FString Capitalized(const FString& Value)
-	{
-		return Value.IsEmpty() ? Value : Value.Left(1).ToUpper() + Value.RightChop(1);
-	}
-
-	FString Label()
-	{
-		const int32 Count = Rng.RandRange(1, 3);
-		TArray<FString> Parts;
-		for (int32 Index = 0; Index < Count; ++Index) Parts.Add(Capitalized(Word()));
-		return FString::Join(Parts, TEXT(" "));
-	}
-
-	FString Sentence(int32 Minimum, int32 Maximum)
-	{
-		const int32 Count = Rng.RandRange(Minimum, Maximum);
-		TArray<FString> Parts;
-		for (int32 Index = 0; Index < Count; ++Index) Parts.Add(Word());
-		const float Decoration = Rng.FRand();
-		if (Decoration < 0.08f)
-		{
-			const FString Argument = Pick(Rng, FormatArguments);
-			Parts.Insert(Argument, Rng.RandRange(0, Parts.Num()));
-		}
-		else if (Decoration < 0.12f)
-		{
-			const int32 Index = Rng.RandRange(0, Parts.Num() - 1);
-			Parts[Index] = TEXT("<Em>") + Parts[Index] + TEXT("</>");
-		}
-		const float End = Rng.FRand();
-		const TCHAR* Ending = End < 0.7f ? TEXT(".") : End < 0.85f ? TEXT("!") : End < 0.95f ? TEXT("?") : TEXT("\u2026");
-		return Capitalized(FString::Join(Parts, TEXT(" "))) + Ending;
-	}
-
-	FString Description()
-	{
-		const int32 Count = Rng.RandRange(1, 3);
-		TArray<FString> Parts;
-		for (int32 Index = 0; Index < Count; ++Index) Parts.Add(Sentence(6, 16));
-		return FString::Join(Parts, Rng.FRand() < 0.15f ? TEXT("\n") : TEXT(" "));
-	}
-
-	FRandomStream& Rng;
-	FDuplicateCounts& Duplicates;
-};
-
-/** "[PACKAGENAMESPACE]", the namespace the editor gives text typed into this package. */
-FString PackageTextNamespace(const FString& PackageNamespace)
-{
-	return TextNamespaceUtil::BuildFullNamespace(FString(), PackageNamespace, true);
-}
-
-FCorpusPackage NewPackage(FRandomStream& Rng, const TCHAR* Kind, const TCHAR* Folder, const FString& Name)
-{
-	FCorpusPackage Package;
-	Package.Kind = Kind;
-	Package.Folder = Folder;
-	Package.Name = Name;
-	Package.PackageNamespace = HexId(Rng);
-	Package.PersistentGuid = NextGuid(Rng);
-	return Package;
-}
-
-/** A key reused from Earlier with new source: a deliberate conflict. Returns false when none applies. */
-bool TryConflict(FRandomStream& Rng, const TArray<TPair<FString, FString>>& Earlier, FCorpusText& Text,
-	FDuplicateCounts& Duplicates)
-{
-	if (Earlier.IsEmpty() || Rng.FRand() >= KeyConflictChance) return false;
-	const TPair<FString, FString>& Previous = Earlier[Rng.RandRange(0, Earlier.Num() - 1)];
-	Text.Key = Previous.Key;
-	if (Text.Source == Previous.Value) Text.Source += TEXT(" (revised)");
-	++Duplicates.KeyConflicts;
-	return true;
-}
-
-TArray<FCorpusPackage> PlanCorpus(int32 Lines, int32 Seed, FDuplicateCounts& Duplicates)
-{
-	FRandomStream Rng(Seed);
-	FTextFactory Factory(Rng, Duplicates);
-	int32 Widgets = Lines * WidgetPercent / 100;
-	int32 Variables = Lines * VariablePercent / 100;
-	int32 Pins = Lines * PinPercent / 100;
-	// Rows carry two text cells, so the cell budget is even.
-	int32 Cells = (Lines * DataTablePercent / 100) & ~1;
-	int32 Strings = Lines - Widgets - Variables - Pins - Cells;
-	TArray<FCorpusPackage> Packages;
-
-	// String tables. Tables of one area share a namespace, as studios often split one namespace
-	// over several tables; that is where a reused key conflicts. The first table is a large one.
-	TMap<FString, TArray<TPair<FString, FString>>> EntriesByNamespace;
-	int32 KeyCounter = 0;
-	for (int32 Index = 0; Strings > 0; ++Index)
-	{
-		const int32 Size = FMath::Min(Strings, Index == 0 ? 400 : Rng.RandRange(20, 60));
-		const FString Area = Pick(Rng, CorpusAreas);
-		FCorpusPackage Package = NewPackage(Rng, KindStringTable, TEXT("StringTables"),
-			FString::Printf(TEXT("ST_%s_%03d"), *Area, Index));
-		Package.TableNamespace = TEXT("Corpus.") + Area;
-		const TArray<TPair<FString, FString>> Earlier = EntriesByNamespace.FindRef(Package.TableNamespace);
-		TSet<FString> Keys;
-		for (int32 Entry = 0; Entry < Size; ++Entry)
-		{
-			FCorpusText Text;
-			Text.Kind = TextStringTableEntry;
-			Text.Namespace = Package.TableNamespace;
-			Text.Source = Factory.Next(Rng.FRand() < 0.3f ? EStyle::Label : Rng.FRand() < 0.7f ? EStyle::Line : EStyle::Description);
-			Text.Notes = Factory.NextNotes();
-			if (!TryConflict(Rng, Earlier, Text, Duplicates) || Keys.Contains(Text.Key))
-			{
-				if (Keys.Contains(Text.Key)) --Duplicates.KeyConflicts;
-				Text.Key = FString::Printf(TEXT("%s_%05d"), *Area, KeyCounter++);
-			}
-			Keys.Add(Text.Key);
-			Text.Field = Text.Key;
-			Package.Texts.Add(MoveTemp(Text));
-		}
-		TArray<TPair<FString, FString>>& Known = EntriesByNamespace.FindOrAdd(Package.TableNamespace);
-		for (const FCorpusText& Text : Package.Texts) Known.Emplace(Text.Key, Text.Source);
-		Strings -= Size;
-		Packages.Add(MoveTemp(Package));
-	}
-
-	// DataTables: two text cells per row, keyed as the editor keys typed text. A cell that reuses
-	// an earlier key of the same table with other text conflicts within the package namespace.
-	for (int32 Index = 0; Cells > 0; ++Index)
-	{
-		const int32 Rows = FMath::Min(Cells / 2, Rng.RandRange(8, 25));
-		const FString Area = Pick(Rng, CorpusAreas);
-		FCorpusPackage Package = NewPackage(Rng, KindDataTable, TEXT("DataTables"),
-			FString::Printf(TEXT("DT_%s_%03d"), *Area, Index));
-		const FString Namespace = PackageTextNamespace(Package.PackageNamespace);
-		TArray<TPair<FString, FString>> Earlier;
-		for (int32 Row = 0; Row < Rows; ++Row)
-		{
-			for (const TCHAR* Column : DataTableColumns)
-			{
-				FCorpusText Text;
-				Text.Kind = TextDataTableCell;
-				Text.Field = FString::Printf(TEXT("%s_%03d.%s"), *Area, Row, Column);
-				Text.Namespace = Namespace;
-				Text.Source = Factory.Next(FCString::Strcmp(Column, TEXT("DisplayName")) == 0 ? EStyle::Label : EStyle::Description);
-				if (!TryConflict(Rng, Earlier, Text, Duplicates)) Text.Key = HexId(Rng);
-				Earlier.Emplace(Text.Key, Text.Source);
-				Package.Texts.Add(MoveTemp(Text));
-			}
-		}
-		Cells -= Rows * 2;
-		Packages.Add(MoveTemp(Package));
-	}
-
-	// Actor Blueprints: FText variables with class-default values, and text pin defaults on
-	// Print Text (wired from BeginPlay) and To Upper (pure, unwired) nodes.
-	for (int32 Index = 0; Variables > 0 || Pins > 0; ++Index)
-	{
-		const int32 VariableCount = FMath::Min(Variables, Rng.RandRange(1, 4));
-		const int32 PinCount = FMath::Min(Pins, Rng.RandRange(1, 4));
-		FCorpusPackage Package = NewPackage(Rng, KindBlueprint, TEXT("Blueprints"),
-			FString::Printf(TEXT("BP_Corpus_%03d"), Index));
-		const FString Namespace = PackageTextNamespace(Package.PackageNamespace);
-		TArray<TPair<FString, FString>> EarlierVariables;
-		for (int32 Variable = 0; Variable < VariableCount; ++Variable)
-		{
-			FCorpusText Text;
-			Text.Kind = TextBlueprintVariable;
-			Text.Field = FString::Printf(TEXT("Text_%02d"), Variable);
-			Text.Namespace = Namespace;
-			Text.Source = Factory.Next(Rng.FRand() < 0.5f ? EStyle::Label : EStyle::Line);
-			if (!TryConflict(Rng, EarlierVariables, Text, Duplicates)) Text.Key = HexId(Rng);
-			EarlierVariables.Emplace(Text.Key, Text.Source);
-			Package.Texts.Add(MoveTemp(Text));
-		}
-		TArray<TPair<FString, FString>> EarlierPins;
-		for (int32 Pin = 0; Pin < PinCount; ++Pin)
-		{
-			FCorpusText Text;
-			Text.Kind = TextBlueprintPin;
-			Text.Field = FString::Printf(TEXT("%s_%02d.InText"),
-				Rng.FRand() < 0.7f ? *PrintTextName.ToString() : *TextToUpperName.ToString(), Pin);
-			Text.Namespace = Namespace;
-			Text.Source = Factory.Next(EStyle::Line);
-			if (!TryConflict(Rng, EarlierPins, Text, Duplicates)) Text.Key = HexId(Rng);
-			EarlierPins.Emplace(Text.Key, Text.Source);
-			Package.Texts.Add(MoveTemp(Text));
-		}
-		Variables -= VariableCount;
-		Pins -= PinCount;
-		Packages.Add(MoveTemp(Package));
-	}
-
-	// Widget Blueprints: text blocks under a vertical box.
-	for (int32 Index = 0; Widgets > 0; ++Index)
-	{
-		const int32 Blocks = FMath::Min(Widgets, Rng.RandRange(3, 10));
-		FCorpusPackage Package = NewPackage(Rng, KindWidget, TEXT("Widgets"),
-			FString::Printf(TEXT("WBP_Corpus_%03d"), Index));
-		const FString Namespace = PackageTextNamespace(Package.PackageNamespace);
-		TArray<TPair<FString, FString>> Earlier;
-		for (int32 Block = 0; Block < Blocks; ++Block)
-		{
-			FCorpusText Text;
-			Text.Kind = TextWidget;
-			Text.Field = FString::Printf(TEXT("Text_%02d.Text"), Block);
-			Text.Namespace = Namespace;
-			Text.Source = Factory.Next(Rng.FRand() < 0.6f ? EStyle::Label : EStyle::Line);
-			if (!TryConflict(Rng, Earlier, Text, Duplicates)) Text.Key = HexId(Rng);
-			Earlier.Emplace(Text.Key, Text.Source);
-			Package.Texts.Add(MoveTemp(Text));
-		}
-		Widgets -= Blocks;
-		Packages.Add(MoveTemp(Package));
-	}
-	return Packages;
-}
-
 FText MakeText(const FCorpusText& Text)
 {
-	return FText::ChangeKey(FTextKey(Text.Namespace), FTextKey(Text.Key), FText::FromString(Text.Source));
+    if (Text.Mode == TEXT("invariant")) return FText::AsCultureInvariant(Text.Source);
+    if (Text.Mode == TEXT("reference"))
+        return FText::FromStringTable(FName(*Text.Table), Text.TableKey, EStringTableLoadingPolicy::FindOrLoad);
+    return FText::ChangeKey(FTextKey(Text.Namespace), FTextKey(Text.Key), FText::FromString(Text.Source));
 }
 
 /** The part of Field before the first dot: the row, variable, node or widget name. */
@@ -453,7 +106,9 @@ FString Owner(const FCorpusText& Text)
 
 UPackage* CreateCorpusPackage(const FCorpusPackage& Planned, const FString& Root)
 {
-	UPackage* Package = CreatePackage(*Planned.PackagePath(Root));
+	const FString Path = Planned.PackagePath(Root);
+	UPackage* Package = FPackageName::DoesPackageExist(Path) ? LoadPackage(nullptr, *Path, LOAD_None) : CreatePackage(*Path);
+	if (!Package) return nullptr;
 	TextNamespaceUtil::ForcePackageNamespace(Package, Planned.PackageNamespace);
 	Package->SetPersistentGuid(Planned.PersistentGuid);
 	return Package;
@@ -468,7 +123,6 @@ bool Save(UObject* Asset)
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
 	FSavePackageArgs Args;
 	Args.TopLevelFlags = RF_Public | RF_Standalone;
-	Args.SaveFlags = SAVE_NoError;
 	if (UPackage::SavePackage(Package, Asset, *Filename, Args)) return true;
 	UE_LOG(LogUEShedCorpus, Error, TEXT("Could not save %s."), *Filename);
 	return false;
@@ -484,7 +138,11 @@ void StabilizeBlueprintGuids(UBlueprint* Blueprint, FRandomStream& Rng)
 	}
 	if (Blueprint->SimpleConstructionScript)
 	{
-		for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes()) Node->VariableGuid = NextGuid(Rng);
+		for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+		{
+			Node->VariableGuid = NextGuid(Rng);
+			Node->CategoryName = FText::GetEmpty();
+		}
 	}
 }
 
@@ -499,7 +157,11 @@ void StabilizeGraphGuids(UBlueprint* Blueprint, FRandomStream& Rng)
 		for (UEdGraphNode* Node : Graph->Nodes)
 		{
 			Node->NodeGuid = NextGuid(Rng);
-			for (UEdGraphPin* Pin : Node->Pins) Pin->PinId = NextGuid(Rng);
+			for (UEdGraphPin* Pin : Node->Pins)
+			{
+				Pin->PinId = NextGuid(Rng);
+				Pin->PinFriendlyName = FText::GetEmpty();
+			}
 		}
 	}
 }
@@ -507,7 +169,9 @@ void StabilizeGraphGuids(UBlueprint* Blueprint, FRandomStream& Rng)
 bool AuthorStringTable(const FCorpusPackage& Planned, const FString& Root)
 {
 	UPackage* Package = CreateCorpusPackage(Planned, Root);
-	UStringTable* Asset = NewObject<UStringTable>(Package, *Planned.Name, RF_Public | RF_Standalone | RF_Transactional);
+	if (!Package) return false;
+	UStringTable* Asset = FindObject<UStringTable>(Package, *Planned.Name);
+	if (!Asset) Asset = NewObject<UStringTable>(Package, *Planned.Name, RF_Public | RF_Standalone | RF_Transactional);
 	FAssetRegistryModule::AssetCreated(Asset);
 	FStringTableRef Table = Asset->GetMutableStringTable();
 	Table->ClearSourceStrings();
@@ -516,8 +180,10 @@ bool AuthorStringTable(const FCorpusPackage& Planned, const FString& Root)
 	for (const FCorpusText& Text : Planned.Texts)
 	{
 #if UE_VERSION_OLDER_THAN(5, 8, 0)
+		if (!Text.PreviousSource.IsEmpty()) Table->SetSourceString(FTextKey(Text.Key), Text.PreviousSource);
 		Table->SetSourceString(FTextKey(Text.Key), Text.Source);
 #else
+		if (!Text.PreviousSource.IsEmpty()) Table->SetSourceString(FTextKey(Text.Key), Text.PreviousSource, FString());
 		Table->SetSourceString(FTextKey(Text.Key), Text.Source, Text.Notes);
 #endif
 		if (!Text.Notes.IsEmpty()) Table->SetMetaData(FTextKey(Text.Key), TEXT("Comment"), Text.Notes);
@@ -579,7 +245,9 @@ bool AuthorDataTable(const FCorpusPackage& Planned, const FString& Root, UUserDe
 		if (!Columns.Last()) return false;
 	}
 	UPackage* Package = CreateCorpusPackage(Planned, Root);
-	UDataTable* Asset = NewObject<UDataTable>(Package, *Planned.Name, RF_Public | RF_Standalone | RF_Transactional);
+	if (!Package) return false;
+	UDataTable* Asset = FindObject<UDataTable>(Package, *Planned.Name);
+	if (!Asset) Asset = NewObject<UDataTable>(Package, *Planned.Name, RF_Public | RF_Standalone | RF_Transactional);
 	FAssetRegistryModule::AssetCreated(Asset);
 	Asset->RowStruct = RowStruct;
 	Asset->EmptyTable();
@@ -608,10 +276,14 @@ bool AuthorBlueprint(const FCorpusPackage& Planned, const FString& Root, FRandom
 	TextType.PinCategory = UEdGraphSchema_K2::PC_Text;
 	for (const FCorpusText& Text : Planned.Texts)
 	{
-		if (Text.Kind != TextBlueprintVariable) continue;
+		if (Text.Kind != TextBlueprintVariable || Text.Mode == TEXT("scaffold")) continue;
 		if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*Owner(Text)), TextType)) return false;
 	}
-	for (FBPVariableDescription& Variable : Blueprint->NewVariables) Variable.VarGuid = NextGuid(GuidRng);
+	for (FBPVariableDescription& Variable : Blueprint->NewVariables)
+	{
+		Variable.VarGuid = NextGuid(GuidRng);
+		Variable.Category = FText::GetEmpty();
+	}
 
 	// New actor Blueprints start with a ghost BeginPlay; wiring a node to it enables it.
 	UK2Node_Event* BeginPlay = FBlueprintEditorUtils::FindOverrideForFunction(Blueprint, AActor::StaticClass(), BeginPlayName);
@@ -639,7 +311,9 @@ bool AuthorBlueprint(const FCorpusPackage& Planned, const FString& Root, FRandom
 		Node->AllocateDefaultPins();
 		UEdGraphPin* Pin = Node->FindPin(TEXT("InText"));
 		if (!Pin) return false;
-		Pin->DefaultTextValue = MakeText(Text);
+		FCorpusText Initial = Text;
+		if (!Text.CompiledSource.IsEmpty()) Initial.Source = Text.CompiledSource;
+		Pin->DefaultTextValue = MakeText(Initial);
 		if (bPrint)
 		{
 			if (!Then || !Schema->TryCreateConnection(Then, Node->GetExecPin())) return false;
@@ -654,13 +328,24 @@ bool AuthorBlueprint(const FCorpusPackage& Planned, const FString& Root, FRandom
 	if (!Defaults) return false;
 	for (const FCorpusText& Text : Planned.Texts)
 	{
-		if (Text.Kind != TextBlueprintVariable) continue;
+		if (Text.Kind != TextBlueprintVariable || Text.Mode == TEXT("scaffold")) continue;
 		FTextProperty* Property = CastField<FTextProperty>(Blueprint->GeneratedClass->FindPropertyByName(FName(*Owner(Text))));
 		if (!Property) return false;
 		*Property->ContainerPtrToValuePtr<FText>(Defaults) = MakeText(Text);
 	}
 	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	for (const FCorpusText& Text : Planned.Texts)
+	{
+		if (Text.Kind != TextBlueprintPin || Text.CompiledSource.IsEmpty()) continue;
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (Node->GetName() != Owner(Text)) continue;
+			UEdGraphPin* Pin = Node->FindPin(TEXT("InText"));
+			if (!Pin) return false;
+			Pin->DefaultTextValue = MakeText(Text);
+		}
+	}
 	StabilizeGraphGuids(Blueprint, GuidRng);
 	return Save(Blueprint);
 }
@@ -691,171 +376,208 @@ bool AuthorWidget(const FCorpusPackage& Planned, const FString& Root, FRandomStr
 	return Save(Blueprint);
 }
 
-using FJsonWriterRef = TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>>;
 
-FString WriteManifest(const TArray<FCorpusPackage>& Packages, const FDuplicateCounts& Duplicates, int32 Lines,
-	int32 Seed, const FString& Root)
+bool SavePlannedFiles(const TSharedPtr<FJsonObject>& Localization, const FString& Target, bool bReplaceOwned)
 {
-	TMap<FString, int32> Counts;
-	for (const TCHAR* Kind : { TextStringTableEntry, TextDataTableCell, TextBlueprintVariable, TextBlueprintPin, TextWidget })
-		Counts.Add(Kind, 0);
-	for (const FCorpusPackage& Package : Packages)
-		for (const FCorpusText& Text : Package.Texts) ++Counts.FindChecked(Text.Kind);
-
-	FString Output;
-	FJsonWriterRef Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Output);
-	Writer->WriteObjectStart();
-	Writer->WriteValue(TEXT("format"), ManifestFormat);
-	Writer->WriteValue(TEXT("version"), ManifestVersion);
-	Writer->WriteValue(TEXT("seed"), Seed);
-	Writer->WriteValue(TEXT("lines"), Lines);
-	Writer->WriteValue(TEXT("root"), Root);
-	Writer->WriteValue(TEXT("rowStruct"), RowStructPath(Root));
-	Writer->WriteValue(TEXT("engineVersion"), FEngineVersion::Current().ToString());
-	Writer->WriteObjectStart(TEXT("counts"));
-	for (const TPair<FString, int32>& Count : Counts) Writer->WriteValue(Count.Key, Count.Value);
-	Writer->WriteValue(TEXT("total"), Lines);
-	Writer->WriteObjectEnd();
-	Writer->WriteObjectStart(TEXT("duplicates"));
-	Writer->WriteValue(TEXT("sharedSource"), Duplicates.SharedSource);
-	Writer->WriteValue(TEXT("keyConflicts"), Duplicates.KeyConflicts);
-	Writer->WriteValue(TEXT("empty"), Duplicates.Empty);
-	Writer->WriteValue(TEXT("whitespace"), Duplicates.Whitespace);
-	Writer->WriteObjectEnd();
-	Writer->WriteArrayStart(TEXT("packages"));
-	for (const FCorpusPackage& Package : Packages)
-	{
-		Writer->WriteObjectStart();
-		Writer->WriteValue(TEXT("path"), Package.PackagePath(Root));
-		Writer->WriteValue(TEXT("kind"), Package.Kind);
-		Writer->WriteValue(TEXT("lines"), Package.Texts.Num());
-		Writer->WriteArrayStart(TEXT("texts"));
-		for (const FCorpusText& Text : Package.Texts)
-		{
-			Writer->WriteObjectStart();
-			Writer->WriteValue(TEXT("kind"), Text.Kind);
-			Writer->WriteValue(TEXT("field"), Text.Field);
-			Writer->WriteValue(TEXT("namespace"), Text.Namespace);
-			Writer->WriteValue(TEXT("key"), Text.Key);
-			Writer->WriteValue(TEXT("source"), Text.Source);
-			if (!Text.Notes.IsEmpty()) Writer->WriteValue(TEXT("notes"), Text.Notes);
-			Writer->WriteObjectEnd();
-		}
-		Writer->WriteArrayEnd();
-		Writer->WriteObjectEnd();
-	}
-	Writer->WriteArrayEnd();
-	Writer->WriteObjectEnd();
-	Writer->Close();
-	// One line ending on every host, so manifests compare byte for byte.
-	Output.ReplaceInline(TEXT("\r\n"), TEXT("\n"));
-	return Output + TEXT("\n");
-}
-
-bool HasAnyFile(const FString& Directory)
-{
-	bool bFound = false;
-	IFileManager::Get().IterateDirectoryRecursively(*Directory, [&bFound](const TCHAR*, bool bIsDirectory)
-	{
-		bFound = !bIsDirectory;
-		return !bFound;
-	});
-	return bFound;
+    const FString Project = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+    const TSharedPtr<FJsonObject> Files = Localization->GetObjectField(TEXT("files"));
+    for (const auto& File : Files->Values)
+    {
+#if UE_VERSION_OLDER_THAN(5, 8, 0)
+        const FString RelativePath = File.Key;
+#else
+        const FString RelativePath(File.Key.ToView());
+#endif
+        const FString Path = Project / RelativePath;
+        if (RelativePath.Contains(TEXT("..")) || FPaths::IsRelative(RelativePath) == false ||
+            !(RelativePath.StartsWith(TEXT("Content/Localization/") + Target + TEXT("/")) ||
+              RelativePath == TEXT("Config/Localization/") + Target + TEXT("_Gather.ini"))) return false;
+        if (!bReplaceOwned && IFileManager::Get().FileExists(*Path)) return false;
+        IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+        if (!FFileHelper::SaveStringToFile(File.Value->AsString(), *Path,
+            FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM)) return false;
+    }
+    const FString Folder = Project / Localization->GetStringField(TEXT("folder"));
+    FTextLocalizationMetaDataResource Meta;
+    Meta.NativeCulture = TEXT("en");
+    Meta.NativeLocRes = TEXT("en/") + Target + TEXT(".locres");
+    for (const auto& Value : Localization->GetArrayField(TEXT("resources")))
+    {
+        const auto ResourcePlan = Value->AsObject();
+        const FString Culture = ResourcePlan->GetStringField(TEXT("culture"));
+        FTextLocalizationResource Resource;
+        for (const auto& EntryValue : ResourcePlan->GetArrayField(TEXT("entries")))
+        {
+            const auto Entry = EntryValue->AsObject();
+            Resource.AddEntry(FTextKey(Entry->GetStringField(TEXT("namespace"))),
+                FTextKey(Entry->GetStringField(TEXT("key"))), Entry->GetStringField(TEXT("source")),
+                Entry->GetStringField(TEXT("translation")), 0);
+        }
+        const FString ResourcePath = Folder / Culture / (Target + TEXT(".locres"));
+        if (!Resource.SaveToFile(ResourcePath)) return false;
+        // Verify serialization using Unreal's reader; these facts are not exposed by today's index.
+        FTextLocalizationResource ReadBack;
+        if (!ReadBack.LoadFromFile(ResourcePath, 0) || ReadBack.Entries.Num() != Resource.Entries.Num()) return false;
+        for (const auto& Entry : Resource.Entries)
+        {
+            const auto* Saved = ReadBack.Entries.Find(Entry.Key);
+            if (!Saved || Saved->SourceStringHash != Entry.Value.SourceStringHash ||
+                *Saved->LocalizedString != *Entry.Value.LocalizedString) return false;
+        }
+        Meta.CompiledCultures.Add(Culture);
+    }
+    return Meta.SaveToFile(Folder / (Target + TEXT(".locmeta")));
 }
 }
 
 UUEShedGameTextCorpusCommandlet::UUEShedGameTextCorpusCommandlet()
 {
-	IsClient = false;
-	IsEditor = true;
-	IsServer = false;
-	LogToConsole = true;
-	ShowErrorCount = true;
-	// The host project may log its own startup errors; the exit code is this commandlet's result.
-	UseCommandletResultAsExitCode = true;
+    IsClient = false;
+    IsEditor = true;
+    IsServer = false;
+    LogToConsole = true;
+    ShowErrorCount = true;
+    UseCommandletResultAsExitCode = true;
 }
 
 int32 UUEShedGameTextCorpusCommandlet::Main(const FString& Params)
 {
-	int32 Lines = 10000;
-	int32 Seed = 1;
-	FString Root = FString(TEXT("/Game/Developers")) / FPaths::GameUserDeveloperFolderName() / TEXT("GameTextCorpus");
-	FParse::Value(*Params, TEXT("Lines="), Lines);
-	FParse::Value(*Params, TEXT("Seed="), Seed);
-	FParse::Value(*Params, TEXT("Root="), Root);
-	Root.RemoveFromEnd(TEXT("/"));
-
-	if (Lines < 1 || Lines > MaximumLines)
-	{
-		UE_LOG(LogUEShedCorpus, Error, TEXT("-Lines must be between 1 and %d."), MaximumLines);
-		return 1;
-	}
-	if (Seed < 0)
-	{
-		UE_LOG(LogUEShedCorpus, Error, TEXT("-Seed must be zero or more."));
-		return 1;
-	}
-	FText Reason;
-	if (!Root.StartsWith(TEXT("/Game/")) || !FPackageName::IsValidLongPackageName(Root, false, &Reason))
-	{
-		UE_LOG(LogUEShedCorpus, Error, TEXT("-Root must be a /Game/ folder: %s %s"), *Root, *Reason.ToString());
-		return 1;
-	}
-	FString Directory;
-	if (!FPackageName::TryConvertLongPackageNameToFilename(Root + TEXT("/"), Directory))
-	{
-		UE_LOG(LogUEShedCorpus, Error, TEXT("Could not map %s to a folder."), *Root);
-		return 1;
-	}
-	Directory = FPaths::ConvertRelativePathToFull(Directory);
-	if (HasAnyFile(Directory))
-	{
-		UE_LOG(LogUEShedCorpus, Error, TEXT("%s is not empty. The generator only writes into a new folder; remove the old corpus first."), *Directory);
-		return 1;
-	}
-
-	const double Started = FPlatformTime::Seconds();
-	FDuplicateCounts Duplicates;
-	const TArray<FCorpusPackage> Packages = PlanCorpus(Lines, Seed, Duplicates);
-	UE_LOG(LogUEShedCorpus, Display, TEXT("Planned %d lines in %d packages under %s."), Lines, Packages.Num(), *Root);
-
-	UUserDefinedStruct* RowStruct = AuthorRowStruct(Root, Seed);
-	if (!RowStruct)
-	{
-		UE_LOG(LogUEShedCorpus, Error, TEXT("Could not author %s."), *RowStructPath(Root));
-		return 1;
-	}
-
-	for (int32 Index = 0; Index < Packages.Num(); ++Index)
-	{
-		const FCorpusPackage& Planned = Packages[Index];
-		// Per-package GUID stream, independent of the plan and of authoring order.
-		FRandomStream GuidRng(static_cast<int32>(GetTypeHash(Planned.PackageNamespace)));
-		bool bSaved = false;
-		if (Planned.Kind == KindStringTable) bSaved = AuthorStringTable(Planned, Root);
-		else if (Planned.Kind == KindDataTable) bSaved = AuthorDataTable(Planned, Root, RowStruct);
-		else if (Planned.Kind == KindBlueprint) bSaved = AuthorBlueprint(Planned, Root, GuidRng);
-		else bSaved = AuthorWidget(Planned, Root, GuidRng);
-		if (!bSaved)
-		{
-			UE_LOG(LogUEShedCorpus, Error, TEXT("Could not author %s."), *Planned.PackagePath(Root));
-			return 1;
-		}
-		if ((Index + 1) % 50 == 0)
-		{
-			UE_LOG(LogUEShedCorpus, Display, TEXT("Saved %d of %d packages."), Index + 1, Packages.Num());
-			CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
-		}
-	}
-
-	const FString ManifestPath = Directory / ManifestName;
-	if (!FFileHelper::SaveStringToFile(WriteManifest(Packages, Duplicates, Lines, Seed, Root), *ManifestPath,
-		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
-	{
-		UE_LOG(LogUEShedCorpus, Error, TEXT("Could not write %s."), *ManifestPath);
-		return 1;
-	}
-	UE_LOG(LogUEShedCorpus, Display, TEXT("Wrote %d lines in %d packages in %.1f s. Manifest: %s"), Lines,
-		Packages.Num(), FPlatformTime::Seconds() - Started, *ManifestPath);
-	return 0;
+    // Defense in depth: even direct commandlet invocations require the generator-owned scratch.
+    FString MarkerJson, Descriptor;
+    TSharedPtr<FJsonObject> Marker;
+    if (!FFileHelper::LoadFileToString(MarkerJson, *(FPaths::ProjectDir() / TEXT(".ue-shed-corpus-scratch.json"))) ||
+        !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(MarkerJson), Marker) || !Marker ||
+        Marker->GetStringField(TEXT("format")) != TEXT("ue-shed-corpus-scratch") ||
+        Marker->GetStringField(TEXT("project")) != FPaths::GetCleanFilename(FPaths::GetProjectFilePath()) ||
+        !FFileHelper::LoadFileToString(Descriptor, *FPaths::GetProjectFilePath()) ||
+        Descriptor != Marker->GetStringField(TEXT("descriptor"))) return 1;
+    FString PlanPath, Json;
+    TSharedPtr<FJsonObject> Plan;
+    if (!FParse::Value(*Params, TEXT("Plan="), PlanPath) ||
+        !FFileHelper::LoadFileToString(Json, *PlanPath) ||
+        !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Plan) || !Plan ||
+        Plan->GetStringField(TEXT("format")) != TEXT("ue-shed-game-text-corpus-plan") ||
+        Plan->GetIntegerField(TEXT("version")) != 1) return 1;
+    const FString Root = Plan->GetStringField(TEXT("root"));
+    const bool bPatch = FParse::Param(*Params, TEXT("Patch"));
+    const FString Target = Plan->GetStringField(TEXT("target"));
+    const int32 Seed = Plan->GetIntegerField(TEXT("seed"));
+    if (!Root.StartsWith(TEXT("/Game/")) || Root.Contains(TEXT("..")) ||
+        !FPackageName::IsValidLongPackageName(Root) || Target != TEXT("UEShedCorpus")) return 1;
+    FString Directory;
+    if (!FPackageName::TryConvertLongPackageNameToFilename(Root + TEXT("/"), Directory)) return 1;
+    if (IFileManager::Get().DirectoryExists(*Directory) && !bPatch) return 1;
+    TArray<FCorpusPackage> Packages;
+    for (const auto& Value : Plan->GetArrayField(TEXT("packages")))
+    {
+        const auto Object = Value->AsObject();
+        FCorpusPackage Package;
+        Package.Kind = Object->GetStringField(TEXT("kind"));
+        Package.Folder = Object->GetStringField(TEXT("folder"));
+        Package.Name = Object->GetStringField(TEXT("name"));
+        Package.PackageNamespace = Object->GetStringField(TEXT("packageNamespace"));
+        Package.TableNamespace = Object->GetStringField(TEXT("tableNamespace"));
+        if (!FGuid::ParseExact(Object->GetStringField(TEXT("persistentGuid")), EGuidFormats::Digits, Package.PersistentGuid) ||
+            Object->GetStringField(TEXT("path")) != Package.PackagePath(Root) ||
+            Package.Folder.Contains(TEXT("..")) || Package.Name.Contains(TEXT("/"))) return 1;
+        for (const auto& TextValue : Object->GetArrayField(TEXT("texts")))
+        {
+            const auto Item = TextValue->AsObject();
+            if (!Item->GetBoolField(TEXT("exists"))) continue;
+            FCorpusText Text;
+            Text.Kind = Item->GetStringField(TEXT("kind"));
+            Text.Field = Item->GetStringField(TEXT("field"));
+            if (Text.Kind == TEXT("dataTableCell") && !Text.Field.EndsWith(TEXT(".DisplayName"))) return 1;
+            Text.Namespace = Item->GetStringField(TEXT("namespace"));
+            Text.Key = Item->GetStringField(TEXT("key"));
+            Text.Source = Item->GetStringField(TEXT("source"));
+            Text.Notes = Item->GetStringField(TEXT("notes"));
+            Text.Mode = Item->GetStringField(TEXT("mode"));
+            Text.Table = Item->GetStringField(TEXT("table"));
+            Text.TableKey = Item->GetStringField(TEXT("tableKey"));
+            Text.CompiledSource = Item->GetStringField(TEXT("compiledSource"));
+            Text.PreviousSource = Item->GetStringField(TEXT("previousSource"));
+            if (Text.Mode != TEXT("text") && Text.Mode != TEXT("invariant") && Text.Mode != TEXT("reference") && Text.Mode != TEXT("scaffold")) return 1;
+            Package.Texts.Add(Text);
+        }
+        if (Package.Kind != KindStringTable && Package.Kind != KindDataTable &&
+            Package.Kind != KindBlueprint && Package.Kind != KindWidget) return 1;
+        Packages.Add(Package);
+    }
+    UUserDefinedStruct* RowStruct = bPatch ? LoadObject<UUserDefinedStruct>(nullptr, *RowStructPath(Root)) : AuthorRowStruct(Root, Seed);
+    if (!RowStruct) return 1;
+    TSet<FString> Changed, Deleted;
+    const auto Edits = Plan->GetObjectField(TEXT("edits"));
+    for (const auto& Path : Edits->GetArrayField(TEXT("packages"))) Changed.Add(Path->AsString());
+    for (const auto& Path : Edits->GetArrayField(TEXT("deletedPackages"))) Deleted.Add(Path->AsString());
+    if (bPatch) for (const FString& Path : Deleted)
+    {
+        if (!Path.StartsWith(Root + TEXT("/")) || !FPackageName::IsValidLongPackageName(Path)) return 1;
+        const FString Filename = FPackageName::LongPackageNameToFilename(Path, FPackageName::GetAssetPackageExtension());
+        if (IFileManager::Get().FileExists(*Filename) && !IFileManager::Get().Delete(*Filename)) return 1;
+    }
+    // Tables must exist before any planned String Table reference is created.
+    for (const FCorpusPackage& Package : Packages)
+        if (Package.Kind == KindStringTable && (!bPatch || (Changed.Contains(Package.PackagePath(Root)) && !Deleted.Contains(Package.PackagePath(Root)))) && !AuthorStringTable(Package, Root)) return 1;
+    for (const FCorpusPackage& Package : Packages)
+    {
+        if (bPatch && (!Changed.Contains(Package.PackagePath(Root)) || Deleted.Contains(Package.PackagePath(Root)))) continue;
+        FRandomStream GuidRng(static_cast<int32>(GetTypeHash(Package.PackageNamespace)));
+        bool Saved = true;
+        if (Package.Kind == KindDataTable) Saved = AuthorDataTable(Package, Root, RowStruct);
+        else if (Package.Kind == KindBlueprint) Saved = AuthorBlueprint(Package, Root, GuidRng);
+        else if (Package.Kind == KindWidget) Saved = AuthorWidget(Package, Root, GuidRng);
+        if (!Saved) return 1;
+    }
+    if (!SavePlannedFiles(Plan->GetObjectField(TEXT("localization")), Target, bPatch)) return 1;
+    auto Manifest = MakeShared<FJsonObject>();
+    Manifest->SetStringField(TEXT("format"), TEXT("ue-shed-game-text-corpus"));
+    Manifest->SetNumberField(TEXT("version"), 1);
+    Manifest->SetNumberField(TEXT("seed"), Seed);
+    Manifest->SetNumberField(TEXT("lines"), Plan->GetIntegerField(TEXT("lines")));
+    Manifest->SetStringField(TEXT("root"), Root);
+    Manifest->SetStringField(TEXT("rowStruct"), RowStructPath(Root));
+    Manifest->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+    Manifest->SetArrayField(TEXT("packages"), Plan->GetArrayField(TEXT("packages")));
+    auto Counts = MakeShared<FJsonObject>();
+    Counts->SetNumberField(TEXT("total"), Plan->GetIntegerField(TEXT("lines")));
+    for (const auto& Package : Packages) for (const auto& Text : Package.Texts)
+    {
+        double Previous = 0;
+        Counts->TryGetNumberField(Text.Kind, Previous);
+        Counts->SetNumberField(Text.Kind, Previous + 1);
+    }
+    Manifest->SetObjectField(TEXT("counts"), Counts);
+    auto Duplicates = MakeShared<FJsonObject>();
+    double Shared = 0, Conflicts = 0, Empty = 0, Whitespace = 0;
+    for (const auto& Value : Plan->GetObjectField(TEXT("expectations"))->GetArrayField(TEXT("subjects")))
+    {
+        const auto Subject = Value->AsObject();
+        if (Subject->GetStringField(TEXT("culture")) != TEXT("en")) continue;
+        const FString Source = Subject->GetStringField(TEXT("source"));
+        if (Source.IsEmpty()) ++Empty;
+        else if (Source.TrimStartAndEnd().IsEmpty()) ++Whitespace;
+        for (const auto& Signal : Subject->GetArrayField(TEXT("signals")))
+        {
+            if (Signal->AsString() == TEXT("duplicate_source")) ++Shared;
+            if (Signal->AsString() == TEXT("conflicting")) ++Conflicts;
+        }
+    }
+    Duplicates->SetNumberField(TEXT("sharedSource"), Shared);
+    Duplicates->SetNumberField(TEXT("keyConflicts"), Conflicts);
+    Duplicates->SetNumberField(TEXT("empty"), Empty);
+    Duplicates->SetNumberField(TEXT("whitespace"), Whitespace);
+    Manifest->SetObjectField(TEXT("duplicates"), Duplicates);
+    for (const auto& Pair : TArray<TPair<FString, TSharedPtr<FJsonObject>>>{
+        { ManifestName, Manifest },
+        { TEXT("UEShedGameTextCorpus.expected.json"), Plan->GetObjectField(TEXT("expectations")) }
+    })
+    {
+        FString Output;
+        FJsonSerializer::Serialize(Pair.Value.ToSharedRef(), TJsonWriterFactory<>::Create(&Output));
+        if (!FFileHelper::SaveStringToFile(Output, *(Directory / Pair.Key),
+            FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM)) return 1;
+    }
+    UE_LOG(LogUEShedCorpus, Display, TEXT("Authored plan: %s"), *PlanPath);
+    return 0;
 }

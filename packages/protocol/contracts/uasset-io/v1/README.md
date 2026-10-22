@@ -163,3 +163,17 @@ bytes may contain FText. Gap samples and streamed `text_coverage_gap` values add
 Every gap remains reported. Without a usable saved gather table, only text-capable gaps or decode
 errors make a package partial; with a usable table, only missing runtime gather entries do. Undecoded graph pins remain partial even when a runtime table is usable. The worker strips
 both new fields below minor 18, including classifications on individually streamed gaps.
+
+Minor version 1.19 adds optional `staging` to `extract_text_packages`: a directory and one group
+number below 4096 for each requested path. The worker then writes each package's record, or its
+package `error`, as one JSON line (the same object a `text_package_record` result carries) to
+`<directory>/<group>.ndjson`, and streams a `staged_text_package` result with the package path,
+group and line size in its place. Lines and staged results follow completion order, not path
+order. The directory must exist and hold none of the group files; the worker creates each file it
+writes and flushes them all before the summary. The closing `text_summary` is unchanged. Staging
+needs explicit paths and is rejected below minor 19. A host reads each group in its own worker, so
+package text never crosses the host's event stream.
+
+From 1.19, `protocol-session` also answers `project_index_status`, so a host that holds a reader
+session reads status without starting a process. Older workers fail it in a session with
+`unsupported_session_operation` before doing any work; ask them through `protocol` instead.

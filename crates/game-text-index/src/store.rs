@@ -71,7 +71,7 @@ impl Configuration {
     pub fn directory(&self) -> Result<PathBuf> {
         Ok(self
             .cache_root
-            .join("game-text-v1")
+            .join("game-text-v2")
             .join(digest(self.identity()?.as_bytes())))
     }
 }
@@ -539,6 +539,75 @@ pub fn encode_ids(ids: &[u32]) -> Vec<u8> {
             .collect::<Vec<_>>(),
     )
 }
+/// A staged local layer's string blocks, concatenated per local domain in section order.
+struct LocalStrings {
+    domains: Vec<(String, Vec<Vec<u8>>)>,
+    /// The layer carries `file.meta` and may reuse a previous layer's dictionary blocks.
+    reusable: bool,
+}
+fn local_strings(file: &Path) -> Result<LocalStrings> {
+    let mut reader = Reader::open(file)?;
+    let mut domains: Vec<(String, Vec<Vec<u8>>)> = Vec::new();
+    for index in 0..reader.entries.len() {
+        let entry = reader.entries[index].clone();
+        if entry.kind != 4 {
+            continue;
+        }
+        let values = crate::snapshot::strings_bytes(&reader.load(index)?)?;
+        match domains
+            .iter_mut()
+            .find(|(domain, _)| *domain == entry.domain)
+        {
+            Some((_, existing)) => existing.extend(values),
+            None => domains.push((entry.domain, values)),
+        }
+    }
+    Ok(LocalStrings {
+        domains,
+        reusable: reader.entries.iter().any(|entry| entry.name == "file.meta"),
+    })
+}
+/// Writes one staged local layer with its string IDs remapped to global IDs: the encoding
+/// `prepare_local` uses for a new layer that reuses no previous blocks.
+fn encode_local_layer(
+    directory: &Path,
+    key: &str,
+    input: &Path,
+    mapping: &BTreeMap<String, Vec<u32>>,
+    generation: &Value,
+    segment_count: usize,
+) -> Result<Value> {
+    let mut reader = Reader::open(input)?;
+    let mut writer = Writer::new(&directory.join(format!("{}.tmp", token())))?;
+    let mut order = Vec::new();
+    let mut string_columns = BTreeMap::new();
+    for i in 0..reader.entries.len() {
+        let e = reader.entries[i].clone();
+        if e.kind == 4 || e.name.ends_with(".starts") || e.name == "input.hash" {
+            continue;
+        }
+        let mut data = reader.load(i)?;
+        if e.kind == 3 {
+            let map = mapping.get(&e.domain).ok_or("local domain absent")?;
+            let mut previous = 0;
+            let mut remapped = Vec::new();
+            for id in integers(&data)? {
+                let global = *map.get(id as usize).ok_or("local id outside domain")?;
+                let delta = global.wrapping_sub(previous) as i32;
+                remapped.push(((delta << 1) ^ (delta >> 31)) as u32);
+                previous = global;
+            }
+            data = u32_bytes(&remapped);
+            string_columns.insert(e.name.clone(), e.domain);
+        }
+        order.push(writer.add(&e.name, if e.kind == 3 { 2 } else { e.kind }, "", &data, 1)?);
+    }
+    let file = format!("layer-{}.snapshot", token());
+    let mut record = json!({"file":file,"key":key,"storeGeneration":generation,"segmentCount":segment_count,"bytes":0,"stringColumns":string_columns,"idEncoding":"delta32"});
+    order.push(writer.add("shared.meta", 0, "", &serde_json::to_vec(&record)?, 1)?);
+    record["bytes"] = json!(writer.finish(&directory.join(file), &order)?);
+    Ok(record)
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Compaction {
@@ -871,25 +940,29 @@ impl Store {
         Ok(())
     }
     pub fn prepare_batch_cold(&mut self, inputs: &[crate::builder::InputLayer]) -> Result<()> {
+        use rayon::prelude::*;
+        let pending = inputs
+            .iter()
+            .filter(|input| self.root["layers"].get(&input.key).is_none())
+            .collect::<Vec<_>>();
+        // Inputs are independent and freshly staged; reading them concurrently overlaps the
+        // first-open latency some platforms add to new files.
+        let locals = pending
+            .par_iter()
+            .map(|input| local_strings(&input.file))
+            .collect::<Result<Vec<_>>>()?;
         let mut domains = BTreeMap::<String, HashSet<Vec<u8>>>::new();
         let mut domain_order = Vec::new();
-        for input in inputs {
-            if self.root["layers"].get(&input.key).is_some() {
-                continue;
-            }
-            let mut reader = Reader::open(&input.file)?;
-            for index in 0..reader.entries.len() {
-                let entry = reader.entries[index].clone();
-                if entry.kind == 4 {
-                    let domain = dictionary::storage_domain(&input.name, &entry.domain);
-                    if !domains.contains_key(&domain) {
-                        domain_order.push(domain.clone());
-                    }
-                    domains
-                        .entry(domain)
-                        .or_default()
-                        .extend(crate::snapshot::strings_bytes(&reader.load(index)?)?);
+        for (input, local) in pending.iter().zip(&locals) {
+            for (domain, values) in &local.domains {
+                let domain = dictionary::storage_domain(&input.name, domain);
+                if !domains.contains_key(&domain) {
+                    domain_order.push(domain.clone());
                 }
+                domains
+                    .entry(domain)
+                    .or_default()
+                    .extend(values.iter().cloned());
             }
         }
         if self.root["segments"].as_array().ok_or("segments")?.len() + domains.len() > 256 {
@@ -899,8 +972,56 @@ impl Store {
             let values = domains.remove(&domain).ok_or("cold domain absent")?;
             self.intern_bytes(&domain, &values.into_iter().collect::<Vec<_>>())?;
         }
-        for input in inputs {
-            self.prepare_local_with_mode(&input.name, &input.key, &input.file, false)?;
+        let segments = self.root["segments"].as_array().ok_or("segments")?.len();
+        // New layers that replace nothing and reuse nothing are independent files: encode them
+        // concurrently and record them in input order. Anything else keeps the serial path.
+        let independent = pending.len() == inputs.len()
+            && inputs
+                .iter()
+                .map(|input| input.name.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                == inputs.len()
+            && pending.iter().zip(&locals).all(|(input, local)| {
+                self.root["active"].get(&input.name).is_none()
+                    && !local.reusable
+                    && segments + local.domains.len() <= 256
+            });
+        if !independent {
+            for input in inputs {
+                self.prepare_local_with_mode(&input.name, &input.key, &input.file, false)?;
+            }
+            return Ok(());
+        }
+        let mut jobs = Vec::with_capacity(pending.len());
+        for (input, local) in pending.iter().zip(locals) {
+            let mut mapping = BTreeMap::new();
+            for (domain, values) in local.domains {
+                let ids =
+                    self.intern_bytes(&dictionary::storage_domain(&input.name, &domain), &values)?;
+                mapping.insert(domain, ids);
+            }
+            jobs.push((*input, mapping));
+        }
+        let generation = self.root["generation"].clone();
+        let segment_count = self.root["segments"].as_array().ok_or("segments")?.len();
+        let directory = self.directory.clone();
+        let records = jobs
+            .par_iter()
+            .map(|(input, mapping)| {
+                encode_local_layer(
+                    &directory,
+                    &input.key,
+                    &input.file,
+                    mapping,
+                    &generation,
+                    segment_count,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for ((input, _), record) in jobs.iter().zip(records) {
+            self.root["layers"][&input.key] = record;
+            self.root["active"][&input.name] = json!(input.key);
         }
         Ok(())
     }
@@ -1065,10 +1186,10 @@ impl Store {
                 s["start"].as_u64().unwrap_or(0) + s["count"].as_u64().unwrap_or(0)
             });
         let mut writer = Writer::new(&self.directory.join(format!("{}.tmp", token())))?;
-        let mut order = Vec::new();
         let mut string_columns = serde_json::Map::new();
+        let mut encoded = Vec::with_capacity(columns.len());
         for (field, domain, values) in columns {
-            let bytes = if domain.is_empty() {
+            encoded.push(if domain.is_empty() {
                 u32_bytes(values)
             } else {
                 require(
@@ -1077,9 +1198,16 @@ impl Store {
                 )?;
                 string_columns.insert(field.clone(), json!(domain));
                 encode_ids(values)
-            };
-            order.push(writer.add(field, 2, "", &bytes, 1)?);
+            });
         }
+        let mut order = writer.add_all(
+            &columns
+                .iter()
+                .zip(&encoded)
+                .map(|((field, _, _), bytes)| (field.as_str(), 2, "", bytes.as_slice(), 1))
+                .collect::<Vec<_>>(),
+        )?;
+        drop(encoded);
         if !metadata.is_empty() {
             order.push(writer.add("join.meta", 0, "", metadata, 1)?);
         }

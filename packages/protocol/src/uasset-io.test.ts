@@ -54,6 +54,8 @@ describe("uasset IO protocol v1", () => {
 				for (const name of [
 					"valid/scan-request.json",
 					"valid/extract-text-packages-request.json",
+					"valid/extract-text-packages-staged-request.json",
+					"valid/extract-text-packages-staged-result-event.json",
 					"valid/extract-text-packages-result-event.json",
 					"valid/extract-text-packages-gather-coverage-result-event.json",
 					"valid/extract-text-packages-gather-audience-result-event.json",
@@ -107,6 +109,8 @@ describe("uasset IO protocol v1", () => {
 				for (const name of [
 					"invalid/request-wrong-major.json",
 					"invalid/extract-text-packages-request-old-minor.json",
+					"invalid/extract-text-packages-staged-request-old-minor.json",
+					"invalid/extract-text-packages-staged-request-group-limit.json",
 					"invalid/extract-text-packages-unbounded-samples.json",
 					"invalid/extract-text-packages-text-capability-type.json",
 					"invalid/extract-text-packages-negative-text-gap-count.json",

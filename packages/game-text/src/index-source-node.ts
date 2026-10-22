@@ -1,8 +1,9 @@
-import { stat } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { mkdir, stat } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import {
 	AssetReader,
 	batchProtocolPaths,
+	batchStagedProtocolPaths,
 	ProjectIndex,
 	ProjectIndexQuery,
 	projectIndexProcessLayerFromReader,
@@ -61,6 +62,34 @@ export function packageTextReadBatches<Entry extends Pick<PackageTextInventoryEn
 	)) {
 		batches.push(entries.slice(start, start + paths.length));
 		start += paths.length;
+	}
+	return batches;
+}
+
+/**
+ * Split a staged read into consecutive batches whose complete requests, group numbers and
+ * staging directory included, each fit in one native reader request. Batch `n` stages into
+ * `join(directory, String(n))`, so the budget assumes the longest such directory.
+ */
+export function packageTextStagedReadBatches<Entry extends Pick<PackageTextInventoryEntry, "path">>(
+	entries: readonly Entry[],
+	groups: readonly number[],
+	directory: string,
+	maximumRequestBytes?: number
+): readonly { readonly entries: readonly Entry[]; readonly groups: readonly number[] }[] {
+	const batches: { entries: Entry[]; groups: number[] }[] = [];
+	let start = 0;
+	for (const length of batchStagedProtocolPaths(
+		entries.map((entry) => entry.path),
+		groups,
+		join(directory, String(entries.length)),
+		maximumRequestBytes
+	)) {
+		batches.push({
+			entries: entries.slice(start, start + length),
+			groups: groups.slice(start, start + length)
+		});
+		start += length;
 	}
 	return batches;
 }
@@ -306,7 +335,75 @@ export function gameTextIndexSourceNodeLayer(
 					Stream.flatMap(readBatch)
 				);
 			};
-			return GameTextIndexSource.of({ inventory, read });
+			const stageProjectTextPackages = reader.stageProjectTextPackages;
+			// The same verification as `read`. The reader creates each group file exclusively,
+			// so every request stages into its own directory and a group split across requests
+			// has one file per request; each event names the file holding its record.
+			const stage = stageProjectTextPackages
+				? (
+						root: string,
+						entries: readonly PackageTextInventoryEntry[],
+						staging: { readonly directory: string; readonly groups: readonly number[] }
+					) => {
+						const stageBatch = (
+							batch: {
+								readonly entries: readonly PackageTextInventoryEntry[];
+								readonly groups: readonly number[];
+							},
+							index: number
+						) => {
+							const directory = join(staging.directory, String(index));
+							return Stream.fromEffect(
+								Effect.andThen(verify(root, batch.entries), () =>
+									Effect.tryPromise({
+										try: () => mkdir(directory),
+										catch: (cause) =>
+											failure(
+												"read",
+												"Could not create a package-text staging directory.",
+												cause
+											)
+									})
+								)
+							).pipe(
+								Stream.flatMap(() =>
+									stageProjectTextPackages({
+										projectRoot: root,
+										paths: batch.entries.map((entry) => entry.path),
+										staging: { directory, groups: batch.groups }
+									}).pipe(
+										Stream.filter(
+											(event) => event.event === "text_package_staged"
+										),
+										Stream.map((event) => ({
+											path: relative(
+												root,
+												resolve(root, event.path)
+											).replaceAll("\\", "/"),
+											file: join(directory, `${event.group}.ndjson`)
+										})),
+										Stream.mapError((cause) =>
+											failure("read", cause.message, cause)
+										),
+										Stream.concat(
+											Stream.fromEffect(verify(root, batch.entries)).pipe(
+												Stream.drain
+											)
+										)
+									)
+								)
+							);
+						};
+						return Stream.fromIterable(
+							packageTextStagedReadBatches(
+								entries,
+								staging.groups,
+								staging.directory
+							).map((batch, index) => ({ batch, index }))
+						).pipe(Stream.flatMap(({ batch, index }) => stageBatch(batch, index)));
+					}
+				: undefined;
+			return GameTextIndexSource.of({ inventory, read, ...(stage ? { stage } : undefined) });
 		})
 	);
 	return Layer.unwrap(

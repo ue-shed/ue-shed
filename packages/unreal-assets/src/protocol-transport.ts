@@ -576,7 +576,10 @@ export function makeProtocolRequest(
 			return { ...fields, operation: { kind: "game_text_index", request } };
 		return { ...fields, operation: { kind: "game_text_index", request } };
 	}
-	if (operation.kind === "extract_text_packages") return { ...fields, operation };
+	if (operation.kind === "extract_text_packages") {
+		if (operation.staging !== undefined) return { ...fields, operation };
+		return { ...fields, operation };
+	}
 	return { ...fields, operation };
 }
 
@@ -1525,6 +1528,8 @@ export function protocolProjectionStream<A>(options: {
 	readonly configuration: AssetReaderConfiguration;
 	readonly extraction: SavedAssetExtractionOptions;
 	readonly projection: "text" | "text_packages" | "texture";
+	/** Package-text staging (uasset-io v1.19); requires explicit paths. */
+	readonly staging?: { readonly directory: string; readonly groups: readonly number[] };
 	readonly scanStore: ScanProgressStore;
 	readonly decode: (event: UAssetIoResult) => A | undefined;
 }): Stream.Stream<A, AssetReaderError> {
@@ -1534,14 +1539,26 @@ export function protocolProjectionStream<A>(options: {
 			: options.projection === "text_packages"
 				? "extract_text_packages"
 				: "extract_texture";
+	const staging = options.staging;
+	const selection = {
+		projectRoot: options.extraction.projectRoot,
+		...(options.extraction.paths === undefined
+			? undefined
+			: { paths: [...options.extraction.paths] })
+	};
 	const request = makeProtocolRequest(
-		{
-			kind: operation,
-			projectRoot: options.extraction.projectRoot,
-			...(options.extraction.paths === undefined
-				? undefined
-				: { paths: [...options.extraction.paths] })
-		},
+		staging !== undefined && operation === "extract_text_packages"
+			? {
+					kind: operation,
+					projectRoot: selection.projectRoot,
+					paths: selection.paths ?? [],
+					staging: { directory: staging.directory, groups: [...staging.groups] }
+				}
+			: operation === "extract_text"
+				? { kind: operation, ...selection }
+				: operation === "extract_texture"
+					? { kind: operation, ...selection }
+					: { kind: operation, ...selection },
 		{
 			...(options.extraction.concurrency === undefined
 				? undefined
@@ -1554,7 +1571,11 @@ export function protocolProjectionStream<A>(options: {
 		},
 		{
 			contractMinor:
-				options.projection === "text_packages" || options.projection === "text" ? 18 : 0
+				staging !== undefined
+					? 19
+					: options.projection === "text_packages" || options.projection === "text"
+						? 18
+						: 0
 		}
 	);
 	const telemetry = makeProtocolTelemetry(false, options.configuration.protocolObserver);

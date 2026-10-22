@@ -6,10 +6,10 @@ CLI, and Workbench use the same adapter; there is no runtime backend selector.
 
 ## Format and lifecycle
 
-The disposable cache lives under `catalogs-v5/<project-hash>`. An atomic JSON manifest selects a
-physical snapshot and retains the previous snapshot. Existing SQLite and DuckDB caches are ignored;
-the first refresh builds the new format from source. Old cache directories are not deleted or
-converted automatically.
+The disposable cache lives under `catalogs-v6/<project-hash>`. An atomic JSON manifest selects a
+physical snapshot and retains the previous snapshot. Existing SQLite, DuckDB and `catalogs-v5`
+caches are ignored; the first refresh builds the new format from source. Old cache directories are
+not deleted or converted automatically.
 
 Header profile 2 includes raw package flags, gatherable-text summary count/offset, and an exact
 `TextProperty` probe over the complete name map. Plain and dictionary header pages expose this
@@ -20,9 +20,18 @@ require no payload read, and remain generic inspection evidence rather than Game
 
 The snapshot contains five length-delimited sections: compact inventory, shared strings and a
 sorted lexicon, posting directory, posting lists, and packed header records. Integers are
-little-endian, including the full unsigned file signatures. CRC32 checksums cover every section
-and individual records/posting lists. These detect accidental corruption, not malicious changes.
-The file magic versions the encoding; incompatible derived evidence is rebuilt.
+little-endian, including the full unsigned file signatures. CRC32 checksums cover every decoded
+section and individual records/posting lists. These detect accidental corruption, not malicious
+changes. The file magic (`UESHC004`) versions the encoding; incompatible derived evidence is
+rebuilt.
+
+Sections are zstd-compressed (level 3). The first three, which readers decode whole when they
+open, are one frame each. Posting lists and header records, which queries read in ranges, are
+independent 64 KiB blocks behind an index of block end offsets, so a query decodes only the blocks
+its postings and record windows touch. A frame or block that does not compress smaller is stored
+raw. The header records each section's stored length, decoded length and decoded checksum. On a
+local UE 5.7 project with about 11,000 packages this takes the snapshot from 9.7 MB to 1.9 MB, for
+about 30 ms more per full refresh.
 
 Exact classes and serialized names have postings. Prefix and suffix queries inspect the class
 dictionary. Results follow relative-path order and hydrate bounded pages. Readers load metadata
@@ -69,8 +78,9 @@ separate timings and memory observations. The parser was not optimized in this c
 
 ## Validation and dependencies
 
-Normal builds and tests do not compile a database engine. The only new runtime crate is pinned
-`crc32fast` 1.5.0 (MIT OR Apache-2.0); the existing atomic manifest helper remains in use.
+Normal builds and tests do not compile a database engine. The runtime crates are pinned
+`crc32fast` 1.5.0 (MIT OR Apache-2.0) and `zstd` 0.13 (MIT, already used by the Game Text index);
+the existing atomic manifest helper remains in use.
 
 ```sh
 cargo test --locked -p uasset-io --all-targets

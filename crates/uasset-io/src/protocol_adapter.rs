@@ -467,13 +467,14 @@ fn execute_direct(
                 | Operation::Authoring { .. }
                 | Operation::ProjectIndexQuery { .. }
                 | Operation::ProjectIndexCount { .. }
+                | Operation::ProjectIndexStatus { .. }
                 | Operation::GameTextIndex { .. }
                 | Operation::GameTextEngine { .. }
         )
     {
         return Err(Failure::new(
             "unsupported_session_operation",
-            "protocol-session accepts inspect, blueprint, authoring, and project index query/count operations",
+            "protocol-session accepts inspect, blueprint, authoring, and project index query/count/status operations",
             false,
         ));
     }
@@ -614,7 +615,7 @@ fn execute_direct(
             }
             Ok(output.partial)
         }
-        Operation::ExtractText { selection } | Operation::ExtractTextPackages { selection } => {
+        Operation::ExtractText { selection } | Operation::ExtractTextPackages { selection, .. } => {
             let empty_paths = selection.paths.as_deref() == Some(&[]);
             if !empty_paths {
                 emit_progress(emitter, 0, "discovering", None)?;

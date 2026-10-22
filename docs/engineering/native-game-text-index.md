@@ -51,6 +51,17 @@ cursors, `lines` selections, localization focus and line details then find a row
 instead of scanning the ID arena, and focus without a localization selection no longer visits
 every line. The index borrows the reader's arenas: four bytes per slot, two slots per ID.
 
+The `id_index_prepare` total includes six finer timings: `id_index_raw_load` and
+`id_index_line_load` read, decode and validate the persisted `id_starts` / `id_utf8` arenas;
+`id_index_raw_build` and `id_index_line_build` construct and cache their hash tables.
+`id_index_unit_lines_load` acquires the projection and slice-to-unit column and validates their
+lengths; `id_index_unit_lines_build` allocates, fills and caches the unit-to-line vector.
+These are elapsed costs at that point in opening: `raw.visible` is already cached by
+`query_projection_prepare`, and `line.source` by `source_search_prepare`. The projection,
+including line order/ranges, and the slice-to-unit column are also already cached by
+`query_projection_prepare`, so acquiring them usually costs very little. The finer timings
+are parts of `id_index_prepare`, not additional preparation time.
+
 Exact-source predicates (`source` clauses, `group: "source"`, a source `openGroup`) look each
 value up once per request in the sorted dictionary segments, one fence index read per segment and
 one block decoded per probe, and then compare string IDs per row; they never compare source

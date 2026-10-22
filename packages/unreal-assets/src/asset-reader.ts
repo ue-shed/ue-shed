@@ -285,6 +285,28 @@ export interface SavedAssetExtractionOptions {
 	readonly projectRoot: string;
 }
 
+/**
+ * Package-text extraction that writes records to staging files instead of the event stream
+ * (uasset-io v1.19). `groups[i]` is the group of `paths[i]`; the reader writes each package's
+ * `SavedAssetPackageTextEvent` as one JSON line to `<directory>/<group>.ndjson`. The directory
+ * must exist and hold none of those files. Records stay off the host's stream, so a consumer can
+ * read each group in its own worker.
+ */
+export interface SavedAssetStagedTextExtractionOptions extends SavedAssetExtractionOptions {
+	readonly paths: readonly string[];
+	readonly staging: { readonly directory: string; readonly groups: readonly number[] };
+}
+
+/** A package whose text record was staged, or the closing summary of a staged extraction. */
+export type SavedAssetStagedPackageTextEvent =
+	| {
+			readonly event: "text_package_staged";
+			readonly path: string;
+			readonly group: number;
+			readonly bytes: number;
+	  }
+	| Extract<SavedAssetPackageTextEvent, { readonly event: "text_summary" }>;
+
 /** Reads saved actors belonging to exactly one conventional or World Partition map. */
 export interface SavedWorldReadOptions {
 	readonly concurrency?: number;
@@ -355,6 +377,10 @@ export interface AssetReaderApi {
 	readonly extractProjectTextPackages?: (
 		options: SavedAssetExtractionOptions
 	) => Stream.Stream<SavedAssetPackageTextEvent, AssetReaderError>;
+	/** Requires uasset-io v1.19: writes package-text records to staging files (see options). */
+	readonly stageProjectTextPackages?: (
+		options: SavedAssetStagedTextExtractionOptions
+	) => Stream.Stream<SavedAssetStagedPackageTextEvent, AssetReaderError>;
 	/** Streams compact Texture2D facts without generic inspection payloads. */
 	readonly extractProjectTextures: (
 		options: SavedAssetExtractionOptions
@@ -659,6 +685,28 @@ function makeAssetReader(
 					decode: (result) =>
 						result.kind === "extract_text_packages" ? result.event : undefined
 				});
+	const stageProjectTextPackages = (options: SavedAssetStagedTextExtractionOptions) =>
+		options.paths.length === 0
+			? Stream.empty
+			: protocolProjectionStream({
+					configuration,
+					extraction: options,
+					projection: "text_packages",
+					staging: options.staging,
+					scanStore,
+					decode: (result): SavedAssetStagedPackageTextEvent | undefined =>
+						result.kind === "staged_text_package"
+							? {
+									event: "text_package_staged",
+									path: result.path,
+									group: result.group,
+									bytes: result.bytes
+								}
+							: result.kind === "extract_text_packages" &&
+								  result.event.event === "text_summary"
+								? result.event
+								: undefined
+				});
 	const extractProjectTextures = (options: SavedAssetExtractionOptions) =>
 		options.paths?.length === 0
 			? Stream.empty
@@ -824,6 +872,7 @@ function makeAssetReader(
 		discoverTables,
 		extractProjectText,
 		extractProjectTextPackages,
+		stageProjectTextPackages,
 		extractProjectTextures,
 		readAsset,
 		readBlueprint,

@@ -10466,6 +10466,26 @@
 				{
 					"type": "object",
 					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["staged_text_package"]
+						},
+						"path": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"group": {
+							"$ref": "#/$defs/UAssetIoNonNegativeInt"
+						},
+						"bytes": {
+							"$ref": "#/$defs/UAssetIoNonNegativeInt"
+						}
+					},
+					"required": ["kind", "path", "group", "bytes"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
 						"event": {
 							"$ref": "#/$defs/SavedAssetTextureExtractionEvent"
 						},

@@ -5,5 +5,5 @@
 		"noEmit": true,
 		"types": ["node", "vitest/globals"]
 	},
-	"include": ["benchmark-project-index*.ts"]
+	"include": ["benchmark-project-index*.ts", "benchmark-game-text-desktop.ts"]
 }

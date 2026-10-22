@@ -23,7 +23,11 @@ import { encodeWtf8 } from "./wtf8.js";
 import { LocalizationImportSession } from "./localization-import-session.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { writeSnapshotFile, openSnapshotFile, type SnapshotFileReader } from "./snapshot-file.js";
-import { importColdPackageTextShards } from "./package-text-cold.js";
+import {
+	importColdPackageTextShards,
+	packageTextWorkerCount,
+	startPackageTextWorkers
+} from "./package-text-cold.js";
 import { TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { StageClock } from "./stage-clock.js";
@@ -74,6 +78,20 @@ export interface PackageTextRefreshInput<E, R> {
 	readonly read: (
 		paths: readonly string[]
 	) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, E, R>;
+	/**
+	 * A staged read (`GameTextIndexSource.stage`) for cold imports: the reader writes the record
+	 * of `paths[i]` to a file of group `groups[i]` under `directory` and names that file in its
+	 * event, so records never pass through this thread. Workers make their paths relative to
+	 * `projectRoot` and mount them, as `read` does.
+	 */
+	readonly stage?: {
+		readonly projectRoot: string;
+		readonly read: (
+			paths: readonly string[],
+			directory: string,
+			groups: readonly number[]
+		) => Stream.Stream<{ readonly path: string; readonly file: string }, E, R>;
+	};
 }
 
 /** Signature keys include eligibility, so header transitions invalidate reuse.
@@ -370,9 +388,53 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			});
 		const requested = new Map<string, PackageTextInventoryEntry>();
 		for (const shard of changed)
-			for (const { entry, selected } of shard.entries) {
+			for (const { entry, selected } of shard.entries)
 				if (selected) requested.set(entry.path, entry);
-				else {
+		const occupied = selection.filter((shard) => shard.entries.length);
+		const workerCount = packageTextWorkerCount(requested.size, occupied.length);
+		// Workers load their modules while the reader extracts the packages they will convert.
+		const workers = yield* startPackageTextWorkers(workerCount);
+		const received = new Set<string>();
+		const receive = (path: string) =>
+			Effect.gen(function* () {
+				if (!requested.has(path) || received.has(path))
+					return yield* Effect.fail(
+						snapshotFailure("package-text.read", "Unexpected or duplicate package")
+					);
+				received.add(path);
+				completed++;
+				report();
+			});
+		const stage = input.stage;
+		// One staging group per shard: a worker then holds one shard's lines at a time.
+		const groups = stage
+			? Array.from({ length: PACKAGE_TEXT_SHARDS }, (_, shard) => [shardName(shard)])
+			: undefined;
+		// Each group's staged files, in the order the reader first wrote to them.
+		const groupFiles = Array.from({ length: PACKAGE_TEXT_SHARDS }, () => new Set<string>());
+		if (stage && groups) {
+			// The reader writes each group's records; unselected packages have none to write.
+			for (const shard of changed)
+				for (const { selected } of shard.entries) if (!selected) completed++;
+			report();
+			const paths = [...requested.keys()];
+			if (paths.length)
+				yield* stage
+					.read(
+						paths,
+						directory,
+						paths.map((path) => packageTextShard(path))
+					)
+					.pipe(
+						Stream.runForEach((event) => {
+							groupFiles[packageTextShard(event.path)]!.add(event.file);
+							return receive(event.path);
+						})
+					);
+		} else {
+			for (const shard of changed)
+				for (const { entry, selected } of shard.entries) {
+					if (selected) continue;
 					yield* append({
 						path: entry.path,
 						signature: entry.signature,
@@ -380,33 +442,32 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 					});
 					completed++;
 				}
-			}
-		report();
-		const received = new Set<string>();
-		if (requested.size)
-			yield* input.read([...requested.keys()]).pipe(
-				Stream.runForEach((event) =>
-					Effect.gen(function* () {
-						if (event.event === "text_summary") return;
-						const entry = requested.get(event.path);
-						if (!entry || received.has(event.path))
-							return yield* Effect.fail(
-								snapshotFailure(
-									"package-text.read",
-									"Unexpected or duplicate package"
-								)
-							);
-						received.add(event.path);
-						yield* append({
-							path: event.path,
-							signature: entry.signature,
-							evidence: event
-						});
-						completed++;
-						report();
-					})
-				)
-			);
+			report();
+			if (requested.size)
+				yield* input.read([...requested.keys()]).pipe(
+					Stream.runForEach((event) =>
+						Effect.gen(function* () {
+							if (event.event === "text_summary") return;
+							const entry = requested.get(event.path);
+							if (!entry || received.has(event.path))
+								return yield* Effect.fail(
+									snapshotFailure(
+										"package-text.read",
+										"Unexpected or duplicate package"
+									)
+								);
+							received.add(event.path);
+							yield* append({
+								path: event.path,
+								signature: entry.signature,
+								evidence: event
+							});
+							completed++;
+							report();
+						})
+					)
+				);
+		}
 		if (received.size !== requested.size)
 			return yield* Effect.fail(
 				snapshotFailure("package-text.read", "Reader omitted requested packages")
@@ -425,7 +486,21 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		// Reading includes the reader's own work and staging the records it returns.
 		stages.mark("read");
 		const result = yield* importColdPackageTextShards(
-			{ inventory, recordDirectory: directory, stagingRoot: directory },
+			{
+				inventory,
+				recordDirectory: directory,
+				stagingRoot: directory,
+				workers,
+				...(stage && groups
+					? {
+							staged: {
+								projectRoot: stage.projectRoot,
+								groups,
+								files: groupFiles.map((files) => [...files])
+							}
+						}
+					: undefined)
+			},
 			selection
 		).pipe(
 			Effect.provideService(
@@ -548,7 +623,17 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			const file = yield* Effect.tryPromise({
 				try: async () => {
 					const path = join(staged.directory, `${shard.name}.snapshot`);
-					await writeSnapshotFile(path, packageTextColumns(next), 1);
+					// Staged for the writer: uncompressed and unsynced.
+					await writeSnapshotFile(
+						path,
+						packageTextColumns(next),
+						0,
+						undefined,
+						undefined,
+						{
+							durable: false
+						}
+					);
 					return openSnapshotFile(path);
 				},
 				catch: (cause) =>

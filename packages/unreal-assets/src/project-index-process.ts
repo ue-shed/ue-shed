@@ -38,6 +38,7 @@ import {
 } from "./project-index-protocol.js";
 import {
 	ProtocolStreamFailure,
+	type ProtocolEvent,
 	UassetProtocolSession,
 	makeProtocolRequest,
 	runUassetProtocolEvents
@@ -377,8 +378,14 @@ async function* refreshEventStream(
 	);
 }
 
+/**
+ * Reads status through the model's long-lived reader session, so a status check does not start a
+ * process. A reader that predates session status rejects it before doing any work; that reader is
+ * asked again through a one-off process.
+ */
 async function collectStatus(
 	configuration: ProjectIndexProcessConfiguration,
+	session: UassetProtocolSession,
 	cacheRoot: ProjectIndexCacheRoot,
 	target: ProjectIndexTarget,
 	signal: AbortSignal | undefined
@@ -391,15 +398,40 @@ async function collectStatus(
 		},
 		configuration.timeoutMs
 	);
-	let sawAccepted = false;
-	let status: ProjectIndexStatus | undefined;
-	try {
-		for await (const event of runUassetProtocolEvents({
+	const inSession = await readStatus(
+		session.events({
+			request,
+			signal,
+			telemetryOperation: "project_index",
+			timeoutMs: configuration.timeoutMs
+		})
+	);
+	if (inSession !== "unsupported_in_session") return inSession;
+	const spawned = await readStatus(
+		runUassetProtocolEvents({
 			configuration,
 			request,
 			signal,
 			timeoutMs: configuration.timeoutMs
-		})) {
+		})
+	);
+	if (spawned === "unsupported_in_session")
+		throw new ProjectIndexUnavailable({
+			message: "The uasset worker refused Project Index status outside a session.",
+			recovery: "Upgrade to a paired uasset-io worker, then retry.",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
+	return spawned;
+}
+
+async function readStatus(
+	events: AsyncIterable<ProtocolEvent>
+): Promise<ProjectIndexStatus | "unsupported_in_session"> {
+	let sawAccepted = false;
+	let status: ProjectIndexStatus | undefined;
+	try {
+		for await (const event of events) {
 			if (event.kind === "accepted") {
 				sawAccepted = true;
 				continue;
@@ -414,6 +446,8 @@ async function collectStatus(
 							};
 				continue;
 			}
+			if (event.kind === "failed" && event.code === "unsupported_session_operation")
+				return "unsupported_in_session";
 			if (event.kind === "failed" || event.kind === "rejected") {
 				throw mapProjectIndexProtocolFailure({ event, sawAccepted });
 			}
@@ -632,10 +666,13 @@ function makeProcessService(
 		const status = Effect.fn("ProjectIndexProcess.status")(function* (
 			target: ProjectIndexTarget
 		) {
-			return yield* Effect.tryPromise({
-				try: (signal) => collectStatus(configuration, cacheRoot, target, signal),
-				catch: (cause) => mapStreamFailure(cause, true)
-			});
+			return yield* mutex.withPermits(1)(
+				Effect.tryPromise({
+					try: (signal) =>
+						collectStatus(configuration, session, cacheRoot, target, signal),
+					catch: (cause) => mapStreamFailure(cause, true)
+				})
+			);
 		}, Effect.withSpan("unreal_assets.project_index_status"));
 
 		return { count, query, rebuild, refresh, status };

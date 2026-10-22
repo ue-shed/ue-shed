@@ -56,6 +56,40 @@ it("keeps the indexed list searchable during a rescan and focuses search with Ct
 	await waitFor(() => expect(status.textContent).toContain("assets"));
 	expect(search).toHaveProperty("value", "Quit");
 });
+it("shows a reopened saved index at once and rescans it behind the results", async () => {
+	const response = await Effect.runPromise(Deferred.make<TextCorpusQueryRunResult>());
+	const query = textCorpusQuery(corpus);
+	const loads: boolean[] = [];
+	const user = userEvent.setup({ delay: null });
+	mount(
+		makeClient(corpus, {
+			loadConfiguredProject: (refresh) => {
+				loads.push(refresh === true);
+				return refresh
+					? Deferred.await(response)
+					: Effect.succeed({
+							status: "completed",
+							summary: query.summary(),
+							cached: true
+						});
+			}
+		})
+	);
+	await screen.findByText("2 matches");
+	await screen.findByText("Rescanning");
+	expect(loads).toEqual([false, true]);
+	expect(screen.queryByRole("button", { name: "Scan project" })).toBeNull();
+	const search = screen.getByRole("searchbox");
+	expect(search).toHaveProperty("disabled", false);
+	await user.type(search, "Quit");
+	await screen.findByText("1 match");
+	await Effect.runPromise(
+		Deferred.succeed(response, { status: "completed", summary: query.summary() })
+	);
+	await waitFor(() => expect(screen.queryByText("Rescanning")).toBeNull());
+	expect(loads).toEqual([false, true]);
+	expect(search).toHaveProperty("value", "Quit");
+});
 it("opens a line as a page, steps to the next line and goes back to the list", async () => {
 	const user = userEvent.setup({ delay: null });
 	mount();
@@ -143,6 +177,33 @@ it("debounces source-only search, shows Searching and never flashes a false empt
 	await runtime.runPromise(Deferred.succeed(release, undefined));
 	await screen.findByText("0 matches");
 	expect(screen.getByText(/No text matches/u)).toBeDefined();
+});
+it("requests a loaded scan's first page at once and debounces only typing", async () => {
+	const query = textCorpusQuery(corpus);
+	let loadedAt = 0;
+	const searches: { query: string; at: number }[] = [];
+	const user = userEvent.setup({ delay: null });
+	mount(
+		makeClient(corpus, {
+			loadConfiguredProject: () =>
+				Effect.sync(() => {
+					loadedAt = performance.now();
+					return { status: "completed" as const, summary: query.summary() };
+				}),
+			search: (request) =>
+				Effect.sync(() => {
+					searches.push({ query: request.query, at: performance.now() });
+					return { status: "ready" as const, page: query.search(request) };
+				})
+		})
+	);
+	await screen.findByText("2 matches");
+	expect(searches[0]!.at - loadedAt).toBeLessThan(100);
+	const typedAt = performance.now();
+	await user.type(screen.getByRole("searchbox", { name: "Search game text" }), "Q");
+	await screen.findByText("1 match");
+	expect(searches.at(-1)!.query).toBe("Q");
+	expect(searches.at(-1)!.at - typedAt).toBeGreaterThanOrEqual(110);
 });
 it("drops a late response when the search request has changed", async () => {
 	const release = await runtime.runPromise(Deferred.make<void>());

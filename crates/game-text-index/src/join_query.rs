@@ -1,5 +1,5 @@
 //! Private numeric query indexes share the gathered slice rules with join findings.
-use crate::join::{Joined, locale, ordinal};
+use crate::join::{Joined, ordinal};
 use crate::join_columns::*;
 use crate::join_policy::*;
 use crate::{Result, require};
@@ -280,7 +280,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     raw.append("raw", &mut result);
     slice.append("slice", &mut result);
     let mut raw_order = (0..names.len() as u32).collect::<Vec<_>>();
-    raw_order.sort_by(|a, b| locale(&names[*a as usize], &names[*b as usize]));
+    crate::join::sort_by_locale(&mut raw_order, &names);
     result.push(("query.raw.order".into(), String::new(), raw_order));
     let (bytes, starts) = packed(&names)?;
     result.push(("query.raw.id_utf8".into(), String::new(), bytes));
@@ -314,7 +314,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     result.push(("query.line.id_utf8".into(), String::new(), bytes));
     result.push(("query.line.id_starts".into(), String::new(), starts));
     let mut line_order = (0..count as u32).collect::<Vec<_>>();
-    line_order.sort_by(|a, b| locale(&line_names[*a as usize], &line_names[*b as usize]));
+    crate::join::sort_by_locale(&mut line_order, &line_names);
     result.push(("query.line.order".into(), String::new(), line_order));
     let paths = j
         .packages

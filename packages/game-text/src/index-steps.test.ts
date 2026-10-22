@@ -1,13 +1,13 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer, Scope, Option } from "effect";
 import { expect } from "vitest";
-import { unlink, writeFile } from "node:fs/promises";
+import { unlink, writeFile, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { GameTextIndexSteps, gameTextIndexStepsLayer } from "./index-steps.js";
 import { GameTextIndexRefresh, GameTextIndexSource } from "./index-refresh.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 
-import { SharedIndex, sharedIndexNodeLayer } from "./shared-index.js";
+import { SharedIndex, sharedIndexNodeLayer, sharedIndexDirectory } from "./shared-index.js";
 import { makeRetainedGameTextIndex } from "./index-retained.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
@@ -15,6 +15,9 @@ import { HostSliceScheduler } from "./host-slices.js";
 import { performance } from "node:perf_hooks";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { GameTextIndexQuery } from "./index-query-native.js";
+import { readJoinedTarget } from "./joined-target-reader.js";
+import { GameTextIndexError } from "./index-contract.js";
+import { SnapshotStore, snapshotStoreNodeLayer } from "./snapshot-store.js";
 
 it.live(
 	"prepares all inputs under one lease and releases a failed import before source recovery",
@@ -567,5 +570,227 @@ it.live("retains existing refresh adapters that do not return project-step metad
 				(yield* model.search({ query: "Source", capability: "all", pageSize: 10 })).total
 			).toBe(1);
 		}).pipe(Effect.provide(legacy));
+	}).pipe(Effect.scoped)
+);
+
+it.live("opens a committed target after restart without inventory, imports or a writer lease", () =>
+	Effect.gen(function* () {
+		const fixture = yield* makeIndexRegressionFixture();
+		const expected = yield* Effect.scoped(
+			Effect.gen(function* () {
+				const steps = yield* GameTextIndexSteps;
+				const target = yield* steps.prepareTarget(fixture.request);
+				return (yield* steps.openTarget(target)).summary;
+			}).pipe(Effect.provide(fixture.layer()))
+		);
+		const configuration = {
+			cacheRoot: join(fixture.projectRoot, "cache"),
+			projectKey: fixture.projectRoot,
+			targetKey: fixture.target.name,
+			projectView: { kind: "localization" as const, target: fixture.target.name }
+		};
+		const directory = sharedIndexDirectory(configuration);
+		const before = yield* Effect.promise(() => readFile(join(directory, "manifest.json")));
+		yield* Effect.gen(function* () {
+			// A held lease proves reopen cannot wait for, or acquire, the writer.
+			yield* (yield* SharedIndex).writer();
+			const opened = yield* (yield* GameTextIndexSteps).openCommitted(fixture.request);
+			expect(Option.isSome(opened)).toBe(true);
+			if (Option.isNone(opened)) throw new Error("Expected committed target");
+			expect(opened.value.summary).toEqual(expected);
+			expect(
+				(yield* opened.value.search({ query: "Source", capability: "all", pageSize: 50 }))
+					.total
+			).toBe(1);
+			expect(opened.value.packages.readPackages).toBe(0);
+			expect(fixture.inventories()).toBe(1);
+			expect(fixture.packageReads()).toBe(1);
+		}).pipe(
+			Effect.provide(fixture.layer()),
+			Effect.provide(sharedIndexNodeLayer(configuration)),
+			Effect.scoped
+		);
+		expect(yield* Effect.promise(() => readFile(join(directory, "manifest.json")))).toEqual(
+			before
+		);
+	}).pipe(Effect.scoped)
+);
+
+for (const damaged of [
+	"missing",
+	"identity",
+	"format",
+	"corrupt",
+	"invalidated",
+	"shared-version",
+	"meta-version",
+	"meta-project",
+	"dependencies"
+] as const) {
+	it.live(`treats a ${damaged} committed cache as absent`, () =>
+		Effect.gen(function* () {
+			const fixture = yield* makeIndexRegressionFixture();
+			const configuration = {
+				cacheRoot: join(fixture.projectRoot, "cache"),
+				projectKey: fixture.projectRoot,
+				targetKey: fixture.target.name,
+				projectView: { kind: "localization" as const, target: fixture.target.name }
+			};
+			const directory = sharedIndexDirectory(configuration);
+			if (damaged !== "missing") {
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						yield* (yield* GameTextIndexSteps).prepareTarget(fixture.request);
+					}).pipe(Effect.provide(fixture.layer()))
+				);
+				if (damaged === "identity" || damaged === "format") {
+					yield* Effect.promise(async () => {
+						const path = join(directory, "manifest.json");
+						const manifest = JSON.parse(await readFile(path, "utf8"));
+						if (damaged === "identity")
+							manifest.identity = JSON.stringify(["other", "project"]);
+						else manifest.formatVersion = -1;
+						await writeFile(path, JSON.stringify(manifest));
+					});
+				} else if (damaged === "shared-version") {
+					yield* Effect.scoped(
+						Effect.gen(function* () {
+							const writer = yield* (yield* SnapshotStore).writer();
+							yield* writer.publish(
+								{
+									columns: [
+										{
+											name: "index.meta",
+											kind: "bytes",
+											load: async () =>
+												new TextEncoder().encode(
+													JSON.stringify({
+														version: -1,
+														generation: "old",
+														active: {},
+														segments: [],
+														layers: {}
+													})
+												)
+										}
+									]
+								},
+								{}
+							);
+						}).pipe(
+							Effect.provide(
+								snapshotStoreNodeLayer({
+									...configuration,
+									targetKey: "shared-project-text-v1"
+								})
+							)
+						)
+					);
+				} else if (damaged === "corrupt") {
+					yield* Effect.promise(async () => {
+						const layer = (await readdir(directory)).find((name) =>
+							name.startsWith("layer-")
+						);
+						if (!layer) throw new Error("Expected a layer");
+						await writeFile(join(directory, layer), "broken");
+					});
+				} else {
+					yield* Effect.scoped(
+						Effect.gen(function* () {
+							const index = yield* SharedIndex;
+							const joined = yield* readJoinedTarget(yield* index.open());
+							const writer = yield* index.writer();
+							if (damaged === "invalidated") {
+								yield* writer.publish("joined.invalidated", "invalidated", {
+									columns: [
+										{
+											name: "invalidate",
+											kind: "bytes",
+											load: async () => Uint8Array.of(1)
+										}
+									]
+								});
+							} else {
+								const meta = {
+									...joined.meta,
+									aliases: {},
+									...(damaged === "meta-version" ? { version: -1 } : undefined),
+									...(damaged === "meta-project"
+										? {
+												input: {
+													...joined.meta.input,
+													projectRoot: "other-project"
+												}
+											}
+										: undefined),
+									...(damaged === "dependencies"
+										? { dependencies: { missing: "key" } }
+										: undefined)
+								};
+								yield* writer.publish("joined", "damaged", {
+									columns: [
+										{
+											name: "join.meta",
+											kind: "bytes",
+											load: async () =>
+												new TextEncoder().encode(JSON.stringify(meta))
+										}
+									]
+								});
+							}
+						}).pipe(Effect.provide(sharedIndexNodeLayer(configuration)))
+					);
+				}
+			}
+			const opened = yield* Effect.scoped(
+				Effect.gen(function* () {
+					return yield* (yield* GameTextIndexSteps).openCommitted(fixture.request);
+				}).pipe(Effect.provide(fixture.layer()))
+			);
+			expect(Option.isNone(opened)).toBe(true);
+			expect(fixture.inventories()).toBe(damaged === "missing" ? 0 : 1);
+		}).pipe(Effect.scoped)
+	);
+}
+
+it.live("discards a committed cache when the native query store disagrees", () =>
+	Effect.gen(function* () {
+		const fixture = yield* makeIndexRegressionFixture();
+		yield* Effect.scoped(
+			Effect.gen(function* () {
+				yield* (yield* GameTextIndexSteps).prepareTarget(fixture.request);
+			}).pipe(Effect.provide(fixture.layer()))
+		);
+		const queries = Layer.succeed(
+			GameTextIndexQuery,
+			GameTextIndexQuery.of({
+				open: () =>
+					Effect.fail(
+						new GameTextIndexError({
+							code: "index_failed",
+							operation: "query_store",
+							message: "Store disagreement",
+							recovery: "Rebuild",
+							nextStep: "reconcile",
+							retrySafe: true
+						})
+					)
+			})
+		);
+		const opened = yield* Effect.scoped(
+			Effect.gen(function* () {
+				return yield* (yield* GameTextIndexSteps).openCommitted(fixture.request);
+			}).pipe(
+				Effect.provide(
+					gameTextIndexStepsLayer(join(fixture.projectRoot, "cache")).pipe(
+						Layer.provide(queries),
+						Layer.provide(typeScriptIndexBuilderLayer),
+						Layer.provide(fixture.source),
+						Layer.provide(fixture.evidence)
+					)
+				)
+			)
+		);
+		expect(Option.isNone(opened)).toBe(true);
 	}).pipe(Effect.scoped)
 );

@@ -56,6 +56,7 @@ import {
 import {
 	makeRetainedGameTextIndexWith,
 	GameTextIndexSteps,
+	GameTextIndexError,
 	GameTextIndexProgressReporter,
 	type GameTextIndexProgress,
 	type RetainedGameTextIndexResult
@@ -77,6 +78,7 @@ import { LocalizationFileAccessLive } from "@ue-shed/localization";
 import {
 	Cache,
 	Result,
+	Option,
 	Data,
 	Deferred,
 	Duration,
@@ -90,12 +92,6 @@ import type {
 	GameTextWorkspaceProgress,
 	GameTextWorkspaceProjectState
 } from "./workspace-host.js";
-
-/** Reader pins cover the complete host operation, including asynchronous file and worker work. */
-const scoped =
-	<Args extends unknown[], A, E, R>(operation: (...args: Args) => Effect.Effect<A, E, R>) =>
-	(...args: Args) =>
-		Effect.scoped(operation(...args));
 
 type ProjectCandidates = {
 	readonly generation: number;
@@ -230,6 +226,27 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			return yield* steps.openTarget(target);
 		})
 	).pipe(Effect.provideService(GameTextIndexProgressReporter, reportProgress));
+	const cachedIndex = yield* makeRetainedGameTextIndexWith(
+		Effect.fn("GameText.workspace.openCached")(function* (request) {
+			const preferred = yield* localization
+				.preparation(request.projectRoot)
+				.pipe(Effect.scoped);
+			let opened = yield* steps.openCommitted({ ...request, ...preferred });
+			if (Option.isNone(opened) && preferred?.targetName !== undefined)
+				opened = yield* steps.openCommitted({ projectRoot: request.projectRoot });
+			if (Option.isSome(opened)) return opened.value;
+			return yield* Effect.fail(
+				new GameTextIndexError({
+					code: "index_failed",
+					operation: "cache",
+					message: "No usable committed Game Text index exists.",
+					recovery: "Scan the project.",
+					nextStep: "reconcile",
+					retrySafe: true
+				})
+			);
+		})
+	);
 	const dialog = host.files;
 	const files = host.files;
 	const activity = yield* Ref.make({ scans: 0, operation: false });
@@ -246,9 +263,10 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const guardScan = <A, B, R>(scan: Effect.Effect<A, never, R>, unavailable: () => B) =>
 		Effect.uninterruptibleMask((restore) =>
 			Effect.gen(function* () {
+				// Admission shares publication's permit so a cached open cannot publish after this check.
 				const admitted = yield* Ref.modify(activity, (value) =>
 					value.operation ? [false, value] : [true, { ...value, scans: value.scans + 1 }]
-				);
+				).pipe(publication.withPermit);
 				if (!admitted) return unavailable();
 				return yield* restore(scan).pipe(
 					Effect.ensuring(
@@ -264,6 +282,10 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		index.sourceQuality(rules);
 	const queryModel = (index: RetainedGameTextIndexResult) => index.query;
 	const querySearch = (index: RetainedGameTextIndexResult) => index.search;
+	const completedQuery = (index: RetainedGameTextIndexResult, cached?: true) =>
+		cached
+			? { status: "completed" as const, summary: index.summary, cached }
+			: { status: "completed" as const, summary: index.summary };
 	const qualityModel = yield* Ref.make<TextQualityQuery | undefined>(undefined);
 	const qualityDocument = yield* Ref.make<GameTextRuleDocument | undefined>(undefined);
 	const qualityRulePath = yield* Ref.make<
@@ -336,6 +358,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		| {
 				readonly projectRoot: string;
 				readonly generation: number;
+				readonly cached?: true;
 				readonly indexed: RetainedGameTextIndexResult;
 		  }
 		| undefined
@@ -343,11 +366,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const currentIndex = Effect.fn("GameText.workspace.currentIndex")(function* () {
 		const selected = yield* project.current();
 		const owner = yield* Ref.get(modelSelection);
-		if (
-			selected.status !== "ready" ||
-			selected.project.projectRoot !== owner?.projectRoot ||
-			(selected.project.generation ?? 0) !== owner.generation
-		)
+		if (selected.status !== "ready" || selected.project.projectRoot !== owner?.projectRoot)
 			return undefined;
 		yield* owner.indexed.borrow;
 		return owner.indexed;
@@ -370,6 +389,92 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			localizationFiles: host.localizationFiles ?? LocalizationFileAccessLive
 		}
 	).pipe(Effect.provideService(GameTextIndexProgressReporter, reportProgress));
+	// The host has no selection event port. Retire on the next workspace call that observes a switch.
+	const unselected = Effect.fn("GameText.workspace.unselected")(function* () {
+		const selected = yield* project.current();
+		const owner = yield* Ref.get(modelSelection);
+		return (
+			owner !== undefined &&
+			!(selected.status === "ready" && selected.project.projectRoot === owner.projectRoot)
+		);
+	});
+	// Every host call, including progress polling, checks for a switch; only a switch observed
+	// outside the permit takes it and checks again before retiring.
+	const retireUnselected = Effect.fn("GameText.workspace.retireUnselected")(function* () {
+		if (yield* unselected()) yield* retireSwitched();
+	});
+	const retireSwitched = Effect.fn("GameText.workspace.retireSwitched")(
+		function* () {
+			if (!(yield* unselected())) return;
+			yield* Ref.set(modelSelection, undefined);
+			yield* Ref.update(scanRevision, (value) => value + 1);
+			yield* Ref.set(investigationSnapshot, undefined);
+			yield* Ref.set(qualityModel, undefined);
+			yield* Ref.set(qualityDocument, undefined);
+			yield* Ref.set(qualityRulePath, undefined);
+			yield* localization.reset();
+			yield* cachedIndex.release({ background: true });
+			yield* refreshIndex.release({ background: true });
+		},
+		publication.withPermit,
+		Effect.uninterruptible
+	);
+	/** Every host read pins its model for the complete operation and observes project switches. */
+	const scoped =
+		<Args extends unknown[], A, E, R>(operation: (...args: Args) => Effect.Effect<A, E, R>) =>
+		(...args: Args) =>
+			Effect.scoped(retireUnselected().pipe(Effect.andThen(operation(...args))));
+	const consistentIndex = Effect.fn("GameText.workspace.consistentIndex")(function* () {
+		const index = yield* currentIndex();
+		const selected = yield* project.current();
+		const owner = yield* Ref.get(modelSelection);
+		// A cached model is searchable but unverified, so it never counts as the current generation.
+		return selected.status === "ready" &&
+			owner?.cached !== true &&
+			(selected.project.generation ?? 0) === owner?.generation
+			? index
+			: undefined;
+	});
+	const cachedOpen = Effect.fn("GameText.workspace.cachedOpen")(function* (projectRoot: string) {
+		const revision = yield* Ref.get(scanRevision);
+		if ((yield* Ref.get(activity)).scans > 0) return { status: "not_scanned" as const };
+		return yield* cachedIndex.refresh({ projectRoot }).pipe(
+			Effect.flatMap((indexed) =>
+				Effect.gen(function* () {
+					const selected = yield* project.current();
+					if (
+						selected.status !== "ready" ||
+						selected.project.projectRoot !== projectRoot ||
+						(yield* Ref.get(activity)).scans > 0 ||
+						(yield* Ref.get(scanRevision)) !== revision
+					)
+						return { status: "not_scanned" as const };
+					// Concurrent reopen requests share the published model, not a second host pin.
+					const previous = yield* currentIndex();
+					if (previous)
+						return completedQuery(previous, (yield* Ref.get(modelSelection))?.cached);
+					const generation = selected.project.generation ?? 0;
+					yield* indexed.retain;
+					yield* Ref.set(modelSelection, {
+						projectRoot,
+						generation,
+						indexed,
+						cached: true
+					});
+					// The cache was never checked against the current Project Index, so it records no
+					// investigation source: exports and rules wait for the rescan's verified model.
+					yield* Ref.set(investigationSnapshot, undefined);
+					return {
+						status: "completed" as const,
+						summary: indexed.summary,
+						cached: true as const
+					};
+				}).pipe(publication.withPermit, Effect.uninterruptible)
+			),
+			// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Cache open always falls back to Scan project.
+			Effect.catch(() => Effect.succeed({ status: "not_scanned" as const }))
+		);
+	});
 	const runRefresh = (projectRoot: string, index: ProjectCandidates) =>
 		Effect.gen(function* () {
 			const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
@@ -470,6 +575,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 										indexed
 									});
 									yield* indexed.retain;
+									yield* cachedIndex.release({ background: true });
 									return {
 										summary: indexed.summary,
 										status: "completed" as const
@@ -492,6 +598,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const configuredScan = Effect.fn("GameText.workspace.configuredScan")(function* (
 		refreshProject: typeof project.refresh = project.refresh
 	) {
+		yield* retireUnselected();
 		const current = yield* refreshProject();
 		if (current.status === "not_configured" || current.status === "cancelled") {
 			return { status: "not_configured" as const };
@@ -536,6 +643,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		refresh = true,
 		refreshProject: typeof project.refresh = project.refresh
 	) {
+		yield* retireUnselected();
 		const current = yield* refresh ? refreshProject() : project.current();
 		if (current.status === "not_configured" || current.status === "cancelled") {
 			return { status: "not_configured" as const };
@@ -551,8 +659,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		if (!refresh) {
 			const indexed = yield* currentIndex();
 			return indexed
-				? { status: "completed" as const, summary: indexed.summary }
-				: { status: "not_scanned" as const };
+				? completedQuery(indexed, (yield* Ref.get(modelSelection))?.cached)
+				: yield* cachedOpen(current.project.projectRoot);
 		}
 		return yield* Cache.get(refreshes, key);
 	});
@@ -609,7 +717,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const prepareQualityRules = Effect.fn("GameText.workspace.prepareQualityRules")(function* (
 		input: GameTextRuleDocument
 	) {
-		const index = yield* currentIndex();
+		const index = yield* consistentIndex();
 		if (index === undefined) return { status: "not_ready" as const };
 		const revision = index.revision;
 		const document = yield* decodeGameTextRuleDocumentJson(JSON.stringify(input)).pipe(
@@ -642,7 +750,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			const snapshot = yield* Ref.get(investigationSnapshot);
 			if (
 				snapshot?.revision !== prepared.revision ||
-				(yield* currentModel(retainedRevision)) !== prepared.revision
+				(yield* consistentIndex())?.revision !== prepared.revision
 			)
 				return { status: "not_ready" as const };
 			yield* Ref.set(investigationSnapshot, { ...snapshot, rules: prepared.document });
@@ -1169,7 +1277,13 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const sharedScan = yield* sharedScans<Effect.Success<ReturnType<typeof fullScan>>>();
 
 	return {
-		operationTarget: scoped(localization.operationTarget),
+		operationTarget: scoped((name) =>
+			consistentIndex().pipe(
+				Effect.flatMap((index) =>
+					index ? localization.operationTarget(name) : Effect.succeed(undefined)
+				)
+			)
+		),
 		operationBusyReason,
 		beginOperation: () =>
 			Ref.modify(activity, (value) =>
@@ -1184,7 +1298,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					if (gather && (yield* configuredRefresh(true)).status !== "completed")
 						return false;
 					if (!gather) yield* localization.reset();
-					return (yield* localization.select(target)).status === "ready";
+					return (yield* localization.select(target, true)).status === "ready";
 				})
 			),
 		localizationBeforeGather: scoped(localization.beforeGather),
@@ -1192,15 +1306,16 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		localizationQualityFocus: scoped(localization.qualityFocus),
 		localizationChanges: scoped(localization.changes),
 		localizationEdits: scoped(localization.edits),
-		localizationReview: (request) => Effect.scoped(localization.review(request, reviewer())),
+		localizationReview: scoped((request) => localization.review(request, reviewer())),
 		localizationReport: scoped(localization.report),
-		localizationReportFile: (request) =>
-			Effect.scoped(localization.reportFile(request, dialog, files)),
-		localizationLinesFile: (input) =>
+		localizationReportFile: scoped((request) =>
+			localization.reportFile(request, dialog, files)
+		),
+		localizationLinesFile: scoped((input) =>
 			projectRelativeRequest(input).pipe(
-				Effect.flatMap((request) => localization.linesFile(request, dialog, files)),
-				Effect.scoped
-			),
+				Effect.flatMap((request) => localization.linesFile(request, dialog, files))
+			)
+		),
 		localizationTargets: scoped(localization.targets),
 		localizationTarget: scoped(localization.select),
 		localizationFocus: scoped(localization.focus),
@@ -1211,7 +1326,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			refresh ? sharedRefresh(refreshScan) : Effect.scoped(configuredRefresh(false)),
 		configuredScan: () => sharedScan(fullScan),
 		focus: scoped(focus),
-		progress,
+		progress: scoped(progress),
 		search: scoped(search),
 		chooseQualityRules: scoped(chooseQualityRules),
 		reloadQualityRules: scoped(reloadQualityRules),

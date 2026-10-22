@@ -9,6 +9,13 @@ use crate::{Result, require};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+#[derive(Default)]
+pub(crate) struct PreparationTimings {
+    pub load: Duration,
+    pub build: Duration,
+}
 
 pub struct EngineQuery {
     pub(crate) audience_rules: Vec<String>,
@@ -245,9 +252,19 @@ impl EngineQuery {
     /// Hash each packed ID once per pinned reader, so every lookup costs one probe rather than a
     /// scan of the whole identity arena.
     pub(crate) fn id_index(&mut self, kind: &str) -> Result<Arc<IdIndex>> {
+        self.id_index_with_timings(kind).map(|(index, _)| index)
+    }
+
+    pub(crate) fn id_index_with_timings(
+        &mut self,
+        kind: &str,
+    ) -> Result<(Arc<IdIndex>, PreparationTimings)> {
         if let Some(index) = self.id_indexes.get(kind) {
-            return Ok(Arc::clone(index));
+            return Ok((Arc::clone(index), PreparationTimings::default()));
         }
+        let load_started = Instant::now();
+        // During Open, identity_starts reuses raw.visible from query_projection_prepare and
+        // line.source from source_search_prepare. The ID arenas themselves are still lazy.
         let starts = self.identity_starts(kind)?;
         let bytes = self.reader.bytes(&format!("query.{kind}.id_utf8"))?;
         require(
@@ -256,9 +273,17 @@ impl EngineQuery {
                 .is_some_and(|end| *end as usize <= bytes.len()),
             "Invalid identity byte range.",
         )?;
+        let load = load_started.elapsed();
+        let build_started = Instant::now();
         let index = Arc::new(IdIndex::new(starts, bytes));
         self.id_indexes.insert(kind.to_owned(), Arc::clone(&index));
-        Ok(index)
+        Ok((
+            index,
+            PreparationTimings {
+                load,
+                build: build_started.elapsed(),
+            },
+        ))
     }
 
     /// The dictionary IDs of exact source texts. A text no row holds has no ID, or an ID no source
@@ -279,15 +304,28 @@ impl EngineQuery {
         &mut self,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<Arc<[u32]>> {
+        self.unit_lines_with_timings(cancelled)
+            .map(|(lines, _)| lines)
+    }
+
+    pub(crate) fn unit_lines_with_timings(
+        &mut self,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<(Arc<[u32]>, PreparationTimings)> {
         if let Some(lines) = &self.unit_lines {
-            return Ok(Arc::clone(lines));
+            return Ok((Arc::clone(lines), PreparationTimings::default()));
         }
+        let load_started = Instant::now();
+        // Open already cached the projection (including line order/ranges) and slice.raw in
+        // query_projection_prepare; measure the cache lookups and validation as they occur.
         let p = crate::engine_match::Projection::open(self, cancelled)?;
         let raws = self.column("slice", "raw")?;
         require(
             raws.len() == p.slice.visible.len(),
             "Invalid slice-to-unit projection.",
         )?;
+        let load = load_started.elapsed();
+        let build_started = Instant::now();
         let mut lines = vec![u32::MAX; p.raw.visible.len()];
         for (index, line) in p.order.iter().enumerate() {
             if index & 255 == 0 {
@@ -302,7 +340,13 @@ impl EngineQuery {
         }
         let lines: Arc<[u32]> = lines.into();
         self.unit_lines = Some(Arc::clone(&lines));
-        Ok(lines)
+        Ok((
+            lines,
+            PreparationTimings {
+                load,
+                build: build_started.elapsed(),
+            },
+        ))
     }
 
     pub(crate) fn identity_starts(&mut self, kind: &str) -> Result<Arc<[u32]>> {

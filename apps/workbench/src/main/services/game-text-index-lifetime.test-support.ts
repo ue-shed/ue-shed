@@ -1,14 +1,34 @@
 import { GameTextIndexSteps } from "@ue-shed/game-text/index";
-import { Deferred, Effect, Layer, Ref } from "effect";
+import { Deferred, Effect, Layer, Ref, Option } from "effect";
 import { makeIndexRegressionFixture } from "../../../../../packages/game-text/src/index-refresh-regressions.test-support.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { WorkbenchGameTextLive } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
-	mode: "retirement" | "search" | "rejected" | "localization" | "pipeline" | "source"
+	mode:
+		| "retirement"
+		| "search"
+		| "rejected"
+		| "localization"
+		| "pipeline"
+		| "source"
+		| "cached"
+		| "cached-open"
+		| "cached-retirement"
 ) {
 	const fixture = yield* makeIndexRegressionFixture();
+	if (mode.startsWith("cached"))
+		yield* Effect.scoped(
+			Effect.gen(function* () {
+				yield* (yield* GameTextIndexSteps).prepareTarget(fixture.request);
+			}).pipe(Effect.provide(fixture.layer()))
+		);
+	const cachedRetired = yield* Deferred.make<void>();
+	const cacheOpening = yield* Deferred.make<void>();
+	const allowCachedOpen = yield* Deferred.make<void>();
+	const selectedRoot = yield* Ref.make<string | undefined>(fixture.projectRoot);
+	let cacheOpens = 0;
 	const retiring = yield* Deferred.make<void>();
 	const allowRetirement = yield* Deferred.make<void>();
 	const searching = yield* Deferred.make<void>();
@@ -29,6 +49,24 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 			return GameTextIndexSteps.of({
 				...real,
 				invalidate: real.invalidate,
+				openCommitted: Effect.fn("Test.GameText.openCommitted")(function* (request) {
+					cacheOpens++;
+					const result = yield* real.openCommitted(request);
+					if (Option.isSome(result)) {
+						yield* Effect.addFinalizer(() =>
+							Deferred.succeed(cachedRetired, undefined).pipe(
+								Effect.andThen(
+									mode === "cached-retirement"
+										? Deferred.await(allowRetirement)
+										: Effect.void
+								)
+							)
+						);
+						yield* Deferred.succeed(cacheOpening, undefined);
+						if (mode === "cached-open") yield* Deferred.await(allowCachedOpen);
+					}
+					return result;
+				}),
 				openTarget: Effect.fn("Test.GameText.productionRefresh")(function* (request) {
 					const call = ++calls;
 					if (call === 1)
@@ -100,21 +138,29 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 		})
 	).pipe(Layer.provide(fixture.layer(true)));
 	const current = () =>
-		Ref.get(generation).pipe(
-			Effect.map((generation) => ({
+		Effect.gen(function* () {
+			const root = yield* Ref.get(selectedRoot);
+			if (!root) return { status: "not_configured" as const };
+			return {
 				status: "ready" as const,
 				project: {
-					generation,
+					generation: yield* Ref.get(generation),
 					inputAtlas: "ready" as const,
 					mapCount: 0,
 					packageCount: 1,
 					projectName: "Fixture",
-					projectRoot: fixture.projectRoot
+					projectRoot: root
 				}
-			}))
-		);
+			};
+		});
 	const project = makeWorkbenchProjectTestLayer({
 		current,
+		...(mode.startsWith("cached")
+			? {
+					refresh: () =>
+						Ref.update(generation, (value) => value + 1).pipe(Effect.andThen(current()))
+				}
+			: undefined),
 		choose: current,
 		inputAtlas: () => Effect.die("Not used"),
 		savedTables: () => Effect.die("Not used"),
@@ -158,6 +204,11 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 			pauseRetirement = true;
 		},
 		fixture,
+		cachedRetired,
+		cacheOpening,
+		allowCachedOpen,
+		selectedRoot,
+		cacheOpens: () => cacheOpens,
 		modelOpens: () => calls,
 		retiring,
 		allowRetirement,

@@ -163,6 +163,23 @@ export interface SharedIndexWriter {
 		entries: readonly ColdLayerSource[],
 		removedNames?: readonly string[]
 	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
+	/**
+	 * The writer sorts a cold batch's strings itself from the staged files, so cold importers
+	 * need not prepare sorted string runs for it.
+	 */
+	readonly sortsColdStrings?: boolean;
+	/**
+	 * `publishCold` for layers that exist only as staged snapshot files, for a writer that reads
+	 * them itself; callers then need not open each file to describe its columns.
+	 */
+	readonly publishColdFiles?: (
+		entries: readonly {
+			readonly name: string;
+			readonly key: string;
+			readonly stagedFile: string;
+		}[],
+		removedNames?: readonly string[]
+	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
 	/** One atomic cold target publication, with a single external dictionary sort. */
 	readonly publishCold: (
 		entries: readonly ColdLayerSource[],
@@ -224,6 +241,54 @@ function readIndex(reader: SnapshotReader) {
 		);
 }
 
+/** Layer files opened at once by a reader; a warm root holds a few hundred. */
+const LAYER_OPEN_CONCURRENCY = 16;
+
+/**
+ * Opens and checks every layer a root names, a bounded number at a time, in the manifest's order.
+ * A failure closes every file already opened, including ones whose open was still in flight.
+ */
+async function openLayerFiles(directory: string, manifest: SharedIndexManifest) {
+	const entries = Object.entries(manifest.layers);
+	for (const [, record] of entries)
+		snapshotCheck(
+			record.storeGeneration === manifest.generation &&
+				record.segmentCount <= manifest.segments.length,
+			"layer",
+			"Layer store dependency differs"
+		);
+	const files: (SnapshotFileReader | undefined)[] = Array.from({ length: entries.length });
+	let next = 0;
+	let failed = false;
+	let failure: unknown;
+	const worker = async () => {
+		while (!failed && next < entries.length) {
+			const index = next++;
+			const record = entries[index]![1];
+			try {
+				const file = await openSnapshotFile(join(directory, record.file));
+				files[index] = file;
+				snapshotCheck(
+					file.directory.fileLength === record.bytes,
+					"layer",
+					"Layer size differs"
+				);
+			} catch (cause) {
+				if (!failed) failure = cause;
+				failed = true;
+			}
+		}
+	};
+	await Promise.all(
+		Array.from({ length: Math.min(LAYER_OPEN_CONCURRENCY, entries.length) }, worker)
+	);
+	if (failed) {
+		for (const file of files) await file?.close();
+		throw failure;
+	}
+	return new Map(entries.map(([key], index) => [key, files[index]!]));
+}
+
 /** One lock and atomic root for segments and every layer; individual cache keys remain independent. */
 export function sharedIndexNodeLayer(options: SharedIndexOptions) {
 	const backing = makeSharedIndexNodeLayer(options);
@@ -257,30 +322,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					(files) => Effect.promise(() => files.close())
 				);
 				const layers = yield* Effect.acquireRelease(
-					boundary("layers", async () => {
-						const opened = new Map<string, SnapshotFileReader>();
-						try {
-							for (const [key, record] of Object.entries(manifest.layers)) {
-								snapshotCheck(
-									record.storeGeneration === manifest.generation &&
-										record.segmentCount <= manifest.segments.length,
-									"layer",
-									"Layer store dependency differs"
-								);
-								const file = await openSnapshotFile(join(directory, record.file));
-								opened.set(key, file);
-								snapshotCheck(
-									file.directory.fileLength === record.bytes,
-									"layer",
-									"Layer size differs"
-								);
-							}
-							return opened;
-						} catch (cause) {
-							for (const file of opened.values()) await file.close();
-							throw cause;
-						}
-					}),
+					boundary("layers", () => openLayerFiles(directory, manifest)),
 					(layers) =>
 						Effect.promise(async () => {
 							for (const file of layers.values()) await file.close();

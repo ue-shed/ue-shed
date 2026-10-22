@@ -37,3 +37,40 @@ export function batchProtocolPaths(
 	if (batch.length > 0) batches.push(batch);
 	return batches;
 }
+
+/**
+ * Split a staged package-text read (uasset-io v1.19) into consecutive batches whose complete
+ * staging payload fits in one request: each path's JSON string and its group number, plus the
+ * staging directory. `directory` should be the longest directory any batch is sent with. Returns
+ * the length of each batch; order is preserved and every path appears in exactly one batch.
+ */
+export function batchStagedProtocolPaths(
+	paths: readonly string[],
+	groups: readonly number[],
+	directory: string,
+	maximumRequestBytes: number = MAX_PROTOCOL_REQUEST_BYTES
+): readonly number[] {
+	if (groups.length !== paths.length)
+		throw new RangeError("A staged read needs one group for each path");
+	const budget =
+		maximumRequestBytes -
+		REQUEST_ENVELOPE_RESERVE_BYTES -
+		Buffer.byteLength(JSON.stringify(directory), "utf8");
+	const lengths: number[] = [];
+	let length = 0;
+	let bytes = 0;
+	for (const [index, path] of paths.entries()) {
+		// Each path's string literal and group number, with their separating commas.
+		const size =
+			Buffer.byteLength(JSON.stringify(path), "utf8") + String(groups[index]).length + 2;
+		if (length > 0 && bytes + size > budget) {
+			lengths.push(length);
+			length = 0;
+			bytes = 0;
+		}
+		length++;
+		bytes += size;
+	}
+	if (length > 0) lengths.push(length);
+	return lengths;
+}

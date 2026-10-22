@@ -44,6 +44,19 @@ export class GameTextIndexSource extends Context.Service<
 			projectRoot: string,
 			entries: readonly PackageTextInventoryEntry[]
 		) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, GameTextIndexError>;
+		/**
+		 * Optional staged read with the same verification: the reader writes each package's
+		 * record as one JSON line to a file under `directory`, where `groups[i]` is the group of
+		 * `entries[i]`. Each event names a staged package by its project-relative path and the
+		 * file holding its record. Every file holds lines of one group only; a group may span
+		 * several files when the source splits the read into several requests. Records never
+		 * pass through the host's stream, so cold imports parse each group in its own worker.
+		 */
+		readonly stage?: (
+			projectRoot: string,
+			entries: readonly PackageTextInventoryEntry[],
+			staging: { readonly directory: string; readonly groups: readonly number[] }
+		) => Stream.Stream<{ readonly path: string; readonly file: string }, GameTextIndexError>;
 	}
 >()("@ue-shed/game-text/GameTextIndexSource") {}
 

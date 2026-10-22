@@ -129,6 +129,8 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/scripts/benchmark-project-index-support.ts",
 	"apps/workbench/scripts/benchmark-project-index.ts",
 	"apps/workbench/scripts/benchmark-compact-text.ts",
+	// The opt-in desktop benchmark drives Electron through Playwright, its foreign adapter.
+	"apps/workbench/scripts/benchmark-game-text-desktop.ts",
 	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	"packages/cameras/src/index.ts",
 	// Capture destinations own the Node filesystem promise boundary; callers receive only
@@ -162,7 +164,9 @@ const approvedEnvironmentAdapters = new Set([
 	"apps/cli/src/index.ts",
 	"apps/workbench/src/main/main.ts",
 	// The synthetic benchmark forwards the process environment to its Playwright child.
-	"packages/observatory/scripts/benchmark.ts"
+	"packages/observatory/scripts/benchmark.ts",
+	// The desktop benchmark forwards the process environment to the Electron it launches.
+	"apps/workbench/scripts/benchmark-game-text-desktop.ts"
 ]);
 const approvedRawFetchAdapters = new Set([
 	// Only the bundled public sample is fetched; selected files are read locally and transferred.
@@ -216,6 +220,11 @@ const approvedResourceAdapters = new Set([
 	"apps/workbench/src/main/preload.ts",
 	// The opt-in benchmark owns bounded RSS sampling timers around each native worker.
 	"apps/workbench/scripts/benchmark-project-index.ts",
+	// The desktop benchmark owns its memory sampler process and poll timers around each run.
+	"apps/workbench/scripts/benchmark-game-text-desktop.ts",
+	// Script strings the benchmark evaluates in the page: one search's observer and Enter
+	// listener, which disconnect on completion and end with the page.
+	"apps/workbench/scripts/benchmark-game-text-desktop-page.ts",
 	"apps/workbench/src/renderer/app-shell.tsx",
 	// Blueprint Graphs owns its bounded search debounce through Solid onCleanup.
 	"extensions/blueprint-graphs/src/project-blueprint-search.tsx",

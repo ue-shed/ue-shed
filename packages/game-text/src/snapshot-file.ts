@@ -16,6 +16,7 @@ import {
 	snapshotDirectoryLength,
 	snapshotFailure,
 	snapshotPayload,
+	unshuffleSnapshotSection,
 	type SnapshotColumn,
 	type SnapshotDirectory,
 	type SnapshotEntry
@@ -100,13 +101,18 @@ async function writeAt(
 		offset += bytesWritten;
 	}
 }
-/** Writes one raw section and at most its compressed copy, never a whole-file buffer. */
+/**
+ * Writes one raw section and at most its compressed copy, never a whole-file buffer. A file that
+ * is only staged for another reader in the same session can skip the sync: it is discarded
+ * rather than recovered after a crash.
+ */
 export async function writeSnapshotFile(
 	path: string,
 	source: SnapshotSource,
 	level: SnapshotCompressionLevel = 1,
 	sample?: () => void,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	options: { readonly durable?: boolean } = {}
 ) {
 	signal?.throwIfAborted();
 	const entries: SnapshotEntry[] = [];
@@ -117,15 +123,32 @@ export async function writeSnapshotFile(
 		"Section count out of bounds"
 	);
 	const handle = await open(path, "wx");
+	// Small sections are batched into few writes: per-section file operations dominated staging
+	// many small snapshots. A batch holds at most WRITE_BATCH_BYTES beyond one section.
+	let pending: Uint8Array[] = [new Uint8Array(position)],
+		pendingStart = 0,
+		pendingBytes = position;
+	const flush = async () => {
+		await writeChunksAt(handle, pending, pendingStart, signal);
+		pendingStart += pendingBytes;
+		pending = [];
+		pendingBytes = 0;
+	};
 	try {
-		await writeAt(handle, new Uint8Array(position), 0, signal);
 		for (const column of source.columns) {
 			signal?.throwIfAborted();
 			await writeColumn(column);
 		}
 		const directory = encodeSnapshotDirectory(entries, position, codecOptions);
-		await writeAt(handle, directory, 0, signal);
-		await handle.sync();
+		if (pendingStart === 0) {
+			// Nothing is written yet: the directory takes its placeholder's place in one write.
+			pending[0] = directory;
+			await flush();
+		} else {
+			await flush();
+			await writeAt(handle, directory, 0, signal);
+		}
+		if (options.durable !== false) await handle.sync();
 		return decodeSnapshotDirectory(directory, position, codecOptions);
 	} finally {
 		await handle.close();
@@ -192,11 +215,39 @@ export async function writeSnapshotFile(
 			stringCount: column.stringCount ?? 0
 		};
 		entries.push(entry);
-		await writeAt(handle, stored, position, signal);
 		const padding = snapshotAligned(stored.length) - stored.length;
-		if (padding)
-			await writeAt(handle, new Uint8Array(padding), position + stored.length, signal);
+		pending.push(stored);
+		if (padding) pending.push(new Uint8Array(padding));
+		pendingBytes += stored.length + padding;
 		position += snapshotAligned(stored.length);
+		if (pendingBytes >= WRITE_BATCH_BYTES) await flush();
+	}
+}
+const WRITE_BATCH_BYTES = 4 * 1024 * 1024;
+
+/** Writes `chunks` contiguously from `position`, resuming after any partial vectored write. */
+async function writeChunksAt(
+	handle: FileHandle,
+	chunks: readonly Uint8Array[],
+	position: number,
+	signal?: AbortSignal
+) {
+	if (chunks.length === 0) return;
+	signal?.throwIfAborted();
+	const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+	const { bytesWritten } = await handle.writev(chunks, position);
+	if (bytesWritten === total) return;
+	let offset = 0;
+	for (const chunk of chunks) {
+		const end = offset + chunk.length;
+		if (end > bytesWritten)
+			await writeAt(
+				handle,
+				chunk.subarray(Math.max(0, bytesWritten - offset)),
+				position + Math.max(offset, bytesWritten),
+				signal
+			);
+		offset = end;
 	}
 }
 
@@ -289,10 +340,13 @@ export async function openSnapshotFile(
 		const unpack = (value: SnapshotEntry, stored: Uint8Array) => {
 			if (value.codec === 0) return stored;
 			try {
-				return zlib.zstdDecompressSync(stored, {
-					maxOutputLength: value.rawLength,
-					chunkSize: Math.max(64, value.rawLength)
-				});
+				return unshuffleSnapshotSection(
+					value.codec,
+					zlib.zstdDecompressSync(stored, {
+						maxOutputLength: value.rawLength,
+						chunkSize: Math.max(64, value.rawLength)
+					})
+				);
 			} catch (cause) {
 				throw snapshotFailure(
 					value.name,

@@ -2,6 +2,8 @@ import { GameTextIndexQuery } from "./index-query-native.js";
 import { randomUUID, createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import {
+	Cause,
+	Exit,
 	Context,
 	Effect,
 	Layer,
@@ -442,6 +444,23 @@ export const makeGameTextIndexSteps = (
 					} satisfies Parameters<typeof refreshPackageTextLayer>[0];
 					if (request.changedFiles !== undefined)
 						Object.assign(packageRequest, { changedFiles: request.changedFiles });
+					const stage = source.stage;
+					if (stage)
+						Object.assign(packageRequest, {
+							stage: {
+								projectRoot,
+								read: (
+									paths: readonly string[],
+									directory: string,
+									groups: readonly number[]
+								) =>
+									stage(
+										projectRoot,
+										paths.map((path) => byPath.get(path)!),
+										{ directory, groups }
+									)
+							}
+						});
 					const packages = retainedPackages
 						? {
 								readPackages: 0,
@@ -845,6 +864,126 @@ export const makeGameTextIndexSteps = (
 					Effect.suspend(() => indexedSourceQuality(joined, summary, ruleDocument))
 			};
 		}, normalizeFailure);
+		/**
+		 * Open only an already committed view. None means the disposable cache cannot be used.
+		 * The temporary inspection reader closes before the normal model reader is opened.
+		 */
+		const openCommitted = Effect.fn("GameTextIndex.openCommitted")(function* (input: {
+			readonly projectRoot: string;
+			readonly targetName?: string;
+		}): Effect.fn.Return<Option.Option<GameTextIndexModel>, never, Scope.Scope> {
+			const attempt = Effect.gen(function* () {
+				const request = yield* Schema.decodeUnknownEffect(
+					Schema.Struct({
+						projectRoot: GameTextIndexRefreshRequest.fields.projectRoot,
+						targetName: GameTextTargetImportRequest.fields.targetName
+					})
+				)(input);
+				const project = yield* openProject(request);
+				const target = yield* Effect.scoped(
+					Effect.gen(function* () {
+						const index = yield* SharedIndex;
+						const manifest = yield* index.inspect();
+						const key = manifest.active.joined;
+						if (!key || manifest.active["joined.invalidated"])
+							return yield* Effect.fail(stale("committed_join"));
+						const joined = yield* readJoinedTarget(yield* index.open());
+						const meta = joined.meta;
+						if (
+							meta.input.projectRoot !== project.projectRoot ||
+							meta.input.target.name !== (request.targetName ?? savedTarget.name)
+						)
+							return yield* Effect.fail(stale("committed_identity"));
+						const indexed: GameTextProjectIndex = {
+							...project,
+							generation: manifest.generation,
+							packageKey: packageKey(manifest),
+							packages: {
+								readPackages: 0,
+								reusedPackages: 0,
+								changedShards: 0,
+								removedShards: 0,
+								published: false,
+								profile: {
+									readBytes: 0,
+									indexReadBytes: 0,
+									appendedBytes: 0,
+									lookupStrings: 0,
+									reusedStrings: 0,
+									probePasses: 0,
+									sortMs: 0,
+									probeMs: 0,
+									appendMs: 0,
+									segments: 0,
+									timings: {
+										collectMs: 0,
+										reuseMs: 0,
+										layerEncodeMs: 0,
+										layerVerifyMs: 0,
+										garbageMs: 0,
+										rootPublishMs: 0
+									}
+								}
+							}
+						};
+						return {
+							project: indexed,
+							view:
+								request.targetName === undefined
+									? { kind: "source" }
+									: { kind: "localization", target: request.targetName },
+							imported: {
+								target: meta.input.target,
+								files: [],
+								diagnostics: [],
+								profile: null
+							},
+							join: {
+								key,
+								rebuilt: false,
+								bytes: 0,
+								count: meta.count,
+								keyChanges: null
+							},
+							review: {
+								file:
+									meta.input.review ??
+									emptyLocalizationReviewFile(meta.input.target.name),
+								relativePath: defaultLocalizationReviewPath(meta.input.target.name),
+								contentHash: null
+							},
+							generation: manifest.generation,
+							fileKeys: {}
+						} satisfies GameTextTargetIndex;
+					}).pipe(
+						Effect.provide(
+							sharedIndexNodeLayer(
+								configurationFor(cacheRoot, project.projectRoot, request.targetName)
+							)
+						)
+					)
+				);
+				return yield* openTarget(target);
+			});
+			const scope = yield* Scope.fork(yield* Effect.scope);
+			return yield* attempt.pipe(
+				Effect.provideService(Scope.Scope, scope),
+				Effect.map(Option.some),
+				// Disposable cache reads may throw format defects; cancellation must still propagate.
+				// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Every unusable cache is a miss.
+				Effect.catchCause((cause) =>
+					Scope.close(scope, Exit.void).pipe(
+						Effect.andThen(
+							Cause.hasInterrupts(cause)
+								? Effect.interrupt
+								: Effect.annotateCurrentSpan({
+										"game_text.cache.miss_reason": Cause.pretty(cause)
+									}).pipe(Effect.as(Option.none<GameTextIndexModel>()))
+						)
+					)
+				)
+			);
+		});
 		const invalidate = Effect.fn("GameTextIndex.invalidate")(function* (
 			request: typeof GameTextIndexRefreshRequest.Type
 		) {
@@ -895,6 +1034,7 @@ export const makeGameTextIndexSteps = (
 			buildTarget: sliced(buildTarget),
 			prepareTarget: sliced(prepareTarget),
 			openTarget: sliced(openTarget),
+			openCommitted: sliced(openCommitted),
 			invalidate: sliced(invalidate)
 		};
 	});

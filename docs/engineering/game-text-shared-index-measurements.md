@@ -10,6 +10,181 @@ subsections below describe earlier revisions; they do not supersede the latest
 Cold/refresh results use **TypeScript builder; native builder pending**. Earlier Phase 6 cold
 discovery measurements with explicit worker heap limits are superseded by default-worker runs.
 
+## Corpus and index engine pass: actual desktop comparison (2026-10-22)
+
+Measured with `pnpm benchmark:game-text-desktop` (`apps/workbench/scripts/benchmark-game-text-desktop.ts`),
+which drives the production Electron Workbench (Electron 43.7.7) on a local UE 5.7 project of about
+11,000 packages, of which about 1,380 hold text (31,110 result rows). Before is the head of
+PR #156 (`9d93fcc8`); after is this pass rebased onto it. Each build used its own release reader.
+Three runs per build alternated in fresh processes (before, after; after, before; before, after),
+each with an isolated profile and an empty derived cache; OS file caches were not evicted. No other
+build or test process ran during the runs (the harness waits for them and recorded none).
+Machine: 16-core Ryzen 9 7950X, 64 GB, Windows 11. Medians of three:
+
+| Actual Workbench operation (median of 3)           |      Before |       After |
+| -------------------------------------------------- | ----------: | ----------: |
+| Game Text cold scan, click to usable results       |     19.76 s |      5.43 s |
+| App launch to usable results (cold)                |     20.69 s |      6.21 s |
+| App launch to Project Index ready (empty cache)    |      0.72 s |      0.72 s |
+| Unchanged rescan to usable results                 |      0.74 s |      0.76 s |
+| Warm relaunch to usable results (same cache)       |      2.74 s |      2.78 s |
+| First search, query round trip (wall to count)     |  18 (67) ms |  18 (76) ms |
+| Second search, query round trip                    |       14 ms |       13 ms |
+| Facet filter, query round trip (wall to count)     | 24 (189) ms | 23 (205) ms |
+| Peak aggregate RSS during the cold session         |   1,656 MiB |   1,087 MiB |
+| Aggregate RSS 2 s after the cold rescan            |   1,122 MiB |   1,017 MiB |
+| Main-process event-loop max stall during the scan  |       66 ms |       22 ms |
+| Main-process stall time over 50 ms during the scan |       66 ms |        0 ms |
+| Project Index Catalog on disk                      |     9.67 MB |     1.92 MB |
+| Game Text cache on disk                            |    19.48 MB |     8.34 MB |
+
+Ranges: cold scan 19.73–19.93 s before, 5.40–5.47 s after; peak RSS 1,639–1,657 MiB before,
+1,074–1,095 MiB after. Every run of both builds hashed the same 31,110 rows, facets and problem
+groups through the production search IPC (`1135be78…`), and returned the same search and facet
+totals. The engine's reported query times are unchanged, but the wall time from submitting to
+seeing the count is 9 ms (first search) and 16 ms (facet) longer after, consistently across runs;
+that time is outside the query and was not profiled. An earlier run of the same comparison on the
+previous PR #156 head (`f77a4dfb`) gave the same picture (cold scan 19.87 s to 5.29 s, peak RSS
+1,611 to 1,093 MiB). RSS is the summed working set of the checkout's Electron and reader processes, sampled
+every 250 ms; worker threads count in the main process. The stall monitor is a 10 ms interval
+timer on the Electron main thread. The scan timer starts at the click and ends when Rescan is
+enabled, no progress is shown, the status shows the line count and the search count is shown.
+In both builds the route's initial load starts before the click, and the click's refresh then
+waits for it and makes one unchanged pass (about 1 s of each cold time).
+
+Traced stages of one cold scan on the previous PR #156 head (spans and native stage seconds;
+tracing itself adds about 0.5 s):
+
+| Stage                                            |                         Before |                         After |
+| ------------------------------------------------ | -----------------------------: | ----------------------------: |
+| Package read: native extraction and host staging |                          7.8 s |                         1.3 s |
+| Native extraction of the 1,380 packages          |                          7.5 s |                         1.1 s |
+| Cold shard conversion in workers (wall)          | 5.7 s (8 workers, 34.7 s busy) | 1.0 s (4 workers, 3.7 s busy) |
+| Native cold publication of 256 package layers    |                         2.46 s |                        0.53 s |
+| Native full join                                 |                         2.26 s |                        1.44 s |
+| Native engine open                               |                         0.19 s |                        0.20 s |
+
+Most of the gain came from five measured costs. One 32 MB Blueprint took 5.3 s to extract
+because every graph and node re-decoded its owner to prove graph membership; the reader also
+built an error breadcrumb for every element of large numeric arrays. About 82 MB of package-text
+JSON crossed the main thread to be re-staged as NDJSON and parsed again in workers; the reader now
+writes it to per-shard staging files (uasset-io 1.19) that workers validate directly. Eight workers
+each loaded the module graph and wrote 256 small snapshots with a zstd context, a sync and a write
+per section; staging is now uncompressed, unsynced and batched, and fewer workers start while the
+reader extracts. The native writer staged 256 layers serially, and the join compared texts with
+ICU per comparison. Disk shrinks because the Catalog is compressed in blocks and integer columns
+are stored byte-grouped and delta-coded (`game-text-v2`).
+
+Raw results: ignored `test-results/game-text-desktop/final-2.{json,log}` (per-run samples, memory
+timelines and hashes; `final-1` is the earlier run) and `trace/*` (spans and CPU profiles of the traced runs). UE 5.8 is not
+installed on the measuring machine; no UE 5.8 measurement or check was run.
+
+### Unchanged rescan and warm relaunch (2026-10-22)
+
+The rescan and warm-relaunch pass added four changes: no typing debounce for a loaded scan's
+first page, concurrent opening of shared layers, Project Index status in the long-lived reader
+session, and pooled native writer processes. Before is `0ea457d4` (the harness commit before
+them); after is the pass. Same harness and method as above, untraced: three alternating
+fresh-process runs per build, each build with its own release reader, and no other build or test
+process running. This was a different machine from the table above, so compare only within each
+table: a 16-core Ryzen 9 5950X running Windows 11, with Node 26.5.0 for the harness. Both projects
+are local and read-only. Every run of both builds hashed identical results.
+
+A local UE 5.7 project of about 11,600 packages (40,610 result rows; it has grown since the
+table above). Builds at `0ea457d4` and `35e80ae2`:
+
+| Workbench operation (median of 3, range)     |                 Before |                  After |
+| -------------------------------------------- | ---------------------: | ---------------------: |
+| Unchanged rescan to usable results           |       950 ms (948–996) |       751 ms (692–824) |
+| Warm relaunch to usable results              | 2,412 ms (2,380–2,453) | 2,153 ms (2,121–2,187) |
+| Warm relaunch to Project Index ready         |       752 ms (745–753) |       762 ms (762–777) |
+| Warm first search, wall (engine-reported)    |             33 (28) ms |             34 (29) ms |
+| Aggregate RSS 2 s after the cold rescan      |              1,106 MiB |              1,139 MiB |
+| Main-process max stall, warm relaunch        |                  30 ms |                  30 ms |
+| Game Text cold scan, click to usable results |                 8.13 s |                 8.03 s |
+
+A local UE 4.27 project of about 167,000 packages (260,839 result rows). The warm relaunch of
+this project exposed a race that predates the pass (see below). Both builds were measured with
+its fix (`255cf7e1`): the "before" checkout had the same change applied and was not committed.
+
+| Workbench operation (median of 3, range)      |                 Before |                  After |
+| --------------------------------------------- | ---------------------: | ---------------------: |
+| Unchanged rescan to usable results            | 4,762 ms (4,679–4,822) | 4,406 ms (4,392–4,444) |
+| Warm relaunch to usable results               | 7,880 ms (7,878–7,925) | 7,482 ms (7,468–7,502) |
+| Warm relaunch to Project Index ready          | 1,098 ms (1,090–1,115) | 1,062 ms (1,041–1,075) |
+| Warm first search, wall (engine-reported)     |             48 (39) ms |             48 (39) ms |
+| Aggregate RSS 2 s after the cold rescan       |              1,591 MiB |              1,681 MiB |
+| Main-process max stall, warm relaunch         |                  62 ms |                  46 ms |
+| Main-process stall time over 50 ms, cold scan |          55 ms (0–233) |       219 ms (161–234) |
+| Game Text cold scan, click to usable results  |               115.97 s |               115.55 s |
+
+The rescan and warm-relaunch ranges do not overlap on either project. The cold scan did not
+regress. Two costs:
+
+- **Memory:** a pooled writer process stays alive after a build session. Settled RSS rises by
+  34 MiB on the smaller project and 90 MiB on the larger one.
+- **Main-process stalls:** on the larger project, the after build stalled for about 100 ms during
+  the cold scan in every run; the before build did so in two of its three runs, and its stall
+  total was lower. This is likely the concurrent layer opens finishing in one turn of the event
+  loop. It has not been profiled.
+
+Warm relaunch to Project Index ready is 10 ms slower on the smaller project, in every run.
+
+**Warm relaunch race (fixed in this PR).** A warm relaunch opens the committed index at once and
+refreshes the Project Index in the background. The harness then clicked "Scan project". That click
+started a second native refresh, which failed at once on the Catalog writer lock: "cannot acquire
+Catalog writer lock: lock acquisition failed because the operation would block". The route then
+stayed on "Scan project" behind a Retry banner. On the larger project the background refresh lasts
+about 0.6 s, long enough to lose this race in every run. The Workbench now runs one refresh per
+project at a time, and a later refresh waits for the earlier one. The smaller project's numbers
+above predate the fix. They are unaffected, because its background refresh finished before the
+click.
+
+**Reopening the saved index (2026-10-22).** A warm relaunch used to wait for a "Scan project" click
+before showing anything. The route now shows the committed index's results at once, then
+rescans behind them, in the same Rescanning state a clicked Rescan uses. Before is the pass above
+(`66006561`), after adds the reopen (`840a95dc`). Same method; both builds share one reader, and
+every run hashed identical results. `warmLaunchToResultsMs` marks when results are first shown.
+`warmLaunchToUsableMs` marks when the refreshed results are ready with no scan running. For the
+before build, both are the clicked scan's completion.
+
+| Workbench operation (median of 3, range)   |         UE 5.7, before |          UE 5.7, after |        UE 4.27, before |         UE 4.27, after |
+| ------------------------------------------ | ---------------------: | ---------------------: | ---------------------: | ---------------------: |
+| Warm relaunch to results shown             | 2,152 ms (2,134–2,158) | 1,526 ms (1,511–1,544) | 8,430 ms (7,922–8,571) | 3,060 ms (3,011–3,132) |
+| Warm relaunch to refreshed, usable results | 2,152 ms (2,134–2,158) | 2,003 ms (1,989–2,004) | 8,430 ms (7,922–8,571) | 6,676 ms (6,568–7,346) |
+| Unchanged rescan to usable results         |       743 ms (717–982) |       560 ms (551–571) |                    n/a |                    n/a |
+| Warm peak aggregate RSS                    |                599 MiB |                630 MiB |              1,347 MiB |              1,429 MiB |
+
+An unrelated job slowed the larger project's before runs (cold scans of 140–148 s, against about
+116 s when the machine was quiet), so that project's rescan and cold-scan differences from this
+comparison are not reported. Its warm-relaunch differences are far larger than that noise. The
+warm peak rises because the cached reader and the rescan's new one overlap until the swap. The
+rescan is faster on the smaller project, most likely because translations now reuse the published
+model rather than importing and building again. That was not traced.
+
+**Where the engine's ID index time goes (2026-10-22).** The reader-open stage `id_index_prepare` is
+now split by `66006561`. Warm reopens:
+
+| Stage                                      | UE 5.7 (40,610 rows) | UE 4.27 (260,839 rows) |
+| ------------------------------------------ | -------------------: | ---------------------: |
+| `id_index_prepare` (total)                 |               130 ms |                 444 ms |
+| Raw IDs: arena load / hash table build     |        27 ms / 35 ms |         90 ms / 121 ms |
+| Line IDs: arena load / hash table build    |        29 ms / 38 ms |         93 ms / 137 ms |
+| Unit-to-line map                           |               0.5 ms |                 2.5 ms |
+| For comparison: `query_projection_prepare` |                42 ms |                 261 ms |
+
+The hash tables account for 56–58% of the stage, and reading the ID arenas, which every lookup
+needs, for 41–43%. Persisting the tables could save at most the build share (about 73 and 258 ms),
+less the cost of loading them, and it changes the format. The two tables are independent once
+their arenas are loaded, so building them in parallel would save about half the build time (about
+35 and 120 ms) with no format change. That is the recommended next step. On the larger project,
+`query_projection_prepare` is the bigger cost.
+
+Raw results: ignored `test-results/part2/ue57-11k.{json,log}` and
+`test-results/part2/ue427-167k.{json,log}`. `test-results/part2/trace427/` holds the traced run
+that found the race. The reopen comparison is in `item6-ue57-11k-quiet` and `item6-ue427-167k`, and
+the ID index split in the traces under `item7-*`.
+
 ## Stage breakdown (Plan 058 C1): instrumentation ready, numbers pending
 
 The build and Quality scan now report their stages: `PackageText.refresh`,
@@ -18,7 +193,8 @@ and `benchmark-game-text-scale.ts --stages` records them with every span's wall 
 [the scale harness](../../scripts/game-text-scale.md)). Any OpenTelemetry tracer a host installs
 receives the same attributes.
 
-**No stage numbers are recorded yet.** The large UE 4.27 project and the large UE 5 World
+**No stage numbers are recorded yet for those two projects**; a smaller local UE 5.7
+project's traced cold-scan stages are in the section above. The large UE 4.27 project and the large UE 5 World
 Partition project were not available on the machine that added the instrumentation, and other
 builds and tests ran on it at the same time. Record the breakdown for both projects here,
 without naming them, on a quiet machine with alternating fresh processes, as ADR 0010 requires.

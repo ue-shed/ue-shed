@@ -132,15 +132,45 @@ pub fn is_blueprint_graph_node_export(context: &AssetDecodeContext<'_>, export: 
     if !is_blueprint_owned_export(package, outer) {
         return false;
     }
-    let Ok((properties, _)) = decode_uobject_properties(outer, context) else {
-        return false;
-    };
-    properties.records.iter().any(|property| {
-        package.resolve_name(property.name).as_deref() == Some("Nodes")
-            && matches!(&property.value, PropertyValue::Array(nodes) if nodes.iter().any(|node|
-                matches!(node, PropertyValue::ObjectRef(index)
-                    if package.resolve_index_str(*index) == Some(export.object_path.as_str()))))
+    let memo = &package.decode_memo.graph_nodes;
+    if !memo.borrow().contains_key(&index) {
+        let nodes = graph_node_paths(context, outer);
+        memo.borrow_mut().insert(index, nodes);
+    }
+    memo.borrow().get(&index).is_some_and(|nodes| {
+        nodes
+            .as_ref()
+            .is_some_and(|nodes| nodes.contains(export.object_path.as_str()))
     })
+}
+
+/// The object paths an outer export's saved `Nodes` array references. Callers keep the answer
+/// per outer: a large Blueprint asks for every graph and node it owns.
+fn graph_node_paths(
+    context: &AssetDecodeContext<'_>,
+    outer: &Export,
+) -> Option<std::collections::HashSet<String>> {
+    let package = context.package;
+    decode_uobject_properties(outer, context)
+        .ok()
+        .map(|(properties, _)| {
+            let mut paths = std::collections::HashSet::new();
+            for property in &properties.records {
+                if package.resolve_name(property.name).as_deref() != Some("Nodes") {
+                    continue;
+                }
+                if let PropertyValue::Array(nodes) = &property.value {
+                    for node in nodes {
+                        if let PropertyValue::ObjectRef(node) = node
+                            && let Some(path) = package.resolve_index_str(*node)
+                        {
+                            paths.insert(path.to_owned());
+                        }
+                    }
+                }
+            }
+            paths
+        })
 }
 
 /// Whether an export belongs to a Blueprint, including custom graphs and their nodes.

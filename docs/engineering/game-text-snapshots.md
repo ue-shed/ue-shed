@@ -41,10 +41,19 @@ runtime without zstd fails with typed upgrade guidance. Other package exports re
 
 ## Format and lazy reads
 
-Layout version 4 uses magic `UESHT004` inside the existing `game-text-v1` cache namespace.
-Old derived generations are rejected and rebuilt. Integers are little endian; payloads are
-four-byte aligned. The 48-byte header contains version, section count, file length, directory end,
-directory CRC32 and header CRC32. Reserved bytes must be zero.
+Layout version 4 uses magic `UESHT004` inside the `game-text-v2` cache namespace. Old derived
+generations, including everything under `game-text-v1`, are rejected and rebuilt. Integers are
+little endian; payloads are four-byte aligned. The 48-byte header contains version, section count,
+file length, directory end, directory CRC32 and header CRC32. Reserved bytes must be zero.
+
+A section's codec is 0 (raw) or 1 (zstd). Integer and string-ID columns may also use codec 2, zstd
+over the values' bytes grouped by significance (all first bytes, then all second bytes, and so on),
+or codec 3, the same over the differences of a non-decreasing column. The native writer picks the
+transform that compresses a sample of the column best, since some integer sections hold packed text
+bytes, and encodes a layer's sections in parallel. The section checksum covers the decoded bytes.
+`game-text-v2` exists because readers of `game-text-v1` cannot decode codecs 2 and 3. On a local
+UE 5.7 project (~11k packages) the joined layer shrinks from 15.2 MB to 4.2 MB and the whole Game
+Text cache from 19.4 MB to 8.3 MB.
 
 Full joins with at least 8,192 distinct sources may include an optional source-query cache. Its
 global IDs, byte offsets, canonical WTF-8 bytes, ASCII flags and a 256 KiB ASCII-trigram membership
@@ -94,8 +103,8 @@ lowercase substring scan. The caller owns that buffer; page reads still load onl
 
 ## Store lifecycle
 
-The configured cache root contains `game-text-v1/<hash-of-project-and-target-keys>`, beside
-`catalogs-v4`. Both `SnapshotStore.open()` and `writer()` require an Effect scope. The reader
+The configured cache root contains `game-text-v2/<hash-of-project-and-target-keys>`, beside
+`catalogs-v6`. Both `SnapshotStore.open()` and `writer()` require an Effect scope. The reader
 holds its physical file open until scope release, preserving that generation through publication
 and retirement. Windows tests retire the old filename before reading its previously unloaded
 strings through the retained handle.
@@ -247,7 +256,7 @@ node --import tsx --max-old-space-size=256 scripts/benchmark-localization-import
 ## Shared strings, generations and compaction
 
 `sharedIndexNodeLayer` supplies the same scoped Effect service to libraries, CLI and Workbench.
-The target key is `shared-index-v2:<target>` inside `game-text-v1`; importer version 5 and root
+The target key is `shared-index-v2:<target>` inside `game-text-v2`; importer version 5 and root
 version 2 rebuild the disposable prior hash-page cache. One writer lock publishes a checksummed
 `index.meta` root atomically. The root names every immutable segment, independent content-keyed
 layer and active file path. Layers declare their generation and segment dependency. Readers open

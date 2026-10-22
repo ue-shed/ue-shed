@@ -431,6 +431,41 @@ describe("shared project string index", () => {
 			)
 		);
 	});
+	it("opens many layers concurrently and closes every opened file when one is damaged", async () => {
+		const { run, options } = await setup();
+		const keys = Array.from({ length: 40 }, (_, index) => `k${index}`);
+		const manifest = await run(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const writer = yield* (yield* SharedIndex).writer();
+					for (const [index, key] of keys.entries())
+						yield* writer.publish(`l${index}`, key, source([`text ${index}`]));
+					return writer.manifest();
+				})
+			)
+		);
+		const read = Effect.scoped(
+			Effect.gen(function* () {
+				const reader = yield* (yield* SharedIndex).open();
+				const values: string[] = [];
+				for (const index of keys.keys()) {
+					const layer = yield* reader.layer(`l${index}`);
+					values.push(
+						...(yield* reader.strings(Array.from(yield* layer.section("entry.source"))))
+					);
+				}
+				return values;
+			})
+		);
+		expect(await run(read)).toEqual(keys.map((_, index) => `text ${index}`));
+		const directory = sharedIndexDirectory(options);
+		const damaged = join(directory, manifest.layers["k23"]!.file);
+		const bytes = await readFile(damaged);
+		await writeFile(damaged, Buffer.concat([bytes, Buffer.of(0)]));
+		await expect(run(read)).rejects.toThrow(/File length mismatch|Layer size differs/u);
+		// Windows refuses to delete a file that is still open, so this fails if a handle leaked.
+		for (const key of keys) await rm(join(directory, manifest.layers[key]!.file));
+	});
 	it("an interrupted compaction leaves the prior generation visible and can be retried", async () => {
 		let interrupt = false;
 		const { run } = await setup({

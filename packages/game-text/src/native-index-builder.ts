@@ -5,7 +5,7 @@ import { nativeIndexQueryLayer } from "./index-query-native.js";
 import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Context, Effect, Exit, Layer, Option, Schema } from "effect";
+import { Context, Duration, Effect, Exit, Layer, Option, Pool, Schema } from "effect";
 import {
 	AssetReader,
 	NativeGameTextIndexClient,
@@ -183,7 +183,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			? Effect.succeed(existing)
 			: io("native-index-stage", async (signal) => {
 					const file = join(stage, `${++sequence}.snapshot`);
-					await writeSnapshotFile(file, source, 1, undefined, signal);
+					await writeSnapshotFile(file, source, 0, undefined, signal, { durable: false });
 					return file;
 				});
 	const publish: SharedIndexWriter["publishBatch"] = Effect.fn("NativeIndexBuilder.publish")(
@@ -209,6 +209,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		}
 	);
 	const writer: SharedIndexWriter = {
+		sortsColdStrings: true,
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {
 				const inputs = [];
@@ -255,6 +256,26 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		publishBatch: publish,
 		publish: (name, key, source) =>
 			publish([{ name, key, source }]).pipe(Effect.map((records) => records[0]!)),
+		publishColdFiles: Effect.fn("NativeIndexBuilder.publishColdFiles")(
+			function* (entries, removedNames) {
+				const result = yield* command({
+					action: "publish",
+					configuration,
+					inputs: entries.map((entry) => ({
+						name: entry.name,
+						key: entry.key,
+						file: manifest.layers[entry.key]
+							? join(sharedIndexDirectory(options), manifest.layers[entry.key]!.file)
+							: entry.stagedFile
+					})),
+					cold: true,
+					...(removedNames ? { removedNames } : undefined)
+				});
+				return yield* Schema.decodeUnknownEffect(Schema.Array(LayerRecord))(
+					result.records
+				).pipe(Effect.mapError((cause) => unavailable("native-index-layer", cause)));
+			}
+		),
 		publishCold: Effect.fn("NativeIndexBuilder.publishCold")(function* (entries, removedNames) {
 			const inputs = [];
 			for (const entry of entries)
@@ -438,13 +459,21 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			keyChanges: result.keyChanges
 		};
 	});
+	let ended = false;
 	return {
 		writer,
 		refreshJoinedTarget,
+		/** Whether `end` ran and succeeded, releasing the native writer lease in this process. */
+		ended: () => ended,
 		close: (): Effect.Effect<void, SnapshotStoreError> =>
 			closed
 				? Effect.void
 				: command({ action: "end", configuration }).pipe(
+						Effect.tap(() =>
+							Effect.sync(() => {
+								ended = true;
+							})
+						),
 						Effect.asVoid,
 						Effect.ensuring(
 							Effect.sync(() => {
@@ -455,44 +484,74 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 	};
 });
 
+/**
+ * Writer processes kept between build sessions. A rescan opens two sessions back to back, and each
+ * new process costs a spawn and a protocol handshake. Idle processes exit after this long.
+ */
+const WRITER_PROCESS_IDLE = Duration.seconds(30);
+const WRITER_PROCESS_LIMIT = 4;
+
 /** Native storage and joins with explicit worker configuration; TS producers own extraction policy. */
 export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration) =>
-	Layer.succeed(
+	Layer.effect(
 		GameTextIndexBuilder,
-		GameTextIndexBuilder.of({
-			importLocalizationFile,
-			importLocalizationTarget,
-			refreshPackageTextLayer,
-			intern: Effect.fn("NativeIndexBuilder.intern")(function* (domain, values) {
-				const index = yield* SharedIndex;
-				return yield* (yield* index.writer()).intern(domain, values);
-			}),
-			compact: Effect.fn("NativeIndexBuilder.compact")(function* (force) {
-				const index = yield* SharedIndex;
-				return yield* (yield* index.writer()).compact(force);
-			}),
-			withSession: (request, effect) =>
-				Effect.scoped(
-					Effect.gen(function* () {
-						const backing = yield* SharedIndex;
-						const stage = yield* Effect.acquireRelease(
-							io("native-index-stage", async () => {
-								await mkdir(request.configuration.cacheRoot, {
-									recursive: true
-								});
-								return mkdtemp(
-									join(request.configuration.cacheRoot, "native-build-")
-								);
-							}),
-							(path) =>
-								Effect.promise(() => rm(path, { recursive: true, force: true }))
-						);
-						const native = yield* Effect.acquireRelease(
-							makeWriter(request.configuration, stage),
-							(native) =>
-								native
-									.close()
-									.pipe(
+		Effect.gen(function* () {
+			// A process is reused only after its session's `end` succeeded, which releases the native
+			// writer lease and its file lock. A failed command, a failed `end` or an interruption
+			// discards it.
+			const writers = yield* Pool.makeWithTTL({
+				acquire: Layer.build(nativeGameTextIndexClientLayer(configuration)).pipe(
+					Effect.map((services) => Context.get(services, NativeGameTextIndexClient))
+				),
+				min: 0,
+				max: WRITER_PROCESS_LIMIT,
+				timeToLive: WRITER_PROCESS_IDLE,
+				timeToLiveStrategy: "usage"
+			});
+			return GameTextIndexBuilder.of({
+				importLocalizationFile,
+				importLocalizationTarget,
+				refreshPackageTextLayer,
+				intern: Effect.fn("NativeIndexBuilder.intern")(function* (domain, values) {
+					const index = yield* SharedIndex;
+					return yield* (yield* index.writer()).intern(domain, values);
+				}),
+				compact: Effect.fn("NativeIndexBuilder.compact")(function* (force) {
+					const index = yield* SharedIndex;
+					return yield* (yield* index.writer()).compact(force);
+				}),
+				withSession: (request, effect) =>
+					Effect.scoped(
+						Effect.gen(function* () {
+							const client = yield* Pool.get(writers);
+							let endedCleanly = false;
+							yield* Effect.addFinalizer(() =>
+								endedCleanly ? Effect.void : Pool.invalidate(writers, client)
+							);
+							const backing = yield* SharedIndex;
+							const stage = yield* Effect.acquireRelease(
+								io("native-index-stage", async () => {
+									await mkdir(request.configuration.cacheRoot, {
+										recursive: true
+									});
+									return mkdtemp(
+										join(request.configuration.cacheRoot, "native-build-")
+									);
+								}),
+								(path) =>
+									Effect.promise(() => rm(path, { recursive: true, force: true }))
+							);
+							const native = yield* Effect.acquireRelease(
+								makeWriter(request.configuration, stage).pipe(
+									Effect.provideService(NativeGameTextIndexClient, client)
+								),
+								(native) =>
+									native.close().pipe(
+										Effect.andThen(
+											Effect.sync(() => {
+												endedCleanly = native.ended();
+											})
+										),
 										Effect.catch((cause) =>
 											Effect.logWarning(
 												"Native index session cleanup failed",
@@ -500,42 +559,40 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 											)
 										)
 									),
-							{ interruptible: true }
-						);
-						const leased = SharedIndex.of({
-							...backing,
-							inspect: () => Effect.succeed(native.writer.manifest()),
-							writer: () => Effect.succeed(native.writer)
-						});
-						return yield* effect.pipe(
-							Effect.provideService(SharedIndex, leased),
-							Effect.provideService(NativeBuildSession, native),
-							Effect.provideService(LocalizationImportSession, {
-								configuration: request.configuration,
-								index: leased,
-								...(request.files && native.writer.manifest().active.joined
-									? { files: request.files }
-									: undefined)
-							})
-						);
-					})
-				).pipe(
-					Effect.provide(sharedIndexNodeLayer(request.configuration)),
-					Effect.provide(nativeGameTextIndexClientLayer(configuration))
-				),
-			refreshJoinedTarget: Effect.fn("NativeIndexBuilder.refreshJoinedTarget")(
-				function* (input) {
-					const session = yield* Effect.serviceOption(NativeBuildSession);
-					if (Option.isNone(session))
-						return yield* Effect.fail(
-							unavailable(
-								"native-index-session",
-								"Call withSession around native build operations."
-							)
-						);
-					return yield* session.value.refreshJoinedTarget(input);
-				}
-			)
+								{ interruptible: true }
+							);
+							const leased = SharedIndex.of({
+								...backing,
+								inspect: () => Effect.succeed(native.writer.manifest()),
+								writer: () => Effect.succeed(native.writer)
+							});
+							return yield* effect.pipe(
+								Effect.provideService(SharedIndex, leased),
+								Effect.provideService(NativeBuildSession, native),
+								Effect.provideService(LocalizationImportSession, {
+									configuration: request.configuration,
+									index: leased,
+									...(request.files && native.writer.manifest().active.joined
+										? { files: request.files }
+										: undefined)
+								})
+							);
+						})
+					).pipe(Effect.provide(sharedIndexNodeLayer(request.configuration))),
+				refreshJoinedTarget: Effect.fn("NativeIndexBuilder.refreshJoinedTarget")(
+					function* (input) {
+						const session = yield* Effect.serviceOption(NativeBuildSession);
+						if (Option.isNone(session))
+							return yield* Effect.fail(
+								unavailable(
+									"native-index-session",
+									"Call withSession around native build operations."
+								)
+							);
+						return yield* session.value.refreshJoinedTarget(input);
+					}
+				)
+			});
 		})
 	).pipe(Layer.merge(nativeIndexQueryLayer(configuration)));
 

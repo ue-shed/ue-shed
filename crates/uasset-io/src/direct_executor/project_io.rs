@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -565,6 +565,13 @@ pub(crate) fn extract_texture_with_cancellation(
     projection(request, ProjectionKind::Texture, cancellation, None)
 }
 
+/// Projection reads parse whole packages; one large package can take a worker for most of a
+/// read, so the default uses the machine's cores, bounded so each worker's package and decoded
+/// model stay within a predictable memory budget. Requests can still set `limits.concurrency`.
+fn default_projection_workers() -> usize {
+    std::thread::available_parallelism().map_or(4, |cores| cores.get().clamp(4, 8))
+}
+
 #[derive(Clone, Copy)]
 enum ProjectionKind {
     Text,
@@ -578,10 +585,12 @@ fn projection(
     cancellation: &CancellationToken,
     mut emit: Option<&mut ProjectionSink<'_>>,
 ) -> Result<ProjectionOutput, Failure> {
-    let selection = match (&request.operation, kind) {
+    let (selection, staging) = match (&request.operation, kind) {
         (Operation::ExtractText { selection }, ProjectionKind::Text)
-        | (Operation::ExtractTextPackages { selection }, ProjectionKind::TextPackages)
-        | (Operation::ExtractTexture { selection }, ProjectionKind::Texture) => selection,
+        | (Operation::ExtractTexture { selection }, ProjectionKind::Texture) => (selection, None),
+        (Operation::ExtractTextPackages { selection, staging }, ProjectionKind::TextPackages) => {
+            (selection, staging.as_ref())
+        }
         _ => {
             return Err(Failure {
                 code: "unsupported".to_owned(),
@@ -592,12 +601,18 @@ fn projection(
         }
     };
     checkpoint(cancellation, "discovery")?;
-    let worker_count = request.limits.concurrency.unwrap_or(4).max(1) as usize;
+    let worker_count = request
+        .limits
+        .concurrency
+        .map_or_else(default_projection_workers, |count| count.max(1) as usize);
     let roots = if emit.is_some() {
         resolve_roots_with_concurrency(selection, cancellation, worker_count)?
     } else {
         resolve_roots(selection, cancellation)?
     };
+    let mut stager = staging
+        .map(|staging| PackageTextStager::new(staging, &roots))
+        .transpose()?;
     let (paths, _) = scanner::discover_paths(&roots, false, cancellation)?;
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
@@ -616,9 +631,20 @@ fn projection(
     let mut skipped_assets = 0_u64;
     let mut completed_assets = 0_u64;
     let streaming = emit.is_some();
-    let mut consume = |result: Result<ProjectionWorkResult, Failure>| {
-        let result = result?;
+    // Staged records name their own group, so their results need no path order.
+    let ordered = stager.is_none();
+    let mut consume = |index: usize, result: Result<ProjectionWorkResult, Failure>| {
+        let mut result = result?;
         checkpoint(cancellation, "inspection")?;
+        if let (Some(stager), Some(path)) = (&mut stager, paths.get(index)) {
+            for frame in &mut result.results {
+                if let ResultFrame::ExtractTextPackages { event } = frame
+                    && !matches!(event, SavedAssetPackageTextEvent::Summary { .. })
+                {
+                    *frame = stager.write(path, event)?;
+                }
+            }
+        }
         if result.diagnostic.is_some() {
             failed_assets += u64::from(result.failed);
         }
@@ -656,6 +682,7 @@ fn projection(
             kind,
             &filters,
             cancellation,
+            ordered,
             &mut consume,
         )?;
     } else {
@@ -686,14 +713,19 @@ fn projection(
                 });
             }
         });
-        for result in slots
+        for (index, result) in slots
             .into_inner()
             .unwrap_or_else(PoisonError::into_inner)
             .into_iter()
-            .flatten()
+            .enumerate()
         {
-            consume(result)?;
+            if let Some(result) = result {
+                consume(index, result)?;
+            }
         }
+    }
+    if let Some(stager) = stager {
+        stager.finish()?;
     }
     let depth = match kind {
         ProjectionKind::Text | ProjectionKind::TextPackages => ScanSummaryDepth::Text,
@@ -745,15 +777,125 @@ fn projection(
     })
 }
 
-/// Keep ordered delivery and at most two jobs per worker in flight. Scheduling advances only
-/// after the next ordered result is consumed, so one slow package cannot grow the reorder buffer.
+/// v1.19 package-text staging: each record becomes one JSON line in its group's file, and the
+/// stream carries a `staged_text_package` result naming the group and line size instead.
+struct PackageTextStager {
+    directory: PathBuf,
+    groups: Vec<(PathBuf, u32)>,
+    files: BTreeMap<u32, io::BufWriter<fs::File>>,
+}
+
+impl PackageTextStager {
+    fn new(
+        staging: &crate::protocol::PackageTextStaging,
+        roots: &[PathBuf],
+    ) -> Result<Self, Failure> {
+        if roots.len() != staging.groups.len() {
+            return Err(staging_failure(
+                "staging needs one group for each requested path".into(),
+            ));
+        }
+        Ok(Self {
+            directory: PathBuf::from(&staging.directory),
+            groups: roots
+                .iter()
+                .cloned()
+                .zip(staging.groups.iter().copied())
+                .collect(),
+            files: BTreeMap::new(),
+        })
+    }
+
+    /// The group of the requested path the package was discovered from: the path itself, or
+    /// the requested directory containing it.
+    fn group(&self, path: &Path) -> Result<u32, Failure> {
+        self.groups
+            .iter()
+            .find(|(root, _)| root == path)
+            .or_else(|| self.groups.iter().find(|(root, _)| path.starts_with(root)))
+            .map(|(_, group)| *group)
+            .ok_or_else(|| staging_failure(format!("{} has no staging group", path.display())))
+    }
+
+    fn write(
+        &mut self,
+        path: &Path,
+        event: &SavedAssetPackageTextEvent,
+    ) -> Result<ResultFrame, Failure> {
+        let group = self.group(path)?;
+        let record_path = match event {
+            SavedAssetPackageTextEvent::Package { record } => record.path.clone(),
+            SavedAssetPackageTextEvent::Error { path, .. } => path.clone(),
+            SavedAssetPackageTextEvent::Summary { .. } => {
+                return Err(staging_failure("a summary is not a package record".into()));
+            }
+        };
+        let mut line = serde_json::to_vec(event)
+            .map_err(|error| staging_failure(format!("could not serialize a record: {error}")))?;
+        if line.len() > MAX_STAGED_PACKAGE_TEXT_BYTES {
+            return Err(Failure {
+                code: "resource_limit".to_owned(),
+                message: format!("{record_path} has more package text than one record can hold"),
+                retry_safe: false,
+                ..Default::default()
+            });
+        }
+        line.push(b'\n');
+        let file = match self.files.entry(group) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let file = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(self.directory.join(format!("{group}.ndjson")))
+                    .map_err(|error| {
+                        staging_failure(format!("could not create a staging file: {error}"))
+                    })?;
+                entry.insert(io::BufWriter::with_capacity(16 * 1024, file))
+            }
+        };
+        file.write_all(&line)
+            .map_err(|error| staging_failure(format!("could not write a staging file: {error}")))?;
+        Ok(ResultFrame::StagedTextPackage {
+            path: record_path,
+            group,
+            bytes: line.len() as u64,
+        })
+    }
+
+    fn finish(self) -> Result<(), Failure> {
+        for (_, mut file) in self.files {
+            file.flush().map_err(|error| {
+                staging_failure(format!("could not write a staging file: {error}"))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// The same bound as a streamed package-text frame.
+const MAX_STAGED_PACKAGE_TEXT_BYTES: usize = 64 * 1024 * 1024;
+
+fn staging_failure(message: String) -> Failure {
+    Failure {
+        code: "staging".to_owned(),
+        message,
+        retry_safe: true,
+        ..Default::default()
+    }
+}
+
+/// At most two jobs per worker in flight. Ordered delivery schedules a job only after the next
+/// ordered result is consumed, so one slow package cannot grow the reorder buffer; unordered
+/// delivery consumes each result as it finishes, so a slow package delays only its own result.
 fn project_paths_bounded(
     paths: &[PathBuf],
     worker_count: usize,
     kind: ProjectionKind,
     filters: &ScanFilters,
     cancellation: &CancellationToken,
-    consume: &mut dyn FnMut(Result<ProjectionWorkResult, Failure>) -> Result<(), Failure>,
+    ordered: bool,
+    consume: &mut dyn FnMut(usize, Result<ProjectionWorkResult, Failure>) -> Result<(), Failure>,
 ) -> Result<(), Failure> {
     let worker_count = worker_count.min(paths.len().max(1));
     let window = worker_count * 2;
@@ -789,6 +931,18 @@ fn project_paths_bounded(
                 jobs.send(index).map_err(|_| workers_stopped())?;
                 scheduled += 1;
             }
+            if !ordered {
+                for _ in 0..paths.len() {
+                    checkpoint(cancellation, "inspection")?;
+                    let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
+                    consume(index, result)?;
+                    if scheduled < paths.len() {
+                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
+                        scheduled += 1;
+                    }
+                }
+                return Ok(());
+            }
             let mut pending = BTreeMap::new();
             let mut next = 0;
             while next < paths.len() {
@@ -796,7 +950,7 @@ fn project_paths_bounded(
                 let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
                 pending.insert(index, result);
                 while let Some(result) = pending.remove(&next) {
-                    consume(result)?;
+                    consume(next, result)?;
                     next += 1;
                     if scheduled < paths.len() {
                         jobs.send(scheduled).map_err(|_| workers_stopped())?;
@@ -2408,6 +2562,151 @@ mod tests {
     }
 
     #[test]
+    fn staged_package_text_writes_each_record_line_to_its_group() {
+        use crate::protocol_result::{ResultFrame, SavedAssetPackageTextEvent};
+        let cancellation = CancellationToken::new();
+        let plain =
+            super::extract_text_with_cancellation(&text_projection_request(true), &cancellation)
+                .unwrap();
+        let directory = std::env::temp_dir().join(format!(
+            "ue-shed-staged-text-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut request = text_projection_request(true);
+        request.contract.version.minor = 19;
+        let crate::protocol::Operation::ExtractTextPackages { staging, .. } =
+            &mut request.operation
+        else {
+            unreachable!("package text request");
+        };
+        *staging = Some(crate::protocol::PackageTextStaging {
+            directory: directory.to_string_lossy().into_owned(),
+            groups: vec![7, 2, 7],
+        });
+        let mut staged = Vec::new();
+        let output = super::extract_text_streaming(&request, &cancellation, &mut |event| {
+            if let super::ProjectionStreamEvent::Result(result) = event {
+                staged.push(result.clone());
+            }
+            Ok(())
+        })
+        .unwrap();
+        let records = plain
+            .results
+            .iter()
+            .filter(|result| {
+                !matches!(
+                    result,
+                    ResultFrame::ExtractTextPackages {
+                        event: SavedAssetPackageTextEvent::Summary { .. }
+                    }
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(staged.len(), records.len());
+        let lines = records
+            .iter()
+            .map(|frame| {
+                let ResultFrame::ExtractTextPackages {
+                    event: event @ SavedAssetPackageTextEvent::Package { record },
+                } = frame
+                else {
+                    panic!("expected a package record: {frame:?}");
+                };
+                let mut line = serde_json::to_vec(event).unwrap();
+                line.push(b'\n');
+                (record.path.clone(), line)
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        // Staged results arrive as packages finish; each group's file holds its records' lines.
+        let mut expected = std::collections::BTreeMap::<u32, Vec<Vec<u8>>>::new();
+        for frame in &staged {
+            let ResultFrame::StagedTextPackage { path, group, bytes } = frame else {
+                panic!("expected a staged frame: {frame:?}");
+            };
+            let line = &lines[path];
+            assert_eq!(*bytes, line.len() as u64);
+            expected.entry(*group).or_default().push(line.clone());
+        }
+        assert_eq!(expected.keys().copied().collect::<Vec<_>>(), [2, 7]);
+        for (group, mut group_lines) in expected {
+            let written = std::fs::read(directory.join(format!("{group}.ndjson"))).unwrap();
+            let mut written = written
+                .split_inclusive(|byte| *byte == b'\n')
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>();
+            written.sort();
+            group_lines.sort();
+            assert_eq!(written, group_lines);
+        }
+        assert!(matches!(
+            output.results.last(),
+            Some(ResultFrame::ExtractTextPackages {
+                event: SavedAssetPackageTextEvent::Summary { .. }
+            })
+        ));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_group_split_across_requests_needs_a_directory_per_request() {
+        let cancellation = CancellationToken::new();
+        let root = std::env::temp_dir().join(format!(
+            "ue-shed-staged-split-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let stage = |paths: std::ops::Range<usize>, directory: &std::path::Path| {
+            std::fs::create_dir_all(directory).unwrap();
+            let mut request = text_projection_request(true);
+            request.contract.version.minor = 19;
+            let crate::protocol::Operation::ExtractTextPackages { selection, staging } =
+                &mut request.operation
+            else {
+                unreachable!("package text request");
+            };
+            let requested = selection.paths.as_mut().expect("explicit paths");
+            *requested = requested[paths].to_vec();
+            *staging = Some(crate::protocol::PackageTextStaging {
+                directory: directory.to_string_lossy().into_owned(),
+                groups: vec![5; requested.len()],
+            });
+            let mut staged = 0;
+            super::extract_text_streaming(&request, &cancellation, &mut |event| {
+                if let super::ProjectionStreamEvent::Result(_) = event {
+                    staged += 1;
+                }
+                Ok(())
+            })
+            .map(|_| staged)
+        };
+        let lines = |directory: &std::path::Path| {
+            std::fs::read(directory.join("5.ndjson"))
+                .unwrap()
+                .split_inclusive(|byte| *byte == b'\n')
+                .count()
+        };
+        // One group read in two requests: each request creates its own file for the group.
+        assert_eq!(stage(0..1, &root.join("0")).unwrap(), 1);
+        assert_eq!(stage(1..3, &root.join("1")).unwrap(), 2);
+        assert_eq!(lines(&root.join("0")) + lines(&root.join("1")), 3);
+        // Reusing a request's directory is refused instead of overwriting or mixing its lines.
+        let failure = stage(1..3, &root.join("0")).unwrap_err();
+        assert_eq!(failure.code, "staging");
+        assert!(failure.message.contains("could not create a staging file"));
+        assert_eq!(lines(&root.join("0")), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn text_records_name_the_main_asset_class() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
         let class = |path: &str| {
@@ -2509,7 +2808,8 @@ mod tests {
     #[test]
     fn parallel_text_path_validation_retains_input_order_and_rejects_outside_roots() {
         let mut request = text_projection_request(true);
-        let crate::protocol::Operation::ExtractTextPackages { selection } = &mut request.operation
+        let crate::protocol::Operation::ExtractTextPackages { selection, .. } =
+            &mut request.operation
         else {
             unreachable!();
         };

@@ -654,6 +654,43 @@ fn protocol_session_reuses_one_process_for_inspection_requests() {
 }
 
 #[test]
+fn protocol_session_answers_project_index_status_without_a_new_process() {
+    let cache = std::env::temp_dir().join(format!("ue-shed-session-status-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&cache);
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
+        .arg("protocol-session")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("uasset protocol session starts");
+    let mut stdin = child.stdin.take().expect("session stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("session stdout"));
+    let mut request = base_request(serde_json::json!({
+        "kind": "project_index_status",
+        "cacheRoot": cache.to_string_lossy(),
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    request["requestId"] = Value::String("session-status".to_owned());
+    write_session_request(&mut stdin, &request);
+    let events = read_session_events(&mut stdout);
+    assert_valid_events(&events);
+    assert_eq!(events[1]["result"]["kind"], "project_index_status");
+    assert_eq!(events[1]["result"]["status"]["status"], "absent");
+    assert_eq!(events.last().unwrap()["kind"], "completed");
+    drop(stdin);
+    let output = child.wait_with_output().expect("protocol session exits");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = std::fs::remove_dir_all(&cache);
+}
+
+#[test]
 fn explicit_empty_paths_do_not_scan_content() {
     let project_root =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");

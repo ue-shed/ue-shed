@@ -12,7 +12,11 @@ import {
 	packageTextSelection,
 	packageTextShard
 } from "../packages/game-text/src/package-text-layer.ts";
-import { importColdPackageTextLayer } from "../packages/game-text/src/package-text-cold.ts";
+import {
+	importColdPackageTextLayer,
+	packageTextWorkerCount,
+	startPackageTextWorkers
+} from "../packages/game-text/src/package-text-cold.ts";
 import {
 	packageTextRecordsFromEvents,
 	emptyPackageTextRecord
@@ -295,16 +299,23 @@ describe("package text layer", () => {
 						join(directory, `package-text.${shard}.ndjson`),
 						lines.join("\n") + "\n"
 					);
+				// The size-aware policy gives this small corpus one worker; three explicit
+				// workers keep shards converting in parallel against the same oracle.
+				expect(packageTextWorkerCount(selected.size, buckets.size)).toBe(1);
 				const cold = await runIn(
 					cache,
-					importColdPackageTextLayer({
-						inventory,
-						recordDirectory: directory,
-						stagingRoot: join(cache, "staging")
+					Effect.gen(function* () {
+						const workers = yield* startPackageTextWorkers(3);
+						return yield* importColdPackageTextLayer({
+							inventory,
+							recordDirectory: directory,
+							stagingRoot: join(cache, "staging"),
+							workers
+						});
 					})
 				);
 				expect(cold.profile.probePasses).toBe(0);
-				expect(cold.workerCount).toBeGreaterThan(1);
+				expect(cold.workerCount).toBe(3);
 				expect(
 					await runIn(
 						cache,

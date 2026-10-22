@@ -232,6 +232,14 @@ impl SqliteCatalog {
             .as_ref()
             .map(|m| self.directory.join(&m.physical_snapshot))
     }
+    fn committed_entry_count(&self) -> Result<u64, CatalogError> {
+        let Some(connection) = self.committed_connection()? else {
+            return Ok(0);
+        };
+        connection
+            .query_row("SELECT count(*) FROM entry", [], |row| row.get(0))
+            .map_err(storage_error("count committed entries"))
+    }
     fn committed_connection(&self) -> Result<Option<Connection>, CatalogError> {
         self.committed_snapshot_path()
             .map(|path| open_connection(&path, OpenFlags::SQLITE_OPEN_READ_ONLY))
@@ -370,9 +378,12 @@ impl Catalog for SqliteCatalog {
         let mut staging = self.staging.take().unwrap();
         let physical_snapshot;
         let previous_snapshot;
+        // The summary counts removed packages only. With nothing staged, every observed path is
+        // a committed one, so equal counts also rule out a removed sidecar.
         if let Some(current) = self.manifest.as_ref()
             && staging.staged_count == 0
             && summary.removed_packages == 0
+            && self.committed_entry_count()? == staging.observed.len() as u64
         {
             physical_snapshot = current.physical_snapshot.clone();
             previous_snapshot = current.previous_snapshot.clone();
@@ -380,7 +391,8 @@ impl Catalog for SqliteCatalog {
             let started = Instant::now();
             writer(&mut staging)?;
             let connection = staging.connection.as_ref().unwrap();
-            if staging.prior_snapshot.is_some() && summary.removed_packages > 0 {
+            // Not gated on removed packages: a removed sidecar must leave the snapshot too.
+            if staging.prior_snapshot.is_some() {
                 connection
                     .execute_batch(
                         "CREATE TEMP TABLE observed(relative_path TEXT PRIMARY KEY) WITHOUT ROWID",

@@ -1,0 +1,18 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 19
+		}
+	},
+	"requestId": "package-text-staged",
+	"sequence": 2,
+	"kind": "result",
+	"result": {
+		"kind": "staged_text_package",
+		"path": "C:/Fixture/Content/UI/DT_Menu.uasset",
+		"group": 0,
+		"bytes": 1824
+	}
+}

@@ -19,6 +19,112 @@ pub struct Entry {
     pub count: u32,
     pub crc: u32,
 }
+/// Section codecs. Integer columns compress far better with each value's bytes grouped by
+/// significance (`SHUFFLED`), and non-decreasing ones better still as differences (`DELTA`).
+pub const CODEC_RAW: u32 = 0;
+pub const CODEC_ZSTD: u32 = 1;
+pub const CODEC_SHUFFLED: u32 = 2;
+pub const CODEC_DELTA: u32 = 3;
+/// Integer sections shorter than this are not worth a transform.
+const SHUFFLE_MINIMUM: usize = 64;
+/// Bytes of an integer column compared with and without its transform.
+const SHUFFLE_SAMPLE: usize = 64 * 1024;
+
+/// The bytes of little-endian u32 `values`, grouped by byte significance.
+fn shuffle(raw: &[u8]) -> Vec<u8> {
+    let n = raw.len() / 4;
+    let mut out = vec![0; raw.len()];
+    for (i, value) in raw.as_chunks::<4>().0.iter().enumerate() {
+        for (byte, part) in value.iter().enumerate() {
+            out[byte * n + i] = *part;
+        }
+    }
+    out
+}
+fn unshuffle(shuffled: &[u8]) -> Vec<u8> {
+    let n = shuffled.len() / 4;
+    let mut out = vec![0; shuffled.len()];
+    for (i, value) in out.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        for (byte, part) in value.iter_mut().enumerate() {
+            *part = shuffled[byte * n + i];
+        }
+    }
+    out
+}
+fn differences(raw: &[u8]) -> Vec<u8> {
+    let mut previous = 0u32;
+    raw.as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|bytes| {
+            let value = u32::from_le_bytes(*bytes);
+            let delta = value.wrapping_sub(previous);
+            previous = value;
+            delta.to_le_bytes()
+        })
+        .collect()
+}
+fn sums(deltas: &mut [u8]) {
+    let mut previous = 0u32;
+    for bytes in deltas.as_chunks_mut::<4>().0 {
+        previous = previous.wrapping_add(u32::from_le_bytes(*bytes));
+        *bytes = previous.to_le_bytes();
+    }
+}
+/// The stored bytes and codec for a section's raw bytes. Integer columns use the transform that
+/// compresses a sample of them best: some hold packed text bytes, which grouping would scatter.
+pub(crate) fn encode_section(kind: u32, raw: &[u8], level: i32) -> Result<(Vec<u8>, u32)> {
+    let transform = |codec: u32, raw: &[u8]| match codec {
+        CODEC_DELTA => shuffle(&differences(raw)),
+        CODEC_SHUFFLED => shuffle(raw),
+        _ => raw.to_vec(),
+    };
+    let mut codec = CODEC_ZSTD;
+    if matches!(kind, 2 | 3) && raw.len() >= SHUFFLE_MINIMUM {
+        let ascending = raw
+            .as_chunks::<4>()
+            .0
+            .windows(2)
+            .all(|pair| u32::from_le_bytes(pair[0]) <= u32::from_le_bytes(pair[1]));
+        let candidate = if ascending {
+            CODEC_DELTA
+        } else {
+            CODEC_SHUFFLED
+        };
+        let sample = &raw[..raw.len().min(SHUFFLE_SAMPLE)];
+        if zstd::bulk::compress(&transform(candidate, sample), level)?.len()
+            < zstd::bulk::compress(sample, level)?.len()
+        {
+            codec = candidate;
+        }
+    }
+    let encoded = zstd::bulk::compress(&transform(codec, raw), level)?;
+    Ok(if encoded.len() < raw.len() {
+        (encoded, codec)
+    } else {
+        (raw.to_vec(), CODEC_RAW)
+    })
+}
+/// A section's raw bytes from its stored bytes.
+pub(crate) fn decode_section(codec: u32, stored: Vec<u8>, raw: usize) -> Result<Vec<u8>> {
+    Ok(match codec {
+        CODEC_RAW => stored,
+        CODEC_ZSTD => zstd::bulk::decompress(&stored, raw)?,
+        CODEC_SHUFFLED | CODEC_DELTA => {
+            let shuffled = zstd::bulk::decompress(&stored, raw)?;
+            require(
+                shuffled.len() == raw && raw.is_multiple_of(4),
+                "section length",
+            )?;
+            let mut bytes = unshuffle(&shuffled);
+            if codec == CODEC_DELTA {
+                sums(&mut bytes);
+            }
+            bytes
+        }
+        _ => return Err("unknown section codec".into()),
+    })
+}
 pub fn u32_bytes(values: &[u32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
@@ -92,6 +198,16 @@ pub struct Writer {
     payload: File,
     pub entries: Vec<Entry>,
 }
+fn check_section(name: &str, kind: u32, domain: &str, raw: &[u8]) -> Result<()> {
+    require(
+        raw.len() <= MAX_SECTION && name.len() <= 31 && domain.len() <= 23,
+        "section cap/name",
+    )?;
+    require(
+        kind <= 4 && (!matches!(kind, 2 | 3) || raw.len().is_multiple_of(4)),
+        "section kind/width",
+    )
+}
 impl Writer {
     pub fn new(path: &Path) -> Result<Self> {
         let payload = OpenOptions::new()
@@ -113,22 +229,38 @@ impl Writer {
         raw: &[u8],
         level: i32,
     ) -> Result<usize> {
-        require(
-            raw.len() <= MAX_SECTION && name.len() <= 31 && domain.len() <= 23,
-            "section cap/name",
-        )?;
-        require(
-            kind <= 4 && (!matches!(kind, 2 | 3) || raw.len().is_multiple_of(4)),
-            "section kind/width",
-        )?;
-        let encoded = zstd::bulk::compress(raw, level)?;
-        let (bytes, codec) = if encoded.len() < raw.len() {
-            (encoded.as_slice(), 1)
-        } else {
-            (raw, 0)
-        };
+        check_section(name, kind, domain, raw)?;
+        let encoded = encode_section(kind, raw, level)?;
+        self.append(name, kind, domain, raw, encoded)
+    }
+    /// `add` for many sections at once: they are encoded in parallel and stored in order.
+    pub fn add_all(&mut self, sections: &[(&str, u32, &str, &[u8], i32)]) -> Result<Vec<usize>> {
+        use rayon::prelude::*;
+        for (name, kind, domain, raw, _) in sections {
+            check_section(name, *kind, domain, raw)?;
+        }
+        let encoded = sections
+            .par_iter()
+            .map(|(_, kind, _, raw, level)| encode_section(*kind, raw, *level))
+            .collect::<Result<Vec<_>>>()?;
+        sections
+            .iter()
+            .zip(encoded)
+            .map(|((name, kind, domain, raw, _), encoded)| {
+                self.append(name, *kind, domain, raw, encoded)
+            })
+            .collect()
+    }
+    fn append(
+        &mut self,
+        name: &str,
+        kind: u32,
+        domain: &str,
+        raw: &[u8],
+        (bytes, codec): (Vec<u8>, u32),
+    ) -> Result<usize> {
         let offset = self.payload.stream_position()?;
-        self.payload.write_all(bytes)?;
+        self.payload.write_all(&bytes)?;
         let id = self.entries.len();
         self.entries.push(Entry {
             name: name.into(),
@@ -299,7 +431,9 @@ impl Reader {
                     && e.raw as usize <= MAX_SECTION
                     && e.stored as usize <= MAX_SECTION
                     && e.kind <= 4
-                    && e.codec <= 1
+                    && (e.codec <= CODEC_ZSTD
+                        || (matches!(e.codec, CODEC_SHUFFLED | CODEC_DELTA)
+                            && matches!(e.kind, 2 | 3)))
                     && get(d, 92) == 0,
                 "invalid section",
             )?;
@@ -378,11 +512,7 @@ impl Reader {
         self.file.seek(SeekFrom::Start(e.offset))?;
         let mut b = vec![0; e.stored as usize];
         self.file.read_exact(&mut b)?;
-        let raw = if e.codec == 1 {
-            zstd::bulk::decompress(&b, e.raw as usize)?
-        } else {
-            b
-        };
+        let raw = decode_section(e.codec, b, e.raw as usize)?;
         require(
             raw.len() == e.raw as usize && crc32fast::hash(&raw) == e.crc,
             "section CRC/length",
@@ -466,6 +596,47 @@ mod tests {
         changed.push(0);
         fs::write(&path, &changed).unwrap();
         assert!(Reader::open(&path).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn integer_columns_round_trip_through_their_codecs() {
+        let root = crate::test_directory("snapshot-codecs");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("columns.snapshot");
+        let mut seed = 7u32;
+        let mut random = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            seed >> 7
+        };
+        let wrapping = vec![u32::MAX - 2, u32::MAX, 0, 5, 5, 4, u32::MAX];
+        let scattered = (0..5000).map(|_| random()).collect::<Vec<u32>>();
+        let mut total = 0u32;
+        let ascending = scattered
+            .iter()
+            .map(|v| {
+                total += v % 7;
+                total
+            })
+            .collect::<Vec<u32>>();
+        let small = scattered.iter().map(|v| v % 9).collect::<Vec<u32>>();
+        let repeated = vec![u32::MAX; 4000];
+        let short = vec![3, 2, 1];
+        let columns = [&ascending, &wrapping, &scattered, &repeated, &short, &small];
+        let mut w = Writer::new(&root.join("payload")).unwrap();
+        let ids = columns
+            .iter()
+            .enumerate()
+            .map(|(i, values)| w.column(&format!("c{i}"), values).unwrap())
+            .collect::<Vec<_>>();
+        w.finish(&path, &ids).unwrap();
+        let mut r = Reader::open(&path).unwrap();
+        let codecs = r.entries.iter().map(|e| e.codec).collect::<Vec<_>>();
+        assert_eq!(&codecs[..3], [CODEC_DELTA, CODEC_RAW, CODEC_SHUFFLED]);
+        assert_eq!(&codecs[3..], [CODEC_ZSTD, CODEC_RAW, CODEC_SHUFFLED]);
+        for (i, values) in columns.iter().enumerate() {
+            assert_eq!(&integers(&r.load(i).unwrap()).unwrap(), *values);
+        }
+        r.verify().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 }

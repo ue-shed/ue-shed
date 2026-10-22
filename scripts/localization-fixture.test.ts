@@ -1,10 +1,30 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { parseJsonObject } from "./json.ts";
 import { assertLocalizationIntent } from "./localization-fixture-evidence.ts";
+import { localizationFixtureSteps } from "./localization-fixture-steps.ts";
 
 const fixture = new URL("../fixtures/unreal-project/", import.meta.url);
+
+test("batched localization tasks never write the same word-count report concurrently", () => {
+	const project = fileURLToPath(new URL("UEShedFixture.uproject", fixture));
+	for (const step of localizationFixtureSteps(project, "evidence")) {
+		const config = step.find((argument) => argument.startsWith("-config="));
+		if (config === undefined) continue;
+		const reports = config
+			.slice("-config=".length)
+			.split(";")
+			.flatMap((path) =>
+				Array.from(
+					readFileSync(path, "utf8").matchAll(/^WordCountReportName=(.+)$/gm),
+					(match) => match[1]!.trim()
+				)
+			);
+		assert.equal(new Set(reports).size, reports.length, config);
+	}
+});
 const intent = parseJsonObject(
 	readFileSync(new URL("FixtureSource/Localization/expected-states.json", fixture), "utf8")
 );

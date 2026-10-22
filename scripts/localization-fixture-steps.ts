@@ -8,7 +8,8 @@ import { dirname, join } from "node:path";
  * the order these operations would run in separately. Export and Compile leave the manifests and
  * archives unchanged, so the gather's report is the same when it runs at the end. The engine
  * matrix compares the resulting evidence with the committed oracles on every engine. Never
- * gather/export after the final two mutations.
+ * gather/export after the final two mutations. Run explicit reports separately: Gather already
+ * writes the word-count report, and Unreal may otherwise schedule both writers in parallel.
  */
 export function localizationFixtureSteps(project: string, evidence: string) {
 	const common = [
@@ -40,7 +41,8 @@ export function localizationFixtureSteps(project: string, evidence: string) {
 		stage("Translate"),
 		operations("Export", "Compile"),
 		stage("Outdate"),
-		operations("Gather", "Export", "Compile", "GenerateReports"),
+		operations("Gather", "Export", "Compile"),
+		operations("GenerateReports"),
 		stage("Unsynced"),
 		stage("AfterGather"),
 		[

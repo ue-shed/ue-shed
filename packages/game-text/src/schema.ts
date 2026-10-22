@@ -700,7 +700,11 @@ export type TextCorpusQuerySummary = Schema.Schema.Type<typeof TextCorpusQuerySu
  */
 export const TextCorpusQueryRunResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_scanned") }),
-	Schema.Struct({ status: Schema.Literal("completed"), summary: TextCorpusQuerySummary }),
+	Schema.Struct({
+		status: Schema.Literal("completed"),
+		summary: TextCorpusQuerySummary,
+		cached: Schema.optionalKey(Schema.Literal(true))
+	}),
 	Schema.Struct({ status: Schema.Literal("not_configured") }),
 	Schema.Struct({ status: Schema.Literal("cancelled") }),
 	Schema.Struct({ status: Schema.Literal("failed"), error: TextCorpusPublicError })

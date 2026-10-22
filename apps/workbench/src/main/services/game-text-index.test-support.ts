@@ -275,6 +275,7 @@ const oracleIndexStepsLayer = Layer.effect(
 		const evidence = yield* LocalizationEvidence;
 		const requests = new WeakMap<GameTextTargetIndex, GameTextIndexRefreshRequest>();
 		const steps: Effect.Success<typeof GameTextIndexSteps> = GameTextIndexSteps.of({
+			openCommitted: () => Effect.succeed(Option.none()),
 			prepareTarget: (request, options) =>
 				Effect.gen(function* () {
 					const project = yield* steps.openProject(request);

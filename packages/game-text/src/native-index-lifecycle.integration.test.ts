@@ -1,10 +1,12 @@
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { Deferred, Effect, Exit, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
+import { GameTextIndexSteps } from "./index-steps.js";
+import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { SharedIndex } from "./shared-index.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -169,4 +171,48 @@ describe.skipIf(!executable)("native index lifecycle soak", () => {
 			}
 		}, 120_000);
 	}
+});
+
+describe.skipIf(!executable)("native committed Game Text reopen", () => {
+	it("opens a native-built source store in a fresh service scope", async () => {
+		if (!executable) throw new Error("Native reader is required");
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const fixture = yield* makeIndexRegressionFixture();
+					const implementation = nativeIndexBuilderLayer({
+						executable,
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 30_000
+					});
+					const layer = fixture.layer(false, fixture.source, false, implementation);
+					yield* Effect.scoped(
+						Effect.gen(function* () {
+							yield* (yield* GameTextIndexSteps).prepareTarget({
+								projectRoot: fixture.projectRoot
+							});
+						}).pipe(Effect.provide(layer))
+					);
+					yield* Effect.scoped(
+						Effect.gen(function* () {
+							const opened = yield* (yield* GameTextIndexSteps).openCommitted({
+								projectRoot: fixture.projectRoot
+							});
+							expect(Option.isSome(opened)).toBe(true);
+							if (Option.isNone(opened))
+								throw new Error("Expected native committed index");
+							expect(
+								(yield* opened.value.search({
+									query: "Source",
+									capability: "all",
+									pageSize: 50
+								})).total
+							).toBe(1);
+							expect(fixture.inventories()).toBe(1);
+						}).pipe(Effect.provide(layer))
+					);
+				})
+			)
+		);
+	});
 });

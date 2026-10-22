@@ -1,5 +1,11 @@
 # @ue-shed/observability
 
+## 0.21.0
+
+### Patch Changes
+
+- No direct behavioral changes; version advanced for suite alignment.
+
 ## 0.20.0
 
 ### Patch Changes

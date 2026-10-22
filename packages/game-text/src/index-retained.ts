@@ -22,7 +22,11 @@ export interface RetainedGameTextIndexResult extends GameTextIndexRefreshResult 
 
 let retainedModels = 0;
 
-/** Preparation belongs to the operation; publication transfers a pin to the host. */
+/**
+ * Preparation belongs to the operation; publication transfers a pin to the host.
+ * release({ background: true }) detaches ownership immediately and finalizes in the host scope;
+ * the default release waits for finalization. Existing operation pins remain valid in either case.
+ */
 export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(function* (
 	prepare: (
 		request: GameTextIndexRefreshRequest
@@ -34,13 +38,18 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 	const current = yield* Ref.make<
 		{ readonly owner: Scope.Closeable; readonly retired: Ref.Ref<boolean> } | undefined
 	>(undefined);
-	const release = Effect.fn("GameTextIndex.release")(function* () {
-		const previous = yield* Ref.getAndSet(current, undefined);
-		if (previous) {
-			yield* Ref.set(previous.retired, true);
-			yield* Scope.close(previous.owner, Exit.void);
-		}
-	}, Effect.uninterruptible);
+	const release = Effect.fn("GameTextIndex.release")(
+		(options: { readonly background?: boolean } = {}) =>
+			Effect.gen(function* () {
+				const previous = yield* Ref.getAndSet(current, undefined);
+				if (previous) {
+					yield* Ref.set(previous.retired, true);
+					const close = Scope.close(previous.owner, Exit.void);
+					if (options.background) yield* close.pipe(Effect.forkIn(hostScope));
+					else yield* close;
+				}
+			}).pipe(Effect.uninterruptible)
+	);
 	yield* Effect.addFinalizer(() => release());
 	const refresh = Effect.fn("GameTextIndex.retainedRefresh")(
 		(request: GameTextIndexRefreshRequest) =>

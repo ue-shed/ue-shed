@@ -320,28 +320,39 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			return result;
 		});
 		const select = Effect.fn("GameText.workspace.localization.select")(function* (
-			name: LocalizationJoin["target"]
+			name: LocalizationJoin["target"],
+			refresh = false
 		) {
 			const revision = yield* currentRevision();
 			const root = yield* currentRoot();
 			if (!revision || !root) return { status: "not_ready" as const };
 			const cached = yield* Ref.get(selected);
-			if (cached?.revision === revision && cached.join.target === name) return cached.result;
+			if (!refresh && cached?.revision === revision && cached.join.target === name)
+				return cached.result;
 			const listed = yield* targets();
 			if (listed.status !== "ready") return listed;
 			const target = (yield* Ref.get(discovery))?.targets.find((item) => item.name === name);
 			if (!target) return failure("target_not_found");
 			const attempt = yield* Ref.updateAndGet(version, (value) => value + 1);
 			const carried = yield* Ref.get(acrossGather);
-			let indexed = yield* refreshIndex
-				.refresh({
-					projectRoot: root,
-					targetName: name,
-					tolerateReviewErrors: true,
-					keyChangePairs:
-						carried?.root === root && carried.target === name ? carried.pairs : []
-				})
-				.pipe(Effect.result);
+			const published =
+				!refresh && !(yield* Ref.get(gatherBaseline))
+					? yield* currentIndex?.() ?? Effect.succeed(undefined)
+					: undefined;
+			let indexed =
+				published?.localization.target === name
+					? Result.succeed(published)
+					: yield* refreshIndex
+							.refresh({
+								projectRoot: root,
+								targetName: name,
+								tolerateReviewErrors: true,
+								keyChangePairs:
+									carried?.root === root && carried.target === name
+										? carried.pairs
+										: []
+							})
+							.pipe(Effect.result);
 			if ((yield* currentRevision()) !== revision || (yield* Ref.get(version)) !== attempt)
 				return { status: "not_ready" as const };
 			if (Result.isFailure(indexed))
@@ -438,6 +449,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					// selection until another quality request happened to replace it.
 					yield* qualityLock.withPermits(1)(clearQuality());
 					yield* indexed.success.retain;
+					if (indexed.success === published)
+						yield* refreshIndex.release({ background: true });
 					yield* Effect.annotateCurrentSpan({
 						lineCount: textCounts.total,
 						notSyncedCount: result.notSynced
@@ -864,7 +877,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				);
 			// Reload so states, counts and the not-synced indicator describe the written files.
 			yield* Ref.set(selected, undefined);
-			const reloaded = yield* select(request.target);
+			const reloaded = yield* select(request.target, true);
 			yield* Effect.annotateCurrentSpan({
 				edits: request.edits.length,
 				status: receipt.success.status
@@ -952,7 +965,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				);
 			yield* Ref.set(selected, undefined);
 			yield* clearQuality();
-			yield* select(request.target);
+			yield* select(request.target, true);
 			yield* Effect.annotateCurrentSpan({ changes: request.changes.length });
 			return { status: "written" as const, relativePath: written.success.relativePath };
 		});

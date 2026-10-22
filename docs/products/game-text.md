@@ -41,6 +41,22 @@ Hosts choose step ordering and requested views. A verified project revision can 
 multiple targets; target import and construction do not refresh package inventory. The library
 checks revision validity and owns per-step locking, publication, and scoped query resources.
 
+Hosts can call `GameTextIndexSteps.openCommitted({ projectRoot, targetName? })` to open an
+existing joined view without refreshing inventory, importing localization, building layers or taking
+the writer lease. It returns `Option.none()` for any unusable cache and traces the reason as
+`game_text.cache.miss_reason`; an opened model belongs to the caller's scope.
+
+The workspace's `configuredRefresh(false)` uses that path when it has no published model and no
+scan is running. A successful reopen returns `{ status: "completed", summary, cached: true }`.
+Hosts can display it immediately and request `configuredRefresh(true)` in the background; reopening
+itself never starts a scan. Missing or unusable caches return `not_scanned`. Source browsing and
+selection of the published localization target keep using the immutable model while the Project
+Index generation changes. Refresh publication replaces it and retires its reader; outstanding
+operations keep their pins. Investigation exports, Unreal operation target admission and quality
+rule application still require the current Project Index generation. The workspace observes project
+switches through its host's current-selection hook and retires the old model on the next workspace
+read or refresh, or when its scope closes.
+
 The CLI cache is under `UE_SHED_PROJECT_INDEX_CACHE_ROOT`, defaulting to `.cache/ue-shed` in the
 user's home directory. Workbench uses `project-catalogs-v1` under its existing Electron user-data
 root. The `game-text-v2` descendants are disposable; close the affected hosts before deleting those

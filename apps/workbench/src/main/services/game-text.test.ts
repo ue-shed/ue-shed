@@ -362,11 +362,11 @@ it.effect("operation refresh reloads evidence and gathers also rescan the retain
 			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
 				notSynced: 0
 			});
-			// The object oracle has no immutable query identity, so selection reads it again.
-			expect(yield* Ref.get(reads)).toBe(3);
+			// Selection borrows the published model; the explicit operation refresh reads again.
+			expect(yield* Ref.get(reads)).toBe(2);
 			expect(yield* Ref.get(scans)).toBe(1);
 			expect(yield* service.refreshAfterOperation(localizationTarget.name, true)).toBe(true);
-			expect(yield* Ref.get(reads)).toBe(5);
+			expect(yield* Ref.get(reads)).toBe(4);
 			expect(yield* Ref.get(scans)).toBe(2);
 			yield* service.endOperation();
 		}).pipe(
@@ -426,14 +426,14 @@ it.effect(
 				});
 				yield* service.configuredRefresh(false);
 				yield* service.localizationTarget(localizationTarget.name);
-				expect(reads).toBe(2);
+				expect(reads).toBe(1);
 				translation = "Translation";
 				yield* service.configuredRefresh(true);
 				expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
 					status: "ready",
 					notSynced: 0
 				});
-				expect(reads).toBe(4);
+				expect(reads).toBe(2);
 				available = false;
 				yield* service.configuredRefresh(true);
 				expect(yield* service.localizationTargets()).toEqual({
@@ -446,7 +446,7 @@ it.effect(
 					status: "ready",
 					page: { total: 1 }
 				});
-				expect(reads).toBe(4);
+				expect(reads).toBe(2);
 			}).pipe(
 				Effect.provide(
 					WorkbenchGameTextLive.pipe(

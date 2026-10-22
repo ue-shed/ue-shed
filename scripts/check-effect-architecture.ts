@@ -733,11 +733,24 @@ export async function checkWorkbenchBoundaries(root: string = repositoryRoot) {
 }
 
 /** Read module syntax without mistaking authored strings or comments for import declarations. */
-function moduleSpecifiers(path: string, text: string): readonly string[] {
+/**
+ * Module specifiers a source names. `runtimeOnly` drops `import type`, `export type` and
+ * `import("…")` types, which TypeScript erases; `import { type A }` still loads its module.
+ */
+function moduleSpecifiers(
+	path: string,
+	text: string,
+	options?: { readonly runtimeOnly?: boolean }
+): readonly string[] {
 	const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
 	const specifiers: string[] = [];
+	const runtimeOnly = options?.runtimeOnly === true;
 	const visit = (node: ts.Node): void => {
 		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+			const typeOnly = ts.isImportDeclaration(node)
+				? node.importClause?.isTypeOnly === true
+				: node.isTypeOnly;
+			if (runtimeOnly && typeOnly) return;
 			if (node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier))
 				specifiers.push(node.moduleSpecifier.text);
 		} else if (ts.isCallExpression(node)) {
@@ -750,6 +763,7 @@ function moduleSpecifiers(path: string, text: string): readonly string[] {
 			)
 				specifiers.push(argument.text);
 		} else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+			if (runtimeOnly) return;
 			if (ts.isStringLiteralLike(node.argument.literal))
 				specifiers.push(node.argument.literal.text);
 		} else if (
@@ -1020,7 +1034,7 @@ export async function checkBrowserEntryClosures(root: string = repositoryRoot) {
 		};
 		findProcess(ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true));
 		if (usesProcess) failures.push(`${label}: browser closure must not use process`);
-		for (const specifier of moduleSpecifiers(path, text)) {
+		for (const specifier of moduleSpecifiers(path, text, { runtimeOnly: true })) {
 			const workspace = /^@ue-shed\/([a-z0-9-]+)(\/.+)?$/u.exec(specifier);
 			if (
 				/^(?:node:|electron(?:\/|$)|fs(?:\/|$)|path$|child_process$|process$)/u.test(

@@ -150,6 +150,45 @@ test("browser closures follow JavaScript sources and Node-only subpaths of guard
 	}
 });
 
+test("browser closures skip erased type-only imports but follow inline type imports", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-types-"));
+	try {
+		const demo = join(fixtureRoot, "packages/demo");
+		const node = join(fixtureRoot, "packages/node");
+		for (const folder of [demo, node]) await mkdir(join(folder, "src"), { recursive: true });
+		await writeFile(
+			join(demo, "package.json"),
+			JSON.stringify({ exports: { "./browser": { import: "./dist/browser.js" } } })
+		);
+		await writeFile(
+			join(node, "package.json"),
+			JSON.stringify({
+				exports: { "./erased": "./src/erased.ts", "./loaded": "./src/loaded.ts" }
+			})
+		);
+		await writeFile(
+			join(demo, "src/browser.ts"),
+			[
+				'import type { Scan } from "@ue-shed/node/erased";',
+				'export type { Scan as Saved } from "@ue-shed/node/erased";',
+				'export type Lazy = import("@ue-shed/node/erased").Scan;',
+				// Without `import type`, the module still loads for its side effects.
+				'import { type Loaded } from "@ue-shed/node/loaded";'
+			].join("\n")
+		);
+		await writeFile(join(node, "src/erased.ts"), 'import "node:fs";\nexport type Scan = 1;\n');
+		await writeFile(
+			join(node, "src/loaded.ts"),
+			'import "node:path";\nexport type Loaded = 1;\n'
+		);
+		assert.deepEqual(await checkBrowserEntryClosures(fixtureRoot), [
+			"packages/node/src/loaded.ts: browser closure must not import node:path"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
 test("Game Text entry points are named and first-party code imports focused entry points", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-game-text-entries-"));
 	try {

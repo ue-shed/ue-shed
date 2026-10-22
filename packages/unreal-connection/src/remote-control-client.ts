@@ -168,10 +168,12 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
  * upstream client, validates both JSON boundaries, and disables upstream retries, including for
  * idempotent calls.
  *
- * `passphrase` is sent as Unreal's Remote Control `Passphrase` header, for editors that enforce a
- * passphrase for remote clients. `headers` are added to every request, for example for a proxy in
- * front of the editor; a `Passphrase` entry there wins over `passphrase`. Omit both to keep the
- * transport's defaults.
+ * `passphrase` is sent as Unreal's Remote Control `Passphrase` header. An editor that restricts
+ * server access with configured passphrases checks it on every request, including requests from
+ * the same machine, and answers a wrong or missing one with HTTP 401 (verified on UE 5.7 and 5.8).
+ * Without `passphrase` the transport sends its own built-in phrase, which such an editor refuses.
+ * `headers` are added to every request, for example for a proxy in front of the editor; a
+ * `Passphrase` entry there wins over `passphrase`. Omit both to keep the transport's defaults.
  */
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;

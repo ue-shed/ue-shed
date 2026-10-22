@@ -54,13 +54,30 @@ function className(classPath: string | null): string | undefined {
 }
 
 /**
- * Unreal's own chord test: a `UInputTriggerChordAction`, or its `ChordBlocker` subclass, on the
- * mapping or its action. A chorded mapping never consumes its key (UE 5.7
- * `IEnhancedInputSubsystemInterface::RebuildControlMappings`).
+ * Unreal's own chord test is `Cast<UInputTriggerChordAction>` on the mapping's and its action's
+ * triggers, so any subclass counts, and a chorded mapping never consumes its key (UE 5.7 and 5.8
+ * `IEnhancedInputSubsystemInterface::RebuildControlMappings`). The engine's chord classes are
+ * known by name. `ChordAction` is declared on `UInputTriggerChordAction`, so a saved one proves a
+ * project class derives from it. Any other class outside the plugin may still derive from it
+ * without saving that property, so its ancestry is unknown.
  */
-function isChord(classPath: string | null): boolean {
+function chordEvidence(
+	classPath: string | null,
+	parameters: readonly { readonly name: string }[] | null | undefined
+): "chord" | "not_chord" | "unknown" {
 	const name = className(classPath);
-	return name === "InputTriggerChordAction" || name === "InputTriggerChordBlocker";
+	if (name === "InputTriggerChordAction" || name === "InputTriggerChordBlocker") return "chord";
+	if (parameters?.some((parameter) => parameter.name === "ChordAction")) return "chord";
+	return classPath?.startsWith("/Script/EnhancedInput.") ? "not_chord" : "unknown";
+}
+
+function claimChordEvidence(claim: AtlasClaim, action: InputActionRecord | undefined) {
+	return [
+		...claim.triggerDetails.map((detail) => chordEvidence(detail.classPath, detail.parameters)),
+		...(action?.triggers ?? []).map((trigger) =>
+			chordEvidence(trigger.classPath ?? null, trigger.parameters)
+		)
+	];
 }
 
 /** Trigger classes whose saved reference ties a mapping to another action. */
@@ -135,11 +152,19 @@ function classifyOrdered(options: {
 	const consumption = consumptionOf(higherAction);
 	const claims: readonly [AtlasClaim, AtlasClaim] = [higher, lower];
 	const base = { key, setId, claims, priorities, consumption };
-	if (claimTriggerClasses(higher, higherAction).some(isChord)) {
+	const chords = claimChordEvidence(higher, higherAction);
+	if (chords.includes("chord")) {
 		return {
 			...base,
 			classification: "qualified",
 			reason: `The ${higher.contextName} mapping is chorded, so it never consumes the key, and Unreal blocks same-key mappings while the chord holds.`
+		};
+	}
+	if (consumption === "consumes" && chords.includes("unknown")) {
+		return {
+			...base,
+			classification: "may_shadow",
+			reason: `${higher.contextName} has the higher priority and its action consumes input, so it hides ${lower.contextName} unless one of its project trigger classes derives from Unreal's chord trigger, which the saved data does not show.`
 		};
 	}
 	if (consumption === "consumes") {

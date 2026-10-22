@@ -22,6 +22,7 @@ import {
 	parseDefaultContextSettings
 } from "./coactivation.js";
 import { classifyInputConflicts } from "./conflicts.js";
+import type { InputInstancedObjectRef } from "./schema.js";
 import {
 	inputControlSheet,
 	inputControlSheetCsv,
@@ -305,6 +306,66 @@ describe("conflict classes", () => {
 			classification: "qualified",
 			consumption: "consumes"
 		});
+	});
+
+	/** The higher mapping or its action carries a project trigger class, not an engine one. */
+	const projectTrigger = (
+		placement: "mapping" | "action",
+		parameters: InputInstancedObjectRef["parameters"]
+	) => {
+		const custom: InputInstancedObjectRef = {
+			objectPath: "/Game/Input/Subobject.InputTriggerProjectChord_0",
+			classPath: "/Script/ProjectInput.InputTriggerProjectChord",
+			parameters
+		};
+		return classifyInputConflicts(
+			report({
+				actions: [
+					action("IA_High", {
+						consumeInput: true,
+						...(placement === "action" ? { triggers: [custom] } : undefined)
+					}),
+					action("IA_Low")
+				],
+				contexts: [
+					context("IMC_High", [
+						mapping("IA_High", "E", placement === "mapping" ? [custom] : [])
+					]),
+					context("IMC_Low", [mapping("IA_Low", "E", [trigger("InputTriggerPressed")])])
+				]
+			}),
+			[
+				{
+					id: "both",
+					label: "both",
+					source: "host_document",
+					origin: "test",
+					contexts: [
+						{ context: path("IMC_High"), priority: 2 },
+						{ context: path("IMC_Low"), priority: 1 }
+					]
+				}
+			]
+		).keys[0]?.conflicts[0];
+	};
+
+	it("treats a project trigger that saves ChordAction as a chord, on the mapping or its action", () => {
+		const chordAction = [
+			{ name: "ChordAction", kind: "object" as const, value: path("IA_Modifier") }
+		];
+		for (const placement of ["mapping", "action"] as const)
+			expect(projectTrigger(placement, chordAction)).toMatchObject({
+				classification: "qualified",
+				consumption: "consumes"
+			});
+	});
+
+	it("does not claim shadowing past a project trigger whose chord ancestry is unknown", () => {
+		for (const placement of ["mapping", "action"] as const)
+			expect(projectTrigger(placement, [])).toMatchObject({
+				classification: "may_shadow",
+				consumption: "consumes"
+			});
 	});
 
 	it("qualifies different triggers only when the higher action passes input through", () => {

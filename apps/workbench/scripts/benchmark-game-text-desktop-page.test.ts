@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Schema } from "effect";
 import { afterEach, expect, it } from "vitest";
 import { searchDoneInPage, searchRecorder } from "./benchmark-game-text-desktop-page.js";
 
@@ -11,7 +12,15 @@ function searchBox(count: string) {
 	return { input, status };
 }
 
-const evaluate = (script: string): unknown => (0, eval)(script);
+/** Runs a page script in this jsdom window, as the benchmark evaluates it in the renderer. */
+const run = (script: string): void => {
+	(0, eval)(script);
+};
+const SearchDone = Schema.Union([
+	Schema.Literal(false),
+	Schema.Struct({ pressedAt: Schema.Number, doneAt: Schema.Number })
+]);
+const done = () => Schema.decodeUnknownSync(SearchDone)((0, eval)(searchDoneInPage));
 const settle = () => new Promise((done) => setTimeout(done, 0));
 
 afterEach(() => {
@@ -20,37 +29,37 @@ afterEach(() => {
 
 it("finishes a repeated search whose count shows Searching and returns between polls", async () => {
 	const { input, status } = searchBox("1 match");
-	evaluate(searchRecorder);
+	run(searchRecorder);
 	input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 	// Both changes land before the next poll; the count ends where it started.
 	status.textContent = "Searching…";
 	status.textContent = "1 match";
 	await settle();
-	expect(evaluate(searchDoneInPage)).toMatchObject({ pressedAt: expect.any(Number) });
+	expect(done()).toMatchObject({ pressedAt: expect.any(Number) });
 });
 
 it("finishes once Searching is seen, even through a replaced text node", async () => {
 	const { input, status } = searchBox("1 match");
-	evaluate(searchRecorder);
+	run(searchRecorder);
 	input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 	status.firstChild?.replaceWith(document.createTextNode("Searching…"));
 	await settle();
-	expect(evaluate(searchDoneInPage)).toBe(false);
+	expect(done()).toBe(false);
 	status.firstChild?.replaceWith(document.createTextNode("1 match"));
 	await settle();
-	expect(evaluate(searchDoneInPage)).toMatchObject({ pressedAt: expect.any(Number) });
+	expect(done()).toMatchObject({ pressedAt: expect.any(Number) });
 });
 
 it("keeps waiting before Enter and while the count has not changed", async () => {
 	const { input, status } = searchBox("2 matches");
-	evaluate(searchRecorder);
+	run(searchRecorder);
 	status.textContent = "Searching…";
 	status.textContent = "2 matches";
 	await settle();
-	expect(evaluate(searchDoneInPage)).toBe(false);
+	expect(done()).toBe(false);
 	input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 	await settle();
-	expect(evaluate(searchDoneInPage)).toBe(false);
+	expect(done()).toBe(false);
 	status.textContent = "1 match";
-	expect(evaluate(searchDoneInPage)).toMatchObject({ pressedAt: expect.any(Number) });
+	expect(done()).toMatchObject({ pressedAt: expect.any(Number) });
 });

@@ -222,6 +222,9 @@ const approvedResourceAdapters = new Set([
 	"apps/workbench/scripts/benchmark-project-index.ts",
 	// The desktop benchmark owns its memory sampler process and poll timers around each run.
 	"apps/workbench/scripts/benchmark-game-text-desktop.ts",
+	// Script strings the benchmark evaluates in the page: one search's observer and Enter
+	// listener, which disconnect on completion and end with the page.
+	"apps/workbench/scripts/benchmark-game-text-desktop-page.ts",
 	"apps/workbench/src/renderer/app-shell.tsx",
 	// Blueprint Graphs owns its bounded search debounce through Solid onCleanup.
 	"extensions/blueprint-graphs/src/project-blueprint-search.tsx",

@@ -721,7 +721,8 @@ try {
 				"  const project = yield* steps.refreshProject({ projectRoot: resolve('./game-text-project') });",
 				"  const imported = yield* steps.importTarget(project);",
 				"  const built = yield* steps.buildTarget(project, imported);",
-				"  if (!built.join.key.startsWith('joined-native-v2:')) throw new Error('packed production builder is not native');",
+				// Any native join format; the version moves with the joined layout.
+				"  if (!/^joined-native-v\\d+:/u.test(built.join.key)) throw new Error('packed production builder is not native');",
 				"  const model = yield* steps.openTarget(built);",
 				"  const indexedPage = yield* model.search({ capability: 'all', pageSize: 50, query: '' });",
 				"  const nativeSummary = model.summary;",

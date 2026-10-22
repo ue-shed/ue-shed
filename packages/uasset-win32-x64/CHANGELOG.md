@@ -1,5 +1,61 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.21.0
+
+### Minor Changes
+
+- 5ece9e8: Game Text caches are smaller. Integer and string-ID columns in `UESHT004` snapshots can use two new
+  section codecs: zstd over the values' bytes grouped by significance, or over the differences of a
+  non-decreasing column. The native writer picks per column by compressing a sample, and encodes a
+  layer's sections in parallel; TypeScript readers decode both. Because older readers cannot, the
+  cache namespace moves to `game-text-v2` and existing caches rebuild once. On a local UE 5.7
+  project (~11k packages) the Game Text cache shrinks from 19.4 MB to 8.3 MB.
+- bde914e: The Project Index Catalog is compressed. Snapshots move to `catalogs-v6` (`UESHC004`): the sections
+  readers decode whole are zstd frames, and posting lists and header records are independent 64 KiB
+  blocks, so queries still decode only what they read. A local UE 5.7 project's snapshot (about
+  11,000 packages) shrinks from 9.7 MB to 1.9 MB. Existing `catalogs-v5` caches are ignored and the
+  next refresh rebuilds the index.
+- 05f4e1a: Package text can skip the host's event stream. uasset-io 1.19 adds `staging` to
+  `extract_text_packages`: the reader writes each package's record line to a group file and streams a
+  small `staged_text_package` result instead, in completion order, so one large package no longer
+  holds back the rest. `AssetReader.stageProjectTextPackages` and `GameTextIndexSource.stage` expose
+  it, and cold Game Text imports use it when the reader supports it: each import worker reads and
+  validates its own group, and the main thread never parses package text. The reader creates each
+  group file exclusively, so a large read split into several requests stages each request in its own
+  directory and every staged event names the file holding its record; `batchStagedProtocolPaths`
+  sizes those requests including their group numbers. Projection reads now
+  default to up to eight workers (at least four) when a request sets no `limits.concurrency`.
+
+    Staged snapshot files are written uncompressed, unsynced and in batched writes, since the writer
+    reads them once in the same session; `writeSnapshotFile` takes `{ durable: false }` for this.
+    A native writer publishes staged cold layers from their files (`SharedIndexWriter.publishColdFiles`)
+    without the host opening each one.
+
+### Patch Changes
+
+- 8a614e0: Build cold Game Text indexes faster with the same results. The native writer encodes a cold
+  batch's new layers concurrently, the full join orders units and lines with precomputed collation
+  keys and builds place keys in parallel, and joins report `join_*` stage seconds. Cold package
+  imports for the native writer skip preparing sorted string runs it never reads, and start fewer
+  workers, sized to the packages read, while the reader is still extracting.
+- ca41635: Read large saved Blueprints and Niagara packages faster with identical output. A Blueprint's
+  graph membership is decoded once per owning export instead of once per graph and node (a 32 MB
+  Blueprint went from 4.6 s to 0.35 s), fixed-size numeric array elements no longer allocate an
+  error breadcrumb each, and text projection skips numeric leaves.
+- b77e2e3: A saved Game Text index can be reopened without rescanning.
+    - `GameTextIndexSteps.openCommitted({ projectRoot, targetName? })` opens an already committed view
+      and returns `None` when there is none to use, without reading packages or rebuilding.
+    - The workspace's `configuredRefresh(false)` uses it to show a saved index at once. Its completed
+      result then carries `cached: true` (optional on `TextCorpusQueryRunResult`). The cached view can be
+      browsed and searched, but quality rules, operation targets and investigation exports wait until a
+      refresh has checked it against the current Project Index. A refresh replaces it.
+    - The native engine reports the ID index's load and build seconds separately in `stage_seconds`
+      (`id_index_raw_*`, `id_index_line_*` and `id_index_unit_lines_*`).
+
+- 4a25d69: Project Index status no longer starts a process for each check. The `uasset` protocol session now
+  answers `project_index_status`, and the process-backed `ProjectIndex` reads status through its
+  existing reader session, falling back to a one-off process for an older reader.
+
 ## 0.20.0
 
 ### Patch Changes

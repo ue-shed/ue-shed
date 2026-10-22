@@ -109,9 +109,15 @@ const result = spawnSync(
 		...(version.major === 5 && version.minor === 6 ? ["-DisablePlugins=EditorTelemetry"] : []),
 		// UE 4.27 opens asset editors in a new window by default. Offscreen, closing one saves
 		// its restored size, which the generic window aborts on; UE5 docks them in the main window.
+		// For the same reason the main layout must not come from the user's own editor: 4.27 keeps
+		// it per user, not per project, and a floating tab saved there (a Message Log window, say)
+		// aborts every offscreen shutdown. A blank layout falls back to the built-in default, and
+		// `-nowrite` keeps the test editor from rewriting the user's layout and settings.
 		...(version.major === 4
 			? [
-					"-ini:EditorPerProjectUserSettings:[/Script/EditorStyle.EditorStyleSettings]:AssetEditorOpenLocation=MainWindow"
+					"-ini:EditorPerProjectUserSettings:[/Script/EditorStyle.EditorStyleSettings]:AssetEditorOpenLocation=MainWindow",
+					"-ini:EditorLayout:[EditorLayouts]:UnrealEd_Layout_v1.4=",
+					"-nowrite"
 				]
 			: []),
 		`-ExecCmds=Automation RunTests ${tests.join("+")}`,

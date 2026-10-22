@@ -40,6 +40,9 @@ test("real Playwright runs join gate traces with retries, skips, parallel worker
 		const config = join(root, "playwright.config.ts");
 		const traceId = newTraceId();
 		const parentSpanId = newSpanId();
+		// The spec named-imports CommonJS @playwright/test. Without this, a `"type": "module"`
+		// package.json above the temp directory would make Playwright load it as ESM and fail.
+		writeFileSync(join(root, "package.json"), '{ "type": "commonjs" }\n');
 		writeFileSync(
 			config,
 			`export default { testDir: ${JSON.stringify(root)}, testMatch: "*.spec.ts", fullyParallel: true, workers: 2, retries: 1, timeout: 2000, outputDir: ${JSON.stringify(join(root, "results"))}, reporter: [[${JSON.stringify(reporter)}]], projects: [{name: "trace-regression"}] };`

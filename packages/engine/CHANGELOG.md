@@ -1,5 +1,33 @@
 # @ue-shed/engine
 
+## 0.21.0
+
+### Minor Changes
+
+- 9d91e8e: Hosts can configure Remote Control access, editor launches and plugin sources without changing UE
+  Shed. All additions are optional; existing calls behave as before.
+    - `makeRemoteControlClient` accepts `passphrase`, sent as Unreal's Remote Control `Passphrase`
+      header, and extra `headers` for every request. An editor's HTTP 401 now reports a refused
+      passphrase, with `fix_input` guidance, instead of a generic refusal.
+    - A launch can add the host's own Remote Control classes to the UE 5.8 allowlist:
+      `remoteControlAllowedClasses` on the `with_plugins` launch mode and on
+      `SupervisedEditorSessionRequest`. `unrealRemoteControlPermissions(pluginIds, additionalClasses)`
+      and the `RemoteControlAllowedClass` schema (`Module.Class`) are exported.
+    - `readEngineInstallation(root)` reads an engine root's version without the registry or a project.
+    - `EditorConnectionRequest.requestTimeout` bounds each manifest request.
+    - Test layers: `makeEditorWindowActivationTestLayer`, `makeEditorForegroundPermissionTestLayer`,
+      `makeEditorForegroundResponsivenessTestLayer`, `makePluginDistributionTestLayer` and
+      `makeCompiledPluginBuilderTestLayer`.
+    - `githubReleaseSourceLayer` accepts `assetNames`, so it serves bundles other than Map Review's.
+
+### Patch Changes
+
+- Updated dependencies [9d91e8e]
+- Updated dependencies [19c9412]
+- Updated dependencies [05f4e1a]
+    - @ue-shed/unreal-connection@0.21.0
+    - @ue-shed/protocol@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes

@@ -1,5 +1,56 @@
 # @ue-shed/unreal-assets
 
+## 0.21.0
+
+### Minor Changes
+
+- 19c9412: Decode more saved Blueprint, Sequencer and Niagara data. On UE 4.27: editable node pin suffixes,
+  soft object path structs, Blueprint class records, property GUID maps, numeric channels, Level
+  Sequence binding maps, data table row handles saved without default fields, and Niagara variable
+  records. On UE5: graph pins from saved revisions 1000 to 1018 (so `readSavedBlueprint` accepts
+  them too), Blueprint class records, DynamicCast nodes, splines, Niagara variable records, field
+  paths and newer numeric channel framing.
+  Keep every coverage gap while distinguishing text-free data from data that may hide text.
+  uasset-io 1.18 adds `textGapCounts` to package text records and `may_contain_text` to gaps;
+  older negotiated clients omit these fields. Native and WASM text status use the same evidence.
+  Game Text package text shards move to `package-text-v9`, so existing indexes re-extract packages
+  once.
+- 1d22faa: Saved-asset limits and pure helpers are public, so hosts no longer copy them.
+    - `@ue-shed/unreal-assets` exports `DEFAULT_TIMEOUT_MS`, `DEFAULT_CATALOG_TIMEOUT_MS` and
+      `SAVED_REVIEW_MAX_CHANGES`. `./investigation-files` exports `INVESTIGATION_PRESET_MAX_BYTES` and
+      `INVESTIGATION_EXPORT_MAX_BYTES`.
+    - `searchBlueprint` accepts `maximumHits`; the default stays `MAX_BLUEPRINT_SEARCH_HITS`.
+    - `@ue-shed/map-history/diff` is a browser-safe entry for `diffSavedWorldSnapshots`,
+      `actorIdentityOf`, `actorIdentityKey` and `savedWorldTransformsEqual`.
+    - `@ue-shed/project-custodian` exports `resolvePolicyDocument`, `PolicyResolution` and
+      `ProjectTargetDefinition`, so a host can validate a policy before writing it.
+    - `@ue-shed/uasset-inspection-wasm` declares the `DEFAULT_LIMITS` it already exported at runtime.
+
+- 05f4e1a: Package text can skip the host's event stream. uasset-io 1.19 adds `staging` to
+  `extract_text_packages`: the reader writes each package's record line to a group file and streams a
+  small `staged_text_package` result instead, in completion order, so one large package no longer
+  holds back the rest. `AssetReader.stageProjectTextPackages` and `GameTextIndexSource.stage` expose
+  it, and cold Game Text imports use it when the reader supports it: each import worker reads and
+  validates its own group, and the main thread never parses package text. The reader creates each
+  group file exclusively, so a large read split into several requests stages each request in its own
+  directory and every staged event names the file holding its record; `batchStagedProtocolPaths`
+  sizes those requests including their group numbers. Projection reads now
+  default to up to eight workers (at least four) when a request sets no `limits.concurrency`.
+
+    Staged snapshot files are written uncompressed, unsynced and in batched writes, since the writer
+    reads them once in the same session; `writeSnapshotFile` takes `{ durable: false }` for this.
+    A native writer publishes staged cold layers from their files (`SharedIndexWriter.publishColdFiles`)
+    without the host opening each one.
+
+### Patch Changes
+
+- 4a25d69: Project Index status no longer starts a process for each check. The `uasset` protocol session now
+  answers `project_index_status`, and the process-backed `ProjectIndex` reads status through its
+  existing reader session, falling back to a one-off process for an older reader.
+- Updated dependencies [19c9412]
+- Updated dependencies [05f4e1a]
+    - @ue-shed/protocol@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes

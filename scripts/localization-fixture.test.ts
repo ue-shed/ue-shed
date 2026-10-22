@@ -1,10 +1,38 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { parseJsonObject } from "./json.ts";
 import { assertLocalizationIntent } from "./localization-fixture-evidence.ts";
+import {
+	gameTextActionsFixtureSteps,
+	gameTextProblemsFixtureSteps,
+	localizationFixtureSteps
+} from "./localization-fixture-steps.ts";
 
 const fixture = new URL("../fixtures/unreal-project/", import.meta.url);
+
+test("no GatherText process runs two report steps that write the same file", () => {
+	const project = fileURLToPath(new URL("UEShedFixture.uproject", fixture));
+	const steps = [
+		...localizationFixtureSteps(project, "evidence"),
+		...gameTextProblemsFixtureSteps(project),
+		...gameTextActionsFixtureSteps(project, "evidence")
+	];
+	for (const step of steps) {
+		const configs = step.find((argument) => argument.startsWith("-config="));
+		if (configs === undefined) continue;
+		// GatherText runs every config's report steps as parallel tasks of its final phase.
+		const reports = configs
+			.slice("-config=".length)
+			.split(";")
+			.flatMap((path) => [
+				...readFileSync(path, "utf8").matchAll(/^\w+ReportName=(.+?)\s*$/gmu)
+			])
+			.map((match) => match[1]);
+		assert.deepEqual(reports, [...new Set(reports)], configs);
+	}
+});
 const intent = parseJsonObject(
 	readFileSync(new URL("FixtureSource/Localization/expected-states.json", fixture), "utf8")
 );

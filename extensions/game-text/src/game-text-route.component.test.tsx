@@ -56,6 +56,40 @@ it("keeps the indexed list searchable during a rescan and focuses search with Ct
 	await waitFor(() => expect(status.textContent).toContain("assets"));
 	expect(search).toHaveProperty("value", "Quit");
 });
+it("shows a reopened saved index at once and rescans it behind the results", async () => {
+	const response = await Effect.runPromise(Deferred.make<TextCorpusQueryRunResult>());
+	const query = textCorpusQuery(corpus);
+	const loads: boolean[] = [];
+	const user = userEvent.setup({ delay: null });
+	mount(
+		makeClient(corpus, {
+			loadConfiguredProject: (refresh) => {
+				loads.push(refresh);
+				return refresh
+					? Deferred.await(response)
+					: Effect.succeed({
+							status: "completed",
+							summary: query.summary(),
+							cached: true
+						});
+			}
+		})
+	);
+	await screen.findByText("2 matches");
+	await screen.findByText("Rescanning");
+	expect(loads).toEqual([false, true]);
+	expect(screen.queryByRole("button", { name: "Scan project" })).toBeNull();
+	const search = screen.getByRole("searchbox");
+	expect(search).toHaveProperty("disabled", false);
+	await user.type(search, "Quit");
+	await screen.findByText("1 match");
+	await Effect.runPromise(
+		Deferred.succeed(response, { status: "completed", summary: query.summary() })
+	);
+	await waitFor(() => expect(screen.queryByText("Rescanning")).toBeNull());
+	expect(loads).toEqual([false, true]);
+	expect(search).toHaveProperty("value", "Quit");
+});
 it("opens a line as a page, steps to the next line and goes back to the list", async () => {
 	const user = userEvent.setup({ delay: null });
 	mount();

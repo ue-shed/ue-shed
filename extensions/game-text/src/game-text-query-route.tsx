@@ -743,6 +743,9 @@ export function GameTextRoute(props: {
 							onSuccess: setProjectKey
 						});
 					}
+					// Results reopened from the saved index stay usable while a rescan brings
+					// them up to date.
+					if (result.cached === true && !refresh) load(true);
 				} else if (result.status === "failed") {
 					setPreparing(false);
 					showError(result.error.message + " " + result.error.recovery, () =>

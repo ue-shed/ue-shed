@@ -92,6 +92,8 @@ interface RunResult {
 	readonly settledBreakdownMiB: Readonly<Record<string, number>>;
 	readonly coldPeakAtMs: number;
 	readonly warmLaunchToUsableMs: number;
+	/** Results first shown after a warm launch: reopened from the cache, or after a clicked scan. */
+	readonly warmLaunchToResultsMs: number;
 	readonly warmLaunchToIndexReadyMs: number;
 	readonly warmFirstSearch: SearchTiming;
 	readonly warmMainStall: StallReport;
@@ -481,14 +483,9 @@ async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number, lab
 
 /**
  * Settled Game Text, checked in the page: Rescan enabled, no progress or scan readout, a line
- * count and a search total shown. Resolves to the page's time; with `scan`, a shown "Scan
- * project" button also ends the wait.
+ * count and a search total shown. Resolves to the page's time.
  */
-const usableInPage = (scan: boolean) => `(() => {
-	const visible = (element) => element && element.getClientRects().length > 0;
-	if (${scan} && [...document.querySelectorAll("button")].some(
-		(button) => button.textContent.trim() === "Scan project" && visible(button)
-	)) return "scan";
+const usableInPage = () => `(() => {
 	const status = document.querySelector('[aria-label="Index status"]');
 	const rescan = [...document.querySelectorAll("button[aria-label]")].find((button) =>
 		button.getAttribute("aria-label").includes("Rescan")
@@ -497,6 +494,15 @@ const usableInPage = (scan: boolean) => `(() => {
 	if (status.querySelector('[role="progressbar"]')) return false;
 	const text = status.innerText;
 	if (/elapsed|Loading translations/u.test(text) || !/lines?/u.test(text)) return false;
+	let count = document.querySelector('input[aria-label="Search game text"]')?.nextElementSibling;
+	while (count && count.getAttribute("role") !== "status") count = count.nextElementSibling;
+	return count && /match/u.test(count.innerText) ? Date.now() : false;
+})()`;
+/** A shown "Scan project" button, or a search count over shown results, even while rescanning. */
+const resultsShownInPage = `(() => {
+	if ([...document.querySelectorAll("button")].some(
+		(button) => button.textContent.trim() === "Scan project" && button.getClientRects().length > 0
+	)) return "scan";
 	let count = document.querySelector('input[aria-label="Search game text"]')?.nextElementSibling;
 	while (count && count.getAttribute("role") !== "status") count = count.nextElementSibling;
 	return count && /match/u.test(count.innerText) ? Date.now() : false;
@@ -519,7 +525,7 @@ const rescanClickRecorder = `(() => {
 const rescanUsableInPage = `(() => {
 	const rescan = window.__ueShedRescan;
 	if (!rescan || rescan.clickedAt === undefined) return false;
-	const usable = ${usableInPage(false)};
+	const usable = ${usableInPage()};
 	if (!usable) rescan.busy = true;
 	return rescan.busy && usable ? { clickedAt: rescan.clickedAt, usableAt: usable } : false;
 })()`;
@@ -739,7 +745,7 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 		step("scan clicked");
 		let usableEpoch: number;
 		try {
-			usableEpoch = await inPage(page, usableInPage(false), 60 * 60_000, Epoch);
+			usableEpoch = await inPage(page, usableInPage(), 60 * 60_000, Epoch);
 			milestones.set("coldUsable", usableEpoch);
 		} catch (cause) {
 			await page.screenshot({ path: `${options.output}.${app.label}-${run}-failed.png` });
@@ -838,13 +844,15 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			.getByRole("link", { exact: true, name: "Game Text" })
 			.click();
 		milestones.set("warmNavigate", Date.now());
-		let warmState = await inPage(warm.page, usableInPage(true), 30 * 60_000, WarmState);
-		if (warmState === "scan") {
+		// A build that reopens the saved index shows its results and rescans behind them; an older
+		// build waits for "Scan project" to be clicked.
+		const warmShown = await inPage(warm.page, resultsShownInPage, 30 * 60_000, WarmState);
+		if (warmShown === "scan") {
 			milestones.set("warmScanShown", Date.now());
 			await warm.page.getByRole("button", { name: "Scan project", exact: true }).click();
-			warmState = await inPage(warm.page, usableInPage(false), 30 * 60_000, Epoch);
-		}
-		const warmUsableEpoch = warmState;
+		} else milestones.set("warmResultsShown", warmShown);
+		const warmUsableEpoch = await inPage(warm.page, usableInPage(), 30 * 60_000, Epoch);
+		const warmResultsEpoch = warmShown === "scan" ? warmUsableEpoch : warmShown;
 		milestones.set("warmUsable", warmUsableEpoch);
 		const warmUsable = warmStarted + (warmUsableEpoch - warmEpoch);
 		const warmMainStall = await readMainStall(warm.application);
@@ -887,6 +895,7 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			settledBreakdownMiB: settledSample.byName,
 			coldPeakAtMs: coldPeak.at - scanStarted,
 			warmLaunchToUsableMs: warmUsableEpoch - warmEpoch,
+			warmLaunchToResultsMs: warmResultsEpoch - warmEpoch,
 			warmLaunchToIndexReadyMs: warmIndexReady - warmEpoch,
 			warmFirstSearch,
 			warmMainStall,
@@ -949,6 +958,7 @@ function summarize(results: ReadonlyArray<RunResult>) {
 					launchToUsableMs: metric((result) => result.launchToUsableMs),
 					rescanMs: metric((result) => result.rescanMs),
 					warmLaunchToUsableMs: metric((result) => result.warmLaunchToUsableMs),
+					warmLaunchToResultsMs: metric((result) => result.warmLaunchToResultsMs),
 					warmLaunchToIndexReadyMs: metric((result) => result.warmLaunchToIndexReadyMs),
 					warmFirstSearchReportedMs: metric(
 						(result) => result.warmFirstSearch.reportedMs
@@ -1002,7 +1012,7 @@ for (let run = 0; run < options.runs; run += 1) {
 		results.push(result);
 		process.stdout.write(
 			`  index ${(result.launchToIndexReadyMs / 1000).toFixed(2)} s, scan ${(result.coldScanMs / 1000).toFixed(2)} s, ` +
-				`rescan ${(result.rescanMs / 1000).toFixed(2)} s, warm ${(result.warmLaunchToUsableMs / 1000).toFixed(2)} s, ` +
+				`rescan ${(result.rescanMs / 1000).toFixed(2)} s, warm ${(result.warmLaunchToResultsMs / 1000).toFixed(2)}/${(result.warmLaunchToUsableMs / 1000).toFixed(2)} s, ` +
 				`peak ${result.coldPeakRssMiB.toFixed(0)} MiB, stall ${result.coldScanMainStall.maxStallMs.toFixed(0)} ms, ` +
 				`hash ${result.resultHash.slice(0, 12)} (${result.resultRows} rows)\n`
 		);

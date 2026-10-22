@@ -22,6 +22,17 @@ it.live(
 				);
 				expect(test.fixture.inventories()).toBe(1);
 				expect(test.modelOpens()).toBe(0);
+				// Unverified against the current Project Index: browsable, but not current.
+				expect(yield* host.previewQualityRules(STARTER_GAME_TEXT_RULES)).toEqual({
+					status: "not_ready"
+				});
+				expect(yield* host.operationTarget(test.fixture.target.name)).toBeUndefined();
+				expect(
+					(yield* host.investigationExport(
+						{ mode: "corpus", query: "", capability: "all", qualityFilter: "all" },
+						"json"
+					)).status
+				).toBe("failed");
 				const before = yield* host.search(request);
 				if (before.status !== "ready") throw new Error("Expected cached search");
 				const id = before.page.units[0]!.id;

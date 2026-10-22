@@ -428,7 +428,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		const index = yield* currentIndex();
 		const selected = yield* project.current();
 		const owner = yield* Ref.get(modelSelection);
+		// A cached model is searchable but unverified, so it never counts as the current generation.
 		return selected.status === "ready" &&
+			owner?.cached !== true &&
 			(selected.project.generation ?? 0) === owner?.generation
 			? index
 			: undefined;
@@ -459,10 +461,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						indexed,
 						cached: true
 					});
-					yield* Ref.set(investigationSnapshot, {
-						source: { projectRoot, generation, authority: "project_files" },
-						revision: indexed.revision
-					});
+					// The cache was never checked against the current Project Index, so it records no
+					// investigation source: exports and rules wait for the rescan's verified model.
+					yield* Ref.set(investigationSnapshot, undefined);
 					return {
 						status: "completed" as const,
 						summary: indexed.summary,

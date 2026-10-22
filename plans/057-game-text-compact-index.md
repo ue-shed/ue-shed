@@ -28,7 +28,9 @@ still applies.
   10× runs; the attempted CLI cold build failed its 900-second cap. Phase 7's browse layout is wired
   to the index; its generated-scale desktop measurements and tour remain incomplete. Reader v1.8
   and gather rule v1.9 are unchanged. See the latest evidence below; no full-gate pass is claimed.
-  Phase 8, moving localization quality checks onto the index, is in progress.
+  Phase 8, moving localization quality checks onto the index, is superseded by
+  [Plan 059](059-game-text-query-and-rule-engine.md), which moves rule evaluation and queries into
+  one native engine.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds

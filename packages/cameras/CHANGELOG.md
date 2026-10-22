@@ -1,5 +1,34 @@
 # @ue-shed/cameras
 
+## 0.21.0
+
+### Minor Changes
+
+- 5aa35e7: Capture, world preparation and observation can be composed and tested by hosts. Defaults are
+  unchanged.
+    - `@ue-shed/cameras` exports `MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST` (also from `./browser` and
+      `./map-tiles`) and `makeMapCaptureTestLayer`.
+    - `worldPreparationLayer(endpoint, { requestTimeout })` and `makeWorldPreparation` take a request
+      timeout (default 30 seconds) for large World Partition maps. `withPreparedWorld` passes a lease ID
+      and duration. `WorldVector`, `WorldExtent`, `WorldLayerRequirement` and `WorldContract` types are
+      exported.
+    - `observatoryLayer` requires `EditorWindowActivation`, so a host can supply its own focus handling.
+      `ObservatoryLive` composes it with the engine's activation as before. `makeObservatoryTestLayer`
+      provides a complete Observatory for tests.
+    - `@ue-shed/niagara` exports `NIAGARA_PREVIEW_MAXIMUM_TOTAL_PIXELS`, and `./browser` now includes
+      the pure presentation helpers.
+
+### Patch Changes
+
+- Updated dependencies [5aa35e7]
+- Updated dependencies [9d91e8e]
+- Updated dependencies [19c9412]
+- Updated dependencies [05f4e1a]
+    - @ue-shed/world@0.21.0
+    - @ue-shed/unreal-connection@0.21.0
+    - @ue-shed/protocol@0.21.0
+    - @ue-shed/observability@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes

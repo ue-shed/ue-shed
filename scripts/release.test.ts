@@ -227,12 +227,22 @@ test("missing and failed gates block the release; --without-unreal drops only Un
 });
 
 test("parses --without-unreal and rejects unknown release arguments", () => {
-	assert.deepEqual(parseReleaseArguments([]), { withoutUnreal: undefined });
+	assert.deepEqual(parseReleaseArguments([]), { withoutUnreal: undefined, checked: false });
 	assert.deepEqual(parseReleaseArguments(["--without-unreal", "docs-only release"]), {
-		withoutUnreal: "docs-only release"
+		withoutUnreal: "docs-only release",
+		checked: false
+	});
+	assert.deepEqual(parseReleaseArguments(["--checked"]), {
+		withoutUnreal: undefined,
+		checked: true
+	});
+	assert.deepEqual(parseReleaseArguments(["--checked", "--without-unreal", "docs-only"]), {
+		withoutUnreal: "docs-only",
+		checked: true
 	});
 	assert.throws(() => parseReleaseArguments(["--without-unreal", " "]), /needs the reason/);
 	assert.throws(() => parseReleaseArguments(["--checked", "a".repeat(40)]));
+	assert.throws(() => parseReleaseArguments(["--unknown"]));
 });
 
 function writePack(directory: string, version: string, commit: string) {

@@ -384,6 +384,7 @@ TArray<FCorpusPackage> PlanCorpus(int32 Lines, int32 Seed, FDuplicateCounts& Dup
 		FCorpusPackage Package = NewPackage(Rng, KindBlueprint, TEXT("Blueprints"),
 			FString::Printf(TEXT("BP_Corpus_%03d"), Index));
 		const FString Namespace = PackageTextNamespace(Package.PackageNamespace);
+		TArray<TPair<FString, FString>> EarlierVariables;
 		for (int32 Variable = 0; Variable < VariableCount; ++Variable)
 		{
 			FCorpusText Text;
@@ -391,9 +392,11 @@ TArray<FCorpusPackage> PlanCorpus(int32 Lines, int32 Seed, FDuplicateCounts& Dup
 			Text.Field = FString::Printf(TEXT("Text_%02d"), Variable);
 			Text.Namespace = Namespace;
 			Text.Source = Factory.Next(Rng.FRand() < 0.5f ? EStyle::Label : EStyle::Line);
-			Text.Key = HexId(Rng);
+			if (!TryConflict(Rng, EarlierVariables, Text, Duplicates)) Text.Key = HexId(Rng);
+			EarlierVariables.Emplace(Text.Key, Text.Source);
 			Package.Texts.Add(MoveTemp(Text));
 		}
+		TArray<TPair<FString, FString>> EarlierPins;
 		for (int32 Pin = 0; Pin < PinCount; ++Pin)
 		{
 			FCorpusText Text;
@@ -402,7 +405,8 @@ TArray<FCorpusPackage> PlanCorpus(int32 Lines, int32 Seed, FDuplicateCounts& Dup
 				Rng.FRand() < 0.7f ? *PrintTextName.ToString() : *TextToUpperName.ToString(), Pin);
 			Text.Namespace = Namespace;
 			Text.Source = Factory.Next(EStyle::Line);
-			Text.Key = HexId(Rng);
+			if (!TryConflict(Rng, EarlierPins, Text, Duplicates)) Text.Key = HexId(Rng);
+			EarlierPins.Emplace(Text.Key, Text.Source);
 			Package.Texts.Add(MoveTemp(Text));
 		}
 		Variables -= VariableCount;
@@ -417,6 +421,7 @@ TArray<FCorpusPackage> PlanCorpus(int32 Lines, int32 Seed, FDuplicateCounts& Dup
 		FCorpusPackage Package = NewPackage(Rng, KindWidget, TEXT("Widgets"),
 			FString::Printf(TEXT("WBP_Corpus_%03d"), Index));
 		const FString Namespace = PackageTextNamespace(Package.PackageNamespace);
+		TArray<TPair<FString, FString>> Earlier;
 		for (int32 Block = 0; Block < Blocks; ++Block)
 		{
 			FCorpusText Text;
@@ -424,7 +429,8 @@ TArray<FCorpusPackage> PlanCorpus(int32 Lines, int32 Seed, FDuplicateCounts& Dup
 			Text.Field = FString::Printf(TEXT("Text_%02d.Text"), Block);
 			Text.Namespace = Namespace;
 			Text.Source = Factory.Next(Rng.FRand() < 0.6f ? EStyle::Label : EStyle::Line);
-			Text.Key = HexId(Rng);
+			if (!TryConflict(Rng, Earlier, Text, Duplicates)) Text.Key = HexId(Rng);
+			Earlier.Emplace(Text.Key, Text.Source);
 			Package.Texts.Add(MoveTemp(Text));
 		}
 		Widgets -= Blocks;

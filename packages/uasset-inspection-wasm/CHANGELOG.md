@@ -1,5 +1,38 @@
 # @ue-shed/uasset-inspection-wasm
 
+## 0.21.0
+
+### Minor Changes
+
+- 1d22faa: Saved-asset limits and pure helpers are public, so hosts no longer copy them.
+    - `@ue-shed/unreal-assets` exports `DEFAULT_TIMEOUT_MS`, `DEFAULT_CATALOG_TIMEOUT_MS` and
+      `SAVED_REVIEW_MAX_CHANGES`. `./investigation-files` exports `INVESTIGATION_PRESET_MAX_BYTES` and
+      `INVESTIGATION_EXPORT_MAX_BYTES`.
+    - `searchBlueprint` accepts `maximumHits`; the default stays `MAX_BLUEPRINT_SEARCH_HITS`.
+    - `@ue-shed/map-history/diff` is a browser-safe entry for `diffSavedWorldSnapshots`,
+      `actorIdentityOf`, `actorIdentityKey` and `savedWorldTransformsEqual`.
+    - `@ue-shed/project-custodian` exports `resolvePolicyDocument`, `PolicyResolution` and
+      `ProjectTargetDefinition`, so a host can validate a policy before writing it.
+    - `@ue-shed/uasset-inspection-wasm` declares the `DEFAULT_LIMITS` it already exported at runtime.
+
+### Patch Changes
+
+- ca41635: Read large saved Blueprints and Niagara packages faster with identical output. A Blueprint's
+  graph membership is decoded once per owning export instead of once per graph and node (a 32 MB
+  Blueprint went from 4.6 s to 0.35 s), fixed-size numeric array elements no longer allocate an
+  error breadcrumb each, and text projection skips numeric leaves.
+- 19c9412: Decode more saved Blueprint, Sequencer and Niagara data. On UE 4.27: editable node pin suffixes,
+  soft object path structs, Blueprint class records, property GUID maps, numeric channels, Level
+  Sequence binding maps, data table row handles saved without default fields, and Niagara variable
+  records. On UE5: graph pins from saved revisions 1000 to 1018 (so `readSavedBlueprint` accepts
+  them too), Blueprint class records, DynamicCast nodes, splines, Niagara variable records, field
+  paths and newer numeric channel framing.
+  Keep every coverage gap while distinguishing text-free data from data that may hide text.
+  uasset-io 1.18 adds `textGapCounts` to package text records and `may_contain_text` to gaps;
+  older negotiated clients omit these fields. Native and WASM text status use the same evidence.
+  Game Text package text shards move to `package-text-v9`, so existing indexes re-extract packages
+  once.
+
 ## 0.20.0
 
 ### Patch Changes

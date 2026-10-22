@@ -58,6 +58,11 @@ These cases are deliberate:
   under different keys.
 - **Key conflicts.** About 1.5% of entries reuse an earlier key with different source text. String
   Tables do this across tables that share a namespace; DataTables do it within one table.
+  Blueprint variables reuse another variable's key in the same Blueprint, graph pins reuse
+  another pin's key, and widget text blocks reuse another block's key in the same Widget
+  Blueprint. These are different authored texts, not stale compiled copies of one text. The
+  first text in each group has no earlier key to reuse, and small corpora may have no conflicts
+  of a particular kind.
 - **Empty and whitespace.** About 0.5% of lines are empty, and about 0.5% hold only whitespace.
 
 The corpus references only engine types and its own packages. The DataTables' row struct is the

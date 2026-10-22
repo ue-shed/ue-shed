@@ -148,6 +148,11 @@ pnpm release
 git push --tags
 ```
 
+After preparation, use `pnpm release --checked` to require current recorded evidence without
+running any checks during publication. It refuses missing, failed or stale evidence, including
+release-text evidence, and still verifies the clean source commit and packed tarball integrity.
+Run `pnpm release:prepare` again if it reports stale gates.
+
 After `pnpm install`, `pnpm release` needs no per-session toolchain environment setup. The private
 workspace pins Node 26 through `devEngines.runtime`; pnpm installs and selects that runtime for
 scripts. Release reuses the invoking pnpm CLI. It builds nothing, so it needs no Rust. Release

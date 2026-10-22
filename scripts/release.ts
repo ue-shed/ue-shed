@@ -5,6 +5,7 @@
  * --from-pack-dir` (which runs `pnpm publish <tarball>`: no lifecycle scripts, no repacking).
  *
  *   pnpm release
+ *   pnpm release --checked
  *   pnpm release --without-unreal "portable-only documentation fix"
  */
 
@@ -208,13 +209,16 @@ export function packedPublishPlan(
 export function parseReleaseArguments(args: readonly string[]) {
 	const { values } = parseArgs({
 		args: [...args],
-		options: { "without-unreal": { type: "string" } },
+		options: {
+			"without-unreal": { type: "string" },
+			checked: { type: "boolean", default: false }
+		},
 		strict: true
 	});
 	const withoutUnreal = values["without-unreal"]?.trim();
 	if (withoutUnreal === "")
 		throw new Error("--without-unreal needs the reason for this release.");
-	return { withoutUnreal };
+	return { withoutUnreal, checked: values.checked };
 }
 
 export function publicationConfirmationPhrase(version: string) {
@@ -272,14 +276,18 @@ interface Verification {
 function verifyRelease(
 	commit: string,
 	withoutUnreal: string | undefined,
-	env: NodeJS.ProcessEnv
+	env: NodeJS.ProcessEnv,
+	checked: boolean
 ): Verification {
 	const tree = readTree(commit);
 	let evidence = readReleaseEvidence(PUBLIC_VERSION);
 	const releaseText = RELEASE_GATES.find((gate) => gate.id === "release-text")!;
 	// Release text is cheap and the release notes often change after the long gates, so rerun it
 	// here rather than send the operator back to release:prepare.
-	if (gateEvidenceState(evidence.gates["release-text"], "everything", tree).kind !== "current") {
+	if (
+		!checked &&
+		gateEvidenceState(evidence.gates["release-text"], "everything", tree).kind !== "current"
+	) {
 		const startedAt = Date.now();
 		runPnpm(["run", "format:check"], env);
 		runPnpm(["run", "test:release"], env);
@@ -383,11 +391,11 @@ function publish(verification: Verification, env: NodeJS.ProcessEnv) {
 }
 
 async function main() {
-	const { withoutUnreal } = parseReleaseArguments(process.argv.slice(2));
+	const { withoutUnreal, checked } = parseReleaseArguments(process.argv.slice(2));
 	const env = releaseEnvironment();
 	await runRelease({
 		validateSource: () => assertCleanReleaseSource(),
-		verify: (commit) => verifyRelease(commit, withoutUnreal, env),
+		verify: (commit) => verifyRelease(commit, withoutUnreal, env, checked),
 		confirm: confirmPublication,
 		publish: (verification) => publish(verification, env)
 	});

@@ -1,5 +1,107 @@
 # @ue-shed/game-text
 
+## 0.21.0
+
+### Minor Changes
+
+- 5ece9e8: Game Text caches are smaller. Integer and string-ID columns in `UESHT004` snapshots can use two new
+  section codecs: zstd over the values' bytes grouped by significance, or over the differences of a
+  non-decreasing column. The native writer picks per column by compressing a sample, and encodes a
+  layer's sections in parallel; TypeScript readers decode both. Because older readers cannot, the
+  cache namespace moves to `game-text-v2` and existing caches rebuild once. On a local UE 5.7
+  project (~11k packages) the Game Text cache shrinks from 19.4 MB to 8.3 MB.
+- 139aa75: Game Text classifies problems from one table. `TEXT_PROBLEM_RULES` says which localization states,
+  facts, unknown reasons and review signals raise each problem; `textProblems` reads it and the
+  native engine compiles a table generated from it, so filters, groups, aggregates and counts agree
+  with the labels. A parity test runs both over the same lines, with and without finding clauses.
+    - New problem `unchecked` ("Couldn't check"), after the findings and before up to date: a culture
+      in scope whose state the evidence cannot prove. Up to date now means every culture in scope was
+      confirmed. `TextProblemCounts` gains `unchecked`.
+    - "Not found in the project" counts as `changed_since_gather` rather than up to date.
+    - Findings follow the request: by default `shared`, `duplicate_source` and `unresolved` make a
+      finding, not `long`. A `finding is` clause or lens that names a signal counts it as a finding for
+      every problem in that request. Search rows (units and localization lines) carry `problems` and
+      `countedFindings`, what put the row in its problems; `countedFindings()` and
+      `textCountedFindings()` give the same in TypeScript.
+    - The localization gate still reports changed text from the `changed_since_gather` state, so not
+      found lines stay `removed`.
+
+- 139aa75: One saved unit per key Unreal translates. Units key resolved text by the namespace without its
+  package marker (`unreal:<gathered namespace>:<key>`), as gathered text does; String Table entries
+  and references keep theirs. Text saved under one key in several packages is one unit with all its
+  places, and its `shared` signal no longer shows on a unit with one place. Occurrences keep the full
+  saved namespace. Unit IDs of such text change, so joined caches rebuild once (`joined-native-v3`);
+  saved selections by unit ID of multi-package keys need their new ID.
+- 19c9412: Decode more saved Blueprint, Sequencer and Niagara data. On UE 4.27: editable node pin suffixes,
+  soft object path structs, Blueprint class records, property GUID maps, numeric channels, Level
+  Sequence binding maps, data table row handles saved without default fields, and Niagara variable
+  records. On UE5: graph pins from saved revisions 1000 to 1018 (so `readSavedBlueprint` accepts
+  them too), Blueprint class records, DynamicCast nodes, splines, Niagara variable records, field
+  paths and newer numeric channel framing.
+  Keep every coverage gap while distinguishing text-free data from data that may hide text.
+  uasset-io 1.18 adds `textGapCounts` to package text records and `may_contain_text` to gaps;
+  older negotiated clients omit these fields. Native and WASM text status use the same evidence.
+  Game Text package text shards move to `package-text-v9`, so existing indexes re-extract packages
+  once.
+- ad955ec: Localization runs and Game Text carry-over are usable from a host's own code.
+    - `makeLocalizationOperationsLayer({ auditLimits })` sets the bounds of the before/after write
+      audit of a commandlet run. The defaults, `defaultLocalizationAuditLimits` (100,000 entries,
+      512 MiB per file, 2 GiB in total), are unchanged; raise them for projects whose audited files are
+      larger. `LocalizationOperationsLive` keeps the defaults.
+    - `makeLocalizationOperationsTestLayer` provides a complete operations implementation for tests.
+    - `localizationCarryChanges(before, after)` from `@ue-shed/game-text/corpus` turns the keys a gather
+      changed into change-set entries for the new keys, as `ue-shed loc run --carry` does.
+    - `GameTextIdRepairsApi` from `@ue-shed/game-text/workspace` names the ID repair workflow type.
+
+- b77e2e3: A saved Game Text index can be reopened without rescanning.
+    - `GameTextIndexSteps.openCommitted({ projectRoot, targetName? })` opens an already committed view
+      and returns `None` when there is none to use, without reading packages or rebuilding.
+    - The workspace's `configuredRefresh(false)` uses it to show a saved index at once. Its completed
+      result then carries `cached: true` (optional on `TextCorpusQueryRunResult`). The cached view can be
+      browsed and searched, but quality rules, operation targets and investigation exports wait until a
+      refresh has checked it against the current Project Index. A refresh replaces it.
+    - The native engine reports the ID index's load and build seconds separately in `stage_seconds`
+      (`id_index_raw_*`, `id_index_line_*` and `id_index_unit_lines_*`).
+
+- 05f4e1a: Package text can skip the host's event stream. uasset-io 1.19 adds `staging` to
+  `extract_text_packages`: the reader writes each package's record line to a group file and streams a
+  small `staged_text_package` result instead, in completion order, so one large package no longer
+  holds back the rest. `AssetReader.stageProjectTextPackages` and `GameTextIndexSource.stage` expose
+  it, and cold Game Text imports use it when the reader supports it: each import worker reads and
+  validates its own group, and the main thread never parses package text. The reader creates each
+  group file exclusively, so a large read split into several requests stages each request in its own
+  directory and every staged event names the file holding its record; `batchStagedProtocolPaths`
+  sizes those requests including their group numbers. Projection reads now
+  default to up to eight workers (at least four) when a request sets no `limits.concurrency`.
+
+    Staged snapshot files are written uncompressed, unsynced and in batched writes, since the writer
+    reads them once in the same session; `writeSnapshotFile` takes `{ durable: false }` for this.
+    A native writer publishes staged cold layers from their files (`SharedIndexWriter.publishColdFiles`)
+    without the host opening each one.
+
+### Patch Changes
+
+- 8a614e0: Build cold Game Text indexes faster with the same results. The native writer encodes a cold
+  batch's new layers concurrently, the full join orders units and lines with precomputed collation
+  keys and builds place keys in parallel, and joins report `join_*` stage seconds. Cold package
+  imports for the native writer skip preparing sorted string runs it never reads, and start fewer
+  workers, sized to the packages read, while the reader is still extracting.
+- 3d34810: Native Game Text build sessions reuse writer processes. `nativeIndexBuilderLayer` keeps up to four
+  `uasset` writer processes, each exiting after 30 seconds unused, so a rescan's back-to-back
+  sessions no longer start a process each. A process serves another session only after its `end`
+  succeeded, which releases the native writer lease and its file lock; a failed command, a failed
+  `end` or an interruption discards it.
+- Updated dependencies [9d91e8e]
+- Updated dependencies [19c9412]
+- Updated dependencies [ad955ec]
+- Updated dependencies [1d22faa]
+- Updated dependencies [4a25d69]
+- Updated dependencies [05f4e1a]
+    - @ue-shed/unreal-connection@0.21.0
+    - @ue-shed/protocol@0.21.0
+    - @ue-shed/unreal-assets@0.21.0
+    - @ue-shed/localization@0.21.0
+
 ## 0.20.0
 
 ### Minor Changes

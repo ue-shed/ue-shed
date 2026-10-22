@@ -326,13 +326,25 @@ impl EngineSession {
                 // Focus, cursors, picked lines and line details look rows up by ID; index the
                 // packed IDs and each unit's line once so none of them scans every row.
                 let index_started = Instant::now();
-                query.id_index("raw")?;
-                query.id_index("line")?;
-                query.unit_lines(cancelled)?;
+                let (_, raw) = query.id_index_with_timings("raw")?;
+                let (_, line) = query.id_index_with_timings("line")?;
+                let (_, unit_lines) = query.unit_lines_with_timings(cancelled)?;
                 outcome.stage_seconds.insert(
                     "id_index_prepare".into(),
                     index_started.elapsed().as_secs_f64(),
                 );
+                for (key, duration) in [
+                    ("id_index_raw_load", raw.load),
+                    ("id_index_raw_build", raw.build),
+                    ("id_index_line_load", line.load),
+                    ("id_index_line_build", line.build),
+                    ("id_index_unit_lines_load", unit_lines.load),
+                    ("id_index_unit_lines_build", unit_lines.build),
+                ] {
+                    outcome
+                        .stage_seconds
+                        .insert(key.into(), duration.as_secs_f64());
+                }
                 let reader = token();
                 outcome.action = "open".into();
                 outcome.reader = Some(reader.clone());
@@ -635,6 +647,25 @@ mod tests {
             policy: EnginePolicy::default(),
         };
         let opened = session.execute(&request, &cancelled)?;
+        let mut detailed_seconds = 0.0;
+        for key in [
+            "id_index_raw_load",
+            "id_index_raw_build",
+            "id_index_line_load",
+            "id_index_line_build",
+            "id_index_unit_lines_load",
+            "id_index_unit_lines_build",
+        ] {
+            let seconds = *opened.stage_seconds.get(key).ok_or("Missing ID stage")?;
+            assert!(seconds.is_finite() && seconds >= 0.0, "{key}: {seconds}");
+            detailed_seconds += seconds;
+        }
+        let total = *opened
+            .stage_seconds
+            .get("id_index_prepare")
+            .ok_or("Missing ID preparation total")?;
+        assert!(total.is_finite() && total >= 0.0);
+        assert!(detailed_seconds <= total + 1e-6);
         let reader = opened.reader.ok_or("reader")?;
         let writer = Store::writer(configuration.clone())?;
         let mut other = EngineSession::default();

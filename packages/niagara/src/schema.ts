@@ -1,6 +1,12 @@
 import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
+/**
+ * Version-1 preview budget: frame count times width times height may not exceed this many pixels
+ * (256 Mi). Hosts can check a request against it before submitting a run.
+ */
+export const NIAGARA_PREVIEW_MAXIMUM_TOTAL_PIXELS = 268_435_456;
+
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const NonNegativeNumber = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0));
 const Fraction = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }));

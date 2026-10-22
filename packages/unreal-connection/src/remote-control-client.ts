@@ -134,6 +134,18 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 	}
 
 	const status = cause.statusCode;
+	if (status === 401) {
+		return clientError(request, {
+			code: "http_refused",
+			cause,
+			message: `The editor at ${request.endpoint} refused the Remote Control passphrase for ${request.functionName} (HTTP 401).`,
+			recovery:
+				"Pass a passphrase configured in the editor's Remote Control settings, or turn off its restricted server access.",
+			retrySafe: request.idempotent === true,
+			nextStep: "fix_input",
+			status
+		});
+	}
 	const transient =
 		cause.kind === "connect" ||
 		cause.kind === "disconnect" ||
@@ -167,9 +179,18 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
  * Creates the Effect HTTP adapter with an explicit default timeout. Each request scopes its
  * upstream client, validates both JSON boundaries, and disables upstream retries, including for
  * idempotent calls.
+ *
+ * `passphrase` is sent as Unreal's Remote Control `Passphrase` header. An editor that restricts
+ * server access with configured passphrases checks it on every request, including requests from
+ * the same machine, and answers a wrong or missing one with HTTP 401 (verified on UE 5.7 and 5.8).
+ * Without `passphrase` the transport sends its own built-in phrase, which such an editor refuses.
+ * `headers` are added to every request, for example for a proxy in front of the editor; a
+ * `Passphrase` entry there wins over `passphrase`. Omit both to keep the transport's defaults.
  */
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
+	readonly passphrase?: string;
+	readonly headers?: Readonly<Record<string, string>>;
 }): RemoteControlClientApi {
 	const request = Effect.fn("RemoteControlClient.request")(
 		function* (request: RemoteControlRequest) {
@@ -185,7 +206,13 @@ export function makeRemoteControlClient(options: {
 								validateResponses: false,
 								http: {
 									baseUrl: endpoint,
-									requestTimeoutMs: Duration.toMillis(timeout)
+									requestTimeoutMs: Duration.toMillis(timeout),
+									...(options.passphrase === undefined
+										? undefined
+										: { passphrase: options.passphrase }),
+									...(options.headers === undefined
+										? undefined
+										: { headers: { ...options.headers } })
 								},
 								retry: false
 							}),

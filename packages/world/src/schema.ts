@@ -9,11 +9,13 @@ export type WorldLeaseId = typeof WorldLeaseId.Type;
 export const WorldId = id.pipe(Schema.brand("WorldId"));
 export type WorldId = typeof WorldId.Type;
 export const WorldVector = Schema.Struct({ x: Schema.Finite, y: Schema.Finite, z: Schema.Finite });
+export type WorldVector = typeof WorldVector.Type;
 export const WorldExtent = Schema.Struct({
 	x: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1e7 })),
 	y: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1e7 })),
 	z: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1e7 }))
 });
+export type WorldExtent = typeof WorldExtent.Type;
 export const WorldRegion = Schema.Struct({ center: WorldVector, extent: WorldExtent });
 export type WorldRegion = typeof WorldRegion.Type;
 export const WorldActorIdentity = Schema.Struct({
@@ -37,6 +39,7 @@ export const WorldLayerRequirement = Schema.Struct({
 	loaded: Schema.Boolean,
 	visible: Schema.Boolean
 });
+export type WorldLayerRequirement = typeof WorldLayerRequirement.Type;
 export const WorldIdentity = Schema.Struct({
 	worldId: WorldId,
 	mapPath: text,
@@ -97,6 +100,7 @@ export const WorldContract = Schema.Struct({
 	name: Schema.Literal("ue-shed-world-preparation"),
 	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) })
 });
+export type WorldContract = typeof WorldContract.Type;
 export const worldPreparationContract = {
 	name: "ue-shed-world-preparation",
 	version: { major: 1, minor: 0 }

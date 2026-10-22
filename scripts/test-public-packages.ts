@@ -721,7 +721,8 @@ try {
 				"  const project = yield* steps.refreshProject({ projectRoot: resolve('./game-text-project') });",
 				"  const imported = yield* steps.importTarget(project);",
 				"  const built = yield* steps.buildTarget(project, imported);",
-				"  if (!built.join.key.startsWith('joined-native-v2:')) throw new Error('packed production builder is not native');",
+				// Any native join format; the version moves with the joined layout.
+				"  if (!/^joined-native-v\\d+:/u.test(built.join.key)) throw new Error('packed production builder is not native');",
 				"  const model = yield* steps.openTarget(built);",
 				"  const indexedPage = yield* model.search({ capability: 'all', pageSize: 50, query: '' });",
 				"  const nativeSummary = model.summary;",
@@ -806,6 +807,8 @@ try {
 			"import * as mapHistory from '@ue-shed/map-history';",
 			"import { MapHistoryQuery } from '@ue-shed/map-history/contract';",
 			"import { mapHistoryPlaybackFrameAt } from '@ue-shed/map-history/playback';",
+			"import { diffSavedWorldSnapshots } from '@ue-shed/map-history/diff';",
+			"if (typeof diffSavedWorldSnapshots !== 'function') throw new Error('missing Map History diff');",
 			"if (typeof mapHistory.readPerforceMapHistory !== 'function') throw new Error('missing Map History service');",
 			"if (MapHistoryQuery === undefined) throw new Error('missing Map History contract');",
 			"const frame = mapHistoryPlaybackFrameAt({",

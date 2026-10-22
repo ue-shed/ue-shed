@@ -4,7 +4,8 @@ import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { Effect, Predicate, Schema } from "effect";
 import { ScenarioDocument } from "./schema.js";
 
-const maximumBytes = 4 * 1024 * 1024;
+/** Largest scenario document file, in bytes, that is read or written: 4 MiB. */
+export const MAX_SCENARIO_DOCUMENT_BYTES = 4 * 1024 * 1024;
 const documentJson = Schema.fromJsonString(ScenarioDocument);
 
 export class ScenarioDocumentFileError extends Schema.TaggedError<ScenarioDocumentFileError>()(
@@ -75,9 +76,9 @@ const failure = (operation: "read" | "save", path: string, cause: unknown) =>
 export const readScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.read")((path: string) =>
 	Effect.tryPromise({
 		try: async () => {
-			if ((await stat(path)).size > maximumBytes) throw new DocumentTooLarge();
+			if ((await stat(path)).size > MAX_SCENARIO_DOCUMENT_BYTES) throw new DocumentTooLarge();
 			const bytes = await readFile(path);
-			if (bytes.length > maximumBytes) throw new DocumentTooLarge();
+			if (bytes.length > MAX_SCENARIO_DOCUMENT_BYTES) throw new DocumentTooLarge();
 			return bytes.toString("utf8");
 		},
 		catch: (cause) => failure("read", path, cause)
@@ -95,7 +96,8 @@ export const writeScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.write")
 				Effect.tryPromise({
 					try: async () => {
 						const bytes = Buffer.from(`${JSON.stringify(decoded, null, "\t")}\n`);
-						if (bytes.length > maximumBytes) throw new DocumentTooLarge();
+						if (bytes.length > MAX_SCENARIO_DOCUMENT_BYTES)
+							throw new DocumentTooLarge();
 						const destination = resolve(path);
 						await mkdir(dirname(destination), { recursive: true });
 						const temporary = await mkdtemp(

@@ -7,6 +7,7 @@ import {
 	checkCatalogUsage,
 	checkErrorGuidance,
 	checkErrorTranslationCauses,
+	checkBrowserEntryClosures,
 	checkGameTextEntryPoints,
 	checkCompositionPolicy,
 	checkDecoderExports,
@@ -51,6 +52,137 @@ test("error translation retains the original failure in mapError and IO catches"
 			"packages/example/src/use.ts:7: error translation must retain its original cause",
 			"packages/example/src/use.ts:11: error translation must retain its original cause",
 			"packages/example/src/use.ts:13: error translation must retain its original cause"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
+test("package browser entries reach no Node authority or unreviewed dependency", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-"));
+	try {
+		const demo = join(fixtureRoot, "packages/demo");
+		const shared = join(fixtureRoot, "packages/shared");
+		await mkdir(join(demo, "src"), { recursive: true });
+		await mkdir(join(shared, "src"), { recursive: true });
+		await writeFile(
+			join(demo, "package.json"),
+			JSON.stringify({
+				name: "@ue-shed/demo",
+				exports: { "./browser": { import: "./dist/browser.js" } }
+			})
+		);
+		await writeFile(
+			join(shared, "package.json"),
+			JSON.stringify({ name: "@ue-shed/shared", exports: { "./pure": "./src/pure.ts" } })
+		);
+		await writeFile(
+			join(demo, "src/browser.ts"),
+			[
+				'export * from "./schema.js";',
+				'import { Schema } from "effect";',
+				'import { pure } from "@ue-shed/shared/pure";',
+				'import chalk from "chalk";'
+			].join("\n")
+		);
+		await writeFile(join(demo, "src/schema.ts"), "export const root = process.cwd();\n");
+		await writeFile(join(shared, "src/pure.ts"), 'import { readFile } from "node:fs";\n');
+		assert.deepEqual((await checkBrowserEntryClosures(fixtureRoot)).sort(), [
+			"packages/demo/src/browser.ts: unreviewed browser dependency chalk",
+			"packages/demo/src/schema.ts: browser closure must not use process",
+			"packages/shared/src/pure.ts: browser closure must not import node:fs"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
+test("browser closures follow JavaScript sources and Node-only subpaths of guarded packages", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-js-"));
+	try {
+		const wasm = join(fixtureRoot, "packages/wasm");
+		const demo = join(fixtureRoot, "packages/demo");
+		const localization = join(fixtureRoot, "packages/localization");
+		for (const folder of [wasm, demo, localization])
+			await mkdir(join(folder, "src"), { recursive: true });
+		await writeFile(
+			join(wasm, "package.json"),
+			JSON.stringify({ exports: { "./browser": { import: "./dist/browser.js" } } })
+		);
+		await writeFile(join(wasm, "src/browser.js"), 'export * from "./runtime.js";\n');
+		await writeFile(
+			join(wasm, "src/runtime.js"),
+			'export { readFile } from "node:fs/promises";\n'
+		);
+		await writeFile(
+			join(demo, "package.json"),
+			JSON.stringify({ exports: { "./browser": { import: "./dist/browser.js" } } })
+		);
+		await writeFile(
+			join(demo, "src/browser.ts"),
+			[
+				'export { format } from "@ue-shed/localization/browser";',
+				'export { readFile } from "@ue-shed/localization";'
+			].join("\n")
+		);
+		await writeFile(
+			join(localization, "package.json"),
+			JSON.stringify({
+				exports: {
+					".": { import: "./dist/index.js" },
+					"./browser": { import: "./dist/browser.js" }
+				}
+			})
+		);
+		// The localization guard walks only `src/browser.ts`; the Node root is not exempt.
+		await writeFile(join(localization, "src/browser.ts"), 'import "node:path";\n');
+		await writeFile(join(localization, "src/index.ts"), 'export * from "./file-access.js";\n');
+		await writeFile(
+			join(localization, "src/file-access.ts"),
+			'export { readFile } from "node:fs/promises";\n'
+		);
+		assert.deepEqual((await checkBrowserEntryClosures(fixtureRoot)).sort(), [
+			"packages/localization/src/file-access.ts: browser closure must not import node:fs/promises",
+			"packages/wasm/src/runtime.js: browser closure must not import node:fs/promises"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
+test("browser closures skip erased type-only imports but follow inline type imports", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-types-"));
+	try {
+		const demo = join(fixtureRoot, "packages/demo");
+		const node = join(fixtureRoot, "packages/node");
+		for (const folder of [demo, node]) await mkdir(join(folder, "src"), { recursive: true });
+		await writeFile(
+			join(demo, "package.json"),
+			JSON.stringify({ exports: { "./browser": { import: "./dist/browser.js" } } })
+		);
+		await writeFile(
+			join(node, "package.json"),
+			JSON.stringify({
+				exports: { "./erased": "./src/erased.ts", "./loaded": "./src/loaded.ts" }
+			})
+		);
+		await writeFile(
+			join(demo, "src/browser.ts"),
+			[
+				'import type { Scan } from "@ue-shed/node/erased";',
+				'export type { Scan as Saved } from "@ue-shed/node/erased";',
+				'export type Lazy = import("@ue-shed/node/erased").Scan;',
+				// Without `import type`, the module still loads for its side effects.
+				'import { type Loaded } from "@ue-shed/node/loaded";'
+			].join("\n")
+		);
+		await writeFile(join(node, "src/erased.ts"), 'import "node:fs";\nexport type Scan = 1;\n');
+		await writeFile(
+			join(node, "src/loaded.ts"),
+			'import "node:path";\nexport type Loaded = 1;\n'
+		);
+		assert.deepEqual(await checkBrowserEntryClosures(fixtureRoot), [
+			"packages/node/src/loaded.ts: browser closure must not import node:path"
 		]);
 	} finally {
 		await rm(fixtureRoot, { recursive: true, force: true });

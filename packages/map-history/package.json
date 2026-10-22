@@ -33,6 +33,10 @@
 		"./playback": {
 			"types": "./dist/playback.d.ts",
 			"import": "./dist/playback.js"
+		},
+		"./diff": {
+			"types": "./dist/diff.d.ts",
+			"import": "./dist/diff.js"
 		}
 	},
 	"publishConfig": {

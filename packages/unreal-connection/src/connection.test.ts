@@ -241,6 +241,60 @@ describe("Remote Control authoring adapter", () => {
 		expect(error.retrySafe).toBe(false);
 	});
 
+	it("sends the host's Remote Control passphrase and extra headers", async () => {
+		const seen: Array<{
+			passphrase: string | string[] | undefined;
+			proxy: string | string[] | undefined;
+		}> = [];
+		const endpoint = await listen((request, response) => {
+			seen.push({
+				passphrase: request.headers.passphrase,
+				proxy: request.headers["x-studio-proxy"]
+			});
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ ResultJson: "{}" }));
+		});
+		const client = makeRemoteControlClient({
+			defaultTimeout: "1 second",
+			passphrase: "studio-secret",
+			headers: { "X-Studio-Proxy": "on" }
+		});
+		await Effect.runPromise(
+			client.request({
+				endpoint,
+				functionName: "GetCapabilityManifest",
+				objectPath: "/Script/UEShedCore.Default__UEShedCoreLibrary",
+				parameters: {}
+			})
+		);
+
+		expect(seen).toEqual([{ passphrase: "studio-secret", proxy: "on" }]);
+	});
+
+	it("says the passphrase was refused when the editor answers 401", async () => {
+		const endpoint = await listen((_request, response) => {
+			response.statusCode = 401;
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ errorMessage: "Invalid passphrase" }));
+		});
+		const client = makeRemoteControlClient({ defaultTimeout: "1 second", passphrase: "wrong" });
+		const error = await Effect.runPromise(
+			Effect.flip(
+				client.request({
+					endpoint,
+					functionName: "GetCapabilityManifest",
+					idempotent: true,
+					objectPath: "/Script/UEShedCore.Default__UEShedCoreLibrary",
+					parameters: {}
+				})
+			)
+		);
+
+		expect(error).toMatchObject({ code: "http_refused", status: 401, nextStep: "fix_input" });
+		expect(error.message).toContain("passphrase");
+		expect(error.recovery).toContain("passphrase");
+	});
+
 	it("does not retry Apply or Save after a transport failure", async () => {
 		const calls: string[] = [];
 		const endpoint = await listen((request, response) => {

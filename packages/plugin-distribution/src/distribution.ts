@@ -64,6 +64,16 @@ export class PluginDistribution extends Context.Service<
 	PluginDistributionApi
 >()("@ue-shed/plugin-distribution/PluginDistribution") {}
 
+/**
+ * Complete test implementation of plugin distribution. The supplied service owns cache state,
+ * progress and typed failures; nothing is downloaded or written.
+ */
+export function makePluginDistributionTestLayer(
+	service: PluginDistributionApi
+): Layer.Layer<PluginDistribution> {
+	return Layer.succeed(PluginDistribution, PluginDistribution.of(service));
+}
+
 interface EnsuredRelease {
 	readonly cacheHit: boolean;
 	readonly release: StoredPluginRelease;

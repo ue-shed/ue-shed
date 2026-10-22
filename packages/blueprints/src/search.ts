@@ -9,6 +9,7 @@ export interface BlueprintSearchHit {
 	readonly label: string;
 }
 
+/** Default most hits `searchBlueprint` returns before it reports `truncated`. */
 export const MAX_BLUEPRINT_SEARCH_HITS = 500;
 
 export interface BlueprintSearchResult {
@@ -16,11 +17,20 @@ export interface BlueprintSearchResult {
 	readonly truncated: boolean;
 }
 
-/** Literal, case-insensitive search in saved order; every whitespace-separated term must match. */
+/**
+ * Literal, case-insensitive search in saved order; every whitespace-separated term must match.
+ * Returns at most `maximumHits` hits (default `MAX_BLUEPRINT_SEARCH_HITS`) and reports whether
+ * more matched.
+ */
 export function searchBlueprint(input: {
 	readonly blueprint: BlueprintGraphProjection;
 	readonly query: string;
+	readonly maximumHits?: number;
 }): BlueprintSearchResult {
+	const requested = input.maximumHits ?? MAX_BLUEPRINT_SEARCH_HITS;
+	const maximumHits = Number.isFinite(requested)
+		? Math.max(0, Math.floor(requested))
+		: MAX_BLUEPRINT_SEARCH_HITS;
 	const terms = input.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
 	const hits: BlueprintSearchHit[] = [];
 	if (terms.length === 0) return { hits, truncated: false };
@@ -32,7 +42,7 @@ export function searchBlueprint(input: {
 		for (const node of graph.nodes) {
 			const common = [graph.name, node.title, node.class_path, node.object_path];
 			if (matches([...common, blueprintNodeDisplay(node).comment ?? ""])) {
-				if (hits.length === MAX_BLUEPRINT_SEARCH_HITS) return { hits, truncated: true };
+				if (hits.length >= maximumHits) return { hits, truncated: true };
 				hits.push({
 					kind: "node",
 					graphObjectPath: graph.object_path,
@@ -58,7 +68,7 @@ export function searchBlueprint(input: {
 					])
 				)
 					continue;
-				if (hits.length === MAX_BLUEPRINT_SEARCH_HITS) return { hits, truncated: true };
+				if (hits.length >= maximumHits) return { hits, truncated: true };
 				hits.push({
 					kind: "pin",
 					graphObjectPath: graph.object_path,

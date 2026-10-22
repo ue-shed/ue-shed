@@ -84,6 +84,8 @@ export {
 	AssetReaderError,
 	AssetReaderLive,
 	BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES,
+	DEFAULT_CATALOG_TIMEOUT_MS,
+	DEFAULT_TIMEOUT_MS,
 	assetReaderLayer,
 	assetReaderMetrics,
 	discoverSavedAssets,
@@ -170,6 +172,7 @@ export {
 	SavedReviewComparison,
 	SavedReviewOutput,
 	SavedReviewReference,
+	SAVED_REVIEW_MAX_CHANGES,
 	sequenceReferences
 } from "./saved-review.js";
 

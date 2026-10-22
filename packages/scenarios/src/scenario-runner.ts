@@ -6,7 +6,7 @@ import {
 } from "@ue-shed/protocol";
 import { EditorPlaySession, type EditorPlaySessionError } from "@ue-shed/engine";
 import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Context, Effect, Layer, Schedule, Schema } from "effect";
+import { Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
 import { movementGymScenario } from "./demo.js";
 import {
 	parseScenarioCancelResponse,
@@ -44,10 +44,17 @@ export class ScenarioRunnerError extends Schema.TaggedError<ScenarioRunnerError>
 	}
 ) {}
 
+/**
+ * One scenario run. `pieStartTimeout` bounds the wait for Play In Editor to reach running state
+ * (default 15 seconds); `resultTimeout` bounds how long `run` waits for a terminal result (default
+ * 45 seconds), so raise it for scenarios that last longer.
+ */
 export interface RunScenarioOptions {
 	readonly document?: ScenarioDocument;
 	readonly endpoint: string;
 	readonly evidenceLimit?: number;
+	readonly pieStartTimeout?: Duration.Input;
+	readonly resultTimeout?: Duration.Input;
 }
 
 import { ScenarioRunHandle, type ScenarioRunnerStatus } from "./runner-contracts.js";
@@ -255,7 +262,8 @@ export const ScenarioRunnerLive = Layer.effect(
 		});
 
 		const runningPieSessionId = Effect.fn("ScenarioRunner.runningPieSessionId")(function* (
-			endpoint: string
+			endpoint: string,
+			timeout: Duration.Input
 		) {
 			const status = yield* playSession
 				.status(endpoint)
@@ -342,7 +350,7 @@ export const ScenarioRunnerLive = Layer.effect(
 			return yield* readRunning.pipe(
 				Effect.retry({
 					schedule: Schedule.spaced("50 millis").pipe(
-						Schedule.upTo({ duration: "15 seconds" })
+						Schedule.upTo({ duration: timeout })
 					),
 					while: isPollPending
 				}),
@@ -415,7 +423,10 @@ export const ScenarioRunnerLive = Layer.effect(
 			if (prepared._tag === "Rejected") {
 				return yield* Effect.fail(rejectedError(endpoint, prepareOperation, prepared));
 			}
-			const pieSessionId = yield* runningPieSessionId(endpoint);
+			const pieSessionId = yield* runningPieSessionId(
+				endpoint,
+				options.pieStartTimeout ?? "15 seconds"
+			);
 			const evidenceLimit = Math.min(
 				options.evidenceLimit ?? target.evidenceLimit,
 				target.evidenceLimit
@@ -517,7 +528,7 @@ export const ScenarioRunnerLive = Layer.effect(
 			return yield* poll.pipe(
 				Effect.retry({
 					schedule: Schedule.spaced("50 millis").pipe(
-						Schedule.upTo({ duration: "45 seconds" })
+						Schedule.upTo({ duration: options.resultTimeout ?? "45 seconds" })
 					),
 					while: isPollPending
 				}),

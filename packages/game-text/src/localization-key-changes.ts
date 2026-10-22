@@ -7,7 +7,7 @@ import {
 	type LocalizationKeyChange,
 	type LocalizationLine
 } from "./localization-schema.js";
-import { LocalizationIdentity } from "@ue-shed/localization/browser";
+import { LocalizationIdentity, type LocalizationChange } from "@ue-shed/localization/browser";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
 import type { TextCorpus, TextLocation } from "./schema.js";
 import { textFileKey } from "./text-origin.js";
@@ -301,6 +301,62 @@ export function localizationKeyChangesAcross(
 			.map(manifestCandidate(textCounts(gathered(after).map(manifestSource)))),
 		before.nativeCulture
 	);
+}
+
+/**
+ * Translations carried across a gather UE Shed ran, from `localizationKeyChangesAcross`.
+ * `changes` proposes each earlier translation for its new key; `keys` counts the carried pairs,
+ * `textChanged` the pairs left out because their text changed, and `ambiguous` the changed keys
+ * left unpaired.
+ */
+export interface LocalizationCarryChanges {
+	readonly changes: readonly LocalizationChange[];
+	readonly keys: number;
+	readonly textChanged: number;
+	readonly ambiguous: number;
+}
+
+/**
+ * The translations of keys that changed in a gather, as change-set entries for the new keys,
+ * ready for `LocalizationChangeSet`. Pairs whose text changed too are left out: those
+ * translations were written for the earlier text. Proposals record `previousTranslation: null`,
+ * so applying them revalidates that the new key is still untranslated.
+ */
+export function localizationCarryChanges(
+	before: LocalizationJoin,
+	after: LocalizationJoin
+): LocalizationCarryChanges {
+	const { pairs, ambiguous } = localizationKeyChangesAcross(before, after);
+	const sources = new Map(
+		after.lines.flatMap((line) =>
+			line.identity === null
+				? []
+				: [
+						[
+							JSON.stringify([line.identity.namespace, line.identity.key]),
+							line.manifest[0]?.source.Text
+						]
+					]
+		)
+	);
+	const carried = pairs.filter((item) => !item.sourceChanged);
+	const changes = carried.flatMap((item) => {
+		const source = sources.get(JSON.stringify([item.to.namespace, item.to.key]));
+		return source === undefined
+			? []
+			: item.translations.map(
+					(translation): LocalizationChange => ({
+						target: after.target,
+						culture: translation.culture,
+						namespace: item.to.namespace,
+						key: item.to.key,
+						source,
+						previousTranslation: null,
+						translation: translation.translation
+					})
+				);
+	});
+	return { changes, keys: carried.length, textChanged: pairs.length - carried.length, ambiguous };
 }
 
 /** Pairs from several sources; the first pair for a new key wins, and each key pairs once. */

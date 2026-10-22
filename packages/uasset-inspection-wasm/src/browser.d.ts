@@ -10,6 +10,8 @@ export declare function createBrowserRuntime(
 ): Promise<import("./types.js").WasmRuntime>;
 
 export declare const initBrowser: typeof createBrowserRuntime;
+/** Default and maximum runtime limits; per-runtime options may only lower them. */
+export declare const DEFAULT_LIMITS: import("./types.js").RuntimeLimits;
 export declare const limits: import("./types.js").RuntimeLimits;
 export declare function inspect(
 	path: string,

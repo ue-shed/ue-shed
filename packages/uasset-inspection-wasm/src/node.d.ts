@@ -4,6 +4,8 @@ export declare function createNodeRuntime(
 	options?: import("./types.js").RuntimeOptions
 ): import("./types.js").WasmRuntime;
 
+/** Default and maximum runtime limits; per-runtime options may only lower them. */
+export declare const DEFAULT_LIMITS: import("./types.js").RuntimeLimits;
 export declare const limits: import("./types.js").RuntimeLimits;
 export declare const inspect: import("./types.js").WasmRuntime["inspect"];
 export declare const extractText: import("./types.js").WasmRuntime["extractText"];

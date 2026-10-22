@@ -178,6 +178,7 @@ export {
 	decodeMapTileCaptureRequest,
 	decodeMapTileCaptureResponse,
 	decodeMapTilePyramidManifest,
+	MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST,
 	MapCaptureBackend,
 	MapCaptureContractVersion,
 	MapCaptureDataLayerPolicy,

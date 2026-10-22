@@ -14,8 +14,16 @@ import {
 	type OwnedProcessExit
 } from "@ue-shed/engine";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "./service.js";
-import { LocalizationOperations, LocalizationOperationsLive } from "./operations.js";
-import { readLocalizationLogChunk, validateLocalizationOutputPath } from "./operation-io.js";
+import {
+	LocalizationOperations,
+	LocalizationOperationsLive,
+	makeLocalizationOperationsLayer
+} from "./operations.js";
+import {
+	defaultLocalizationAuditLimits,
+	readLocalizationLogChunk,
+	validateLocalizationOutputPath
+} from "./operation-io.js";
 
 function fixture() {
 	return Effect.acquireRelease(
@@ -169,6 +177,38 @@ it.effect("streams bounded progress, audits planned/unplanned writes, and releas
 		})
 	)
 );
+it.effect("host audit limits bound the write audit before the commandlet starts", () =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const paths = yield* fixture();
+			const selected = yield* target(paths.project);
+			const layer = makeLocalizationOperationsLayer({
+				auditLimits: { ...defaultLocalizationAuditLimits, maxEntries: 1 }
+			}).pipe(
+				Layer.provide(
+					makeEngineInstallationDiscoveryTestLayer(() =>
+						Effect.succeed({
+							root: paths.engine,
+							version: { major: 4, minor: 27, patch: 2 }
+						})
+					)
+				),
+				Layer.provide(
+					makeOwnedProcessTreeTestLayer(() =>
+						Effect.die("the audit must fail before the commandlet starts")
+					)
+				)
+			);
+			const error = yield* Effect.flatMap(LocalizationOperations, (service) =>
+				service
+					.run({ projectRoot: paths.project, target: selected, operation: "export" })
+					.pipe(Stream.runCollect)
+			).pipe(Effect.provide(layer), Effect.flip);
+			expect(error.code).toBe("limit_exceeded");
+		})
+	)
+);
+
 it.effect("stream cancellation terminates the owned process and does not wait for a receipt", () =>
 	Effect.scoped(
 		Effect.gen(function* () {

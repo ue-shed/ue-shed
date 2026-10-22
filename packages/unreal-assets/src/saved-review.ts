@@ -218,6 +218,12 @@ export const SavedReviewChange = Schema.Struct({
 export interface SavedReviewChange extends Schema.Schema.Type<typeof SavedReviewChange> {}
 
 /**
+ * Most changes one saved-review comparison lists, matching `maxItems` in the
+ * `saved-review.v1` contract. A comparison that reaches it is `partial` with a warning.
+ */
+export const SAVED_REVIEW_MAX_CHANGES = 5000;
+
+/**
  * Versioned Blueprint/sequence comparison with object identities and classified changes. This
  * compares saved evidence; it does not claim live runtime behavioral equivalence.
  */
@@ -227,7 +233,7 @@ export const SavedReviewComparison = Schema.Struct({
 	beforeObjectPath: Schema.String,
 	afterObjectPath: Schema.String,
 	outcome: Schema.Literals(["complete", "partial"]),
-	changes: Schema.Array(SavedReviewChange).check(Schema.isMaxLength(5000)),
+	changes: Schema.Array(SavedReviewChange).check(Schema.isMaxLength(SAVED_REVIEW_MAX_CHANGES)),
 	warnings: Schema.Array(Schema.String),
 	truncated: Schema.Boolean
 });
@@ -659,7 +665,7 @@ function compare(
 		const left = before.get(path),
 			right = after.get(path);
 		if (left && right && canonical(left.value) === canonical(right.value)) continue;
-		if (changes.length === 5000) {
+		if (changes.length === SAVED_REVIEW_MAX_CHANGES) {
 			truncated = true;
 			break;
 		}
@@ -671,7 +677,10 @@ function compare(
 			...(right ? { after: right.value } : undefined)
 		});
 	}
-	if (truncated) warnings.push("Change output reached its 5,000-entry limit.");
+	if (truncated)
+		warnings.push(
+			`Change output reached its ${SAVED_REVIEW_MAX_CHANGES.toLocaleString("en-US")}-entry limit.`
+		);
 	return {
 		schemaVersion: 1,
 		domain,

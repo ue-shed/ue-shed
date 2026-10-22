@@ -1,6 +1,7 @@
 import type { CustodianPolicy, ProjectTargetKey } from "./schema.js";
 import { Schema } from "effect";
 
+/** One reclaimable project location with its rebuild cost, risk and default selection. */
 export interface ProjectTargetDefinition {
 	readonly key: ProjectTargetKey;
 	readonly relativePath: string;
@@ -137,6 +138,10 @@ export const defaultCustodianPolicy: CustodianPolicy = {
 	source: "default"
 };
 
+/**
+ * A project policy document resolved against the defaults. An invalid document resolves to a
+ * disabled policy with no targets and an `error` saying why, so nothing is cleaned by mistake.
+ */
 export interface PolicyResolution {
 	readonly policy: CustodianPolicy;
 	readonly error?: string;
@@ -152,6 +157,11 @@ function nonNegativeNumber(value: Schema.Json): value is number {
 	return Schema.is(Schema.Number)(value) && Number.isFinite(value) && value >= 0;
 }
 
+/**
+ * Validates a parsed project policy document and resolves it against `defaultCustodianPolicy`,
+ * the same way a scan reads the project's policy file. Hosts use it to check a policy before
+ * writing it.
+ */
 export function resolvePolicyDocument(value: Schema.Json): PolicyResolution {
 	if (!isRecord(value)) {
 		return {

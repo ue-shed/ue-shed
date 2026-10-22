@@ -538,13 +538,18 @@ export const httpPluginReleaseSourceLayer = (
 	);
 };
 
+/**
+ * Public GitHub release source. Assets are named like UE Shed's Map Review variant bundles unless
+ * `assetNames` maps a release and variant to the host's own asset names.
+ */
 export const githubReleaseSourceLayer = (options: {
 	readonly owner: string;
 	readonly repository: string;
 	readonly sourceId?: string;
+	readonly assetNames?: HttpPluginReleaseSourceOptions["assetNames"];
 }): Layer.Layer<PluginReleaseSource> =>
 	httpPluginReleaseSourceLayer({
-		assetNames: mapReviewVariantPluginReleaseAssetNames,
+		assetNames: options.assetNames ?? mapReviewVariantPluginReleaseAssetNames,
 		baseUrl: `https://github.com/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repository)}/releases/download/`,
 		kind: "github",
 		releaseDirectory: (releaseVersion) => `v${releaseVersion}`,

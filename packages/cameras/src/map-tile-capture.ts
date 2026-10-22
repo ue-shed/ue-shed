@@ -22,7 +22,7 @@ import {
 	Schema,
 	Stream
 } from "effect";
-import { MapTileReleaseResult } from "./map-tile-schema.js";
+import { MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST, MapTileReleaseResult } from "./map-tile-schema.js";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -60,7 +60,6 @@ import {
 
 const isMapCaptureArtifactSourceRejected = Schema.is(MapCaptureArtifactSourceRejected);
 const mapTileReviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
-const maximumTilesPerRequest = 64;
 const litCameraTilesPerBatch = 4;
 const maximumEnumeratedTiles = 1_000_000;
 
@@ -540,9 +539,9 @@ function viewportLevelBatches(args: {
 				levelKeys.push(key);
 			}
 		}
-		if (levelKeys.length > maximumTilesPerRequest)
+		if (levelKeys.length > MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST)
 			return invalid(
-				`Viewport High Resolution test supports at most ${maximumTilesPerRequest} tiles per zoom; Z${zoom} has ${levelKeys.length}.`
+				`Viewport High Resolution test supports at most ${MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST} tiles per zoom; Z${zoom} has ${levelKeys.length}.`
 			);
 		result.push(levelKeys);
 	}
@@ -670,7 +669,7 @@ function runMapCaptureWith(args: {
 							keys,
 							captureBackend === "lit_camera_tiles"
 								? litCameraTilesPerBatch
-								: maximumTilesPerRequest
+								: MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST
 						);
 			yield* (
 				args.options.onProgress?.({
@@ -980,7 +979,7 @@ function runMapCaptureWith(args: {
 		}).pipe(
 			Effect.withSpan("camera.map_tile.run", {
 				attributes: {
-					"camera.map_tile.batch.maximum": maximumTilesPerRequest,
+					"camera.map_tile.batch.maximum": MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST,
 					"camera.map_tile.capture_backend":
 						args.options.captureBackend ?? "lit_camera_tiles"
 				}
@@ -1012,6 +1011,14 @@ export type MapCaptureShape = MapCaptureApi;
 export class MapCapture extends Context.Service<MapCapture, MapCaptureApi>()(
 	"@ue-shed/cameras/MapCapture"
 ) {}
+
+/**
+ * Complete test implementation of map capture. The supplied service owns inspection, run
+ * outcomes and typed failures; no editor is contacted and nothing is published.
+ */
+export function makeMapCaptureTestLayer(service: MapCaptureApi): Layer.Layer<MapCapture> {
+	return Layer.succeed(MapCapture, MapCapture.of(service));
+}
 
 /**
  * Combines MapCaptureRepository and MapTileCapturePort for bounded capture, verified artifact

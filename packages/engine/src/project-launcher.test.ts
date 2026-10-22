@@ -2,9 +2,12 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Ref } from "effect";
+import { Effect, Layer, Ref, Schema } from "effect";
 import { expect } from "vitest";
-import { unrealRemoteControlPermissions } from "./remote-control-permissions.js";
+import {
+	RemoteControlAllowedClass,
+	unrealRemoteControlPermissions
+} from "./remote-control-permissions.js";
 import {
 	EngineInstallationError,
 	makeEngineInstallationDiscoveryTestLayer
@@ -230,6 +233,35 @@ it("allows only enabled UE Shed API classes without opening arbitrary remote cal
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/UEShedCameraAuthoringBridge.UEShedCameraAuthoringBridgeLibrary,bAllowChildClasses=False)"
 	]);
 	expect(unrealRemoteControlPermissions([])).toEqual([]);
+});
+
+it("adds a host's own Remote Control classes beside the UE Shed plugin classes", () => {
+	const rule = (classPath: string) =>
+		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/${classPath},bAllowChildClasses=False)`;
+	expect(
+		unrealRemoteControlPermissions(
+			["UEShedWorld"],
+			["StudioToolsEditor.StudioToolsLibrary", "StudioToolsEditor.StudioToolsLibrary"]
+		)
+	).toEqual([
+		rule("UEShedWorldEditor.UEShedWorldLibrary"),
+		rule("StudioToolsEditor.StudioToolsLibrary")
+	]);
+	expect(
+		unrealProjectLaunchArguments({
+			mode: {
+				kind: "with_plugins",
+				plugins: [],
+				remoteControlHttpPort: 30_010,
+				remoteControlAllowedClasses: ["StudioToolsEditor.StudioToolsLibrary"]
+			},
+			projectDescriptor: "D:/Projects/Hex/Hex.uproject"
+		})
+	).toContain(rule("StudioToolsEditor.StudioToolsLibrary"));
+	expect(
+		Schema.decodeUnknownExit(RemoteControlAllowedClass)("Studio.Tools,bAllowChildClasses=True")
+			._tag
+	).toBe("Failure");
 });
 
 it("builds normal and plugin launch arguments without a shell", () => {

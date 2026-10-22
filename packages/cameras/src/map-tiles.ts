@@ -49,6 +49,7 @@ export {
 	savedMapPathToGameMapPath
 } from "./map-tile-authoring.js";
 export {
+	MAP_TILE_CAPTURE_MAX_TILES_PER_REQUEST,
 	MapCaptureContractVersion,
 	MapCaptureBackend,
 	MapCaptureDataLayerPolicy,

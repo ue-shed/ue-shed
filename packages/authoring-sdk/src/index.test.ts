@@ -157,4 +157,31 @@ describe("authoring SDK contracts", () => {
 			);
 		}
 	});
+
+	it("sends host headers through a host-supplied fetch", async () => {
+		const seen: Array<{ readonly url: string; readonly headers: Headers }> = [];
+		const client = makeAuthoringHttpClient({
+			endpoint: "https://host.example/api/authoring",
+			headers: { authorization: "Bearer studio" },
+			fetch: async (input, init) => {
+				seen.push({ url: String(input), headers: new Headers(init?.headers) });
+				return new Response(
+					JSON.stringify({
+						status: "success",
+						value: { diagnostics: [], status: "ready", tables: [] }
+					}),
+					{ headers: { "content-type": "application/json" } }
+				);
+			}
+		});
+		expect(await Effect.runPromise(client.loadConfiguredCatalog())).toEqual({
+			diagnostics: [],
+			status: "ready",
+			tables: []
+		});
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.url).toBe("https://host.example/api/authoring");
+		expect(seen[0]?.headers.get("authorization")).toBe("Bearer studio");
+		expect(seen[0]?.headers.get("content-type")).toBe("application/json");
+	});
 });

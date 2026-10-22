@@ -93,6 +93,10 @@ should follow [Website and illustrated guides](engineering/website.md).
 
 ## Research
 
+- [Architecture and API catalog (2026-10-21)](research/architecture-api-catalog-2026-10-21.md) —
+  per-package findings for downstream hosts: Workbench- and CLI-only capabilities, unexported
+  internals, hard-coded policy, test layers and entry points, with a ranked top 15.
+
 - [Effect audit and native index rollout (2026-10-18)](research/effect-audit-native-rollout-2026-10-18.md) —
   production integration, error/API migration, repeated host measurements and acceptance evidence.
 

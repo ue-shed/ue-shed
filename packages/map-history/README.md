@@ -25,8 +25,9 @@ npm install --save-exact @ue-shed/map-history @ue-shed/protocol @ue-shed/unreal-
 ```
 
 The root export owns Perforce acquisition and therefore requires a configured `p4` executable and
-workspace. Browser or renderer consumers should use `@ue-shed/map-history/contract` and
-`@ue-shed/map-history/playback`; those entrypoints perform no Perforce or filesystem operations.
+workspace. Browser or renderer consumers should use `@ue-shed/map-history/contract`,
+`@ue-shed/map-history/playback` and `@ue-shed/map-history/diff` (the pure saved-world snapshot
+diff and actor identity helpers); those entrypoints perform no Perforce or filesystem operations.
 World Log presentation remains private to the maintained extension and is not bundled with this
 headless package.
 

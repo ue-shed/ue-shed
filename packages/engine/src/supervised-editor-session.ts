@@ -23,6 +23,7 @@ import {
 	unrealEditorExecutable,
 	unrealProjectLaunchArguments
 } from "./project-launcher.js";
+import { RemoteControlAllowedClass } from "./remote-control-permissions.js";
 
 const BoundedString = Schema.NonEmptyString.check(Schema.isMaxLength(32_767));
 const BoundedCapability = Schema.NonEmptyString.check(Schema.isMaxLength(256));
@@ -53,6 +54,9 @@ export const SupervisedEditorSessionRequest = Schema.Struct({
 	readinessPollIntervalMs: Schema.optional(Milliseconds),
 	readinessTimeoutMs: Schema.optional(Milliseconds),
 	remoteControlHttpPort: HttpPort,
+	remoteControlAllowedClasses: Schema.optional(
+		Schema.Array(RemoteControlAllowedClass).check(Schema.isMaxLength(64))
+	),
 	requiredCapabilities: Schema.optional(
 		Schema.Array(BoundedCapability).check(Schema.isMaxLength(64))
 	),
@@ -781,7 +785,13 @@ export const SupervisedEditorSessionLive = Layer.effect(
 						mode: {
 							kind: "with_plugins",
 							plugins: request.plugins,
-							remoteControlHttpPort: request.remoteControlHttpPort
+							remoteControlHttpPort: request.remoteControlHttpPort,
+							...(request.remoteControlAllowedClasses === undefined
+								? undefined
+								: {
+										remoteControlAllowedClasses:
+											request.remoteControlAllowedClasses
+									})
 						},
 						projectDescriptor
 					}),

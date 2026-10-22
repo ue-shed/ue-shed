@@ -16,8 +16,7 @@ import {
 	localizationOperationError,
 	type LocalizationError
 } from "@ue-shed/localization";
-import { localizationKeyChangesAcross } from "@ue-shed/game-text/corpus";
-import { type LocalizationJoin } from "@ue-shed/game-text/schema";
+import { localizationCarryChanges } from "@ue-shed/game-text/corpus";
 import { LocalizationChangeSet } from "@ue-shed/localization";
 import { CliRuntime, printJson } from "../cli-runtime.js";
 import {
@@ -47,47 +46,6 @@ const LocalizationRunFailure = Schema.Union([
 	LocalizationRunConfigurationError,
 	LocalizationCheckOutputError
 ]);
-/**
- * The translations of keys that changed in the gather, as a change set for the new keys. Pairs
- * whose text changed too are left out: those translations were written for the earlier text.
- */
-function carriedChanges(before: LocalizationJoin, after: LocalizationJoin) {
-	const { pairs, ambiguous } = localizationKeyChangesAcross(before, after);
-	const sources = new Map(
-		after.lines.flatMap((line) =>
-			line.identity === null
-				? []
-				: [
-						[
-							JSON.stringify([line.identity.namespace, line.identity.key]),
-							line.manifest[0]?.source.Text
-						]
-					]
-		)
-	);
-	const carried = pairs.filter((item) => !item.sourceChanged);
-	const changes = carried.flatMap((item) => {
-		const source = sources.get(JSON.stringify([item.to.namespace, item.to.key]));
-		return source === undefined
-			? []
-			: item.translations.map((translation) => ({
-					target: after.target,
-					culture: translation.culture,
-					namespace: item.to.namespace,
-					key: item.to.key,
-					source,
-					previousTranslation: null,
-					translation: translation.translation
-				}));
-	});
-	return {
-		changes,
-		keys: carried.length,
-		textChanged: pairs.length - carried.length,
-		ambiguous
-	};
-}
-
 function discoveryFailure(error: LocalizationError): LocalizationOperationError {
 	switch (error.code) {
 		case "file_missing":
@@ -228,7 +186,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 								})
 						)
 					)).localizationJoin;
-					const carry = carriedChanges(before, after);
+					const carry = localizationCarryChanges(before, after);
 					if (carry.changes.length > 0)
 						yield* writeLocalizationCheckChanges(
 							command.carry,

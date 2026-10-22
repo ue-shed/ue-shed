@@ -75,10 +75,31 @@ export async function readLocalizationConfig(root: string, path: string): Promis
 	}
 }
 
+/**
+ * Bounds on the before/after write audit of a commandlet run, which hashes every project file
+ * outside the plan's excluded directories. Exceeding one fails the run with `limit_exceeded`.
+ */
+export interface LocalizationAuditLimits {
+	/** Directory entries visited. */
+	readonly maxEntries: number;
+	/** Bytes in one audited file. */
+	readonly maxFileBytes: number;
+	/** Bytes across all audited files. */
+	readonly maxTotalBytes: number;
+}
+
+/** Default audit bounds: 100,000 entries, 512 MiB per file and 2 GiB in total. */
+export const defaultLocalizationAuditLimits: LocalizationAuditLimits = {
+	maxEntries: 100_000,
+	maxFileBytes: 512 * 1024 * 1024,
+	maxTotalBytes: 2 * 1024 * 1024 * 1024
+};
+
 /** Durable project inputs/outputs, excluding named engine scratch/build directories at any depth. */
 export async function snapshotLocalizationProject(
 	root: string,
-	plan: LocalizationOperationPlan
+	plan: LocalizationOperationPlan,
+	limits: LocalizationAuditLimits = defaultLocalizationAuditLimits
 ): Promise<ReadonlyMap<string, string>> {
 	const hashes = new Map<string, string>();
 	const pending = [""];
@@ -88,7 +109,8 @@ export async function snapshotLocalizationProject(
 		const directory = pending.pop();
 		if (directory === undefined) break;
 		for (const entry of await readdir(resolve(root, directory), { withFileTypes: true })) {
-			if (++entriesSeen > 100_000) throw localizationOperationError("limit_exceeded");
+			if (++entriesSeen > limits.maxEntries)
+				throw localizationOperationError("limit_exceeded");
 			if (
 				plan.auditExcludedDirectories.some(
 					(name) => name.toLowerCase() === entry.name.toLowerCase()
@@ -107,7 +129,7 @@ export async function snapshotLocalizationProject(
 			try {
 				const info = await handle.stat();
 				totalBytes += info.size;
-				if (info.size > 512 * 1024 * 1024 || totalBytes > 2 * 1024 * 1024 * 1024)
+				if (info.size > limits.maxFileBytes || totalBytes > limits.maxTotalBytes)
 					throw localizationOperationError("limit_exceeded");
 				const hash = createHash("sha256");
 				const bytes = new Uint8Array(64 * 1024);

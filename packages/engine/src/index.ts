@@ -28,7 +28,9 @@ export {
 	EditorWindowActivation,
 	type EditorWindowActivationApi,
 	EditorWindowActivationError,
-	EditorWindowActivationLive
+	EditorWindowActivationLive,
+	makeEditorForegroundPermissionTestLayer,
+	makeEditorWindowActivationTestLayer
 } from "./editor-window-activation.js";
 export {
 	EDITOR_FOREGROUND_RESPONSIVENESS_CAPABILITY,
@@ -40,7 +42,8 @@ export {
 	type EditorForegroundResponsivenessApi,
 	EditorForegroundResponsivenessError,
 	EditorForegroundResponsivenessFailure,
-	EditorForegroundResponsivenessLive
+	EditorForegroundResponsivenessLive,
+	makeEditorForegroundResponsivenessTestLayer
 } from "./editor-foreground-responsiveness.js";
 export { isLoopbackEndpoint } from "./loopback-endpoint.js";
 export {
@@ -56,7 +59,8 @@ export {
 	parseUnrealProjectDescriptor,
 	ProjectDescriptor,
 	projectLabel,
-	projectRootOf
+	projectRootOf,
+	readEngineInstallation
 } from "./engine-installation.js";
 export {
 	type EngineRootSources,
@@ -88,6 +92,10 @@ export {
 	validateUnrealProjectBuildId,
 	validateUnrealRemoteControlBuild
 } from "./project-launcher.js";
+export {
+	RemoteControlAllowedClass,
+	unrealRemoteControlPermissions
+} from "./remote-control-permissions.js";
 export {
 	makeOwnedProcessTreeTestLayer,
 	makeSupervisedEditorSessionTestLayer,

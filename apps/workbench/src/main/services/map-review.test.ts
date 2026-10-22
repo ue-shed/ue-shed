@@ -16,7 +16,12 @@ import {
 	type ReviewSet
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
-import { Observatory, ActorId, WorldScoutRefreshRate } from "@ue-shed/observatory";
+import {
+	ActorId,
+	makeObservatoryTestLayer,
+	Observatory,
+	WorldScoutRefreshRate
+} from "@ue-shed/observatory";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import { EditorPlaySessionId, decodeEditorWorldOpenRequest } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
@@ -297,15 +302,12 @@ const makeMapReviewDeps = (
 		makeWorkbenchWindowTestLayer(),
 		remoteControl,
 		makeReviewAuthoringSessionsTestLayer(authoringSessions),
-		Layer.succeed(
-			Observatory,
-			Observatory.of({
-				focus: () => Effect.die("not used"),
-				observe: () => Stream.die("not used"),
-				setObservationCadence: () => Effect.die("not used"),
-				snapshot: () => Effect.die("not used")
-			})
-		),
+		makeObservatoryTestLayer({
+			focus: () => Effect.die("not used"),
+			observe: () => Stream.die("not used"),
+			setObservationCadence: () => Effect.die("not used"),
+			snapshot: () => Effect.die("not used")
+		}),
 		makeEditorPlaySessionTestLayer({
 			execute: () => Effect.die("not used"),
 			pause: () => Effect.die("not used"),

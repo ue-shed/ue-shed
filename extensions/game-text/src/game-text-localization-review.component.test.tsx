@@ -25,7 +25,7 @@ import { textCorpusQuery } from "../../../packages/game-text/src/query.test-supp
 import {
 	emptyLocalizationReviewFile,
 	updateLocalizationReviewFile
-} from "../../../packages/localization/src/review-file.js";
+} from "@ue-shed/localization/browser";
 import type { GameTextClientApi } from "./game-text-client.js";
 import {
 	chooseFilter,

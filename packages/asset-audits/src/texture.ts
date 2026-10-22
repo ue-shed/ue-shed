@@ -31,7 +31,8 @@ import {
 const makeTextureObjectPath = TextureObjectPath.make;
 const makeAuditRuleId = AuditRuleId.make;
 
-interface ExtractionProgress {
+/** Texture audit scan progress a host can poll through `TextureAuditApi.progress`. */
+export interface TextureAuditProgress {
 	readonly phase: "idle" | "scanning" | "ready" | "failed";
 	readonly processedAssets: number;
 	readonly totalAssets: number;
@@ -504,7 +505,7 @@ function extractTextureAuditWith(
 		readonly filePath?: string;
 		readonly message: string;
 	}[] = [],
-	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void> = () => Effect.void
+	reportProgress: (progress: TextureAuditProgress) => Effect.Effect<void> = () => Effect.void
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	if (options.paths?.length === 0) {
 		const accumulator = emptyTextureExtractionAccumulator();
@@ -586,7 +587,7 @@ function extractTextureAuditWith(
 function scanTextureAuditWith(
 	reader: AssetReaderApi,
 	options: TextureAuditScanOptions,
-	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
+	reportProgress: (progress: TextureAuditProgress) => Effect.Effect<void>
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
 		const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
@@ -613,7 +614,7 @@ function scanTextureAuditFromProjectIndexWith(
 	reader: AssetReaderApi,
 	index: SavedAssetScan,
 	options: TextureAuditScanOptions,
-	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
+	reportProgress: (progress: TextureAuditProgress) => Effect.Effect<void>
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
 		const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
@@ -643,7 +644,7 @@ function scanTextureAuditFromProjectIndexWith(
 }
 
 export interface TextureAuditApi {
-	readonly progress: () => Effect.Effect<ExtractionProgress>;
+	readonly progress: () => Effect.Effect<TextureAuditProgress>;
 	readonly scan: (
 		options: TextureAuditScanOptions
 	) => Effect.Effect<TextureAuditReport, TextureAuditScanError>;
@@ -661,12 +662,12 @@ export const TextureAuditLive = Layer.effect(
 	TextureAudit,
 	Effect.gen(function* () {
 		const reader = yield* AssetReader;
-		const progressState = yield* Ref.make<ExtractionProgress>({
+		const progressState = yield* Ref.make<TextureAuditProgress>({
 			phase: "idle",
 			processedAssets: 0,
 			totalAssets: 0
 		});
-		const reportProgress = (progress: ExtractionProgress) => Ref.set(progressState, progress);
+		const reportProgress = (progress: TextureAuditProgress) => Ref.set(progressState, progress);
 		const progress = Effect.fn("TextureAudit.progress")(() => Ref.get(progressState));
 		const scan = Effect.fn("TextureAudit.scan")(function* (options: TextureAuditScanOptions) {
 			const validated = yield* decodeScanOptions(options).pipe(

@@ -529,3 +529,16 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 		return EditorForegroundResponsiveness.of({ hold, state });
 	})
 );
+
+/**
+ * Complete test implementation of the foreground-responsiveness lease port. The supplied service
+ * owns lease state and typed failures; no editor setting is changed.
+ */
+export function makeEditorForegroundResponsivenessTestLayer(
+	service: EditorForegroundResponsivenessApi
+): Layer.Layer<EditorForegroundResponsiveness> {
+	return Layer.succeed(
+		EditorForegroundResponsiveness,
+		EditorForegroundResponsiveness.of(service)
+	);
+}

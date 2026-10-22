@@ -15,7 +15,13 @@ export interface FileDropZoneProps {
 	readonly onOpen: (file: File) => void;
 	readonly sampleGroupLabel?: string;
 	readonly samples?: readonly { readonly label: string; readonly open: () => void }[];
+	/** Largest file accepted, in bytes. Defaults to `MAX_ASSET_FILE_BYTES` (64 MiB). */
+	readonly maxBytes?: number;
 }
+
+const mebibyte = 1024 * 1024;
+const sizeLabel = (bytes: number) =>
+	bytes % mebibyte === 0 ? `${bytes / mebibyte} MiB` : `${bytes.toLocaleString("en-US")} bytes`;
 
 export function FileDropZone(props: FileDropZoneProps) {
 	const onOpen = props.onOpen;
@@ -31,8 +37,9 @@ export function FileDropZone(props: FileDropZoneProps) {
 	};
 
 	const openFile = (file: File) => {
-		if (file.size > MAX_ASSET_FILE_BYTES) {
-			setMessage("This file is too large. Choose a .uasset of up to 64 MiB.");
+		const maxBytes = props.maxBytes ?? MAX_ASSET_FILE_BYTES;
+		if (file.size > maxBytes) {
+			setMessage(`This file is too large. Choose a .uasset of up to ${sizeLabel(maxBytes)}.`);
 			return;
 		}
 		if (!file.name.toLowerCase().endsWith(".uasset")) {

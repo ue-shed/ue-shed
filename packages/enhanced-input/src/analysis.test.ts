@@ -349,23 +349,18 @@ describe("conflict classes", () => {
 		).keys[0]?.conflicts[0];
 	};
 
-	it("treats a project trigger that saves ChordAction as a chord, on the mapping or its action", () => {
+	it("does not claim shadowing past a project trigger class, whatever it saves", () => {
+		// A saved ChordAction does not prove chord ancestry: a project trigger deriving straight
+		// from UInputTrigger may declare a property of that name.
 		const chordAction = [
 			{ name: "ChordAction", kind: "object" as const, value: path("IA_Modifier") }
 		];
 		for (const placement of ["mapping", "action"] as const)
-			expect(projectTrigger(placement, chordAction)).toMatchObject({
-				classification: "qualified",
-				consumption: "consumes"
-			});
-	});
-
-	it("does not claim shadowing past a project trigger whose chord ancestry is unknown", () => {
-		for (const placement of ["mapping", "action"] as const)
-			expect(projectTrigger(placement, [])).toMatchObject({
-				classification: "may_shadow",
-				consumption: "consumes"
-			});
+			for (const parameters of [chordAction, []])
+				expect(projectTrigger(placement, parameters)).toMatchObject({
+					classification: "may_shadow",
+					consumption: "consumes"
+				});
 	});
 
 	it("qualifies different triggers only when the higher action passes input through", () => {

@@ -57,26 +57,19 @@ function className(classPath: string | null): string | undefined {
  * Unreal's own chord test is `Cast<UInputTriggerChordAction>` on the mapping's and its action's
  * triggers, so any subclass counts, and a chorded mapping never consumes its key (UE 5.7 and 5.8
  * `IEnhancedInputSubsystemInterface::RebuildControlMappings`). The engine's chord classes are
- * known by name. `ChordAction` is declared on `UInputTriggerChordAction`, so a saved one proves a
- * project class derives from it. Any other class outside the plugin may still derive from it
- * without saving that property, so its ancestry is unknown.
+ * known by name and the plugin's other triggers are known not to be chords. Saved data does not
+ * record a project class's ancestry, and a property name proves nothing, so its ancestry is unknown.
  */
-function chordEvidence(
-	classPath: string | null,
-	parameters: readonly { readonly name: string }[] | null | undefined
-): "chord" | "not_chord" | "unknown" {
+function chordEvidence(classPath: string | null): "chord" | "not_chord" | "unknown" {
 	const name = className(classPath);
 	if (name === "InputTriggerChordAction" || name === "InputTriggerChordBlocker") return "chord";
-	if (parameters?.some((parameter) => parameter.name === "ChordAction")) return "chord";
 	return classPath?.startsWith("/Script/EnhancedInput.") ? "not_chord" : "unknown";
 }
 
 function claimChordEvidence(claim: AtlasClaim, action: InputActionRecord | undefined) {
 	return [
-		...claim.triggerDetails.map((detail) => chordEvidence(detail.classPath, detail.parameters)),
-		...(action?.triggers ?? []).map((trigger) =>
-			chordEvidence(trigger.classPath ?? null, trigger.parameters)
-		)
+		...claim.triggerDetails.map((detail) => chordEvidence(detail.classPath)),
+		...(action?.triggers ?? []).map((trigger) => chordEvidence(trigger.classPath ?? null))
 	];
 }
 

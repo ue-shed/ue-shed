@@ -140,9 +140,50 @@ project at a time, and a later refresh waits for the earlier one. The smaller pr
 above predate the fix. They are unaffected, because its background refresh finished before the
 click.
 
+**Reopening the saved index (2026-10-22).** A warm relaunch used to wait for a "Scan project" click
+before showing anything. The route now shows the committed index's results at once, then
+rescans behind them, in the same Rescanning state a clicked Rescan uses. Before is the pass above
+(`66006561`), after adds the reopen (`840a95dc`). Same method; both builds share one reader, and
+every run hashed identical results. `warmLaunchToResultsMs` marks when results are first shown.
+`warmLaunchToUsableMs` marks when the refreshed results are ready with no scan running. For the
+before build, both are the clicked scan's completion.
+
+| Workbench operation (median of 3, range)   |         UE 5.7, before |          UE 5.7, after |        UE 4.27, before |         UE 4.27, after |
+| ------------------------------------------ | ---------------------: | ---------------------: | ---------------------: | ---------------------: |
+| Warm relaunch to results shown             | 2,152 ms (2,134–2,158) | 1,526 ms (1,511–1,544) | 8,430 ms (7,922–8,571) | 3,060 ms (3,011–3,132) |
+| Warm relaunch to refreshed, usable results | 2,152 ms (2,134–2,158) | 2,003 ms (1,989–2,004) | 8,430 ms (7,922–8,571) | 6,676 ms (6,568–7,346) |
+| Unchanged rescan to usable results         |       743 ms (717–982) |       560 ms (551–571) |                    n/a |                    n/a |
+| Warm peak aggregate RSS                    |                599 MiB |                630 MiB |              1,347 MiB |              1,429 MiB |
+
+An unrelated job slowed the larger project's before runs (cold scans of 140–148 s, against about
+116 s when the machine was quiet), so that project's rescan and cold-scan differences from this
+comparison are not reported. Its warm-relaunch differences are far larger than that noise. The
+warm peak rises because the cached reader and the rescan's new one overlap until the swap. The
+rescan is faster on the smaller project, most likely because translations now reuse the published
+model rather than importing and building again. That was not traced.
+
+**Where the engine's ID index time goes (2026-10-22).** The reader-open stage `id_index_prepare` is
+now split by `66006561`. Warm reopens:
+
+| Stage                                      | UE 5.7 (40,610 rows) | UE 4.27 (260,839 rows) |
+| ------------------------------------------ | -------------------: | ---------------------: |
+| `id_index_prepare` (total)                 |               130 ms |                 444 ms |
+| Raw IDs: arena load / hash table build     |        27 ms / 35 ms |         90 ms / 121 ms |
+| Line IDs: arena load / hash table build    |        29 ms / 38 ms |         93 ms / 137 ms |
+| Unit-to-line map                           |               0.5 ms |                 2.5 ms |
+| For comparison: `query_projection_prepare` |                42 ms |                 261 ms |
+
+The hash tables account for 56–58% of the stage, and reading the ID arenas, which every lookup
+needs, for 41–43%. Persisting the tables could save at most the build share (about 73 and 258 ms),
+less the cost of loading them, and it changes the format. The two tables are independent once
+their arenas are loaded, so building them in parallel would save about half the build time (about
+35 and 120 ms) with no format change. That is the recommended next step. On the larger project,
+`query_projection_prepare` is the bigger cost.
+
 Raw results: ignored `test-results/part2/ue57-11k.{json,log}` and
 `test-results/part2/ue427-167k.{json,log}`. `test-results/part2/trace427/` holds the traced run
-that found the race.
+that found the race. The reopen comparison is in `item6-ue57-11k-quiet` and `item6-ue427-167k`, and
+the ID index split in the traces under `item7-*`.
 
 ## Stage breakdown (Plan 058 C1): instrumentation ready, numbers pending
 

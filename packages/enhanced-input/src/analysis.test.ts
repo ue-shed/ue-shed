@@ -311,7 +311,7 @@ describe("conflict classes", () => {
 	/** The higher mapping or its action carries a project trigger class, not an engine one. */
 	const projectTrigger = (
 		placement: "mapping" | "action",
-		parameters: InputInstancedObjectRef["parameters"]
+		parameters: NonNullable<InputInstancedObjectRef["parameters"]>
 	) => {
 		const custom: InputInstancedObjectRef = {
 			objectPath: "/Game/Input/Subobject.InputTriggerProjectChord_0",

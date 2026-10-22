@@ -37,6 +37,7 @@ import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Schema } from "effect";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright";
+import { searchDoneInPage, searchRecorder } from "./benchmark-game-text-desktop-page.js";
 
 interface AppUnderTest {
 	readonly label: string;
@@ -572,27 +573,6 @@ async function countText(page: Page) {
 		.innerText({ timeout: 1_000 });
 }
 
-/** The search count's text, and the time of the page's last Enter in the search box. */
-const searchRecorder = `(() => {
-	const input = document.querySelector('input[aria-label="Search game text"]');
-	let count = input?.nextElementSibling;
-	while (count && count.getAttribute("role") !== "status") count = count.nextElementSibling;
-	window.__ueShedSearch = { before: count?.innerText, pressedAt: undefined, searching: false };
-	input?.addEventListener("keydown", (event) => {
-		if (event.key === "Enter") window.__ueShedSearch.pressedAt = Date.now();
-	}, { capture: true, once: true });
-})()`;
-const searchDoneInPage = `(() => {
-	const search = window.__ueShedSearch;
-	if (!search || search.pressedAt === undefined) return false;
-	let count = document.querySelector('input[aria-label="Search game text"]')?.nextElementSibling;
-	while (count && count.getAttribute("role") !== "status") count = count.nextElementSibling;
-	const text = count?.innerText ?? "";
-	if (text === "Searching…") search.searching = true;
-	return /match/u.test(text) && (search.searching || text !== search.before)
-		? { pressedAt: search.pressedAt, doneAt: Date.now() }
-		: false;
-})()`;
 const SearchDone = Schema.Struct({ pressedAt: Schema.Number, doneAt: Schema.Number });
 
 async function timedSearch(page: Page, query: string): Promise<SearchTiming> {

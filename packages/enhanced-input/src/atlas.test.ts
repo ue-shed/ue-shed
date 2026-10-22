@@ -164,6 +164,8 @@ describe("input atlas derivation", () => {
 		expect(triggerLabel("/Game/Input/BP_HoldLong.BP_HoldLong_C")).toBe("BP_HoldLong_C");
 		expect(objectName("/Game/Fixture/Input/IMC_Fixture.IMC_Fixture")).toBe("IMC_Fixture");
 		expect(deviceOf("Gamepad_FaceButton_Bottom")).toBe("gamepad");
+		expect(deviceOf("Virtual_Gamepad_Accept")).toBe("gamepad");
+		expect(deviceOf("Virtual_Gamepad_Back")).toBe("gamepad");
 		expect(deviceOf("LeftMouseButton")).toBe("mouse");
 		expect(deviceOf("SpaceBar")).toBe("keyboard");
 	});

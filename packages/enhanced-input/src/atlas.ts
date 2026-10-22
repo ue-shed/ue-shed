@@ -92,7 +92,8 @@ export function modifierLabel(classPath: string): string {
 }
 
 export function deviceOf(key: string): AtlasDevice {
-	if (key.startsWith("Gamepad_")) return "gamepad";
+	// Unreal registers the virtual accept and back keys as gamepad keys (InputCoreTypes.cpp).
+	if (key.startsWith("Gamepad_") || key.startsWith("Virtual_Gamepad_")) return "gamepad";
 	if (key.endsWith("MouseButton") || key.startsWith("Mouse")) return "mouse";
 	return "keyboard";
 }

@@ -8,7 +8,8 @@ Hosts can configure Remote Control access, editor launches and plugin sources wi
 Shed. All additions are optional; existing calls behave as before.
 
 - `makeRemoteControlClient` accepts `passphrase`, sent as Unreal's Remote Control `Passphrase`
-  header, and extra `headers` for every request.
+  header, and extra `headers` for every request. An editor's HTTP 401 now reports a refused
+  passphrase, with `fix_input` guidance, instead of a generic refusal.
 - A launch can add the host's own Remote Control classes to the UE 5.8 allowlist:
   `remoteControlAllowedClasses` on the `with_plugins` launch mode and on
   `SupervisedEditorSessionRequest`. `unrealRemoteControlPermissions(pluginIds, additionalClasses)`

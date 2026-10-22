@@ -134,6 +134,18 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 	}
 
 	const status = cause.statusCode;
+	if (status === 401) {
+		return clientError(request, {
+			code: "http_refused",
+			cause,
+			message: `The editor at ${request.endpoint} refused the Remote Control passphrase for ${request.functionName} (HTTP 401).`,
+			recovery:
+				"Pass a passphrase configured in the editor's Remote Control settings, or turn off its restricted server access.",
+			retrySafe: request.idempotent === true,
+			nextStep: "fix_input",
+			status
+		});
+	}
 	const transient =
 		cause.kind === "connect" ||
 		cause.kind === "disconnect" ||

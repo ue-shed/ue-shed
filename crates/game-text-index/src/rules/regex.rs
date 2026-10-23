@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn javascript_regex_differential_including_lone_surrogates() -> Result<()> {
         let sources = crate::json_value::parse(
-            r#"["", "a A 0 _", "é K ſ k s", "中１ 1", "a\nb\r\n", "ababa", "😀x𐀀", "x\ud800y\udfff", "\ud800\udc00", "\u00a0\ufeff\u0085", "a\u2028b\u2029", "ac", "bbc", "aab"]"#,
+            r#"["", "a A 0 _", "é K ſ k s", "中１ 1", "a\nb\r\n", "ababa", "😀x𐀀", "x\ud800y\udfff", "\ud800\udc00", "\u00a0\ufeff\u0085", "a\u2028b\u2029", "ac", "bbc", "aab", "ad bcd xd", "ababa abc"]"#,
         )?;
         let patterns = [
             r"\d+",
@@ -338,6 +338,10 @@ mod tests {
             "a|ab",
             "(?=a)",
             "(?<=a)b",
+            "(?<=a|bc)d",
+            "(?<=.|ab)c",
+            "(?<=(?:ab){2})a",
+            "(?<!a|bb)c",
             "(a)b\\1",
             "(a|(b))\\2c",
             "(a)?b\\1",
@@ -391,5 +395,81 @@ mod tests {
     fn a_varying_lookbehind_is_rejected_when_compiled() {
         let error = JsRegex::new("(?<=a+)b", true).err();
         assert_eq!(error.map(|error| error.code), Some(ErrorCode::InvalidInput));
+    }
+
+    /// The rule editor rejects exactly the JavaScript patterns the engine cannot run.
+    #[test]
+    fn the_authoring_check_agrees_with_the_engine_compiler() -> Result<()> {
+        let patterns = [
+            r"(?<=a)b",
+            r"(?<=.)b",
+            r"(?<=[aé])b",
+            r"(?<=\d)b",
+            r"(?<=\p{L})b",
+            r"(?<=a|bc)d",
+            r"(?<=a{2})b",
+            r"(?<=a{2,2})b",
+            r"(?<=(?:ab){2})c",
+            r"(?<=(a))b",
+            r"(?<=(?<x>a))b",
+            r"(?<=(?=a)a)b",
+            r"(?<=(?!a)b)c",
+            r"(?<=\bx)y",
+            r"(?<=^)a",
+            r"(?<=\u{1F600})b",
+            r"(?<=[^)])b",
+            r"(?<=[+*?])b",
+            r"(?<=\+)b",
+            r"(?<=\?)b",
+            r"(?<=\{)b",
+            r"(?<!a)b",
+            r"(?<=a{1,2})b",
+            r"(?<=a?)b",
+            r"(?<=a*)b",
+            r"(?<=a+)b",
+            r"(?<=a{2,})b",
+            r"(?<=a+?)b",
+            r"(?<!a+)b",
+            r"(?<=(a)\1)b",
+            r"(?<=(?<x>a)\k<x>)b",
+            r"(?<=(?:a|b)+)c",
+            r"(?<=(?=a+)a)b",
+            r"(?<=(?!(a)\1)b)c",
+            r"(?<=(?=a)(?:a|bb)+)c",
+            r"(?<=x(?<=a+))b",
+            r"a+(?<=a)b",
+            r"(a)\1(?<=a)",
+            r"a?(?=b+)",
+        ];
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .ok_or("Missing repository root.")?;
+        let output = Command::new("node")
+            .args([
+                "--import",
+                "tsx",
+                "--input-type=module",
+                "-e",
+                &format!(
+                    "import {{engineRunsPattern}} from './packages/game-text/src/rule-regex.ts'; process.stdout.write(JSON.stringify({}.map(engineRunsPattern)));",
+                    serde_json::to_string(&patterns[..])?
+                ),
+            ])
+            .current_dir(root)
+            .output()?;
+        require(
+            output.status.success(),
+            std::str::from_utf8(&output.stderr)?,
+        )?;
+        let authored = crate::json_value::parse(std::str::from_utf8(&output.stdout)?)?;
+        for (index, pattern) in patterns.iter().enumerate() {
+            assert_eq!(
+                authored[index].as_bool(),
+                Some(JsRegex::new(pattern, true).is_ok()),
+                "pattern {pattern:?}"
+            );
+        }
+        Ok(())
     }
 }

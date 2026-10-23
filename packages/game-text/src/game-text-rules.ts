@@ -2,6 +2,7 @@ import { Effect, Schema, Struct } from "effect";
 import { CultureCode } from "@ue-shed/localization/browser";
 import { BuiltInCheckId, CheckSeverity } from "./localization-check-ids.js";
 import { LocalizationCheckScope } from "./localization-check-scope.js";
+import { engineRunsPattern } from "./rule-regex.js";
 import {
 	localizationCheckCatalogue,
 	localizationCheckDefaults,
@@ -107,7 +108,8 @@ const CustomTerm = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(102
 
 /**
  * A check the project defines. `pattern` reports text a JavaScript regular expression (Unicode
- * mode) matches, or with `report: "no_match"` text it does not match; `length` reports text
+ * mode) matches, or with `report: "no_match"` text it does not match; a lookbehind in it must not
+ * contain a variable quantifier or a backreference. `length` reports text
  * shorter than `minimum` or longer than `maximum`, in `visible` characters (rich text, modifiers
  * and arguments removed, wide characters counted twice, as `length_outlier` measures) or code
  * point `characters`; `forbidden_term` reports text that uses one of `terms`, matched as the
@@ -138,17 +140,20 @@ export const CustomLocalizationCheck = Schema.Union([
 ]);
 export type CustomLocalizationCheck = typeof CustomLocalizationCheck.Type;
 
-/** Whether a custom check is usable: a compiling pattern, a length with a bound in order. */
+/**
+ * Whether a custom check is usable: a pattern JavaScript compiles and the engine runs, a length
+ * with a bound in order.
+ */
 function validCustomCheck(check: CustomLocalizationCheck): boolean {
 	if (check.id.startsWith("localization.")) return false;
 	switch (check.kind) {
 		case "pattern":
 			try {
 				new RegExp(check.pattern, "u");
-				return true;
 			} catch {
 				return false;
 			}
+			return engineRunsPattern(check.pattern);
 		case "length":
 			return (
 				(check.minimum !== undefined || check.maximum !== undefined) &&

@@ -167,6 +167,9 @@ describe("custom checks", () => {
 		} as const;
 		expect(failure([pattern])).toBeUndefined();
 		expect(failure([{ ...pattern, pattern: "(" }])).toBe("invalid_structure");
+		// The engine runs fixed-width lookbehinds only; JavaScript accepts both.
+		expect(failure([{ ...pattern, pattern: "(?<=TO|O)DO" }])).toBeUndefined();
+		expect(failure([{ ...pattern, pattern: "(?<=T+O)DO" }])).toBe("invalid_structure");
 		expect(failure([{ ...pattern, id: "localization.mine" }])).toBe("invalid_structure");
 		expect(
 			failure([{ ...base, id: "len", kind: "length", subject: "source", measure: "visible" }])

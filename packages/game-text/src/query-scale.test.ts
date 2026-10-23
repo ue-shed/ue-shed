@@ -95,13 +95,22 @@ function largeProject() {
 		manifests.push(manifestEntry(key, index % 70 === 0 ? "Earlier" : source, objectPath));
 		archives.push(archiveEntry(key, source, index % 30 === 0 ? "" : "Translated"));
 	}
-	const base = evidence(manifests, archives);
+	const base = evidence(
+		manifests,
+		archives,
+		undefined,
+		archives.map((entry) => ({ ...entry, translation: entry.source }))
+	);
 	const culture = base.cultures[0];
-	if (!culture) throw new Error("The evidence helper produced no culture.");
+	const foreignCulture = base.cultures[1];
+	if (!culture || !foreignCulture) throw new Error("The evidence helper produced no culture.");
 	const gathered: LocalizationTargetEvidence = {
 		...base,
 		target,
-		cultures: target.cultures.map((code) => ({ ...culture, culture: code }))
+		cultures: target.cultures.map((code) => ({
+			...(code === target.nativeCulture ? culture : foreignCulture),
+			culture: code
+		}))
 	};
 	const packages = [
 		...new Set(units.flatMap((item) => item.occurrences.map((o) => o.packageFile)))

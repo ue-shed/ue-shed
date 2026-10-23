@@ -908,9 +908,11 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			cursor.archive = a.cursor;
 			cursor.po = p.cursor;
 			const expectedSource =
-				nativeOverride && input.target.cultures[ci] !== input.target.nativeCulture
-					? nativeTranslation
-					: m.source![first];
+				first === absent
+					? absent
+					: nativeOverride && input.target.cultures[ci] !== input.target.nativeCulture
+						? nativeTranslation
+						: m.source![first];
 			const collapsedEntries = collapsedPos[ci]!.get(`${ns}/${expectedSource}`);
 			if (p.count === 0 && collapsedEntries?.length)
 				p = { ...p, row: collapsedEntries[0]!, count: collapsedEntries.length };

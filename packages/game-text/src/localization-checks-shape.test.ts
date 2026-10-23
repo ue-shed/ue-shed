@@ -55,33 +55,15 @@ const provenance = {
 
 /** Shape cases use an unchanged native source; foreign translations vary independently. */
 function evidence(...args: Parameters<typeof sharedEvidence>): ReturnType<typeof sharedEvidence> {
-	const files = sharedEvidence(...args);
-	return {
-		...files,
-		cultures: files.cultures.map((culture) =>
-			culture.culture !== files.target.nativeCulture
-				? culture
-				: {
-						...culture,
-						archive: {
-							status: "read" as const,
-							provenance,
-							value: {
-								formatVersion: 2,
-								diagnostics: [],
-								entries: (args[0] ?? [manifestEntry()]).map((entry) =>
-									archiveEntry(
-										entry.key,
-										entry.source.Text,
-										entry.source.Text,
-										entry.namespace
-									)
-								)
-							}
-						}
-					}
+	const [manifests = [manifestEntry()], archives, po] = args;
+	return sharedEvidence(
+		manifests,
+		archives,
+		po,
+		manifests.map((entry) =>
+			archiveEntry(entry.key, entry.source.Text, entry.source.Text, entry.namespace)
 		)
-	};
+	);
 }
 
 function report(

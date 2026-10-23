@@ -31,7 +31,9 @@ describe("all-languages spreadsheet", () => {
 					manifestEntry("Alpha", "=SUM(1,2)"),
 					manifestEntry("Code", "From code", "Source/Game/Private/Menu.cpp(12)")
 				],
-				[archiveEntry("Zeta", "Last line", "Letzte Zeile")]
+				[archiveEntry("Zeta", "Last line", "Letzte Zeile")],
+				undefined,
+				[archiveEntry("Zeta", "Last line", "Last line")]
 			)
 		);
 		const lines = textCorpusQuery(text, undefined, joined).localizationLines({
@@ -79,7 +81,9 @@ describe("all-languages spreadsheet", () => {
 			text,
 			evidence(
 				[manifestEntry("Zeta", "Last line"), manifestEntry("Alpha", "First line")],
-				[archiveEntry("Zeta", "Last line", "Letzte Zeile")]
+				[archiveEntry("Zeta", "Last line", "Letzte Zeile")],
+				undefined,
+				[archiveEntry("Zeta", "Last line", "Last line")]
 			)
 		);
 		const query = textCorpusQuery(text, undefined, joined);

@@ -569,7 +569,12 @@ export function makeProtocolRequest(
 		requestId: `unreal-assets-${process.pid}-${protocolRequestCounter}`
 	};
 	// Narrow each branch to preserve the request union's operation/version correlation.
-	if (operation.kind === "game_text_engine") return { ...fields, operation };
+	if (operation.kind === "game_text_engine") {
+		const request = operation.request;
+		if (request.action === "findings_evaluate" || request.action === "findings_lines" || request.action === "findings_units")
+			return { ...fields, operation: { kind: "game_text_engine", request } };
+		return { ...fields, operation: { kind: "game_text_engine", request } };
+	}
 	if (operation.kind === "game_text_index") {
 		const request = operation.request;
 		if (request.action === "publish_packages")

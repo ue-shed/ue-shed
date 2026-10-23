@@ -19,6 +19,7 @@ import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
 import {
 	decodeEngineRequestMix,
 	engineAnswerDigest,
+	expectFound,
 	type EngineSample
 } from "./game-text-engine-results.ts";
 
@@ -432,10 +433,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 				const line = page.localization?.lines[0];
 				if (scenarioHost === "electroswag-worst") {
 					const { selection } = mix;
-					const seed = await run(
-						workspace.focus({ id: unit.id, pageSize: selection.pageSize })
+					const seed = expectFound(
+						await run(workspace.focus({ id: unit.id, pageSize: selection.pageSize })),
+						"seed focus"
 					);
-					if (seed.status !== "found") throw new Error("Selection seed is missing.");
 					const files = [
 						...new Set(seed.focus.occurrences.map((place) => place.packageFile))
 					];
@@ -489,11 +490,15 @@ export async function runEngineStage(options: EngineStageOptions) {
 								{ length: selection.relatedLines },
 								(_, index) => ids[index % Math.max(1, ids.length)] ?? unit.id
 							);
-							const focuses = await pooled(saturated, (id) =>
-								run(workspace.focus({ id, pageSize: selection.pageSize }))
+							const focuses = await pooled(saturated, async (id) =>
+								expectFound(
+									await run(
+										workspace.focus({ id, pageSize: selection.pageSize })
+									),
+									"related focus"
+								)
 							);
-							const sameKeys = await pooled(focuses, async (focus) => {
-								const found = focus.status === "found" ? focus.focus : seed.focus;
+							const sameKeys = await pooled(focuses, async ({ focus: found }) => {
 								const identity = gatheredTextIdentity(
 									TextUnit.make({
 										id: found.unit.id,
@@ -527,12 +532,15 @@ export async function runEngineStage(options: EngineStageOptions) {
 												ids[index % Math.max(1, ids.length)] ??
 												found.unit.id
 										),
-										(id) =>
-											run(
-												workspace.focus({
-													id,
-													pageSize: selection.pageSize
-												})
+										async (id) =>
+											expectFound(
+												await run(
+													workspace.focus({
+														id,
+														pageSize: selection.pageSize
+													})
+												),
+												"same-key focus"
 											)
 									)
 								};
@@ -561,7 +569,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 												}
 											: { id: unit.id, pageSize: 50 }
 									)
-								),
+								).then((reply) => expectFound(reply, "focus")),
 								run(
 									workspace.localizationFocus({
 										target,
@@ -569,7 +577,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 											? { kind: "line", id: line.id }
 											: { kind: "unit", id: unit.id }
 									})
-								)
+								).then((reply) => expectFound(reply, "detail"))
 							]),
 						2
 					);

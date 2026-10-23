@@ -155,6 +155,20 @@ export const EngineBenchmarkResult = Schema.Struct({
 });
 
 /** Nearest-rank quantiles; never interpolate a latency that was not observed. */
+/**
+ * A selection reply the host found. Workspace focus and detail failures are returned values, not
+ * rejections, so each one is checked here: a broken path stops the run instead of being timed.
+ */
+export function expectFound<R extends { readonly status: string }>(
+	reply: R,
+	request: string
+): Extract<R, { readonly status: "found" }> {
+	if (reply.status !== "found") throw new Error(`Selection ${request} answered ${reply.status}.`);
+	// SAFETY: the status is "found", so the reply is the union member with that status.
+	// Verified by: game-text-engine-results.test.ts — "selection replies must be found".
+	return reply as Extract<R, { readonly status: "found" }>;
+}
+
 export function engineStatistics(values: readonly number[]) {
 	if (!values.length || values.some((value) => !Number.isFinite(value) || value < 0))
 		throw new Error("Statistics need finite, non-negative samples.");

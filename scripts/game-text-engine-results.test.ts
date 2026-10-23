@@ -13,7 +13,8 @@ import {
 	engineRequestOverhead,
 	decodeEngineRustTiming,
 	EngineStageResult,
-	EngineBenchmarkResult
+	EngineBenchmarkResult,
+	expectFound
 } from "./game-text-engine-results.ts";
 
 const mix: unknown = JSON.parse(
@@ -147,4 +148,14 @@ test("result schema rejects invalid measurements and mismatches stop comparisons
 	assert.equal(decodeReport(report).results.length, 1);
 	assert.throws(() => decodeReport({ ...report, commit: "invalid" }));
 	assert.throws(() => decodeReport({ ...report, caps: { ...report.caps, rayonThreads: 32 } }));
+});
+
+test("selection replies must be found", () => {
+	const found = { status: "found", focus: { id: "unit" } } as const;
+	assert.equal(expectFound(found, "focus").focus.id, "unit");
+	for (const status of ["failed", "not_found", "not_ready"])
+		assert.throws(
+			() => expectFound({ status }, "detail"),
+			new RegExp(`Selection detail answered ${status}`, "u")
+		);
 });

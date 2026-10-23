@@ -546,6 +546,15 @@ impl EngineReader {
     }
 
     fn block(&mut self, segment_index: usize, block: usize) -> Result<Vec<Vec<u8>>> {
+        let (bytes, range) = self.block_bytes(segment_index, block)?;
+        decode_a64_bytes(bytes.get(range).ok_or("Dictionary block range.")?)
+    }
+    /// A dictionary block's encoded bytes: its frame, through the frame cache, and its range.
+    fn block_bytes(
+        &mut self,
+        segment_index: usize,
+        block: usize,
+    ) -> Result<(Arc<[u8]>, std::ops::Range<usize>)> {
         let segment = &mut self.segments[segment_index];
         let frame = *segment
             .frames
@@ -577,7 +586,7 @@ impl EngineReader {
         } else {
             bytes.len()
         };
-        decode_a64_bytes(bytes.get(start..end).ok_or("Dictionary block range.")?)
+        Ok((bytes, start..end))
     }
 
     pub fn strings(&mut self, ids: &[u32]) -> Result<Vec<String>> {
@@ -587,28 +596,59 @@ impl EngineReader {
     /// The strings of many IDs, in their order. It visits them in ID order, so it decodes each
     /// dictionary block once, where a lookup per ID decodes a block per ID.
     pub fn strings_batch(&mut self, ids: &[u32]) -> Result<Vec<String>> {
+        use rayon::prelude::*;
         let mut visit = (0..ids.len()).collect::<Vec<_>>();
         visit.sort_unstable_by_key(|index| ids[*index]);
-        let mut result = vec![String::new(); ids.len()];
-        // The last decoded block: its (segment, block) and its strings.
-        let mut decoded: Option<(DictionaryBlock, Vec<Vec<u8>>)> = None;
+        // Frames are read serially through the cache; blocks then decode in parallel.
+        struct Block {
+            bytes: Arc<[u8]>,
+            range: std::ops::Range<usize>,
+            /// (result index, position in the block)
+            members: Vec<(usize, usize)>,
+        }
+        let mut blocks = Vec::<Block>::new();
+        let mut current: Option<DictionaryBlock> = None;
         for index in visit {
             let (segment_index, local) = self.string_position(ids[index])?;
-            let block = (segment_index, local / 64);
-            if decoded.as_ref().map(|(key, _)| *key) != Some(block) {
-                decoded = Some((block, self.block(segment_index, local / 64)?));
+            let key = (segment_index, local / 64);
+            if current != Some(key) {
+                let (bytes, range) = self.block_bytes(segment_index, local / 64)?;
+                blocks.push(Block {
+                    bytes,
+                    range,
+                    members: Vec::new(),
+                });
+                current = Some(key);
             }
-            let values = &decoded
-                .as_ref()
-                .ok_or("Dictionary block was not decoded.")?
-                .1;
-            result[index] = Wtf8Buf::from_bytes(
-                values
-                    .get(local % 64)
-                    .ok_or("String outside dictionary block.")?
-                    .clone(),
-            )
-            .map(Wtf8Buf::into_view)?;
+            if let Some(block) = blocks.last_mut() {
+                block.members.push((index, local % 64));
+            }
+        }
+        let decoded = blocks
+            .par_iter()
+            .map(|block| -> Result<Vec<(usize, String)>> {
+                let values = decode_a64_bytes(
+                    block
+                        .bytes
+                        .get(block.range.clone())
+                        .ok_or("Dictionary block range.")?,
+                )?;
+                block
+                    .members
+                    .iter()
+                    .map(|(index, position)| {
+                        let bytes = values
+                            .get(*position)
+                            .ok_or("String outside dictionary block.")?
+                            .clone();
+                        Ok((*index, Wtf8Buf::from_bytes(bytes)?.into_view()))
+                    })
+                    .collect()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut result = vec![String::new(); ids.len()];
+        for (index, text) in decoded.into_iter().flatten() {
+            result[index] = text;
         }
         Ok(result)
     }

@@ -817,6 +817,7 @@ impl<'a, 'q> Projector<'a, 'q> {
             if self.arena.occurrences.fields.contains_key(name) {
                 continue;
             }
+            let step = super::stages::Measure::start();
             let values = match name.as_str() {
                 "source" | "devNotes" => {
                     let ids = &data.columns[if name == "source" { "source" } else { "notes" }];
@@ -886,6 +887,9 @@ impl<'a, 'q> Projector<'a, 'q> {
             };
             let column = self.column(&values)?;
             self.arena.occurrences.fields.insert(name.clone(), column);
+            self.arena
+                .recorder
+                .sub_stage(format!("occurrences.{name}"), &step, data.len());
         }
         if line && let Some(children) = &self.arena.line_children {
             let mut children = (**children).clone();
@@ -903,6 +907,7 @@ impl<'a, 'q> Projector<'a, 'q> {
                 .map(|unit| unit.members.clone())
                 .collect()
         };
+        let step = super::stages::Measure::start();
         if line {
             let rows = groups
                 .iter()
@@ -943,6 +948,11 @@ impl<'a, 'q> Projector<'a, 'q> {
             shared.rows = None;
             self.arena.line_children = Some(Arc::new(shared));
         }
+        self.arena.recorder.sub_stage(
+            "occurrences.groups".into(),
+            &step,
+            children.offsets.len() - 1,
+        );
         Ok(children)
     }
 }

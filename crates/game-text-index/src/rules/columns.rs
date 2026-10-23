@@ -541,21 +541,31 @@ impl Arena {
             })
             .collect::<Vec<_>>();
         wanted.sort_unstable();
-        for (id, text) in wanted.iter().copied().zip(reader.strings_batch(&wanted)?) {
+        let mut measure = super::stages::Measure::start();
+        let texts = reader.strings_batch(&wanted)?;
+        // Hash and copy in parallel; the maps are filled in ID order, as before.
+        let hashed = measure.parallel_chunks(&texts, 1024, |text| {
             let mut hash = FxHasher::default();
-            hash.write(Wtf8Buf::from_view(&text).as_bytes());
-            if let Some(first) = self.strings.get(&hash.finish()).copied() {
-                if self.text(first) != text {
+            hash.write(Wtf8Buf::from_view(text).as_bytes());
+            (hash.finish(), Arc::<str>::from(text.as_str()))
+        });
+        drop(texts);
+        self.stored.reserve(hashed.len());
+        for (id, (hash, text)) in wanted.iter().copied().zip(hashed) {
+            if let Some(first) = self.strings.get(&hash).copied() {
+                if *self.text(first) != *text {
                     self.string_collisions
-                        .entry(hash.finish())
+                        .entry(hash)
                         .or_default()
                         .push(StrId(id));
                 }
             } else {
-                self.strings.insert(hash.finish(), StrId(id));
+                self.strings.insert(hash, StrId(id));
             }
-            self.stored.insert(StrId(id), Arc::from(text));
+            self.stored.insert(StrId(id), text);
         }
+        self.recorder
+            .sub_stage("strings.load".into(), &measure, wanted.len());
         Ok(())
     }
     pub fn same_dictionary(&self, a: StrId, b: StrId) -> bool {

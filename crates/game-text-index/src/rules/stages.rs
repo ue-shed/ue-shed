@@ -27,6 +27,11 @@ impl Default for Recording {
 #[derive(Default, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Memory {
+    /// Process counters when the stage ended. In a long-lived engine process the peaks are
+    /// lifetime values, so only a fresh process's peak is one evaluation's peak.
+    pub private_bytes: u64,
+    pub peak_private_bytes: Option<u64>,
+    pub working_set_bytes: u64,
     pub peak_working_set_bytes: u64,
     pub arena_bytes: usize,
     pub side_dictionary_bytes: usize,
@@ -127,7 +132,12 @@ impl Recorder {
             .active = name;
     }
     pub fn memory(&self, name: &'static str, mut memory: Memory) {
-        memory.peak_working_set_bytes = process_peak();
+        if let Ok(process) = process_metrics::memory() {
+            memory.private_bytes = process.private_bytes;
+            memory.peak_private_bytes = process.peak_private_bytes;
+            memory.working_set_bytes = process.working_set_bytes;
+            memory.peak_working_set_bytes = process.peak_working_set_bytes;
+        }
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -287,55 +297,4 @@ pub(crate) struct TestNode {
 #[cfg(test)]
 pub(crate) struct TestStats {
     pub nodes: Vec<TestNode>,
-}
-
-/// A single hidden Windows metrics helper avoids both unsafe FFI in this crate and a process
-/// launch at every stage. It exits on EOF when the native process closes its pipe.
-#[cfg(windows)]
-fn process_peak() -> u64 {
-    use std::io::{BufRead, Write};
-    use std::os::windows::process::CommandExt;
-    use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-    type Probe = Option<(Child, ChildStdin, std::io::BufReader<ChildStdout>)>;
-    static PROBE: std::sync::OnceLock<Mutex<Probe>> = std::sync::OnceLock::new();
-    let mut probe = PROBE
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let read = || -> std::io::Result<u64> {
-        if probe.is_none() {
-            let mut child = Command::new("powershell.exe").creation_flags(0x0800_0000)
-                .args(["-NoProfile","-NonInteractive","-Command", "$ErrorActionPreference='Stop'; while($null -ne ($line=[Console]::ReadLine())) { [Console]::WriteLine((Get-Process -Id ([int]$line)).PeakWorkingSet64) }"])
-                .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
-            let input = child.stdin.take().ok_or(std::io::ErrorKind::BrokenPipe)?;
-            let output = child.stdout.take().ok_or(std::io::ErrorKind::BrokenPipe)?;
-            *probe = Some((child, input, std::io::BufReader::new(output)));
-        }
-        let (_, input, output) = probe.as_mut().ok_or(std::io::ErrorKind::BrokenPipe)?;
-        writeln!(input, "{}", std::process::id())?;
-        input.flush()?;
-        let mut line = String::new();
-        output.read_line(&mut line)?;
-        line.trim().parse().map_err(std::io::Error::other)
-    };
-    let mut read = read;
-    read().unwrap_or(0)
-}
-#[cfg(target_os = "linux")]
-fn process_peak() -> u64 {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|text| {
-            text.lines().find_map(|line| {
-                line.strip_prefix("VmHWM:")
-                    .and_then(|value| value.split_whitespace().next())
-                    .and_then(|value| value.parse::<u64>().ok())
-            })
-        })
-        .unwrap_or(0)
-        * 1024
-}
-#[cfg(not(any(windows, target_os = "linux")))]
-fn process_peak() -> u64 {
-    0
 }

@@ -123,7 +123,20 @@ pub(super) struct EvaluatedFindings {
     pub(super) digest: String,
 }
 impl EngineQuery {
+    /// Evaluation reads raw index columns into its own scope, never the query cache.
     pub(super) fn evaluate_findings(
+        &mut self,
+        program: &super::Program,
+        collator: &HostCollator,
+        cancelled: &AtomicBool,
+        request: Option<&Measure>,
+    ) -> Result<EvaluatedFindings> {
+        self.reader.begin_evaluation()?;
+        let evaluated = self.evaluate_scoped(program, collator, cancelled, request);
+        self.reader.end_evaluation();
+        evaluated
+    }
+    fn evaluate_scoped(
         &mut self,
         program: &super::Program,
         collator: &HostCollator,
@@ -148,6 +161,7 @@ impl EngineQuery {
         let occurrences =
             super::occurrences::OccurrenceData::build(self, &mut occurrences_measure)?;
         arena.occurrences.data = Some(Arc::clone(&occurrences));
+        self.reader.release_evaluation_columns();
         recorder.stage(
             "subjects.occurrences",
             &occurrences_measure,
@@ -173,6 +187,7 @@ impl EngineQuery {
                 cancelled,
                 Arc::clone(&occurrences),
             )?;
+            subjects.query.reader.release_evaluation_columns();
             recorder.stage("subjects.columns", &setup, 0);
             let (evaluation, _, diagnostics) =
                 program.evaluate_shared(&mut subjects, collator, &mut arena)?;

@@ -1,0 +1,19 @@
+[package]
+name = "process-metrics"
+version = "0.21.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+description = "In-process memory counters for UE Shed native services"
+repository = "https://github.com/ue-shed/ue-shed"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_ProcessStatus", "Win32_System_Threading"] }
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+unwrap_used = "warn"
+expect_used = "warn"

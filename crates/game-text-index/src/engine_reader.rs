@@ -28,9 +28,17 @@ struct Segment {
     fences: Option<Vec<Vec<u8>>>,
 }
 
+/// Raw columns a rule evaluation reads. They belong to the evaluation, not to the reader's
+/// query cache, and are dropped as soon as the evaluation has built what it needs from them.
+#[derive(Default)]
+struct ScopedColumns {
+    columns: HashMap<(String, String), Arc<[u32]>>,
+    bytes: HashMap<String, Arc<[u8]>>,
+}
 /// Every input is selected from the same immutable joined metadata and held open until drop.
 /// Writers may publish or compact concurrently without changing this reader's results.
 pub struct EngineReader {
+    evaluation: Option<ScopedColumns>,
     pub generation: String,
     pub joined_key: String,
     pub meta: Value,
@@ -218,6 +226,7 @@ impl EngineReader {
             });
         }
         Ok(Self {
+            evaluation: None,
             generation,
             joined_key,
             meta,
@@ -233,9 +242,34 @@ impl EngineReader {
         })
     }
 
+    pub(crate) fn begin_evaluation(&mut self) -> Result<()> {
+        require(self.evaluation.is_none(), "Nested rule column scope.")?;
+        self.evaluation = Some(ScopedColumns::default());
+        Ok(())
+    }
+    pub(crate) fn release_evaluation_columns(&mut self) {
+        if let Some(scope) = &mut self.evaluation {
+            *scope = ScopedColumns::default();
+        }
+    }
+    pub(crate) fn end_evaluation(&mut self) {
+        self.evaluation = None;
+    }
+    fn raw_columns(&mut self) -> &mut HashMap<(String, String), Arc<[u32]>> {
+        match &mut self.evaluation {
+            Some(scope) => &mut scope.columns,
+            None => &mut self.columns,
+        }
+    }
+    fn raw_bytes(&mut self) -> &mut HashMap<String, Arc<[u8]>> {
+        match &mut self.evaluation {
+            Some(scope) => &mut scope.bytes,
+            None => &mut self.byte_columns,
+        }
+    }
     pub fn layer_column(&mut self, key: &str, name: &str) -> Result<Arc<[u32]>> {
         let cache_key = (key.to_owned(), name.to_owned());
-        if let Some(values) = self.columns.get(&cache_key) {
+        if let Some(values) = self.raw_columns().get(&cache_key) {
             return Ok(Arc::clone(values));
         }
         let layer = self
@@ -249,7 +283,7 @@ impl EngineReader {
             integers(&bytes)?
         }
         .into();
-        self.columns.insert(cache_key, Arc::clone(&values));
+        self.raw_columns().insert(cache_key, Arc::clone(&values));
         Ok(values)
     }
 
@@ -275,7 +309,7 @@ impl EngineReader {
     /// Packed byte arenas use numeric physical sections. Read them directly so native query
     /// opens do not retain both a decoded u32 copy and a byte copy of every identity/source arena.
     pub fn bytes(&mut self, name: &str) -> Result<Arc<[u8]>> {
-        if let Some(value) = self.byte_columns.get(name) {
+        if let Some(value) = self.raw_bytes().get(name) {
             return Ok(Arc::clone(value));
         }
         require(
@@ -313,14 +347,14 @@ impl EngineReader {
             bytes.extend_from_slice(&section(&mut layer.reader, &field)?);
         }
         let bytes: Arc<[u8]> = bytes.into();
-        self.byte_columns.insert(name.into(), Arc::clone(&bytes));
+        self.raw_bytes().insert(name.into(), Arc::clone(&bytes));
         Ok(bytes)
     }
 
     /// Read logical columns: immutable full-build columns plus one flat bounded overlay.
     pub fn column(&mut self, name: &str) -> Result<Arc<[u32]>> {
         let cache_key = (String::new(), name.to_owned());
-        if let Some(values) = self.columns.get(&cache_key) {
+        if let Some(values) = self.raw_columns().get(&cache_key) {
             return Ok(Arc::clone(values));
         }
         if let Some(kind) = self.source_patch_kind(name) {
@@ -328,7 +362,7 @@ impl EngineReader {
         }
         let original = self.original_column(name)?;
         if self.meta["patches"][name].is_null() {
-            self.columns.insert(cache_key, Arc::clone(&original));
+            self.raw_columns().insert(cache_key, Arc::clone(&original));
             return Ok(original);
         }
         let mut values = original.to_vec();
@@ -355,7 +389,7 @@ impl EngineReader {
             }
         }
         let values: Arc<[u32]> = values.into();
-        self.columns.insert(cache_key, Arc::clone(&values));
+        self.raw_columns().insert(cache_key, Arc::clone(&values));
         Ok(values)
     }
 

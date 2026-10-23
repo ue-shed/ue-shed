@@ -80,43 +80,6 @@ fn retained_query(cache_root: &Path) -> Result<EngineQuery> {
     Ok(query)
 }
 
-#[cfg(windows)]
-fn peak_memory() -> Result<u64> {
-    use std::os::windows::process::CommandExt;
-    let output = Command::new("powershell.exe")
-        .creation_flags(0x0800_0000)
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &format!("(Get-Process -Id {}).PeakWorkingSet64", std::process::id()),
-        ])
-        .output()?;
-    require(
-        output.status.success(),
-        "Could not read the evaluator's peak working set.",
-    )?;
-    Ok(std::str::from_utf8(&output.stdout)?.trim().parse()?)
-}
-#[cfg(target_os = "linux")]
-fn peak_memory() -> Result<u64> {
-    let status = std::fs::read_to_string("/proc/self/status")?;
-    let value = status
-        .lines()
-        .find_map(|line| line.strip_prefix("VmHWM:"))
-        .ok_or("Missing process high-water mark.")?;
-    Ok(value
-        .split_whitespace()
-        .next()
-        .ok_or("Missing VmHWM value.")?
-        .parse::<u64>()?
-        * 1024)
-}
-#[cfg(not(any(windows, target_os = "linux")))]
-fn peak_memory() -> Result<u64> {
-    Err("Peak working set measurement is unavailable on this platform.".into())
-}
-
 #[test]
 #[ignore = "Requires a retained cache, Node 26, a heavy-run lease, and --release"]
 fn persisted_default_catalogue_timing() -> Result<()> {
@@ -158,7 +121,9 @@ fn persisted_default_catalogue_timing() -> Result<()> {
         super::HostCollator::new(catalogue["locale"].as_str().ok_or("Missing host locale.")?)?;
     let evaluated = query.evaluate_findings(&program, &collator, &cancelled, None)?;
     let profile = &evaluated.profile;
-    let result = json!({"digest":evaluated.digest,"profile":profile,"peakWorkingSetBytes":peak_memory()?,"rayonThreads":rayon::current_num_threads()});
+    // A fresh test process: its peaks are this evaluation's.
+    let memory = process_metrics::memory()?;
+    let result = json!({"digest":evaluated.digest,"profile":profile,"peakPrivateBytes":memory.peak_private_bytes,"peakWorkingSetBytes":memory.peak_working_set_bytes,"rayonThreads":rayon::current_num_threads()});
     println!("{}", serde_json::to_string(&result)?);
     require(
         evaluated.digest == "87dba57d4b3751dddb3a0d4f816b9a22eeaab1472756a588baeed7d173980576",

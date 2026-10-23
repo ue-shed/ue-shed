@@ -21,6 +21,7 @@ rayon = "1.11"
 zstd = "0.13"
 sha2 = "0.10"
 rustc-hash = "=2.1.3"
+process-metrics = { path = "../process-metrics" }
 
 [target.'cfg(windows)'.dependencies]
 file-id = "=0.2.3"

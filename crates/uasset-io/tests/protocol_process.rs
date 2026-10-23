@@ -513,7 +513,7 @@ fn compiled_pin_identity_requires_a_readable_matching_pin() {
                 assert_eq!(compiled["identity"]["key"], key);
                 assert_eq!(
                     compiled["identity"]["namespace"],
-                    if state != "matching" {
+                    if state == "unread_pin" {
                         uasset_parser::gatherable_text::strip_package_namespace(&namespace)
                     } else {
                         &namespace
@@ -528,7 +528,7 @@ fn compiled_pin_identity_requires_a_readable_matching_pin() {
                         })
                         .unwrap();
                     assert_eq!(pin["identity"]["key"], compiled["identity"]["key"]);
-                    assert_ne!(pin["identity"], compiled["identity"]);
+                    assert_eq!(pin["identity"], compiled["identity"]);
                 }
                 if state == "unread_pin" {
                     assert!(records.iter().any(|record| record["status"] == "partial"));

@@ -282,6 +282,13 @@ own place. A site saved only under the class, such as a construction-script node
 site and stays a place at its own path; copies of it fold into the generated class's site, then the
 default object's, then the skeleton's.
 
+A compiled function's text literal uses a bytecode offset rather than its pin's property path.
+When its Blueprint has exactly one saved pin with the same namespace and key, that pin is the
+authoring place and the bytecode literal is its generated-class copy. The texts may differ after
+an edit. Several candidate pins keep their separate evidence; source equality does not establish
+ownership. The same folding applies when the compiled text is current, so it does not add a place
+or a `shared` signal.
+
 The place keeps its own text: the line's source, search, counts, facets, exports and localization
 joins all use the authored text, which is what the next compile and gather will use. Each copy is
 kept on the place's `copies` (`objectPath`, `kind`: `generated_class`, `instance`, `class_default`

@@ -8,8 +8,9 @@ use crate::projection::{TextIdentity, TextLocation, TextOccurrence};
 
 /// Call once with all decoded occurrences from exactly one package. Unreal's compiler strips
 /// the package namespace from bytecode; its gatherer strips the same marker from pin text.
-/// Keep both locations, using the saved pin identity only when key, source and clean namespace
-/// match unambiguously. Missing pins, conflicting sources and ambiguous stamps stay untouched.
+/// Keep both locations, using the saved pin identity when key and clean namespace identify one
+/// package stamp. Source equality is not required: bytecode may predate an edited pin. Missing
+/// pins and ambiguous stamps stay untouched; the host folds uniquely attributable runtime copies.
 pub fn reconcile_blueprint_text(occurrences: &mut [TextOccurrence]) {
     let mut pins = BTreeMap::new();
     for text in occurrences.iter() {
@@ -26,7 +27,7 @@ pub fn reconcile_blueprint_text(occurrences: &mut [TextOccurrence]) {
         if clean == namespace {
             continue;
         }
-        pins.entry((clean, key.as_str(), text.source.as_str()))
+        pins.entry((clean, key.as_str()))
             .and_modify(|target| {
                 if *target != Some(namespace.as_str()) {
                     *target = None;
@@ -47,7 +48,7 @@ pub fn reconcile_blueprint_text(occurrences: &mut [TextOccurrence]) {
             let TextIdentity::Resolved { namespace, key } = &text.identity else {
                 return None;
             };
-            let target = pins.get(&(namespace.as_str(), key.as_str(), text.source.as_str()))?;
+            let target = pins.get(&(namespace.as_str(), key.as_str()))?;
             target.map(|target| (index, target.to_owned()))
         })
         .collect();
@@ -81,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn merges_only_exact_compiled_copies_and_keeps_their_locations() {
+    fn reconciles_current_and_stale_compiled_copies_and_keeps_their_locations() {
         let mut texts = vec![
             text("UI", "Locked", "ScriptBytecode[0]"),
             text("UI [PackageA]", "Locked", "Pins[4].DefaultTextValue"),
@@ -92,8 +93,12 @@ mod tests {
         let original = texts.clone();
         reconcile_blueprint_text(&mut texts);
         assert_eq!(texts[0].identity, texts[1].identity);
+        assert_eq!(texts[2].identity, texts[1].identity);
         assert_eq!(texts[0].location, original[0].location);
-        assert_eq!(&texts[1..], &original[1..]);
+        assert_eq!(texts[2].source, "Barred");
+        assert_eq!(texts[2].location, original[2].location);
+        assert_eq!(texts[1], original[1]);
+        assert_eq!(&texts[3..], &original[3..]);
         let reconciled = texts.clone();
         reconcile_blueprint_text(&mut texts);
         assert_eq!(texts, reconciled);

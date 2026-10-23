@@ -15,30 +15,6 @@ export interface CorpusKnownDefect {
 }
 const cultures = ["en", "de", "fr", "ja"];
 export const corpusKnownDefects: readonly CorpusKnownDefect[] = [
-	...cultures.map(
-		(culture): CorpusKnownDefect => ({
-			case: "compiled-copy-differs",
-			defects: ["compiled-copy-differs"],
-			culture,
-			kind: "subject",
-			status: "defect",
-			why: "A single wired PrintText pin was compiled, then its default edited without compiling. The saved package contains Graph older label in bytecode and Graph saved label on the pin. Bytecode is a runtime representation, not another authoring place. Reconciliation requires matching source and therefore loses stale copies.",
-			actual: {
-				state: "unknown",
-				facts: ["translated", "unknown"],
-				unknownReasons: ["conflicting_source"],
-				signals: ["shared", "conflicting", "evidence_only"],
-				problems: ["conflicting_source", "finding", "unchecked"]
-			},
-			rightAnswer: {
-				state: "translated",
-				facts: ["translated"],
-				unknownReasons: [],
-				signals: ["evidence_only", "compiled_copy_differs"],
-				problems: ["up_to_date"]
-			}
-		})
-	),
 	...["collapse-unique-a", "collapse-unique-b"].flatMap((name) =>
 		cultures.map(
 			(culture): CorpusKnownDefect => ({
@@ -182,26 +158,6 @@ export function corpusDefectsFor(
 			);
 		}
 
-		if (
-			subject.kind === "blueprintPin" &&
-			subject.field.startsWith("PrintText_") &&
-			!subject.case.startsWith("compiled-copy-differs@")
-		) {
-			defectIds.push("wired-pin-shared");
-			predicted.signals = ["shared", ...predicted.signals];
-			predicted.problems = predicted.problems.filter((problem) => problem !== "up_to_date");
-			if (!predicted.problems.includes("finding"))
-				predicted.problems.splice(
-					predicted.problems.includes("unchecked")
-						? predicted.problems.indexOf("unchecked")
-						: predicted.problems.length,
-					0,
-					"finding"
-				);
-			explanations.push(
-				"Compiled copies are not additional saved authoring places. A single wired pin plus identical bytecode incorrectly receives shared; the raw occurrence count includes its runtime representation."
-			);
-		}
 		if (explanations.length) {
 			const actual = Schema.decodeUnknownSync(Dictionary)(predicted),
 				wanted = Schema.decodeUnknownSync(Dictionary)(subject);
@@ -224,21 +180,10 @@ export function corpusDefectsFor(
 	for (const probe of probes)
 		for (const template of corpusKnownDefects) {
 			if (template.kind !== "probe" || template.case !== probe.case.split("@")[0]) continue;
-			const placement = subjects.find((subject) => subject.case === probe.case);
-			const compiledPin =
-				template.case === "archive-missing-entry" &&
-				placement?.kind === "blueprintPin" &&
-				placement.field.startsWith("PrintText_");
 			result.push({
 				...template,
 				case: probe.case,
-				subject: probe.subject!,
-				actual: compiledPin ? ["translation", "finding"] : template.actual,
-				why:
-					template.why +
-					(compiledPin
-						? " This instance is a wired pin, so the separate compiled-copy shared defect also adds finding to the line page."
-						: "")
+				subject: probe.subject!
 			});
 		}
 	return result;

@@ -59,8 +59,9 @@ export type PackageTextInventoryEntry = typeof PackageTextInventoryEntry.Type;
  * file's package instead of the name its summary serializes, which records keep as `packageName`
  * (uasset-io 1.17), and so every package records its main asset's class as `assetClass`.
  * v9: re-extract with the UE 4.27 decoders and the reader's text-capable gap status (uasset-io
- * 1.18), so cached records do not keep packages partial for text-free gaps. */
-export const PACKAGE_TEXT_FORMAT = "package-text-v9";
+ * 1.18), so cached records do not keep packages partial for text-free gaps.
+ * v10: reconcile stale bytecode identities and fold uniquely attributable pin runtime copies. */
+export const PACKAGE_TEXT_FORMAT = "package-text-v10";
 export const PACKAGE_TEXT_SHARDS = 256;
 export function packageTextShard(path: string) {
 	let hash = 2166136261;

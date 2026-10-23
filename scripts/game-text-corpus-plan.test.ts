@@ -236,8 +236,12 @@ test("localization has all cultures and never emits invariant or String Table re
 	);
 });
 test("known defects cannot hide unrelated changes or silently survive a fix", () => {
-	const caseName = "compiled-copy-differs@0";
-	const intent = plan.expectations.subjects.filter((subject) => subject.case === caseName);
+	const caseName = "empty-with-source-edge@0";
+	const intent = plan.expectations.subjects.filter(
+		(subject) =>
+			subject.case === caseName &&
+			subject.findings.some((finding) => finding.check === "localization.empty_translation")
+	);
 	const actual = intent.map((subject) => {
 		const defect = corpusDefectsFor(intent).find(
 			(defect) => defect.case === caseName && defect.culture === subject.culture
@@ -250,7 +254,10 @@ test("known defects cannot hide unrelated changes or silently survive a fix", ()
 	assert.deepEqual(triageCorpusDifferences(differences, active), {
 		unexpected: [],
 		stale: [],
-		pinned: { total: intent.length, byDefect: { "compiled-copy-differs": intent.length } }
+		pinned: {
+			total: intent.length,
+			byDefect: { "empty-translation-whitespace": intent.length }
+		}
 	});
 	const fixed = diffCorpus(expected, [intent[0]!, ...actual.slice(1)]);
 	assert.equal(triageCorpusDifferences(fixed, active).stale.length, 1);
@@ -616,7 +623,7 @@ test("each Blueprint variable contributes its own editor category scaffold", () 
 	}
 });
 
-test("line-page defect assertions compose with a wired pin's compiled-copy defect", () => {
+test("line-page defect assertions retain culture scope independently of compiled pin copies", () => {
 	const variety = planCorpus({ ...options, seed: 73131, density: 5, lines: 1000 });
 	const probes = variety.probes.map((probe) => ({
 		case: probe.case,
@@ -633,30 +640,29 @@ test("line-page defect assertions compose with a wired pin's compiled-copy defec
 		);
 		assert.ok(defect);
 		assert.deepEqual(defect.rightAnswer, ["up_to_date"]);
-		assert.deepEqual(
-			defect.actual,
-			subject.kind === "blueprintPin" ? ["translation", "finding"] : ["translation"]
-		);
+		assert.deepEqual(defect.actual, ["translation"]);
 	}
 });
 
 test("known-defect assertions use set semantics for signals while retaining exact evidence", () => {
-	const sample = planCorpus({ ...options, seed: 19088743, density: 5, lines: 10_000 });
-	const subject = sample.expectations.subjects.find(
-		(subject) => subject.kind === "blueprintPin" && subject.signals.includes("long")
+	const planted = plan.expectations.subjects.find(
+		(subject) =>
+			subject.case === "empty-with-source-edge@0" &&
+			subject.findings.some((finding) => finding.check === "localization.empty_translation")
 	);
-	assert.ok(subject);
-	const expected = { ...sample.expectations, subjects: [subject] };
+	assert.ok(planted);
+	const subject = { ...planted, signals: ["long", "evidence_only"] };
+	const expected = { ...plan.expectations, subjects: [subject] };
 	const actual = {
 		...subject,
-		signals: ["shared", ...subject.signals].reverse(),
-		problems: ["finding"]
+		...JSON.parse(JSON.stringify(corpusDefectsFor([subject])[0]!.actual)),
+		signals: [...subject.signals].reverse()
 	};
 	const result = triageCorpusDifferences(diffCorpus(expected, [actual]), [subject]);
 	assert.deepEqual(result, {
 		unexpected: [],
 		stale: [],
-		pinned: { total: 1, byDefect: { "wired-pin-shared": 1 } }
+		pinned: { total: 1, byDefect: { "empty-translation-whitespace": 1 } }
 	});
 	assert.equal(triageCorpusDifferences([], [subject]).stale.length, 1);
 });

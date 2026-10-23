@@ -940,14 +940,28 @@ impl Arena {
         self.recorder
             .sub_stage("strings.hash".into(), &hashing, wanted.len());
         let inserting = super::stages::Measure::start();
-        let mut buffer = String::with_capacity(texts.iter().map(String::len).sum());
-        let batch = u32::try_from(self.stored_text.len())?;
+        // Spans hold 32-bit offsets, so a batch past that size continues in another buffer.
+        // Tests use tiny buffers, so every string they load takes the same path.
+        #[cfg(not(test))]
+        const BUFFER: usize = u32::MAX as usize;
+        #[cfg(test)]
+        const BUFFER: usize = 64;
+        let mut pending = texts.iter().map(String::len).sum::<usize>();
+        let mut buffer = String::new();
         let mut spans = Vec::with_capacity(texts.len());
         for text in &texts {
+            if !buffer.is_empty() && buffer.len() + text.len() > BUFFER {
+                self.stored_text
+                    .push(std::mem::take(&mut buffer).into_boxed_str());
+            }
+            if buffer.capacity() == 0 {
+                buffer.reserve_exact(pending.min(BUFFER));
+            }
             let start = u32::try_from(buffer.len())?;
             buffer.push_str(text);
+            pending -= text.len();
             spans.push(Span {
-                batch,
+                batch: u32::try_from(self.stored_text.len())?,
                 start,
                 end: u32::try_from(buffer.len())?,
             });

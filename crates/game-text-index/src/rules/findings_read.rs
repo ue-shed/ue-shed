@@ -113,12 +113,16 @@ impl EngineQuery {
         value["profile"]["responseBytes"] = json!(bytes);
         value["profile"]["fileFallback"] = json!(bytes > 16 * 1024 * 1024);
         result = javascript_json(&value, false);
+        // A reply at the threshold can have no consistent count: one byte over it when it says
+        // no fallback, one byte under when it says fallback. It settles as a fallback reply.
+        let mut rounds = 0;
         while value["profile"]["responseBytes"] != json!(result.len()) {
+            rounds += 1;
             value["profile"]["responseBytes"] = json!(result.len());
-            value["profile"]["fileFallback"] = json!(result.len() > 16 * 1024 * 1024);
+            value["profile"]["fileFallback"] = json!(result.len() > 16 * 1024 * 1024 || rounds > 4);
             result = javascript_json(&value, false);
         }
-        if result.len() <= 16 * 1024 * 1024 {
+        if value["profile"]["fileFallback"] == json!(false) {
             return Ok(result);
         }
         let path = self
@@ -198,9 +202,30 @@ fn read_lines(
             "A finding line row is outside the subject relation.",
         ),
     )?;
-    // Nearly every requested line has findings: load their places' strings in one batch.
-    subjects.prefetch_occurrences(rows)?;
     let lc_lines = layer.column("subjects.line_culture.lines")?;
+    // Only lines with findings show places. Nearly every requested line has some: load their
+    // places' strings in one batch rather than line by line.
+    let mut hydrated = Vec::new();
+    for (rule_index, rule) in rules.iter().enumerate() {
+        if rule.subject == Subject::UnitSource {
+            continue;
+        }
+        let recorded = layer.column(&format!("r{rule_index}.rows"))?;
+        let culture = rule.subject == Subject::LineCulture;
+        for position in selected_positions(&recorded, culture.then_some(&lc_lines[..]), rows)? {
+            let row = recorded[position];
+            hydrated.push(if culture {
+                *lc_lines
+                    .get(row as usize)
+                    .ok_or("Finding culture row outside relation.")?
+            } else {
+                row
+            });
+        }
+    }
+    hydrated.sort_unstable();
+    hydrated.dedup();
+    subjects.prefetch_occurrences(&hydrated)?;
     let mut lines = rows
         .iter()
         .map(|row| FindingLine {

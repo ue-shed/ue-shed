@@ -805,6 +805,9 @@ function recipeBatch({
 	const changed = add("changed-since-gather", "Freshly painted boat", {
 		manifestSource: "Old painted boat"
 	});
+	// Only the saved package changed. Keep the native archive at the gathered source so
+	// NativeText does not independently invalidate every foreign archive's recorded source.
+	translation(changed, changed.manifestSource, "en");
 	state(changed, "changed_since_gather", ["changed_since_gather"]);
 	facts(changed, ["translated", "changed_since_gather"]);
 	const removed = add("not-found", "Removed harbor bell", { exists: false, kind: "manifest" });

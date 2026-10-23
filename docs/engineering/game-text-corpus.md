@@ -102,6 +102,12 @@ Retained version-1 corpora without this marker keep their original evidence-only
 new generation and fuzz runs assert fixes. The portable fix tests also check the proposed-change
 schema and today's TypeScript implementation without using it to produce expectations.
 
+The saved-source-change recipe keeps the native archive translation at the gathered source.
+Changing that translation too would activate Unreal's NativeText source override and invalidate
+foreign archives independently of the saved-package change (`LocTextHelper.cpp`, `GetExportText`
+and `GetRuntimeText`). Retained corpora from before this repair must be regenerated; their
+expected answers are never rewritten by the comparison adapter.
+
 Both the comparison's native scans and the generator's Unreal subprocesses hold
 `UE_SHED_UNREAL_LOCK`. They create the lease exclusively, record the owner and time, poll every
 30 seconds while another job owns it, and release it after completion or failure. The collapse

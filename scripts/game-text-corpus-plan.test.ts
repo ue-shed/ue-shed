@@ -178,6 +178,33 @@ test("the expectation derivation never imports checks, rules or index code", () 
 			/from ["'][^"']*(?:@ue-shed|packages\/|localization-checks|text-problems|index\.js)/u
 		);
 });
+test("saved-source changes keep the native archive at the gathered source", () => {
+	for (const seed of [1, 73139]) {
+		const fixture = planCorpus({ ...options, seed });
+		const changed = fixture.packages
+			.flatMap((item) => item.texts)
+			.find((text) => text.case === "changed-since-gather@0");
+		assert.ok(changed);
+		assert.notEqual(changed.source, changed.manifestSource);
+		assert.equal(changed.cultures.en?.translation, changed.manifestSource);
+		assert.equal(changed.cultures.en?.archiveSource, changed.manifestSource);
+		for (const culture of ["de", "fr", "ja"])
+			assert.equal(changed.cultures[culture]?.archiveSource, changed.cultures.en.translation);
+		assert.ok(
+			fixture.expectations.subjects
+				.filter((subject) => subject.case === changed.case)
+				.every(
+					(subject) =>
+						subject.facts.includes("translated") &&
+						subject.facts.includes("changed_since_gather") &&
+						!subject.findings.some(
+							(finding) => finding.check === "localization.outdated_translation"
+						)
+				)
+		);
+	}
+});
+
 test("plan and expectation decoders reject invalid versions, missing fields and inconsistent counts", () => {
 	assert.deepEqual(decodeCorpusPlan(JSON.stringify(plan)), plan);
 	assert.deepEqual(

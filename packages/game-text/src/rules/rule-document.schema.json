@@ -1,0 +1,3474 @@
+{
+	"dialect": "draft-2020-12",
+	"schema": {
+		"$ref": "#/$defs/GameTextRuleDocumentV4"
+	},
+	"definitions": {
+		"GameTextExpr": {
+			"anyOf": [
+				{
+					"type": "null"
+				},
+				{
+					"type": "boolean"
+				},
+				{
+					"type": "number"
+				},
+				{
+					"type": "string"
+				},
+				{
+					"type": "object",
+					"properties": {
+						"lit": {}
+					},
+					"required": ["lit"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"list": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["list"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"object": {
+							"type": "object",
+							"additionalProperties": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["object"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"field": {
+							"type": "string"
+						}
+					},
+					"required": ["field"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"param": {
+							"type": "string"
+						}
+					},
+					"required": ["param"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"var": {
+							"type": "string"
+						}
+					},
+					"required": ["var"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"finding": {
+							"type": "string"
+						}
+					},
+					"required": ["finding"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"not": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["not"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"isNull": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["isNull"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"utf16Length": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["utf16Length"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"codePoints": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["codePoints"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"visibleLength": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["visibleLength"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"visibleWords": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["visibleWords"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"interiorLineBreaks": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["interiorLineBreaks"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"trim": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["trim"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"lower": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["lower"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"normalizeLineEndings": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["normalizeLineEndings"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"count": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["count"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"flatten": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["flatten"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"distinct": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["distinct"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"first": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["first"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sortByStart": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["sortByStart"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatArgumentNames": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatArgumentNames"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatArgumentOrder": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatArgumentOrder"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatModifiers": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatModifiers"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatIssues": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatIssues"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatCompiled": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatCompiled"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"richTextCounts": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["richTextCounts"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"richTextTagBalance": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["richTextTagBalance"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"unrealWhitespace": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["unrealWhitespace"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"unrealUnsafeWhitespace": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["unrealUnsafeWhitespace"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatBraceBalance": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatBraceBalance"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"get": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["get"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"eq": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["eq"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"ne": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["ne"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"lt": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["lt"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"le": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["le"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"gt": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["gt"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"ge": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["ge"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"in": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["in"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sub": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["sub"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"div": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["div"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"round": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["round"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"startsWith": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["startsWith"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"endsWith": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["endsWith"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"contains": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["contains"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"countOccurrences": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["countOccurrences"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"findAll": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["findAll"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"anyChar": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["anyChar"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"allChars": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["allChars"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"removeClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["removeClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"leadingClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["leadingClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"trailingClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["trailingClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"take": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["take"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"drop": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["drop"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"minus": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["minus"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"zip": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["zip"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"matchesRole": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["matchesRole"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"pathHasPrefix": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["pathHasPrefix"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatPattern": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["formatPattern"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"richTextValid": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["richTextValid"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"compareRichTextTags": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["compareRichTextTags"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"withoutOptionalArgumentTags": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["withoutOptionalArgumentTags"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"findingField": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["findingField"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"if": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["if"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"slice": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["slice"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"trimClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["trimClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"runs": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["runs"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"regexMatches": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["regexMatches"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"regexTest": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["regexTest"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"termMatches": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["termMatches"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"and": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["and"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"or": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["or"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"coalesce": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["coalesce"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"add": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["add"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mul": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["mul"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"min": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["min"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"max": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["max"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"concat": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["concat"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"concatLists": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["concatLists"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"filter": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["filter"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"map": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["map"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"flatMap": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["flatMap"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"any": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["any"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"all": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["all"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sortCodeUnit": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 1,
+									"minItems": 1
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								}
+							]
+						}
+					},
+					"required": ["sortCodeUnit"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sortLocale": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 1,
+									"minItems": 1
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								}
+							]
+						}
+					},
+					"required": ["sortLocale"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"occurrences": {
+							"type": "array",
+							"items": false
+						}
+					},
+					"required": ["occurrences"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"termListMatches": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 4,
+							"minItems": 4
+						}
+					},
+					"required": ["termListMatches"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatRenameArgument": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 4,
+							"minItems": 4
+						}
+					},
+					"required": ["formatRenameArgument"],
+					"additionalProperties": true
+				}
+			]
+		},
+		"GameTextExpr_1": {
+			"anyOf": [
+				{
+					"type": "null"
+				},
+				{
+					"type": "boolean"
+				},
+				{
+					"type": "number"
+				},
+				{
+					"type": "string"
+				},
+				{
+					"type": "object",
+					"properties": {
+						"lit": {}
+					},
+					"required": ["lit"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"list": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["list"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"object": {
+							"type": "object",
+							"additionalProperties": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["object"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"field": {
+							"type": "string"
+						}
+					},
+					"required": ["field"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"param": {
+							"type": "string"
+						}
+					},
+					"required": ["param"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"var": {
+							"type": "string"
+						}
+					},
+					"required": ["var"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"finding": {
+							"type": "string"
+						}
+					},
+					"required": ["finding"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"not": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["not"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"isNull": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["isNull"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"utf16Length": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["utf16Length"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"codePoints": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["codePoints"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"visibleLength": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["visibleLength"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"visibleWords": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["visibleWords"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"interiorLineBreaks": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["interiorLineBreaks"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"trim": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["trim"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"lower": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["lower"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"normalizeLineEndings": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["normalizeLineEndings"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"count": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["count"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"flatten": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["flatten"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"distinct": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["distinct"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"first": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["first"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sortByStart": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["sortByStart"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatArgumentNames": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatArgumentNames"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatArgumentOrder": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatArgumentOrder"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatModifiers": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatModifiers"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatIssues": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatIssues"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatCompiled": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatCompiled"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"richTextCounts": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["richTextCounts"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"richTextTagBalance": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["richTextTagBalance"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"unrealWhitespace": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["unrealWhitespace"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"unrealUnsafeWhitespace": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["unrealUnsafeWhitespace"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatBraceBalance": {
+							"$ref": "#/$defs/GameTextExpr"
+						}
+					},
+					"required": ["formatBraceBalance"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"get": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["get"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"eq": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["eq"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"ne": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["ne"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"lt": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["lt"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"le": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["le"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"gt": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["gt"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"ge": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["ge"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"in": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["in"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sub": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["sub"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"div": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["div"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"round": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["round"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"startsWith": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["startsWith"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"endsWith": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["endsWith"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"contains": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["contains"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"countOccurrences": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["countOccurrences"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"findAll": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["findAll"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"anyChar": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["anyChar"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"allChars": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["allChars"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"removeClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["removeClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"leadingClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["leadingClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"trailingClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["trailingClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"take": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["take"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"drop": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["drop"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"minus": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["minus"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"zip": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["zip"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"matchesRole": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["matchesRole"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"pathHasPrefix": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["pathHasPrefix"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatPattern": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["formatPattern"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"richTextValid": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["richTextValid"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"compareRichTextTags": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["compareRichTextTags"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"withoutOptionalArgumentTags": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["withoutOptionalArgumentTags"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"findingField": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 2,
+							"minItems": 2
+						}
+					},
+					"required": ["findingField"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"if": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["if"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"slice": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["slice"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"trimClass": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["trimClass"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"runs": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["runs"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"regexMatches": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["regexMatches"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"regexTest": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["regexTest"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"termMatches": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 3,
+							"minItems": 3
+						}
+					},
+					"required": ["termMatches"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"and": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["and"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"or": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["or"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"coalesce": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["coalesce"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"add": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["add"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mul": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["mul"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"min": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["min"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"max": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["max"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"concat": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["concat"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"concatLists": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/GameTextExpr"
+							}
+						}
+					},
+					"required": ["concatLists"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"filter": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["filter"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"map": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["map"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"flatMap": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["flatMap"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"any": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["any"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"all": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"type": "string"
+										}
+									],
+									"maxItems": 3,
+									"minItems": 3
+								}
+							]
+						}
+					},
+					"required": ["all"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sortCodeUnit": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 1,
+									"minItems": 1
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								}
+							]
+						}
+					},
+					"required": ["sortCodeUnit"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"sortLocale": {
+							"anyOf": [
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 1,
+									"minItems": 1
+								},
+								{
+									"type": "array",
+									"prefixItems": [
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										},
+										{
+											"$ref": "#/$defs/GameTextExpr"
+										}
+									],
+									"maxItems": 2,
+									"minItems": 2
+								}
+							]
+						}
+					},
+					"required": ["sortLocale"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"occurrences": {
+							"type": "array",
+							"items": false
+						}
+					},
+					"required": ["occurrences"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"termListMatches": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 4,
+							"minItems": 4
+						}
+					},
+					"required": ["termListMatches"],
+					"additionalProperties": true
+				},
+				{
+					"type": "object",
+					"properties": {
+						"formatRenameArgument": {
+							"type": "array",
+							"prefixItems": [
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								},
+								{
+									"$ref": "#/$defs/GameTextExpr"
+								}
+							],
+							"maxItems": 4,
+							"minItems": 4
+						}
+					},
+					"required": ["formatRenameArgument"],
+					"additionalProperties": true
+				}
+			]
+		},
+		"GameTextRule": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"minLength": 1
+				},
+				"ruleId": {
+					"type": "string",
+					"minLength": 1
+				},
+				"kind": {
+					"type": "string",
+					"minLength": 1
+				},
+				"label": {
+					"type": "string",
+					"minLength": 1
+				},
+				"subject": {
+					"type": "string",
+					"enum": ["line", "line_culture", "unit_source"]
+				},
+				"family": {
+					"type": "string",
+					"enum": ["builtin", "policy", "custom", "source"]
+				},
+				"enabled": {
+					"type": "boolean"
+				},
+				"severity": {
+					"type": "string",
+					"enum": ["blocking", "normal", "low"]
+				},
+				"params": {
+					"type": "object"
+				},
+				"scope": {
+					"type": "object",
+					"properties": {
+						"roles": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1,
+							"maxItems": 64
+						},
+						"cultures": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							},
+							"minItems": 1,
+							"maxItems": 256
+						},
+						"pathPrefixes": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 1,
+							"maxItems": 64
+						}
+					},
+					"additionalProperties": true
+				},
+				"role": {
+					"type": "string"
+				},
+				"let": {
+					"type": "object",
+					"additionalProperties": {
+						"$ref": "#/$defs/GameTextExpr"
+					}
+				},
+				"each": {
+					"$ref": "#/$defs/GameTextExpr_1"
+				},
+				"eachAs": {
+					"type": "string"
+				},
+				"when": {
+					"$ref": "#/$defs/GameTextExpr"
+				},
+				"actual": {
+					"$ref": "#/$defs/GameTextExpr"
+				},
+				"expectation": {
+					"$ref": "#/$defs/GameTextExpr"
+				},
+				"fix": {
+					"$ref": "#/$defs/GameTextExpr_1"
+				},
+				"affected": {
+					"$ref": "#/$defs/GameTextExpr_1"
+				},
+				"translationOrigin": {
+					"$ref": "#/$defs/GameTextExpr_1"
+				},
+				"extra": {
+					"$ref": "#/$defs/GameTextExpr_1"
+				},
+				"recovery": {
+					"$ref": "#/$defs/GameTextExpr"
+				},
+				"counts": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"id",
+				"kind",
+				"label",
+				"subject",
+				"family",
+				"severity",
+				"when",
+				"actual",
+				"expectation",
+				"recovery"
+			],
+			"additionalProperties": true
+		},
+		"GameTextRuleDocumentV4": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"type": "number",
+					"enum": [4]
+				},
+				"roles": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"description": {
+								"type": "string"
+							},
+							"scopes": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"matchers": {
+											"type": "array",
+											"items": {
+												"anyOf": [
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["location_kind"]
+															},
+															"value": {
+																"type": "string",
+																"enum": [
+																	"data_table_cell",
+																	"string_table_entry",
+																	"asset_property"
+																]
+															}
+														},
+														"required": ["kind", "value"],
+														"additionalProperties": true
+													},
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["object_path"]
+															},
+															"operator": {
+																"type": "string",
+																"enum": ["exact", "prefix"]
+															},
+															"value": {
+																"type": "string"
+															}
+														},
+														"required": ["kind", "operator", "value"],
+														"additionalProperties": true
+													},
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["row"]
+															},
+															"operator": {
+																"type": "string",
+																"enum": ["exact", "prefix"]
+															},
+															"value": {
+																"type": "string"
+															}
+														},
+														"required": ["kind", "operator", "value"],
+														"additionalProperties": true
+													},
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["property_path"]
+															},
+															"operator": {
+																"type": "string",
+																"enum": ["exact", "prefix"]
+															},
+															"value": {
+																"type": "string"
+															}
+														},
+														"required": ["kind", "operator", "value"],
+														"additionalProperties": true
+													},
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["string_table_entry"]
+															},
+															"operator": {
+																"type": "string",
+																"enum": ["exact", "prefix"]
+															},
+															"value": {
+																"type": "string"
+															}
+														},
+														"required": ["kind", "operator", "value"],
+														"additionalProperties": true
+													},
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["class_path"]
+															},
+															"operator": {
+																"type": "string",
+																"enum": ["exact", "prefix"]
+															},
+															"value": {
+																"type": "string"
+															}
+														},
+														"required": ["kind", "operator", "value"],
+														"additionalProperties": true
+													}
+												]
+											},
+											"minItems": 1,
+											"maxItems": 16
+										}
+									},
+									"required": ["matchers"],
+									"additionalProperties": true
+								},
+								"minItems": 1,
+								"maxItems": 64
+							}
+						},
+						"required": ["id", "scopes"],
+						"additionalProperties": true
+					}
+				},
+				"rules": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/GameTextRule"
+					}
+				}
+			},
+			"required": ["schemaVersion", "roles", "rules"],
+			"additionalProperties": true
+		}
+	}
+}

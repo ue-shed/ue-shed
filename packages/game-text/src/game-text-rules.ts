@@ -218,7 +218,9 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 			"duplicate_culture_key",
 			"duplicate_role_id",
 			"duplicate_rule_id",
-			"unknown_role_id"
+			"unknown_role_id",
+			"invalid_expression",
+			"rule_cycle"
 		]),
 		message: Schema.String,
 		recovery: Schema.String

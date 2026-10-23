@@ -1,5 +1,10 @@
 // Named exports only. Modules not listed in an entry point are private to the package.
 
+export { Expr, Rule, RuleDocumentV4, ruleDocumentJsonSchema } from "./rules/schema.js";
+export { rule, expr } from "./rules/builder.js";
+export { exampleRules } from "./rules/catalogue.js";
+export { translateRuleDocument, canonicalRuleDocument } from "./rules/translate.js";
+
 export { LocalizationWordCount, localizationWordCount } from "./localization-words.js";
 
 export {

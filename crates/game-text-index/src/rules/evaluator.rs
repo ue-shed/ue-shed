@@ -327,7 +327,8 @@ impl Parsed {
 }
 struct DenseSelection {
     suffixes: Vec<Vec<Atom>>,
-    groups: Vec<usize>,
+    /// Each row's suffix; empty when every row has the first.
+    groups: Vec<u8>,
 }
 /// A subject row's diagnostic. The subject is the evaluation's; `code` indexes
 /// `DIAGNOSTIC_CODES`.
@@ -391,7 +392,7 @@ fn suffix_groups(
     columns: &[Column],
     len: usize,
     measure: &mut Measure,
-) -> Option<(Vec<Vec<Atom>>, Vec<usize>)> {
+) -> Option<(Vec<Vec<Atom>>, Vec<u8>)> {
     const LIMIT: usize = 32;
     let suffix = |row: usize| {
         columns
@@ -409,7 +410,7 @@ fn suffix_groups(
         .iter()
         .all(|column| matches!(column.data, super::columns::Data::Constant(_)))
     {
-        return Some((vec![suffix(0)], vec![0; len]));
+        return Some((vec![suffix(0)], Vec::new()));
     }
     const CHUNK: usize = 1 << 16;
     let chunks = (0..len.div_ceil(CHUNK)).collect::<Vec<_>>();
@@ -440,7 +441,7 @@ fn suffix_groups(
         suffixes
             .iter()
             .position(|known| same(row, known))
-            .unwrap_or_default()
+            .unwrap_or_default() as u8
     });
     Some((suffixes, groups))
 }
@@ -451,10 +452,18 @@ fn gather(
     slot: impl Fn(usize) -> Option<Slot> + Sync + Send,
 ) -> Vec<Atom> {
     let len = failures.len;
+    let any_limited = std::sync::atomic::AtomicBool::new(false);
     let output = measure.parallel_range(len, |row| match slot(row) {
         Some(Slot::Value(value)) => value,
-        _ => Atom::Null,
+        Some(Slot::Limit) => {
+            any_limited.store(true, std::sync::atomic::Ordering::Relaxed);
+            Atom::Null
+        }
+        None => Atom::Null,
     });
+    if !any_limited.into_inner() {
+        return output;
+    }
     let limited = measure.parallel_range(len.div_ceil(64), |word| {
         (word * 64..((word + 1) * 64).min(len))
             .filter(|row| matches!(slot(*row), Some(Slot::Limit)))
@@ -1224,8 +1233,10 @@ impl<'a> Evaluator<'a> {
                 );
             }
         }
-        // Keys and memo hits in parallel, a bounded chunk of rows at a time. Hits go straight to
-        // the output; misses are deduplicated in row order, so interning order is unchanged.
+        // A bounded chunk of rows at a time: keys and memo hits in parallel, then the chunk's
+        // misses deduplicated in row order, computed and committed before the next chunk
+        // probes. A key is computed in the chunk where it first appears, so tasks still run
+        // and intern in first-row order, and the dedup table stays the size of a chunk.
         let len = selection.len();
         let arity = columns.len();
         let mut output = vec![Atom::Null; len];
@@ -1236,8 +1247,11 @@ impl<'a> Evaluator<'a> {
         // Each task's tuple, `arity` atoms at a time.
         let mut atoms = Vec::<Atom>::new();
         let mut missing = FxHashMap::<TupleKey, u32>::default();
+        let mut results = Vec::<Slot>::new();
         let mut tuple = vec![Atom::Null; arity];
         let mut phases = <[PhaseTime; 5]>::default();
+        let mut distinct_inputs = 0;
+        let nested = self.arena.recorder.kernel_wall();
         const CHUNK: usize = 1 << 16;
         for chunk in (0..len).step_by(CHUNK) {
             let mut probe = Measure::start();
@@ -1270,15 +1284,10 @@ impl<'a> Evaluator<'a> {
             };
             probe.into_phase(&mut phases[0], &mut started);
             let claim = Measure::start();
-            // Size the miss table for this chunk at once rather than rehashing as it grows.
-            let misses_here = probes
-                .iter()
-                .filter(|probe| matches!(probe, Probe::Miss(_) | Probe::Unpacked))
-                .count();
-            missing.reserve(misses_here);
-            keys.reserve(misses_here);
-            atoms.reserve(misses_here * arity);
-            misses.reserve(misses_here);
+            missing.clear();
+            keys.clear();
+            atoms.clear();
+            misses.clear();
             for (offset, probe) in probes.into_iter().enumerate() {
                 let row = chunk + offset;
                 let key = match probe {
@@ -1319,69 +1328,74 @@ impl<'a> Evaluator<'a> {
                 misses.push((row as u32, task));
             }
             claim.into_phase(&mut phases[1], &mut started);
-        }
-        drop(missing);
-        let task_tuple = |task: usize| &atoms[task * arity..(task + 1) * arity];
-        let nested = self.arena.recorder.kernel_wall();
-        if matches!(node.op, Op::MatchesRole | Op::PathHasPrefix) {
-            // Prepare each shared occurrence bitset before tuple workers start, avoiding
-            // competing first-use builds of the same role or prefix in the Rayon pool.
-            let roles = (0..keys.len())
-                .filter_map(|task| match task_tuple(task) {
-                    [Atom::Val(_), Atom::Str(key)] => Some(*key),
-                    _ => None,
-                })
-                .collect::<HashSet<_>>();
-            for key in roles {
-                self.kernel
-                    .occurrence_mask(&self.arena, key, node.op == Op::MatchesRole)?;
+            if keys.is_empty() {
+                continue;
             }
-        }
-        let distinct_inputs = keys.len();
-        self.cache[cache].reserve(keys.len());
-        // Bound temporary structured results while keeping interning order stable.
-        let mut results = Vec::with_capacity(keys.len());
-        for batch in (0..keys.len()).collect::<Vec<_>>().chunks(4096) {
-            let arena = &self.arena;
-            let kernel = &self.kernel;
-            let mut compute = Measure::start();
-            let computed = compute
-                .parallel(batch, |task| {
-                    let tuple = task_tuple(*task);
-                    if node.op == Op::List {
-                        return Ok(Computed::List(tuple.to_vec()));
-                    }
-                    match kernel.run(arena, &node.op, tuple) {
-                        Ok(value) => Ok(arena
-                            .find(&value)
-                            .map_or(Computed::Out(value), Computed::Found)),
-                        Err(error) if error.code == ErrorCode::LimitExceeded => Ok(Computed::Limit),
-                        Err(error) => Err(error),
-                    }
-                })
-                .into_iter()
-                .collect::<Result<Vec<_>>>()?;
-            compute.into_phase(&mut phases[2], &mut started);
-            let commit = Measure::start();
-            for (task, value) in batch.iter().zip(computed) {
-                let result = match value {
-                    Computed::List(values) => Slot::Value(self.arena.list(values)?),
-                    Computed::Found(value) => Slot::Value(value),
-                    Computed::Out(value) => Slot::Value(self.arena.build(value)?),
-                    Computed::Limit => Slot::Limit,
-                };
-                self.cache[cache].insert(keys[*task], result);
-                results.push(result);
+            let task_tuple = |task: usize| &atoms[task * arity..(task + 1) * arity];
+            if matches!(node.op, Op::MatchesRole | Op::PathHasPrefix) {
+                // Prepare each shared occurrence bitset before tuple workers start, avoiding
+                // competing first-use builds of the same role or prefix in the Rayon pool.
+                let roles = (0..keys.len())
+                    .filter_map(|task| match task_tuple(task) {
+                        [Atom::Val(_), Atom::Str(key)] => Some(*key),
+                        _ => None,
+                    })
+                    .collect::<HashSet<_>>();
+                for key in roles {
+                    self.kernel
+                        .occurrence_mask(&self.arena, key, node.op == Op::MatchesRole)?;
+                }
             }
-            commit.into_phase(&mut phases[3], &mut started);
+            distinct_inputs += keys.len();
+            self.cache[cache].reserve(keys.len());
+            results.clear();
+            // Bound temporary structured results while keeping interning order stable.
+            for batch in (0..keys.len()).collect::<Vec<_>>().chunks(4096) {
+                let arena = &self.arena;
+                let kernel = &self.kernel;
+                let mut compute = Measure::start();
+                let computed = compute
+                    .parallel(batch, |task| {
+                        let tuple = task_tuple(*task);
+                        if node.op == Op::List {
+                            return Ok(Computed::List(tuple.to_vec()));
+                        }
+                        match kernel.run(arena, &node.op, tuple) {
+                            Ok(value) => Ok(arena
+                                .find(&value)
+                                .map_or(Computed::Out(value), Computed::Found)),
+                            Err(error) if error.code == ErrorCode::LimitExceeded => {
+                                Ok(Computed::Limit)
+                            }
+                            Err(error) => Err(error),
+                        }
+                    })
+                    .into_iter()
+                    .collect::<Result<Vec<_>>>()?;
+                compute.into_phase(&mut phases[2], &mut started);
+                let commit = Measure::start();
+                for (task, value) in batch.iter().zip(computed) {
+                    let result = match value {
+                        Computed::List(values) => Slot::Value(self.arena.list(values)?),
+                        Computed::Found(value) => Slot::Value(value),
+                        Computed::Out(value) => Slot::Value(self.arena.build(value)?),
+                        Computed::Limit => Slot::Limit,
+                    };
+                    self.cache[cache].insert(keys[*task], result);
+                    results.push(result);
+                }
+                commit.into_phase(&mut phases[3], &mut started);
+            }
+            let gather = Measure::start();
+            for (row, task) in misses.iter().copied() {
+                match results[task as usize] {
+                    Slot::Value(value) => output[row as usize] = value,
+                    Slot::Limit => limited.push(row),
+                }
+            }
+            gather.into_phase(&mut phases[4], &mut started);
         }
         let gather = Measure::start();
-        for (row, task) in misses {
-            match results[task as usize] {
-                Slot::Value(value) => output[row as usize] = value,
-                Slot::Limit => limited.push(row),
-            }
-        }
         // A row over its limit is null and failed.
         for row in limited {
             failures.set(row as usize);
@@ -1477,32 +1491,52 @@ impl<'a> Evaluator<'a> {
             }
         }
         let parsed = &self.parsed;
+        // Each row's text and memo group in one word; `NONE` for failed and non-string rows.
+        const NONE: u64 = u64::MAX;
+        let key =
+            |packed: u64| (packed != NONE).then_some((StrId(packed as u32), (packed >> 32) as usize));
         let row_keys = keyed.parallel_range(selection.len(), |row| {
             if failures.get(row) {
-                return None;
+                return NONE;
             }
             let Atom::Str(text) = columns[0].get(row, &self.arena) else {
-                return None;
+                return NONE;
             };
             let independent = pattern
                 && parsed[text.0 as usize]
                     .as_ref()
                     .is_some_and(|parse| !parse.culture_dependent);
-            Some((
-                text,
-                cache_groups[if independent {
-                    suffixes.len()
-                } else {
-                    groups[row]
-                }],
-            ))
+            let group = cache_groups[if independent {
+                suffixes.len()
+            } else {
+                groups.get(row).copied().unwrap_or(0) as usize
+            }];
+            (group as u64) << 32 | u64::from(text.0)
         });
         keyed.into_phase(&mut phases[0], &mut started);
-        let claim = Measure::start();
+        // Most rows' inputs are in the memo already. Find the rest in parallel, then claim them
+        // in row order, which is the order a pass over every row would claim them in.
+        let mut claim = Measure::start();
+        const CHUNK: usize = 1 << 16;
+        let memos = &self.dense[cache];
+        let unclaimed = claim.parallel_chunks(
+            &(0..row_keys.len().div_ceil(CHUNK)).collect::<Vec<_>>(),
+            1,
+            |chunk| {
+                (chunk * CHUNK..((chunk + 1) * CHUNK).min(row_keys.len()))
+                    .filter(|row| {
+                        key(row_keys[*row])
+                            .is_some_and(|(text, group)| memos[group].1.missing(text.0 as usize))
+                    })
+                    .collect::<Vec<_>>()
+            },
+        );
         let mut tasks = Vec::new();
-        for (text, group) in row_keys.iter().flatten() {
-            if self.dense[cache][*group].1.claim(text.0 as usize) {
-                tasks.push((*text, *group));
+        for row in unclaimed.into_iter().flatten() {
+            if let Some((text, group)) = key(row_keys[row])
+                && self.dense[cache][group].1.claim(text.0 as usize)
+            {
+                tasks.push((text, group));
             }
         }
         let distinct_inputs = tasks.len();
@@ -1580,7 +1614,8 @@ impl<'a> Evaluator<'a> {
         }
         let mut gathered = Measure::start();
         let output = gather(&mut gathered, &mut failures, |row| {
-            row_keys[row].and_then(|(text, group)| self.dense[cache][group].1.get(text.0 as usize))
+            key(row_keys[row])
+                .and_then(|(text, group)| self.dense[cache][group].1.get(text.0 as usize))
         });
         let mut output = Column::from_atoms(&output, &mut self.arena)?;
         output.failed = failures;

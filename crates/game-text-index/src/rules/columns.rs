@@ -318,81 +318,65 @@ impl Column {
         }
     }
     pub fn from_atoms(values: &[Atom], arena: &mut Arena) -> Result<Self> {
-        let mut nulls = Bits::new(values.len());
-        for (row, value) in values.iter().enumerate() {
-            if *value == Atom::Null {
-                nulls.set(row);
-            }
-        }
+        use rayon::prelude::*;
+        // Large inputs scan and copy in parallel; small ones stay on the calling thread. Only
+        // the mixed-type case interns, and it stays serial so ids follow row order.
+        const SPLIT: usize = 1 << 15;
+        let words = |set: &(dyn Fn(Atom) -> bool + Sync)| Bits {
+            words: values
+                .par_chunks(64)
+                .with_min_len(SPLIT / 64)
+                .map(|chunk| {
+                    chunk
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, value)| set(**value))
+                        .fold(0u64, |word, (row, _)| word | 1 << row)
+                })
+                .collect(),
+            len: values.len(),
+        };
+        let nulls = words(&|value| value == Atom::Null);
         let first = values
             .iter()
             .copied()
             .find(|value| *value != Atom::Null)
             .unwrap_or_default();
-        if values.iter().all(|value| *value == first) {
+        if values
+            .par_iter()
+            .with_min_len(SPLIT)
+            .all(|value| *value == first)
+        {
             return Ok(Self::constant(first, values.len()));
         }
-        let same = values.iter().all(|value| {
+        let same = values.par_iter().with_min_len(SPLIT).all(|value| {
             *value == Atom::Null || std::mem::discriminant(value) == std::mem::discriminant(&first)
         });
+        fn typed<T: Send>(values: &[Atom], read: impl Fn(Atom) -> T + Sync + Send) -> Vec<T> {
+            values
+                .par_iter()
+                .with_min_len(SPLIT)
+                .map(|value| read(*value))
+                .collect()
+        }
         let data = match first {
-            Atom::Bool(_) if same => {
-                let mut bits = Bits::new(values.len());
-                for (row, value) in values.iter().enumerate() {
-                    if value.boolean() {
-                        bits.set(row);
-                    }
-                }
-                Data::Bool(bits)
-            }
-            Atom::Int(_) if same => Data::Int(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Int(value) = value {
-                            *value
-                        } else {
-                            0
-                        }
-                    })
-                    .collect(),
-            ),
-            Atom::Num(_) if same => Data::Num(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Num(value) = value {
-                            f64::from_bits(*value)
-                        } else {
-                            0.0
-                        }
-                    })
-                    .collect(),
-            ),
-            Atom::Str(_) if same => Data::Str(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Str(value) = value {
-                            *value
-                        } else {
-                            StrId(0)
-                        }
-                    })
-                    .collect(),
-            ),
-            Atom::Val(_) if same => Data::Val(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Val(value) = value {
-                            *value
-                        } else {
-                            ValId(0)
-                        }
-                    })
-                    .collect(),
-            ),
+            Atom::Bool(_) if same => Data::Bool(words(&|value| value.boolean())),
+            Atom::Int(_) if same => Data::Int(typed(values, |value| match value {
+                Atom::Int(value) => value,
+                _ => 0,
+            })),
+            Atom::Num(_) if same => Data::Num(typed(values, |value| match value {
+                Atom::Num(value) => f64::from_bits(value),
+                _ => 0.0,
+            })),
+            Atom::Str(_) if same => Data::Str(typed(values, |value| match value {
+                Atom::Str(value) => value,
+                _ => StrId(0),
+            })),
+            Atom::Val(_) if same => Data::Val(typed(values, |value| match value {
+                Atom::Val(value) => value,
+                _ => ValId(0),
+            })),
             _ => Data::Val(
                 values
                     .iter()

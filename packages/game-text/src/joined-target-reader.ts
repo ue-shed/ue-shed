@@ -617,7 +617,7 @@ export const inspectJoinedTarget = Effect.fn("JoinedTarget.inspect")(function* (
 	}
 	for (const [name, mask] of [
 		["line.problems", (1 << TEXT_PROBLEMS.length) - 1],
-		["line.reasons", 131071],
+		["line.reasons", (1 << LocalizationUnknownReason.literals.length) - 1],
 		["line.facts", 1023]
 	] as const)
 		for (const value of yield* u32(layer, name))
@@ -632,7 +632,7 @@ export const inspectJoinedTarget = Effect.fn("JoinedTarget.inspect")(function* (
 		states[meta.input.target.cultures[ci]!] = counts;
 		for (const [field, mask] of [
 			["facts", 1023],
-			["reasons", 131071],
+			["reasons", (1 << LocalizationUnknownReason.literals.length) - 1],
 			["review", 3]
 		] as const)
 			for (const value of yield* u32(layer, `c${ci}.${field}`))

@@ -326,7 +326,9 @@ describe("conflicting source order regression", () => {
 					path: resolve(projectRoot, record.path)
 				}))
 			});
-			const expected = joinLocalizationTarget(corpus, evidence);
+			const expected = joinLocalizationTarget(corpus, evidence, evidence.target, {
+				completePackageInventory: true
+			});
 			await runJoinIn(
 				projectRoot,
 				cache,
@@ -356,7 +358,9 @@ describe("conflicting source order regression", () => {
 			);
 			// Hydration and the join must both match the independent original-event oracle.
 			expect(layerCorpus).toEqual(corpus);
-			const layerOracle = joinLocalizationTarget(layerCorpus, evidence);
+			const layerOracle = joinLocalizationTarget(layerCorpus, evidence, evidence.target, {
+				completePackageInventory: true
+			});
 			expect(compareLocalizationJoins(layerOracle, actual).equal).toBe(true);
 			const comparison = compareLocalizationJoins(expected, actual);
 			expect(comparison.equal, comparison.message).toBe(true);
@@ -424,7 +428,9 @@ describe("split saved identity findings regression", () => {
 				`unreal:${encodeURIComponent("UI [literal]")}:T`,
 				"unreal:UI:T"
 			]);
-			const expected = joinLocalizationTarget(corpus, evidence);
+			const expected = joinLocalizationTarget(corpus, evidence, evidence.target, {
+				completePackageInventory: true
+			});
 			await runJoinIn(
 				projectRoot,
 				cache,

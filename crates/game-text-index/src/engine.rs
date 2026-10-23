@@ -99,10 +99,6 @@ pub enum EngineRequest {
         payload: String,
         output: std::path::PathBuf,
     },
-    LocalizationFocus {
-        reader: String,
-        payload: String,
-    },
     LocalizationDetail {
         reader: String,
         payload: String,
@@ -116,10 +112,6 @@ pub enum EngineRequest {
         reader: String,
         payload: String,
         output: std::path::PathBuf,
-    },
-    LocalizationPage {
-        reader: String,
-        payload: String,
     },
 }
 impl EngineRequest {
@@ -153,11 +145,9 @@ impl EngineRequest {
             | Self::LocalizationCorpus { reader, .. }
             | Self::Export { reader, .. }
             | Self::Rows { reader, .. }
-            | Self::LocalizationFocus { reader, .. }
             | Self::LocalizationDetail { reader, .. }
             | Self::LocalizationExport { reader, .. }
-            | Self::LocalizationFocusExport { reader, .. }
-            | Self::LocalizationPage { reader, .. } => {
+            | Self::LocalizationFocusExport { reader, .. } => {
                 require(
                     !reader.is_empty() && reader.len() <= 128,
                     invalid("Invalid native reader handle."),
@@ -175,17 +165,12 @@ impl EngineRequest {
             Self::Search { payload, .. }
             | Self::Focus { payload, .. }
             | Self::Rows { payload, .. }
-            | Self::LocalizationPage { payload, .. }
-            | Self::LocalizationFocus { payload, .. }
             | Self::LocalizationFocusExport { payload, .. } => {
                 require(
                     payload.len() <= 512 * 1024,
                     invalid("Native query payload exceeds its bound."),
                 )?;
-                if matches!(
-                    self,
-                    Self::LocalizationFocus { .. } | Self::LocalizationFocusExport { .. }
-                ) {
+                if matches!(self, Self::LocalizationFocusExport { .. }) {
                     let id = crate::json_value::parse(payload).map_err(|source| {
                         Error::with_source(
                             ErrorCode::InvalidInput,
@@ -368,11 +353,9 @@ impl EngineSession {
             | EngineRequest::LocalizationCorpus { reader, .. }
             | EngineRequest::Export { reader, .. }
             | EngineRequest::Rows { reader, .. }
-            | EngineRequest::LocalizationFocus { reader, .. }
             | EngineRequest::LocalizationDetail { reader, .. }
             | EngineRequest::LocalizationExport { reader, .. }
-            | EngineRequest::LocalizationFocusExport { reader, .. }
-            | EngineRequest::LocalizationPage { reader, .. } => {
+            | EngineRequest::LocalizationFocusExport { reader, .. } => {
                 let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 let (action, payload) = match request {
                     EngineRequest::Summary { .. } => (
@@ -476,10 +459,6 @@ impl EngineSession {
                     EngineRequest::Focus { payload, .. } => {
                         ("focus", query.focus_json(payload, cancelled)?)
                     }
-                    EngineRequest::LocalizationFocus { payload, .. } => (
-                        "localization_focus",
-                        query.localization_focus_json(payload, cancelled)?,
-                    ),
                     EngineRequest::LocalizationDetail { payload, .. } => (
                         "localization_detail",
                         query.localization_detail_json(payload, cancelled)?,
@@ -521,13 +500,6 @@ impl EngineSession {
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
                         )
                     }
-                    EngineRequest::LocalizationPage { payload, .. } => {
-                        let request = parse_search_request(payload)?;
-                        (
-                            "localization_page",
-                            crate::wtf8::view_json(&query.localization_page(&request, cancelled)?)?,
-                        )
-                    }
                     _ => return Err("Invalid engine dispatch.".into()),
                 };
                 require(
@@ -556,6 +528,24 @@ mod tests {
     use crate::store::Store;
     use serde_json::json;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn retired_inline_localization_actions_are_rejected() -> Result<()> {
+        for action in ["localization_focus", "localization_page"] {
+            assert!(
+                serde_json::from_value::<EngineRequest>(json!({
+                    "action": action, "reader": "reader", "payload": "\"line\""
+                }))
+                .is_err()
+            );
+        }
+        let export: EngineRequest = serde_json::from_value(json!({
+            "action": "localization_focus_export", "reader": "reader",
+            "payload": "\"line\"", "output": crate::test_directory("focus-export").join("line.json")
+        }))?;
+        export.validate()?;
+        Ok(())
+    }
 
     fn snapshot() -> Result<(Configuration, String)> {
         let configuration = Configuration {

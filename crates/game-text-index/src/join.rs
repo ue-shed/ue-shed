@@ -1320,10 +1320,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let meta = json!({"version":3,"engineSummary":summary,"count":joined.groups.len(),"input":input,"aliases":aliases,"chunks":chunks,"generation":generation,"dependencies":dependencies,"packageNames":joined.packages.names,"packageStarts":joined.packages.starts,"pairs":marks["pairs"],"ambiguous":marks["ambiguous"],"oldCandidates":marks["oldCandidates"],"reducedSourceChecking":joined.pos.iter().map(|f|f.loaded&&!f.has_source).collect::<Vec<_>>()});
     let count = joined.groups.len() as u32;
     drop(joined);
-    if let Some(outcome) = crate::join_overlay::publish(store, input, &key, &meta, &unique_columns)?
-    {
-        return Ok(outcome);
-    }
     let metadata = metadata_bytes(&meta)?;
     require(
         metadata.len() <= 16 * 1024 * 1024,

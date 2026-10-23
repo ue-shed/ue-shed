@@ -27,7 +27,6 @@ pub mod join;
 mod join_columns;
 pub mod join_incremental;
 mod join_marks;
-mod join_overlay;
 mod join_places;
 mod join_policy;
 mod join_query;

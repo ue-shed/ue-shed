@@ -1,7 +1,6 @@
 //! Hydrate selected localization evidence in Rust; entry decoding never runs in the host.
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
-use crate::engine_types::MAX_PAGE;
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -218,33 +217,5 @@ impl EngineQuery {
             cultures.push(mark);
         }
         Ok(cultures)
-    }
-    pub fn localization_page(
-        &mut self,
-        request: &crate::engine_types::SearchRequest,
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
-        require(
-            request.localization.is_some(),
-            crate::engine_types::invalid("Localization evidence requires a selected target."),
-        )?;
-        let rows = self.matching(request, cancelled)?;
-        let start = if let Some(cursor) = &request.localization_cursor {
-            let row = self.find_id("line", cursor)?;
-            row.and_then(|row| rows.iter().position(|value| *value as usize == row))
-                .map_or(0, |index| index + 1)
-        } else {
-            0
-        };
-        let end = rows.len().min(start + request.page_size.min(MAX_PAGE));
-        let mut entries = Vec::new();
-        for row in &rows[start..end] {
-            entries.push(self.localization_line(*row as usize, cancelled)?);
-        }
-        let mut result = json!({"lines":entries,"total":rows.len()});
-        if end < rows.len() {
-            result["nextCursor"] = json!(self.packed("line", rows[end - 1] as usize)?);
-        }
-        Ok(result)
     }
 }

@@ -915,8 +915,6 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     "corpus_report_header",
                     "corpus_fingerprint",
                     "aggregate",
-                    "localization_focus",
-                    "localization_page",
                     "localization_detail",
                     "localization_export",
                     "localization_focus_export",

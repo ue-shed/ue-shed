@@ -528,66 +528,6 @@
 					"properties": {
 						"action": {
 							"type": "string",
-							"enum": ["localization_focus"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"payload": {
-							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 524288
-								}
-							]
-						}
-					},
-					"required": ["action", "reader", "payload"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["localization_page"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"payload": {
-							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 524288
-								}
-							]
-						}
-					},
-					"required": ["action", "reader", "payload"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
 							"enum": ["localization_detail"]
 						},
 						"reader": {

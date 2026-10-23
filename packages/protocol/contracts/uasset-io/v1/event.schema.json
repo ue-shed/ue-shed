@@ -63,12 +63,10 @@
 						"corpus_fingerprint",
 						"aggregate",
 						"rows",
-						"localization_focus",
 						"localization_detail",
 						"localization_export",
 						"localization_focus_export",
-						"localization_corpus",
-						"localization_page"
+						"localization_corpus"
 					]
 				},
 				"capabilities": {

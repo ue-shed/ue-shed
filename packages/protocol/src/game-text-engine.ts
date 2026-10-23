@@ -41,15 +41,7 @@ export const GameTextEngineRequest = Schema.Union([
 	...(["close", "summary", "corpus_fingerprint", "corpus_report_header"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader })
 	),
-	...(
-		[
-			"search",
-			"focus",
-			"localization_focus",
-			"localization_page",
-			"localization_detail"
-		] as const
-	).map((action) =>
+	...(["search", "focus", "localization_detail"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader, payload: Payload })
 	)
 ]).annotate({ identifier: "GameTextEngineRequest" });
@@ -72,12 +64,10 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"corpus_fingerprint",
 		"aggregate",
 		"rows",
-		"localization_focus",
 		"localization_detail",
 		"localization_export",
 		"localization_focus_export",
-		"localization_corpus",
-		"localization_page"
+		"localization_corpus"
 	]),
 	capabilities: Schema.Array(Schema.Literal("game_text_engine_v1")),
 	reader: Schema.NullOr(Reader),

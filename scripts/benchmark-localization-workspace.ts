@@ -36,10 +36,7 @@ const build: typeof localizationQualityWorkspaceOf = process.argv[3]
 	? (await import(pathToFileURL(resolve(process.argv[3])).href)).localizationQualityWorkspaceOf
 	: localizationQualityWorkspaceOf;
 if (!Number.isSafeInteger(count) || count < 1) throw new Error("Choose a positive line count.");
-const measure = <A>(stage: string, run: () => A) => {
-	const stop = eventLoopGaps();
-	const started = performance.now();
-	const value = run();
+const report = (stage: string, started: number, stop: ReturnType<typeof eventLoopGaps>) => {
 	const gaps = stop();
 	if (gaps.stallMaxMs > stallLimit) violations.push(`${stage}: ${gaps.stallMaxMs.toFixed(1)} ms`);
 	console.log(
@@ -50,8 +47,23 @@ const measure = <A>(stage: string, run: () => A) => {
 			heapMiB: process.memoryUsage().heapUsed / 1024 ** 2
 		})
 	);
+};
+const measure = <A>(stage: string, run: () => A) => {
+	const stop = eventLoopGaps();
+	const started = performance.now();
+	const value = run();
+	report(stage, started, stop);
 	return value;
 };
+// Pages hydrate asynchronously: time the read through to its result, not its construction.
+const measureRead = <A, E, R>(stage: string, read: () => Effect.Effect<A, E, R>) =>
+	Effect.gen(function* () {
+		const stop = eventLoopGaps();
+		const started = performance.now();
+		const value = yield* read();
+		report(stage, started, stop);
+		return value;
+	});
 await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
@@ -81,7 +93,7 @@ await Effect.runPromise(
 					);
 					yield* Effect.yieldNow;
 					for (const offset of [0, Math.floor(quality.findings.length / 2)]) {
-						const page = yield* measure(`page:${withRules}:${offset}`, () =>
+						const page = yield* measureRead(`page:${withRules}:${offset}`, () =>
 							workspace.search({ target: target.name, filter: "all", offset })
 						);
 						yield* Effect.yieldNow;
@@ -98,7 +110,7 @@ await Effect.runPromise(
 					}
 					for (const filter of ["terminology", "placeholder_text"] as const)
 						for (const offset of [0, 1000]) {
-							const page = yield* measure(
+							const page = yield* measureRead(
 								`page:${withRules}:${filter}:${offset}`,
 								() => workspace.search({ target: target.name, filter, offset })
 							);
@@ -114,7 +126,7 @@ await Effect.runPromise(
 							yield* Effect.yieldNow;
 						}
 					for (const culture of target.cultures.slice(0, 2)) {
-						yield* measure(`page:${withRules}:${culture}`, () =>
+						yield* measureRead(`page:${withRules}:${culture}`, () =>
 							workspace.search({ target: target.name, filter: "all", culture })
 						);
 						yield* Effect.yieldNow;

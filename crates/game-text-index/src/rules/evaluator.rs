@@ -715,25 +715,16 @@ impl<'a> Evaluator<'a> {
                 let (cached, ready) = self.cheap_columns[id].get_or_insert_with(|| {
                     (Column::constant(Atom::Null, self.len), Bits::new(self.len))
                 });
-                cached.scatter(
-                    &narrowed.rows.iter().collect::<Vec<_>>(),
-                    &column,
-                    &mut self.arena,
-                )?;
+                cached.scatter_mask(&narrowed.rows.mask, &column, &mut self.arena)?;
                 for (word, done) in ready.words.iter_mut().zip(&narrowed.rows.mask.words) {
                     *word |= done;
                 }
             }
-            let rows = selection
-                .rows
-                .iter()
-                .map(|row| row as usize)
-                .collect::<Vec<_>>();
-            return self.cheap_columns[id]
+            return Ok(self.cheap_columns[id]
                 .as_ref()
                 .ok_or("Missing cached column.")?
                 .0
-                .select(&rows, &mut self.arena);
+                .select_mask(mask, None));
         }
         if cacheable {
             let missing = if let Some((_, ready)) = &self.cheap_columns[id] {
@@ -785,6 +776,9 @@ impl<'a> Evaluator<'a> {
             )),
             Op::Field(name) => {
                 let field = self.prepared.field(name)?;
+                if let Some(mask) = selection.mask() {
+                    return Ok(field.column.select_mask(mask, field.rows.as_deref()));
+                }
                 let rows = selection
                     .rows
                     .iter()
@@ -816,6 +810,17 @@ impl<'a> Evaluator<'a> {
                     .reference()
                     .and_then(|name| self.references.get(name))
                     .copied();
+                if let (Op::Finding(_), Some(mask)) = (&node.op, selection.mask()) {
+                    let found = reference
+                        .and_then(|id| self.masks.get(&id))
+                        .map_or_else(|| Bits::new(selection.len()), |found| found.extract(mask));
+                    return Ok(Column {
+                        data: super::columns::Data::Bool(found),
+                        nulls: Bits::new(selection.len()),
+                        failed: Bits::new(selection.len()),
+                    }
+                    .folded());
+                }
                 let mut values = Vec::with_capacity(selection.len());
                 for row in selection.rows.iter() {
                     if let Op::Finding(_) = node.op {
@@ -951,21 +956,53 @@ impl<'a> Evaluator<'a> {
     fn conditional(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
         let condition = self.evaluate(node.args[0], selection)?;
-        let mut output = vec![Atom::Null; selection.len()];
+        // Branch rows as bitsets. When both branches give the same plain scalar type, they are
+        // written into one column; otherwise the rows are joined as atoms, as below.
+        let len = selection.len();
+        let truths = condition.booleans(&self.arena);
+        let mut untrue = Bits::all(len);
+        for ((word, truth), failure) in untrue
+            .words
+            .iter_mut()
+            .zip(&truths.words)
+            .zip(&condition.failed.words)
+        {
+            *word &= !truth & !failure;
+        }
+        let mut branches = Vec::with_capacity(2);
+        for (branch, rows) in [(node.args[1], truths), (node.args[2], untrue)] {
+            let narrowed = selection.select_bits(&rows, &mut self.arena)?;
+            branches.push((rows, self.evaluate(branch, &narrowed)?));
+        }
+        let plain = |column: &Column| match &column.data {
+            super::columns::Data::Bool(_) | super::columns::Data::Constant(Atom::Bool(_)) => {
+                Some(0)
+            }
+            super::columns::Data::Int(_) | super::columns::Data::Constant(Atom::Int(_)) => Some(1),
+            super::columns::Data::Num(_) | super::columns::Data::Constant(Atom::Num(_)) => Some(2),
+            super::columns::Data::Str(_) | super::columns::Data::Constant(Atom::Str(_)) => Some(3),
+            super::columns::Data::Constant(Atom::Null) => None,
+            _ => Some(4),
+        };
+        let kinds = branches
+            .iter()
+            .filter_map(|(_, column)| plain(column))
+            .collect::<HashSet<_>>();
+        if kinds.len() <= 1 && !kinds.contains(&4) {
+            let mut output = Column::constant(Atom::Null, len);
+            output.failed = condition.failed.clone();
+            for (rows, values) in &branches {
+                output.scatter_mask(rows, values, &mut self.arena)?;
+            }
+            return Ok(output.folded());
+        }
+        let mut output = vec![Atom::Null; len];
         let mut failed = condition.failed.clone();
-        for (branch, condition_value) in [(1, true), (2, false)] {
-            let indices = (0..selection.len())
-                .filter(|row| {
-                    !condition.failed.get(*row)
-                        && condition.get(*row, &self.arena).boolean() == condition_value
-                })
-                .collect::<Vec<_>>();
-            let narrowed = selection.select(&indices, &mut self.arena)?;
-            let values = self.evaluate(node.args[branch], &narrowed)?;
-            for (index, destination) in indices.into_iter().enumerate() {
-                output[destination] = values.get(index, &self.arena);
+        for (rows, values) in &branches {
+            for (index, destination) in rows.ones().enumerate() {
+                output[destination as usize] = values.get(index, &self.arena);
                 if values.failed.get(index) {
-                    failed.set(destination);
+                    failed.set(destination as usize);
                 }
             }
         }
@@ -2110,15 +2147,22 @@ impl Program {
             span.0
                 .into_phase_nested(&mut rule_phases[2], recorder.worker_adjustment() - span.1);
             let span = (Measure::start(), recorder.worker_adjustment());
-            let mut selected = Vec::new();
-            for (index, row) in candidates.rows.iter().enumerate() {
-                if when.failed.get(index) {
+            let selected = if let Some(mask) = candidates.mask() {
+                for row in mask.deposit(&when.failed).ones() {
                     output.diagnostics.push(Diagnostic::new(row, SYNTAX_LIMIT)?);
-                } else if when.get(index, &evaluator.arena).boolean() {
-                    selected.push(index);
                 }
-            }
-            let selected = candidates.select(&selected, &mut evaluator.arena)?;
+                candidates.select_bits(&when.booleans(&evaluator.arena), &mut evaluator.arena)?
+            } else {
+                let mut selected = Vec::new();
+                for (index, row) in candidates.rows.iter().enumerate() {
+                    if when.failed.get(index) {
+                        output.diagnostics.push(Diagnostic::new(row, SYNTAX_LIMIT)?);
+                    } else if when.get(index, &evaluator.arena).boolean() {
+                        selected.push(index);
+                    }
+                }
+                candidates.select(&selected, &mut evaluator.arena)?
+            };
             span.0
                 .into_phase_nested(&mut rule_phases[3], recorder.worker_adjustment() - span.1);
             let span = (Measure::start(), recorder.worker_adjustment());

@@ -78,8 +78,8 @@ async function compareGameTextCorpusLocked(
 					};
 					const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify(plan.rules));
 					const quality = yield* model.localizationQuality(rules);
-					const sourceQuality = (yield* model.sourceQuality(rules)).export("all");
-					const findings = quality.findings.items(
+					const sourceQuality = yield* (yield* model.sourceQuality(rules)).export("all");
+					const findings = yield* quality.findings.items(
 						Array.from({ length: quality.findings.length }, (_, i) => i)
 					);
 					const findingsByLine = new Map<string, CorpusFinding[]>();

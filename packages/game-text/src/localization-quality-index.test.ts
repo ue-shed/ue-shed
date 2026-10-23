@@ -1,3 +1,7 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeSourceReport as evaluateGameTextSourceQuality
+} from "./native-rule-reports.test-support.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -7,7 +11,7 @@ import { expect } from "vitest";
 import type { GameTextIndexRefreshResult } from "./index-contract.js";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 import type { LocalizationCheckOptions } from "./localization-quality-schema.js";
 import { localizationLineFingerprint } from "./localization-review.js";
@@ -20,11 +24,7 @@ import {
 	type WorkspaceQualityRequest
 } from "./localization-workspace.js";
 import { TextQualityFindingId } from "./quality-query.js";
-import {
-	GameTextRuleDocument,
-	evaluateGameTextSourceQuality,
-	migrateGameTextRuleDocument
-} from "./game-text-rules.js";
+import { GameTextRuleDocument, migrateGameTextRuleDocument } from "./game-text-rules.js";
 
 /**
  * One problem per key pattern; German carries the translation problems. `deSource` is the source
@@ -375,24 +375,28 @@ it.live(
 								...(culture ? { culture } : undefined)
 							};
 							for (const offset of [0, 50])
-								expect(indexed.search({ ...request, offset })).toEqual(
+								expect(yield* indexed.search({ ...request, offset })).toEqual(
 									legacy.search({ ...request, offset })
 								);
-							expect(indexed.export(request)).toEqual(legacy.export(request));
-							expect(indexed.changes(request)).toEqual(legacy.changes(request));
+							expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+							expect(yield* indexed.changes(request)).toEqual(
+								legacy.changes(request)
+							);
 							// Every finding once; later occurrence pages for a sample.
 							if (filter !== "all" || culture) continue;
-							legacy.export(request).findings.forEach(({ id }, index) => {
+							for (const [index, { id }] of legacy
+								.export(request)
+								.findings.entries()) {
 								for (const occurrenceOffset of index % 10 === 0 ? [0, 1] : [0])
 									expect(
-										indexed.focus({ ...request, id, occurrenceOffset })
+										yield* indexed.focus({ ...request, id, occurrenceOffset })
 									).toEqual(legacy.focus({ ...request, id, occurrenceOffset }));
-							});
+							}
 						}
 					const unknown = TextQualityFindingId.make(
 						all.findings[0]!.id.replace(/.$/u, "x")
 					);
-					expect(indexed.focus({ target: join.target, id: unknown })).toEqual({
+					expect(yield* indexed.focus({ target: join.target, id: unknown })).toEqual({
 						status: "not_found"
 					});
 				}
@@ -436,11 +440,11 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 						filter,
 						...(culture ? { culture } : undefined)
 					};
-					expect(indexed.search(request)).toEqual(legacy.search(request));
+					expect(yield* indexed.search(request)).toEqual(legacy.search(request));
 					const exported = legacy.export(request);
-					expect(indexed.export(request)).toEqual(exported);
+					expect(yield* indexed.export(request)).toEqual(exported);
 					for (const { id } of exported.findings.filter((_, index) => index % 10 === 0))
-						expect(indexed.focus({ ...request, id })).toEqual(
+						expect(yield* indexed.focus({ ...request, id })).toEqual(
 							legacy.focus({ ...request, id })
 						);
 				}
@@ -654,8 +658,8 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 					filter: "all" as const,
 					...(culture ? { culture } : undefined)
 				};
-				expect(indexed.export(request)).toEqual(legacy.export(request));
-				expect(indexed.search({ ...request, offset: 500 })).toEqual(
+				expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+				expect(yield* indexed.search({ ...request, offset: 500 })).toEqual(
 					legacy.search({ ...request, offset: 500 })
 				);
 			}
@@ -693,8 +697,8 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 				{ length: plain.findings.length },
 				(_, position) => position
 			);
-			expect(reported.findings.items(everyPosition)).toEqual(
-				plain.findings.items(everyPosition)
+			expect(yield* reported.findings.items(everyPosition)).toEqual(
+				yield* plain.findings.items(everyPosition)
 			);
 			expect(reported.findings.limits(undefined)).toEqual(plain.findings.limits(undefined));
 			expect(reported.metadata.rules).toEqual(plain.metadata.rules);
@@ -732,18 +736,20 @@ it.live("the indexed scan stores each finding's severity as the rule file rates 
 			const quality = yield* result.localizationQuality(rated);
 			const indexed = localizationQualityWorkspaceOf(undefined, quality);
 			const request = { target: join.target, filter: "all" as const };
-			expect(indexed.export(request)).toEqual(legacy.export(request));
-			const page = indexed.search(request);
+			expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+			const page = yield* indexed.search(request);
 			expect(page).toEqual(legacy.search(request));
 			const severities = (filter: WorkspaceQualityFilter) =>
-				new Set(
-					indexed
-						.search({ ...request, filter })
-						.findings.map((finding) => finding.severity)
-				);
-			expect(severities("length_outlier")).toEqual(new Set(["blocking"]));
-			expect(severities("outdated_translation")).toEqual(new Set(["low"]));
-			expect(severities("character_budget")).toContain("blocking");
+				indexed
+					.search({ ...request, filter })
+					.pipe(
+						Effect.map(
+							(page) => new Set(page.findings.map((finding) => finding.severity))
+						)
+					);
+			expect(yield* severities("length_outlier")).toEqual(new Set(["blocking"]));
+			expect(yield* severities("outdated_translation")).toEqual(new Set(["low"]));
+			expect(yield* severities("character_budget")).toContain("blocking");
 			expect(page.counts.rich_text_tags).toBe(0);
 			expect(page.counts.rich_text_tags_added).toBeGreaterThan(0);
 			// Groups and positions agree on the stored severity.
@@ -819,21 +825,21 @@ it.live("custom checks scan as the in-memory checks do, past the old filter and 
 					filter: "all" as const,
 					...(culture ? { culture } : undefined)
 				};
-				const page = indexed.search(request);
+				const page = yield* indexed.search(request);
 				expect(page).toEqual(legacy.search(request));
-				expect(indexed.export(request)).toEqual(legacy.export(request));
+				expect(yield* indexed.export(request)).toEqual(legacy.export(request));
 				expect(page.customFilters).toHaveLength(82);
 				for (const filter of [
 					"custom.length.79",
 					"custom.no-hallo",
 					"custom.braces"
 				] as const) {
-					expect(indexed.search({ ...request, filter })).toEqual(
+					expect(yield* indexed.search({ ...request, filter })).toEqual(
 						legacy.search({ ...request, filter })
 					);
 				}
 			}
-			const all = indexed.search({ target: join.target, filter: "all" });
+			const all = yield* indexed.search({ target: join.target, filter: "all" });
 			expect(all.counts["custom.no-hallo"]).toBeGreaterThan(0);
 			expect(all.counts["custom.braces"]).toBeGreaterThan(0);
 			expect(all.counts["custom.length.79"]).toBeGreaterThan(0);
@@ -885,9 +891,9 @@ it.live("custom regex checks preserve whitespace and zero-width truth in indexed
 				yield* result.localizationQuality(checks)
 			);
 			const request = { target: join.target, filter: "all" as const };
-			expect(indexed.search(request)).toEqual(legacy.search(request));
-			expect(indexed.export(request)).toEqual(legacy.export(request));
-			const counts = indexed.search(request).counts;
+			expect(yield* indexed.search(request)).toEqual(legacy.search(request));
+			expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+			const counts = (yield* indexed.search(request)).counts;
 			for (const subject of ["source", "translation"] as const) {
 				expect(counts[`custom.${subject}-space`]).toBe(subject === "translation" ? 2 : 0);
 				expect(counts[`custom.${subject}-lookahead`]).toBe(1);
@@ -955,7 +961,7 @@ it.live("proposals past the first 100 count the rest without reading their lines
 					culture: join.cultures[1]!
 				}
 			]) {
-				const proposed = indexed.changes(request);
+				const proposed = yield* indexed.changes(request);
 				expect(proposed).toEqual(legacy.changes(request));
 				expect(proposed.status === "ready" && proposed.document.changes.length).toBe(100);
 				expect(proposed.status === "ready" && proposed.remaining).toBe(30);

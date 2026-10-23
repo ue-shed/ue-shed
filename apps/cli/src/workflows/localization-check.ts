@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import { Effect, FileSystem, Metric, Result, Schema } from "effect";
 import { LocalizationChangeSet, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
-import { checkLocalizationTarget } from "@ue-shed/game-text/checks";
 import {
 	decodeGameTextRuleDocumentJson,
 	GameTextRuleDocumentError,
@@ -93,13 +92,7 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 			command._tag,
 			Effect.gen(function* () {
 				const result = yield* Effect.gen(function* () {
-					const {
-						corpus,
-						join: joined,
-						evidence,
-						selection,
-						review
-					} = yield* loadLocalizationContext(command);
+					const { check, selection, review } = yield* loadLocalizationContext(command);
 					const fs = yield* FileSystem.FileSystem;
 					const rulesPath = join(command.projectRoot, GAME_TEXT_RULES_RELATIVE_PATH);
 					const rules = yield* Effect.gen(function* () {
@@ -129,13 +122,7 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 						...(command.checks.length ? { checks: command.checks } : undefined),
 						review: review.file
 					};
-					const report = checkLocalizationTarget(
-						yield* corpus,
-						yield* joined,
-						evidence,
-						options,
-						rules
-					);
+					const report = yield* check(rules, options);
 					if (command.changes !== undefined)
 						yield* writeLocalizationCheckChanges(command.changes, report.changes);
 					yield* Metric.update(

@@ -1,3 +1,5 @@
+import { nativeLocalizationReport as checkLocalizationTarget } from "./native-rule-reports.test-support.js";
+
 import { Effect, Schema } from "effect";
 import { parsePO } from "@ue-shed/localization/browser";
 import { describe, expect, it } from "vitest";
@@ -10,7 +12,7 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { localizationCheckDefaults } from "./localization-check-catalogue.js";
 import { BuiltInCheckId } from "./localization-check-ids.js";
 import type {

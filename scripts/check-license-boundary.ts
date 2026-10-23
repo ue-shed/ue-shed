@@ -46,8 +46,12 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 		"MIT OR Apache-2.0",
 		"block-buffer cpufeatures crossbeam-deque crossbeam-epoch crossbeam-utils crypto-common digest displaydoc either file-id jobserver rayon rayon-core regex regex-automata regex-syntax sha2 stable_deref_trait typenum windows-targets windows_aarch64_gnullvm windows_aarch64_msvc windows_i686_gnu windows_i686_gnullvm windows_i686_msvc windows_x86_64_gnu windows_x86_64_gnullvm windows_x86_64_msvc"
 	),
-	licensed("Apache-2.0 OR MIT", "equivalent indexmap utf16_iter utf8_iter write16"),
-	licensed("MIT", "game-text-index generic-array synstructure zstd"),
+	licensed(
+		"Apache-2.0 OR MIT",
+		"bit-set bit-vec equivalent indexmap utf16_iter utf8_iter write16"
+	),
+	licensed("Apache-2.0 OR BSL-1.0", "ryu-js"),
+	licensed("MIT", "fancy-regex game-text-index generic-array synstructure zstd"),
 	licensed(
 		"Unicode-3.0",
 		"icu_collator icu_collator_data icu_collections icu_locale icu_locale_core icu_locale_data icu_normalizer icu_normalizer_data icu_properties icu_properties_data icu_provider litemap potential_utf tinystr writeable yoke yoke-derive zerofrom zerofrom-derive zerotrie zerovec zerovec-derive"

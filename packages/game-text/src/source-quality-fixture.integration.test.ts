@@ -1,3 +1,5 @@
+import { nativeSourceReport as evaluateGameTextSourceQuality } from "./native-rule-reports.test-support.js";
+
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,11 +14,7 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
-import {
-	GameTextRuleDocument,
-	decodeGameTextRuleDocumentJson,
-	evaluateGameTextSourceQuality
-} from "./game-text-rules.js";
+import { GameTextRuleDocument, decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import type { TextCorpus } from "./schema.js";
 import { expectSameSourceQuality } from "./source-quality-index.test-support.js";
 

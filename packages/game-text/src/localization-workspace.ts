@@ -1,4 +1,9 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import {
+	hydrateQualityRead,
+	materializeQualityRead,
+	type QualityRead
+} from "./quality-hydration.js";
 import {
 	CultureCode,
 	LocalizationTargetName,
@@ -709,7 +714,9 @@ export interface LocalizationFindingList {
 	reportedBySource(position: number): boolean;
 	/** The first position with this ID within the culture selection. */
 	find(id: TextQualityFindingId, culture: CultureCode | undefined): number | undefined;
-	items(positions: readonly number[]): readonly WorkspaceQualityItem[];
+	items(
+		positions: readonly number[]
+	): Effect.Effect<readonly WorkspaceQualityItem[], import("./index-failure.js").IndexFailure>;
 	/** Check diagnostic counts in first-seen order. */
 	limits(
 		culture: CultureCode | undefined
@@ -745,14 +752,29 @@ export function localizationQualityWorkspace(
 	report: LocalizationQualityReport,
 	join: LocalizationJoin
 ) {
-	return localizationQualityWorkspaceOf(source, localizationQuality(report, join));
+	const quality = materializedLocalizationQuality(report, join);
+	const reads = localizationQualityReads(source, quality);
+	return {
+		search: (request: WorkspaceQualityRequest) =>
+			materializeQualityRead(reads.search(request), quality.findings.items),
+		export: (request: WorkspaceQualityRequest) =>
+			materializeQualityRead(reads.export(request), quality.findings.items),
+		focus: (request: WorkspaceQualityFocusRequest) =>
+			materializeQualityRead(reads.focus(request), quality.findings.items),
+		changes: (request: WorkspaceQualityRequest) =>
+			materializeQualityRead(reads.changes(request), quality.findings.items)
+	};
 }
 
 /** The in-memory form: findings of a whole report, with the join their lines come from. */
-export function localizationQuality(
+function materializedLocalizationQuality(
 	report: LocalizationQualityReport,
 	join: LocalizationJoin
-): LocalizationQuality {
+): Omit<LocalizationQuality, "findings"> & {
+	findings: Omit<LocalizationFindingList, "items"> & {
+		items: (positions: readonly number[]) => readonly WorkspaceQualityItem[];
+	};
+} {
 	const lines = new Map(join.lines.map((line) => [line.id, line]));
 	const units = new Map(
 		join.lines.flatMap((line) =>
@@ -803,7 +825,7 @@ export function localizationQuality(
 				);
 				return position < 0 ? undefined : position;
 			},
-			items: (positions) => positions.map(itemAt),
+			items: (positions: readonly number[]) => positions.map(itemAt),
 			limits: (culture) => {
 				const limits = new Map<LocalizationCheckDiagnostic["code"], number>();
 				for (const diagnostic of report.checkDiagnostics) {
@@ -821,6 +843,21 @@ export function localizationQuality(
 			status: report.status,
 			coverage: report.coverage,
 			lineOfUnit: (id) => units.get(id)
+		}
+	};
+}
+
+/** An already materialized report with the same async interface as native findings. */
+export function localizationQuality(
+	report: LocalizationQualityReport,
+	join: LocalizationJoin
+): LocalizationQuality {
+	const quality = materializedLocalizationQuality(report, join);
+	return {
+		...quality,
+		findings: {
+			...quality.findings,
+			items: (positions) => Effect.succeed(quality.findings.items(positions))
 		}
 	};
 }
@@ -851,9 +888,14 @@ function withoutSourceReported(item: WorkspaceQualityItem): WorkspaceQualityItem
  * The workspace over any finding list. Pages and exports list blocking findings, then normal, then
  * low; within a severity, source findings come first, then localization findings in report order.
  */
-export function localizationQualityWorkspaceOf(
+function localizationQualityReads(
 	source: TextQualityReport | undefined,
-	{ findings: list, metadata }: LocalizationQuality
+	{
+		findings: list,
+		metadata
+	}: Omit<LocalizationQuality, "findings"> & {
+		readonly findings: Omit<LocalizationFindingList, "items">;
+	}
 ) {
 	const sourceFindings = source?.findings ?? [];
 	const customFilters = (metadata.customChecks ?? []).map(({ ruleId, label }) => ({
@@ -938,21 +980,25 @@ export function localizationQualityWorkspaceOf(
 		position < sourceCount
 			? eligibleLocalizationChange(sourceFindings[position]!) !== undefined
 			: list.eligible(position - sourceCount);
-	const itemsAt = (positions: readonly number[]): WorkspaceQualityItem[] => {
+	const itemsAt = function* (
+		positions: readonly number[]
+	): QualityRead<WorkspaceQualityItem[], WorkspaceQualityItem> {
 		pageSources.clear();
-		const localized = list.items(
-			positions.filter((position) => position >= sourceCount).map((p) => p - sourceCount)
-		);
+		const localized = yield positions
+			.filter((position) => position >= sourceCount)
+			.map((p) => p - sourceCount);
 		let next = 0;
 		return positions.map((position) =>
 			position < sourceCount ? sourceItemAt(position) : withSummary(localized[next++]!)
 		);
 	};
 	/** Summaries in batches, so a large export never holds every finding and line at once. */
-	const summariesAt = (positions: readonly number[]) => {
+	const summariesAt = function* (
+		positions: readonly number[]
+	): QualityRead<WorkspaceFinding[], WorkspaceQualityItem> {
 		const summaries: WorkspaceFinding[] = [];
 		for (let start = 0; start < positions.length; start += 2048)
-			for (const item of itemsAt(positions.slice(start, start + 2048)))
+			for (const item of yield* itemsAt(positions.slice(start, start + 2048)))
 				summaries.push(item.summary);
 		return summaries;
 	};
@@ -1074,7 +1120,9 @@ export function localizationQualityWorkspaceOf(
 		};
 	};
 	let selection: ReturnType<typeof select> | undefined;
-	const search = (request: WorkspaceQualityRequest): WorkspaceQualityPage => {
+	const search = function* (
+		request: WorkspaceQualityRequest
+	): QualityRead<WorkspaceQualityPage, WorkspaceQualityItem> {
 		if (
 			!selection ||
 			selection.culture !== request.culture ||
@@ -1128,7 +1176,7 @@ export function localizationQualityWorkspaceOf(
 		const { suggestedFixCount, rules, ...summary } = page;
 		return {
 			...summary,
-			findings: itemsAt(selected).map((item) => item.summary),
+			findings: (yield* itemsAt(selected)).map((item) => item.summary),
 			suggestedFixCount,
 			rules,
 			...(offset + 50 < page.total ? { nextOffset: offset + 50 } : undefined)
@@ -1136,11 +1184,13 @@ export function localizationQualityWorkspaceOf(
 	};
 	return {
 		search,
-		export(request: WorkspaceQualityRequest): WorkspaceQualityReport {
-			const { nextOffset: _offset, ...page } = search(request);
+		export: function* (
+			request: WorkspaceQualityRequest
+		): QualityRead<WorkspaceQualityReport, WorkspaceQualityItem> {
+			const { nextOffset: _offset, ...page } = yield* search(request);
 			return {
 				...page,
-				findings: summariesAt(matched(request)),
+				findings: yield* summariesAt(matched(request)),
 				corpusCoverage: metadata.coverage,
 				status: metadata.status,
 				target: request.target,
@@ -1148,7 +1198,9 @@ export function localizationQualityWorkspaceOf(
 				...(request.culture ? { culture: request.culture } : undefined)
 			};
 		},
-		focus(request: WorkspaceQualityFocusRequest): WorkspaceQualityFocusResult {
+		focus: function* (
+			request: WorkspaceQualityFocusRequest
+		): QualityRead<WorkspaceQualityFocusResult, WorkspaceQualityItem> {
 			const sourceFinding =
 				pageSources.get(request.id) ??
 				(request.id.startsWith("quality-finding:")
@@ -1160,9 +1212,9 @@ export function localizationQualityWorkspaceOf(
 				item =
 					position === undefined || hidden(position)
 						? undefined
-						: withSummary(list.items([position])[0]!);
+						: withSummary((yield [position])[0]!);
 			}
-			if (!item) return { status: "not_found" };
+			if (!item) return { status: "not_found" } as const;
 			const { finding, line, summary } = item;
 			if (!("culture" in finding)) {
 				const offset = request.occurrenceOffset ?? 0;
@@ -1175,10 +1227,10 @@ export function localizationQualityWorkspaceOf(
 						...(previous ? { occurrenceCursor: previous } : undefined)
 					});
 				return focus
-					? { status: "found", focus: { kind: "source", focus } }
-					: { status: "not_found" };
+					? { status: "found" as const, focus: { kind: "source" as const, focus } }
+					: { status: "not_found" as const };
 			}
-			if (!line) return { status: "not_found" };
+			if (!line) return { status: "not_found" } as const;
 			const mark = line.cultures.find((mark) => mark.culture === finding.culture);
 			const sourceText = findingSource(finding, line);
 			const translation = mark ? localizationShippedTranslation(mark).value : null;
@@ -1197,9 +1249,9 @@ export function localizationQualityWorkspaceOf(
 			);
 			const change = eligibleLocalizationChange(finding);
 			return {
-				status: "found",
+				status: "found" as const,
 				focus: {
-					kind: "localization",
+					kind: "localization" as const,
 					id: summary.id,
 					source: sourceText.slice(0, 4096),
 					translation: translation?.slice(0, 4096) ?? null,
@@ -1232,7 +1284,9 @@ export function localizationQualityWorkspaceOf(
 				}
 			};
 		},
-		changes(request: WorkspaceQualityRequest): WorkspaceChangesResult {
+		changes: function* (
+			request: WorkspaceQualityRequest
+		): QualityRead<WorkspaceChangesResult, WorkspaceQualityItem> {
 			const changes: LocalizationChange[] = [];
 			const seen = new Set<string>();
 			let remaining = 0,
@@ -1242,7 +1296,7 @@ export function localizationQualityWorkspaceOf(
 			// Only format-argument findings suggest changes: one per line and culture, and a line's
 			// identity is unique, so changes past the first 100 are counted without reading lines.
 			while (read < eligible.length && changes.length < 100) {
-				const batch = itemsAt(eligible.slice(read, read + 128));
+				const batch = yield* itemsAt(eligible.slice(read, read + 128));
 				read += batch.length;
 				for (const { finding } of batch) {
 					const change = eligibleLocalizationChange(finding);
@@ -1267,9 +1321,9 @@ export function localizationQualityWorkspaceOf(
 			remaining += eligible.length - read;
 			// File authority stays in the host. A proposal records complete change identities, without filesystem paths.
 			return {
-				status: "ready",
+				status: "ready" as const,
 				document: {
-					schemaVersion: 1,
+					schemaVersion: 1 as const,
 					provenance: { producer: "ue-shed.localization.checks", files: [] },
 					changes
 				},
@@ -1523,4 +1577,22 @@ export function workspaceQualityCsv(report: WorkspaceQualityReport): string {
 			report.status
 		])
 	]);
+}
+
+/** The workspace over native findings hydrates its selected positions asynchronously. */
+export function localizationQualityWorkspaceOf(
+	source: TextQualityReport | undefined,
+	quality: LocalizationQuality
+) {
+	const reads = localizationQualityReads(source, quality);
+	return {
+		search: (request: WorkspaceQualityRequest) =>
+			hydrateQualityRead(reads.search(request), quality.findings.items),
+		export: (request: WorkspaceQualityRequest) =>
+			hydrateQualityRead(reads.export(request), quality.findings.items),
+		focus: (request: WorkspaceQualityFocusRequest) =>
+			hydrateQualityRead(reads.focus(request), quality.findings.items),
+		changes: (request: WorkspaceQualityRequest) =>
+			hydrateQualityRead(reads.changes(request), quality.findings.items)
+	};
 }

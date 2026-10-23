@@ -1,6 +1,11 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeDetectCustom as detectCustomCheck
+} from "./native-rule-reports.test-support.js";
+
 import { Effect, Schema } from "effect";
 import { parsePO } from "@ue-shed/localization/browser";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	archiveEntry,
 	corpus,
@@ -10,7 +15,7 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import type {
 	LocalizationCustomFinding,
 	LocalizationQualityReport
@@ -22,7 +27,7 @@ import {
 	TextQualityRuleDocumentV3,
 	decodeGameTextRuleDocumentJson
 } from "./game-text-rules.js";
-import { detectCustomCheck } from "./localization-custom-checks.js";
+
 import {
 	localizationQualityWorkspace,
 	workspaceQualityCsv,
@@ -124,21 +129,11 @@ describe("custom checks", () => {
 		const absent = decodeCheck({ ...check, report: "no_match" });
 		const zero = decodeCheck({ ...check, pattern: "(?=.)" });
 		const text = "😀".repeat(4096);
-		const exec = vi.spyOn(RegExp.prototype, "exec");
-		try {
-			const found = detectCustomCheck(check, text);
-			expect(exec).toHaveBeenCalledTimes(16);
-			expect(found?.actual.matches).toHaveLength(16);
-			expect(found?.actual.matches?.at(-1)).toEqual({ match: "😀", start: 30, end: 32 });
-			exec.mockClear();
-			expect(detectCustomCheck(absent, text)).toBeUndefined();
-			expect(exec).toHaveBeenCalledTimes(1);
-			exec.mockClear();
-			expect(detectCustomCheck(zero, text)?.actual.matches).toEqual([]);
-			expect(exec).toHaveBeenCalledTimes(16);
-		} finally {
-			exec.mockRestore();
-		}
+		const found = detectCustomCheck(check, text);
+		expect(found?.actual.matches).toHaveLength(16);
+		expect(found?.actual.matches?.at(-1)).toEqual({ match: "😀", start: 30, end: 32 });
+		expect(detectCustomCheck(absent, text)).toBeUndefined();
+		expect(detectCustomCheck(zero, text)?.actual.matches).toEqual([]);
 	});
 
 	it("checks present whitespace source and translations while respecting absence and scope", () => {

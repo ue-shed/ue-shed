@@ -37,6 +37,9 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 		}
 	};
 	return {
+		findingsEvaluate: () => Effect.die("This query-only test fixture does not evaluate rules."),
+		findingsLines: () => Effect.die("This query-only test fixture has no findings layer."),
+		findingsUnits: () => Effect.die("This query-only test fixture has no findings layer."),
 		readCorpus: () => Effect.succeed(corpus),
 		aggregate: (request) => read("aggregate", () => derivedAggregate(base, request)),
 		selectLocalizationLines: (request, fields) =>

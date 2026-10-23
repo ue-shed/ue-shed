@@ -290,7 +290,14 @@ export const exampleRules: readonly Rule[] = [
 			x.ne(f("po"), ""),
 			x.ne(f("archive"), ""),
 			x.or(
-				x.ne(x.unrealWhitespace(source), x.unrealWhitespace(translation)),
+				x.ne(
+					g(x.unrealWhitespace(source), "leading"),
+					g(x.unrealWhitespace(translation), "leading")
+				),
+				x.ne(
+					g(x.unrealWhitespace(source), "trailing"),
+					g(x.unrealWhitespace(translation), "trailing")
+				),
 				x.unrealUnsafeWhitespace(translation)
 			)
 		),

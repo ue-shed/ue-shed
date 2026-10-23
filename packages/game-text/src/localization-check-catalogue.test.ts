@@ -18,13 +18,13 @@ import {
 	withLocalizationCheckTable
 } from "./localization-check-table.js";
 import {
-	consistentTranslationCandidate,
 	lengthOutlier,
 	lengthOutlierMinimumRatio,
 	placeholderMatches,
 	placeholderMatchRanges,
 	placeholderTranslation
-} from "./localization-text-shape.js";
+} from "./native-text-shape.test-support.js";
+import { consistentTranslationCandidate } from "./localization-text-shape.js";
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 

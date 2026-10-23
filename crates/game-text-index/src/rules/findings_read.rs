@@ -23,6 +23,28 @@ fn ordered_places(ids: &Value, occurrences: &[Value]) -> Result<Vec<Value>> {
         .collect()
 }
 
+/// Sparse finding rows are sorted; locate only the requested subjects before decoding evidence.
+fn selected_positions(
+    recorded: &[u32],
+    parents: Option<&[u32]>,
+    selected: &[u32],
+) -> Result<Vec<usize>> {
+    require(
+        parents.is_none_or(|parents| recorded.iter().all(|row| (*row as usize) < parents.len())),
+        "Finding row outside subject mapping.",
+    )?;
+    let parent = |row: &u32| parents.map_or(*row, |parents| parents[*row as usize]);
+    let mut positions = Vec::new();
+    for selected in selected {
+        let first = recorded.partition_point(|row| parent(row) < *selected);
+        let end = first + recorded[first..].partition_point(|row| parent(row) == *selected);
+        positions.extend(first..end);
+    }
+    positions.sort_unstable();
+    positions.dedup();
+    Ok(positions)
+}
+
 impl EngineQuery {
     fn with_findings(
         &mut self,
@@ -90,7 +112,8 @@ impl EngineQuery {
                 if rule["subject"] == "unit_source" { continue; }
                 let recorded = layer.column(&format!("r{rule_index}.rows"))?; let cultures = layer.column(&format!("r{rule_index}.cultures"))?; let evidence = layer.column(&format!("r{rule_index}.evidence"))?; let saved_places = layer.column(&format!("r{rule_index}.places"))?; let id0 = layer.column(&format!("r{rule_index}.id0"))?; let id1 = layer.column(&format!("r{rule_index}.id1"))?;
                 require([cultures.len(),evidence.len(),saved_places.len(),id0.len(),id1.len()].into_iter().all(|len| len == recorded.len()),"Invalid finding column lengths.")?;
-                for (position,subject_row) in recorded.iter().enumerate() {
+                for position in selected_positions(&recorded, if rule["subject"] == "line_culture" { Some(&lc_lines) } else { None }, rows)? {
+                    let subject_row = &recorded[position];
                     let line = if rule["subject"] == "line_culture" { *lc_lines.get(*subject_row as usize).ok_or("Finding culture row outside relation.")? } else { *subject_row };
                     if !rows.contains(&line) { continue; } checkpoint(cancelled)?;
                     let ci = cultures[position] as usize; let stored = layer.json(evidence[position])?; let ids = layer.json(saved_places[position])?;
@@ -112,7 +135,7 @@ impl EngineQuery {
             }
             let diag_rows = layer.column("diag.rows")?; let diag_cultures = layer.column("diag.cultures")?; let diag_codes = layer.column("diag.codes")?;
             require(diag_rows.len() == diag_cultures.len() && diag_rows.len() == diag_codes.len(),"Invalid diagnostic column lengths.")?;
-            for (position,row) in diag_rows.iter().enumerate() { if rows.contains(row) { let diagnostic = json!({"lineId":subjects.query.packed("line",*row as usize)?,"culture":subjects.query.cultures.get(diag_cultures[position] as usize).ok_or("Diagnostic culture outside target.")?,"code":layer.dictionary.string(diag_codes[position])?}); for (destination,selected) in rows.iter().enumerate() { if selected == row { lines[destination]["diagnostics"].as_array_mut().ok_or("Invalid diagnostic list.")?.push(diagnostic.clone()); } } } }
+            for position in selected_positions(&diag_rows, None, rows)? { let row = &diag_rows[position]; if rows.contains(row) { let diagnostic = json!({"lineId":subjects.query.packed("line",*row as usize)?,"culture":subjects.query.cultures.get(diag_cultures[position] as usize).ok_or("Diagnostic culture outside target.")?,"code":layer.dictionary.string(diag_codes[position])?}); for (destination,selected) in rows.iter().enumerate() { if selected == row { lines[destination]["diagnostics"].as_array_mut().ok_or("Invalid diagnostic list.")?.push(diagnostic.clone()); } } } }
             Ok(json!({"places":places,"lines":lines}))
         })
     }
@@ -141,7 +164,8 @@ impl EngineQuery {
                 let recorded = layer.column(&format!("r{rule_index}.rows"))?; let evidence = layer.column(&format!("r{rule_index}.evidence"))?; let saved_places = layer.column(&format!("r{rule_index}.places"))?; let id0 = layer.column(&format!("r{rule_index}.id0"))?; let id1 = layer.column(&format!("r{rule_index}.id1"))?;
                 require([evidence.len(),saved_places.len(),id0.len(),id1.len()].into_iter().all(|len| len == recorded.len()),"Invalid source finding column lengths.")?;
                 let mut selected = Vec::new();
-                for (position,row) in recorded.iter().enumerate() {
+                for position in selected_positions(&recorded, Some(&unit_rows), units)? {
+                    let row = &recorded[position];
                     let unit = *unit_rows.get(*row as usize).ok_or("Source finding row outside relation.")?;
                     if !units.contains(&unit) { continue; } checkpoint(cancelled)?;
                     let ids = layer.json(saved_places[position])?; let occurrences = subjects.occurrences(*row as usize)?; let mut affected = ordered_places(&ids,&occurrences)?;

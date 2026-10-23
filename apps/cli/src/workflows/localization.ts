@@ -123,7 +123,8 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		);
 	return {
 		joined: indexed.joined,
-		/** Whole-corpus and join reads; only `loc check` still builds its report from them. */
+		check: indexed.localizationCheck,
+		/** Whole-corpus and join reads for evidence and export workflows. */
 		corpus: indexed.corpus,
 		join: indexed.localizationJoin,
 		evidence: indexed.evidence,

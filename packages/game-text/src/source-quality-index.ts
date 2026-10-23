@@ -1,22 +1,18 @@
 import { Effect } from "effect";
-import { textOccurrenceId } from "./corpus.js";
 import { IndexedPolicyData } from "./indexed-policy-data.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
-import {
-	matchesTextRole,
-	prepareTextQualityRules,
-	textQualityUnitFindings,
-	type TextQualityOccurrence
-} from "./quality.js";
+import { matchesTextRole, prepareTextQualityRules } from "./quality.js";
 import {
 	textQualityFindingHash,
 	textQualityFindingIdHash,
 	textQualityFindingIdOf,
-	textQualityQueryOf,
-	type TextQualityQuery
+	asyncTextQualityQueryOf,
+	type AsyncTextQualityQuery
 } from "./quality-query.js";
+import { translateRuleDocument } from "./rules/translate.js";
+import type { NativeFindings } from "./native-findings.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
-import type { TextQualityAffectedOccurrence, TextQualityFinding } from "./quality-schema.js";
+import type { TextQualityFinding } from "./quality-schema.js";
 import type { TextCorpus, TextLocation } from "./schema.js";
 import { snapshotCheck } from "./snapshot-format.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
@@ -46,12 +42,6 @@ function u32Builder() {
 		},
 		finish: () => values.slice(0, length)
 	};
-}
-
-/** An occurrence as the rules read it, with where its other evidence is stored. */
-interface StoredOccurrence extends TextQualityOccurrence {
-	readonly shard: number;
-	readonly row: number;
 }
 
 /** Reads occurrence locations and sources from the package columns, a batch of rows at once. */
@@ -112,20 +102,7 @@ function occurrenceReader(data: IndexedPolicyData) {
 		}
 		return { locations: located, shards, rows };
 	};
-	/** Sources of these shard rows. */
-	const sources = (shards: ArrayLike<number>, rows: ArrayLike<number>) =>
-		data.strings(Array.from(rows, (row, index) => column(shards[index]!, "source")[row]!));
-	/** Evidence of occurrences that produce a finding; package files are read only for them. */
-	const evidence = (occurrences: readonly StoredOccurrence[]) =>
-		occurrences.map((occurrence): TextQualityAffectedOccurrence => {
-			const packageFile = data.occurrencePackageFile(occurrence.shard, occurrence.row);
-			return {
-				id: textOccurrenceId(packageFile, occurrence.location),
-				location: occurrence.location,
-				packageFile
-			};
-		});
-	return { locations, sources, evidence };
+	return { locations };
 }
 
 /**
@@ -142,7 +119,8 @@ function occurrenceReader(data: IndexedPolicyData) {
 export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function* (
 	joined: JoinedTargetReader,
 	corpus: Pick<TextCorpus, "status" | "coverage">,
-	document: GameTextRuleDocument
+	document: GameTextRuleDocument,
+	native: NativeFindings
 ) {
 	// Progress goes to the reporter: a `source_quality` event before the scan with no units
 	// checked, then after each page of units, the last with every unit and the finding count.
@@ -150,7 +128,6 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 	const data = new IndexedPolicyData(joined);
 	const order = data.column("query.raw.order"),
 		visible = data.column("query.raw.visible"),
-		rawIds = data.column("query.raw.raw"),
 		memberStart = data.column("query.raw.member_start"),
 		memberEnd = data.column("query.raw.member_end"),
 		members = data.column("query.raw.members");
@@ -162,10 +139,8 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 	const roles = [...document.roles].sort((left, right) => left.id.localeCompare(right.id));
 	const rules = [...document.rules].sort((left, right) => left.id.localeCompare(right.id));
 	const prepared = prepareTextQualityRules(document);
+	const evaluated = yield* native.findingsEvaluate(translateRuleDocument(document));
 	snapshotCheck(prepared.length < 0x10000, "quality.source", "Too many rules");
-	/** For each rule, its role's position in `roles`. */
-	const ruleRole = prepared.map(({ role }) => roles.indexOf(role));
-	const ruleRoles = new Set(ruleRole);
 	const reader = occurrenceReader(data);
 
 	const matchedOccurrences = new Float64Array(roles.length),
@@ -175,100 +150,67 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 		storedOrdinal = u32Builder(),
 		storedHigh = u32Builder(),
 		storedLow = u32Builder();
-	const unitId = (rank: number) => data.id(rawIds[order[rank]!]!);
-
-	/** A unit's occurrences as the rules read them, every source decoded. */
-	const unitOccurrences = (rank: number): StoredOccurrence[] => {
-		const row = order[rank]!;
-		const globals = members.subarray(memberStart[row], memberEnd[row]);
-		const { locations, shards, rows } = reader.locations(globals);
-		const sources = reader.sources(shards, rows);
-		return locations.map((location, index) => ({
-			location,
-			source: sources[index]!,
-			shard: shards[index]!,
-			row: rows[index]!
-		}));
-	};
 
 	let checkedTextUnits = 0;
 	/** Checks one page of units, given by rank, and records their findings. */
-	const checkPage = (ranks: readonly number[]) => {
-		const globals: number[] = [],
-			firsts: number[] = [];
-		for (const rank of ranks) {
-			const row = order[rank]!;
-			firsts.push(globals.length);
-			for (let member = memberStart[row]!; member < memberEnd[row]!; member++)
-				globals.push(members[member]!);
-		}
-		firsts.push(globals.length);
-		const { locations, shards, rows } = reader.locations(globals);
-		/** Each role's matches, one byte per occurrence of the page. */
-		const matches = roles.map((role) =>
-			Uint8Array.from(locations, (location) => Number(matchesTextRole({ location }, role)))
-		);
-		// Sources only of occurrences a rule reads.
-		const wanted: number[] = [];
-		for (let index = 0; index < globals.length; index++)
-			for (const role of ruleRoles)
-				if (matches[role]![index]) {
-					wanted.push(index);
-					break;
-				}
-		const wantedSources = reader.sources(
-			wanted.map((index) => shards[index]!),
-			wanted.map((index) => rows[index]!)
-		);
-		const sources: (string | undefined)[] = [];
-		wanted.forEach((index, position) => (sources[index] = wantedSources[position]));
-
-		for (let unit = 0; unit < ranks.length; unit++) {
-			const first = firsts[unit]!,
-				end = firsts[unit + 1]!;
-			for (let role = 0; role < roles.length; role++) {
-				let matched = 0;
-				for (let index = first; index < end; index++) matched += matches[role]![index]!;
-				matchedOccurrences[role]! += matched;
-				if (matched) matchedTextUnits[role]!++;
+	const checkPage = (ranks: readonly number[]) =>
+		Effect.gen(function* () {
+			const checked = yield* native.findingsUnits(
+				evaluated.key,
+				ranks.map((rank) => order[rank]!)
+			);
+			const globals: number[] = [],
+				firsts: number[] = [];
+			for (const rank of ranks) {
+				const row = order[rank]!;
+				firsts.push(globals.length);
+				for (let member = memberStart[row]!; member < memberEnd[row]!; member++)
+					globals.push(members[member]!);
 			}
-			let id: ReturnType<typeof unitId> | undefined;
-			for (let rule = 0; rule < prepared.length; rule++) {
-				const role = matches[ruleRole[rule]!]!;
-				const occurrences: StoredOccurrence[] = [];
-				for (let index = first; index < end; index++)
-					if (role[index])
-						occurrences.push({
-							location: locations[index]!,
-							source: sources[index]!,
-							shard: shards[index]!,
-							row: rows[index]!
-						});
-				if (!occurrences.length) continue;
-				const findings = textQualityUnitFindings(
-					prepared[rule]!,
-					(id ??= unitId(ranks[unit]!)),
-					occurrences,
-					reader.evidence
-				);
-				findings.forEach((finding, ordinal) => {
+			firsts.push(globals.length);
+			const { locations } = reader.locations(globals);
+			/** Each role's matches, one byte per occurrence of the page. */
+			const matches = roles.map((role) =>
+				Uint8Array.from(locations, (location) =>
+					Number(matchesTextRole({ location }, role))
+				)
+			);
+
+			for (let unit = 0; unit < ranks.length; unit++) {
+				const first = firsts[unit]!,
+					end = firsts[unit + 1]!;
+				for (let role = 0; role < roles.length; role++) {
+					let matched = 0;
+					for (let index = first; index < end; index++) matched += matches[role]![index]!;
+					matchedOccurrences[role]! += matched;
+					if (matched) matchedTextUnits[role]!++;
+				}
+				const ordinals = new Map<number, number>();
+				for (const finding of checked[unit]!.findings) {
+					const rule = prepared.findIndex((entry) => entry.rule.id === finding.ruleId);
+					snapshotCheck(
+						rule >= 0,
+						"quality.source",
+						"The native source finding has no authored rule"
+					);
+					const ordinal = ordinals.get(rule) ?? 0;
+					ordinals.set(rule, ordinal + 1);
 					const [high, low] = textQualityFindingHash(finding);
 					storedRule.push(rule);
 					storedRank.push(ranks[unit]!);
 					storedOrdinal.push(ordinal);
 					storedHigh.push(high);
 					storedLow.push(low);
-				});
+				}
 			}
-		}
-		checkedTextUnits += ranks.length;
-		reportProgress({
-			phase: "source_quality",
-			completed: checkedTextUnits,
-			total: totalTextUnits,
-			findings: storedRule.length
+			checkedTextUnits += ranks.length;
+			reportProgress({
+				phase: "source_quality",
+				completed: checkedTextUnits,
+				total: totalTextUnits,
+				findings: storedRule.length
+			});
 		});
-	};
 
 	let page: number[] = [],
 		pageOccurrences = 0;
@@ -278,12 +220,12 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 		page.push(rank);
 		pageOccurrences += memberEnd[row]! - memberStart[row]!;
 		if (page.length < SCAN_PAGE_UNITS && pageOccurrences < SCAN_PAGE_OCCURRENCES) continue;
-		checkPage(page);
+		yield* checkPage(page);
 		page = [];
 		pageOccurrences = 0;
 		yield* Effect.yieldNow;
 	}
-	if (page.length || checkedTextUnits === 0) checkPage(page);
+	if (page.length || checkedTextUnits === 0) yield* checkPage(page);
 	page = [];
 	yield* Effect.yieldNow;
 
@@ -315,44 +257,39 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 	}
 
 	/** Rebuilds the findings at these positions from their units, each checked against its hash. */
-	const items = (positions: readonly number[]): TextQualityFinding[] => {
-		const units = new Map<number, StoredOccurrence[]>();
-		const ruleFindings = new Map<string, TextQualityFinding[]>();
-		return positions.map((position) => {
-			const rank = findingRank[position]!,
-				rule = findingRule[position]!;
-			let occurrences = units.get(rank);
-			if (!occurrences) units.set(rank, (occurrences = unitOccurrences(rank)));
-			const key = `${rank}:${rule}`;
-			let findings = ruleFindings.get(key);
-			if (!findings)
-				ruleFindings.set(
-					key,
-					(findings = textQualityUnitFindings(
-						prepared[rule]!,
-						unitId(rank),
-						occurrences,
-						reader.evidence
-					))
+	const items = (positions: readonly number[]) =>
+		Effect.gen(function* () {
+			const units = [...new Set(positions.map((position) => order[findingRank[position]!]!))];
+			const checked = new Map<number, readonly TextQualityFinding[]>();
+			for (let start = 0; start < units.length; start += 5000)
+				for (const unit of yield* native.findingsUnits(
+					evaluated.key,
+					units.slice(start, start + 5000)
+				))
+					checked.set(unit.unit, unit.findings);
+			return positions.map((position) => {
+				const row = order[findingRank[position]!]!,
+					rule = prepared[findingRule[position]!]!.rule;
+				const finding = checked.get(row)!.filter((finding) => finding.ruleId === rule.id)[
+					findingOrdinal[position]!
+				];
+				const hash = finding && textQualityFindingHash(finding);
+				snapshotCheck(
+					hash !== undefined &&
+						hash[0] === findingHigh[position] &&
+						hash[1] === findingLow[position],
+					"quality.source",
+					"A text unit no longer yields the finding its index recorded"
 				);
-			const finding = findings[findingOrdinal[position]!];
-			const hash = finding && textQualityFindingHash(finding);
-			snapshotCheck(
-				hash !== undefined &&
-					hash[0] === findingHigh[position] &&
-					hash[1] === findingLow[position],
-				"quality.source",
-				"A text unit no longer yields the finding its index recorded"
-			);
-			return finding!;
+				return finding!;
+			});
 		});
-	};
 
 	yield* Effect.yieldNow;
 	// The bounded diagnostics the index's corpus summarizes; about 0.25 s on 166,518 packages.
 	const diagnostics = data.metadataReport();
 	yield* Effect.yieldNow;
-	return textQualityQueryOf(
+	return asyncTextQualityQueryOf(
 		{
 			coverage: corpus.coverage,
 			diagnostics: diagnostics.diagnostics,
@@ -389,5 +326,5 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 			},
 			items
 		}
-	) satisfies TextQualityQuery;
+	) satisfies AsyncTextQualityQuery;
 });

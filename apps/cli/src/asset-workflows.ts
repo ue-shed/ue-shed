@@ -219,8 +219,9 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 	observeCliOperation(
 		command._tag,
 		Effect.gen(function* () {
-			const { decodeGameTextRuleDocumentJson, evaluateGameTextSourceQuality } =
-				yield* Effect.promise(() => import("@ue-shed/game-text/rules"));
+			const { decodeGameTextRuleDocumentJson } = yield* Effect.promise(
+				() => import("@ue-shed/game-text/rules")
+			);
 			const ruleJson = yield* Effect.tryPromise({
 				try: () => readFile(command.ruleFile, "utf8"),
 				catch: (cause) =>
@@ -249,11 +250,11 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 						})
 				)
 			);
-			const { corpus } = yield* refreshCliGameTextIndex(
+			const { sourceQuality } = yield* refreshCliGameTextIndex(
 				{ projectRoot: command.projectRoot },
 				command.reader
 			);
-			return yield* printJson(evaluateGameTextSourceQuality(yield* corpus, document));
+			return yield* printJson(yield* (yield* sourceQuality(document)).export("all"));
 		})
 	)
 );

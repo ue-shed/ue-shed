@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { nativeSourceReport } from "./native-rule-reports.test-support.js";
+import { textQualityQuery } from "./quality-query.js";
 import { gameTextCsv as formatCsv } from "./csv.js";
 import { exportGameTextInvestigation as exportInvestigation } from "./investigation.js";
 import { textCorpusQuery, type TextCorpusQuery } from "./query.test-support.js";
@@ -28,7 +30,17 @@ export function exportGameTextInvestigation(
 ) {
 	const reference = query ?? (preset.query.localization ? undefined : textCorpusQuery(corpus));
 	return exportInvestigation(
-		corpus,
+		{
+			sourceQuality: (document) => {
+				const source = textQualityQuery(nativeSourceReport(corpus, document));
+				return Effect.succeed({
+					summary: source.summary,
+					search: (request) => Effect.succeed(source.search(request)),
+					focus: (request) => Effect.succeed(source.focus(request)),
+					export: (filter) => Effect.succeed(source.export(filter))
+				});
+			}
+		},
 		preset,
 		source,
 		reference

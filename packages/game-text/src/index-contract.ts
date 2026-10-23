@@ -6,15 +6,13 @@ import {
 import type { SavedAssetPackageTextEvent } from "@ue-shed/unreal-assets";
 import type { PackageTextInventoryEntry, refreshPackageTextLayer } from "./package-text-layer.js";
 import type { importLocalizationTarget } from "./localization-import.js";
-import type { SnapshotStoreError } from "./snapshot-store.js";
-import type { SnapshotFormatError } from "./snapshot-format.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
 import type { NativeTextQuery } from "./native-query.js";
 import type { TextCorpus, TextCorpusSearchRequest, TextCorpusSearchPage } from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
 import type { IndexedLocalizationQualityOptions } from "./localization-quality-index.js";
 import type { LocalizationQuality } from "./localization-workspace.js";
-import type { TextQualityQuery } from "./quality-query.js";
+import type { AsyncTextQualityQuery } from "./quality-query.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import { LocalizationKeyChangePair } from "./localization-key-changes.js";
 import type { RefreshJoinedTarget } from "./joined-target.js";
@@ -126,13 +124,23 @@ export interface GameTextIndexRefreshResult {
 		ruleDocument?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
 	) => Effect.Effect<LocalizationQuality, IndexFailure>;
+	/** The complete CLI quality report, including proposals collected before acceptance filtering. */
+	readonly localizationCheck: (
+		document?: GameTextRuleDocument,
+		options?: IndexedLocalizationQualityOptions
+	) => Effect.Effect<
+		import("./localization-quality-schema.js").LocalizationQualityReport,
+		IndexFailure
+	>;
 	/**
 	 * Source quality rules evaluated over the index in bounded pages: the query
 	 * `textQualityQuery(evaluateGameTextSourceQuality(corpus, ruleDocument))` gives, without
 	 * building the corpus's units. The scan yields between pages and can be interrupted, and
 	 * reports `source_quality` progress through `GameTextIndexProgressReporter`.
 	 */
-	readonly sourceQuality: (ruleDocument: GameTextRuleDocument) => Effect.Effect<TextQualityQuery>;
+	readonly sourceQuality: (
+		ruleDocument: GameTextRuleDocument
+	) => Effect.Effect<AsyncTextQualityQuery, IndexFailure>;
 }
 
 /**
@@ -140,7 +148,8 @@ export interface GameTextIndexRefreshResult {
  * filesystem/session, or cache format. Hosts use recovery guidance instead of flattening them
  * into a generic retry.
  */
-export type IndexFailure = SnapshotStoreError | SnapshotFormatError | GameTextIndexError;
+export type { IndexFailure } from "./index-failure.js";
+import type { IndexFailure } from "./index-failure.js";
 /**
  * Complete project/target refresh and invalidation port. A refresh returns a scoped pinned
  * model; invalidation affects disposable derived data, never the host's selected project or

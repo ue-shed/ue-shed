@@ -1,3 +1,6 @@
+import { textQualityQuery } from "./quality-query.js";
+import { nativeSourceReport as evaluateTextQuality } from "./native-rule-reports.test-support.js";
+
 import { TextRoleId } from "./quality-schema.js";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -10,7 +13,7 @@ import {
 	decodeTextQualityRuleDocumentJson,
 	TextQualityRuleDocumentError
 } from "./quality-schema.js";
-import { evaluateTextQuality, matchesTextRole } from "./quality.js";
+import { matchesTextRole } from "./quality.js";
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,
@@ -386,7 +389,21 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			generation: 7,
 			authority: "project_files" as const
 		};
-		const exported = yield* exportGameTextInvestigation(corpus, decoded, source);
+		const exported = yield* exportGameTextInvestigation(
+			{
+				sourceQuality: (document) => {
+					const query = textQualityQuery(evaluateTextQuality(corpus, document));
+					return Effect.succeed({
+						summary: query.summary,
+						search: (request) => Effect.succeed(query.search(request)),
+						focus: (request) => Effect.succeed(query.focus(request)),
+						export: (filter) => Effect.succeed(query.export(filter))
+					});
+				}
+			},
+			decoded,
+			source
+		);
 		expect(exported.source).toEqual(source);
 		expect(exported.result.mode).toBe("quality");
 		if (exported.result.mode !== "quality") return;

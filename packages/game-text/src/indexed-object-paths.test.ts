@@ -1,3 +1,8 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeSourceReport as evaluateGameTextSourceQuality
+} from "./native-rule-reports.test-support.js";
+
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -8,12 +13,12 @@ import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "./game-text-rules.js";
+import { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextCorpus, TextLocation } from "./schema.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -329,8 +334,9 @@ it.live("object path, class path and row roles match through the index and in me
 				memoryJoin
 			);
 			const quality = yield* result.localizationQuality(document);
-			const translated = quality.findings
-				.items(Array.from({ length: quality.findings.length }, (_, position) => position))
+			const translated = (yield* quality.findings.items(
+				Array.from({ length: quality.findings.length }, (_, position) => position)
+			))
 				.flatMap(({ finding }) =>
 					finding.kind === "localization_character_budget"
 						? [[finding.ruleId, finding.identity.key, finding.culture]]
@@ -343,8 +349,8 @@ it.live("object path, class path and row roles match through the index and in me
 			]);
 			const indexed = localizationQualityWorkspaceOf(source, quality);
 			const request = { target: fixture.target.name, filter: "character_budget" } as const;
-			expect(indexed.export(request)).toEqual(legacy.export(request));
-			expect(indexed.search(request)).toEqual(legacy.search(request));
+			expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+			expect(yield* indexed.search(request)).toEqual(legacy.search(request));
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );

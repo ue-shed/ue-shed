@@ -1,3 +1,8 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeSourceReport as evaluateGameTextSourceQuality
+} from "../../../../../packages/game-text/src/native-rule-reports.test-support.js";
+
 import { referenceNativeQuery } from "../../../../../packages/game-text/src/native-query.test-support.js";
 import { textCorpusQuery } from "../../../../../packages/game-text/src/query.test-support.js";
 import { Effect, Layer, Option, Result, type Scope } from "effect";
@@ -20,8 +25,7 @@ import {
 	localizationQuality,
 	textQualityQuery
 } from "@ue-shed/game-text/corpus";
-import { checkLocalizationTarget } from "@ue-shed/game-text/checks";
-import { evaluateGameTextSourceQuality } from "@ue-shed/game-text/rules";
+
 import { type TextCorpus } from "@ue-shed/game-text/schema";
 import {
 	LocalizationEvidence,
@@ -138,7 +142,19 @@ export function oracleGameTextIndexLayer<E>(
 						summary: reference.summary(),
 						query,
 						search: query.search,
-						// The in-memory checks are the oracle the indexed scans match.
+						// Explicit test facts are evaluated by the same native rule engine.
+						localizationCheck: (document, options) =>
+							Effect.sync(() => {
+								if (!join || !files)
+									throw new Error("No target in this test request");
+								return checkLocalizationTarget(
+									corpus,
+									join,
+									files,
+									options,
+									document
+								);
+							}),
 						localizationQuality: (ruleDocument, options) =>
 							Effect.sync(() => {
 								if (!join || !files)
@@ -156,9 +172,7 @@ export function oracleGameTextIndexLayer<E>(
 							}),
 						sourceQuality: (ruleDocument) =>
 							Effect.sync(() =>
-								textQualityQuery(
-									evaluateGameTextSourceQuality(corpus, ruleDocument)
-								)
+								asyncQuery(evaluateGameTextSourceQuality(corpus, ruleDocument))
 							),
 						get localizationJoin(): GameTextIndexRefreshResult["localizationJoin"] {
 							if (!join) throw new Error("No target in this oracle request");
@@ -390,3 +404,16 @@ const oracleIndexStepsLayer = Layer.effect(
 		return steps;
 	})
 );
+
+function asyncQuery(report: Parameters<typeof textQualityQuery>[0]) {
+	const query = textQualityQuery(report);
+	return {
+		summary: query.summary,
+		search: (request: Parameters<typeof query.search>[0]) =>
+			Effect.sync(() => query.search(request)),
+		focus: (request: Parameters<typeof query.focus>[0]) =>
+			Effect.sync(() => query.focus(request)),
+		export: (filter: Parameters<typeof query.export>[0]) =>
+			Effect.sync(() => query.export(filter))
+	};
+}

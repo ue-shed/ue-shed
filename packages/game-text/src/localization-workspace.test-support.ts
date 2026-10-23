@@ -1,3 +1,8 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeSourceReport as evaluateGameTextSourceQuality
+} from "./native-rule-reports.test-support.js";
+
 import { Schema } from "effect";
 import { parsePO } from "@ue-shed/localization/browser";
 import {
@@ -9,8 +14,8 @@ import {
 	success
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "./game-text-rules.js";
+
+import { GameTextRuleDocument } from "./game-text-rules.js";
 import { localizationQualityWorkspace, localizationReportPage } from "./localization-workspace.js";
 import { createLocalizationBaseline, localizationProgressReport } from "./localization-reports.js";
 

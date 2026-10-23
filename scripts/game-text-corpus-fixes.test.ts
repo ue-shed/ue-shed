@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { Schema } from "effect";
 import { LocalizationChange, parsePO } from "../packages/localization/dist/index.js";
-import { checkLocalizationTarget } from "../packages/game-text/src/localization-checks.ts";
+import { nativeLocalizationReport as checkLocalizationTarget } from "../packages/game-text/src/native-rule-reports.test-support.ts";
 import { joinLocalizationTarget } from "../packages/game-text/src/localization.ts";
 import {
 	archiveEntry,

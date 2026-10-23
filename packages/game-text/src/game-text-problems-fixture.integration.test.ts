@@ -1,3 +1,8 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeSourceReport as evaluateGameTextSourceQuality
+} from "./native-rule-reports.test-support.js";
+
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +18,7 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { applyLocalizationKeyChanges, localizationKeyChanges } from "./localization-key-changes.js";
 import type { LocalizationQualityReport } from "./localization-quality-schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
@@ -23,10 +28,7 @@ import {
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
 import { textCorpusQuery } from "./query.test-support.js";
-import {
-	decodeGameTextRuleDocumentJson,
-	evaluateGameTextSourceQuality
-} from "./game-text-rules.js";
+import { decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import type { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { staleRuntimeCopy } from "./text-copies.js";
 import { TextAudience, TextOutOfScopeReason } from "./text-audience-schema.js";
@@ -361,8 +363,12 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 										filter,
 										...(culture ? { culture } : undefined)
 									};
-									expect(indexed.search(request)).toEqual(memory.search(request));
-									expect(indexed.export(request)).toEqual(memory.export(request));
+									expect(yield* indexed.search(request)).toEqual(
+										memory.search(request)
+									);
+									expect(yield* indexed.export(request)).toEqual(
+										memory.export(request)
+									);
 								}
 						}
 					})

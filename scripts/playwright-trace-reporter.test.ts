@@ -12,7 +12,7 @@ import { chromeTrace, readSpans } from "./time-gate.ts";
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const require = createRequire(join(repositoryRoot, "apps/workbench/package.json"));
 const playwright = require.resolve("@playwright/test/cli");
-const playwrightTest = require.resolve("@playwright/test");
+const playwrightTest = require.resolve("@playwright/test").replace(/index\.js$/u, "index.mjs");
 const reporter = resolve(repositoryRoot, "apps/workbench/e2e/gate-trace-reporter.ts");
 
 test("normal Playwright runs keep only the list reporter", () => {
@@ -113,7 +113,7 @@ lifecycle.describe("separate timeout slots", () => {
 		const attempts = spans.filter(
 			(span) => span.attributes["playwright.test_id"] !== undefined
 		);
-		assert.equal(attempts.length, 9);
+		assert.equal(attempts.length, 9, result.stdout + result.stderr);
 		assert.ok(attempts.every((span) => span.parentSpanId === run.spanId));
 		assert.ok(
 			attempts.every((span) => span.attributes["playwright.project"] === "trace-regression")

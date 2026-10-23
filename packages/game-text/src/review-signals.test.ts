@@ -1,3 +1,5 @@
+import { nativeLocalizationReport as checkLocalizationTarget } from "./native-rule-reports.test-support.js";
+
 import type { TextCorpusSearchPage } from "./schema.js";
 import type { GameTextIndexError } from "./index-contract.js";
 import { it } from "@effect/vitest";
@@ -7,7 +9,7 @@ import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { textCorpusQuery } from "./query.test-support.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { u32 } from "./joined-target-input.js";
 
 for (const mixed of [false, true])

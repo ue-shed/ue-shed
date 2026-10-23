@@ -1,9 +1,16 @@
 import { MessagePort, parentPort, workerData } from "node:worker_threads";
-import { Effect, Exit, Fiber, Schema, Tracer } from "effect";
+import { Effect, Exit, Fiber, Layer, Schema, Tracer } from "effect";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
+import {
+	AssetReader,
+	AssetReaderLive,
+	nativeGameTextEngineClientLayer
+} from "@ue-shed/unreal-assets";
+import { openNativeTextQuery } from "./native-query.js";
+import { nativeIndexConfiguration } from "./native-index-configuration.js";
 import { sharedIndexNodeLayer } from "./shared-index.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
-import { snapshotCheck } from "./snapshot-format.js";
+import { snapshotCheck, snapshotFailure } from "./snapshot-format.js";
 import { readIndexedLocalizationEvidence } from "./index-context.js";
 import { indexedLocalizationQuality } from "./localization-quality-index.js";
 import type { LocalizationQuality } from "./localization-workspace.js";
@@ -97,13 +104,19 @@ function scanTimings() {
 }
 
 /** Reads one finished scan for a synchronous call. */
-function callValue(scans: ReadonlyMap<number, LocalizationQuality>, call: QualityWorkerCall) {
+const callValue = Effect.fn("GameText.qualityWorker.read")(function* (
+	scans: ReadonlyMap<number, LocalizationQuality>,
+	call: QualityWorkerCall
+) {
 	const quality = scans.get(call.scan);
-	snapshotCheck(quality !== undefined, "quality.worker", "The quality scan was released");
+	if (quality === undefined)
+		return yield* Effect.fail(
+			snapshotFailure("quality.worker", "The quality scan was released")
+		);
 	const values = qualityWorkerCallValues;
 	switch (call.method) {
 		case "items":
-			return Schema.encodeSync(values.items)(quality.findings.items(call.positions));
+			return Schema.encodeSync(values.items)(yield* quality.findings.items(call.positions));
 		case "find":
 			return Schema.encodeSync(values.find)(
 				quality.findings.find(call.findingId, call.culture)
@@ -115,7 +128,7 @@ function callValue(scans: ReadonlyMap<number, LocalizationQuality>, call: Qualit
 				quality.metadata.sourceKeyOfUnit?.(call.unitId)
 			);
 	}
-}
+});
 
 // This worker is a Node runtime boundary. Its scope pins the generation until shutdown.
 void Effect.runPromise(
@@ -137,6 +150,17 @@ void Effect.runPromise(
 				Effect.provide(LocalizationFileAccessLive)
 			);
 			const signal = new Int32Array(data.signal);
+			const readerConfiguration = yield* Effect.flatMap(AssetReader, (reader) =>
+				reader.configuration()
+			).pipe(Effect.provide(AssetReaderLive));
+			const services = yield* Layer.build(
+				nativeGameTextEngineClientLayer(readerConfiguration)
+			);
+			const native = yield* openNativeTextQuery({
+				configuration: nativeIndexConfiguration(input.configuration),
+				generation: input.generation,
+				joinedKey: input.joinedKey
+			}).pipe(Effect.provide(services));
 			const scans = new Map<number, LocalizationQuality>();
 			const running = new Map<number, Fiber.Fiber<void>>();
 			const scan = (task: Extract<QualityWorkerTask, { kind: "scan" }>) => {
@@ -147,7 +171,8 @@ void Effect.runPromise(
 					evidence,
 					task.rows,
 					task.ruleDocument,
-					task.options
+					task.options,
+					native
 				).pipe(
 					// The scan's progress goes to the host, which hands it to its own reporter.
 					Effect.provideService(GameTextIndexProgressReporter, (progress) =>
@@ -210,7 +235,27 @@ void Effect.runPromise(
 					try {
 						const decoded = Schema.decodeUnknownSync(QualityWorkerCall)(raw);
 						id = decoded.id;
-						response = { kind: "value", id, value: callValue(scans, decoded) };
+						Effect.runFork(
+							callValue(scans, decoded).pipe(
+								Effect.match({
+									onSuccess: (value) =>
+										postSyncReply(data.calls, signal, {
+											kind: "value",
+											id,
+											value
+										}),
+									onFailure: (cause) =>
+										postSyncReply(data.calls, signal, {
+											kind: "failed",
+											id,
+											error: Schema.encodeSync(QualityWorkerFailure)(
+												qualityWorkerFailure("quality.worker.call", cause)
+											)
+										})
+								})
+							)
+						);
+						return;
 					} catch (cause) {
 						response = {
 							kind: "failed",

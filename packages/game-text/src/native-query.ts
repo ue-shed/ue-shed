@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { TextCorpusReportHeader } from "./corpus-summary.js";
 import { join } from "node:path";
 import { Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
@@ -31,6 +31,14 @@ import {
 } from "./index-reads.js";
 
 import type { NativeTextQuery } from "./native-query-contract.js";
+import { canonicalRuleDocument } from "./rules/translate.js";
+import {
+	FindingsEvaluation,
+	NativeFindingLines,
+	NativeFindingUnits,
+	inflateFindingLines,
+	inflateFindingUnits
+} from "./native-findings.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
 
 const NativeExportFile = Schema.Struct({
@@ -499,6 +507,39 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			)
 	);
 	const reader = interactive.reader;
+	const findingResponse = <S extends Schema.Codec<unknown, unknown>>(
+		lane: Lane,
+		request: GameTextEngineRequest,
+		schema: S
+	) =>
+		Effect.gen(function* () {
+			const result = yield* response(
+				lane,
+				request,
+				Schema.Union([Schema.Struct({ file: Schema.String }), schema])
+			);
+			if (Schema.is(schema)(result)) return result;
+			return yield* Effect.acquireUseRelease(
+				Effect.succeed(result.file),
+				(file) =>
+					Effect.tryPromise({
+						try: (signal) => readFile(file, { encoding: "utf8", signal }),
+						catch: (cause) => failed("findings_read", cause)
+					}).pipe(
+						Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
+						Effect.mapError((cause) => failed("findings_decode", cause))
+					),
+				(file) =>
+					Effect.tryPromise({
+						try: () => rm(file, { force: true }),
+						catch: (cause) => failed("findings_cleanup", cause)
+					}).pipe(
+						Effect.catch((cause) =>
+							Effect.logWarning("Native finding file cleanup failed", { cause })
+						)
+					)
+			);
+		});
 	const summary = Effect.fn("GameTextIndex.nativeSummary")(() =>
 		response(interactive, { action: "summary", reader }, TextCorpusQuerySummary)
 	);
@@ -571,6 +612,54 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
 		bulk((lane) => exportWithSignals(lane, request));
 	const model: NativeIndexReader = {
+		findingsEvaluate: (document) =>
+			bulk((lane) =>
+				withStage((directory) =>
+					Effect.gen(function* () {
+						const rulesFile = join(directory, "rules.json");
+						yield* Effect.tryPromise({
+							try: (signal) =>
+								writeFile(rulesFile, canonicalRuleDocument(document), {
+									encoding: "utf8",
+									signal
+								}),
+							catch: (cause) => failed("findings_rules", cause)
+						});
+						return yield* response(
+							lane,
+							{
+								action: "findings_evaluate",
+								reader: lane.reader,
+								rulesFile,
+								collationLocale: new Intl.Collator().resolvedOptions().locale
+							},
+							FindingsEvaluation
+						);
+					})
+				)
+			),
+		findingsLines: (key, rows) =>
+			bulk((lane) =>
+				findingResponse(
+					lane,
+					{ action: "findings_lines", reader: lane.reader, key, rows },
+					NativeFindingLines
+				).pipe(
+					Effect.flatMap(inflateFindingLines),
+					Effect.mapError((cause) => failed("findings_lines", cause))
+				)
+			),
+		findingsUnits: (key, units) =>
+			bulk((lane) =>
+				findingResponse(
+					lane,
+					{ action: "findings_units", reader: lane.reader, key, units },
+					NativeFindingUnits
+				).pipe(
+					Effect.flatMap(inflateFindingUnits),
+					Effect.mapError((cause) => failed("findings_units", cause))
+				)
+			),
 		summary: () => scopedRead(reads, summary()),
 		search: (request) => scopedRead(reads, search(request)),
 		focus: (request) => scopedRead(reads, focus(request)),

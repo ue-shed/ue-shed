@@ -1,12 +1,17 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeV1SourceReport as evaluateTextQuality
+} from "./native-rule-reports.test-support.js";
+
 import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { textCorpusQuery } from "./query.test-support.js";
 import { LocalizationStatusReport, localizationStatusReport } from "./localization-status.js";
 import { localizationProgressReport, LocalizationProgressReport } from "./localization-reports.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { textQualityQuery } from "./quality-query.js";
-import { evaluateTextQuality } from "./quality.js";
+
 import { joinLocalizationTarget } from "./localization.js";
 import { corpus, evidence } from "./localization.test-support.js";
 import { TextCorpusDiagnostic, TextPackageCoverage, type TextCorpus } from "./schema.js";

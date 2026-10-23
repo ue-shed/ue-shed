@@ -1,14 +1,15 @@
+import { nativeSourceReport as evaluateGameTextSourceQuality } from "../../../packages/game-text/src/native-rule-reports.test-support.js";
 import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
-import { checkLocalizationTarget } from "@ue-shed/game-text/checks";
+import { nativeLocalizationReport as checkLocalizationTarget } from "../../../packages/game-text/src/native-rule-reports.test-support.js";
 import {
 	localizationFocusPage,
 	localizationQualityWorkspace,
 	textQualityQuery
 } from "@ue-shed/game-text/corpus";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "@ue-shed/game-text/rules";
+import { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";

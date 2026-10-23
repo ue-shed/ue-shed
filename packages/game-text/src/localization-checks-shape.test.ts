@@ -1,4 +1,9 @@
-import { Schema } from "effect";
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeSourceReport as evaluateGameTextSourceQuality
+} from "./native-rule-reports.test-support.js";
+
+import { Effect, Schema } from "effect";
 import { parsePO } from "@ue-shed/localization/browser";
 import { describe, expect, it } from "vitest";
 import {
@@ -13,7 +18,7 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { localizationCheckCatalogue } from "./localization-check-catalogue.js";
 import {
 	type LocalizationCheckOptions,
@@ -29,10 +34,9 @@ import {
 	placeholderMatches,
 	placeholderTranslation,
 	richTextTagBalance,
-	sourceWhitespace,
-	translationGroupKey,
-	visibleTextLength
-} from "./localization-text-shape.js";
+	sourceWhitespace
+} from "./native-text-shape.test-support.js";
+import { translationGroupKey, visibleTextLength } from "./localization-text-shape.js";
 import {
 	WorkspaceQualityPage,
 	localizationQuality,
@@ -41,7 +45,7 @@ import {
 	workspaceQualityCsv
 } from "./localization-workspace.js";
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "./game-text-rules.js";
+import { GameTextRuleDocument } from "./game-text-rules.js";
 import { TextQualityRuleDocument } from "./quality-schema.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
 
@@ -701,8 +705,7 @@ describe("built-in source checks", () => {
 			return built;
 		};
 		const problems = (value: ReturnType<typeof workspace>) =>
-			value
-				.export({ target: target.name, filter: "all" })
+			Effect.runSync(value.export({ target: target.name, filter: "all" }))
 				.findings.filter(
 					(finding) =>
 						finding.filter === "placeholder_text" || finding.filter === "terminology"
@@ -711,7 +714,7 @@ describe("built-in source checks", () => {
 		// Every placeholder is a forbidden term's finding: the built-in's is left out.
 		const covered = workspace("Choose a placeholder name", starter);
 		expect(problems(covered).map(([filter]) => filter)).toEqual(["terminology"]);
-		const page = covered.search({ target: target.name, filter: "all" });
+		const page = Effect.runSync(covered.search({ target: target.name, filter: "all" }));
 		expect(page.counts.placeholder_text).toBe(0);
 		expect(page.total).toBe(page.findings.length);
 		// Some are: the built-in names only the others.

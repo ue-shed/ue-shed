@@ -16,8 +16,6 @@ import {
 	TextRole,
 	decodeTextQualityRuleDocument
 } from "./quality-schema.js";
-import type { TextCorpus } from "./schema.js";
-import { evaluateTextQuality } from "./quality.js";
 
 const [Budget, Terminology] = TextQualityRule.members;
 /**
@@ -346,20 +344,6 @@ export const GameTextSourceQualityReport = TextQualityReport.mapFields((fields) 
 	ruleDocumentVersion: Schema.Literals([1, 2, 3])
 }));
 export type GameTextSourceQualityReport = typeof GameTextSourceQualityReport.Type;
-/** Source evaluation keeps v1 behavior; translation policy requires a selected target's join. */
-export function evaluateGameTextSourceQuality(
-	corpus: TextCorpus,
-	document: GameTextRuleDocument
-): GameTextSourceQualityReport {
-	if (document.schemaVersion === 1) return evaluateTextQuality(corpus, document);
-	const report = evaluateTextQuality(corpus, {
-		roles: document.roles,
-		rules: document.rules,
-		schemaVersion: 1
-	});
-	return { ...report, ruleDocumentVersion: document.schemaVersion };
-}
-
 /** One built-in check as a rule file resolves it. */
 export interface ResolvedLocalizationCheck<Id extends BuiltInCheckId = BuiltInCheckId> {
 	readonly enabled: boolean;

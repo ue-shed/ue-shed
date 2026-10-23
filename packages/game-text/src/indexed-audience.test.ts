@@ -1,3 +1,5 @@
+import { nativeLocalizationReport as checkLocalizationTarget } from "./native-rule-reports.test-support.js";
+
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -8,7 +10,7 @@ import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
@@ -273,7 +275,7 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				yield* result.localizationQuality()
 			);
 			const all = { target: fixture.target.name, filter: "all" } as const;
-			expect(indexed.export(all)).toEqual(legacy.export(all));
+			expect(yield* indexed.export(all)).toEqual(legacy.export(all));
 			// Editor text the target never gathers asks for no translator notes or translations.
 			expect(
 				[...new Set(legacy.export(all).findings.map((finding) => finding.source))].sort()

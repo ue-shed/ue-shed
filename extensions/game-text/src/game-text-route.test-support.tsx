@@ -1,7 +1,8 @@
+import { nativeSourceReport as evaluateGameTextSourceQuality } from "../../../packages/game-text/src/native-rule-reports.test-support.js";
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
-import { evaluateGameTextSourceQuality } from "@ue-shed/game-text/rules";
+
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,

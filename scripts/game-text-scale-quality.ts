@@ -8,7 +8,6 @@ import {
 	GameTextIndexRefresh,
 	GameTextIndexSource,
 	GameTextRuleDocument,
-	evaluateGameTextSourceQuality,
 	gameTextIndexRefreshLayer,
 	textQualityQuery,
 	type GameTextIndexRefreshResult
@@ -281,24 +280,24 @@ export async function scaleSourceQuality(
 		throw new Error("The opened index does not offer source quality.");
 	const stalls = eventLoopGaps();
 	try {
+		const indexed = await Effect.runPromise(result.sourceQuality(scaleSourceRules));
 		const query =
 			mode === "indexed"
-				? await Effect.runPromise(result.sourceQuality(scaleSourceRules))
-				: textQualityQuery(
-						evaluateGameTextSourceQuality(
-							await Effect.runPromise(result.corpus),
-							scaleSourceRules
-						)
-					);
+				? indexed
+				: textQualityQuery(await Effect.runPromise(indexed.export("all")));
 		const measured = stalls();
 		const summary = query.summary();
 		// A first page and its last finding's focus, as a host shows them.
 		const pageStarted = performance.now();
-		const page = query.search({ filter: "all", pageSize: 50 });
+		const pageResult = query.search({ filter: "all", pageSize: 50 });
+		const page = Effect.isEffect(pageResult) ? await Effect.runPromise(pageResult) : pageResult;
 		const pageMs = performance.now() - pageStarted;
 		const focusStarted = performance.now();
 		const last = page.findings.at(-1);
-		if (last) query.focus({ id: last.id, pageSize: 50 });
+		if (last) {
+			const focused = query.focus({ id: last.id, pageSize: 50 });
+			if (Effect.isEffect(focused)) await Effect.runPromise(focused);
+		}
 		const focusMs = performance.now() - focusStarted;
 		return {
 			query,

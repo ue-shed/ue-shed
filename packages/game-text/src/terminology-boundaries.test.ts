@@ -1,19 +1,23 @@
+import {
+	nativeLocalizationReport as checkLocalizationTarget,
+	nativeSourceReport as evaluateGameTextSourceQuality
+} from "./native-rule-reports.test-support.js";
+
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it as effectIt } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
-import { termMatches } from "./quality.js";
+import { nativeTermMatches as termMatches } from "./native-rule-reports.test-support.js";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { expectSameSourceQuality } from "./source-quality-index.test-support.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
-import { evaluateGameTextSourceQuality } from "./game-text-rules.js";
 
 it.each(["prefixTODOsuffix", "éTODO", "TODO界", "2TODO", "TODO٢", "𐐀TODO", "TODO𐐀"])(
 	"does not match a term beside a Unicode letter or number in %s",
@@ -129,9 +133,9 @@ effectIt.live(
 					culture: fixture.target.cultures[1]!,
 					filter: "terminology" as const
 				};
-				expect(columnar.search(request)).toEqual(memory.search(request));
+				expect(yield* columnar.search(request)).toEqual(memory.search(request));
 				for (const { id } of memory.search(request).findings) {
-					expect(columnar.focus({ ...request, id })).toEqual(
+					expect(yield* columnar.focus({ ...request, id })).toEqual(
 						memory.focus({ ...request, id })
 					);
 				}

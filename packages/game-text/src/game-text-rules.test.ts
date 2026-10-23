@@ -1,14 +1,16 @@
+import {
+	nativeSourceReport as evaluateGameTextSourceQuality,
+	nativeV1SourceReport as evaluateTextQuality,
+	nativeLocalizationReport as checkLocalizationTarget
+} from "./native-rule-reports.test-support.js";
+
 import { Effect, Schema } from "effect";
 import { it } from "@effect/vitest";
 import { expect } from "vitest";
 import { readFileSync } from "node:fs";
-import {
-	decodeGameTextRuleDocumentJson,
-	evaluateGameTextSourceQuality,
-	TextQualityRuleDocumentV2
-} from "./game-text-rules.js";
+import { decodeGameTextRuleDocumentJson, TextQualityRuleDocumentV2 } from "./game-text-rules.js";
 import { decodeTextQualityRuleDocumentJson } from "./quality-schema.js";
-import { evaluateTextQuality } from "./quality.js";
+
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
 	archiveEntry,
@@ -19,7 +21,7 @@ import {
 	poDocument,
 	unit
 } from "./localization.test-support.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { joinLocalizationTarget } from "./localization.js";
 import { LocalizationQualityReport } from "./localization-quality-schema.js";
 

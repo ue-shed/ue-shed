@@ -1,9 +1,5 @@
 import type { NativeTextQuery } from "./native-query-contract.js";
-import {
-	GameTextRuleDocument,
-	decodeGameTextRuleDocumentJson,
-	evaluateGameTextSourceQuality
-} from "./game-text-rules.js";
+import { GameTextRuleDocument, decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import { Effect, Schema } from "effect";
 import {
 	InvestigationSource,
@@ -16,7 +12,7 @@ import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
-import { textQualityQuery, TextQualityFilter, type TextQualityQuery } from "./quality-query.js";
+import { TextQualityFilter, type AsyncTextQualityQuery } from "./quality-query.js";
 import type { TextUnit } from "./schema.js";
 
 /**
@@ -127,7 +123,7 @@ export interface IndexedInvestigationSource {
 	readonly sourceQuality: (
 		rules: GameTextRuleDocument
 	) => Effect.Effect<
-		TextQualityQuery,
+		AsyncTextQualityQuery,
 		Pick<InvestigationError, "message" | "recovery" | "retrySafe" | "nextStep">
 	>;
 }
@@ -246,6 +242,37 @@ export function exportGameTextInvestigation(
 								})
 						)
 					);
+		const qualityReport =
+			preset.query.mode === "quality" &&
+			rules !== undefined &&
+			(preset.query.workspaceFilter === undefined || workspace === undefined)
+				? yield* Effect.gen(function* () {
+						if (!("sourceQuality" in corpus))
+							return yield* Effect.fail(
+								new InvestigationError({
+									message:
+										"Source quality requires an open native Game Text snapshot.",
+									recovery:
+										"Pass the index model that owns the selected snapshot.",
+									retrySafe: true,
+									nextStep: "fix_input"
+								})
+							);
+						const query = yield* corpus.sourceQuality(rules);
+						return yield* query.export(preset.query.qualityFilter);
+					}).pipe(
+						Effect.mapError(
+							(cause) =>
+								new InvestigationError({
+									message: cause.message,
+									recovery: cause.recovery,
+									retrySafe: cause.retrySafe,
+									nextStep: cause.nextStep,
+									cause
+								})
+						)
+					)
+				: undefined;
 		return {
 			schemaVersion: preset.schemaVersion,
 			kind: "game_text_export",
@@ -260,21 +287,7 @@ export function exportGameTextInvestigation(
 					: preset.query.mode === "quality" && rules !== undefined
 						? {
 								mode: "quality",
-								report: ("sourceQuality" in corpus
-									? yield* corpus.sourceQuality(rules).pipe(
-											Effect.mapError(
-												(cause) =>
-													new InvestigationError({
-														message: cause.message,
-														recovery: cause.recovery,
-														retrySafe: cause.retrySafe,
-														nextStep: cause.nextStep,
-														cause
-													})
-											)
-										)
-									: textQualityQuery(evaluateGameTextSourceQuality(corpus, rules))
-								).export(preset.query.qualityFilter)
+								report: qualityReport!
 							}
 						: { mode: "corpus", corpus: textCorpusReport(yield* corpusExport) }
 		} satisfies GameTextInvestigationExport;

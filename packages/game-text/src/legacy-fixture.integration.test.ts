@@ -1,3 +1,5 @@
+import { nativeSourceReport as evaluateGameTextSourceQuality } from "./native-rule-reports.test-support.js";
+
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +18,7 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "./game-text-rules.js";
+import { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextOccurrence } from "./schema.js";
 import { hasSearchableSource } from "./search.js";
 

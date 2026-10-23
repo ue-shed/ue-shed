@@ -20,7 +20,6 @@ export {
 	TextQualityRuleDocumentV2,
 	TextQualityRuleDocumentV3,
 	decodeGameTextRuleDocumentJson,
-	evaluateGameTextSourceQuality,
 	migrateGameTextRuleDocument,
 	resolveLocalizationChecks
 } from "./game-text-rules.js";

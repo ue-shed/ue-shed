@@ -66,7 +66,7 @@ await Effect.runPromise(
 						cultures: target.cultures.length
 					})
 				);
-				const source = (yield* result.sourceQuality(rules)).export("all");
+				const source = yield* (yield* result.sourceQuality(rules)).export("all");
 				const quality = yield* result.localizationQuality(rules);
 				console.log(
 					JSON.stringify({
@@ -81,7 +81,7 @@ await Effect.runPromise(
 					);
 					yield* Effect.yieldNow;
 					for (const offset of [0, Math.floor(quality.findings.length / 2)]) {
-						const page = measure(`page:${withRules}:${offset}`, () =>
+						const page = yield* measure(`page:${withRules}:${offset}`, () =>
 							workspace.search({ target: target.name, filter: "all", offset })
 						);
 						yield* Effect.yieldNow;
@@ -98,8 +98,9 @@ await Effect.runPromise(
 					}
 					for (const filter of ["terminology", "placeholder_text"] as const)
 						for (const offset of [0, 1000]) {
-							const page = measure(`page:${withRules}:${filter}:${offset}`, () =>
-								workspace.search({ target: target.name, filter, offset })
+							const page = yield* measure(
+								`page:${withRules}:${filter}:${offset}`,
+								() => workspace.search({ target: target.name, filter, offset })
 							);
 							console.log(
 								JSON.stringify({
@@ -113,7 +114,7 @@ await Effect.runPromise(
 							yield* Effect.yieldNow;
 						}
 					for (const culture of target.cultures.slice(0, 2)) {
-						measure(`page:${withRules}:${culture}`, () =>
+						yield* measure(`page:${withRules}:${culture}`, () =>
 							workspace.search({ target: target.name, filter: "all", culture })
 						);
 						yield* Effect.yieldNow;

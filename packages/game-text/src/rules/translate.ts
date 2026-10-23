@@ -267,7 +267,10 @@ export function translateRuleDocument(
 			const found = x.regexMatches(
 				text,
 				check.pattern,
-				o({ caseSensitive: check.caseSensitive !== false, cap: 16 })
+				o({
+					caseSensitive: check.caseSensitive !== false,
+					cap: report === "no_match" ? 1 : 16
+				})
 			);
 			rules.push({
 				...base,

@@ -3,7 +3,6 @@ use super::columns::{Arena, Atom, Bits, StrId, Structured};
 use super::value::{Object, Value, value};
 use super::{HostCollator, grammar, regex as js_regex, text};
 use crate::{Error, ErrorCode, Result};
-use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -139,28 +138,35 @@ impl<'a> Kernel<'a> {
             return Ok(Arc::clone(mask));
         }
         let name = arena.text(key);
-        let words = (0..arena.occurrences.len.div_ceil(64))
-            .into_par_iter()
-            .map(|word| {
-                let mut bits = 0;
-                for row in word * 64..((word + 1) * 64).min(arena.occurrences.len) {
-                    let matches = if role {
-                        self.roles
-                            .get(name)
-                            .is_some_and(|role| self.matches_occurrence(arena, row as u32, role))
-                    } else {
-                        let location = arena.value(arena.occurrence(row as u32, "location"));
-                        location["objectPath"]
-                            .as_str()
-                            .is_some_and(|path| path.starts_with(name))
-                    };
-                    if matches {
-                        bits |= 1 << (row % 64);
-                    }
+        let mut measure = super::stages::Measure::start();
+        let rows = (0..arena.occurrences.len.div_ceil(64)).collect::<Vec<_>>();
+        let words = measure.parallel(&rows, |word| {
+            let word = *word;
+            let mut bits = 0;
+            for row in word * 64..((word + 1) * 64).min(arena.occurrences.len) {
+                let matches = if role {
+                    self.roles
+                        .get(name)
+                        .is_some_and(|role| self.matches_occurrence(arena, row as u32, role))
+                } else {
+                    let location = arena.value(arena.occurrence(row as u32, "location"));
+                    location["objectPath"]
+                        .as_str()
+                        .is_some_and(|path| path.starts_with(name))
+                };
+                if matches {
+                    bits |= 1 << (row % 64);
                 }
-                bits
-            })
-            .collect();
+            }
+            bits
+        });
+        arena.recorder.kernel(
+            if role { "matchesRole" } else { "pathHasPrefix" },
+            &measure,
+            arena.occurrences.len,
+            1,
+            0,
+        );
         let mask = Arc::new(Bits {
             words,
             len: arena.occurrences.len,

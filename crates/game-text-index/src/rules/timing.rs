@@ -153,24 +153,11 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     let rules = catalogue["rules"]
         .as_str()
         .ok_or("Missing default catalogue.")?;
-    let directory = root.join("test-results");
-    std::fs::create_dir_all(&directory)?;
-    let path = directory.join(format!("timing-rules-{}.json", crate::store::token()));
-    // Whitespace has no semantic effect; a distinct cache key ensures this measures a fresh run.
-    let fresh = format!("{}{}", rules, " ".repeat(257));
-    std::fs::write(&path, fresh)?;
-    let response = query.findings_evaluate(
-        &path,
-        catalogue["locale"].as_str().ok_or("Missing host locale.")?,
-        &cancelled,
-    );
-    std::fs::remove_file(path)?;
-    let response = crate::json_value::parse(&response?)?;
-    let profile = &response["profile"];
-    require(
-        profile["cached"] == false,
-        "Timing unexpectedly reused a cached findings layer.",
-    )?;
+    let program = super::compile(rules)?;
+    let collator =
+        super::HostCollator::new(catalogue["locale"].as_str().ok_or("Missing host locale.")?)?;
+    let evaluated = query.evaluate_findings(&program, &collator, &cancelled)?;
+    let profile = &evaluated.profile;
     let result = json!({"profile":profile,"peakWorkingSetBytes":peak_memory()?,"rayonThreads":rayon::current_num_threads()});
     println!("{}", serde_json::to_string(&result)?);
     Ok(())

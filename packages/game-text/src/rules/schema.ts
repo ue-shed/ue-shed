@@ -86,6 +86,27 @@ const variadic = [
 ] as const;
 const binding = ["filter", "map", "flatMap", "any", "all"] as const;
 
+/** Finite operation names shared with native profile decoding. */
+export const ruleOperationNames = [
+	...unary,
+	...binary,
+	...ternary,
+	...variadic,
+	...binding,
+	"lit",
+	"list",
+	"object",
+	"field",
+	"param",
+	"var",
+	"finding",
+	"occurrences",
+	"sortCodeUnit",
+	"sortLocale",
+	"termListMatches",
+	"formatRenameArgument"
+] as const;
+
 /** JSON rule expression. Operators have explicit arity; the native compiler checks value types. */
 export type Expr =
 	| null

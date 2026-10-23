@@ -727,20 +727,21 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 	 * built-ins sort first and policy findings follow rule by rule over the lines; accepted findings
 	 * then leave and the rest sort as reported. Both sorts are stable.
 	 */
-	const readFindings = (rows: readonly number[]) =>
-		Effect.gen(function* () {
-			const result = new Map<
-				number,
-				Effect.Success<ReturnType<NativeFindings["findingsLines"]>>[number]
-			>();
-			for (let start = 0; start < rows.length; start += 5000)
-				for (const line of yield* native.findingsLines(
-					evaluated.key,
-					rows.slice(start, start + 5000)
-				))
-					result.set(line.row, line);
-			return result;
-		});
+	const readFindings = Effect.fn("GameText.localizationQuality.readFindings")(function* (
+		rows: readonly number[]
+	) {
+		const result = new Map<
+			number,
+			Effect.Success<ReturnType<NativeFindings["findingsLines"]>>[number]
+		>();
+		for (let start = 0; start < rows.length; start += 5000)
+			for (const line of yield* native.findingsLines(
+				evaluated.key,
+				rows.slice(start, start + 5000)
+			))
+				result.set(line.row, line);
+		return result;
+	});
 	const check = (
 		lines: readonly LocalizationLine[],
 		rows: readonly number[],

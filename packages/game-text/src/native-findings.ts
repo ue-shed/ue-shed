@@ -9,7 +9,7 @@ import { TextQualityAffectedOccurrence, TextQualityFinding } from "./quality-sch
 import { snapshotCheck } from "./snapshot-format.js";
 import { localizationFindingHash, localizationFindingId } from "./localization-workspace.js";
 import { textQualityFindingId } from "./quality-query.js";
-import type { RuleDocumentV4 } from "./rules/schema.js";
+import { ruleOperationNames, type RuleDocumentV4 } from "./rules/schema.js";
 import type { GameTextIndexError } from "./index-error.js";
 
 const Row = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffffffff }));
@@ -17,14 +17,84 @@ const Evidence = Schema.Record(Schema.String, Schema.Unknown);
 const Places = Schema.Array(
 	Schema.Struct({ id: Row, occurrences: Schema.Array(TextQualityAffectedOccurrence) })
 );
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
+const ProfileSample = Schema.Struct({
+	wallMs: Milliseconds,
+	busyMs: Milliseconds,
+	rows: Count,
+	inputs: Count,
+	memoHits: Count
+});
+const StageName = Schema.String.check(
+	Schema.isPattern(
+		/^(subjects\.(occurrences|columns)|(line|line_culture|unit_source)\.(execute|diagnostics|emission)|layer\.publish)$/
+	)
+);
+const KernelName = Schema.String.check(
+	Schema.isPattern(new RegExp(`^(${ruleOperationNames.join("|")})$`))
+);
+export const FindingsEvaluationProfile = Schema.Union([
+	Schema.Struct({ cached: Schema.Literal(true) }),
+	Schema.Struct({
+		cached: Schema.Literal(false),
+		wallMs: Milliseconds,
+		rules: Count,
+		findings: Count,
+		diagnostics: Count,
+		stages: Schema.Record(StageName, ProfileSample),
+		kernels: Schema.Record(KernelName, ProfileSample)
+	})
+]);
+const FindingsReadProfile = Schema.Struct({
+	rowsRequested: Count,
+	findingsReturned: Count,
+	responseBytes: Count,
+	fileFallback: Schema.Boolean
+});
+/** Profiles contain only bounded operation names and numbers from this call. */
+export const annotateFindingsProfile = (
+	profile: typeof FindingsEvaluationProfile.Type | typeof FindingsReadProfile.Type
+) => {
+	const attributes: Record<string, number | boolean> = {};
+	const prefix = "game_text.findings.";
+	if ("cached" in profile) {
+		attributes[`${prefix}cached`] = profile.cached;
+		if (!profile.cached) {
+			attributes[`${prefix}rules`] = profile.rules;
+			attributes[`${prefix}findings`] = profile.findings;
+			attributes[`${prefix}diagnostics`] = profile.diagnostics;
+			attributes[`${prefix}wall_ms`] = profile.wallMs;
+			for (const [stage, sample] of Object.entries(profile.stages)) {
+				attributes[`${prefix}stage.${stage}.wall_ms`] = sample.wallMs;
+				attributes[`${prefix}stage.${stage}.busy_ms`] = sample.busyMs;
+			}
+			for (const [op, sample] of Object.entries(profile.kernels)) {
+				attributes[`${prefix}kernel.${op}.wall_ms`] = sample.wallMs;
+				attributes[`${prefix}kernel.${op}.busy_ms`] = sample.busyMs;
+				attributes[`${prefix}kernel.${op}.rows`] = sample.rows;
+				attributes[`${prefix}kernel.${op}.inputs`] = sample.inputs;
+				attributes[`${prefix}kernel.${op}.memo_hits`] = sample.memoHits;
+			}
+		}
+	} else {
+		attributes[`${prefix}rows_requested`] = profile.rowsRequested;
+		attributes[`${prefix}findings`] = profile.findingsReturned;
+		attributes[`${prefix}response_bytes`] = profile.responseBytes;
+		attributes[`${prefix}file_fallback`] = profile.fileFallback;
+	}
+	return Effect.annotateCurrentSpan(attributes);
+};
 export const FindingsEvaluation = Schema.Struct({
 	key: Schema.NonEmptyString,
 	rules: Schema.Array(Evidence),
 	counts: Schema.Array(Evidence),
 	diagnosticCount: Row,
-	collation: Schema.String
+	collation: Schema.String,
+	profile: FindingsEvaluationProfile
 });
 export const NativeFindingLines = Schema.Struct({
+	profile: FindingsReadProfile,
 	places: Places,
 	lines: Schema.Array(
 		Schema.Struct({
@@ -37,6 +107,7 @@ export const NativeFindingLines = Schema.Struct({
 	)
 });
 export const NativeFindingUnits = Schema.Struct({
+	profile: FindingsReadProfile,
 	places: Places,
 	units: Schema.Array(Schema.Struct({ unit: Row, findings: Schema.Array(Evidence) }))
 });

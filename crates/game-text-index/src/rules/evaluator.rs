@@ -8,7 +8,6 @@ use super::stages::{Measure, Recorder, subject_stage};
 use super::text;
 use super::value::Value as ScalarValue;
 use crate::{Error, ErrorCode, Result};
-use rayon::prelude::*;
 use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;
@@ -740,6 +739,7 @@ impl<'a> Evaluator<'a> {
                 slots.push((None, Some(slot)));
             }
         }
+        let nested = self.arena.recorder.kernel_wall();
         if matches!(node.op.as_str(), "matchesRole" | "pathHasPrefix") {
             // Prepare each shared occurrence bitset before tuple workers start, avoiding
             // competing first-use builds of the same role or prefix in the Rayon pool.
@@ -830,6 +830,7 @@ impl<'a> Evaluator<'a> {
         }
         let mut column = Column::from_atoms(&output, &mut self.arena)?;
         column.failed = failures;
+        started.exclude(self.arena.recorder.kernel_wall().saturating_sub(nested));
         self.arena.recorder.kernel(
             &node.op,
             &started,
@@ -1000,9 +1001,11 @@ impl<'a> Evaluator<'a> {
         }
         // Lists are small. Expansion/grouping is parallel by row chunk, with scalar bodies
         // evaluated over the element relation through the same distinct-tuple memo.
-        let groups = (0..selection.len())
-            .into_par_iter()
-            .map(|row| {
+        let mut measure = Measure::start();
+        let rows = (0..selection.len()).collect::<Vec<_>>();
+        let groups = measure
+            .parallel(&rows, |row| {
+                let row = *row;
                 if input.failed.get(row) {
                     return Ok(None);
                 }
@@ -1011,7 +1014,9 @@ impl<'a> Evaluator<'a> {
                     .elements(input.get(row, &self.arena))?
                     .map(<[Atom]>::to_vec))
             })
+            .into_iter()
             .collect::<Result<Vec<_>>>()?;
+        self.arena.recorder.kernel(&node.op, &measure, 0, 0, 0);
         let mut parents = Vec::new();
         let mut elements = Vec::new();
         let mut offsets = vec![0];

@@ -257,33 +257,34 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 	}
 
 	/** Rebuilds the findings at these positions from their units, each checked against its hash. */
-	const items = (positions: readonly number[]) =>
-		Effect.gen(function* () {
-			const units = [...new Set(positions.map((position) => order[findingRank[position]!]!))];
-			const checked = new Map<number, readonly TextQualityFinding[]>();
-			for (let start = 0; start < units.length; start += 5000)
-				for (const unit of yield* native.findingsUnits(
-					evaluated.key,
-					units.slice(start, start + 5000)
-				))
-					checked.set(unit.unit, unit.findings);
-			return positions.map((position) => {
-				const row = order[findingRank[position]!]!,
-					rule = prepared[findingRule[position]!]!.rule;
-				const finding = checked.get(row)!.filter((finding) => finding.ruleId === rule.id)[
-					findingOrdinal[position]!
-				];
-				const hash = finding && textQualityFindingHash(finding);
-				snapshotCheck(
-					hash !== undefined &&
-						hash[0] === findingHigh[position] &&
-						hash[1] === findingLow[position],
-					"quality.source",
-					"A text unit no longer yields the finding its index recorded"
-				);
-				return finding!;
-			});
+	const items = Effect.fn("GameText.sourceQuality.items")(function* (
+		positions: readonly number[]
+	) {
+		const units = [...new Set(positions.map((position) => order[findingRank[position]!]!))];
+		const checked = new Map<number, readonly TextQualityFinding[]>();
+		for (let start = 0; start < units.length; start += 5000)
+			for (const unit of yield* native.findingsUnits(
+				evaluated.key,
+				units.slice(start, start + 5000)
+			))
+				checked.set(unit.unit, unit.findings);
+		return positions.map((position) => {
+			const row = order[findingRank[position]!]!,
+				rule = prepared[findingRule[position]!]!.rule;
+			const finding = checked.get(row)!.filter((finding) => finding.ruleId === rule.id)[
+				findingOrdinal[position]!
+			];
+			const hash = finding && textQualityFindingHash(finding);
+			snapshotCheck(
+				hash !== undefined &&
+					hash[0] === findingHigh[position] &&
+					hash[1] === findingLow[position],
+				"quality.source",
+				"A text unit no longer yields the finding its index recorded"
+			);
+			return finding!;
 		});
+	});
 
 	yield* Effect.yieldNow;
 	// The bounded diagnostics the index's corpus summarizes; about 0.25 s on 166,518 packages.

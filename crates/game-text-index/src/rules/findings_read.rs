@@ -53,7 +53,7 @@ impl EngineQuery {
     fn with_findings(
         &mut self,
         key: &str,
-        _requested: usize,
+        requested: usize,
         read: impl FnOnce(&mut Self, &mut FindingsLayer) -> Result<Value>,
     ) -> Result<String> {
         let mut layer = if let Some(layer) = self.findings.remove(key) {
@@ -70,7 +70,33 @@ impl EngineQuery {
         )?;
         let result = read(self, &mut layer);
         self.findings.insert(key.into(), layer);
-        let result = javascript_json(&result?, false);
+        let mut value = result?;
+        let rows = value["lines"]
+            .as_array()
+            .or_else(|| value["units"].as_array())
+            .ok_or("Missing findings response rows.")?;
+        let findings = rows
+            .iter()
+            .map(|row| {
+                ["builtIns", "policy", "custom", "findings"]
+                    .iter()
+                    .map(|name| row[*name].as_array().map_or(0, Vec::len))
+                    .sum::<usize>()
+            })
+            .sum::<usize>();
+        value["profile"] = json!({"rowsRequested":requested,"findingsReturned":findings,"responseBytes":0,"fileFallback":false});
+        let mut result = javascript_json(&value, false);
+        // Iterate to a fixed point because the byte count includes its own decimal digits.
+        loop {
+            value["profile"]["responseBytes"] = json!(result.len());
+            value["profile"]["fileFallback"] = json!(result.len() > 16 * 1024 * 1024);
+            let encoded = javascript_json(&value, false);
+            if encoded.len() == result.len() {
+                result = encoded;
+                break;
+            }
+            result = encoded;
+        }
         if result.len() <= 16 * 1024 * 1024 {
             return Ok(result);
         }

@@ -34,6 +34,7 @@ import type { NativeTextQuery } from "./native-query-contract.js";
 import { canonicalRuleDocument } from "./rules/translate.js";
 import {
 	FindingsEvaluation,
+	annotateFindingsProfile,
 	NativeFindingLines,
 	NativeFindingUnits,
 	inflateFindingLines,
@@ -612,7 +613,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
 		bulk((lane) => exportWithSignals(lane, request));
 	const model: NativeIndexReader = {
-		findingsEvaluate: (document) =>
+		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")((document) =>
 			bulk((lane) =>
 				withStage((directory) =>
 					Effect.gen(function* () {
@@ -634,32 +635,37 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 								collationLocale: new Intl.Collator().resolvedOptions().locale
 							},
 							FindingsEvaluation
-						);
+						).pipe(Effect.tap((result) => annotateFindingsProfile(result.profile)));
 					})
 				)
-			),
-		findingsLines: (key, rows) =>
+			)
+		),
+		findingsLines: Effect.fn("GameText.native.findingsLines")((key, rows) =>
 			bulk((lane) =>
 				findingResponse(
 					lane,
 					{ action: "findings_lines", reader: lane.reader, key, rows },
 					NativeFindingLines
 				).pipe(
+					Effect.tap((result) => annotateFindingsProfile(result.profile)),
 					Effect.flatMap(inflateFindingLines),
 					Effect.mapError((cause) => failed("findings_lines", cause))
 				)
-			),
-		findingsUnits: (key, units) =>
+			)
+		),
+		findingsUnits: Effect.fn("GameText.native.findingsUnits")((key, units) =>
 			bulk((lane) =>
 				findingResponse(
 					lane,
 					{ action: "findings_units", reader: lane.reader, key, units },
 					NativeFindingUnits
 				).pipe(
+					Effect.tap((result) => annotateFindingsProfile(result.profile)),
 					Effect.flatMap(inflateFindingUnits),
 					Effect.mapError((cause) => failed("findings_units", cause))
 				)
-			),
+			)
+		),
 		summary: () => scopedRead(reads, summary()),
 		search: (request) => scopedRead(reads, search(request)),
 		focus: (request) => scopedRead(reads, focus(request)),

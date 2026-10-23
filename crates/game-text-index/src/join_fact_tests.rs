@@ -662,9 +662,17 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
             .len(),
         1
     );
+    assert_eq!(result["profile"]["cached"], false);
+    let cached = crate::json_value::parse(&query.findings_evaluate(&path, "en", &cancelled)?)?;
+    let mut expected_cached = result.clone();
+    expected_cached["profile"] = json!({"cached":true});
+    assert_eq!(cached, expected_cached);
+    assert_eq!(lines["profile"]["rowsRequested"], 1);
+    assert_eq!(lines["profile"]["findingsReturned"], 1);
+    assert_eq!(lines["profile"]["fileFallback"], false);
     assert_eq!(
-        query.findings_evaluate(&path, "en", &cancelled)?,
-        crate::rules::javascript_json(&result, false)
+        lines["profile"]["responseBytes"],
+        crate::rules::javascript_json(&lines, false).len()
     );
     let (_, root) = crate::store::open_root(&configuration)?;
     assert_eq!(root["active"]["joined"], joined);

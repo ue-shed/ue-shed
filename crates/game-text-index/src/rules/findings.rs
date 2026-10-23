@@ -93,8 +93,8 @@ impl FindingsLayer {
     pub(super) fn json(&mut self, id: u32) -> Result<Value> {
         crate::json_value::parse_stored(&self.dictionary.string(id)?)
     }
-    fn result(&self, key: &str, _profile: &Value) -> Value {
-        json!({"key":key,"rules":self.metadata["rules"],"counts":self.metadata["counts"],"diagnosticCount":self.metadata["diagnosticCount"],"collation":self.metadata["collation"]})
+    fn result(&self, key: &str, profile: &Value) -> Value {
+        json!({"key":key,"rules":self.metadata["rules"],"counts":self.metadata["counts"],"diagnosticCount":self.metadata["diagnosticCount"],"collation":self.metadata["collation"],"profile":profile})
     }
 }
 fn intern_json(store: &mut Store, domain: &str, values: &[Value]) -> Result<Vec<u32>> {
@@ -107,7 +107,105 @@ fn intern_json(store: &mut Store, domain: &str, values: &[Value]) -> Result<Vec<
     )
 }
 
+/// Product evaluation before publication. The read-only retained-index test consumes this exact
+/// recording and result; it never writes a findings layer into the retained checkout.
+pub(super) struct EvaluatedFindings {
+    all: Vec<Emission>,
+    base_diagnostics: Vec<(u32, u32, String)>,
+    regex_diagnostics: Vec<(u32, u32, String)>,
+    lc_lines: Vec<u32>,
+    lc_cultures: Vec<u32>,
+    unit_rows: Vec<u32>,
+    unit_sources: Vec<u32>,
+    recorder: super::stages::Recorder,
+    pub(super) profile: Value,
+}
 impl EngineQuery {
+    pub(super) fn evaluate_findings(
+        &mut self,
+        program: &super::Program,
+        collator: &HostCollator,
+        cancelled: &AtomicBool,
+    ) -> Result<EvaluatedFindings> {
+        let elapsed = Measure::start();
+        let mut arena = super::columns::Arena::new(self.reader.dictionary_count()?)?;
+        let mut all = Vec::<Emission>::new();
+        let mut regex_diagnostics = Vec::new();
+        let mut base_diagnostics = Vec::new();
+        let recorder = arena.recorder.clone();
+        let mut lc_lines = Vec::new();
+        let mut lc_cultures = Vec::new();
+        let mut unit_rows = Vec::new();
+        let mut unit_sources = Vec::new();
+        for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
+            if subject != Subject::LineCulture
+                && !program
+                    .rules
+                    .iter()
+                    .any(|rule| rule.rule.subject == subject)
+            {
+                continue;
+            }
+            let setup = Measure::start();
+            let mut subjects = NativeSubjects::new(self, subject, collator, cancelled)?;
+            recorder.stage("subjects.columns", &setup, 0);
+            let (evaluation, _, diagnostics) =
+                program.evaluate_shared(&mut subjects, collator, &mut arena)?;
+            for (_, row, code) in diagnostics {
+                let (line, ci) = subjects.cultures[row];
+                base_diagnostics.push((line as u32, ci as u32, code));
+            }
+            if subject == Subject::LineCulture {
+                for (line, ci) in &subjects.cultures {
+                    lc_lines.push(*line as u32);
+                    lc_cultures.push(*ci as u32);
+                }
+            }
+            if subject == Subject::UnitSource {
+                for unit in &subjects.units {
+                    unit_rows.push(unit.unit as u32);
+                    unit_sources.push(unit.source);
+                }
+            }
+            for (subject, row, code) in evaluation.diagnostics {
+                if subject == Subject::LineCulture {
+                    let (line, ci) = subjects.cultures[row];
+                    regex_diagnostics.push((line as u32, ci as u32, code));
+                } else if subject == Subject::Line {
+                    let culture = subjects.line_field(row, "sourceCulture")?;
+                    if let Some(ci) = subjects
+                        .query
+                        .cultures
+                        .iter()
+                        .position(|value| Some(value.as_str()) == culture.as_str())
+                    {
+                        regex_diagnostics.push((row as u32, ci as u32, code));
+                    }
+                }
+            }
+            all.extend(evaluation.findings);
+        }
+        drop(arena);
+
+        let mut profile = recorder.profile(
+            program.rules.len(),
+            all.len(),
+            base_diagnostics.len() + regex_diagnostics.len(),
+        );
+        profile["wallMs"] = json!(elapsed.elapsed().as_secs_f64() * 1000.0);
+        Ok(EvaluatedFindings {
+            all,
+            base_diagnostics,
+            regex_diagnostics,
+            lc_lines,
+            lc_cultures,
+            unit_rows,
+            unit_sources,
+            recorder,
+            profile,
+        })
+    }
+
     pub fn findings_evaluate(
         &mut self,
         rules_file: &std::path::Path,
@@ -153,64 +251,17 @@ impl EngineQuery {
         )?;
         let mut profile = json!({"cached":true});
         if store.root["layers"].get(&key).is_none() {
-            let mut arena = super::columns::Arena::new(self.reader.dictionary_count()?)?;
-            let mut all = Vec::<Emission>::new();
-            let mut regex_diagnostics = Vec::new();
-            let mut base_diagnostics = Vec::new();
-            let recorder = arena.recorder.clone();
-            let mut lc_lines = Vec::new();
-            let mut lc_cultures = Vec::new();
-            let mut unit_rows = Vec::new();
-            let mut unit_sources = Vec::new();
-            for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
-                if subject != Subject::LineCulture
-                    && !program
-                        .rules
-                        .iter()
-                        .any(|rule| rule.rule.subject == subject)
-                {
-                    continue;
-                }
-                let setup = Measure::start();
-                let mut subjects = NativeSubjects::new(self, subject, &collator, cancelled)?;
-                recorder.stage("subjects.columns", &setup, 0);
-                let (evaluation, _, diagnostics) =
-                    program.evaluate_shared(&mut subjects, &collator, &mut arena)?;
-                for (_, row, code) in diagnostics {
-                    let (line, ci) = subjects.cultures[row];
-                    base_diagnostics.push((line as u32, ci as u32, code));
-                }
-                if subject == Subject::LineCulture {
-                    for (line, ci) in &subjects.cultures {
-                        lc_lines.push(*line as u32);
-                        lc_cultures.push(*ci as u32);
-                    }
-                }
-                if subject == Subject::UnitSource {
-                    for unit in &subjects.units {
-                        unit_rows.push(unit.unit as u32);
-                        unit_sources.push(unit.source);
-                    }
-                }
-                for (subject, row, code) in evaluation.diagnostics {
-                    if subject == Subject::LineCulture {
-                        let (line, ci) = subjects.cultures[row];
-                        regex_diagnostics.push((line as u32, ci as u32, code));
-                    } else if subject == Subject::Line {
-                        let culture = subjects.line_field(row, "sourceCulture")?;
-                        if let Some(ci) = subjects
-                            .query
-                            .cultures
-                            .iter()
-                            .position(|value| Some(value.as_str()) == culture.as_str())
-                        {
-                            regex_diagnostics.push((row as u32, ci as u32, code));
-                        }
-                    }
-                }
-                all.extend(evaluation.findings);
-            }
-            drop(arena);
+            let EvaluatedFindings {
+                all,
+                base_diagnostics,
+                regex_diagnostics,
+                lc_lines,
+                lc_cultures,
+                unit_rows,
+                unit_sources,
+                recorder,
+                profile: evaluation_profile,
+            } = self.evaluate_findings(&program, &collator, cancelled)?;
             let mut publish = Measure::start();
             let line_count = Projection::open(self, cancelled)?.source.len();
             let mut source_cultures = vec![u32::MAX; line_count];
@@ -380,7 +431,10 @@ impl EngineQuery {
                 &[],
             )?;
             recorder.stage("layer.publish", &publish, all.len());
-            profile = recorder.profile(program.rules.len(), all.len(), diagnostics.len());
+            profile = evaluation_profile;
+            profile["stages"] = recorder.profile(program.rules.len(), all.len(), diagnostics.len())
+                ["stages"]
+                .take();
             profile["wallMs"] = json!(elapsed.elapsed().as_secs_f64() * 1000.0);
         }
         drop(store);

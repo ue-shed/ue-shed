@@ -51,6 +51,10 @@ impl DenseMemo {
     pub fn reserve(&mut self, len: usize) {
         self.slots.resize(len.max(self.slots.len()), MISSING);
     }
+    /// Whether `claim` would take this id: nothing is stored or pending for it.
+    pub fn missing(&self, id: usize) -> bool {
+        self.slots.get(id).is_none_or(|slot| *slot == MISSING)
+    }
     pub fn claim(&mut self, id: usize) -> bool {
         if self.slots.len() <= id {
             self.reserve(id + 1);

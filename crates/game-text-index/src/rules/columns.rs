@@ -143,6 +143,93 @@ impl Bits {
         }
         result
     }
+    /// The bits at `mask`'s set positions, packed in order: the inverse of `deposit`. Full mask
+    /// words copy whole, and only the set bits of the source cost anything.
+    pub fn extract(&self, mask: &Self) -> Self {
+        let mut result = Self::new(mask.count());
+        let mut at = 0;
+        for (index, selected) in mask.words.iter().copied().enumerate() {
+            let mut source = self.words.get(index).copied().unwrap_or(0) & selected;
+            if source != 0 {
+                let packed = if selected == u64::MAX {
+                    source
+                } else {
+                    let mut word = 0;
+                    while source != 0 {
+                        let bit = source.trailing_zeros();
+                        source &= source - 1;
+                        word |= 1 << (selected & ((1 << bit) - 1)).count_ones();
+                    }
+                    word
+                };
+                result.words[at / 64] |= packed << (at % 64);
+                if at % 64 > 0
+                    && let Some(next) = result.words.get_mut(at / 64 + 1)
+                {
+                    *next |= packed >> (64 - at % 64);
+                }
+            }
+            at += selected.count_ones() as usize;
+        }
+        result
+    }
+    /// The bits of `parents[row]` for each of `mask`'s set rows, packed in order.
+    pub fn extract_through(&self, mask: &Self, parents: &[u32]) -> Self {
+        let mut result = Self::new(mask.count());
+        if self.any() {
+            for (index, row) in mask.ones().enumerate() {
+                if self.get(parents[row as usize] as usize) {
+                    result.set(index);
+                }
+            }
+        }
+        result
+    }
+}
+/// The values at a mask's set rows, in order, read through `parents` when given. Chunks of 64K
+/// rows fill their own ranges of the output in parallel.
+fn gather_mask<T: Copy + Send + Sync>(
+    values: &[T],
+    mask: &Bits,
+    parents: Option<&[u32]>,
+) -> Vec<T> {
+    use rayon::prelude::*;
+    const WORDS: usize = 1024;
+    let counts = mask
+        .words
+        .par_chunks(WORDS)
+        .map(|words| words.iter().map(|word| word.count_ones() as usize).sum())
+        .collect::<Vec<usize>>();
+    let total = counts.iter().sum();
+    if total == 0 {
+        return Vec::new();
+    }
+    // Any value will do as the fill; every slot is written below.
+    let mut output = vec![values[0]; total];
+    let mut slices = Vec::with_capacity(counts.len());
+    let mut rest = output.as_mut_slice();
+    for count in counts {
+        let (head, tail) = std::mem::take(&mut rest).split_at_mut(count);
+        slices.push(head);
+        rest = tail;
+    }
+    mask.words
+        .par_chunks(WORDS)
+        .zip(slices)
+        .enumerate()
+        .for_each(|(chunk, (words, slice))| {
+            let mut slot = 0;
+            for (offset, mut word) in words.iter().copied().enumerate() {
+                let base = (chunk * WORDS + offset) * 64;
+                while word != 0 {
+                    let row = base + word.trailing_zeros() as usize;
+                    word &= word - 1;
+                    slice[slot] = values[parents.map_or(row, |parents| parents[row] as usize)];
+                    slot += 1;
+                }
+            }
+        });
+    output
 }
 #[derive(Clone, Debug)]
 pub enum Data {
@@ -231,81 +318,65 @@ impl Column {
         }
     }
     pub fn from_atoms(values: &[Atom], arena: &mut Arena) -> Result<Self> {
-        let mut nulls = Bits::new(values.len());
-        for (row, value) in values.iter().enumerate() {
-            if *value == Atom::Null {
-                nulls.set(row);
-            }
-        }
+        use rayon::prelude::*;
+        // Large inputs scan and copy in parallel; small ones stay on the calling thread. Only
+        // the mixed-type case interns, and it stays serial so ids follow row order.
+        const SPLIT: usize = 1 << 15;
+        let words = |set: &(dyn Fn(Atom) -> bool + Sync)| Bits {
+            words: values
+                .par_chunks(64)
+                .with_min_len(SPLIT / 64)
+                .map(|chunk| {
+                    chunk
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, value)| set(**value))
+                        .fold(0u64, |word, (row, _)| word | 1 << row)
+                })
+                .collect(),
+            len: values.len(),
+        };
+        let nulls = words(&|value| value == Atom::Null);
         let first = values
             .iter()
             .copied()
             .find(|value| *value != Atom::Null)
             .unwrap_or_default();
-        if values.iter().all(|value| *value == first) {
+        if values
+            .par_iter()
+            .with_min_len(SPLIT)
+            .all(|value| *value == first)
+        {
             return Ok(Self::constant(first, values.len()));
         }
-        let same = values.iter().all(|value| {
+        let same = values.par_iter().with_min_len(SPLIT).all(|value| {
             *value == Atom::Null || std::mem::discriminant(value) == std::mem::discriminant(&first)
         });
+        fn typed<T: Send>(values: &[Atom], read: impl Fn(Atom) -> T + Sync + Send) -> Vec<T> {
+            values
+                .par_iter()
+                .with_min_len(SPLIT)
+                .map(|value| read(*value))
+                .collect()
+        }
         let data = match first {
-            Atom::Bool(_) if same => {
-                let mut bits = Bits::new(values.len());
-                for (row, value) in values.iter().enumerate() {
-                    if value.boolean() {
-                        bits.set(row);
-                    }
-                }
-                Data::Bool(bits)
-            }
-            Atom::Int(_) if same => Data::Int(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Int(value) = value {
-                            *value
-                        } else {
-                            0
-                        }
-                    })
-                    .collect(),
-            ),
-            Atom::Num(_) if same => Data::Num(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Num(value) = value {
-                            f64::from_bits(*value)
-                        } else {
-                            0.0
-                        }
-                    })
-                    .collect(),
-            ),
-            Atom::Str(_) if same => Data::Str(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Str(value) = value {
-                            *value
-                        } else {
-                            StrId(0)
-                        }
-                    })
-                    .collect(),
-            ),
-            Atom::Val(_) if same => Data::Val(
-                values
-                    .iter()
-                    .map(|value| {
-                        if let Atom::Val(value) = value {
-                            *value
-                        } else {
-                            ValId(0)
-                        }
-                    })
-                    .collect(),
-            ),
+            Atom::Bool(_) if same => Data::Bool(words(&|value| value.boolean())),
+            Atom::Int(_) if same => Data::Int(typed(values, |value| match value {
+                Atom::Int(value) => value,
+                _ => 0,
+            })),
+            Atom::Num(_) if same => Data::Num(typed(values, |value| match value {
+                Atom::Num(value) => f64::from_bits(value),
+                _ => 0.0,
+            })),
+            Atom::Str(_) if same => Data::Str(typed(values, |value| match value {
+                Atom::Str(value) => value,
+                _ => StrId(0),
+            })),
+            Atom::Val(_) if same => Data::Val(typed(values, |value| match value {
+                Atom::Val(value) => value,
+                _ => ValId(0),
+            })),
             _ => Data::Val(
                 values
                     .iter()
@@ -362,7 +433,28 @@ impl Column {
             failed: select_bits(&self.failed),
         })
     }
-    pub fn scatter(&mut self, rows: &[u32], source: &Self, arena: &mut Arena) -> Result<()> {
+    /// `select` at a mask's set rows, read through `parents` when given, without a row list.
+    pub fn select_mask(&self, mask: &Bits, parents: Option<&[u32]>) -> Self {
+        let bits = |bits: &Bits| match parents {
+            Some(parents) => bits.extract_through(mask, parents),
+            None => bits.extract(mask),
+        };
+        let data = match &self.data {
+            Data::Constant(value) => Data::Constant(*value),
+            Data::Bool(values) => Data::Bool(bits(values)),
+            Data::Int(values) => Data::Int(gather_mask(values, mask, parents)),
+            Data::Num(values) => Data::Num(gather_mask(values, mask, parents)),
+            Data::Str(values) => Data::Str(gather_mask(values, mask, parents)),
+            Data::Val(values) => Data::Val(gather_mask(values, mask, parents)),
+        };
+        Self {
+            data,
+            nulls: bits(&self.nulls),
+            failed: bits(&self.failed),
+        }
+    }
+    /// Give a constant column the storage for the source's type, as the first scatter needs.
+    fn adopt(&mut self, source: &Self) {
         if let Data::Constant(value) = self.data {
             self.data = match &source.data {
                 Data::Bool(_) | Data::Constant(Atom::Bool(_)) => Data::Bool(Bits::new(self.len())),
@@ -377,6 +469,165 @@ impl Column {
                 Data::Constant(Atom::Null) => Data::Constant(value),
             };
         }
+    }
+    /// `scatter` at a mask's set rows. A source of the column's own type is written a word or a
+    /// value at a time; any other source takes `scatter`, so value ids are made the same way.
+    pub fn scatter_mask(&mut self, mask: &Bits, source: &Self, arena: &mut Arena) -> Result<()> {
+        self.adopt(source);
+        let typed = matches!(
+            (&self.data, &source.data),
+            (Data::Constant(Atom::Null), Data::Constant(Atom::Null))
+                | (
+                    Data::Bool(_),
+                    Data::Bool(_) | Data::Constant(Atom::Bool(_) | Atom::Null)
+                )
+                | (
+                    Data::Int(_),
+                    Data::Int(_) | Data::Constant(Atom::Int(_) | Atom::Null)
+                )
+                | (
+                    Data::Num(_),
+                    Data::Num(_) | Data::Constant(Atom::Num(_) | Atom::Null)
+                )
+                | (
+                    Data::Str(_),
+                    Data::Str(_) | Data::Constant(Atom::Str(_) | Atom::Null)
+                )
+                | (
+                    Data::Val(_),
+                    Data::Val(_) | Data::Constant(Atom::Val(_) | Atom::Null)
+                )
+        );
+        if !typed {
+            return self.scatter(&mask.ones().collect::<Vec<_>>(), source, arena);
+        }
+        // Null source rows only set their null bit; every other row clears it and is written.
+        // A constant null reads as null whatever its bits say.
+        let mut nulls = if let Data::Constant(Atom::Null) = source.data {
+            mask.clone()
+        } else {
+            mask.deposit(&source.nulls)
+        };
+        let failed = mask.deposit(&source.failed);
+        fn write<T: Copy>(
+            target: &mut [T],
+            mask: &Bits,
+            nulls: &Bits,
+            mut value: impl FnMut(usize) -> T,
+        ) {
+            for (index, row) in mask.ones().enumerate() {
+                if !nulls.get(row as usize) {
+                    target[row as usize] = value(index);
+                }
+            }
+        }
+        match (&mut self.data, &source.data) {
+            (Data::Bool(values), _) => {
+                let set = match &source.data {
+                    Data::Bool(bits) => mask.deposit(bits),
+                    Data::Constant(Atom::Bool(true)) => mask.clone(),
+                    _ => Bits::new(mask.len),
+                };
+                for (((word, selected), null), set) in values
+                    .words
+                    .iter_mut()
+                    .zip(&mask.words)
+                    .zip(&nulls.words)
+                    .zip(&set.words)
+                {
+                    let written = selected & !null;
+                    *word = (*word & !written) | (set & written);
+                }
+            }
+            (Data::Int(values), Data::Int(source)) => write(values, mask, &nulls, |at| source[at]),
+            (Data::Int(values), Data::Constant(Atom::Int(value))) => {
+                write(values, mask, &nulls, |_| *value)
+            }
+            (Data::Num(values), Data::Num(source)) => write(values, mask, &nulls, |at| source[at]),
+            (Data::Num(values), Data::Constant(Atom::Num(value))) => {
+                write(values, mask, &nulls, |_| f64::from_bits(*value))
+            }
+            (Data::Str(values), Data::Str(source)) => write(values, mask, &nulls, |at| source[at]),
+            (Data::Str(values), Data::Constant(Atom::Str(value))) => {
+                write(values, mask, &nulls, |_| *value)
+            }
+            (Data::Val(values), Data::Constant(Atom::Val(value))) => {
+                write(values, mask, &nulls, |_| *value)
+            }
+            // A scalar wrapper reads as its scalar: `scatter` would store a wrapped value
+            // unwrapped, a wrapped null as null, and find any other wrapper's own id again.
+            (Data::Val(values), Data::Val(source)) => {
+                for (index, row) in mask.ones().enumerate() {
+                    let row = row as usize;
+                    if nulls.get(row) {
+                        continue;
+                    }
+                    match arena.values[source[index].0 as usize] {
+                        Structured::Scalar(Atom::Null) => nulls.set(row),
+                        Structured::Scalar(Atom::Val(value)) => values[row] = value,
+                        _ => values[row] = source[index],
+                    }
+                }
+            }
+            _ => {}
+        }
+        for ((word, selected), null) in self
+            .nulls
+            .words
+            .iter_mut()
+            .zip(&mask.words)
+            .zip(&nulls.words)
+        {
+            *word = (*word & !selected) | null;
+        }
+        for (word, failure) in self.failed.words.iter_mut().zip(&failed.words) {
+            *word |= failure;
+        }
+        Ok(())
+    }
+    /// The representation `from_atoms` gives the same values: constant when every row, nulls
+    /// included, holds one value. Failures are kept as they are; only plain scalars fold.
+    pub fn folded(mut self) -> Self {
+        let failed = std::mem::take(&mut self.failed);
+        let mut column = self.fold();
+        column.failed = failed;
+        column
+    }
+    fn fold(self) -> Self {
+        let len = self.len();
+        let nulls = self.nulls.count();
+        if nulls > 0 && nulls < len {
+            return self;
+        }
+        if nulls == len {
+            return Self::constant(Atom::Null, len);
+        }
+        let first = match &self.data {
+            Data::Bool(bits) => {
+                let set = bits.count();
+                (set == 0 || set == len).then_some(Atom::Bool(set == len))
+            }
+            Data::Int(values) => values
+                .iter()
+                .all(|value| *value == values[0])
+                .then(|| Atom::Int(values[0])),
+            Data::Num(values) => values
+                .iter()
+                .all(|value| value.to_bits() == values[0].to_bits())
+                .then(|| Atom::Num(values[0].to_bits())),
+            Data::Str(values) => values
+                .iter()
+                .all(|value| *value == values[0])
+                .then(|| Atom::Str(values[0])),
+            Data::Val(_) | Data::Constant(_) => None,
+        };
+        match first {
+            Some(value) if len > 0 => Self::constant(value, len),
+            _ => self,
+        }
+    }
+    pub fn scatter(&mut self, rows: &[u32], source: &Self, arena: &mut Arena) -> Result<()> {
+        self.adopt(source);
         for (index, row) in rows.iter().copied().enumerate() {
             let row = row as usize;
             let atom = source.get(index, arena);
@@ -467,11 +718,19 @@ struct Span {
     start: u32,
     end: u32,
 }
+impl Span {
+    /// The span of a store string that is not loaded.
+    const NONE: Self = Self {
+        batch: u32::MAX,
+        start: 0,
+        end: 0,
+    };
+}
 pub struct Arena {
     store_count: u32,
-    /// Loaded store strings: each `load_strings` batch is one exact-size buffer, so a string
-    /// costs a span, not an allocation of its own.
-    stored: FxHashMap<StrId, Span>,
+    /// Loaded store strings by id, up to the highest id loaded: each `load_strings` batch is
+    /// one exact-size buffer, so a string costs a span, not an allocation of its own.
+    stored: Vec<Span>,
     stored_text: Vec<Box<str>>,
     side: Vec<Arc<str>>,
     strings: FxHashMap<u64, StrId>,
@@ -520,8 +779,8 @@ impl Arena {
                 ((self.occurrence_values.capacity() + self.location_values.capacity()) * 4) as u64,
             ),
             (
-                "arena.storedMap",
-                (self.stored.capacity() * (size_of::<StrId>() + size_of::<Span>() + 1)) as u64,
+                "arena.storedSpans",
+                (self.stored.capacity() * size_of::<Span>()) as u64,
             ),
             (
                 "arena.storedText",
@@ -576,7 +835,7 @@ impl Arena {
                 + structures
                 + self.structures.capacity() * (size_of::<Structured>() + size_of::<ValId>() + 1)
                 + (self.occurrence_values.capacity() + self.location_values.capacity()) * 4
-                + self.stored.capacity() * (size_of::<StrId>() + size_of::<Span>() + 1)
+                + self.stored.capacity() * size_of::<Span>()
                 + self
                     .stored_text
                     .iter()
@@ -597,7 +856,7 @@ impl Arena {
     pub fn new(store_count: usize) -> Result<Self> {
         Ok(Self {
             store_count: store_count.try_into()?,
-            stored: FxHashMap::default(),
+            stored: Vec::new(),
             stored_text: Vec::new(),
             side: Vec::new(),
             strings: FxHashMap::default(),
@@ -617,15 +876,27 @@ impl Arena {
     }
     pub fn load_strings(&mut self, reader: &mut EngineReader, ids: &[u32]) -> Result<()> {
         let dedup = super::stages::Measure::start();
-        let mut seen = HashSet::new();
+        // Each wanted id once, in id order. Most calls ask for a few strings, often loaded
+        // already, so the work follows the request; only a request for a sizable share of the
+        // store dedups through a bitset over it.
         let mut wanted = ids
             .iter()
             .copied()
-            .filter(|id| {
-                *id < self.store_count && !self.stored.contains_key(&StrId(*id)) && seen.insert(*id)
-            })
+            .filter(|id| *id < self.store_count && !self.loaded(*id as usize))
             .collect::<Vec<_>>();
-        wanted.sort_unstable();
+        if wanted.is_empty() {
+            return Ok(());
+        }
+        if wanted.len() < self.store_count as usize / 32 {
+            wanted.sort_unstable();
+            wanted.dedup();
+        } else {
+            let mut seen = Bits::new(self.store_count as usize);
+            for id in &wanted {
+                seen.set(*id as usize);
+            }
+            wanted = seen.ones().collect();
+        }
         self.recorder
             .sub_stage("strings.dedup".into(), &dedup, ids.len());
         let mut measure = super::stages::Measure::start();
@@ -658,9 +929,15 @@ impl Arena {
         }
         drop(texts);
         self.stored_text.push(buffer.into_boxed_str());
-        self.stored.reserve(spans.len());
+        if let Some(last) = wanted.last().map(|id| *id as usize + 1)
+            && last > self.stored.len()
+        {
+            self.stored.reserve_exact(last - self.stored.len());
+            self.stored.resize(last, Span::NONE);
+        }
+        self.strings.reserve(wanted.len());
         for ((id, hash), span) in wanted.iter().copied().zip(hashes).zip(spans) {
-            self.stored.insert(StrId(id), span);
+            self.stored[id as usize] = span;
             if let Some(first) = self.strings.get(&hash).copied() {
                 if self.text(first) != self.text(StrId(id)) {
                     self.string_collisions
@@ -688,10 +965,18 @@ impl Arena {
         if id.0 >= self.store_count {
             &self.side[(id.0 - self.store_count) as usize]
         } else {
-            self.stored.get(&id).map_or("", |span| {
-                &self.stored_text[span.batch as usize][span.start as usize..span.end as usize]
-            })
+            self.stored
+                .get(id.0 as usize)
+                .filter(|span| span.batch != Span::NONE.batch)
+                .map_or("", |span| {
+                    &self.stored_text[span.batch as usize][span.start as usize..span.end as usize]
+                })
         }
+    }
+    fn loaded(&self, id: usize) -> bool {
+        self.stored
+            .get(id)
+            .is_some_and(|span| span.batch != Span::NONE.batch)
     }
     fn text_arc(&self, id: StrId) -> Arc<str> {
         if id.0 >= self.store_count {
@@ -1111,6 +1396,206 @@ mod tests {
                 "round {round}"
             );
         }
+    }
+
+    #[test]
+    fn mask_selection_and_scatter_match_the_row_list_paths() -> Result<()> {
+        // Every data type, sparse and full masks, nulls and failures, scalar-wrapped values and
+        // parent rows: the mask paths must give the row-list paths' exact representation and
+        // create no value ids of their own.
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut arena = Arena::new(0)?;
+        let list = arena.structured(Structured::List(Arc::from([Atom::Int(1)])))?;
+        let wrapped = [
+            arena.structured(Structured::Scalar(Atom::Str(StrId(3))))?,
+            arena.structured(Structured::Scalar(Atom::Val(list)))?,
+            arena.structured(Structured::Scalar(Atom::Null))?,
+        ];
+        for round in 0..96 {
+            let len = 64 * 40 + round * 7;
+            let bits = |density: u64, next: &mut dyn FnMut() -> u64| {
+                let mut bits = Bits::new(len);
+                for row in 0..len {
+                    let keep = match (row / 64) % 4 {
+                        0 => false,
+                        3 => true,
+                        _ => density > 0 && next().is_multiple_of(density),
+                    };
+                    if keep {
+                        bits.set(row);
+                    }
+                }
+                bits
+            };
+            let mask = bits(2 + round as u64 % 5, &mut next);
+            let nulls = if round % 3 == 0 {
+                Bits::new(len)
+            } else {
+                bits(5, &mut next)
+            };
+            let failed = if round % 4 == 0 {
+                bits(11, &mut next)
+            } else {
+                Bits::new(len)
+            };
+            let data = match round % 7 {
+                0 => Data::Bool(bits(2, &mut next)),
+                1 => Data::Int((0..len).map(|_| (next() % 9) as i64).collect()),
+                2 => Data::Num((0..len).map(|_| (next() % 9) as f64 / 2.0).collect()),
+                3 => Data::Str((0..len).map(|_| StrId((next() % 9) as u32)).collect()),
+                4 => Data::Val(
+                    (0..len)
+                        .map(|_| match next() % 4 {
+                            3 => list,
+                            pick => wrapped[pick as usize],
+                        })
+                        .collect(),
+                ),
+                5 => Data::Constant(Atom::Str(StrId(4))),
+                _ => Data::Constant(Atom::Null),
+            };
+            let column = Column {
+                data,
+                nulls,
+                failed,
+            };
+            let rows = mask.ones().map(|row| row as usize).collect::<Vec<_>>();
+            let shown = |column: &Column| format!("{column:?}");
+            assert_eq!(
+                shown(&column.select_mask(&mask, None)),
+                shown(&column.select(&rows, &mut arena)?),
+                "select, round {round}"
+            );
+            let parents = (0..len)
+                .map(|_| (next() % len as u64) as u32)
+                .collect::<Vec<_>>();
+            let through = rows
+                .iter()
+                .map(|row| parents[*row] as usize)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                shown(&column.select_mask(&mask, Some(&parents))),
+                shown(&column.select(&through, &mut arena)?),
+                "select through parents, round {round}"
+            );
+            // Fill a cache column twice, the second time over rows the first already wrote.
+            let source = column.select(&rows, &mut arena)?;
+            let second = bits(3, &mut next);
+            let second_rows = second.ones().map(|row| row as usize).collect::<Vec<_>>();
+            let again = column.select(&second_rows, &mut arena)?;
+            let ids = arena.values.len();
+            let mut by_mask = Column::constant(Atom::Null, len);
+            by_mask.scatter_mask(&mask, &source, &mut arena)?;
+            by_mask.scatter_mask(&second, &again, &mut arena)?;
+            let mask_ids = arena.values.len();
+            let mut by_rows = Column::constant(Atom::Null, len);
+            by_rows.scatter(&mask.ones().collect::<Vec<_>>(), &source, &mut arena)?;
+            by_rows.scatter(&second.ones().collect::<Vec<_>>(), &again, &mut arena)?;
+            assert_eq!(shown(&by_mask), shown(&by_rows), "scatter, round {round}");
+            assert_eq!((mask_ids, arena.values.len()), (ids, ids), "round {round}");
+            // `extract` is `deposit`'s inverse.
+            let compact = column.nulls.extract(&mask);
+            assert_eq!(
+                mask.deposit(&compact).words,
+                column
+                    .nulls
+                    .words
+                    .iter()
+                    .zip(&mask.words)
+                    .map(|(a, b)| a & b)
+                    .collect::<Vec<_>>(),
+                "extract, round {round}"
+            );
+        }
+        // Folding matches `from_atoms` for uniform, mixed and null values of each plain type.
+        for atoms in [
+            vec![Atom::Bool(true); 70],
+            vec![Atom::Bool(false), Atom::Bool(true)],
+            vec![Atom::Int(4); 3],
+            vec![Atom::Int(4), Atom::Null],
+            vec![Atom::Num(2.5f64.to_bits()); 2],
+            vec![Atom::Str(StrId(2)); 5],
+            vec![Atom::Str(StrId(2)), Atom::Str(StrId(3))],
+            vec![Atom::Null; 4],
+            vec![],
+        ] {
+            let mut typed = Column::constant(Atom::Null, atoms.len());
+            let mut source = Column::from_atoms(&atoms, &mut arena)?;
+            if let Data::Constant(value) = source.data
+                && value != Atom::Null
+            {
+                // A typed column of one repeated value, as a scatter builds it.
+                let mut parts = atoms.clone();
+                parts.push(Atom::Null);
+                source = Column::from_atoms(&parts, &mut arena)?
+                    .select(&(0..atoms.len()).collect::<Vec<_>>(), &mut arena)?;
+            }
+            typed.scatter_mask(&Bits::all(atoms.len()), &source, &mut arena)?;
+            assert_eq!(
+                format!("{:?}", typed.folded()),
+                format!("{:?}", Column::from_atoms(&atoms, &mut arena)?),
+                "{atoms:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn large_and_short_masks_select_like_row_lists() -> Result<()> {
+        // Several parallel gather chunks, masks that end before the column does, and empty
+        // and full masks; then the parallel `from_atoms` range against its expected column.
+        let mut arena = Arena::new(0)?;
+        let len = 200_003;
+        let column = Column {
+            // Null rows hold id 0, as `from_atoms` leaves them.
+            data: Data::Str(
+                (0..len)
+                    .map(|row| StrId(if row % 13 == 0 { 0 } else { (row % 977) as u32 }))
+                    .collect(),
+            ),
+            nulls: {
+                let mut nulls = Bits::new(len);
+                (0..len).step_by(13).for_each(|row| nulls.set(row));
+                nulls
+            },
+            failed: Bits::new(len),
+        };
+        let mut sparse = Bits::new(len - 70_000);
+        (0..sparse.len).step_by(3).for_each(|row| sparse.set(row));
+        for mask in [Bits::all(len), Bits::new(len), Bits::all(70_001), sparse] {
+            let rows = mask.ones().map(|row| row as usize).collect::<Vec<_>>();
+            assert_eq!(
+                format!("{:?}", column.select_mask(&mask, None)),
+                format!("{:?}", column.select(&rows, &mut arena)?),
+                "mask of {} rows",
+                rows.len()
+            );
+        }
+        let atoms = (0..len)
+            .map(|row| {
+                if row % 13 == 0 {
+                    Atom::Null
+                } else {
+                    Atom::Str(StrId((row % 977) as u32))
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            format!("{:?}", Column::from_atoms(&atoms, &mut arena)?),
+            format!("{column:?}")
+        );
+        let uniform = vec![Atom::Int(7); len];
+        assert_eq!(
+            format!("{:?}", Column::from_atoms(&uniform, &mut arena)?),
+            format!("{:?}", Column::constant(Atom::Int(7), len))
+        );
+        Ok(())
     }
 
     #[test]

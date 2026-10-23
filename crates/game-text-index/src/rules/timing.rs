@@ -4,6 +4,7 @@ use crate::engine_query::EngineQuery;
 use crate::store::{Configuration, open_root};
 use crate::{Result, require};
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
@@ -116,6 +117,25 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     let rules = catalogue["rules"]
         .as_str()
         .ok_or("Missing default catalogue.")?;
+    // Local measurement only: keep the listed rules, in catalogue order.
+    let only = std::env::var("UE_SHED_GAME_TEXT_TIMING_RULES").ok();
+    let filtered;
+    let rules = if let Some(only) = &only {
+        let keep = only.split(',').collect::<HashSet<_>>();
+        let mut document: Value = serde_json::from_str(rules)?;
+        document["rules"]
+            .as_array_mut()
+            .ok_or("Missing rules.")?
+            .retain(|rule| rule["id"].as_str().is_some_and(|id| keep.contains(id)));
+        require(
+            document["rules"].as_array().map(Vec::len) == Some(keep.len()),
+            "A listed rule is not in the catalogue.",
+        )?;
+        filtered = serde_json::to_string(&document)?;
+        filtered.as_str()
+    } else {
+        rules
+    };
     let program = super::compile(rules)?;
     let collator =
         super::HostCollator::new(catalogue["locale"].as_str().ok_or("Missing host locale.")?)?;
@@ -126,7 +146,9 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     let result = json!({"digest":evaluated.digest,"profile":profile,"peakPrivateBytes":memory.peak_private_bytes,"peakWorkingSetBytes":memory.peak_working_set_bytes,"rayonThreads":rayon::current_num_threads()});
     println!("{}", serde_json::to_string(&result)?);
     require(
-        evaluated.digest == "87dba57d4b3751dddb3a0d4f816b9a22eeaab1472756a588baeed7d173980576",
+        only.is_some()
+            || evaluated.digest
+                == "87dba57d4b3751dddb3a0d4f816b9a22eeaab1472756a588baeed7d173980576",
         "Retained output digest differs from e857a864.",
     )?;
     Ok(())

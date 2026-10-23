@@ -72,15 +72,10 @@ pub fn source_identity(
     kind: &str,
     actual: &Value,
     expectation: &Value,
-    occurrences: &[impl std::borrow::Borrow<Value>],
+    occurrences: &[Option<std::sync::Arc<str>>],
 ) -> (String, [u32; 2]) {
-    let mut ids = occurrences
-        .iter()
-        .map(|occurrence| occurrence.borrow()["id"].clone())
-        .collect::<Vec<_>>();
-    ids.sort_by(|a, b| {
-        super::text::code_unit_compare(a.as_str().unwrap_or(""), b.as_str().unwrap_or(""))
-    });
+    let mut ids = occurrences.iter().map(Option::as_deref).collect::<Vec<_>>();
+    ids.sort_by(|a, b| super::text::code_unit_compare(a.unwrap_or(""), b.unwrap_or("")));
     let input = javascript_json(
         &json!([rule, role, unit, kind, actual, expectation, ids]),
         false,
@@ -133,9 +128,12 @@ mod tests {
                 "kind",
                 &finding["actual"],
                 &finding["expectation"],
-                finding["affectedOccurrences"]
+                &finding["affectedOccurrences"]
                     .as_array()
-                    .ok_or("Missing places.")?,
+                    .ok_or("Missing places.")?
+                    .iter()
+                    .map(|place| place["id"].as_str().map(std::sync::Arc::from))
+                    .collect::<Vec<_>>(),
             );
             assert_eq!(
                 localization.0, expected[index][0],

@@ -425,7 +425,6 @@ pub struct Occurrences {
     pub(super) data: Option<Arc<super::occurrences::OccurrenceData>>,
     pub(super) ids: Vec<Option<StrId>>,
     pub(super) files: Vec<StrId>,
-    pub(super) places: Vec<Option<Arc<serde_json::Value>>>,
     pub(super) location_kinds: [Atom; 3],
     pub fields: HashMap<String, Arc<Column>>,
     pub len: usize,
@@ -446,24 +445,6 @@ pub struct Arena {
     pub(crate) recorder: super::stages::Recorder,
     pub(crate) roles_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
     pub(crate) paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
-}
-fn json_bytes(value: &serde_json::Value) -> usize {
-    use serde_json::Value;
-    match value {
-        Value::String(text) => text.capacity(),
-        Value::Array(values) => {
-            values.capacity() * std::mem::size_of::<Value>()
-                + values.iter().map(json_bytes).sum::<usize>()
-        }
-        Value::Object(fields) => {
-            fields.len() * (std::mem::size_of::<(String, Value)>() + 1)
-                + fields
-                    .iter()
-                    .map(|(key, value)| key.capacity() + json_bytes(value))
-                    .sum::<usize>()
-        }
-        _ => 0,
-    }
 }
 impl Arena {
     pub(crate) fn memory(&self) -> super::stages::Memory {
@@ -491,14 +472,6 @@ impl Arena {
                 .fields
                 .values()
                 .map(|column| column.bytes())
-                .sum::<usize>()
-            + self.occurrences.places.capacity() * size_of::<Option<Arc<serde_json::Value>>>()
-            + self
-                .occurrences
-                .places
-                .iter()
-                .flatten()
-                .map(|place| json_bytes(place))
                 .sum::<usize>()
             + self.line_children.as_ref().map_or(0, |children| {
                 children.offsets.capacity() * 4 + children.members.capacity() * 4

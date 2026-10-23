@@ -139,7 +139,7 @@ pub(super) fn digest_subject(
     program: &super::Program,
     subjects: &mut super::NativeSubjects<'_>,
     evaluation: &super::Evaluation,
-    diagnostics: &[(super::Subject, usize, String)],
+    diagnostics: &[super::Diagnostic],
 ) -> Result<()> {
     use super::SubjectRows;
     fn record(digest: &mut sha2::Sha256, value: &Value) {
@@ -150,95 +150,116 @@ pub(super) fn digest_subject(
     }
     record(digest, &json!(["subject", subjects.subject()]));
     let mut identities = std::collections::HashMap::<usize, (String, String)>::new();
-    for finding in &evaluation.findings {
-        let compiled = program
-            .rules
+    // Places are hydrated a chunk of findings at a time, as reads do, so the digest holds no
+    // more of them than it needs.
+    for findings in evaluation.findings.chunks(4096) {
+        let mut places = std::collections::BTreeMap::new();
+        for finding in findings {
+            for (row, id) in finding.affected.rows.iter().zip(&finding.affected.ids) {
+                places.entry(*row).or_insert_with(|| id.clone());
+            }
+        }
+        let (rows, ids): (Vec<_>, Vec<_>) = places.into_iter().unzip();
+        let places = rows
             .iter()
-            .find(|rule| rule.ordinal == finding.rule)
-            .ok_or("Missing digest rule.")?;
-        let rule = &compiled.rule;
-        let identity = if let Some(identity) = identities.get(&finding.row) {
-            identity.clone()
-        } else {
-            let identity: (String, String) = if finding.subject == super::Subject::UnitSource {
-                (
-                    subjects
-                        .field(finding.row, "textUnitId")?
-                        .as_str()
-                        .ok_or("Missing unit ID.")?
-                        .to_owned(),
-                    String::new(),
-                )
-            } else if finding.subject == super::Subject::LineCulture {
-                (
-                    subjects
-                        .field(finding.row, "line.lineId")?
-                        .as_str()
-                        .ok_or("Missing line ID.")?
-                        .to_owned(),
-                    subjects
-                        .field(finding.row, "culture")?
-                        .as_str()
-                        .ok_or("Missing culture.")?
-                        .to_owned(),
-                )
+            .copied()
+            .zip(subjects.places(&rows, &ids)?)
+            .collect::<std::collections::HashMap<_, _>>();
+        for finding in findings {
+            let compiled = program
+                .rules
+                .iter()
+                .find(|rule| rule.ordinal == finding.rule)
+                .ok_or("Missing digest rule.")?;
+            let rule = &compiled.rule;
+            let identity = if let Some(identity) = identities.get(&finding.row) {
+                identity.clone()
             } else {
-                (
-                    subjects
-                        .field(finding.row, "lineId")?
-                        .as_str()
-                        .ok_or("Missing line ID.")?
-                        .to_owned(),
-                    subjects
-                        .field(finding.row, "sourceCulture")?
-                        .as_str()
-                        .unwrap_or("")
-                        .to_owned(),
-                )
+                let identity: (String, String) = if finding.subject == super::Subject::UnitSource {
+                    (
+                        subjects
+                            .field(finding.row, "textUnitId")?
+                            .as_str()
+                            .ok_or("Missing unit ID.")?
+                            .to_owned(),
+                        String::new(),
+                    )
+                } else if finding.subject == super::Subject::LineCulture {
+                    (
+                        subjects
+                            .field(finding.row, "line.lineId")?
+                            .as_str()
+                            .ok_or("Missing line ID.")?
+                            .to_owned(),
+                        subjects
+                            .field(finding.row, "culture")?
+                            .as_str()
+                            .ok_or("Missing culture.")?
+                            .to_owned(),
+                    )
+                } else {
+                    (
+                        subjects
+                            .field(finding.row, "lineId")?
+                            .as_str()
+                            .ok_or("Missing line ID.")?
+                            .to_owned(),
+                        subjects
+                            .field(finding.row, "sourceCulture")?
+                            .as_str()
+                            .unwrap_or("")
+                            .to_owned(),
+                    )
+                };
+                identities.insert(finding.row, identity.clone());
+                identity
             };
-            identities.insert(finding.row, identity.clone());
-            identity
-        };
-        let rule_id = rule.rule_id.as_ref().unwrap_or(&rule.id);
-        let id = if finding.subject == super::Subject::UnitSource {
-            super::source_identity(
-                rule_id,
-                rule.role.as_deref(),
-                &identity.0,
-                &rule.kind,
-                &finding.actual,
-                &finding.expectation,
-                &finding.affected,
-            )
-            .0
-        } else {
-            super::localization_identity(
-                &identity.0,
-                &identity.1,
-                rule_id,
-                &rule.kind,
-                &finding.actual,
-                &finding.expectation,
-            )
-            .0
-        };
-        record(
-            digest,
-            &json!([
-                "finding",
-                finding.rule,
-                finding.row,
-                finding.subject,
-                finding.actual,
-                finding.expectation,
-                finding.fix,
-                finding.extra,
-                finding.translation_origin,
-                finding.recovery,
-                finding.affected.as_slice(),
-                id
-            ]),
-        );
+            let rule_id = rule.rule_id.as_ref().unwrap_or(&rule.id);
+            let id = if finding.subject == super::Subject::UnitSource {
+                super::source_identity(
+                    rule_id,
+                    rule.role.as_deref(),
+                    &identity.0,
+                    &rule.kind,
+                    &finding.actual,
+                    &finding.expectation,
+                    &finding.affected.ids,
+                )
+                .0
+            } else {
+                super::localization_identity(
+                    &identity.0,
+                    &identity.1,
+                    rule_id,
+                    &rule.kind,
+                    &finding.actual,
+                    &finding.expectation,
+                )
+                .0
+            };
+            record(
+                digest,
+                &json!([
+                    "finding",
+                    finding.rule,
+                    finding.row,
+                    finding.subject,
+                    finding.actual,
+                    finding.expectation,
+                    finding.fix,
+                    finding.extra,
+                    finding.translation_origin,
+                    finding.recovery,
+                    finding
+                        .affected
+                        .rows
+                        .iter()
+                        .map(|row| &places[row])
+                        .collect::<Vec<_>>(),
+                    id
+                ]),
+            );
+        }
     }
     let masks = evaluation
         .masks
@@ -250,12 +271,14 @@ pub(super) fn digest_subject(
     fn diagnostic_record(
         digest: &mut sha2::Sha256,
         name: &str,
-        values: &[(super::Subject, usize, String)],
+        subject: super::Subject,
+        values: &[super::Diagnostic],
     ) {
         use sha2::Digest;
         let prefix = format!("[{},[", super::javascript_json(&json!(name), true));
-        let encoded =
-            |value: &(super::Subject, usize, String)| super::javascript_json(&json!(value), true);
+        let encoded = |value: &super::Diagnostic| {
+            super::javascript_json(&json!([subject, value.row, value.name()]), true)
+        };
         let length = prefix.len()
             + 2
             + values.len().saturating_sub(1)
@@ -273,8 +296,9 @@ pub(super) fn digest_subject(
         }
         digest.update(b"]]");
     }
-    diagnostic_record(digest, "rule-diagnostics", &evaluation.diagnostics);
-    diagnostic_record(digest, "projection-diagnostics", diagnostics);
+    let subject = subjects.subject();
+    diagnostic_record(digest, "rule-diagnostics", subject, &evaluation.diagnostics);
+    diagnostic_record(digest, "projection-diagnostics", subject, diagnostics);
     // Keep the trait in this function so baseline and product share precisely the same encoder.
     let _ = digest;
     Ok(())

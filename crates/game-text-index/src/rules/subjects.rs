@@ -430,34 +430,50 @@ impl<'a> NativeSubjects<'a> {
         Ok(result)
     }
 }
+impl NativeSubjects<'_> {
+    /// Places as reads and evidence show them, built from the index in a scratch arena so
+    /// nothing outlives the call.
+    pub(super) fn places(&mut self, rows: &[u32], ids: &[Option<Arc<str>>]) -> Result<Vec<Value>> {
+        use super::columns::{Arena, StrId};
+        let data = Arc::clone(&self.occurrences);
+        let string_ids = rows
+            .iter()
+            .flat_map(|row| {
+                [
+                    "source", "notes", "object", "property", "class", "row", "key",
+                ]
+                .map(|field| data.value(*row as usize, field))
+            })
+            .collect::<Vec<_>>();
+        let mut arena = Arena::new(self.query.reader.dictionary_count()?)?;
+        arena.load_strings(&mut self.query.reader, &string_ids)?;
+        Ok(rows
+            .iter()
+            .zip(ids)
+            .map(|(row, id)| {
+                let row = *row as usize;
+                json!({"id":id.as_deref().unwrap_or(""),"packageFile":data.files[data.packages[row] as usize],
+                "source":arena.text(StrId(data.value(row,"source"))),
+                "devNotes":arena.text(StrId(data.value(row,"notes"))),
+                "location":data.location(row,&arena),"unitStatus":data.status(row,&arena)})
+            })
+            .collect())
+    }
+}
 impl SubjectRows for NativeSubjects<'_> {
-    fn prepare_places(
+    fn affected(
         &mut self,
         arena: &mut super::columns::Arena,
         sets: &[super::columns::Atom],
         measure: &mut super::stages::Measure,
-    ) -> Result<HashMap<super::columns::Atom, Arc<Vec<Arc<Value>>>>> {
-        use super::columns::{Atom, StrId, Structured};
+    ) -> Result<HashMap<super::columns::Atom, Arc<super::Affected>>> {
         let mut rows = Vec::new();
         let mut lists = Vec::new();
         let mut unique = HashMap::<Vec<u32>, usize>::new();
         let mut set_keys = Vec::new();
         for set in sets {
-            let members = arena
-                .elements(*set)?
-                .unwrap_or_default()
-                .iter()
-                .map(|atom| {
-                    if let Atom::Val(id) = atom
-                        && let Structured::Occurrence(row) = arena.values[id.0 as usize]
-                    {
-                        Ok(row)
-                    } else {
-                        Err("Expected native occurrence row.".into())
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?;
-            // Membership keys are sorted; output keeps the original relation order.
+            let members = super::evaluator::occurrence_rows(arena, *set)?;
+            // Sets with the same members share one list, in the order first seen.
             let mut membership = members.clone();
             membership.sort_unstable();
             let next = lists.len();
@@ -471,49 +487,20 @@ impl SubjectRows for NativeSubjects<'_> {
         rows.sort_unstable();
         rows.dedup();
         arena.occurrence_ids(self.query, &rows, measure)?;
-        let data = Arc::clone(&self.occurrences);
-        let string_ids = rows
-            .iter()
-            .flat_map(|row| {
-                [
-                    "source", "notes", "object", "property", "class", "row", "key",
-                ]
-                .map(|field| data.value(*row as usize, field))
-            })
-            .collect::<Vec<_>>();
-        arena.load_strings(&mut self.query.reader, &string_ids)?;
-        arena.occurrences.places.resize_with(data.len(), || None);
-        let missing = rows
-            .into_iter()
-            .filter(|row| arena.occurrences.places[*row as usize].is_none())
-            .collect::<Vec<_>>();
-        let places = measure.parallel(&missing, |row| {
-            let row = *row as usize;
-            let id = arena.occurrences.ids[row]
-                .map(|id| arena.text(id))
-                .unwrap_or("");
-            Arc::new(
-                json!({"id":id,"packageFile":data.files[data.packages[row] as usize],
-                "source":arena.text(StrId(data.value(row,"source"))),
-                "devNotes":arena.text(StrId(data.value(row,"notes"))),
-                "location":data.location(row,arena),"unitStatus":data.status(row,arena)}),
-            )
-        });
-        for (row, place) in missing.into_iter().zip(places) {
-            arena.occurrences.places[row as usize] = Some(place);
-        }
+        let names = &arena.occurrences.ids;
         let built = measure.parallel(&lists, |members| {
-            Arc::new(
-                members
+            Arc::new(super::Affected {
+                ids: members
                     .iter()
                     .map(|row| {
-                        arena.occurrences.places[*row as usize]
-                            .as_ref()
-                            .cloned()
-                            .unwrap_or_else(|| Arc::new(Value::Null))
+                        Some(
+                            names[*row as usize]
+                                .map_or(Arc::from(""), |id| Arc::from(arena.text(id))),
+                        )
                     })
-                    .collect::<Vec<_>>(),
-            )
+                    .collect(),
+                rows: members.as_slice().into(),
+            })
         });
         Ok(set_keys
             .into_iter()
@@ -592,13 +579,9 @@ impl SubjectRows for NativeSubjects<'_> {
             .map(|row| arena.occurrence_id(row))
             .collect::<Result<Vec<Atom>>>()?;
         let set = arena.list(atoms)?;
-        let places =
-            self.prepare_places(&mut arena, &[set], &mut super::stages::Measure::start())?;
-        let result = places[&set]
-            .iter()
-            .map(|place| place.as_ref().clone())
-            .collect();
+        let affected = self.affected(&mut arena, &[set], &mut super::stages::Measure::start())?;
         self.read_arena = Some(arena);
-        Ok(result)
+        let affected = &affected[&set];
+        self.places(&affected.rows, &affected.ids)
     }
 }

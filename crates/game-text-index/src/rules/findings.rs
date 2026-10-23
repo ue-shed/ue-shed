@@ -111,8 +111,8 @@ fn intern_json(store: &mut Store, domain: &str, values: &[Value]) -> Result<Vec<
 /// recording and result; it never writes a findings layer into the retained checkout.
 pub(super) struct EvaluatedFindings {
     all: Vec<Emission>,
-    base_diagnostics: Vec<(u32, u32, String)>,
-    regex_diagnostics: Vec<(u32, u32, String)>,
+    base_diagnostics: Vec<(u32, u32, u8)>,
+    regex_diagnostics: Vec<(u32, u32, u8)>,
     lc_lines: Vec<u32>,
     lc_cultures: Vec<u32>,
     unit_rows: Vec<u32>,
@@ -203,9 +203,9 @@ impl EngineQuery {
                 )?;
                 elapsed.exclude(digest_time.elapsed());
             }
-            for (_, row, code) in diagnostics {
-                let (line, ci) = subjects.cultures[row];
-                base_diagnostics.push((line as u32, ci as u32, code));
+            for diagnostic in diagnostics {
+                let (line, ci) = subjects.cultures[diagnostic.row as usize];
+                base_diagnostics.push((line as u32, ci as u32, diagnostic.code));
             }
             if subject == Subject::LineCulture {
                 for (line, ci) in &subjects.cultures {
@@ -219,7 +219,8 @@ impl EngineQuery {
                     unit_sources.push(unit.source);
                 }
             }
-            for (subject, row, code) in evaluation.diagnostics {
+            for super::Diagnostic { row, code } in evaluation.diagnostics {
+                let row = row as usize;
                 if subject == Subject::LineCulture {
                     let (line, ci) = subjects.cultures[row];
                     regex_diagnostics.push((line as u32, ci as u32, code));
@@ -400,7 +401,7 @@ impl EngineQuery {
                     let rule = metadata["ruleId"].as_str().ok_or("Missing finding rule ID.")?;
                     let kind = metadata["kind"].as_str().ok_or("Missing finding kind.")?;
                     let (_, hash) = if finding.subject == Subject::UnitSource {
-                        source_identity(rule, metadata["role"].as_str(), &identities[&line], kind, &finding.actual, &finding.expectation, &finding.affected)
+                        source_identity(rule, metadata["role"].as_str(), &identities[&line], kind, &finding.actual, &finding.expectation, &finding.affected.ids)
                     } else {
                         localization_identity(&identities[&line], &self.cultures[ci], rule, kind, &finding.actual, &finding.expectation)
                     };
@@ -408,7 +409,7 @@ impl EngineQuery {
                     for (name, item) in [("fix", &finding.fix), ("extra", &finding.extra), ("translationOrigin", &finding.translation_origin)] {
                         if !item.is_null() { value[name] = item.clone(); }
                     }
-                    let places = json!(finding.affected.iter().map(|occurrence| occurrence["id"].clone()).collect::<Vec<_>>());
+                    let places = json!(finding.affected.ids);
                     Ok((finding.row as u32, ci, finding.subject, value, places, hash))
                 });
                 publish.exclude(emission.elapsed());
@@ -461,13 +462,29 @@ impl EngineQuery {
             let mut diagnostics = base_diagnostics;
             diagnostics.extend(regex_diagnostics);
             diagnostics.sort_by_key(|(line, _, _)| *line);
-            let codes = store.intern(
+            // Intern each code once, in first-use order, which assigns the same IDs as interning
+            // every diagnostic's code.
+            let mut used = Vec::new();
+            for (_, _, code) in &diagnostics {
+                if !used.contains(code) {
+                    used.push(*code);
+                }
+            }
+            let ids = store.intern(
                 "findings",
-                &diagnostics
+                &used
                     .iter()
-                    .map(|(_, _, code)| code.clone())
+                    .map(|code| super::DIAGNOSTIC_CODES[*code as usize].to_owned())
                     .collect::<Vec<_>>(),
             )?;
+            let mut table = [0; super::DIAGNOSTIC_CODES.len()];
+            for (code, id) in used.into_iter().zip(ids) {
+                table[code as usize] = id;
+            }
+            let codes = diagnostics
+                .iter()
+                .map(|(_, _, code)| table[*code as usize])
+                .collect::<Vec<_>>();
             columns.push((
                 "diag.rows".into(),
                 String::new(),

@@ -20,7 +20,9 @@ mod value;
 mod vector;
 pub use collation::HostCollator;
 pub use compiler::{Program, Rule, Subject, compile};
-pub use evaluator::{Emission, Evaluation, Relation, SubjectRows};
+pub use evaluator::{
+    Affected, DIAGNOSTIC_CODES, Diagnostic, Emission, Evaluation, Relation, SubjectRows,
+};
 pub use grammar::format_pattern;
 pub use subjects::NativeSubjects;
 /// Parse JSON evidence while preserving every UTF-16 code unit.

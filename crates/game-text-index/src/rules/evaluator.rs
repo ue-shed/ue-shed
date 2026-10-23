@@ -8,6 +8,7 @@ use super::stages::{Measure, Recorder, subject_stage};
 use super::text;
 use super::tuple::{Key as TupleKey, Packer};
 use super::value::Value as ScalarValue;
+use crate::engine_types::REASONS;
 use crate::{Error, ErrorCode, Result};
 use rustc_hash::FxHashMap;
 use serde_json::Value;
@@ -29,6 +30,56 @@ impl Relation {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    /// An affected occurrence as rules see it. Rows number this relation's occurrences in
+    /// order, across subject rows.
+    pub fn place(&self, row: u32) -> Result<Value> {
+        let occurrence = self
+            .occurrences
+            .iter()
+            .flatten()
+            .nth(row as usize)
+            .ok_or("Missing affected occurrence.")?;
+        let mut arena = Arena::new(0)?;
+        let value = ScalarValue::from_json(occurrence);
+        let mut place = serde_json::Map::new();
+        for name in OCCURRENCE_FIELDS {
+            let atom = arena.intern(value[name].clone())?;
+            place.insert(name.into(), arena.json(atom));
+        }
+        Ok(Value::Object(place))
+    }
+}
+const OCCURRENCE_FIELDS: [&str; 6] = [
+    "id",
+    "packageFile",
+    "source",
+    "devNotes",
+    "location",
+    "unitStatus",
+];
+/// The occurrences a finding affects: relation rows in emission order and their IDs. Places are
+/// hydrated from the index only when they are read.
+#[derive(Debug, Default)]
+pub struct Affected {
+    pub rows: Box<[u32]>,
+    pub ids: Box<[Option<Arc<str>>]>,
+}
+/// The relation rows of an occurrence list.
+pub(super) fn occurrence_rows(arena: &Arena, set: Atom) -> Result<Vec<u32>> {
+    arena
+        .elements(set)?
+        .unwrap_or_default()
+        .iter()
+        .map(|atom| {
+            if let Atom::Val(id) = atom
+                && let super::columns::Structured::Occurrence(row) = arena.values[id.0 as usize]
+            {
+                Ok(row)
+            } else {
+                Err("Finding affected must be an occurrence list.".into())
+            }
+        })
+        .collect()
 }
 pub trait SubjectRows {
     fn subject(&self) -> Subject;
@@ -39,24 +90,28 @@ pub trait SubjectRows {
     /// Compatibility/emission reads. Native execution overrides prepare and never reads row JSON.
     fn field(&mut self, row: usize, name: &str) -> Result<Value>;
     fn occurrences(&mut self, row: usize) -> Result<Vec<Value>>;
-    fn prepare_places(
+    fn affected(
         &mut self,
         arena: &mut Arena,
         sets: &[Atom],
         measure: &mut Measure,
-    ) -> Result<HashMap<Atom, Arc<Vec<Arc<Value>>>>> {
+    ) -> Result<HashMap<Atom, Arc<Affected>>> {
         measure
             .parallel(sets, |set| {
+                let rows = occurrence_rows(arena, *set)?;
+                let ids = rows
+                    .iter()
+                    .map(|row| match arena.occurrence(*row, "id") {
+                        Atom::Str(id) => Some(Arc::from(arena.text(id))),
+                        _ => None,
+                    })
+                    .collect();
                 Ok((
                     *set,
-                    Arc::new(
-                        arena
-                            .elements(*set)?
-                            .unwrap_or_default()
-                            .iter()
-                            .map(|atom| Arc::new(arena.json(*atom)))
-                            .collect(),
-                    ),
+                    Arc::new(Affected {
+                        rows: rows.into(),
+                        ids,
+                    }),
                 ))
             })
             .into_iter()
@@ -105,14 +160,7 @@ pub trait SubjectRows {
         for row in 0..len {
             for occurrence in self.occurrences(row)? {
                 let occurrence = ScalarValue::from_json(&occurrence);
-                for name in [
-                    "id",
-                    "packageFile",
-                    "source",
-                    "devNotes",
-                    "location",
-                    "unitStatus",
-                ] {
+                for name in OCCURRENCE_FIELDS {
                     values
                         .entry(name.into())
                         .or_default()
@@ -170,11 +218,11 @@ pub struct Emission {
     pub extra: Value,
     pub translation_origin: Value,
     pub recovery: String,
-    pub affected: Arc<Vec<Arc<Value>>>,
+    pub affected: Arc<Affected>,
 }
 pub struct Evaluation {
     pub findings: Vec<Emission>,
-    pub diagnostics: Vec<(Subject, usize, String)>,
+    pub diagnostics: Vec<Diagnostic>,
     pub masks: HashMap<usize, Vec<u64>>,
 }
 #[derive(Clone, Copy)]
@@ -212,7 +260,55 @@ struct DenseSelection {
     suffixes: Vec<Vec<Atom>>,
     groups: Vec<usize>,
 }
-type Diagnostics = Vec<(Subject, usize, String)>;
+/// A subject row's diagnostic. The subject is the evaluation's; `code` indexes
+/// `DIAGNOSTIC_CODES`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Diagnostic {
+    pub row: u32,
+    pub code: u8,
+}
+/// The reasons a line could not be checked, then the evaluator's own codes. Stored diagnostics
+/// name these; the order only fixes `code`.
+pub const DIAGNOSTIC_CODES: [&str; REASONS.len() + 5] = {
+    let mut codes = [""; REASONS.len() + 5];
+    let mut index = 0;
+    while index < REASONS.len() {
+        codes[index] = REASONS[index];
+        index += 1;
+    }
+    codes[REASONS.len()] = "reduced_source_checking";
+    codes[REASONS.len() + 1] = "source_unavailable";
+    codes[REASONS.len() + 2] = "translation_unavailable";
+    codes[REASONS.len() + 3] = "unsupported_culture";
+    codes[REASONS.len() + 4] = "syntax_limit";
+    codes
+};
+const REDUCED_SOURCE_CHECKING: u8 = REASONS.len() as u8;
+const SOURCE_UNAVAILABLE: u8 = REASONS.len() as u8 + 1;
+const TRANSLATION_UNAVAILABLE: u8 = REASONS.len() as u8 + 2;
+const UNSUPPORTED_CULTURE: u8 = REASONS.len() as u8 + 3;
+const SYNTAX_LIMIT: u8 = REASONS.len() as u8 + 4;
+impl Diagnostic {
+    fn new(row: impl TryInto<u32>, code: u8) -> Result<Self> {
+        Ok(Self {
+            row: row
+                .try_into()
+                .map_err(|_| "Diagnostic row is out of range.")?,
+            code,
+        })
+    }
+    pub fn name(self) -> &'static str {
+        DIAGNOSTIC_CODES[self.code as usize]
+    }
+}
+fn diagnostic_code(name: &str) -> Result<u8> {
+    DIAGNOSTIC_CODES
+        .iter()
+        .position(|code| *code == name)
+        .map(|code| code as u8)
+        .ok_or_else(|| format!("Unknown diagnostic code {name}.").into())
+}
+type Diagnostics = Vec<Diagnostic>;
 type TimedEvaluation = (Evaluation, Recorder, Diagnostics);
 struct Evaluator<'a> {
     program: &'a Program,
@@ -1233,7 +1329,7 @@ impl<'a> Evaluator<'a> {
         column.failed = failed;
         Ok(column)
     }
-    fn diagnostics(&mut self, len: usize) -> Result<Vec<(Subject, usize, String)>> {
+    fn diagnostics(&mut self, len: usize) -> Result<Vec<Diagnostic>> {
         let checkable = self.prepared.field("line.checkable")?.clone();
         let comparable = self.prepared.field("line.comparable")?.clone();
         let gathered = self.prepared.field("line.gathered")?.clone();
@@ -1261,7 +1357,7 @@ impl<'a> Evaluator<'a> {
         {
             let selection = Selection::new(rows);
             let patterns = self.evaluate(node, &selection)?;
-            let mut codes = HashMap::<u32, Vec<String>>::new();
+            let mut codes = HashMap::<u32, Vec<u8>>::new();
             for (index, row) in selection.rows.iter().enumerate() {
                 let found = self
                     .arena
@@ -1269,10 +1365,12 @@ impl<'a> Evaluator<'a> {
                 for issue in self.arena.elements(found)?.unwrap_or_default() {
                     let code = self.arena.get_path(*issue, "code");
                     if let Atom::Str(code) = code {
-                        let code = self.arena.text(code);
-                        if matches!(code, "unsupported_culture" | "syntax_limit") {
-                            codes.entry(row).or_default().push(code.into());
-                        }
+                        let code = match self.arena.text(code) {
+                            "unsupported_culture" => UNSUPPORTED_CULTURE,
+                            "syntax_limit" => SYNTAX_LIMIT,
+                            _ => continue,
+                        };
+                        codes.entry(row).or_default().push(code);
                     }
                 }
             }
@@ -1295,46 +1393,37 @@ impl<'a> Evaluator<'a> {
                     .unwrap_or_default()
                 {
                     if let Atom::Str(reason) = reason {
-                        output.push((Subject::LineCulture, row, self.arena.text(*reason).into()));
+                        output.push(Diagnostic::new(
+                            row,
+                            diagnostic_code(self.arena.text(*reason))?,
+                        )?);
                     }
                 }
                 if reduced.get(row, &self.arena).boolean() {
-                    output.push((Subject::LineCulture, row, "reduced_source_checking".into()));
+                    output.push(Diagnostic::new(row, REDUCED_SOURCE_CHECKING)?);
                 }
             }
             if checkable.get(first, &self.arena).boolean() {
                 for row in first..end {
                     if !gathered.get(row, &self.arena).boolean() {
-                        output.push((Subject::LineCulture, row, "source_unavailable".into()));
+                        output.push(Diagnostic::new(row, SOURCE_UNAVAILABLE)?);
                     }
                     let absent = latest.get(row, &self.arena) == Atom::Null;
                     if !comparable.get(row, &self.arena).boolean() {
                         if absent {
-                            output.push((
-                                Subject::LineCulture,
-                                row,
-                                "translation_unavailable".into(),
-                            ));
+                            output.push(Diagnostic::new(row, TRANSLATION_UNAVAILABLE)?);
                         }
                         continue;
                     }
-                    if let Some(codes) = issues[0].get(&(row as u32)) {
-                        output.extend(
-                            codes
-                                .iter()
-                                .map(|code| (Subject::LineCulture, row, code.clone())),
-                        );
+                    for code in issues[0].get(&(row as u32)).into_iter().flatten() {
+                        output.push(Diagnostic::new(row, *code)?);
                     }
                     if absent {
-                        output.push((Subject::LineCulture, row, "translation_unavailable".into()));
+                        output.push(Diagnostic::new(row, TRANSLATION_UNAVAILABLE)?);
                         continue;
                     }
-                    if let Some(codes) = issues[1].get(&(row as u32)) {
-                        output.extend(
-                            codes
-                                .iter()
-                                .map(|code| (Subject::LineCulture, row, code.clone())),
-                        );
+                    for code in issues[1].get(&(row as u32)).into_iter().flatten() {
+                        output.push(Diagnostic::new(row, *code)?);
                     }
                 }
             }
@@ -1575,11 +1664,9 @@ impl Program {
                 let mut elements = Vec::new();
                 for (row, subject_row) in scope.rows.iter().enumerate() {
                     if items.failed.get(row) {
-                        output.diagnostics.push((
-                            subject,
-                            subject_row as usize,
-                            "syntax_limit".into(),
-                        ));
+                        output
+                            .diagnostics
+                            .push(Diagnostic::new(subject_row, SYNTAX_LIMIT)?);
                         continue;
                     }
                     if let Some(values) =
@@ -1604,9 +1691,7 @@ impl Program {
             let mut selected = Vec::new();
             for (index, row) in candidates.rows.iter().enumerate() {
                 if when.failed.get(index) {
-                    output
-                        .diagnostics
-                        .push((subject, row as usize, "syntax_limit".into()));
+                    output.diagnostics.push(Diagnostic::new(row, SYNTAX_LIMIT)?);
                 } else if when.get(index, &evaluator.arena).boolean() {
                     selected.push(index);
                 }
@@ -1646,9 +1731,7 @@ impl Program {
                 .iter()
                 .any(|column| column.failed.get(index))
                 {
-                    output
-                        .diagnostics
-                        .push((subject, row as usize, "syntax_limit".into()));
+                    output.diagnostics.push(Diagnostic::new(row, SYNTAX_LIMIT)?);
                     continue;
                 }
                 let evidence = Evidence {
@@ -1732,7 +1815,7 @@ impl Program {
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let places = relation.prepare_places(&mut evaluator.arena, &sets, &mut emission)?;
+        let places = relation.affected(&mut evaluator.arena, &sets, &mut emission)?;
         output.findings = emission
             .parallel(&emissions, |pending| {
                 let evidence = pending.evidence;
@@ -1751,7 +1834,7 @@ impl Program {
                     extra: evaluator.arena.json(evidence.extra),
                     translation_origin: evaluator.arena.json(evidence.translation_origin),
                     recovery,
-                    affected: places[&pending.affected].clone(),
+                    affected: Arc::clone(&places[&pending.affected]),
                 })
             })
             .into_iter()
@@ -2009,7 +2092,7 @@ mod tests {
                     "unknownReasons".into(),
                     vec![
                         json!(["unresolved_identity"]),
-                        json!(["incomplete_coverage"]),
+                        json!(["missing_po"]),
                         json!(["source_unavailable"]),
                     ],
                 ),
@@ -2027,18 +2110,18 @@ mod tests {
         assert_eq!(
             diagnostics
                 .into_iter()
-                .map(|(_, row, code)| (row, code))
+                .map(|diagnostic| (diagnostic.row, diagnostic.name()))
                 .collect::<Vec<_>>(),
             vec![
-                (0, "unresolved_identity".into()),
-                (0, "reduced_source_checking".into()),
-                (1, "incomplete_coverage".into()),
-                (2, "source_unavailable".into()),
-                (1, "source_unavailable".into()),
-                (1, "unsupported_culture".into()),
-                (1, "translation_unavailable".into()),
-                (2, "source_unavailable".into()),
-                (2, "unsupported_culture".into())
+                (0, "unresolved_identity"),
+                (0, "reduced_source_checking"),
+                (1, "missing_po"),
+                (2, "source_unavailable"),
+                (1, "source_unavailable"),
+                (1, "unsupported_culture"),
+                (1, "translation_unavailable"),
+                (2, "source_unavailable"),
+                (2, "unsupported_culture")
             ]
         );
         Ok(())

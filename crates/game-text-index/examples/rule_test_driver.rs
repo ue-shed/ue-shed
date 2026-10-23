@@ -43,10 +43,17 @@ fn main() -> Result<()> {
         }
         let evaluated = program.evaluate(&mut relation, &collator)?;
         for finding in evaluated.findings {
-            output.push(json!({"rule":finding.rule,"row":finding.row,"actual":finding.actual,"expectation":finding.expectation,"fix":finding.fix,"extra":finding.extra,"translationOrigin":finding.translation_origin,"recovery":finding.recovery,"affected":finding.affected.as_ref()}));
+            let affected = finding
+                .affected
+                .rows
+                .iter()
+                .map(|row| relation.place(*row))
+                .collect::<Result<Vec<_>>>()?;
+            output.push(json!({"rule":finding.rule,"row":finding.row,"actual":finding.actual,"expectation":finding.expectation,"fix":finding.fix,"extra":finding.extra,"translationOrigin":finding.translation_origin,"recovery":finding.recovery,"affected":affected}));
         }
-        for (_, row, code) in evaluated.diagnostics {
-            diagnostics.push(json!({"subject":subject,"row":row,"code":code}));
+        for diagnostic in evaluated.diagnostics {
+            diagnostics
+                .push(json!({"subject":subject,"row":diagnostic.row,"code":diagnostic.name()}));
         }
         if subject == Subject::LineCulture {
             for (row, value) in rows.iter().enumerate() {

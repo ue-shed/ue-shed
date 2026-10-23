@@ -5,7 +5,7 @@ import {
 	archiveEntry,
 	corpus,
 	cultureCode,
-	evidence,
+	evidence as sharedEvidence,
 	ftextUnit,
 	manifestEntry,
 	success,
@@ -53,6 +53,37 @@ const provenance = {
 	contentHash: "hash"
 };
 
+/** Shape cases use an unchanged native source; foreign translations vary independently. */
+function evidence(...args: Parameters<typeof sharedEvidence>): ReturnType<typeof sharedEvidence> {
+	const files = sharedEvidence(...args);
+	return {
+		...files,
+		cultures: files.cultures.map((culture) =>
+			culture.culture !== files.target.nativeCulture
+				? culture
+				: {
+						...culture,
+						archive: {
+							status: "read" as const,
+							provenance,
+							value: {
+								formatVersion: 2,
+								diagnostics: [],
+								entries: (args[0] ?? [manifestEntry()]).map((entry) =>
+									archiveEntry(
+										entry.key,
+										entry.source.Text,
+										entry.source.Text,
+										entry.namespace
+									)
+								)
+							}
+						}
+					}
+		)
+	};
+}
+
 function report(
 	text: TextCorpus,
 	files: ReturnType<typeof evidence>,
@@ -66,7 +97,7 @@ function report(
 	};
 }
 
-/** One gathered line with the same archive translation in every culture. */
+/** One gathered line with an unchanged native source and a foreign translation. */
 function line(
 	source: string,
 	translation: string,

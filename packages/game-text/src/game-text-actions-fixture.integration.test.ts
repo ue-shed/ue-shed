@@ -309,7 +309,12 @@ describe("Game Text identity cases in the saved fixture", () => {
 								occurrence.source === "Lamp lit" &&
 								occurrence.devNotes === "A lit lantern, not a command" &&
 								occurrence.location.kind === "asset_property" &&
-								occurrence.location.propertyPath.startsWith("ScriptBytecode")
+								(occurrence.location.propertyPath.startsWith("ScriptBytecode") ||
+									occurrence.copies?.some(
+										(copy) =>
+											copy.kind === "generated_class" &&
+											copy.source === "Lamp lit"
+									))
 						)
 				).toBe(true);
 			}
@@ -368,7 +373,7 @@ describe("Game Text identity cases in the saved fixture", () => {
 					(occurrence) =>
 						occurrence.source === "The door is locked" &&
 						occurrence.location.kind === "asset_property" &&
-						occurrence.location.propertyPath.startsWith("ScriptBytecode")
+						occurrence.location.propertyPath === "Pins[4].DefaultTextValue"
 				)
 			);
 			expect(new Set(locked.map((occurrence) => occurrence.id)).size).toBe(2);
@@ -378,8 +383,8 @@ describe("Game Text identity cases in the saved fixture", () => {
 				pageSize: 50,
 				query: "The door is locked"
 			}).units;
-			// Each compiled literal joins its saved pin's package-stamped identity. Unreal gathers
-			// both under the same clean namespace/key/source; both saved places remain visible.
+			// Each compiled literal folds into its saved pin's package-stamped identity. Unreal
+			// gathers two keys; both authored places and their compiled provenance remain visible.
 			const evidence = await readEvidence(fixtureEngine);
 			const packageNamespace = evidence.packages.find(
 				(entry) => entry.package === `${ROOT}BP_ActionSign_Duplicate`
@@ -394,19 +399,17 @@ describe("Game Text identity cases in the saved fixture", () => {
 			).toEqual([`[${packageNamespace}]`, `[${packageNamespace}]`]);
 			for (const match of matches) {
 				const unit = corpus.units.find((unit) => unit.id === match.id)!;
-				expect(unit.occurrences).toHaveLength(2);
-				expect(
-					unit.occurrences.map((occurrence) =>
-						occurrence.location.kind === "asset_property"
-							? occurrence.location.propertyPath
-							: undefined
-					)
-				).toEqual(
-					expect.arrayContaining([
-						"Pins[4].DefaultTextValue",
-						expect.stringMatching(/^ScriptBytecode\[/u)
-					])
-				);
+				expect(unit.occurrences).toHaveLength(1);
+				expect(unit.occurrences[0]).toMatchObject({
+					location: { propertyPath: "Pins[4].DefaultTextValue" },
+					copies: [
+						{
+							kind: "generated_class",
+							source: "The door is locked",
+							objectPath: expect.stringContaining(".ExecuteUbergraph_")
+						}
+					]
+				});
 			}
 			expect(
 				new Set(

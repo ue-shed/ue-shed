@@ -1088,99 +1088,114 @@ impl<'a> Evaluator<'a> {
                 );
             }
         }
-        // Keys and memo hits in parallel; misses are deduplicated in row order, so interning
-        // order is unchanged.
-        let probes = {
-            let arena = &self.arena;
-            let packer = &self.packer;
-            let memo = &self.cache[cache];
-            started.fill(selection.len(), 4096, |start, probes: &mut [Probe]| {
-                let mut tuple = Vec::with_capacity(columns.len());
-                for (offset, probe) in probes.iter_mut().enumerate() {
-                    let row = start + offset;
-                    if failures.get(row) {
-                        continue;
-                    }
-                    tuple.clear();
-                    tuple.extend(columns.iter().map(|column| column.get(row, arena)));
-                    *probe = match packer.try_key(&tuple) {
-                        Some(key) => match memo.get(&key) {
-                            Some(value) => Probe::Hit(*value),
-                            None => Probe::Miss(key),
-                        },
-                        None => Probe::Unpacked,
-                    };
-                }
-            })
-        };
-        let mut tuples = Vec::new();
-        let mut missing = FxHashMap::<TupleKey, usize>::default();
-        let mut slots = Vec::with_capacity(selection.len());
-        let mut tuple = vec![Atom::Null; columns.len()];
-        for (row, probe) in probes.into_iter().enumerate() {
-            let key = match probe {
-                Probe::Failed => {
-                    slots.push((None, None));
-                    continue;
-                }
-                Probe::Hit(value) => {
-                    slots.push((Some(value), None));
-                    continue;
-                }
-                Probe::Miss(key) => key,
-                Probe::Unpacked => {
-                    for (atom, column) in tuple.iter_mut().zip(&columns) {
-                        *atom = column.get(row, &self.arena);
-                    }
-                    let key = self.packer.key(&tuple);
-                    if let Some(value) = self.cache[cache].get(&key) {
-                        slots.push((Some(*value), None));
-                        continue;
-                    }
-                    key
-                }
+        // Keys and memo hits in parallel, a bounded chunk of rows at a time. Hits go straight to
+        // the output; misses are deduplicated in row order, so interning order is unchanged.
+        let len = selection.len();
+        let arity = columns.len();
+        let mut output = vec![Atom::Null; len];
+        let mut limited = Vec::<u32>::new();
+        // (row, task): the rows whose result a task computes.
+        let mut misses = Vec::<(u32, u32)>::new();
+        let mut keys = Vec::<TupleKey>::new();
+        // Each task's tuple, `arity` atoms at a time.
+        let mut atoms = Vec::<Atom>::new();
+        let mut missing = FxHashMap::<TupleKey, u32>::default();
+        let mut tuple = vec![Atom::Null; arity];
+        const CHUNK: usize = 1 << 16;
+        for chunk in (0..len).step_by(CHUNK) {
+            let probes = {
+                let arena = &self.arena;
+                let packer = &self.packer;
+                let memo = &self.cache[cache];
+                started.fill(
+                    (chunk + CHUNK).min(len) - chunk,
+                    4096,
+                    |start, probes: &mut [Probe]| {
+                        let mut tuple = Vec::with_capacity(arity);
+                        for (offset, probe) in probes.iter_mut().enumerate() {
+                            let row = chunk + start + offset;
+                            if failures.get(row) {
+                                continue;
+                            }
+                            tuple.clear();
+                            tuple.extend(columns.iter().map(|column| column.get(row, arena)));
+                            *probe = match packer.try_key(&tuple) {
+                                Some(key) => match memo.get(&key) {
+                                    Some(value) => Probe::Hit(*value),
+                                    None => Probe::Miss(key),
+                                },
+                                None => Probe::Unpacked,
+                            };
+                        }
+                    },
+                )
             };
-            let next = tuples.len();
-            let slot = *missing.entry(key).or_insert_with(|| {
-                for (atom, column) in tuple.iter_mut().zip(&columns) {
-                    *atom = column.get(row, &self.arena);
-                }
-                tuples.push((key, tuple.clone().into_boxed_slice()));
-                next
-            });
-            slots.push((None, Some(slot)));
+            for (offset, probe) in probes.into_iter().enumerate() {
+                let row = chunk + offset;
+                let key = match probe {
+                    Probe::Failed => continue,
+                    Probe::Hit(Slot::Value(value)) => {
+                        output[row] = value;
+                        continue;
+                    }
+                    Probe::Hit(Slot::Limit) => {
+                        limited.push(row as u32);
+                        continue;
+                    }
+                    Probe::Miss(key) => key,
+                    Probe::Unpacked => {
+                        for (atom, column) in tuple.iter_mut().zip(&columns) {
+                            *atom = column.get(row, &self.arena);
+                        }
+                        let key = self.packer.key(&tuple);
+                        match self.cache[cache].get(&key) {
+                            Some(Slot::Value(value)) => {
+                                output[row] = *value;
+                                continue;
+                            }
+                            Some(Slot::Limit) => {
+                                limited.push(row as u32);
+                                continue;
+                            }
+                            None => key,
+                        }
+                    }
+                };
+                let next = u32::try_from(keys.len())?;
+                let task = *missing.entry(key).or_insert_with(|| {
+                    keys.push(key);
+                    atoms.extend(columns.iter().map(|column| column.get(row, &self.arena)));
+                    next
+                });
+                misses.push((row as u32, task));
+            }
         }
+        drop(missing);
+        let task_tuple = |task: usize| &atoms[task * arity..(task + 1) * arity];
         let nested = self.arena.recorder.kernel_wall();
         if matches!(node.op, Op::MatchesRole | Op::PathHasPrefix) {
             // Prepare each shared occurrence bitset before tuple workers start, avoiding
             // competing first-use builds of the same role or prefix in the Rayon pool.
-            let keys = tuples
-                .iter()
-                .filter_map(|(_, tuple)| match tuple.as_ref() {
+            let roles = (0..keys.len())
+                .filter_map(|task| match task_tuple(task) {
                     [Atom::Val(_), Atom::Str(key)] => Some(*key),
                     _ => None,
                 })
                 .collect::<HashSet<_>>();
-            for key in keys {
+            for key in roles {
                 self.kernel
                     .occurrence_mask(&self.arena, key, node.op == Op::MatchesRole)?;
             }
         }
-        let distinct_inputs = tuples.len();
-        // Bound temporary structured results while keeping tuple slots and interning order stable.
-        // A catalogue node may have millions of distinct tuples on a persisted project.
-        drop(missing);
-        let mut results = Vec::with_capacity(tuples.len());
-        let mut pending = tuples.into_iter();
-        loop {
-            let batch = pending.by_ref().take(4096).collect::<Vec<_>>();
-            if batch.is_empty() {
-                break;
-            }
+        let distinct_inputs = keys.len();
+        // Bound temporary structured results while keeping interning order stable.
+        let mut results = Vec::with_capacity(keys.len());
+        for batch in (0..keys.len()).collect::<Vec<_>>().chunks(4096) {
             let arena = &self.arena;
             let kernel = &self.kernel;
             let computed = started
-                .parallel(&batch, |(_, tuple)| {
+                .parallel(batch, |task| {
+                    let tuple = task_tuple(*task);
                     if node.op == Op::List {
                         return Ok(Computed::List(tuple.to_vec()));
                     }
@@ -1194,21 +1209,27 @@ impl<'a> Evaluator<'a> {
                 })
                 .into_iter()
                 .collect::<Result<Vec<_>>>()?;
-            for ((key, _), value) in batch.into_iter().zip(computed) {
+            for (task, value) in batch.iter().zip(computed) {
                 let result = match value {
                     Computed::List(values) => Slot::Value(self.arena.list(values)?),
                     Computed::Found(value) => Slot::Value(value),
                     Computed::Out(value) => Slot::Value(self.arena.build(value)?),
                     Computed::Limit => Slot::Limit,
                 };
-                self.cache[cache].insert(key, result);
+                self.cache[cache].insert(keys[*task], result);
                 results.push(result);
             }
         }
-        let output = gather(&mut started, &mut failures, |row| {
-            let (cached, slot) = slots[row];
-            cached.or_else(|| slot.map(|slot| results[slot]))
-        });
+        for (row, task) in misses {
+            match results[task as usize] {
+                Slot::Value(value) => output[row as usize] = value,
+                Slot::Limit => limited.push(row),
+            }
+        }
+        // A row over its limit is null and failed.
+        for row in limited {
+            failures.set(row as usize);
+        }
         let mut column = Column::from_atoms(&output, &mut self.arena)?;
         column.failed = failures;
         started.exclude(self.arena.recorder.kernel_wall().saturating_sub(nested));

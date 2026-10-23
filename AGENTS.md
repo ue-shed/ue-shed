@@ -77,6 +77,19 @@ registry keys) or use explicit configuration. Verify Unreal APIs against each en
 This is a development reference, not a product default. Runtime code, fixtures, and tests must use
 engine discovery or explicit configuration rather than depend on any machine path.
 
+## Native engine boundary
+
+Hosts and Rust engines are one system in one build ([ADR 0012](docs/decisions/0012-native-engine-boundary.md)).
+
+- Rust owns engine messages; hosts use the `ts-rs`-generated types, never hand-written mirrors.
+- Each worker process proves its contract hash once, before its first request; after that neither
+  side validates, decodes or re-checks the other's messages.
+- Inside an engine, no `serde_json::Value` between functions and no dispatch on operation names.
+  JSON is only for data entering or leaving the system.
+- Targets (Phase 3): no stored JSON text, and bulk data crossing as columns read through
+  typed-array views.
+- Shipping engine code starts no child processes.
+
 ## TypeScript style
 
 Tabs, double quotes, semicolons, no trailing commas, and approximately 100 characters per line.
@@ -89,8 +102,9 @@ Tabs, double quotes, semicolons, no trailing commas, and approximately 100 chara
   to appear functional.
 - Use Effect Schema for most TypeScript-owned runtime schemas. Infer types from schemas and derive
   variants with schema combinators instead of copying interfaces or mutating base schemas.
-- Validate all external input at the boundary. A language-neutral wire schema remains authoritative
-  when TypeScript and C++ share a contract.
+- Validate input from outside the system at the boundary (authored documents, project files,
+  other builds' caches), not messages between our own hosts and engines. A language-neutral wire
+  schema stays authoritative for the separately built C++ plugins.
 - Prefer discriminated unions for lifecycle state and branded identifiers at system boundaries.
 - Expected failures are typed domain values with useful context and recovery guidance. Defects are
   reserved for broken invariants and genuinely unexpected failures.

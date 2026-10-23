@@ -8,7 +8,7 @@ use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
 use crate::{Error, ErrorCode, Result, require};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
 fn public_place(occurrence: &Value) -> Result<Place> {
@@ -101,16 +101,22 @@ impl EngineQuery {
         let mut value = serde_json::to_value(&reply)?;
         drop(reply);
         let mut result = javascript_json(&value, false);
-        // Iterate to a fixed point because the byte count includes its own decimal digits.
-        loop {
+        // The reply states its own length, digits included. Its profile is encoded with a zero
+        // count and no fallback, so the final length follows from this one; a mismatch falls
+        // back to iterating.
+        let base = result.len() - "0".len() - "false".len();
+        let mut bytes = result.len();
+        for _ in 0..4 {
+            let fallback = bytes > 16 * 1024 * 1024;
+            bytes = base + bytes.to_string().len() + if fallback { "true" } else { "false" }.len();
+        }
+        value["profile"]["responseBytes"] = json!(bytes);
+        value["profile"]["fileFallback"] = json!(bytes > 16 * 1024 * 1024);
+        result = javascript_json(&value, false);
+        while value["profile"]["responseBytes"] != json!(result.len()) {
             value["profile"]["responseBytes"] = json!(result.len());
             value["profile"]["fileFallback"] = json!(result.len() > 16 * 1024 * 1024);
-            let encoded = javascript_json(&value, false);
-            if encoded.len() == result.len() {
-                result = encoded;
-                break;
-            }
-            result = encoded;
+            result = javascript_json(&value, false);
         }
         if result.len() <= 16 * 1024 * 1024 {
             return Ok(result);
@@ -192,6 +198,8 @@ fn read_lines(
             "A finding line row is outside the subject relation.",
         ),
     )?;
+    // Nearly every requested line has findings: load their places' strings in one batch.
+    subjects.prefetch_occurrences(rows)?;
     let lc_lines = layer.column("subjects.line_culture.lines")?;
     let mut lines = rows
         .iter()
@@ -202,6 +210,8 @@ fn read_lines(
         .collect::<Vec<_>>();
     let mut places = Vec::new();
     let mut place_ids = HashSet::new();
+    // A line's places are the same for each of its findings: build them once per read.
+    let mut line_places = HashMap::<u32, Vec<Value>>::new();
     for (rule_index, rule) in rules.iter().enumerate() {
         if rule.subject == Subject::UnitSource {
             continue;
@@ -248,8 +258,10 @@ fn read_lines(
             let ci = cultures[position] as usize;
             let stored = layer.json(evidence[position])?;
             let ids = layer.json(saved_places[position])?;
-            let occurrences = subjects.occurrences(line as usize)?;
-            let affected = ordered_places(&ids, &occurrences)?;
+            if let std::collections::hash_map::Entry::Vacant(slot) = line_places.entry(line) {
+                slot.insert(subjects.occurrences(line as usize)?);
+            }
+            let affected = ordered_places(&ids, &line_places[&line])?;
             if place_ids.insert(saved_places[position]) {
                 places.push(place_set(saved_places[position], &affected)?);
             }

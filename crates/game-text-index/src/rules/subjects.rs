@@ -52,6 +52,8 @@ pub struct NativeSubjects<'a> {
     pub(super) cancelled: &'a AtomicBool,
     pub(super) occurrences: Arc<super::occurrences::OccurrenceData>,
     read_arena: Option<super::columns::Arena>,
+    /// The strings `places` reads, kept for the rest of this read.
+    place_arena: Option<super::columns::Arena>,
 }
 impl<'a> NativeSubjects<'a> {
     pub fn new(
@@ -60,8 +62,17 @@ impl<'a> NativeSubjects<'a> {
         collator: &'a HostCollator,
         cancelled: &'a AtomicBool,
     ) -> Result<Self> {
-        let occurrences =
-            super::occurrences::OccurrenceData::build(query, &mut super::stages::Measure::start())?;
+        let occurrences = match &query.occurrence_data {
+            Some(occurrences) => Arc::clone(occurrences),
+            None => {
+                let occurrences = super::occurrences::OccurrenceData::build(
+                    query,
+                    &mut super::stages::Measure::start(),
+                )?;
+                query.occurrence_data = Some(Arc::clone(&occurrences));
+                occurrences
+            }
+        };
         Self::new_shared(query, subject, collator, cancelled, occurrences)
     }
     pub(super) fn new_shared(
@@ -133,6 +144,7 @@ impl<'a> NativeSubjects<'a> {
             cancelled,
             occurrences,
             read_arena: None,
+            place_arena: None,
         })
     }
     pub(super) fn occurrence_text_id(&self, row: u32) -> Result<&str> {
@@ -475,24 +487,74 @@ impl<'a> NativeSubjects<'a> {
         Ok(result)
     }
 }
+/// The occurrence fields a place shows, all store strings.
+const PLACE_STRINGS: [&str; 7] = [
+    "source", "notes", "object", "property", "class", "row", "key",
+];
 impl NativeSubjects<'_> {
-    /// Places as reads and evidence show them, built from the index in a scratch arena so
-    /// nothing outlives the call.
+    /// The arena `occurrences` reads through, with the occurrence children prepared.
+    fn take_read_arena(&mut self) -> Result<super::columns::Arena> {
+        match self.read_arena.take() {
+            Some(arena) => Ok(arena),
+            None => {
+                let mut arena = super::columns::Arena::new(self.dictionary_len()?)?;
+                self.prepare_columns(&[], &mut arena, true)?;
+                Ok(arena)
+            }
+        }
+    }
+    /// Load what `occurrences` reads for these subject rows in one batch per arena, so that
+    /// reading them one at a time afterwards finds every string already loaded.
+    pub(super) fn prefetch_occurrences(&mut self, rows: &[u32]) -> Result<()> {
+        let mut arena = self.take_read_arena()?;
+        let mut members = Vec::new();
+        for row in rows {
+            if self.subject == Subject::UnitSource {
+                members.extend_from_slice(&self.units[*row as usize].members);
+            } else {
+                members.extend_from_slice(
+                    arena
+                        .line_children
+                        .as_ref()
+                        .ok_or("Missing occurrence CSR.")?
+                        .members(self.line_row(*row as usize)?),
+                );
+            }
+        }
+        members.sort_unstable();
+        members.dedup();
+        let loaded =
+            arena.occurrence_ids(self.query, &members, &mut super::stages::Measure::start());
+        self.read_arena = Some(arena);
+        loaded?;
+        let data = Arc::clone(&self.occurrences);
+        let strings = members
+            .iter()
+            .flat_map(|row| PLACE_STRINGS.map(|field| data.value(*row as usize, field)))
+            .collect::<Vec<_>>();
+        let mut arena = match self.place_arena.take() {
+            Some(arena) => arena,
+            None => super::columns::Arena::new(self.query.reader.dictionary_count()?)?,
+        };
+        let loaded = arena.load_strings(&mut self.query.reader, &strings);
+        self.place_arena = Some(arena);
+        loaded
+    }
+    /// Places as reads and evidence show them, built from the index. Their strings load into
+    /// one scratch arena that lasts as long as these subjects, so a read loads each string once.
     pub(super) fn places(&mut self, rows: &[u32], ids: &[Option<Arc<str>>]) -> Result<Vec<Value>> {
         use super::columns::{Arena, StrId};
         let data = Arc::clone(&self.occurrences);
         let string_ids = rows
             .iter()
-            .flat_map(|row| {
-                [
-                    "source", "notes", "object", "property", "class", "row", "key",
-                ]
-                .map(|field| data.value(*row as usize, field))
-            })
+            .flat_map(|row| PLACE_STRINGS.map(|field| data.value(*row as usize, field)))
             .collect::<Vec<_>>();
-        let mut arena = Arena::new(self.query.reader.dictionary_count()?)?;
+        let mut arena = match self.place_arena.take() {
+            Some(arena) => arena,
+            None => Arena::new(self.query.reader.dictionary_count()?)?,
+        };
         arena.load_strings(&mut self.query.reader, &string_ids)?;
-        Ok(rows
+        let places = rows
             .iter()
             .zip(ids)
             .map(|(row, id)| {
@@ -502,7 +564,9 @@ impl NativeSubjects<'_> {
                 "devNotes":arena.text(StrId(data.value(row,"notes"))),
                 "location":data.location(row,&arena),"unitStatus":data.status(row,&arena)})
             })
-            .collect())
+            .collect();
+        self.place_arena = Some(arena);
+        Ok(places)
     }
 }
 impl SubjectRows for NativeSubjects<'_> {
@@ -600,15 +664,8 @@ impl SubjectRows for NativeSubjects<'_> {
         }
     }
     fn occurrences(&mut self, row: usize) -> Result<Vec<Value>> {
-        use super::columns::{Arena, Atom};
-        let mut arena = match self.read_arena.take() {
-            Some(arena) => arena,
-            None => {
-                let mut arena = Arena::new(self.dictionary_len()?)?;
-                self.prepare_columns(&[], &mut arena, true)?;
-                arena
-            }
-        };
+        use super::columns::Atom;
+        let mut arena = self.take_read_arena()?;
         let members = if self.subject == Subject::UnitSource {
             self.units[row].members.clone()
         } else {

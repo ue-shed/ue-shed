@@ -34,6 +34,8 @@ pub struct EngineQuery {
     pub(crate) matched: HashMap<String, Arc<[u32]>>,
     pub(crate) places: Option<Arc<crate::engine_places::Places>>,
     pub(crate) projection: Option<Arc<crate::engine_match::Projection>>,
+    /// The occurrence relation finding reads share, built once per reader.
+    pub(crate) occurrence_data: Option<Arc<crate::rules::OccurrenceData>>,
     pub(crate) asset_types: Option<Arc<crate::engine_asset_types::AssetTypes>>,
     package_names: Vec<String>,
     package_starts: Vec<u32>,
@@ -218,6 +220,7 @@ impl EngineQuery {
             finding_files: FindingFiles::default(),
             audience_rules: Vec::new(),
             summary_cache: None,
+            occurrence_data: None,
             metadata_cache: crate::query_cache::QueryCache::default(),
             row_ranks: HashMap::new(),
             copy_starts: HashMap::new(),

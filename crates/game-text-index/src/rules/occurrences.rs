@@ -19,13 +19,13 @@ const FIELDS: [&str; 10] = [
     "key",
 ];
 #[derive(Clone, Copy)]
-pub(super) enum UnitStatus {
+pub(crate) enum UnitStatus {
     Resolved,
     StringTable,
     Unresolved,
 }
 #[derive(Default)]
-pub(super) struct OccurrenceData {
+pub(crate) struct OccurrenceData {
     pub columns: HashMap<&'static str, Arc<[u32]>>,
     pub packages: Vec<u32>,
     pub files: Vec<String>,

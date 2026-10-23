@@ -1,0 +1,175 @@
+{
+	"schemaVersion": 3,
+	"preset": "none",
+	"roles": [],
+	"rules": [],
+	"checks": {
+		"format_arguments": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {
+				"optionalArguments": []
+			}
+		},
+		"argument_modifiers": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		},
+		"rich_text": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		},
+		"po_escape_safety": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		},
+		"whitespace": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		},
+		"empty_translation": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		},
+		"missing_translator_notes": {
+			"enabled": true,
+			"severity": "low",
+			"params": {}
+		},
+		"duplicate_source": {
+			"enabled": true,
+			"severity": "low",
+			"params": {}
+		},
+		"format_argument_renamed": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {
+				"optionalArguments": []
+			}
+		},
+		"rich_text_tags": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {
+				"optionalTags": [],
+				"optionalArguments": []
+			}
+		},
+		"rich_text_tag_case": {
+			"enabled": true,
+			"severity": "low",
+			"params": {
+				"optionalArguments": []
+			}
+		},
+		"line_breaks": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		},
+		"segment_separator": {
+			"enabled": false,
+			"severity": "normal",
+			"params": {}
+		},
+		"length_outlier": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {
+				"minimumSourceLength": 20,
+				"minimumRatio": 0.3333333333333333,
+				"maximumRatio": 3,
+				"compactCultures": ["zh", "ja", "ko", "th"],
+				"compactMinimumRatio": 0.25
+			}
+		},
+		"outdated_translation": {
+			"enabled": true,
+			"severity": "blocking",
+			"params": {}
+		},
+		"inconsistent_translation": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {
+				"minimumLength": 3,
+				"maximumWords": 4
+			}
+		},
+		"rich_text_tags_added": {
+			"enabled": true,
+			"severity": "low",
+			"params": {
+				"optionalTags": [],
+				"optionalArguments": []
+			}
+		},
+		"source_line_endings_changed": {
+			"enabled": true,
+			"severity": "low",
+			"params": {}
+		},
+		"placeholder_translation": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {
+				"words": [
+					"skip",
+					"skipped",
+					"script lama",
+					"tbd",
+					"tba",
+					"fixme",
+					"placeholder",
+					"to be translated",
+					"untranslated",
+					"not translated",
+					"n/a",
+					"xxx"
+				],
+				"caseSensitiveWords": ["TODO"],
+				"maximumLength": 24,
+				"minimumPunctuationSourceWords": 3
+			}
+		},
+		"culture_invariant_text": {
+			"enabled": true,
+			"severity": "low",
+			"params": {}
+		},
+		"placeholder_text": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {
+				"markers": ["TODO", "TBD", "FIXME"],
+				"phrases": ["lorem ipsum", "to be translated", "placeholder"]
+			}
+		},
+		"source_whitespace": {
+			"enabled": true,
+			"severity": "low",
+			"params": {}
+		},
+		"source_markup": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		},
+		"number_only_text": {
+			"enabled": true,
+			"severity": "low",
+			"params": {}
+		},
+		"string_table_key_collision": {
+			"enabled": true,
+			"severity": "normal",
+			"params": {}
+		}
+	}
+}

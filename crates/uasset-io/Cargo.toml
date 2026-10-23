@@ -21,6 +21,7 @@ uasset-parser = { path = "../uasset-parser" }
 zstd = "0.13"
 
 [features]
+benchmark-timings = ["game-text-index/benchmark-timings"]
 catalog-oracle = ["dep:rusqlite"]
 
 [lib]

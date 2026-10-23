@@ -1,0 +1,605 @@
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { channel } from "node:diagnostics_channel";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { performance } from "node:perf_hooks";
+import { Context, Effect, Exit, Layer, Option, Result, Schema, Scope } from "effect";
+import * as currentIndex from "../packages/game-text/dist/entry-index.js";
+import * as currentWorkspace from "../packages/game-text/dist/entry-workspace.js";
+import type { GameTextWorkspaceFileHooks } from "../packages/game-text/dist/entry-workspace.js";
+import * as currentSchema from "../packages/game-text/dist/entry-schema.js";
+import type { TextCorpusSearchPage } from "../packages/game-text/dist/entry-schema.js";
+import * as currentAssets from "../packages/unreal-assets/dist/index.js";
+import * as currentLocalization from "../packages/localization/dist/index.js";
+import * as currentCorpus from "../packages/game-text/dist/entry-corpus.js";
+import * as currentRules from "../packages/game-text/dist/entry-rules.js";
+import * as currentPublic from "../packages/game-text/dist/index.js";
+import { retainedPackageSource } from "./game-text-scale-quality.ts";
+import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
+import {
+	decodeEngineRequestMix,
+	engineAnswerDigest,
+	expectFound,
+	type EngineSample
+} from "./game-text-engine-results.ts";
+
+export interface EngineStageOptions {
+	readonly project: string;
+	readonly cache: string;
+	readonly output: string;
+	readonly mix: string;
+	readonly records?: string | undefined;
+	readonly target?: string | undefined;
+	readonly stage: string;
+}
+
+type EngineRequestMetrics = ReturnType<ReturnType<typeof trackBenchmarkEventLoop>["stop"]> & {
+	nodeThreadCpuMs: number;
+	failed: 0 | 1;
+	total?: number;
+	rowCount?: number;
+};
+
+/** All writable destinations belong to the caller's output directory; projects are inputs only. */
+export async function runEngineStage(options: EngineStageOptions) {
+	// The same harness can load a preserved build for an alternating instrumentation-off control.
+	// SAFETY: the preserved build is the same commit and public API types as the current build.
+	const load = async <A>(path: string, current: A): Promise<A> =>
+		process.env.UE_SHED_ENGINE_API_ROOT
+			? (import(
+					pathToFileURL(join(process.env.UE_SHED_ENGINE_API_ROOT, "packages", path)).href
+				) as Promise<A>)
+			: current;
+	const {
+		GameTextIndexBuilderLive,
+		GameTextIndexSteps,
+		gameTextIndexRefreshLayer,
+		gameTextIndexSourceNodeLayer
+	} = await load("game-text/dist/entry-index.js", currentIndex);
+	const { makeGameTextWorkspace } = await load(
+		"game-text/dist/entry-workspace.js",
+		currentWorkspace
+	);
+	const { TextCorpusSearchRequest, TextUnit } = await load(
+		"game-text/dist/entry-schema.js",
+		currentSchema
+	);
+	const { AssetReaderLive } = await load("unreal-assets/dist/index.js", currentAssets);
+	const { LocalizationEvidence, LocalizationEvidenceNodeLive, LocalizationTargetName } =
+		await load("localization/dist/index.js", currentLocalization);
+	const { LOCALIZATION_LINES_CSV_FIELDS } = await load(
+		"game-text/dist/entry-corpus.js",
+		currentCorpus
+	);
+	const { decodeGameTextRuleDocumentJson } = await load(
+		"game-text/dist/entry-rules.js",
+		currentRules
+	);
+	const { gatheredIdentityKey, gatheredTextIdentity } = await load(
+		"game-text/dist/index.js",
+		currentPublic
+	);
+	const [stage, scenarioHost, scenarioGroups] = options.stage.split(":");
+	const mix = decodeEngineRequestMix(JSON.parse(await readFile(options.mix, "utf8")));
+	const samples: EngineSample[] = [];
+	const timings: unknown[] = [];
+	let activeSample: string | undefined;
+	const topic = channel("ue-shed.game-text-benchmark");
+	const Timing = Schema.Struct({
+		stage: Schema.String,
+		ms: Schema.Number,
+		requestId: Schema.optionalKey(Schema.String),
+		action: Schema.optionalKey(Schema.String)
+	});
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- diagnostics_channel owns this boundary; decode it immediately.
+	const listener = (message: unknown) =>
+		timings.push({ sampleId: activeSample, ...Schema.decodeUnknownSync(Timing)(message) });
+	if (process.env.UE_SHED_GAME_TEXT_MEASURE_DIR) topic.subscribe(listener);
+	let peakHeapBytes = 0;
+	let peakRssBytes = 0;
+	let measuring = false;
+	let measurementDepth = 0;
+	const pendingHashes: (() => Promise<void>)[] = [];
+	let recording = true;
+	const sample = () => {
+		const memory = process.memoryUsage();
+		if (recording) {
+			peakHeapBytes = Math.max(peakHeapBytes, memory.heapUsed);
+			peakRssBytes = Math.max(peakRssBytes, memory.rss);
+		}
+		process.send?.({ kind: "memory", heap: memory.heapUsed, rss: memory.rss });
+	};
+	const measure = async <A>(
+		id: string,
+		run: () => Promise<A>,
+		requests: number | (() => number) = 1
+	) => {
+		recording = true;
+		process.send?.({ kind: "resume" });
+		if (!measuring) {
+			measuring = true;
+			peakHeapBytes = 0;
+			peakRssBytes = 0;
+			process.send?.({ kind: "start" });
+		}
+		const probe = trackBenchmarkEventLoop();
+		const previousSample = activeSample;
+		activeSample = id;
+		measurementDepth++;
+		const cpu = process.threadCpuUsage();
+		const started = performance.now();
+		let answer: A;
+		let ms: number;
+		let gaps;
+		try {
+			answer = await run();
+			ms = performance.now() - started;
+		} finally {
+			activeSample = previousSample;
+			measurementDepth--;
+			gaps = probe.stop();
+			sample();
+		}
+		const used = process.threadCpuUsage(cpu);
+		const counted = Schema.decodeUnknownResult(
+			Schema.Struct({
+				total: Schema.optionalKey(Schema.Number),
+				page: Schema.optionalKey(Schema.Struct({ total: Schema.Number })),
+				rowCount: Schema.optionalKey(Schema.Number),
+				status: Schema.optionalKey(Schema.String)
+			})
+		)(answer);
+		const total = Result.isSuccess(counted)
+			? (counted.success.total ?? counted.success.page?.total)
+			: undefined;
+		const rowCount = Result.isSuccess(counted) ? counted.success.rowCount : undefined;
+		const metrics: EngineRequestMetrics = {
+			...gaps,
+			nodeThreadCpuMs: (used.user + used.system) / 1000,
+			failed: Result.isSuccess(counted) && counted.success.status === "failed" ? 1 : 0
+		};
+		if (total !== undefined) metrics.total = total;
+		if (rowCount !== undefined) metrics.rowCount = rowCount;
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- This is a number-or-callback API, not unparsed external data.
+		const requestCount = typeof requests === "number" ? requests : requests();
+		pendingHashes.push(async () => {
+			const recorded = {
+				id,
+				ms,
+				...engineAnswerDigest(answer),
+				requests: requestCount,
+				metrics
+			};
+			samples.push(recorded);
+			process.send?.({ kind: "sample", sample: recorded });
+		});
+		// Hash outside the whole fan-out timer, including its nested request timers.
+		if (measurementDepth === 0) {
+			recording = false;
+			process.send?.({ kind: "pause" });
+			for (const hash of pendingHashes.splice(0)) await hash();
+		}
+		return answer;
+	};
+	await mkdir(options.cache, { recursive: true });
+	await mkdir(options.output, { recursive: true });
+	const files: GameTextWorkspaceFileHooks = {
+		chooseFile: () => Effect.succeed({ status: "cancelled" }),
+		chooseSaveFile: () => Effect.succeed({ status: "cancelled" }),
+		readFile: (path) => Effect.promise(() => readFile(path)),
+		readFileWithin: (root, path) => Effect.promise(() => readFile(join(root, path))),
+		writeFile: () =>
+			Effect.fail({
+				message: "Workspace file writes are disabled in the baseline.",
+				recovery: "Use the benchmark cache and output directories."
+			})
+	};
+	if (stage === "records") {
+		const { convertGeneratedPackageText } = await import("./package-text-generated.ts");
+		const { gameTextScaleRecipe } = await import("./localization-scale-data.ts");
+		const { readScaleRecipe } = await import("./game-text-scale-options.ts");
+		const recipe = gameTextScaleRecipe((await readScaleRecipe(options.project)).scale);
+		await measure("records", () =>
+			convertGeneratedPackageText(options.project, options.records!, recipe.textPackages)
+		);
+		return {
+			schemaVersion: 1 as const,
+			stage: options.stage,
+			node: process.version,
+			peakHeapBytes,
+			peakRssBytes,
+			samples
+		};
+	}
+	const scope = await Effect.runPromise(Scope.make());
+	const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
+	const timer = setInterval(sample, 25);
+	try {
+		const source = options.records
+			? retainedPackageSource(options.records)
+			: gameTextIndexSourceNodeLayer(options.cache).pipe(Layer.provide(AssetReaderLive));
+		const layer = gameTextIndexRefreshLayer(options.cache, { qualityWorker: true }).pipe(
+			Layer.provide(source),
+			Layer.provide(GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))),
+			Layer.provide(LocalizationEvidenceNodeLive)
+		);
+		const context = await run(Layer.buildWithScope(layer, scope));
+		const steps = Context.get(context, GameTextIndexSteps);
+		const state = {
+			status: "ready" as const,
+			project: { projectRoot: options.project, generation: 0 }
+		};
+		const workspace = await run(
+			makeGameTextWorkspace({
+				project: {
+					current: () => Effect.succeed(state),
+					refresh: () => Effect.succeed(state),
+					candidates: () =>
+						Effect.succeed({
+							generation: 0,
+							summary: { projectRoot: options.project }
+						}),
+					progress: () =>
+						Effect.succeed({ phase: "idle", completed: 0, total: 0, stage: "" })
+				},
+				files
+			}).pipe(
+				Effect.provide(context),
+				Effect.provide(LocalizationEvidenceNodeLive),
+				Effect.provideService(Scope.Scope, scope)
+			)
+		);
+		const targetReply = await run(
+			Effect.flatMap(LocalizationEvidence, (reader) =>
+				reader.discover({ projectRoot: options.project })
+			).pipe(Effect.provide(LocalizationEvidenceNodeLive))
+		);
+		const targetName = options.target ?? targetReply.targets[0]?.name;
+		if (!targetName) throw new Error("The project has no localization target.");
+		const target = LocalizationTargetName.make(targetName);
+		const base = Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+			...mix.list,
+			localization: { target }
+		});
+		const ready = <A extends { readonly status: string }>(reply: A, expected = "ready") => {
+			if (reply.status !== expected) throw new Error(JSON.stringify(reply));
+			return reply;
+		};
+		const search = async (request: typeof base) => {
+			const reply = await run(workspace.search(request));
+			if (reply.status !== "ready") throw new Error(JSON.stringify(reply));
+			return reply.page;
+		};
+		const firstPage = async (read: (request: typeof base) => Promise<TextCorpusSearchPage>) => {
+			const page = await read(base);
+			const groups = page.groups?.entries ?? [];
+			const fits =
+				page.groups?.more === 0 &&
+				groups.reduce((total, group) => total + group.count, 0) <= 50;
+			const open = fits ? groups : groups.slice(0, 1);
+			return {
+				total: page.total,
+				page,
+				groups: await Promise.all(
+					open.map((group) => read({ ...base, openGroup: group.key }))
+				)
+			};
+		};
+		if (stage === "build" || stage === "cached-reopen") {
+			await measure(stage, async () => {
+				ready(await run(workspace.configuredRefresh(true)), "completed");
+				ready(await run(workspace.localizationTarget(target)));
+				return firstPage(search);
+			});
+		} else if (stage === "open") {
+			await measure("open", async () => {
+				const model = await run(
+					steps
+						.openCommitted({ projectRoot: options.project, targetName })
+						.pipe(Effect.provideService(Scope.Scope, scope))
+				);
+				if (Option.isNone(model)) throw new Error("Built index not available.");
+				return firstPage((request) => run(model.value.query.search(request)));
+			});
+		} else {
+			ready(await run(workspace.configuredRefresh(true)), "completed");
+			ready(await run(workspace.localizationTarget(target)));
+			if (stage === "quality" || stage === "quality-default") {
+				if (stage === "quality") {
+					const document = await run(
+						decodeGameTextRuleDocumentJson(
+							await readFile(
+								new URL("./game-text-engine-rules.json", import.meta.url),
+								"utf8"
+							)
+						)
+					);
+					ready(await run(workspace.previewQualityRules(document)), "completed");
+				}
+				await measure(stage, async () =>
+					ready(await run(workspace.localizationQualitySearch({ target, filter: "all" })))
+				);
+			} else if (stage === "overhead") {
+				const model = await run(
+					steps
+						.openCommitted({ projectRoot: options.project, targetName })
+						.pipe(Effect.provideService(Scope.Scope, scope))
+				);
+				if (Option.isNone(model)) throw new Error("Built index not available.");
+				const query = model.value.query;
+				const { group: _group, ...flat } = base;
+				const { facets: _facets, ...plain } = flat;
+				const ids: NonNullable<
+					TextCorpusSearchPage["localization"]
+				>["lines"][number]["id"][] = [];
+				let request = plain;
+				while (ids.length < 5000) {
+					const page = await run(query.search(request));
+					ids.push(...(page.localization?.lines ?? []).map((line) => line.id));
+					const cursor = page.localization?.nextCursor;
+					if (!cursor) break;
+					request = { ...plain, localizationCursor: cursor };
+				}
+				if (scenarioHost !== "small")
+					await run(
+						query.selectLocalizationLines(
+							{ ...plain, lines: ids.slice(0, 1) },
+							LOCALIZATION_LINES_CSV_FIELDS
+						)
+					);
+				for (let repeat = 0; repeat < 30; repeat++)
+					await measure(`small:${repeat}`, () => run(query.search(flat)));
+				if (scenarioHost !== "small") {
+					const observeBulk = async <A>(read: () => Promise<A>) => {
+						try {
+							return await read();
+						} catch (cause) {
+							console.error(cause);
+							return {
+								status: "failed" as const,
+								message: cause instanceof Error ? cause.message : String(cause)
+							};
+						}
+					};
+					await measure("medium", () =>
+						observeBulk(() =>
+							run(
+								query.selectLocalizationLines(
+									{ ...plain, lines: ids.slice(0, 5000) },
+									LOCALIZATION_LINES_CSV_FIELDS
+								)
+							)
+						)
+					);
+				}
+			} else if (stage === "typing") {
+				for (const host of mix.hosts.filter(
+					(host) =>
+						!scenarioHost ||
+						(host.name === scenarioHost && host.openGroups === scenarioGroups)
+				))
+					for (const query of mix.queries)
+						for (let length = 1; length <= query.length; length++) {
+							const prefix = query.slice(0, length);
+							const id = `${host.name}:${host.openGroups}:${query}:${length}`;
+							const request = Schema.decodeUnknownSync(TextCorpusSearchRequest)(
+								host.excludeEditor
+									? {
+											...base,
+											query: prefix,
+											filter: [
+												{
+													field: "audience",
+													op: "is_not",
+													values: ["editor"]
+												}
+											]
+										}
+									: { ...base, query: prefix }
+							);
+							let fanout = 1;
+							await measure(
+								`keystroke:${id}`,
+								async () => {
+									const page = await measure(`request:${id}:header`, () =>
+										search(request)
+									);
+									const groups = page.groups?.entries ?? [];
+									const fits =
+										page.groups?.more === 0 &&
+										groups.reduce((n, group) => n + group.count, 0) <= 50;
+									const open =
+										host.openGroups === "all" || fits
+											? groups
+											: groups.slice(0, 1);
+									fanout += open.length;
+									const replies = await Promise.all(
+										open.map((group) =>
+											measure(`request:${id}:${group.key}`, () =>
+												search({ ...request, openGroup: group.key })
+											)
+										)
+									);
+									return { page, groups: replies };
+								},
+								() => fanout
+							);
+						}
+			} else if (stage === "selection") {
+				const { group: _group, ...ungrouped } = base;
+				const page = await search(ungrouped);
+				const unit = page.units.find((unit) => unit.occurrenceCount > 0) ?? page.units[0];
+				if (!unit) throw new Error("No row available for selection.");
+				const line = page.localization?.lines[0];
+				if (scenarioHost === "electroswag-worst") {
+					const { selection } = mix;
+					const seed = expectFound(
+						await run(workspace.focus({ id: unit.id, pageSize: selection.pageSize })),
+						"seed focus"
+					);
+					const files = [
+						...new Set(seed.focus.occurrences.map((place) => place.packageFile))
+					];
+					const pooled = async <A, B>(
+						items: readonly A[],
+						read: (item: A) => Promise<B>
+					) => {
+						const values: B[] = [];
+						let next = 0;
+						await Promise.all(
+							Array.from(
+								{ length: Math.min(selection.concurrency, items.length) },
+								async () => {
+									for (let index = next++; index < items.length; index = next++)
+										values[index] = await read(items[index]!);
+								}
+							)
+						);
+						return values;
+					};
+					const related =
+						selection.causeSearchPages +
+						selection.relatedLines +
+						selection.relatedLines * (1 + selection.relatedLines);
+					await measure(
+						"electroswag:saturated-related",
+						async () => {
+							const causePages: TextCorpusSearchPage[] = [];
+							for (let index = 0; index < selection.causeSearchPages; index++) {
+								const previousCursor = causePages.at(-1)?.nextCursor;
+								const cursor = previousCursor
+									? { cursor: previousCursor }
+									: undefined;
+								causePages.push(
+									await search(
+										Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+											query: "",
+											capability: "all",
+											pageSize: selection.pageSize,
+											lens: "conflicting",
+											filter: [{ field: "asset", op: "is", values: files }],
+											...cursor
+										})
+									)
+								);
+							}
+							const ids = causePages.flatMap((page) =>
+								page.units.map((unit) => unit.id)
+							);
+							const saturated = Array.from(
+								{ length: selection.relatedLines },
+								(_, index) => ids[index % Math.max(1, ids.length)] ?? unit.id
+							);
+							const focuses = await pooled(saturated, async (id) =>
+								expectFound(
+									await run(
+										workspace.focus({ id, pageSize: selection.pageSize })
+									),
+									"related focus"
+								)
+							);
+							const sameKeys = await pooled(focuses, async ({ focus: found }) => {
+								const identity = gatheredTextIdentity(
+									TextUnit.make({
+										id: found.unit.id,
+										source: found.unit.source,
+										identity: found.unit.identity,
+										occurrences: found.occurrences
+									})
+								);
+								const key = identity
+									? gatheredIdentityKey(identity)
+									: JSON.stringify(["", ""]);
+								const page = await search(
+									Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+										query: "",
+										capability: "all",
+										pageSize: selection.keySearchPageSize,
+										filter: [
+											{ field: "translation_key", op: "is", values: [key] }
+										]
+									})
+								);
+								const ids = page.units
+									.filter((other) => other.id !== found.unit.id)
+									.map((other) => other.id);
+								return {
+									page,
+									focuses: await pooled(
+										Array.from(
+											{ length: selection.relatedLines },
+											(_, index) =>
+												ids[index % Math.max(1, ids.length)] ??
+												found.unit.id
+										),
+										async (id) =>
+											expectFound(
+												await run(
+													workspace.focus({
+														id,
+														pageSize: selection.pageSize
+													})
+												),
+												"same-key focus"
+											)
+									)
+								};
+							});
+							// Saturate the host's bounds with existing IDs when the project has fewer partners.
+							// This is an explicit load probe, not a claim that this project has 20×20 copies.
+							return { saturated: true, causePages, focuses, sameKeys };
+						},
+						related
+					);
+				}
+				for (const host of ["workbench", "electroswag"].filter(
+					(host) => !scenarioHost || host === scenarioHost
+				))
+					await measure(
+						`${host}:selection`,
+						() =>
+							Promise.all([
+								run(
+									workspace.focus(
+										line
+											? {
+													id: unit.id,
+													pageSize: 50,
+													localization: { target, id: line.id }
+												}
+											: { id: unit.id, pageSize: 50 }
+									)
+								).then((reply) => expectFound(reply, "focus")),
+								run(
+									workspace.localizationFocus({
+										target,
+										selection: line
+											? { kind: "line", id: line.id }
+											: { kind: "unit", id: unit.id }
+									})
+								).then((reply) => expectFound(reply, "detail"))
+							]),
+						2
+					);
+			} else throw new Error(`Unknown engine stage: ${options.stage}`);
+		}
+	} finally {
+		clearInterval(timer);
+		topic.unsubscribe(listener);
+		sample();
+		await run(Scope.close(scope, Exit.void));
+		if (process.env.UE_SHED_GAME_TEXT_MEASURE_DIR)
+			await writeFile(
+				join(process.env.UE_SHED_GAME_TEXT_MEASURE_DIR, `ts-${process.pid}.ndjson`),
+				timings.map((timing) => JSON.stringify(timing)).join("\n") + "\n"
+			);
+	}
+	return {
+		schemaVersion: 1 as const,
+		stage: options.stage,
+		node: process.version,
+		peakHeapBytes,
+		peakRssBytes,
+		samples
+	};
+}

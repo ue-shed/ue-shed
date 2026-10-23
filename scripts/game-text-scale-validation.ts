@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { performance } from "node:perf_hooks";
-import { readScaleRecipe, repositoryPath } from "./game-text-scale-options.ts";
+import { readScaleRecipe } from "./game-text-scale-options.ts";
 
 /** Recipe-specific token census, not a JSON/PO parser. Memory is bounded by one read chunk. */
 async function census(path: string, encoding: BufferEncoding, tokens: readonly string[]) {
@@ -38,7 +38,8 @@ async function census(path: string, encoding: BufferEncoding, tokens: readonly s
 }
 
 export async function validateGameTextScale(project: string) {
-	const root = repositoryPath(project);
+	// Validation only reads inputs; retained fixtures may live outside this checkout.
+	const root = resolve(project);
 	const started = performance.now();
 	const recipe = await readScaleRecipe(root);
 	const files: { path: string; kind: string; bytes: number; counts: Record<string, number> }[] =

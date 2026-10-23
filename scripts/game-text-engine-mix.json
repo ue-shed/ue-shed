@@ -1,0 +1,43 @@
+{
+	"schemaVersion": 1,
+	"sources": [
+		"UE Shed 8b4ce3a4 extensions/game-text/src/game-text-query-route.tsx:570-586 (request), :623-701 (refill), :789-803 (120 ms debounce)",
+		"UE Shed 8b4ce3a4 extensions/game-text/src/game-text-grouped-results.tsx:82-86 (default open groups), :150-213 (one search per open group; all facet flags retained)",
+		"UE Shed 8b4ce3a4 extensions/game-text/src/game-text-query-route.tsx:364-409 and extensions/game-text/src/game-text-localization-state.ts:185-311 (parallel focus and detail)",
+		"Electroswag src/mainview/features/game-text/showcase/game-text-query-route.tsx:708-729 (request), :761-837 (refill), :930-940 (120 ms debounce)",
+		"Electroswag src/mainview/features/game-text/showcase/game-text-line-ids.ts:82-111 (four pages and focus concurrency), :220-274 (cause), :277-305 (state scans)",
+		"Electroswag src/mainview/features/game-text/showcase/game-text-same-key-lines.ts:36-63 (21-row key search, 20 focuses, concurrency four)",
+		"Typing replays admitted keystrokes after the 120 ms trailing debounce; whole fan-out excludes user think time. Default and all-open states are separate scenarios. Transport sizes are 50, 5000 and every row.",
+		"The saturated related-line load probe sends 4 + 20 + 20*(1+20) = 444 requests, with concurrency four at each host loop. Existing IDs fill absent partners; it measures the bounded fan-out and does not assert that the input has 20 by 20 conflicting copies. The ordinary row-selection probes measure focus plus detail separately."
+	],
+	"list": {
+		"query": "",
+		"capability": "all",
+		"lens": "all",
+		"withoutNotes": false,
+		"group": "problem",
+		"pageSize": 50,
+		"facets": {
+			"folder": "",
+			"assets": true,
+			"origins": true,
+			"audiences": true,
+			"assetTypes": true,
+			"cultures": true
+		}
+	},
+	"queries": ["the", "Taluma", "中文", "zzzx_no_match_059"],
+	"hosts": [
+		{ "name": "workbench", "excludeEditor": false, "openGroups": "default" },
+		{ "name": "workbench", "excludeEditor": false, "openGroups": "all" },
+		{ "name": "electroswag", "excludeEditor": true, "openGroups": "default" }
+	],
+	"selection": {
+		"pageSize": 50,
+		"causeSearchPages": 4,
+		"relatedLines": 20,
+		"keySearchPageSize": 21,
+		"concurrency": 4
+	},
+	"transportRows": [50, 5000, "all"]
+}

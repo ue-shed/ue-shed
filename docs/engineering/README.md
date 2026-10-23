@@ -21,31 +21,32 @@ UE Shed code should be functional, typed, observable, and well tested.
 
 - [Website and illustrated guides](website.md) — asserted screenshot refresh, provenance, and browser checks.
 
-| Guide                                                                 | Use it for                                                         |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [Functional design](functional-design.md)                             | Logic, state, services, and concurrency                            |
-| [Types and errors](types-and-errors.md)                               | Schemas, IDs, APIs, and failures                                   |
-| [Effect](effect.md)                                                   | Services, resources, streams, and retries                          |
-| [SolidJS](solidjs.md)                                                 | First-party UI code                                                |
-| [StyleX](stylex.md)                                                   | Styles, themes, and UI packages                                    |
-| [Observability](observability.md)                                     | Telemetry, health, and diagnostics                                 |
-| [Testing](testing.md)                                                 | Test scope and test types                                          |
-| [Camera authoring native proof](camera-authoring-native-proof.md)     | Transient editing, clean maps, and view-local exclusion            |
-| [Camera flow walkthrough](camera-flow-implementation.html)            | Scoped authoring, persistence, and recorded render comparisons     |
-| [UAsset benchmarks](uasset-benchmarks.md)                             | Parser, CLI, WASM, and Unreal measurements                         |
-| [Project Index storage report](project-index-storage-comparison.html) | Visual comparison of four measured eras                            |
-| [Binary Project Index](binary-project-index.md)                       | Canonical Catalog storage and lifecycle                            |
-| [Game Text snapshots](game-text-snapshots.md)                         | Compact domain format, bounds and Node store lifecycle             |
-| [Native Game Text preparation](native-game-text-index.md)             | Production writer, incremental joins, composition and measurements |
-| [Game Text gather coverage](game-text-gather-coverage.md)             | Saved-scan gaps, manifest evidence and Unreal gather authority     |
-| [Game Text test corpus](game-text-corpus.md)                          | Generate a scratch corpus with planted right answers               |
-| [SQLite Project Index](sqlite-project-index.md)                       | Previous Catalog and current test oracle                           |
-| [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence                                |
-| [Releases](releases.md)                                               | Local pre-1.0 releases and post-1.0 CI plan                        |
-| [Plugin distribution](plugin-distribution.md)                         | Immutable Unreal plugin host caches                                |
-| [Private package ledger](private-packages.md)                         | Why excluded workspaces are not published                          |
-| [Agent adoption](agent-adoption.md)                                   | Agent-operated workflows and copied slices                         |
-| [API surface](api-surface.md)                                         | Measured exports of the host-facing packages                       |
+| Guide                                                                 | Use it for                                                            |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [Functional design](functional-design.md)                             | Logic, state, services, and concurrency                               |
+| [Types and errors](types-and-errors.md)                               | Schemas, IDs, APIs, and failures                                      |
+| [Effect](effect.md)                                                   | Services, resources, streams, and retries                             |
+| [SolidJS](solidjs.md)                                                 | First-party UI code                                                   |
+| [StyleX](stylex.md)                                                   | Styles, themes, and UI packages                                       |
+| [Observability](observability.md)                                     | Telemetry, health, and diagnostics                                    |
+| [Testing](testing.md)                                                 | Test scope and test types                                             |
+| [Camera authoring native proof](camera-authoring-native-proof.md)     | Transient editing, clean maps, and view-local exclusion               |
+| [Camera flow walkthrough](camera-flow-implementation.html)            | Scoped authoring, persistence, and recorded render comparisons        |
+| [UAsset benchmarks](uasset-benchmarks.md)                             | Parser, CLI, WASM, and Unreal measurements                            |
+| [Project Index storage report](project-index-storage-comparison.html) | Visual comparison of four measured eras                               |
+| [Binary Project Index](binary-project-index.md)                       | Canonical Catalog storage and lifecycle                               |
+| [Game Text snapshots](game-text-snapshots.md)                         | Compact domain format, bounds and Node store lifecycle                |
+| [Native Game Text preparation](native-game-text-index.md)             | Production writer, incremental joins, composition and measurements    |
+| [Game Text engine baseline](game-text-engine-measurements.md)         | Host API replay, resource caps, overhead and the transport experiment |
+| [Game Text gather coverage](game-text-gather-coverage.md)             | Saved-scan gaps, manifest evidence and Unreal gather authority        |
+| [Game Text test corpus](game-text-corpus.md)                          | Generate a scratch corpus with planted right answers                  |
+| [SQLite Project Index](sqlite-project-index.md)                       | Previous Catalog and current test oracle                              |
+| [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence                                   |
+| [Releases](releases.md)                                               | Local pre-1.0 releases and post-1.0 CI plan                           |
+| [Plugin distribution](plugin-distribution.md)                         | Immutable Unreal plugin host caches                                   |
+| [Private package ledger](private-packages.md)                         | Why excluded workspaces are not published                             |
+| [Agent adoption](agent-adoption.md)                                   | Agent-operated workflows and copied slices                            |
+| [API surface](api-surface.md)                                         | Measured exports of the host-facing packages                          |
 
 ## Stack
 

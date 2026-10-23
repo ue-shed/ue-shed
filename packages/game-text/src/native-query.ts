@@ -1,5 +1,5 @@
+import { channel } from "node:diagnostics_channel";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { TextCorpusReportHeader } from "./corpus-summary.js";
 import { join } from "node:path";
 import { Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
 import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
@@ -9,6 +9,7 @@ import type {
 	GameTextIndexConfiguration
 } from "@ue-shed/protocol";
 import { GameTextIndexError } from "./index-contract.js";
+import { TextCorpusReportHeader } from "./corpus-summary.js";
 import {
 	TextCorpus,
 	TextUnit,
@@ -32,6 +33,8 @@ import {
 
 import type { NativeTextQuery } from "./native-query-contract.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
+
+const benchmark = channel("ue-shed.game-text-benchmark");
 
 const NativeExportFile = Schema.Struct({
 	...TextCorpus.fields,
@@ -207,10 +210,18 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	): Effect.Effect<S["Type"], GameTextIndexError> {
 		return Effect.gen(function* () {
 			const outcome = yield* lane.execute(request);
+			const decodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 			const parsed = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
 				outcome.payload
 			);
-			return yield* Schema.decodeUnknownEffect(schema)(parsed);
+			const value = yield* Schema.decodeUnknownEffect(schema)(parsed);
+			if (decodeStarted !== undefined)
+				benchmark.publish({
+					stage: "tsPayloadDecode",
+					action: request.action,
+					ms: performance.now() - decodeStarted
+				});
+			return value;
 		}).pipe(
 			Effect.mapError((cause) =>
 				Schema.is(GameTextIndexError)(cause) ? cause : failed(request.action, cause)
@@ -315,13 +326,46 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			Effect.gen(function* () {
 				const output = join(directory, `${operation}.json`);
 				yield* lane.execute(request(output));
+				const readStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 				const text = yield* Effect.tryPromise({
 					try: (signal) => readFile(output, { encoding: "utf8", signal }),
-					catch: (cause) => failed(`${operation}_read`, cause)
+					catch: (cause) => {
+						if (readStarted !== undefined)
+							benchmark.publish({
+								stage: "tsBulkRead",
+								action: operation,
+								ms: performance.now() - readStarted
+							});
+						return failed(`${operation}_read`, cause);
+					}
 				});
-				return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
-					Effect.mapError((cause) => failed(`${operation}_decode`, cause))
+				if (readStarted !== undefined)
+					benchmark.publish({
+						stage: "tsBulkRead",
+						action: operation,
+						ms: performance.now() - readStarted
+					});
+				const decodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
+				const value = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(
+					text
+				).pipe(
+					Effect.mapError((cause) => {
+						if (decodeStarted !== undefined)
+							benchmark.publish({
+								stage: "tsPayloadDecode",
+								action: operation,
+								ms: performance.now() - decodeStarted
+							});
+						return failed(`${operation}_decode`, cause);
+					})
 				);
+				if (decodeStarted !== undefined)
+					benchmark.publish({
+						stage: "tsPayloadDecode",
+						action: operation,
+						ms: performance.now() - decodeStarted
+					});
+				return value;
 			})
 		);
 	const NativeAggregate = Schema.Struct({
@@ -384,17 +428,25 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		fields: readonly F[]
 	) =>
 		Effect.gen(function* () {
+			const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 			const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
 				...request,
 				pageSize: 50
 			}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
+			const payload = JSON.stringify({ ...decoded, fields: [...new Set(fields)] });
+			if (encodeStarted !== undefined)
+				benchmark.publish({
+					stage: "tsDomainEncode",
+					action: "localization_export",
+					ms: performance.now() - encodeStarted
+				});
 			return yield* fileRead(
 				lane,
 				"localization_export",
 				(output) => ({
 					action: "localization_export",
 					reader: lane.reader,
-					payload: JSON.stringify({ ...decoded, fields: [...new Set(fields)] }),
+					payload,
 					output
 				}),
 				localizationLineViews(fields)
@@ -505,12 +557,20 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const search = Effect.fn("GameTextIndex.nativeSearch")(function* (
 		request: TextCorpusSearchRequest
 	) {
+		const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
 			Effect.mapError((cause) => failed("search", cause))
 		);
+		const payload = JSON.stringify(decoded);
+		if (encodeStarted !== undefined)
+			benchmark.publish({
+				stage: "tsDomainEncode",
+				action: "search",
+				ms: performance.now() - encodeStarted
+			});
 		return yield* response(
 			interactive,
-			{ action: "search", reader, payload: JSON.stringify(decoded) },
+			{ action: "search", reader, payload },
 			TextCorpusSearchPage
 		);
 	});

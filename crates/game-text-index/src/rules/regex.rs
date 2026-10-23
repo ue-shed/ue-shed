@@ -1,8 +1,8 @@
 //! JavaScript Unicode regex syntax over a reversible UTF-16 view.
-use super::value::{Value, value};
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result};
 use fancy_regex::{Regex, RegexBuilder};
+use serde::Serialize;
 #[cfg(test)]
 use serde_json::json;
 
@@ -189,7 +189,7 @@ impl JsRegex {
     }
 
     /// A budget error is returned to the caller, which emits the existing syntax_limit diagnostic.
-    pub fn matches(&self, source: &str, cap: Option<usize>) -> Result<Vec<Value>> {
+    pub fn matches(&self, source: &str, cap: Option<usize>) -> Result<Vec<Match>> {
         let (text, positions) = regex_text(source);
         let source_units = units(source);
         let mut output = Vec::new();
@@ -236,7 +236,11 @@ impl JsRegex {
                 }
             }
             if let Some((unit, next_offset)) = interior {
-                output.push(value!({"match":"","start":unit,"end":unit}));
+                output.push(Match {
+                    text: String::new(),
+                    start: unit,
+                    end: unit,
+                });
                 offset = next_offset;
                 continue;
             }
@@ -251,7 +255,11 @@ impl JsRegex {
                 .map_err(|_| "Regex end is not a UTF-16 boundary.")?;
             let start = positions[start_index].1;
             let end = positions[end_index].1;
-            output.push(value!({"match":view(&source_units[start..end]),"start":start,"end":end}));
+            output.push(Match {
+                text: view(&source_units[start..end]),
+                start,
+                end,
+            });
             offset = if found.start() == found.end() {
                 positions
                     .get(end_index + 1)
@@ -262,6 +270,15 @@ impl JsRegex {
         }
         Ok(output)
     }
+}
+
+/// A match in UTF-16 units, as JavaScript reports it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Match {
+    #[serde(rename = "match")]
+    pub text: String,
+    pub start: usize,
+    pub end: usize,
 }
 
 pub fn term_pattern(term: &str, boundary: &str) -> String {

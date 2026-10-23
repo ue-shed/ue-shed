@@ -1,6 +1,6 @@
 //! Unreal's format compiler, inverse argument edit, and compile rich-text validator.
 use super::regex::{units, view};
-use super::value::{Value, value};
+use super::text::Balance;
 use crate::join_policy::js_space;
 use serde::{Deserialize, Serialize};
 
@@ -531,7 +531,7 @@ pub fn rename_argument(text: &str, from: &str, to: &str, culture: &str) -> Optio
     Some(view(&result))
 }
 
-pub fn rich_text_counts(text: &str) -> Value {
+pub fn rich_text_counts(text: &str) -> Balance {
     let (mut opening, mut closing) = (0, 0);
     let mut start = None;
     for (index, byte) in text.bytes().enumerate() {
@@ -549,7 +549,7 @@ pub fn rich_text_counts(text: &str) -> Value {
             start = None;
         }
     }
-    value!({"opening":opening,"closing":closing})
+    Balance { opening, closing }
 }
 
 #[cfg(test)]

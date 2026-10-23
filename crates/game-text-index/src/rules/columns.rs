@@ -775,6 +775,38 @@ impl Arena {
             },
         }
     }
+    /// Rule value equality, without building values: strings compare by text across
+    /// dictionaries, lists by element, and objects by key regardless of member order. Integers
+    /// and floating-point numbers stay distinct.
+    pub fn equal(&self, a: Atom, b: Atom) -> bool {
+        if a == b {
+            return true;
+        }
+        match (a, b) {
+            (Atom::Str(a), Atom::Str(b)) => self.text(a) == self.text(b),
+            (Atom::Val(x), Atom::Val(y)) => {
+                match (&self.values[x.0 as usize], &self.values[y.0 as usize]) {
+                    (Structured::List(x), Structured::List(y)) => {
+                        x.len() == y.len()
+                            && x.iter().zip(y.iter()).all(|(x, y)| self.equal(*x, *y))
+                    }
+                    (Structured::Object(x), Structured::Object(y)) => {
+                        x.len() == y.len()
+                            && x.iter().all(|(name, value)| {
+                                let name = self.text(*name);
+                                y.iter()
+                                    .find(|(key, _)| self.text(*key) == name)
+                                    .is_some_and(|(_, other)| self.equal(*value, *other))
+                            })
+                    }
+                    // Occurrence views and wrapped scalars compare as the values they present.
+                    _ => self.value(a) == self.value(b),
+                }
+            }
+            (Atom::Val(_), _) | (_, Atom::Val(_)) => self.value(a) == self.value(b),
+            _ => false,
+        }
+    }
     pub fn elements(&self, atom: Atom) -> Result<Option<&[Atom]>> {
         if atom == Atom::Null {
             return Ok(None);

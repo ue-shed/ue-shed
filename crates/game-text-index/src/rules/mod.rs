@@ -7,6 +7,7 @@ mod grammar;
 mod kernel;
 mod memo;
 mod occurrences;
+mod out;
 mod plural_tables;
 mod regex;
 mod selection;

@@ -1,7 +1,8 @@
-//! Pure scalar kernels over typed values, shared by selection and list evaluation.
+//! Pure scalar kernels over interned atoms, shared by selection and list evaluation. Kernels
+//! read the arena and return what they built as an `Out`; the evaluator interns it.
 use super::columns::{Arena, Atom, Bits, StrId, Structured};
 use super::compiler::{MatchOperator, MatcherKind, Op, Role};
-use super::value::{Object, Value, value};
+use super::out::{Out, out};
 use super::{HostCollator, grammar, regex as js_regex, text};
 use crate::{Error, ErrorCode, Result};
 use std::collections::HashMap;
@@ -16,56 +17,61 @@ pub struct Kernel<'a> {
     roles_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
     paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
 }
-fn boolean(value: &Value) -> bool {
-    value.as_bool() == Some(true)
+fn optional_text(arena: &Arena, atom: Atom) -> Option<&str> {
+    if let Atom::Str(id) = atom {
+        Some(arena.text(id))
+    } else {
+        None
+    }
 }
-fn string(value: &Value) -> Result<&str> {
-    value
-        .as_str()
+fn string(arena: &Arena, atom: Atom) -> Result<&str> {
+    optional_text(arena, atom)
         .ok_or_else(|| Error::new(ErrorCode::InvalidInput, "Rule operation requires a string."))
 }
-fn list(value: &Value) -> Result<&[Value]> {
-    value
-        .as_array()
-        .map(Vec::as_slice)
+fn list(arena: &Arena, atom: Atom) -> Result<&[Atom]> {
+    arena
+        .elements(atom)
+        .ok()
+        .flatten()
         .ok_or_else(|| Error::new(ErrorCode::InvalidInput, "Rule operation requires a list."))
 }
-fn number(value: &Value) -> Result<f64> {
-    value
-        .as_f64()
-        .ok_or_else(|| Error::new(ErrorCode::InvalidInput, "Rule operation requires a number."))
-}
-fn deep_get(value: &Value, path: &str) -> Value {
-    let mut current = value;
-    for key in path.split('.') {
-        current = if current.is_array() {
-            key.parse::<usize>()
-                .ok()
-                .and_then(|index| current.get(index))
-                .unwrap_or(&Value::Null)
-        } else {
-            current.get(key).unwrap_or(&Value::Null)
-        };
+fn number(atom: Atom) -> Result<f64> {
+    match atom {
+        Atom::Int(value) => Ok(value as f64),
+        Atom::Num(value) => Ok(f64::from_bits(value)),
+        _ => Err(Error::new(
+            ErrorCode::InvalidInput,
+            "Rule operation requires a number.",
+        )),
     }
-    current.clone()
 }
-fn role_matches(location: &Value, role: &Role) -> bool {
-    let kind = location["kind"].as_str();
+/// A non-negative integer; floating-point numbers do not count.
+fn count(atom: Atom) -> Option<u64> {
+    if let Atom::Int(value) = atom {
+        value.try_into().ok()
+    } else {
+        None
+    }
+}
+fn atoms(values: &[Atom]) -> Out {
+    Out::List(values.iter().copied().map(Out::Atom).collect())
+}
+fn role_matches(arena: &Arena, location: Atom, role: &Role) -> bool {
+    let field = |name| optional_text(arena, arena.get_path(location, name));
+    let kind = field("kind");
     role.scopes.iter().any(|scope| {
         scope.matchers.iter().all(|matcher| {
             let actual = match matcher.kind {
                 MatcherKind::LocationKind => kind,
-                MatcherKind::ObjectPath => location["objectPath"].as_str(),
-                MatcherKind::Row if kind == Some("data_table_cell") => location["row"].as_str(),
+                MatcherKind::ObjectPath => field("objectPath"),
+                MatcherKind::Row if kind == Some("data_table_cell") => field("row"),
                 MatcherKind::PropertyPath if kind != Some("string_table_entry") => {
-                    location["propertyPath"].as_str()
+                    field("propertyPath")
                 }
                 MatcherKind::StringTableEntry if kind == Some("string_table_entry") => {
-                    location["entryKey"].as_str()
+                    field("entryKey")
                 }
-                MatcherKind::ClassPath if kind == Some("asset_property") => {
-                    location["classPath"].as_str()
-                }
+                MatcherKind::ClassPath if kind == Some("asset_property") => field("classPath"),
                 _ => None,
             };
             actual.is_some_and(|actual| {
@@ -80,12 +86,12 @@ fn role_matches(location: &Value, role: &Role) -> bool {
         })
     })
 }
+fn path_has_prefix(arena: &Arena, location: Atom, prefix: &str) -> bool {
+    optional_text(arena, arena.get_path(location, "objectPath"))
+        .is_some_and(|path| path.starts_with(prefix))
+}
 impl<'a> Kernel<'a> {
-    pub fn new(
-        collator: &'a HostCollator,
-        roles: &HashMap<String, Role>,
-        arena: &Arena,
-    ) -> Self {
+    pub fn new(collator: &'a HostCollator, roles: &HashMap<String, Role>, arena: &Arena) -> Self {
         Self {
             collator,
             roles: roles.clone(),
@@ -102,7 +108,7 @@ impl<'a> Kernel<'a> {
         pattern: &str,
         sensitive: bool,
         cap: Option<usize>,
-    ) -> Result<Vec<Value>> {
+    ) -> Result<Vec<js_regex::Match>> {
         let key = (pattern.to_owned(), sensitive);
         let expression = {
             let mut patterns = self
@@ -118,6 +124,18 @@ impl<'a> Kernel<'a> {
             }
         };
         expression.matches(source, cap)
+    }
+    fn class(&self, arena: &Arena, class: Atom) -> Result<Arc<text::CharacterClass>> {
+        let mut classes = self
+            .classes
+            .lock()
+            .map_err(|_| "Character-class cache was poisoned.")?;
+        if let Some(compiled) = classes.get(&class) {
+            return Ok(Arc::clone(compiled));
+        }
+        let compiled = Arc::new(text::CharacterClass::compile(arena, class)?);
+        classes.insert(class, Arc::clone(&compiled));
+        Ok(compiled)
     }
     pub fn occurrence_mask(&self, arena: &Arena, key: StrId, role: bool) -> Result<Arc<Bits>> {
         let cache = if role {
@@ -139,15 +157,13 @@ impl<'a> Kernel<'a> {
             let word = *word;
             let mut bits = 0;
             for row in word * 64..((word + 1) * 64).min(arena.occurrences.len) {
+                let location = arena.occurrence(row as u32, "location");
                 let matches = if role {
                     self.roles
                         .get(name)
-                        .is_some_and(|role| self.matches_occurrence(arena, row as u32, role))
+                        .is_some_and(|role| role_matches(arena, location, role))
                 } else {
-                    let location = arena.value(arena.occurrence(row as u32, "location"));
-                    location["objectPath"]
-                        .as_str()
-                        .is_some_and(|path| path.starts_with(name))
+                    path_has_prefix(arena, location, name)
                 };
                 if matches {
                     bits |= 1 << (row % 64);
@@ -172,218 +188,130 @@ impl<'a> Kernel<'a> {
             .insert(key, Arc::clone(&mask));
         Ok(mask)
     }
-    fn matches_occurrence(&self, arena: &Arena, row: u32, role: &Role) -> bool {
-        role_matches(&arena.value(arena.occurrence(row, "location")), role)
+    fn term_list_matches(&self, arena: &Arena, inputs: &[Atom]) -> Result<Out> {
+        let terms = list(arena, inputs[1])?;
+        if terms.is_empty() {
+            return Ok(Out::List(Vec::new()));
+        }
+        let key = (inputs[1], inputs[2], inputs[3]);
+        let expression = {
+            let mut cache = self.terms.lock().map_err(|_| "Term cache was poisoned.")?;
+            if let Some(expression) = cache.get(&key) {
+                Arc::clone(expression)
+            } else {
+                let alternation = terms
+                    .iter()
+                    .map(|term| {
+                        optional_text(arena, *term)
+                            .map(::regex::escape)
+                            .ok_or_else(|| "Invalid term.".into())
+                    })
+                    .collect::<Result<Vec<_>>>()?
+                    .join("|");
+                let flags = optional_text(arena, inputs[3]).ok_or("Missing term flags.")?;
+                let pattern = js_regex::term_pattern(&format!("(?:{alternation})"), flags).replace(
+                    &::regex::escape(&format!("(?:{alternation})")),
+                    &format!("(?:{alternation})"),
+                );
+                let expression = Arc::new(js_regex::JsRegex::new(&pattern, inputs[2].boolean())?);
+                cache.insert(key, Arc::clone(&expression));
+                expression
+            }
+        };
+        let source = optional_text(arena, inputs[0]).ok_or("Missing term source.")?;
+        Ok(expression.matches(source, None)?.into())
     }
-    pub fn run(&self, arena: &Arena, op: &Op, inputs: &[Atom]) -> Result<Value> {
-        if *op == Op::Get
-            && let [value, Atom::Str(path)] = inputs
+    pub fn run(&self, arena: &Arena, op: &Op, inputs: &[Atom]) -> Result<Out> {
+        let a = inputs.first().copied().unwrap_or_default();
+        let b = inputs.get(1).copied().unwrap_or_default();
+        let c = inputs.get(2).copied().unwrap_or_default();
+        // Constructors keep their null inputs; every other kernel is null when an input is,
+        // except an omitted slice end.
+        match op {
+            Op::List => return Ok(atoms(inputs)),
+            Op::Object(keys) => {
+                let mut fields: Vec<(Arc<str>, Out)> = Vec::with_capacity(keys.len());
+                for (name, value) in keys.iter().zip(inputs) {
+                    if *value == Atom::Null {
+                        continue;
+                    }
+                    if let Some(field) = fields.iter_mut().find(|(key, _)| key == name) {
+                        field.1 = Out::Atom(*value);
+                    } else {
+                        fields.push((Arc::clone(name), Out::Atom(*value)));
+                    }
+                }
+                return Ok(Out::Fields(fields));
+            }
+            _ => {}
+        }
+        if inputs
+            .iter()
+            .enumerate()
+            .any(|(index, value)| *value == Atom::Null && !(*op == Op::Slice && index == 2))
         {
-            return Ok(arena.value(arena.get_path(*value, arena.text(*path))));
-        }
-        if *op == Op::IsNull {
-            return Ok((inputs[0] == Atom::Null).into());
-        }
-        if *op == Op::Not {
-            return Ok((!inputs[0].boolean()).into());
-        }
-        if matches!(op, Op::Eq | Op::Ne) {
-            let equal = inputs[0] == inputs[1]
-                || match (inputs[0], inputs[1]) {
-                    (Atom::Str(a), Atom::Str(b)) => arena.text(a) == arena.text(b),
-                    _ => arena.value(inputs[0]) == arena.value(inputs[1]),
-                };
-            return Ok((equal == (*op == Op::Eq)).into());
-        }
-        if *op == Op::Count {
-            return Ok(arena.elements(inputs[0])?.map(<[Atom]>::len).into());
-        }
-        if *op == Op::First {
-            return Ok(arena
-                .elements(inputs[0])?
-                .and_then(|values| values.first())
-                .map_or(Value::Null, |value| arena.value(*value)));
+            return Ok(Out::NULL);
         }
         if matches!(op, Op::MatchesRole | Op::PathHasPrefix)
-            && let [Atom::Val(id), Atom::Str(key)] = inputs
+            && let (Atom::Val(id), Atom::Str(key)) = (a, b)
             && let Structured::Occurrence(row) = arena.values[id.0 as usize]
         {
             return Ok(self
-                .occurrence_mask(arena, *key, *op == Op::MatchesRole)?
+                .occurrence_mask(arena, key, *op == Op::MatchesRole)?
                 .get(row as usize)
                 .into());
         }
-        if *op == Op::TermListMatches && inputs.iter().all(|value| *value != Atom::Null) {
-            let terms = arena.elements(inputs[1])?.ok_or("Missing term list.")?;
-            if terms.is_empty() {
-                return Ok(value!([]));
-            }
-            let key = (inputs[1], inputs[2], inputs[3]);
-            let expression = {
-                let mut cache = self.terms.lock().map_err(|_| "Term cache was poisoned.")?;
-                if let Some(expression) = cache.get(&key) {
-                    Arc::clone(expression)
-                } else {
-                    let alternation = terms
-                        .iter()
-                        .map(|value| {
-                            if let Atom::Str(id) = value {
-                                Ok(::regex::escape(arena.text(*id)))
-                            } else {
-                                Err("Invalid term.".into())
-                            }
-                        })
-                        .collect::<Result<Vec<_>>>()?
-                        .join("|");
-                    let Atom::Str(flags) = inputs[3] else {
-                        return Err("Missing term flags.".into());
-                    };
-                    let pattern =
-                        js_regex::term_pattern(&format!("(?:{alternation})"), arena.text(flags))
-                            .replace(
-                                &::regex::escape(&format!("(?:{alternation})")),
-                                &format!("(?:{alternation})"),
-                            );
-                    let expression =
-                        Arc::new(js_regex::JsRegex::new(&pattern, inputs[2].boolean())?);
-                    cache.insert(key, Arc::clone(&expression));
-                    expression
-                }
-            };
-            let Atom::Str(source) = inputs[0] else {
-                return Err("Missing term source.".into());
-            };
-            return Ok(value!(expression.matches(arena.text(source), None)?));
-        }
-        let values = inputs
-            .iter()
-            .map(|atom| arena.value(*atom))
-            .collect::<Vec<_>>();
-        self.operation(op, inputs, &values)
-    }
-    fn operation(&self, op: &Op, inputs: &[Atom], values: &[Value]) -> Result<Value> {
-        let a = values.first().unwrap_or(&Value::Null);
-        let b = values.get(1).unwrap_or(&Value::Null);
-        let c = values.get(2).unwrap_or(&Value::Null);
-        if !matches!(
-            op,
-            Op::List | Op::Object(_) | Op::Eq | Op::Ne | Op::IsNull | Op::Not
-        )
-            && values
-                .iter()
-                .enumerate()
-                .any(|(index, value)| value.is_null() && !(*op == Op::Slice && index == 2))
-        {
-            return Ok(Value::Null);
-        }
+        // Cheap operators (comparison, arithmetic, `get`, `count`, `first`) run in `vector`.
         Ok(match op {
-            Op::List => value!(values),
-            Op::Object(keys) => {
-                let mut object = Object::new();
-                for (name, value) in keys.iter().zip(values) {
-                    if !value.is_null() {
-                        object.insert(name.to_string(), value.clone());
-                    }
-                }
-                Value::object(object)
+            Op::Utf16Length => out!(text::utf16_length(string(arena, a)?)),
+            Op::CodePoints => out!(text::points(string(arena, a)?).count()),
+            Op::VisibleLength => out!(text::visible_length(string(arena, a)?)?),
+            Op::VisibleWords => out!(text::visible_words(string(arena, a)?)?),
+            Op::InteriorLineBreaks => out!(text::interior_line_breaks(string(arena, a)?)),
+            Op::Trim => out!(crate::join_policy::trim(string(arena, a)?)),
+            Op::Lower => out!(string(arena, a)?.to_lowercase()),
+            Op::NormalizeLineEndings => {
+                out!(string(arena, a)?.replace("\r\n", "\n").replace('\r', "\n"))
             }
-            Op::Get => deep_get(a, string(b)?),
-            Op::IsNull => value!(a.is_null()),
-            Op::Not => value!(!boolean(a)),
-            Op::Eq => value!(a == b),
-            Op::Ne => value!(a != b),
-            Op::Lt | Op::Le | Op::Gt | Op::Ge => {
-                let order = if a.is_string() && b.is_string() {
-                    text::code_unit_compare(string(a)?, string(b)?)
-                } else {
-                    number(a)?
-                        .partial_cmp(&number(b)?)
-                        .ok_or("Invalid numeric comparison.")?
-                };
-                value!(match op {
-                    Op::Lt => order.is_lt(),
-                    Op::Le => order.is_le(),
-                    Op::Gt => order.is_gt(),
-                    _ => order.is_ge(),
-                })
-            }
-            Op::In => value!(list(b)?.contains(a)),
-            Op::Add => value!(
-                values
-                    .iter()
-                    .map(number)
-                    .collect::<Result<Vec<_>>>()?
-                    .iter()
-                    .sum::<f64>()
-            ),
-            Op::Mul => value!(
-                values
-                    .iter()
-                    .map(number)
-                    .collect::<Result<Vec<_>>>()?
-                    .iter()
-                    .product::<f64>()
-            ),
-            Op::Sub => value!(number(a)? - number(b)?),
-            Op::Div => value!(number(a)? / number(b)?),
-            Op::Min | Op::Max => {
-                let numbers = values.iter().map(number).collect::<Result<Vec<_>>>()?;
-                value!(
-                    numbers
-                        .into_iter()
-                        .reduce(if *op == Op::Min { f64::min } else { f64::max })
-                )
-            }
-            Op::Round => {
-                let factor = 10f64.powf(number(b)?);
-                value!((number(a)? * factor + 0.5).floor() / factor)
-            }
-            Op::Utf16Length => value!(text::utf16_length(string(a)?)),
-            Op::CodePoints => value!(text::points(string(a)?).count()),
-            Op::VisibleLength => value!(text::visible_length(string(a)?)?),
-            Op::VisibleWords => value!(text::visible_words(string(a)?)?),
-            Op::InteriorLineBreaks => value!(text::interior_line_breaks(string(a)?)),
-            Op::Trim => value!(crate::join_policy::trim(string(a)?)),
-            Op::Lower => value!(string(a)?.to_lowercase()),
-            Op::NormalizeLineEndings => value!(string(a)?.replace("\r\n", "\n").replace('\r', "\n")),
             Op::Slice => {
-                let source = js_regex::units(string(a)?);
+                let source = js_regex::units(string(arena, a)?);
                 let len = source.len() as i64;
-                let bound = |number: &Value, default| {
-                    number.as_i64().map_or(default, |value| {
-                        if value < 0 {
-                            (len + value).max(0)
-                        } else {
-                            value.min(len)
-                        }
+                let bound = |atom: Atom, default| {
+                    let Atom::Int(value) = atom else {
+                        return default as usize;
+                    };
+                    (if value < 0 {
+                        (len + value).max(0)
+                    } else {
+                        value.min(len)
                     }) as usize
                 };
                 let start = bound(b, 0);
                 let end = bound(c, len).max(start);
-                value!(js_regex::view(&source[start..end]))
+                out!(js_regex::view(&source[start..end]))
             }
-            Op::Concat => value!(
-                values
+            Op::Concat => out!(
+                inputs
                     .iter()
-                    .map(string)
+                    .map(|atom| string(arena, *atom))
                     .collect::<Result<Vec<_>>>()?
                     .concat()
             ),
-            Op::StartsWith => {
-                value!(js_regex::units(string(a)?).starts_with(&js_regex::units(string(b)?)))
-            }
-            Op::EndsWith => {
-                value!(js_regex::units(string(a)?).ends_with(&js_regex::units(string(b)?)))
-            }
+            Op::StartsWith => out!(
+                js_regex::units(string(arena, a)?).starts_with(&js_regex::units(string(arena, b)?))
+            ),
+            Op::EndsWith => out!(
+                js_regex::units(string(arena, a)?).ends_with(&js_regex::units(string(arena, b)?))
+            ),
             Op::Contains => {
-                let source = js_regex::units(string(a)?);
-                let needle = js_regex::units(string(b)?);
-                value!(needle.is_empty() || source.windows(needle.len()).any(|part| part == needle))
+                let source = js_regex::units(string(arena, a)?);
+                let needle = js_regex::units(string(arena, b)?);
+                out!(needle.is_empty() || source.windows(needle.len()).any(|part| part == needle))
             }
             Op::CountOccurrences => {
-                let source = js_regex::units(string(a)?);
-                let needle = js_regex::units(string(b)?);
-                let mut count = 0;
+                let source = js_regex::units(string(arena, a)?);
+                let needle = js_regex::units(string(arena, b)?);
+                let mut count = 0usize;
                 let mut offset = 0;
                 if !needle.is_empty() {
                     while offset + needle.len() <= source.len() {
@@ -395,13 +323,13 @@ impl<'a> Kernel<'a> {
                         }
                     }
                 }
-                value!(count)
+                out!(count)
             }
             Op::FindAll => {
-                let source = js_regex::units(string(a)?);
-                let needles = list(b)?
+                let source = js_regex::units(string(arena, a)?);
+                let needles = list(arena, b)?
                     .iter()
-                    .map(|value| Ok(js_regex::units(string(value)?)))
+                    .map(|value| Ok(js_regex::units(string(arena, *value)?)))
                     .collect::<Result<Vec<_>>>()?;
                 let mut found = Vec::new();
                 let mut offset = 0;
@@ -410,13 +338,17 @@ impl<'a> Kernel<'a> {
                         .iter()
                         .find(|needle| !needle.is_empty() && source[offset..].starts_with(needle))
                     {
-                        found.push(value!({"match":js_regex::view(needle),"start":offset,"end":offset + needle.len()}));
+                        found.push(js_regex::Match {
+                            text: js_regex::view(needle),
+                            start: offset,
+                            end: offset + needle.len(),
+                        });
                         offset += needle.len();
                     } else {
                         offset += 1;
                     }
                 }
-                value!(found)
+                out!(found)
             }
             Op::AnyChar
             | Op::AllChars
@@ -425,21 +357,8 @@ impl<'a> Kernel<'a> {
             | Op::LeadingClass
             | Op::TrailingClass
             | Op::Runs => {
-                let class_id = inputs[1];
-                let class = {
-                    let mut classes = self
-                        .classes
-                        .lock()
-                        .map_err(|_| "Character-class cache was poisoned.")?;
-                    if let Some(class) = classes.get(&class_id) {
-                        Arc::clone(class)
-                    } else {
-                        let class = Arc::new(text::CharacterClass::compile(b)?);
-                        classes.insert(class_id, Arc::clone(&class));
-                        class
-                    }
-                };
-                let points = text::code_points(string(a)?);
+                let class = self.class(arena, b)?;
+                let points = text::code_points(string(arena, a)?);
                 let start = points
                     .iter()
                     .take_while(|point| class.contains(**point))
@@ -451,25 +370,25 @@ impl<'a> Kernel<'a> {
                         .take_while(|point| class.contains(**point))
                         .count();
                 match op {
-                    Op::AnyChar => value!(points.iter().any(|point| class.contains(*point))),
-                    Op::AllChars => value!(points.iter().all(|point| class.contains(*point))),
-                    Op::RemoveClass => value!(text::from_points(
+                    Op::AnyChar => out!(points.iter().any(|point| class.contains(*point))),
+                    Op::AllChars => out!(points.iter().all(|point| class.contains(*point))),
+                    Op::RemoveClass => out!(text::from_points(
                         points.into_iter().filter(|point| !class.contains(*point))
                     )),
-                    Op::LeadingClass => value!(text::from_points(points[..start].iter().copied())),
-                    Op::TrailingClass => value!(text::from_points(points[end..].iter().copied())),
+                    Op::LeadingClass => out!(text::from_points(points[..start].iter().copied())),
+                    Op::TrailingClass => out!(text::from_points(points[end..].iter().copied())),
                     Op::TrimClass => {
-                        let side = string(c)?;
+                        let side = string(arena, c)?;
                         let begin = if side == "end" { 0 } else { start };
                         let end = if side == "start" {
                             points.len()
                         } else {
                             end.max(begin)
                         };
-                        value!(text::from_points(points[begin..end].iter().copied()))
+                        out!(text::from_points(points[begin..end].iter().copied()))
                     }
                     _ => {
-                        let mut runs = 0;
+                        let mut runs = 0usize;
                         let mut length = 0;
                         let minimum = number(c)? as usize;
                         for point in points.into_iter().chain([0x110000]) {
@@ -482,155 +401,172 @@ impl<'a> Kernel<'a> {
                                 length = 0;
                             }
                         }
-                        value!(runs)
+                        out!(runs)
                     }
                 }
             }
-            Op::RegexMatches => value!(self.regex_matches(
-                string(a)?,
-                string(b)?,
-                c["caseSensitive"].as_bool().unwrap_or(true),
-                c["cap"].as_u64().map(|cap| cap as usize)
+            Op::RegexMatches => out!(self.regex_matches(
+                string(arena, a)?,
+                string(arena, b)?,
+                arena.get_path(c, "caseSensitive") != Atom::Bool(false),
+                count(arena.get_path(c, "cap")).map(|cap| cap as usize)
             )?),
-            Op::RegexTest => value!(
+            Op::RegexTest => out!(
                 !self
-                    .regex_matches(string(a)?, string(b)?, !string(c)?.contains('i'), Some(1))?
+                    .regex_matches(
+                        string(arena, a)?,
+                        string(arena, b)?,
+                        !string(arena, c)?.contains('i'),
+                        Some(1)
+                    )?
                     .is_empty()
             ),
-            Op::TermMatches => value!(self.regex_matches(
-                string(a)?,
-                &js_regex::term_pattern(string(b)?, "lmn"),
-                boolean(c),
+            Op::TermMatches => out!(self.regex_matches(
+                string(arena, a)?,
+                &js_regex::term_pattern(string(arena, b)?, "lmn"),
+                c.boolean(),
                 None
             )?),
-            Op::TermListMatches => return Err("Term matcher requires typed inputs.".into()),
-            Op::Count => value!(list(a)?.len()),
-            Op::Flatten => value!(
-                list(a)?
-                    .iter()
-                    .map(list)
-                    .collect::<Result<Vec<_>>>()?
-                    .concat()
-            ),
+            Op::TermListMatches => self.term_list_matches(arena, inputs)?,
+            Op::Flatten => {
+                let mut flattened = Vec::new();
+                for value in list(arena, a)? {
+                    flattened.extend_from_slice(list(arena, *value)?);
+                }
+                atoms(&flattened)
+            }
             Op::Distinct => {
-                let mut result = Vec::new();
-                for value in list(a)? {
-                    if !result.contains(value) {
-                        result.push(value.clone());
+                let mut distinct = Vec::<Atom>::new();
+                for value in list(arena, a)? {
+                    if !distinct.iter().any(|seen| arena.equal(*seen, *value)) {
+                        distinct.push(*value);
                     }
                 }
-                value!(result)
+                atoms(&distinct)
             }
-            Op::First => list(a)?.first().cloned().unwrap_or(Value::Null),
-            Op::Take => value!(
-                list(a)?
+            Op::Take => {
+                let values = list(arena, a)?;
+                atoms(&values[..values.len().min(number(b)? as usize)])
+            }
+            Op::Drop => {
+                let values = list(arena, a)?;
+                atoms(&values[values.len().min(number(b)? as usize)..])
+            }
+            Op::ConcatLists => {
+                let mut joined = Vec::new();
+                for value in inputs {
+                    joined.extend_from_slice(list(arena, *value)?);
+                }
+                atoms(&joined)
+            }
+            Op::Minus => {
+                let removed = list(arena, b).unwrap_or(&[]);
+                Out::List(
+                    list(arena, a)?
+                        .iter()
+                        .filter(|value| !removed.iter().any(|other| arena.equal(*other, **value)))
+                        .map(|value| Out::Atom(*value))
+                        .collect(),
+                )
+            }
+            Op::Zip => Out::List(
+                list(arena, a)?
                     .iter()
-                    .take(number(b)? as usize)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            ),
-            Op::Drop => value!(
-                list(a)?
-                    .iter()
-                    .skip(number(b)? as usize)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            ),
-            Op::ConcatLists => value!(
-                values
-                    .iter()
-                    .map(list)
-                    .collect::<Result<Vec<_>>>()?
-                    .concat()
-            ),
-            Op::Minus => value!(
-                list(a)?
-                    .iter()
-                    .filter(|value| !list(b).unwrap_or(&[]).contains(value))
-                    .cloned()
-                    .collect::<Vec<_>>()
-            ),
-            Op::Zip => value!(
-                list(a)?
-                    .iter()
-                    .zip(list(b)?)
-                    .map(|(a, b)| value!([a, b]))
-                    .collect::<Vec<_>>()
+                    .zip(list(arena, b)?)
+                    .map(|(a, b)| atoms(&[*a, *b]))
+                    .collect(),
             ),
             Op::SortByStart => {
-                let mut values = list(a)?.to_vec();
-                values.sort_by_key(|value| value["start"].as_u64().unwrap_or(0));
-                value!(values)
+                let mut values = list(arena, a)?.to_vec();
+                values.sort_by_key(|value| count(arena.get_path(*value, "start")).unwrap_or(0));
+                atoms(&values)
             }
-            Op::MatchesRole => value!(
+            Op::MatchesRole => out!(
                 self.roles
-                    .get(string(b)?)
-                    .is_some_and(|role| role_matches(&a["location"], role))
+                    .get(string(arena, b)?)
+                    .is_some_and(|role| role_matches(arena, arena.get_path(a, "location"), role))
             ),
-            Op::PathHasPrefix => value!(
-                a["location"]["objectPath"]
-                    .as_str()
-                    .is_some_and(|path| path.starts_with(b.as_str().unwrap_or("")))
-            ),
-            Op::FormatPattern => Value::from(grammar::format_pattern(string(a)?, string(b)?)),
+            Op::PathHasPrefix => out!(path_has_prefix(
+                arena,
+                arena.get_path(a, "location"),
+                optional_text(arena, b).unwrap_or("")
+            )),
+            Op::FormatPattern => out!(grammar::format_pattern(
+                string(arena, a)?,
+                string(arena, b)?
+            )),
             Op::FormatArgumentNames | Op::FormatArgumentOrder => {
-                let mut names = Vec::new();
-                for argument in a["arguments"]
-                    .as_array()
-                    .ok_or("Missing format arguments.")?
-                {
-                    let name = argument["name"].clone();
-                    if !names.contains(&name) {
+                let arguments = arena
+                    .elements(arena.get_path(a, "arguments"))
+                    .ok()
+                    .flatten()
+                    .ok_or("Missing format arguments.")?;
+                let mut names = Vec::<Atom>::new();
+                for argument in arguments {
+                    let name = arena.get_path(*argument, "name");
+                    if !names.iter().any(|seen| arena.equal(*seen, name)) {
                         names.push(name);
                     }
                 }
                 if *op == Op::FormatArgumentNames {
                     names.sort_by(|a, b| {
-                        text::code_unit_compare(a.as_str().unwrap_or(""), b.as_str().unwrap_or(""))
+                        text::code_unit_compare(
+                            optional_text(arena, *a).unwrap_or(""),
+                            optional_text(arena, *b).unwrap_or(""),
+                        )
                     });
                 }
-                value!(names)
+                atoms(&names)
             }
             Op::FormatModifiers => {
-                let mut modifiers = a["modifiers"]
-                    .as_array()
+                let mut modifiers = arena
+                    .elements(arena.get_path(a, "modifiers"))
+                    .ok()
+                    .flatten()
                     .ok_or("Missing format modifiers.")?
                     .iter()
-                    .map(
-                        |modifier| value!({"argument":modifier["argument"],"name":modifier["name"]}),
-                    )
+                    .map(|modifier| {
+                        (
+                            arena.get_path(*modifier, "argument"),
+                            arena.get_path(*modifier, "name"),
+                        )
+                    })
                     .collect::<Vec<_>>();
+                let text = |atom| optional_text(arena, atom).unwrap_or("");
                 modifiers.sort_by(|a, b| {
                     self.collator
-                        .compare(
-                            a["argument"].as_str().unwrap_or(""),
-                            b["argument"].as_str().unwrap_or(""),
-                        )
-                        .then_with(|| {
-                            self.collator.compare(
-                                a["name"].as_str().unwrap_or(""),
-                                b["name"].as_str().unwrap_or(""),
-                            )
-                        })
+                        .compare(text(a.0), text(b.0))
+                        .then_with(|| self.collator.compare(text(a.1), text(b.1)))
                 });
-                value!(modifiers)
+                Out::List(
+                    modifiers
+                        .into_iter()
+                        .map(|(argument, name)| out!({"argument": argument, "name": name}))
+                        .collect(),
+                )
             }
-            Op::FormatIssues => a["issues"].clone(),
-            Op::FormatCompiled => a["compiled"].clone(),
-            Op::FormatRenameArgument => {
-                grammar::rename_argument(string(a)?, string(b)?, string(c)?, string(&values[3])?)
-                    .map_or(Value::Null, Value::string)
+            Op::FormatRenameArgument => out!(grammar::rename_argument(
+                string(arena, a)?,
+                string(arena, b)?,
+                string(arena, c)?,
+                string(arena, inputs[3])?
+            )),
+            Op::RichTextCounts => out!(grammar::rich_text_counts(string(arena, a)?)),
+            Op::RichTextValid => out!(text::rich_valid(string(arena, a)?, string(arena, b)?)),
+            Op::RichTextTagBalance => out!(text::rich_balance(string(arena, a)?)?),
+            Op::CompareRichTextTags => {
+                out!(text::compare_tags(string(arena, a)?, string(arena, b)?)?)
             }
-            Op::RichTextCounts => grammar::rich_text_counts(string(a)?),
-            Op::RichTextValid => value!(text::rich_valid(string(a)?, string(b)?)),
-            Op::RichTextTagBalance => text::rich_balance(string(a)?)?,
-            Op::CompareRichTextTags => text::compare_tags(string(a)?, string(b)?)?,
             Op::WithoutOptionalArgumentTags => {
-                value!(text::without_optional_tags(string(a)?, list(b)?)?)
+                let arguments = list(arena, b)?
+                    .iter()
+                    .filter_map(|value| optional_text(arena, *value))
+                    .collect::<Vec<_>>();
+                out!(text::without_optional_tags(string(arena, a)?, &arguments)?)
             }
-            Op::UnrealWhitespace => text::unreal_whitespace(string(a)?),
-            Op::UnrealUnsafeWhitespace => value!(text::unsafe_whitespace(string(a)?)),
-            Op::FormatBraceBalance => text::brace_balance(string(a)?),
+            Op::UnrealWhitespace => out!(text::unreal_whitespace(string(arena, a)?)),
+            Op::UnrealUnsafeWhitespace => out!(text::unsafe_whitespace(string(arena, a)?)),
+            Op::FormatBraceBalance => out!(text::brace_balance(string(arena, a)?)),
             _ => {
                 return Err(Error::new(
                     ErrorCode::InvalidInput,

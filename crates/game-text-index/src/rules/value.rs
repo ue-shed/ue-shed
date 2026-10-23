@@ -355,12 +355,14 @@ impl Serialize for Value {
         }
     }
 }
+#[cfg(test)]
 macro_rules! value {
     ([]) => { $crate::rules::value::Value::from(Vec::<$crate::rules::value::Value>::new()) };
     ([$($value:expr),* $(,)?]) => { $crate::rules::value::Value::from(vec![$($crate::rules::value::Value::from(&$value)),*]) };
     ({$($key:literal: $value:expr),* $(,)?}) => { $crate::rules::value::Value::object($crate::rules::value::Object(vec![$(($key.to_owned(), $crate::rules::value::Value::from(&$value))),*])) };
     ($value:expr) => { $crate::rules::value::Value::from(&$value) };
 }
+#[cfg(test)]
 pub(crate) use value;
 
 impl<'de> serde::Deserialize<'de> for Value {
@@ -417,23 +419,5 @@ impl<'de> serde::Deserialize<'de> for Value {
             }
         }
         decoder.deserialize_any(Visitor)
-    }
-}
-
-impl From<super::grammar::Pattern> for Value {
-    fn from(pattern: super::grammar::Pattern) -> Self {
-        let arguments = pattern
-            .arguments
-            .into_iter()
-            .map(
-                |argument| value!({"name":argument.name,"start":argument.start,"end":argument.end}),
-            )
-            .collect::<Vec<_>>();
-        let modifiers = pattern.modifiers.into_iter().map(|modifier| {
-            let forms = modifier.forms.into_iter().map(|form| value!({"name":form.name,"value":form.value})).collect::<Vec<_>>();
-            value!({"name":modifier.name,"argument":modifier.argument,"forms":forms,"start":modifier.start,"end":modifier.end,"depth":modifier.depth})
-        }).collect::<Vec<_>>();
-        let issues = pattern.issues.into_iter().map(|issue| value!({"code":issue.code,"modifier":issue.modifier,"argument":issue.argument,"forms":issue.forms,"position":issue.position})).collect::<Vec<_>>();
-        value!({"compiled":pattern.compiled,"arguments":arguments,"modifiers":modifiers,"issues":issues})
     }
 }

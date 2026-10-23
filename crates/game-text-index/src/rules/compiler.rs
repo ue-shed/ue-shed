@@ -193,7 +193,10 @@ impl Op {
     /// The element variable a list operator binds for its body.
     pub fn binding(&self) -> Option<&str> {
         match self {
-            Self::Filter(name) | Self::Map(name) | Self::FlatMap(name) | Self::Any(name)
+            Self::Filter(name)
+            | Self::Map(name)
+            | Self::FlatMap(name)
+            | Self::Any(name)
             | Self::All(name) => Some(name),
             Self::SortCodeUnit | Self::SortLocale => Some("item"),
             _ => None,
@@ -415,7 +418,11 @@ impl Compiler {
         Ok(id)
     }
     fn literal(&mut self, value: &Value) -> Result<NodeId> {
-        self.node(Op::Lit(Literal::read(value)?), Vec::new(), literal_type(value))
+        self.node(
+            Op::Lit(Literal::read(value)?),
+            Vec::new(),
+            literal_type(value),
+        )
     }
     fn expression(&mut self, value: &Value, rule: &Rule) -> Result<NodeId> {
         let Value::Object(object) = value else {

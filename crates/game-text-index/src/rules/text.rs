@@ -1,11 +1,37 @@
+use super::columns::{Arena, Atom, Structured};
 use super::grammar::rich_text_counts;
 use super::regex::{units, view};
-use super::value::{Value, value};
 use crate::join_policy::{js_space, trim};
 use crate::{Error, ErrorCode, Result};
-#[cfg(test)]
-use serde_json::json;
 use std::collections::BTreeMap;
+
+/// Opening and closing counts of braces or rich-text tags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Balance {
+    pub opening: usize,
+    pub closing: usize,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RichBalance {
+    pub opening: usize,
+    pub closing: usize,
+    pub xml_closings: Vec<String>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TagComparison {
+    pub source_tags: Vec<String>,
+    pub translation_tags: Vec<String>,
+    pub missing: Vec<String>,
+    pub added: Vec<String>,
+    /// `(source, translation)` spellings of the same tag.
+    pub changed: Vec<(String, String)>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Whitespace {
+    pub leading: String,
+    pub trailing: String,
+    pub line_breaks: usize,
+}
 
 // Byte ranges are over the reversible scalar view. ASCII syntax bytes never split a scalar.
 #[derive(Clone, Copy, Debug)]
@@ -254,35 +280,58 @@ pub enum CharacterClass {
     Union(Vec<Self>),
 }
 impl CharacterClass {
-    pub fn compile(value: &Value) -> Result<Self> {
-        Ok(match value {
-            Value::String(name) if name.as_ref() == "jsSpace" => Self::JsSpace,
-            Value::String(name) if name.as_ref() == "textCharWhitespace" => Self::TextSpace,
-            Value::String(name) if name.as_ref() == "wide" => Self::Wide,
-            Value::Object(value) if value.contains_key("chars") => Self::Chars(code_points(
-                value["chars"].as_str().ok_or("Invalid character list.")?,
-            )),
-            Value::Object(value) if value.contains_key("category") => {
-                Self::Category(regex::Regex::new(&format!(
-                    r"\A\p{{{}}}\z",
-                    value["category"]
-                        .as_str()
-                        .ok_or("Invalid character category.")?
-                ))?)
-            }
-            Value::Object(value) if value.contains_key("union") => Self::Union(
-                value["union"]
-                    .as_array()
-                    .ok_or("Invalid character-class union.")?
+    /// Compile a class from its rule constant: a named class, or `{chars}`, `{category}` or
+    /// `{union}`.
+    pub fn compile(arena: &Arena, class: Atom) -> Result<Self> {
+        let text = |atom| match atom {
+            Atom::Str(id) => Some(arena.text(id)),
+            _ => None,
+        };
+        let field = |name: &str| match class {
+            Atom::Val(id) => match &arena.values[id.0 as usize] {
+                Structured::Object(fields) => fields
                     .iter()
-                    .map(Self::compile)
-                    .collect::<Result<_>>()?,
-            ),
-            _ => {
+                    .find(|(key, _)| arena.text(*key) == name)
+                    .map(|(_, value)| *value),
+                _ => None,
+            },
+            _ => None,
+        };
+        Ok(match text(class) {
+            Some("jsSpace") => Self::JsSpace,
+            Some("textCharWhitespace") => Self::TextSpace,
+            Some("wide") => Self::Wide,
+            Some(_) => {
                 return Err(Error::new(
                     ErrorCode::InvalidInput,
                     "Invalid rule character class.",
                 ));
+            }
+            None => {
+                if let Some(chars) = field("chars") {
+                    Self::Chars(code_points(text(chars).ok_or("Invalid character list.")?))
+                } else if let Some(category) = field("category") {
+                    Self::Category(regex::Regex::new(&format!(
+                        r"\A\p{{{}}}\z",
+                        text(category).ok_or("Invalid character category.")?
+                    ))?)
+                } else if let Some(union) = field("union") {
+                    Self::Union(
+                        arena
+                            .elements(union)
+                            .ok()
+                            .flatten()
+                            .ok_or("Invalid character-class union.")?
+                            .iter()
+                            .map(|class| Self::compile(arena, *class))
+                            .collect::<Result<_>>()?,
+                    )
+                } else {
+                    return Err(Error::new(
+                        ErrorCode::InvalidInput,
+                        "Invalid rule character class.",
+                    ));
+                }
             }
         })
     }
@@ -337,8 +386,15 @@ pub fn line_breaks(text: &str) -> usize {
 pub fn interior_line_breaks(text: &str) -> usize {
     line_breaks(trim(text))
 }
-pub fn unreal_whitespace(text: &str) -> Value {
-    value!({"leading":text.chars().take_while(|c| text_space(*c)).collect::<String>(),"trailing":text.chars().rev().take_while(|c| text_space(*c)).collect::<String>().chars().rev().collect::<String>(),"lineBreaks":line_breaks(text)})
+pub fn unreal_whitespace(text: &str) -> Whitespace {
+    // An all-whitespace text is both its leading and its trailing run.
+    let leading = text.len() - text.trim_start_matches(text_space).len();
+    let trailing = text.trim_end_matches(text_space).len();
+    Whitespace {
+        leading: text[..leading].to_owned(),
+        trailing: text[trailing..].to_owned(),
+        line_breaks: line_breaks(text),
+    }
 }
 pub fn unsafe_whitespace(text: &str) -> bool {
     [text.chars().next(), text.chars().next_back()]
@@ -346,7 +402,7 @@ pub fn unsafe_whitespace(text: &str) -> bool {
         .flatten()
         .any(|c| c != '\r' && c != '\n' && text_space(c))
 }
-pub fn brace_balance(text: &str) -> Value {
+pub fn brace_balance(text: &str) -> Balance {
     let mut opening = 0;
     let mut closing = 0;
     let mut escaped = false;
@@ -361,7 +417,7 @@ pub fn brace_balance(text: &str) -> Value {
             closing += 1;
         }
     }
-    value!({"opening":opening,"closing":closing})
+    Balance { opening, closing }
 }
 
 fn tag_names(text: &str) -> Result<Vec<String>> {
@@ -372,9 +428,9 @@ fn tag_names(text: &str) -> Result<Vec<String>> {
 pub fn rich_valid(source: &str, translation: &str) -> bool {
     let actual = rich_text_counts(translation);
     let expected = rich_text_counts(source);
-    actual["opening"] == actual["closing"] || actual == expected
+    actual.opening == actual.closing || actual == expected
 }
-pub fn rich_balance(text: &str) -> Result<Value> {
+pub fn rich_balance(text: &str) -> Result<RichBalance> {
     let bytes = text.as_bytes();
     let identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
     let cpp_scope = bytes
@@ -432,14 +488,18 @@ pub fn rich_balance(text: &str) -> Result<Value> {
             at = close + 1;
         }
     }
-    Ok(value!({"opening":opening,"closing":closing,"xmlClosings":xml_closings}))
+    Ok(RichBalance {
+        opening,
+        closing,
+        xml_closings,
+    })
 }
 
-pub fn compare_tags(source: &str, translation: &str) -> Result<Value> {
+pub fn compare_tags(source: &str, translation: &str) -> Result<Option<TagComparison>> {
     let source = tag_names(source)?;
     let translation = tag_names(translation)?;
     if source.is_empty() && translation.is_empty() {
-        return Ok(Value::Null);
+        return Ok(None);
     }
     type Counts = BTreeMap<String, usize>;
     let mut groups = BTreeMap::<String, (Counts, Counts)>::new();
@@ -472,35 +532,29 @@ pub fn compare_tags(source: &str, translation: &str) -> Result<Value> {
         if source_count > 0 {
             for form in translation.keys() {
                 if !source.contains_key(form) {
-                    changed.push(value!({"source":first(source),"translation":form}));
+                    changed.push((first(source), form.clone()));
                 }
             }
         }
     }
     missing.sort_by(|a, b| code_unit_compare(a, b));
     added.sort_by(|a, b| code_unit_compare(a, b));
-    changed.sort_by(|a, b| {
-        code_unit_compare(
-            a["source"].as_str().unwrap_or(""),
-            b["source"].as_str().unwrap_or(""),
-        )
-        .then_with(|| {
-            code_unit_compare(
-                a["translation"].as_str().unwrap_or(""),
-                b["translation"].as_str().unwrap_or(""),
-            )
-        })
-    });
+    changed
+        .sort_by(|a, b| code_unit_compare(&a.0, &b.0).then_with(|| code_unit_compare(&a.1, &b.1)));
     let unique = |mut values: Vec<String>| {
         values.sort_by(|a, b| code_unit_compare(a, b));
         values.dedup();
         values
     };
-    Ok(
-        value!({"sourceTags":unique(source),"translationTags":unique(translation),"missing":missing,"added":added,"changed":changed}),
-    )
+    Ok(Some(TagComparison {
+        source_tags: unique(source),
+        translation_tags: unique(translation),
+        missing,
+        added,
+        changed,
+    }))
 }
-pub fn without_optional_tags(text: &str, arguments: &[Value]) -> Result<String> {
+pub fn without_optional_tags(text: &str, arguments: &[&str]) -> Result<String> {
     let bytes = text.as_bytes();
     let mut output = String::new();
     let mut offset = 0;
@@ -531,10 +585,7 @@ pub fn without_optional_tags(text: &str, arguments: &[Value]) -> Result<String> 
             continue;
         }
         at = stop + 4;
-        if !arguments
-            .iter()
-            .any(|value| value.as_str() == Some(&text[content..stop]))
-        {
+        if !arguments.contains(&&text[content..stop]) {
             continue;
         }
         output.push_str(&text[offset..start]);
@@ -558,12 +609,16 @@ mod tests {
         assert_eq!(visible_length("a|plural(one=\"x)\\\"y\",other=z)b")?, 2);
         assert_eq!(visible_words("a<b/>b</>c")?, 3);
         assert_eq!(
-            without_optional_tags("<b>{Name}</><b>{Other}</>", &[value!("Name")])?,
+            without_optional_tags("<b>{Name}</><b>{Other}</>", &["Name"])?,
             "{Name}<b>{Other}</>"
         );
         assert_eq!(
             rich_balance("<A><B></></></A> <{C}> <b a='{x}'>")?,
-            json!({"opening":4,"closing":2,"xmlClosings":["A"]})
+            RichBalance {
+                opening: 4,
+                closing: 2,
+                xml_closings: vec!["A".into()]
+            }
         );
         let text =
             crate::wtf8::Wtf8Buf::from_utf16(&[0xd800, 0x61, 0xdc00, 0xd83d, 0xde00]).into_view();
@@ -581,7 +636,10 @@ mod tests {
         );
         assert_eq!(
             rich_text_counts("<unclosed<BR>\r\n</>"),
-            json!({"opening":1,"closing":1})
+            Balance {
+                opening: 1,
+                closing: 1
+            }
         );
         Ok(())
     }
@@ -606,27 +664,42 @@ mod tests {
     fn rich_text_and_whitespace_keep_existing_tests() -> Result<()> {
         assert_eq!(
             rich_balance("<invalid requirement type>")?,
-            json!({"opening":0,"closing":0,"xmlClosings":[]})
+            RichBalance {
+                opening: 0,
+                closing: 0,
+                xml_closings: Vec::new()
+            }
         );
         assert_eq!(
-            rich_balance("GetWorld()->GetGameInstance()->GetSubsystem<UC_InputSubsystem>()")?["opening"],
+            rich_balance("GetWorld()->GetGameInstance()->GetSubsystem<UC_InputSubsystem>()")?
+                .opening,
             0
         );
-        assert_eq!(
-            rich_balance("<{playerColor}>{playerName}</>")?["opening"],
-            1
-        );
+        assert_eq!(rich_balance("<{playerColor}>{playerName}</>")?.opening, 1);
         assert_eq!(
             rich_text_counts("<broken<Tag>Text</>"),
-            json!({"opening":1,"closing":1})
+            Balance {
+                opening: 1,
+                closing: 1
+            }
         );
-        assert_eq!(rich_text_counts("<BR>"), json!({"opening":1,"closing":0}));
+        assert_eq!(
+            rich_text_counts("<BR>"),
+            Balance {
+                opening: 1,
+                closing: 0
+            }
+        );
         assert!(!rich_valid("<Em>Hello</>", "<Em>Hallo"));
         assert!(rich_valid("<Em>Hello", "<Different>Hallo"));
         assert!(rich_valid("Hello", "</><Em>Hallo"));
         assert_eq!(
             unreal_whitespace(" \tText\r\n\n"),
-            json!({"leading":" \t","trailing":"\r\n\n","lineBreaks":2})
+            Whitespace {
+                leading: " \t".into(),
+                trailing: "\r\n\n".into(),
+                line_breaks: 2
+            }
         );
         assert!(unsafe_whitespace("Text\u{1c}"));
         for text in ["\r\nText\n", "Text\u{a0}", "Text\u{2007}", "Text\u{202f}"] {

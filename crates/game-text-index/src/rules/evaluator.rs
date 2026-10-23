@@ -183,9 +183,8 @@ pub(super) enum Slot {
     Limit,
 }
 enum Computed {
-    Atom(Atom),
     List(Vec<Atom>),
-    Value(ScalarValue),
+    Out(super::out::Out),
     Limit,
 }
 #[derive(Clone, Copy)]
@@ -709,9 +708,13 @@ impl<'a> Evaluator<'a> {
                 for (word, failed) in bits.words.iter_mut().zip(&failures.words) {
                     *word &= !failed;
                 }
-                self.arena
-                    .recorder
-                    .kernel(node.op.name(), &started, selection.len(), selection.len(), 0);
+                self.arena.recorder.kernel(
+                    node.op.name(),
+                    &started,
+                    selection.len(),
+                    selection.len(),
+                    0,
+                );
                 return Ok(Column {
                     data: Data::Bool(bits),
                     nulls: failures.clone(),
@@ -735,9 +738,13 @@ impl<'a> Evaluator<'a> {
                         _ => {}
                     }
                 }
-                self.arena
-                    .recorder
-                    .kernel(node.op.name(), &started, selection.len(), selection.len(), 0);
+                self.arena.recorder.kernel(
+                    node.op.name(),
+                    &started,
+                    selection.len(),
+                    selection.len(),
+                    0,
+                );
                 return Ok(Column {
                     data: Data::Bool(bits),
                     nulls,
@@ -757,9 +764,13 @@ impl<'a> Evaluator<'a> {
             }
             let mut output = Column::from_atoms(&output, &mut self.arena)?;
             output.failed = failures;
-            self.arena
-                .recorder
-                .kernel(node.op.name(), &started, selection.len(), selection.len(), 0);
+            self.arena.recorder.kernel(
+                node.op.name(),
+                &started,
+                selection.len(),
+                selection.len(),
+                0,
+            );
             return Ok(output);
         }
         if !columns.is_empty()
@@ -863,32 +874,8 @@ impl<'a> Evaluator<'a> {
                     if node.op == Op::List {
                         return Ok(Computed::List(tuple.to_vec()));
                     }
-                    if node.op == Op::Get
-                        && let [value, Atom::Str(path)] = tuple.as_ref()
-                    {
-                        return Ok(Computed::Atom(arena.get_path(*value, arena.text(*path))));
-                    }
-                    if node.op == Op::First {
-                        return Ok(Computed::Atom(
-                            arena
-                                .elements(tuple[0])?
-                                .and_then(|values| values.first())
-                                .copied()
-                                .unwrap_or_default(),
-                        ));
-                    }
-                    if matches!(node.op, Op::FormatIssues | Op::FormatCompiled) {
-                        return Ok(Computed::Atom(arena.get_path(
-                            tuple[0],
-                            if node.op == Op::FormatIssues {
-                                "issues"
-                            } else {
-                                "compiled"
-                            },
-                        )));
-                    }
                     match kernel.run(arena, &node.op, tuple) {
-                        Ok(value) => Ok(Computed::Value(value)),
+                        Ok(value) => Ok(Computed::Out(value)),
                         Err(error) if error.code == ErrorCode::LimitExceeded => Ok(Computed::Limit),
                         Err(error) => Err(error),
                     }
@@ -897,9 +884,8 @@ impl<'a> Evaluator<'a> {
                 .collect::<Result<Vec<_>>>()?;
             for ((key, _), value) in batch.into_iter().zip(computed) {
                 let result = match value {
-                    Computed::Atom(value) => Slot::Value(value),
                     Computed::List(values) => Slot::Value(self.arena.list(values)?),
-                    Computed::Value(value) => Slot::Value(self.arena.intern(value)?),
+                    Computed::Out(value) => Slot::Value(self.arena.build(value)?),
                     Computed::Limit => Slot::Limit,
                 };
                 self.cache[cache].insert(key, result);
@@ -1043,7 +1029,7 @@ impl<'a> Evaluator<'a> {
                             }
                         })
                         .unwrap_or("en");
-                    return Ok(ScalarValue::from(super::grammar::validate_pattern(
+                    return Ok(super::out::Out::from(super::grammar::validate_pattern(
                         (**parsed).clone(),
                         culture,
                     )));
@@ -1051,12 +1037,11 @@ impl<'a> Evaluator<'a> {
                 let mut inputs = Vec::with_capacity(suffix.len() + 1);
                 inputs.push(Atom::Str(*text));
                 inputs.extend_from_slice(suffix);
-                self.kernel
-                    .run(&self.arena, &node.op, &inputs)
+                self.kernel.run(&self.arena, &node.op, &inputs)
             });
             for ((text, group), value) in batch.iter().zip(computed) {
                 let value = match value {
-                    Ok(value) => Slot::Value(self.arena.intern(value)?),
+                    Ok(value) => Slot::Value(self.arena.build(value)?),
                     Err(error) if error.code == ErrorCode::LimitExceeded => Slot::Limit,
                     Err(error) => return Err(error),
                 };
@@ -1111,7 +1096,9 @@ impl<'a> Evaluator<'a> {
             })
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
-        self.arena.recorder.kernel(node.op.name(), &measure, 0, 0, 0);
+        self.arena
+            .recorder
+            .kernel(node.op.name(), &measure, 0, 0, 0);
         let mut parents = Vec::new();
         let mut elements = Vec::new();
         let mut offsets = vec![0];

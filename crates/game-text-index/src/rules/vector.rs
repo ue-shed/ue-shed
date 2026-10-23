@@ -46,7 +46,7 @@ fn equal(arena: &Arena, a: Atom, b: Atom) -> bool {
             (Atom::Int(_) | Atom::Num(_), Atom::Int(_) | Atom::Num(_)) => {
                 number(a).ok() == number(b).ok()
             }
-            (Atom::Val(_), Atom::Val(_)) => arena.value(a) == arena.value(b),
+            (Atom::Val(_), Atom::Val(_)) => arena.equal(a, b),
             _ => false,
         }
 }

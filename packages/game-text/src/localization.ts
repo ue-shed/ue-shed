@@ -372,6 +372,19 @@ function groupByIdentity<A extends typeof LocalizationIdentity.Type>(
 	return grouped;
 }
 
+function collapsedPOEntries(file: LocalizationTargetEvidence["cultures"][number]["po"]) {
+	const groups = new Map<string, { entry: POEntry }[]>();
+	if (file.status !== "read" || !file.value.hasSourceText) return groups;
+	for (const entry of file.value.entries) {
+		if (entry.identity?.key !== "") continue;
+		const key = JSON.stringify([entry.identity.namespace, entry.msgid]);
+		const group = groups.get(key) ?? [];
+		group.push({ entry });
+		groups.set(key, group);
+	}
+	return groups;
+}
+
 /** Join gathered namespace/key, stripping package markers only from saved FText occurrences. */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
@@ -421,6 +434,10 @@ export function joinLocalizationTarget(
 		archives: groupByIdentity(
 			culture.archive.status === "read" ? culture.archive.value.entries : []
 		),
+		collapsedPos:
+			target.collapseMode === "IdenticalNamespaceAndSource"
+				? collapsedPOEntries(culture.po)
+				: undefined,
 		pos: groupByIdentity(
 			culture.po.status === "read"
 				? culture.po.value.entries.flatMap((entry) =>
@@ -544,7 +561,6 @@ export function joinLocalizationTarget(
 		const cultures: LocalizationCultureState[] = target.cultures.map((culture) => {
 			const index = cultureIndexes.find((item) => item.culture === culture);
 			const archives: readonly ArchiveEntry[] = index?.archives.get(key) ?? [];
-			const pos = index?.pos.get(key) ?? [];
 			const archive = archives[0] ?? null;
 			const nativeEntries = cultureIndexes
 				.find((item) => item.culture === target.nativeCulture)
@@ -557,6 +573,13 @@ export function joinLocalizationTarget(
 					target.nativeCulture,
 					nativeEntries?.length === 1 ? nativeEntries[0] : null
 				);
+			const pos =
+				index?.pos.get(key) ??
+				(row.identity &&
+					index?.collapsedPos?.get(
+						JSON.stringify([row.identity.namespace, expectedSource?.Text ?? source])
+					)) ??
+				[];
 			const po: POEntry | null = pos[0]?.entry ?? null;
 			const poValue = po?.msgstr["0"] ?? "";
 			const archiveAbsent =
@@ -569,8 +592,6 @@ export function joinLocalizationTarget(
 			if (!index || index.po.status === "failed") unknownReasons.push("missing_po");
 			if (archives.length > 1) unknownReasons.push("duplicate_archive_identity");
 			if (pos.length > 1) unknownReasons.push("duplicate_po_identity");
-			if (target.collapseMode === "IdenticalNamespaceAndSource")
-				unknownReasons.push("ambiguous_po_identity");
 			if (
 				(index?.archive.status === "read" || archiveAbsent) &&
 				archives.length <= 1 &&

@@ -13,32 +13,7 @@ export interface CorpusKnownDefect {
 	actual: typeof Schema.Json.Type;
 	rightAnswer: typeof Schema.Json.Type;
 }
-const cultures = ["en", "de", "fr", "ja"];
 export const corpusKnownDefects: readonly CorpusKnownDefect[] = [
-	...["collapse-unique-a", "collapse-unique-b"].flatMap((name) =>
-		cultures.map(
-			(culture): CorpusKnownDefect => ({
-				case: name,
-				defects: ["collapse-mode-identity"],
-				culture,
-				kind: "subject",
-				status: "defect",
-				why: "Each namespace/source pair identifies exactly one manifest key, and its archive is current. Unreal supports IdenticalNamespaceAndSource; a target-wide ambiguity is unjustified.",
-				actual: {
-					state: "unknown",
-					facts: ["translated", "unknown"],
-					unknownReasons: ["ambiguous_po_identity"],
-					problems: ["unchecked"]
-				},
-				rightAnswer: {
-					state: "translated",
-					facts: ["translated"],
-					unknownReasons: [],
-					problems: ["up_to_date"]
-				}
-			})
-		)
-	),
 	{
 		case: "empty-with-source-edge",
 		defects: ["empty-translation-whitespace"],

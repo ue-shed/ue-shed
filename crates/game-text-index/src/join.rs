@@ -48,8 +48,8 @@ pub(crate) const L_REASONS: usize = 9;
 /// A line's problems under a request that names no finding, classified through `text_problem`
 /// from the shared table, as the engine does. Queries classify per request instead.
 pub(crate) const L_PROBLEMS: usize = 11;
-/// v5 validates foreign archive sources against native archive translations, as Unreal does.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v5:";
+/// v6 joins namespace-collapsed PO entries by namespace and effective source.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v6:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -806,6 +806,27 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let mut visible_line = vec![false; joined.groups.len()];
     let mut cursors = vec![[0; 2]; cultures.len()];
     let mut native_cursor = 0;
+    let collapsed = target["collapseMode"] == "IdenticalNamespaceAndSource";
+    let collapsed_pos = joined
+        .pos
+        .iter()
+        .map(|file| {
+            let mut groups = HashMap::<(u32, u32), Vec<u32>>::new();
+            if collapsed && file.has_source {
+                for row in &file.order {
+                    let row = *row as usize;
+                    let c = &file.columns;
+                    if c[OPTIONS][row] & 16 == 0 && c[KEY][row] == empty {
+                        groups
+                            .entry((c[NS][row], c[SOURCE][row]))
+                            .or_default()
+                            .push(row as u32);
+                    }
+                }
+            }
+            groups
+        })
+        .collect::<Vec<_>>();
     let mut pending_sources = Vec::new();
     let mut pending_rows = Vec::new();
     for row in 0..joined.groups.len() {
@@ -1120,11 +1141,23 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             } else {
                 af.lookup(g.ns, g.key, &mut cursor[0])
             };
-            let (pr, pc) = if g.ns == ABSENT {
+            let expected_source = (first != ABSENT).then(|| {
+                native_override
+                    .filter(|_| Some(cultures[ci].as_str()) != native_culture)
+                    .unwrap_or((m[SOURCE][first as usize], m[SOURCE_EXTRA][first as usize]))
+            });
+            let (mut pr, mut pc) = if g.ns == ABSENT {
                 (ABSENT, 0)
             } else {
                 pf.lookup(g.ns, g.key, &mut cursor[1])
             };
+            if pc == 0
+                && let Some(expected) = expected_source
+                && let Some(entries) = collapsed_pos[ci].get(&(g.ns, expected.0))
+            {
+                pr = entries[0];
+                pc = entries.len();
+            }
             let a = &af.columns;
             let p = &pf.columns;
             let mut unknown = reasons;
@@ -1140,9 +1173,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             }
             if pc > 1 {
                 unknown |= 1 << 5;
-            }
-            if target["collapseMode"] == "IdenticalNamespaceAndSource" {
-                unknown |= 1 << 16;
             }
             let at = if ar == ABSENT {
                 empty
@@ -1168,9 +1198,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 facts |= 1 << 3;
             }
             let matches = ac == 1 && g.me - g.ms == 1 && {
-                let expected = native_override
-                    .filter(|_| Some(cultures[ci].as_str()) != native_culture)
-                    .unwrap_or((m[SOURCE][first as usize], m[SOURCE_EXTRA][first as usize]));
+                let expected = expected_source.ok_or("manifest source missing")?;
                 a[SOURCE][ar as usize] == expected.0
                     && same_extra(
                         joined.string(a[SOURCE_EXTRA][ar as usize]),

@@ -250,6 +250,11 @@ pub(crate) fn refresh(
     if input.force == Some(true) {
         return fallback("forced");
     }
+    // A collapsed PO row can feed several identities; the keyed delta path cannot identify
+    // all of its dependents. Rebuild until it has namespace/source dependency edges.
+    if input.target["collapseMode"] == "IdenticalNamespaceAndSource" {
+        return fallback("collapsed-po-identity");
+    }
     let Some(previous_key) = store.root["active"]["joined"].as_str().map(str::to_owned) else {
         return fallback("no-base");
     };

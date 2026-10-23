@@ -591,7 +591,7 @@ describe("localization identity join and precedence", () => {
 			...evidence(),
 			target: { ...target, collapseMode: "IdenticalNamespaceAndSource" }
 		});
-		expect(mark(corpus(), collapsed).unknownReasons).toContain("ambiguous_po_identity");
+		expect(mark(corpus(), collapsed).unknownReasons).not.toContain("ambiguous_po_identity");
 	});
 	it("keeps authored String Table namespaces when resolving references and joining evidence", () => {
 		const own = unit("K", "Source", "Content/Text/Table.uasset", "UI [Beta]");

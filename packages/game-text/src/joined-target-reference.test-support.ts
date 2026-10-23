@@ -117,7 +117,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 	);
 	const key =
-		"joined-v19:" +
+		"joined-v20:" +
 		createHash("sha256")
 			.update(
 				JSON.stringify([
@@ -145,7 +145,11 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	}
 	const reader = yield* store.open();
 	let incrementalFallback: string | undefined;
-	if (!input.force && (root.active.joined ?? "").startsWith("joined-v19:")) {
+	if (
+		!input.force &&
+		input.target.collapseMode !== "IdenticalNamespaceAndSource" &&
+		(root.active.joined ?? "").startsWith("joined-v20:")
+	) {
 		const incremental = yield* incrementJoinedTarget(
 			input,
 			key,
@@ -182,6 +186,20 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		);
 	}
 	const packages = yield* loadJoinPackages(reader, strings, input.projectRoot, input.target);
+	const collapsedPos = pos.map((file) => {
+		const groups = new Map<string, number[]>();
+		if (input.target.collapseMode === "IdenticalNamespaceAndSource" && file.hasSourceText) {
+			for (const row of file.order) {
+				const c = file.columns;
+				if (c.options![row]! & 16 || c.key![row] !== empty) continue;
+				const key = `${c.namespace![row]}/${c.source![row]}`;
+				const group = groups.get(key) ?? [];
+				group.push(row);
+				groups.set(key, group);
+			}
+		}
+		return groups;
+	});
 	const nativePath =
 		input.target.nativeCulture && input.target.outputPaths.archives[input.target.nativeCulture];
 	const nativeArchive = yield* loadJoinFile(
@@ -880,12 +898,19 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 				ns === absent
 					? { cursor: cursor.archive, row: absent, count: 0 }
 					: lookup(archiveFile, ns, keyId, cursor.archive);
-			const p =
+			let p =
 				ns === absent
 					? { cursor: cursor.po, row: absent, count: 0 }
 					: lookup(poFile, ns, keyId, cursor.po);
 			cursor.archive = a.cursor;
 			cursor.po = p.cursor;
+			const expectedSource =
+				nativeOverride && input.target.cultures[ci] !== input.target.nativeCulture
+					? nativeTranslation
+					: m.source![first];
+			const collapsedEntries = collapsedPos[ci]!.get(`${ns}/${expectedSource}`);
+			if (p.count === 0 && collapsedEntries?.length)
+				p = { ...p, row: collapsedEntries[0]!, count: collapsedEntries.length };
 			const ac = archiveFile.columns,
 				pc = poFile.columns,
 				marks = culture[ci]!;
@@ -895,8 +920,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			if (!poFile.reader) unknown |= reasonBit("missing_po");
 			if (a.count > 1) unknown |= reasonBit("duplicate_archive_identity");
 			if (p.count > 1) unknown |= reasonBit("duplicate_po_identity");
-			if (input.target.collapseMode === "IdenticalNamespaceAndSource")
-				unknown |= reasonBit("ambiguous_po_identity");
 			const at =
 				a.row === absent
 					? empty

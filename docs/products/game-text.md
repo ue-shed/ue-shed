@@ -858,8 +858,9 @@ have is reported as "Not in this working copy" with its project-relative path an
 recovery; a file that exists but fails to read or parse keeps "could not be read" with its error
 code. Ready target results and workspace report pages carry these failed files as bounded
 `LocalizationFileProblem` values and the folder Game Text looked in, without file provenance.
-Namespace-collapsed PO identities
-without keys cannot support an exact join. Crowdin identity PO marks reduced source checking because
+In `IdenticalNamespaceAndSource` mode, PO entries without keys join by their namespace and effective
+source text. A unique pair is current when its archive is current; collapse mode does not make a
+target ambiguous. Entries retaining an explicit key still join by that key. Crowdin identity PO marks reduced source checking because
 it has no source; archive-to-manifest comparisons still determine staleness.
 
 A reference into an available String Table whose namespace is known but whose entry is absent

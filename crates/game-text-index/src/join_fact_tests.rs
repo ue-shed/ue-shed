@@ -304,3 +304,49 @@ fn foreign_sources_use_native_archive_translations_including_metadata() -> Resul
     }
     Ok(())
 }
+
+#[test]
+fn namespace_collapsed_po_entries_join_only_their_source_and_track_pending_imports() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    fixture.target["collapseMode"] = json!("IdenticalNamespaceAndSource");
+    let rows = [
+        ("A", "Amber harbor"),
+        ("B", "Silver harbor"),
+        ("C", "Amber harbor"),
+    ];
+    fixture.file("Game.manifest", "manifest", &rows.iter().map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"path":"/Game/Text/Example.Example.Label"})).collect::<Vec<_>>())?;
+    fixture.file("en.archive", "archive", &rows.iter().map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"translation":source})).collect::<Vec<_>>())?;
+    fixture.file("de.archive", "archive", &rows.iter().map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"translation":if *key == "B" { "Silber" } else { "Bernstein" }})).collect::<Vec<_>>())?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[
+        json!({"namespace":"UI","key":"","source":"Amber harbor","translation":"Bernstein","options":64}),
+        json!({"namespace":"UI","key":"","source":"Silver harbor","translation":"New silver","options":64})
+    ])?;
+    fixture.packages(&rows.iter().map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"object":"/Game/Text/Example.Example","property":key})).collect::<Vec<_>>())?;
+    for line in fixture.lines()? {
+        let mark = line["cultures"]
+            .as_array()
+            .ok_or("cultures")?
+            .iter()
+            .find(|mark| mark["culture"] == "de")
+            .ok_or("foreign culture")?;
+        assert_eq!(mark["unknownReasons"], json!([]));
+        assert_eq!(
+            mark["state"],
+            if line["identity"]["key"] == "B" {
+                "not_synced"
+            } else {
+                "translated"
+            }
+        );
+        assert_eq!(
+            mark["po"]["msgstr"]["0"],
+            if line["identity"]["key"] == "B" {
+                "New silver"
+            } else {
+                "Bernstein"
+            }
+        );
+    }
+    Ok(())
+}

@@ -4,9 +4,15 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "28e2f6cac4c27aaf73204d1cdc8f122886163f88b33eee3423e1a5df1aaed75d"
+	contractHash: "fb4ec88150ddd5417c270aae00ef49f4239bb4e0301546b1e342aa9db1e3875f"
 } as const;
 
+/**
+ * The Game Text engine's message types: the v4 rule IR, the findings replies and the
+* evaluation profile. Hosts build and read engine messages with these types; the session
+* handshake checks that the engine was built against the same contract.
+ */
+export declare namespace GameTextContract {
 export type JsonValue =
 	| null
 	| boolean
@@ -102,3 +108,4 @@ export type Place = { id: string, location: { readonly [key: string]: JsonValue 
 export type ReadProfile = { rowsRequested: number, findingsReturned: number, responseBytes: number, fileFallback: boolean, };
 
 export type SpilledReply = { file: string, };
+}

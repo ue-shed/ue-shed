@@ -81,7 +81,11 @@ mod tests {
             identity.build_id, identity.contract_hash
         ));
         text.push_str(
-            "export type JsonValue =\n\t| null\n\t| boolean\n\t| number\n\t| string\n\t\
+            "/**\n * The Game Text engine's message types: the v4 rule IR, the findings replies and the\n\
+             * evaluation profile. Hosts build and read engine messages with these types; the session\n\
+             * handshake checks that the engine was built against the same contract.\n */\n\
+             export declare namespace GameTextContract {\n\
+             export type JsonValue =\n\t| null\n\t| boolean\n\t| number\n\t| string\n\t\
              | ReadonlyArray<JsonValue>\n\t| { readonly [key: string]: JsonValue };\n\n\
              /** One finding's fields; `places` names its place set. */\n\
              export type Finding = {\n\treadonly places: number;\n\treadonly id: string;\n\t\
@@ -127,6 +131,7 @@ mod tests {
             );
             text.push('\n');
         }
+        text.push_str("}\n");
         text
     }
 

@@ -1036,44 +1036,38 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		return write.status === "ready" ? yield* publishQualityRules(prepared) : write;
 	});
 
-	const qualitySearch = Effect.fn("GameText.workspace.qualitySearch")(
-		(request: TextQualitySearchRequest) =>
-			currentValue(qualityModel).pipe(
-				Effect.flatMap((model) =>
-					model
-						? model.search(request).pipe(
-								Effect.map((page) => ({ page, status: "ready" as const })),
-								Effect.catch((cause) =>
-									Effect.logWarning("Source quality read failed", { cause }).pipe(
-										Effect.as({ status: "not_ready" as const })
-									)
-								)
-							)
-						: Effect.succeed({ status: "not_ready" as const })
-				)
-			)
-	);
-	const qualityFocus = Effect.fn("GameText.workspace.qualityFocus")(
-		(request: TextQualityFocusRequest) =>
-			currentValue(qualityModel).pipe(
-				Effect.flatMap((model) =>
-					model
-						? model.focus(request).pipe(
-								Effect.map((focus) =>
-									focus
-										? { focus, status: "found" as const }
-										: { status: "not_found" as const }
-								),
-								Effect.catch((cause) =>
-									Effect.logWarning("Source quality read failed", { cause }).pipe(
-										Effect.as({ status: "not_ready" as const })
-									)
-								)
-							)
-						: Effect.succeed({ status: "not_ready" as const })
-				)
-			)
-	);
+	// Reads hydrate asynchronously; a model replaced meanwhile (project switch, rescan, new rules)
+	// answers not ready rather than publishing the retired model's result.
+	const qualityRead = <A>(read: (model: AsyncTextQualityQuery) => Effect.Effect<A, unknown>) =>
+		Effect.gen(function* () {
+			const model = yield* currentValue(qualityModel);
+			if (!model) return undefined;
+			const outcome = yield* read(model).pipe(Effect.result);
+			if (Result.isFailure(outcome)) {
+				yield* Effect.logWarning("Source quality read failed", { cause: outcome.failure });
+				return undefined;
+			}
+			return (yield* currentValue(qualityModel)) === model
+				? { value: outcome.success }
+				: undefined;
+		});
+	const qualitySearch = Effect.fn("GameText.workspace.qualitySearch")(function* (
+		request: TextQualitySearchRequest
+	) {
+		const read = yield* qualityRead((model) => model.search(request));
+		return read
+			? { page: read.value, status: "ready" as const }
+			: { status: "not_ready" as const };
+	});
+	const qualityFocus = Effect.fn("GameText.workspace.qualityFocus")(function* (
+		request: TextQualityFocusRequest
+	) {
+		const read = yield* qualityRead((model) => model.focus(request));
+		if (!read) return { status: "not_ready" as const };
+		return read.value
+			? { focus: read.value, status: "found" as const }
+			: { status: "not_found" as const };
+	});
 
 	const captureInvestigation = Effect.fn("GameText.workspace.captureInvestigation")(function* (
 		query: GameTextInvestigationQuery

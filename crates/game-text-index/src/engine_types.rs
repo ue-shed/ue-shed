@@ -263,6 +263,8 @@ pub fn translation_key(value: &str) -> Result<(String, String)> {
 /// Decode the actual JSON text before Serde, retaining every JavaScript UTF-16 code unit.
 /// Serde's ordinary String decoder intentionally rejects lone surrogates.
 pub fn parse_search_request(payload: &str) -> Result<SearchRequest> {
+    #[cfg(feature = "benchmark-timings")]
+    let _span = crate::benchmark_timings::Span::new("payloadDecodeValidate");
     let value = crate::json_value::parse(payload).map_err(|source| {
         Error::with_source(ErrorCode::InvalidInput, "Invalid search JSON.", source)
     })?;

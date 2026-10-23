@@ -3,6 +3,8 @@
 mod bounded_intern;
 mod error;
 pub use error::{Error, ErrorCode};
+#[cfg(feature = "benchmark-timings")]
+pub mod benchmark_timings;
 pub mod builder;
 mod dependency_graph;
 pub mod dictionary;

@@ -1,3 +1,4 @@
+import { channel } from "node:diagnostics_channel";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 import { GameTextEngineRequest, type GameTextEngineOutcome } from "@ue-shed/protocol";
 import { AssetReaderError, type AssetReaderConfiguration } from "./asset-reader.js";
@@ -6,6 +7,8 @@ import {
 	makeProtocolRequest,
 	UassetProtocolSession
 } from "./protocol-transport.js";
+
+const benchmark = channel("ue-shed.game-text-benchmark");
 
 /** Native engine calls share their process scope; reader handles never escape that scope. */
 export class NativeGameTextEngineClient extends Context.Service<
@@ -39,6 +42,7 @@ export const nativeGameTextEngineClientLayer = (configuration: AssetReaderConfig
 			);
 			return NativeGameTextEngineClient.of({
 				execute: Effect.fn("NativeGameTextEngine.execute")(function* (input) {
+					const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 					const request = yield* Schema.decodeUnknownEffect(GameTextEngineRequest, {
 						onExcessProperty: "error"
 					})(input).pipe(
@@ -57,6 +61,20 @@ export const nativeGameTextEngineClientLayer = (configuration: AssetReaderConfig
 								})
 						)
 					);
+					const protocolRequest = makeProtocolRequest(
+						{ kind: "game_text_engine", request },
+						{
+							maximumOutputBytes: 64 * 1024 ** 2,
+							timeoutMs: configuration.catalogTimeoutMs
+						},
+						{ contractMinor: 15 }
+					);
+					if (encodeStarted !== undefined)
+						benchmark.publish({
+							stage: "tsClientSchema",
+							action: request.action,
+							ms: performance.now() - encodeStarted
+						});
 					const evidence = yield* mutex.withPermits(1)(
 						invokeProtocolSessionSingleWithEvidence({
 							session,
@@ -71,14 +89,7 @@ export const nativeGameTextEngineClientLayer = (configuration: AssetReaderConfig
 									: request.action === "capabilities"
 										? "capabilities"
 										: request.reader,
-							request: makeProtocolRequest(
-								{ kind: "game_text_engine", request },
-								{
-									maximumOutputBytes: 64 * 1024 ** 2,
-									timeoutMs: configuration.catalogTimeoutMs
-								},
-								{ contractMinor: 15 }
-							),
+							request: protocolRequest,
 							expected: "game_text_engine",
 							select: (result) =>
 								result.kind === "game_text_engine" ? result.outcome : undefined

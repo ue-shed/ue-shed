@@ -151,7 +151,10 @@ impl EngineQuery {
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<String> {
         let request = parse_search_request(payload)?;
-        crate::wtf8::view_json(&self.search(&request, cancelled)?)
+        let answer = self.search(&request, cancelled)?;
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("payloadEncode");
+        crate::wtf8::view_json(&answer)
     }
 
     pub fn open(configuration: &Configuration, expected_joined: Option<&str>) -> Result<Self> {

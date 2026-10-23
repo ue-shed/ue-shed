@@ -8,11 +8,18 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 
-/// The sources that define the contract, serde attributes and encoding conventions included.
-const SOURCES: [&str; 3] = [
+/// The sources that decide what crosses the boundary: the typed contract, the engine's requests
+/// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
+/// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
+/// the drift test then asks for the generated file to be regenerated.
+const SOURCES: [&str; 7] = [
     include_str!("contract.rs"),
     include_str!("rules/ir.rs"),
     include_str!("rules/replies.rs"),
+    include_str!("engine.rs"),
+    include_str!("rules/findings_read.rs"),
+    include_str!("rules/identity.rs"),
+    include_str!("wtf8.rs"),
 ];
 
 /// The engine's build and contract identity, reported by `capabilities`.

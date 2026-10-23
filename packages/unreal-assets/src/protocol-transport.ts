@@ -866,6 +866,12 @@ export class UassetProtocolSession {
 	private running = false;
 	private stderr = "";
 	private terminating = false;
+	private started = 0;
+
+	/** The running worker process, numbered by start; undefined while none runs. */
+	get worker(): number | undefined {
+		return this.child === undefined ? undefined : this.started;
+	}
 
 	constructor(
 		private readonly configuration: Pick<
@@ -908,6 +914,7 @@ export class UassetProtocolSession {
 			decoder.finish();
 		})(child.stdout);
 		this.child = child;
+		this.started += 1;
 		this.iterator = lines[Symbol.asyncIterator]();
 		this.stderr = "";
 		this.processError = undefined;

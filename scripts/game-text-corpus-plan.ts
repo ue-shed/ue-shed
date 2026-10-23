@@ -499,6 +499,29 @@ function recipeBatch({
 	nested.absent.push("localization.format_arguments");
 	signals(nested, ["long"], ["up_to_date"]);
 	const nestedNear = add("format-renamed-nested-near", nestedSource + " N");
+	// Japanese has one plural category. Today's modifier check reports both sides even when
+	// their nested arguments agree, just as in the argument-modifier-dropped recipe below.
+	for (const text of [nested, nestedNear])
+		for (const side of ["source", "translation"])
+			find(
+				text,
+				"argument_modifiers",
+				{
+					side,
+					issues: [
+						{
+							code: "redundant_modifier",
+							modifier: "plural",
+							argument: "N",
+							forms: [],
+							position: 3
+						}
+					],
+					modifiers: [{ argument: "N", name: "plural" }]
+				},
+				{ modifiers: [{ argument: "N", name: "plural" }] },
+				"ja"
+			);
 	nestedNear.absent.push("localization.format_argument_renamed", "localization.format_arguments");
 	signals(nestedNear, ["long"], ["up_to_date"]);
 

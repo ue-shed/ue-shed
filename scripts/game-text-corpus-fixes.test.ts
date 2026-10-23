@@ -17,6 +17,65 @@ import { diffCorpus } from "./game-text-corpus-contract.ts";
 import { planCorpus } from "./game-text-corpus-plan.ts";
 
 for (const seed of [1, 73139]) {
+	test(`nested plural recipes include today's Japanese modifier evidence, seed ${seed}`, () => {
+		const plan = planCorpus({ seed, lines: 1, density: 2, root: "/Game/Fixture/Corpus" });
+		const subjects = plan.expectations.subjects.filter(
+			(subject) =>
+				subject.case.startsWith("format-renamed-nested") && subject.culture === "ja"
+		);
+		assert.equal(subjects.length, 4);
+		for (const subject of subjects) {
+			const text = corpus([
+				unit(subject.key, subject.source, "Content/Text/Table.uasset", subject.namespace)
+			]);
+			const initial = evidence(
+				[
+					manifestEntry(
+						subject.key,
+						subject.source,
+						"/Game/Text/Table.Table",
+						subject.namespace
+					)
+				],
+				[
+					archiveEntry(
+						subject.key,
+						subject.source,
+						subject.stages.archive!,
+						subject.namespace
+					)
+				],
+				success(parsePO(new TextEncoder().encode("")))
+			);
+			const files = {
+				...initial,
+				target: { ...initial.target, cultures: [cultureCode("en"), cultureCode("ja")] },
+				cultures: initial.cultures.map((culture) =>
+					culture.culture === "de" ? { ...culture, culture: cultureCode("ja") } : culture
+				)
+			};
+			const report = checkLocalizationTarget(
+				text,
+				joinLocalizationTarget(text, files),
+				files,
+				{
+					checks: ["argument_modifiers"]
+				}
+			);
+			assert.deepEqual(
+				report.findings
+					.filter((finding) => "culture" in finding && finding.culture === "ja")
+					.map((finding) => ({
+						check: `localization.${finding.kind}`,
+						actual: finding.actual,
+						expectation: finding.expectation
+					})),
+				subject.findings,
+				subject.case
+			);
+		}
+	});
+
 	test(`planted rename fixes equal today's check, including nested plural forms, seed ${seed}`, () => {
 		const plan = planCorpus({ seed, lines: 1, density: 2, root: "/Game/Fixture/Corpus" });
 		const subjects = plan.expectations.subjects.filter((subject) =>

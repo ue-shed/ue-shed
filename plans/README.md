@@ -22,6 +22,7 @@ the status row when done.
 | [052](052-text-identity-and-scope-tools.md)              | Text identity and scope tools for Game Text                                | P1       | L      | 051, Map History Perforce | IN PROGRESS — Phase 3 not started |
 | [057](057-game-text-compact-index.md)                    | A compact, persistent Game Text index                                      | P1       | XL     | 056, 037                  | TODO                              |
 | [058](058-game-text-actions-rules-and-codebase-week.md)  | Game Text ID actions, studio-owned rules, performance and a codebase audit | P1       | XL     | #98, #99, #101            | IN PROGRESS                       |
+| [059](059-game-text-query-and-rule-engine.md)            | One query and rule engine inside the Game Text index                       | P1       | XL     | 057, Game Text fixture    | IN PROGRESS — Phase 0             |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

@@ -19,7 +19,6 @@ export default defineProject({
 		],
 		include: [
 			"{apps,extensions,fixtures,packages,tools}/**/*.{test,spec}.{ts,tsx}",
-			"scripts/game-text-corpus.test.ts",
 			"scripts/game-text-scale.test.ts",
 			"scripts/game-text-stage-timings.test.ts",
 			"scripts/game-text-scale-safety.test.ts",

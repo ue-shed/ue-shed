@@ -11,7 +11,13 @@ import {
 	rmSync,
 	writeFileSync
 } from "node:fs";
-import { userInfo } from "node:os";
+import { userInfo, availableParallelism, tmpdir } from "node:os";
+import { setTimeout } from "node:timers/promises";
+import { dirname } from "node:path";
+import { decodeCorpusPlan, planCorpus } from "./game-text-corpus-plan.ts";
+import { corpusPlanName } from "./game-text-corpus-contract.ts";
+import { corpusLocalization } from "./game-text-corpus-localization.ts";
+import { prepareCorpusOutput, writeCorpusOwnership } from "./game-text-corpus-ownership.ts";
 import { basename, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -29,6 +35,7 @@ import {
 	unrealEngineTools,
 	unrealEngineVersion
 } from "./unreal-plugin-host.ts";
+import { assertCorpusScratch, createCorpusScratch } from "./game-text-corpus-scratch.ts";
 import { parseUnrealDescriptor } from "./unreal-project-support.ts";
 
 const pluginName = "UEShedCorpusGenerator";
@@ -41,7 +48,33 @@ function filesUnder(root: string): string[] {
 		.map((entry) => join(entry.parentPath, entry.name));
 }
 
-function run(log: string, command: string, args: readonly string[]) {
+async function run(log: string, command: string, args: readonly string[]) {
+	const lock = process.env.UE_SHED_UNREAL_LOCK ?? join(tmpdir(), "ue-shed-unreal.lock");
+	mkdirSync(dirname(lock), { recursive: true });
+	let lease: number;
+	for (;;) {
+		try {
+			lease = openSync(lock, "wx");
+			break;
+		} catch (cause) {
+			if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "EEXIST")
+				throw cause;
+			process.stdout.write(`Waiting for Unreal lock: ${lock}\n`);
+			await setTimeout(5000);
+		}
+	}
+	writeFileSync(
+		lease,
+		`Codex game-text fixture ${new Date().toISOString()} pid ${process.pid}\n`
+	);
+	try {
+		runLocked(log, command, args);
+	} finally {
+		closeSync(lease);
+		rmSync(lock);
+	}
+}
+function runLocked(log: string, command: string, args: readonly string[]) {
 	const batch = /\.(bat|cmd)$/iu.test(command);
 	const executable = batch
 		? [command, ...args].map((argument) => `"${argument.replaceAll('"', '""')}"`).join(" ")
@@ -50,6 +83,12 @@ function run(log: string, command: string, args: readonly string[]) {
 	try {
 		const result = spawnSync(executable, batch ? [] : args, {
 			cwd: repositoryRoot,
+			env: {
+				...process.env,
+				UnrealBuildTool_BuildConfiguration__MaxParallelActions: String(
+					Math.max(1, Math.min(8, Math.floor(availableParallelism() / 2)))
+				)
+			},
 			shell: batch,
 			stdio: ["ignore", descriptor, descriptor],
 			windowsHide: true
@@ -67,7 +106,7 @@ function run(log: string, command: string, args: readonly string[]) {
 }
 
 /** Builds the plugin for one engine once per source revision, under out/. */
-function buildPlugin(engineRoot: string, label: string) {
+async function buildPlugin(engineRoot: string, label: string) {
 	const editorManifest = parseJsonObject(
 		readFileSync(
 			join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor.modules"),
@@ -95,11 +134,11 @@ function buildPlugin(engineRoot: string, label: string) {
 	mkdirSync(parent, { recursive: true });
 	const log = `${packageRoot}-build.log`;
 	process.stdout.write(`Building ${pluginName} for Unreal ${label} (log: ${log})\n`);
-	run(log, join(engineRoot, "Engine", "Build", "BatchFiles", "RunUAT.bat"), [
+	await run(log, join(engineRoot, "Engine", "Build", "BatchFiles", "RunUAT.bat"), [
 		"BuildPlugin",
 		`-Plugin=${join(pluginSource, `${pluginName}.uplugin`)}`,
 		`-Package=${packageRoot}`,
-		"-TargetPlatforms=Win64",
+		"-NoTargetPlatforms",
 		"-NoP4",
 		"-Unattended"
 	]);
@@ -111,7 +150,9 @@ function buildPlugin(engineRoot: string, label: string) {
 /** The project's engine: --engine-root, else the engine its EngineAssociation names. */
 async function projectEngineRoot(project: string, explicitRoot: string | undefined) {
 	if (explicitRoot !== undefined) return explicitRoot;
-	const association = parseUnrealDescriptor(readFileSync(project, "utf8")).EngineAssociation;
+	const association = existsSync(project)
+		? parseUnrealDescriptor(readFileSync(project, "utf8")).EngineAssociation
+		: "5.8";
 	const label = isJsonString(association) ? association : undefined;
 	const root = await associatedUnrealEngine(label);
 	if (root === undefined || !existsSync(root)) {
@@ -122,41 +163,41 @@ async function projectEngineRoot(project: string, explicitRoot: string | undefin
 	return root;
 }
 
-/** Empties the corpus folder only when it holds a corpus: its manifest and saved packages. */
-function prepareOutputFolder(folder: string, clean: boolean) {
-	if (!existsSync(folder)) return;
-	const files = filesUnder(folder);
-	if (files.length === 0) return;
-	const manifestPath = join(folder, corpusManifestName);
-	if (!existsSync(manifestPath)) {
-		throw new Error(`${folder} has files but no ${corpusManifestName}. Choose another --root.`);
-	}
-	if (!clean) throw new Error(`${folder} already holds a corpus. Pass --clean to replace it.`);
-	decodeCorpusManifest(readFileSync(manifestPath, "utf8"));
-	const foreign = files.filter((file) => file !== manifestPath && !file.endsWith(".uasset"));
-	if (foreign.length > 0) {
-		throw new Error(
-			`--clean stopped: ${folder} holds files the generator did not write:\n` +
-				foreign.slice(0, 10).join("\n")
-		);
-	}
-	rmSync(folder, { recursive: true });
-	process.stdout.write(`Removed the previous corpus in ${folder}\n`);
-}
-
 const options = parseCorpusArguments(process.argv.slice(2), userInfo().username);
-if (!existsSync(options.project)) throw new Error(`No project at ${options.project}.`);
+assertCorpusScratch(options.project);
 const engineRoot = await projectEngineRoot(options.project, options.engineRoot);
 const version = unrealEngineVersion(engineRoot);
-if (!version || version.major < 5) {
+if (!version || version.major !== 5) {
 	throw new Error(`The corpus generator needs Unreal Engine 5; ${engineRoot} is not.`);
 }
+createCorpusScratch(options.project, version.label);
 process.stdout.write(`Unreal ${version.label}: ${engineRoot}\n`);
 const folder = corpusContentFolder(options.project, options.root);
-prepareOutputFolder(folder, options.clean);
+const plan = planCorpus({ ...options, phase: options.patch ? "after" : "initial" });
+if (options.patch && !existsSync(join(folder, corpusManifestName)))
+	throw new Error("--patch needs a generated corpus.");
+if (options.patch) {
+	const previous = decodeCorpusPlan(readFileSync(join(folder, corpusPlanName), "utf8"));
+	if (
+		previous.seed !== plan.seed ||
+		previous.requestedLines !== plan.requestedLines ||
+		previous.density !== plan.density ||
+		previous.root !== plan.root ||
+		previous.scenario !== plan.scenario
+	)
+		throw new Error("--patch must use the original seed, line count, root and scenario.");
+}
+
+prepareCorpusOutput(
+	dirname(options.project),
+	folder,
+	plan.target,
+	options.patch || options.clean,
+	!options.patch
+);
 
 const buildStarted = performance.now();
-const plugin = buildPlugin(engineRoot, version.label);
+const plugin = await buildPlugin(engineRoot, version.label);
 const buildSeconds = (performance.now() - buildStarted) / 1000;
 process.stdout.write(
 	plugin.built
@@ -169,12 +210,19 @@ mkdirSync(runs, { recursive: true });
 const runLog = join(runs, `${basename(options.project, ".uproject")}-${Date.now()}.log`);
 process.stdout.write(`Generating ${options.lines} lines (seed ${options.seed}); log: ${runLog}\n`);
 const generateStarted = performance.now();
-run(runLog, unrealEngineTools(engineRoot).editorCommandlet, [
+const planPath = join(dirname(options.project), "Saved", "UEShedCorpus", corpusPlanName);
+mkdirSync(dirname(planPath), { recursive: true });
+const wirePlan = {
+	...plan,
+	packages: plan.packages.map((item) => ({ ...item, lines: item.texts.length })),
+	localization: corpusLocalization(plan)
+};
+writeFileSync(planPath, JSON.stringify(wirePlan, null, "\t"));
+await run(runLog, unrealEngineTools(engineRoot).editorCommandlet, [
 	options.project,
 	"-run=UEShedGameTextCorpus",
-	`-Lines=${options.lines}`,
-	`-Seed=${options.seed}`,
-	`-Root=${options.root}`,
+	`-Plan=${planPath}`,
+	...(options.patch ? ["-Patch"] : []),
 	`-PLUGIN=${plugin.descriptor}`,
 	`-ABSLOG=${runLog.replace(/\.log$/u, "-editor.log")}`,
 	"-unattended",
@@ -184,6 +232,8 @@ run(runLog, unrealEngineTools(engineRoot).editorCommandlet, [
 	...localDerivedDataCacheArguments,
 	"-UTF8Output"
 ]);
+writeFileSync(join(folder, corpusPlanName), readFileSync(planPath));
+writeCorpusOwnership(dirname(options.project), folder, plan.target);
 const generateSeconds = (performance.now() - generateStarted) / 1000;
 const manifest = decodeCorpusManifest(readFileSync(join(folder, corpusManifestName), "utf8"));
 process.stdout.write(`${summarizeCorpusManifest(manifest)}\n`);
@@ -191,3 +241,37 @@ process.stdout.write(
 	`Plugin build: ${plugin.built ? `${buildSeconds.toFixed(1)} s` : "cached"}; ` +
 		`generation: ${generateSeconds.toFixed(1)} s\nFolder: ${folder}\n`
 );
+if (options.scenario === "main" && !options.patch) {
+	const probeProject = join(
+		dirname(options.project),
+		"Saved",
+		"UEShedCorpus",
+		"CollapseProbe",
+		"Corpus.uproject"
+	);
+	createCorpusScratch(probeProject, version.label);
+	const probe = spawnSync(
+		process.execPath,
+		[
+			join(repositoryRoot, "scripts", "generate-game-text-corpus.ts"),
+			"--project",
+			probeProject,
+			"--root",
+			options.root,
+			"--seed",
+			String(options.seed),
+			"--lines",
+			"1",
+			"--engine-root",
+			engineRoot,
+			"--scenario",
+			"collapse",
+			"--density",
+			"1",
+			...(options.clean ? ["--clean"] : [])
+		],
+		{ stdio: "inherit", windowsHide: true }
+	);
+	if (probe.error) throw probe.error;
+	if (probe.status !== 0) throw new Error(`Collapse probe generation failed (${probe.status}).`);
+}

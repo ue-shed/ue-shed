@@ -81,9 +81,9 @@ fn retained_query(cache_root: &Path) -> Result<EngineQuery> {
     Ok(query)
 }
 
-#[test]
-#[ignore = "Requires a retained cache, Node 26, a heavy-run lease, and --release"]
-fn persisted_default_catalogue_timing() -> Result<()> {
+/// The retained cache and the default catalogue, after checking the release build, the
+/// heavy-run lease and Node 26.
+fn timing_inputs() -> Result<(EngineQuery, Value)> {
     require(
         !cfg!(debug_assertions),
         "Run this timing test with cargo test --release.",
@@ -112,7 +112,13 @@ fn persisted_default_catalogue_timing() -> Result<()> {
             .is_some_and(|version| version.starts_with("26.")),
         "Use Node 26 for the default catalogue.",
     )?;
-    let mut query = retained_query(Path::new(&cache))?;
+    Ok((retained_query(Path::new(&cache))?, catalogue))
+}
+
+#[test]
+#[ignore = "Requires a retained cache, Node 26, a heavy-run lease, and --release"]
+fn persisted_default_catalogue_timing() -> Result<()> {
+    let (mut query, catalogue) = timing_inputs()?;
     let cancelled = AtomicBool::new(false);
     let rules = catalogue["rules"]
         .as_str()
@@ -151,6 +157,42 @@ fn persisted_default_catalogue_timing() -> Result<()> {
                 == "87dba57d4b3751dddb3a0d4f816b9a22eeaab1472756a588baeed7d173980576",
         "Retained output digest differs from e857a864.",
     )?;
+    Ok(())
+}
+
+/// Workspace Quality reads every line's findings back, 5,000 lines a call. Each call's time on
+/// the retained cache: the first also opens the read state, the rest are the steady cost.
+/// The findings layer is written to the cache, so point it at a disposable copy.
+#[test]
+#[ignore = "Requires a disposable retained cache, Node 26, a heavy-run lease, and --release"]
+fn persisted_findings_lines_timing() -> Result<()> {
+    let (mut query, catalogue) = timing_inputs()?;
+    let cancelled = AtomicBool::new(false);
+    let rules = catalogue["rules"]
+        .as_str()
+        .ok_or("Missing default catalogue.")?;
+    let locale = catalogue["locale"].as_str().ok_or("Missing host locale.")?;
+    let started = std::time::Instant::now();
+    let evaluated: Value =
+        serde_json::from_str(&query.findings_evaluate(rules, locale, &cancelled)?)?;
+    let key = evaluated["key"].as_str().ok_or("Missing findings key.")?;
+    println!(
+        "{}",
+        json!({"evaluateMs": started.elapsed().as_secs_f64() * 1000.0})
+    );
+    let calls = std::env::var("UE_SHED_GAME_TEXT_TIMING_CALLS")
+        .ok()
+        .and_then(|calls| calls.parse::<u32>().ok())
+        .unwrap_or(4);
+    for call in 0..calls {
+        let rows = (call * 5000..(call + 1) * 5000).collect::<Vec<_>>();
+        let started = std::time::Instant::now();
+        let reply = query.findings_lines(key, &rows, &cancelled)?;
+        println!(
+            "{}",
+            json!({"call": call, "ms": started.elapsed().as_secs_f64() * 1000.0, "bytes": reply.len()})
+        );
+    }
     Ok(())
 }
 

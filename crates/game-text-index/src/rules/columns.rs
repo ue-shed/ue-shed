@@ -726,11 +726,39 @@ impl Span {
         end: 0,
     };
 }
+/// Loaded store strings' spans by id, in pages allocated on first use. A full load costs about
+/// what one dense array would; a scratch arena that loads a few strings costs a page or two.
+#[derive(Default)]
+struct Spans {
+    pages: Vec<Option<Box<[Span]>>>,
+}
+impl Spans {
+    const PAGE: usize = 1 << 12;
+    fn get(&self, id: usize) -> Option<&Span> {
+        self.pages
+            .get(id / Self::PAGE)?
+            .as_ref()
+            .map(|page| &page[id % Self::PAGE])
+            .filter(|span| span.batch != Span::NONE.batch)
+    }
+    fn set(&mut self, id: usize, span: Span) {
+        let page = id / Self::PAGE;
+        if self.pages.len() <= page {
+            self.pages.resize_with(page + 1, || None);
+        }
+        self.pages[page].get_or_insert_with(|| vec![Span::NONE; Self::PAGE].into_boxed_slice())
+            [id % Self::PAGE] = span;
+    }
+    fn bytes(&self) -> usize {
+        self.pages.capacity() * std::mem::size_of::<Option<Box<[Span]>>>()
+            + self.pages.iter().flatten().count() * Self::PAGE * std::mem::size_of::<Span>()
+    }
+}
 pub struct Arena {
     store_count: u32,
-    /// Loaded store strings by id, up to the highest id loaded: each `load_strings` batch is
-    /// one exact-size buffer, so a string costs a span, not an allocation of its own.
-    stored: Vec<Span>,
+    /// Loaded store strings by id: each `load_strings` batch is one exact-size buffer, so a
+    /// string costs a span, not an allocation of its own.
+    stored: Spans,
     stored_text: Vec<Box<str>>,
     side: Vec<Arc<str>>,
     strings: FxHashMap<u64, StrId>,
@@ -778,10 +806,7 @@ impl Arena {
                 "arena.rowValues",
                 ((self.occurrence_values.capacity() + self.location_values.capacity()) * 4) as u64,
             ),
-            (
-                "arena.storedSpans",
-                (self.stored.capacity() * size_of::<Span>()) as u64,
-            ),
+            ("arena.storedSpans", self.stored.bytes() as u64),
             (
                 "arena.storedText",
                 self.stored_text
@@ -835,7 +860,7 @@ impl Arena {
                 + structures
                 + self.structures.capacity() * (size_of::<Structured>() + size_of::<ValId>() + 1)
                 + (self.occurrence_values.capacity() + self.location_values.capacity()) * 4
-                + self.stored.capacity() * size_of::<Span>()
+                + self.stored.bytes()
                 + self
                     .stored_text
                     .iter()
@@ -856,7 +881,7 @@ impl Arena {
     pub fn new(store_count: usize) -> Result<Self> {
         Ok(Self {
             store_count: store_count.try_into()?,
-            stored: Vec::new(),
+            stored: Spans::default(),
             stored_text: Vec::new(),
             side: Vec::new(),
             strings: FxHashMap::default(),
@@ -915,29 +940,37 @@ impl Arena {
         self.recorder
             .sub_stage("strings.hash".into(), &hashing, wanted.len());
         let inserting = super::stages::Measure::start();
-        let mut buffer = String::with_capacity(texts.iter().map(String::len).sum());
-        let batch = u32::try_from(self.stored_text.len())?;
+        // Spans hold 32-bit offsets, so a batch past that size continues in another buffer.
+        // Tests use tiny buffers, so every string they load takes the same path.
+        #[cfg(not(test))]
+        const BUFFER: usize = u32::MAX as usize;
+        #[cfg(test)]
+        const BUFFER: usize = 64;
+        let mut pending = texts.iter().map(String::len).sum::<usize>();
+        let mut buffer = String::new();
         let mut spans = Vec::with_capacity(texts.len());
         for text in &texts {
+            if !buffer.is_empty() && buffer.len() + text.len() > BUFFER {
+                self.stored_text
+                    .push(std::mem::take(&mut buffer).into_boxed_str());
+            }
+            if buffer.capacity() == 0 {
+                buffer.reserve_exact(pending.min(BUFFER));
+            }
             let start = u32::try_from(buffer.len())?;
             buffer.push_str(text);
+            pending -= text.len();
             spans.push(Span {
-                batch,
+                batch: u32::try_from(self.stored_text.len())?,
                 start,
                 end: u32::try_from(buffer.len())?,
             });
         }
         drop(texts);
         self.stored_text.push(buffer.into_boxed_str());
-        if let Some(last) = wanted.last().map(|id| *id as usize + 1)
-            && last > self.stored.len()
-        {
-            self.stored.reserve_exact(last - self.stored.len());
-            self.stored.resize(last, Span::NONE);
-        }
         self.strings.reserve(wanted.len());
         for ((id, hash), span) in wanted.iter().copied().zip(hashes).zip(spans) {
-            self.stored[id as usize] = span;
+            self.stored.set(id as usize, span);
             if let Some(first) = self.strings.get(&hash).copied() {
                 if self.text(first) != self.text(StrId(id)) {
                     self.string_collisions
@@ -965,18 +998,13 @@ impl Arena {
         if id.0 >= self.store_count {
             &self.side[(id.0 - self.store_count) as usize]
         } else {
-            self.stored
-                .get(id.0 as usize)
-                .filter(|span| span.batch != Span::NONE.batch)
-                .map_or("", |span| {
-                    &self.stored_text[span.batch as usize][span.start as usize..span.end as usize]
-                })
+            self.stored.get(id.0 as usize).map_or("", |span| {
+                &self.stored_text[span.batch as usize][span.start as usize..span.end as usize]
+            })
         }
     }
     fn loaded(&self, id: usize) -> bool {
-        self.stored
-            .get(id)
-            .is_some_and(|span| span.batch != Span::NONE.batch)
+        self.stored.get(id).is_some()
     }
     fn text_arc(&self, id: StrId) -> Arc<str> {
         if id.0 >= self.store_count {

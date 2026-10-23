@@ -1,10 +1,12 @@
 //! Column-at-a-time DAG evaluation with selection short circuiting and tuple memoization.
 use super::HostCollator;
-use super::columns::{Arena, Atom, Bits, Children, Column, FieldColumn, Occurrences, Prepared};
+use super::columns::{
+    Arena, Atom, Bits, Children, Column, FieldColumn, Occurrences, Prepared, StrId,
+};
 use super::compiler::{CompiledRule, Literal, NodeId, Op, Program, Subject};
 use super::kernel::Kernel;
 use super::selection::Selection;
-use super::stages::{Measure, Recorder, subject_stage};
+use super::stages::{Measure, Phase, Recorder, subject_stage};
 use super::text;
 use super::tuple::{Key as TupleKey, Packer};
 use super::value::Value as ScalarValue;
@@ -236,12 +238,47 @@ enum Computed {
     Limit,
 }
 #[derive(Clone, Copy)]
-struct Evidence {
-    actual: Atom,
-    expectation: Atom,
-    fix: Atom,
-    extra: Atom,
-    translation_origin: Atom,
+pub(crate) struct Evidence {
+    pub actual: Atom,
+    pub expectation: Atom,
+    pub fix: Atom,
+    pub extra: Atom,
+    pub translation_origin: Atom,
+}
+/// A finding as evaluation produced it: interned evidence in the evaluation's arena.
+pub(crate) struct Finding {
+    pub rule: usize,
+    pub row: u32,
+    pub subject: Subject,
+    pub evidence: Evidence,
+    pub recovery: StrId,
+    pub affected: Arc<Affected>,
+}
+impl Finding {
+    pub fn emission(&self, arena: &Arena) -> Emission {
+        let evidence = self.evidence;
+        Emission {
+            rule: self.rule,
+            row: self.row as usize,
+            subject: self.subject,
+            actual: arena.json(evidence.actual),
+            expectation: arena.json(evidence.expectation),
+            fix: arena.json(evidence.fix),
+            extra: arena.json(evidence.extra),
+            translation_origin: arena.json(evidence.translation_origin),
+            recovery: arena.text(self.recovery).to_owned(),
+            affected: Arc::clone(&self.affected),
+        }
+    }
+}
+/// One subject's evaluation, its findings still in the arena it ran in.
+pub(crate) struct Evaluated {
+    pub findings: Vec<Finding>,
+    pub diagnostics: Vec<Diagnostic>,
+    pub masks: HashMap<usize, Vec<u64>>,
+    /// Line-culture diagnostics that do not come from a rule.
+    pub projection: Vec<Diagnostic>,
+    pub recorder: Recorder,
 }
 struct Pending {
     rule: usize,
@@ -308,8 +345,29 @@ fn diagnostic_code(name: &str) -> Result<u8> {
         .map(|code| code as u8)
         .ok_or_else(|| format!("Unknown diagnostic code {name}.").into())
 }
-type Diagnostics = Vec<Diagnostic>;
-type TimedEvaluation = (Evaluation, Recorder, Diagnostics);
+/// Each row's memoized result, in parallel. A row over its limit is null and failed.
+fn gather(
+    measure: &mut Measure,
+    failures: &mut Bits,
+    slot: impl Fn(usize) -> Option<Slot> + Sync + Send,
+) -> Vec<Atom> {
+    let len = failures.len;
+    let output = measure.parallel_range(len, |row| match slot(row) {
+        Some(Slot::Value(value)) => value,
+        _ => Atom::Null,
+    });
+    let limited = measure.parallel_range(len.div_ceil(64), |word| {
+        (word * 64..((word + 1) * 64).min(len))
+            .filter(|row| matches!(slot(*row), Some(Slot::Limit)))
+            .fold(0u64, |bits, row| bits | 1 << (row % 64))
+    });
+    for (word, limited) in failures.words.iter_mut().zip(limited) {
+        *word |= limited;
+    }
+    output
+}
+#[cfg(test)]
+type TimedEvaluation = (Evaluation, Recorder, Vec<Diagnostic>);
 struct Evaluator<'a> {
     program: &'a Program,
     arena: Arena,
@@ -988,20 +1046,10 @@ impl<'a> Evaluator<'a> {
                 results.push(result);
             }
         }
-        let scattered = started.parallel(&slots, |(cached, slot)| {
-            match cached.or_else(|| slot.map(|slot| results[slot])) {
-                Some(Slot::Value(value)) => (value, false),
-                Some(Slot::Limit) => (Atom::Null, true),
-                None => (Atom::Null, false),
-            }
+        let output = gather(&mut started, &mut failures, |row| {
+            let (cached, slot) = slots[row];
+            cached.or_else(|| slot.map(|slot| results[slot]))
         });
-        let mut output = Vec::with_capacity(selection.len());
-        for (row, (atom, failed)) in scattered.into_iter().enumerate() {
-            output.push(atom);
-            if failed {
-                failures.set(row);
-            }
-        }
         let mut column = Column::from_atoms(&output, &mut self.arena)?;
         column.failed = failures;
         started.exclude(self.arena.recorder.kernel_wall().saturating_sub(nested));
@@ -1144,20 +1192,9 @@ impl<'a> Evaluator<'a> {
                 self.dense[cache][*group].1.insert(text.0 as usize, value);
             }
         }
-        let scattered = started.parallel(&row_keys, |key| {
-            match key.and_then(|(text, group)| self.dense[cache][group].1.get(text.0 as usize)) {
-                Some(Slot::Value(value)) => (value, false),
-                Some(Slot::Limit) => (Atom::Null, true),
-                None => (Atom::Null, false),
-            }
+        let output = gather(&mut started, &mut failures, |row| {
+            row_keys[row].and_then(|(text, group)| self.dense[cache][group].1.get(text.0 as usize))
         });
-        let mut output = Vec::with_capacity(selection.len());
-        for (row, (atom, failed)) in scattered.into_iter().enumerate() {
-            output.push(atom);
-            if failed {
-                failures.set(row);
-            }
-        }
         let mut output = Column::from_atoms(&output, &mut self.arena)?;
         output.failed = failures;
         self.arena.recorder.kernel(
@@ -1497,8 +1534,29 @@ impl Program {
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
     ) -> Result<Evaluation> {
-        self.evaluate_columns(relation, collator, false, None)
+        self.evaluate_local(relation, collator, false)
             .map(|(evaluation, _, _)| evaluation)
+    }
+    /// Evaluate in a private arena and convert the findings while it is alive.
+    fn evaluate_local(
+        &self,
+        relation: &mut dyn SubjectRows,
+        collator: &HostCollator,
+        include_diagnostics: bool,
+    ) -> Result<(Evaluation, Recorder, Vec<Diagnostic>)> {
+        let mut arena = Arena::new(relation.dictionary_len()?)?;
+        let evaluated =
+            self.evaluate_columns(relation, collator, include_diagnostics, &mut arena)?;
+        let evaluation = Evaluation {
+            findings: evaluated
+                .findings
+                .iter()
+                .map(|finding| finding.emission(&arena))
+                .collect(),
+            diagnostics: evaluated.diagnostics,
+            masks: evaluated.masks,
+        };
+        Ok((evaluation, evaluated.recorder, evaluated.projection))
     }
     #[cfg(test)]
     pub(crate) fn evaluate_timed(
@@ -1506,7 +1564,7 @@ impl Program {
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
     ) -> Result<(Evaluation, super::stages::TestStats)> {
-        self.evaluate_columns(relation, collator, false, None)
+        self.evaluate_local(relation, collator, false)
             .map(|(evaluation, recorder, _)| (evaluation, recorder.node_stats(self)))
     }
     #[cfg(test)]
@@ -1515,23 +1573,24 @@ impl Program {
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
     ) -> Result<TimedEvaluation> {
-        self.evaluate_columns(relation, collator, true, None)
+        self.evaluate_local(relation, collator, true)
     }
+    /// Evaluate in an arena shared across subjects; the findings stay typed in it.
     pub(crate) fn evaluate_shared(
         &self,
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
         arena: &mut Arena,
-    ) -> Result<TimedEvaluation> {
-        self.evaluate_columns(relation, collator, true, Some(arena))
+    ) -> Result<Evaluated> {
+        self.evaluate_columns(relation, collator, true, arena)
     }
     fn evaluate_columns(
         &self,
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
         include_diagnostics: bool,
-        shared: Option<&mut Arena>,
-    ) -> Result<TimedEvaluation> {
+        shared: &mut Arena,
+    ) -> Result<Evaluated> {
         let subject = relation.subject();
         let include_diagnostics = include_diagnostics && subject == Subject::LineCulture;
         let len = relation.len();
@@ -1540,13 +1599,15 @@ impl Program {
             .iter()
             .filter(|rule| rule.rule.subject == subject)
             .collect::<Vec<_>>();
-        let mut output = Evaluation {
+        let mut output = Evaluated {
             findings: Vec::new(),
             diagnostics: Vec::new(),
             masks: HashMap::new(),
+            projection: Vec::new(),
+            recorder: Recorder::default(),
         };
         if rules.is_empty() && !include_diagnostics {
-            return Ok((output, Recorder::default(), Vec::new()));
+            return Ok(output);
         }
         let mut names = HashSet::new();
         let mut nodes = HashSet::new();
@@ -1614,12 +1675,7 @@ impl Program {
         }
         let mut names = names.into_iter().collect::<Vec<_>>();
         names.sort();
-        let mut shared = shared;
-        let mut arena = if let Some(shared) = shared.as_deref_mut() {
-            std::mem::replace(shared, Arena::new(0)?)
-        } else {
-            Arena::new(relation.dictionary_len()?)?
-        };
+        let mut arena = std::mem::replace(shared, Arena::new(0)?);
         for node in &self.nodes {
             if node.op == Op::Get
                 && let Some(key) = node.args.get(1).and_then(|arg| match &self.nodes[*arg].op {
@@ -1651,7 +1707,7 @@ impl Program {
         prepared.validate(len)?;
         let recorder = arena.recorder.clone();
         let mut evaluator = Evaluator::new(self, arena, prepared, collator, len, subject)?;
-        recorder.enter(subject_stage(subject, "execute"));
+        recorder.enter(subject_stage(subject, Phase::Execute));
         let execute = Measure::start();
         let execute_workers = recorder.worker_adjustment();
         let mut emissions = Vec::new();
@@ -1786,13 +1842,13 @@ impl Program {
             }
         }
         recorder.stage_with_kernels(
-            subject_stage(subject, "execute"),
+            subject_stage(subject, Phase::Execute),
             &execute,
             len,
             execute_workers,
         );
-        recorder.memory(subject_stage(subject, "execute"), evaluator.memory());
-        recorder.enter(subject_stage(subject, "diagnostics"));
+        recorder.memory(subject_stage(subject, Phase::Execute), evaluator.memory());
+        recorder.enter(subject_stage(subject, Phase::Diagnostics));
         let diagnostics_started = Measure::start();
         let diagnostic_workers = recorder.worker_adjustment();
         let diagnostics = if include_diagnostics {
@@ -1801,13 +1857,16 @@ impl Program {
             Vec::new()
         };
         recorder.stage_with_kernels(
-            subject_stage(subject, "diagnostics"),
+            subject_stage(subject, Phase::Diagnostics),
             &diagnostics_started,
             diagnostics.len(),
             diagnostic_workers,
         );
-        recorder.memory(subject_stage(subject, "diagnostics"), evaluator.memory());
-        recorder.enter(subject_stage(subject, "emission"));
+        recorder.memory(
+            subject_stage(subject, Phase::Diagnostics),
+            evaluator.memory(),
+        );
+        recorder.enter(subject_stage(subject, Phase::Emission));
         let mut emission = Measure::start();
         let sets = emissions
             .iter()
@@ -1816,42 +1875,35 @@ impl Program {
             .into_iter()
             .collect::<Vec<_>>();
         let places = relation.affected(&mut evaluator.arena, &sets, &mut emission)?;
-        output.findings = emission
-            .parallel(&emissions, |pending| {
-                let evidence = pending.evidence;
-                let recovery = if let Atom::Str(id) = pending.recovery {
-                    evaluator.arena.text(id).to_owned()
-                } else {
+        output.findings = emissions
+            .into_iter()
+            .map(|pending| {
+                let Atom::Str(recovery) = pending.recovery else {
                     return Err("Invalid finding recovery.".into());
                 };
-                Ok(Emission {
+                Ok(Finding {
                     rule: pending.rule,
-                    row: pending.row as usize,
+                    row: pending.row,
                     subject: pending.subject,
-                    actual: evaluator.arena.json(evidence.actual),
-                    expectation: evaluator.arena.json(evidence.expectation),
-                    fix: evaluator.arena.json(evidence.fix),
-                    extra: evaluator.arena.json(evidence.extra),
-                    translation_origin: evaluator.arena.json(evidence.translation_origin),
+                    evidence: pending.evidence,
                     recovery,
                     affected: Arc::clone(&places[&pending.affected]),
                 })
             })
-            .into_iter()
             .collect::<Result<Vec<_>>>()?;
         output
             .findings
             .sort_by_key(|finding| (finding.rule, finding.row));
         recorder.stage(
-            subject_stage(subject, "emission"),
+            subject_stage(subject, Phase::Emission),
             &emission,
             output.findings.len(),
         );
-        recorder.memory(subject_stage(subject, "emission"), evaluator.memory());
-        if let Some(shared) = shared {
-            *shared = evaluator.arena;
-        }
-        Ok((output, recorder, diagnostics))
+        recorder.memory(subject_stage(subject, Phase::Emission), evaluator.memory());
+        *shared = evaluator.arena;
+        output.projection = diagnostics;
+        output.recorder = recorder;
+        Ok(output)
     }
 }
 

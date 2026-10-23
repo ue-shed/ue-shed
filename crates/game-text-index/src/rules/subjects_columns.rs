@@ -921,8 +921,13 @@ impl NativeSubjects<'_> {
         } else {
             None
         };
+        use super::stages::{Phase, subject_stage};
+        let (children_stage, columns_stage) = (
+            subject_stage(self.subject, Phase::Children),
+            subject_stage(self.subject, Phase::Columns),
+        );
         let mut projector = Projector::new(self, arena)?;
-        projector.arena.recorder.enter("subjects.occurrences");
+        projector.arena.recorder.enter(children_stage);
         let mut started = super::stages::Measure::start();
         let children = if with_children {
             projector.children(parents.clone())?
@@ -931,16 +936,15 @@ impl NativeSubjects<'_> {
         };
         started.include(&projector.work);
         projector.work = super::stages::Measure::start();
-        projector.arena.recorder.stage(
-            "subjects.occurrences",
-            &started,
-            projector.arena.occurrences.len,
-        );
         projector
             .arena
             .recorder
-            .memory("subjects.occurrences", projector.arena.memory());
-        projector.arena.recorder.enter("subjects.columns");
+            .stage(children_stage, &started, projector.arena.occurrences.len);
+        projector
+            .arena
+            .recorder
+            .memory(children_stage, projector.arena.memory());
+        projector.arena.recorder.enter(columns_stage);
         let mut started = super::stages::Measure::start();
         let mut fields = HashMap::new();
         for name in names {
@@ -962,12 +966,14 @@ impl NativeSubjects<'_> {
         projector
             .arena
             .recorder
-            .stage("subjects.columns", &started, projector.subjects.len());
+            .stage(columns_stage, &started, projector.subjects.len());
         projector
             .arena
             .recorder
-            .memory("subjects.columns", projector.arena.memory());
+            .memory(columns_stage, projector.arena.memory());
         projector.arena.line_fields = projector.fields.clone();
+        // The subject's columns are built: its raw index columns are no longer needed.
+        self.query.reader.release_evaluation_columns();
         Ok(Prepared { fields, children })
     }
 }

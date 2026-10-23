@@ -138,8 +138,8 @@ pub(super) fn digest_subject(
     digest: &mut sha2::Sha256,
     program: &super::Program,
     subjects: &mut super::NativeSubjects<'_>,
-    evaluation: &super::Evaluation,
-    diagnostics: &[super::Diagnostic],
+    arena: &super::columns::Arena,
+    evaluated: &super::evaluator::Evaluated,
 ) -> Result<()> {
     use super::SubjectRows;
     fn record(digest: &mut sha2::Sha256, value: &Value) {
@@ -152,7 +152,7 @@ pub(super) fn digest_subject(
     let mut identities = std::collections::HashMap::<usize, (String, String)>::new();
     // Places are hydrated a chunk of findings at a time, as reads do, so the digest holds no
     // more of them than it needs.
-    for findings in evaluation.findings.chunks(4096) {
+    for findings in evaluated.findings.chunks(4096) {
         let mut places = std::collections::BTreeMap::new();
         for finding in findings {
             for (row, id) in finding.affected.rows.iter().zip(&finding.affected.ids) {
@@ -165,7 +165,8 @@ pub(super) fn digest_subject(
             .copied()
             .zip(subjects.places(&rows, &ids)?)
             .collect::<std::collections::HashMap<_, _>>();
-        for finding in findings {
+        for typed in findings {
+            let finding = &typed.emission(arena);
             let compiled = program
                 .rules
                 .iter()
@@ -261,7 +262,7 @@ pub(super) fn digest_subject(
             );
         }
     }
-    let masks = evaluation
+    let masks = evaluated
         .masks
         .iter()
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -297,8 +298,13 @@ pub(super) fn digest_subject(
         digest.update(b"]]");
     }
     let subject = subjects.subject();
-    diagnostic_record(digest, "rule-diagnostics", subject, &evaluation.diagnostics);
-    diagnostic_record(digest, "projection-diagnostics", subject, diagnostics);
+    diagnostic_record(digest, "rule-diagnostics", subject, &evaluated.diagnostics);
+    diagnostic_record(
+        digest,
+        "projection-diagnostics",
+        subject,
+        &evaluated.projection,
+    );
     // Keep the trait in this function so baseline and product share precisely the same encoder.
     let _ = digest;
     Ok(())

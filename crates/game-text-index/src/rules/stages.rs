@@ -103,6 +103,32 @@ impl Measure {
         }
         results
     }
+    /// `run(index)` for every index below `len`, written in parallel straight into the output:
+    /// no per-chunk vectors and no merged copy.
+    pub fn parallel_range<U: Copy + Default + Send>(
+        &mut self,
+        len: usize,
+        run: impl Fn(usize) -> U + Sync + Send,
+    ) -> Vec<U> {
+        use rayon::prelude::*;
+        const CHUNK: usize = 4096;
+        let started = Instant::now();
+        let mut output = vec![U::default(); len];
+        let busy = output
+            .par_chunks_mut(CHUNK)
+            .enumerate()
+            .map(|(chunk, slots)| {
+                let started = Instant::now();
+                for (offset, slot) in slots.iter_mut().enumerate() {
+                    *slot = run(chunk * CHUNK + offset);
+                }
+                started.elapsed()
+            })
+            .sum::<Duration>();
+        self.parallel += started.elapsed();
+        self.workers += busy;
+        output
+    }
     pub fn include(&mut self, other: &Self) {
         self.parallel += other.parallel;
         self.workers += other.workers;
@@ -275,19 +301,47 @@ impl Recorder {
             "kernels":recording.kernels.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>()})
     }
 }
-pub(crate) fn subject_stage(subject: super::Subject, phase: &str) -> &'static str {
+/// A subject's evaluation phases, in order. Each subject records its own, so memory samples
+/// and times are never merged across subjects.
+#[derive(Clone, Copy)]
+pub(crate) enum Phase {
+    Children,
+    Columns,
+    Execute,
+    Diagnostics,
+    Emission,
+}
+pub(crate) fn subject_stage(subject: super::Subject, phase: Phase) -> &'static str {
     use super::Subject::*;
-    match (subject, phase) {
-        (Line, "execute") => "line.execute",
-        (Line, "diagnostics") => "line.diagnostics",
-        (Line, _) => "line.emission",
-        (LineCulture, "execute") => "line_culture.execute",
-        (LineCulture, "diagnostics") => "line_culture.diagnostics",
-        (LineCulture, _) => "line_culture.emission",
-        (UnitSource, "execute") => "unit_source.execute",
-        (UnitSource, "diagnostics") => "unit_source.diagnostics",
-        (UnitSource, _) => "unit_source.emission",
-    }
+    const NAMES: [[&str; 5]; 3] = [
+        [
+            "line.children",
+            "line.columns",
+            "line.execute",
+            "line.diagnostics",
+            "line.emission",
+        ],
+        [
+            "line_culture.children",
+            "line_culture.columns",
+            "line_culture.execute",
+            "line_culture.diagnostics",
+            "line_culture.emission",
+        ],
+        [
+            "unit_source.children",
+            "unit_source.columns",
+            "unit_source.execute",
+            "unit_source.diagnostics",
+            "unit_source.emission",
+        ],
+    ];
+    let subject = match subject {
+        Line => 0,
+        LineCulture => 1,
+        UnitSource => 2,
+    };
+    NAMES[subject][phase as usize]
 }
 
 #[cfg(test)]

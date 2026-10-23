@@ -11,6 +11,9 @@ struct Recording {
     active: &'static str,
     stage_kernels: BTreeMap<&'static str, BTreeMap<String, Sample>>,
     stages: BTreeMap<&'static str, Sample>,
+    /// Named parts of a stage, such as each derived subject field. Names are bounded by the
+    /// catalogue's fields.
+    sub_stages: BTreeMap<String, Sample>,
     kernels: BTreeMap<String, Sample>,
 }
 impl Default for Recording {
@@ -20,6 +23,7 @@ impl Default for Recording {
             active: "",
             stage_kernels: BTreeMap::new(),
             stages: BTreeMap::new(),
+            sub_stages: BTreeMap::new(),
             kernels: BTreeMap::new(),
         }
     }
@@ -211,6 +215,17 @@ impl Recorder {
         sample.busy += busy;
         sample.rows += rows;
     }
+    pub fn sub_stage(&self, name: String, measure: &Measure, rows: usize) {
+        let (wall, busy) = measure.times();
+        let mut recording = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let sample = recording.sub_stages.entry(name).or_default();
+        sample.wall += wall;
+        sample.busy += busy;
+        sample.rows += rows;
+    }
     pub fn kernel(&self, op: &str, measure: &Measure, rows: usize, inputs: usize, hits: usize) {
         let (wall, busy) = measure.times();
         let mut recording = self
@@ -322,6 +337,7 @@ impl Recorder {
                 result["kernels"] = json!(recording.stage_kernels.get(name).map(|kernels| kernels.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>()).unwrap_or_default());
                 ((*name).to_owned(),result)
             }).collect::<serde_json::Map<_,_>>(),
+            "subStages":recording.sub_stages.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>(),
             "kernels":recording.kernels.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>()})
     }
 }

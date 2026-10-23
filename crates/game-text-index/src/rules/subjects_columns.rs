@@ -606,7 +606,6 @@ impl<'a, 'q> Projector<'a, 'q> {
         Ok(column)
     }
     fn culture(&mut self, name: &str) -> Result<Arc<Column>> {
-        let mut values = Vec::with_capacity(self.subjects.cultures.len());
         let source_culture = if name == "isSourceCulture" {
             Some(self.line("sourceCulture")?)
         } else {
@@ -638,7 +637,6 @@ impl<'a, 'q> Projector<'a, 'q> {
                 }
             }
         }
-        let mut lists = HashMap::<u32, Atom>::new();
         let state_ids = STATES
             .iter()
             .map(|name| self.string(name))
@@ -647,30 +645,25 @@ impl<'a, 'q> Projector<'a, 'q> {
             .iter()
             .map(|name| self.string(name))
             .collect::<Result<Vec<_>>>()?;
-        for row in 0..self.subjects.cultures.len() {
-            if row & 8191 == 0 {
-                checkpoint(self.subjects.cancelled)?;
-            }
-            let (line, ci) = self.subjects.cultures[row];
-            let mark = &self.subjects.projection.cultures[ci];
-            let value = match name {
-                "culture" => culture_ids[ci],
-                "state" => state_ids[mark.state[line] as usize],
-                "facts" | "unknownReasons" => {
-                    let mask = if name == "facts" {
-                        mark.facts[line]
-                    } else {
-                        mark.reasons[line]
-                    };
-                    if let Some(value) = lists.get(&mask) {
-                        *value
-                    } else {
-                        let names = if name == "facts" {
-                            &state_ids
-                        } else {
-                            &reason_ids
-                        };
-                        let value = self.arena.list(
+        let rows = &self.subjects.cultures;
+        let marks = &self.subjects.projection.cultures;
+        // Interning happens here, in first-row order; the parallel fill below only reads.
+        let mut lists = HashMap::<u32, Atom>::new();
+        if matches!(name, "facts" | "unknownReasons") {
+            let names = if name == "facts" {
+                &state_ids
+            } else {
+                &reason_ids
+            };
+            for (line, ci) in rows {
+                let mask = if name == "facts" {
+                    marks[*ci].facts[*line]
+                } else {
+                    marks[*ci].reasons[*line]
+                };
+                if let std::collections::hash_map::Entry::Vacant(entry) = lists.entry(mask) {
+                    entry.insert(
+                        self.arena.list(
                             names
                                 .iter()
                                 .enumerate()
@@ -678,28 +671,78 @@ impl<'a, 'q> Projector<'a, 'q> {
                                     (mask & (1 << bit) != 0).then_some(*value)
                                 })
                                 .collect(),
-                        )?;
-                        lists.insert(mask, value);
-                        value
-                    }
+                        )?,
+                    );
                 }
-                "reducedSourceChecking" => Atom::Bool(
-                    self.subjects.query.reader.meta["reducedSourceChecking"][ci]
-                        .as_bool()
-                        .unwrap_or(false),
-                ),
+            }
+        }
+        let origins = if name == "latestOrigin" {
+            [
+                self.string("po")?,
+                self.string("archive")?,
+                self.string("absent")?,
+            ]
+        } else {
+            [Atom::Null; 3]
+        };
+        let reduced = (0..culture_names.len())
+            .map(|ci| {
+                self.subjects.query.reader.meta["reducedSourceChecking"][ci]
+                    .as_bool()
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        let known = matches!(
+            name,
+            "culture"
+                | "state"
+                | "facts"
+                | "unknownReasons"
+                | "reducedSourceChecking"
+                | "isNative"
+                | "isSourceCulture"
+                | "latestOrigin"
+                | "po"
+                | "archive"
+                | "archiveSource"
+                | "latest"
+                | "expectedSource"
+        );
+        if !known {
+            return Err(format!("Unknown native culture column {name}.").into());
+        }
+        let rows = &self.subjects.cultures;
+        let marks = &self.subjects.projection.cultures;
+        let references = &self.references;
+        let files = &self.files;
+        let arena = &*self.arena;
+        let value = |row: usize| -> Atom {
+            let (line, ci) = rows[row];
+            let mark = &marks[ci];
+            match name {
+                "culture" => culture_ids[ci],
+                "state" => state_ids[mark.state[line] as usize],
+                "facts" => lists[&mark.facts[line]],
+                "unknownReasons" => lists[&mark.reasons[line]],
+                "reducedSourceChecking" => Atom::Bool(reduced[ci]),
                 "isNative" => Atom::Bool(native.as_deref() == Some(&culture_names[ci])),
                 "isSourceCulture" => Atom::Bool(
                     source_culture
                         .as_ref()
-                        .ok_or("Missing source cultures.")?
-                        .get(line, self.arena)
-                        == culture_ids[ci],
+                        .is_some_and(|column| column.get(line, arena) == culture_ids[ci]),
                 ),
-                "latestOrigin" => self.origin(line, ci)?,
-                "po" | "archive" => self.files[&(ci, name == "po")].translation(line),
+                "latestOrigin" => {
+                    if mark.facts[line] & 8 != 0 || mark.state[line] == 3 {
+                        origins[0]
+                    } else if references[ci].1[line] != 0 {
+                        origins[1]
+                    } else {
+                        origins[2]
+                    }
+                }
+                "po" | "archive" => files[&(ci, name == "po")].translation(line),
                 "archiveSource" => {
-                    let file = &self.files[&(ci, false)];
+                    let file = &files[&(ci, false)];
                     let entry = file.references[line];
                     if entry == 0 {
                         Atom::Null
@@ -707,28 +750,28 @@ impl<'a, 'q> Projector<'a, 'q> {
                         Atom::Str(StrId(file.source[entry as usize - 1]))
                     }
                 }
-                "latest" => {
-                    let mark = &self.subjects.projection.cultures[ci];
-                    self.files[&(ci, mark.facts[line] & 8 != 0 || mark.state[line] == 3)]
-                        .translation(line)
-                }
-                "expectedSource" => {
-                    if native.as_deref() == Some(&culture_names[ci]) {
-                        manifest
-                            .as_ref()
-                            .ok_or("Missing manifest source.")?
-                            .get(line, self.arena)
+                "latest" => files[&(ci, mark.facts[line] & 8 != 0 || mark.state[line] == 3)]
+                    .translation(line),
+                _ => {
+                    let column = if native.as_deref() == Some(&culture_names[ci]) {
+                        &manifest
                     } else {
-                        expected
-                            .as_ref()
-                            .ok_or("Missing expected source.")?
-                            .get(line, self.arena)
-                    }
+                        &expected
+                    };
+                    column
+                        .as_ref()
+                        .map_or(Atom::Null, |column| column.get(line, arena))
                 }
-                _ => return Err(format!("Unknown native culture column {name}.").into()),
-            };
-            values.push(value);
-        }
+            }
+        };
+        checkpoint(self.subjects.cancelled)?;
+        let values = self
+            .work
+            .fill(rows.len(), 1 << 14, |start, slots: &mut [Atom]| {
+                for (offset, slot) in slots.iter_mut().enumerate() {
+                    *slot = value(start + offset);
+                }
+            });
         self.column(&values)
     }
     fn unit(&mut self, name: &str) -> Result<Arc<Column>> {
@@ -949,6 +992,8 @@ impl NativeSubjects<'_> {
         let mut fields = HashMap::new();
         for name in names {
             checkpoint(projector.subjects.cancelled)?;
+            let mut field = super::stages::Measure::start();
+            let work = std::mem::replace(&mut projector.work, super::stages::Measure::start());
             let (column, rows) = match projector.subjects.subject {
                 Subject::Line => (projector.line(name)?, None),
                 Subject::LineCulture => {
@@ -961,6 +1006,14 @@ impl NativeSubjects<'_> {
                 Subject::UnitSource => (projector.unit(name)?, None),
             };
             fields.insert(name.clone(), FieldColumn { column, rows });
+            field.include(&projector.work);
+            projector.arena.recorder.sub_stage(
+                format!("{columns_stage}.{name}"),
+                &field,
+                projector.subjects.len(),
+            );
+            started.include(&projector.work);
+            projector.work = work;
         }
         started.include(&projector.work);
         projector

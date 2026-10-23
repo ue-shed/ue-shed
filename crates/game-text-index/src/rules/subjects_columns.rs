@@ -885,6 +885,15 @@ impl<'a, 'q> Projector<'a, 'q> {
                 .recorder
                 .sub_stage(format!("occurrences.{name}"), &step, data.len());
         }
+        // The order follows the reader and the collation only, so reads that each start a new
+        // arena share one build instead of sorting every line's occurrences again.
+        if line
+            && self.arena.line_children.is_none()
+            && let Some((locale, children)) = &self.subjects.query.line_children
+            && *locale == self.subjects.collator.locale
+        {
+            self.arena.line_children = Some(Arc::clone(children));
+        }
         if line && let Some(children) = &self.arena.line_children {
             let mut children = (**children).clone();
             children.rows = parents;
@@ -940,7 +949,10 @@ impl<'a, 'q> Projector<'a, 'q> {
         if line {
             let mut shared = children.clone();
             shared.rows = None;
-            self.arena.line_children = Some(Arc::new(shared));
+            let shared = Arc::new(shared);
+            self.subjects.query.line_children =
+                Some((self.subjects.collator.locale.clone(), Arc::clone(&shared)));
+            self.arena.line_children = Some(shared);
         }
         self.arena.recorder.sub_stage(
             "occurrences.groups".into(),

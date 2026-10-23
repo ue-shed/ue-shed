@@ -36,6 +36,8 @@ pub struct EngineQuery {
     pub(crate) projection: Option<Arc<crate::engine_match::Projection>>,
     /// The occurrence relation finding reads share, built once per reader.
     pub(crate) occurrence_data: Option<Arc<crate::rules::OccurrenceData>>,
+    /// Each line's occurrences in a collation's order, built once per reader and locale.
+    pub(crate) line_children: Option<(String, Arc<crate::rules::Children>)>,
     pub(crate) asset_types: Option<Arc<crate::engine_asset_types::AssetTypes>>,
     package_names: Vec<String>,
     package_starts: Vec<u32>,
@@ -221,6 +223,7 @@ impl EngineQuery {
             audience_rules: Vec::new(),
             summary_cache: None,
             occurrence_data: None,
+            line_children: None,
             metadata_cache: crate::query_cache::QueryCache::default(),
             row_ranks: HashMap::new(),
             copy_starts: HashMap::new(),

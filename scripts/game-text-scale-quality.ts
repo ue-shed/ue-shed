@@ -22,7 +22,7 @@ import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 export const stallIntervalMs = 10;
 
 /** Retained package records stand in for the native reader; refresh and queries are production. */
-function retainedPackageSource(records: string) {
+export function retainedPackageSource(records: string) {
 	const readFailure = (cause: unknown) =>
 		new GameTextIndexError({
 			nextStep: "escalate",

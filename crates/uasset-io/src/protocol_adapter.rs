@@ -102,6 +102,8 @@ pub fn run_session() -> u8 {
             eprintln!("uasset protocol-session: request exceeds 4 MiB");
             return EXIT_MALFORMED;
         }
+        #[cfg(feature = "benchmark-timings")]
+        let decode_span = game_text_index::benchmark_timings::Span::new("frameDecodeValidate");
         let request = match decode_request_frame(&request_bytes, MAX_REQUEST_BYTES) {
             Ok(request) => request,
             Err(error) => {
@@ -109,7 +111,13 @@ pub fn run_session() -> u8 {
                 return EXIT_MALFORMED;
             }
         };
+        #[cfg(feature = "benchmark-timings")]
+        drop(decode_span);
         let exit = execute_request(&request, Some(&mut query_session));
+        #[cfg(feature = "benchmark-timings")]
+        if let Err(error) = game_text_index::benchmark_timings::flush(&request.request_id) {
+            eprintln!("benchmark timing output failed: {error}");
+        }
         if exit != EXIT_SUCCESS {
             return exit;
         }
@@ -198,6 +206,8 @@ impl Emitter {
     }
 
     fn emit_internal(&mut self, kind: &str, fields: Value, validate: bool) -> Result<(), String> {
+        #[cfg(feature = "benchmark-timings")]
+        let encode_span = game_text_index::benchmark_timings::Span::new("frameEncode");
         self.cancellation
             .checkpoint("event emission")
             .map_err(|stage| format!("operation cancelled during {stage}"))?;
@@ -219,10 +229,14 @@ impl Emitter {
             decode_event(&bytes)
                 .map_err(|error| format!("internal protocol event failed validation: {error}"))?;
         }
+        #[cfg(feature = "benchmark-timings")]
+        drop(encode_span);
         self.write_frame(&bytes)
     }
 
     fn write_frame(&mut self, bytes: &[u8]) -> Result<(), String> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = game_text_index::benchmark_timings::Span::new("pipeWrite");
         let frame_bytes = u64::try_from(bytes.len())
             .map_err(|_| "protocol output size overflowed".to_owned())?
             .checked_add(1)
@@ -336,6 +350,8 @@ impl Emitter {
             sequence: self.sequence,
             result,
         };
+        #[cfg(feature = "benchmark-timings")]
+        let encode_span = game_text_index::benchmark_timings::Span::new("frameEncode");
         let bytes = if matches!(result, ResultFrame::ExtractTextPackages { .. }) {
             let mut frame = BoundedJsonFrame {
                 bytes: Vec::new(),
@@ -362,6 +378,8 @@ impl Emitter {
                 ..Default::default()
             })?
         };
+        #[cfg(feature = "benchmark-timings")]
+        drop(encode_span);
         self.write_frame(&bytes).map_err(emission_failure)
     }
 }

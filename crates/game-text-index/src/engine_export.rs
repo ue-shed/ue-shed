@@ -9,7 +9,14 @@ use std::path::Path;
 use std::sync::{Arc, atomic::AtomicBool};
 
 fn value(output: &mut impl Write, value: &Value) -> Result<()> {
-    output.write_all(crate::wtf8::view_json(value)?.as_bytes())?;
+    #[cfg(feature = "benchmark-timings")]
+    let encoding = crate::benchmark_timings::Span::new("bulkEncode");
+    let text = crate::wtf8::view_json(value)?;
+    #[cfg(feature = "benchmark-timings")]
+    drop(encoding);
+    #[cfg(feature = "benchmark-timings")]
+    let _write = crate::benchmark_timings::Span::new("bulkBufferedWrite");
+    output.write_all(text.as_bytes())?;
     Ok(())
 }
 fn separator(output: &mut impl Write, first: &mut bool) -> Result<()> {
@@ -87,6 +94,8 @@ impl EngineQuery {
                 value(&mut output, &line)?;
             }
             output.write_all(b"]")?;
+            #[cfg(feature = "benchmark-timings")]
+            let _flush = crate::benchmark_timings::Span::new("bulkFlush");
             output.flush()?;
             Ok(output.get_ref().metadata()?.len())
         })();

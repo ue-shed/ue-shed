@@ -1,3 +1,4 @@
+import { channel } from "node:diagnostics_channel";
 import { Context, Effect, Layer, Ref, Semaphore } from "effect";
 import {
 	type GameTextEngineRequest,
@@ -11,6 +12,8 @@ import {
 	type ProtocolSessionProcessFactory,
 	UassetProtocolSession
 } from "./protocol-transport.js";
+
+const benchmark = channel("ue-shed.game-text-benchmark");
 
 /** Native engine calls share their process scope; reader handles never escape that scope. */
 export class NativeGameTextEngineClient extends Context.Service<
@@ -52,6 +55,22 @@ export const nativeGameTextEngineClientLayer = (
 				// Requests are built by typed host code and trusted after the handshake; the engine
 				// still bounds what it allocates for each one.
 				const request = input;
+				const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
+				const protocolRequest = makeProtocolRequest(
+					{ kind: "game_text_engine", request },
+					{
+						maximumOutputBytes: 64 * 1024 ** 2,
+						timeoutMs: configuration.catalogTimeoutMs
+					},
+					{ contractMinor: request.action.startsWith("findings_") ? 20 : 15 }
+				);
+				// The benchmark's client stage; requests are no longer Schema-decoded here.
+				if (encodeStarted !== undefined)
+					benchmark.publish({
+						stage: "tsClientSchema",
+						action: request.action,
+						ms: performance.now() - encodeStarted
+					});
 				const evidence = yield* mutex.withPermits(1)(
 					invokeProtocolSessionSingleWithEvidence({
 						session,
@@ -66,14 +85,7 @@ export const nativeGameTextEngineClientLayer = (
 								: request.action === "capabilities"
 									? "capabilities"
 									: request.reader,
-						request: makeProtocolRequest(
-							{ kind: "game_text_engine", request },
-							{
-								maximumOutputBytes: 64 * 1024 ** 2,
-								timeoutMs: configuration.catalogTimeoutMs
-							},
-							{ contractMinor: request.action.startsWith("findings_") ? 20 : 15 }
-						),
+						request: protocolRequest,
 						expected: "game_text_engine",
 						select: (result) =>
 							result.kind === "game_text_engine" ? result.outcome : undefined

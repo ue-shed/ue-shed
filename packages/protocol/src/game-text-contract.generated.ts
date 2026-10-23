@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "62436b3e739eae94b73751de6654f263023ddf8d7e4b7f91b7e0ddf937e7a12d"
+	contractHash: "28e2f6cac4c27aaf73204d1cdc8f122886163f88b33eee3423e1a5df1aaed75d"
 } as const;
 
 export type JsonValue =

@@ -13,8 +13,8 @@
 
 ## Status
 
-- **State**: TODO. Phase 0 is in progress on `test/game-text-fixture`: the Game Text fixture with
-  planted right answers.
+- **State**: In progress. Phase 0 is complete: the fixture merged in #162, and the baseline and
+  transport decision are recorded.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -309,8 +309,8 @@ Illustrative syntax:
     - **(b)** the child process writes batches to shared memory;
     - **(c)** an in-process N-API module.
 
-    The working preference is (a), for crash isolation, unless the measured per-request overhead
-    dominates.
+    Phase 0 chose (a). Small-request pipe delivery is 0.52 ms on the generated project and
+    0.60 ms on the released project. Engine compute and column construction dominate.
 
 ### Incremental updates
 
@@ -350,21 +350,36 @@ Illustrative syntax:
 
 ## Phases
 
-### Phase 0: fixture and baseline (in progress)
+### Phase 0: fixture and baseline (complete)
 
 - **The fixture.**
     - The corpus generator plants every case with its right answer, and writes localization files and
       an expectations file.
     - It runs as a fuzzer at any seed and scale.
     - Known defects of today's engine are listed per case.
-- **The baseline.** Measure on the generated corpus at 1× and, read-only, on the released project:
+- **The baseline.** Measured on the generated corpus at 1× and, read-only, on the released project:
     - build, open and cached reopen;
     - the quality pass;
     - a keystroke search with facets;
     - row selection with detail and related lines;
-    - export;
     - the per-request overhead, broken down into serialize, pipe, parse and decode.
-- **The transport spike.** Measure options (a), (b) and (c) on the same request mix, and decide.
+- **The transport spike.** Chose (a), binary frames over the existing child-process pipe, after
+  three generated-project rounds and two released-project rounds.
+
+Baseline medians, except the keystroke p95:
+
+| Path                                            | Generated 1× | Released 10-culture project |
+| ----------------------------------------------- | -----------: | --------------------------: |
+| Cold build to visible page                      |     66.999 s |                   108.189 s |
+| Open to visible page                            |      1.897 s |                     1.812 s |
+| Cached reopen                                   |      2.957 s |                     6.068 s |
+| Quality, captured defaults                      |     94.110 s |                   176.291 s |
+| Workbench matching 1–2-character keystroke, p95 |    598.98 ms |                   389.44 ms |
+| Saturated related-line probe, 444 requests      |    784.24 ms |                   638.17 ms |
+
+The [measurement record](../docs/engineering/game-text-engine-measurements.md) has the request
+mix, commands, complete tables and probe coverage. Engine compute and column construction,
+especially for all rows, are the Phase 3 and 4 work.
 
 ### Phase 1: facts, the IR and rules that read only their own row
 
@@ -504,9 +519,10 @@ Decided on 2026-10-23, for Phase 1 (details in the
 14. **v4 rule documents stay internal in Phase 1.** They become the public authoring format in
     Phase 2, with the rule editor.
 
-Still open:
+Decided in Phase 0:
 
-- **Transport:** (a), (b) or (c), decided by the Phase 0 measurements. The working preference is (a).
+- **Transport:** (a), binary frames over the existing child-process pipe. Delivery is a small
+  part of the round trip; retain the process boundary.
 
 UE Shed doesn't have to decide these, because the design leaves them to the rule:
 

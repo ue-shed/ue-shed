@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { channel } from "node:diagnostics_channel";
 import type { Readable, Writable } from "node:stream";
 import {
 	SavedAssetManifestEntry,
@@ -54,6 +55,7 @@ export interface ProtocolSingleEvidence<A> {
 const TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS = 8 * 1024 * 1024;
 const PROJECT_INDEX_TYPE_SIDE_MIN_FRAME_CHARACTERS = 128 * 1024;
 const MAX_PROTOCOL_TERMINATION_WAIT_MS = 1_000;
+const benchmark = channel("ue-shed.game-text-benchmark");
 const exactProtocolParseOptions = { onExcessProperty: "error" } as const;
 const validateProtocolEventType = Schema.decodeUnknownExit(
 	Schema.toType(UAssetIoEvent),
@@ -138,6 +140,7 @@ export class ProtocolStreamValidator {
 	) {}
 
 	pushLine(line: string): ProtocolEvent {
+		const parseStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 		if (line.trim().length === 0) {
 			throw new ProtocolStreamFailure("contract", "Protocol stream contains an empty frame");
 		}
@@ -155,6 +158,12 @@ export class ProtocolStreamValidator {
 			);
 		}
 		this.push(event);
+		if (parseStarted !== undefined)
+			benchmark.publish({
+				stage: "tsFrameParse",
+				requestId: event.requestId,
+				ms: performance.now() - parseStarted
+			});
 		return event;
 	}
 
@@ -1056,12 +1065,27 @@ export class UassetProtocolSession {
 				throw new ProtocolStreamFailure("process", "Protocol session input is unavailable");
 			}
 			try {
+				const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
+				const frame = `${JSON.stringify(options.request)}\n`;
+				if (encodeStarted !== undefined)
+					benchmark.publish({
+						stage: "tsFrameEncode",
+						requestId: options.request.requestId,
+						ms: performance.now() - encodeStarted
+					});
+				const writeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 				await new Promise<void>((resolvePromise, rejectPromise) => {
-					stdin.write(`${JSON.stringify(options.request)}\n`, (cause) => {
+					stdin.write(frame, (cause) => {
 						if (cause === null || cause === undefined) resolvePromise();
 						else rejectPromise(cause);
 					});
 				});
+				if (writeStarted !== undefined)
+					benchmark.publish({
+						stage: "tsPipeWriteCallback",
+						requestId: options.request.requestId,
+						ms: performance.now() - writeStarted
+					});
 			} catch (cause) {
 				const processCause =
 					this.processError ?? (cause instanceof Error ? cause : undefined);

@@ -139,6 +139,8 @@ impl EngineRequest {
         )
     }
     pub fn validate(&self) -> Result<()> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("requestValidate");
         match self {
             Self::Capabilities => {}
             Self::Open {
@@ -301,6 +303,8 @@ impl EngineSession {
         request: &EngineRequest,
         cancelled: &AtomicBool,
     ) -> Result<EngineOutcome> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("engineTotal");
         request.validate()?;
         checkpoint(cancelled)?;
         let started = Instant::now();

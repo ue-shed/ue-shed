@@ -31,6 +31,7 @@ ts-rs = "12.0"
 # Count live heap in test builds, for memory attribution runs. Off for timing runs: the counters
 # cost every allocation.
 heap-counting = []
+benchmark-timings = []
 
 [target.'cfg(windows)'.dependencies]
 file-id = "=0.2.3"

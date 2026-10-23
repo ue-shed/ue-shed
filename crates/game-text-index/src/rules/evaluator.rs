@@ -1493,8 +1493,9 @@ impl<'a> Evaluator<'a> {
         let parsed = &self.parsed;
         // Each row's text and memo group in one word; `NONE` for failed and non-string rows.
         const NONE: u64 = u64::MAX;
-        let key =
-            |packed: u64| (packed != NONE).then_some((StrId(packed as u32), (packed >> 32) as usize));
+        let key = |packed: u64| {
+            (packed != NONE).then_some((StrId(packed as u32), (packed >> 32) as usize))
+        };
         let row_keys = keyed.parallel_range(selection.len(), |row| {
             if failures.get(row) {
                 return NONE;

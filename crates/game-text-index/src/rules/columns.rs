@@ -718,11 +718,19 @@ struct Span {
     start: u32,
     end: u32,
 }
+impl Span {
+    /// The span of a store string that is not loaded.
+    const NONE: Self = Self {
+        batch: u32::MAX,
+        start: 0,
+        end: 0,
+    };
+}
 pub struct Arena {
     store_count: u32,
-    /// Loaded store strings: each `load_strings` batch is one exact-size buffer, so a string
-    /// costs a span, not an allocation of its own.
-    stored: FxHashMap<StrId, Span>,
+    /// Loaded store strings by id, up to the highest id loaded: each `load_strings` batch is
+    /// one exact-size buffer, so a string costs a span, not an allocation of its own.
+    stored: Vec<Span>,
     stored_text: Vec<Box<str>>,
     side: Vec<Arc<str>>,
     strings: FxHashMap<u64, StrId>,
@@ -771,8 +779,8 @@ impl Arena {
                 ((self.occurrence_values.capacity() + self.location_values.capacity()) * 4) as u64,
             ),
             (
-                "arena.storedMap",
-                (self.stored.capacity() * (size_of::<StrId>() + size_of::<Span>() + 1)) as u64,
+                "arena.storedSpans",
+                (self.stored.capacity() * size_of::<Span>()) as u64,
             ),
             (
                 "arena.storedText",
@@ -827,7 +835,7 @@ impl Arena {
                 + structures
                 + self.structures.capacity() * (size_of::<Structured>() + size_of::<ValId>() + 1)
                 + (self.occurrence_values.capacity() + self.location_values.capacity()) * 4
-                + self.stored.capacity() * (size_of::<StrId>() + size_of::<Span>() + 1)
+                + self.stored.capacity() * size_of::<Span>()
                 + self
                     .stored_text
                     .iter()
@@ -848,7 +856,7 @@ impl Arena {
     pub fn new(store_count: usize) -> Result<Self> {
         Ok(Self {
             store_count: store_count.try_into()?,
-            stored: FxHashMap::default(),
+            stored: Vec::new(),
             stored_text: Vec::new(),
             side: Vec::new(),
             strings: FxHashMap::default(),
@@ -868,15 +876,15 @@ impl Arena {
     }
     pub fn load_strings(&mut self, reader: &mut EngineReader, ids: &[u32]) -> Result<()> {
         let dedup = super::stages::Measure::start();
-        let mut seen = HashSet::new();
-        let mut wanted = ids
-            .iter()
-            .copied()
-            .filter(|id| {
-                *id < self.store_count && !self.stored.contains_key(&StrId(*id)) && seen.insert(*id)
-            })
-            .collect::<Vec<_>>();
-        wanted.sort_unstable();
+        // Each wanted id once, in id order: a bitset over the store marks the ids not loaded.
+        let mut seen = Bits::new(self.store_count as usize);
+        for id in ids.iter().map(|id| *id as usize) {
+            if id < seen.len && !self.loaded(id) {
+                seen.set(id);
+            }
+        }
+        let wanted = seen.ones().collect::<Vec<_>>();
+        drop(seen);
         self.recorder
             .sub_stage("strings.dedup".into(), &dedup, ids.len());
         let mut measure = super::stages::Measure::start();
@@ -909,9 +917,15 @@ impl Arena {
         }
         drop(texts);
         self.stored_text.push(buffer.into_boxed_str());
-        self.stored.reserve(spans.len());
+        if let Some(last) = wanted.last().map(|id| *id as usize + 1)
+            && last > self.stored.len()
+        {
+            self.stored.reserve_exact(last - self.stored.len());
+            self.stored.resize(last, Span::NONE);
+        }
+        self.strings.reserve(wanted.len());
         for ((id, hash), span) in wanted.iter().copied().zip(hashes).zip(spans) {
-            self.stored.insert(StrId(id), span);
+            self.stored[id as usize] = span;
             if let Some(first) = self.strings.get(&hash).copied() {
                 if self.text(first) != self.text(StrId(id)) {
                     self.string_collisions
@@ -939,10 +953,18 @@ impl Arena {
         if id.0 >= self.store_count {
             &self.side[(id.0 - self.store_count) as usize]
         } else {
-            self.stored.get(&id).map_or("", |span| {
-                &self.stored_text[span.batch as usize][span.start as usize..span.end as usize]
-            })
+            self.stored
+                .get(id.0 as usize)
+                .filter(|span| span.batch != Span::NONE.batch)
+                .map_or("", |span| {
+                    &self.stored_text[span.batch as usize][span.start as usize..span.end as usize]
+                })
         }
+    }
+    fn loaded(&self, id: usize) -> bool {
+        self.stored
+            .get(id)
+            .is_some_and(|span| span.batch != Span::NONE.batch)
     }
     fn text_arc(&self, id: StrId) -> Arc<str> {
         if id.0 >= self.store_count {

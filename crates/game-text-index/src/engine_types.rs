@@ -21,7 +21,7 @@ pub const STATES: [&str; 10] = [
     "outside_target",
     "unknown",
 ];
-pub const REASONS: [&str; 17] = [
+pub const REASONS: [&str; 18] = [
     "missing_manifest",
     "missing_archive",
     "missing_po",
@@ -39,6 +39,7 @@ pub const REASONS: [&str; 17] = [
     "asset_class_unavailable",
     "path_not_project_relative",
     "ambiguous_po_identity",
+    "string_table_entry_missing",
 ];
 pub const SIGNALS: [&str; 7] = [
     "shared",

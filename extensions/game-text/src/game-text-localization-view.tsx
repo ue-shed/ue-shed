@@ -54,7 +54,8 @@ export const unknownLabels = {
 	class_hierarchy_unavailable: "The asset's class ancestry is unavailable.",
 	asset_class_unavailable: "The asset's class is unavailable.",
 	path_not_project_relative: "The asset could not be placed inside the project.",
-	ambiguous_po_identity: "The PO entry could not be matched to a single key."
+	ambiguous_po_identity: "The PO entry could not be matched to a single key.",
+	string_table_entry_missing: "The referenced entry is missing from the String Table."
 } satisfies Record<LocalizationUnknownReason, string>;
 
 function reasonFileKind(

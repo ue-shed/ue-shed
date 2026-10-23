@@ -728,7 +728,7 @@ export const inspectJoinedTarget = Effect.fn("JoinedTarget.inspect")(function* (
 		keyChanges: meta.pairs.length,
 		ambiguous: meta.ambiguous,
 		keyless: (yield* u32(layer, "line.reasons")).reduce(
-			(count, bits) => count + Number(Boolean(bits & ((1 << 9) | (1 << 10)))),
+			(count, bits) => count + Number(Boolean(bits & ((1 << 9) | (1 << 10) | (1 << 17)))),
 			0
 		),
 		folderCounts: Object.fromEntries(

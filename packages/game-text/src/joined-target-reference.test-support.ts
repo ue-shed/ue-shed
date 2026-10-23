@@ -240,6 +240,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		if (c.location[row] === 2 && c.identity[row] === 0 && c.key[row] !== empty)
 			tables[tableIndex++] = row;
 	tables.sort((a, b) => c.object[a]! - c.object[b]! || c.row[a]! - c.row[b]! || a - b);
+	const knownTables = new Set(Array.from(tables, (row) => c.object[row]!));
 	for (let start = 0; start < tables.length; ) {
 		let end = start + 1;
 		const first = tables[start]!;
@@ -690,7 +691,14 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		if (oe - os > 1) line.problems![row]! |= FINDING_BIT;
 		if (ns === absent)
 			reasons |= reasonBit(
-				hasReference ? "string_table_namespace_unavailable" : "unresolved_identity"
+				hasReference
+					? Array.from(order.slice(os, oe)).some(
+							(index) =>
+								c.identity[index] === 1 && knownTables.has(c.namespace[index]!)
+						)
+						? "string_table_entry_missing"
+						: "string_table_namespace_unavailable"
+					: "unresolved_identity"
 			);
 		if (!manifest.reader) reasons |= reasonBit("missing_manifest");
 		if (me - ms > 1) reasons |= reasonBit("duplicate_manifest_identity");

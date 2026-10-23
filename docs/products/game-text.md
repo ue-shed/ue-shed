@@ -840,7 +840,7 @@ so a changed source can also have an unsynced translation. Native cultures use t
 with the same rules; gathered native translations normally equal the source.
 
 Missing manifest/archive/PO evidence, duplicate identities, unresolved corpus identities or String
-Table namespaces, conflicting current sources, unavailable gather settings, non-project paths and
+Table namespaces or entries, conflicting current sources, unavailable gather settings, non-project paths and
 unavailable asset classes or excluded-class ancestry are explicit unknown reasons. DataTable cell
 locations do not distinguish DataTable subclasses, so class exclusions can require unknown coverage.
 A file the working copy does not
@@ -851,6 +851,10 @@ code. Ready target results and workspace report pages carry these failed files a
 Namespace-collapsed PO identities
 without keys cannot support an exact join. Crowdin identity PO marks reduced source checking because
 it has no source; archive-to-manifest comparisons still determine staleness.
+
+A reference into an available String Table whose namespace is known but whose entry is absent
+is `unknown` with `string_table_entry_missing`. `string_table_namespace_unavailable` means the
+table's namespace could not be established. These are distinct from an unresolved FText identity.
 
 A file confirmed missing supplies absence: a non-empty PO translation with a missing archive is
 not synced, while a missing PO does not invalidate a proven archive translation. File failures

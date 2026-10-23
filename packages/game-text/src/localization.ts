@@ -368,6 +368,16 @@ export function joinLocalizationTarget(
 		evidence.manifest.status === "read" ? evidence.manifest.value.entries : []
 	);
 	const rows = gatheredTextGroups(corpus);
+	const knownTables = new Set(
+		corpus.units.flatMap((unit) =>
+			unit.occurrences.flatMap((occurrence) =>
+				occurrence.location.kind === "string_table_entry" &&
+				occurrence.identity.status === "resolved"
+					? [occurrence.location.objectPath]
+					: []
+			)
+		)
+	);
 	for (const [key, entries] of manifest) {
 		const entry = entries[0];
 		if (entry && !rows.has(key))
@@ -425,7 +435,13 @@ export function joinLocalizationTarget(
 		if (!row.identity)
 			reasons.push(
 				row.units.some((unit) => unit.identity.status === "string_table")
-					? "string_table_namespace_unavailable"
+					? row.units.some(
+							(unit) =>
+								unit.identity.status === "string_table" &&
+								knownTables.has(unit.identity.tableId)
+						)
+						? "string_table_entry_missing"
+						: "string_table_namespace_unavailable"
 					: "unresolved_identity"
 			);
 		if (evidence.manifest.status === "failed") reasons.push("missing_manifest");

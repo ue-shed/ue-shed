@@ -144,7 +144,7 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 	const affected = new Set<number>(),
 		order = yield* u32(layer, "occurrence.rows");
 	let resolvedCount = meta.count;
-	while (resolvedCount && line.reasons![resolvedCount - 1]! & ((1 << 9) | (1 << 10)))
+	while (resolvedCount && line.reasons![resolvedCount - 1]! & ((1 << 9) | (1 << 10) | (1 << 17)))
 		resolvedCount--;
 	for (let position = 0; position < order.length; position++)
 		if (packageChanges.has(order[position]!)) {
@@ -422,7 +422,10 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 			set(prefix + "state", row, state);
 			set(prefix + "reasons", row, unknown);
 			problems |= cultureProblemBits(state, facts, unknown);
-			if (input.review?.target === input.target.name && !(reasons & ((1 << 9) | (1 << 10)))) {
+			if (
+				input.review?.target === input.target.name &&
+				!(reasons & ((1 << 9) | (1 << 10) | (1 << 17)))
+			) {
 				const recordRows = yield* u32(layer, prefix + "review_record"),
 					record = input.review.records[recordRows[row]! - 1];
 				if (record) {

@@ -48,9 +48,8 @@ pub(crate) const L_REASONS: usize = 9;
 /// A line's problems under a request that names no finding, classified through `text_problem`
 /// from the shared table, as the engine does. Queries classify per request instead.
 pub(crate) const L_PROBLEMS: usize = 11;
-/// Joined layers this build writes and extends. v3: units key resolved text by the namespace
-/// without its package marker, so earlier joins carry other unit IDs.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v3:";
+/// v4 distinguishes absent String Table entries from unavailable table namespaces.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v4:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -117,7 +116,7 @@ impl Joined {
         self.groups[row].os < self.groups[row].oe
     }
     pub fn resolved(&self, row: usize) -> bool {
-        self.line[L_REASONS][row] & ((1 << 9) | (1 << 10)) == 0
+        self.line[L_REASONS][row] & ((1 << 9) | (1 << 10) | (1 << 17)) == 0
     }
     pub fn matches(&self, row: usize, state: u32) -> bool {
         self.cultures.iter().any(|c| c[0][row] == state)
@@ -599,8 +598,10 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         unit_ids.push(packages.unit_id(row, &strings, empty)?);
     }
     let mut tables = HashMap::<(u32, u32), usize>::new();
+    let mut known_tables = HashSet::new();
     for row in 0..count {
         if c[O_LOCATION][row] == 2 && c[O_IDENTITY][row] == 0 && c[O_KEY][row] != empty {
+            known_tables.insert(c[O_OBJECT][row]);
             let key = (c[O_OBJECT][row], c[O_ROW][row]);
             let select = tables.get(&key).is_none_or(|previous| {
                 (c[O_NS][row], c[O_KEY][row]) == (c[O_NS][*previous], c[O_KEY][*previous])
@@ -909,7 +910,16 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             joined.line[L_PROBLEMS][row] |= crate::text_problem::FINDING;
         }
         if g.ns == ABSENT {
-            reasons |= 1 << if has_reference { 10 } else { 9 };
+            let reason = if !has_reference {
+                9
+            } else if occurrence_rows.iter().any(|i| {
+                c[O_IDENTITY][*i as usize] == 1 && known_tables.contains(&c[O_NS][*i as usize])
+            }) {
+                17
+            } else {
+                10
+            };
+            reasons |= 1 << reason;
         }
         if !joined.manifest.loaded {
             reasons |= 1;

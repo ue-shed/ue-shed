@@ -63,18 +63,6 @@ export const corpusKnownDefects: readonly CorpusKnownDefect[] = [
 			})
 		)
 	),
-	...cultures.map(
-		(culture): CorpusKnownDefect => ({
-			case: "reference-missing-key",
-			defects: ["reference-missing-key"],
-			culture,
-			kind: "subject",
-			status: "defect",
-			why: "The table exists and exposes its namespace. The missing entry requires the dedicated string_table_entry_missing reason; treating the namespace as unavailable is incorrect.",
-			actual: { unknownReasons: ["string_table_namespace_unavailable"] },
-			rightAnswer: { unknownReasons: ["string_table_entry_missing"] }
-		})
-	),
 	{
 		case: "empty-with-source-edge",
 		defects: ["empty-translation-whitespace"],

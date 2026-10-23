@@ -623,6 +623,25 @@ describe("localization identity join and precedence", () => {
 			"translated"
 		]);
 	});
+	it("distinguishes a missing String Table entry from an unavailable table namespace", () => {
+		const table = unit("K", "Source", "Content/Text/Table.uasset");
+		const saved = ftextUnit("Absent", "Reference", "Content/Text/Reference.uasset");
+		const identity = {
+			status: "string_table" as const,
+			tableId: "/Game/Text/Table.Table",
+			key: "Absent"
+		};
+		const reference = Schema.decodeUnknownSync(TextUnit)({
+			...saved,
+			identity,
+			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity }))
+		});
+		const line = joinLocalizationTarget(corpus([table, reference]), evidence([])).lines.find(
+			(line) => line.identity === null
+		);
+		expect(line?.cultures.every((mark) => mark.state === "unknown")).toBe(true);
+		expect(line?.cultures[0]?.unknownReasons).toEqual(["string_table_entry_missing"]);
+	});
 	it("distinguishes confirmed file absence from unreadable evidence", () => {
 		const files = evidence();
 		const missingArchive = Schema.decodeUnknownSync(LocalizationTargetEvidence)({

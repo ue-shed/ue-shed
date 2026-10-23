@@ -25,6 +25,8 @@ mod engine_text;
 mod engine_types;
 pub mod join;
 mod join_columns;
+#[cfg(test)]
+mod join_fact_tests;
 pub mod join_incremental;
 mod join_marks;
 mod join_places;

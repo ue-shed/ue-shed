@@ -1,7 +1,7 @@
 //! Native typed subject projections. Stored texts stay dictionary IDs throughout execution.
-use super::columns::{Arena, Atom, Children, Column, FieldColumn, Occurrences, Prepared, StrId};
+use super::columns::{Arena, Atom, Children, Column, FieldColumn, Prepared, StrId};
 use super::value::Value;
-use super::{NativeSubjects, Subject};
+use super::{NativeSubjects, Subject, SubjectRows};
 use crate::engine_match::checkpoint;
 use crate::engine_types::{REASONS, STATES};
 use crate::join_policy::trim;
@@ -93,10 +93,11 @@ impl<'a, 'q> Projector<'a, 'q> {
                     })
             })
             .collect();
+        let fields = arena.line_fields.clone();
         Ok(Self {
             subjects,
             arena,
-            fields: HashMap::new(),
+            fields,
             manifest: None,
             files: HashMap::new(),
             references,
@@ -734,156 +735,125 @@ impl<'a, 'q> Projector<'a, 'q> {
         self.column(&values)
     }
     fn children(&mut self, parents: Option<Arc<[u32]>>) -> Result<Children> {
-        let mut groups = Vec::new();
-        if self.subjects.subject == Subject::UnitSource {
-            groups.extend(self.subjects.units.iter().map(|unit| unit.members.clone()));
-        } else {
-            for row in 0..self.subjects.projection.source.len() {
-                groups.push(self.subjects.line_members(row));
-            }
+        let line = self.subjects.subject != Subject::UnitSource;
+        if line && let Some(children) = &self.arena.line_children {
+            let mut children = (**children).clone();
+            children.rows = parents;
+            return Ok(children);
         }
-        let mut used = groups.iter().flatten().copied().collect::<Vec<_>>();
-        used.sort_unstable();
-        used.dedup();
-        let local = used
+        let groups = if line {
+            (0..self.subjects.projection.source.len())
+                .map(|row| self.subjects.line_members(row))
+                .collect::<Vec<_>>()
+        } else {
+            self.subjects
+                .units
+                .iter()
+                .map(|unit| unit.members.clone())
+                .collect()
+        };
+        let mut used = if self.arena.occurrences.raw_rows.is_empty() {
+            let mut used = groups.iter().flatten().copied().collect::<Vec<_>>();
+            used.sort_unstable();
+            used.dedup();
+            used
+        } else {
+            self.arena.occurrences.raw_rows.clone()
+        };
+        let mut local = used
             .iter()
             .enumerate()
             .map(|(index, row)| (*row, index as u32))
             .collect::<HashMap<_, _>>();
-        let mut physical = HashMap::<&str, Vec<u32>>::new();
-        let names = [
-            "source", "notes", "object", "property", "class", "row", "key", "identity", "location",
-        ];
-        let mut shards = Vec::new();
-        for shard in 0..self.subjects.query.package_count() {
-            let mut columns = HashMap::new();
-            for name in names {
-                columns.insert(
-                    name,
-                    self.subjects
-                        .query
-                        .package_column(shard, &format!("occurrence.{name}"))?,
-                );
-            }
-            shards.push(columns);
-        }
-        for (index, member) in used.iter().enumerate() {
-            if index & 8191 == 0 {
-                checkpoint(self.subjects.cancelled)?;
-            }
-            let (shard, row) = self.subjects.query.package_coordinate(*member as usize)?;
-            for name in names {
-                physical
-                    .entry(name)
-                    .or_default()
-                    .push(shards[shard][name][row]);
+        for row in groups.iter().flatten() {
+            if !local.contains_key(row) {
+                local.insert(*row, used.len() as u32);
+                used.push(*row);
             }
         }
-        for name in [
-            "source", "notes", "object", "property", "class", "row", "key",
-        ] {
-            if let Some(ids) = physical.get(name) {
-                self.strings(ids)?;
-            }
-        }
-        let mut fields = HashMap::<String, Arc<Column>>::new();
-        for (name, source) in [("source", "source"), ("devNotes", "notes")] {
-            let values = physical
-                .get(source)
-                .into_iter()
-                .flatten()
-                .map(|id| Atom::Str(StrId(*id)))
-                .collect::<Vec<_>>();
-            fields.insert(name.into(), self.column(&values)?);
-        }
-        let mut locations = Vec::new();
-        let mut ids = Vec::new();
-        let mut packages = Vec::new();
-        let mut statuses = Vec::new();
-        let mut package_ids = HashMap::new();
-        for (index, member) in used.iter().enumerate() {
-            if index & 8191 == 0 {
-                checkpoint(self.subjects.cancelled)?;
-            }
-            let (shard, package) = self.subjects.query.package_row(*member as usize)?;
-            let package = if let Some(id) = package_ids.get(&(shard, package)) {
-                *id
-            } else {
-                let text = self.subjects.query.package_file(shard, package)?;
-                let id = self.string(&text)?;
-                package_ids.insert((shard, package), id);
-                id
-            };
-            packages.push(package);
-            let object = Atom::Str(StrId(physical["object"][index]));
-            let property = Atom::Str(StrId(physical["property"][index]));
-            let row = Atom::Str(StrId(physical["row"][index]));
-            let code = physical["location"][index];
-            let kind = self.string(match code {
-                0 => "asset_property",
-                1 => "data_table_cell",
-                2 => "string_table_entry",
-                _ => return Err("Invalid occurrence location.".into()),
-            })?;
-            let mut location = vec![("objectPath", object), ("kind", kind)];
-            match code {
-                0 => {
-                    location.push(("propertyPath", property));
-                    location.push(("classPath", Atom::Str(StrId(physical["class"][index]))));
+        let required = self.arena.occurrence_fields.clone();
+        // Native occurrence columns are requested by rule expressions. Evidence is hydrated
+        // only for emitted sets, so the default catalogue needs only devNotes here.
+        if self.arena.occurrences.raw_rows.is_empty() {
+            for name in &required {
+                let mut values = Vec::with_capacity(used.len());
+                for (index, row) in used.iter().copied().enumerate() {
+                    if index & 8191 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
+                    let value = match name.as_str() {
+                        "source" | "devNotes" => {
+                            let id = self.subjects.query.occurrence_value(
+                                row as usize,
+                                if name == "source" { "source" } else { "notes" },
+                            )?;
+                            Atom::Str(StrId(id))
+                        }
+                        "location" => {
+                            let value = self.subjects.query.occurrence_location(row as usize)?;
+                            self.arena.intern(Value::from_json(&value))?
+                        }
+                        "unitStatus" => {
+                            let value = self.subjects.query.occurrence_identity(row as usize)?;
+                            self.arena.intern(Value::from_json(&value["status"]))?
+                        }
+                        "id" => {
+                            let id = self.subjects.query.occurrence_id(row as usize)?;
+                            self.string(&id)?
+                        }
+                        "packageFile" => {
+                            let (shard, package) = self.subjects.query.package_row(row as usize)?;
+                            let value = self.subjects.query.package_file(shard, package)?;
+                            self.string(&value)?
+                        }
+                        _ => continue,
+                    };
+                    values.push(value);
                 }
-                1 => {
-                    location.push(("propertyPath", property));
-                    location.push(("row", row));
-                }
-                _ => location.push(("entryKey", row)),
+                let ids = values
+                    .iter()
+                    .filter_map(|atom| {
+                        if let Atom::Str(id) = atom {
+                            Some(id.0)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                self.strings(&ids)?;
+                let column = self.column(&values)?;
+                self.arena.occurrences.fields.insert(name.clone(), column);
             }
-            locations.push(self.arena.object(location)?);
-            let suffix = match code {
-                0 => format!("property:{}", self.text(property)),
-                1 => format!("row:{}:property:{}", self.text(row), self.text(property)),
-                _ => format!("entry:{}", self.text(row)),
-            };
-            let id = format!(
-                "occurrence:{}:{suffix}:{}",
-                self.text(object),
-                self.text(package)
-            );
-            ids.push(self.string(&id)?);
-            let identity = physical["identity"][index];
-            require(identity <= 3, "Invalid stored occurrence identity.")?;
-            let empty = self.arena.text(StrId(physical["key"][index])).is_empty();
-            statuses.push(self.string(if identity >= 2 || empty {
-                "unresolved"
-            } else if identity == 1 {
-                "string_table"
-            } else {
-                "resolved"
-            })?);
         }
-        fields.insert("id".into(), self.column(&ids)?);
-        fields.insert("packageFile".into(), self.column(&packages)?);
-        fields.insert("location".into(), self.column(&locations)?);
-        fields.insert("unitStatus".into(), self.column(&statuses)?);
-        self.arena.occurrences = Occurrences {
-            fields,
-            len: used.len(),
+        let ids = if line {
+            used.iter()
+                .map(|row| self.subjects.query.occurrence_id(*row as usize))
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            Vec::new()
         };
         let mut children = Children {
-            offsets: vec![0],
-            members: Vec::new(),
+            offsets: Arc::new(vec![0]),
+            members: Arc::default(),
             rows: parents,
         };
         for mut group in groups {
-            if self.subjects.subject != Subject::UnitSource {
+            if line {
                 group.sort_by(|a, b| {
-                    self.subjects.collator.compare(
-                        self.text(ids[local[a] as usize]),
-                        self.text(ids[local[b] as usize]),
-                    )
+                    self.subjects
+                        .collator
+                        .compare(&ids[local[a] as usize], &ids[local[b] as usize])
                 });
             }
-            children.members.extend(group.iter().map(|row| local[row]));
-            children.offsets.push(children.members.len().try_into()?);
+            Arc::make_mut(&mut children.members).extend(group.iter().map(|row| local[row]));
+            Arc::make_mut(&mut children.offsets).push(children.members.len().try_into()?);
+        }
+        self.arena.occurrences.len = used.len();
+        self.arena.occurrences.raw_rows = used;
+        if line {
+            let mut shared = children.clone();
+            shared.rows = None;
+            self.arena.line_children = Some(Arc::new(shared));
         }
         Ok(children)
     }
@@ -907,16 +877,20 @@ impl NativeSubjects<'_> {
             None
         };
         let mut projector = Projector::new(self, arena)?;
-        let started = std::time::Instant::now();
+        let started = super::stages::Measure::start();
         let children = if with_children {
             projector.children(parents.clone())?
         } else {
             Children::default()
         };
-        let mut timings = vec![("occurrences".into(), started.elapsed())];
+        projector.arena.recorder.stage(
+            "subjects.occurrences",
+            &started,
+            projector.arena.occurrences.len,
+        );
+        let started = super::stages::Measure::start();
         let mut fields = HashMap::new();
         for name in names {
-            let started = std::time::Instant::now();
             checkpoint(projector.subjects.cancelled)?;
             let (column, rows) = match projector.subjects.subject {
                 Subject::Line => (projector.line(name)?, None),
@@ -930,12 +904,12 @@ impl NativeSubjects<'_> {
                 Subject::UnitSource => (projector.unit(name)?, None),
             };
             fields.insert(name.clone(), FieldColumn { column, rows });
-            timings.push((name.clone(), started.elapsed()));
         }
-        Ok(Prepared {
-            fields,
-            children,
-            timings,
-        })
+        projector
+            .arena
+            .recorder
+            .stage("subjects.columns", &started, projector.subjects.len());
+        projector.arena.line_fields = projector.fields.clone();
+        Ok(Prepared { fields, children })
     }
 }

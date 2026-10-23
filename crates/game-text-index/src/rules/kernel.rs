@@ -12,8 +12,8 @@ pub struct Kernel<'a> {
     pub roles: HashMap<String, Value>,
     patterns: Mutex<HashMap<(String, bool), Arc<js_regex::JsRegex>>>,
     classes: Mutex<HashMap<Atom, Arc<text::CharacterClass>>>,
-    roles_mask: Mutex<HashMap<StrId, Arc<Bits>>>,
-    paths_mask: Mutex<HashMap<StrId, Arc<Bits>>>,
+    roles_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
+    paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
 }
 fn boolean(value: &Value) -> bool {
     value.as_bool() == Some(true)
@@ -85,7 +85,11 @@ fn role_matches(occurrence: &Value, role: &Value) -> bool {
     })
 }
 impl<'a> Kernel<'a> {
-    pub fn new(collator: &'a HostCollator, roles: &HashMap<String, serde_json::Value>) -> Self {
+    pub fn new(
+        collator: &'a HostCollator,
+        roles: &HashMap<String, serde_json::Value>,
+        arena: &Arena,
+    ) -> Self {
         Self {
             collator,
             roles: roles
@@ -94,8 +98,8 @@ impl<'a> Kernel<'a> {
                 .collect(),
             patterns: Mutex::default(),
             classes: Mutex::default(),
-            roles_mask: Mutex::default(),
-            paths_mask: Mutex::default(),
+            roles_mask: Arc::clone(&arena.roles_mask),
+            paths_mask: Arc::clone(&arena.paths_mask),
         }
     }
     fn regex_matches(

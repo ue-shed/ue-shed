@@ -4,7 +4,7 @@ use crate::engine_reader::EngineReader;
 use crate::wtf8::Wtf8Buf;
 use crate::{Result, require};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StrId(pub u32);
@@ -53,6 +53,9 @@ impl Bits {
         self.words
             .get(row / 64)
             .is_some_and(|word| word & (1 << (row % 64)) != 0)
+    }
+    pub fn clear(&mut self, row: usize) {
+        self.words[row / 64] &= !(1 << (row % 64));
     }
     pub fn set(&mut self, row: usize) {
         self.words[row / 64] |= 1 << (row % 64);
@@ -204,18 +207,95 @@ impl Column {
             failed: Bits::new(values.len()),
         })
     }
-    pub fn select(&self, rows: &[usize], arena: &mut Arena) -> Result<Self> {
-        let values = rows
-            .iter()
-            .map(|row| self.get(*row, arena))
-            .collect::<Vec<_>>();
-        let mut column = Self::from_atoms(&values, arena)?;
-        for (index, row) in rows.iter().enumerate() {
-            if self.failed.get(*row) {
-                column.failed.set(index);
+    pub fn select(&self, rows: &[usize], _arena: &mut Arena) -> Result<Self> {
+        let select_bits = |bits: &Bits| {
+            let mut selected = Bits::new(rows.len());
+            for (index, row) in rows.iter().enumerate() {
+                if bits.get(*row) {
+                    selected.set(index);
+                }
+            }
+            selected
+        };
+        let data = match &self.data {
+            Data::Constant(value) => Data::Constant(*value),
+            Data::Bool(values) => Data::Bool(select_bits(values)),
+            Data::Int(values) => Data::Int(rows.iter().map(|row| values[*row]).collect()),
+            Data::Num(values) => Data::Num(rows.iter().map(|row| values[*row]).collect()),
+            Data::Str(values) => Data::Str(rows.iter().map(|row| values[*row]).collect()),
+            Data::Val(values) => Data::Val(rows.iter().map(|row| values[*row]).collect()),
+        };
+        Ok(Self {
+            data,
+            nulls: select_bits(&self.nulls),
+            failed: select_bits(&self.failed),
+        })
+    }
+    pub fn scatter(&mut self, rows: &[u32], source: &Self, arena: &mut Arena) -> Result<()> {
+        if let Data::Constant(value) = self.data {
+            self.data = match &source.data {
+                Data::Bool(_) | Data::Constant(Atom::Bool(_)) => Data::Bool(Bits::new(self.len())),
+                Data::Int(_) | Data::Constant(Atom::Int(_)) => Data::Int(vec![0; self.len()]),
+                Data::Num(_) | Data::Constant(Atom::Num(_)) => Data::Num(vec![0.0; self.len()]),
+                Data::Str(_) | Data::Constant(Atom::Str(_)) => {
+                    Data::Str(vec![StrId(0); self.len()])
+                }
+                Data::Val(_) | Data::Constant(Atom::Val(_)) => {
+                    Data::Val(vec![ValId(0); self.len()])
+                }
+                Data::Constant(Atom::Null) => Data::Constant(value),
+            };
+        }
+        for (index, row) in rows.iter().copied().enumerate() {
+            let row = row as usize;
+            let atom = source.get(index, arena);
+            if atom == Atom::Null {
+                self.nulls.set(row);
+            } else {
+                let compatible = matches!(
+                    (&self.data, atom),
+                    (Data::Bool(_), Atom::Bool(_))
+                        | (Data::Int(_), Atom::Int(_))
+                        | (Data::Num(_), Atom::Num(_))
+                        | (Data::Str(_), Atom::Str(_))
+                        | (Data::Val(_), _)
+                );
+                if !compatible {
+                    let atoms = (0..self.len())
+                        .map(|index| self.get(index, arena))
+                        .collect::<Vec<_>>();
+                    self.data = Data::Val(
+                        atoms
+                            .into_iter()
+                            .map(|atom| arena.structured(Structured::Scalar(atom)))
+                            .collect::<Result<_>>()?,
+                    );
+                }
+                self.nulls.clear(row);
+                match (&mut self.data, atom) {
+                    (Data::Bool(values), Atom::Bool(value)) => {
+                        if value {
+                            values.set(row);
+                        } else {
+                            values.clear(row);
+                        }
+                    }
+                    (Data::Int(values), Atom::Int(value)) => values[row] = value,
+                    (Data::Num(values), Atom::Num(value)) => values[row] = f64::from_bits(value),
+                    (Data::Str(values), Atom::Str(value)) => values[row] = value,
+                    (Data::Val(values), Atom::Val(value)) => values[row] = value,
+                    (Data::Val(values), atom) => {
+                        values[row] = arena.structured(Structured::Scalar(atom))?
+                    }
+                    (Data::Constant(value), atom) if *value == atom => {}
+                    _ => return Err("Incompatible cached column types.".into()),
+                }
+            }
+            if source.failed.get(index) {
+                self.failed.set(row);
             }
         }
-        Ok(column)
+        Ok(())
     }
 }
 #[derive(Clone)]
@@ -242,6 +322,7 @@ pub enum Structured {
 pub struct Occurrences {
     pub fields: HashMap<String, Arc<Column>>,
     pub len: usize,
+    pub raw_rows: Vec<u32>,
 }
 pub struct Arena {
     store_count: u32,
@@ -251,6 +332,12 @@ pub struct Arena {
     pub values: Vec<Structured>,
     structures: HashMap<Structured, ValId>,
     pub occurrences: Occurrences,
+    pub line_children: Option<Arc<Children>>,
+    pub line_fields: HashMap<String, Arc<Column>>,
+    pub occurrence_fields: HashSet<String>,
+    pub(crate) recorder: super::stages::Recorder,
+    pub(crate) roles_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
+    pub(crate) paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
 }
 impl Arena {
     pub fn new(store_count: usize) -> Result<Self> {
@@ -262,6 +349,12 @@ impl Arena {
             values: Vec::new(),
             structures: HashMap::new(),
             occurrences: Occurrences::default(),
+            line_children: None,
+            line_fields: HashMap::new(),
+            occurrence_fields: HashSet::new(),
+            recorder: super::stages::Recorder::default(),
+            roles_mask: Arc::default(),
+            paths_mask: Arc::default(),
         })
     }
     pub fn load_strings(&mut self, reader: &mut EngineReader, ids: &[u32]) -> Result<()> {
@@ -269,7 +362,9 @@ impl Arena {
         let mut wanted = ids
             .iter()
             .copied()
-            .filter(|id| !self.stored.contains_key(&StrId(*id)) && seen.insert(*id))
+            .filter(|id| {
+                *id < self.store_count && !self.stored.contains_key(&StrId(*id)) && seen.insert(*id)
+            })
             .collect::<Vec<_>>();
         wanted.sort_unstable();
         for (id, text) in wanted.iter().copied().zip(reader.strings_batch(&wanted)?) {
@@ -279,6 +374,12 @@ impl Arena {
             self.stored.insert(StrId(id), Arc::from(text));
         }
         Ok(())
+    }
+    pub fn same_dictionary(&self, a: StrId, b: StrId) -> bool {
+        (a.0 < self.store_count) == (b.0 < self.store_count)
+    }
+    pub fn string_count(&self) -> usize {
+        self.store_count as usize + self.side.len()
     }
     pub fn text(&self, id: StrId) -> &str {
         if id.0 >= self.store_count {
@@ -355,6 +456,29 @@ impl Arena {
                 Atom::Val(self.structured(Structured::Object(fields.into()))?)
             }
         })
+    }
+    pub fn json(&self, atom: Atom) -> serde_json::Value {
+        match atom {
+            Atom::Null => serde_json::Value::Null,
+            Atom::Bool(value) => value.into(),
+            Atom::Int(value) => value.into(),
+            Atom::Num(value) => serde_json::Number::from_f64(f64::from_bits(value))
+                .map_or(serde_json::Value::Null, serde_json::Value::Number),
+            Atom::Str(id) => self.text(id).into(),
+            Atom::Val(id) => match &self.values[id.0 as usize] {
+                Structured::List(values) => {
+                    serde_json::Value::Array(values.iter().map(|value| self.json(*value)).collect())
+                }
+                Structured::Object(fields) => serde_json::Value::Object(
+                    fields
+                        .iter()
+                        .map(|(key, value)| (self.text(*key).to_owned(), self.json(*value)))
+                        .collect(),
+                ),
+                Structured::Scalar(value) => self.json(*value),
+                Structured::Occurrence(_) => self.value(atom).json(),
+            },
+        }
     }
     pub fn value(&self, atom: Atom) -> Value {
         match atom {
@@ -435,10 +559,10 @@ impl Arena {
         value
     }
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Children {
-    pub offsets: Vec<u32>,
-    pub members: Vec<u32>,
+    pub offsets: Arc<Vec<u32>>,
+    pub members: Arc<Vec<u32>>,
     pub rows: Option<Arc<[u32]>>,
 }
 impl Children {
@@ -451,7 +575,6 @@ impl Children {
 pub struct Prepared {
     pub fields: HashMap<String, FieldColumn>,
     pub children: Children,
-    pub timings: Vec<(String, std::time::Duration)>,
 }
 impl Prepared {
     pub fn field(&self, name: &str) -> Result<&FieldColumn> {

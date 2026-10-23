@@ -1,14 +1,12 @@
 //! Explicit release-only timing over a retained, read-only joined index.
-use super::{HostCollator, NativeSubjects, Subject, SubjectRows, compile};
+
 use crate::engine_query::EngineQuery;
 use crate::store::{Configuration, open_root};
 use crate::{Result, require};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant};
 
 fn retained_query(cache_root: &Path) -> Result<EngineQuery> {
     let mut projects = std::fs::read_dir(cache_root.join("game-text-v2"))?
@@ -137,7 +135,7 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let catalogue = Command::new("node")
         .args(["--import","tsx","--input-type=module","-e",r#"import {canonicalRuleDocument,translateRuleDocument} from "./packages/game-text/src/rules/translate.ts"; console.log(JSON.stringify({node:process.versions.node,locale:new Intl.Collator().resolvedOptions().locale,rules:canonicalRuleDocument(translateRuleDocument())}));"#])
-        .current_dir(root)
+        .current_dir(&root)
         .output()?;
     require(
         catalogue.status.success(),
@@ -150,71 +148,30 @@ fn persisted_default_catalogue_timing() -> Result<()> {
             .is_some_and(|version| version.starts_with("26.")),
         "Use Node 26 for the default catalogue.",
     )?;
-    let program = compile(
-        catalogue["rules"]
-            .as_str()
-            .ok_or("Missing default catalogue.")?,
-    )?;
-    let collator = HostCollator::new(catalogue["locale"].as_str().ok_or("Missing host locale.")?)?;
-    let open_started = Instant::now();
     let mut query = retained_query(Path::new(&cache))?;
-    let open_elapsed = open_started.elapsed();
     let cancelled = AtomicBool::new(false);
-    let started = Instant::now();
-    let mut stages = Vec::new();
-    let mut kernels = HashMap::<String, (Duration, usize, usize)>::new();
-    let mut retained = Vec::new();
-    let mut finding_count = 0;
-    let mut diagnostic_count = 0;
-    for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
-        if subject != Subject::LineCulture
-            && !program
-                .rules
-                .iter()
-                .any(|rule| rule.rule.subject == subject)
-        {
-            continue;
-        }
-        let subject_started = Instant::now();
-        let mut subjects = NativeSubjects::new(&mut query, subject, &collator, &cancelled)?;
-        let setup = subject_started.elapsed();
-        let rows = subjects.len();
-        let (evaluation, timings, diagnostics) =
-            program.evaluate_with_diagnostics(&mut subjects, &collator)?;
-        for (node, timing) in program.nodes.iter().zip(&timings.nodes) {
-            let value = kernels.entry(node.op.clone()).or_default();
-            value.0 += timing.scalar;
-            value.1 += timing.tuples;
-            value.2 += timing.rows;
-        }
-        finding_count += evaluation.findings.len();
-        diagnostic_count += evaluation.diagnostics.len() + diagnostics.len();
-        stages.push(json!({
-            "subject":subject,"rows":rows,"setupMs":setup.as_secs_f64()*1000.0,
-            "prepareMs":timings.prepare.as_secs_f64()*1000.0,
-            "executeMs":timings.execute.as_secs_f64()*1000.0,
-            "diagnosticsMs":timings.diagnostics.as_secs_f64()*1000.0,
-            "emissionMs":timings.emission.as_secs_f64()*1000.0,
-            "projections":timings.projections.iter().map(|(name,time)| json!({"column":name,"ms":time.as_secs_f64()*1000.0})).collect::<Vec<_>>()
-        }));
-        retained.push((evaluation, diagnostics));
-    }
-    let elapsed = started.elapsed();
-    let peak = peak_memory()?;
-    let mut kernels = kernels.into_iter().collect::<Vec<_>>();
-    kernels.sort_by(|a, b| b.1.0.cmp(&a.1.0));
-    let result = json!({
-        "elapsedSeconds":elapsed.as_secs_f64(),"openSeconds":open_elapsed.as_secs_f64(),
-        "peakWorkingSetBytes":peak,"rayonThreads":rayon::current_num_threads(),
-        "findings":finding_count,"diagnostics":diagnostic_count,"stages":stages,
-        "kernels":kernels.into_iter().take(15).map(|(op,(time,tuples,rows))| json!({"op":op,"seconds":time.as_secs_f64(),"tuples":tuples,"rowVisits":rows})).collect::<Vec<_>>()
-    });
+    let rules = catalogue["rules"]
+        .as_str()
+        .ok_or("Missing default catalogue.")?;
+    let directory = root.join("test-results");
+    std::fs::create_dir_all(&directory)?;
+    let path = directory.join(format!("timing-rules-{}.json", crate::store::token()));
+    // Whitespace has no semantic effect; a distinct cache key ensures this measures a fresh run.
+    let fresh = format!("{}{}", rules, " ".repeat(257));
+    std::fs::write(&path, fresh)?;
+    let response = query.findings_evaluate(
+        &path,
+        catalogue["locale"].as_str().ok_or("Missing host locale.")?,
+        &cancelled,
+    );
+    std::fs::remove_file(path)?;
+    let response = crate::json_value::parse(&response?)?;
+    let profile = &response["profile"];
+    require(
+        profile["cached"] == false,
+        "Timing unexpectedly reused a cached findings layer.",
+    )?;
+    let result = json!({"profile":profile,"peakWorkingSetBytes":peak_memory()?,"rayonThreads":rayon::current_num_threads()});
     println!("{}", serde_json::to_string(&result)?);
-    if elapsed.as_secs_f64() > 30.0 {
-        println!(
-            "Evaluation exceeded 30 seconds; the stage and scalar-kernel breakdown above identifies the remaining cost."
-        );
-    }
-    drop(retained);
     Ok(())
 }

@@ -230,9 +230,87 @@ pub fn plural_forms(culture: &str, ordinal: bool) -> Option<Vec<String>> {
 }
 
 pub fn format_pattern(text: &str, culture: &str) -> Pattern {
-    parse(text, culture, 0)
+    validate_pattern(parse_pattern(text), culture)
 }
-fn parse(text: &str, culture: &str, depth: usize) -> Pattern {
+pub(super) fn parse_pattern(text: &str) -> Pattern {
+    if text.len() <= 1_000_000
+        && !text
+            .bytes()
+            .any(|byte| matches!(byte, b'{' | b'}' | b'`' | b'|'))
+    {
+        return Pattern {
+            compiled: Some(true),
+            arguments: Vec::new(),
+            modifiers: Vec::new(),
+            issues: Vec::new(),
+        };
+    }
+    parse(text, 0)
+}
+pub(super) fn validate_pattern(mut pattern: Pattern, culture: &str) -> Pattern {
+    let mut issues = Vec::new();
+    for item in pattern.issues {
+        if item.code != "__culture" {
+            issues.push(item);
+            continue;
+        }
+        let name = item.modifier.as_deref().unwrap_or("");
+        if let Some(required) = plural_forms(culture, name == "ordinal") {
+            if required.len() == 1 {
+                issues.push(issue(
+                    "redundant_modifier",
+                    Some(name),
+                    item.argument.as_deref(),
+                    Vec::new(),
+                    item.position,
+                ));
+            }
+            let missing = required
+                .iter()
+                .filter(|form| !item.forms.contains(form))
+                .cloned()
+                .collect::<Vec<_>>();
+            let unused = item
+                .forms
+                .iter()
+                .filter(|form| {
+                    ["zero", "one", "two", "few", "many", "other"].contains(&form.as_str())
+                        && !required.contains(form)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if !missing.is_empty() {
+                issues.push(issue(
+                    "missing_form",
+                    Some(name),
+                    item.argument.as_deref(),
+                    missing,
+                    item.position,
+                ));
+            }
+            if required.len() > 1 && !unused.is_empty() {
+                issues.push(issue(
+                    "unused_form",
+                    Some(name),
+                    item.argument.as_deref(),
+                    unused,
+                    item.position,
+                ));
+            }
+        } else {
+            issues.push(issue(
+                "unsupported_culture",
+                Some(name),
+                item.argument.as_deref(),
+                Vec::new(),
+                item.position,
+            ));
+        }
+    }
+    pattern.issues = issues;
+    pattern
+}
+fn parse(text: &str, depth: usize) -> Pattern {
     let text = units(text);
     let mut result = Pattern {
         compiled: Some(true),
@@ -277,7 +355,12 @@ fn parse(text: &str, culture: &str, depth: usize) -> Pattern {
         let prefix = ["plural", "ordinal", "gender", "hpp"]
             .into_iter()
             .find(|name| {
-                text[index..].starts_with(&format!("|{name}(").encode_utf16().collect::<Vec<_>>())
+                text[index] == 124
+                    && text[index + 1..]
+                        .iter()
+                        .copied()
+                        .take(name.len() + 1)
+                        .eq(name.bytes().map(u16::from).chain([40]))
             });
         if let Some(name) = prefix {
             let start = index + name.len() + 2;
@@ -298,7 +381,7 @@ fn parse(text: &str, culture: &str, depth: usize) -> Pattern {
                     } else {
                         forms
                             .iter()
-                            .map(|form| parse(&form.value, culture, depth + 1))
+                            .map(|form| parse(&form.value, depth + 1))
                             .collect::<Vec<_>>()
                     };
                     let required = if name == "gender" {
@@ -343,60 +426,13 @@ fn parse(text: &str, culture: &str, depth: usize) -> Pattern {
                             result.issues.extend(child.issues);
                         }
                         if matches!(name, "plural" | "ordinal") {
-                            if let Some(required) = plural_forms(culture, name == "ordinal") {
-                                let given = forms
-                                    .iter()
-                                    .map(|form| form.name.clone())
-                                    .collect::<Vec<_>>();
-                                if required.len() == 1 {
-                                    result.issues.push(issue(
-                                        "redundant_modifier",
-                                        Some(name),
-                                        previous.as_deref(),
-                                        Vec::new(),
-                                        index,
-                                    ));
-                                }
-                                let missing = required
-                                    .iter()
-                                    .filter(|form| !given.contains(form))
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                let unused = given
-                                    .into_iter()
-                                    .filter(|form| {
-                                        ["zero", "one", "two", "few", "many", "other"]
-                                            .contains(&form.as_str())
-                                            && !required.contains(form)
-                                    })
-                                    .collect::<Vec<_>>();
-                                if !missing.is_empty() {
-                                    result.issues.push(issue(
-                                        "missing_form",
-                                        Some(name),
-                                        previous.as_deref(),
-                                        missing,
-                                        index,
-                                    ));
-                                }
-                                if required.len() > 1 && !unused.is_empty() {
-                                    result.issues.push(issue(
-                                        "unused_form",
-                                        Some(name),
-                                        previous.as_deref(),
-                                        unused,
-                                        index,
-                                    ));
-                                }
-                            } else {
-                                result.issues.push(issue(
-                                    "unsupported_culture",
-                                    Some(name),
-                                    previous.as_deref(),
-                                    Vec::new(),
-                                    index,
-                                ));
-                            }
+                            result.issues.push(issue(
+                                "__culture",
+                                Some(name),
+                                previous.as_deref(),
+                                forms.iter().map(|form| form.name.clone()).collect(),
+                                index,
+                            ));
                         }
                         index = end + 1;
                         previous = None;

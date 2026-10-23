@@ -43,7 +43,7 @@ fn main() -> Result<()> {
         }
         let evaluated = program.evaluate(&mut relation, &collator)?;
         for finding in evaluated.findings {
-            output.push(json!({"rule":finding.rule,"row":finding.row,"actual":finding.actual,"expectation":finding.expectation,"fix":finding.fix,"extra":finding.extra,"translationOrigin":finding.translation_origin,"recovery":finding.recovery,"affected":finding.affected}));
+            output.push(json!({"rule":finding.rule,"row":finding.row,"actual":finding.actual,"expectation":finding.expectation,"fix":finding.fix,"extra":finding.extra,"translationOrigin":finding.translation_origin,"recovery":finding.recovery,"affected":finding.affected.as_ref()}));
         }
         for (_, row, code) in evaluated.diagnostics {
             diagnostics.push(json!({"subject":subject,"row":row,"code":code}));

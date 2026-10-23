@@ -1,4 +1,5 @@
 //! Persisted finding evidence, identities, and diagnostics for a pinned joined view.
+use super::stages::{Measure, subject_stage};
 use super::{
     Emission, HostCollator, NativeSubjects, Subject, compile, javascript_json,
     localization_identity, source_identity,
@@ -92,7 +93,7 @@ impl FindingsLayer {
     pub(super) fn json(&mut self, id: u32) -> Result<Value> {
         crate::json_value::parse_stored(&self.dictionary.string(id)?)
     }
-    fn result(&self, key: &str) -> Value {
+    fn result(&self, key: &str, _profile: &Value) -> Value {
         json!({"key":key,"rules":self.metadata["rules"],"counts":self.metadata["counts"],"diagnosticCount":self.metadata["diagnosticCount"],"collation":self.metadata["collation"]})
     }
 }
@@ -113,6 +114,7 @@ impl EngineQuery {
         locale: &str,
         cancelled: &AtomicBool,
     ) -> Result<String> {
+        let elapsed = Measure::start();
         checkpoint(cancelled)?;
         let text = std::fs::read_to_string(rules_file)?;
         let program = compile(&text)?;
@@ -136,7 +138,10 @@ impl EngineQuery {
             )
         );
         if let Some(layer) = self.findings.get(&key) {
-            return Ok(javascript_json(&layer.result(&key), false));
+            return Ok(javascript_json(
+                &layer.result(&key, &json!({"cached":true})),
+                false,
+            ));
         }
         let mut store = Store::writer(self.configuration.clone())?;
         require(
@@ -146,11 +151,13 @@ impl EngineQuery {
                 "The dictionary generation changed before rule evaluation.",
             ),
         )?;
+        let mut profile = json!({"cached":true});
         if store.root["layers"].get(&key).is_none() {
+            let mut arena = super::columns::Arena::new(self.reader.dictionary_count()?)?;
             let mut all = Vec::<Emission>::new();
             let mut regex_diagnostics = Vec::new();
             let mut base_diagnostics = Vec::new();
-            let mut evaluation_timings = Vec::new();
+            let recorder = arena.recorder.clone();
             let mut lc_lines = Vec::new();
             let mut lc_cultures = Vec::new();
             let mut unit_rows = Vec::new();
@@ -164,10 +171,11 @@ impl EngineQuery {
                 {
                     continue;
                 }
+                let setup = Measure::start();
                 let mut subjects = NativeSubjects::new(self, subject, &collator, cancelled)?;
-                let (evaluation, timings, diagnostics) =
-                    program.evaluate_with_diagnostics(&mut subjects, &collator)?;
-                evaluation_timings.push(json!({"subject":subject,"prepareMs":timings.prepare.as_secs_f64()*1000.0,"executeMs":timings.execute.as_secs_f64()*1000.0,"diagnosticsMs":timings.diagnostics.as_secs_f64()*1000.0,"emissionMs":timings.emission.as_secs_f64()*1000.0,"tuples":timings.nodes.iter().map(|node| node.tuples).sum::<usize>(),"rowVisits":timings.nodes.iter().map(|node| node.rows).sum::<usize>(),"scalarMs":timings.nodes.iter().map(|node| node.scalar.as_secs_f64()*1000.0).sum::<f64>(),"projections":timings.projections.iter().map(|(name,time)| json!({"column":name,"ms":time.as_secs_f64()*1000.0})).collect::<Vec<_>>()}));
+                recorder.stage("subjects.columns", &setup, 0);
+                let (evaluation, _, diagnostics) =
+                    program.evaluate_shared(&mut subjects, &collator, &mut arena)?;
                 for (_, row, code) in diagnostics {
                     let (line, ci) = subjects.cultures[row];
                     base_diagnostics.push((line as u32, ci as u32, code));
@@ -202,6 +210,8 @@ impl EngineQuery {
                 }
                 all.extend(evaluation.findings);
             }
+            drop(arena);
+            let mut publish = Measure::start();
             let line_count = Projection::open(self, cancelled)?.source.len();
             let mut source_cultures = vec![u32::MAX; line_count];
             for (line, ci) in lc_lines.iter().zip(&lc_cultures) {
@@ -251,68 +261,66 @@ impl EngineQuery {
                 let mut places = Vec::new();
                 let mut id0 = Vec::new();
                 let mut id1 = Vec::new();
-                for finding in findings {
+                let mut emission = Measure::start();
+                let mut identities = HashMap::new();
+                for finding in &findings {
+                    let row = match finding.subject {
+                        Subject::Line => finding.row,
+                        Subject::LineCulture => lc_lines[finding.row] as usize,
+                        Subject::UnitSource => unit_rows[finding.row] as usize,
+                    };
+                    if let std::collections::hash_map::Entry::Vacant(entry) = identities.entry(row)
+                    {
+                        entry.insert(self.packed(
+                            if finding.subject == Subject::UnitSource {
+                                "raw"
+                            } else {
+                                "line"
+                            },
+                            row,
+                        )?);
+                    }
+                }
+                let encoded = emission.parallel(&findings, |finding| -> Result<_> {
                     let (line, ci) = match finding.subject {
                         Subject::Line => (finding.row, source_cultures[finding.row] as usize),
-                        Subject::LineCulture => (
-                            lc_lines[finding.row] as usize,
-                            lc_cultures[finding.row] as usize,
-                        ),
-                        Subject::UnitSource => (unit_rows[finding.row] as usize, 0),
+                        Subject::LineCulture => (lc_lines[finding.row] as usize, lc_cultures[finding.row] as usize),
+                        Subject::UnitSource => (unit_rows[finding.row] as usize, 0)
                     };
-                    let rule = metadata["ruleId"]
-                        .as_str()
-                        .ok_or("Missing finding rule ID.")?;
+                    let rule = metadata["ruleId"].as_str().ok_or("Missing finding rule ID.")?;
                     let kind = metadata["kind"].as_str().ok_or("Missing finding kind.")?;
                     let (_, hash) = if finding.subject == Subject::UnitSource {
-                        source_identity(
-                            rule,
-                            metadata["role"].as_str(),
-                            &self.packed("raw", line)?,
-                            kind,
-                            &finding.actual,
-                            &finding.expectation,
-                            &finding.affected,
-                        )
+                        source_identity(rule, metadata["role"].as_str(), &identities[&line], kind, &finding.actual, &finding.expectation, &finding.affected)
                     } else {
-                        localization_identity(
-                            &self.packed("line", line)?,
-                            &self.cultures[ci],
-                            rule,
-                            kind,
-                            &finding.actual,
-                            &finding.expectation,
-                        )
+                        localization_identity(&identities[&line], &self.cultures[ci], rule, kind, &finding.actual, &finding.expectation)
                     };
-                    rows.push(finding.row as u32);
-                    if finding.subject != Subject::UnitSource {
+                    let mut value = json!({"actual":finding.actual,"expectation":finding.expectation,"recovery":finding.recovery});
+                    for (name, item) in [("fix", &finding.fix), ("extra", &finding.extra), ("translationOrigin", &finding.translation_origin)] {
+                        if !item.is_null() { value[name] = item.clone(); }
+                    }
+                    let places = json!(finding.affected.iter().map(|occurrence| occurrence["id"].clone()).collect::<Vec<_>>());
+                    Ok((finding.row as u32, ci, finding.subject, value, places, hash))
+                });
+                publish.exclude(emission.elapsed());
+                recorder.stage(
+                    subject_stage(compiled.rule.subject, "emission"),
+                    &emission,
+                    encoded.len(),
+                );
+                for result in encoded {
+                    let (row, ci, subject, value, saved_places, hash) = result?;
+                    rows.push(row);
+                    if subject != Subject::UnitSource {
                         cultures.push(ci as u32);
                     }
-                    // Recovery may be an expression, so its observed text travels with sparse evidence.
-                    let mut value = json!({"actual":finding.actual,"expectation":finding.expectation,"recovery":finding.recovery});
-                    for (name, item) in [
-                        ("fix", &finding.fix),
-                        ("extra", &finding.extra),
-                        ("translationOrigin", &finding.translation_origin),
-                    ] {
-                        if !item.is_null() {
-                            value[name] = item.clone();
-                        }
-                    }
                     evidence.push(value);
-                    places.push(json!(
-                        finding
-                            .affected
-                            .iter()
-                            .map(|occurrence| occurrence["id"].clone())
-                            .collect::<Vec<_>>()
-                    ));
+                    places.push(saved_places);
                     id0.push(hash[0]);
                     id1.push(hash[1]);
                     *counts
                         .entry((
                             index,
-                            if finding.subject == Subject::UnitSource {
+                            if subject == Subject::UnitSource {
                                 u32::MAX
                             } else {
                                 ci as u32
@@ -362,7 +370,7 @@ impl EngineQuery {
             ));
             columns.push(("diag.codes".into(), "findings".into(), codes));
             let counts = counts.into_iter().map(|((rule,culture,severity),count)| json!({"rule":rule,"culture":if culture == u32::MAX { Value::Null } else { json!(self.cultures[culture as usize]) },"severity":severity,"count":count})).collect::<Vec<_>>();
-            let metadata = json!({"version":VERSION,"joinedKey":self.reader.joined_key,"collation":collator.locale,"rules":rules,"counts":counts,"diagnosticCount":diagnostics.len(),"evaluationTimings":evaluation_timings});
+            let metadata = json!({"version":VERSION,"joinedKey":self.reader.joined_key,"collation":collator.locale,"rules":rules,"counts":counts,"diagnosticCount":diagnostics.len()});
             store.publish_global(
                 "findings",
                 &key,
@@ -371,10 +379,13 @@ impl EngineQuery {
                 &BTreeMap::new(),
                 &[],
             )?;
+            recorder.stage("layer.publish", &publish, all.len());
+            profile = recorder.profile(program.rules.len(), all.len(), diagnostics.len());
+            profile["wallMs"] = json!(elapsed.elapsed().as_secs_f64() * 1000.0);
         }
         drop(store);
         let layer = FindingsLayer::open(&self.configuration, &key, &self.reader.joined_key)?;
-        let result = javascript_json(&layer.result(&key), false);
+        let result = javascript_json(&layer.result(&key, &profile), false);
         self.findings.insert(key, layer);
         Ok(result)
     }

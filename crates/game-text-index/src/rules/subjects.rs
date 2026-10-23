@@ -414,6 +414,26 @@ impl<'a> NativeSubjects<'a> {
     }
 }
 impl SubjectRows for NativeSubjects<'_> {
+    fn emit_places(
+        &mut self,
+        arena: &super::columns::Arena,
+        value: super::columns::Atom,
+    ) -> Result<Vec<Value>> {
+        use super::columns::{Atom, Structured};
+        let mut places = Vec::new();
+        for atom in arena.elements(value)?.unwrap_or_default() {
+            if let Atom::Val(id) = atom
+                && let Structured::Occurrence(row) = arena.values[id.0 as usize]
+            {
+                let raw = arena.occurrences.raw_rows[row as usize] as usize;
+                let status = self.query.occurrence_identity(raw)?["status"].clone();
+                places.push(self.place(raw as u32, &status)?);
+            } else {
+                places.push(arena.json(*atom));
+            }
+        }
+        Ok(places)
+    }
     fn dictionary_len(&self) -> Result<usize> {
         self.query.reader.dictionary_count()
     }

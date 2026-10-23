@@ -4,6 +4,7 @@ use super::columns::{Arena, Atom, Bits, Children, Column, FieldColumn, Occurrenc
 use super::compiler::{CompiledRule, NodeId, Program, Subject};
 use super::kernel::Kernel;
 use super::selection::Selection;
+use super::stages::{Measure, Recorder, subject_stage};
 use super::text;
 use super::value::Value as ScalarValue;
 use crate::{Error, ErrorCode, Result};
@@ -13,7 +14,6 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 #[derive(Default)]
 pub struct Relation {
@@ -38,6 +38,14 @@ pub trait SubjectRows {
     /// Compatibility/emission reads. Native execution overrides prepare and never reads row JSON.
     fn field(&mut self, row: usize, name: &str) -> Result<Value>;
     fn occurrences(&mut self, row: usize) -> Result<Vec<Value>>;
+    fn emit_places(&mut self, arena: &Arena, value: Atom) -> Result<Vec<Value>> {
+        Ok(arena
+            .elements(value)?
+            .unwrap_or_default()
+            .iter()
+            .map(|atom| arena.value(*atom).json())
+            .collect())
+    }
     fn dictionary_len(&self) -> Result<usize> {
         Ok(0)
     }
@@ -74,7 +82,7 @@ pub trait SubjectRows {
         }
         let mut values = HashMap::<String, Vec<Atom>>::new();
         let mut children = Children {
-            offsets: vec![0],
+            offsets: Arc::new(vec![0]),
             ..Children::default()
         };
         let mut count = 0;
@@ -94,13 +102,14 @@ pub trait SubjectRows {
                         .or_default()
                         .push(arena.intern(occurrence[name].clone())?);
                 }
-                children.members.push(count);
+                Arc::make_mut(&mut children.members).push(count);
                 count += 1;
             }
-            children.offsets.push(count);
+            Arc::make_mut(&mut children.offsets).push(count);
         }
         arena.occurrences = Occurrences {
             len: count as usize,
+            raw_rows: Vec::new(),
             fields: values
                 .into_iter()
                 .map(|(name, values)| Ok((name, Arc::new(Column::from_atoms(&values, arena)?))))
@@ -144,7 +153,7 @@ pub struct Emission {
     pub extra: Value,
     pub translation_origin: Value,
     pub recovery: String,
-    pub affected: Vec<Value>,
+    pub affected: Arc<Vec<Value>>,
 }
 pub struct Evaluation {
     pub findings: Vec<Emission>,
@@ -152,7 +161,7 @@ pub struct Evaluation {
     pub masks: HashMap<usize, Vec<u64>>,
 }
 #[derive(Clone, Copy)]
-enum Slot {
+pub(super) enum Slot {
     Value(Atom),
     Limit,
 }
@@ -161,22 +170,6 @@ enum Computed {
     List(Vec<Atom>),
     Value(ScalarValue),
     Limit,
-}
-#[derive(Default)]
-pub(crate) struct NodeTiming {
-    pub elapsed: Duration,
-    pub scalar: Duration,
-    pub rows: usize,
-    pub tuples: usize,
-}
-#[derive(Default)]
-pub(crate) struct EvaluationTimings {
-    pub prepare: Duration,
-    pub execute: Duration,
-    pub emission: Duration,
-    pub diagnostics: Duration,
-    pub nodes: Vec<NodeTiming>,
-    pub projections: Vec<(String, Duration)>,
 }
 #[derive(Clone, Copy)]
 struct Evidence {
@@ -194,8 +187,12 @@ struct Pending {
     recovery: Atom,
     affected: Atom,
 }
+struct DenseSelection {
+    suffixes: Vec<Vec<Atom>>,
+    groups: Vec<usize>,
+}
 type Diagnostics = Vec<(Subject, usize, String)>;
-type TimedEvaluation = (Evaluation, EvaluationTimings, Diagnostics);
+type TimedEvaluation = (Evaluation, Recorder, Diagnostics);
 struct Evaluator<'a> {
     program: &'a Program,
     arena: Arena,
@@ -209,7 +206,11 @@ struct Evaluator<'a> {
     masks: HashMap<usize, Bits>,
     evidence: HashMap<(usize, u32), Evidence>,
     children: HashMap<usize, Atom>,
-    timings: Vec<NodeTiming>,
+    dense: Vec<Vec<(Vec<Atom>, super::memo::DenseMemo)>>,
+    parsed: Vec<Option<Arc<super::grammar::Pattern>>>,
+    cheap_columns: Vec<Option<(Column, Bits)>>,
+    independent: Vec<bool>,
+    len: usize,
 }
 impl<'a> Evaluator<'a> {
     fn new(
@@ -217,12 +218,12 @@ impl<'a> Evaluator<'a> {
         arena: Arena,
         prepared: Prepared,
         collator: &'a HostCollator,
+        len: usize,
     ) -> Result<Self> {
         let mut value = Self {
             program,
+            kernel: Kernel::new(collator, &program.roles, &arena),
             arena,
-            prepared,
-            kernel: Kernel::new(collator, &program.roles),
             literals: vec![None; program.nodes.len()],
             extras: program
                 .nodes
@@ -230,7 +231,13 @@ impl<'a> Evaluator<'a> {
                 .map(|node| ScalarValue::from_json(&node.value))
                 .collect(),
             cache: Vec::new(),
+            dense: Vec::new(),
+            parsed: Vec::new(),
+            cheap_columns: (0..program.nodes.len()).map(|_| None).collect(),
+            independent: vec![false; program.nodes.len()],
+            len,
             cache_ids: Vec::new(),
+            prepared,
             references: program
                 .rules
                 .iter()
@@ -239,9 +246,6 @@ impl<'a> Evaluator<'a> {
             masks: HashMap::new(),
             evidence: HashMap::new(),
             children: HashMap::new(),
-            timings: (0..program.nodes.len())
-                .map(|_| NodeTiming::default())
-                .collect(),
         };
         let mut groups = HashMap::new();
         for (id, node) in program.nodes.iter().enumerate() {
@@ -254,6 +258,22 @@ impl<'a> Evaluator<'a> {
             }
         }
         value.cache = (0..groups.len()).map(|_| HashMap::new()).collect();
+        value.dense = (0..groups.len()).map(|_| Vec::new()).collect();
+        for (id, node) in program.nodes.iter().enumerate() {
+            value.independent[id] = !matches!(
+                node.op.as_str(),
+                "var"
+                    | "finding"
+                    | "findingField"
+                    | "filter"
+                    | "map"
+                    | "flatMap"
+                    | "any"
+                    | "all"
+                    | "sortLocale"
+                    | "sortCodeUnit"
+            ) && node.args.iter().all(|arg| value.independent[*arg]);
+        }
         Ok(value)
     }
     fn children(&mut self, row: usize) -> Result<Atom> {
@@ -276,15 +296,84 @@ impl<'a> Evaluator<'a> {
         Ok(value)
     }
     fn evaluate(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        let mut measure = Measure::start();
+        let children = self.arena.recorder.kernel_wall();
+        let result = self.evaluate_inner(id, selection);
+        measure.exclude(self.arena.recorder.kernel_wall().saturating_sub(children));
+        let op = &self.program.nodes[id].op;
+        let structural = matches!(
+            op.as_str(),
+            "lit"
+                | "field"
+                | "var"
+                | "occurrences"
+                | "finding"
+                | "findingField"
+                | "and"
+                | "or"
+                | "if"
+                | "coalesce"
+                | "filter"
+                | "map"
+                | "flatMap"
+                | "any"
+                | "all"
+                | "sortLocale"
+                | "sortCodeUnit"
+        );
+        self.arena.recorder.kernel(
+            op,
+            &measure,
+            if structural { selection.len() } else { 0 },
+            0,
+            0,
+        );
+        result
+    }
+    fn evaluate_inner(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         if selection.len() == 0 {
             return Ok(Column::constant(Atom::Null, 0));
         }
-        let started = Instant::now();
+        let op = self.program.nodes[id].op.as_str();
+        let cacheable = self.independent[id]
+            && (super::vector::cheap(op) || matches!(op, "and" | "or" | "if" | "coalesce"));
+        if cacheable {
+            let missing = if let Some((_, ready)) = &self.cheap_columns[id] {
+                selection
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, row)| (!ready.get(*row as usize)).then_some(index))
+                    .collect::<Vec<_>>()
+            } else {
+                (0..selection.len()).collect()
+            };
+            if !missing.is_empty() {
+                let narrowed = selection.select(&missing, &mut self.arena)?;
+                let column = self.node(id, &narrowed)?;
+                let (cached, ready) = self.cheap_columns[id].get_or_insert_with(|| {
+                    (Column::constant(Atom::Null, self.len), Bits::new(self.len))
+                });
+                cached.scatter(&narrowed.rows, &column, &mut self.arena)?;
+                for row in &narrowed.rows {
+                    ready.set(*row as usize);
+                }
+            }
+            let rows = selection
+                .rows
+                .iter()
+                .map(|row| *row as usize)
+                .collect::<Vec<_>>();
+            return self.cheap_columns[id]
+                .as_ref()
+                .ok_or("Missing cached column.")?
+                .0
+                .select(&rows, &mut self.arena);
+        }
         let column = self.node(id, selection)?;
-        self.timings[id].elapsed += started.elapsed();
-        self.timings[id].rows += selection.len();
         Ok(column)
     }
+
     fn node(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
         match node.op.as_str() {
@@ -365,6 +454,47 @@ impl<'a> Evaluator<'a> {
     }
     fn short_circuit(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
+        if node.op != "coalesce" {
+            let and = node.op == "and";
+            let mut output = if and {
+                Bits::all(selection.len())
+            } else {
+                Bits::new(selection.len())
+            };
+            let mut failed = Bits::new(selection.len());
+            let mut pending = (0..selection.len()).collect::<Vec<_>>();
+            for arg in &node.args {
+                if pending.is_empty() {
+                    break;
+                }
+                let narrowed = selection.select(&pending, &mut self.arena)?;
+                let values = self.evaluate(*arg, &narrowed)?;
+                let mut decisive = Bits::new(selection.len());
+                let mut later = Vec::new();
+                for (index, destination) in pending.iter().copied().enumerate() {
+                    if values.failed.get(index) {
+                        failed.set(destination);
+                    } else if values.get(index, &self.arena).boolean() != and {
+                        decisive.set(destination);
+                    } else {
+                        later.push(destination);
+                    }
+                }
+                for (word, decisive) in output.words.iter_mut().zip(&decisive.words) {
+                    if and {
+                        *word &= !decisive;
+                    } else {
+                        *word |= decisive;
+                    }
+                }
+                pending = later;
+            }
+            return Ok(Column {
+                data: super::columns::Data::Bool(output),
+                nulls: Bits::new(selection.len()),
+                failed,
+            });
+        }
         let mut output = vec![
             if node.op == "coalesce" {
                 Atom::Null
@@ -437,10 +567,73 @@ impl<'a> Evaluator<'a> {
             .iter()
             .map(|arg| self.evaluate(*arg, selection))
             .collect::<Result<Vec<_>>>()?;
-        let started = Instant::now();
+        let mut started = Measure::start();
         let mut failures = Bits::new(selection.len());
         for column in &columns {
             failures.union(&column.failed);
+        }
+        if super::vector::cheap(&node.op) {
+            let mut inputs = vec![Atom::Null; columns.len()];
+            let mut output = Vec::with_capacity(selection.len());
+            for row in 0..selection.len() {
+                if failures.get(row) {
+                    output.push(Atom::Null);
+                    continue;
+                }
+                for (input, column) in inputs.iter_mut().zip(&columns) {
+                    *input = column.get(row, &self.arena);
+                }
+                output.push(super::vector::run(&self.arena, &node.op, &inputs)?);
+            }
+            let mut output = Column::from_atoms(&output, &mut self.arena)?;
+            output.failed = failures;
+            self.arena
+                .recorder
+                .kernel(&node.op, &started, selection.len(), selection.len(), 0);
+            return Ok(output);
+        }
+        if !columns.is_empty()
+            && matches!(
+                &columns[0].data,
+                super::columns::Data::Str(_) | super::columns::Data::Constant(Atom::Str(_))
+            )
+        {
+            // A short, fixed scalar suffix gets a separate dense dictionary memo. Resolve
+            // suffixes once per selection, rather than hashing them for every row.
+            let mut suffixes = Vec::<Vec<Atom>>::new();
+            let mut dense_rows = Vec::with_capacity(selection.len());
+            let mut supported = true;
+            let mut suffix = vec![Atom::Null; columns.len() - 1];
+            for row in 0..selection.len() {
+                for (value, column) in suffix.iter_mut().zip(&columns[1..]) {
+                    *value = column.get(row, &self.arena);
+                }
+                let group = suffixes
+                    .iter()
+                    .position(|value| *value == suffix)
+                    .unwrap_or_else(|| {
+                        suffixes.push(suffix.clone());
+                        suffixes.len() - 1
+                    });
+                if suffixes.len() > 32 {
+                    supported = false;
+                    break;
+                }
+                dense_rows.push(group);
+            }
+            if supported {
+                return self.dense_scalar(
+                    id,
+                    selection,
+                    &columns,
+                    failures,
+                    DenseSelection {
+                        suffixes,
+                        groups: dense_rows,
+                    },
+                    started,
+                );
+            }
         }
         let mut tuples = Vec::new();
         let mut missing = HashMap::<Vec<Atom>, usize>::new();
@@ -480,7 +673,7 @@ impl<'a> Evaluator<'a> {
                     .occurrence_mask(&self.arena, key, node.op == "matchesRole")?;
             }
         }
-        self.timings[id].tuples += tuples.len();
+        let distinct_inputs = tuples.len();
         // Bound temporary structured results while keeping tuple slots and interning order stable.
         // A catalogue node may have millions of distinct tuples on a persisted project.
         drop(missing);
@@ -494,9 +687,8 @@ impl<'a> Evaluator<'a> {
             let arena = &self.arena;
             let kernel = &self.kernel;
             let extra = &self.extras[id];
-            let computed = batch
-                .par_iter()
-                .map(|tuple| {
+            let computed = started
+                .parallel(&batch, |tuple| {
                     if node.op == "list" {
                         return Ok(Computed::List(tuple.clone()));
                     }
@@ -530,6 +722,7 @@ impl<'a> Evaluator<'a> {
                         Err(error) => Err(error),
                     }
                 })
+                .into_iter()
                 .collect::<Result<Vec<_>>>()?;
             for (tuple, value) in batch.into_iter().zip(computed) {
                 let result = match value {
@@ -555,8 +748,167 @@ impl<'a> Evaluator<'a> {
         }
         let mut column = Column::from_atoms(&output, &mut self.arena)?;
         column.failed = failures;
-        self.timings[id].scalar += started.elapsed();
+        self.arena.recorder.kernel(
+            &node.op,
+            &started,
+            selection.len(),
+            distinct_inputs,
+            selection.len().saturating_sub(distinct_inputs),
+        );
         Ok(column)
+    }
+    fn dense_scalar(
+        &mut self,
+        id: NodeId,
+        selection: &Selection,
+        columns: &[Column],
+        mut failures: Bits,
+        inputs: DenseSelection,
+        mut started: Measure,
+    ) -> Result<Column> {
+        let DenseSelection { suffixes, groups } = inputs;
+        let node = &self.program.nodes[id];
+        let cache = self.cache_ids[id];
+        let pattern = node.op == "formatPattern";
+        let neutral = Vec::new();
+        let mut keys = suffixes.clone();
+        if pattern {
+            keys.push(neutral.clone());
+        }
+        let cache_groups = keys
+            .iter()
+            .map(|key| {
+                if let Some(index) = self.dense[cache].iter().position(|(value, _)| value == key) {
+                    index
+                } else {
+                    self.dense[cache].push((key.clone(), super::memo::DenseMemo::default()));
+                    self.dense[cache].len() - 1
+                }
+            })
+            .collect::<Vec<_>>();
+        if pattern && self.parsed.len() < self.arena.string_count() {
+            self.parsed.resize(self.arena.string_count(), None);
+        }
+        let empty_pattern = Arc::new(super::grammar::parse_pattern(""));
+        let mut missing_patterns = Vec::new();
+        if pattern {
+            for row in 0..selection.len() {
+                if failures.get(row) {
+                    continue;
+                }
+                if let Atom::Str(text) = columns[0].get(row, &self.arena)
+                    && self.parsed[text.0 as usize].is_none()
+                {
+                    // A shared empty marker claims this string until the parallel parse finishes.
+                    self.parsed[text.0 as usize] = Some(Arc::clone(&empty_pattern));
+                    missing_patterns.push(text);
+                }
+            }
+            for batch in missing_patterns.chunks(4096) {
+                let parsed = started.parallel(batch, |text| {
+                    let text = self.arena.text(*text);
+                    if text.len() <= 1_000_000
+                        && !text
+                            .bytes()
+                            .any(|byte| matches!(byte, b'{' | b'}' | b'`' | b'|'))
+                    {
+                        Arc::clone(&empty_pattern)
+                    } else {
+                        Arc::new(super::grammar::parse_pattern(text))
+                    }
+                });
+                for (text, parsed) in batch.iter().zip(parsed) {
+                    self.parsed[text.0 as usize] = Some(parsed);
+                }
+            }
+        }
+        let mut tasks = Vec::new();
+        let mut row_keys = Vec::with_capacity(selection.len());
+        for (row, group) in groups.iter().copied().enumerate() {
+            if failures.get(row) {
+                row_keys.push(None);
+                continue;
+            }
+            let Atom::Str(text) = columns[0].get(row, &self.arena) else {
+                row_keys.push(None);
+                continue;
+            };
+            let independent = pattern
+                && self.parsed[text.0 as usize]
+                    .as_ref()
+                    .is_some_and(|pattern| {
+                        !pattern.modifiers.iter().any(|modifier| {
+                            matches!(
+                                modifier.name.as_str(),
+                                "plural" | "ordinal" | "gender" | "hpp"
+                            )
+                        })
+                    });
+            let group = cache_groups[if independent { suffixes.len() } else { group }];
+            if self.dense[cache][group].1.claim(text.0 as usize) {
+                tasks.push((text, group));
+            }
+            row_keys.push(Some((text, group)));
+        }
+        let distinct_inputs = tasks.len();
+        for batch in tasks.chunks(4096) {
+            let computed = started.parallel(batch, |(text, group)| {
+                let suffix = &self.dense[cache][*group].0;
+                if pattern {
+                    let parsed = self.parsed[text.0 as usize]
+                        .as_ref()
+                        .ok_or("Missing parsed pattern.")?;
+                    let culture = suffix
+                        .first()
+                        .and_then(|value| {
+                            if let Atom::Str(id) = value {
+                                Some(self.arena.text(*id))
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or("en");
+                    return Ok(ScalarValue::from(super::grammar::validate_pattern(
+                        (**parsed).clone(),
+                        culture,
+                    )));
+                }
+                let mut inputs = Vec::with_capacity(suffix.len() + 1);
+                inputs.push(Atom::Str(*text));
+                inputs.extend_from_slice(suffix);
+                self.kernel
+                    .run(&self.arena, &node.op, &self.extras[id], &inputs)
+            });
+            for ((text, group), value) in batch.iter().zip(computed) {
+                let value = match value {
+                    Ok(value) => Slot::Value(self.arena.intern(value)?),
+                    Err(error) if error.code == ErrorCode::LimitExceeded => Slot::Limit,
+                    Err(error) => return Err(error),
+                };
+                self.dense[cache][*group].1.insert(text.0 as usize, value);
+            }
+        }
+        let mut output = Vec::with_capacity(selection.len());
+        for (row, key) in row_keys.into_iter().enumerate() {
+            match key.and_then(|(text, group)| self.dense[cache][group].1.get(text.0 as usize)) {
+                Some(Slot::Value(value)) => output.push(value),
+                Some(Slot::Limit) => {
+                    output.push(Atom::Null);
+                    failures.set(row);
+                }
+                None => output.push(Atom::Null),
+            }
+        }
+        let mut output = Column::from_atoms(&output, &mut self.arena)?;
+        output.failed = failures;
+        self.arena.recorder.kernel(
+            &node.op,
+            &started,
+            selection.len(),
+            distinct_inputs,
+            selection.len().saturating_sub(distinct_inputs),
+        );
+        Ok(output)
     }
     fn list_operator(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
@@ -889,31 +1241,41 @@ impl Program {
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
     ) -> Result<Evaluation> {
-        self.evaluate_timed(relation, collator)
-            .map(|(evaluation, _)| evaluation)
+        self.evaluate_columns(relation, collator, false, None)
+            .map(|(evaluation, _, _)| evaluation)
     }
+    #[cfg(test)]
     pub(crate) fn evaluate_timed(
         &self,
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
-    ) -> Result<(Evaluation, EvaluationTimings)> {
-        self.evaluate_columns(relation, collator, false)
-            .map(|(evaluation, timings, _)| (evaluation, timings))
+    ) -> Result<(Evaluation, super::stages::TestStats)> {
+        self.evaluate_columns(relation, collator, false, None)
+            .map(|(evaluation, recorder, _)| (evaluation, recorder.node_stats(self)))
     }
+    #[cfg(test)]
     pub(crate) fn evaluate_with_diagnostics(
         &self,
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
     ) -> Result<TimedEvaluation> {
-        self.evaluate_columns(relation, collator, true)
+        self.evaluate_columns(relation, collator, true, None)
+    }
+    pub(crate) fn evaluate_shared(
+        &self,
+        relation: &mut dyn SubjectRows,
+        collator: &HostCollator,
+        arena: &mut Arena,
+    ) -> Result<TimedEvaluation> {
+        self.evaluate_columns(relation, collator, true, Some(arena))
     }
     fn evaluate_columns(
         &self,
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
         include_diagnostics: bool,
+        shared: Option<&mut Arena>,
     ) -> Result<TimedEvaluation> {
-        let started = Instant::now();
         let subject = relation.subject();
         let include_diagnostics = include_diagnostics && subject == Subject::LineCulture;
         let len = relation.len();
@@ -928,7 +1290,7 @@ impl Program {
             masks: HashMap::new(),
         };
         if rules.is_empty() && !include_diagnostics {
-            return Ok((output, EvaluationTimings::default(), Vec::new()));
+            return Ok((output, Recorder::default(), Vec::new()));
         }
         let mut names = HashSet::new();
         let mut nodes = HashSet::new();
@@ -1001,13 +1363,42 @@ impl Program {
         }
         let mut names = names.into_iter().collect::<Vec<_>>();
         names.sort();
-        let mut arena = Arena::new(relation.dictionary_len()?)?;
+        let mut shared = shared;
+        let mut arena = if let Some(shared) = shared.as_deref_mut() {
+            std::mem::replace(shared, Arena::new(0)?)
+        } else {
+            Arena::new(relation.dictionary_len()?)?
+        };
+        for node in &self.nodes {
+            if node.op == "get"
+                && let Some(key) = node
+                    .args
+                    .get(1)
+                    .and_then(|arg| self.nodes[*arg].value.as_str())
+            {
+                arena
+                    .occurrence_fields
+                    .insert(key.split('.').next().unwrap_or(key).to_owned());
+            }
+            if matches!(node.op.as_str(), "matchesRole" | "pathHasPrefix") {
+                arena.occurrence_fields.insert("location".into());
+            }
+        }
+        if self.rules.iter().any(|rule| {
+            rule.rule
+                .scope
+                .as_ref()
+                .is_some_and(|scope| scope["roles"].is_array() || scope["pathPrefixes"].is_array())
+        }) {
+            arena.occurrence_fields.insert("location".into());
+        }
+
         let prepared = relation.prepare(&names, &mut arena, !rules.is_empty())?;
         prepared.validate(len)?;
-        let projections = prepared.timings.clone();
-        let mut evaluator = Evaluator::new(self, arena, prepared, collator)?;
-        let prepare = started.elapsed();
-        let execute = Instant::now();
+        let recorder = arena.recorder.clone();
+        let mut evaluator = Evaluator::new(self, arena, prepared, collator, len)?;
+        let execute = Measure::start();
+        let execute_workers = recorder.worker_adjustment();
         let mut emissions = Vec::new();
         for rule in rules {
             relation.checkpoint()?;
@@ -1125,47 +1516,58 @@ impl Program {
             }
             evaluator.masks.insert(rule.ordinal, mask);
         }
-        let execute = execute.elapsed();
-        let diagnostics_started = Instant::now();
+        recorder.stage_with_kernels(
+            subject_stage(subject, "execute"),
+            &execute,
+            len,
+            execute_workers,
+        );
+        let diagnostics_started = Measure::start();
+        let diagnostic_workers = recorder.worker_adjustment();
         let diagnostics = if include_diagnostics {
             evaluator.diagnostics(len)?
         } else {
             Vec::new()
         };
-        let diagnostics_elapsed = diagnostics_started.elapsed();
-        let emission = Instant::now();
-        let mut places = HashMap::<Atom, Vec<Value>>::new();
-        for pending in emissions {
-            let affected = if let Some(places) = places.get(&pending.affected) {
-                places.clone()
-            } else {
-                let value = evaluator.arena.value(pending.affected).json();
-                let value = value
-                    .as_array()
-                    .ok_or("Finding places are not a list.")?
-                    .clone();
-                places.insert(pending.affected, value.clone());
-                value
-            };
-            let evidence = pending.evidence;
-            let recovery = if let Atom::Str(id) = pending.recovery {
-                evaluator.arena.text(id).to_owned()
-            } else {
-                return Err("Invalid finding recovery.".into());
-            };
-            output.findings.push(Emission {
-                rule: pending.rule,
-                row: pending.row as usize,
-                subject: pending.subject,
-                actual: evaluator.arena.value(evidence.actual).json(),
-                expectation: evaluator.arena.value(evidence.expectation).json(),
-                fix: evaluator.arena.value(evidence.fix).json(),
-                extra: evaluator.arena.value(evidence.extra).json(),
-                translation_origin: evaluator.arena.value(evidence.translation_origin).json(),
-                recovery,
-                affected,
-            });
+        recorder.stage_with_kernels(
+            subject_stage(subject, "diagnostics"),
+            &diagnostics_started,
+            diagnostics.len(),
+            diagnostic_workers,
+        );
+        let mut emission = Measure::start();
+        let mut places = HashMap::<Atom, Arc<Vec<Value>>>::new();
+        for pending in &emissions {
+            if let std::collections::hash_map::Entry::Vacant(entry) = places.entry(pending.affected)
+            {
+                entry.insert(Arc::new(
+                    relation.emit_places(&evaluator.arena, pending.affected)?,
+                ));
+            }
         }
+        output.findings = emission
+            .parallel(&emissions, |pending| {
+                let evidence = pending.evidence;
+                let recovery = if let Atom::Str(id) = pending.recovery {
+                    evaluator.arena.text(id).to_owned()
+                } else {
+                    return Err("Invalid finding recovery.".into());
+                };
+                Ok(Emission {
+                    rule: pending.rule,
+                    row: pending.row as usize,
+                    subject: pending.subject,
+                    actual: evaluator.arena.json(evidence.actual),
+                    expectation: evaluator.arena.json(evidence.expectation),
+                    fix: evaluator.arena.json(evidence.fix),
+                    extra: evaluator.arena.json(evidence.extra),
+                    translation_origin: evaluator.arena.json(evidence.translation_origin),
+                    recovery,
+                    affected: places[&pending.affected].clone(),
+                })
+            })
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
         output
             .findings
             .sort_by_key(|finding| (finding.rule, finding.row));
@@ -1174,15 +1576,15 @@ impl Program {
             .into_iter()
             .map(|(rule, mask)| (rule, mask.words))
             .collect();
-        let timings = EvaluationTimings {
-            prepare,
-            execute,
-            emission: emission.elapsed(),
-            diagnostics: diagnostics_elapsed,
-            nodes: evaluator.timings,
-            projections,
-        };
-        Ok((output, timings, diagnostics))
+        recorder.stage(
+            subject_stage(subject, "emission"),
+            &emission,
+            output.findings.len(),
+        );
+        if let Some(shared) = shared {
+            *shared = evaluator.arena;
+        }
+        Ok((output, recorder, diagnostics))
     }
 }
 

@@ -655,11 +655,11 @@ impl<'a, 'q> Projector<'a, 'q> {
             } else {
                 &reason_ids
             };
-            for (line, ci) in rows {
+            for (line, ci) in rows.iter() {
                 let mask = if name == "facts" {
-                    marks[*ci].facts[*line]
+                    marks[ci].facts[line]
                 } else {
-                    marks[*ci].reasons[*line]
+                    marks[ci].reasons[line]
                 };
                 if let std::collections::hash_map::Entry::Vacant(entry) = lists.entry(mask) {
                     entry.insert(
@@ -717,7 +717,7 @@ impl<'a, 'q> Projector<'a, 'q> {
         let files = &self.files;
         let arena = &*self.arena;
         let value = |row: usize| -> Atom {
-            let (line, ci) = rows[row];
+            let (line, ci) = rows.at(row);
             let mark = &marks[ci];
             match name {
                 "culture" => culture_ids[ci],
@@ -837,13 +837,7 @@ impl<'a, 'q> Projector<'a, 'q> {
                         self.arena.occurrences.location_kinds[index] = self.string(kind)?;
                     }
                     (0..data.len())
-                        .map(|row| {
-                            self.arena
-                                .structured(super::columns::Structured::OccurrenceLocation(
-                                    row as u32,
-                                ))
-                                .map(Atom::Val)
-                        })
+                        .map(|row| self.arena.occurrence_location(u32::try_from(row)?))
                         .collect::<Result<Vec<_>>>()?
                 }
                 "unitStatus" => {
@@ -964,13 +958,7 @@ impl NativeSubjects<'_> {
         with_children: bool,
     ) -> Result<Prepared> {
         let parents: Option<Arc<[u32]>> = if self.subject == Subject::LineCulture {
-            Some(
-                self.cultures
-                    .iter()
-                    .map(|(line, _)| *line as u32)
-                    .collect::<Vec<_>>()
-                    .into(),
-            )
+            Some(Arc::clone(&self.cultures.lines))
         } else {
             None
         };

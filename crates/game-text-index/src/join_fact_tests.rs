@@ -259,7 +259,7 @@ fn partial_packages_keep_empty_archive_entries_checkable_with_absent_or_blank_sa
         let de = subjects
             .cultures
             .iter()
-            .position(|(_, ci)| *ci == 1)
+            .position(|(_, ci)| ci == 1)
             .ok_or("Missing German row.")?;
         assert_eq!(subjects.field(de, "latest")?, json!(""));
         assert_eq!(

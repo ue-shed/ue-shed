@@ -279,6 +279,7 @@ impl EngineQuery {
                     ),
                     ("occurrences", memory.occurrence_relation_bytes as u64),
                     ("lineFields", line_fields as u64),
+                    ("cultures", (subjects.cultures.len() * 8) as u64),
                     ("projection", subjects.projection.bytes() as u64),
                     ("reader", subjects.query.reader.cache_bytes() as u64),
                     ("encodedFindings", (encoded_bytes + previous_encoded) as u64),
@@ -286,14 +287,12 @@ impl EngineQuery {
             );
             previous_encoded += encoded_bytes;
             for diagnostic in &evaluated.projection {
-                let (line, ci) = subjects.cultures[diagnostic.row as usize];
+                let (line, ci) = subjects.cultures.at(diagnostic.row as usize);
                 base_diagnostics.push((line as u32, ci as u32, diagnostic.code));
             }
             if subject == Subject::LineCulture {
-                for (line, ci) in &subjects.cultures {
-                    lc_lines.push(*line as u32);
-                    lc_cultures.push(*ci as u32);
-                }
+                lc_lines.extend_from_slice(&subjects.cultures.lines);
+                lc_cultures.extend_from_slice(subjects.cultures.cultures());
             }
             if subject == Subject::UnitSource {
                 for unit in &subjects.units {
@@ -304,7 +303,7 @@ impl EngineQuery {
             for super::Diagnostic { row, code } in &evaluated.diagnostics {
                 let row = *row as usize;
                 if subject == Subject::LineCulture {
-                    let (line, ci) = subjects.cultures[row];
+                    let (line, ci) = subjects.cultures.at(row);
                     regex_diagnostics.push((line as u32, ci as u32, *code));
                 } else if subject == Subject::Line {
                     let culture = subjects.line_field(row, "sourceCulture")?;
@@ -579,7 +578,7 @@ fn encode_findings(
             let rule_id = rule.rule.rule_id.as_ref().unwrap_or(&rule.rule.id);
             let (line, culture) = match subject {
                 Subject::Line => (finding.row as usize, source_culture(finding.row as usize)?),
-                Subject::LineCulture => subjects.cultures[finding.row as usize],
+                Subject::LineCulture => subjects.cultures.at(finding.row as usize),
                 Subject::UnitSource => (subjects.units[finding.row as usize].unit, 0),
             };
             let evidence = finding.evidence;
@@ -656,7 +655,7 @@ fn finding_lines(
         let row = finding.row as usize;
         let (kind, line) = match subjects.subject {
             Subject::Line => ("line", row),
-            Subject::LineCulture => ("line", subjects.cultures[row].0),
+            Subject::LineCulture => ("line", subjects.cultures.at(row).0),
             Subject::UnitSource => ("raw", subjects.units[row].unit),
         };
         if let std::collections::hash_map::Entry::Vacant(entry) = lines.entry(line) {
@@ -714,7 +713,7 @@ fn check_encoding(
         let rule_id = rule.rule.rule_id.as_ref().unwrap_or(&rule.rule.id);
         let (line, culture) = match subjects.subject {
             Subject::Line => (finding.row as usize, source_culture(finding.row as usize)?),
-            Subject::LineCulture => subjects.cultures[finding.row as usize],
+            Subject::LineCulture => subjects.cultures.at(finding.row as usize),
             Subject::UnitSource => (subjects.units[finding.row as usize].unit, 0),
         };
         let mut value = json!({"actual":emission.actual,"expectation":emission.expectation,"recovery":emission.recovery});

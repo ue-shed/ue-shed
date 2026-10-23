@@ -6,7 +6,7 @@ use super::columns::{
 use super::compiler::{CompiledRule, Literal, NodeId, Op, Program, Subject};
 use super::kernel::Kernel;
 use super::selection::Selection;
-use super::stages::{Measure, Phase, Recorder, subject_stage};
+use super::stages::{Measure, Phase, PhaseTime, Recorder, subject_stage};
 use super::text;
 use super::tuple::{Key as TupleKey, Packer};
 use super::value::Value as ScalarValue;
@@ -491,6 +491,27 @@ struct Evaluator<'a> {
     len: usize,
 }
 impl<'a> Evaluator<'a> {
+    /// What the arena and the evaluator's caches hold, by part.
+    fn holders(&self) -> std::collections::BTreeMap<&'static str, u64> {
+        let mut holders = self.arena.holders();
+        let cheap = self
+            .cheap_columns
+            .iter()
+            .flatten()
+            .map(|(column, ready)| column.bytes() + ready.words.capacity() * 8)
+            .sum::<usize>();
+        let prepared = self
+            .prepared
+            .fields
+            .values()
+            .map(|field| field.column.bytes())
+            .sum::<usize>();
+        let memory = self.memory();
+        holders.insert("cheapColumns", cheap as u64);
+        holders.insert("preparedFields", prepared as u64);
+        holders.insert("memos", memory.memos_bytes as u64);
+        holders
+    }
     fn memory(&self) -> super::stages::Memory {
         let mut memory = self.arena.memory();
         memory.live_node_columns_bytes = self
@@ -954,12 +975,54 @@ impl<'a> Evaluator<'a> {
     }
     fn scalar(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
-        let cache = self.cache_ids[id];
         let columns = node
             .args
             .iter()
             .map(|arg| self.evaluate(*arg, selection))
             .collect::<Result<Vec<_>>>()?;
+        let len = selection.len();
+        // Every row has the same input: compute the one tuple as a one-row selection, through
+        // the same memo and interning, and repeat its result. Failed or mixed-null rows take
+        // the per-row path, so no row reaches a computation it would not have reached.
+        let uniform = |column: &Column| {
+            let nulls = column.nulls.count();
+            matches!(column.data, super::columns::Data::Constant(_))
+                && !column.failed.any()
+                && (nulls == 0 || nulls == column.len())
+        };
+        if len > 1 && !super::vector::cheap(&node.op) && columns.iter().all(uniform) {
+            let shortcut = Measure::start();
+            let one = columns
+                .iter()
+                .map(|column| Column::constant(column.get(0, &self.arena), 1))
+                .collect::<Vec<_>>();
+            let single = self.scalar_columns(id, &Selection::from_mask(Bits::all(1)), one)?;
+            let column = if single.failed.get(0) {
+                let mut column = Column::constant(Atom::Null, len);
+                column.failed = Bits::all(len);
+                column
+            } else {
+                Column::constant(single.get(0, &self.arena), len)
+            };
+            // The one-row call recorded the kernel's time; the other rows are memo hits.
+            self.arena
+                .recorder
+                .kernel(node.op.name(), &Measure::start(), len - 1, 0, len - 1);
+            self.arena
+                .recorder
+                .sub_stage(format!("{}.constant", node.op.name()), &shortcut, len);
+            return Ok(column);
+        }
+        self.scalar_columns(id, selection, columns)
+    }
+    fn scalar_columns(
+        &mut self,
+        id: NodeId,
+        selection: &Selection,
+        columns: Vec<Column>,
+    ) -> Result<Column> {
+        let node = &self.program.nodes[id];
+        let cache = self.cache_ids[id];
         let mut started = Measure::start();
         let mut failures = Bits::new(selection.len());
         for column in &columns {
@@ -1137,13 +1200,15 @@ impl<'a> Evaluator<'a> {
         let mut atoms = Vec::<Atom>::new();
         let mut missing = FxHashMap::<TupleKey, u32>::default();
         let mut tuple = vec![Atom::Null; arity];
+        let mut phases = <[PhaseTime; 5]>::default();
         const CHUNK: usize = 1 << 16;
         for chunk in (0..len).step_by(CHUNK) {
+            let mut probe = Measure::start();
             let probes = {
                 let arena = &self.arena;
                 let packer = &self.packer;
                 let memo = &self.cache[cache];
-                started.fill(
+                probe.fill(
                     (chunk + CHUNK).min(len) - chunk,
                     4096,
                     |start, probes: &mut [Probe]| {
@@ -1166,6 +1231,8 @@ impl<'a> Evaluator<'a> {
                     },
                 )
             };
+            probe.into_phase(&mut phases[0], &mut started);
+            let claim = Measure::start();
             // Size the miss table for this chunk at once rather than rehashing as it grows.
             let misses_here = probes
                 .iter()
@@ -1214,6 +1281,7 @@ impl<'a> Evaluator<'a> {
                 });
                 misses.push((row as u32, task));
             }
+            claim.into_phase(&mut phases[1], &mut started);
         }
         drop(missing);
         let task_tuple = |task: usize| &atoms[task * arity..(task + 1) * arity];
@@ -1239,7 +1307,8 @@ impl<'a> Evaluator<'a> {
         for batch in (0..keys.len()).collect::<Vec<_>>().chunks(4096) {
             let arena = &self.arena;
             let kernel = &self.kernel;
-            let computed = started
+            let mut compute = Measure::start();
+            let computed = compute
                 .parallel(batch, |task| {
                     let tuple = task_tuple(*task);
                     if node.op == Op::List {
@@ -1255,6 +1324,8 @@ impl<'a> Evaluator<'a> {
                 })
                 .into_iter()
                 .collect::<Result<Vec<_>>>()?;
+            compute.into_phase(&mut phases[2], &mut started);
+            let commit = Measure::start();
             for (task, value) in batch.iter().zip(computed) {
                 let result = match value {
                     Computed::List(values) => Slot::Value(self.arena.list(values)?),
@@ -1265,7 +1336,9 @@ impl<'a> Evaluator<'a> {
                 self.cache[cache].insert(keys[*task], result);
                 results.push(result);
             }
+            commit.into_phase(&mut phases[3], &mut started);
         }
+        let gather = Measure::start();
         for (row, task) in misses {
             match results[task as usize] {
                 Slot::Value(value) => output[row as usize] = value,
@@ -1278,6 +1351,8 @@ impl<'a> Evaluator<'a> {
         }
         let mut column = Column::from_atoms(&output, &mut self.arena)?;
         column.failed = failures;
+        gather.into_phase(&mut phases[4], &mut started);
+        self.phases(&node.op, "hashed", &phases, selection.len());
         started.exclude(self.arena.recorder.kernel_wall().saturating_sub(nested));
         self.arena.recorder.kernel(
             node.op.name(),
@@ -1287,6 +1362,18 @@ impl<'a> Evaluator<'a> {
             selection.len().saturating_sub(distinct_inputs),
         );
         Ok(column)
+    }
+    /// A memo kernel's phases as sub-stages: keys or probes, the serial claim, the parallel
+    /// compute, the serial commit, and the gather into the output column.
+    fn phases(&self, op: &Op, path: &str, phases: &[PhaseTime; 5], rows: usize) {
+        for (name, phase) in ["keys", "claim", "compute", "commit", "gather"]
+            .into_iter()
+            .zip(phases)
+        {
+            self.arena
+                .recorder
+                .phase(format!("{}.{path}.{name}", op.name()), phase, rows);
+        }
     }
     fn dense_scalar(
         &mut self,
@@ -1317,12 +1404,14 @@ impl<'a> Evaluator<'a> {
                 }
             })
             .collect::<Vec<_>>();
+        let mut phases = <[PhaseTime; 5]>::default();
+        let mut keyed = Measure::start();
         if pattern {
             if self.parsed.len() < self.arena.string_count() {
                 self.parsed.resize(self.arena.string_count(), None);
             }
             let parsed = &self.parsed;
-            let mut missing = started.parallel_range(selection.len(), |row| {
+            let mut missing = keyed.parallel_range(selection.len(), |row| {
                 match columns[0].get(row, &self.arena) {
                     Atom::Str(text) if !failures.get(row) && parsed[text.0 as usize].is_none() => {
                         text.0
@@ -1334,7 +1423,7 @@ impl<'a> Evaluator<'a> {
             missing.sort_unstable();
             missing.dedup();
             let unformatted = &self.unformatted;
-            let parses = started.parallel(&missing, |text| {
+            let parses = keyed.parallel(&missing, |text| {
                 let text = self.arena.text(StrId(*text));
                 if text.len() <= 1_000_000
                     && !text
@@ -1351,7 +1440,7 @@ impl<'a> Evaluator<'a> {
             }
         }
         let parsed = &self.parsed;
-        let row_keys = started.parallel_range(selection.len(), |row| {
+        let row_keys = keyed.parallel_range(selection.len(), |row| {
             if failures.get(row) {
                 return None;
             }
@@ -1371,6 +1460,8 @@ impl<'a> Evaluator<'a> {
                 }],
             ))
         });
+        keyed.into_phase(&mut phases[0], &mut started);
+        let claim = Measure::start();
         let mut tasks = Vec::new();
         for (text, group) in row_keys.iter().flatten() {
             if self.dense[cache][*group].1.claim(text.0 as usize) {
@@ -1412,8 +1503,10 @@ impl<'a> Evaluator<'a> {
             }
             tasks = formatted;
         }
+        claim.into_phase(&mut phases[1], &mut started);
         for batch in tasks.chunks(4096) {
-            let computed = started.parallel(
+            let mut compute = Measure::start();
+            let computed = compute.parallel(
                 batch,
                 |(text, group)| -> Result<std::result::Result<Atom, super::out::Out>> {
                     let suffix = &self.dense[cache][*group].0;
@@ -1435,6 +1528,8 @@ impl<'a> Evaluator<'a> {
                     Ok(self.arena.find(&value).ok_or(value))
                 },
             );
+            compute.into_phase(&mut phases[2], &mut started);
+            let commit = Measure::start();
             for ((text, group), value) in batch.iter().zip(computed) {
                 let value = match value {
                     Ok(Ok(value)) => Slot::Value(value),
@@ -1444,12 +1539,16 @@ impl<'a> Evaluator<'a> {
                 };
                 self.dense[cache][*group].1.insert(text.0 as usize, value);
             }
+            commit.into_phase(&mut phases[3], &mut started);
         }
-        let output = gather(&mut started, &mut failures, |row| {
+        let mut gathered = Measure::start();
+        let output = gather(&mut gathered, &mut failures, |row| {
             row_keys[row].and_then(|(text, group)| self.dense[cache][group].1.get(text.0 as usize))
         });
         let mut output = Column::from_atoms(&output, &mut self.arena)?;
         output.failed = failures;
+        gathered.into_phase(&mut phases[4], &mut started);
+        self.phases(&node.op, "dense", &phases, selection.len());
         self.arena.recorder.kernel(
             node.op.name(),
             &started,
@@ -1964,10 +2063,17 @@ impl Program {
         let execute = Measure::start();
         let execute_workers = recorder.worker_adjustment();
         let mut emissions = Vec::new();
+        // Each rule's phases, summed over rules: what the kernels inside `when` and the evidence
+        // cost, and the per-row selection and emission loops no kernel covers.
+        let mut rule_phases = <[PhaseTime; 6]>::default();
         for (execution, rule) in rules.into_iter().enumerate() {
             relation.checkpoint()?;
             let rule_measure = Measure::start();
+            let span = (Measure::start(), recorder.worker_adjustment());
             let scope = evaluator.scope(rule, len)?;
+            span.0
+                .into_phase_nested(&mut rule_phases[0], recorder.worker_adjustment() - span.1);
+            let span = (Measure::start(), recorder.worker_adjustment());
             let candidates = if let Some(each) = rule.each {
                 let items = evaluator.evaluate(each, &scope)?;
                 let mut parents = Vec::new();
@@ -1997,7 +2103,13 @@ impl Program {
             } else {
                 scope
             };
+            span.0
+                .into_phase_nested(&mut rule_phases[1], recorder.worker_adjustment() - span.1);
+            let span = (Measure::start(), recorder.worker_adjustment());
             let when = evaluator.evaluate(rule.when, &candidates)?;
+            span.0
+                .into_phase_nested(&mut rule_phases[2], recorder.worker_adjustment() - span.1);
+            let span = (Measure::start(), recorder.worker_adjustment());
             let mut selected = Vec::new();
             for (index, row) in candidates.rows.iter().enumerate() {
                 if when.failed.get(index) {
@@ -2007,6 +2119,9 @@ impl Program {
                 }
             }
             let selected = candidates.select(&selected, &mut evaluator.arena)?;
+            span.0
+                .into_phase_nested(&mut rule_phases[3], recorder.worker_adjustment() - span.1);
+            let span = (Measure::start(), recorder.worker_adjustment());
             let actual = evaluator.evaluate(rule.actual, &selected)?;
             let expectation = evaluator.evaluate(rule.expectation, &selected)?;
             let mut optional = |node| match node {
@@ -2027,6 +2142,9 @@ impl Program {
                 Column::from_atoms(&values, &mut evaluator.arena)?
             };
             let recovery = evaluator.evaluate(rule.recovery, &selected)?;
+            span.0
+                .into_phase_nested(&mut rule_phases[4], recorder.worker_adjustment() - span.1);
+            let span = (Measure::start(), recorder.worker_adjustment());
             let mut mask = Bits::new(len);
             for (index, row) in selected.rows.iter().enumerate() {
                 if [
@@ -2075,6 +2193,8 @@ impl Program {
                     affected: places,
                 });
             }
+            span.0
+                .into_phase_nested(&mut rule_phases[5], recorder.worker_adjustment() - span.1);
             // Each rule's own time, and with heap counting its heap peak.
             recorder.sub_stage(
                 format!(
@@ -2105,6 +2225,14 @@ impl Program {
                 }
             }
         }
+        let stage = subject_stage(subject, Phase::Execute);
+        for (name, phase) in ["scope", "each", "when", "select", "evidence", "emit"]
+            .into_iter()
+            .zip(&rule_phases)
+        {
+            recorder.phase(format!("{stage}.rules.{name}"), phase, len);
+        }
+        recorder.holders(stage, evaluator.holders());
         recorder.stage_with_kernels(
             subject_stage(subject, Phase::Execute),
             &execute,
@@ -2297,6 +2425,49 @@ mod tests {
                 .map(|(_, timing)| timing.tuples)
                 .sum::<usize>(),
             1
+        );
+        assert!(result.diagnostics.is_empty());
+        Ok(())
+    }
+    #[test]
+    fn constant_inputs_compute_once_and_repeat_the_per_row_result() -> Result<()> {
+        let constant = rule(
+            "constant",
+            json!({"eq":[{"trim":{"lit":" shared "}},{"lit":"shared"}]}),
+            json!({"object":{"trimmed":{"trim":{"lit":" shared "}},"missing":{"trim":{"lit":null}}}}),
+        );
+        let varying = rule(
+            "varying",
+            json!({"eq":[{"trim":{"field":"source"}},{"lit":"shared"}]}),
+            json!({"object":{"trimmed":{"trim":{"field":"source"}}}}),
+        );
+        let program = super::super::compile(&serde_json::to_string(
+            &json!({"schemaVersion":4,"roles":[],"rules":[constant,varying]}),
+        )?)?;
+        let mut relation = Relation {
+            subject: Some(Subject::UnitSource),
+            fields: HashMap::from([(
+                "source".into(),
+                vec![json!(" shared "), json!("shared"), json!("x")],
+            )]),
+            occurrences: vec![vec![], vec![], vec![]],
+        };
+        let (result, _) = program.evaluate_timed(&mut relation, &HostCollator::new("en")?)?;
+        let actual = result
+            .findings
+            .iter()
+            .map(|finding| finding.actual.clone())
+            .collect::<Vec<_>>();
+        // A null field is omitted from the published object, as on the per-row path.
+        assert_eq!(
+            actual,
+            [
+                json!({"trimmed":"shared"}),
+                json!({"trimmed":"shared"}),
+                json!({"trimmed":"shared"}),
+                json!({"trimmed":"shared"}),
+                json!({"trimmed":"shared"}),
+            ]
         );
         assert!(result.diagnostics.is_empty());
         Ok(())

@@ -14,11 +14,39 @@ pub struct UnitSource {
     pub source: u32,
     pub members: Vec<u32>,
 }
+/// The line-culture rows: each row's line and culture index, sized exactly.
+#[derive(Default)]
+pub struct CultureRows {
+    /// Each row's line, which is also the parent row of every line-culture column.
+    pub(crate) lines: Arc<[u32]>,
+    cultures: Box<[u32]>,
+}
+impl CultureRows {
+    pub fn len(&self) -> usize {
+        self.lines.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.lines.is_empty()
+    }
+    /// The row's `(line, culture index)`.
+    pub fn at(&self, row: usize) -> (usize, usize) {
+        (self.lines[row] as usize, self.cultures[row] as usize)
+    }
+    pub fn get(&self, row: usize) -> Option<(usize, usize)> {
+        (row < self.len()).then(|| self.at(row))
+    }
+    pub fn iter(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        (0..self.len()).map(|row| self.at(row))
+    }
+    pub fn cultures(&self) -> &[u32] {
+        &self.cultures
+    }
+}
 pub struct NativeSubjects<'a> {
     pub query: &'a mut EngineQuery,
     pub(crate) projection: Arc<Projection>,
     pub subject: Subject,
-    pub cultures: Vec<(usize, usize)>,
+    pub cultures: CultureRows,
     pub units: Vec<UnitSource>,
     pub(super) collator: &'a HostCollator,
     pub(super) cancelled: &'a AtomicBool,
@@ -44,18 +72,35 @@ impl<'a> NativeSubjects<'a> {
         occurrences: Arc<super::occurrences::OccurrenceData>,
     ) -> Result<Self> {
         let projection = Projection::open(query, cancelled)?;
-        let mut cultures = Vec::new();
+        let mut cultures = CultureRows::default();
         let mut units: Vec<UnitSource> = Vec::new();
         if subject == Subject::LineCulture {
             let mut order = (0..query.cultures.len()).collect::<Vec<_>>();
             order.sort_by(|a, b| collator.compare(&query.cultures[*a], &query.cultures[*b]));
+            let present =
+                |line: usize, culture: usize| projection.cultures[culture].state[line] != 8;
+            let count = (0..projection.source.len())
+                .map(|line| {
+                    order
+                        .iter()
+                        .filter(|culture| present(line, **culture))
+                        .count()
+                })
+                .sum();
+            let mut lines = Vec::with_capacity(count);
+            let mut indices = Vec::with_capacity(count);
             for line in 0..projection.source.len() {
                 for culture in &order {
-                    if projection.cultures[*culture].state[line] != 8 {
-                        cultures.push((line, *culture));
+                    if present(line, *culture) {
+                        lines.push(u32::try_from(line)?);
+                        indices.push(u32::try_from(*culture)?);
                     }
                 }
             }
+            cultures = CultureRows {
+                lines: lines.into(),
+                cultures: indices.into(),
+            };
         }
         if subject == Subject::UnitSource {
             for unit in 0..projection.raw.visible.len() {
@@ -107,7 +152,7 @@ impl<'a> NativeSubjects<'a> {
         if self.subject == Subject::LineCulture {
             self.cultures
                 .get(row)
-                .map(|(line, _)| *line)
+                .map(|(line, _)| line)
                 .ok_or_else(|| "Culture subject outside relation.".into())
         } else {
             Ok(row)
@@ -537,7 +582,7 @@ impl SubjectRows for NativeSubjects<'_> {
         match self.subject {
             Subject::Line => self.line_field(row, name),
             Subject::LineCulture => {
-                let (line, ci) = self.cultures[row];
+                let (line, ci) = self.cultures.at(row);
                 if let Some(name) = name.strip_prefix("line.") {
                     self.line_field(line, name)
                 } else {

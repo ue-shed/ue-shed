@@ -478,6 +478,10 @@ pub struct Arena {
     string_collisions: FxHashMap<u64, Vec<StrId>>,
     pub values: Vec<Structured>,
     structures: FxHashMap<Structured, ValId>,
+    /// Occurrence and occurrence-location values by row: one per row, created on first use
+    /// in the same order as any other value, without a hash-consing entry.
+    occurrence_values: Vec<u32>,
+    location_values: Vec<u32>,
     pub occurrences: Occurrences,
     pub line_children: Option<Arc<Children>>,
     pub line_fields: HashMap<String, Arc<Column>>,
@@ -487,6 +491,57 @@ pub struct Arena {
     pub(crate) paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
 }
 impl Arena {
+    /// The arena's parts in bytes, and how many structure entries it interns.
+    pub(crate) fn holders(&self) -> std::collections::BTreeMap<&'static str, u64> {
+        use std::mem::size_of;
+        let payload = self
+            .values
+            .iter()
+            .map(|value| match value {
+                Structured::List(values) => values.len() * size_of::<Atom>(),
+                Structured::Object(values) => values.len() * size_of::<(StrId, Atom)>(),
+                _ => 0,
+            })
+            .sum::<usize>();
+        std::collections::BTreeMap::from([
+            (
+                "arena.values",
+                (self.values.capacity() * size_of::<Structured>()) as u64,
+            ),
+            ("arena.valuePayload", payload as u64),
+            (
+                "arena.structuresMap",
+                (self.structures.capacity() * (size_of::<Structured>() + size_of::<ValId>() + 1))
+                    as u64,
+            ),
+            ("arena.structuresEntries", self.structures.len() as u64),
+            (
+                "arena.rowValues",
+                ((self.occurrence_values.capacity() + self.location_values.capacity()) * 4) as u64,
+            ),
+            (
+                "arena.storedMap",
+                (self.stored.capacity() * (size_of::<StrId>() + size_of::<Span>() + 1)) as u64,
+            ),
+            (
+                "arena.storedText",
+                self.stored_text
+                    .iter()
+                    .map(|text| text.len())
+                    .sum::<usize>() as u64,
+            ),
+            (
+                "arena.side",
+                (self.side.capacity() * size_of::<Arc<str>>()
+                    + self.side.iter().map(|text| text.len()).sum::<usize>())
+                    as u64,
+            ),
+            (
+                "arena.stringsMap",
+                (self.strings.capacity() * (size_of::<u64>() + size_of::<StrId>() + 1)) as u64,
+            ),
+        ])
+    }
     pub(crate) fn memory(&self) -> super::stages::Memory {
         use std::mem::size_of;
         let structures = self
@@ -520,6 +575,7 @@ impl Arena {
             arena_bytes: self.values.capacity() * size_of::<Structured>()
                 + structures
                 + self.structures.capacity() * (size_of::<Structured>() + size_of::<ValId>() + 1)
+                + (self.occurrence_values.capacity() + self.location_values.capacity()) * 4
                 + self.stored.capacity() * (size_of::<StrId>() + size_of::<Span>() + 1)
                 + self
                     .stored_text
@@ -548,6 +604,8 @@ impl Arena {
             string_collisions: FxHashMap::default(),
             values: Vec::new(),
             structures: FxHashMap::default(),
+            occurrence_values: Vec::new(),
+            location_values: Vec::new(),
             occurrences: Occurrences::default(),
             line_children: None,
             line_fields: HashMap::new(),
@@ -558,6 +616,7 @@ impl Arena {
         })
     }
     pub fn load_strings(&mut self, reader: &mut EngineReader, ids: &[u32]) -> Result<()> {
+        let dedup = super::stages::Measure::start();
         let mut seen = HashSet::new();
         let mut wanted = ids
             .iter()
@@ -567,14 +626,24 @@ impl Arena {
             })
             .collect::<Vec<_>>();
         wanted.sort_unstable();
+        self.recorder
+            .sub_stage("strings.dedup".into(), &dedup, ids.len());
         let mut measure = super::stages::Measure::start();
+        let batch_read = super::stages::Measure::start();
         let texts = reader.strings_batch(&wanted)?;
+        self.recorder
+            .sub_stage("strings.batch".into(), &batch_read, wanted.len());
+        let mut hashing = super::stages::Measure::start();
         // Hash in parallel; the batch's text is one buffer and the maps are filled in ID order.
-        let hashes = measure.parallel_chunks(&texts, 1024, |text| {
+        let hashes = hashing.parallel_chunks(&texts, 1024, |text| {
             let mut hash = FxHasher::default();
             hash.write(Wtf8Buf::from_view(text).as_bytes());
             hash.finish()
         });
+        measure.include(&hashing);
+        self.recorder
+            .sub_stage("strings.hash".into(), &hashing, wanted.len());
+        let inserting = super::stages::Measure::start();
         let mut buffer = String::with_capacity(texts.iter().map(String::len).sum());
         let batch = u32::try_from(self.stored_text.len())?;
         let mut spans = Vec::with_capacity(texts.len());
@@ -603,6 +672,8 @@ impl Arena {
                 self.strings.insert(hash, StrId(id));
             }
         }
+        self.recorder
+            .sub_stage("strings.insert".into(), &inserting, wanted.len());
         self.recorder
             .sub_stage("strings.load".into(), &measure, wanted.len());
         Ok(())
@@ -892,7 +963,36 @@ impl Arena {
             .map_or(Atom::Null, |column| column.get(row as usize, self))
     }
     pub fn occurrence_id(&mut self, row: u32) -> Result<Atom> {
-        self.structured(Structured::Occurrence(row)).map(Atom::Val)
+        self.row_value(row, false)
+    }
+    pub fn occurrence_location(&mut self, row: u32) -> Result<Atom> {
+        self.row_value(row, true)
+    }
+    fn row_value(&mut self, row: u32, location: bool) -> Result<Atom> {
+        let index = if location {
+            &self.location_values
+        } else {
+            &self.occurrence_values
+        };
+        if let Some(id) = index.get(row as usize).filter(|id| **id != u32::MAX) {
+            return Ok(Atom::Val(ValId(*id)));
+        }
+        let id = u32::try_from(self.values.len())?;
+        self.values.push(if location {
+            Structured::OccurrenceLocation(row)
+        } else {
+            Structured::Occurrence(row)
+        });
+        let index = if location {
+            &mut self.location_values
+        } else {
+            &mut self.occurrence_values
+        };
+        if index.len() <= row as usize {
+            index.resize(row as usize + 1, u32::MAX);
+        }
+        index[row as usize] = id;
+        Ok(Atom::Val(ValId(id)))
     }
     pub fn get_path(&self, mut value: Atom, path: &str) -> Atom {
         for name in path.split('.') {

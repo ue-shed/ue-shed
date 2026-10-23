@@ -10,12 +10,104 @@ use std::sync::{Arc, Mutex};
 
 /// A term list's bare alternation, then the same terms with their boundaries.
 type TermExpressions = (js_regex::JsRegex, js_regex::JsRegex);
+/// A `findAll` needle list, prepared once per list: each needle's text, UTF-16 units and
+/// length, and which first bytes can start a match.
+struct Needles {
+    texts: Vec<String>,
+    units: Vec<Vec<u16>>,
+    /// No needle holds an escaped lone surrogate, so plain UTF-8 sources match bytewise.
+    plain: bool,
+    first: [bool; 256],
+}
+impl Needles {
+    fn new(arena: &Arena, list: &[Atom]) -> Result<Self> {
+        let texts = list
+            .iter()
+            .map(|value| Ok(string(arena, *value)?.to_owned()))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self::from_texts(texts))
+    }
+    fn from_texts(texts: Vec<String>) -> Self {
+        let units = texts.iter().map(|text| js_regex::units(text)).collect();
+        let mut first = [false; 256];
+        for text in &texts {
+            if let Some(byte) = text.as_bytes().first() {
+                first[usize::from(*byte)] = true;
+            }
+        }
+        Self {
+            plain: texts.iter().all(|text| !text.as_bytes().contains(&0xf3)),
+            texts,
+            units,
+            first,
+        }
+    }
+    /// Non-overlapping occurrences, left to right, the earliest-listed needle winning where
+    /// several match at one position; offsets in UTF-16 units.
+    fn find_all(&self, source: &str) -> Vec<js_regex::Match> {
+        let mut found = Vec::new();
+        if self.plain && !source.as_bytes().contains(&0xf3) {
+            // Neither side has a lone surrogate, so a match starts and ends on whole characters
+            // and the source is scanned as UTF-8, counting UTF-16 units as it goes.
+            let bytes = source.as_bytes();
+            let (mut offset, mut unit) = (0, 0);
+            while offset < bytes.len() {
+                if self.first[usize::from(bytes[offset])]
+                    && let Some(index) = self.texts.iter().position(|text| {
+                        !text.is_empty() && bytes[offset..].starts_with(text.as_bytes())
+                    })
+                {
+                    let length = self.units[index].len();
+                    found.push(js_regex::Match {
+                        text: self.texts[index].clone(),
+                        start: unit,
+                        end: unit + length,
+                    });
+                    offset += self.texts[index].len();
+                    unit += length;
+                    continue;
+                }
+                let width = match bytes[offset] {
+                    0x00..=0x7f => 1,
+                    0xc0..=0xdf => 2,
+                    0xe0..=0xef => 3,
+                    _ => 4,
+                };
+                offset += width;
+                unit += if width == 4 { 2 } else { 1 };
+            }
+            return found;
+        }
+        let source = js_regex::units(source);
+        let mut offset = 0;
+        while offset < source.len() {
+            if let Some(index) = self
+                .units
+                .iter()
+                .position(|needle| !needle.is_empty() && source[offset..].starts_with(needle))
+            {
+                let needle = &self.units[index];
+                found.push(js_regex::Match {
+                    text: js_regex::view(needle),
+                    start: offset,
+                    end: offset + needle.len(),
+                });
+                offset += needle.len();
+            } else {
+                offset += 1;
+            }
+        }
+        found
+    }
+}
 pub struct Kernel<'a> {
     pub collator: &'a HostCollator,
     pub roles: HashMap<String, Role>,
     patterns: Mutex<HashMap<(String, bool), Arc<js_regex::JsRegex>>>,
     terms: Mutex<HashMap<(Atom, Atom, Atom), Arc<TermExpressions>>>,
     classes: Mutex<HashMap<Atom, Arc<text::CharacterClass>>>,
+    /// Read on every call from every worker, so readers must not block one another.
+    needles: std::sync::RwLock<HashMap<Atom, Arc<Needles>>>,
     roles_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
     paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
 }
@@ -99,6 +191,7 @@ impl<'a> Kernel<'a> {
             roles: roles.clone(),
             patterns: Mutex::default(),
             classes: Mutex::default(),
+            needles: std::sync::RwLock::default(),
             terms: Mutex::default(),
             roles_mask: Arc::clone(&arena.roles_mask),
             paths_mask: Arc::clone(&arena.paths_mask),
@@ -358,29 +451,25 @@ impl<'a> Kernel<'a> {
                 out!(count)
             }
             Op::FindAll => {
-                let source = js_regex::units(string(arena, a)?);
-                let needles = list(arena, b)?
-                    .iter()
-                    .map(|value| Ok(js_regex::units(string(arena, *value)?)))
-                    .collect::<Result<Vec<_>>>()?;
-                let mut found = Vec::new();
-                let mut offset = 0;
-                while offset < source.len() {
-                    if let Some(needle) = needles
-                        .iter()
-                        .find(|needle| !needle.is_empty() && source[offset..].starts_with(needle))
-                    {
-                        found.push(js_regex::Match {
-                            text: js_regex::view(needle),
-                            start: offset,
-                            end: offset + needle.len(),
-                        });
-                        offset += needle.len();
-                    } else {
-                        offset += 1;
-                    }
-                }
-                out!(found)
+                let source = string(arena, a)?;
+                let cached = self
+                    .needles
+                    .read()
+                    .map_err(|_| "Needle cache was poisoned.")?
+                    .get(&b)
+                    .cloned();
+                let needles = if let Some(prepared) = cached {
+                    prepared
+                } else {
+                    let prepared = Arc::new(Needles::new(arena, list(arena, b)?)?);
+                    self.needles
+                        .write()
+                        .map_err(|_| "Needle cache was poisoned.")?
+                        .entry(b)
+                        .or_insert(prepared)
+                        .clone()
+                };
+                out!(needles.find_all(source))
             }
             Op::AnyChar
             | Op::AllChars
@@ -612,5 +701,92 @@ impl<'a> Kernel<'a> {
                 ));
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Needles, js_regex};
+
+    /// The UTF-16 scan `findAll` used before needles were prepared, kept as the reference.
+    fn reference(source: &str, needles: &[String]) -> Vec<js_regex::Match> {
+        let source = js_regex::units(source);
+        let needles = needles
+            .iter()
+            .map(|needle| js_regex::units(needle))
+            .collect::<Vec<_>>();
+        let mut found = Vec::new();
+        let mut offset = 0;
+        while offset < source.len() {
+            if let Some(needle) = needles
+                .iter()
+                .find(|needle| !needle.is_empty() && source[offset..].starts_with(needle))
+            {
+                found.push(js_regex::Match {
+                    text: js_regex::view(needle),
+                    start: offset,
+                    end: offset + needle.len(),
+                });
+                offset += needle.len();
+            } else {
+                offset += 1;
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn prepared_needles_find_what_the_utf16_scan_finds() {
+        // Units: ASCII, a backslash pair, multi-byte, an astral pair, and lone surrogates.
+        const UNITS: [&[u16]; 9] = [
+            &[0x61],
+            &[0x62],
+            &[0x5c],
+            &[0x6e],
+            &[0xe9],
+            &[0x4e2d],
+            &[0xd83d, 0xde00],
+            &[0xd800],
+            &[0xde00],
+        ];
+        let needle_lists = [
+            vec!["\n", "\r", "\t"],
+            vec!["a", "ab", "b"],
+            vec!["ab", "a", ""],
+            vec!["é中", "中", "😀"],
+            vec![],
+            vec![""],
+        ];
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % bound as u64) as usize
+        };
+        let mut lists = needle_lists
+            .iter()
+            .map(|list| {
+                list.iter()
+                    .map(|needle| (*needle).to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        // Needles holding a lone surrogate take the UTF-16 path.
+        lists.push(vec![js_regex::view(&[0xd800]), "a".into()]);
+        lists.push(vec![js_regex::view(&[0xde00, 0x61])]);
+        for _ in 0..4000 {
+            let units = (0..next(24))
+                .flat_map(|_| UNITS[next(UNITS.len())].iter().copied())
+                .collect::<Vec<_>>();
+            let source = js_regex::view(&units);
+            for needles in &lists {
+                assert_eq!(
+                    Needles::from_texts(needles.clone()).find_all(&source),
+                    reference(&source, needles),
+                    "source {units:x?}, needles {needles:?}"
+                );
+            }
+        }
     }
 }

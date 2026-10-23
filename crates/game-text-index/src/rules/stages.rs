@@ -48,6 +48,12 @@ struct Sample {
     /// With heap counting, for sub-stages: live heap at the end, and the peak within.
     heap: Option<(u64, u64)>,
 }
+/// One phase's wall and busy time summed over several spans, recorded as one sub-stage.
+#[derive(Default)]
+pub struct PhaseTime {
+    wall: Duration,
+    busy: Duration,
+}
 /// All native clocks and worker accounting live here, rather than in persisted metadata.
 pub struct Measure {
     start: Instant,
@@ -155,6 +161,24 @@ impl Measure {
         self.parallel += other.parallel;
         self.workers += other.workers;
     }
+    /// Fold a span whose parallel work ran in kernels into a phase total: `nested` is the
+    /// kernels' busy-minus-wall over the span, from `Recorder::worker_adjustment`.
+    pub fn into_phase_nested(self, phase: &mut PhaseTime, nested: i128) {
+        let wall = self.wall();
+        phase.wall += wall;
+        phase.busy += Duration::from_nanos(
+            (wall.as_nanos() as i128 + nested)
+                .max(0)
+                .min(u64::MAX as i128) as u64,
+        );
+    }
+    /// Fold this measure into a phase total and its parallel work into `owner`'s accounting.
+    pub fn into_phase(self, phase: &mut PhaseTime, owner: &mut Self) {
+        let (wall, busy) = self.times();
+        phase.wall += wall;
+        phase.busy += busy;
+        owner.include(&self);
+    }
     pub fn exclude(&mut self, duration: Duration) {
         self.excluded += duration;
     }
@@ -232,6 +256,12 @@ impl Recorder {
     }
     pub fn sub_stage(&self, name: String, measure: &Measure, rows: usize) {
         let (wall, busy) = measure.times();
+        self.sub_stage_times(name, wall, busy, rows);
+    }
+    pub fn phase(&self, name: String, phase: &PhaseTime, rows: usize) {
+        self.sub_stage_times(name, phase.wall, phase.busy, rows);
+    }
+    fn sub_stage_times(&self, name: String, wall: Duration, busy: Duration, rows: usize) {
         let mut recording = self
             .0
             .lock()

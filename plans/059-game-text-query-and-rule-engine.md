@@ -368,22 +368,31 @@ Illustrative syntax:
 
 ### Phase 1: facts, the IR and rules that read only their own row
 
-- Split the facts from policy.
+The specification is [Game Text rule engine](../docs/engineering/game-text-rule-engine.md).
+
+- **Fact repairs: done.** Missing String Table entries, native-source overrides, compiled copies,
+  `IdenticalNamespaceAndSource` and deleted packages now match the fixture. The wired-pin `shared`
+  defect went with the compiled-copy repair.
 - Implement the IR evaluator and the base functions (measures, character classes, regex, terms,
-  tokenizers).
-- Write the 19 localization checks, the source checks that read only their own row, and the custom
-  kinds as v4 example rules.
-- Write the v1–v3 translator.
+  Unreal's format, rich-text and whitespace grammar).
+- Rules may reference other rules on the same row.
+- Write every check that reads only its own row as a v4 example rule:
+    - 16 on `line_culture`, `length_outlier` included;
+    - 6 on `line`, `string_table_key_collision` included;
+    - the seven authored kinds.
+- Write the v1–v3 translator. v4 stays internal in this phase: rule files on disk stay v1–v3.
 - Persist the findings layer.
-- The Quality tab and Browse chips read it.
-- **Parity:** the fixture is exact for these rules, except for the known defects this phase fixes.
-  Those entries are removed.
+- The workspace Quality indexes and `ue-shed loc check` read it. Sorting, paging and counting stay
+  in TypeScript until Phase 3.
+- **Parity:** the fixture is exact. The `empty-translation-whitespace` pin is removed.
 
-### Phase 2: group rules and rule references
+### Phase 2: group rules and corpus aggregates
 
-- Add group aggregates, corpus aggregates and rule references.
-- `shared`, `duplicate_source`, `long`, `inconsistent_translation`, `culture_invariant_text`,
-  `string_table_key_collision` and `length_outlier` become rules.
+- Add group aggregates, corpus aggregates and references across rows.
+- `shared`, `duplicate_source`, `long`, `inconsistent_translation` and `culture_invariant_text`
+  become rules.
+- No rule is on by default (decision 1), and rules come only from the project's file and the host
+  overlay. v4 becomes the public authoring format, and the rule editor learns it.
 - There is one `duplicate_source`. Today the fixture records two behaviours:
     - the native signal leaves out lines that are only in gathered text;
     - the Quality check leaves out text made only of digits or punctuation.
@@ -396,7 +405,8 @@ Illustrative syntax:
 ### Phase 3: the query engine
 
 - Bitset predicates over the IR.
-- Findings as filter, group and facet fields.
+- Findings as filter, group and facet fields, including Browse chips.
+- The engine sorts, pages and counts findings. The workspace Quality indexes stop re-checking lines.
 - Facets in one pass.
 - Separate response parts, groups with their first rows, and related lines.
 - The trigram index.
@@ -461,6 +471,38 @@ Decided on 2026-10-23, from the fixture's triage of today's engine:
    `missing_translator_notes`.
 6. **The line page keeps the list's culture scope.** Today it recomputes problems over every
    culture, so it can show work the list doesn't.
+
+Decided on 2026-10-23, for Phase 1 (details in the
+[specification](../docs/engineering/game-text-rule-engine.md)):
+
+7. **Three rule subjects.**
+    - `line` and `line_culture`, as planned.
+    - `unit_source`: a raw text unit with one exact source. Rule-file source rules need it, and it
+      works without a localization target.
+8. **Same-row rule references move to Phase 1.**
+    - Renames suppress their pair in `format_arguments`, and missing tags suppress their additions.
+    - `length_outlier` and `string_table_key_collision` read only their own row, so they move to
+      Phase 1.
+9. **Unreal's format grammar includes the rename edit.**
+    - `formatRenameArgument` is a base function: the inverse of the format tokenizer.
+    - When to offer a fix stays in the rule.
+10. **Heuristics are expressions, not native functions.**
+    - Placeholder words, length ratios, number-only text and source whitespace are written in the
+      example rules from general string, character-class and list operations.
+11. **Custom patterns keep exact JavaScript semantics.**
+    - A rewrite for `fancy-regex` covers ASCII `\d`, `\w` and `\b`, JS `\s`, `.` and lone
+      surrogates, proved by a differential test against Node.
+    - A pattern over its backtrack budget reports `syntax_limit`.
+12. **Collation follows the host.**
+    - Wherever today's code uses `localeCompare`, the engine uses the host's resolved collator
+      locale, and the findings layer is keyed by it.
+    - Modifier order is part of finding identity.
+13. **Finding identity is byte-identical.**
+    - Two formulas stay: `localization-finding:` for line findings, `quality-finding:` for
+      `unit_source`.
+    - Numbers are formatted as JavaScript formats them.
+14. **v4 rule documents stay internal in Phase 1.** They become the public authoring format in
+    Phase 2, with the rule editor.
 
 Still open:
 

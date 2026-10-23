@@ -1798,18 +1798,24 @@ impl<'a> Evaluator<'a> {
         let latest = self.prepared.field("latest")?.clone();
         let reasons = self.prepared.field("unknownReasons")?.clone();
         let reduced = self.prepared.field("reducedSourceChecking")?.clone();
-        let source_rows = (0..len)
-            .filter(|row| {
-                checkable.get(*row, &self.arena).boolean()
-                    && comparable.get(*row, &self.arena).boolean()
-            })
-            .map(|row| row as u32)
-            .collect::<Vec<_>>();
-        let translation_rows = source_rows
-            .iter()
-            .copied()
-            .filter(|row| latest.get(*row as usize, &self.arena) != Atom::Null)
-            .collect::<Vec<_>>();
+        // The row sets, the issue codes and the output are built in parallel and kept in row
+        // order; their time is recorded as one `diagnostics` kernel.
+        let mut work = Measure::start();
+        let nested = self.arena.recorder.kernel_wall();
+        let source_rows = Bits {
+            words: work.parallel_range(len.div_ceil(64), |word| {
+                (word * 64..((word + 1) * 64).min(len))
+                    .filter(|row| {
+                        checkable.get(*row, &self.arena).boolean()
+                            && comparable.get(*row, &self.arena).boolean()
+                    })
+                    .fold(0u64, |bits, row| bits | 1 << (row % 64))
+            }),
+            len,
+        };
+        let mut translation_rows = source_rows.clone();
+        translation_rows.retain(|row| latest.get(row as usize, &self.arena) != Atom::Null);
+        const CHUNK: usize = 1 << 16;
         let mut issues = Vec::new();
         for (node, rows) in self
             .program
@@ -1817,80 +1823,135 @@ impl<'a> Evaluator<'a> {
             .into_iter()
             .zip([source_rows, translation_rows])
         {
+            let rows = rows.ones().collect::<Vec<_>>();
             let selection = Selection::new(rows);
             let patterns = self.evaluate(node, &selection)?;
-            let mut codes = HashMap::<u32, Vec<u8>>::new();
-            for (index, row) in selection.rows.iter().enumerate() {
-                let found = self
-                    .arena
-                    .get_path(patterns.get(index, &self.arena), "issues");
-                for issue in self.arena.elements(found)?.unwrap_or_default() {
-                    let code = self.arena.get_path(*issue, "code");
-                    if let Atom::Str(code) = code {
-                        let code = match self.arena.text(code) {
-                            "unsupported_culture" => UNSUPPORTED_CULTURE,
-                            "syntax_limit" => SYNTAX_LIMIT,
-                            _ => continue,
-                        };
-                        codes.entry(row).or_default().push(code);
+            let rows = selection.rows.iter().collect::<Vec<_>>();
+            // (row, code) in row order; a row keeps every code it has, duplicates included.
+            let arena = &self.arena;
+            let codes = work.parallel_chunks(
+                &(0..rows.len().div_ceil(CHUNK)).collect::<Vec<_>>(),
+                1,
+                |&chunk| -> Result<Vec<(u32, u8)>> {
+                    let mut codes = Vec::new();
+                    let first = chunk * CHUNK;
+                    for (index, row) in rows.iter().enumerate().skip(first).take(CHUNK) {
+                        let found = arena.get_path(patterns.get(index, arena), "issues");
+                        for issue in arena.elements(found)?.unwrap_or_default() {
+                            if let Atom::Str(code) = arena.get_path(*issue, "code") {
+                                let code = match arena.text(code) {
+                                    "unsupported_culture" => UNSUPPORTED_CULTURE,
+                                    "syntax_limit" => SYNTAX_LIMIT,
+                                    _ => continue,
+                                };
+                                codes.push((*row, code));
+                            }
+                        }
                     }
-                }
+                    Ok(codes)
+                },
+            );
+            let mut all = Vec::new();
+            for chunk in codes {
+                all.extend(chunk?);
             }
-            issues.push(codes);
+            issues.push(all);
         }
-        // The two passes stay adjacent for each line, preserving duplicate diagnostics.
+        // The two passes stay adjacent for each line, preserving duplicate diagnostics. Chunks
+        // start at a line's first row, so each line is emitted whole by one worker.
         let parents = checkable.rows.clone();
         let parent = |row: usize| parents.as_ref().map_or(row as u32, |parents| parents[row]);
-        let mut output = Vec::new();
-        let mut first = 0;
-        while first < len {
-            let mut end = first + 1;
-            while end < len && parent(end) == parent(first) {
-                end += 1;
+        let mut starts = vec![0];
+        let mut next = CHUNK;
+        while next < len {
+            while next < len && parent(next) == parent(next - 1) {
+                next += 1;
             }
-            for row in first..end {
-                for reason in self
-                    .arena
-                    .elements(reasons.get(row, &self.arena))?
-                    .unwrap_or_default()
-                {
-                    if let Atom::Str(reason) = reason {
-                        output.push(Diagnostic::new(
-                            row,
-                            diagnostic_code(self.arena.text(*reason))?,
-                        )?);
-                    }
-                }
-                if reduced.get(row, &self.arena).boolean() {
-                    output.push(Diagnostic::new(row, REDUCED_SOURCE_CHECKING)?);
-                }
+            if next < len {
+                starts.push(next);
             }
-            if checkable.get(first, &self.arena).boolean() {
-                for row in first..end {
-                    if !gathered.get(row, &self.arena).boolean() {
-                        output.push(Diagnostic::new(row, SOURCE_UNAVAILABLE)?);
-                    }
-                    let absent = latest.get(row, &self.arena) == Atom::Null;
-                    if !comparable.get(row, &self.arena).boolean() {
-                        if absent {
-                            output.push(Diagnostic::new(row, TRANSLATION_UNAVAILABLE)?);
-                        }
-                        continue;
-                    }
-                    for code in issues[0].get(&(row as u32)).into_iter().flatten() {
-                        output.push(Diagnostic::new(row, *code)?);
-                    }
-                    if absent {
-                        output.push(Diagnostic::new(row, TRANSLATION_UNAVAILABLE)?);
-                        continue;
-                    }
-                    for code in issues[1].get(&(row as u32)).into_iter().flatten() {
-                        output.push(Diagnostic::new(row, *code)?);
-                    }
-                }
-            }
-            first = end;
+            next += CHUNK;
         }
+        let arena = &self.arena;
+        let chunks = work.parallel_chunks(
+            &(0..starts.len()).collect::<Vec<_>>(),
+            1,
+            |&chunk| -> Result<Vec<Diagnostic>> {
+                let stop = starts.get(chunk + 1).copied().unwrap_or(len);
+                // Each pass's codes from this chunk's first row on, read forward with the rows.
+                let mut cursors = issues
+                    .iter()
+                    .map(|codes| codes.partition_point(|(at, _)| (*at as usize) < starts[chunk]))
+                    .collect::<Vec<_>>();
+                let mut codes = |pass: usize, row: usize| {
+                    let codes = &issues[pass];
+                    while cursors[pass] < codes.len() && (codes[cursors[pass]].0 as usize) < row {
+                        cursors[pass] += 1;
+                    }
+                    let from = cursors[pass];
+                    while cursors[pass] < codes.len() && codes[cursors[pass]].0 as usize == row {
+                        cursors[pass] += 1;
+                    }
+                    codes[from..cursors[pass]]
+                        .iter()
+                        .map(|(_, code)| *code)
+                        .collect::<Vec<_>>()
+                };
+                let mut output = Vec::new();
+                let mut first = starts[chunk];
+                while first < stop {
+                    let mut end = first + 1;
+                    while end < stop && parent(end) == parent(first) {
+                        end += 1;
+                    }
+                    for row in first..end {
+                        for reason in arena.elements(reasons.get(row, arena))?.unwrap_or_default() {
+                            if let Atom::Str(reason) = reason {
+                                output.push(Diagnostic::new(
+                                    row,
+                                    diagnostic_code(arena.text(*reason))?,
+                                )?);
+                            }
+                        }
+                        if reduced.get(row, arena).boolean() {
+                            output.push(Diagnostic::new(row, REDUCED_SOURCE_CHECKING)?);
+                        }
+                    }
+                    if checkable.get(first, arena).boolean() {
+                        for row in first..end {
+                            if !gathered.get(row, arena).boolean() {
+                                output.push(Diagnostic::new(row, SOURCE_UNAVAILABLE)?);
+                            }
+                            let absent = latest.get(row, arena) == Atom::Null;
+                            if !comparable.get(row, arena).boolean() {
+                                if absent {
+                                    output.push(Diagnostic::new(row, TRANSLATION_UNAVAILABLE)?);
+                                }
+                                continue;
+                            }
+                            for code in codes(0, row) {
+                                output.push(Diagnostic::new(row, code)?);
+                            }
+                            if absent {
+                                output.push(Diagnostic::new(row, TRANSLATION_UNAVAILABLE)?);
+                                continue;
+                            }
+                            for code in codes(1, row) {
+                                output.push(Diagnostic::new(row, code)?);
+                            }
+                        }
+                    }
+                    first = end;
+                }
+                Ok(output)
+            },
+        );
+        let mut output = Vec::new();
+        for chunk in chunks {
+            output.extend(chunk?);
+        }
+        work.exclude(self.arena.recorder.kernel_wall().saturating_sub(nested));
+        self.arena.recorder.kernel("diagnostics", &work, len, 0, 0);
         Ok(output)
     }
     fn scope(&mut self, rule: &CompiledRule, len: usize) -> Result<Selection> {

@@ -245,6 +245,19 @@
 							}
 						]
 					}
+				},
+				"contract": {
+					"type": "object",
+					"properties": {
+						"buildId": {
+							"type": "string"
+						},
+						"contractHash": {
+							"type": "string"
+						}
+					},
+					"required": ["buildId", "contractHash"],
+					"additionalProperties": false
 				}
 			},
 			"required": [

@@ -185,3 +185,7 @@ or raw-unit rows. Results carry interned places and the existing finding evidenc
 Responses over 16 MiB use a scoped `{file}` result; the host reads and deletes it. Evaluation
 and reads retain the pinned joined identity, and stale findings fail explicitly. Existing engine
 operations retain their minor-15 requirement.
+
+From 1.20 the engine's `capabilities` outcome also carries `contract`: the engine's `buildId` and
+the `contractHash` of its Rust-owned contract. A host compares them once, on a session's first
+call, refuses a different contract and then trusts the session's messages.

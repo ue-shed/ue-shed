@@ -119,6 +119,10 @@ export const GameTextEngineOutcome = Schema.Struct({
 	stageSeconds: Schema.Record(
 		Schema.String,
 		Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+	),
+	/** `capabilities` reports the engine's build and contract for the host's one handshake. */
+	contract: Schema.optionalKey(
+		Schema.Struct({ buildId: Schema.String, contractHash: Schema.String })
 	)
 }).annotate({ identifier: "GameTextEngineOutcome" });
 export type GameTextEngineOutcome = typeof GameTextEngineOutcome.Type;

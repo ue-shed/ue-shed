@@ -287,6 +287,9 @@ pub struct EngineOutcome {
     pub payload: Option<String>,
     pub io: crate::snapshot::IoMetrics,
     pub stage_seconds: BTreeMap<String, f64>,
+    /// `capabilities` reports the engine's build and contract, for the host's one handshake.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<crate::contract::ContractIdentity>,
 }
 #[derive(Default)]
 pub struct EngineSession {
@@ -310,9 +313,13 @@ impl EngineSession {
             payload: None,
             io: crate::snapshot::io_metrics(),
             stage_seconds: BTreeMap::new(),
+            contract: None,
         };
         match request {
-            EngineRequest::Capabilities => outcome.action = "capabilities".into(),
+            EngineRequest::Capabilities => {
+                outcome.action = "capabilities".into();
+                outcome.contract = Some(crate::contract::identity());
+            }
             EngineRequest::Open {
                 configuration,
                 expected_generation,

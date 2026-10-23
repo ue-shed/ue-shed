@@ -4,7 +4,7 @@
 //! (`rules/replies.rs`). The host's TypeScript types are generated from these definitions into
 //! `packages/protocol/src/game-text-contract.generated.ts`; a test fails when that file drifts.
 //! After the handshake neither side validates the other's messages.
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 
@@ -16,29 +16,31 @@ const SOURCES: [&str; 3] = [
 ];
 
 /// The engine's build and contract identity, reported by `capabilities`.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContractIdentity {
     /// The UE Shed suite version the engine was built for.
-    pub build_id: &'static str,
+    pub build_id: String,
     /// SHA-256 of the contract sources.
-    pub contract_hash: &'static str,
+    pub contract_hash: String,
 }
 
 pub fn identity() -> ContractIdentity {
     static HASH: OnceLock<String> = OnceLock::new();
     ContractIdentity {
-        build_id: env!("CARGO_PKG_VERSION"),
-        contract_hash: HASH.get_or_init(|| {
-            let mut hash = Sha256::new();
-            for source in SOURCES {
-                // Line endings are checkout settings, not contract changes.
-                let source = source.replace("\r\n", "\n");
-                hash.update((source.len() as u64).to_le_bytes());
-                hash.update(source.as_bytes());
-            }
-            format!("{:x}", hash.finalize())
-        }),
+        build_id: env!("CARGO_PKG_VERSION").into(),
+        contract_hash: HASH
+            .get_or_init(|| {
+                let mut hash = Sha256::new();
+                for source in SOURCES {
+                    // Line endings are checkout settings, not contract changes.
+                    let source = source.replace("\r\n", "\n");
+                    hash.update((source.len() as u64).to_le_bytes());
+                    hash.update(source.as_bytes());
+                }
+                format!("{:x}", hash.finalize())
+            })
+            .clone(),
     }
 }
 

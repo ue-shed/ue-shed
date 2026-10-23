@@ -404,6 +404,18 @@ impl Compiler {
             }
             args.push(argument);
         }
+        // Rule regexes are JavaScript's; the few constructs the engine cannot run (such as a
+        // lookbehind of varying length) reject the document here, not the evaluation reaching them.
+        if matches!(op, Op::RegexMatches | Op::RegexTest)
+            && let Some(Op::Lit(Literal::Str(pattern))) = args.get(1).map(|id| &self.nodes[*id].op)
+        {
+            super::regex::JsRegex::new(pattern, true).map_err(|cause| {
+                invalid(format!(
+                    "Rule {} has a regular expression the engine cannot run: {cause}.",
+                    rule.id
+                ))
+            })?;
+        }
         // Arity is part of each operator's IR type; only argument and result types remain.
         let result = match &op {
             Op::List => Type::List(Box::new(
@@ -820,6 +832,27 @@ mod tests {
         )));
         let cycle = compile(&document(r#"{"finding":"a"}"#, "")).err();
         assert!(cycle.is_some_and(|error| error.to_string().contains("rule_cycle")));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_a_literal_regex_the_engine_cannot_run() -> Result<()> {
+        let test = |pattern: &str| {
+            document(
+                &format!(
+                    r#"{{"regexTest":[{{"field":"source"}},{{"lit":"{pattern}"}},{{"lit":"u"}}]}}"#
+                ),
+                "",
+            )
+        };
+        compile(&test("(?<=a)b"))?;
+        let varying = compile(&test("(?<=a+)b")).err();
+        assert!(varying.is_some_and(|error| {
+            error.code == ErrorCode::InvalidInput
+                && error
+                    .to_string()
+                    .contains("Rule a has a regular expression")
+        }));
         Ok(())
     }
 

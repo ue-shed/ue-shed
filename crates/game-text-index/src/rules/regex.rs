@@ -132,6 +132,25 @@ pub fn rewrite(pattern: &str, case_sensitive: bool) -> Result<String> {
                 output.push_str(r"\x08");
             } else if escape == '/' {
                 output.push('/');
+            } else if !class && escape.is_ascii_digit() && escape != '0' {
+                // JS matches a reference (numbered or named) to a group that has not participated
+                // as empty; the backtracking engine fails it unless asked whether the group matched.
+                let digits = chars[index + 1..]
+                    .iter()
+                    .take_while(|digit| digit.is_ascii_digit())
+                    .collect::<String>();
+                output.push_str(&format!(r"(?({digits})\{digits})"));
+                index += 1 + digits.len();
+                continue;
+            } else if !class
+                && escape == 'k'
+                && chars.get(index + 2) == Some(&'<')
+                && let Some(close) = (index + 3..chars.len()).find(|i| chars[*i] == '>')
+            {
+                let name = chars[index + 3..close].iter().collect::<String>();
+                output.push_str(&format!(r"(?(<{name}>)\k<{name}>)"));
+                index = close + 1;
+                continue;
             } else {
                 output.push('\\');
                 output.push(escape);
@@ -300,7 +319,7 @@ mod tests {
     #[test]
     fn javascript_regex_differential_including_lone_surrogates() -> Result<()> {
         let sources = crate::json_value::parse(
-            r#"["", "a A 0 _", "é K ſ k s", "中１ 1", "a\nb\r\n", "ababa", "😀x𐀀", "x\ud800y\udfff", "\ud800\udc00", "\u00a0\ufeff\u0085", "a\u2028b\u2029"]"#,
+            r#"["", "a A 0 _", "é K ſ k s", "中１ 1", "a\nb\r\n", "ababa", "😀x𐀀", "x\ud800y\udfff", "\ud800\udc00", "\u00a0\ufeff\u0085", "a\u2028b\u2029", "ac", "bbc", "aab"]"#,
         )?;
         let patterns = [
             r"\d+",
@@ -320,6 +339,11 @@ mod tests {
             "(?=a)",
             "(?<=a)b",
             "(a)b\\1",
+            "(a|(b))\\2c",
+            "(a)?b\\1",
+            "\\1(a)",
+            "(a)|\\1b",
+            "(?<x>a)|\\k<x>b",
             "[\\d_]+",
             "[^]",
             "[]",
@@ -361,5 +385,11 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn a_varying_lookbehind_is_rejected_when_compiled() {
+        let error = JsRegex::new("(?<=a+)b", true).err();
+        assert_eq!(error.map(|error| error.code), Some(ErrorCode::InvalidInput));
     }
 }

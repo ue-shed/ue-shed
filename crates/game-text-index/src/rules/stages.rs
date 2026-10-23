@@ -15,6 +15,10 @@ struct Recording {
     /// catalogue's fields.
     sub_stages: BTreeMap<String, Sample>,
     kernels: BTreeMap<String, Sample>,
+    /// With heap counting: the heap peak since the last stage sample, across sub-stage samples.
+    heap_peak: u64,
+    /// Named memory holders, sampled at a point: bytes per holder.
+    holders: BTreeMap<&'static str, BTreeMap<&'static str, u64>>,
 }
 impl Default for Recording {
     fn default() -> Self {
@@ -25,6 +29,8 @@ impl Default for Recording {
             stages: BTreeMap::new(),
             sub_stages: BTreeMap::new(),
             kernels: BTreeMap::new(),
+            heap_peak: 0,
+            holders: BTreeMap::new(),
         }
     }
 }
@@ -37,6 +43,11 @@ pub(crate) struct Memory {
     pub peak_private_bytes: Option<u64>,
     pub working_set_bytes: u64,
     pub peak_working_set_bytes: u64,
+    /// With heap counting: live heap at the stage's end, and its peak since the last sample.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heap_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heap_peak_bytes: Option<u64>,
     pub arena_bytes: usize,
     pub side_dictionary_bytes: usize,
     pub live_node_columns_bytes: usize,
@@ -53,6 +64,8 @@ struct Sample {
     rows: usize,
     inputs: usize,
     hits: usize,
+    /// With heap counting, for sub-stages: live heap at the end, and the peak within.
+    heap: Option<(u64, u64)>,
 }
 /// All native clocks and worker accounting live here, rather than in persisted metadata.
 pub struct Measure {
@@ -192,6 +205,16 @@ impl Recorder {
             memory.working_set_bytes = process.working_set_bytes;
             memory.peak_working_set_bytes = process.peak_working_set_bytes;
         }
+        let mut recording = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((live, peak)) = process_metrics::heap() {
+            memory.heap_bytes = Some(live);
+            memory.heap_peak_bytes = Some(peak.max(recording.heap_peak));
+            recording.heap_peak = 0;
+        }
+        drop(recording);
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -215,16 +238,34 @@ impl Recorder {
         sample.busy += busy;
         sample.rows += rows;
     }
+    /// Bytes held by named owners at a point, with the live heap when it is counted.
+    pub fn holders(&self, point: &'static str, mut holders: BTreeMap<&'static str, u64>) {
+        if let Some(live) = process_metrics::heap_live() {
+            holders.insert("heap", live);
+        }
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .holders
+            .insert(point, holders);
+    }
     pub fn sub_stage(&self, name: String, measure: &Measure, rows: usize) {
         let (wall, busy) = measure.times();
         let mut recording = self
             .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let heap = process_metrics::heap();
+        if let Some((_, peak)) = heap {
+            recording.heap_peak = recording.heap_peak.max(peak);
+        }
         let sample = recording.sub_stages.entry(name).or_default();
         sample.wall += wall;
         sample.busy += busy;
         sample.rows += rows;
+        if let Some((live, peak)) = heap {
+            sample.heap = Some((live, sample.heap.map_or(peak, |(_, old)| old.max(peak))));
+        }
     }
     pub fn kernel(&self, op: &str, measure: &Measure, rows: usize, inputs: usize, hits: usize) {
         let (wall, busy) = measure.times();
@@ -337,7 +378,15 @@ impl Recorder {
                 result["kernels"] = json!(recording.stage_kernels.get(name).map(|kernels| kernels.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>()).unwrap_or_default());
                 ((*name).to_owned(),result)
             }).collect::<serde_json::Map<_,_>>(),
-            "subStages":recording.sub_stages.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>(),
+            "subStages":recording.sub_stages.iter().map(|(name,value)| {
+                let mut result = sample(value);
+                if let Some((live, peak)) = value.heap {
+                    result["heapBytes"] = json!(live);
+                    result["heapPeakBytes"] = json!(peak);
+                }
+                (name.clone(),result)
+            }).collect::<serde_json::Map<_,_>>(),
+            "holders":json!(recording.holders),
             "kernels":recording.kernels.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>()})
     }
 }

@@ -1920,6 +1920,7 @@ impl Program {
         let mut emissions = Vec::new();
         for (execution, rule) in rules.into_iter().enumerate() {
             relation.checkpoint()?;
+            let rule_measure = Measure::start();
             let scope = evaluator.scope(rule, len)?;
             let candidates = if let Some(each) = rule.each {
                 let items = evaluator.evaluate(each, &scope)?;
@@ -2028,6 +2029,16 @@ impl Program {
                     affected: places,
                 });
             }
+            // Each rule's own time, and with heap counting its heap peak.
+            recorder.sub_stage(
+                format!(
+                    "{}.{}",
+                    subject_stage(subject, Phase::Execute),
+                    rule.rule.id
+                ),
+                &rule_measure,
+                len,
+            );
             output.masks.insert(rule.ordinal, mask.words.clone());
             evaluator.masks.insert(rule.ordinal, mask);
             for (node, last) in evaluator.node_last.iter().enumerate() {

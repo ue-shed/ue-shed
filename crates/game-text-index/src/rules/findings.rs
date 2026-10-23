@@ -168,6 +168,7 @@ impl EngineQuery {
             .map(|_| RuleColumns::default())
             .collect::<Vec<_>>();
         let mut findings = 0;
+        let mut previous_encoded = 0;
         let mut regex_diagnostics = Vec::new();
         let mut base_diagnostics = Vec::new();
         let recorder = arena.recorder.clone();
@@ -236,6 +237,10 @@ impl EngineQuery {
                 elapsed.exclude(check_time.elapsed());
             }
             findings += encoded.len();
+            let encoded_bytes = encoded
+                .iter()
+                .map(|encoded| encoded.evidence.capacity() + encoded.places.capacity() + 16)
+                .sum::<usize>();
             for (finding, encoded) in evaluated.findings.iter().zip(encoded) {
                 let columns = &mut rules[finding.rule];
                 columns.rows.push(encoded.row);
@@ -247,6 +252,27 @@ impl EngineQuery {
                 columns.id0.push(encoded.hash[0]);
                 columns.id1.push(encoded.hash[1]);
             }
+            let memory = arena.memory();
+            let line_fields = arena
+                .line_fields
+                .values()
+                .map(|column| column.bytes())
+                .sum::<usize>();
+            recorder.holders(
+                subject_stage(subject, Phase::Emission),
+                BTreeMap::from([
+                    (
+                        "arena",
+                        (memory.arena_bytes + memory.side_dictionary_bytes) as u64,
+                    ),
+                    ("occurrences", memory.occurrence_relation_bytes as u64),
+                    ("lineFields", line_fields as u64),
+                    ("projection", subjects.projection.bytes() as u64),
+                    ("reader", subjects.query.reader.cache_bytes() as u64),
+                    ("encodedFindings", (encoded_bytes + previous_encoded) as u64),
+                ]),
+            );
+            previous_encoded += encoded_bytes;
             for diagnostic in &evaluated.projection {
                 let (line, ci) = subjects.cultures[diagnostic.row as usize];
                 base_diagnostics.push((line as u32, ci as u32, diagnostic.code));

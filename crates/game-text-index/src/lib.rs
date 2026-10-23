@@ -1,5 +1,8 @@
 //! Game Text column encoding and shared-store mechanics, used by the native IO build capability.
 //! Native IO owns transport; this library never reads Unreal projects or launches editors.
+#[cfg(all(test, feature = "heap-counting"))]
+#[global_allocator]
+static HEAP: process_metrics::CountingAllocator = process_metrics::CountingAllocator;
 mod bounded_intern;
 mod error;
 pub use error::{Error, ErrorCode};

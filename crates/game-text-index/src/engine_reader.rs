@@ -242,6 +242,25 @@ impl EngineReader {
         })
     }
 
+    /// Heap bytes of the cached columns and dictionary frames, query cache and evaluation scope.
+    pub(crate) fn cache_bytes(&self) -> usize {
+        let columns = |columns: &HashMap<(String, String), Arc<[u32]>>| {
+            columns
+                .values()
+                .map(|column| column.len() * 4)
+                .sum::<usize>()
+        };
+        let bytes = |bytes: &HashMap<String, Arc<[u8]>>| {
+            bytes.values().map(|value| value.len()).sum::<usize>()
+        };
+        columns(&self.columns)
+            + bytes(&self.byte_columns)
+            + self.frame_bytes
+            + self
+                .evaluation
+                .as_ref()
+                .map_or(0, |scope| columns(&scope.columns) + bytes(&scope.bytes))
+    }
     pub(crate) fn begin_evaluation(&mut self) -> Result<()> {
         require(self.evaluation.is_none(), "Nested rule column scope.")?;
         self.evaluation = Some(ScopedColumns::default());

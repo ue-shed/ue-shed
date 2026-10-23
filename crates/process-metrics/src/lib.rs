@@ -64,3 +64,70 @@ pub fn memory() -> std::io::Result<Memory> {
         "Process memory counters unavailable.",
     ))
 }
+
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+static INSTALLED: AtomicBool = AtomicBool::new(false);
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+/// A system allocator that counts live heap bytes and their peak, for attribution runs. Its
+/// atomics cost every allocation, so only an opt-in build installs it as the global allocator.
+pub struct CountingAllocator;
+
+// SAFETY: every call forwards to the system allocator with the caller's layout and pointer
+// unchanged; the counters are plain atomics and never touch the allocation.
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the caller upholds `GlobalAlloc::alloc`'s contract for this layout.
+        let pointer = unsafe { System.alloc(layout) };
+        if !pointer.is_null() {
+            grow(layout.size());
+        }
+        pointer
+    }
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: as for `alloc`.
+        let pointer = unsafe { System.alloc_zeroed(layout) };
+        if !pointer.is_null() {
+            grow(layout.size());
+        }
+        pointer
+    }
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: the pointer came from this allocator with this layout.
+        unsafe { System.dealloc(pointer, layout) };
+        LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+    }
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        // SAFETY: the pointer came from this allocator with this layout.
+        let moved = unsafe { System.realloc(pointer, layout, size) };
+        if !moved.is_null() {
+            LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+            grow(size);
+        }
+        moved
+    }
+}
+fn grow(size: usize) {
+    INSTALLED.store(true, Ordering::Relaxed);
+    let live = LIVE.fetch_add(size, Ordering::Relaxed) + size;
+    PEAK.fetch_max(live, Ordering::Relaxed);
+}
+/// Live heap bytes, without starting a new peak interval. `None` unless counting is installed.
+pub fn heap_live() -> Option<u64> {
+    INSTALLED
+        .load(Ordering::Relaxed)
+        .then(|| LIVE.load(Ordering::Relaxed) as u64)
+}
+/// Live heap bytes and their peak since the previous call, which starts a new interval.
+/// `None` unless `CountingAllocator` is the global allocator.
+pub fn heap() -> Option<(u64, u64)> {
+    if !INSTALLED.load(Ordering::Relaxed) {
+        return None;
+    }
+    let live = LIVE.load(Ordering::Relaxed);
+    let peak = PEAK.swap(live, Ordering::Relaxed).max(live);
+    Some((live as u64, peak as u64))
+}

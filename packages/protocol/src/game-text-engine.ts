@@ -5,7 +5,7 @@ const Reader = Schema.NonEmptyString.check(Schema.isMaxLength(128));
 const Identity = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 const Payload = Schema.String.check(Schema.isMaxLength(512 * 1024));
 /** Native read-only snapshots are scoped to their owning process session. */
-export const GameTextEngineRequest = Schema.Union([
+export const GameTextEnginePreviousRequest = Schema.Union([
 	Schema.Struct({ action: Schema.Literal("capabilities") }),
 	Schema.Struct({
 		action: Schema.Literal("open"),
@@ -44,6 +44,35 @@ export const GameTextEngineRequest = Schema.Union([
 	...(["search", "focus", "localization_detail"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader, payload: Payload })
 	)
+]);
+const FindingRows = Schema.Array(
+	Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(0xffffffff))
+).check(Schema.isMaxLength(5000));
+/** Additive findings actions, requiring uasset-io minor 20. */
+export const GameTextFindingsRequest = Schema.Union([
+	Schema.Struct({
+		action: Schema.Literal("findings_evaluate"),
+		reader: Reader,
+		rulesFile: Schema.NonEmptyString.check(Schema.isMaxLength(32767)),
+		collationLocale: Schema.NonEmptyString.check(Schema.isMaxLength(128))
+	}),
+	Schema.Struct({
+		action: Schema.Literal("findings_lines"),
+		reader: Reader,
+		key: Identity,
+		rows: FindingRows
+	}),
+	Schema.Struct({
+		action: Schema.Literal("findings_units"),
+		reader: Reader,
+		key: Identity,
+		units: FindingRows
+	})
+]);
+/** Native snapshot reads and persisted finding evaluation share one process scope. */
+export const GameTextEngineRequest = Schema.Union([
+	GameTextEnginePreviousRequest,
+	GameTextFindingsRequest
 ]).annotate({ identifier: "GameTextEngineRequest" });
 export type GameTextEngineRequest = typeof GameTextEngineRequest.Type;
 
@@ -67,7 +96,10 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"localization_detail",
 		"localization_export",
 		"localization_focus_export",
-		"localization_corpus"
+		"localization_corpus",
+		"findings_evaluate",
+		"findings_lines",
+		"findings_units"
 	]),
 	capabilities: Schema.Array(Schema.Literal("game_text_engine_v1")),
 	reader: Schema.NullOr(Reader),

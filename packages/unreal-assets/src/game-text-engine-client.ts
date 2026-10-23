@@ -77,7 +77,7 @@ export const nativeGameTextEngineClientLayer = (configuration: AssetReaderConfig
 									maximumOutputBytes: 64 * 1024 ** 2,
 									timeoutMs: configuration.catalogTimeoutMs
 								},
-								{ contractMinor: 15 }
+								{ contractMinor: request.action.startsWith("findings_") ? 20 : 15 }
 							),
 							expected: "game_text_engine",
 							select: (result) =>

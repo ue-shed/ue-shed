@@ -159,7 +159,7 @@ impl<'a> NativeSubjects<'a> {
             },
         )
     }
-    fn culture_field(&mut self, line: usize, ci: usize, name: &str) -> Result<Value> {
+    pub(super) fn culture_field(&mut self, line: usize, ci: usize, name: &str) -> Result<Value> {
         let mark = &self.projection.cultures[ci];
         Ok(match name {
             "culture" => json!(self.query.cultures[ci]),

@@ -113,8 +113,31 @@ pub enum EngineRequest {
         payload: String,
         output: std::path::PathBuf,
     },
+    FindingsEvaluate {
+        reader: String,
+        #[serde(rename = "rulesFile")]
+        rules_file: std::path::PathBuf,
+        #[serde(rename = "collationLocale")]
+        collation_locale: String,
+    },
+    FindingsLines {
+        reader: String,
+        key: String,
+        rows: Vec<u32>,
+    },
+    FindingsUnits {
+        reader: String,
+        key: String,
+        units: Vec<u32>,
+    },
 }
 impl EngineRequest {
+    pub fn requires_findings(&self) -> bool {
+        matches!(
+            self,
+            Self::FindingsEvaluate { .. } | Self::FindingsLines { .. } | Self::FindingsUnits { .. }
+        )
+    }
     pub fn validate(&self) -> Result<()> {
         match self {
             Self::Capabilities => {}
@@ -147,7 +170,10 @@ impl EngineRequest {
             | Self::Rows { reader, .. }
             | Self::LocalizationDetail { reader, .. }
             | Self::LocalizationExport { reader, .. }
-            | Self::LocalizationFocusExport { reader, .. } => {
+            | Self::LocalizationFocusExport { reader, .. }
+            | Self::FindingsEvaluate { reader, .. }
+            | Self::FindingsLines { reader, .. }
+            | Self::FindingsUnits { reader, .. } => {
                 require(
                     !reader.is_empty() && reader.len() <= 128,
                     invalid("Invalid native reader handle."),
@@ -155,6 +181,29 @@ impl EngineRequest {
             }
         }
         match self {
+            Self::FindingsEvaluate {
+                rules_file,
+                collation_locale,
+                ..
+            } => {
+                require(
+                    rules_file
+                        .to_str()
+                        .is_some_and(|path| !path.is_empty() && path.len() <= 32767)
+                        && !collation_locale.is_empty()
+                        && collation_locale.len() <= 128,
+                    invalid("Invalid findings rule file or collation locale."),
+                )?;
+            }
+            Self::FindingsLines { key, rows, .. }
+            | Self::FindingsUnits {
+                key, units: rows, ..
+            } => {
+                require(
+                    !key.is_empty() && key.len() <= 1024 && rows.len() <= 5000,
+                    invalid("Invalid findings key or row selection."),
+                )?;
+            }
             Self::Export { payload, .. } => {
                 require(
                     payload.len() <= 512 * 1024,
@@ -355,9 +404,28 @@ impl EngineSession {
             | EngineRequest::Rows { reader, .. }
             | EngineRequest::LocalizationDetail { reader, .. }
             | EngineRequest::LocalizationExport { reader, .. }
-            | EngineRequest::LocalizationFocusExport { reader, .. } => {
+            | EngineRequest::LocalizationFocusExport { reader, .. }
+            | EngineRequest::FindingsEvaluate { reader, .. }
+            | EngineRequest::FindingsLines { reader, .. }
+            | EngineRequest::FindingsUnits { reader, .. } => {
                 let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 let (action, payload) = match request {
+                    EngineRequest::FindingsEvaluate {
+                        rules_file,
+                        collation_locale,
+                        ..
+                    } => (
+                        "findings_evaluate",
+                        query.findings_evaluate(rules_file, collation_locale, cancelled)?,
+                    ),
+                    EngineRequest::FindingsLines { key, rows, .. } => (
+                        "findings_lines",
+                        query.findings_lines(key, rows, cancelled)?,
+                    ),
+                    EngineRequest::FindingsUnits { key, units, .. } => (
+                        "findings_units",
+                        query.findings_units(key, units, cancelled)?,
+                    ),
                     EngineRequest::Summary { .. } => (
                         "summary",
                         crate::wtf8::view_json(&query.summary(cancelled)?)?,
@@ -528,6 +596,33 @@ mod tests {
     use crate::store::Store;
     use serde_json::json;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn findings_requests_are_bounded_and_require_the_new_contract() -> Result<()> {
+        for action in ["findings_lines", "findings_units"] {
+            let field = if action == "findings_lines" {
+                "rows"
+            } else {
+                "units"
+            };
+            let mut value = json!({"action":action,"reader":"reader","key":"findings-v1:test"});
+            value[field] = json!([0, u32::MAX]);
+            let request: EngineRequest = serde_json::from_value(value.clone())?;
+            assert!(request.requires_findings());
+            request.validate()?;
+            value[field] = json!(vec![0; 5001]);
+            let request: EngineRequest = serde_json::from_value(value.clone())?;
+            assert!(request.validate().is_err());
+            value[field] = json!([-1]);
+            assert!(serde_json::from_value::<EngineRequest>(value).is_err());
+        }
+        let request: EngineRequest = serde_json::from_value(
+            json!({"action":"findings_evaluate","reader":"reader","rulesFile":"rules.json","collationLocale":"sv"}),
+        )?;
+        assert!(request.requires_findings());
+        request.validate()?;
+        Ok(())
+    }
 
     #[test]
     fn retired_inline_localization_actions_are_rejected() -> Result<()> {

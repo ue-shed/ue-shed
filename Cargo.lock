@@ -221,6 +221,7 @@ dependencies = [
  "file-id",
  "icu_collator",
  "icu_locale",
+ "icu_provider",
  "memchr",
  "rayon",
  "regex",

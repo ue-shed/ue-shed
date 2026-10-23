@@ -618,6 +618,88 @@ fn every_authored_kind_uses_the_same_evaluator_and_existing_evidence() -> Result
 }
 
 #[test]
+fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    fixture.file("Game.manifest","manifest",&[json!({"namespace":"UI","key":"K","source":"Take {Count}","path":"/Game/Text/Example.Example.Label"})])?;
+    fixture.file(
+        "en.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"K","source":"Take {Count}","translation":"Take {Count}"})],
+    )?;
+    fixture.file("de.archive","archive",&[json!({"namespace":"UI","key":"K","source":"Take {Count}","translation":"Nimm {Anzahl}"})])?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&[json!({"namespace":"UI","key":"K","source":"Take {Count}","object":"/Game/Text/Example.Example","property":"Label"})])?;
+    fixture.lines()?;
+    let program = example_program(&["format_argument_renamed"], None)?;
+    let path = fixture.store.directory.join("rules.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(
+            &json!({"schemaVersion":4,"roles":[],"rules":program.rules.iter().map(|rule| &rule.rule).collect::<Vec<_>>()}),
+        )?,
+    )?;
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    let cancelled = AtomicBool::new(false);
+    let mut query = EngineQuery::open(&configuration, None)?;
+    let joined = query.reader.joined_key.clone();
+    let result = crate::json_value::parse(&query.findings_evaluate(&path, "en", &cancelled)?)?;
+    let key = result["key"].as_str().ok_or("Missing findings key.")?;
+    assert_eq!(result["diagnosticCount"], 0);
+    assert_eq!(result["counts"][0]["count"], 1);
+    let lines = crate::json_value::parse(&query.findings_lines(key, &[0], &cancelled)?)?;
+    let finding = &lines["lines"][0]["builtIns"][0];
+    assert_eq!(
+        finding["actual"],
+        json!({"arguments":["Anzahl"],"renamed":[{"from":"Anzahl","to":"Count"}]})
+    );
+    assert_eq!(finding["suggestedChange"]["translation"], "Nimm {Count}");
+    assert_eq!(
+        lines["places"][0]["occurrences"]
+            .as_array()
+            .ok_or("Missing places.")?
+            .len(),
+        1
+    );
+    assert_eq!(
+        query.findings_evaluate(&path, "en", &cancelled)?,
+        crate::rules::javascript_json(&result, false)
+    );
+    let (_, root) = crate::store::open_root(&configuration)?;
+    assert_eq!(root["active"]["joined"], joined);
+    assert_eq!(root["active"]["findings"], key);
+    let mut reopened = EngineQuery::open(&configuration, None)?;
+    assert_eq!(
+        crate::json_value::parse(&reopened.findings_lines(key, &[0], &cancelled)?)?,
+        lines
+    );
+    assert!(
+        reopened
+            .findings_lines(key, &[u32::MAX], &cancelled)
+            .is_err()
+    );
+    assert!(
+        reopened
+            .findings_lines("missing", &[0], &cancelled)
+            .is_err()
+    );
+    assert!(
+        reopened
+            .findings_lines(key, &vec![0; 5001], &cancelled)
+            .is_err()
+    );
+    let mut store = Store::writer(configuration)?;
+    store.compact(true)?;
+    drop(store);
+    assert_eq!(
+        crate::json_value::parse(&query.findings_lines(key, &[0], &cancelled)?)?,
+        lines
+    );
+    Ok(())
+}
+
+#[test]
 fn missing_table_entry_retains_unknown_without_claiming_an_unavailable_namespace() -> Result<()> {
     let mut fixture = Fixture::new()?;
     for (name, format) in [

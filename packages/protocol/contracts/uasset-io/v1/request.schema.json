@@ -67,493 +67,35 @@
 			"required": ["name", "version"],
 			"additionalProperties": false
 		},
-		"GameTextEngineRequest": {
-			"anyOf": [
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["capabilities"]
-						}
-					},
-					"required": ["action"],
-					"additionalProperties": false
+		"UAssetIoGameTextFindingsContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
 				},
-				{
+				"version": {
 					"type": "object",
 					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["open"]
+						"major": {
+							"type": "number",
+							"enum": [1]
 						},
-						"configuration": {
-							"anyOf": [
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [false]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								},
-								{
-									"type": "object",
-									"properties": {
-										"cacheRoot": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"projectKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"targetKey": {
-											"type": "string",
-											"allOf": [
-												{
-													"minLength": 1
-												},
-												{
-													"maxLength": 32767
-												}
-											]
-										},
-										"sharedProject": {
-											"type": "boolean",
-											"enum": [true]
-										},
-										"viewPrefix": {
-											"type": "string",
-											"allOf": [
-												{
-													"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
-												}
-											]
-										}
-									},
-									"required": [
-										"cacheRoot",
-										"projectKey",
-										"targetKey",
-										"sharedProject"
-									],
-									"additionalProperties": false
-								}
-							]
-						},
-						"expectedGeneration": {
-							"type": "string",
+						"minor": {
+							"type": "integer",
 							"allOf": [
 								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 1024
-								}
-							]
-						},
-						"expectedJoined": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 1024
-								}
-							]
-						},
-						"policy": {
-							"type": "object",
-							"properties": {
-								"audienceRules": {
-									"type": "array",
-									"items": {
-										"type": "string",
-										"allOf": [
-											{
-												"minLength": 1
-											},
-											{
-												"maxLength": 1024
-											}
-										]
-									},
-									"allOf": [
-										{
-											"maxItems": 255
-										}
-									]
-								}
-							},
-							"required": ["audienceRules"],
-							"additionalProperties": false
-						}
-					},
-					"required": [
-						"action",
-						"configuration",
-						"expectedGeneration",
-						"expectedJoined",
-						"policy"
-					],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["corpus", "corpus_header", "localization_corpus"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"output": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 32767
+									"minimum": 20
 								}
 							]
 						}
 					},
-					"required": ["action", "reader", "output"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["rows"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"payload": {
-							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 524288
-								}
-							]
-						},
-						"output": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 32767
-								}
-							]
-						}
-					},
-					"required": ["action", "reader", "payload", "output"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": [
-								"export",
-								"aggregate",
-								"localization_export",
-								"localization_focus_export"
-							]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"payload": {
-							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 524288
-								}
-							]
-						},
-						"output": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 32767
-								}
-							]
-						}
-					},
-					"required": ["action", "reader", "payload", "output"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["close"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						}
-					},
-					"required": ["action", "reader"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["summary"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						}
-					},
-					"required": ["action", "reader"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["corpus_fingerprint"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						}
-					},
-					"required": ["action", "reader"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["corpus_report_header"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						}
-					},
-					"required": ["action", "reader"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["search"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"payload": {
-							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 524288
-								}
-							]
-						}
-					},
-					"required": ["action", "reader", "payload"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["focus"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"payload": {
-							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 524288
-								}
-							]
-						}
-					},
-					"required": ["action", "reader", "payload"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"action": {
-							"type": "string",
-							"enum": ["localization_detail"]
-						},
-						"reader": {
-							"type": "string",
-							"allOf": [
-								{
-									"minLength": 1
-								},
-								{
-									"maxLength": 128
-								}
-							]
-						},
-						"payload": {
-							"type": "string",
-							"allOf": [
-								{
-									"maxLength": 524288
-								}
-							]
-						}
-					},
-					"required": ["action", "reader", "payload"],
+					"required": ["major", "minor"],
 					"additionalProperties": false
 				}
-			]
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
 		},
 		"UAssetIoGameTextIndexContract": {
 			"type": "object",
@@ -1131,7 +673,680 @@
 									"enum": ["game_text_engine"]
 								},
 								"request": {
-									"$ref": "#/$defs/GameTextEngineRequest"
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["capabilities"]
+												}
+											},
+											"required": ["action"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["open"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"expectedGeneration": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 1024
+														}
+													]
+												},
+												"expectedJoined": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 1024
+														}
+													]
+												},
+												"policy": {
+													"type": "object",
+													"properties": {
+														"audienceRules": {
+															"type": "array",
+															"items": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	},
+																	{
+																		"maxLength": 1024
+																	}
+																]
+															},
+															"allOf": [
+																{
+																	"maxItems": 255
+																}
+															]
+														}
+													},
+													"required": ["audienceRules"],
+													"additionalProperties": false
+												}
+											},
+											"required": [
+												"action",
+												"configuration",
+												"expectedGeneration",
+												"expectedJoined",
+												"policy"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": [
+														"corpus",
+														"corpus_header",
+														"localization_corpus"
+													]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"output": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "output"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["rows"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"payload": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 524288
+														}
+													]
+												},
+												"output": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "payload", "output"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": [
+														"export",
+														"aggregate",
+														"localization_export",
+														"localization_focus_export"
+													]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"payload": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 524288
+														}
+													]
+												},
+												"output": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "payload", "output"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["close"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												}
+											},
+											"required": ["action", "reader"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["summary"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												}
+											},
+											"required": ["action", "reader"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["corpus_fingerprint"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												}
+											},
+											"required": ["action", "reader"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["corpus_report_header"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												}
+											},
+											"required": ["action", "reader"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["search"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"payload": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 524288
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "payload"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["focus"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"payload": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 524288
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "payload"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["localization_detail"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"payload": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 524288
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "payload"],
+											"additionalProperties": false
+										}
+									]
+								}
+							},
+							"required": ["kind", "request"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoGameTextFindingsContract"
+						},
+						"operation": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["game_text_engine"]
+								},
+								"request": {
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["findings_evaluate"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"rulesFile": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												},
+												"collationLocale": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												}
+											},
+											"required": [
+												"action",
+												"reader",
+												"rulesFile",
+												"collationLocale"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["findings_lines"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"key": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 1024
+														}
+													]
+												},
+												"rows": {
+													"type": "array",
+													"items": {
+														"type": "integer",
+														"allOf": [
+															{
+																"minimum": 0
+															},
+															{
+																"maximum": 4294967295
+															}
+														]
+													},
+													"allOf": [
+														{
+															"maxItems": 5000
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "key", "rows"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["findings_units"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"key": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 1024
+														}
+													]
+												},
+												"units": {
+													"type": "array",
+													"items": {
+														"type": "integer",
+														"allOf": [
+															{
+																"minimum": 0
+															},
+															{
+																"maximum": 4294967295
+															}
+														]
+													},
+													"allOf": [
+														{
+															"maxItems": 5000
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "key", "units"],
+											"additionalProperties": false
+										}
+									]
 								}
 							},
 							"required": ["kind", "request"],

@@ -11,3 +11,8 @@ pub use collation::HostCollator;
 pub use compiler::{Program, Rule, Subject, compile};
 pub use evaluator::{Emission, Evaluation, Relation, SubjectRows};
 pub use subjects::NativeSubjects;
+mod identity;
+pub use identity::{javascript_json, localization_identity, source_identity};
+mod findings;
+mod findings_read;
+pub(crate) use findings::FindingsLayer;

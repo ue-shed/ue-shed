@@ -66,7 +66,10 @@
 						"localization_detail",
 						"localization_export",
 						"localization_focus_export",
-						"localization_corpus"
+						"localization_corpus",
+						"findings_evaluate",
+						"findings_lines",
+						"findings_units"
 					]
 				},
 				"capabilities": {

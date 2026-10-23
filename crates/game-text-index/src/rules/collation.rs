@@ -2,6 +2,7 @@ use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result};
 use icu_collator::{Collator, CollatorBorrowed};
 use icu_locale::Locale;
+use icu_provider::{DataIdentifierBorrowed, DataProvider, DataRequest};
 use std::cmp::Ordering;
 
 pub struct HostCollator {
@@ -11,9 +12,26 @@ pub struct HostCollator {
 
 impl HostCollator {
     pub fn new(locale: &str) -> Result<Self> {
-        let requested = locale.parse::<Locale>();
+        let requested = locale.parse::<Locale>().ok().filter(|parsed| {
+            let data_locale = parsed.id.clone().into();
+            let response = <icu_collator::provider::Baked as DataProvider<
+                icu_collator::provider::CollationMetadataV1,
+            >>::load(
+                &icu_collator::provider::Baked,
+                DataRequest {
+                    id: DataIdentifierBorrowed::for_locale(&data_locale),
+                    ..Default::default()
+                },
+            );
+            response.is_ok_and(|response| {
+                !response
+                    .metadata
+                    .locale
+                    .is_some_and(|used| used.is_unknown())
+            })
+        });
         let (inner, locale) = match requested {
-            Ok(parsed) => match Collator::try_new(parsed.into(), Default::default()) {
+            Some(parsed) => match Collator::try_new(parsed.into(), Default::default()) {
                 Ok(collator) => (collator, locale.to_owned()),
                 Err(_) => (
                     Collator::try_new(Default::default(), Default::default())
@@ -21,7 +39,7 @@ impl HostCollator {
                     "und".to_owned(),
                 ),
             },
-            Err(_) => (
+            None => (
                 Collator::try_new(Default::default(), Default::default())
                     .map_err(|cause| Error::new(ErrorCode::Unavailable, cause.to_string()))?,
                 "und".to_owned(),
@@ -44,6 +62,14 @@ mod tests {
     use crate::require;
     use std::io::Write;
     use std::process::{Command, Stdio};
+
+    #[test]
+    fn reports_root_for_unsupported_locales() -> Result<()> {
+        assert_eq!(HostCollator::new("zz-ZZ")?.locale, "und");
+        assert_eq!(HostCollator::new("not a locale")?.locale, "und");
+        assert_eq!(HostCollator::new("sv")?.locale, "sv");
+        Ok(())
+    }
 
     #[test]
     fn host_collation_matches_node_en_and_sv() -> Result<()> {

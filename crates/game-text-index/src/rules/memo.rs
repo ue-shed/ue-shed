@@ -21,6 +21,16 @@ pub(super) struct DenseMemo {
     len: usize,
 }
 impl DenseMemo {
+    pub fn bytes(&self) -> usize {
+        self.slots.capacity() * 4
+            + self.general.capacity() * std::mem::size_of::<Atom>()
+            + match &self.values {
+                Values::Int(values) => values.capacity() * 8,
+                Values::Bool(values) => values.words.capacity() * 8,
+                Values::Str(values) => values.capacity() * 4,
+                Values::General => 0,
+            }
+    }
     pub fn get(&self, id: usize) -> Option<Slot> {
         let slot = *self.slots.get(id)?;
         match slot {

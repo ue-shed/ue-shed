@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Clock, Context, Effect, Exit, Option, Schema } from "effect";
 import {
 	LocalizationQualityFinding,
 	LocalizationPolicyFinding,
@@ -34,6 +34,20 @@ const StageName = Schema.String.check(
 const KernelName = Schema.String.check(
 	Schema.isPattern(new RegExp(`^(${ruleOperationNames.join("|")})$`))
 );
+const StageSample = Schema.Struct({
+	...ProfileSample.fields,
+	startOffsetMs: Milliseconds,
+	endOffsetMs: Milliseconds,
+	memory: Schema.Struct({
+		peakWorkingSetBytes: Count,
+		arenaBytes: Count,
+		sideDictionaryBytes: Count,
+		liveNodeColumnsBytes: Count,
+		memosBytes: Count,
+		occurrenceRelationBytes: Count
+	}),
+	kernels: Schema.Record(KernelName, ProfileSample)
+});
 export const FindingsEvaluationProfile = Schema.Union([
 	Schema.Struct({ cached: Schema.Literal(true) }),
 	Schema.Struct({
@@ -42,7 +56,7 @@ export const FindingsEvaluationProfile = Schema.Union([
 		rules: Count,
 		findings: Count,
 		diagnostics: Count,
-		stages: Schema.Record(StageName, ProfileSample),
+		stages: Schema.Record(StageName, StageSample),
 		kernels: Schema.Record(KernelName, ProfileSample)
 	})
 ]);
@@ -54,37 +68,63 @@ const FindingsReadProfile = Schema.Struct({
 });
 /** Profiles contain only bounded operation names and numbers from this call. */
 export const annotateFindingsProfile = (
-	profile: typeof FindingsEvaluationProfile.Type | typeof FindingsReadProfile.Type
-) => {
-	const attributes: Record<string, number | boolean> = {};
-	const prefix = "game_text.findings.";
-	if ("cached" in profile) {
-		attributes[`${prefix}cached`] = profile.cached;
-		if (!profile.cached) {
-			attributes[`${prefix}rules`] = profile.rules;
-			attributes[`${prefix}findings`] = profile.findings;
-			attributes[`${prefix}diagnostics`] = profile.diagnostics;
-			attributes[`${prefix}wall_ms`] = profile.wallMs;
-			for (const [stage, sample] of Object.entries(profile.stages)) {
-				attributes[`${prefix}stage.${stage}.wall_ms`] = sample.wallMs;
-				attributes[`${prefix}stage.${stage}.busy_ms`] = sample.busyMs;
-			}
-			for (const [op, sample] of Object.entries(profile.kernels)) {
-				attributes[`${prefix}kernel.${op}.wall_ms`] = sample.wallMs;
-				attributes[`${prefix}kernel.${op}.busy_ms`] = sample.busyMs;
-				attributes[`${prefix}kernel.${op}.rows`] = sample.rows;
-				attributes[`${prefix}kernel.${op}.inputs`] = sample.inputs;
-				attributes[`${prefix}kernel.${op}.memo_hits`] = sample.memoHits;
-			}
+	profile: typeof FindingsEvaluationProfile.Type | typeof FindingsReadProfile.Type,
+	requestStart?: bigint
+) =>
+	Effect.gen(function* () {
+		const prefix = "game_text.findings.";
+		if (!("cached" in profile)) {
+			yield* Effect.annotateCurrentSpan({
+				[`${prefix}rows_requested`]: profile.rowsRequested,
+				[`${prefix}findings`]: profile.findingsReturned,
+				[`${prefix}response_bytes`]: profile.responseBytes,
+				[`${prefix}file_fallback`]: profile.fileFallback
+			});
+			return;
 		}
-	} else {
-		attributes[`${prefix}rows_requested`] = profile.rowsRequested;
-		attributes[`${prefix}findings`] = profile.findingsReturned;
-		attributes[`${prefix}response_bytes`] = profile.responseBytes;
-		attributes[`${prefix}file_fallback`] = profile.fileFallback;
-	}
-	return Effect.annotateCurrentSpan(attributes);
-};
+		yield* Effect.annotateCurrentSpan(`${prefix}cached`, profile.cached);
+		if (profile.cached) return;
+		yield* Effect.annotateCurrentSpan({
+			[`${prefix}rules`]: profile.rules,
+			[`${prefix}findings`]: profile.findings,
+			[`${prefix}diagnostics`]: profile.diagnostics,
+			[`${prefix}wall_ms`]: profile.wallMs
+		});
+		const parent = yield* Effect.option(Effect.currentSpan);
+		if (Option.isNone(parent)) return;
+		const tracer = yield* Effect.tracer;
+		const origin =
+			requestStart ??
+			(yield* Clock.currentTimeNanos) - BigInt(Math.round(profile.wallMs * 1_000_000));
+		for (const [name, sample] of Object.entries(profile.stages)) {
+			const span = tracer.span({
+				name: `GameText.native.findingsEvaluate.${name}`,
+				parent,
+				annotations: Context.empty(),
+				links: [],
+				startTime: origin + BigInt(Math.round(sample.startOffsetMs * 1_000_000)),
+				kind: "internal",
+				root: false,
+				sampled: parent.value.sampled
+			});
+			span.attribute(`${prefix}stage.wall_ms`, sample.wallMs);
+			span.attribute(`${prefix}stage.busy_ms`, sample.busyMs);
+			span.attribute(`${prefix}stage.rows`, sample.rows);
+			for (const [field, value] of Object.entries(sample.memory)) {
+				span.attribute(`${prefix}memory.${field}`, value);
+			}
+			const kernels = Object.entries(sample.kernels)
+				.sort((a, b) => b[1].busyMs - a[1].busyMs)
+				.slice(0, 24);
+			for (const [op, kernel] of kernels) {
+				span.attribute(`${prefix}kernel.${op}.wall_ms`, kernel.wallMs);
+				span.attribute(`${prefix}kernel.${op}.busy_ms`, kernel.busyMs);
+				span.attribute(`${prefix}kernel.${op}.rows`, kernel.rows);
+				span.attribute(`${prefix}kernel.${op}.inputs`, kernel.inputs);
+			}
+			span.end(origin + BigInt(Math.round(sample.endOffsetMs * 1_000_000)), Exit.void);
+		}
+	});
 export const FindingsEvaluation = Schema.Struct({
 	key: Schema.NonEmptyString,
 	rules: Schema.Array(Evidence),

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { TextCorpusReportHeader } from "./corpus-summary.js";
 import { join } from "node:path";
-import { Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
+import { Clock, Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
 import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type {
 	GameTextEngineOutcome,
@@ -626,6 +626,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 								}),
 							catch: (cause) => failed("findings_rules", cause)
 						});
+						const requestStart = yield* Clock.currentTimeNanos;
 						return yield* response(
 							lane,
 							{
@@ -635,7 +636,11 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 								collationLocale: new Intl.Collator().resolvedOptions().locale
 							},
 							FindingsEvaluation
-						).pipe(Effect.tap((result) => annotateFindingsProfile(result.profile)));
+						).pipe(
+							Effect.tap((result) =>
+								annotateFindingsProfile(result.profile, requestStart)
+							)
+						);
 					})
 				)
 			)

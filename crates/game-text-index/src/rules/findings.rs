@@ -119,6 +119,8 @@ pub(super) struct EvaluatedFindings {
     unit_sources: Vec<u32>,
     recorder: super::stages::Recorder,
     pub(super) profile: Value,
+    #[cfg(test)]
+    pub(super) digest: String,
 }
 impl EngineQuery {
     pub(super) fn evaluate_findings(
@@ -126,9 +128,13 @@ impl EngineQuery {
         program: &super::Program,
         collator: &HostCollator,
         cancelled: &AtomicBool,
+        request: Option<&Measure>,
     ) -> Result<EvaluatedFindings> {
         let elapsed = Measure::start();
+        #[cfg(test)]
+        let mut elapsed = elapsed;
         let mut arena = super::columns::Arena::new(self.reader.dictionary_count()?)?;
+        arena.recorder = super::stages::Recorder::at(request.unwrap_or(&elapsed));
         let mut all = Vec::<Emission>::new();
         let mut regex_diagnostics = Vec::new();
         let mut base_diagnostics = Vec::new();
@@ -137,6 +143,19 @@ impl EngineQuery {
         let mut lc_cultures = Vec::new();
         let mut unit_rows = Vec::new();
         let mut unit_sources = Vec::new();
+        recorder.enter("subjects.occurrences");
+        let mut occurrences_measure = Measure::start();
+        let occurrences =
+            super::occurrences::OccurrenceData::build(self, &mut occurrences_measure)?;
+        arena.occurrences.data = Some(Arc::clone(&occurrences));
+        recorder.stage(
+            "subjects.occurrences",
+            &occurrences_measure,
+            occurrences.len(),
+        );
+        recorder.memory("subjects.occurrences", arena.memory());
+        #[cfg(test)]
+        let mut output_digest = <sha2::Sha256 as sha2::Digest>::new();
         for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
             if subject != Subject::LineCulture
                 && !program
@@ -147,10 +166,28 @@ impl EngineQuery {
                 continue;
             }
             let setup = Measure::start();
-            let mut subjects = NativeSubjects::new(self, subject, collator, cancelled)?;
+            let mut subjects = NativeSubjects::new_shared(
+                self,
+                subject,
+                collator,
+                cancelled,
+                Arc::clone(&occurrences),
+            )?;
             recorder.stage("subjects.columns", &setup, 0);
             let (evaluation, _, diagnostics) =
                 program.evaluate_shared(&mut subjects, collator, &mut arena)?;
+            #[cfg(test)]
+            if std::env::var_os("UE_SHED_GAME_TEXT_TIMING_CACHE").is_some() {
+                let digest_time = Measure::start();
+                super::timing::digest_subject(
+                    &mut output_digest,
+                    program,
+                    &mut subjects,
+                    &evaluation,
+                    &diagnostics,
+                )?;
+                elapsed.exclude(digest_time.elapsed());
+            }
             for (_, row, code) in diagnostics {
                 let (line, ci) = subjects.cultures[row];
                 base_diagnostics.push((line as u32, ci as u32, code));
@@ -192,7 +229,7 @@ impl EngineQuery {
             all.len(),
             base_diagnostics.len() + regex_diagnostics.len(),
         );
-        profile["wallMs"] = json!(elapsed.elapsed().as_secs_f64() * 1000.0);
+        profile["wallMs"] = json!(elapsed.wall().as_secs_f64() * 1000.0);
         Ok(EvaluatedFindings {
             all,
             base_diagnostics,
@@ -203,6 +240,11 @@ impl EngineQuery {
             unit_sources,
             recorder,
             profile,
+            #[cfg(test)]
+            digest: format!(
+                "{:x}",
+                <sha2::Sha256 as sha2::Digest>::finalize(output_digest)
+            ),
         })
     }
 
@@ -261,7 +303,9 @@ impl EngineQuery {
                 unit_sources,
                 recorder,
                 profile: evaluation_profile,
-            } = self.evaluate_findings(&program, &collator, cancelled)?;
+                #[cfg(test)]
+                    digest: _,
+            } = self.evaluate_findings(&program, &collator, cancelled, Some(&elapsed))?;
             let mut publish = Measure::start();
             let line_count = Projection::open(self, cancelled)?.source.len();
             let mut source_cultures = vec![u32::MAX; line_count];
@@ -431,6 +475,7 @@ impl EngineQuery {
                 &[],
             )?;
             recorder.stage("layer.publish", &publish, all.len());
+            recorder.memory("layer.publish", super::stages::Memory::default());
             profile = evaluation_profile;
             profile["stages"] = recorder.profile(program.rules.len(), all.len(), diagnostics.len())
                 ["stages"]

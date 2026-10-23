@@ -532,19 +532,18 @@ pub fn rename_argument(text: &str, from: &str, to: &str, culture: &str) -> Optio
 }
 
 pub fn rich_text_counts(text: &str) -> Value {
-    let text = units(text);
     let (mut opening, mut closing) = (0, 0);
     let mut start = None;
-    for (index, unit) in text.iter().enumerate() {
-        if *unit == 60 {
+    for (index, byte) in text.bytes().enumerate() {
+        if byte == b'<' {
             start = Some(index);
-        } else if *unit == 62
+        } else if byte == b'>'
             && let Some(begin) = start
         {
             let body = &text[begin + 1..index];
-            if body == [47] {
+            if body == "/" {
                 closing += 1;
-            } else if !body.ends_with(&[47]) && body != [98, 114] {
+            } else if !body.ends_with('/') && body != "br" {
                 opening += 1;
             }
             start = None;

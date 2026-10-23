@@ -72,11 +72,11 @@ pub fn source_identity(
     kind: &str,
     actual: &Value,
     expectation: &Value,
-    occurrences: &[Value],
+    occurrences: &[impl std::borrow::Borrow<Value>],
 ) -> (String, [u32; 2]) {
     let mut ids = occurrences
         .iter()
-        .map(|occurrence| occurrence["id"].clone())
+        .map(|occurrence| occurrence.borrow()["id"].clone())
         .collect::<Vec<_>>();
     ids.sort_by(|a, b| {
         super::text::code_unit_compare(a.as_str().unwrap_or(""), b.as_str().unwrap_or(""))

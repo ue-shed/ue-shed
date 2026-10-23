@@ -56,6 +56,7 @@ struct Projector<'a, 'q> {
     references: Vec<(Ids, Ids)>,
     choices: Vec<Option<usize>>,
     json: HashMap<u32, Value>,
+    work: super::stages::Measure,
 }
 impl<'a, 'q> Projector<'a, 'q> {
     fn new(subjects: &'a mut NativeSubjects<'q>, arena: &'a mut Arena) -> Result<Self> {
@@ -103,6 +104,7 @@ impl<'a, 'q> Projector<'a, 'q> {
             references,
             choices,
             json: HashMap::new(),
+            work: super::stages::Measure::start(),
         })
     }
     fn strings(&mut self, ids: &[u32]) -> Result<()> {
@@ -234,11 +236,6 @@ impl<'a, 'q> Projector<'a, 'q> {
         self.manifest = Some(manifest);
         Ok(())
     }
-    fn sorted_strings(&mut self, mut values: Vec<Atom>) -> Result<Atom> {
-        values.sort_by(|a, b| super::text::code_unit_compare(self.text(*a), self.text(*b)));
-        values.dedup_by(|a, b| self.text(*a) == self.text(*b));
-        self.arena.list(values)
-    }
     fn line(&mut self, name: &str) -> Result<Arc<Column>> {
         if let Some(column) = self.fields.get(name) {
             return Ok(Arc::clone(column));
@@ -338,52 +335,39 @@ impl<'a, 'q> Projector<'a, 'q> {
                 }
             }
             "sourceVariants" => {
-                for row in 0..len {
-                    if row & 255 == 0 {
-                        checkpoint(self.subjects.cancelled)?;
-                    }
-                    if !self
-                        .subjects
-                        .projection
+                let data = Arc::clone(&self.subjects.occurrences);
+                self.strings(&data.columns["source"])?;
+                let p = &self.subjects.projection;
+                let arena = &self.arena;
+                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
+                    let row = *row;
+                    if !p
                         .cultures
                         .iter()
                         .any(|culture| culture.reasons[row] & (1 << 11) != 0)
                     {
-                        values.push(Atom::Null);
-                        continue;
+                        return None;
                     }
-                    let authored = self
-                        .subjects
-                        .slices(row)
-                        .any(|slice| self.subjects.projection.slice.identity[slice] != 1);
-                    let mut sources = Vec::new();
-                    for slice in self.subjects.slices(row) {
-                        if authored && self.subjects.projection.slice.identity[slice] == 1 {
-                            continue;
-                        }
-                        for member in self.subjects.projection.slice.members(slice) {
-                            sources.push(
-                                self.subjects
-                                    .query
-                                    .occurrence_value(*member as usize, "source")?,
-                            );
-                        }
-                    }
-                    self.strings(&sources)?;
-                    let group = self.sorted_strings(
-                        sources.into_iter().map(|id| Atom::Str(StrId(id))).collect(),
-                    )?;
-                    values.push(
-                        if self
-                            .arena
-                            .elements(group)?
-                            .is_some_and(|values| values.len() > 1)
-                        {
-                            group
-                        } else {
-                            Atom::Null
-                        },
-                    );
+                    let slices = p.starts[row] as usize..p.starts[row + 1] as usize;
+                    let authored = slices.clone().any(|slice| p.slice.identity[slice] != 1);
+                    let mut sources = slices
+                        .filter(|slice| !authored || p.slice.identity[*slice] != 1)
+                        .flat_map(|slice| p.slice.members(slice).iter())
+                        .map(|member| data.value(*member as usize, "source"))
+                        .collect::<Vec<_>>();
+                    sources.sort_by(|a, b| {
+                        super::text::code_unit_compare(arena.text(StrId(*a)), arena.text(StrId(*b)))
+                    });
+                    sources.dedup_by(|a, b| arena.text(StrId(*a)) == arena.text(StrId(*b)));
+                    (sources.len() > 1).then_some(sources)
+                });
+                for list in lists {
+                    values.push(if let Some(list) = list {
+                        self.arena
+                            .list(list.into_iter().map(|id| Atom::Str(StrId(id))).collect())?
+                    } else {
+                        Atom::Null
+                    });
                 }
             }
             "comparable" => {
@@ -425,109 +409,152 @@ impl<'a, 'q> Projector<'a, 'q> {
             "manifestLocations" | "bytecodeOnly" => {
                 self.manifest()?;
                 let mut paths = HashMap::<(u32, bool), Atom>::new();
-                for row in 0..len {
-                    if row & 255 == 0 {
-                        checkpoint(self.subjects.cancelled)?;
-                    }
-                    let entries = self.subjects.manifest_rows(row).to_vec();
-                    let mut locations = Vec::new();
-                    if let Some(file) = &self.manifest {
-                        for entry in entries {
-                            let entry = entry as usize;
-                            let key = (file.path[entry], file.options[entry] & 1024 != 0);
-                            let path = if let Some(path) = paths.get(&key) {
-                                *path
-                            } else {
-                                let value = format!(
-                                    "{}{}",
-                                    if key.1 { &file.prefix } else { "" },
-                                    self.arena.text(StrId(key.0))
-                                );
-                                let value = Atom::Str(self.arena.string(&value)?);
-                                paths.insert(key, value);
-                                value
-                            };
-                            locations.push(path);
+                if let Some(file) = &self.manifest {
+                    for entry in self.subjects.projection.manifest.iter() {
+                        let entry = *entry as usize;
+                        let key = (file.path[entry], file.options[entry] & 1024 != 0);
+                        if let std::collections::hash_map::Entry::Vacant(entry) = paths.entry(key) {
+                            let path = format!(
+                                "{}{}",
+                                if key.1 { &file.prefix } else { "" },
+                                self.arena.text(StrId(key.0))
+                            );
+                            entry.insert(Atom::Str(self.arena.string(&path)?));
                         }
                     }
+                }
+                let subjects = &self.subjects;
+                let file = &self.manifest;
+                let arena = &self.arena;
+                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
+                    let mut list = Vec::new();
+                    if let Some(file) = file {
+                        for entry in subjects.manifest_rows(*row) {
+                            let entry = *entry as usize;
+                            list.push(paths[&(file.path[entry], file.options[entry] & 1024 != 0)]);
+                        }
+                    }
+                    if name != "bytecodeOnly" {
+                        list.sort_by(|a, b| {
+                            super::text::code_unit_compare(
+                                if let Atom::Str(id) = a {
+                                    arena.text(*id)
+                                } else {
+                                    ""
+                                },
+                                if let Atom::Str(id) = b {
+                                    arena.text(*id)
+                                } else {
+                                    ""
+                                },
+                            )
+                        });
+                        list.dedup();
+                    }
+                    list
+                });
+                for list in lists {
                     values.push(if name == "bytecodeOnly" {
                         Atom::Bool(
-                            !locations.is_empty()
-                                && locations
+                            !list.is_empty()
+                                && list
                                     .iter()
                                     .all(|value| self.text(*value).ends_with("[Script Bytecode]")),
                         )
                     } else {
-                        self.sorted_strings(locations)?
+                        self.arena.list(list)?
                     });
                 }
             }
             "manifestNotes" => {
                 self.manifest()?;
                 let mut comments = HashMap::<u32, Atom>::new();
-                for row in 0..len {
-                    if row & 255 == 0 {
-                        checkpoint(self.subjects.cancelled)?;
+                if let Some(file) = &self.manifest {
+                    let ids = self
+                        .subjects
+                        .projection
+                        .manifest
+                        .iter()
+                        .filter(|entry| file.options[**entry as usize] & 8 != 0)
+                        .map(|entry| file.metadata[*entry as usize])
+                        .collect::<std::collections::HashSet<_>>();
+                    for id in ids {
+                        let parsed = self.parsed(id)?;
+                        let comment = parsed["Info"]["Comment"].as_str().map(str::to_owned);
+                        comments.insert(
+                            id,
+                            comment.map_or(Ok(Atom::Null), |text| self.string(&text))?,
+                        );
                     }
-                    let entries = self.subjects.manifest_rows(row).to_vec();
+                }
+                let subjects = &self.subjects;
+                let file = &self.manifest;
+                let arena = &self.arena;
+                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
                     let mut notes = Vec::new();
-                    for entry in entries {
-                        let file = self.manifest.as_ref().ok_or("Missing manifest columns.")?;
-                        let entry = entry as usize;
-                        let flags = file.options[entry];
-                        let note = if flags & 4 != 0 {
-                            Atom::Str(StrId(file.notes[entry]))
-                        } else {
-                            Atom::Null
-                        };
-                        let metadata = file.metadata[entry];
-                        let comment = if flags & 8 == 0 {
-                            Atom::Null
-                        } else if let Some(comment) = comments.get(&metadata) {
-                            *comment
-                        } else {
-                            let parsed = self.parsed(metadata)?;
-                            let comment = parsed["Info"]["Comment"]
-                                .as_str()
-                                .map(str::to_owned)
-                                .map_or(Ok(Atom::Null), |value| self.string(&value))?;
-                            comments.insert(metadata, comment);
-                            comment
-                        };
-                        if note != Atom::Null && !trim(self.text(note)).is_empty() {
-                            notes.push(note);
-                        }
-                        if comment != Atom::Null
-                            && !trim(self.text(comment)).is_empty()
-                            && (note == Atom::Null || self.text(note) != self.text(comment))
-                        {
-                            notes.push(comment);
+                    if let Some(file) = file {
+                        for entry in subjects.manifest_rows(*row) {
+                            let entry = *entry as usize;
+                            let flags = file.options[entry];
+                            let note = if flags & 4 != 0 {
+                                Atom::Str(StrId(file.notes[entry]))
+                            } else {
+                                Atom::Null
+                            };
+                            let comment = if flags & 8 != 0 {
+                                comments
+                                    .get(&file.metadata[entry])
+                                    .copied()
+                                    .unwrap_or_default()
+                            } else {
+                                Atom::Null
+                            };
+                            let text = |atom| {
+                                if let Atom::Str(id) = atom {
+                                    arena.text(id)
+                                } else {
+                                    ""
+                                }
+                            };
+                            if note != Atom::Null && !trim(text(note)).is_empty() {
+                                notes.push(note);
+                            }
+                            if comment != Atom::Null
+                                && !trim(text(comment)).is_empty()
+                                && (note == Atom::Null || text(note) != text(comment))
+                            {
+                                notes.push(comment);
+                            }
                         }
                     }
-                    values.push(self.arena.list(notes)?);
+                    notes
+                });
+                for list in lists {
+                    values.push(self.arena.list(list)?);
                 }
             }
             "stringTables" => {
-                for row in 0..len {
-                    let mut tables = Vec::new();
-                    for member in self.subjects.line_members(row) {
-                        if self
-                            .subjects
-                            .query
-                            .occurrence_value(member as usize, "location")?
-                            == 2
-                        {
-                            tables.push(
-                                self.subjects
-                                    .query
-                                    .occurrence_value(member as usize, "object")?,
-                            );
-                        }
-                    }
-                    self.strings(&tables)?;
-                    values.push(self.sorted_strings(
-                        tables.into_iter().map(|id| Atom::Str(StrId(id))).collect(),
-                    )?);
+                let data = Arc::clone(&self.subjects.occurrences);
+                self.strings(&data.columns["object"])?;
+                let p = &self.subjects.projection;
+                let arena = &self.arena;
+                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
+                    let mut tables = (p.starts[*row] as usize..p.starts[*row + 1] as usize)
+                        .flat_map(|slice| p.slice.members(slice).iter())
+                        .filter(|member| data.value(**member as usize, "location") == 2)
+                        .map(|member| data.value(*member as usize, "object"))
+                        .collect::<Vec<_>>();
+                    tables.sort_by(|a, b| {
+                        super::text::code_unit_compare(arena.text(StrId(*a)), arena.text(StrId(*b)))
+                    });
+                    tables.dedup_by(|a, b| arena.text(StrId(*a)) == arena.text(StrId(*b)));
+                    tables
+                        .into_iter()
+                        .map(|id| Atom::Str(StrId(id)))
+                        .collect::<Vec<_>>()
+                });
+                for list in lists {
+                    values.push(self.arena.list(list)?);
                 }
             }
             "__expectedSource" => {
@@ -736,12 +763,93 @@ impl<'a, 'q> Projector<'a, 'q> {
     }
     fn children(&mut self, parents: Option<Arc<[u32]>>) -> Result<Children> {
         let line = self.subjects.subject != Subject::UnitSource;
+        let data = Arc::clone(&self.subjects.occurrences);
+        self.arena.occurrences.data = Some(Arc::clone(&data));
+        self.arena.occurrences.len = data.len();
+        if self.arena.occurrences.raw_rows.is_empty() {
+            self.arena.occurrences.raw_rows = (0..data.len() as u32).collect();
+        }
+        let required = self.arena.occurrence_fields.clone();
+        for name in &required {
+            if self.arena.occurrences.fields.contains_key(name) {
+                continue;
+            }
+            let values = match name.as_str() {
+                "source" | "devNotes" => {
+                    let ids = &data.columns[if name == "source" { "source" } else { "notes" }];
+                    self.strings(ids)?;
+                    ids.iter()
+                        .map(|id| Atom::Str(StrId(*id)))
+                        .collect::<Vec<_>>()
+                }
+                "location" => {
+                    for field in ["object", "property", "class", "row"] {
+                        self.strings(&data.columns[field])?;
+                    }
+                    for (index, kind) in ["asset_property", "data_table_cell", "string_table_entry"]
+                        .iter()
+                        .enumerate()
+                    {
+                        self.arena.occurrences.location_kinds[index] = self.string(kind)?;
+                    }
+                    (0..data.len())
+                        .map(|row| {
+                            self.arena
+                                .structured(super::columns::Structured::OccurrenceLocation(
+                                    row as u32,
+                                ))
+                                .map(Atom::Val)
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                }
+                "unitStatus" => {
+                    self.strings(&data.columns["key"])?;
+                    let resolved = self.string("resolved")?;
+                    let table = self.string("string_table")?;
+                    let unresolved = self.string("unresolved")?;
+                    (0..data.len())
+                        .map(|row| match data.status(row, self.arena) {
+                            "resolved" => resolved,
+                            "string_table" => table,
+                            _ => unresolved,
+                        })
+                        .collect()
+                }
+                "id" => {
+                    let rows = (0..data.len() as u32).collect::<Vec<_>>();
+                    self.arena
+                        .occurrence_ids(self.subjects.query, &rows, &mut self.work)?;
+                    self.arena
+                        .occurrences
+                        .ids
+                        .iter()
+                        .map(|id| id.map_or(Atom::Null, Atom::Str))
+                        .collect()
+                }
+                "packageFile" => {
+                    if self.arena.occurrences.files.is_empty() {
+                        self.arena.occurrences.files = data
+                            .files
+                            .iter()
+                            .map(|file| self.arena.string(file))
+                            .collect::<Result<_>>()?;
+                    }
+                    data.packages
+                        .iter()
+                        .map(|package| Atom::Str(self.arena.occurrences.files[*package as usize]))
+                        .collect()
+                }
+                _ => continue,
+            };
+            let column = self.column(&values)?;
+            self.arena.occurrences.fields.insert(name.clone(), column);
+        }
         if line && let Some(children) = &self.arena.line_children {
             let mut children = (**children).clone();
             children.rows = parents;
             return Ok(children);
         }
-        let groups = if line {
+        let mut groups = if line {
             (0..self.subjects.projection.source.len())
                 .map(|row| self.subjects.line_members(row))
                 .collect::<Vec<_>>()
@@ -752,104 +860,41 @@ impl<'a, 'q> Projector<'a, 'q> {
                 .map(|unit| unit.members.clone())
                 .collect()
         };
-        let mut used = if self.arena.occurrences.raw_rows.is_empty() {
-            let mut used = groups.iter().flatten().copied().collect::<Vec<_>>();
-            used.sort_unstable();
-            used.dedup();
-            used
-        } else {
-            self.arena.occurrences.raw_rows.clone()
-        };
-        let mut local = used
-            .iter()
-            .enumerate()
-            .map(|(index, row)| (*row, index as u32))
-            .collect::<HashMap<_, _>>();
-        for row in groups.iter().flatten() {
-            if !local.contains_key(row) {
-                local.insert(*row, used.len() as u32);
-                used.push(*row);
-            }
-        }
-        let required = self.arena.occurrence_fields.clone();
-        // Native occurrence columns are requested by rule expressions. Evidence is hydrated
-        // only for emitted sets, so the default catalogue needs only devNotes here.
-        if self.arena.occurrences.raw_rows.is_empty() {
-            for name in &required {
-                let mut values = Vec::with_capacity(used.len());
-                for (index, row) in used.iter().copied().enumerate() {
-                    if index & 8191 == 0 {
-                        checkpoint(self.subjects.cancelled)?;
-                    }
-                    let value = match name.as_str() {
-                        "source" | "devNotes" => {
-                            let id = self.subjects.query.occurrence_value(
-                                row as usize,
-                                if name == "source" { "source" } else { "notes" },
-                            )?;
-                            Atom::Str(StrId(id))
-                        }
-                        "location" => {
-                            let value = self.subjects.query.occurrence_location(row as usize)?;
-                            self.arena.intern(Value::from_json(&value))?
-                        }
-                        "unitStatus" => {
-                            let value = self.subjects.query.occurrence_identity(row as usize)?;
-                            self.arena.intern(Value::from_json(&value["status"]))?
-                        }
-                        "id" => {
-                            let id = self.subjects.query.occurrence_id(row as usize)?;
-                            self.string(&id)?
-                        }
-                        "packageFile" => {
-                            let (shard, package) = self.subjects.query.package_row(row as usize)?;
-                            let value = self.subjects.query.package_file(shard, package)?;
-                            self.string(&value)?
-                        }
-                        _ => continue,
-                    };
-                    values.push(value);
+        if line {
+            let rows = groups
+                .iter()
+                .filter(|group| group.len() > 1)
+                .flatten()
+                .copied()
+                .collect::<Vec<_>>();
+            self.arena
+                .occurrence_ids(self.subjects.query, &rows, &mut self.work)?;
+            let arena = &self.arena;
+            let collator = self.subjects.collator;
+            groups = self.work.parallel(&groups, |group| {
+                let mut group = group.clone();
+                if group.len() > 1 {
+                    group.sort_by(|a, b| {
+                        collator.compare(
+                            arena.text(arena.occurrences.ids[*a as usize].unwrap_or(StrId(0))),
+                            arena.text(arena.occurrences.ids[*b as usize].unwrap_or(StrId(0))),
+                        )
+                    });
                 }
-                let ids = values
-                    .iter()
-                    .filter_map(|atom| {
-                        if let Atom::Str(id) = atom {
-                            Some(id.0)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                self.strings(&ids)?;
-                let column = self.column(&values)?;
-                self.arena.occurrences.fields.insert(name.clone(), column);
-            }
+                group
+            });
         }
-        let ids = if line {
-            used.iter()
-                .map(|row| self.subjects.query.occurrence_id(*row as usize))
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
         let mut children = Children {
             offsets: Arc::new(vec![0]),
             members: Arc::default(),
             rows: parents,
         };
-        for mut group in groups {
-            if line {
-                group.sort_by(|a, b| {
-                    self.subjects
-                        .collator
-                        .compare(&ids[local[a] as usize], &ids[local[b] as usize])
-                });
-            }
-            Arc::make_mut(&mut children.members).extend(group.iter().map(|row| local[row]));
-            Arc::make_mut(&mut children.offsets).push(children.members.len().try_into()?);
+        let offsets = Arc::make_mut(&mut children.offsets);
+        let members = Arc::make_mut(&mut children.members);
+        for group in groups {
+            members.extend(group);
+            offsets.push(members.len().try_into()?);
         }
-        self.arena.occurrences.len = used.len();
-        self.arena.occurrences.raw_rows = used;
         if line {
             let mut shared = children.clone();
             shared.rows = None;
@@ -877,18 +922,26 @@ impl NativeSubjects<'_> {
             None
         };
         let mut projector = Projector::new(self, arena)?;
-        let started = super::stages::Measure::start();
+        projector.arena.recorder.enter("subjects.occurrences");
+        let mut started = super::stages::Measure::start();
         let children = if with_children {
             projector.children(parents.clone())?
         } else {
             Children::default()
         };
+        started.include(&projector.work);
+        projector.work = super::stages::Measure::start();
         projector.arena.recorder.stage(
             "subjects.occurrences",
             &started,
             projector.arena.occurrences.len,
         );
-        let started = super::stages::Measure::start();
+        projector
+            .arena
+            .recorder
+            .memory("subjects.occurrences", projector.arena.memory());
+        projector.arena.recorder.enter("subjects.columns");
+        let mut started = super::stages::Measure::start();
         let mut fields = HashMap::new();
         for name in names {
             checkpoint(projector.subjects.cancelled)?;
@@ -905,10 +958,15 @@ impl NativeSubjects<'_> {
             };
             fields.insert(name.clone(), FieldColumn { column, rows });
         }
+        started.include(&projector.work);
         projector
             .arena
             .recorder
             .stage("subjects.columns", &started, projector.subjects.len());
+        projector
+            .arena
+            .recorder
+            .memory("subjects.columns", projector.arena.memory());
         projector.arena.line_fields = projector.fields.clone();
         Ok(Prepared { fields, children })
     }

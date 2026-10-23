@@ -93,6 +93,8 @@ pub struct Program {
     pub rules: Vec<CompiledRule>,
     pub roles: HashMap<String, Value>,
     pub(crate) diagnostic_patterns: [NodeId; 2],
+    pub(crate) node_last_consumer: Vec<[usize; 3]>,
+    pub(crate) rule_last_reader: Vec<usize>,
 }
 fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::InvalidInput, message)
@@ -735,7 +737,7 @@ pub fn compile(json: &str) -> Result<Program> {
         )?;
     }
     let mut compiled: Vec<Option<CompiledRule>> = compiled.into_iter().map(Some).collect();
-    let rules = order
+    let rules: Vec<CompiledRule> = order
         .into_iter()
         .filter_map(|index| compiled[index].take())
         .collect();
@@ -772,7 +774,72 @@ pub fn compile(json: &str) -> Result<Program> {
             Type::Object,
         )?,
     ];
+    let mut node_last_consumer = vec![[0; 3]; compiler.nodes.len()];
+    let mut rule_last_reader =
+        vec![0; rules.iter().map(|rule| rule.ordinal + 1).max().unwrap_or(0)];
+    for (subject_index, subject) in [Subject::Line, Subject::LineCulture, Subject::UnitSource]
+        .into_iter()
+        .enumerate()
+    {
+        let subject_rules = rules
+            .iter()
+            .filter(|rule| rule.rule.subject == subject)
+            .collect::<Vec<_>>();
+        for (execution, rule) in subject_rules.iter().enumerate() {
+            rule_last_reader[rule.ordinal] = execution;
+        }
+        for (execution, rule) in subject_rules.iter().enumerate() {
+            let mut stack = vec![rule.when, rule.actual, rule.expectation, rule.recovery];
+            stack.extend(
+                [
+                    rule.each,
+                    rule.fix,
+                    rule.affected,
+                    rule.translation_origin,
+                    rule.extra,
+                ]
+                .into_iter()
+                .flatten(),
+            );
+            let mut seen = HashSet::new();
+            while let Some(id) = stack.pop() {
+                if !seen.insert(id) {
+                    continue;
+                }
+                node_last_consumer[id][subject_index] =
+                    node_last_consumer[id][subject_index].max(execution);
+                let node = &compiler.nodes[id];
+                stack.extend_from_slice(&node.args);
+                let reference = if node.op == "finding" {
+                    node.value.as_str()
+                } else if node.op == "findingField" {
+                    node.value[0].as_str()
+                } else {
+                    None
+                };
+                if let Some(reference) = reference
+                    && let Some(target) = rules.iter().find(|rule| rule.rule.id == reference)
+                {
+                    rule_last_reader[target.ordinal] =
+                        rule_last_reader[target.ordinal].max(execution);
+                }
+            }
+        }
+        if subject == Subject::LineCulture {
+            let mut stack = diagnostic_patterns.to_vec();
+            let mut seen = HashSet::new();
+            while let Some(id) = stack.pop() {
+                if seen.insert(id) {
+                    node_last_consumer[id][subject_index] =
+                        node_last_consumer[id][subject_index].max(subject_rules.len());
+                    stack.extend_from_slice(&compiler.nodes[id].args);
+                }
+            }
+        }
+    }
     Ok(Program {
+        node_last_consumer,
+        rule_last_reader,
         nodes: compiler.nodes,
         rules,
         roles,

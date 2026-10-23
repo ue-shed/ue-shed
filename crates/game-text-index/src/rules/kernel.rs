@@ -10,6 +10,7 @@ pub struct Kernel<'a> {
     pub collator: &'a HostCollator,
     pub roles: HashMap<String, Value>,
     patterns: Mutex<HashMap<(String, bool), Arc<js_regex::JsRegex>>>,
+    terms: Mutex<HashMap<(Atom, Atom, Atom), Arc<js_regex::JsRegex>>>,
     classes: Mutex<HashMap<Atom, Arc<text::CharacterClass>>>,
     roles_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
     paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
@@ -97,6 +98,7 @@ impl<'a> Kernel<'a> {
                 .collect(),
             patterns: Mutex::default(),
             classes: Mutex::default(),
+            terms: Mutex::default(),
             roles_mask: Arc::clone(&arena.roles_mask),
             paths_mask: Arc::clone(&arena.paths_mask),
         }
@@ -219,6 +221,48 @@ impl<'a> Kernel<'a> {
                 .get(row as usize)
                 .into());
         }
+        if op == "termListMatches" && inputs.iter().all(|value| *value != Atom::Null) {
+            let terms = arena.elements(inputs[1])?.ok_or("Missing term list.")?;
+            if terms.is_empty() {
+                return Ok(value!([]));
+            }
+            let key = (inputs[1], inputs[2], inputs[3]);
+            let expression = {
+                let mut cache = self.terms.lock().map_err(|_| "Term cache was poisoned.")?;
+                if let Some(expression) = cache.get(&key) {
+                    Arc::clone(expression)
+                } else {
+                    let alternation = terms
+                        .iter()
+                        .map(|value| {
+                            if let Atom::Str(id) = value {
+                                Ok(::regex::escape(arena.text(*id)))
+                            } else {
+                                Err("Invalid term.".into())
+                            }
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                        .join("|");
+                    let Atom::Str(flags) = inputs[3] else {
+                        return Err("Missing term flags.".into());
+                    };
+                    let pattern =
+                        js_regex::term_pattern(&format!("(?:{alternation})"), arena.text(flags))
+                            .replace(
+                                &::regex::escape(&format!("(?:{alternation})")),
+                                &format!("(?:{alternation})"),
+                            );
+                    let expression =
+                        Arc::new(js_regex::JsRegex::new(&pattern, inputs[2].boolean())?);
+                    cache.insert(key, Arc::clone(&expression));
+                    expression
+                }
+            };
+            let Atom::Str(source) = inputs[0] else {
+                return Err("Missing term source.".into());
+            };
+            return Ok(value!(expression.matches(arena.text(source), None)?));
+        }
         let values = inputs
             .iter()
             .map(|atom| arena.value(*atom))
@@ -305,8 +349,8 @@ impl<'a> Kernel<'a> {
                 let factor = 10f64.powf(number(b)?);
                 value!((number(a)? * factor + 0.5).floor() / factor)
             }
-            "utf16Length" => value!(js_regex::units(string(a)?).len()),
-            "codePoints" => value!(text::code_points(string(a)?).len()),
+            "utf16Length" => value!(text::utf16_length(string(a)?)),
+            "codePoints" => value!(text::points(string(a)?).count()),
             "visibleLength" => value!(text::visible_length(string(a)?)?),
             "visibleWords" => value!(text::visible_words(string(a)?)?),
             "interiorLineBreaks" => value!(text::interior_line_breaks(string(a)?)),
@@ -465,25 +509,7 @@ impl<'a> Kernel<'a> {
                 boolean(c),
                 None
             )?),
-            "termListMatches" => {
-                let terms = list(b)?;
-                if terms.is_empty() {
-                    value!([])
-                } else {
-                    let alternation = terms
-                        .iter()
-                        .map(|value| Ok(::regex::escape(string(value)?)))
-                        .collect::<Result<Vec<_>>>()?
-                        .join("|");
-                    let pattern =
-                        js_regex::term_pattern(&format!("(?:{alternation})"), string(&values[3])?)
-                            .replace(
-                                &::regex::escape(&format!("(?:{alternation})")),
-                                &format!("(?:{alternation})"),
-                            );
-                    value!(self.regex_matches(string(a)?, &pattern, boolean(c), None)?)
-                }
-            }
+            "termListMatches" => return Err("Term matcher requires typed inputs.".into()),
             "count" => value!(list(a)?.len()),
             "flatten" => value!(
                 list(a)?

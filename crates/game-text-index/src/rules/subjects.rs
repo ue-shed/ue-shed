@@ -22,7 +22,8 @@ pub struct NativeSubjects<'a> {
     pub units: Vec<UnitSource>,
     pub(super) collator: &'a HostCollator,
     pub(super) cancelled: &'a AtomicBool,
-    place_cache: HashMap<usize, Vec<Value>>,
+    pub(super) occurrences: Arc<super::occurrences::OccurrenceData>,
+    read_arena: Option<super::columns::Arena>,
 }
 impl<'a> NativeSubjects<'a> {
     pub fn new(
@@ -30,6 +31,17 @@ impl<'a> NativeSubjects<'a> {
         subject: Subject,
         collator: &'a HostCollator,
         cancelled: &'a AtomicBool,
+    ) -> Result<Self> {
+        let occurrences =
+            super::occurrences::OccurrenceData::build(query, &mut super::stages::Measure::start())?;
+        Self::new_shared(query, subject, collator, cancelled, occurrences)
+    }
+    pub(super) fn new_shared(
+        query: &'a mut EngineQuery,
+        subject: Subject,
+        collator: &'a HostCollator,
+        cancelled: &'a AtomicBool,
+        occurrences: Arc<super::occurrences::OccurrenceData>,
     ) -> Result<Self> {
         let projection = Projection::open(query, cancelled)?;
         let mut cultures = Vec::new();
@@ -52,7 +64,7 @@ impl<'a> NativeSubjects<'a> {
                 }
                 let mut groups = HashMap::<u32, usize>::new();
                 for member in projection.raw.members(unit) {
-                    let source = query.occurrence_value(*member as usize, "source")?;
+                    let source = occurrences.value(*member as usize, "source");
                     if let Some(row) = groups.get(&source) {
                         units[*row].members.push(*member);
                     } else {
@@ -74,8 +86,22 @@ impl<'a> NativeSubjects<'a> {
             units,
             collator,
             cancelled,
-            place_cache: HashMap::new(),
+            occurrences,
+            read_arena: None,
         })
+    }
+    pub(super) fn occurrence_text_id(&self, row: u32) -> Result<&str> {
+        let arena = self
+            .read_arena
+            .as_ref()
+            .ok_or("Missing read occurrence relation.")?;
+        Ok(arena
+            .occurrences
+            .ids
+            .get(row as usize)
+            .copied()
+            .flatten()
+            .map_or("", |id| arena.text(id)))
     }
     pub fn line_row(&self, row: usize) -> Result<usize> {
         if self.subject == Subject::LineCulture {
@@ -286,7 +312,7 @@ impl<'a> NativeSubjects<'a> {
                     }
                     let mut sources = Vec::new();
                     for member in if members.is_empty() { all } else { members } {
-                        let id = self.query.occurrence_value(member as usize, "source")?;
+                        let id = self.occurrences.value(member as usize, "source");
                         let source = self.query.reader.string(id)?;
                         if !sources.contains(&source) {
                             sources.push(source);
@@ -388,8 +414,8 @@ impl<'a> NativeSubjects<'a> {
             "stringTables" => {
                 let mut tables = Vec::new();
                 for member in self.line_members(line) {
-                    if self.query.occurrence_value(member as usize, "location")? == 2 {
-                        let id = self.query.occurrence_value(member as usize, "object")?;
+                    if self.occurrences.value(member as usize, "location") == 2 {
+                        let id = self.occurrences.value(member as usize, "object");
                         let object = self.query.reader.string(id)?;
                         if !tables.contains(&object) {
                             tables.push(object);
@@ -403,36 +429,96 @@ impl<'a> NativeSubjects<'a> {
         };
         Ok(result)
     }
-    fn place(&mut self, member: u32, unit_status: &Value) -> Result<Value> {
-        let member = member as usize;
-        let (shard, package) = self.query.package_row(member)?;
-        let source = self.query.occurrence_value(member, "source")?;
-        let notes = self.query.occurrence_value(member, "notes")?;
-        Ok(
-            json!({"id":self.query.occurrence_id(member)?,"packageFile":self.query.package_file(shard,package)?,"source":self.query.reader.string(source)?,"devNotes":self.query.reader.string(notes)?,"location":self.query.occurrence_location(member)?,"unitStatus":unit_status}),
-        )
-    }
 }
 impl SubjectRows for NativeSubjects<'_> {
-    fn emit_places(
+    fn prepare_places(
         &mut self,
-        arena: &super::columns::Arena,
-        value: super::columns::Atom,
-    ) -> Result<Vec<Value>> {
-        use super::columns::{Atom, Structured};
-        let mut places = Vec::new();
-        for atom in arena.elements(value)?.unwrap_or_default() {
-            if let Atom::Val(id) = atom
-                && let Structured::Occurrence(row) = arena.values[id.0 as usize]
-            {
-                let raw = arena.occurrences.raw_rows[row as usize] as usize;
-                let status = self.query.occurrence_identity(raw)?["status"].clone();
-                places.push(self.place(raw as u32, &status)?);
-            } else {
-                places.push(arena.json(*atom));
-            }
+        arena: &mut super::columns::Arena,
+        sets: &[super::columns::Atom],
+        measure: &mut super::stages::Measure,
+    ) -> Result<HashMap<super::columns::Atom, Arc<Vec<Arc<Value>>>>> {
+        use super::columns::{Atom, StrId, Structured};
+        let mut rows = Vec::new();
+        let mut lists = Vec::new();
+        let mut unique = HashMap::<Vec<u32>, usize>::new();
+        let mut set_keys = Vec::new();
+        for set in sets {
+            let members = arena
+                .elements(*set)?
+                .unwrap_or_default()
+                .iter()
+                .map(|atom| {
+                    if let Atom::Val(id) = atom
+                        && let Structured::Occurrence(row) = arena.values[id.0 as usize]
+                    {
+                        Ok(row)
+                    } else {
+                        Err("Expected native occurrence row.".into())
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
+            // Membership keys are sorted; output keeps the original relation order.
+            let mut membership = members.clone();
+            membership.sort_unstable();
+            let next = lists.len();
+            let key = *unique.entry(membership).or_insert_with(|| {
+                rows.extend_from_slice(&members);
+                lists.push(members);
+                next
+            });
+            set_keys.push((*set, key));
         }
-        Ok(places)
+        rows.sort_unstable();
+        rows.dedup();
+        arena.occurrence_ids(self.query, &rows, measure)?;
+        let data = Arc::clone(&self.occurrences);
+        let string_ids = rows
+            .iter()
+            .flat_map(|row| {
+                [
+                    "source", "notes", "object", "property", "class", "row", "key",
+                ]
+                .map(|field| data.value(*row as usize, field))
+            })
+            .collect::<Vec<_>>();
+        arena.load_strings(&mut self.query.reader, &string_ids)?;
+        arena.occurrences.places.resize_with(data.len(), || None);
+        let missing = rows
+            .into_iter()
+            .filter(|row| arena.occurrences.places[*row as usize].is_none())
+            .collect::<Vec<_>>();
+        let places = measure.parallel(&missing, |row| {
+            let row = *row as usize;
+            let id = arena.occurrences.ids[row]
+                .map(|id| arena.text(id))
+                .unwrap_or("");
+            Arc::new(
+                json!({"id":id,"packageFile":data.files[data.packages[row] as usize],
+                "source":arena.text(StrId(data.value(row,"source"))),
+                "devNotes":arena.text(StrId(data.value(row,"notes"))),
+                "location":data.location(row,arena),"unitStatus":data.status(row,arena)}),
+            )
+        });
+        for (row, place) in missing.into_iter().zip(places) {
+            arena.occurrences.places[row as usize] = Some(place);
+        }
+        let built = measure.parallel(&lists, |members| {
+            Arc::new(
+                members
+                    .iter()
+                    .map(|row| {
+                        arena.occurrences.places[*row as usize]
+                            .as_ref()
+                            .cloned()
+                            .unwrap_or_else(|| Arc::new(Value::Null))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        });
+        Ok(set_keys
+            .into_iter()
+            .map(|(set, key)| (set, Arc::clone(&built[key])))
+            .collect())
     }
     fn dictionary_len(&self) -> Result<usize> {
         self.query.reader.dictionary_count()
@@ -482,43 +568,37 @@ impl SubjectRows for NativeSubjects<'_> {
         }
     }
     fn occurrences(&mut self, row: usize) -> Result<Vec<Value>> {
-        checkpoint(self.cancelled)?;
-        let line = self.line_row(row)?;
-        let cache_key = if self.subject == Subject::UnitSource {
-            row
-        } else {
-            line
+        use super::columns::{Arena, Atom};
+        let mut arena = match self.read_arena.take() {
+            Some(arena) => arena,
+            None => {
+                let mut arena = Arena::new(self.dictionary_len()?)?;
+                self.prepare_columns(&[], &mut arena, true)?;
+                arena
+            }
         };
-        if let Some(places) = self.place_cache.get(&cache_key) {
-            return Ok(places.clone());
-        }
-        let mut result = Vec::new();
-        if self.subject == Subject::UnitSource {
-            let members = self.units[row].members.clone();
-            let representative =
-                self.query
-                    .value("raw", "representative", self.units[row].unit)? as usize;
-            let status = self.query.occurrence_identity(representative)?["status"].clone();
-            for member in members {
-                result.push(self.place(member, &status)?);
-            }
+        let members = if self.subject == Subject::UnitSource {
+            self.units[row].members.clone()
         } else {
-            for slice in self.slices(line) {
-                let representative = self.query.value("slice", "representative", slice)? as usize;
-                let status = self.query.occurrence_identity(representative)?["status"].clone();
-                let members = self.projection.slice.members(slice).to_vec();
-                for member in members {
-                    result.push(self.place(member, &status)?);
-                }
-            }
-            result.sort_by(|a, b| {
-                self.collator.compare(
-                    a["id"].as_str().unwrap_or(""),
-                    b["id"].as_str().unwrap_or(""),
-                )
-            });
-        }
-        self.place_cache.insert(cache_key, result.clone());
+            arena
+                .line_children
+                .as_ref()
+                .ok_or("Missing occurrence CSR.")?
+                .members(self.line_row(row)?)
+                .to_vec()
+        };
+        let atoms = members
+            .into_iter()
+            .map(|row| arena.occurrence_id(row))
+            .collect::<Result<Vec<Atom>>>()?;
+        let set = arena.list(atoms)?;
+        let places =
+            self.prepare_places(&mut arena, &[set], &mut super::stages::Measure::start())?;
+        let result = places[&set]
+            .iter()
+            .map(|place| place.as_ref().clone())
+            .collect();
+        self.read_arena = Some(arena);
         Ok(result)
     }
 }

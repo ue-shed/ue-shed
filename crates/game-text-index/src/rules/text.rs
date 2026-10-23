@@ -1,41 +1,231 @@
 use super::grammar::rich_text_counts;
-use super::regex::{JsRegex, units, view};
+use super::regex::{units, view};
 use super::value::{Value, value};
 use crate::join_policy::{js_space, trim};
 use crate::{Error, ErrorCode, Result};
 #[cfg(test)]
 use serde_json::json;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
 
-const TAG: &str = r#"<([A-Za-z_][\w.-]*)(?:\s+[\w.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*/?>"#;
-const MODIFIER: &str = r#"\|(?:plural|ordinal|gender|hpp)\((?:"(?:[^"\\]|\\.)*"|[^()"])*\)"#;
-
-fn expression(pattern: &'static str) -> Result<Arc<JsRegex>> {
-    static EXPRESSIONS: OnceLock<Mutex<HashMap<&'static str, Arc<JsRegex>>>> = OnceLock::new();
-    let mut expressions = EXPRESSIONS
-        .get_or_init(Mutex::default)
-        .lock()
-        .map_err(|_| "Text grammar cache was poisoned.")?;
-    if let Some(expression) = expressions.get(pattern) {
-        return Ok(Arc::clone(expression));
+// Byte ranges are over the reversible scalar view. ASCII syntax bytes never split a scalar.
+#[derive(Clone, Copy, Debug)]
+pub struct TextRange {
+    pub start: usize,
+    pub end: usize,
+}
+#[derive(Clone, Copy)]
+struct Tag {
+    range: TextRange,
+    name_end: usize,
+}
+fn word(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-')
+}
+fn first_name(byte: u8) -> bool {
+    byte.is_ascii_alphabetic() || byte == b'_'
+}
+fn spaces(text: &str, mut at: usize) -> usize {
+    for c in text[at..].chars() {
+        if !js_space(c) {
+            break;
+        }
+        at += c.len_utf8();
     }
-    let expression = Arc::new(JsRegex::new(pattern, true)?);
-    expressions.insert(pattern, Arc::clone(&expression));
-    Ok(expression)
+    at
+}
+fn tag_at(text: &str, start: usize) -> Option<Tag> {
+    let bytes = text.as_bytes();
+    let mut at = start + 1;
+    if !first_name(*bytes.get(at)?) {
+        return None;
+    }
+    at += 1;
+    while bytes.get(at).copied().is_some_and(word) {
+        at += 1;
+    }
+    let name_end = at;
+    loop {
+        let next = spaces(text, at);
+        if bytes.get(next) == Some(&b'>') {
+            return Some(Tag {
+                range: TextRange {
+                    start,
+                    end: next + 1,
+                },
+                name_end,
+            });
+        }
+        if bytes.get(next..next + 2) == Some(b"/>") {
+            return Some(Tag {
+                range: TextRange {
+                    start,
+                    end: next + 2,
+                },
+                name_end,
+            });
+        }
+        if next == at || !bytes.get(next).copied().is_some_and(word) {
+            return None;
+        }
+        at = next;
+        while bytes.get(at).copied().is_some_and(word) {
+            at += 1;
+        }
+        at = spaces(text, at);
+        if bytes.get(at) != Some(&b'=') {
+            return None;
+        }
+        at = spaces(text, at + 1);
+        let quote = *bytes.get(at)?;
+        if quote != b'\"' && quote != b'\'' {
+            return None;
+        }
+        at += 1;
+        at += bytes[at..].iter().position(|byte| *byte == quote)?;
+        at += 1;
+    }
+}
+fn tags(text: &str) -> impl Iterator<Item = Tag> + '_ {
+    let mut at = 0;
+    std::iter::from_fn(move || {
+        while let Some(next) = text.as_bytes()[at..].iter().position(|byte| *byte == b'<') {
+            let start = at + next;
+            at = start + 1;
+            if let Some(tag) = tag_at(text, start) {
+                at = tag.range.end;
+                return Some(tag);
+            }
+        }
+        None
+    })
+}
+fn modifier_at(text: &str, start: usize) -> Option<usize> {
+    let tail = &text[start..];
+    let prefix = ["|plural(", "|ordinal(", "|gender(", "|hpp("]
+        .into_iter()
+        .find(|prefix| tail.starts_with(prefix))?;
+    let mut chars = text[start + prefix.len()..].char_indices();
+    let mut quoted = false;
+    while let Some((offset, c)) = chars.next() {
+        if quoted && c == '\\' {
+            let (_, escaped) = chars.next()?;
+            if matches!(escaped, '\r' | '\n' | '\u{2028}' | '\u{2029}') {
+                return None;
+            }
+        } else if c == '\"' {
+            quoted = !quoted;
+        } else if !quoted && c == '(' {
+            return None;
+        } else if !quoted && c == ')' {
+            return Some(start + prefix.len() + offset + 1);
+        }
+    }
+    None
+}
+pub fn replace_ranges(text: &str, ranges: &[TextRange], replacement: &str) -> Result<String> {
+    let mut output = String::with_capacity(text.len());
+    let mut offset = 0;
+    for range in ranges {
+        if range.start < offset || range.end > text.len() {
+            return Err("Invalid match range.".into());
+        }
+        output.push_str(&text[offset..range.start]);
+        output.push_str(replacement);
+        offset = range.end;
+    }
+    output.push_str(&text[offset..]);
+    Ok(output)
+}
+fn strip<'a>(text: &'a str, kind: u8, replacement: &str) -> Result<std::borrow::Cow<'a, str>> {
+    let mut ranges = Vec::new();
+    if kind == b'<' {
+        ranges.extend(tags(text).map(|tag| tag.range));
+    } else {
+        let bytes = text.as_bytes();
+        let mut at = 0;
+        while let Some(next) = bytes[at..].iter().position(|byte| *byte == kind) {
+            let start = at + next;
+            at = start + 1;
+            let end = match kind {
+                b'/' => text[start..]
+                    .starts_with("/>")
+                    .then_some(start + 2)
+                    .filter(|_| start > 0 && bytes[start - 1] == b'<'),
+                b'|' => modifier_at(text, start),
+                b'{' => bytes[at..]
+                    .iter()
+                    .position(|byte| matches!(*byte, b'{' | b'}'))
+                    .filter(|offset| bytes[at + *offset] == b'}')
+                    .map(|offset| at + offset + 1),
+                _ => None,
+            };
+            if let Some(end) = end {
+                ranges.push(TextRange {
+                    start: if kind == b'/' { start - 1 } else { start },
+                    end,
+                });
+                at = end;
+            }
+        }
+    }
+    if ranges.is_empty() {
+        Ok(std::borrow::Cow::Borrowed(text))
+    } else {
+        replace_ranges(text, &ranges, replacement).map(std::borrow::Cow::Owned)
+    }
+}
+
+pub struct Points<'a> {
+    chars: std::str::Chars<'a>,
+    pending: Option<u32>,
+}
+impl Points<'_> {
+    fn read(&mut self) -> Option<u32> {
+        if let Some(point) = self.pending.take() {
+            return Some(point);
+        }
+        let c = self.chars.next()?;
+        Some(if c == '\u{f0000}' {
+            u32::from(self.chars.next()?)
+        } else if ('\u{f0001}'..='\u{f0800}').contains(&c) {
+            0xd800 + u32::from(c) - 0xf0001
+        } else {
+            u32::from(c)
+        })
+    }
+}
+impl Iterator for Points<'_> {
+    type Item = u32;
+    fn next(&mut self) -> Option<u32> {
+        let point = self.read()?;
+        if (0xd800..=0xdbff).contains(&point)
+            && let Some(next) = self.read()
+        {
+            if (0xdc00..=0xdfff).contains(&next) {
+                return Some(0x10000 + ((point - 0xd800) << 10) + next - 0xdc00);
+            }
+            self.pending = Some(next);
+        }
+        Some(point)
+    }
+}
+pub fn points(text: &str) -> Points<'_> {
+    Points {
+        chars: text.chars(),
+        pending: None,
+    }
+}
+pub fn utf16_length(text: &str) -> usize {
+    points(text)
+        .map(|point| if point > 0xffff { 2 } else { 1 })
+        .sum()
 }
 
 pub fn code_unit_compare(a: &str, b: &str) -> std::cmp::Ordering {
     units(a).cmp(&units(b))
 }
 pub fn code_points(text: &str) -> Vec<u32> {
-    std::char::decode_utf16(units(text))
-        .map(|point| match point {
-            Ok(c) => u32::from(c),
-            Err(c) => u32::from(c.unpaired_surrogate()),
-        })
-        .collect()
+    points(text).collect()
 }
 pub fn from_points(points: impl IntoIterator<Item = u32>) -> String {
     let mut output = Vec::new();
@@ -109,41 +299,14 @@ impl CharacterClass {
     }
 }
 
-pub fn replace_ranges(text: &str, matches: &[Value], replacement: &str) -> Result<String> {
-    let source = units(text);
-    let mut output = Vec::new();
-    let mut offset = 0;
-    let replacement = units(replacement);
-    for found in matches {
-        let start = found["start"].as_u64().ok_or("Invalid match start.")? as usize;
-        let end = found["end"].as_u64().ok_or("Invalid match end.")? as usize;
-        if start < offset || end > source.len() {
-            return Err("Invalid match range.".into());
-        }
-        output.extend_from_slice(&source[offset..start]);
-        output.extend_from_slice(&replacement);
-        offset = end;
-    }
-    output.extend_from_slice(&source[offset..]);
-    Ok(view(&output))
-}
-fn replace(text: &str, pattern: &'static str, replacement: &str) -> Result<String> {
-    replace_ranges(
-        text,
-        &expression(pattern)?.matches(text, None)?,
-        replacement,
-    )
-}
-
 pub fn visible_length(text: &str) -> Result<usize> {
-    let visible = replace(
-        &replace(&replace(&replace(text, TAG, "")?, "</>", "")?, MODIFIER, "")?,
-        r"\{[^{}]*\}",
-        "",
-    )?;
+    let tags = strip(text, b'<', "")?;
+    let closing = strip(&tags, b'/', "")?;
+    let modifiers = strip(&closing, b'|', "")?;
+    let visible = strip(&modifiers, b'{', "")?;
     let mut length = 0;
     let mut pending = false;
-    for point in code_points(&visible) {
+    for point in points(&visible) {
         if char::from_u32(point).is_some_and(js_space) {
             pending = length > 0;
             continue;
@@ -154,28 +317,22 @@ pub fn visible_length(text: &str) -> Result<usize> {
     Ok(length)
 }
 pub fn visible_words(text: &str) -> Result<usize> {
-    let visible = replace(&replace(text, TAG, " ")?, "</>", " ")?;
+    let tags = strip(text, b'<', " ")?;
+    let visible = strip(&tags, b'/', " ")?;
     Ok(visible
         .split(js_space)
         .filter(|part| !part.is_empty())
         .count())
 }
 pub fn line_breaks(text: &str) -> usize {
-    let text = units(text);
-    let mut count = 0;
-    let mut index = 0;
-    while index < text.len() {
-        if text[index] == 10 {
-            count += 1;
-        } else if text[index] == 13 {
-            count += 1;
-            if text.get(index + 1) == Some(&10) {
-                index += 1;
-            }
-        }
-        index += 1;
-    }
-    count
+    let mut previous = 0;
+    text.bytes()
+        .filter(|byte| {
+            let found = *byte == b'\r' || (*byte == b'\n' && previous != b'\r');
+            previous = *byte;
+            found
+        })
+        .count()
 }
 pub fn interior_line_breaks(text: &str) -> usize {
     line_breaks(trim(text))
@@ -193,7 +350,7 @@ pub fn brace_balance(text: &str) -> Value {
     let mut opening = 0;
     let mut closing = 0;
     let mut escaped = false;
-    for unit in units(text) {
+    for unit in points(text) {
         if escaped {
             escaped = false;
         } else if unit == 96 {
@@ -208,17 +365,8 @@ pub fn brace_balance(text: &str) -> Value {
 }
 
 fn tag_names(text: &str) -> Result<Vec<String>> {
-    Ok(expression(TAG)?
-        .matches(text, None)?
-        .into_iter()
-        .filter_map(|found| {
-            found["match"].as_str().map(|matched| {
-                matched[1..]
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || ['_', '.', '-'].contains(c))
-                    .collect()
-            })
-        })
+    Ok(tags(text)
+        .map(|tag| text[tag.range.start + 1..tag.name_end].to_owned())
         .collect())
 }
 pub fn rich_valid(source: &str, translation: &str) -> bool {
@@ -227,46 +375,63 @@ pub fn rich_valid(source: &str, translation: &str) -> bool {
     actual["opening"] == actual["closing"] || actual == expected
 }
 pub fn rich_balance(text: &str) -> Result<Value> {
+    let bytes = text.as_bytes();
+    let identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+    let cpp_scope = bytes
+        .windows(4)
+        .any(|bytes| identifier(bytes[0]) && &bytes[1..3] == b"::" && identifier(bytes[3]));
     let mut opening = 0;
-    static CPP_SCOPE: OnceLock<std::result::Result<regex::Regex, regex::Error>> = OnceLock::new();
-    let cpp_scope = CPP_SCOPE
-        .get_or_init(|| regex::Regex::new(r"[A-Za-z0-9_]::[A-Za-z0-9_]"))
-        .as_ref()
-        .map_err(|cause| Error::new(ErrorCode::InvalidInput, cause.to_string()))?
-        .is_match(text);
-    for found in expression(TAG)?.matches(text, None)? {
-        let matched = found["match"].as_str().ok_or("Missing tag.")?;
-        let tag = matched[1..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || ['_', '.', '-'].contains(c))
-            .collect::<String>();
-        let source = units(text);
-        let start = found["start"].as_u64().ok_or("Missing tag start.")? as usize;
-        let end = found["end"].as_u64().ok_or("Missing tag end.")? as usize;
-        let identifier = start > 0
-            && char::from_u32(u32::from(source[start - 1]))
-                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
-        let code = identifier
-            && (source.get(end) == Some(&40)
-                || source.get(end..end + 2) == Some(&[58, 58])
+    for tag in tags(text) {
+        let start = tag.range.start;
+        let end = tag.range.end;
+        let code = start > 0
+            && identifier(bytes[start - 1])
+            && (bytes.get(end) == Some(&b'(')
+                || bytes.get(end..end + 2) == Some(b"::")
                 || text.contains("->")
                 || cpp_scope);
-        if !matched.ends_with("/>") && tag.to_lowercase() != "br" && !code {
+        if bytes.get(end - 2) != Some(&b'/')
+            && !text[start + 1..tag.name_end].eq_ignore_ascii_case("br")
+            && !code
+        {
             opening += 1;
         }
     }
-    opening += expression(r"<\{[^{}<>]+\}>")?.matches(text, None)?.len();
-    let closing = expression("</>")?.matches(text, None)?.len();
-    let xml_closings = expression(r"</[A-Za-z_][\w.-]*\s*>")?
-        .matches(text, None)?
-        .into_iter()
-        .map(|found| {
-            found["match"].as_str().unwrap_or("")[2..]
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || ['_', '.', '-'].contains(c))
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>();
+    let mut at = 0;
+    while let Some(next) = text[at..].find("<{") {
+        let start = at + next + 2;
+        at = start;
+        let end = bytes[start..]
+            .iter()
+            .position(|byte| matches!(*byte, b'{' | b'}' | b'<' | b'>'))
+            .map(|offset| start + offset);
+        if let Some(end) = end
+            && end > start
+            && bytes.get(end..end + 2) == Some(b"}>")
+        {
+            opening += 1;
+            at = end + 2;
+        }
+    }
+    let closing = text.match_indices("</>").count();
+    let mut xml_closings = Vec::new();
+    let mut at = 0;
+    while let Some(next) = text[at..].find("</") {
+        let start = at + next + 2;
+        at = start;
+        if !bytes.get(start).copied().is_some_and(first_name) {
+            continue;
+        }
+        let mut end = start + 1;
+        while bytes.get(end).copied().is_some_and(word) {
+            end += 1;
+        }
+        let close = spaces(text, end);
+        if bytes.get(close) == Some(&b'>') {
+            xml_closings.push(text[start..end].to_owned());
+            at = close + 1;
+        }
+    }
     Ok(value!({"opening":opening,"closing":closing,"xmlClosings":xml_closings}))
 }
 
@@ -336,32 +501,90 @@ pub fn compare_tags(source: &str, translation: &str) -> Result<Value> {
     )
 }
 pub fn without_optional_tags(text: &str, arguments: &[Value]) -> Result<String> {
-    let source = units(text);
-    let mut output = Vec::new();
+    let bytes = text.as_bytes();
+    let mut output = String::new();
     let mut offset = 0;
-    for found in expression(r"<[A-Za-z_][\w.-]*>\{([^{}<>|]+)\}</>")?.matches(text, None)? {
-        let matched = found["match"].as_str().ok_or("Missing optional wrapper.")?;
-        let begin = matched.find("{").ok_or("Missing optional argument.")?;
-        let end = matched.rfind("}").ok_or("Missing optional argument end.")?;
-        let argument = &matched[begin + 1..end];
+    let mut at = 0;
+    while let Some(next) = text[at..].find('<') {
+        let start = at + next;
+        at = start + 1;
+        if !bytes.get(at).copied().is_some_and(first_name) {
+            continue;
+        }
+        let mut end = at + 1;
+        while bytes.get(end).copied().is_some_and(word) {
+            end += 1;
+        }
+        if bytes.get(end..end + 2) != Some(b">{") {
+            continue;
+        }
+        let begin = end + 1;
+        let content = begin + 1;
+        let Some(stop) = bytes[content..]
+            .iter()
+            .position(|byte| matches!(*byte, b'{' | b'}' | b'<' | b'>' | b'|'))
+            .map(|offset| content + offset)
+        else {
+            continue;
+        };
+        if stop == content || bytes.get(stop..stop + 4) != Some(b"}</>") {
+            continue;
+        }
+        at = stop + 4;
         if !arguments
             .iter()
-            .any(|value| value.as_str() == Some(argument))
+            .any(|value| value.as_str() == Some(&text[content..stop]))
         {
             continue;
         }
-        let start = found["start"].as_u64().ok_or("Missing wrapper start.")? as usize;
-        output.extend_from_slice(&source[offset..start]);
-        output.extend_from_slice(&units(&matched[begin..=end]));
-        offset = found["end"].as_u64().ok_or("Missing wrapper end.")? as usize;
+        output.push_str(&text[offset..start]);
+        output.push_str(&text[begin..=stop]);
+        offset = at;
     }
-    output.extend_from_slice(&source[offset..]);
-    Ok(view(&output))
+    output.push_str(&text[offset..]);
+    Ok(output)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scanner_edges_preserve_escaping_nesting_braces_and_utf16() -> Result<()> {
+        assert_eq!(
+            tag_names("`<b a='{}'>x</><broken<Inner>y</><unclosed")?,
+            ["b", "Inner"]
+        );
+        assert_eq!(visible_length("`<b a='{}'>x</> {outer{inner}}")?, 10);
+        assert_eq!(visible_length("a|plural(one=\"x)\\\"y\",other=z)b")?, 2);
+        assert_eq!(visible_words("a<b/>b</>c")?, 3);
+        assert_eq!(
+            without_optional_tags("<b>{Name}</><b>{Other}</>", &[value!("Name")])?,
+            "{Name}<b>{Other}</>"
+        );
+        assert_eq!(
+            rich_balance("<A><B></></></A> <{C}> <b a='{x}'>")?,
+            json!({"opening":4,"closing":2,"xmlClosings":["A"]})
+        );
+        let text =
+            crate::wtf8::Wtf8Buf::from_utf16(&[0xd800, 0x61, 0xdc00, 0xd83d, 0xde00]).into_view();
+        assert_eq!(utf16_length(&text), 5);
+        assert_eq!(points(&text).count(), 4);
+        assert_eq!(visible_length(&text)?, 4);
+        assert_eq!(
+            line_breaks(
+                "a\r\nb\rc\nd\r\n"
+                    .replace("\\r", "\r")
+                    .replace("\\n", "\n")
+                    .as_str()
+            ),
+            4
+        );
+        assert_eq!(
+            rich_text_counts("<unclosed<BR>\r\n</>"),
+            json!({"opening":1,"closing":1})
+        );
+        Ok(())
+    }
     #[test]
     fn visible_measures_and_line_breaks_keep_existing_tests() -> Result<()> {
         assert_eq!(

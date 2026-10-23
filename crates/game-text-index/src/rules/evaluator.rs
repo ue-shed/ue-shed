@@ -6,8 +6,10 @@ use super::kernel::Kernel;
 use super::selection::Selection;
 use super::stages::{Measure, Recorder, subject_stage};
 use super::text;
+use super::tuple::{Key as TupleKey, Packer};
 use super::value::Value as ScalarValue;
 use crate::{Error, ErrorCode, Result};
+use rustc_hash::FxHashMap;
 use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;
@@ -37,13 +39,28 @@ pub trait SubjectRows {
     /// Compatibility/emission reads. Native execution overrides prepare and never reads row JSON.
     fn field(&mut self, row: usize, name: &str) -> Result<Value>;
     fn occurrences(&mut self, row: usize) -> Result<Vec<Value>>;
-    fn emit_places(&mut self, arena: &Arena, value: Atom) -> Result<Vec<Value>> {
-        Ok(arena
-            .elements(value)?
-            .unwrap_or_default()
-            .iter()
-            .map(|atom| arena.value(*atom).json())
-            .collect())
+    fn prepare_places(
+        &mut self,
+        arena: &mut Arena,
+        sets: &[Atom],
+        measure: &mut Measure,
+    ) -> Result<HashMap<Atom, Arc<Vec<Arc<Value>>>>> {
+        measure
+            .parallel(sets, |set| {
+                Ok((
+                    *set,
+                    Arc::new(
+                        arena
+                            .elements(*set)?
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|atom| Arc::new(arena.json(*atom)))
+                            .collect(),
+                    ),
+                ))
+            })
+            .into_iter()
+            .collect()
     }
     fn dictionary_len(&self) -> Result<usize> {
         Ok(0)
@@ -113,6 +130,7 @@ pub trait SubjectRows {
                 .into_iter()
                 .map(|(name, values)| Ok((name, Arc::new(Column::from_atoms(&values, arena)?))))
                 .collect::<Result<_>>()?,
+            ..Occurrences::default()
         };
         prepared.children = children;
         Ok(prepared)
@@ -152,7 +170,7 @@ pub struct Emission {
     pub extra: Value,
     pub translation_origin: Value,
     pub recovery: String,
-    pub affected: Arc<Vec<Value>>,
+    pub affected: Arc<Vec<Arc<Value>>>,
 }
 pub struct Evaluation {
     pub findings: Vec<Emission>,
@@ -186,6 +204,11 @@ struct Pending {
     recovery: Atom,
     affected: Atom,
 }
+#[derive(Default)]
+struct RuleEvidence {
+    rows: Vec<u32>,
+    values: Vec<Evidence>,
+}
 struct DenseSelection {
     suffixes: Vec<Vec<Atom>>,
     groups: Vec<usize>,
@@ -199,11 +222,14 @@ struct Evaluator<'a> {
     kernel: Kernel<'a>,
     literals: Vec<Option<Atom>>,
     extras: Vec<ScalarValue>,
-    cache: Vec<HashMap<Vec<Atom>, Slot>>,
+    cache: Vec<FxHashMap<TupleKey, Slot>>,
+    packer: Packer,
+    cache_last: Vec<usize>,
+    node_last: Vec<usize>,
     cache_ids: Vec<usize>,
     references: HashMap<String, usize>,
     masks: HashMap<usize, Bits>,
-    evidence: HashMap<(usize, u32), Evidence>,
+    evidence: Vec<Option<RuleEvidence>>,
     children: HashMap<usize, Atom>,
     dense: Vec<Vec<(Vec<Atom>, super::memo::DenseMemo)>>,
     parsed: Vec<Option<Arc<super::grammar::Pattern>>>,
@@ -212,12 +238,47 @@ struct Evaluator<'a> {
     len: usize,
 }
 impl<'a> Evaluator<'a> {
+    fn memory(&self) -> super::stages::Memory {
+        let mut memory = self.arena.memory();
+        memory.live_node_columns_bytes = self
+            .cheap_columns
+            .iter()
+            .flatten()
+            .map(|(column, ready)| column.bytes() + ready.words.capacity() * 8)
+            .sum::<usize>()
+            + self
+                .prepared
+                .fields
+                .values()
+                .map(|field| field.column.bytes())
+                .sum::<usize>();
+        memory.memos_bytes = self
+            .cache
+            .iter()
+            .map(|cache| {
+                cache.capacity()
+                    * (std::mem::size_of::<TupleKey>() + std::mem::size_of::<Slot>() + 1)
+            })
+            .sum::<usize>()
+            + self
+                .dense
+                .iter()
+                .flatten()
+                .map(|(suffix, memo)| {
+                    suffix.capacity() * std::mem::size_of::<Atom>() + memo.bytes()
+                })
+                .sum::<usize>()
+            + self.packer.bytes()
+            + self.parsed.capacity() * std::mem::size_of::<Option<Arc<super::grammar::Pattern>>>();
+        memory
+    }
     fn new(
         program: &'a Program,
         arena: Arena,
         prepared: Prepared,
         collator: &'a HostCollator,
         len: usize,
+        subject: Subject,
     ) -> Result<Self> {
         let mut value = Self {
             program,
@@ -230,6 +291,19 @@ impl<'a> Evaluator<'a> {
                 .map(|node| ScalarValue::from_json(&node.value))
                 .collect(),
             cache: Vec::new(),
+            packer: Packer::default(),
+            cache_last: Vec::new(),
+            node_last: program
+                .node_last_consumer
+                .iter()
+                .map(|last| {
+                    last[match subject {
+                        Subject::Line => 0,
+                        Subject::LineCulture => 1,
+                        Subject::UnitSource => 2,
+                    }]
+                })
+                .collect(),
             dense: Vec::new(),
             parsed: Vec::new(),
             cheap_columns: (0..program.nodes.len()).map(|_| None).collect(),
@@ -243,7 +317,14 @@ impl<'a> Evaluator<'a> {
                 .map(|rule| (rule.rule.id.clone(), rule.ordinal))
                 .collect(),
             masks: HashMap::new(),
-            evidence: HashMap::new(),
+            evidence: (0..program
+                .rules
+                .iter()
+                .map(|rule| rule.ordinal + 1)
+                .max()
+                .unwrap_or(0))
+                .map(|_| None)
+                .collect(),
             children: HashMap::new(),
         };
         let mut groups = HashMap::new();
@@ -256,7 +337,11 @@ impl<'a> Evaluator<'a> {
                 value.literals[id] = Some(value.arena.intern(value.extras[id].clone())?);
             }
         }
-        value.cache = (0..groups.len()).map(|_| HashMap::new()).collect();
+        value.cache = (0..groups.len()).map(|_| FxHashMap::default()).collect();
+        value.cache_last = vec![0; groups.len()];
+        for (node, cache) in value.cache_ids.iter().enumerate() {
+            value.cache_last[*cache] = value.cache_last[*cache].max(value.node_last[node]);
+        }
         value.dense = (0..groups.len()).map(|_| Vec::new()).collect();
         for (id, node) in program.nodes.iter().enumerate() {
             value.independent[id] = !matches!(
@@ -339,7 +424,7 @@ impl<'a> Evaluator<'a> {
         if cacheable
             && self.cheap_columns[id].is_none()
             && selection.len() == self.len
-            && selection.rows.iter().copied().eq(0..self.len as u32)
+            && selection.rows.iter().eq(0..self.len as u32)
         {
             let column = self.node(id, selection)?;
             self.cheap_columns[id] = Some((column.clone(), Bits::all(self.len)));
@@ -351,7 +436,7 @@ impl<'a> Evaluator<'a> {
                     .rows
                     .iter()
                     .enumerate()
-                    .filter_map(|(index, row)| (!ready.get(*row as usize)).then_some(index))
+                    .filter_map(|(index, row)| (!ready.get(row as usize)).then_some(index))
                     .collect::<Vec<_>>()
             } else {
                 (0..selection.len()).collect()
@@ -362,15 +447,19 @@ impl<'a> Evaluator<'a> {
                 let (cached, ready) = self.cheap_columns[id].get_or_insert_with(|| {
                     (Column::constant(Atom::Null, self.len), Bits::new(self.len))
                 });
-                cached.scatter(&narrowed.rows, &column, &mut self.arena)?;
-                for row in &narrowed.rows {
-                    ready.set(*row as usize);
+                cached.scatter(
+                    &narrowed.rows.iter().collect::<Vec<_>>(),
+                    &column,
+                    &mut self.arena,
+                )?;
+                for row in narrowed.rows.iter() {
+                    ready.set(row as usize);
                 }
             }
             let rows = selection
                 .rows
                 .iter()
-                .map(|row| *row as usize)
+                .map(|row| row as usize)
                 .collect::<Vec<_>>();
             return self.cheap_columns[id]
                 .as_ref()
@@ -399,7 +488,7 @@ impl<'a> Evaluator<'a> {
                         field
                             .rows
                             .as_ref()
-                            .map_or(*row as usize, |parents| parents[*row as usize] as usize)
+                            .map_or(row as usize, |parents| parents[row as usize] as usize)
                     })
                     .collect::<Vec<_>>();
                 field.column.select(&rows, &mut self.arena)
@@ -413,7 +502,7 @@ impl<'a> Evaluator<'a> {
                 let values = selection
                     .rows
                     .iter()
-                    .map(|row| self.children(*row as usize))
+                    .map(|row| self.children(row as usize))
                     .collect::<Result<Vec<_>>>()?;
                 Column::from_atoms(&values, &mut self.arena)
             }
@@ -426,17 +515,24 @@ impl<'a> Evaluator<'a> {
                 .unwrap_or("");
                 let reference = self.references.get(name).copied();
                 let mut values = Vec::with_capacity(selection.len());
-                for row in &selection.rows {
+                for row in selection.rows.iter() {
                     if node.op == "finding" {
                         values.push(Atom::Bool(
                             reference
                                 .and_then(|id| self.masks.get(&id))
-                                .is_some_and(|mask| mask.get(*row as usize)),
+                                .is_some_and(|mask| mask.get(row as usize)),
                         ));
                     } else {
                         let path = node.value[1].as_str().unwrap_or("");
                         let value = reference
-                            .and_then(|id| self.evidence.get(&(id, *row)))
+                            .and_then(|id| self.evidence[id].as_ref())
+                            .and_then(|evidence| {
+                                evidence
+                                    .rows
+                                    .binary_search(&row)
+                                    .ok()
+                                    .map(|index| &evidence.values[index])
+                            })
                             .map_or(Atom::Null, |evidence| {
                                 let (field, path) = path.split_once('.').unwrap_or((path, ""));
                                 let value = match field {
@@ -475,32 +571,32 @@ impl<'a> Evaluator<'a> {
                 Bits::new(selection.len())
             };
             let mut failed = Bits::new(selection.len());
-            let mut pending = (0..selection.len()).collect::<Vec<_>>();
+            let mut pending = Bits::all(selection.len());
             for arg in &node.args {
-                if pending.is_empty() {
+                if !pending.any() {
                     break;
                 }
-                let narrowed = selection.select(&pending, &mut self.arena)?;
+                let narrowed = selection.select_bits(&pending, &mut self.arena)?;
                 let values = self.evaluate(*arg, &narrowed)?;
-                let mut decisive = Bits::new(selection.len());
-                let mut later = Vec::new();
-                for (index, destination) in pending.iter().copied().enumerate() {
-                    if values.failed.get(index) {
-                        failed.set(destination);
-                    } else if values.get(index, &self.arena).boolean() != and {
-                        decisive.set(destination);
-                    } else {
-                        later.push(destination);
-                    }
-                }
-                for (word, decisive) in output.words.iter_mut().zip(&decisive.words) {
+                let truths = pending.deposit(&values.booleans(&self.arena));
+                let failures = pending.deposit(&values.failed);
+                for ((((out, later), failure), truth), error) in output
+                    .words
+                    .iter_mut()
+                    .zip(&mut pending.words)
+                    .zip(&mut failed.words)
+                    .zip(&truths.words)
+                    .zip(&failures.words)
+                {
+                    *failure |= error;
+                    let decisive = *later & !error & if and { !truth } else { *truth };
                     if and {
-                        *word &= !decisive;
+                        *out &= !decisive;
                     } else {
-                        *word |= decisive;
+                        *out |= decisive;
                     }
+                    *later &= !error & if and { *truth } else { !truth };
                 }
-                pending = later;
             }
             return Ok(Column {
                 data: super::columns::Data::Bool(output),
@@ -717,23 +813,24 @@ impl<'a> Evaluator<'a> {
             }
         }
         let mut tuples = Vec::new();
-        let mut missing = HashMap::<Vec<Atom>, usize>::new();
+        let mut missing = FxHashMap::<TupleKey, usize>::default();
         let mut slots = Vec::with_capacity(selection.len());
+        let mut tuple = vec![Atom::Null; columns.len()];
         for row in 0..selection.len() {
             if failures.get(row) {
                 slots.push((None, None));
                 continue;
             }
-            let tuple = columns
-                .iter()
-                .map(|column| column.get(row, &self.arena))
-                .collect::<Vec<_>>();
-            if let Some(value) = self.cache[cache].get(&tuple) {
+            for (atom, column) in tuple.iter_mut().zip(&columns) {
+                *atom = column.get(row, &self.arena);
+            }
+            let key = self.packer.key(&tuple);
+            if let Some(value) = self.cache[cache].get(&key) {
                 slots.push((Some(*value), None));
             } else {
                 let next = tuples.len();
-                let slot = *missing.entry(tuple.clone()).or_insert_with(|| {
-                    tuples.push(tuple);
+                let slot = *missing.entry(key).or_insert_with(|| {
+                    tuples.push((key, tuple.clone().into_boxed_slice()));
                     next
                 });
                 slots.push((None, Some(slot)));
@@ -745,7 +842,7 @@ impl<'a> Evaluator<'a> {
             // competing first-use builds of the same role or prefix in the Rayon pool.
             let keys = tuples
                 .iter()
-                .filter_map(|tuple| match tuple.as_slice() {
+                .filter_map(|(_, tuple)| match tuple.as_ref() {
                     [Atom::Val(_), Atom::Str(key)] => Some(*key),
                     _ => None,
                 })
@@ -770,12 +867,12 @@ impl<'a> Evaluator<'a> {
             let kernel = &self.kernel;
             let extra = &self.extras[id];
             let computed = started
-                .parallel(&batch, |tuple| {
+                .parallel(&batch, |(_, tuple)| {
                     if node.op == "list" {
-                        return Ok(Computed::List(tuple.clone()));
+                        return Ok(Computed::List(tuple.to_vec()));
                     }
                     if node.op == "get"
-                        && let [value, Atom::Str(path)] = tuple.as_slice()
+                        && let [value, Atom::Str(path)] = tuple.as_ref()
                     {
                         return Ok(Computed::Atom(arena.get_path(*value, arena.text(*path))));
                     }
@@ -806,26 +903,29 @@ impl<'a> Evaluator<'a> {
                 })
                 .into_iter()
                 .collect::<Result<Vec<_>>>()?;
-            for (tuple, value) in batch.into_iter().zip(computed) {
+            for ((key, _), value) in batch.into_iter().zip(computed) {
                 let result = match value {
                     Computed::Atom(value) => Slot::Value(value),
                     Computed::List(values) => Slot::Value(self.arena.list(values)?),
                     Computed::Value(value) => Slot::Value(self.arena.intern(value)?),
                     Computed::Limit => Slot::Limit,
                 };
-                self.cache[cache].insert(tuple, result);
+                self.cache[cache].insert(key, result);
                 results.push(result);
             }
         }
-        let mut output = Vec::with_capacity(selection.len());
-        for (row, (cached, slot)) in slots.into_iter().enumerate() {
+        let scattered = started.parallel(&slots, |(cached, slot)| {
             match cached.or_else(|| slot.map(|slot| results[slot])) {
-                Some(Slot::Value(value)) => output.push(value),
-                Some(Slot::Limit) => {
-                    output.push(Atom::Null);
-                    failures.set(row);
-                }
-                None => output.push(Atom::Null),
+                Some(Slot::Value(value)) => (value, false),
+                Some(Slot::Limit) => (Atom::Null, true),
+                None => (Atom::Null, false),
+            }
+        });
+        let mut output = Vec::with_capacity(selection.len());
+        for (row, (atom, failed)) in scattered.into_iter().enumerate() {
+            output.push(atom);
+            if failed {
+                failures.set(row);
             }
         }
         let mut column = Column::from_atoms(&output, &mut self.arena)?;
@@ -971,15 +1071,18 @@ impl<'a> Evaluator<'a> {
                 self.dense[cache][*group].1.insert(text.0 as usize, value);
             }
         }
-        let mut output = Vec::with_capacity(selection.len());
-        for (row, key) in row_keys.into_iter().enumerate() {
+        let scattered = started.parallel(&row_keys, |key| {
             match key.and_then(|(text, group)| self.dense[cache][group].1.get(text.0 as usize)) {
-                Some(Slot::Value(value)) => output.push(value),
-                Some(Slot::Limit) => {
-                    output.push(Atom::Null);
-                    failures.set(row);
-                }
-                None => output.push(Atom::Null),
+                Some(Slot::Value(value)) => (value, false),
+                Some(Slot::Limit) => (Atom::Null, true),
+                None => (Atom::Null, false),
+            }
+        });
+        let mut output = Vec::with_capacity(selection.len());
+        for (row, (atom, failed)) in scattered.into_iter().enumerate() {
+            output.push(atom);
+            if failed {
+                failures.set(row);
             }
         }
         let mut output = Column::from_atoms(&output, &mut self.arena)?;
@@ -1180,7 +1283,7 @@ impl<'a> Evaluator<'a> {
             let selection = Selection::new(rows);
             let patterns = self.evaluate(node, &selection)?;
             let mut codes = HashMap::<u32, Vec<String>>::new();
-            for (index, row) in selection.rows.iter().copied().enumerate() {
+            for (index, row) in selection.rows.iter().enumerate() {
                 let found = self
                     .arena
                     .get_path(patterns.get(index, &self.arena), "issues");
@@ -1261,11 +1364,11 @@ impl<'a> Evaluator<'a> {
         Ok(output)
     }
     fn scope(&mut self, rule: &CompiledRule, len: usize) -> Result<Selection> {
-        let mut selected = (0..len as u32).collect::<Vec<_>>();
+        let mut selected = Bits::all(len);
         // Culture gates precede occurrence masks and every rule expression.
         if rule.rule.subject == Subject::Line {
             let culture = self.prepared.field("sourceCulture")?;
-            selected.retain(|row| culture.get(*row as usize, &self.arena) != Atom::Null);
+            selected.retain(|row| culture.get(row as usize, &self.arena) != Atom::Null);
         }
         if let Some(scope) = &rule.rule.scope {
             if rule.rule.subject != Subject::UnitSource
@@ -1280,7 +1383,7 @@ impl<'a> Evaluator<'a> {
                     .iter()
                     .map(|culture| self.arena.intern(ScalarValue::from_json(culture)))
                     .collect::<Result<Vec<_>>>()?;
-                selected.retain(|row| cultures.contains(&field.get(*row as usize, &self.arena)));
+                selected.retain(|row| cultures.contains(&field.get(row as usize, &self.arena)));
             }
             let mut mask = |name: &str, role: bool| -> Result<Option<Bits>> {
                 let Some(values) = scope[name].as_array() else {
@@ -1305,7 +1408,7 @@ impl<'a> Evaluator<'a> {
                 selected.retain(|row| {
                     self.prepared
                         .children
-                        .members(*row as usize)
+                        .members(row as usize)
                         .iter()
                         .any(|occurrence| {
                             roles
@@ -1318,7 +1421,7 @@ impl<'a> Evaluator<'a> {
                 });
             }
         }
-        Ok(Selection::new(selected))
+        Ok(Selection::from_mask(selected))
     }
 }
 impl Program {
@@ -1483,11 +1586,12 @@ impl Program {
         let prepared = relation.prepare(&names, &mut arena, !rules.is_empty())?;
         prepared.validate(len)?;
         let recorder = arena.recorder.clone();
-        let mut evaluator = Evaluator::new(self, arena, prepared, collator, len)?;
+        let mut evaluator = Evaluator::new(self, arena, prepared, collator, len, subject)?;
+        recorder.enter(subject_stage(subject, "execute"));
         let execute = Measure::start();
         let execute_workers = recorder.worker_adjustment();
         let mut emissions = Vec::new();
-        for rule in rules {
+        for (execution, rule) in rules.into_iter().enumerate() {
             relation.checkpoint()?;
             let scope = evaluator.scope(rule, len)?;
             let candidates = if let Some(each) = rule.each {
@@ -1498,7 +1602,7 @@ impl Program {
                     if items.failed.get(row) {
                         output.diagnostics.push((
                             subject,
-                            *subject_row as usize,
+                            subject_row as usize,
                             "syntax_limit".into(),
                         ));
                         continue;
@@ -1527,7 +1631,7 @@ impl Program {
                 if when.failed.get(index) {
                     output
                         .diagnostics
-                        .push((subject, *row as usize, "syntax_limit".into()));
+                        .push((subject, row as usize, "syntax_limit".into()));
                 } else if when.get(index, &evaluator.arena).boolean() {
                     selected.push(index);
                 }
@@ -1548,13 +1652,13 @@ impl Program {
                 let values = selected
                     .rows
                     .iter()
-                    .map(|row| evaluator.children(*row as usize))
+                    .map(|row| evaluator.children(row as usize))
                     .collect::<Result<Vec<_>>>()?;
                 Column::from_atoms(&values, &mut evaluator.arena)?
             };
             let recovery = evaluator.evaluate(rule.recovery, &selected)?;
             let mut mask = Bits::new(len);
-            for (index, row) in selected.rows.iter().copied().enumerate() {
+            for (index, row) in selected.rows.iter().enumerate() {
                 if [
                     &actual,
                     &expectation,
@@ -1588,10 +1692,12 @@ impl Program {
                     return Err("Finding recovery must be a string.".into());
                 }
                 mask.set(row as usize);
-                evaluator
-                    .evidence
-                    .entry((rule.ordinal, row))
-                    .or_insert(evidence);
+                let saved =
+                    evaluator.evidence[rule.ordinal].get_or_insert_with(RuleEvidence::default);
+                if saved.rows.last().copied() != Some(row) {
+                    saved.rows.push(row);
+                    saved.values.push(evidence);
+                }
                 emissions.push(Pending {
                     rule: rule.ordinal,
                     row,
@@ -1601,7 +1707,25 @@ impl Program {
                     affected: places,
                 });
             }
+            output.masks.insert(rule.ordinal, mask.words.clone());
             evaluator.masks.insert(rule.ordinal, mask);
+            for (node, last) in evaluator.node_last.iter().enumerate() {
+                if *last == execution {
+                    evaluator.cheap_columns[node] = None;
+                }
+            }
+            for (cache, last) in evaluator.cache_last.iter().enumerate() {
+                if *last == execution {
+                    evaluator.cache[cache] = FxHashMap::default();
+                    evaluator.dense[cache].clear();
+                }
+            }
+            for (rule, last) in self.rule_last_reader.iter().enumerate() {
+                if *last == execution {
+                    evaluator.evidence[rule] = None;
+                    evaluator.masks.remove(&rule);
+                }
+            }
         }
         recorder.stage_with_kernels(
             subject_stage(subject, "execute"),
@@ -1609,6 +1733,8 @@ impl Program {
             len,
             execute_workers,
         );
+        recorder.memory(subject_stage(subject, "execute"), evaluator.memory());
+        recorder.enter(subject_stage(subject, "diagnostics"));
         let diagnostics_started = Measure::start();
         let diagnostic_workers = recorder.worker_adjustment();
         let diagnostics = if include_diagnostics {
@@ -1622,16 +1748,16 @@ impl Program {
             diagnostics.len(),
             diagnostic_workers,
         );
+        recorder.memory(subject_stage(subject, "diagnostics"), evaluator.memory());
+        recorder.enter(subject_stage(subject, "emission"));
         let mut emission = Measure::start();
-        let mut places = HashMap::<Atom, Arc<Vec<Value>>>::new();
-        for pending in &emissions {
-            if let std::collections::hash_map::Entry::Vacant(entry) = places.entry(pending.affected)
-            {
-                entry.insert(Arc::new(
-                    relation.emit_places(&evaluator.arena, pending.affected)?,
-                ));
-            }
-        }
+        let sets = emissions
+            .iter()
+            .map(|pending| pending.affected)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let places = relation.prepare_places(&mut evaluator.arena, &sets, &mut emission)?;
         output.findings = emission
             .parallel(&emissions, |pending| {
                 let evidence = pending.evidence;
@@ -1658,16 +1784,12 @@ impl Program {
         output
             .findings
             .sort_by_key(|finding| (finding.rule, finding.row));
-        output.masks = evaluator
-            .masks
-            .into_iter()
-            .map(|(rule, mask)| (rule, mask.words))
-            .collect();
         recorder.stage(
             subject_stage(subject, "emission"),
             &emission,
             output.findings.len(),
         );
+        recorder.memory(subject_stage(subject, "emission"), evaluator.memory());
         if let Some(shared) = shared {
             *shared = evaluator.arena;
         }

@@ -156,9 +156,161 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     let program = super::compile(rules)?;
     let collator =
         super::HostCollator::new(catalogue["locale"].as_str().ok_or("Missing host locale.")?)?;
-    let evaluated = query.evaluate_findings(&program, &collator, &cancelled)?;
+    let evaluated = query.evaluate_findings(&program, &collator, &cancelled, None)?;
     let profile = &evaluated.profile;
-    let result = json!({"profile":profile,"peakWorkingSetBytes":peak_memory()?,"rayonThreads":rayon::current_num_threads()});
+    let result = json!({"digest":evaluated.digest,"profile":profile,"peakWorkingSetBytes":peak_memory()?,"rayonThreads":rayon::current_num_threads()});
     println!("{}", serde_json::to_string(&result)?);
+    require(
+        evaluated.digest == "87dba57d4b3751dddb3a0d4f816b9a22eeaab1472756a588baeed7d173980576",
+        "Retained output digest differs from e857a864.",
+    )?;
+    Ok(())
+}
+
+/// Streaming canonical output digest. Delimit records with their byte length; keep emission,
+/// affected-set and diagnostic order, and sort only object keys and the mask map.
+pub(super) fn digest_subject(
+    digest: &mut sha2::Sha256,
+    program: &super::Program,
+    subjects: &mut super::NativeSubjects<'_>,
+    evaluation: &super::Evaluation,
+    diagnostics: &[(super::Subject, usize, String)],
+) -> Result<()> {
+    use super::SubjectRows;
+    fn record(digest: &mut sha2::Sha256, value: &Value) {
+        use sha2::Digest;
+        let bytes = super::javascript_json(value, true);
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes.as_bytes());
+    }
+    record(digest, &json!(["subject", subjects.subject()]));
+    let mut identities = std::collections::HashMap::<usize, (String, String)>::new();
+    for finding in &evaluation.findings {
+        let compiled = program
+            .rules
+            .iter()
+            .find(|rule| rule.ordinal == finding.rule)
+            .ok_or("Missing digest rule.")?;
+        let rule = &compiled.rule;
+        let identity = if let Some(identity) = identities.get(&finding.row) {
+            identity.clone()
+        } else {
+            let identity: (String, String) = if finding.subject == super::Subject::UnitSource {
+                (
+                    subjects
+                        .field(finding.row, "textUnitId")?
+                        .as_str()
+                        .ok_or("Missing unit ID.")?
+                        .to_owned(),
+                    String::new(),
+                )
+            } else if finding.subject == super::Subject::LineCulture {
+                (
+                    subjects
+                        .field(finding.row, "line.lineId")?
+                        .as_str()
+                        .ok_or("Missing line ID.")?
+                        .to_owned(),
+                    subjects
+                        .field(finding.row, "culture")?
+                        .as_str()
+                        .ok_or("Missing culture.")?
+                        .to_owned(),
+                )
+            } else {
+                (
+                    subjects
+                        .field(finding.row, "lineId")?
+                        .as_str()
+                        .ok_or("Missing line ID.")?
+                        .to_owned(),
+                    subjects
+                        .field(finding.row, "sourceCulture")?
+                        .as_str()
+                        .unwrap_or("")
+                        .to_owned(),
+                )
+            };
+            identities.insert(finding.row, identity.clone());
+            identity
+        };
+        let rule_id = rule.rule_id.as_ref().unwrap_or(&rule.id);
+        let id = if finding.subject == super::Subject::UnitSource {
+            super::source_identity(
+                rule_id,
+                rule.role.as_deref(),
+                &identity.0,
+                &rule.kind,
+                &finding.actual,
+                &finding.expectation,
+                &finding.affected,
+            )
+            .0
+        } else {
+            super::localization_identity(
+                &identity.0,
+                &identity.1,
+                rule_id,
+                &rule.kind,
+                &finding.actual,
+                &finding.expectation,
+            )
+            .0
+        };
+        record(
+            digest,
+            &json!([
+                "finding",
+                finding.rule,
+                finding.row,
+                finding.subject,
+                finding.actual,
+                finding.expectation,
+                finding.fix,
+                finding.extra,
+                finding.translation_origin,
+                finding.recovery,
+                finding.affected.as_slice(),
+                id
+            ]),
+        );
+    }
+    let masks = evaluation
+        .masks
+        .iter()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for (rule, words) in masks {
+        record(digest, &json!(["mask", rule, words]));
+    }
+    fn diagnostic_record(
+        digest: &mut sha2::Sha256,
+        name: &str,
+        values: &[(super::Subject, usize, String)],
+    ) {
+        use sha2::Digest;
+        let prefix = format!("[{},[", super::javascript_json(&json!(name), true));
+        let encoded =
+            |value: &(super::Subject, usize, String)| super::javascript_json(&json!(value), true);
+        let length = prefix.len()
+            + 2
+            + values.len().saturating_sub(1)
+            + values
+                .iter()
+                .map(|value| encoded(value).len())
+                .sum::<usize>();
+        digest.update((length as u64).to_le_bytes());
+        digest.update(prefix.as_bytes());
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                digest.update(b",");
+            }
+            digest.update(encoded(value).as_bytes());
+        }
+        digest.update(b"]]");
+    }
+    diagnostic_record(digest, "rule-diagnostics", &evaluation.diagnostics);
+    diagnostic_record(digest, "projection-diagnostics", diagnostics);
+    // Keep the trait in this function so baseline and product share precisely the same encoder.
+    let _ = digest;
     Ok(())
 }

@@ -368,7 +368,7 @@ fn read_units(
                 .iter()
                 .enumerate()
             {
-                if subjects.query.occurrence_id(*member as usize)? == first {
+                if subjects.occurrence_text_id(*member)? == first {
                     first_rank = rank;
                     break;
                 }

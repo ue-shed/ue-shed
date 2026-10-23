@@ -12,8 +12,42 @@ import { corpusLocalization } from "./game-text-corpus-localization.ts";
 import {
 	corpusDefectsFor,
 	triageCorpusDifferences,
-	formatCorpusComparisonSummary
+	formatCorpusComparisonSummary,
+	type CorpusKnownDefect
 } from "./game-text-corpus-defects.ts";
+
+/** A subject pin for the triage tests, since every pin the corpus still needs is a probe. */
+const syntheticPin: CorpusKnownDefect = {
+	case: "empty-with-source-edge",
+	defects: ["synthetic-whitespace"],
+	withCheck: "localization.empty_translation",
+	kind: "subject",
+	status: "defect",
+	why: "An empty translation should only produce empty_translation among translation-shape checks, as documented by the check contract. Boundary whitespace cannot be repaired until a translation exists.",
+	rightAnswer: {
+		findings: [
+			{
+				check: "localization.empty_translation",
+				actual: { entryExists: true, translation: "" },
+				expectation: { nonEmptyTranslation: true }
+			}
+		]
+	},
+	actual: {
+		findings: [
+			{
+				check: "localization.empty_translation",
+				actual: { entryExists: true, translation: "" },
+				expectation: { nonEmptyTranslation: true }
+			},
+			{
+				check: "localization.whitespace",
+				actual: { leading: "", trailing: "", lineBreaks: 0 },
+				expectation: { leading: " ", trailing: "", lineBreaks: 0 }
+			}
+		]
+	}
+};
 
 const options = { root: "/Game/Fixture/Corpus", seed: 1, lines: 256, density: 1 };
 const plan = planCorpus(options);
@@ -270,7 +304,7 @@ test("known defects cannot hide unrelated changes or silently survive a fix", ()
 			subject.findings.some((finding) => finding.check === "localization.empty_translation")
 	);
 	const actual = intent.map((subject) => {
-		const defect = corpusDefectsFor(intent).find(
+		const defect = corpusDefectsFor(intent, [], [syntheticPin]).find(
 			(defect) => defect.case === caseName && defect.culture === subject.culture
 		)!;
 		return { ...subject, ...JSON.parse(JSON.stringify(defect.actual)) };
@@ -278,23 +312,28 @@ test("known defects cannot hide unrelated changes or silently survive a fix", ()
 	const expected = { ...plan.expectations, subjects: intent };
 	const active = intent;
 	const differences = diffCorpus(expected, actual);
-	assert.deepEqual(triageCorpusDifferences(differences, active), {
+	assert.deepEqual(triageCorpusDifferences(differences, active, [], [syntheticPin]), {
 		unexpected: [],
 		stale: [],
 		pinned: {
 			total: intent.length,
-			byDefect: { "empty-translation-whitespace": intent.length }
+			byDefect: { "synthetic-whitespace": intent.length }
 		}
 	});
 	const fixed = diffCorpus(expected, [intent[0]!, ...actual.slice(1)]);
-	assert.equal(triageCorpusDifferences(fixed, active).stale.length, 1);
+	assert.equal(triageCorpusDifferences(fixed, active, [], [syntheticPin]).stale.length, 1);
 	const drift = diffCorpus(expected, [
 		{ ...actual[0], source: "unrelated regression" },
 		...actual.slice(1)
 	]);
-	assert.equal(triageCorpusDifferences(drift, active).unexpected.length, 1);
+	assert.equal(triageCorpusDifferences(drift, active, [], [syntheticPin]).unexpected.length, 1);
 	// A second copy of a pinned result is still a failure, even when it matches the defect.
-	const twice = triageCorpusDifferences(diffCorpus(expected, [...actual, actual[0]!]), active);
+	const twice = triageCorpusDifferences(
+		diffCorpus(expected, [...actual, actual[0]!]),
+		active,
+		[],
+		[syntheticPin]
+	);
 	assert.equal(twice.unexpected.length, 1);
 	assert.equal(twice.stale.length, 0);
 	assert.equal(twice.pinned.total, intent.length);
@@ -682,16 +721,21 @@ test("known-defect assertions use set semantics for signals while retaining exac
 	const expected = { ...plan.expectations, subjects: [subject] };
 	const actual = {
 		...subject,
-		...JSON.parse(JSON.stringify(corpusDefectsFor([subject])[0]!.actual)),
+		...JSON.parse(JSON.stringify(corpusDefectsFor([subject], [], [syntheticPin])[0]!.actual)),
 		signals: [...subject.signals].reverse()
 	};
-	const result = triageCorpusDifferences(diffCorpus(expected, [actual]), [subject]);
+	const result = triageCorpusDifferences(
+		diffCorpus(expected, [actual]),
+		[subject],
+		[],
+		[syntheticPin]
+	);
 	assert.deepEqual(result, {
 		unexpected: [],
 		stale: [],
-		pinned: { total: 1, byDefect: { "empty-translation-whitespace": 1 } }
+		pinned: { total: 1, byDefect: { "synthetic-whitespace": 1 } }
 	});
-	assert.equal(triageCorpusDifferences([], [subject]).stale.length, 1);
+	assert.equal(triageCorpusDifferences([], [subject], [], [syntheticPin]).stale.length, 1);
 });
 
 test("background subjects require no defect pins, including their pure pin placements", () => {

@@ -8,43 +8,14 @@ export interface CorpusKnownDefect {
 	defects: readonly string[];
 	kind: "subject" | "probe";
 	culture?: string;
+	/** A subject pin that applies to every culture's subject carrying this finding check. */
+	withCheck?: string;
 	status: "defect" | "open";
 	why: string;
 	actual: typeof Schema.Json.Type;
 	rightAnswer: typeof Schema.Json.Type;
 }
 export const corpusKnownDefects: readonly CorpusKnownDefect[] = [
-	{
-		case: "empty-with-source-edge",
-		defects: ["empty-translation-whitespace"],
-		culture: "de",
-		kind: "subject",
-		status: "defect",
-		why: "An empty translation should only produce empty_translation among translation-shape checks, as documented by the check contract. Boundary whitespace cannot be repaired until a translation exists.",
-		rightAnswer: {
-			findings: [
-				{
-					check: "localization.empty_translation",
-					actual: { entryExists: true, translation: "" },
-					expectation: { nonEmptyTranslation: true }
-				}
-			]
-		},
-		actual: {
-			findings: [
-				{
-					check: "localization.empty_translation",
-					actual: { entryExists: true, translation: "" },
-					expectation: { nonEmptyTranslation: true }
-				},
-				{
-					check: "localization.whitespace",
-					actual: { leading: "", trailing: "", lineBreaks: 0 },
-					expectation: { leading: " ", trailing: "", lineBreaks: 0 }
-				}
-			]
-		}
-	},
 	{
 		case: "manifest-notes-only",
 		defects: ["manifest-notes-filter"],
@@ -88,7 +59,8 @@ type Difference = {
 };
 export function corpusDefectsFor(
 	subjects: readonly CorpusSubject[],
-	probes: readonly Difference[] = []
+	probes: readonly Difference[] = [],
+	known: readonly CorpusKnownDefect[] = corpusKnownDefects
 ) {
 	const result: (CorpusKnownDefect & { subject: string })[] = [];
 	for (const subject of subjects) {
@@ -101,15 +73,11 @@ export function corpusDefectsFor(
 		};
 		const explanations: string[] = [],
 			defectIds: string[] = [];
-		for (const template of corpusKnownDefects) {
+		for (const template of known) {
 			if (template.kind !== "subject" || template.case !== subject.case.split("@")[0])
 				continue;
-			if (template.case === "empty-with-source-edge") {
-				if (
-					!subject.findings.some(
-						(finding) => finding.check === "localization.empty_translation"
-					)
-				)
+			if (template.withCheck !== undefined) {
+				if (!subject.findings.some((finding) => finding.check === template.withCheck))
 					continue;
 			} else if (template.culture !== subject.culture) continue;
 			const right = Schema.decodeUnknownSync(Dictionary)(template.rightAnswer),
@@ -141,7 +109,7 @@ export function corpusDefectsFor(
 		}
 	}
 	for (const probe of probes)
-		for (const template of corpusKnownDefects) {
+		for (const template of known) {
 			if (template.kind !== "probe" || template.case !== probe.case.split("@")[0]) continue;
 			result.push({
 				...template,
@@ -156,9 +124,10 @@ export function corpusDefectsFor(
 export function triageCorpusDifferences(
 	differences: readonly Difference[],
 	subjects: readonly CorpusSubject[] = [],
-	probes: readonly Difference[] = []
+	probes: readonly Difference[] = [],
+	known: readonly CorpusKnownDefect[] = corpusKnownDefects
 ) {
-	const defects = corpusDefectsFor(subjects, probes);
+	const defects = corpusDefectsFor(subjects, probes, known);
 	const matched = new Set<(typeof defects)[number]>();
 	const bySubject = new Map(
 		defects.map((defect) => [`${defect.case}\0${defect.subject}`, defect])

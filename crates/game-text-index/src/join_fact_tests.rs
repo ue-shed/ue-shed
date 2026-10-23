@@ -223,6 +223,57 @@ impl Fixture {
 }
 
 #[test]
+fn rule_subjects_read_saved_manifest_and_translation_stages_independently() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject, SubjectRows};
+    let mut fixture = Fixture::new()?;
+    fixture.file("Game.manifest","manifest", &[json!({"namespace":"UI","key":"K","source":"Raw","path":"/Game/Text/Example.Example.Label","notes":"Developer context","metadata":"{\"Info\":{\"Comment\":\"Translator context\"}}","options":12})])?;
+    fixture.file(
+        "en.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"K","source":"Raw","translation":"Native"})],
+    )?;
+    fixture.file(
+        "de.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"K","source":"Native","translation":"Foreign"})],
+    )?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po","po", &[json!({"namespace":"UI","key":"K","source":"Native","translation":"Pending","options":64})])?;
+    fixture.packages(&[json!({"namespace":"UI","key":"K","source":"Saved","object":"/Game/Text/Example.Example","property":"Label","notes":"Occurrence context"})])?;
+    fixture.lines()?;
+    let mut query = EngineQuery::open(&fixture.configuration, None)?;
+    let collator = HostCollator::new("en")?;
+    let cancelled = AtomicBool::new(false);
+    let mut rows = NativeSubjects::new(&mut query, Subject::LineCulture, &collator, &cancelled)?;
+    let row = (0..rows.len())
+        .find(|row| rows.field(*row, "culture").ok().as_ref() == Some(&json!("de")))
+        .ok_or("Missing foreign subject.")?;
+    assert_eq!(rows.field(row, "line.source")?, "Saved");
+    assert_eq!(rows.field(row, "line.manifestSource")?, "Raw");
+    assert_eq!(rows.field(row, "line.comparisonSource")?, "Raw");
+    assert_eq!(rows.field(row, "expectedSource")?, "Native");
+    assert_eq!(rows.field(row, "archive")?, "Foreign");
+    assert_eq!(rows.field(row, "po")?, "Pending");
+    assert_eq!(rows.field(row, "latest")?, "Pending");
+    assert_eq!(rows.field(row, "latestOrigin")?, "po");
+    assert_eq!(rows.field(row, "line.sourceCulture")?, "en");
+    assert_eq!(
+        rows.field(row, "line.manifestNotes")?,
+        json!(["Developer context", "Translator context"])
+    );
+    let occurrences = rows.occurrences(row)?;
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0]["source"], "Saved");
+    assert_eq!(occurrences[0]["devNotes"], "Occurrence context");
+    assert_eq!(occurrences[0]["unitStatus"], "resolved");
+    drop(rows);
+    let mut units = NativeSubjects::new(&mut query, Subject::UnitSource, &collator, &cancelled)?;
+    assert_eq!(units.len(), 1);
+    assert_eq!(units.field(0, "source")?, "Saved");
+    Ok(())
+}
+
+#[test]
 fn missing_table_entry_retains_unknown_without_claiming_an_unavailable_namespace() -> Result<()> {
     let mut fixture = Fixture::new()?;
     for (name, format) in [

@@ -22,12 +22,12 @@ impl EngineQuery {
         };
         crate::wtf8::view_json(&result)
     }
-    fn entry_text(&mut self, name: &str, field: &str, row: usize) -> Result<String> {
+    pub(crate) fn entry_text(&mut self, name: &str, field: &str, row: usize) -> Result<String> {
         let ids = self.reader.input_column(name, &format!("entry.{field}"))?;
         self.reader
             .string(*ids.get(row).ok_or("Evidence row outside input.")?)
     }
-    fn entry_json(&mut self, name: &str, field: &str, row: usize) -> Result<Value> {
+    pub(crate) fn entry_json(&mut self, name: &str, field: &str, row: usize) -> Result<Value> {
         let text = self.entry_text(name, field, row)?;
         if text.is_empty() {
             return Ok(json!({}));

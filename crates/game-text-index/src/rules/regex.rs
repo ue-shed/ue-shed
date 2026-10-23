@@ -1,0 +1,346 @@
+//! JavaScript Unicode regex syntax over a reversible UTF-16 view.
+use crate::wtf8::Wtf8Buf;
+use crate::{Error, ErrorCode, Result};
+use fancy_regex::{Regex, RegexBuilder};
+use serde_json::{Value, json};
+
+const JS_SPACE: &str =
+    r"\x09-\x0d\x20\u{a0}\u{1680}\u{2000}-\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}";
+const BACKTRACK_LIMIT: usize = 1_000_000;
+
+pub fn units(view: &str) -> Vec<u16> {
+    Wtf8Buf::from_view(view).to_utf16()
+}
+pub fn view(units: &[u16]) -> String {
+    Wtf8Buf::from_utf16(units).into_view()
+}
+
+/// Lone surrogates occupy distinct private-use scalars while matching. A literal scalar in
+/// U+10F800–10FFFF collides with this mapping, as documented by the expression contract.
+fn regex_text(view: &str) -> (String, Vec<(usize, usize)>) {
+    let units = units(view);
+    let mut text = String::new();
+    let mut positions = vec![(0, 0)];
+    let mut index = 0;
+    while index < units.len() {
+        let unit = units[index];
+        let point = if (0xd800..=0xdbff).contains(&unit)
+            && units
+                .get(index + 1)
+                .is_some_and(|next| (0xdc00..=0xdfff).contains(next))
+        {
+            index += 1;
+            0x10000 + ((u32::from(unit) - 0xd800) << 10) + (u32::from(units[index]) - 0xdc00)
+        } else if (0xd800..=0xdfff).contains(&unit) {
+            0x10f800 + u32::from(unit) - 0xd800
+        } else {
+            u32::from(unit)
+        };
+        if let Some(character) = char::from_u32(point) {
+            text.push(character);
+        }
+        index += 1;
+        positions.push((text.len(), index));
+    }
+    (text, positions)
+}
+
+fn word(case_sensitive: bool) -> &'static str {
+    if case_sensitive {
+        "A-Za-z0-9_"
+    } else {
+        "A-Za-z0-9_\u{17f}\u{212a}"
+    }
+}
+
+fn unicode_escape(chars: &[char], index: usize) -> Option<(u32, usize)> {
+    if chars.get(index) != Some(&'\\') || chars.get(index + 1) != Some(&'u') {
+        return None;
+    }
+    if chars.get(index + 2) == Some(&'{') {
+        let end = (index + 3..chars.len()).find(|i| chars[*i] == '}')?;
+        let digits: String = chars[index + 3..end].iter().collect();
+        return u32::from_str_radix(&digits, 16)
+            .ok()
+            .map(|point| (point, end + 1));
+    }
+    let digits: String = chars.get(index + 2..index + 6)?.iter().collect();
+    u32::from_str_radix(&digits, 16)
+        .ok()
+        .map(|point| (point, index + 6))
+}
+
+pub fn rewrite(pattern: &str, case_sensitive: bool) -> Result<String> {
+    let (pattern, _) = regex_text(pattern);
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut output = String::new();
+    let mut index = 0;
+    let mut class = false;
+    while index < chars.len() {
+        let character = chars[index];
+        if character == '\\' {
+            if let Some((mut point, mut end)) = unicode_escape(&chars, index) {
+                if (0xd800..=0xdbff).contains(&point)
+                    && let Some((next, next_end)) = unicode_escape(&chars, end)
+                    && (0xdc00..=0xdfff).contains(&next)
+                {
+                    point = 0x10000 + ((point - 0xd800) << 10) + next - 0xdc00;
+                    end = next_end;
+                }
+                if (0xd800..=0xdfff).contains(&point) {
+                    point = 0x10f800 + point - 0xd800;
+                }
+                output.push_str(&format!("\\x{{{point:x}}}"));
+                index = end;
+                continue;
+            }
+            let escape = *chars.get(index + 1).ok_or_else(|| {
+                Error::new(
+                    ErrorCode::InvalidInput,
+                    "Incomplete regular-expression escape.",
+                )
+            })?;
+            let value = match escape {
+                'd' => Some("0-9".to_owned()),
+                'w' => Some(word(case_sensitive).to_owned()),
+                's' => Some(JS_SPACE.to_owned()),
+                _ => None,
+            };
+            if let Some(value) = value {
+                if class {
+                    output.push_str(&value);
+                } else {
+                    output.push_str(&format!("[{value}]"));
+                }
+            } else if matches!(escape, 'D' | 'W' | 'S') {
+                let value = match escape {
+                    'D' => "0-9",
+                    'W' => word(case_sensitive),
+                    _ => JS_SPACE,
+                };
+                output.push_str(&format!("[^{value}]"));
+            } else if !class && matches!(escape, 'b' | 'B') {
+                let word = word(case_sensitive);
+                output.push_str(&if escape == 'b' {
+                    format!("(?:(?<![{word}])(?=[{word}])|(?<=[{word}])(?![{word}]))")
+                } else {
+                    format!("(?:(?<=[{word}])(?=[{word}])|(?<![{word}])(?![{word}]))")
+                });
+            } else if class && escape == 'b' {
+                output.push_str(r"\x08");
+            } else if escape == '/' {
+                output.push('/');
+            } else {
+                output.push('\\');
+                output.push(escape);
+            }
+            index += 2;
+            continue;
+        }
+        if !class && chars.get(index..index + 2) == Some(&['[', ']']) {
+            output.push_str("(?!)");
+            index += 2;
+            continue;
+        }
+        if !class && chars.get(index..index + 3) == Some(&['[', '^', ']']) {
+            output.push_str("(?s:.)");
+            index += 3;
+            continue;
+        }
+        match character {
+            '[' => {
+                class = true;
+                output.push(character);
+            }
+            ']' => {
+                class = false;
+                output.push(character);
+            }
+            '.' if !class => output.push_str(r"[^\n\r\u{2028}\u{2029}]"),
+            '^' if !class => output.push_str(r"\A"),
+            '$' if !class => output.push_str(r"\z"),
+            _ => output.push(character),
+        }
+        index += 1;
+    }
+    Ok(output)
+}
+
+pub struct JsRegex {
+    inner: Regex,
+}
+impl JsRegex {
+    pub fn new(pattern: &str, case_sensitive: bool) -> Result<Self> {
+        let pattern = rewrite(pattern, case_sensitive)?;
+        let inner = RegexBuilder::new(&pattern)
+            .case_insensitive(!case_sensitive)
+            .backtrack_limit(BACKTRACK_LIMIT)
+            .build()
+            .map_err(|cause| {
+                Error::with_source(
+                    ErrorCode::InvalidInput,
+                    "Invalid rule regular expression.",
+                    cause,
+                )
+            })?;
+        Ok(Self { inner })
+    }
+
+    /// A budget error is returned to the caller, which emits the existing syntax_limit diagnostic.
+    pub fn matches(&self, source: &str, cap: Option<usize>) -> Result<Vec<Value>> {
+        let (text, positions) = regex_text(source);
+        let source_units = units(source);
+        let mut output = Vec::new();
+        let mut offset = 0;
+        while offset <= text.len() && cap.is_none_or(|cap| output.len() < cap) {
+            let found = self.inner.find_from_pos(&text, offset).map_err(|cause| {
+                Error::with_source(
+                    ErrorCode::LimitExceeded,
+                    "Rule regex exceeded its syntax limit.",
+                    cause,
+                )
+            })?;
+            // JS searches assertions at UTF-16 positions, even between a surrogate pair.
+            // Unicode consuming matches still use scalars. Probe only empty matches at those
+            // additional positions, before the scalar match the regex engine found.
+            let stop = found.as_ref().map_or(text.len(), |found| found.start());
+            let mut interior = None;
+            for pair in positions.windows(2).filter(|pair| {
+                pair[0].0 >= offset && pair[0].0 < stop && pair[1].1 == pair[0].1 + 2
+            }) {
+                let (begin, unit) = pair[0];
+                let end = pair[1].0;
+                let high = char::from_u32(0x10f800 + u32::from(source_units[unit]) - 0xd800)
+                    .ok_or("Invalid high surrogate.")?;
+                let low = char::from_u32(0x10f800 + u32::from(source_units[unit + 1]) - 0xd800)
+                    .ok_or("Invalid low surrogate.")?;
+                let split = format!("{}{high}{low}{}", &text[..begin], &text[end..]);
+                let boundary = begin + high.len_utf8();
+                let candidate = self
+                    .inner
+                    .find_from_pos(&split, boundary)
+                    .map_err(|cause| {
+                        Error::with_source(
+                            ErrorCode::LimitExceeded,
+                            "Rule regex exceeded its syntax limit.",
+                            cause,
+                        )
+                    })?;
+                if candidate.is_some_and(|candidate| {
+                    candidate.start() == boundary && candidate.end() == boundary
+                }) {
+                    interior = Some((unit + 1, end));
+                    break;
+                }
+            }
+            if let Some((unit, next_offset)) = interior {
+                output.push(json!({"match":"","start":unit,"end":unit}));
+                offset = next_offset;
+                continue;
+            }
+            let Some(found) = found else {
+                break;
+            };
+            let start_index = positions
+                .binary_search_by_key(&found.start(), |position| position.0)
+                .map_err(|_| "Regex start is not a UTF-16 boundary.")?;
+            let end_index = positions
+                .binary_search_by_key(&found.end(), |position| position.0)
+                .map_err(|_| "Regex end is not a UTF-16 boundary.")?;
+            let start = positions[start_index].1;
+            let end = positions[end_index].1;
+            output.push(json!({"match":view(&source_units[start..end]),"start":start,"end":end}));
+            offset = if found.start() == found.end() {
+                positions
+                    .get(end_index + 1)
+                    .map_or(text.len() + 1, |position| position.0)
+            } else {
+                found.end()
+            };
+        }
+        Ok(output)
+    }
+}
+
+pub fn term_pattern(term: &str, boundary: &str) -> String {
+    let class = if boundary == "lmnu" {
+        r"\p{L}\p{M}\p{N}_"
+    } else {
+        r"\p{L}\p{M}\p{N}"
+    };
+    format!("(?<![{class}]){}(?![{class}])", regex::escape(term))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::require;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    #[test]
+    fn javascript_regex_differential_including_lone_surrogates() -> Result<()> {
+        let sources = crate::json_value::parse(
+            r#"["", "a A 0 _", "é K ſ k s", "中１ 1", "a\nb\r\n", "ababa", "😀x𐀀", "x\ud800y\udfff", "\ud800\udc00", "\u00a0\ufeff\u0085", "a\u2028b\u2029"]"#,
+        )?;
+        let patterns = [
+            r"\d+",
+            r"\D+",
+            r"\w+",
+            r"\W+",
+            r"\s+",
+            r"\S+",
+            r"\b\w+\b",
+            r"\B",
+            ".",
+            "^",
+            "$",
+            ".*?",
+            "a*",
+            "a|ab",
+            "(?=a)",
+            "(?<=a)b",
+            "(a)b\\1",
+            "[\\d_]+",
+            "[^]",
+            "[]",
+            r"\uD800",
+            r"[\uD800-\uDFFF]",
+            r"\uD800\uDC00",
+            r"\u{1F600}",
+            r"\p{L}+",
+            "k|s",
+            "a(?=b)",
+            "a(?!b)",
+        ];
+        for case_sensitive in [true, false] {
+            let mut cases = Vec::new();
+            for source in sources.as_array().ok_or("Missing inputs.")? {
+                for pattern in patterns {
+                    cases.push(json!({"source": source, "pattern": pattern, "caseSensitive":case_sensitive}));
+                }
+            }
+            let mut child = Command::new("node").args(["-e", "let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',v=>s+=v);process.stdin.on('end',()=>process.stdout.write(JSON.stringify(JSON.parse(s).map(({source,pattern,caseSensitive})=>[...source.matchAll(new RegExp(pattern,caseSensitive?'gu':'giu'))].slice(0,16).map(m=>({match:m[0],start:m.index,end:m.index+m[0].length}))))));"])
+                .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+            child
+                .stdin
+                .take()
+                .ok_or("Missing Node stdin.")?
+                .write_all(crate::wtf8::view_json(&json!(cases))?.as_bytes())?;
+            let output = child.wait_with_output()?;
+            require(output.status.success(), "Node regex pin failed.")?;
+            let expected = crate::json_value::parse(std::str::from_utf8(&output.stdout)?)?;
+            for (index, case) in cases.iter().enumerate() {
+                let pattern = case["pattern"].as_str().ok_or("Missing pattern.")?;
+                let source = case["source"].as_str().ok_or("Missing source.")?;
+                let actual = JsRegex::new(pattern, case_sensitive)?.matches(source, Some(16))?;
+                assert_eq!(
+                    json!(actual),
+                    expected[index],
+                    "pattern {pattern:?}, source {source:?}, sensitive {case_sensitive}"
+                );
+            }
+        }
+        Ok(())
+    }
+}

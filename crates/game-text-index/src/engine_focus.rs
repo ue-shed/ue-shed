@@ -44,7 +44,7 @@ impl EngineQuery {
         let (shard, package) = self.package_row(occurrence)?;
         Ok((shard, package, self.package_file(shard, package)?))
     }
-    fn occurrence_id(&mut self, occurrence: usize) -> Result<String> {
+    pub(crate) fn occurrence_id(&mut self, occurrence: usize) -> Result<String> {
         let (_, _, package) = self.package_position(occurrence)?;
         let location = self.occurrence_location(occurrence)?;
         let object = location["objectPath"]

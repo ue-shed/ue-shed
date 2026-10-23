@@ -309,22 +309,41 @@ impl Column {
         })
     }
     pub fn select(&self, rows: &[usize], _arena: &mut Arena) -> Result<Self> {
+        use rayon::prelude::*;
+        // Large selections copy in parallel; a word of selected bits is built at a time.
+        let parallel = rows.len() >= 1 << 16;
         let select_bits = |bits: &Bits| {
-            let mut selected = Bits::new(rows.len());
-            for (index, row) in rows.iter().enumerate() {
-                if bits.get(*row) {
-                    selected.set(index);
-                }
+            let word = |chunk: &[usize]| {
+                chunk
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, row)| bits.get(**row))
+                    .fold(0u64, |word, (index, _)| word | 1 << index)
+            };
+            let words = if parallel {
+                rows.par_chunks(64).map(word).collect()
+            } else {
+                rows.chunks(64).map(word).collect()
+            };
+            Bits {
+                words,
+                len: rows.len(),
             }
-            selected
         };
+        fn gather<T: Copy + Send + Sync>(values: &[T], rows: &[usize], parallel: bool) -> Vec<T> {
+            if parallel {
+                rows.par_iter().map(|row| values[*row]).collect()
+            } else {
+                rows.iter().map(|row| values[*row]).collect()
+            }
+        }
         let data = match &self.data {
             Data::Constant(value) => Data::Constant(*value),
             Data::Bool(values) => Data::Bool(select_bits(values)),
-            Data::Int(values) => Data::Int(rows.iter().map(|row| values[*row]).collect()),
-            Data::Num(values) => Data::Num(rows.iter().map(|row| values[*row]).collect()),
-            Data::Str(values) => Data::Str(rows.iter().map(|row| values[*row]).collect()),
-            Data::Val(values) => Data::Val(rows.iter().map(|row| values[*row]).collect()),
+            Data::Int(values) => Data::Int(gather(values, rows, parallel)),
+            Data::Num(values) => Data::Num(gather(values, rows, parallel)),
+            Data::Str(values) => Data::Str(gather(values, rows, parallel)),
+            Data::Val(values) => Data::Val(gather(values, rows, parallel)),
         };
         Ok(Self {
             data,

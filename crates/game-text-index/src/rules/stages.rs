@@ -129,6 +129,30 @@ impl Measure {
         self.workers += busy;
         output
     }
+    /// Fill a preallocated output in parallel, `run(start, slots)` writing `slots` from index
+    /// `start`. Each worker reuses its own scratch state across its chunk.
+    pub fn fill<U: Copy + Default + Send>(
+        &mut self,
+        len: usize,
+        chunk: usize,
+        run: impl Fn(usize, &mut [U]) + Sync + Send,
+    ) -> Vec<U> {
+        use rayon::prelude::*;
+        let started = Instant::now();
+        let mut output = vec![U::default(); len];
+        let busy = output
+            .par_chunks_mut(chunk)
+            .enumerate()
+            .map(|(index, slots)| {
+                let started = Instant::now();
+                run(index * chunk, slots);
+                started.elapsed()
+            })
+            .sum::<Duration>();
+        self.parallel += started.elapsed();
+        self.workers += busy;
+        output
+    }
     pub fn include(&mut self, other: &Self) {
         self.parallel += other.parallel;
         self.workers += other.workers;

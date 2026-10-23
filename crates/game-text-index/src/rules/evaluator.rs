@@ -293,6 +293,16 @@ struct RuleEvidence {
     rows: Vec<u32>,
     values: Vec<Evidence>,
 }
+/// A row's memo lookup in the hashed scalar path.
+#[derive(Clone, Copy, Default)]
+enum Probe {
+    #[default]
+    Failed,
+    Hit(Slot),
+    Miss(TupleKey),
+    /// Its key needs the packer's overflow tables, which only the serial pass may grow.
+    Unpacked,
+}
 /// A string's format parse, with the one property of it that is read for every row.
 struct Parsed {
     pattern: super::grammar::Pattern,
@@ -965,23 +975,54 @@ impl<'a> Evaluator<'a> {
                     failed: failures,
                 });
             }
-            let mut inputs = vec![Atom::Null; columns.len()];
+            // Rows run in parallel; the first error any row hits is the operator's.
+            let error = std::sync::Mutex::new(None::<Error>);
+            let len = selection.len();
+            let arena = &self.arena;
+            let run = |row: usize, inputs: &mut Vec<Atom>| {
+                inputs.clear();
+                inputs.extend(columns.iter().map(|column| column.get(row, arena)));
+                super::vector::run(arena, &node.op, inputs).unwrap_or_else(|cause| {
+                    let mut first = error
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    first.get_or_insert(cause);
+                    Atom::Null
+                })
+            };
             if node.result == super::compiler::Type::Bool {
-                let mut bits = Bits::new(selection.len());
-                let mut nulls = failures.clone();
-                for row in 0..selection.len() {
-                    if failures.get(row) {
-                        continue;
-                    }
-                    for (input, column) in inputs.iter_mut().zip(&columns) {
-                        *input = column.get(row, &self.arena);
-                    }
-                    match super::vector::run(&self.arena, &node.op, &inputs)? {
-                        Atom::Bool(true) => bits.set(row),
-                        Atom::Null => nulls.set(row),
-                        _ => {}
-                    }
+                let words =
+                    started.fill(len.div_ceil(64), 256, |start, words: &mut [(u64, u64)]| {
+                        let mut inputs = Vec::with_capacity(columns.len());
+                        for (offset, (bits, nulls)) in words.iter_mut().enumerate() {
+                            let word = start + offset;
+                            *nulls = failures.words[word];
+                            for row in word * 64..((word + 1) * 64).min(len) {
+                                if failures.get(row) {
+                                    continue;
+                                }
+                                match run(row, &mut inputs) {
+                                    Atom::Bool(true) => *bits |= 1 << (row % 64),
+                                    Atom::Null => *nulls |= 1 << (row % 64),
+                                    _ => {}
+                                }
+                            }
+                        }
+                    });
+                if let Some(cause) = error
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                {
+                    return Err(cause);
                 }
+                let bits = Bits {
+                    words: words.iter().map(|(bits, _)| *bits).collect(),
+                    len,
+                };
+                let nulls = Bits {
+                    words: words.iter().map(|(_, nulls)| *nulls).collect(),
+                    len,
+                };
                 self.arena.recorder.kernel(
                     node.op.name(),
                     &started,
@@ -995,16 +1036,20 @@ impl<'a> Evaluator<'a> {
                     failed: failures,
                 });
             }
-            let mut output = Vec::with_capacity(selection.len());
-            for row in 0..selection.len() {
-                if failures.get(row) {
-                    output.push(Atom::Null);
-                    continue;
+            let output = started.fill(len, 4096, |start, slots: &mut [Atom]| {
+                let mut inputs = Vec::with_capacity(columns.len());
+                for (offset, slot) in slots.iter_mut().enumerate() {
+                    let row = start + offset;
+                    if !failures.get(row) {
+                        *slot = run(row, &mut inputs);
+                    }
                 }
-                for (input, column) in inputs.iter_mut().zip(&columns) {
-                    *input = column.get(row, &self.arena);
-                }
-                output.push(super::vector::run(&self.arena, &node.op, &inputs)?);
+            });
+            if let Some(cause) = error
+                .into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+            {
+                return Err(cause);
             }
             let mut output = Column::from_atoms(&output, &mut self.arena)?;
             output.failed = failures;
@@ -1041,29 +1086,67 @@ impl<'a> Evaluator<'a> {
                 );
             }
         }
+        // Keys and memo hits in parallel; misses are deduplicated in row order, so interning
+        // order is unchanged.
+        let probes = {
+            let arena = &self.arena;
+            let packer = &self.packer;
+            let memo = &self.cache[cache];
+            started.fill(selection.len(), 4096, |start, probes: &mut [Probe]| {
+                let mut tuple = Vec::with_capacity(columns.len());
+                for (offset, probe) in probes.iter_mut().enumerate() {
+                    let row = start + offset;
+                    if failures.get(row) {
+                        continue;
+                    }
+                    tuple.clear();
+                    tuple.extend(columns.iter().map(|column| column.get(row, arena)));
+                    *probe = match packer.try_key(&tuple) {
+                        Some(key) => match memo.get(&key) {
+                            Some(value) => Probe::Hit(*value),
+                            None => Probe::Miss(key),
+                        },
+                        None => Probe::Unpacked,
+                    };
+                }
+            })
+        };
         let mut tuples = Vec::new();
         let mut missing = FxHashMap::<TupleKey, usize>::default();
         let mut slots = Vec::with_capacity(selection.len());
         let mut tuple = vec![Atom::Null; columns.len()];
-        for row in 0..selection.len() {
-            if failures.get(row) {
-                slots.push((None, None));
-                continue;
-            }
-            for (atom, column) in tuple.iter_mut().zip(&columns) {
-                *atom = column.get(row, &self.arena);
-            }
-            let key = self.packer.key(&tuple);
-            if let Some(value) = self.cache[cache].get(&key) {
-                slots.push((Some(*value), None));
-            } else {
-                let next = tuples.len();
-                let slot = *missing.entry(key).or_insert_with(|| {
-                    tuples.push((key, tuple.clone().into_boxed_slice()));
-                    next
-                });
-                slots.push((None, Some(slot)));
-            }
+        for (row, probe) in probes.into_iter().enumerate() {
+            let key = match probe {
+                Probe::Failed => {
+                    slots.push((None, None));
+                    continue;
+                }
+                Probe::Hit(value) => {
+                    slots.push((Some(value), None));
+                    continue;
+                }
+                Probe::Miss(key) => key,
+                Probe::Unpacked => {
+                    for (atom, column) in tuple.iter_mut().zip(&columns) {
+                        *atom = column.get(row, &self.arena);
+                    }
+                    let key = self.packer.key(&tuple);
+                    if let Some(value) = self.cache[cache].get(&key) {
+                        slots.push((Some(*value), None));
+                        continue;
+                    }
+                    key
+                }
+            };
+            let next = tuples.len();
+            let slot = *missing.entry(key).or_insert_with(|| {
+                for (atom, column) in tuple.iter_mut().zip(&columns) {
+                    *atom = column.get(row, &self.arena);
+                }
+                tuples.push((key, tuple.clone().into_boxed_slice()));
+                next
+            });
+            slots.push((None, Some(slot)));
         }
         let nested = self.arena.recorder.kernel_wall();
         if matches!(node.op, Op::MatchesRole | Op::PathHasPrefix) {

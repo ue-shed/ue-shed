@@ -2,7 +2,7 @@
 use super::columns::Atom;
 use rustc_hash::FxHashMap;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(super) struct Key {
     atoms: [u64; 4],
     len: usize,
@@ -32,6 +32,35 @@ impl Packer {
             }
         };
         (tag << 48) | value
+    }
+    /// The key without touching the overflow tables: up to four atoms, none of them an integer
+    /// outside 48 bits or a NaN. Read-only, so parallel workers can share the packer.
+    pub fn try_key(&self, atoms: &[Atom]) -> Option<Key> {
+        if atoms.len() > 4 {
+            return None;
+        }
+        let mut key = Key {
+            atoms: [0; 4],
+            len: atoms.len(),
+        };
+        for (slot, atom) in key.atoms.iter_mut().zip(atoms) {
+            let (tag, value) = match *atom {
+                Atom::Null => (0x7ff8, 0),
+                Atom::Bool(value) => (0x7ff9, u64::from(value)),
+                Atom::Str(value) => (0x7ffa, u64::from(value.0)),
+                Atom::Val(value) => (0x7ffb, u64::from(value.0)),
+                Atom::Int(value) if (-(1i64 << 47)..(1i64 << 47)).contains(&value) => {
+                    (0x7ffc, value as u64 & 0x0000_ffff_ffff_ffff)
+                }
+                Atom::Num(value) if !f64::from_bits(value).is_nan() => {
+                    *slot = value;
+                    continue;
+                }
+                _ => return None,
+            };
+            *slot = (tag << 48) | value;
+        }
+        Some(key)
     }
     pub fn key(&mut self, atoms: &[Atom]) -> Key {
         let mut key = Key {

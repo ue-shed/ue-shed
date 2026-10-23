@@ -293,6 +293,26 @@ struct RuleEvidence {
     rows: Vec<u32>,
     values: Vec<Evidence>,
 }
+/// A string's format parse, with the one property of it that is read for every row.
+struct Parsed {
+    pattern: super::grammar::Pattern,
+    /// Plural, ordinal, gender and hpp modifiers validate per culture.
+    culture_dependent: bool,
+}
+impl Parsed {
+    fn new(pattern: super::grammar::Pattern) -> Self {
+        let culture_dependent = pattern.modifiers.iter().any(|modifier| {
+            matches!(
+                modifier.name.as_str(),
+                "plural" | "ordinal" | "gender" | "hpp"
+            )
+        });
+        Self {
+            pattern,
+            culture_dependent,
+        }
+    }
+}
 struct DenseSelection {
     suffixes: Vec<Vec<Atom>>,
     groups: Vec<usize>,
@@ -345,6 +365,73 @@ fn diagnostic_code(name: &str) -> Result<u8> {
         .map(|code| code as u8)
         .ok_or_else(|| format!("Unknown diagnostic code {name}.").into())
 }
+/// A format pattern's culture: the first suffix atom, `en` when there is none.
+fn pattern_culture<'a>(arena: &'a Arena, suffix: &[Atom]) -> &'a str {
+    match suffix.first() {
+        Some(Atom::Str(id)) => arena.text(*id),
+        _ => "en",
+    }
+}
+/// The distinct scalar suffixes of a selection, in first-row order, and each row's group.
+/// `None` past 32 distinct suffixes, where a dense memo per suffix no longer pays.
+fn suffix_groups(
+    arena: &Arena,
+    columns: &[Column],
+    len: usize,
+    measure: &mut Measure,
+) -> Option<(Vec<Vec<Atom>>, Vec<usize>)> {
+    const LIMIT: usize = 32;
+    let suffix = |row: usize| {
+        columns
+            .iter()
+            .map(|column| column.get(row, arena))
+            .collect::<Vec<_>>()
+    };
+    let same = |row: usize, known: &[Atom]| {
+        columns
+            .iter()
+            .zip(known)
+            .all(|(column, atom)| column.get(row, arena) == *atom)
+    };
+    if columns
+        .iter()
+        .all(|column| matches!(column.data, super::columns::Data::Constant(_)))
+    {
+        return Some((vec![suffix(0)], vec![0; len]));
+    }
+    const CHUNK: usize = 1 << 16;
+    let chunks = (0..len.div_ceil(CHUNK)).collect::<Vec<_>>();
+    let found = measure.parallel_chunks(&chunks, 1, |chunk| {
+        let mut distinct = Vec::<Vec<Atom>>::new();
+        for row in chunk * CHUNK..((chunk + 1) * CHUNK).min(len) {
+            if !distinct.iter().any(|known| same(row, known)) {
+                if distinct.len() == LIMIT {
+                    return None;
+                }
+                distinct.push(suffix(row));
+            }
+        }
+        Some(distinct)
+    });
+    let mut suffixes = Vec::new();
+    for distinct in found {
+        for value in distinct? {
+            if !suffixes.contains(&value) {
+                if suffixes.len() == LIMIT {
+                    return None;
+                }
+                suffixes.push(value);
+            }
+        }
+    }
+    let groups = measure.parallel_range(len, |row| {
+        suffixes
+            .iter()
+            .position(|known| same(row, known))
+            .unwrap_or_default()
+    });
+    Some((suffixes, groups))
+}
 /// Each row's memoized result, in parallel. A row over its limit is null and failed.
 fn gather(
     measure: &mut Measure,
@@ -384,7 +471,9 @@ struct Evaluator<'a> {
     evidence: Vec<Option<RuleEvidence>>,
     children: HashMap<usize, Atom>,
     dense: Vec<Vec<(Vec<Atom>, super::memo::DenseMemo)>>,
-    parsed: Vec<Option<Arc<super::grammar::Pattern>>>,
+    parsed: Vec<Option<Arc<Parsed>>>,
+    /// The parse every string without format syntax shares.
+    unformatted: Arc<Parsed>,
     cheap_columns: Vec<Option<(Column, Bits)>>,
     independent: Vec<bool>,
     len: usize,
@@ -421,7 +510,7 @@ impl<'a> Evaluator<'a> {
                 })
                 .sum::<usize>()
             + self.packer.bytes()
-            + self.parsed.capacity() * std::mem::size_of::<Option<Arc<super::grammar::Pattern>>>();
+            + self.parsed.capacity() * std::mem::size_of::<Option<Arc<Parsed>>>();
         memory
     }
     fn new(
@@ -453,6 +542,7 @@ impl<'a> Evaluator<'a> {
                 .collect(),
             dense: Vec::new(),
             parsed: Vec::new(),
+            unformatted: Arc::new(Parsed::new(super::grammar::parse_pattern(""))),
             cheap_columns: (0..program.nodes.len()).map(|_| None).collect(),
             independent: vec![false; program.nodes.len()],
             len,
@@ -935,28 +1025,9 @@ impl<'a> Evaluator<'a> {
         {
             // A short, fixed scalar suffix gets a separate dense dictionary memo. Resolve
             // suffixes once per selection, rather than hashing them for every row.
-            let mut suffixes = Vec::<Vec<Atom>>::new();
-            let mut dense_rows = Vec::with_capacity(selection.len());
-            let mut supported = true;
-            let mut suffix = vec![Atom::Null; columns.len() - 1];
-            for row in 0..selection.len() {
-                for (value, column) in suffix.iter_mut().zip(&columns[1..]) {
-                    *value = column.get(row, &self.arena);
-                }
-                let group = suffixes
-                    .iter()
-                    .position(|value| *value == suffix)
-                    .unwrap_or_else(|| {
-                        suffixes.push(suffix.clone());
-                        suffixes.len() - 1
-                    });
-                if suffixes.len() > 32 {
-                    supported = false;
-                    break;
-                }
-                dense_rows.push(group);
-            }
-            if supported {
+            if let Some((suffixes, dense_rows)) =
+                suffix_groups(&self.arena, &columns[1..], selection.len(), &mut started)
+            {
                 return self.dense_scalar(
                     id,
                     selection,
@@ -1091,91 +1162,111 @@ impl<'a> Evaluator<'a> {
                 }
             })
             .collect::<Vec<_>>();
-        if pattern && self.parsed.len() < self.arena.string_count() {
-            self.parsed.resize(self.arena.string_count(), None);
-        }
-        let empty_pattern = Arc::new(super::grammar::parse_pattern(""));
-        let mut missing_patterns = Vec::new();
         if pattern {
-            for row in 0..selection.len() {
-                if failures.get(row) {
-                    continue;
-                }
-                if let Atom::Str(text) = columns[0].get(row, &self.arena)
-                    && self.parsed[text.0 as usize].is_none()
-                {
-                    // A shared empty marker claims this string until the parallel parse finishes.
-                    self.parsed[text.0 as usize] = Some(Arc::clone(&empty_pattern));
-                    missing_patterns.push(text);
-                }
+            if self.parsed.len() < self.arena.string_count() {
+                self.parsed.resize(self.arena.string_count(), None);
             }
-            for batch in missing_patterns.chunks(4096) {
-                let parsed = started.parallel(batch, |text| {
-                    let text = self.arena.text(*text);
-                    if text.len() <= 1_000_000
-                        && !text
-                            .bytes()
-                            .any(|byte| matches!(byte, b'{' | b'}' | b'`' | b'|'))
-                    {
-                        Arc::clone(&empty_pattern)
-                    } else {
-                        Arc::new(super::grammar::parse_pattern(text))
+            let parsed = &self.parsed;
+            let mut missing = started.parallel_range(selection.len(), |row| {
+                match columns[0].get(row, &self.arena) {
+                    Atom::Str(text) if !failures.get(row) && parsed[text.0 as usize].is_none() => {
+                        text.0
                     }
-                });
-                for (text, parsed) in batch.iter().zip(parsed) {
-                    self.parsed[text.0 as usize] = Some(parsed);
+                    _ => u32::MAX,
                 }
+            });
+            missing.retain(|text| *text != u32::MAX);
+            missing.sort_unstable();
+            missing.dedup();
+            let unformatted = &self.unformatted;
+            let parses = started.parallel(&missing, |text| {
+                let text = self.arena.text(StrId(*text));
+                if text.len() <= 1_000_000
+                    && !text
+                        .bytes()
+                        .any(|byte| matches!(byte, b'{' | b'}' | b'`' | b'|'))
+                {
+                    Arc::clone(unformatted)
+                } else {
+                    Arc::new(Parsed::new(super::grammar::parse_pattern(text)))
+                }
+            });
+            for (text, parse) in missing.into_iter().zip(parses) {
+                self.parsed[text as usize] = Some(parse);
             }
         }
-        let mut tasks = Vec::new();
-        let mut row_keys = Vec::with_capacity(selection.len());
-        for (row, group) in groups.iter().copied().enumerate() {
+        let parsed = &self.parsed;
+        let row_keys = started.parallel_range(selection.len(), |row| {
             if failures.get(row) {
-                row_keys.push(None);
-                continue;
+                return None;
             }
             let Atom::Str(text) = columns[0].get(row, &self.arena) else {
-                row_keys.push(None);
-                continue;
+                return None;
             };
             let independent = pattern
-                && self.parsed[text.0 as usize]
+                && parsed[text.0 as usize]
                     .as_ref()
-                    .is_some_and(|pattern| {
-                        !pattern.modifiers.iter().any(|modifier| {
-                            matches!(
-                                modifier.name.as_str(),
-                                "plural" | "ordinal" | "gender" | "hpp"
-                            )
-                        })
-                    });
-            let group = cache_groups[if independent { suffixes.len() } else { group }];
-            if self.dense[cache][group].1.claim(text.0 as usize) {
-                tasks.push((text, group));
+                    .is_some_and(|parse| !parse.culture_dependent);
+            Some((
+                text,
+                cache_groups[if independent {
+                    suffixes.len()
+                } else {
+                    groups[row]
+                }],
+            ))
+        });
+        let mut tasks = Vec::new();
+        for (text, group) in row_keys.iter().flatten() {
+            if self.dense[cache][*group].1.claim(text.0 as usize) {
+                tasks.push((*text, *group));
             }
-            row_keys.push(Some((text, group)));
         }
         let distinct_inputs = tasks.len();
+        if pattern {
+            // Every unformatted string validates to the same result for a culture: build it
+            // once per group.
+            let mut shared = HashMap::new();
+            let mut formatted = Vec::with_capacity(tasks.len());
+            for (text, group) in tasks {
+                let parse = self.parsed[text.0 as usize]
+                    .as_ref()
+                    .ok_or("Missing parsed pattern.")?;
+                if !Arc::ptr_eq(parse, &self.unformatted) {
+                    formatted.push((text, group));
+                    continue;
+                }
+                let value = match shared.get(&group) {
+                    Some(value) => *value,
+                    None => {
+                        let culture = pattern_culture(&self.arena, &self.dense[cache][group].0);
+                        let value = Slot::Value(
+                            self.arena.build(
+                                super::grammar::validate_pattern(
+                                    self.unformatted.pattern.clone(),
+                                    culture,
+                                )
+                                .into(),
+                            )?,
+                        );
+                        shared.insert(group, value);
+                        value
+                    }
+                };
+                self.dense[cache][group].1.insert(text.0 as usize, value);
+            }
+            tasks = formatted;
+        }
         for batch in tasks.chunks(4096) {
             let computed = started.parallel(batch, |(text, group)| {
                 let suffix = &self.dense[cache][*group].0;
                 if pattern {
-                    let parsed = self.parsed[text.0 as usize]
+                    let parse = self.parsed[text.0 as usize]
                         .as_ref()
                         .ok_or("Missing parsed pattern.")?;
-                    let culture = suffix
-                        .first()
-                        .and_then(|value| {
-                            if let Atom::Str(id) = value {
-                                Some(self.arena.text(*id))
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or("en");
                     return Ok(super::out::Out::from(super::grammar::validate_pattern(
-                        (**parsed).clone(),
-                        culture,
+                        parse.pattern.clone(),
+                        pattern_culture(&self.arena, suffix),
                     )));
                 }
                 let mut inputs = Vec::with_capacity(suffix.len() + 1);

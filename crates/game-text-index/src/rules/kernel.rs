@@ -8,11 +8,13 @@ use crate::{Error, ErrorCode, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// A term list's bare alternation, then the same terms with their boundaries.
+type TermExpressions = (js_regex::JsRegex, js_regex::JsRegex);
 pub struct Kernel<'a> {
     pub collator: &'a HostCollator,
     pub roles: HashMap<String, Role>,
     patterns: Mutex<HashMap<(String, bool), Arc<js_regex::JsRegex>>>,
-    terms: Mutex<HashMap<(Atom, Atom, Atom), Arc<js_regex::JsRegex>>>,
+    terms: Mutex<HashMap<(Atom, Atom, Atom), Arc<TermExpressions>>>,
     classes: Mutex<HashMap<Atom, Arc<text::CharacterClass>>>,
     roles_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
     paths_mask: Arc<Mutex<HashMap<StrId, Arc<Bits>>>>,
@@ -194,10 +196,10 @@ impl<'a> Kernel<'a> {
             return Ok(Out::List(Vec::new()));
         }
         let key = (inputs[1], inputs[2], inputs[3]);
-        let expression = {
+        let expressions = {
             let mut cache = self.terms.lock().map_err(|_| "Term cache was poisoned.")?;
-            if let Some(expression) = cache.get(&key) {
-                Arc::clone(expression)
+            if let Some(expressions) = cache.get(&key) {
+                Arc::clone(expressions)
             } else {
                 let alternation = terms
                     .iter()
@@ -213,13 +215,21 @@ impl<'a> Kernel<'a> {
                     &::regex::escape(&format!("(?:{alternation})")),
                     &format!("(?:{alternation})"),
                 );
-                let expression = Arc::new(js_regex::JsRegex::new(&pattern, inputs[2].boolean())?);
-                cache.insert(key, Arc::clone(&expression));
-                expression
+                let sensitive = inputs[2].boolean();
+                let expressions = Arc::new((
+                    js_regex::JsRegex::new(&format!("(?:{alternation})"), sensitive)?,
+                    js_regex::JsRegex::new(&pattern, sensitive)?,
+                ));
+                cache.insert(key, Arc::clone(&expressions));
+                expressions
             }
         };
         let source = optional_text(arena, inputs[0]).ok_or("Missing term source.")?;
-        Ok(expression.matches(source, None)?.into())
+        // Boundaries only remove matches: a text without a bare term match has none.
+        if expressions.0.matches(source, Some(1))?.is_empty() {
+            return Ok(Out::List(Vec::new()));
+        }
+        Ok(expressions.1.matches(source, None)?.into())
     }
     pub fn run(&self, arena: &Arena, op: &Op, inputs: &[Atom]) -> Result<Out> {
         let a = inputs.first().copied().unwrap_or_default();
@@ -268,10 +278,32 @@ impl<'a> Kernel<'a> {
             Op::VisibleLength => out!(text::visible_length(string(arena, a)?)?),
             Op::VisibleWords => out!(text::visible_words(string(arena, a)?)?),
             Op::InteriorLineBreaks => out!(text::interior_line_breaks(string(arena, a)?)),
-            Op::Trim => out!(crate::join_policy::trim(string(arena, a)?)),
-            Op::Lower => out!(string(arena, a)?.to_lowercase()),
+            // A text these leave unchanged is the input atom, not a new string to intern.
+            Op::Trim => {
+                let text = string(arena, a)?;
+                let trimmed = crate::join_policy::trim(text);
+                if trimmed.len() == text.len() {
+                    Out::Atom(a)
+                } else {
+                    out!(trimmed)
+                }
+            }
+            Op::Lower => {
+                let text = string(arena, a)?;
+                let lower = text.to_lowercase();
+                if lower == text {
+                    Out::Atom(a)
+                } else {
+                    out!(lower)
+                }
+            }
             Op::NormalizeLineEndings => {
-                out!(string(arena, a)?.replace("\r\n", "\n").replace('\r', "\n"))
+                let text = string(arena, a)?;
+                if text.contains('\r') {
+                    out!(text.replace("\r\n", "\n").replace('\r', "\n"))
+                } else {
+                    Out::Atom(a)
+                }
             }
             Op::Slice => {
                 let source = js_regex::units(string(arena, a)?);

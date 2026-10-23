@@ -1,3 +1,4 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { parsePO } from "@ue-shed/localization/browser";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,9 +10,7 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
 import { localizationQualityWorkspace } from "./localization-workspace.js";
-
 /** Lines whose findings come from checks that did not change. */
 const cases = [
 	["A", "Take {Count} {Item}", "Nimm {Count}"],
@@ -21,7 +20,6 @@ const cases = [
 	["E", "Empty", ""],
 	["F", "{N}|plural(one=x,other=y)", "{N}|plural(one=x)"]
 ] as const;
-
 /**
  * Finding IDs the same lines had before checks were rated and split. IDs hash the line, culture,
  * rule and evidence; a check whose evidence did not change keeps its findings' IDs, so a saved
@@ -47,7 +45,6 @@ const before = {
 	"F en argument_modifiers": "localization-finding:3e4398818d4d986d",
 	"F en missing_translator_notes": "localization-finding:92b05aef395e7b7d"
 };
-
 describe("finding IDs of unchanged checks", () => {
 	it("stay as they were", () => {
 		const text = corpus(cases.map(([key, source]) => unit(key, source)));
@@ -57,7 +54,7 @@ describe("finding IDs of unchanged checks", () => {
 			success(parsePO(new TextEncoder().encode("")))
 		);
 		const join = joinLocalizationTarget(text, files, files.target);
-		const report = checkLocalizationTarget(text, join, files);
+		const report = indexedTestReports(text, files).localization(undefined, undefined);
 		const workspace = localizationQualityWorkspace(undefined, report, join);
 		const ids = Object.fromEntries(
 			workspace
@@ -71,7 +68,6 @@ describe("finding IDs of unchanged checks", () => {
 			expect([name, ids[name]]).toEqual([name, id]);
 	});
 });
-
 describe("finding places", () => {
 	it("name the first place a finding affects and how many it affects", () => {
 		const text = corpus(cases.map(([key, source]) => unit(key, source)));
@@ -81,7 +77,7 @@ describe("finding places", () => {
 			success(parsePO(new TextEncoder().encode("")))
 		);
 		const join = joinLocalizationTarget(text, files, files.target);
-		const report = checkLocalizationTarget(text, join, files);
+		const report = indexedTestReports(text, files).localization(undefined, undefined);
 		const workspace = localizationQualityWorkspace(undefined, report, join);
 		const { findings } = workspace.export({ target: join.target, filter: "all" });
 		expect(findings.length).toBeGreaterThan(0);

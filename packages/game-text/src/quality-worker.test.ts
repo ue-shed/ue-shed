@@ -28,10 +28,10 @@ const occurrence = (key: string, source: string) => ({
 });
 
 /** Everything a workspace can read from a scan, read the same way from either side. */
-function readAll(quality: LocalizationQuality) {
+const readAll = Effect.fn("Test.GameText.readAllQuality")(function* (quality: LocalizationQuality) {
 	const { findings, metadata } = quality;
 	const positions = Array.from({ length: findings.length }, (_, position) => position);
-	const items = findings.items(positions);
+	const items = yield* findings.items(positions);
 	const cultures = [undefined, ...metadata.join.cultures];
 	return {
 		length: findings.length,
@@ -58,7 +58,7 @@ function readAll(quality: LocalizationQuality) {
 		coverage: metadata.coverage,
 		unsupportedRuleCultures: metadata.unsupportedRuleCultures
 	};
-}
+});
 
 it.live(
 	"scans in the quality worker with the same findings, items and lookups as the host",
@@ -103,7 +103,7 @@ it.live(
 						pageSize: 1
 					})).units[0]!;
 					return {
-						read: readAll(quality),
+						read: yield* readAll(quality),
 						line: quality.metadata.lineOfUnit(unit.id),
 						sourceKey: quality.metadata.sourceKeyOfUnit?.(unit.id),
 						lastProgress: progress.at(-1),
@@ -257,7 +257,11 @@ it.live(
 						);
 					});
 				try {
-					expect(() => next.findings.items([0])).toThrow(/quality scan was released/u);
+					const failed = yield* next.findings.items([0]).pipe(Effect.result);
+					expect(failed).toMatchObject({
+						_tag: "Failure",
+						failure: { message: expect.stringMatching(/quality scan was released/u) }
+					});
 				} finally {
 					calls.mockRestore();
 				}

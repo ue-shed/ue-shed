@@ -167,7 +167,6 @@ export {
 	TextQualityRuleDocumentV2,
 	TextQualityRuleDocumentV3,
 	decodeGameTextRuleDocumentJson,
-	evaluateGameTextSourceQuality,
 	migrateGameTextRuleDocument,
 	resolveLocalizationChecks,
 	GAME_TEXT_RULES_RELATIVE_PATH,
@@ -219,12 +218,8 @@ export {
 } from "./entry-rules.js";
 
 export {
-	type LocalizationCheckLists,
 	type LocalizationLineCheckContext,
-	type LocalizationLineCheckOutput,
 	type LocalizationTranslationVariants,
-	checkLocalizationLine,
-	checkLocalizationTarget,
 	compareLocalizationFindings,
 	compareReportedLocalizationFindings,
 	enabledLocalizationChecks,
@@ -239,7 +234,6 @@ export {
 	localizationPropertyKey,
 	localizationRuleContext,
 	localizationSourceCulture,
-	localizationStringTables,
 	localizationTranslationVariants,
 	reportableInvariantText,
 	DEFAULT_GATE_FAILURES,
@@ -254,13 +248,9 @@ export {
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,
 	type PreparedTextQualityRule,
-	type TextQualityOccurrence,
-	evaluateTextQuality,
 	matchesTextRole,
 	matchesTextRoleMatcher,
 	prepareTextQualityRules,
-	termMatches,
-	textQualityUnitFindings,
 	type TextCountedFinding,
 	type TextFacts,
 	countedFindings,
@@ -310,10 +300,7 @@ export {
 	projectRuleKinds,
 	LocalizationCheckScope,
 	localizationCheckInScope,
-	type CustomCheckContext,
-	customLocalizationChecks,
-	detectCustomCheck,
-	localizationLineCustomFindings
+	customLocalizationChecks
 } from "./entry-checks.js";
 
 export {
@@ -462,6 +449,7 @@ export {
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	type TextQualityQuery,
+	type AsyncTextQualityQuery,
 	TextQualityQueryRunResult,
 	TextQualityQuerySummary,
 	TextQualityRuleFile,

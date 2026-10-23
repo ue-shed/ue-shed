@@ -324,6 +324,25 @@ function recipeBatch({
 	) {
 		text.cultures[culture]!.findings.push(builtin(check, actual, expectation));
 	}
+	function plantFix(text: PlannedText, translation: string, culture = "de") {
+		const mark = text.cultures[culture]!;
+		mark.findings = mark.findings.map((finding) =>
+			finding.check === "localization.format_argument_renamed"
+				? {
+						...finding,
+						fix: {
+							target,
+							culture,
+							namespace: text.namespace,
+							key: text.key,
+							source: text.manifestSource,
+							previousTranslation: mark.po,
+							translation
+						}
+					}
+				: finding
+		);
+	}
 	function signals(text: PlannedText, values: string[], problems = ["finding"]) {
 		text.signals = values;
 		for (const culture of corpusCultures) text.cultures[culture]!.problems = problems;
@@ -452,8 +471,59 @@ function recipeBatch({
 			operation,
 			arguments: args
 		};
-		if (operation === "rename") text.absent.push("localization.format_arguments");
+		if (operation === "rename") {
+			text.absent.push("localization.format_arguments");
+			// Reuse the drawn argument slots in their translation order; no tokenizer supplies this answer.
+			plantFix(
+				text,
+				"Fracht " +
+					targetArgs.map((arg) => `{${arg === extra ? args[chosen]! : arg}}`).join(" ")
+			);
+		}
 	}
+	const nestedNonce = token(6, 44);
+	const nestedSource = `{N}|plural(one="{Owner} has one ${nestedNonce}",other="{Owner} has many ${nestedNonce}")`;
+	const nestedTranslation = `{N}|plural(one="{Wrong} hat eins ${nestedNonce}",other="{Wrong} hat viele ${nestedNonce}")`;
+	const nested = add("format-renamed-nested", nestedSource);
+	translation(nested, nestedTranslation);
+	find(
+		nested,
+		"format_argument_renamed",
+		{ arguments: ["N", "Wrong"], renamed: [{ from: "Wrong", to: "Owner" }] },
+		{ arguments: ["N", "Owner"] }
+	);
+	plantFix(
+		nested,
+		`{N}|plural(one="{Owner} hat eins ${nestedNonce}",other="{Owner} hat viele ${nestedNonce}")`
+	);
+	nested.absent.push("localization.format_arguments");
+	signals(nested, ["long"], ["up_to_date"]);
+	const nestedNear = add("format-renamed-nested-near", nestedSource + " N");
+	// Japanese has one plural category. Today's modifier check reports both sides even when
+	// their nested arguments agree, just as in the argument-modifier-dropped recipe below.
+	for (const text of [nested, nestedNear])
+		for (const side of ["source", "translation"])
+			find(
+				text,
+				"argument_modifiers",
+				{
+					side,
+					issues: [
+						{
+							code: "redundant_modifier",
+							modifier: "plural",
+							argument: "N",
+							forms: [],
+							position: 3
+						}
+					],
+					modifiers: [{ argument: "N", name: "plural" }]
+				},
+				{ modifiers: [{ argument: "N", name: "plural" }] },
+				"ja"
+			);
+	nestedNear.absent.push("localization.format_argument_renamed", "localization.format_arguments");
+	signals(nestedNear, ["long"], ["up_to_date"]);
 
 	const modifier = translatedCase(
 		"argument-modifier-dropped",
@@ -758,6 +828,9 @@ function recipeBatch({
 	const changed = add("changed-since-gather", "Freshly painted boat", {
 		manifestSource: "Old painted boat"
 	});
+	// Only the saved package changed. Keep the native archive at the gathered source so
+	// NativeText does not independently invalidate every foreign archive's recorded source.
+	translation(changed, changed.manifestSource, "en");
 	state(changed, "changed_since_gather", ["changed_since_gather"]);
 	facts(changed, ["translated", "changed_since_gather"]);
 	const removed = add("not-found", "Removed harbor bell", { exists: false, kind: "manifest" });
@@ -1273,6 +1346,7 @@ function recipeBatch({
 		{ arguments: ["Objet"], renamed: [{ from: "Objet", to: "Item" }] },
 		{ arguments: ["Item"] }
 	);
+	plantFix(multi, " Beute {Item}");
 	multi.absent.push("localization.format_arguments");
 	const notesOnly = add("manifest-notes-only", "Manifest context label", {}, rows);
 	probes.push({ case: notesOnly.case, kind: "without-notes", culture: "en", expected: false });
@@ -1553,6 +1627,7 @@ export function deriveCorpusExpectations({
 		cultures: [...corpusCultures],
 		subjects,
 		counts: findingCounts(subjects),
+		findingFixes: true,
 		notExposedYet: corpusNotExposedYet
 	};
 	return expectations;
@@ -2349,6 +2424,34 @@ export function planCorpus({
 	}
 	plan.packages = plan.packages.filter((owner) => owner.texts.length);
 	plan.lines = plan.packages.reduce((count, owner) => count + owner.texts.length, 0);
+	// Placement changes object kinds, identities and cultures. Carry the planted replacement
+	// to those final coordinates, using the same saved preconditions the recipe wrote.
+	for (const owner of plan.packages)
+		for (const text of owner.texts)
+			for (const [culture, mark] of Object.entries(text.cultures))
+				mark.findings = mark.findings.map((finding) =>
+					finding.fix
+						? {
+								...finding,
+								fix: {
+									...finding.fix,
+									target: plan.target,
+									culture,
+									namespace:
+										text.kind === "stringTableEntry"
+											? text.namespace
+											: text.namespace.replace(/ ?\[[^\]]*\]$/u, ""),
+									key: text.key,
+									source: text.manifestSource,
+									previousTranslation: mark.poEntry
+										? mark.po
+										: mark.archive
+											? mark.translation
+											: null
+								}
+							}
+						: finding
+				);
 	plan.expectations = deriveCorpusExpectations(plan);
 	return plan;
 }

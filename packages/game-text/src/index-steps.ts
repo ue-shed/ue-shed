@@ -55,6 +55,7 @@ import {
 } from "./index-context.js";
 import { indexedLocalizationQuality } from "./localization-quality-index.js";
 import { indexedSourceQuality } from "./source-quality-index.js";
+import { indexedLocalizationCheckReport } from "./localization-check-report.js";
 import { openJoinedTarget, readJoinedTarget } from "./joined-target-reader.js";
 import type { importLocalizationTarget } from "./localization-import.js";
 import type { refreshPackageTextLayer } from "./package-text-layer.js";
@@ -857,11 +858,26 @@ export const makeGameTextIndexSteps = (
 							indexedEvidence,
 							rows,
 							ruleDocument,
-							scanOptions
+							scanOptions ?? {},
+							query
 						);
 					}),
 				sourceQuality: (ruleDocument) =>
-					Effect.suspend(() => indexedSourceQuality(joined, summary, ruleDocument))
+					Effect.suspend(() =>
+						indexedSourceQuality(joined, summary, ruleDocument, query)
+					),
+				localizationCheck: (document, options) =>
+					Effect.gen(function* () {
+						return yield* indexedLocalizationCheckReport(
+							joined,
+							yield* corpus,
+							yield* localizationJoin,
+							indexedEvidence,
+							query,
+							options,
+							document
+						);
+					})
 			};
 		}, normalizeFailure);
 		/**

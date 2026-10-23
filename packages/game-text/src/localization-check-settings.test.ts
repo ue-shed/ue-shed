@@ -1,3 +1,4 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { Effect, Schema } from "effect";
 import { parsePO } from "@ue-shed/localization/browser";
 import { describe, expect, it } from "vitest";
@@ -9,8 +10,6 @@ import {
 	success,
 	unit
 } from "./localization.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
 import { localizationCheckDefaults } from "./localization-check-catalogue.js";
 import { BuiltInCheckId } from "./localization-check-ids.js";
 import type {
@@ -27,9 +26,7 @@ import {
 	resolveLocalizationChecks
 } from "./game-text-rules.js";
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
-
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
-
 /** One gathered line with the same archive translation in every culture. */
 function line(
 	source: string,
@@ -43,17 +40,14 @@ function line(
 		[archiveEntry("K", source, translation)],
 		noPO()
 	);
-	const joined = joinLocalizationTarget(text, files, files.target);
-	return checkLocalizationTarget(text, joined, files, options, rules);
+	return indexedTestReports(text, files).localization(rules, options);
 }
-
 const german = (value: LocalizationQualityReport) =>
 	value.findings.filter(
 		(finding): finding is LocalizationQualityFinding =>
 			"culture" in finding && finding.culture === "de"
 	);
 const kinds = (value: LocalizationQualityReport) => german(value).map((finding) => finding.kind);
-
 type V3Fields = Omit<
 	typeof TextQualityRuleDocumentV3.Encoded,
 	"schemaVersion" | "roles" | "rules"
@@ -82,9 +76,7 @@ const v3 = (fields: V3Fields) => {
 };
 const v1 = (fields: V1Fields) =>
 	Schema.decodeUnknownSync(GameTextRuleDocument)({ ...STARTER_GAME_TEXT_RULES, ...fields });
-
 const harbour = "A fairly long sentence about the harbour";
-
 describe("rule file v3", () => {
 	it("resolves every check's own parameter schema and defaults", () => {
 		for (const id of BuiltInCheckId.literals) {
@@ -95,7 +87,6 @@ describe("rule file v3", () => {
 			expect(resolved[id].severity).toBe("low");
 		}
 	});
-
 	it("reports added tags with their own policy when a sibling is disabled or ignores them", () => {
 		const source = "<b>Source</>",
 			translation = "<i>Übersetzung</>";
@@ -143,7 +134,6 @@ describe("rule file v3", () => {
 			expect(kinds(line(source, translation, legacy))).toContain("rich_text_tags_added");
 		}
 	});
-
 	it("reports argument differences when the rename check is disabled", () => {
 		const source = "Hello {Old}",
 			translation = "Hallo {New}";
@@ -188,7 +178,6 @@ describe("rule file v3", () => {
 			);
 		}
 	});
-
 	it("decodes a file of check settings alone and validates scopes and parameters", () => {
 		const document = v3({
 			checks: { length_outlier: { severity: "low", params: { maximumRatio: 4 } } }
@@ -219,7 +208,6 @@ describe("rule file v3", () => {
 		expect(failure(`"segmentSeparator":"//"`)).toBe("invalid_structure");
 		expect(failure("")).toBeUndefined();
 	});
-
 	it("applies enabled, preset, severity and parameters", () => {
 		expect(kinds(line(harbour, "Hafen"))).toContain("length_outlier");
 		const low = line(harbour, "Hafen", v3({ checks: { length_outlier: { severity: "low" } } }));
@@ -270,7 +258,6 @@ describe("rule file v3", () => {
 			)
 		).not.toContain("placeholder_text");
 	});
-
 	it("reads v1 and v2 check fields as their v3 settings and migrates them unchanged", () => {
 		const legacy = v1({
 			disabledLocalizationChecks: ["missing_translator_notes"],
@@ -302,7 +289,6 @@ describe("rule file v3", () => {
 			expect(after.rules).toEqual(before.rules);
 		}
 	});
-
 	it("applies a check's scope after its finding, by culture, role and object path", () => {
 		const roles = [
 			{
@@ -330,8 +316,7 @@ describe("rule file v3", () => {
 				[archiveEntry("K", harbour, "Hafen")],
 				noPO()
 			);
-			const joined = joinLocalizationTarget(text, files, files.target);
-			return kinds(checkLocalizationTarget(text, joined, files, {}, v3({ roles, checks })));
+			return kinds(indexedTestReports(text, files).localization(v3({ roles, checks }), {}));
 		};
 		expect(outlier({ length_outlier: { scope: { cultures: ["de"] } } })).toContain(
 			"length_outlier"
@@ -359,7 +344,6 @@ describe("rule file v3", () => {
 			)
 		).not.toContain("length_outlier");
 	});
-
 	it("lets a check report what an out-of-scope check would have taken", () => {
 		const elsewhere = { scope: { cultures: ["fr"] } };
 		// Added tags are rich_text_tags_added's own finding when rich_text_tags is out of scope.

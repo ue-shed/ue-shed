@@ -59,8 +59,9 @@ export type PackageTextInventoryEntry = typeof PackageTextInventoryEntry.Type;
  * file's package instead of the name its summary serializes, which records keep as `packageName`
  * (uasset-io 1.17), and so every package records its main asset's class as `assetClass`.
  * v9: re-extract with the UE 4.27 decoders and the reader's text-capable gap status (uasset-io
- * 1.18), so cached records do not keep packages partial for text-free gaps. */
-export const PACKAGE_TEXT_FORMAT = "package-text-v9";
+ * 1.18), so cached records do not keep packages partial for text-free gaps.
+ * v10: reconcile stale bytecode identities and fold uniquely attributable pin runtime copies. */
+export const PACKAGE_TEXT_FORMAT = "package-text-v10";
 export const PACKAGE_TEXT_SHARDS = 256;
 export function packageTextShard(path: string) {
 	let hash = 2166136261;
@@ -300,15 +301,22 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		inventory.length - changed.reduce((count, shard) => count + shard.entries.length, 0);
 	const report = () => reportProgress({ phase: "packages", completed, total: inventory.length });
 	report();
-	if (!inventory.length && !Object.keys(manifest.layers).length) {
-		yield* writer.publishCold([
-			{ name: selection[0]!.name, key: selection[0]!.key, source: packageTextColumns([]) }
-		]);
+	if (!inventory.length) {
+		const empty = {
+			name: selection[0]!.name,
+			key: selection[0]!.key,
+			source: packageTextColumns([])
+		};
+		const retired = removed.filter((name) => name !== empty.name);
+		// Retain an empty prepared-inventory marker after deleting the last package, including
+		// when localization layers were imported before this first package preparation.
+		if (!Object.keys(manifest.layers).length) yield* writer.publishCold([empty]);
+		else yield* writer.publishBatch([empty], retired);
 		return {
 			readPackages: 0,
 			reusedPackages: 0,
 			changedShards: 0,
-			removedShards: 0,
+			removedShards: retired.length,
 			published: true,
 			profile: writer.metrics()
 		};

@@ -1,0 +1,559 @@
+import { localizationCheckCatalogue } from "../localization-check-catalogue.js";
+import type { BuiltInCheckId } from "../localization-check-ids.js";
+import { type Arg, asExpr, expr as x } from "./builder.js";
+import type { Expr, Rule } from "./schema.js";
+
+const f = x.field;
+const p = x.param;
+const v = x.var;
+const g = x.get;
+const o = x.object;
+const nonempty = (value: Expr) => x.gt(x.utf16Length(value), 0);
+const positive = (value: Expr) => x.gt(value, 0);
+const item = v("item");
+const source = f("line.comparisonSource");
+const translation = f("latest");
+const translated = nonempty(x.trim(translation));
+const comparable = x.and(f("line.checkable"), f("line.comparable"), x.not(x.isNull(translation)));
+const translatedComparable = x.and(comparable, translated);
+const sourceText = v("text");
+const sourceTexts = x.coalesce(
+	f("sourceVariants"),
+	x.list(x.if(nonempty(x.trim(f("source"))), f("source"), f("comparisonSource")))
+);
+const placeholders = (text: Expr, markers = p("markers"), phrases = p("phrases")) =>
+	x.sortByStart(
+		x.concatLists(
+			x.termListMatches(text, markers, true, "lmnu"),
+			x.termListMatches(text, phrases, false, "lmnu")
+		)
+	);
+const classValue = (value: Record<string, string>) => x.lit(value);
+const category = (value: string) => classValue({ category: value });
+const punctuationSpace = x.lit({ union: [{ category: "P" }, "jsSpace"] });
+const groupKey = (text: Expr) => {
+	const key = x.removeClass(
+		x.lower(text),
+		x.lit({ union: [{ category: "P" }, { category: "S" }, { category: "Z" }, "jsSpace"] })
+	);
+	return x.if(nonempty(key), key, x.trim(text));
+};
+
+/** A built-in rule's expressions; recovery guidance may be bare text. */
+type Body = Pick<Rule, "when" | "actual" | "expectation"> &
+	Omit<Partial<Rule>, "recovery"> & { readonly recovery: Arg };
+
+function builtin(id: BuiltInCheckId, subject: Rule["subject"], expressions: Body): Rule {
+	const descriptor = localizationCheckCatalogue[id];
+	return {
+		id,
+		ruleId: `localization.${id}`,
+		kind: id,
+		label: descriptor.label,
+		subject,
+		family: "builtin",
+		severity: descriptor.severity,
+		params: {
+			...descriptor.defaults,
+			...(id === "placeholder_translation"
+				? {
+						sourceMarkers: localizationCheckCatalogue.placeholder_text.defaults.markers,
+						sourcePhrases: localizationCheckCatalogue.placeholder_text.defaults.phrases
+					}
+				: undefined),
+			...(id === "placeholder_text" ? { sourceTerminology: [] } : undefined),
+			...(id === "segment_separator" ? { separator: null } : undefined)
+		},
+		...expressions,
+		recovery: asExpr(expressions.recovery)
+	};
+}
+const lc = (id: BuiltInCheckId, body: Parameters<typeof builtin>[2]) =>
+	builtin(id, "line_culture", { ...body, when: x.and(comparable, body.when) });
+const line = (id: BuiltInCheckId, body: Parameters<typeof builtin>[2]) =>
+	builtin(id, "line", { ...body, when: x.and(f("checkable"), body.when) });
+const sourceRule = (id: BuiltInCheckId, body: Parameters<typeof builtin>[2]) =>
+	line(id, { each: sourceTexts, eachAs: "text", ...body });
+
+const sourcePattern = x.formatPattern(source, f("culture"));
+const translationPattern = x.formatPattern(translation, f("culture"));
+const expectedArgs = x.formatArgumentNames(sourcePattern);
+const actualArgs = x.formatArgumentNames(translationPattern);
+const missing = x.if(
+	translated,
+	x.minus(x.formatArgumentOrder(sourcePattern), actualArgs),
+	x.list()
+);
+const added = x.minus(
+	x.minus(x.formatArgumentOrder(translationPattern), expectedArgs),
+	p("optionalArguments")
+);
+const canComparePattern = x.and(
+	x.not(x.isNull(x.formatCompiled(sourcePattern))),
+	x.not(x.isNull(x.formatCompiled(translationPattern)))
+);
+const renamed = x.findingField("format_argument_renamed", "actual.renamed");
+const renameCount = x.coalesce(x.count(renamed), 0);
+const pairs = x.zip(added, missing);
+const renamedPairs = x.map(pairs, o({ from: g(item, "0"), to: g(item, "1") }));
+const actionableIssues = (pattern: Expr) =>
+	x.filter(
+		x.formatIssues(pattern),
+		x.not(x.in(g(item, "code"), x.lit(["unsupported_culture", "syntax_limit"])))
+	);
+const tags = x.compareRichTextTags(
+	x.withoutOptionalArgumentTags(source, p("optionalArguments")),
+	x.withoutOptionalArgumentTags(translation, p("optionalArguments"))
+);
+const requiredTags = (field: string) =>
+	x.filter(g(tags, field), x.not(x.in(x.lower(item), x.map(p("optionalTags"), x.lower(item)))));
+const placeholderWord = (text: Expr) => x.trimClass(x.lower(text), punctuationSpace, "end");
+const trimmedTranslation = x.trim(translation);
+const sourcePlaceholders = placeholders(source, p("sourceMarkers"), p("sourcePhrases"));
+const lowerWords = x.map(p("words"), x.lower(item));
+const caseWord = x.first(
+	x.filter(p("caseSensitiveWords"), x.eq(x.lower(item), placeholderWord(trimmedTranslation)))
+);
+const placeholder = x.and(
+	translatedComparable,
+	x.not(f("isNative")),
+	x.le(x.utf16Length(trimmedTranslation), p("maximumLength")),
+	x.anyChar(source, category("L")),
+	x.ne(groupKey(trimmedTranslation), groupKey(source)),
+	x.eq(x.count(sourcePlaceholders), 0),
+	x.not(x.in(placeholderWord(x.trim(source)), lowerWords)),
+	x.if(
+		x.not(
+			x.anyChar(trimmedTranslation, x.lit({ union: [{ category: "L" }, { category: "N" }] }))
+		),
+		x.ge(x.visibleWords(source), p("minimumPunctuationSourceWords")),
+		x.if(
+			x.isNull(caseWord),
+			x.in(placeholderWord(trimmedTranslation), lowerWords),
+			x.startsWith(trimmedTranslation, caseWord)
+		)
+	)
+);
+const compact = x.any(
+	p("compactCultures"),
+	x.or(
+		x.eq(x.lower(f("culture")), x.lower(item)),
+		x.startsWith(x.lower(f("culture")), x.concat(x.lower(item), "-"))
+	)
+);
+const minimumRatio = x.if(compact, p("compactMinimumRatio"), p("minimumRatio"));
+const sourceLength = x.visibleLength(source);
+const translationLength = x.visibleLength(translation);
+const ratio = x.div(translationLength, sourceLength);
+const xmlClosings = g(x.richTextTagBalance(sourceText), "xmlClosings");
+const richBalance = o({
+	opening: g(x.richTextTagBalance(sourceText), "opening"),
+	closing: g(x.richTextTagBalance(sourceText), "closing")
+});
+const braces = x.formatBraceBalance(sourceText);
+const sourceSpaces = o({
+	leading: x.leadingClass(sourceText, "jsSpace"),
+	trailing: x.trailingClass(sourceText, "jsSpace"),
+	repeatedSpaces: x.runs(x.trim(sourceText), x.lit({ chars: " " }), 2)
+});
+const sourcePlaceholderRanges = placeholders(sourceText);
+const reportedPlaceholderRanges = x.flatMap(
+	x.filter(
+		p("sourceTerminology"),
+		x.any(
+			x.occurrences(),
+			x.and(
+				x.eq(g(v("occurrence"), "source"), sourceText),
+				x.matchesRole(v("occurrence"), g(v("termRule"), "role"))
+			),
+			"occurrence"
+		),
+		"termRule"
+	),
+	x.flatMap(
+		g(v("termRule"), "terms"),
+		x.termMatches(sourceText, item, g(v("termRule"), "caseSensitive"))
+	),
+	"termRule"
+);
+const overlapsPlaceholder = (range: Expr) =>
+	x.any(
+		sourcePlaceholderRanges,
+		x.and(x.lt(g(item, "start"), g(range, "end")), x.lt(g(range, "start"), g(item, "end")))
+	);
+const reported = x.filter(reportedPlaceholderRanges, overlapsPlaceholder(v("range")), "range");
+const unreported = x.if(
+	positive(x.count(reported)),
+	x.map(
+		x.filter(
+			sourcePlaceholderRanges,
+			x.not(
+				x.any(
+					reported,
+					x.and(
+						x.lt(g(item, "start"), g(v("placeholder"), "end")),
+						x.lt(g(v("placeholder"), "start"), g(item, "end"))
+					)
+				)
+			),
+			"placeholder"
+		),
+		g(item, "match")
+	),
+	null
+);
+
+/** Opt-in v4 definitions for every built-in that reads its own row, in the existing check catalogue order. */
+export const exampleRules: readonly Rule[] = [
+	lc("format_arguments", {
+		when: x.and(
+			canComparePattern,
+			x.or(
+				positive(x.count(x.drop(missing, renameCount))),
+				positive(
+					x.count(x.minus(added, x.map(x.coalesce(renamed, x.list()), g(item, "from"))))
+				)
+			)
+		),
+		actual: o({
+			arguments: actualArgs,
+			missing: x.sortCodeUnit(x.drop(missing, renameCount)),
+			added: x.sortCodeUnit(
+				x.minus(added, x.map(x.coalesce(renamed, x.list()), g(item, "from")))
+			)
+		}),
+		expectation: o({ arguments: expectedArgs }),
+		recovery:
+			"Keep the source's case-sensitive format argument names in the translation, including arguments inside modifier forms."
+	}),
+	builtin("argument_modifiers", "line_culture", {
+		each: x.lit(["source", "translation"]),
+		when: x.and(
+			f("line.checkable"),
+			f("line.comparable"),
+			x.if(
+				x.eq(item, "source"),
+				positive(x.count(actionableIssues(sourcePattern))),
+				x.and(
+					translated,
+					x.or(
+						positive(x.count(actionableIssues(translationPattern))),
+						x.and(
+							canComparePattern,
+							x.ne(
+								x.formatModifiers(sourcePattern),
+								x.formatModifiers(translationPattern)
+							)
+						)
+					)
+				)
+			)
+		),
+		actual: o({
+			side: item,
+			issues: x.if(
+				x.eq(item, "source"),
+				actionableIssues(sourcePattern),
+				actionableIssues(translationPattern)
+			),
+			modifiers: x.if(
+				x.eq(item, "source"),
+				x.formatModifiers(sourcePattern),
+				x.formatModifiers(translationPattern)
+			)
+		}),
+		expectation: o({ modifiers: x.formatModifiers(sourcePattern) }),
+		recovery: x.if(
+			x.eq(item, "source"),
+			"Repair the source's modifier syntax and culture-required forms before translating it.",
+			"Repair modifier syntax and culture-required forms; preserve the source's argument modifiers."
+		)
+	}),
+	lc("rich_text", {
+		when: x.not(x.richTextValid(source, translation)),
+		actual: x.richTextCounts(translation),
+		expectation: x.richTextCounts(source),
+		recovery: "Balance opening rich-text tags with </>, retaining intentional source imbalance."
+	}),
+	lc("po_escape_safety", {
+		let: { matches: x.findAll(translation, x.lit(["\\n", "\\r", "\\t"])) },
+		when: positive(x.count(v("matches"))),
+		actual: o({
+			positions: x.map(v("matches"), g(item, "start")),
+			sequences: x.map(v("matches"), g(item, "match"))
+		}),
+		expectation: o({ roundTripSafe: true }),
+		recovery:
+			"Replace literal backslash control sequences with actual control characters or reword them before Unreal's PO round trip."
+	}),
+	lc("whitespace", {
+		when: x.and(
+			x.ne(f("po"), ""),
+			x.ne(f("archive"), ""),
+			x.or(
+				x.ne(
+					g(x.unrealWhitespace(source), "leading"),
+					g(x.unrealWhitespace(translation), "leading")
+				),
+				x.ne(
+					g(x.unrealWhitespace(source), "trailing"),
+					g(x.unrealWhitespace(translation), "trailing")
+				),
+				x.unrealUnsafeWhitespace(translation)
+			)
+		),
+		actual: x.unrealWhitespace(translation),
+		expectation: x.unrealWhitespace(source),
+		recovery:
+			"Preserve the source's intentional boundary whitespace; remove unsafe boundary spaces or tabs."
+	}),
+	builtin("empty_translation", "line_culture", {
+		when: x.and(f("line.checkable"), x.or(x.eq(f("po"), ""), x.eq(f("archive"), ""))),
+		actual: o({ entryExists: true, translation: "" }),
+		expectation: o({ nonEmptyTranslation: true }),
+		translationOrigin: x.if(x.eq(f("po"), ""), "po", "archive"),
+		recovery:
+			"Provide a non-empty translation in the culture's PO entry, then import and compile with Unreal."
+	}),
+	line("missing_translator_notes", {
+		when: x.and(
+			x.eq(x.count(f("manifestNotes")), 0),
+			x.not(x.any(x.occurrences(), nonempty(x.trim(g(item, "devNotes")))))
+		),
+		actual: o({ noteCount: 0 }),
+		expectation: o({ minimumNotes: 1 }),
+		recovery: "Add translator context to a source occurrence or manifest-producing source."
+	}),
+	lc("format_argument_renamed", {
+		when: x.and(canComparePattern, positive(x.count(pairs))),
+		actual: o({ arguments: actualArgs, renamed: renamedPairs }),
+		expectation: o({ arguments: expectedArgs }),
+		fix: x.if(
+			x.and(
+				f("line.gathered"),
+				x.not(
+					x.any(
+						f("unknownReasons"),
+						x.in(
+							item,
+							x.lit([
+								"duplicate_manifest_identity",
+								"duplicate_archive_identity",
+								"duplicate_po_identity"
+							])
+						)
+					)
+				),
+				x.eq(x.count(missing), 1),
+				x.eq(x.count(added), 1)
+			),
+			x.formatRenameArgument(translation, x.first(added), x.first(missing), f("culture")),
+			null
+		),
+		recovery:
+			"Use the source's argument names unchanged; translate the words around {arguments}, never the names inside them."
+	}),
+	lc("rich_text_tags", {
+		when: x.and(translated, positive(x.count(requiredTags("missing")))),
+		actual: o({
+			tags: g(tags, "translationTags"),
+			missing: requiredTags("missing"),
+			added: requiredTags("added")
+		}),
+		expectation: o({ tags: g(tags, "sourceTags") }),
+		recovery:
+			"Keep the source's rich-text tags, such as <b>…</> and <img/>, around the matching words; don't add or drop any."
+	}),
+	lc("rich_text_tag_case", {
+		when: x.and(translated, positive(x.count(g(tags, "changed")))),
+		actual: o({ changed: g(tags, "changed") }),
+		expectation: o({ sameCase: true }),
+		recovery: "Spell rich-text tag names exactly as the source does."
+	}),
+	lc("line_breaks", {
+		when: x.and(
+			translated,
+			x.ne(x.interiorLineBreaks(source), x.interiorLineBreaks(translation))
+		),
+		actual: o({ lineBreaks: x.interiorLineBreaks(translation) }),
+		expectation: o({ lineBreaks: x.interiorLineBreaks(source) }),
+		recovery:
+			"Use as many line breaks as the source, so the text keeps its layout in the same space."
+	}),
+	lc("segment_separator", {
+		when: x.and(
+			translated,
+			x.not(x.isNull(p("separator"))),
+			x.ne(
+				x.countOccurrences(source, p("separator")),
+				x.countOccurrences(translation, p("separator"))
+			)
+		),
+		actual: o({
+			separator: p("separator"),
+			count: x.countOccurrences(translation, p("separator"))
+		}),
+		expectation: o({
+			separator: p("separator"),
+			count: x.countOccurrences(source, p("separator"))
+		}),
+		recovery: x.concat(
+			'Keep each "',
+			p("separator"),
+			'" segment of the source in the translation, in the same order.'
+		)
+	}),
+	lc("length_outlier", {
+		when: x.and(
+			translatedComparable,
+			x.not(x.finding("placeholder_translation")),
+			x.ge(sourceLength, p("minimumSourceLength")),
+			x.gt(translationLength, 0),
+			x.or(x.lt(ratio, minimumRatio), x.gt(ratio, p("maximumRatio")))
+		),
+		actual: o({ length: translationLength, ratio: x.round(ratio, 2) }),
+		expectation: o({
+			sourceLength,
+			minimumRatio: x.round(minimumRatio, 2),
+			maximumRatio: p("maximumRatio")
+		}),
+		recovery:
+			"Check that the translation belongs to this line and is complete; a translation this much shorter or longer is often another line's text."
+	}),
+	...(["outdated_translation", "source_line_endings_changed"] as const).map((id) =>
+		lc(id, {
+			when: x.and(
+				translatedComparable,
+				x.not(x.isNull(f("line.manifestSource"))),
+				x.eq(f("latestOrigin"), "archive"),
+				x.not(x.isNull(f("archive"))),
+				x.not(f("isNative")),
+				x.in("needs_update", f("facts")),
+				id === "source_line_endings_changed"
+					? x.and(
+							x.ne(f("archiveSource"), f("expectedSource")),
+							x.eq(
+								x.normalizeLineEndings(f("archiveSource")),
+								x.normalizeLineEndings(f("expectedSource"))
+							)
+						)
+					: x.or(
+							x.eq(f("archiveSource"), f("expectedSource")),
+							x.ne(
+								x.normalizeLineEndings(f("archiveSource")),
+								x.normalizeLineEndings(f("expectedSource"))
+							)
+						)
+			),
+			actual: o({ translatedSource: f("archiveSource") }),
+			expectation: o({ source: f("expectedSource") }),
+			recovery:
+				id === "outdated_translation"
+					? "Translate the current source text and import it; Unreal ships the source instead of a translation made for older text."
+					: "Save the source with the line endings it was translated with, or re-import the translation against the current source."
+		})
+	),
+	lc("rich_text_tags_added", {
+		let: {
+			additions: x.filter(
+				requiredTags("added"),
+				x.not(
+					x.in(
+						x.lower(item),
+						x.map(
+							x.coalesce(x.findingField("rich_text_tags", "actual.added"), x.list()),
+							x.lower(item)
+						)
+					)
+				)
+			)
+		},
+		when: x.and(translated, positive(x.count(v("additions")))),
+		actual: o({ tags: g(tags, "translationTags"), added: v("additions") }),
+		expectation: o({ tags: g(tags, "sourceTags") }),
+		recovery:
+			"Style the same words as the source; list a tag a culture may add in the rule file's optionalTags."
+	}),
+	lc("placeholder_translation", {
+		when: placeholder,
+		actual: o({ translation: trimmedTranslation }),
+		expectation: o({ translatedText: true }),
+		recovery:
+			"Translate the line; the culture ships this placeholder to players in place of the text."
+	}),
+	sourceRule("placeholder_text", {
+		when: positive(x.count(sourcePlaceholderRanges)),
+		actual: o({
+			source: sourceText,
+			matches: x.map(sourcePlaceholderRanges, g(item, "match"))
+		}),
+		expectation: o({ finalText: true }),
+		extra: o({ unreportedMatches: unreported }),
+		recovery:
+			"Replace the placeholder with final text, or keep the line out of the build until it has some."
+	}),
+	sourceRule("source_whitespace", {
+		when: x.and(
+			f("gathered"),
+			x.not(f("bytecodeOnly")),
+			x.or(
+				nonempty(g(sourceSpaces, "leading")),
+				nonempty(g(sourceSpaces, "trailing")),
+				x.gt(g(sourceSpaces, "repeatedSpaces"), 0)
+			)
+		),
+		actual: o({
+			source: sourceText,
+			leading: g(sourceSpaces, "leading"),
+			trailing: g(sourceSpaces, "trailing"),
+			repeatedSpaces: g(sourceSpaces, "repeatedSpaces")
+		}),
+		expectation: o({ trimmed: true }),
+		recovery:
+			"Remove spaces and line breaks at the ends and doubled spaces; build spacing into the format pattern instead of joining text."
+	}),
+	sourceRule("source_markup", {
+		when: x.and(
+			x.not(f("bytecodeOnly")),
+			x.or(
+				x.ne(g(richBalance, "opening"), g(richBalance, "closing")),
+				x.ne(g(braces, "opening"), g(braces, "closing")),
+				positive(x.count(xmlClosings))
+			)
+		),
+		actual: o({
+			source: sourceText,
+			richText: richBalance,
+			braces,
+			xmlClosings: x.if(positive(x.count(xmlClosings)), x.distinct(xmlClosings), null)
+		}),
+		expectation: o({ balanced: true }),
+		recovery: x.if(
+			positive(x.count(xmlClosings)),
+			"Close rich-text tags with </>; Unreal shows a closing such as </Name> as text.",
+			"Close each rich-text tag with </> and pair each { with }; escape a literal brace with a backtick."
+		)
+	}),
+	sourceRule("number_only_text", {
+		when: x.and(
+			x.not(f("bytecodeOnly")),
+			x.not(x.contains(sourceText, "{")),
+			x.not(x.anyChar(sourceText, category("L"))),
+			x.anyChar(sourceText, category("N"))
+		),
+		actual: o({ source: sourceText }),
+		expectation: o({ cultureInvariant: true }),
+		recovery:
+			"Make number-only text culture invariant, or format the number with FText::AsNumber, so translators are not sent it."
+	}),
+	line("string_table_key_collision", {
+		when: x.gt(x.count(f("stringTables")), 1),
+		actual: o({
+			tables: x.take(f("stringTables"), 16),
+			tableCount: x.count(f("stringTables"))
+		}),
+		expectation: o({ oneTablePerKey: true }),
+		recovery:
+			"Give each String Table its own namespace or rename the key; Unreal keeps one entry per namespace and key."
+	})
+];

@@ -12,8 +12,42 @@ import { corpusLocalization } from "./game-text-corpus-localization.ts";
 import {
 	corpusDefectsFor,
 	triageCorpusDifferences,
-	formatCorpusComparisonSummary
+	formatCorpusComparisonSummary,
+	type CorpusKnownDefect
 } from "./game-text-corpus-defects.ts";
+
+/** A subject pin for the triage tests, since every pin the corpus still needs is a probe. */
+const syntheticPin: CorpusKnownDefect = {
+	case: "empty-with-source-edge",
+	defects: ["synthetic-whitespace"],
+	withCheck: "localization.empty_translation",
+	kind: "subject",
+	status: "defect",
+	why: "An empty translation should only produce empty_translation among translation-shape checks, as documented by the check contract. Boundary whitespace cannot be repaired until a translation exists.",
+	rightAnswer: {
+		findings: [
+			{
+				check: "localization.empty_translation",
+				actual: { entryExists: true, translation: "" },
+				expectation: { nonEmptyTranslation: true }
+			}
+		]
+	},
+	actual: {
+		findings: [
+			{
+				check: "localization.empty_translation",
+				actual: { entryExists: true, translation: "" },
+				expectation: { nonEmptyTranslation: true }
+			},
+			{
+				check: "localization.whitespace",
+				actual: { leading: "", trailing: "", lineBreaks: 0 },
+				expectation: { leading: " ", trailing: "", lineBreaks: 0 }
+			}
+		]
+	}
+};
 
 const options = { root: "/Game/Fixture/Corpus", seed: 1, lines: 256, density: 1 };
 const plan = planCorpus(options);
@@ -178,6 +212,33 @@ test("the expectation derivation never imports checks, rules or index code", () 
 			/from ["'][^"']*(?:@ue-shed|packages\/|localization-checks|text-problems|index\.js)/u
 		);
 });
+test("saved-source changes keep the native archive at the gathered source", () => {
+	for (const seed of [1, 73139]) {
+		const fixture = planCorpus({ ...options, seed });
+		const changed = fixture.packages
+			.flatMap((item) => item.texts)
+			.find((text) => text.case === "changed-since-gather@0");
+		assert.ok(changed);
+		assert.notEqual(changed.source, changed.manifestSource);
+		assert.equal(changed.cultures.en?.translation, changed.manifestSource);
+		assert.equal(changed.cultures.en?.archiveSource, changed.manifestSource);
+		for (const culture of ["de", "fr", "ja"])
+			assert.equal(changed.cultures[culture]?.archiveSource, changed.cultures.en.translation);
+		assert.ok(
+			fixture.expectations.subjects
+				.filter((subject) => subject.case === changed.case)
+				.every(
+					(subject) =>
+						subject.facts.includes("translated") &&
+						subject.facts.includes("changed_since_gather") &&
+						!subject.findings.some(
+							(finding) => finding.check === "localization.outdated_translation"
+						)
+				)
+		);
+	}
+});
+
 test("plan and expectation decoders reject invalid versions, missing fields and inconsistent counts", () => {
 	assert.deepEqual(decodeCorpusPlan(JSON.stringify(plan)), plan);
 	assert.deepEqual(
@@ -236,10 +297,14 @@ test("localization has all cultures and never emits invariant or String Table re
 	);
 });
 test("known defects cannot hide unrelated changes or silently survive a fix", () => {
-	const caseName = "compiled-copy-differs@0";
-	const intent = plan.expectations.subjects.filter((subject) => subject.case === caseName);
+	const caseName = "empty-with-source-edge@0";
+	const intent = plan.expectations.subjects.filter(
+		(subject) =>
+			subject.case === caseName &&
+			subject.findings.some((finding) => finding.check === "localization.empty_translation")
+	);
 	const actual = intent.map((subject) => {
-		const defect = corpusDefectsFor(intent).find(
+		const defect = corpusDefectsFor(intent, [], [syntheticPin]).find(
 			(defect) => defect.case === caseName && defect.culture === subject.culture
 		)!;
 		return { ...subject, ...JSON.parse(JSON.stringify(defect.actual)) };
@@ -247,20 +312,28 @@ test("known defects cannot hide unrelated changes or silently survive a fix", ()
 	const expected = { ...plan.expectations, subjects: intent };
 	const active = intent;
 	const differences = diffCorpus(expected, actual);
-	assert.deepEqual(triageCorpusDifferences(differences, active), {
+	assert.deepEqual(triageCorpusDifferences(differences, active, [], [syntheticPin]), {
 		unexpected: [],
 		stale: [],
-		pinned: { total: intent.length, byDefect: { "compiled-copy-differs": intent.length } }
+		pinned: {
+			total: intent.length,
+			byDefect: { "synthetic-whitespace": intent.length }
+		}
 	});
 	const fixed = diffCorpus(expected, [intent[0]!, ...actual.slice(1)]);
-	assert.equal(triageCorpusDifferences(fixed, active).stale.length, 1);
+	assert.equal(triageCorpusDifferences(fixed, active, [], [syntheticPin]).stale.length, 1);
 	const drift = diffCorpus(expected, [
 		{ ...actual[0], source: "unrelated regression" },
 		...actual.slice(1)
 	]);
-	assert.equal(triageCorpusDifferences(drift, active).unexpected.length, 1);
+	assert.equal(triageCorpusDifferences(drift, active, [], [syntheticPin]).unexpected.length, 1);
 	// A second copy of a pinned result is still a failure, even when it matches the defect.
-	const twice = triageCorpusDifferences(diffCorpus(expected, [...actual, actual[0]!]), active);
+	const twice = triageCorpusDifferences(
+		diffCorpus(expected, [...actual, actual[0]!]),
+		active,
+		[],
+		[syntheticPin]
+	);
 	assert.equal(twice.unexpected.length, 1);
 	assert.equal(twice.stale.length, 0);
 	assert.equal(twice.pinned.total, intent.length);
@@ -514,7 +587,7 @@ test("canonical seed covers every recipe and source kind; density repeats recipe
 					.map((text) => text.case.split("@")[0])
 			)
 		).size,
-		158
+		160
 	);
 	assert.deepEqual(
 		new Set(plan.packages.flatMap((owner) => owner.texts.map((text) => text.kind))),
@@ -616,7 +689,7 @@ test("each Blueprint variable contributes its own editor category scaffold", () 
 	}
 });
 
-test("line-page defect assertions compose with a wired pin's compiled-copy defect", () => {
+test("line-page defect assertions retain culture scope independently of compiled pin copies", () => {
 	const variety = planCorpus({ ...options, seed: 73131, density: 5, lines: 1000 });
 	const probes = variety.probes.map((probe) => ({
 		case: probe.case,
@@ -633,32 +706,36 @@ test("line-page defect assertions compose with a wired pin's compiled-copy defec
 		);
 		assert.ok(defect);
 		assert.deepEqual(defect.rightAnswer, ["up_to_date"]);
-		assert.deepEqual(
-			defect.actual,
-			subject.kind === "blueprintPin" ? ["translation", "finding"] : ["translation"]
-		);
+		assert.deepEqual(defect.actual, ["translation"]);
 	}
 });
 
 test("known-defect assertions use set semantics for signals while retaining exact evidence", () => {
-	const sample = planCorpus({ ...options, seed: 19088743, density: 5, lines: 10_000 });
-	const subject = sample.expectations.subjects.find(
-		(subject) => subject.kind === "blueprintPin" && subject.signals.includes("long")
+	const planted = plan.expectations.subjects.find(
+		(subject) =>
+			subject.case === "empty-with-source-edge@0" &&
+			subject.findings.some((finding) => finding.check === "localization.empty_translation")
 	);
-	assert.ok(subject);
-	const expected = { ...sample.expectations, subjects: [subject] };
+	assert.ok(planted);
+	const subject = { ...planted, signals: ["long", "evidence_only"] };
+	const expected = { ...plan.expectations, subjects: [subject] };
 	const actual = {
 		...subject,
-		signals: ["shared", ...subject.signals].reverse(),
-		problems: ["finding"]
+		...JSON.parse(JSON.stringify(corpusDefectsFor([subject], [], [syntheticPin])[0]!.actual)),
+		signals: [...subject.signals].reverse()
 	};
-	const result = triageCorpusDifferences(diffCorpus(expected, [actual]), [subject]);
+	const result = triageCorpusDifferences(
+		diffCorpus(expected, [actual]),
+		[subject],
+		[],
+		[syntheticPin]
+	);
 	assert.deepEqual(result, {
 		unexpected: [],
 		stale: [],
-		pinned: { total: 1, byDefect: { "wired-pin-shared": 1 } }
+		pinned: { total: 1, byDefect: { "synthetic-whitespace": 1 } }
 	});
-	assert.equal(triageCorpusDifferences([], [subject]).stale.length, 1);
+	assert.equal(triageCorpusDifferences([], [subject], [], [syntheticPin]).stale.length, 1);
 });
 
 test("background subjects require no defect pins, including their pure pin placements", () => {
@@ -755,7 +832,7 @@ test("canonical compare output reports the number and classes of pinned disagree
 	assert.deepEqual(result.unexpected, []);
 	assert.deepEqual(result.stale, []);
 	assert.equal(result.pinned.total, defects.length);
-	assert.equal(result.pinned.byDefect["native-source-override"], 6);
+	assert.equal(result.pinned.byDefect["native-source-override"], undefined);
 	const output = formatCorpusComparisonSummary(
 		subjects.length,
 		differences.length,

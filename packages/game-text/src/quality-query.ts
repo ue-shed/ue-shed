@@ -1,4 +1,9 @@
-import { Schema } from "effect";
+import { Schema, type Effect } from "effect";
+import {
+	hydrateQualityRead,
+	materializeQualityRead,
+	type QualityRead
+} from "./quality-hydration.js";
 import {
 	TextQualityAffectedOccurrence,
 	TextQualityRoleSummary,
@@ -362,6 +367,24 @@ export interface TextQualityQuery {
 	readonly summary: () => TextQualityQuerySummary;
 }
 
+/** Source-quality presentation backed by asynchronous native hydration. */
+export interface AsyncTextQualityQuery {
+	readonly focus: (
+		request: TextQualityFocusRequest
+	) => Effect.Effect<TextQualityFocus | undefined, import("./index-failure.js").IndexFailure>;
+	readonly search: (
+		request: TextQualitySearchRequest
+	) => Effect.Effect<TextQualitySearchPage, import("./index-failure.js").IndexFailure>;
+	readonly export: (
+		filter: TextQualityFilter
+	) => Effect.Effect<TextQualityReport, import("./index-failure.js").IndexFailure>;
+	readonly summary: () => TextQualityQuerySummary;
+}
+export interface AsyncTextQualityFindingList extends Omit<TextQualityFindingList, "items"> {
+	readonly items: (
+		positions: readonly number[]
+	) => Effect.Effect<readonly TextQualityFinding[], import("./index-failure.js").IndexFailure>;
+}
 /**
  * A report's findings by position, in report order. A list may keep only compact facts and
  * rebuild findings on demand; `items` returns them for the positions asked, in that order.
@@ -460,10 +483,10 @@ function findingFocus(
  * The presentation query over a report whose findings are a list. Counts read only kinds;
  * search, focus and export hydrate just the findings they return.
  */
-export function textQualityQueryOf(
+function textQualityReads(
 	report: Omit<TextQualityReport, "findings">,
-	list: TextQualityFindingList
-): TextQualityQuery {
+	list: Omit<TextQualityFindingList, "items">
+) {
 	const matchedByFilter = new Map<TextQualityFilter, Uint32Array>();
 	const matched = (filter: TextQualityFilter) => {
 		let positions = matchedByFilter.get(filter);
@@ -493,15 +516,19 @@ export function textQualityQueryOf(
 	};
 
 	return {
-		export: (filter) => {
+		export: function* (
+			filter: TextQualityFilter
+		): QualityRead<TextQualityReport, TextQualityFinding> {
 			const positions = Array.from(matched(filter));
 			const findings: TextQualityFinding[] = [];
 			for (let start = 0; start < positions.length; start += EXPORT_BATCH)
-				findings.push(...list.items(positions.slice(start, start + EXPORT_BATCH)));
+				findings.push(...(yield positions.slice(start, start + EXPORT_BATCH)));
 			return { ...report, findings };
 		},
 		summary: () => summary,
-		search: (request) => {
+		search: function* (
+			request: TextQualitySearchRequest
+		): QualityRead<TextQualitySearchPage, TextQualityFinding> {
 			const positions = matched(request.filter);
 			// Equal findings share an ID; a cursor names the first of them.
 			const cursor = request.cursor === undefined ? undefined : list.find(request.cursor);
@@ -517,7 +544,7 @@ export function textQualityQueryOf(
 				if (positions[low] === cursor) start = low + 1;
 			}
 			const page = Array.from(positions.subarray(start, start + request.pageSize));
-			const findings = list.items(page);
+			const findings = yield page;
 			const final = page.at(-1);
 			return {
 				findings: findings.map((finding, index) =>
@@ -529,14 +556,43 @@ export function textQualityQueryOf(
 					: undefined)
 			};
 		},
-		focus: (request) => {
+		focus: function* (
+			request: TextQualityFocusRequest
+		): QualityRead<TextQualityFocus | undefined, TextQualityFinding> {
 			const position = list.find(request.id);
 			if (position === undefined) return undefined;
-			return findingFocus(list.items([position])[0]!, list.id(position), request);
+			return findingFocus((yield [position])[0]!, list.id(position), request);
 		}
 	};
 }
 
+/** Native presentation hydrates only the selected finding positions. */
+export function asyncTextQualityQueryOf(
+	report: Omit<TextQualityReport, "findings">,
+	list: AsyncTextQualityFindingList
+): AsyncTextQualityQuery {
+	const reads = textQualityReads(report, list);
+	return {
+		summary: reads.summary,
+		search: (request) => hydrateQualityRead(() => reads.search(request), list.items),
+		focus: (request) => hydrateQualityRead(() => reads.focus(request), list.items),
+		export: (filter) => hydrateQualityRead(() => reads.export(filter), list.items)
+	};
+}
+
+/** Pure presentation over already materialized findings. */
+export function textQualityQueryOf(
+	report: Omit<TextQualityReport, "findings">,
+	list: TextQualityFindingList
+): TextQualityQuery {
+	const reads = textQualityReads(report, list);
+	return {
+		summary: reads.summary,
+		search: (request) => materializeQualityRead(reads.search(request), list.items),
+		focus: (request) => materializeQualityRead(reads.focus(request), list.items),
+		export: (filter) => materializeQualityRead(reads.export(filter), list.items)
+	};
+}
 /** The presentation query over a report whose findings are all in memory. */
 export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 	const { findings, ...rest } = report;

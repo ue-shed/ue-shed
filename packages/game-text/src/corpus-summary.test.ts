@@ -1,33 +1,30 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { textCorpusQuery } from "./query.test-support.js";
 import { LocalizationStatusReport, localizationStatusReport } from "./localization-status.js";
 import { localizationProgressReport, LocalizationProgressReport } from "./localization-reports.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
 import { textQualityQuery } from "./quality-query.js";
-import { evaluateTextQuality } from "./quality.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { corpus, evidence } from "./localization.test-support.js";
 import { TextCorpusDiagnostic, TextPackageCoverage, type TextCorpus } from "./schema.js";
 import { TextCorpusDiagnosticSummary, textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import { GameTextInvestigationExport, GameTextInvestigationPreset } from "./investigation.js";
-
-const diagnostics = Array.from({ length: 1_000 }, (_, index) =>
+const diagnostics = Array.from({ length: 1000 }, (_, index) =>
 	TextCorpusDiagnostic.make({
 		code: TextCorpusDiagnostic.fields.code.literals[index % 3] ?? "package_inspection_failed",
 		message: "Synthetic reader diagnostic.",
 		packageFile: `Content/Text/Package${index}.uasset`
 	})
 );
-const packageCoverage = Array.from({ length: 1_200 }, (_, index) =>
+const packageCoverage = Array.from({ length: 1200 }, (_, index) =>
 	TextPackageCoverage.make({
 		packageFile: `Content/Text/Package${index}.uasset`,
 		status: TextPackageCoverage.fields.status.literals[index % 3] ?? "complete"
 	})
 );
 const text = { ...corpus(), diagnostics, packageCoverage };
-
 describe("bounded corpus reports", () => {
 	it("loc status retains not_gatherable status and its optional count", () => {
 		const text: TextCorpus = {
@@ -63,7 +60,7 @@ describe("bounded corpus reports", () => {
 		];
 		for (const report of reports) {
 			expect(report.diagnostics).toEqual(diagnostics.slice(0, 200));
-			expect(report.diagnosticCount).toBe(1_000);
+			expect(report.diagnosticCount).toBe(1000);
 			expect(report.diagnosticsOmitted).toBe(800);
 			expect(report.diagnosticCounts).toEqual({
 				package_inspection_failed: 334,
@@ -88,21 +85,31 @@ describe("bounded corpus reports", () => {
 			reports[1]
 		);
 	});
-
 	it("bounds quality reports used by checks and investigations", () => {
-		const report = evaluateTextQuality(text, { schemaVersion: 1, roles: [], rules: [] });
+		const { packageCoverage: _packages, ...base } = corpus();
+		const reportText = {
+			...base,
+			diagnostics: diagnostics.map((diagnostic) => ({
+				...diagnostic,
+				code: "package_inspection_failed" as const
+			}))
+		};
+		const report = indexedTestReports(reportText).source({
+			schemaVersion: 3,
+			roles: [],
+			rules: []
+		});
 		expect(report.diagnostics).toHaveLength(200);
-		expect(report.diagnosticCount).toBe(1_000);
+		expect(report.diagnosticCount).toBe(1000);
 		expect(report.diagnosticsOmitted).toBe(800);
-		expect(textQualityQuery(report).summary().diagnosticCount).toBe(1_000);
-		expect(textQualityQuery(report).export("all").diagnosticCount).toBe(1_000);
+		expect(textQualityQuery(report).summary().diagnosticCount).toBe(1000);
+		expect(textQualityQuery(report).export("all").diagnosticCount).toBe(1000);
 		const files = evidence();
-		const checked = checkLocalizationTarget(text, joinLocalizationTarget(text, files), files);
+		const checked = indexedTestReports(reportText, files).localization(undefined, undefined);
 		expect(checked.diagnostics).toHaveLength(200);
-		expect(checked.diagnosticCount).toBe(1_000);
+		expect(checked.diagnosticCount).toBe(1000);
 		expect(checked.diagnosticsOmitted).toBe(800);
 	});
-
 	it("bounds corpus diagnostics and package evidence in investigation exports", async () => {
 		const preset = GameTextInvestigationPreset.make({
 			schemaVersion: 1,
@@ -125,13 +132,12 @@ describe("bounded corpus reports", () => {
 		);
 		if (exported.result.mode !== "corpus") throw new Error("Expected a corpus export.");
 		expect(exported.result.corpus.diagnostics).toHaveLength(200);
-		expect(exported.result.corpus.diagnosticCount).toBe(1_000);
+		expect(exported.result.corpus.diagnosticCount).toBe(1000);
 		expect(exported.result.corpus.packageCoverage?.packages).toHaveLength(200);
 		expect(exported.result.corpus.packageCoverage?.omitted).toBe(600);
 		expect(exported.result.corpus.units).toEqual(text.units);
 		expect(Schema.decodeUnknownSync(GameTextInvestigationExport)(exported)).toEqual(exported);
 	});
-
 	it("handles absent package evidence and rejects oversized diagnostic payloads", () => {
 		const files = evidence();
 		const { packageCoverage: availablePackages, ...withoutPackages } = corpus();

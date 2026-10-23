@@ -155,7 +155,8 @@ describe("localization presentation", () => {
 					example.archive === null
 						? []
 						: [archiveEntry("K", example.recordedSource, example.archive)],
-					poDocument(example.po)
+					poDocument(example.po),
+					[archiveEntry("K", "Source", "Source")]
 				)
 			);
 			const line = joined.lines[0];

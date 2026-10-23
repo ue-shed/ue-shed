@@ -25,6 +25,44 @@ const fixture = async (path: string): Promise<Schema.Json> =>
 	);
 
 describe("uasset IO protocol v1", () => {
+	it("negotiates findings at minor 20 and bounds each requested row batch", async () => {
+		const base = Schema.decodeUnknownSync(UAssetIoRequest)(
+			await fixture("valid/game-text-engine-capabilities-request.json")
+		);
+		for (const action of ["findings_lines", "findings_units"] as const) {
+			const request = {
+				...base,
+				contract: { ...base.contract, version: { major: 1, minor: 20 } },
+				operation: {
+					kind: "game_text_engine",
+					request: {
+						action,
+						reader: "reader",
+						key: "findings-v1:test",
+						[action === "findings_lines" ? "rows" : "units"]: [0, 0xffffffff]
+					}
+				}
+			};
+			expect(Schema.is(UAssetIoRequest)(request)).toBe(true);
+			expect(
+				Schema.is(UAssetIoRequest)({
+					...request,
+					contract: { ...request.contract, version: { major: 1, minor: 19 } }
+				})
+			).toBe(false);
+			const field = action === "findings_lines" ? "rows" : "units";
+			for (const rows of [[-1], [0x100000000], Array.from({ length: 5001 }, () => 0)])
+				expect(
+					Schema.is(UAssetIoRequest)({
+						...request,
+						operation: {
+							...request.operation,
+							request: { ...request.operation.request, [field]: rows }
+						}
+					})
+				).toBe(false);
+		}
+	});
 	it("keeps Effect schemas conformant with the language-neutral JSON Schema", async () => {
 		for (const [name, contract] of [
 			["request", UAssetIoRequest],

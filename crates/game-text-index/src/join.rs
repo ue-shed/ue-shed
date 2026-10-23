@@ -48,9 +48,8 @@ pub(crate) const L_REASONS: usize = 9;
 /// A line's problems under a request that names no finding, classified through `text_problem`
 /// from the shared table, as the engine does. Queries classify per request instead.
 pub(crate) const L_PROBLEMS: usize = 11;
-/// Joined layers this build writes and extends. v3: units key resolved text by the namespace
-/// without its package marker, so earlier joins carry other unit IDs.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v3:";
+/// v7 treats absence from a prepared complete package inventory as proven missing content.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v7:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -117,7 +116,7 @@ impl Joined {
         self.groups[row].os < self.groups[row].oe
     }
     pub fn resolved(&self, row: usize) -> bool {
-        self.line[L_REASONS][row] & ((1 << 9) | (1 << 10)) == 0
+        self.line[L_REASONS][row] & ((1 << 9) | (1 << 10) | (1 << 17)) == 0
     }
     pub fn matches(&self, row: usize, state: u32) -> bool {
         self.cultures.iter().any(|c| c[0][row] == state)
@@ -451,6 +450,14 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 .unwrap_or_else(|| format!("<po:{culture}>")),
         );
     }
+    let native_culture = target["nativeCulture"].as_str();
+    let native_path =
+        native_culture.and_then(|culture| target["outputPaths"]["archives"][culture].as_str());
+    if let Some(path) = native_path
+        && !paths.iter().any(|value| value == path)
+    {
+        paths.push(path.to_owned());
+    }
     let mut dependencies = serde_json::Map::new();
     let mut names = store.root["active"]
         .as_object()
@@ -530,10 +537,10 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         .into_iter()
         .map(|bytes| crate::wtf8::Wtf8Buf::from_bytes(bytes).map(|value| value.into_view()))
         .collect::<Result<Vec<_>>>()?;
-    let load = |path: &String| {
+    let load = |path: &str| {
         FileColumns::load(
             store,
-            path.clone(),
+            path.to_owned(),
             input
                 .file_errors
                 .as_ref()
@@ -548,6 +555,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         archives.push(load(&paths[ci * 2 + 1])?);
         pos.push(load(&paths[ci * 2 + 2])?);
     }
+    let native_archive = load(native_path.unwrap_or("<native archive>"))?;
     crate::join_incremental::note_stage("dictionary", &mut stage);
     let packages = PackageColumns::load(store, &strings, &input.project_root, target)?;
     crate::join_incremental::note_stage("load", &mut stage);
@@ -599,8 +607,10 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         unit_ids.push(packages.unit_id(row, &strings, empty)?);
     }
     let mut tables = HashMap::<(u32, u32), usize>::new();
+    let mut known_tables = HashSet::new();
     for row in 0..count {
         if c[O_LOCATION][row] == 2 && c[O_IDENTITY][row] == 0 && c[O_KEY][row] != empty {
+            known_tables.insert(c[O_OBJECT][row]);
             let key = (c[O_OBJECT][row], c[O_ROW][row]);
             let select = tables.get(&key).is_none_or(|previous| {
                 (c[O_NS][row], c[O_KEY][row]) == (c[O_NS][*previous], c[O_KEY][*previous])
@@ -795,6 +805,28 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let mut visible_occurrence = vec![false; count];
     let mut visible_line = vec![false; joined.groups.len()];
     let mut cursors = vec![[0; 2]; cultures.len()];
+    let mut native_cursor = 0;
+    let collapsed = target["collapseMode"] == "IdenticalNamespaceAndSource";
+    let collapsed_pos = joined
+        .pos
+        .iter()
+        .map(|file| {
+            let mut groups = HashMap::<(u32, u32), Vec<u32>>::new();
+            if collapsed && file.has_source {
+                for row in &file.order {
+                    let row = *row as usize;
+                    let c = &file.columns;
+                    if c[OPTIONS][row] & 16 == 0 && c[KEY][row] == empty {
+                        groups
+                            .entry((c[NS][row], c[SOURCE][row]))
+                            .or_default()
+                            .push(row as u32);
+                    }
+                }
+            }
+            groups
+        })
+        .collect::<Vec<_>>();
     let mut pending_sources = Vec::new();
     let mut pending_rows = Vec::new();
     for row in 0..joined.groups.len() {
@@ -909,7 +941,16 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             joined.line[L_PROBLEMS][row] |= crate::text_problem::FINDING;
         }
         if g.ns == ABSENT {
-            reasons |= 1 << if has_reference { 10 } else { 9 };
+            let reason = if !has_reference {
+                9
+            } else if occurrence_rows.iter().any(|i| {
+                c[O_IDENTITY][*i as usize] == 1 && known_tables.contains(&c[O_NS][*i as usize])
+            }) {
+                17
+            } else {
+                10
+            };
+            reasons |= 1 << reason;
         }
         if !joined.manifest.loaded {
             reasons |= 1;
@@ -997,7 +1038,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                     });
                     if !present {
                         let status = joined.packages.status(&file);
-                        if status == Some(0) {
+                        if joined.packages.absence_is_known(&file) {
                             structural |= 1 << 6;
                         } else {
                             reasons |= status_reason(status);
@@ -1035,13 +1076,16 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 structural |= 1 << 7;
             } else {
                 for manifest_row in &mo[g.ms..g.me] {
-                    let status = manifest_package(
+                    let file = manifest_package(
                         &joined
                             .manifest
                             .path(*manifest_row as usize, &joined.strings)?,
-                    )
-                    .and_then(|f| joined.packages.status(&f));
-                    if status != Some(0) {
+                    );
+                    let status = file.as_ref().and_then(|f| joined.packages.status(f));
+                    if !file
+                        .as_ref()
+                        .is_some_and(|f| joined.packages.absence_is_known(f))
+                    {
                         reasons |= status_reason(status);
                     }
                 }
@@ -1069,6 +1113,29 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         joined.line[18][row] = file_rows.len() as u32;
         file_rows.extend(unique(row_files));
         joined.line[19][row] = file_rows.len() as u32;
+        let native_override = if g.ns == ABSENT {
+            None
+        } else {
+            let (entry, count) = native_archive.lookup(g.ns, g.key, &mut native_cursor);
+            if count == 1 {
+                let entry = entry as usize;
+                let c = &native_archive.columns;
+                let translation = c[if c[OPTIONS][entry] & 128 != 0 {
+                    SOURCE
+                } else {
+                    TRANSLATION
+                }][entry];
+                // FLocTextHelper::GetExportText/GetRuntimeText use IsExactMatch, including metadata.
+                (c[SOURCE][entry] != translation
+                    || !same_extra(
+                        joined.string(c[SOURCE_EXTRA][entry]),
+                        joined.string(c[TRANSLATION_EXTRA][entry]),
+                    ))
+                .then_some((translation, c[TRANSLATION_EXTRA][entry]))
+            } else {
+                None
+            }
+        };
         for (ci, cursor) in cursors.iter_mut().enumerate() {
             let af = &joined.archives[ci];
             let pf = &joined.pos[ci];
@@ -1077,11 +1144,23 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             } else {
                 af.lookup(g.ns, g.key, &mut cursor[0])
             };
-            let (pr, pc) = if g.ns == ABSENT {
+            let expected_source = (first != ABSENT).then(|| {
+                native_override
+                    .filter(|_| Some(cultures[ci].as_str()) != native_culture)
+                    .unwrap_or((m[SOURCE][first as usize], m[SOURCE_EXTRA][first as usize]))
+            });
+            let (mut pr, mut pc) = if g.ns == ABSENT {
                 (ABSENT, 0)
             } else {
                 pf.lookup(g.ns, g.key, &mut cursor[1])
             };
+            if pc == 0
+                && let Some(expected) = expected_source
+                && let Some(entries) = collapsed_pos[ci].get(&(g.ns, expected.0))
+            {
+                pr = entries[0];
+                pc = entries.len();
+            }
             let a = &af.columns;
             let p = &pf.columns;
             let mut unknown = reasons;
@@ -1097,9 +1176,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             }
             if pc > 1 {
                 unknown |= 1 << 5;
-            }
-            if target["collapseMode"] == "IdenticalNamespaceAndSource" {
-                unknown |= 1 << 16;
             }
             let at = if ar == ABSENT {
                 empty
@@ -1124,13 +1200,14 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             if (af.loaded || af.missing) && ac <= 1 && pc == 1 && pt != empty && pt != at {
                 facts |= 1 << 3;
             }
-            let matches = ac == 1
-                && g.me - g.ms == 1
-                && a[SOURCE][ar as usize] == m[SOURCE][first as usize]
-                && same_extra(
-                    joined.string(a[SOURCE_EXTRA][ar as usize]),
-                    joined.string(m[SOURCE_EXTRA][first as usize]),
-                );
+            let matches = ac == 1 && g.me - g.ms == 1 && {
+                let expected = expected_source.ok_or("manifest source missing")?;
+                a[SOURCE][ar as usize] == expected.0
+                    && same_extra(
+                        joined.string(a[SOURCE_EXTRA][ar as usize]),
+                        joined.string(expected.1),
+                    )
+            };
             if ac == 1 && g.me - g.ms == 1 && !matches {
                 facts |= 1 << 2;
             }
@@ -1320,10 +1397,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let meta = json!({"version":3,"engineSummary":summary,"count":joined.groups.len(),"input":input,"aliases":aliases,"chunks":chunks,"generation":generation,"dependencies":dependencies,"packageNames":joined.packages.names,"packageStarts":joined.packages.starts,"pairs":marks["pairs"],"ambiguous":marks["ambiguous"],"oldCandidates":marks["oldCandidates"],"reducedSourceChecking":joined.pos.iter().map(|f|f.loaded&&!f.has_source).collect::<Vec<_>>()});
     let count = joined.groups.len() as u32;
     drop(joined);
-    if let Some(outcome) = crate::join_overlay::publish(store, input, &key, &meta, &unique_columns)?
-    {
-        return Ok(outcome);
-    }
     let metadata = metadata_bytes(&meta)?;
     require(
         metadata.len() <= 16 * 1024 * 1024,

@@ -63,12 +63,13 @@
 						"corpus_fingerprint",
 						"aggregate",
 						"rows",
-						"localization_focus",
 						"localization_detail",
 						"localization_export",
 						"localization_focus_export",
 						"localization_corpus",
-						"localization_page"
+						"findings_evaluate",
+						"findings_lines",
+						"findings_units"
 					]
 				},
 				"capabilities": {
@@ -244,6 +245,19 @@
 							}
 						]
 					}
+				},
+				"contract": {
+					"type": "object",
+					"properties": {
+						"buildId": {
+							"type": "string"
+						},
+						"contractHash": {
+							"type": "string"
+						}
+					},
+					"required": ["buildId", "contractHash"],
+					"additionalProperties": false
 				}
 			},
 			"required": [

@@ -95,6 +95,18 @@ const join = joinLocalizationTarget(
 				)
 			),
 			inNamespace(archiveEntry("Code", "From code", "Aus dem Code"), "Code")
+		],
+		undefined,
+		[
+			...gathered.map(({ key, namespace, source }) =>
+				archiveEntry(
+					key,
+					key === "Quit" ? "Earlier" : source,
+					key === "Quit" ? "Earlier" : source,
+					namespace
+				)
+			),
+			archiveEntry("Code", "From code", "From code", "Code")
 		]
 	),
 	target

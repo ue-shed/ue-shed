@@ -1,7 +1,7 @@
+import { indexedTestReports } from "../../../packages/game-text/src/indexed-reports.test-support.js";
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
-import { evaluateGameTextSourceQuality } from "@ue-shed/game-text/rules";
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,
@@ -16,6 +16,10 @@ import { afterAll, afterEach, beforeEach, expect, vi } from "vitest";
 import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 import { type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
+
+// Quality reports come from the native engine, in one driver process per distinct rule
+// document, which can outlast the component suite's 5 s default under CI load.
+vi.setConfig({ testTimeout: 20_000 });
 export const corpus: TextCorpus = {
 	coverage: {
 		discoveredPackages: 2,
@@ -127,7 +131,7 @@ export function makeClient(
 	overrides: Partial<GameTextClientApi> = {}
 ): GameTextClientApi {
 	const query = textCorpusQuery(input, "2026-10-07T16:53:00.000Z");
-	let quality = textQualityQuery(evaluateGameTextSourceQuality(input, rulesDocument));
+	let quality = textQualityQuery(indexedTestReports(input).source(rulesDocument));
 	return {
 		loadConfiguredProject: () =>
 			Effect.succeed({ status: "completed", summary: query.summary() }),
@@ -160,7 +164,7 @@ export function makeClient(
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
 		previewQualityRules: (draft) => {
-			quality = textQualityQuery(evaluateGameTextSourceQuality(input, draft));
+			quality = textQualityQuery(indexedTestReports(input).source(draft));
 			return Effect.succeed({
 				status: "completed",
 				document: draft,
@@ -168,7 +172,7 @@ export function makeClient(
 			});
 		},
 		saveQualityRules: (draft) => {
-			quality = textQualityQuery(evaluateGameTextSourceQuality(input, draft));
+			quality = textQualityQuery(indexedTestReports(input).source(draft));
 			return Effect.succeed({
 				status: "completed",
 				document: draft,

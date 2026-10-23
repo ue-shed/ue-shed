@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Effect, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { GameTextRuleDocument } from "../packages/game-text/src/game-text-rules.ts";
 import {
 	workspaceScaleFixture,
@@ -36,11 +36,11 @@ const build: typeof localizationQualityWorkspaceOf = process.argv[3]
 	? (await import(pathToFileURL(resolve(process.argv[3])).href)).localizationQualityWorkspaceOf
 	: localizationQualityWorkspaceOf;
 if (!Number.isSafeInteger(count) || count < 1) throw new Error("Choose a positive line count.");
-const measure = <A>(stage: string, run: () => A) => {
-	const stop = eventLoopGaps();
-	const started = performance.now();
-	const value = run();
-	const gaps = stop();
+const report = (
+	stage: string,
+	started: number,
+	gaps: ReturnType<ReturnType<typeof eventLoopGaps>>
+) => {
 	if (gaps.stallMaxMs > stallLimit) violations.push(`${stage}: ${gaps.stallMaxMs.toFixed(1)} ms`);
 	console.log(
 		JSON.stringify({
@@ -50,8 +50,35 @@ const measure = <A>(stage: string, run: () => A) => {
 			heapMiB: process.memoryUsage().heapUsed / 1024 ** 2
 		})
 	);
-	return value;
 };
+// The gap sampler's interval keeps the process alive, so it stops however the stage ends.
+const measure = <A>(stage: string, run: () => A) => {
+	const stop = eventLoopGaps();
+	const started = performance.now();
+	let gaps: ReturnType<typeof stop> | undefined;
+	try {
+		const value = run();
+		gaps = stop();
+		report(stage, started, gaps);
+		return value;
+	} finally {
+		if (!gaps) stop();
+	}
+};
+// Pages hydrate asynchronously: time the read through to its result, not its construction.
+const measureRead = <A, E, R>(stage: string, read: () => Effect.Effect<A, E, R>) =>
+	Effect.suspend(() => {
+		const stop = eventLoopGaps();
+		const started = performance.now();
+		return read().pipe(
+			Effect.onExit((exit) =>
+				Effect.sync(() => {
+					const gaps = stop();
+					if (Exit.isSuccess(exit)) report(stage, started, gaps);
+				})
+			)
+		);
+	});
 await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
@@ -66,7 +93,7 @@ await Effect.runPromise(
 						cultures: target.cultures.length
 					})
 				);
-				const source = (yield* result.sourceQuality(rules)).export("all");
+				const source = yield* (yield* result.sourceQuality(rules)).export("all");
 				const quality = yield* result.localizationQuality(rules);
 				console.log(
 					JSON.stringify({
@@ -81,7 +108,7 @@ await Effect.runPromise(
 					);
 					yield* Effect.yieldNow;
 					for (const offset of [0, Math.floor(quality.findings.length / 2)]) {
-						const page = measure(`page:${withRules}:${offset}`, () =>
+						const page = yield* measureRead(`page:${withRules}:${offset}`, () =>
 							workspace.search({ target: target.name, filter: "all", offset })
 						);
 						yield* Effect.yieldNow;
@@ -98,8 +125,9 @@ await Effect.runPromise(
 					}
 					for (const filter of ["terminology", "placeholder_text"] as const)
 						for (const offset of [0, 1000]) {
-							const page = measure(`page:${withRules}:${filter}:${offset}`, () =>
-								workspace.search({ target: target.name, filter, offset })
+							const page = yield* measureRead(
+								`page:${withRules}:${filter}:${offset}`,
+								() => workspace.search({ target: target.name, filter, offset })
 							);
 							console.log(
 								JSON.stringify({
@@ -113,7 +141,7 @@ await Effect.runPromise(
 							yield* Effect.yieldNow;
 						}
 					for (const culture of target.cultures.slice(0, 2)) {
-						measure(`page:${withRules}:${culture}`, () =>
+						yield* measureRead(`page:${withRules}:${culture}`, () =>
 							workspace.search({ target: target.name, filter: "all", culture })
 						);
 						yield* Effect.yieldNow;

@@ -97,13 +97,22 @@ function hostQuality(
 				),
 			items: (positions) =>
 				positions.length === 0
-					? []
-					: callSync(
-							calls,
-							failed,
-							{ id: next(), scan, method: "items", positions: [...positions] },
-							values.items
-						),
+					? Effect.succeed([])
+					: Effect.try({
+							try: () =>
+								callSync(
+									calls,
+									failed,
+									{
+										id: next(),
+										scan,
+										method: "items",
+										positions: [...positions]
+									},
+									values.items
+								),
+							catch: (cause) => qualityWorkerFailure("quality.worker.items", cause)
+						}),
 			limits: (culture) => limits.get(culture ?? "") ?? []
 		},
 		metadata: {

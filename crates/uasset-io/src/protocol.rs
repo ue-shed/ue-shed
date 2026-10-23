@@ -625,6 +625,11 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
     }
     match &request.operation {
         Operation::GameTextEngine { request: engine } => {
+            if engine.requires_findings() && request.contract.version.minor < 20 {
+                return Err(ProtocolError(
+                    "Game Text findings require uasset-io v1.20".into(),
+                ));
+            }
             if request.contract.version.minor < 15 {
                 return Err(ProtocolError(
                     "game_text_engine requires uasset-io v1.15".into(),
@@ -915,12 +920,13 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     "corpus_report_header",
                     "corpus_fingerprint",
                     "aggregate",
-                    "localization_focus",
-                    "localization_page",
                     "localization_detail",
                     "localization_export",
                     "localization_focus_export",
                     "localization_corpus",
+                    "findings_evaluate",
+                    "findings_lines",
+                    "findings_units",
                 ]
                 .contains(&outcome.action.as_str())
                 || outcome

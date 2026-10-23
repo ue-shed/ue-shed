@@ -2,9 +2,9 @@ import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
 import { GameTextIndexRefresh } from "./index-refresh.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
+
 import { CheckSeverity } from "./localization-check-ids.js";
-import { evaluateGameTextSourceQuality } from "./game-text-rules.js";
+
 import {
 	BuiltInQualityFilter,
 	eligibleLocalizationChange,
@@ -79,17 +79,10 @@ it.live(
 			yield* Effect.gen(function* () {
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 				const join = yield* result.localizationJoin;
-				const source = evaluateGameTextSourceQuality(
-					yield* result.corpus,
-					workspaceScaleRules
+				const source = yield* (yield* result.sourceQuality(workspaceScaleRules)).export(
+					"all"
 				);
-				const report = checkLocalizationTarget(
-					yield* result.corpus,
-					join,
-					result.evidence,
-					{},
-					workspaceScaleRules
-				);
+				const report = yield* result.localizationCheck(workspaceScaleRules);
 				const quality = yield* result.localizationQuality(workspaceScaleRules);
 				for (const rules of [source, undefined]) {
 					const expected = eagerItems(rules, report, join);
@@ -166,7 +159,7 @@ it.live(
 									...(culture ? { culture } : undefined)
 								};
 								const before = hydrated + sourceLines;
-								const page = indexed.search(request);
+								const page = yield* indexed.search(request);
 								expect(hydrated + sourceLines - before).toBeLessThanOrEqual(50);
 								expect(page).toEqual(memory.search(request));
 								expect(page.findings).toEqual(
@@ -181,7 +174,7 @@ it.live(
 								expect(page.suggestedFixCount).toBe(suggestedFixCount);
 								expect(page.counts).toEqual(counts);
 								const beforeFacts = facts;
-								indexed.search({ ...request, offset: offset + 50 });
+								yield* indexed.search({ ...request, offset: offset + 50 });
 								expect(facts).toBe(beforeFacts);
 							}
 						}
@@ -193,7 +186,7 @@ it.live(
 						"format_argument_renamed"
 					] as const) {
 						const request = { target: target.name, filter };
-						const exported = indexed.export(request);
+						const exported = yield* indexed.export(request);
 						expect(exported).toEqual(memory.export(request));
 						expect(exported.findings).toEqual(
 							expected
@@ -202,17 +195,18 @@ it.live(
 								)
 								.map((item) => item.summary)
 						);
-						for (const { id } of indexed.search(request).findings.slice(0, 2))
-							expect(indexed.focus({ target: target.name, id })).toEqual(
+						for (const { id } of (yield* indexed.search(request)).findings.slice(0, 2))
+							expect(yield* indexed.focus({ target: target.name, id })).toEqual(
 								memory.focus({ target: target.name, id })
 							);
 					}
-					expect(indexed.changes({ target: target.name, filter: "all" })).toEqual(
+					expect(yield* indexed.changes({ target: target.name, filter: "all" })).toEqual(
 						memory.changes({ target: target.name, filter: "all" })
 					);
 					expect(sourceLines).toBe(0);
 				}
 			}).pipe(Effect.provide(fixture.layer()));
 		}),
-	120_000
+	// Native debug evaluation and asynchronous hydration retain every existing scale assertion.
+	300_000
 );

@@ -84,7 +84,8 @@ export function poDocument(
 export function evidence(
 	manifests: readonly ManifestEntry[] = [manifestEntry()],
 	archives: readonly ArchiveEntry[] = [archiveEntry()],
-	po: PODocument = poDocument()
+	po: PODocument = poDocument(),
+	nativeArchives: readonly ArchiveEntry[] = archives
 ): LocalizationTargetEvidence {
 	const provenance = {
 		relativePath: "Content/Localization/Test",
@@ -116,7 +117,11 @@ export function evidence(
 			archive: {
 				status: "read",
 				provenance,
-				value: { formatVersion: 2, entries: archives, diagnostics: [] }
+				value: {
+					formatVersion: 2,
+					entries: culture === target.nativeCulture ? nativeArchives : archives,
+					diagnostics: []
+				}
 			},
 			po: { status: "read", provenance, value: projectPOEvidence(po) }
 		})),

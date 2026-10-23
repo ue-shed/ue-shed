@@ -384,7 +384,7 @@
 			"source_markup": 2,
 			"source_whitespace": 2,
 			"string_table_key_collision": 1,
-			"whitespace": 5
+			"whitespace": 2
 		},
 		"with": {
 			"culture_invariant_text": 1,
@@ -411,7 +411,7 @@
 			"source_markup": 2,
 			"source_whitespace": 2,
 			"string_table_key_collision": 1,
-			"whitespace": 5
+			"whitespace": 2
 		}
 	}
 }

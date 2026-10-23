@@ -99,10 +99,6 @@ pub enum EngineRequest {
         payload: String,
         output: std::path::PathBuf,
     },
-    LocalizationFocus {
-        reader: String,
-        payload: String,
-    },
     LocalizationDetail {
         reader: String,
         payload: String,
@@ -117,12 +113,31 @@ pub enum EngineRequest {
         payload: String,
         output: std::path::PathBuf,
     },
-    LocalizationPage {
+    FindingsEvaluate {
         reader: String,
-        payload: String,
+        /// The v4 rule document's JSON text, read by the WTF-8-aware reader.
+        rules: String,
+        #[serde(rename = "collationLocale")]
+        collation_locale: String,
+    },
+    FindingsLines {
+        reader: String,
+        key: String,
+        rows: Vec<u32>,
+    },
+    FindingsUnits {
+        reader: String,
+        key: String,
+        units: Vec<u32>,
     },
 }
 impl EngineRequest {
+    pub fn requires_findings(&self) -> bool {
+        matches!(
+            self,
+            Self::FindingsEvaluate { .. } | Self::FindingsLines { .. } | Self::FindingsUnits { .. }
+        )
+    }
     pub fn validate(&self) -> Result<()> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("requestValidate");
@@ -155,11 +170,12 @@ impl EngineRequest {
             | Self::LocalizationCorpus { reader, .. }
             | Self::Export { reader, .. }
             | Self::Rows { reader, .. }
-            | Self::LocalizationFocus { reader, .. }
             | Self::LocalizationDetail { reader, .. }
             | Self::LocalizationExport { reader, .. }
             | Self::LocalizationFocusExport { reader, .. }
-            | Self::LocalizationPage { reader, .. } => {
+            | Self::FindingsEvaluate { reader, .. }
+            | Self::FindingsLines { reader, .. }
+            | Self::FindingsUnits { reader, .. } => {
                 require(
                     !reader.is_empty() && reader.len() <= 128,
                     invalid("Invalid native reader handle."),
@@ -167,6 +183,23 @@ impl EngineRequest {
             }
         }
         match self {
+            Self::FindingsEvaluate {
+                collation_locale, ..
+            } => {
+                require(
+                    !collation_locale.is_empty() && collation_locale.len() <= 128,
+                    invalid("Invalid findings collation locale."),
+                )?;
+            }
+            Self::FindingsLines { key, rows, .. }
+            | Self::FindingsUnits {
+                key, units: rows, ..
+            } => {
+                require(
+                    !key.is_empty() && key.len() <= 1024 && rows.len() <= 5000,
+                    invalid("Invalid findings key or row selection."),
+                )?;
+            }
             Self::Export { payload, .. } => {
                 require(
                     payload.len() <= 512 * 1024,
@@ -177,17 +210,12 @@ impl EngineRequest {
             Self::Search { payload, .. }
             | Self::Focus { payload, .. }
             | Self::Rows { payload, .. }
-            | Self::LocalizationPage { payload, .. }
-            | Self::LocalizationFocus { payload, .. }
             | Self::LocalizationFocusExport { payload, .. } => {
                 require(
                     payload.len() <= 512 * 1024,
                     invalid("Native query payload exceeds its bound."),
                 )?;
-                if matches!(
-                    self,
-                    Self::LocalizationFocus { .. } | Self::LocalizationFocusExport { .. }
-                ) {
+                if matches!(self, Self::LocalizationFocusExport { .. }) {
                     let id = crate::json_value::parse(payload).map_err(|source| {
                         Error::with_source(
                             ErrorCode::InvalidInput,
@@ -261,6 +289,9 @@ pub struct EngineOutcome {
     pub payload: Option<String>,
     pub io: crate::snapshot::IoMetrics,
     pub stage_seconds: BTreeMap<String, f64>,
+    /// `capabilities` reports the engine's build and contract, for the host's one handshake.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<crate::contract::ContractIdentity>,
 }
 #[derive(Default)]
 pub struct EngineSession {
@@ -286,9 +317,13 @@ impl EngineSession {
             payload: None,
             io: crate::snapshot::io_metrics(),
             stage_seconds: BTreeMap::new(),
+            contract: None,
         };
         match request {
-            EngineRequest::Capabilities => outcome.action = "capabilities".into(),
+            EngineRequest::Capabilities => {
+                outcome.action = "capabilities".into();
+                outcome.contract = Some(crate::contract::identity());
+            }
             EngineRequest::Open {
                 configuration,
                 expected_generation,
@@ -372,13 +407,30 @@ impl EngineSession {
             | EngineRequest::LocalizationCorpus { reader, .. }
             | EngineRequest::Export { reader, .. }
             | EngineRequest::Rows { reader, .. }
-            | EngineRequest::LocalizationFocus { reader, .. }
             | EngineRequest::LocalizationDetail { reader, .. }
             | EngineRequest::LocalizationExport { reader, .. }
             | EngineRequest::LocalizationFocusExport { reader, .. }
-            | EngineRequest::LocalizationPage { reader, .. } => {
+            | EngineRequest::FindingsEvaluate { reader, .. }
+            | EngineRequest::FindingsLines { reader, .. }
+            | EngineRequest::FindingsUnits { reader, .. } => {
                 let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 let (action, payload) = match request {
+                    EngineRequest::FindingsEvaluate {
+                        rules,
+                        collation_locale,
+                        ..
+                    } => (
+                        "findings_evaluate",
+                        query.findings_evaluate(rules, collation_locale, cancelled)?,
+                    ),
+                    EngineRequest::FindingsLines { key, rows, .. } => (
+                        "findings_lines",
+                        query.findings_lines(key, rows, cancelled)?,
+                    ),
+                    EngineRequest::FindingsUnits { key, units, .. } => (
+                        "findings_units",
+                        query.findings_units(key, units, cancelled)?,
+                    ),
                     EngineRequest::Summary { .. } => (
                         "summary",
                         crate::wtf8::view_json(&query.summary(cancelled)?)?,
@@ -480,10 +532,6 @@ impl EngineSession {
                     EngineRequest::Focus { payload, .. } => {
                         ("focus", query.focus_json(payload, cancelled)?)
                     }
-                    EngineRequest::LocalizationFocus { payload, .. } => (
-                        "localization_focus",
-                        query.localization_focus_json(payload, cancelled)?,
-                    ),
                     EngineRequest::LocalizationDetail { payload, .. } => (
                         "localization_detail",
                         query.localization_detail_json(payload, cancelled)?,
@@ -525,13 +573,6 @@ impl EngineSession {
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
                         )
                     }
-                    EngineRequest::LocalizationPage { payload, .. } => {
-                        let request = parse_search_request(payload)?;
-                        (
-                            "localization_page",
-                            crate::wtf8::view_json(&query.localization_page(&request, cancelled)?)?,
-                        )
-                    }
                     _ => return Err("Invalid engine dispatch.".into()),
                 };
                 require(
@@ -560,6 +601,51 @@ mod tests {
     use crate::store::Store;
     use serde_json::json;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn findings_requests_are_bounded_and_require_the_new_contract() -> Result<()> {
+        for action in ["findings_lines", "findings_units"] {
+            let field = if action == "findings_lines" {
+                "rows"
+            } else {
+                "units"
+            };
+            let mut value = json!({"action":action,"reader":"reader","key":"findings-v1:test"});
+            value[field] = json!([0, u32::MAX]);
+            let request: EngineRequest = serde_json::from_value(value.clone())?;
+            assert!(request.requires_findings());
+            request.validate()?;
+            value[field] = json!(vec![0; 5001]);
+            let request: EngineRequest = serde_json::from_value(value.clone())?;
+            assert!(request.validate().is_err());
+            value[field] = json!([-1]);
+            assert!(serde_json::from_value::<EngineRequest>(value).is_err());
+        }
+        let request: EngineRequest = serde_json::from_value(
+            json!({"action":"findings_evaluate","reader":"reader","rules":"{}","collationLocale":"sv"}),
+        )?;
+        assert!(request.requires_findings());
+        request.validate()?;
+        Ok(())
+    }
+
+    #[test]
+    fn retired_inline_localization_actions_are_rejected() -> Result<()> {
+        for action in ["localization_focus", "localization_page"] {
+            assert!(
+                serde_json::from_value::<EngineRequest>(json!({
+                    "action": action, "reader": "reader", "payload": "\"line\""
+                }))
+                .is_err()
+            );
+        }
+        let export: EngineRequest = serde_json::from_value(json!({
+            "action": "localization_focus_export", "reader": "reader",
+            "payload": "\"line\"", "output": crate::test_directory("focus-export").join("line.json")
+        }))?;
+        export.validate()?;
+        Ok(())
+    }
 
     fn snapshot() -> Result<(Configuration, String)> {
         let configuration = Configuration {

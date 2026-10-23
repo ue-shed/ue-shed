@@ -223,6 +223,75 @@ pub(crate) struct Projection {
     pub cultures: Vec<Culture>,
 }
 impl Projection {
+    /// Heap bytes of the projection's columns.
+    pub(crate) fn bytes(&self) -> usize {
+        let rows = |rows: &Rows| {
+            [
+                &rows.visible,
+                &rows.signals,
+                &rows.origins,
+                &rows.editing,
+                &rows.notes,
+                &rows.audience,
+                &rows.identity,
+                &rows.namespace,
+                &rows.member_start,
+                &rows.member_end,
+                &rows.members,
+                &rows.source_start,
+                &rows.source_end,
+                &rows.sources,
+                &rows.file_start,
+                &rows.file_end,
+                &rows.files,
+                &rows.order,
+            ]
+            .iter()
+            .map(|column| column.len() * 4)
+            .sum::<usize>()
+                + rows.namespace_defined.capacity()
+        };
+        rows(&self.raw)
+            + rows(&self.slice)
+            + [
+                &self.slice_raw,
+                &self.slice_line,
+                &self.starts,
+                &self.order,
+                &self.source,
+                &self.source_visible,
+                &self.notes,
+                &self.origins,
+                &self.editing,
+                &self.audience,
+                &self.key_change,
+                &self.key,
+                &self.namespace,
+                &self.file_start,
+                &self.file_end,
+                &self.files,
+                &self.manifest_start,
+                &self.manifest_end,
+                &self.manifest,
+            ]
+            .iter()
+            .map(|column| column.len() * 4)
+            .sum::<usize>()
+            + self.flags.capacity() * 4
+            + self.saved_visible.capacity()
+            + self
+                .cultures
+                .iter()
+                .map(|culture| {
+                    (culture.state.len()
+                        + culture.facts.len()
+                        + culture.reasons.len()
+                        + culture.review.len()
+                        + culture.review_record.len())
+                        * 4
+                })
+                .sum::<usize>()
+    }
     pub fn open(query: &mut EngineQuery, cancelled: &AtomicBool) -> Result<Arc<Self>> {
         if let Some(value) = &query.projection {
             return Ok(Arc::clone(value));

@@ -5,7 +5,7 @@ const Reader = Schema.NonEmptyString.check(Schema.isMaxLength(128));
 const Identity = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 const Payload = Schema.String.check(Schema.isMaxLength(512 * 1024));
 /** Native read-only snapshots are scoped to their owning process session. */
-export const GameTextEngineRequest = Schema.Union([
+export const GameTextEnginePreviousRequest = Schema.Union([
 	Schema.Struct({ action: Schema.Literal("capabilities") }),
 	Schema.Struct({
 		action: Schema.Literal("open"),
@@ -41,17 +41,39 @@ export const GameTextEngineRequest = Schema.Union([
 	...(["close", "summary", "corpus_fingerprint", "corpus_report_header"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader })
 	),
-	...(
-		[
-			"search",
-			"focus",
-			"localization_focus",
-			"localization_page",
-			"localization_detail"
-		] as const
-	).map((action) =>
+	...(["search", "focus", "localization_detail"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader, payload: Payload })
 	)
+]);
+const FindingRows = Schema.Array(
+	Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(0xffffffff))
+).check(Schema.isMaxLength(5000));
+/** Additive findings actions, requiring uasset-io minor 20. */
+export const GameTextFindingsRequest = Schema.Union([
+	Schema.Struct({
+		action: Schema.Literal("findings_evaluate"),
+		reader: Reader,
+		/** The v4 rule document's JSON text; the request frame bounds its size. */
+		rules: Schema.NonEmptyString,
+		collationLocale: Schema.NonEmptyString.check(Schema.isMaxLength(128))
+	}),
+	Schema.Struct({
+		action: Schema.Literal("findings_lines"),
+		reader: Reader,
+		key: Identity,
+		rows: FindingRows
+	}),
+	Schema.Struct({
+		action: Schema.Literal("findings_units"),
+		reader: Reader,
+		key: Identity,
+		units: FindingRows
+	})
+]);
+/** Native snapshot reads and persisted finding evaluation share one process scope. */
+export const GameTextEngineRequest = Schema.Union([
+	GameTextEnginePreviousRequest,
+	GameTextFindingsRequest
 ]).annotate({ identifier: "GameTextEngineRequest" });
 export type GameTextEngineRequest = typeof GameTextEngineRequest.Type;
 
@@ -72,12 +94,13 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"corpus_fingerprint",
 		"aggregate",
 		"rows",
-		"localization_focus",
 		"localization_detail",
 		"localization_export",
 		"localization_focus_export",
 		"localization_corpus",
-		"localization_page"
+		"findings_evaluate",
+		"findings_lines",
+		"findings_units"
 	]),
 	capabilities: Schema.Array(Schema.Literal("game_text_engine_v1")),
 	reader: Schema.NullOr(Reader),
@@ -96,6 +119,10 @@ export const GameTextEngineOutcome = Schema.Struct({
 	stageSeconds: Schema.Record(
 		Schema.String,
 		Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+	),
+	/** `capabilities` reports the engine's build and contract for the host's one handshake. */
+	contract: Schema.optionalKey(
+		Schema.Struct({ buildId: Schema.String, contractHash: Schema.String })
 	)
 }).annotate({ identifier: "GameTextEngineOutcome" });
 export type GameTextEngineOutcome = typeof GameTextEngineOutcome.Type;

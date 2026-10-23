@@ -444,7 +444,9 @@ describe("Game Text localization", () => {
 			evidence(
 				[manifestEntry("K", "Welcome")],
 				[archiveEntry("K", "Welcome", "")],
-				poDocument("")
+				poDocument(""),
+				// The native archive keeps the source; only the foreign archive is empty.
+				[archiveEntry("K", "Welcome", "Welcome")]
 			)
 		);
 		const line = untranslated.lines[0];

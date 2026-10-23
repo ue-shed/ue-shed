@@ -108,13 +108,16 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			input.target.outputPaths.portableObjects[culture] ?? `<po:${culture}>`
 		])
 	];
+	const nativeDependency =
+		input.target.nativeCulture && input.target.outputPaths.archives[input.target.nativeCulture];
+	if (nativeDependency && !paths.includes(nativeDependency)) paths.push(nativeDependency);
 	const dependencies = Object.fromEntries(
 		Object.entries(root.active)
 			.filter(([name]) => name.startsWith("package-text.") || paths.includes(name))
 			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 	);
 	const key =
-		"joined-v18:" +
+		"joined-v20:" +
 		createHash("sha256")
 			.update(
 				JSON.stringify([
@@ -142,7 +145,11 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	}
 	const reader = yield* store.open();
 	let incrementalFallback: string | undefined;
-	if (!input.force && (root.active.joined ?? "").startsWith("joined-v18:")) {
+	if (
+		!input.force &&
+		input.target.collapseMode !== "IdenticalNamespaceAndSource" &&
+		(root.active.joined ?? "").startsWith("joined-v20:")
+	) {
 		const incremental = yield* incrementJoinedTarget(
 			input,
 			key,
@@ -179,6 +186,28 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		);
 	}
 	const packages = yield* loadJoinPackages(reader, strings, input.projectRoot, input.target);
+	const collapsedPos = pos.map((file) => {
+		const groups = new Map<string, number[]>();
+		if (input.target.collapseMode === "IdenticalNamespaceAndSource" && file.hasSourceText) {
+			for (const row of file.order) {
+				const c = file.columns;
+				if (c.options![row]! & 16 || c.key![row] !== empty) continue;
+				const key = `${c.namespace![row]}/${c.source![row]}`;
+				const group = groups.get(key) ?? [];
+				group.push(row);
+				groups.set(key, group);
+			}
+		}
+		return groups;
+	});
+	const nativePath =
+		input.target.nativeCulture && input.target.outputPaths.archives[input.target.nativeCulture];
+	const nativeArchive = yield* loadJoinFile(
+		reader,
+		nativePath ?? "<native archive>",
+		nativePath ? input.fileErrors?.[nativePath] : undefined
+	);
+	let nativeCursor = 0;
 	stages.mark("inputs");
 	const c = packages.occurrence,
 		occurrenceCount = c.source.length;
@@ -211,8 +240,15 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 					manifest.columns.source!
 				]
 			: []),
-		...[manifest, ...archives].flatMap((file) =>
-			file.columns["source-extra"] ? [file.columns["source-extra"]!] : []
+		...[manifest, nativeArchive, ...archives].flatMap((file) =>
+			file.columns["source-extra"]
+				? [
+						file.columns["source-extra"]!,
+						file.columns["translation-extra"]!,
+						file.columns.source!,
+						file.columns.translation!
+					]
+				: []
 		)
 	]);
 	const last = reader.manifest.segments.at(-1),
@@ -240,6 +276,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		if (c.location[row] === 2 && c.identity[row] === 0 && c.key[row] !== empty)
 			tables[tableIndex++] = row;
 	tables.sort((a, b) => c.object[a]! - c.object[b]! || c.row[a]! - c.row[b]! || a - b);
+	const knownTables = new Set(Array.from(tables, (row) => c.object[row]!));
 	for (let start = 0; start < tables.length; ) {
 		let end = start + 1;
 		const first = tables[start]!;
@@ -548,7 +585,10 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		);
 	const absenceStatus = (file: string) =>
 		packageStatus(packages, normalizedPackagePath(file)) ??
-		packageStatus(packages, normalizedPackagePath(file).replace(/\.uasset$/u, ".umap"));
+		packageStatus(packages, normalizedPackagePath(file).replace(/\.uasset$/u, ".umap")) ??
+		(Object.keys(reader.manifest.active).some((name) => name.startsWith("package-text."))
+			? 0
+			: undefined);
 	const sameExtra = (a: number, b: number) =>
 		a === b ||
 		localizationTextMatches(
@@ -690,7 +730,14 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		if (oe - os > 1) line.problems![row]! |= FINDING_BIT;
 		if (ns === absent)
 			reasons |= reasonBit(
-				hasReference ? "string_table_namespace_unavailable" : "unresolved_identity"
+				hasReference
+					? Array.from(order.slice(os, oe)).some(
+							(index) =>
+								c.identity[index] === 1 && knownTables.has(c.namespace[index]!)
+						)
+						? "string_table_entry_missing"
+						: "string_table_namespace_unavailable"
+					: "unresolved_identity"
 			);
 		if (!manifest.reader) reasons |= reasonBit("missing_manifest");
 		if (me - ms > 1) reasons |= reasonBit("duplicate_manifest_identity");
@@ -827,6 +874,25 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		line.file_start![row] = fileCount;
 		for (const id of rowFiles) appendFile(id);
 		line.file_end![row] = fileCount;
+		const native =
+			ns === absent
+				? { cursor: nativeCursor, row: absent, count: 0 }
+				: lookup(nativeArchive, ns, keyId, nativeCursor);
+		nativeCursor = native.cursor;
+		const nc = nativeArchive.columns;
+		const nativeTranslation =
+			native.row === absent
+				? empty
+				: nc.options![native.row]! & 128
+					? nc.source![native.row]!
+					: nc.translation![native.row]!;
+		const nativeOverride =
+			native.count === 1 &&
+			(nc.source![native.row] !== nativeTranslation ||
+				!sameExtra(
+					nc["source-extra"]![native.row]!,
+					nc["translation-extra"]![native.row]!
+				));
 		for (let ci = 0; ci < culture.length; ci++) {
 			const archiveFile = archives[ci]!,
 				poFile = pos[ci]!,
@@ -835,12 +901,21 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 				ns === absent
 					? { cursor: cursor.archive, row: absent, count: 0 }
 					: lookup(archiveFile, ns, keyId, cursor.archive);
-			const p =
+			let p =
 				ns === absent
 					? { cursor: cursor.po, row: absent, count: 0 }
 					: lookup(poFile, ns, keyId, cursor.po);
 			cursor.archive = a.cursor;
 			cursor.po = p.cursor;
+			const expectedSource =
+				first === absent
+					? absent
+					: nativeOverride && input.target.cultures[ci] !== input.target.nativeCulture
+						? nativeTranslation
+						: m.source![first];
+			const collapsedEntries = collapsedPos[ci]!.get(`${ns}/${expectedSource}`);
+			if (p.count === 0 && collapsedEntries?.length)
+				p = { ...p, row: collapsedEntries[0]!, count: collapsedEntries.length };
 			const ac = archiveFile.columns,
 				pc = poFile.columns,
 				marks = culture[ci]!;
@@ -850,8 +925,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			if (!poFile.reader) unknown |= reasonBit("missing_po");
 			if (a.count > 1) unknown |= reasonBit("duplicate_archive_identity");
 			if (p.count > 1) unknown |= reasonBit("duplicate_po_identity");
-			if (input.target.collapseMode === "IdenticalNamespaceAndSource")
-				unknown |= reasonBit("ambiguous_po_identity");
 			const at =
 				a.row === absent
 					? empty
@@ -875,8 +948,16 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			const matches =
 				a.count === 1 &&
 				me - ms === 1 &&
-				ac.source![a.row] === m.source![first] &&
-				sameExtra(ac["source-extra"]![a.row]!, m["source-extra"]![first]!);
+				ac.source![a.row] ===
+					(nativeOverride && input.target.cultures[ci] !== input.target.nativeCulture
+						? nativeTranslation
+						: m.source![first]) &&
+				sameExtra(
+					ac["source-extra"]![a.row]!,
+					nativeOverride && input.target.cultures[ci] !== input.target.nativeCulture
+						? nc["translation-extra"]![native.row]!
+						: m["source-extra"]![first]!
+				);
 			if (a.count === 1 && me - ms === 1 && !matches) facts |= stateBit("needs_update");
 			if ((archiveFile.reader || archiveFile.missing) && a.count <= 1) {
 				if (a.row === absent || at === empty) facts |= stateBit("not_translated");

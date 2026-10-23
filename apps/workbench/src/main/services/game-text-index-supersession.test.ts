@@ -164,3 +164,36 @@ for (const release of [true, false])
 			}),
 		15000
 	);
+it.live(
+	"a source quality read that new rules replace meanwhile answers not ready",
+	() =>
+		Effect.gen(function* () {
+			const test = yield* makeHost("source-read");
+			yield* Effect.gen(function* () {
+				const host = yield* WorkbenchGameText;
+				expect((yield* host.configuredRefresh()).status).toBe("completed");
+				expect((yield* host.previewQualityRules(STARTER_GAME_TEXT_RULES)).status).toBe(
+					"completed"
+				);
+				test.armQualityRead();
+				const stale = yield* host
+					.qualitySearch({ filter: "all", pageSize: 50 })
+					.pipe(Effect.forkChild);
+				yield* Deferred.await(test.searching);
+				const fewer = {
+					...STARTER_GAME_TEXT_RULES,
+					rules: STARTER_GAME_TEXT_RULES.rules.slice(1)
+				};
+				expect((yield* host.previewQualityRules(fewer)).status).toBe("completed");
+				yield* Deferred.succeed(test.allowSearch, undefined);
+				expect(yield* Fiber.join(stale)).toEqual({ status: "not_ready" });
+				expect((yield* host.qualitySearch({ filter: "all", pageSize: 50 })).status).toBe(
+					"ready"
+				);
+			}).pipe(
+				Effect.ensuring(Deferred.succeed(test.allowSearch, undefined)),
+				Effect.provide(test.layer)
+			);
+		}),
+	15000
+);

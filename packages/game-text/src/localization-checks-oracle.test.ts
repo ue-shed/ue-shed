@@ -1,3 +1,5 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
+
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Effect, Schema } from "effect";
@@ -10,7 +12,7 @@ import {
 import { CultureCode, TextNamespace, TextKey } from "@ue-shed/localization/browser";
 import { corpus } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget, localizationShippedTranslation } from "./localization-checks.js";
+import { localizationShippedTranslation } from "./localization-checks.js";
 import { parseUnrealFormatPattern, unrealPluralForms } from "./unreal-text-syntax.js";
 
 const Format = Schema.Struct({
@@ -96,7 +98,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 			).toBe(true);
 			const text = corpus([]);
 			const joined = joinLocalizationTarget(text, files, files.target);
-			const report = checkLocalizationTarget(text, joined, files);
+			const report = indexedTestReports(text, files).localization(undefined, undefined);
 			let compared = 0;
 			const failures = new Set<string>();
 			for (const entry of expected.entries) {

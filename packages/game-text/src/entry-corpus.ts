@@ -181,6 +181,7 @@ export {
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	type TextQualityQuery,
+	type AsyncTextQualityQuery,
 	TextQualityQueryRunResult,
 	TextQualityQuerySummary,
 	TextQualityRuleFile,

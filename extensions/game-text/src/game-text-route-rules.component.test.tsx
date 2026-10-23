@@ -1,11 +1,8 @@
+import { indexedTestReports } from "../../../packages/game-text/src/indexed-reports.test-support.js";
 import { screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
-import {
-	evaluateGameTextSourceQuality,
-	STARTER_GAME_TEXT_RULES,
-	type GameTextRuleDocument
-} from "@ue-shed/game-text/rules";
+import { STARTER_GAME_TEXT_RULES, type GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 import {
@@ -123,7 +120,7 @@ it("retains every editable rule field, term actions, preview and save", async ()
 });
 it("offers to load an existing starter rules file and labels invalid rules", async () => {
 	const user = userEvent.setup({ delay: null });
-	const loaded = textQualityQuery(evaluateGameTextSourceQuality(corpus, STARTER_GAME_TEXT_RULES));
+	const loaded = textQualityQuery(indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES));
 	const requested: boolean[] = [];
 	mount(
 		makeClient(corpus, {

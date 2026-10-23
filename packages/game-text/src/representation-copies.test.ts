@@ -296,6 +296,72 @@ describe("foldRepresentationCopies", () => {
 });
 
 describe("folded corpus", () => {
+	it.each(["Saved label", "Older label"])(
+		"folds a unique pin's compiled literal with text %s",
+		(compiledSource) => {
+			const pin = property(
+				`${classes.blueprint}.EventGraph.Node`,
+				"Pins[4].DefaultTextValue",
+				"Saved label",
+				"Pin"
+			);
+			const bytecode = property(
+				`${classes.generatedClass}.ExecuteUbergraph_Menu`,
+				"ScriptBytecode[42]",
+				compiledSource,
+				"Pin",
+				"/Script/CoreUObject.Function"
+			);
+			const folded = foldRepresentationCopies(menu([bytecode, pin]));
+			expect(folded.occurrences).toEqual([
+				{
+					...pin,
+					copies: [
+						{
+							object_path: bytecode.location.object_path,
+							kind: "generated_class",
+							source: compiledSource,
+							class_path: "/Script/CoreUObject.Function"
+						}
+					]
+				}
+			]);
+			expect(staleRuntimeCopy(folded.occurrences[0]!) !== undefined).toBe(
+				compiledSource !== "Saved label"
+			);
+			expect(foldRepresentationCopies(folded)).toEqual(folded);
+		}
+	);
+	it("keeps ambiguous pin sites and literals from another Blueprint as independent evidence", () => {
+		const pin = property(
+			`${classes.blueprint}.EventGraph.First`,
+			"Pins[4].DefaultTextValue",
+			"First",
+			"Pin"
+		);
+		const second = property(
+			`${classes.blueprint}.EventGraph.Second`,
+			"Pins[4].DefaultTextValue",
+			"Second",
+			"Pin"
+		);
+		const bytecode = property(
+			`${classes.generatedClass}.ExecuteUbergraph_Menu`,
+			"ScriptBytecode[42]",
+			"Older",
+			"Pin"
+		);
+		const ambiguous = menu([pin, second, bytecode]);
+		expect(foldRepresentationCopies(ambiguous)).toEqual(ambiguous);
+		const foreign = menu([
+			pin,
+			{
+				...bytecode,
+				location: { ...bytecode.location, object_path: "/Game/UI/Other.Other_C.Function" }
+			}
+		]);
+		expect(foldRepresentationCopies(foreign)).toEqual(foreign);
+	});
 	it("lists one place per authored site and flags text the compiled class has not caught up with", () => {
 		const corpus = textCorpusFromExtractionEvents({
 			projectRoot: "/project",

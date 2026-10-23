@@ -8,104 +8,14 @@ export interface CorpusKnownDefect {
 	defects: readonly string[];
 	kind: "subject" | "probe";
 	culture?: string;
+	/** A subject pin that applies to every culture's subject carrying this finding check. */
+	withCheck?: string;
 	status: "defect" | "open";
 	why: string;
 	actual: typeof Schema.Json.Type;
 	rightAnswer: typeof Schema.Json.Type;
 }
-const cultures = ["en", "de", "fr", "ja"];
 export const corpusKnownDefects: readonly CorpusKnownDefect[] = [
-	...cultures.map(
-		(culture): CorpusKnownDefect => ({
-			case: "compiled-copy-differs",
-			defects: ["compiled-copy-differs"],
-			culture,
-			kind: "subject",
-			status: "defect",
-			why: "A single wired PrintText pin was compiled, then its default edited without compiling. The saved package contains Graph older label in bytecode and Graph saved label on the pin. Bytecode is a runtime representation, not another authoring place. Reconciliation requires matching source and therefore loses stale copies.",
-			actual: {
-				state: "unknown",
-				facts: ["translated", "unknown"],
-				unknownReasons: ["conflicting_source"],
-				signals: ["shared", "conflicting", "evidence_only"],
-				problems: ["conflicting_source", "finding", "unchecked"]
-			},
-			rightAnswer: {
-				state: "translated",
-				facts: ["translated"],
-				unknownReasons: [],
-				signals: ["evidence_only", "compiled_copy_differs"],
-				problems: ["up_to_date"]
-			}
-		})
-	),
-	...["collapse-unique-a", "collapse-unique-b"].flatMap((name) =>
-		cultures.map(
-			(culture): CorpusKnownDefect => ({
-				case: name,
-				defects: ["collapse-mode-identity"],
-				culture,
-				kind: "subject",
-				status: "defect",
-				why: "Each namespace/source pair identifies exactly one manifest key, and its archive is current. Unreal supports IdenticalNamespaceAndSource; a target-wide ambiguity is unjustified.",
-				actual: {
-					state: "unknown",
-					facts: ["translated", "unknown"],
-					unknownReasons: ["ambiguous_po_identity"],
-					problems: ["unchecked"]
-				},
-				rightAnswer: {
-					state: "translated",
-					facts: ["translated"],
-					unknownReasons: [],
-					problems: ["up_to_date"]
-				}
-			})
-		)
-	),
-	...cultures.map(
-		(culture): CorpusKnownDefect => ({
-			case: "reference-missing-key",
-			defects: ["reference-missing-key"],
-			culture,
-			kind: "subject",
-			status: "defect",
-			why: "The table exists and exposes its namespace. The missing entry requires the dedicated string_table_entry_missing reason; treating the namespace as unavailable is incorrect.",
-			actual: { unknownReasons: ["string_table_namespace_unavailable"] },
-			rightAnswer: { unknownReasons: ["string_table_entry_missing"] }
-		})
-	),
-	{
-		case: "empty-with-source-edge",
-		defects: ["empty-translation-whitespace"],
-		culture: "de",
-		kind: "subject",
-		status: "defect",
-		why: "An empty translation should only produce empty_translation among translation-shape checks, as documented by the check contract. Boundary whitespace cannot be repaired until a translation exists.",
-		rightAnswer: {
-			findings: [
-				{
-					check: "localization.empty_translation",
-					actual: { entryExists: true, translation: "" },
-					expectation: { nonEmptyTranslation: true }
-				}
-			]
-		},
-		actual: {
-			findings: [
-				{
-					check: "localization.empty_translation",
-					actual: { entryExists: true, translation: "" },
-					expectation: { nonEmptyTranslation: true }
-				},
-				{
-					check: "localization.whitespace",
-					actual: { leading: "", trailing: "", lineBreaks: 0 },
-					expectation: { leading: " ", trailing: "", lineBreaks: 0 }
-				}
-			]
-		}
-	},
 	{
 		case: "manifest-notes-only",
 		defects: ["manifest-notes-filter"],
@@ -149,10 +59,10 @@ type Difference = {
 };
 export function corpusDefectsFor(
 	subjects: readonly CorpusSubject[],
-	probes: readonly Difference[] = []
+	probes: readonly Difference[] = [],
+	known: readonly CorpusKnownDefect[] = corpusKnownDefects
 ) {
 	const result: (CorpusKnownDefect & { subject: string })[] = [];
-	const lookup = new Map(subjects.map((subject) => [subjectKey(subject), subject]));
 	for (const subject of subjects) {
 		const predicted = {
 			...subject,
@@ -163,15 +73,11 @@ export function corpusDefectsFor(
 		};
 		const explanations: string[] = [],
 			defectIds: string[] = [];
-		for (const template of corpusKnownDefects) {
+		for (const template of known) {
 			if (template.kind !== "subject" || template.case !== subject.case.split("@")[0])
 				continue;
-			if (template.case === "empty-with-source-edge") {
-				if (
-					!subject.findings.some(
-						(finding) => finding.check === "localization.empty_translation"
-					)
-				)
+			if (template.withCheck !== undefined) {
+				if (!subject.findings.some((finding) => finding.check === template.withCheck))
 					continue;
 			} else if (template.culture !== subject.culture) continue;
 			const right = Schema.decodeUnknownSync(Dictionary)(template.rightAnswer),
@@ -182,72 +88,7 @@ export function corpusDefectsFor(
 			explanations.push(template.why);
 			defectIds.push(...template.defects);
 		}
-		const native = lookup.get(subjectKey({ ...subject, culture: "en" }));
-		const recipe = subject.case.split("@")[0];
-		if (
-			(recipe === "native-source-override" || recipe === "native-source-override-near") &&
-			subject.culture !== "en" &&
-			native?.stages.archive
-		) {
-			if (recipe === "native-source-override-near") {
-				predicted.state = "translated";
-				predicted.facts = subject.facts.map((fact) =>
-					fact === "needs_update" ? "translated" : fact
-				);
-				predicted.problems = ["up_to_date"];
-				predicted.findings = subject.findings.filter(
-					(finding) => finding.check !== "localization.outdated_translation"
-				);
-			} else {
-				predicted.state = "needs_update";
-				predicted.facts = subject.facts.map((fact) =>
-					fact === "translated" ? "needs_update" : fact
-				);
-				predicted.problems = ["translation"];
-				predicted.findings.push({
-					check: "localization.outdated_translation",
-					actual: { translatedSource: native.stages.archive },
-					expectation: { source: subject.gatheredSource }
-				});
-			}
-			defectIds.push("native-source-override");
-			explanations.push(
-				"LocTextHelper.cpp:1197-1213 and 1240-1252 require the native archive translation as foreign source. Today's join/check compares with raw manifest source, rejecting the current archive in native-source-override and accepting the stale raw-source archive in its near miss."
-			);
-		}
-		if (subject.case === "edit-deleted-package") {
-			defectIds.push("deleted-package-not-found");
-			predicted.state = "unknown";
-			predicted.facts = predicted.facts.map((fact) =>
-				fact === "not_found" ? "unknown" : fact
-			);
-			predicted.unknownReasons = ["package_not_scanned"];
-			predicted.problems = ["unchecked"];
-			explanations.push(
-				"The complete project inventory proves this generated package was deleted. Today's join treats a missing inventory row as unscanned instead of reporting not_found; both full and incremental scans preserve that error."
-			);
-		}
 
-		if (
-			subject.kind === "blueprintPin" &&
-			subject.field.startsWith("PrintText_") &&
-			!subject.case.startsWith("compiled-copy-differs@")
-		) {
-			defectIds.push("wired-pin-shared");
-			predicted.signals = ["shared", ...predicted.signals];
-			predicted.problems = predicted.problems.filter((problem) => problem !== "up_to_date");
-			if (!predicted.problems.includes("finding"))
-				predicted.problems.splice(
-					predicted.problems.includes("unchecked")
-						? predicted.problems.indexOf("unchecked")
-						: predicted.problems.length,
-					0,
-					"finding"
-				);
-			explanations.push(
-				"Compiled copies are not additional saved authoring places. A single wired pin plus identical bytecode incorrectly receives shared; the raw occurrence count includes its runtime representation."
-			);
-		}
 		if (explanations.length) {
 			const actual = Schema.decodeUnknownSync(Dictionary)(predicted),
 				wanted = Schema.decodeUnknownSync(Dictionary)(subject);
@@ -268,23 +109,12 @@ export function corpusDefectsFor(
 		}
 	}
 	for (const probe of probes)
-		for (const template of corpusKnownDefects) {
+		for (const template of known) {
 			if (template.kind !== "probe" || template.case !== probe.case.split("@")[0]) continue;
-			const placement = subjects.find((subject) => subject.case === probe.case);
-			const compiledPin =
-				template.case === "archive-missing-entry" &&
-				placement?.kind === "blueprintPin" &&
-				placement.field.startsWith("PrintText_");
 			result.push({
 				...template,
 				case: probe.case,
-				subject: probe.subject!,
-				actual: compiledPin ? ["translation", "finding"] : template.actual,
-				why:
-					template.why +
-					(compiledPin
-						? " This instance is a wired pin, so the separate compiled-copy shared defect also adds finding to the line page."
-						: "")
+				subject: probe.subject!
 			});
 		}
 	return result;
@@ -294,9 +124,10 @@ export function corpusDefectsFor(
 export function triageCorpusDifferences(
 	differences: readonly Difference[],
 	subjects: readonly CorpusSubject[] = [],
-	probes: readonly Difference[] = []
+	probes: readonly Difference[] = [],
+	known: readonly CorpusKnownDefect[] = corpusKnownDefects
 ) {
-	const defects = corpusDefectsFor(subjects, probes);
+	const defects = corpusDefectsFor(subjects, probes, known);
 	const matched = new Set<(typeof defects)[number]>();
 	const bySubject = new Map(
 		defects.map((defect) => [`${defect.case}\0${defect.subject}`, defect])

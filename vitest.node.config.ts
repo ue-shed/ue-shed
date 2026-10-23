@@ -20,6 +20,7 @@ export default defineProject({
 		include: [
 			"{apps,extensions,fixtures,packages,tools}/**/*.{test,spec}.{ts,tsx}",
 			"scripts/game-text-scale.test.ts",
+			"scripts/game-text-corpus-fixes.test.ts",
 			"scripts/game-text-stage-timings.test.ts",
 			"scripts/game-text-scale-safety.test.ts",
 			...(process.env.UE_SHED_GAME_TEXT_BENCHMARK === "1"

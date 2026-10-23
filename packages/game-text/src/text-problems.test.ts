@@ -129,9 +129,7 @@ describe("problems in the query", () => {
 		archives
 	);
 	// Only de lacks the translation; en has every line.
-	const translated = archives.map((entry) =>
-		entry.key === "Untranslated" ? archiveEntry("Untranslated", "Untranslated", "Done") : entry
-	);
+	const translated = archives.map((entry) => ({ ...entry, translation: entry.source }));
 	const join = joinLocalizationTarget(
 		text,
 		{

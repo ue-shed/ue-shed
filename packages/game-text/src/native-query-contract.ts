@@ -1,5 +1,6 @@
 import type { Effect } from "effect";
 import type { TextCorpusReportHeader } from "./corpus-summary.js";
+import type { NativeFindings } from "./native-findings.js";
 import type {
 	TextCorpus,
 	TextCorpusQuerySummary,
@@ -22,7 +23,7 @@ import type {
 } from "./index-reads.js";
 
 /** Native queries are asynchronous process calls; this interface owns no query or column data. */
-export interface NativeTextQuery {
+export interface NativeTextQuery extends NativeFindings {
 	/** Full saved corpus, including blank units retained as provenance. */
 	readonly readCorpus: () => Effect.Effect<TextCorpus, GameTextIndexError>;
 	/** Complete joined provenance, including blank-source lines. */

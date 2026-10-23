@@ -250,6 +250,11 @@ pub(crate) fn refresh(
     if input.force == Some(true) {
         return fallback("forced");
     }
+    // A collapsed PO row can feed several identities; the keyed delta path cannot identify
+    // all of its dependents. Rebuild until it has namespace/source dependency edges.
+    if input.target["collapseMode"] == "IdenticalNamespaceAndSource" {
+        return fallback("collapsed-po-identity");
+    }
     let Some(previous_key) = store.root["active"]["joined"].as_str().map(str::to_owned) else {
         return fallback("no-base");
     };
@@ -522,7 +527,7 @@ pub(crate) fn refresh(
         };
         for row in &package_lines {
             if sources.joined.get("line.split_unit", *row)? != 0
-                || reasons[*row] & ((1 << 9) | (1 << 10)) != 0
+                || reasons[*row] & ((1 << 9) | (1 << 10) | (1 << 17)) != 0
             {
                 return fallback("split-unit");
             }
@@ -674,7 +679,7 @@ pub(crate) fn refresh(
             problems |= crate::text_problem::culture(state, facts, unknown);
             if let Some(review) = &input.review
                 && review["target"] == input.target["name"]
-                && reasons[row] & ((1 << 9) | (1 << 10)) == 0
+                && reasons[row] & ((1 << 9) | (1 << 10) | (1 << 17)) == 0
             {
                 let record = joined.get(&(prefix.clone() + "review_record"), row)?;
                 if record != 0 {

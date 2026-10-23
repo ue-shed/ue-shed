@@ -534,7 +534,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							// Indexed source rules read only the units their findings name.
 							const source = !document
 								? undefined
-								: (yield* retained.sourceQuality(document)).export("all");
+								: yield* (yield* retained.sourceQuality(document)).export("all");
 							// Indexed targets check page by page, yielding between pages.
 							return localizationQualityWorkspaceOf(
 								source,
@@ -564,7 +564,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				};
 			const model = checked.success;
 			if (!model) return { status: "not_ready" };
-			const page = model.search(request);
+			const result = yield* model.search(request).pipe(Effect.result);
+			if (Result.isFailure(result))
+				return {
+					status: "failed",
+					message: result.failure.message,
+					recovery: result.failure.recovery
+				};
+			const page = result.success;
 			yield* Effect.annotateCurrentSpan({
 				findingCount: page.total,
 				pageCount: page.findings.length
@@ -582,7 +589,16 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					recovery: checked.failure.recovery
 				};
 			const model = checked.success;
-			return model ? model.focus(request) : { status: "not_ready" };
+			if (!model) return { status: "not_ready" };
+			return yield* model.focus(request).pipe(
+				Effect.catch((cause) =>
+					Effect.succeed({
+						status: "failed" as const,
+						message: cause.message,
+						recovery: cause.recovery
+					})
+				)
+			);
 		});
 		const changes = Effect.fn("GameText.workspace.localization.changes")(function* (
 			request: WorkspaceQualityRequest
@@ -596,7 +612,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				};
 			const model = checked.success;
 			if (!model) return { status: "not_ready" };
-			const result = model.changes(request);
+			const checkedChanges = yield* model.changes(request).pipe(Effect.result);
+			if (Result.isFailure(checkedChanges))
+				return {
+					status: "failed",
+					message: checkedChanges.failure.message,
+					recovery: checkedChanges.failure.recovery
+				};
+			const result = checkedChanges.success;
 			if (result.status === "ready")
 				yield* Effect.annotateCurrentSpan({
 					changeCount: result.document.changes.length,
@@ -995,7 +1018,11 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				current(target).pipe(Effect.map((cached) => cached?.model)),
 			focus,
 			qualityExport: (request: WorkspaceQualityRequest) =>
-				quality(request).pipe(Effect.map((model) => model?.export(request))),
+				quality(request).pipe(
+					Effect.flatMap((model) =>
+						model ? model.export(request) : Effect.succeed(undefined)
+					)
+				),
 			qualitySearch,
 			qualityFocus,
 			changes,

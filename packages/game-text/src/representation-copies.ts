@@ -120,6 +120,10 @@ function siteKey(occurrence: SavedAssetTextOccurrence, objectPath: string): stri
 	return `${location.kind}\0${objectPath}\0${field}\0${identityKey(occurrence)}`;
 }
 
+function withinObject(path: string, parent: string): boolean {
+	return path === parent || path.startsWith(`${parent}.`) || path.startsWith(`${parent}:`);
+}
+
 /**
  * Fold the representation copies of a package's Blueprints into the sites they copy.
  *
@@ -154,9 +158,43 @@ export function foldRepresentationCopies<
 		representationSite(occurrence.location.object_path, prefixes)
 	);
 	if (sites.every((site) => site === undefined)) return record;
+	// A compiled literal has a function/bytecode offset rather than its pin's property path.
+	// Only a unique saved pin of this Blueprint and identity proves which place it copies.
+	const pins = new Map<string, number | null>();
+	record.occurrences.forEach((occurrence, index) => {
+		const location = occurrence.location;
+		if (
+			sites[index] !== undefined ||
+			location.kind !== "asset_property" ||
+			!/^Pins\[\d+\]\.DefaultTextValue$/u.test(location.property_path) ||
+			occurrence.identity.status !== "resolved" ||
+			!occurrence.identity.key
+		)
+			return;
+		const blueprint = classes.find((item) =>
+			withinObject(location.object_path, item.blueprint)
+		);
+		if (!blueprint) return;
+		const key = `${blueprint.blueprint}\0${identityKey(occurrence)}`;
+		pins.set(key, pins.has(key) ? null : index);
+	});
 	const groups = new Map<string, number[]>();
 	record.occurrences.forEach((occurrence, index) => {
-		const key = siteKey(occurrence, sites[index]?.site ?? occurrence.location.object_path);
+		const location = occurrence.location;
+		const blueprint =
+			sites[index]?.kind === "generated_class" &&
+			location.kind === "asset_property" &&
+			location.property_path.startsWith("ScriptBytecode[")
+				? classes.find((item) => withinObject(location.object_path, item.generatedClass))
+				: undefined;
+		const pin = blueprint
+			? pins.get(`${blueprint.blueprint}\0${identityKey(occurrence)}`)
+			: undefined;
+		const place = pin == null ? occurrence : record.occurrences[pin]!;
+		const key = siteKey(
+			place,
+			pin == null ? (sites[index]?.site ?? location.object_path) : place.location.object_path
+		);
 		const group = groups.get(key);
 		if (group) group.push(index);
 		else groups.set(key, [index]);

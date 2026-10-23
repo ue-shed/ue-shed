@@ -14,10 +14,21 @@ export const CorpusSourceKind = Schema.Literals([
 	"manifest"
 ]);
 export type CorpusSourceKind = typeof CorpusSourceKind.Type;
+/** A proposed change, matching today's suggestedChange and change-set entry, without engine imports. */
+export const CorpusFindingFix = Schema.Struct({
+	target: Schema.String,
+	culture: Schema.String,
+	namespace: Schema.String,
+	key: Schema.String,
+	source: Schema.String,
+	previousTranslation: Schema.NullOr(Schema.String),
+	translation: Schema.String
+});
 export const CorpusFinding = Schema.Struct({
 	check: Schema.String,
 	actual: Schema.Json,
-	expectation: Schema.Json
+	expectation: Schema.Json,
+	fix: Schema.optionalKey(CorpusFindingFix)
 });
 export type CorpusFinding = typeof CorpusFinding.Type;
 /** Compiled and lag facts are carried for the next engine; today's public index exposes PO/archive. */
@@ -63,6 +74,8 @@ export const CorpusExpectations = Schema.Struct({
 	cultures: Schema.Array(Schema.String),
 	subjects: Schema.Array(CorpusSubject),
 	counts: Schema.Record(Schema.String, Schema.Int),
+	/** Absent on retained v1 corpora created before fix assertions were introduced. */
+	findingFixes: Schema.optionalKey(Schema.Literal(true)),
 	notExposedYet: Schema.Struct({
 		"stages.compiled": Schema.Literal(true),
 		"stages.importPending": Schema.Literal(true),

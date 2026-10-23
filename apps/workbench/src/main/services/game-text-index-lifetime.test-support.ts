@@ -13,6 +13,7 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 		| "localization"
 		| "pipeline"
 		| "source"
+		| "source-read"
 		| "cached"
 		| "cached-open"
 		| "cached-retirement"
@@ -42,6 +43,7 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 	const generation = yield* Ref.make(0);
 	let calls = 0;
 	let pauseRetirement = false;
+	let pauseQualityRead = false;
 	const indexed = Layer.effect(
 		GameTextIndexSteps,
 		Effect.gen(function* () {
@@ -103,6 +105,31 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 					const sourceQuality = result.sourceQuality;
 					return {
 						...result,
+						// The first model's next source quality read waits for the test.
+						...(mode === "source-read" && sourceQuality
+							? {
+									sourceQuality: (...args: Parameters<typeof sourceQuality>) =>
+										sourceQuality(...args).pipe(
+											Effect.map((model) => ({
+												...model,
+												search: (
+													request: Parameters<typeof model.search>[0]
+												) =>
+													Effect.gen(function* () {
+														if (pauseQualityRead) {
+															pauseQualityRead = false;
+															yield* Deferred.succeed(
+																searching,
+																undefined
+															);
+															yield* Deferred.await(allowSearch);
+														}
+														return yield* model.search(request);
+													})
+											}))
+										)
+								}
+							: undefined),
 						// The second model's source rules wait for the test before evaluating.
 						...(call === 2 && mode === "source" && sourceQuality
 							? {
@@ -202,6 +229,9 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 	return {
 		armRetirement: () => {
 			pauseRetirement = true;
+		},
+		armQualityRead: () => {
+			pauseQualityRead = true;
 		},
 		fixture,
 		cachedRetired,

@@ -1,4 +1,9 @@
-import { GameTextEngineRequest, GameTextEngineOutcome } from "./game-text-engine.js";
+import {
+	GameTextEngineRequest,
+	GameTextEnginePreviousRequest,
+	GameTextFindingsRequest,
+	GameTextEngineOutcome
+} from "./game-text-engine.js";
 import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 import {
@@ -433,7 +438,25 @@ export const UAssetIoRequest = Schema.Union([
 				})
 			})
 		).annotate({ identifier: "UAssetIoGameTextEngineContract" }),
-		operation: GameTextEngineOperation
+		operation: Schema.Struct({
+			...GameTextEngineOperation.fields,
+			request: GameTextEnginePreviousRequest
+		})
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(20))
+				})
+			})
+		).annotate({ identifier: "UAssetIoGameTextFindingsContract" }),
+		operation: Schema.Struct({
+			...GameTextEngineOperation.fields,
+			request: GameTextFindingsRequest
+		})
 	}),
 	Schema.Struct({
 		...RequestFields,

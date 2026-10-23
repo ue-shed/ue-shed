@@ -17,13 +17,14 @@ import {
 import { gatheredNamespace } from "./game-text-corpus-localization.ts";
 import { decodeCorpusPlan } from "./game-text-corpus-plan.ts";
 import { ensureUassetExecutable } from "./native-tools.ts";
+import { withCorpusUnrealLock } from "./game-text-corpus-lock.ts";
 import {
 	triageCorpusDifferences,
 	formatCorpusComparisonSummary
 } from "./game-text-corpus-defects.ts";
 
 /** A corpus folder, not a repository fixture. Never launches Unreal or changes its inputs. */
-export async function compareGameTextCorpus(
+async function compareGameTextCorpusLocked(
 	corpusRoot: string,
 	executable = ensureUassetExecutable(),
 	options: {
@@ -77,8 +78,8 @@ export async function compareGameTextCorpus(
 					};
 					const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify(plan.rules));
 					const quality = yield* model.localizationQuality(rules);
-					const sourceQuality = (yield* model.sourceQuality(rules)).export("all");
-					const findings = quality.findings.items(
+					const sourceQuality = yield* (yield* model.sourceQuality(rules)).export("all");
+					const findings = yield* quality.findings.items(
 						Array.from({ length: quality.findings.length }, (_, i) => i)
 					);
 					const findingsByLine = new Map<string, CorpusFinding[]>();
@@ -89,7 +90,12 @@ export async function compareGameTextCorpus(
 							items.push({
 								check: finding.ruleId,
 								actual: finding.actual,
-								expectation: finding.expectation
+								expectation: finding.expectation,
+								...(expected.findingFixes &&
+								"suggestedChange" in finding &&
+								finding.suggestedChange
+									? { fix: finding.suggestedChange }
+									: undefined)
 							});
 							findingsByLine.set(key, items);
 						}
@@ -472,7 +478,7 @@ export async function compareGameTextCorpus(
 				throw new Error(
 					"Missing collapse probe; regenerate this scratch corpus with corpus:generate."
 				);
-			const probe = await compareGameTextCorpus(probeRoot, executable);
+			const probe = await compareGameTextCorpusLocked(probeRoot, executable);
 			differences.push(...probe.differences);
 			activeSubjects.push(...probe.expected.subjects);
 			activeProbes.push(...probe.observations);
@@ -487,6 +493,15 @@ export async function compareGameTextCorpus(
 	} finally {
 		if (!options.cacheRoot) await rm(cacheRoot, { recursive: true, force: true });
 	}
+}
+
+/** The lease covers the complete native scan, including the recursive collapse probe. */
+export async function compareGameTextCorpus(
+	corpusRoot: string,
+	executable = ensureUassetExecutable(),
+	options: Parameters<typeof compareGameTextCorpusLocked>[2] = {}
+) {
+	return withCorpusUnrealLock(() => compareGameTextCorpusLocked(corpusRoot, executable, options));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

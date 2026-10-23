@@ -578,7 +578,16 @@ export function makeProtocolRequest(
 		requestId: `unreal-assets-${process.pid}-${protocolRequestCounter}`
 	};
 	// Narrow each branch to preserve the request union's operation/version correlation.
-	if (operation.kind === "game_text_engine") return { ...fields, operation };
+	if (operation.kind === "game_text_engine") {
+		const request = operation.request;
+		if (
+			request.action === "findings_evaluate" ||
+			request.action === "findings_lines" ||
+			request.action === "findings_units"
+		)
+			return { ...fields, operation: { kind: "game_text_engine", request } };
+		return { ...fields, operation: { kind: "game_text_engine", request } };
+	}
 	if (operation.kind === "game_text_index") {
 		const request = operation.request;
 		if (request.action === "publish_packages")
@@ -866,6 +875,12 @@ export class UassetProtocolSession {
 	private running = false;
 	private stderr = "";
 	private terminating = false;
+	private started = 0;
+
+	/** The running worker process, numbered by start; undefined while none runs. */
+	get worker(): number | undefined {
+		return this.child === undefined ? undefined : this.started;
+	}
 
 	constructor(
 		private readonly configuration: Pick<
@@ -908,6 +923,7 @@ export class UassetProtocolSession {
 			decoder.finish();
 		})(child.stdout);
 		this.child = child;
+		this.started += 1;
 		this.iterator = lines[Symbol.asyncIterator]();
 		this.stderr = "";
 		this.processError = undefined;

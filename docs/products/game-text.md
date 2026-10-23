@@ -282,6 +282,13 @@ own place. A site saved only under the class, such as a construction-script node
 site and stays a place at its own path; copies of it fold into the generated class's site, then the
 default object's, then the skeleton's.
 
+A compiled function's text literal uses a bytecode offset rather than its pin's property path.
+When its Blueprint has exactly one saved pin with the same namespace and key, that pin is the
+authoring place and the bytecode literal is its generated-class copy. The texts may differ after
+an edit. Several candidate pins keep their separate evidence; source equality does not establish
+ownership. The same folding applies when the compiled text is current, so it does not add a place
+or a `shared` signal.
+
 The place keeps its own text: the line's source, search, counts, facets, exports and localization
 joins all use the authored text, which is what the next compile and gather will use. Each copy is
 kept on the place's `copies` (`objectPath`, `kind`: `generated_class`, `instance`, `class_default`
@@ -827,9 +834,12 @@ guessed.
 | Unknown                  | Available evidence cannot prove a more specific state                                        |
 
 "Not gathered yet" requires an observed identity inside the target's gather scope and a readable
-manifest without that identity. "Not found" requires explicit completion of the manifest's named
-package, including packages with no remaining text. Partial, failed and unscanned packages produce
-typed unknown reasons. Older corpora without per-package completion cannot prove absence.
+manifest without that identity. "Not found" requires either a completed read of the manifest's
+named package without the key, or its absence from the prepared complete project inventory.
+Preparation retains an empty inventory marker even after the last package is deleted. Partial,
+failed and unscanned package reads produce typed unknown reasons. Older corpora without completion
+or complete inventory evidence cannot prove absence. The pure `joinLocalizationTarget` helper
+accepts `completePackageInventory: true` only when its caller holds that evidence.
 
 The primary state precedence is `outside_target`, `not_gathered`, `not_found`, `gathered_only`,
 `changed_since_gather`, `unknown`, `not_synced`, `needs_update`, `not_translated`, `translated`.
@@ -837,10 +847,13 @@ Structural state and current-source drift precede culture translation work, matc
 intent. Uncertainty blocks unsupported translation claims. Non-empty PO text differing from the
 archive takes precedence over archive staleness. Secondary facts retain every applicable state,
 so a changed source can also have an unsynced translation. Native cultures use their native archive
-with the same rules; gathered native translations normally equal the source.
+with the same rules; gathered native translations normally equal the source. For foreign cultures,
+Unreal's NativeText export and runtime source check uses a native archive translation that differs
+from its recorded source, including metadata. A foreign archive recorded against that native
+translation is current; one recorded against the raw manifest source is outdated.
 
 Missing manifest/archive/PO evidence, duplicate identities, unresolved corpus identities or String
-Table namespaces, conflicting current sources, unavailable gather settings, non-project paths and
+Table namespaces or entries, conflicting current sources, unavailable gather settings, non-project paths and
 unavailable asset classes or excluded-class ancestry are explicit unknown reasons. DataTable cell
 locations do not distinguish DataTable subclasses, so class exclusions can require unknown coverage.
 A file the working copy does not
@@ -848,9 +861,14 @@ have is reported as "Not in this working copy" with its project-relative path an
 recovery; a file that exists but fails to read or parse keeps "could not be read" with its error
 code. Ready target results and workspace report pages carry these failed files as bounded
 `LocalizationFileProblem` values and the folder Game Text looked in, without file provenance.
-Namespace-collapsed PO identities
-without keys cannot support an exact join. Crowdin identity PO marks reduced source checking because
+In `IdenticalNamespaceAndSource` mode, PO entries without keys join by their namespace and effective
+source text. A unique pair is current when its archive is current; collapse mode does not make a
+target ambiguous. Entries retaining an explicit key still join by that key. Crowdin identity PO marks reduced source checking because
 it has no source; archive-to-manifest comparisons still determine staleness.
+
+A reference into an available String Table whose namespace is known but whose entry is absent
+is `unknown` with `string_table_entry_missing`. `string_table_namespace_unavailable` means the
+table's namespace could not be established. These are distinct from an unresolved FText identity.
 
 A file confirmed missing supplies absence: a non-empty PO translation with a missing archive is
 not synced, while a missing PO does not invalidate a proven archive translation. File failures

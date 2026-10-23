@@ -7,11 +7,10 @@ import {
 	type LocalizationTargetEvidence
 } from "@ue-shed/localization";
 import {
-	checkLocalizationLine,
+	checkLocalizationGroups,
 	compareLocalizationFindings,
 	compareReportedLocalizationFindings,
 	enabledLocalizationChecks,
-	localizationSourceCulture,
 	localizationDuplicateSources,
 	localizationDuplicatePlaces,
 	localizationPropertiesWhereLocalizable,
@@ -29,11 +28,8 @@ import type {
 	LocalizationPolicyFinding,
 	LocalizationQualityFinding
 } from "./localization-quality-schema.js";
-import { localizationLinePolicyFindings, localizationPolicyRules } from "./localization-policy.js";
-import {
-	customLocalizationChecks,
-	localizationLineCustomFindings
-} from "./localization-custom-checks.js";
+import { localizationPolicyRules } from "./localization-policy.js";
+import { customLocalizationChecks } from "./localization-custom-checks.js";
 import { acceptedFindingFilter } from "./localization-review.js";
 import {
 	LocalizationUnknownReason,
@@ -61,6 +57,8 @@ import { IndexedPolicyData } from "./indexed-policy-data.js";
 import { u32 } from "./joined-target-input.js";
 import { runJoinedQuery } from "./joined-query-node.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
+import { translateRuleDocument } from "./rules/translate.js";
+import type { NativeFindings } from "./native-findings.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextQualityRuleId } from "./quality-schema.js";
 import { CheckSeverity } from "./localization-check-ids.js";
@@ -606,7 +604,7 @@ const localizableProperties = Effect.fn("GameText.localizationQuality.properties
 /**
  * Localization quality over a joined index. Lines are checked in bounded pages and dropped;
  * findings are kept as columns. Pages, focus and proposals re-check only the rows they show, with
- * the same line checks `checkLocalizationTarget` runs. The scan yields between pages, so a host
+ * the same persisted native findings and corpus group checks. The scan yields between pages, so a host
  * keeps serving other requests and can interrupt it.
  *
  * `joinRows` are the join's lines as rows of `joined`, in the join's order: the rows the query's
@@ -617,8 +615,9 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 	corpus: Pick<TextCorpus, "status" | "coverage">,
 	evidence: LocalizationTargetEvidence,
 	joinRows: Uint32Array,
-	ruleDocument?: GameTextRuleDocument,
-	options: IndexedLocalizationQualityOptions = {}
+	ruleDocument: GameTextRuleDocument | undefined,
+	options: IndexedLocalizationQualityOptions,
+	native: NativeFindings
 ) {
 	const reportProgress = yield* GameTextIndexProgressReporter;
 	const report = (completed: number, findings: number) =>
@@ -637,6 +636,7 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 		nativeCulture: target.nativeCulture,
 		cultures: target.cultures
 	};
+	const evaluated = yield* native.findingsEvaluate(translateRuleDocument(ruleDocument, options));
 	const enabled = enabledLocalizationChecks(join, evidence, options, ruleDocument);
 	const policy =
 		ruleDocument !== undefined && ruleDocument.schemaVersion !== 1
@@ -670,18 +670,10 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 		localizableProperties: enabled.includes("culture_invariant_text")
 			? yield* localizableProperties(data)
 			: new Set(),
-		cultureInvariant: (line) => units.cultureInvariant(line, context.localizableProperties),
-		occurrenceNotes: (line) => units.occurrenceNotes(line),
-		stringTables: (line) => units.stringTables(line)
+		cultureInvariant: (line) => units.cultureInvariant(line, context.localizableProperties)
 	};
 	stages.mark("prepare");
 	const units = unitIndex(data);
-	const customContext = {
-		target: target.name,
-		nativeCulture: target.nativeCulture,
-		options,
-		roles: context.roles
-	};
 	yield* Effect.yieldNow;
 	stages.mark("units");
 
@@ -735,56 +727,59 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 	 * built-ins sort first and policy findings follow rule by rule over the lines; accepted findings
 	 * then leave and the rest sort as reported. Both sorts are stable.
 	 */
-	const check = (lines: readonly LocalizationLine[]) => {
-		const unitsOf = lines.map((line) => {
-			let lineUnits: readonly TextUnit[] | undefined;
-			return () => (lineUnits ??= localizationLineUnits(line, units.forLine(line)));
-		});
-		const builtIns: LocalizationQualityFinding[] = [],
-			diagnostics: LocalizationCheckDiagnostic[][] = [];
+	const readFindings = Effect.fn("GameText.localizationQuality.readFindings")(function* (
+		rows: readonly number[]
+	) {
+		const result = new Map<
+			number,
+			Effect.Success<ReturnType<NativeFindings["findingsLines"]>>[number]
+		>();
+		for (let start = 0; start < rows.length; start += 5000)
+			for (const line of yield* native.findingsLines(
+				evaluated.key,
+				rows.slice(start, start + 5000)
+			))
+				result.set(line.row, line);
+		return result;
+	});
+	const check = (
+		lines: readonly LocalizationLine[],
+		rows: readonly number[],
+		checked: Effect.Success<ReturnType<typeof readFindings>>
+	) => {
+		const builtIns: LocalizationQualityFinding[] = [];
+		const diagnostics: LocalizationCheckDiagnostic[][] = [];
+		const selected = <F extends { readonly culture: CultureCode }>(findings: readonly F[]) =>
+			findings.filter((finding) => !options.culture || finding.culture === options.culture);
 		for (let index = 0; index < lines.length; index++) {
-			const lineDiagnostics: LocalizationCheckDiagnostic[] = [];
-			checkLocalizationLine(lines[index]!, unitsOf[index]!, context, {
-				findings: builtIns,
-				checkDiagnostics: lineDiagnostics,
-				changes: []
-			});
-			diagnostics.push(lineDiagnostics);
+			const line = lines[index]!,
+				nativeLine = checked.get(rows[index]!)!;
+			builtIns.push(...selected(nativeLine.builtIns));
+			checkLocalizationGroups(
+				line,
+				() => localizationLineUnits(line, units.forLine(line)),
+				context,
+				builtIns
+			);
+			diagnostics.push(selected(nativeLine.diagnostics));
 		}
-		const policyFindings: LocalizationPolicyFinding[] = [];
-		for (const rule of policy?.rules ?? [])
-			for (let index = 0; index < lines.length; index++)
-				localizationLinePolicyFindings(
-					lines[index]!,
-					unitsOf[index]!,
-					rule,
-					target.name,
-					options,
-					policyFindings
-				);
-		const customFindings: LocalizationCustomFinding[] = [];
-		for (const custom of customChecks)
-			for (let index = 0; index < lines.length; index++)
-				localizationLineCustomFindings(
-					lines[index]!,
-					unitsOf[index]!,
-					custom,
-					localizationSourceCulture(lines[index]!, target.nativeCulture),
-					customContext,
-					customFindings
-				);
+		const family = (name: "policy" | "custom") => {
+			const findings = rows.flatMap((row) => selected<Finding>(checked.get(row)![name]));
+			const rules =
+				name === "policy"
+					? (policy?.rules ?? []).map(({ rule }) => rule.id)
+					: customChecks.map((custom) => custom.id);
+			return findings.sort((a, b) => rules.indexOf(a.ruleId) - rules.indexOf(b.ruleId));
+		};
 		const findings: Finding[] = [
 			...builtIns.sort(compareLocalizationFindings),
-			...policyFindings,
-			...customFindings
+			...family("policy"),
+			...family("custom")
 		];
 		const visible = keep
 			? findings.filter((finding) => keep(lineOf(lines, finding), finding))
 			: findings;
-		return {
-			findings: visible.sort(compareReportedLocalizationFindings),
-			diagnostics
-		};
+		return { findings: visible.sort(compareReportedLocalizationFindings), diagnostics };
 	};
 
 	const cultureIndex = new Map(target.cultures.map((culture, index) => [culture, index]));
@@ -860,56 +855,63 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 		blockSize = new Uint32Array(lineCount);
 	let checkedLines = 0;
 	/** Checks one page of blocks, then reports progress. */
-	const checkBlocks = (firsts: readonly number[]) => {
-		const hydrating = performance.now();
-		const blocks = blockLines(firsts);
-		stages.add("scan.hydrate", performance.now() - hydrating);
-		for (let block = 0; block < firsts.length; block++) {
-			const lines = blocks[block]!,
-				rank = firsts[block]!;
-			const checking = performance.now();
-			const { findings, diagnostics } = check(lines);
-			stages.add("scan.check", performance.now() - checking);
-			blockStart[rank] = storedFacts.length;
-			blockSize[rank] = findings.length;
-			for (const finding of findings) {
-				const [first, second] = localizationFindingHash(finding);
-				if (finding.kind === "placeholder_text" && finding.unreportedMatches?.length === 0)
-					storedReported.push(storedFacts.length);
-				storedFacts.push(pack(finding));
-				storedSeverity.push(severityIndex.get(finding.severity)!);
-				storedRule.push(ruleOf(finding.ruleId));
-				storedFirst.push(first);
-				storedSecond.push(second);
-			}
-			for (let index = 0; index < lines.length; index++)
-				for (let position = 0; position < diagnostics[index]!.length; position++) {
-					const diagnostic = diagnostics[index]![position]!,
-						seen = (rank + index) * 2 ** 20 + position;
-					recordLimit("", diagnostic.code, seen);
-					recordLimit(diagnostic.culture, diagnostic.code, seen);
+	const checkBlocks = (firsts: readonly number[]) =>
+		Effect.gen(function* () {
+			const hydrating = performance.now();
+			const blocks = blockLines(firsts);
+			const rows = firsts.map((first) => Array.from(order.subarray(first, blockEnd(first))));
+			const checked = yield* readFindings(rows.flat());
+			stages.add("scan.hydrate", performance.now() - hydrating);
+			for (let block = 0; block < firsts.length; block++) {
+				const lines = blocks[block]!,
+					rank = firsts[block]!;
+				const checking = performance.now();
+				const { findings, diagnostics } = check(lines, rows[block]!, checked);
+				stages.add("scan.check", performance.now() - checking);
+				blockStart[rank] = storedFacts.length;
+				blockSize[rank] = findings.length;
+				for (const finding of findings) {
+					const [first, second] = localizationFindingHash(finding);
+					if (
+						finding.kind === "placeholder_text" &&
+						finding.unreportedMatches?.length === 0
+					)
+						storedReported.push(storedFacts.length);
+					storedFacts.push(pack(finding));
+					storedSeverity.push(severityIndex.get(finding.severity)!);
+					storedRule.push(ruleOf(finding.ruleId));
+					storedFirst.push(first);
+					storedSecond.push(second);
 				}
-			checkedLines += lines.length;
-		}
-		report(checkedLines, storedFacts.length);
-	};
+				for (let index = 0; index < lines.length; index++)
+					for (let position = 0; position < diagnostics[index]!.length; position++) {
+						const diagnostic = diagnostics[index]![position]!,
+							seen = (rank + index) * 2 ** 20 + position;
+						recordLimit("", diagnostic.code, seen);
+						recordLimit(diagnostic.culture, diagnostic.code, seen);
+					}
+				checkedLines += lines.length;
+			}
+			report(checkedLines, storedFacts.length);
+		});
 	// One-line blocks in storage order, so each page hydrates adjacent rows. Which page a line
 	// is checked in does not change its findings or their order.
 	let page: number[] = [],
 		pageLines = SCAN_PAGE_LINES;
-	const checkPage = () => {
-		const started = performance.now();
-		checkBlocks(page);
-		pageLines = nextPageLines(pageLines, performance.now() - started);
-		page = [];
-	};
+	const checkPage = () =>
+		Effect.gen(function* () {
+			const started = performance.now();
+			yield* checkBlocks(page);
+			pageLines = nextPageLines(pageLines, performance.now() - started);
+			page = [];
+		});
 	for (let row = 0; row < count; row++) {
 		if (joinPosition[row] === NOT_JOINED) continue;
 		const rank = rankOf[row]!;
 		if (tied[rank] || (rank + 1 < lineCount && tied[rank + 1])) continue;
 		page.push(rank);
 		if (page.length < pageLines) continue;
-		checkPage();
+		yield* checkPage();
 		yield* Effect.yieldNow;
 	}
 	// Then the rare blocks of several lines.
@@ -917,10 +919,10 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 		if (tied[rank] || !tied[rank + 1]) continue;
 		page.push(rank);
 		if (page.length < pageLines) continue;
-		checkPage();
+		yield* checkPage();
 		yield* Effect.yieldNow;
 	}
-	if (page.length) checkBlocks(page);
+	if (page.length) yield* checkBlocks(page);
 	units.releaseMemos();
 	// The whole scan, including its yields; scan.hydrate and scan.check are parts of it.
 	stages.mark("scan");
@@ -1005,31 +1007,42 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 	);
 
 	/** Re-checks the blocks behind positions; each finding must hash as it did in the scan. */
-	const hydrate = (positions: readonly number[]) => {
-		const firsts = [...new Set(positions.map((position) => blockOf[position]!))];
-		const blocks = blockLines(firsts);
-		const checked = new Map(
-			firsts.map((rank, block) => [
-				rank,
-				{ lines: blocks[block]!, findings: check(blocks[block]!).findings }
-			])
-		);
-		return positions.map((position) => {
-			const block = blockOf[position]!,
-				{ lines, findings } = checked.get(block)!;
-			const finding = findings[position - blockPosition[block]!];
-			const hash = finding && localizationFindingHash(finding);
-			snapshotCheck(
-				finding !== undefined &&
-					hash !== undefined &&
-					hash[0] === first[position] &&
-					hash[1] === second[position],
-				"quality.findings",
-				"A line no longer yields the finding its index recorded"
+	const hydrate = (positions: readonly number[]) =>
+		Effect.gen(function* () {
+			const firsts = [...new Set(positions.map((position) => blockOf[position]!))];
+			const blocks = blockLines(firsts);
+			const nativeChecked = yield* readFindings(
+				firsts.flatMap((first) => Array.from(order.subarray(first, blockEnd(first))))
 			);
-			return workspaceQualityItem(finding, lineOf(lines, finding));
+			const checked = new Map(
+				firsts.map((rank, block) => [
+					rank,
+					{
+						lines: blocks[block]!,
+						findings: check(
+							blocks[block]!,
+							Array.from(order.subarray(rank, blockEnd(rank))),
+							nativeChecked
+						).findings
+					}
+				])
+			);
+			return positions.map((position) => {
+				const block = blockOf[position]!,
+					{ lines, findings } = checked.get(block)!;
+				const finding = findings[position - blockPosition[block]!];
+				const hash = finding && localizationFindingHash(finding);
+				snapshotCheck(
+					finding !== undefined &&
+						hash !== undefined &&
+						hash[0] === first[position] &&
+						hash[1] === second[position],
+					"quality.findings",
+					"A line no longer yields the finding its index recorded"
+				);
+				return workspaceQualityItem(finding, lineOf(lines, finding));
+			});
 		});
-	};
 	let lineOfRaw: Uint32Array | undefined;
 	const rowOfUnit = (id: TextUnitId) => {
 		const raw = units.find(id);
@@ -1081,12 +1094,13 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 					return position;
 			return undefined;
 		},
-		items(positions) {
-			const items = [];
-			for (let start = 0; start < positions.length; start += ITEM_BATCH)
-				items.push(...hydrate(positions.slice(start, start + ITEM_BATCH)));
-			return items;
-		},
+		items: (positions) =>
+			Effect.gen(function* () {
+				const items = [];
+				for (let start = 0; start < positions.length; start += ITEM_BATCH)
+					items.push(...(yield* hydrate(positions.slice(start, start + ITEM_BATCH))));
+				return items;
+			}),
 		limits: (culture) => limits.get(culture ?? "") ?? []
 	};
 	return {

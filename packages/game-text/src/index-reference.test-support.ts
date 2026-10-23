@@ -1,7 +1,13 @@
 import { JoinedQueryData } from "./joined-query-data.test-support.js";
 import { textCorpusReportHeader } from "./corpus-summary.js";
-import type { openNativeTextQuery } from "./native-query.js";
 import { Effect, Layer } from "effect";
+import {
+	AssetReader,
+	AssetReaderLive,
+	nativeGameTextEngineClientLayer
+} from "@ue-shed/unreal-assets";
+import { openNativeTextQuery } from "./native-query.js";
+import { nativeIndexConfiguration } from "./native-index-configuration.js";
 import { typeScriptIndexBuilderLayer as builder } from "./index-builder-reference.test-support.js";
 import { GameTextIndexQuery } from "./index-query-native.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
@@ -39,6 +45,15 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 					)
 				);
 				const reference = columnarTextCorpusQuery(joined);
+				const configuration = yield* Effect.flatMap(AssetReader, (reader) =>
+					reader.configuration()
+				).pipe(Effect.provide(AssetReaderLive), Effect.orDie);
+				const services = yield* Layer.build(nativeGameTextEngineClientLayer(configuration));
+				const findings = yield* openNativeTextQuery({
+					configuration: nativeIndexConfiguration(input.configuration),
+					generation: input.generation,
+					joinedKey: input.joinedKey
+				}).pipe(Effect.provide(services));
 				const readCorpus = () => {
 					const data = new JoinedQueryData(joined),
 						summary = reference.summary();
@@ -58,6 +73,9 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 					cultures: joined.meta.input.target.cultures
 				};
 				const reader: Effect.Success<ReturnType<typeof openNativeTextQuery>> = {
+					findingsEvaluate: findings.findingsEvaluate,
+					findingsLines: findings.findingsLines,
+					findingsUnits: findings.findingsUnits,
 					readLocalizationLines: () =>
 						Effect.sync(() => reference.readLocalizationLines()),
 					readCorpus: () => Effect.sync(readCorpus),

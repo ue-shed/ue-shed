@@ -2,6 +2,7 @@ import { Effect, Schema, Struct } from "effect";
 import { CultureCode } from "@ue-shed/localization/browser";
 import { BuiltInCheckId, CheckSeverity } from "./localization-check-ids.js";
 import { LocalizationCheckScope } from "./localization-check-scope.js";
+import { engineRunsPattern } from "./rule-regex.js";
 import {
 	localizationCheckCatalogue,
 	localizationCheckDefaults,
@@ -16,8 +17,6 @@ import {
 	TextRole,
 	decodeTextQualityRuleDocument
 } from "./quality-schema.js";
-import type { TextCorpus } from "./schema.js";
-import { evaluateTextQuality } from "./quality.js";
 
 const [Budget, Terminology] = TextQualityRule.members;
 /**
@@ -109,7 +108,8 @@ const CustomTerm = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(102
 
 /**
  * A check the project defines. `pattern` reports text a JavaScript regular expression (Unicode
- * mode) matches, or with `report: "no_match"` text it does not match; `length` reports text
+ * mode) matches, or with `report: "no_match"` text it does not match; a lookbehind in it must have a
+ * fixed width, or be an alternation of fixed-width branches, without backreferences. `length` reports text
  * shorter than `minimum` or longer than `maximum`, in `visible` characters (rich text, modifiers
  * and arguments removed, wide characters counted twice, as `length_outlier` measures) or code
  * point `characters`; `forbidden_term` reports text that uses one of `terms`, matched as the
@@ -140,17 +140,20 @@ export const CustomLocalizationCheck = Schema.Union([
 ]);
 export type CustomLocalizationCheck = typeof CustomLocalizationCheck.Type;
 
-/** Whether a custom check is usable: a compiling pattern, a length with a bound in order. */
+/**
+ * Whether a custom check is usable: a pattern JavaScript compiles and the engine runs, a length
+ * with a bound in order.
+ */
 function validCustomCheck(check: CustomLocalizationCheck): boolean {
 	if (check.id.startsWith("localization.")) return false;
 	switch (check.kind) {
 		case "pattern":
 			try {
 				new RegExp(check.pattern, "u");
-				return true;
 			} catch {
 				return false;
 			}
+			return engineRunsPattern(check.pattern);
 		case "length":
 			return (
 				(check.minimum !== undefined || check.maximum !== undefined) &&
@@ -218,7 +221,9 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 			"duplicate_culture_key",
 			"duplicate_role_id",
 			"duplicate_rule_id",
-			"unknown_role_id"
+			"unknown_role_id",
+			"invalid_expression",
+			"rule_cycle"
 		]),
 		message: Schema.String,
 		recovery: Schema.String
@@ -344,20 +349,6 @@ export const GameTextSourceQualityReport = TextQualityReport.mapFields((fields) 
 	ruleDocumentVersion: Schema.Literals([1, 2, 3])
 }));
 export type GameTextSourceQualityReport = typeof GameTextSourceQualityReport.Type;
-/** Source evaluation keeps v1 behavior; translation policy requires a selected target's join. */
-export function evaluateGameTextSourceQuality(
-	corpus: TextCorpus,
-	document: GameTextRuleDocument
-): GameTextSourceQualityReport {
-	if (document.schemaVersion === 1) return evaluateTextQuality(corpus, document);
-	const report = evaluateTextQuality(corpus, {
-		roles: document.roles,
-		rules: document.rules,
-		schemaVersion: 1
-	});
-	return { ...report, ruleDocumentVersion: document.schemaVersion };
-}
-
 /** One built-in check as a rule file resolves it. */
 export interface ResolvedLocalizationCheck<Id extends BuiltInCheckId = BuiltInCheckId> {
 	readonly enabled: boolean;

@@ -62,7 +62,8 @@ export const LocalizationUnknownReason = Schema.Literals([
 	"class_hierarchy_unavailable",
 	"asset_class_unavailable",
 	"path_not_project_relative",
-	"ambiguous_po_identity"
+	"ambiguous_po_identity",
+	"string_table_entry_missing"
 ]);
 export type LocalizationUnknownReason = typeof LocalizationUnknownReason.Type;
 /**

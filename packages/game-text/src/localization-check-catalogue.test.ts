@@ -17,13 +17,11 @@ import {
 	localizationCheckRows,
 	withLocalizationCheckTable
 } from "./localization-check-table.js";
+import { evaluateCatalogueRule } from "./native-text-shape.test-support.js";
 import {
-	consistentTranslationCandidate,
-	lengthOutlier,
-	lengthOutlierMinimumRatio,
-	placeholderMatches,
-	placeholderMatchRanges,
-	placeholderTranslation
+	translationGroupKey,
+	visibleTextLength,
+	consistentTranslationCandidate
 } from "./localization-text-shape.js";
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
@@ -59,51 +57,80 @@ describe("localization check catalogue", () => {
 		expect(localizationCheckCatalogue.length_outlier.condition(params)).toContain("four times");
 	});
 
-	it("runs the text-shape helpers on parameters", () => {
-		const source = "A fairly long sentence about the harbour";
-		expect(lengthOutlier(source, "Hafen")).toBeDefined();
-		const relaxed = { ...localizationCheckDefaults.length_outlier, minimumRatio: 0.1 };
-		expect(lengthOutlier(source, "Hafen", undefined, undefined, relaxed)).toBeUndefined();
-		expect(lengthOutlierMinimumRatio("pt-BR", { ...relaxed, compactCultures: ["pt"] })).toBe(
-			relaxed.compactMinimumRatio
+	it("emits catalogue evidence from explicit facts and parameter overrides", () => {
+		const facts = {
+			"line.checkable": true,
+			"line.comparable": true,
+			"line.comparisonSource": "A fairly long sentence about the harbour",
+			latest: "Hafen",
+			culture: "de",
+			isNative: false
+		};
+		const found = evaluateCatalogueRule("length_outlier", facts);
+		expect(found?.actual).toEqual({ length: 5, ratio: 0.13 });
+		expect(found?.expectation).toEqual({
+			sourceLength: 40,
+			minimumRatio: 0.33,
+			maximumRatio: 3
+		});
+		expect(
+			evaluateCatalogueRule("length_outlier", facts, { minimumRatio: 0.1 })
+		).toBeUndefined();
+		expect(
+			evaluateCatalogueRule(
+				"length_outlier",
+				{ ...facts, culture: "pt-BR" },
+				{ compactCultures: ["pt"] }
+			)?.expectation
+		).toMatchObject({ minimumRatio: 0.25 });
+		const translation = evaluateCatalogueRule(
+			"placeholder_translation",
+			{ ...facts, latest: "NYI" },
+			{ words: ["nyi"] }
 		);
-		expect(lengthOutlierMinimumRatio("pt-BR", relaxed)).toBe(0.1);
-		const words = { ...localizationCheckDefaults.placeholder_translation, words: ["nyi"] };
-		expect(placeholderTranslation("The harbour is closed.", "NYI", words)).toBe("NYI");
-		expect(placeholderTranslation("The harbour is closed.", "skip", words)).toBeUndefined();
-		const markers = { markers: ["WIP"], phrases: [] };
-		expect(placeholderMatches("WIP: the harbour, TODO", markers)).toEqual(["WIP"]);
-		expect(placeholderMatches("The harbour", { markers: [], phrases: [] })).toEqual([]);
+		expect(translation?.actual).toEqual({ translation: "NYI" });
+		expect(translation?.expectation).toEqual({ translatedText: true });
+		expect(
+			evaluateCatalogueRule(
+				"placeholder_translation",
+				{ ...facts, latest: "skip" },
+				{ words: ["nyi"] }
+			)
+		).toBeUndefined();
 		const words5 = { minimumLength: 3, maximumWords: 5 };
 		expect(consistentTranslationCandidate("Open the old harbour gate")).toBe(false);
 		expect(consistentTranslationCandidate("Open the old harbour gate", words5)).toBe(true);
 	});
 
-	it("matches project placeholders across Unicode scripts and literal punctuation", () => {
+	it("emits literal Unicode placeholders without examining catalogue IR", () => {
 		const params = {
 			markers: ["仮", "заглушка", "[WIP]", "TODO"],
 			phrases: ["à traduire", "🔧"]
 		};
-		expect(placeholderMatches("😀 仮 /заглушка/ [WIP] TODO! À TRADUIRE 🔧", params)).toEqual([
-			"仮",
-			"заглушка",
-			"[WIP]",
-			"TODO",
-			"À TRADUIRE",
-			"🔧"
-		]);
-		expect(placeholderMatchRanges("😀 [WIP] 仮", params)).toEqual([
-			{ match: "[WIP]", start: 3, end: 8 },
-			{ match: "仮", start: 9, end: 10 }
-		]);
+		const facts = {
+			checkable: true,
+			sourceVariants: null,
+			source: "😀 仮 /заглушка/ [WIP] TODO! À TRADUIRE 🔧",
+			comparisonSource: "",
+			sourceCulture: "en"
+		};
+		const found = evaluateCatalogueRule("placeholder_text", facts, params);
+		expect(found?.actual).toEqual({
+			source: facts.source,
+			matches: ["仮", "заглушка", "[WIP]", "TODO", "À TRADUIRE", "🔧"]
+		});
+		expect(found?.expectation).toEqual({ finalText: true });
+		for (const source of [
+			"仮名 незаглушка заглушками X[WIP]Y éTODO TODOé _TODO TODO_ TODO\u0301",
+			"todo Заглушка"
+		]) {
+			expect(
+				evaluateCatalogueRule("placeholder_text", { ...facts, source }, params)
+			).toBeUndefined();
+		}
 		expect(
-			placeholderMatches(
-				"仮名 незаглушка заглушками X[WIP]Y éTODO TODOé _TODO TODO_ TODO\u0301",
-				params
-			)
-		).toEqual([]);
-		expect(placeholderMatches("todo Заглушка", params)).toEqual([]);
-		expect(placeholderMatches("仮 [WIP]", { markers: [], phrases: [] })).toEqual([]);
+			evaluateCatalogueRule("placeholder_text", facts, { markers: [], phrases: [] })
+		).toBeUndefined();
 	});
 
 	it("generates the README check table", () => {
@@ -126,4 +153,177 @@ describe("localization check catalogue", () => {
 		expect(table(readme)).toEqual(table(generated!));
 		expect(table(readme).slice(1)).toEqual(localizationCheckRows().map((row) => [...row]));
 	});
+});
+
+// These edge cases are not planted in the saved fixture. Exercise the catalogue with explicit
+// subject inputs, preserving the native rule's emitted evidence rather than old API shims.
+const translationFacts = {
+	"line.checkable": true,
+	"line.comparable": true,
+	"line.comparisonSource":
+		"The rows are like a composition.//You left negative space. On purpose?",
+	latest: "Leertaste drücken",
+	culture: "de",
+	isNative: false
+};
+const sourceFacts = {
+	checkable: true,
+	sourceVariants: null,
+	comparisonSource: "",
+	sourceCulture: "en",
+	gathered: true,
+	bytecodeOnly: false
+};
+it("compares rich-text tags by name and case", () => {
+	const facts = {
+		...translationFacts,
+		"line.comparisonSource": 'Press <Key>Space</> or <img id="pad"/>'
+	};
+	const missing = evaluateCatalogueRule("rich_text_tags", facts);
+	expect(missing?.actual).toMatchObject({ missing: ["Key", "img"], added: [] });
+	expect(missing?.expectation).toEqual({ tags: ["Key", "img"] });
+	const changed = evaluateCatalogueRule("rich_text_tag_case", {
+		...translationFacts,
+		"line.comparisonSource": "<Italic>Note</>",
+		latest: "<italic>Hinweis</>"
+	});
+	expect(changed?.actual).toEqual({ changed: [{ source: "Italic", translation: "italic" }] });
+	expect(changed?.expectation).toEqual({ sameCase: true });
+	for (const source of ["a < b > c", "Plain"])
+		expect(
+			evaluateCatalogueRule("rich_text_tags", {
+				...translationFacts,
+				"line.comparisonSource": source,
+				latest: source
+			})
+		).toBeUndefined();
+});
+it("measures visible length and flags only clear outliers", () => {
+	expect(visibleTextLength("<b>Hi</> {Name}|plural(one=x,other=y)  there")).toBe(8);
+	expect(visibleTextLength("  a  \tb \n")).toBe(3);
+	expect(visibleTextLength("\u{20000}x")).toBe(3);
+	expect(
+		evaluateCatalogueRule("length_outlier", {
+			...translationFacts,
+			"line.comparisonSource": "Open the inventory to see items",
+			latest: "打开背包查看物品"
+		})
+	).toBeUndefined();
+	expect(
+		evaluateCatalogueRule("length_outlier", {
+			...translationFacts,
+			"line.comparisonSource": "Short source",
+			latest: "Eine sehr viel längere Übersetzung"
+		})
+	).toBeUndefined();
+	for (const culture of ["zh-CN", "ja", "ko", "th-TH", "de", "id"]) {
+		expect(
+			evaluateCatalogueRule("length_outlier", {
+				...translationFacts,
+				culture,
+				"line.comparisonSource": "A fairly long sentence about the harbour",
+				latest: "Hafen"
+			})?.expectation
+		).toMatchObject({ minimumRatio: ["de", "id"].includes(culture) ? 0.33 : 0.25 });
+	}
+});
+it("recognizes placeholder translations, Slate tag syntax and interior line breaks", () => {
+	for (const latest of ["script lama", "Skip", "...", ".", "…", "-", "TBD"]) {
+		const found = evaluateCatalogueRule("placeholder_translation", {
+			...translationFacts,
+			latest
+		});
+		expect(found?.actual).toEqual({ translation: latest });
+		expect(found?.expectation).toEqual({ translatedText: true });
+	}
+	for (const [source, latest] of [
+		[translationFacts["line.comparisonSource"], "Las filas son como una composición."],
+		["...", "..."],
+		["Okay", "OK"],
+		["All", "Todo"],
+		["TBD", "skip"],
+		["tbd", "skip"],
+		["xxx", "xxx"],
+		["*exhales*", "..."]
+	])
+		expect(
+			evaluateCatalogueRule("placeholder_translation", {
+				...translationFacts,
+				"line.comparisonSource": source!,
+				latest: latest!
+			})
+		).toBeUndefined();
+	expect(
+		evaluateCatalogueRule("placeholder_translation", {
+			...translationFacts,
+			"line.comparisonSource": "Maybe the baby will settle down soon.",
+			latest: "..."
+		})?.actual
+	).toEqual({ translation: "..." });
+	for (const source of [
+		"<invalid requirement type>",
+		"GetWorld()->GetGameInstance()->GetSubsystem<UC_InputSubsystem>()",
+		"<{playerColor}>{playerName}</>"
+	])
+		expect(evaluateCatalogueRule("source_markup", { ...sourceFacts, source })).toBeUndefined();
+	const markup = evaluateCatalogueRule("source_markup", {
+		...sourceFacts,
+		source: "To join the festival, arrive between <timeAnd>19:00 and 22:00</timeAnd>."
+	});
+	expect(markup?.actual).toMatchObject({
+		richText: { opening: 1, closing: 0 },
+		xmlClosings: ["timeAnd"]
+	});
+	expect(markup?.expectation).toEqual({ balanced: true });
+	const breaks = evaluateCatalogueRule("line_breaks", {
+		...translationFacts,
+		"line.comparisonSource": "Torn Pages\r\nA scrap\nof paper",
+		latest: "Tu madre.\r\n"
+	});
+	expect(breaks?.actual).toEqual({ lineBreaks: 0 });
+	expect(breaks?.expectation).toEqual({ lineBreaks: 2 });
+	expect(
+		evaluateCatalogueRule("line_breaks", {
+			...translationFacts,
+			"line.comparisonSource": "\r\n<PlayerName>{ParentLabel}</>，为什么？",
+			latest: "Tu madre.\r\n"
+		})
+	).toBeUndefined();
+	expect(
+		["thanks", "Danke!", " danke ", "Karte  öffnen.", "..."].map(translationGroupKey)
+	).toEqual(["thanks", "danke", "danke", "karteöffnen", "..."]);
+});
+it("finds placeholders, number-only text and source whitespace", () => {
+	const found = evaluateCatalogueRule("placeholder_text", {
+		...sourceFacts,
+		source: "TODO: name, Lorem ipsum, To be translated"
+	});
+	expect(found?.actual).toEqual({
+		source: "TODO: name, Lorem ipsum, To be translated",
+		matches: ["TODO", "Lorem ipsum", "To be translated"]
+	});
+	expect(found?.expectation).toEqual({ finalText: true });
+	expect(
+		evaluateCatalogueRule("placeholder_text", { ...sourceFacts, source: "todo el mundo" })
+	).toBeUndefined();
+	for (const source of ["100", "3/4", "+25%", "1,000"]) {
+		const found = evaluateCatalogueRule("number_only_text", { ...sourceFacts, source });
+		expect(found?.actual).toEqual({ source });
+		expect(found?.expectation).toEqual({ cultureInvariant: true });
+	}
+	for (const source of ["Level 5", "{0}%", "---", ""])
+		expect(
+			evaluateCatalogueRule("number_only_text", { ...sourceFacts, source })
+		).toBeUndefined();
+	const spaces = evaluateCatalogueRule("source_whitespace", {
+		...sourceFacts,
+		source: " Score:  10 "
+	});
+	expect(spaces?.actual).toEqual({
+		source: " Score:  10 ",
+		leading: " ",
+		trailing: " ",
+		repeatedSpaces: 1
+	});
+	expect(spaces?.expectation).toEqual({ trimmed: true });
 });

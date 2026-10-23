@@ -141,7 +141,7 @@ describe("localization identity join and precedence", () => {
 		expect(joined.lines[0]?.identity).toEqual({ namespace: gathered, key: "K" });
 		expect(joined.lines[0]?.cultures.map((culture) => culture.state)).toEqual([
 			"translated",
-			"translated"
+			"needs_update"
 		]);
 		expect(joined.lines[0]?.cultures[0]?.po?.identity?.namespace).toBe(gathered);
 		expect(text.units[0]?.identity).toMatchObject({ namespace: saved });
@@ -263,7 +263,7 @@ describe("localization identity join and precedence", () => {
 				expect(line.origin).toEqual({ kind: "corpus", unitIds: [unit.id] });
 				expect(line.cultures.map((culture) => culture.state)).toEqual([
 					"translated",
-					"translated"
+					"needs_update"
 				]);
 				expect(
 					localizationLineUnits(line, units).flatMap((item) => item.occurrences)
@@ -591,7 +591,7 @@ describe("localization identity join and precedence", () => {
 			...evidence(),
 			target: { ...target, collapseMode: "IdenticalNamespaceAndSource" }
 		});
-		expect(mark(corpus(), collapsed).unknownReasons).toContain("ambiguous_po_identity");
+		expect(mark(corpus(), collapsed).unknownReasons).not.toContain("ambiguous_po_identity");
 	});
 	it("keeps authored String Table namespaces when resolving references and joining evidence", () => {
 		const own = unit("K", "Source", "Content/Text/Table.uasset", "UI [Beta]");
@@ -620,8 +620,27 @@ describe("localization identity join and precedence", () => {
 		expect(joined.lines[0]?.origin).toMatchObject({ unitIds: [own.id, reference.id].sort() });
 		expect(joined.lines[0]?.cultures.map((culture) => culture.state)).toEqual([
 			"translated",
-			"translated"
+			"needs_update"
 		]);
+	});
+	it("distinguishes a missing String Table entry from an unavailable table namespace", () => {
+		const table = unit("K", "Source", "Content/Text/Table.uasset");
+		const saved = ftextUnit("Absent", "Reference", "Content/Text/Reference.uasset");
+		const identity = {
+			status: "string_table" as const,
+			tableId: "/Game/Text/Table.Table",
+			key: "Absent"
+		};
+		const reference = Schema.decodeUnknownSync(TextUnit)({
+			...saved,
+			identity,
+			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity }))
+		});
+		const line = joinLocalizationTarget(corpus([table, reference]), evidence([])).lines.find(
+			(line) => line.identity === null
+		);
+		expect(line?.cultures.every((mark) => mark.state === "unknown")).toBe(true);
+		expect(line?.cultures[0]?.unknownReasons).toEqual(["string_table_entry_missing"]);
 	});
 	it("distinguishes confirmed file absence from unreadable evidence", () => {
 		const files = evidence();

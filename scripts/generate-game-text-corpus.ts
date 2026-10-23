@@ -11,8 +11,7 @@ import {
 	rmSync,
 	writeFileSync
 } from "node:fs";
-import { userInfo, availableParallelism, tmpdir } from "node:os";
-import { setTimeout } from "node:timers/promises";
+import { userInfo, availableParallelism } from "node:os";
 import { dirname } from "node:path";
 import { decodeCorpusPlan, planCorpus } from "./game-text-corpus-plan.ts";
 import { corpusPlanName } from "./game-text-corpus-contract.ts";
@@ -37,6 +36,7 @@ import {
 } from "./unreal-plugin-host.ts";
 import { assertCorpusScratch, createCorpusScratch } from "./game-text-corpus-scratch.ts";
 import { parseUnrealDescriptor } from "./unreal-project-support.ts";
+import { withCorpusUnrealLock } from "./game-text-corpus-lock.ts";
 
 const pluginName = "UEShedCorpusGenerator";
 const pluginSource = join(repositoryRoot, "tools", "unreal", pluginName);
@@ -49,30 +49,7 @@ function filesUnder(root: string): string[] {
 }
 
 async function run(log: string, command: string, args: readonly string[]) {
-	const lock = process.env.UE_SHED_UNREAL_LOCK ?? join(tmpdir(), "ue-shed-unreal.lock");
-	mkdirSync(dirname(lock), { recursive: true });
-	let lease: number;
-	for (;;) {
-		try {
-			lease = openSync(lock, "wx");
-			break;
-		} catch (cause) {
-			if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "EEXIST")
-				throw cause;
-			process.stdout.write(`Waiting for Unreal lock: ${lock}\n`);
-			await setTimeout(5000);
-		}
-	}
-	writeFileSync(
-		lease,
-		`Codex game-text fixture ${new Date().toISOString()} pid ${process.pid}\n`
-	);
-	try {
-		runLocked(log, command, args);
-	} finally {
-		closeSync(lease);
-		rmSync(lock);
-	}
+	await withCorpusUnrealLock(() => runLocked(log, command, args));
 }
 function runLocked(log: string, command: string, args: readonly string[]) {
 	const batch = /\.(bat|cmd)$/iu.test(command);

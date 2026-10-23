@@ -313,6 +313,20 @@ export function localizationTextMatches(left: LocalizationText, right: Localizat
 	return sameJson(left, right);
 }
 
+/** Unreal NativeText uses a differing native archive translation as the foreign source. */
+export function localizationExpectedSource(
+	source: LocalizationText,
+	culture: string,
+	nativeCulture: string | null,
+	nativeArchive: ArchiveEntry | null | undefined
+): LocalizationText {
+	return culture !== nativeCulture &&
+		nativeArchive &&
+		!localizationTextMatches(nativeArchive.source, nativeArchive.translation)
+		? nativeArchive.translation
+		: source;
+}
+
 const CommentMetadata = Schema.Struct({ Comment: Schema.optionalKey(Schema.String) });
 
 /**
@@ -358,16 +372,41 @@ function groupByIdentity<A extends typeof LocalizationIdentity.Type>(
 	return grouped;
 }
 
+function collapsedPOEntries(file: LocalizationTargetEvidence["cultures"][number]["po"]) {
+	const groups = new Map<string, { entry: POEntry }[]>();
+	if (file.status !== "read" || !file.value.hasSourceText) return groups;
+	for (const entry of file.value.entries) {
+		if (entry.identity?.key !== "") continue;
+		const key = JSON.stringify([entry.identity.namespace, entry.msgid]);
+		const group = groups.get(key) ?? [];
+		group.push({ entry });
+		groups.set(key, group);
+	}
+	return groups;
+}
+
 /** Join gathered namespace/key, stripping package markers only from saved FText occurrences. */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
-	target: LocalizationTarget = evidence.target
+	target: LocalizationTarget = evidence.target,
+	/** Only a caller holding the complete project inventory can prove a deleted package absent. */
+	options: { readonly completePackageInventory?: boolean } = {}
 ): LocalizationJoin {
 	const manifest = groupByIdentity(
 		evidence.manifest.status === "read" ? evidence.manifest.value.entries : []
 	);
 	const rows = gatheredTextGroups(corpus);
+	const knownTables = new Set(
+		corpus.units.flatMap((unit) =>
+			unit.occurrences.flatMap((occurrence) =>
+				occurrence.location.kind === "string_table_entry" &&
+				occurrence.identity.status === "resolved"
+					? [occurrence.location.objectPath]
+					: []
+			)
+		)
+	);
 	for (const [key, entries] of manifest) {
 		const entry = entries[0];
 		if (entry && !rows.has(key))
@@ -397,6 +436,10 @@ export function joinLocalizationTarget(
 		archives: groupByIdentity(
 			culture.archive.status === "read" ? culture.archive.value.entries : []
 		),
+		collapsedPos:
+			target.collapseMode === "IdenticalNamespaceAndSource"
+				? collapsedPOEntries(culture.po)
+				: undefined,
 		pos: groupByIdentity(
 			culture.po.status === "read"
 				? culture.po.value.entries.flatMap((entry) =>
@@ -425,7 +468,13 @@ export function joinLocalizationTarget(
 		if (!row.identity)
 			reasons.push(
 				row.units.some((unit) => unit.identity.status === "string_table")
-					? "string_table_namespace_unavailable"
+					? row.units.some(
+							(unit) =>
+								unit.identity.status === "string_table" &&
+								knownTables.has(unit.identity.tableId)
+						)
+						? "string_table_entry_missing"
+						: "string_table_namespace_unavailable"
 					: "unresolved_identity"
 			);
 		if (evidence.manifest.status === "failed") reasons.push("missing_manifest");
@@ -472,7 +521,11 @@ export function joinLocalizationTarget(
 				)
 					continue;
 				const status = packageCoverage.get(path) ?? packageCoverage.get(alternative);
-				if (status === "complete") structural.push("not_found");
+				if (
+					status === "complete" ||
+					(status === undefined && options.completePackageInventory)
+				)
+					structural.push("not_found");
 				else
 					reasons.push(
 						status === "partial"
@@ -499,7 +552,10 @@ export function joinLocalizationTarget(
 					const status =
 						packageCoverage.get(normalized) ??
 						packageCoverage.get(normalized.replace(/\.uasset$/u, ".umap"));
-					if (status !== "complete")
+					if (
+						status !== "complete" &&
+						!(status === undefined && options.completePackageInventory)
+					)
 						reasons.push(
 							status === "partial"
 								? "package_partial"
@@ -514,8 +570,25 @@ export function joinLocalizationTarget(
 		const cultures: LocalizationCultureState[] = target.cultures.map((culture) => {
 			const index = cultureIndexes.find((item) => item.culture === culture);
 			const archives: readonly ArchiveEntry[] = index?.archives.get(key) ?? [];
-			const pos = index?.pos.get(key) ?? [];
 			const archive = archives[0] ?? null;
+			const nativeEntries = cultureIndexes
+				.find((item) => item.culture === target.nativeCulture)
+				?.archives.get(key);
+			const expectedSource =
+				first &&
+				localizationExpectedSource(
+					first.source,
+					culture,
+					target.nativeCulture,
+					nativeEntries?.length === 1 ? nativeEntries[0] : null
+				);
+			const pos =
+				index?.pos.get(key) ??
+				(row.identity &&
+					index?.collapsedPos?.get(
+						JSON.stringify([row.identity.namespace, expectedSource?.Text ?? source])
+					)) ??
+				[];
 			const po: POEntry | null = pos[0]?.entry ?? null;
 			const poValue = po?.msgstr["0"] ?? "";
 			const archiveAbsent =
@@ -528,8 +601,6 @@ export function joinLocalizationTarget(
 			if (!index || index.po.status === "failed") unknownReasons.push("missing_po");
 			if (archives.length > 1) unknownReasons.push("duplicate_archive_identity");
 			if (pos.length > 1) unknownReasons.push("duplicate_po_identity");
-			if (target.collapseMode === "IdenticalNamespaceAndSource")
-				unknownReasons.push("ambiguous_po_identity");
 			if (
 				(index?.archive.status === "read" || archiveAbsent) &&
 				archives.length <= 1 &&
@@ -543,7 +614,8 @@ export function joinLocalizationTarget(
 				entries.length === 1 &&
 				archive &&
 				first &&
-				!localizationTextMatches(archive.source, first.source)
+				expectedSource &&
+				!localizationTextMatches(archive.source, expectedSource)
 			)
 				facts.push("needs_update");
 			if ((index?.archive.status === "read" || archiveAbsent) && archives.length <= 1) {
@@ -551,7 +623,8 @@ export function joinLocalizationTarget(
 				else if (
 					entries.length === 1 &&
 					first &&
-					localizationTextMatches(archive.source, first.source)
+					expectedSource &&
+					localizationTextMatches(archive.source, expectedSource)
 				)
 					facts.push("translated");
 			}

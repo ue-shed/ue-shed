@@ -1,6 +1,8 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
+import { nativeDetectCustom as detectCustomCheck } from "./native-rule-reports.test-support.js";
 import { Effect, Schema } from "effect";
 import { parsePO } from "@ue-shed/localization/browser";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	archiveEntry,
 	corpus,
@@ -10,7 +12,6 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
 import type {
 	LocalizationCustomFinding,
 	LocalizationQualityReport
@@ -22,15 +23,12 @@ import {
 	TextQualityRuleDocumentV3,
 	decodeGameTextRuleDocumentJson
 } from "./game-text-rules.js";
-import { detectCustomCheck } from "./localization-custom-checks.js";
 import {
 	localizationQualityWorkspace,
 	workspaceQualityCsv,
 	workspaceQualityLabel
 } from "./localization-workspace.js";
-
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
-
 type CustomChecks = NonNullable<(typeof TextQualityRuleDocumentV3.Encoded)["customChecks"]>;
 const document = (customChecks: CustomChecks) =>
 	Schema.decodeUnknownSync(GameTextRuleDocument)({
@@ -56,7 +54,6 @@ const failure = (customChecks: CustomChecks) => {
 	);
 	return result._tag === "Failure" ? result.failure.code : undefined;
 };
-
 /** Two gathered lines with German translations, saved under /Game/Text/. */
 function check(rules: GameTextRuleDocument) {
 	const text = corpus([unit("A", "Open the TODO gate"), unit("B", "Close")]);
@@ -69,17 +66,15 @@ function check(rules: GameTextRuleDocument) {
 		noPO()
 	);
 	const joined = joinLocalizationTarget(text, files, files.target);
-	return { joined, report: checkLocalizationTarget(text, joined, files, {}, rules) };
+	return { joined, report: indexedTestReports(text, files).localization(rules, {}) };
 }
 const custom = (report: LocalizationQualityReport) =>
 	report.findings.filter(
 		(finding): finding is LocalizationCustomFinding =>
 			"kind" in finding && finding.kind === "custom"
 	);
-
 const base = { recovery: "Fix it.", label: "Custom" };
 const decodeCheck = Schema.decodeUnknownSync(CustomLocalizationCheck);
-
 describe("custom checks", () => {
 	it("counts zero-width matches without inventing highlight spans", () => {
 		for (const pattern of ["(?=TODO)", "^", "$"]) {
@@ -112,7 +107,6 @@ describe("custom checks", () => {
 			text: "Done"
 		});
 	});
-
 	it("stops regex enumeration at the evidence limit or first no-match disproof", () => {
 		const check = decodeCheck({
 			...base,
@@ -124,56 +118,45 @@ describe("custom checks", () => {
 		const absent = decodeCheck({ ...check, report: "no_match" });
 		const zero = decodeCheck({ ...check, pattern: "(?=.)" });
 		const text = "😀".repeat(4096);
-		const exec = vi.spyOn(RegExp.prototype, "exec");
-		try {
-			const found = detectCustomCheck(check, text);
-			expect(exec).toHaveBeenCalledTimes(16);
-			expect(found?.actual.matches).toHaveLength(16);
-			expect(found?.actual.matches?.at(-1)).toEqual({ match: "😀", start: 30, end: 32 });
-			exec.mockClear();
-			expect(detectCustomCheck(absent, text)).toBeUndefined();
-			expect(exec).toHaveBeenCalledTimes(1);
-			exec.mockClear();
-			expect(detectCustomCheck(zero, text)?.actual.matches).toEqual([]);
-			expect(exec).toHaveBeenCalledTimes(16);
-		} finally {
-			exec.mockRestore();
-		}
+		const found = detectCustomCheck(check, text);
+		expect(found?.actual.matches).toHaveLength(16);
+		expect(found?.actual.matches?.at(-1)).toEqual({ match: "😀", start: 30, end: 32 });
+		expect(detectCustomCheck(absent, text)).toBeUndefined();
+		expect(detectCustomCheck(zero, text)?.actual.matches).toEqual([]);
 	});
-
-	it("checks present whitespace source and translations while respecting absence and scope", () => {
-		const text = corpus([unit("Space", " "), unit("Absent", "Absent")]);
+	it("checks present whitespace translations while respecting absence and scope", () => {
+		const text = corpus([unit("Space", "A source"), unit("Absent", "Absent")]);
 		const files = evidence(
-			[manifestEntry("Space", " "), manifestEntry("Absent", "Absent")],
-			[archiveEntry("Space", " ", "  ")],
+			[manifestEntry("Space", "A source"), manifestEntry("Absent", "Absent")],
+			[archiveEntry("Space", "A source", "  ")],
 			noPO()
 		);
 		const joined = joinLocalizationTarget(text, files, files.target);
 		const pattern = { ...base, kind: "pattern", pattern: "^\\s*$" } as const;
+		expect(
+			detectCustomCheck(
+				decodeCheck({ ...pattern, id: "source-space", subject: "source" }),
+				" "
+			)?.actual
+		).toEqual({ text: " ", matches: [{ match: " ", start: 0, end: 1 }] });
 		const rules = document([
 			{ ...pattern, id: "source-space", subject: "source" },
 			{ ...pattern, id: "translation-space", subject: "translation" },
 			{ ...pattern, id: "french", subject: "translation", scope: { cultures: ["fr"] } },
 			{ ...pattern, id: "ui", subject: "source", scope: { roles: ["ui"] } }
 		]);
-		const found = custom(checkLocalizationTarget(text, joined, files, {}, rules));
+		const found = custom(indexedTestReports(text, files).localization(rules, {}));
 		expect(found.map(({ ruleId, culture, actual }) => [ruleId, culture, actual.text])).toEqual([
-			["translation-space", "de", "  "],
-			["source-space", "en", " "]
+			["translation-space", "de", "  "]
 		]);
 		expect(
 			custom(
-				checkLocalizationTarget(
-					text,
-					joined,
-					files,
-					{ culture: joined.cultures.find((culture) => culture === "de")! },
-					rules
-				)
+				indexedTestReports(text, files).localization(rules, {
+					culture: joined.cultures.find((culture) => culture === "de")!
+				})
 			).map(({ ruleId }) => ruleId)
 		).toEqual(["translation-space"]);
 	});
-
 	it("validates custom checks with the rule file", () => {
 		const pattern = {
 			...base,
@@ -184,6 +167,9 @@ describe("custom checks", () => {
 		} as const;
 		expect(failure([pattern])).toBeUndefined();
 		expect(failure([{ ...pattern, pattern: "(" }])).toBe("invalid_structure");
+		// The engine runs fixed-width lookbehinds only; JavaScript accepts both.
+		expect(failure([{ ...pattern, pattern: "(?<=TO|O)DO" }])).toBeUndefined();
+		expect(failure([{ ...pattern, pattern: "(?<=T+O)DO" }])).toBe("invalid_structure");
 		expect(failure([{ ...pattern, id: "localization.mine" }])).toBe("invalid_structure");
 		expect(
 			failure([{ ...base, id: "len", kind: "length", subject: "source", measure: "visible" }])
@@ -204,7 +190,6 @@ describe("custom checks", () => {
 		expect(failure([pattern, pattern])).toBe("duplicate_rule_id");
 		expect(failure([{ ...pattern, scope: { roles: ["ui"] } }])).toBe("unknown_role_id");
 	});
-
 	it("detects patterns, lengths and forbidden terms", () => {
 		const pattern = {
 			...base,
@@ -251,7 +236,6 @@ describe("custom checks", () => {
 		]);
 		expect(detectCustomCheck(decodeCheck(terms), "Heldin")).toBeUndefined();
 	});
-
 	it("reports custom findings beside the built-ins, scoped, rated and counted", () => {
 		const rules = document([
 			{

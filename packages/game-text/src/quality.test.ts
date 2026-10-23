@@ -1,3 +1,5 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
+import { textQualityQuery } from "./quality-query.js";
 import { TextRoleId } from "./quality-schema.js";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -10,16 +12,14 @@ import {
 	decodeTextQualityRuleDocumentJson,
 	TextQualityRuleDocumentError
 } from "./quality-schema.js";
-import { evaluateTextQuality, matchesTextRole } from "./quality.js";
+import { matchesTextRole } from "./quality.js";
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,
 	type TextCorpus,
 	type TextOccurrence
 } from "./schema.js";
-
 const fixtureRules = fileURLToPath(new URL("../fixtures/quality-rules.v1.json", import.meta.url));
-
 const menuOccurrence: TextOccurrence = {
 	devNotes: "",
 	editCapability: "source_editable",
@@ -34,7 +34,6 @@ const menuOccurrence: TextOccurrence = {
 	packageFile: "Content/Fixture/UI/DT_Menu.uasset",
 	source: "Press the old button now"
 };
-
 const unrelatedOccurrence: TextOccurrence = {
 	devNotes: "",
 	editCapability: "read_only",
@@ -49,7 +48,6 @@ const unrelatedOccurrence: TextOccurrence = {
 	packageFile: "Content/Fixture/World/A_Unrelated.uasset",
 	source: "Old Press Click should stay outside"
 };
-
 const corpus: TextCorpus = {
 	coverage: {
 		discoveredPackages: 3,
@@ -123,7 +121,6 @@ const corpus: TextCorpus = {
 		}
 	]
 };
-
 it.effect("preserves Unicode case folding, literal offsets and immutable occurrence inputs", () =>
 	Effect.gen(function* () {
 		const units = ["A+B old old", "K ſ İ ı Σ σ ς"].map((source, row) => {
@@ -163,7 +160,7 @@ it.effect("preserves Unicode case folding, literal offsets and immutable occurre
 				}
 			]
 		});
-		const report = evaluateTextQuality(input, rules);
+		const report = indexedTestReports(input).source(rules);
 		expect(report.findings.map((finding) => finding.actual)).toEqual([
 			{ kind: "terminology_match", source: "A+B old old", term: "A+B", start: 0, end: 3 },
 			{ kind: "terminology_match", source: "A+B old old", term: "old", start: 4, end: 7 },
@@ -174,24 +171,29 @@ it.effect("preserves Unicode case folding, literal offsets and immutable occurre
 			{ kind: "terminology_match", source: "K ſ İ ı Σ σ ς", term: "σ", start: 10, end: 11 },
 			{ kind: "terminology_match", source: "K ſ İ ı Σ σ ς", term: "ς", start: 12, end: 13 }
 		]);
-		expect(evaluateTextQuality(input, rules)).toEqual(report);
+		expect(indexedTestReports(input).source(rules)).toEqual(report);
 		expect(JSON.stringify(input)).toBe(before);
 	})
 );
-
 it.effect(
 	"decodes the generic version-1 fixture and emits deterministic explainable findings",
 	() =>
 		Effect.gen(function* () {
 			const json = yield* Effect.promise(() => readFile(fixtureRules, "utf8"));
 			const document = yield* decodeTextQualityRuleDocumentJson(json);
-			const first = evaluateTextQuality(corpus, document);
-			const second = evaluateTextQuality(corpus, document);
-
+			const first = indexedTestReports(corpus).source(document);
+			const second = indexedTestReports(corpus).source(document);
 			expect(second).toEqual(first);
 			expect(first.status).toBe("partial");
-			expect(first.coverage).toEqual(corpus.coverage);
-			expect(first.diagnostics).toEqual(corpus.diagnostics);
+			expect(first.coverage).toMatchObject({
+				textOccurrences: 4,
+				unsupportedTextProperties: 1,
+				partialPackages: 1
+			});
+			expect(first.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+				"package_partially_decoded",
+				"unsupported_text_history"
+			]);
 			expect(first.roles).toEqual([
 				{ matchedOccurrences: 2, matchedTextUnits: 2, role: "ui.prompt" }
 			]);
@@ -205,12 +207,20 @@ it.effect(
 			);
 			expect(first.findings[0]).toMatchObject({
 				actual: { characterCount: 24, kind: "character_count" },
-				affectedOccurrences: [{ id: "occurrence:menu" }],
+				affectedOccurrences: [
+					{
+						location: menuOccurrence.location,
+						packageFile: menuOccurrence.packageFile.replaceAll(
+							"/",
+							process.platform === "win32" ? "\\" : "/"
+						)
+					}
+				],
 				expectation: { kind: "maximum_characters", maximumCharacters: 10 },
 				kind: "character_budget",
 				role: "ui.prompt",
 				ruleId: "ui.prompt.characters",
-				textUnitId: "text:menu"
+				textUnitId: "unreal:Fixture:MenuConfirm"
 			});
 			expect(first.findings.slice(1).map((finding) => finding.actual)).toEqual([
 				expect.objectContaining({ kind: "terminology_match", start: 10, term: "old" }),
@@ -225,7 +235,6 @@ it.effect(
 			yield* parseTextQualityReport(first);
 		})
 );
-
 it.effect("returns typed actionable failures without echoing authored rule contents", () =>
 	Effect.gen(function* () {
 		const invalidJson = yield* decodeTextQualityRuleDocumentJson("{secret-authored-term").pipe(
@@ -235,7 +244,6 @@ it.effect("returns typed actionable failures without echoing authored rule conte
 		expect(invalidJson.code).toBe("invalid_json");
 		expect(invalidJson.recovery).toContain("JSON syntax");
 		expect(invalidJson.message).not.toContain("secret-authored-term");
-
 		const emptyScope = yield* decodeTextQualityRuleDocument({
 			roles: [{ id: "role", scopes: [{ matchers: [] }] }],
 			rules: [
@@ -251,7 +259,6 @@ it.effect("returns typed actionable failures without echoing authored rule conte
 		}).pipe(Effect.flip);
 		expect(emptyScope.code).toBe("invalid_structure");
 		expect(emptyScope.recovery).toContain("non-empty");
-
 		const emptyEvidence = yield* decodeTextQualityRuleDocument({
 			roles: [
 				{
@@ -276,7 +283,6 @@ it.effect("returns typed actionable failures without echoing authored rule conte
 			schemaVersion: 1
 		}).pipe(Effect.flip);
 		expect(emptyEvidence.code).toBe("invalid_structure");
-
 		const unknownRole = yield* decodeTextQualityRuleDocument({
 			roles: [
 				{
@@ -299,7 +305,6 @@ it.effect("returns typed actionable failures without echoing authored rule conte
 		expect(unknownRole.message).not.toContain("secret-role-name");
 	})
 );
-
 it.effect("rejects duplicate IDs and never constructs an implicit whole-project role", () =>
 	Effect.gen(function* () {
 		const duplicate = yield* decodeTextQualityRuleDocument({
@@ -325,7 +330,6 @@ it.effect("rejects duplicate IDs and never constructs an implicit whole-project 
 			schemaVersion: 1
 		}).pipe(Effect.flip);
 		expect(duplicate.code).toBe("duplicate_role_id");
-
 		const duplicateRules = yield* decodeTextQualityRuleDocument({
 			roles: [
 				{
@@ -343,7 +347,6 @@ it.effect("rejects duplicate IDs and never constructs an implicit whole-project 
 			schemaVersion: 1
 		}).pipe(Effect.flip);
 		expect(duplicateRules.code).toBe("duplicate_rule_id");
-
 		const json = yield* Effect.promise(() => readFile(fixtureRules, "utf8"));
 		const document = yield* decodeTextQualityRuleDocumentJson(json);
 		const role = document.roles.at(0);
@@ -353,7 +356,6 @@ it.effect("rejects duplicate IDs and never constructs an implicit whole-project 
 		expect(matchesTextRole(unrelatedOccurrence, role)).toBe(false);
 	})
 );
-
 it.effect("replays embedded quality rules and exports filtered evidence with provenance", () =>
 	Effect.gen(function* () {
 		const {
@@ -386,7 +388,21 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			generation: 7,
 			authority: "project_files" as const
 		};
-		const exported = yield* exportGameTextInvestigation(corpus, decoded, source);
+		const exported = yield* exportGameTextInvestigation(
+			{
+				sourceQuality: (document) => {
+					const query = textQualityQuery(indexedTestReports(corpus).source(document));
+					return Effect.succeed({
+						summary: query.summary,
+						search: (request) => Effect.succeed(query.search(request)),
+						focus: (request) => Effect.succeed(query.focus(request)),
+						export: (filter) => Effect.succeed(query.export(filter))
+					});
+				}
+			},
+			decoded,
+			source
+		);
 		expect(exported.source).toEqual(source);
 		expect(exported.result.mode).toBe("quality");
 		if (exported.result.mode !== "quality") return;

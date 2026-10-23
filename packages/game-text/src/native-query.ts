@@ -1,9 +1,10 @@
 import { channel } from "node:diagnostics_channel";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
-import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
+import { Clock, Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
+import { MAX_PROTOCOL_PATH_BYTES, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type {
+	GameTextContract,
 	GameTextEngineOutcome,
 	GameTextEngineRequest,
 	GameTextIndexConfiguration
@@ -32,6 +33,12 @@ import {
 } from "./index-reads.js";
 
 import type { NativeTextQuery } from "./native-query-contract.js";
+import { canonicalRuleDocument } from "./rules/translate.js";
+import {
+	annotateFindingsProfile,
+	inflateFindingLines,
+	inflateFindingUnits
+} from "./native-findings.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
 
 const benchmark = channel("ue-shed.game-text-benchmark");
@@ -551,6 +558,48 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			)
 	);
 	const reader = interactive.reader;
+	/**
+	 * A findings reply as the contract's type. The session's handshake checked the engine's
+	 * contract, so the reply is parsed, not decoded.
+	 */
+	const engineReply = <T>(lane: Lane, request: GameTextEngineRequest) =>
+		Effect.gen(function* () {
+			const { payload } = yield* lane.execute(request);
+			if (payload === null)
+				return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
+			return yield* parseReply<T>(request.action, payload);
+		});
+	const parseReply = <T>(operation: string, text: string) =>
+		Effect.try({
+			// SAFETY: the engine serializes this reply from the contract type T; the handshake
+			// checked that host and engine were built against the same contract.
+			// Verified by: the Rust contract test regenerates these types from the reply structs.
+			try: (): T => JSON.parse(text),
+			catch: (cause) => failed(operation, cause)
+		});
+	/** A bounded findings read, which the engine spills to a file past one frame. */
+	const findingResponse = <T extends object>(lane: Lane, request: GameTextEngineRequest) =>
+		Effect.gen(function* () {
+			const reply = yield* engineReply<T | GameTextContract.SpilledReply>(lane, request);
+			if (!("file" in reply)) return reply;
+			return yield* Effect.acquireUseRelease(
+				Effect.succeed(reply.file),
+				(file) =>
+					Effect.tryPromise({
+						try: (signal) => readFile(file, { encoding: "utf8", signal }),
+						catch: (cause) => failed("findings_read", cause)
+					}).pipe(Effect.flatMap((text) => parseReply<T>("findings_decode", text))),
+				(file) =>
+					Effect.tryPromise({
+						try: () => rm(file, { force: true }),
+						catch: (cause) => failed("findings_cleanup", cause)
+					}).pipe(
+						Effect.catch((cause) =>
+							Effect.logWarning("Native finding file cleanup failed", { cause })
+						)
+					)
+			);
+		});
 	const summary = Effect.fn("GameTextIndex.nativeSummary")(() =>
 		response(interactive, { action: "summary", reader }, TextCorpusQuerySummary)
 	);
@@ -631,6 +680,61 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
 		bulk((lane) => exportWithSignals(lane, request));
 	const model: NativeIndexReader = {
+		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")((document) =>
+			bulk((lane) =>
+				Effect.gen(function* () {
+					// The rule program travels inline, as JSON text the engine reads WTF-8-aware.
+					const rules = canonicalRuleDocument(document);
+					const bytes = Buffer.byteLength(JSON.stringify(rules), "utf8");
+					if (bytes > MAX_PROTOCOL_PATH_BYTES)
+						return yield* Effect.fail(
+							failed(
+								"findings_rules",
+								`The rule policy encodes to ${bytes} bytes; one evaluation request carries at most ${MAX_PROTOCOL_PATH_BYTES}.`
+							)
+						);
+					const requestStart = yield* Clock.currentTimeNanos;
+					return yield* engineReply<GameTextContract.FindingsEvaluation>(lane, {
+						action: "findings_evaluate",
+						reader: lane.reader,
+						rules,
+						collationLocale: new Intl.Collator().resolvedOptions().locale
+					}).pipe(
+						Effect.tap((result) =>
+							annotateFindingsProfile(result.profile, requestStart)
+						)
+					);
+				})
+			)
+		),
+		findingsLines: Effect.fn("GameText.native.findingsLines")((key, rows) =>
+			bulk((lane) =>
+				findingResponse<GameTextContract.FindingLines>(lane, {
+					action: "findings_lines",
+					reader: lane.reader,
+					key,
+					rows
+				}).pipe(
+					Effect.tap((result) => annotateFindingsProfile(result.profile)),
+					Effect.flatMap(inflateFindingLines),
+					Effect.mapError((cause) => failed("findings_lines", cause))
+				)
+			)
+		),
+		findingsUnits: Effect.fn("GameText.native.findingsUnits")((key, units) =>
+			bulk((lane) =>
+				findingResponse<GameTextContract.FindingUnits>(lane, {
+					action: "findings_units",
+					reader: lane.reader,
+					key,
+					units
+				}).pipe(
+					Effect.tap((result) => annotateFindingsProfile(result.profile)),
+					Effect.flatMap(inflateFindingUnits),
+					Effect.mapError((cause) => failed("findings_units", cause))
+				)
+			)
+		),
 		summary: () => scopedRead(reads, summary()),
 		search: (request) => scopedRead(reads, search(request)),
 		focus: (request) => scopedRead(reads, focus(request)),

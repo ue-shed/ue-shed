@@ -1,3 +1,4 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { Schema } from "effect";
 import { parsePO } from "@ue-shed/localization/browser";
 import {
@@ -9,11 +10,9 @@ import {
 	success
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "./game-text-rules.js";
+import { GameTextRuleDocument } from "./game-text-rules.js";
 import { localizationQualityWorkspace, localizationReportPage } from "./localization-workspace.js";
 import { createLocalizationBaseline, localizationProgressReport } from "./localization-reports.js";
-
 export function qualityFixture(count = 1) {
 	const source = "Hello {PlayerName}";
 	const text = corpus(Array.from({ length: count }, (_, index) => unit("K" + index, source)));
@@ -75,8 +74,8 @@ export function qualityFixture(count = 1) {
 			}
 		]
 	});
-	const sourceReport = evaluateGameTextSourceQuality(text, document);
-	const report = checkLocalizationTarget(text, join, files, {}, document);
+	const sourceReport = indexedTestReports(text, files).source(document);
+	const report = indexedTestReports(text, files).localization(document, {});
 	const workspace = localizationQualityWorkspace(sourceReport, report, join);
 	const baseline = createLocalizationBaseline(text, files, "2026-10-07T00:00:00Z");
 	const progress = localizationProgressReport(text, join, files, baseline);

@@ -58,7 +58,7 @@ export const finishJoinedTarget = Effect.fn("JoinedTarget.marks")(function* (
 		columns;
 	const m = manifest.columns;
 	const isSaved = (row: number) => line.occ_end![row]! > line.occ_start![row]!;
-	const isResolved = (row: number) => !(line.reasons![row]! & ((1 << 9) | (1 << 10)));
+	const isResolved = (row: number) => !(line.reasons![row]! & ((1 << 9) | (1 << 10) | (1 << 17)));
 	const manifestRow = (row: number) =>
 		line.manifest_start![row] === line.manifest_end![row]
 			? absent

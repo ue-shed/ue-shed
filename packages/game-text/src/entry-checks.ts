@@ -11,12 +11,8 @@ export {
 } from "./id-repair.js";
 
 export {
-	type LocalizationCheckLists,
 	type LocalizationLineCheckContext,
-	type LocalizationLineCheckOutput,
 	type LocalizationTranslationVariants,
-	checkLocalizationLine,
-	checkLocalizationTarget,
 	compareLocalizationFindings,
 	compareReportedLocalizationFindings,
 	enabledLocalizationChecks,
@@ -31,7 +27,6 @@ export {
 	localizationPropertyKey,
 	localizationRuleContext,
 	localizationSourceCulture,
-	localizationStringTables,
 	localizationTranslationVariants,
 	reportableInvariantText
 } from "./localization-checks.js";
@@ -55,13 +50,9 @@ export {
 
 export {
 	type PreparedTextQualityRule,
-	type TextQualityOccurrence,
-	evaluateTextQuality,
 	matchesTextRole,
 	matchesTextRoleMatcher,
-	prepareTextQualityRules,
-	termMatches,
-	textQualityUnitFindings
+	prepareTextQualityRules
 } from "./quality.js";
 
 export {
@@ -126,9 +117,4 @@ export {
 
 export { LocalizationCheckScope, localizationCheckInScope } from "./localization-check-scope.js";
 
-export {
-	type CustomCheckContext,
-	customLocalizationChecks,
-	detectCustomCheck,
-	localizationLineCustomFindings
-} from "./localization-custom-checks.js";
+export { customLocalizationChecks } from "./localization-custom-checks.js";

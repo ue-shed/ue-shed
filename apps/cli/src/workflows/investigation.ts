@@ -58,10 +58,10 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 							preset.query.mode === "quality" &&
 							preset.query.workspaceFilter !== undefined &&
 							preset.query.localization
-								? text
+								? yield* text
 										.localizationQualityWorkspaceOf(
 											preset.rules
-												? (yield* indexed.sourceQuality(
+												? yield* (yield* indexed.sourceQuality(
 														preset.rules
 													)).export("all")
 												: undefined,

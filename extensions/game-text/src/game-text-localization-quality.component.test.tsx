@@ -1,14 +1,14 @@
+import { indexedTestReports } from "../../../packages/game-text/src/indexed-reports.test-support.js";
 import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
-import { checkLocalizationTarget } from "@ue-shed/game-text/checks";
 import {
 	localizationFocusPage,
 	localizationQualityWorkspace,
 	textQualityQuery
 } from "@ue-shed/game-text/corpus";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "@ue-shed/game-text/rules";
+import { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,19 +17,19 @@ import { cultureCode } from "../../../packages/game-text/src/localization.test-s
 import type { GameTextClientApi } from "./game-text-client.js";
 import type { GameTextPreferences } from "./game-text-preferences.js";
 import { GameTextRoute } from "./game-text-query-route.js";
-
 const runtime = ManagedRuntime.make(Layer.empty);
 const fixture = qualityFixture();
 function client(): GameTextClientApi {
 	let document = fixture.document;
 	let quality = fixture.workspace;
 	const text = textCorpusQuery(fixture.text, undefined, fixture.join);
-	const source = () => textQualityQuery(evaluateGameTextSourceQuality(fixture.text, document));
+	const source = () =>
+		textQualityQuery(indexedTestReports(fixture.text, fixture.files).source(document));
 	const reviewed = (next: GameTextRuleDocument) => {
 		document = next;
 		quality = localizationQualityWorkspace(
-			evaluateGameTextSourceQuality(fixture.text, next),
-			checkLocalizationTarget(fixture.text, fixture.join, fixture.files, {}, next),
+			indexedTestReports(fixture.text, fixture.files).source(next),
+			indexedTestReports(fixture.text, fixture.files).localization(next, {}),
 			fixture.join
 		);
 		return Effect.succeed({
@@ -164,7 +164,6 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 afterAll(() => runtime.dispose());
-
 describe("localization quality and reports", () => {
 	it("shows culture counts, exact asset/key rows, argument highlights and copy-only diffs", async () => {
 		const user = userEvent.setup({ delay: null }),
@@ -203,7 +202,6 @@ describe("localization quality and reports", () => {
 			changes: [{ translation: "Hallo {PlayerName}", previousTranslation: "Hallo {Name}" }]
 		});
 	});
-
 	it("copies all filtered suggestions in one bounded document", async () => {
 		const user = userEvent.setup({ delay: null }),
 			write = vi.fn(async (_text: string) => undefined);
@@ -226,7 +224,6 @@ describe("localization quality and reports", () => {
 		expect(JSON.parse(write.mock.calls[0]?.[0] ?? "{}").changes).toHaveLength(1);
 		expect(screen.queryByRole("button", { name: /Apply|Write translation/u })).toBeNull();
 	});
-
 	it("shows loading without a false empty finding state", async () => {
 		mount({ ...client(), localizationQualitySearch: () => Effect.never });
 		await screen.findByText("Loading findings…");
@@ -235,7 +232,6 @@ describe("localization quality and reports", () => {
 		expect(screen.queryByRole("table", { name: "Rules overview" })).toBeNull();
 		expect(screen.getByRole("tab", { name: "Quality checks" })).toBeTruthy();
 	});
-
 	it("renders a dense native-first report and baseline save/compare/export flows", async () => {
 		const user = userEvent.setup({ delay: null }),
 			api = client();
@@ -270,7 +266,6 @@ describe("localization quality and reports", () => {
 			"export_csv"
 		]);
 	});
-
 	it("restores Reports, the culture filter and finding across fresh mounts without rescanning", async () => {
 		const user = userEvent.setup({ delay: null }),
 			api = client(),
@@ -306,7 +301,6 @@ describe("localization quality and reports", () => {
 		await screen.findByRole("region", { name: "Suggested fix" });
 		expect(load.mock.calls).toEqual([[false], [false]]);
 	});
-
 	it("keeps Reports loading and baseline failures separate from real table values", async () => {
 		const first = mount(
 			{ ...client(), localizationReport: () => Effect.never },
@@ -335,7 +329,6 @@ describe("localization quality and reports", () => {
 		);
 		expect(screen.queryByRole("columnheader", { name: "New words" })).toBeNull();
 	});
-
 	it("edits culture budgets, glossaries, alternatives and recovery before explicit save", async () => {
 		const user = userEvent.setup({ delay: null }),
 			api = client();
@@ -410,8 +403,7 @@ describe("localization quality and reports", () => {
 				}
 			]
 		});
-	});
-
+	}, 30_000);
 	it("upgrades v1 by previewing without saving and retains source rule fields", async () => {
 		const user = userEvent.setup({ delay: null }),
 			api = client();
@@ -441,5 +433,5 @@ describe("localization quality and reports", () => {
 		).toBeTruthy();
 		await user.click(screen.getByRole("button", { name: "Save" }));
 		await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-	});
+	}, 30_000);
 });

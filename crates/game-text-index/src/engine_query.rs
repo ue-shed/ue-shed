@@ -18,6 +18,9 @@ pub(crate) struct PreparationTimings {
 }
 
 pub struct EngineQuery {
+    pub(crate) configuration: Configuration,
+    pub(crate) findings: HashMap<String, crate::rules::FindingsLayer>,
+    pub(crate) finding_files: FindingFiles,
     pub(crate) audience_rules: Vec<String>,
     pub(crate) summary_cache: Option<Value>,
     pub(crate) metadata_cache: crate::query_cache::QueryCache,
@@ -45,6 +48,17 @@ pub struct EngineQuery {
     pub(crate) package_lists: Option<Arc<(Vec<Value>, Vec<Value>)>>,
     /// Each evidence input's file metadata, read once per reader.
     pub(crate) evidence_meta: HashMap<String, Arc<Value>>,
+}
+
+/// Large response files belong to the reader even when its caller is interrupted.
+#[derive(Default)]
+pub(crate) struct FindingFiles(pub Vec<std::path::PathBuf>);
+impl Drop for FindingFiles {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 /// An open-addressed hash of one packed-ID arena: each slot holds a row plus one, zero when
@@ -199,6 +213,9 @@ impl EngineQuery {
             "Invalid package offset order.",
         )?;
         Ok(Self {
+            configuration: configuration.clone(),
+            findings: HashMap::new(),
+            finding_files: FindingFiles::default(),
             audience_rules: Vec::new(),
             summary_cache: None,
             metadata_cache: crate::query_cache::QueryCache::default(),

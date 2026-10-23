@@ -7,7 +7,6 @@ import { expect } from "vitest";
 import type { GameTextIndexRefreshResult } from "./index-contract.js";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 import type { LocalizationCheckOptions } from "./localization-quality-schema.js";
 import { localizationLineFingerprint } from "./localization-review.js";
@@ -20,18 +19,18 @@ import {
 	type WorkspaceQualityRequest
 } from "./localization-workspace.js";
 import { TextQualityFindingId } from "./quality-query.js";
-import {
-	GameTextRuleDocument,
-	evaluateGameTextSourceQuality,
-	migrateGameTextRuleDocument
-} from "./game-text-rules.js";
-
+import { GameTextRuleDocument, migrateGameTextRuleDocument } from "./game-text-rules.js";
 /**
  * One problem per key pattern; German carries the translation problems. `deSource` is the source
  * German's archive entry records, when it was translated from older text; `dePO` is a pending PO
  * translation that differs from the archive.
  */
-const patterns: ReadonlyArray<{ source: string; de: string; deSource?: string; dePO?: string }> = [
+const patterns: ReadonlyArray<{
+	source: string;
+	de: string;
+	deSource?: string;
+	dePO?: string;
+}> = [
 	{ source: "Hello {PlayerName}", de: "Hallo {Name}" },
 	{ source: "<Bold>Gold</>", de: "<Bold>Gold" },
 	{ source: "Ready ", de: "Bereit" },
@@ -77,7 +76,6 @@ const po = (text: string) =>
 		.replaceAll('"', '\\"')
 		.replaceAll("\r", "\\r")
 		.replaceAll("\n", "\\n");
-
 const occurrence = (key: string, source: string, index: number) => ({
 	source,
 	dev_notes: index % patterns.length === 7 ? "Shown on the main menu." : "",
@@ -90,7 +88,6 @@ const occurrence = (key: string, source: string, index: number) => ({
 	},
 	edit_capability: "read_only" as const
 });
-
 const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 	schemaVersion: 2,
 	segmentSeparator: "//",
@@ -140,7 +137,6 @@ const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 		}
 	]
 });
-
 /** Writes the target's manifest, archives and PO files for these keys. */
 async function writeLocalization(projectRoot: string, entries: typeof keys) {
 	const manifest = {
@@ -175,7 +171,6 @@ async function writeLocalization(projectRoot: string, entries: typeof keys) {
 		await writeFile(join(projectRoot, `${culture}.po`), portable(culture));
 	}
 }
-
 it.live(
 	"indexed quality pages, focus and proposals equal the in-memory workspace",
 	() =>
@@ -271,16 +266,10 @@ it.live(
 				});
 				const whitespace: number[] = [];
 				for (const options of [{}, { review }]) {
-					const source = evaluateGameTextSourceQuality(yield* result.corpus, document);
+					const source = yield* (yield* result.sourceQuality(document)).export("all");
 					const legacy = localizationQualityWorkspace(
 						source,
-						checkLocalizationTarget(
-							yield* result.corpus,
-							join,
-							result.evidence,
-							options,
-							document
-						),
+						yield* result.localizationCheck(document, options),
 						join
 					);
 					// Placeholders the source terminology reports are left out from the scan's
@@ -375,24 +364,28 @@ it.live(
 								...(culture ? { culture } : undefined)
 							};
 							for (const offset of [0, 50])
-								expect(indexed.search({ ...request, offset })).toEqual(
+								expect(yield* indexed.search({ ...request, offset })).toEqual(
 									legacy.search({ ...request, offset })
 								);
-							expect(indexed.export(request)).toEqual(legacy.export(request));
-							expect(indexed.changes(request)).toEqual(legacy.changes(request));
+							expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+							expect(yield* indexed.changes(request)).toEqual(
+								legacy.changes(request)
+							);
 							// Every finding once; later occurrence pages for a sample.
 							if (filter !== "all" || culture) continue;
-							legacy.export(request).findings.forEach(({ id }, index) => {
+							for (const [index, { id }] of legacy
+								.export(request)
+								.findings.entries()) {
 								for (const occurrenceOffset of index % 10 === 0 ? [0, 1] : [0])
 									expect(
-										indexed.focus({ ...request, id, occurrenceOffset })
+										yield* indexed.focus({ ...request, id, occurrenceOffset })
 									).toEqual(legacy.focus({ ...request, id, occurrenceOffset }));
-							});
+							}
 						}
 					const unknown = TextQualityFindingId.make(
 						all.findings[0]!.id.replace(/.$/u, "x")
 					);
-					expect(indexed.focus({ target: join.target, id: unknown })).toEqual({
+					expect(yield* indexed.focus({ target: join.target, id: unknown })).toEqual({
 						status: "not_found"
 					});
 				}
@@ -400,9 +393,8 @@ it.live(
 				expect(whitespace[1]).toBe(whitespace[0]! - 1);
 			}).pipe(Effect.provide(fixture.layer()));
 		}).pipe(Effect.scoped),
-	120_000
+	120000
 );
-
 /** Every filter, culture, page, export and focus of both workspaces, with and without the rules. */
 const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 	result: GameTextIndexRefreshResult,
@@ -412,17 +404,11 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 	for (const rules of [undefined, document])
 		for (const options of optionSets) {
 			const source = rules
-				? evaluateGameTextSourceQuality(yield* result.corpus, rules)
+				? yield* (yield* result.sourceQuality(rules)).export("all")
 				: undefined;
 			const legacy = localizationQualityWorkspace(
 				source,
-				checkLocalizationTarget(
-					yield* result.corpus,
-					join,
-					result.evidence,
-					options,
-					rules
-				),
+				yield* result.localizationCheck(rules, options),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(
@@ -436,17 +422,16 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 						filter,
 						...(culture ? { culture } : undefined)
 					};
-					expect(indexed.search(request)).toEqual(legacy.search(request));
+					expect(yield* indexed.search(request)).toEqual(legacy.search(request));
 					const exported = legacy.export(request);
-					expect(indexed.export(request)).toEqual(exported);
+					expect(yield* indexed.export(request)).toEqual(exported);
 					for (const { id } of exported.findings.filter((_, index) => index % 10 === 0))
-						expect(indexed.focus({ ...request, id })).toEqual(
+						expect(yield* indexed.focus({ ...request, id })).toEqual(
 							legacy.focus({ ...request, id })
 						);
 				}
 		}
 });
-
 it.live("checks report each place once, its compiled Blueprint copies folded in", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -493,8 +478,7 @@ it.live("checks report each place once, its compiled Blueprint copies folded in"
 		);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = yield* result.localizationJoin;
-			const report = checkLocalizationTarget(yield* result.corpus, join, result.evidence);
+			const report = yield* result.localizationCheck(undefined, undefined);
 			const found = (kind: string) =>
 				report.findings.filter((finding) => finding.kind === kind);
 			for (const kind of ["culture_invariant_text", "rich_text_tags_added"]) {
@@ -512,7 +496,6 @@ it.live("checks report each place once, its compiled Blueprint copies folded in"
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("rows the query hides are neither checked nor counted in the limits", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -538,7 +521,7 @@ it.live("rows the query hides are neither checked nor counted in the limits", ()
 			expect(join.lines.map((line) => line.identity?.key)).toEqual(["K"]);
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(yield* result.corpus, join, result.evidence),
+				yield* result.localizationCheck(undefined, undefined),
 				join
 			);
 			expect(legacy.search({ target: join.target, filter: "all" }).limits).toContainEqual({
@@ -549,7 +532,6 @@ it.live("rows the query hides are neither checked nor counted in the limits", ()
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -592,20 +574,15 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 					accept("e\u0301", "localization.duplicate_source", join.nativeCulture!)
 				]
 			});
-			const corpusForOracle = yield* result.corpus;
 			const total = (options: LocalizationCheckOptions) =>
-				localizationQualityWorkspace(
-					undefined,
-					checkLocalizationTarget(
-						corpusForOracle,
-						join,
-						result.evidence,
-						options,
-						document
-					),
-					join
-				).search({ target: join.target, filter: "all" }).total;
-			expect(total({ review })).toBe(total({}) - 2);
+				Effect.gen(function* () {
+					return localizationQualityWorkspace(
+						undefined,
+						yield* result.localizationCheck(document, options),
+						join
+					).search({ target: join.target, filter: "all" }).total;
+				});
+			expect(yield* total({ review })).toBe((yield* total({})) - 2);
 			yield* expectSameQuality(result, [{}, { review }]);
 			// Lines checked as one block count once each.
 			let last: GameTextIndexProgress | undefined;
@@ -623,7 +600,6 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("a scan across many pages equals the in-memory checks", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -641,7 +617,7 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 			expect(join.lines.length).toBeGreaterThan(512);
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(yield* result.corpus, join, result.evidence),
+				yield* result.localizationCheck(undefined, undefined),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(
@@ -654,12 +630,11 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 					filter: "all" as const,
 					...(culture ? { culture } : undefined)
 				};
-				expect(indexed.export(request)).toEqual(legacy.export(request));
-				expect(indexed.search({ ...request, offset: 500 })).toEqual(
+				expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+				expect(yield* indexed.search({ ...request, offset: 500 })).toEqual(
 					legacy.search({ ...request, offset: 500 })
 				);
 			}
-
 			// Progress: once before the scan, then per page, ending at every line and finding.
 			const progress: GameTextIndexProgress[] = [];
 			const reported = yield* result
@@ -693,15 +668,14 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 				{ length: plain.findings.length },
 				(_, position) => position
 			);
-			expect(reported.findings.items(everyPosition)).toEqual(
-				plain.findings.items(everyPosition)
+			expect(yield* reported.findings.items(everyPosition)).toEqual(
+				yield* plain.findings.items(everyPosition)
 			);
 			expect(reported.findings.limits(undefined)).toEqual(plain.findings.limits(undefined));
 			expect(reported.metadata.rules).toEqual(plain.metadata.rules);
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("the indexed scan stores each finding's severity as the rule file rates it", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -726,24 +700,26 @@ it.live("the indexed scan stores each finding's severity as the rule file rates 
 			const join = yield* result.localizationJoin;
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(yield* result.corpus, join, result.evidence, {}, rated),
+				yield* result.localizationCheck(rated, {}),
 				join
 			);
 			const quality = yield* result.localizationQuality(rated);
 			const indexed = localizationQualityWorkspaceOf(undefined, quality);
 			const request = { target: join.target, filter: "all" as const };
-			expect(indexed.export(request)).toEqual(legacy.export(request));
-			const page = indexed.search(request);
+			expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+			const page = yield* indexed.search(request);
 			expect(page).toEqual(legacy.search(request));
 			const severities = (filter: WorkspaceQualityFilter) =>
-				new Set(
-					indexed
-						.search({ ...request, filter })
-						.findings.map((finding) => finding.severity)
-				);
-			expect(severities("length_outlier")).toEqual(new Set(["blocking"]));
-			expect(severities("outdated_translation")).toEqual(new Set(["low"]));
-			expect(severities("character_budget")).toContain("blocking");
+				indexed
+					.search({ ...request, filter })
+					.pipe(
+						Effect.map(
+							(page) => new Set(page.findings.map((finding) => finding.severity))
+						)
+					);
+			expect(yield* severities("length_outlier")).toEqual(new Set(["blocking"]));
+			expect(yield* severities("outdated_translation")).toEqual(new Set(["low"]));
+			expect(yield* severities("character_budget")).toContain("blocking");
 			expect(page.counts.rich_text_tags).toBe(0);
 			expect(page.counts.rich_text_tags_added).toBeGreaterThan(0);
 			// Groups and positions agree on the stored severity.
@@ -757,7 +733,6 @@ it.live("the indexed scan stores each finding's severity as the rule file rates 
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("custom checks scan as the in-memory checks do, past the old filter and rule bits", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -802,13 +777,7 @@ it.live("custom checks scan as the in-memory checks do, past the old filter and 
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const join = yield* result.localizationJoin;
-			const report = checkLocalizationTarget(
-				yield* result.corpus,
-				join,
-				result.evidence,
-				{},
-				custom
-			);
+			const report = yield* result.localizationCheck(custom, {});
 			const legacy = localizationQualityWorkspace(undefined, report, join);
 			const quality = yield* result.localizationQuality(custom);
 			const indexed = localizationQualityWorkspaceOf(undefined, quality);
@@ -819,28 +788,27 @@ it.live("custom checks scan as the in-memory checks do, past the old filter and 
 					filter: "all" as const,
 					...(culture ? { culture } : undefined)
 				};
-				const page = indexed.search(request);
+				const page = yield* indexed.search(request);
 				expect(page).toEqual(legacy.search(request));
-				expect(indexed.export(request)).toEqual(legacy.export(request));
+				expect(yield* indexed.export(request)).toEqual(legacy.export(request));
 				expect(page.customFilters).toHaveLength(82);
 				for (const filter of [
 					"custom.length.79",
 					"custom.no-hallo",
 					"custom.braces"
 				] as const) {
-					expect(indexed.search({ ...request, filter })).toEqual(
+					expect(yield* indexed.search({ ...request, filter })).toEqual(
 						legacy.search({ ...request, filter })
 					);
 				}
 			}
-			const all = indexed.search({ target: join.target, filter: "all" });
+			const all = yield* indexed.search({ target: join.target, filter: "all" });
 			expect(all.counts["custom.no-hallo"]).toBeGreaterThan(0);
 			expect(all.counts["custom.braces"]).toBeGreaterThan(0);
 			expect(all.counts["custom.length.79"]).toBeGreaterThan(0);
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("custom regex checks preserve whitespace and zero-width truth in indexed scans", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -872,22 +840,16 @@ it.live("custom regex checks preserve whitespace and zero-width truth in indexed
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const join = yield* result.localizationJoin;
-			const report = checkLocalizationTarget(
-				yield* result.corpus,
-				join,
-				result.evidence,
-				{},
-				checks
-			);
+			const report = yield* result.localizationCheck(checks, {});
 			const legacy = localizationQualityWorkspace(undefined, report, join);
 			const indexed = localizationQualityWorkspaceOf(
 				undefined,
 				yield* result.localizationQuality(checks)
 			);
 			const request = { target: join.target, filter: "all" as const };
-			expect(indexed.search(request)).toEqual(legacy.search(request));
-			expect(indexed.export(request)).toEqual(legacy.export(request));
-			const counts = indexed.search(request).counts;
+			expect(yield* indexed.search(request)).toEqual(legacy.search(request));
+			expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+			const counts = (yield* indexed.search(request)).counts;
 			for (const subject of ["source", "translation"] as const) {
 				expect(counts[`custom.${subject}-space`]).toBe(subject === "translation" ? 2 : 0);
 				expect(counts[`custom.${subject}-lookahead`]).toBe(1);
@@ -896,7 +858,6 @@ it.live("custom regex checks preserve whitespace and zero-width truth in indexed
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("the indexed scan yields between pages and stops when interrupted", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -924,7 +885,6 @@ it.live("the indexed scan yields between pages and stops when interrupted", () =
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("proposals past the first 100 count the rest without reading their lines", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -940,7 +900,7 @@ it.live("proposals past the first 100 count the rest without reading their lines
 			const join = yield* result.localizationJoin;
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(yield* result.corpus, join, result.evidence),
+				yield* result.localizationCheck(undefined, undefined),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(
@@ -955,7 +915,7 @@ it.live("proposals past the first 100 count the rest without reading their lines
 					culture: join.cultures[1]!
 				}
 			]) {
-				const proposed = indexed.changes(request);
+				const proposed = yield* indexed.changes(request);
 				expect(proposed).toEqual(legacy.changes(request));
 				expect(proposed.status === "ready" && proposed.document.changes.length).toBe(100);
 				expect(proposed.status === "ready" && proposed.remaining).toBe(30);

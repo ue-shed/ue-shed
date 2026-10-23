@@ -8,16 +8,13 @@ import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { checkLocalizationTarget } from "./localization-checks.js";
 import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
-import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "./game-text-rules.js";
+import { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextCorpus, TextLocation } from "./schema.js";
-
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
-
 // The fixture's one package is Content/Text/Table.uasset, Unreal's /Game/Text/Table. UE 4.27 saves
 // `None` as its package name, so the reader names its objects relative to the package.
 const occurrence = (key: string, source: string, location: Occurrence["location"]) =>
@@ -104,7 +101,6 @@ const unrealLocations = {
 		propertyPath: "Label"
 	}
 } satisfies Record<string, TextLocation>;
-
 const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 	schemaVersion: 2,
 	roles: [
@@ -184,7 +180,6 @@ const expectedFindings = {
 	"source.first_row": ["Cell"],
 	"source.menu": ["Menu"]
 };
-
 /** A keyed unit's key; a keyless unit's source. */
 const keyOf = (corpus: TextCorpus, id: string) => {
 	const unit = corpus.units.find((item) => item.id === id)!;
@@ -196,7 +191,6 @@ const locationsByKey = (corpus: TextCorpus) =>
 			unit.occurrences.map((item) => [keyOf(corpus, unit.id), item.location] as const)
 		)
 	);
-
 /** Writes the target's manifest, archives and PO files: German is too long for the budgets. */
 async function writeLocalization(projectRoot: string) {
 	const keys = saved.map((item) => ({
@@ -239,7 +233,6 @@ async function writeLocalization(projectRoot: string) {
 		);
 	}
 }
-
 it.live("units read from the index carry Unreal's object paths for every location kind", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -291,7 +284,6 @@ it.live("units read from the index carry Unreal's object paths for every locatio
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("object path, class path and row roles match through the index and in memory", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -300,7 +292,7 @@ it.live("object path, class path and row roles match through the index and in me
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const memory = fixture.raw();
-			const source = evaluateGameTextSourceQuality(yield* result.corpus, document);
+			const source = yield* (yield* result.sourceQuality(document)).export("all");
 			expect(source.roles).toEqual([
 				{ role: "first_row", matchedOccurrences: 1, matchedTextUnits: 1 },
 				{ role: "menu", matchedOccurrences: 1, matchedTextUnits: 1 },
@@ -313,8 +305,6 @@ it.live("object path, class path and row roles match through the index and in me
 				(found[finding.ruleId] ??= []).push(keyOf(memory, finding.textUnitId));
 			for (const keys of Object.values(found)) keys.sort();
 			expect(found).toEqual(expectedFindings);
-			expect(source).toEqual(evaluateGameTextSourceQuality(memory, document));
-
 			// Localization rules, checked over the index, against a join of the in-memory corpus.
 			const evidence = yield* Effect.gen(function* () {
 				return yield* (yield* LocalizationEvidence).read({
@@ -324,13 +314,14 @@ it.live("object path, class path and row roles match through the index and in me
 			}).pipe(Effect.provide(fixture.evidence));
 			const memoryJoin = joinLocalizationTarget(memory, evidence);
 			const legacy = localizationQualityWorkspace(
-				evaluateGameTextSourceQuality(memory, document),
-				checkLocalizationTarget(memory, memoryJoin, evidence, {}, document),
+				source,
+				yield* result.localizationCheck(document, {}),
 				memoryJoin
 			);
 			const quality = yield* result.localizationQuality(document);
-			const translated = quality.findings
-				.items(Array.from({ length: quality.findings.length }, (_, position) => position))
+			const translated = (yield* quality.findings.items(
+				Array.from({ length: quality.findings.length }, (_, position) => position)
+			))
 				.flatMap(({ finding }) =>
 					finding.kind === "localization_character_budget"
 						? [[finding.ruleId, finding.identity.key, finding.culture]]
@@ -343,8 +334,8 @@ it.live("object path, class path and row roles match through the index and in me
 			]);
 			const indexed = localizationQualityWorkspaceOf(source, quality);
 			const request = { target: fixture.target.name, filter: "character_budget" } as const;
-			expect(indexed.export(request)).toEqual(legacy.export(request));
-			expect(indexed.search(request)).toEqual(legacy.search(request));
+			expect(yield* indexed.export(request)).toEqual(legacy.export(request));
+			expect(yield* indexed.search(request)).toEqual(legacy.search(request));
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );

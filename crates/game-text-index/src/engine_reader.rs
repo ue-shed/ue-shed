@@ -28,9 +28,17 @@ struct Segment {
     fences: Option<Vec<Vec<u8>>>,
 }
 
+/// Raw columns a rule evaluation reads. They belong to the evaluation, not to the reader's
+/// query cache, and are dropped as soon as the evaluation has built what it needs from them.
+#[derive(Default)]
+struct ScopedColumns {
+    columns: HashMap<(String, String), Arc<[u32]>>,
+    bytes: HashMap<String, Arc<[u8]>>,
+}
 /// Every input is selected from the same immutable joined metadata and held open until drop.
 /// Writers may publish or compact concurrently without changing this reader's results.
 pub struct EngineReader {
+    evaluation: Option<ScopedColumns>,
     pub generation: String,
     pub joined_key: String,
     pub meta: Value,
@@ -218,6 +226,7 @@ impl EngineReader {
             });
         }
         Ok(Self {
+            evaluation: None,
             generation,
             joined_key,
             meta,
@@ -233,9 +242,53 @@ impl EngineReader {
         })
     }
 
+    /// Heap bytes of the cached columns and dictionary frames, query cache and evaluation scope.
+    pub(crate) fn cache_bytes(&self) -> usize {
+        let columns = |columns: &HashMap<(String, String), Arc<[u32]>>| {
+            columns
+                .values()
+                .map(|column| column.len() * 4)
+                .sum::<usize>()
+        };
+        let bytes = |bytes: &HashMap<String, Arc<[u8]>>| {
+            bytes.values().map(|value| value.len()).sum::<usize>()
+        };
+        columns(&self.columns)
+            + bytes(&self.byte_columns)
+            + self.frame_bytes
+            + self
+                .evaluation
+                .as_ref()
+                .map_or(0, |scope| columns(&scope.columns) + bytes(&scope.bytes))
+    }
+    pub(crate) fn begin_evaluation(&mut self) -> Result<()> {
+        require(self.evaluation.is_none(), "Nested rule column scope.")?;
+        self.evaluation = Some(ScopedColumns::default());
+        Ok(())
+    }
+    pub(crate) fn release_evaluation_columns(&mut self) {
+        if let Some(scope) = &mut self.evaluation {
+            *scope = ScopedColumns::default();
+        }
+    }
+    pub(crate) fn end_evaluation(&mut self) {
+        self.evaluation = None;
+    }
+    fn raw_columns(&mut self) -> &mut HashMap<(String, String), Arc<[u32]>> {
+        match &mut self.evaluation {
+            Some(scope) => &mut scope.columns,
+            None => &mut self.columns,
+        }
+    }
+    fn raw_bytes(&mut self) -> &mut HashMap<String, Arc<[u8]>> {
+        match &mut self.evaluation {
+            Some(scope) => &mut scope.bytes,
+            None => &mut self.byte_columns,
+        }
+    }
     pub fn layer_column(&mut self, key: &str, name: &str) -> Result<Arc<[u32]>> {
         let cache_key = (key.to_owned(), name.to_owned());
-        if let Some(values) = self.columns.get(&cache_key) {
+        if let Some(values) = self.raw_columns().get(&cache_key) {
             return Ok(Arc::clone(values));
         }
         let layer = self
@@ -249,7 +302,7 @@ impl EngineReader {
             integers(&bytes)?
         }
         .into();
-        self.columns.insert(cache_key, Arc::clone(&values));
+        self.raw_columns().insert(cache_key, Arc::clone(&values));
         Ok(values)
     }
 
@@ -275,7 +328,7 @@ impl EngineReader {
     /// Packed byte arenas use numeric physical sections. Read them directly so native query
     /// opens do not retain both a decoded u32 copy and a byte copy of every identity/source arena.
     pub fn bytes(&mut self, name: &str) -> Result<Arc<[u8]>> {
-        if let Some(value) = self.byte_columns.get(name) {
+        if let Some(value) = self.raw_bytes().get(name) {
             return Ok(Arc::clone(value));
         }
         require(
@@ -313,14 +366,14 @@ impl EngineReader {
             bytes.extend_from_slice(&section(&mut layer.reader, &field)?);
         }
         let bytes: Arc<[u8]> = bytes.into();
-        self.byte_columns.insert(name.into(), Arc::clone(&bytes));
+        self.raw_bytes().insert(name.into(), Arc::clone(&bytes));
         Ok(bytes)
     }
 
     /// Read logical columns: immutable full-build columns plus one flat bounded overlay.
     pub fn column(&mut self, name: &str) -> Result<Arc<[u32]>> {
         let cache_key = (String::new(), name.to_owned());
-        if let Some(values) = self.columns.get(&cache_key) {
+        if let Some(values) = self.raw_columns().get(&cache_key) {
             return Ok(Arc::clone(values));
         }
         if let Some(kind) = self.source_patch_kind(name) {
@@ -328,7 +381,7 @@ impl EngineReader {
         }
         let original = self.original_column(name)?;
         if self.meta["patches"][name].is_null() {
-            self.columns.insert(cache_key, Arc::clone(&original));
+            self.raw_columns().insert(cache_key, Arc::clone(&original));
             return Ok(original);
         }
         let mut values = original.to_vec();
@@ -355,7 +408,7 @@ impl EngineReader {
             }
         }
         let values: Arc<[u32]> = values.into();
-        self.columns.insert(cache_key, Arc::clone(&values));
+        self.raw_columns().insert(cache_key, Arc::clone(&values));
         Ok(values)
     }
 
@@ -512,6 +565,15 @@ impl EngineReader {
     }
 
     fn block(&mut self, segment_index: usize, block: usize) -> Result<Vec<Vec<u8>>> {
+        let (bytes, range) = self.block_bytes(segment_index, block)?;
+        decode_a64_bytes(bytes.get(range).ok_or("Dictionary block range.")?)
+    }
+    /// A dictionary block's encoded bytes: its frame, through the frame cache, and its range.
+    fn block_bytes(
+        &mut self,
+        segment_index: usize,
+        block: usize,
+    ) -> Result<(Arc<[u8]>, std::ops::Range<usize>)> {
         let segment = &mut self.segments[segment_index];
         let frame = *segment
             .frames
@@ -543,7 +605,7 @@ impl EngineReader {
         } else {
             bytes.len()
         };
-        decode_a64_bytes(bytes.get(start..end).ok_or("Dictionary block range.")?)
+        Ok((bytes, start..end))
     }
 
     pub fn strings(&mut self, ids: &[u32]) -> Result<Vec<String>> {
@@ -553,28 +615,59 @@ impl EngineReader {
     /// The strings of many IDs, in their order. It visits them in ID order, so it decodes each
     /// dictionary block once, where a lookup per ID decodes a block per ID.
     pub fn strings_batch(&mut self, ids: &[u32]) -> Result<Vec<String>> {
+        use rayon::prelude::*;
         let mut visit = (0..ids.len()).collect::<Vec<_>>();
         visit.sort_unstable_by_key(|index| ids[*index]);
-        let mut result = vec![String::new(); ids.len()];
-        // The last decoded block: its (segment, block) and its strings.
-        let mut decoded: Option<(DictionaryBlock, Vec<Vec<u8>>)> = None;
+        // Frames are read serially through the cache; blocks then decode in parallel.
+        struct Block {
+            bytes: Arc<[u8]>,
+            range: std::ops::Range<usize>,
+            /// (result index, position in the block)
+            members: Vec<(usize, usize)>,
+        }
+        let mut blocks = Vec::<Block>::new();
+        let mut current: Option<DictionaryBlock> = None;
         for index in visit {
             let (segment_index, local) = self.string_position(ids[index])?;
-            let block = (segment_index, local / 64);
-            if decoded.as_ref().map(|(key, _)| *key) != Some(block) {
-                decoded = Some((block, self.block(segment_index, local / 64)?));
+            let key = (segment_index, local / 64);
+            if current != Some(key) {
+                let (bytes, range) = self.block_bytes(segment_index, local / 64)?;
+                blocks.push(Block {
+                    bytes,
+                    range,
+                    members: Vec::new(),
+                });
+                current = Some(key);
             }
-            let values = &decoded
-                .as_ref()
-                .ok_or("Dictionary block was not decoded.")?
-                .1;
-            result[index] = Wtf8Buf::from_bytes(
-                values
-                    .get(local % 64)
-                    .ok_or("String outside dictionary block.")?
-                    .clone(),
-            )
-            .map(Wtf8Buf::into_view)?;
+            if let Some(block) = blocks.last_mut() {
+                block.members.push((index, local % 64));
+            }
+        }
+        let decoded = blocks
+            .par_iter()
+            .map(|block| -> Result<Vec<(usize, String)>> {
+                let values = decode_a64_bytes(
+                    block
+                        .bytes
+                        .get(block.range.clone())
+                        .ok_or("Dictionary block range.")?,
+                )?;
+                block
+                    .members
+                    .iter()
+                    .map(|(index, position)| {
+                        let bytes = values
+                            .get(*position)
+                            .ok_or("String outside dictionary block.")?
+                            .clone();
+                        Ok((*index, Wtf8Buf::from_bytes(bytes)?.into_view()))
+                    })
+                    .collect()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut result = vec![String::new(); ids.len()];
+        for (index, text) in decoded.into_iter().flatten() {
+            result[index] = text;
         }
         Ok(result)
     }

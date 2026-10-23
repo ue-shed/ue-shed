@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { ensureUassetExecutable, repositoryRoot } from "./native-tools.ts";
 import { reportPerforceMapHistoryTestGate, reportUnrealTestGates } from "./test-gates.ts";
 
@@ -12,6 +12,27 @@ const withoutUasset = testArguments.includes(withoutUassetFlag);
 const vitestArguments = testArguments.filter((argument) => argument !== withoutUassetFlag);
 const vitest = join(repositoryRoot, "node_modules", "vitest", "vitest.mjs");
 const environment: NodeJS.ProcessEnv = { ...process.env };
+// The row-rule unit fixtures invoke the native evaluator directly, without a TS oracle.
+const driverBuild = spawnSync(
+	"cargo",
+	["build", "--locked", "-p", "game-text-index", "--example", "rule_test_driver"],
+	{
+		cwd: repositoryRoot,
+		env: environment,
+		stdio: "inherit",
+		windowsHide: true
+	}
+);
+if (driverBuild.error) throw driverBuild.error;
+if (driverBuild.status !== 0) throw new Error("Building the native rule test driver failed.");
+environment.UE_SHED_RULE_TEST_DRIVER = join(
+	environment.CARGO_TARGET_DIR
+		? resolve(repositoryRoot, environment.CARGO_TARGET_DIR)
+		: join(repositoryRoot, "target"),
+	"debug",
+	"examples",
+	process.platform === "win32" ? "rule_test_driver.exe" : "rule_test_driver"
+);
 delete environment.UE_SHED_PACKAGE_TEXT_FIXTURE_CACHE;
 let fixtureCache: string | undefined;
 if (withoutUasset) {

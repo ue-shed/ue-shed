@@ -594,7 +594,13 @@ impl<'a> Kernel<'a> {
                     .iter()
                     .filter_map(|value| optional_text(arena, *value))
                     .collect::<Vec<_>>();
-                out!(text::without_optional_tags(string(arena, a)?, &arguments)?)
+                let text = string(arena, a)?;
+                let without = text::without_optional_tags(text, &arguments)?;
+                if without.len() == text.len() {
+                    Out::Atom(a)
+                } else {
+                    out!(without)
+                }
             }
             Op::UnrealWhitespace => out!(text::unreal_whitespace(string(arena, a)?)),
             Op::UnrealUnsafeWhitespace => out!(text::unsafe_whitespace(string(arena, a)?)),

@@ -451,12 +451,12 @@ pub struct Occurrences {
 }
 pub struct Arena {
     store_count: u32,
-    stored: HashMap<StrId, Arc<str>>,
+    stored: FxHashMap<StrId, Arc<str>>,
     side: Vec<Arc<str>>,
     strings: FxHashMap<u64, StrId>,
     string_collisions: FxHashMap<u64, Vec<StrId>>,
     pub values: Vec<Structured>,
-    structures: HashMap<Structured, ValId>,
+    structures: FxHashMap<Structured, ValId>,
     pub occurrences: Occurrences,
     pub line_children: Option<Arc<Children>>,
     pub line_fields: HashMap<String, Arc<Column>>,
@@ -516,12 +516,12 @@ impl Arena {
     pub fn new(store_count: usize) -> Result<Self> {
         Ok(Self {
             store_count: store_count.try_into()?,
-            stored: HashMap::new(),
+            stored: FxHashMap::default(),
             side: Vec::new(),
             strings: FxHashMap::default(),
             string_collisions: FxHashMap::default(),
             values: Vec::new(),
-            structures: HashMap::new(),
+            structures: FxHashMap::default(),
             occurrences: Occurrences::default(),
             line_children: None,
             line_fields: HashMap::new(),
@@ -589,15 +589,18 @@ impl Arena {
         }
     }
     pub fn string(&mut self, text: &str) -> Result<StrId> {
-        let bytes = Wtf8Buf::from_view(text).into_bytes();
+        use std::borrow::Cow;
+        // A view without escaped surrogates is its own WTF-8: hash it in place.
+        let (bytes, canonical) = if text.as_bytes().contains(&0xf3) {
+            let bytes = Wtf8Buf::from_view(text).into_bytes();
+            let canonical = Wtf8Buf::from_bytes(bytes.clone())?.into_view();
+            (Cow::Owned(bytes), Cow::Owned(canonical))
+        } else {
+            (Cow::Borrowed(text.as_bytes()), Cow::Borrowed(text))
+        };
         let mut hash = FxHasher::default();
         hash.write(&bytes);
         let hash = hash.finish();
-        let canonical = if text.as_bytes().contains(&0xf3) {
-            std::borrow::Cow::Owned(Wtf8Buf::from_bytes(bytes.clone())?.into_view())
-        } else {
-            std::borrow::Cow::Borrowed(text)
-        };
         if let Some(first) = self.strings.get(&hash).copied() {
             if self.text(first) == canonical {
                 return Ok(first);
@@ -613,14 +616,35 @@ impl Arena {
                 .checked_add(u32::try_from(self.side.len())?)
                 .ok_or("Evaluation string dictionary is full.")?,
         );
-        self.side
-            .push(Arc::from(Wtf8Buf::from_bytes(bytes.clone())?.into_view()));
+        self.side.push(Arc::from(&*canonical));
         if let std::collections::hash_map::Entry::Vacant(entry) = self.strings.entry(hash) {
             entry.insert(id);
         } else {
             self.string_collisions.entry(hash).or_default().push(id);
         }
         Ok(id)
+    }
+    /// The ID `string` would return, if the text is already interned. Read-only.
+    pub fn find_string(&self, text: &str) -> Option<StrId> {
+        if text.as_bytes().contains(&0xf3) {
+            return None;
+        }
+        let mut hash = FxHasher::default();
+        hash.write(text.as_bytes());
+        let hash = hash.finish();
+        let first = *self.strings.get(&hash)?;
+        if self.text(first) == text {
+            return Some(first);
+        }
+        self.string_collisions
+            .get(&hash)?
+            .iter()
+            .copied()
+            .find(|id| self.text(*id) == text)
+    }
+    /// The ID `structured` would return, if the value is already interned. Read-only.
+    pub fn find_structured(&self, value: &Structured) -> Option<ValId> {
+        self.structures.get(value).copied()
     }
     pub fn structured(&mut self, value: Structured) -> Result<ValId> {
         if let Some(id) = self.structures.get(&value) {

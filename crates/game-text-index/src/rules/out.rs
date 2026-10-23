@@ -176,6 +176,35 @@ impl From<grammar::Pattern> for Out {
 }
 
 impl Arena {
+    /// The atom `build` would return, when everything in `out` is already interned. Read-only,
+    /// so kernel workers resolve repeated results in parallel and leave only new ones to `build`.
+    pub fn find(&self, out: &Out) -> Option<Atom> {
+        Some(match out {
+            Out::Atom(atom) => *atom,
+            Out::Text(text) => Atom::Str(self.find_string(text)?),
+            Out::List(values) => {
+                let values = values
+                    .iter()
+                    .map(|value| self.find(value))
+                    .collect::<Option<Vec<_>>>()?;
+                Atom::Val(self.find_structured(&Structured::List(values.into()))?)
+            }
+            Out::Record(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, value)| Some((self.find_string(name)?, self.find(value)?)))
+                    .collect::<Option<Vec<_>>>()?;
+                Atom::Val(self.find_structured(&Structured::Object(fields.into()))?)
+            }
+            Out::Fields(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, value)| Some((self.find_string(name)?, self.find(value)?)))
+                    .collect::<Option<Vec<_>>>()?;
+                Atom::Val(self.find_structured(&Structured::Object(fields.into()))?)
+            }
+        })
+    }
     pub fn build(&mut self, out: Out) -> Result<Atom> {
         Ok(match out {
             Out::Atom(atom) => atom,

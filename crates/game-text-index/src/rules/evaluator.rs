@@ -234,6 +234,8 @@ pub(super) enum Slot {
 }
 enum Computed {
     List(Vec<Atom>),
+    /// A result that is already interned.
+    Found(Atom),
     Out(super::out::Out),
     Limit,
 }
@@ -1183,7 +1185,9 @@ impl<'a> Evaluator<'a> {
                         return Ok(Computed::List(tuple.to_vec()));
                     }
                     match kernel.run(arena, &node.op, tuple) {
-                        Ok(value) => Ok(Computed::Out(value)),
+                        Ok(value) => Ok(arena
+                            .find(&value)
+                            .map_or(Computed::Out(value), Computed::Found)),
                         Err(error) if error.code == ErrorCode::LimitExceeded => Ok(Computed::Limit),
                         Err(error) => Err(error),
                     }
@@ -1193,6 +1197,7 @@ impl<'a> Evaluator<'a> {
             for ((key, _), value) in batch.into_iter().zip(computed) {
                 let result = match value {
                     Computed::List(values) => Slot::Value(self.arena.list(values)?),
+                    Computed::Found(value) => Slot::Value(value),
                     Computed::Out(value) => Slot::Value(self.arena.build(value)?),
                     Computed::Limit => Slot::Limit,
                 };
@@ -1341,25 +1346,32 @@ impl<'a> Evaluator<'a> {
             tasks = formatted;
         }
         for batch in tasks.chunks(4096) {
-            let computed = started.parallel(batch, |(text, group)| {
-                let suffix = &self.dense[cache][*group].0;
-                if pattern {
-                    let parse = self.parsed[text.0 as usize]
-                        .as_ref()
-                        .ok_or("Missing parsed pattern.")?;
-                    return Ok(super::out::Out::from(super::grammar::validate_pattern(
-                        parse.pattern.clone(),
-                        pattern_culture(&self.arena, suffix),
-                    )));
-                }
-                let mut inputs = Vec::with_capacity(suffix.len() + 1);
-                inputs.push(Atom::Str(*text));
-                inputs.extend_from_slice(suffix);
-                self.kernel.run(&self.arena, &node.op, &inputs)
-            });
+            let computed = started.parallel(
+                batch,
+                |(text, group)| -> Result<std::result::Result<Atom, super::out::Out>> {
+                    let suffix = &self.dense[cache][*group].0;
+                    let value = if pattern {
+                        let parse = self.parsed[text.0 as usize]
+                            .as_ref()
+                            .ok_or("Missing parsed pattern.")?;
+                        super::out::Out::from(super::grammar::validate_pattern(
+                            parse.pattern.clone(),
+                            pattern_culture(&self.arena, suffix),
+                        ))
+                    } else {
+                        let mut inputs = Vec::with_capacity(suffix.len() + 1);
+                        inputs.push(Atom::Str(*text));
+                        inputs.extend_from_slice(suffix);
+                        self.kernel.run(&self.arena, &node.op, &inputs)?
+                    };
+                    // Already-interned results resolve here, on the worker.
+                    Ok(self.arena.find(&value).ok_or(value))
+                },
+            );
             for ((text, group), value) in batch.iter().zip(computed) {
                 let value = match value {
-                    Ok(value) => Slot::Value(self.arena.build(value)?),
+                    Ok(Ok(value)) => Slot::Value(value),
+                    Ok(Err(value)) => Slot::Value(self.arena.build(value)?),
                     Err(error) if error.code == ErrorCode::LimitExceeded => Slot::Limit,
                     Err(error) => return Err(error),
                 };

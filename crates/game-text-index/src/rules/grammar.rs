@@ -523,7 +523,7 @@ pub fn rename_argument(text: &str, from: &str, to: &str, culture: &str) -> Optio
             format!("|{}({})", modifier.name, values.join(",")),
         ));
     }
-    replacements.sort_by(|a, b| b.0.cmp(&a.0));
+    replacements.sort_by_key(|a| std::cmp::Reverse(a.0));
     let mut result = units(text);
     for (start, end, replacement) in replacements {
         result.splice(start..end, units(&replacement));

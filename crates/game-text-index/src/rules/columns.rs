@@ -449,9 +449,19 @@ pub struct Occurrences {
     pub len: usize,
     pub raw_rows: Vec<u32>,
 }
+/// Where a loaded store string sits: its batch's buffer and byte range.
+#[derive(Clone, Copy)]
+struct Span {
+    batch: u32,
+    start: u32,
+    end: u32,
+}
 pub struct Arena {
     store_count: u32,
-    stored: FxHashMap<StrId, Arc<str>>,
+    /// Loaded store strings: each `load_strings` batch is one exact-size buffer, so a string
+    /// costs a span, not an allocation of its own.
+    stored: FxHashMap<StrId, Span>,
+    stored_text: Vec<Box<str>>,
     side: Vec<Arc<str>>,
     strings: FxHashMap<u64, StrId>,
     string_collisions: FxHashMap<u64, Vec<StrId>>,
@@ -499,8 +509,12 @@ impl Arena {
             arena_bytes: self.values.capacity() * size_of::<Structured>()
                 + structures
                 + self.structures.capacity() * (size_of::<Structured>() + size_of::<ValId>() + 1)
-                + self.stored.capacity() * (size_of::<StrId>() + size_of::<Arc<str>>() + 1)
-                + self.stored.values().map(|text| text.len()).sum::<usize>(),
+                + self.stored.capacity() * (size_of::<StrId>() + size_of::<Span>() + 1)
+                + self
+                    .stored_text
+                    .iter()
+                    .map(|text| text.len())
+                    .sum::<usize>(),
             side_dictionary_bytes: self.side.capacity() * size_of::<Arc<str>>()
                 + side_strings
                 + self.strings.capacity() * (size_of::<u64>() + size_of::<StrId>() + 1)
@@ -517,6 +531,7 @@ impl Arena {
         Ok(Self {
             store_count: store_count.try_into()?,
             stored: FxHashMap::default(),
+            stored_text: Vec::new(),
             side: Vec::new(),
             strings: FxHashMap::default(),
             string_collisions: FxHashMap::default(),
@@ -543,17 +558,31 @@ impl Arena {
         wanted.sort_unstable();
         let mut measure = super::stages::Measure::start();
         let texts = reader.strings_batch(&wanted)?;
-        // Hash and copy in parallel; the maps are filled in ID order, as before.
-        let hashed = measure.parallel_chunks(&texts, 1024, |text| {
+        // Hash in parallel; the batch's text is one buffer and the maps are filled in ID order.
+        let hashes = measure.parallel_chunks(&texts, 1024, |text| {
             let mut hash = FxHasher::default();
             hash.write(Wtf8Buf::from_view(text).as_bytes());
-            (hash.finish(), Arc::<str>::from(text.as_str()))
+            hash.finish()
         });
+        let mut buffer = String::with_capacity(texts.iter().map(String::len).sum());
+        let batch = u32::try_from(self.stored_text.len())?;
+        let mut spans = Vec::with_capacity(texts.len());
+        for text in &texts {
+            let start = u32::try_from(buffer.len())?;
+            buffer.push_str(text);
+            spans.push(Span {
+                batch,
+                start,
+                end: u32::try_from(buffer.len())?,
+            });
+        }
         drop(texts);
-        self.stored.reserve(hashed.len());
-        for (id, (hash, text)) in wanted.iter().copied().zip(hashed) {
+        self.stored_text.push(buffer.into_boxed_str());
+        self.stored.reserve(spans.len());
+        for ((id, hash), span) in wanted.iter().copied().zip(hashes).zip(spans) {
+            self.stored.insert(StrId(id), span);
             if let Some(first) = self.strings.get(&hash).copied() {
-                if *self.text(first) != *text {
+                if self.text(first) != self.text(StrId(id)) {
                     self.string_collisions
                         .entry(hash)
                         .or_default()
@@ -562,7 +591,6 @@ impl Arena {
             } else {
                 self.strings.insert(hash, StrId(id));
             }
-            self.stored.insert(StrId(id), text);
         }
         self.recorder
             .sub_stage("strings.load".into(), &measure, wanted.len());
@@ -578,14 +606,16 @@ impl Arena {
         if id.0 >= self.store_count {
             &self.side[(id.0 - self.store_count) as usize]
         } else {
-            self.stored.get(&id).map_or("", AsRef::as_ref)
+            self.stored.get(&id).map_or("", |span| {
+                &self.stored_text[span.batch as usize][span.start as usize..span.end as usize]
+            })
         }
     }
     fn text_arc(&self, id: StrId) -> Arc<str> {
         if id.0 >= self.store_count {
             Arc::clone(&self.side[(id.0 - self.store_count) as usize])
         } else {
-            self.stored.get(&id).cloned().unwrap_or_default()
+            Arc::from(self.text(id))
         }
     }
     pub fn string(&mut self, text: &str) -> Result<StrId> {

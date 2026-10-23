@@ -672,11 +672,47 @@ impl<'a> Evaluator<'a> {
         if cacheable
             && self.cheap_columns[id].is_none()
             && selection.len() == self.len
-            && selection.rows.iter().eq(0..self.len as u32)
+            && selection
+                .mask()
+                .is_some_and(|mask| mask.count() == self.len)
         {
             let column = self.node(id, selection)?;
             self.cheap_columns[id] = Some((column.clone(), Bits::all(self.len)));
             return Ok(column);
+        }
+        // Most selections are bitsets: find, compute and mark the missing rows a word at a time.
+        if cacheable && let Some(mask) = selection.mask() {
+            let mut missing = mask.clone();
+            if let Some((_, ready)) = &self.cheap_columns[id] {
+                for (word, done) in missing.words.iter_mut().zip(&ready.words) {
+                    *word &= !done;
+                }
+            }
+            if missing.any() {
+                let narrowed = Selection::from_mask(missing);
+                let column = self.node(id, &narrowed)?;
+                let (cached, ready) = self.cheap_columns[id].get_or_insert_with(|| {
+                    (Column::constant(Atom::Null, self.len), Bits::new(self.len))
+                });
+                cached.scatter(
+                    &narrowed.rows.iter().collect::<Vec<_>>(),
+                    &column,
+                    &mut self.arena,
+                )?;
+                for (word, done) in ready.words.iter_mut().zip(&narrowed.rows.mask.words) {
+                    *word |= done;
+                }
+            }
+            let rows = selection
+                .rows
+                .iter()
+                .map(|row| row as usize)
+                .collect::<Vec<_>>();
+            return self.cheap_columns[id]
+                .as_ref()
+                .ok_or("Missing cached column.")?
+                .0
+                .select(&rows, &mut self.arena);
         }
         if cacheable {
             let missing = if let Some((_, ready)) = &self.cheap_columns[id] {
@@ -1130,6 +1166,15 @@ impl<'a> Evaluator<'a> {
                     },
                 )
             };
+            // Size the miss table for this chunk at once rather than rehashing as it grows.
+            let misses_here = probes
+                .iter()
+                .filter(|probe| matches!(probe, Probe::Miss(_) | Probe::Unpacked))
+                .count();
+            missing.reserve(misses_here);
+            keys.reserve(misses_here);
+            atoms.reserve(misses_here * arity);
+            misses.reserve(misses_here);
             for (offset, probe) in probes.into_iter().enumerate() {
                 let row = chunk + offset;
                 let key = match probe {
@@ -1188,6 +1233,7 @@ impl<'a> Evaluator<'a> {
             }
         }
         let distinct_inputs = keys.len();
+        self.cache[cache].reserve(keys.len());
         // Bound temporary structured results while keeping interning order stable.
         let mut results = Vec::with_capacity(keys.len());
         for batch in (0..keys.len()).collect::<Vec<_>>().chunks(4096) {

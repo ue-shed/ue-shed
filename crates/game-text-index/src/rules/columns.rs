@@ -104,31 +104,42 @@ impl Bits {
                 })
             })
     }
-    /// Deposit compact column bits into selection positions, copying dense words at once.
+    /// Deposit compact column bits into selection positions. Each selection word takes its
+    /// chunk of compact bits at once; empty and full chunks need no per-bit work.
     pub fn deposit(&self, compact: &Self) -> Self {
         let mut result = Self::new(self.len);
         let mut source = 0usize;
         for (destination, selected) in self.words.iter().copied().enumerate() {
-            if selected == u64::MAX {
-                let offset = source % 64;
-                result.words[destination] =
-                    compact.words.get(source / 64).copied().unwrap_or(0) >> offset;
-                if offset > 0 {
-                    result.words[destination] |=
-                        compact.words.get(source / 64 + 1).copied().unwrap_or(0) << (64 - offset);
-                }
-                source += 64;
+            let count = selected.count_ones() as usize;
+            if count == 0 {
+                continue;
+            }
+            // The next `count` compact bits, lowest first.
+            let offset = source % 64;
+            let mut chunk = compact.words.get(source / 64).copied().unwrap_or(0) >> offset;
+            if offset > 0 {
+                chunk |= compact.words.get(source / 64 + 1).copied().unwrap_or(0) << (64 - offset);
+            }
+            if count < 64 {
+                chunk &= (1 << count) - 1;
+            }
+            source += count;
+            result.words[destination] = if chunk == 0 {
+                0
+            } else if count == 64 {
+                chunk
+            } else if chunk.count_ones() as usize == count {
+                selected
             } else {
-                let mut selected = selected;
-                while selected != 0 {
+                let (mut selected, mut word) = (selected, 0);
+                while chunk != 0 {
                     let bit = selected.trailing_zeros();
                     selected &= selected - 1;
-                    if compact.get(source) {
-                        result.words[destination] |= 1 << bit;
-                    }
-                    source += 1;
+                    word |= (chunk & 1) << bit;
+                    chunk >>= 1;
                 }
-            }
+                word
+            };
         }
         result
     }
@@ -951,6 +962,56 @@ impl Prepared {
 mod tests {
     use super::super::value::value;
     use super::*;
+
+    #[test]
+    fn deposit_places_each_compact_bit_at_the_next_selected_position() {
+        // Selections mixing empty, sparse, dense and full words, against compact patterns that
+        // exercise empty, full and partial chunks across word boundaries.
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for round in 0..64 {
+            let len = 64 * 9 + round;
+            let mut selection = Bits::new(len);
+            for row in 0..len {
+                let word = row / 64;
+                let keep = match word % 4 {
+                    0 => false,
+                    1 => next() % 7 == 0,
+                    2 => next() % 2 == 0,
+                    _ => true,
+                };
+                if keep {
+                    selection.set(row);
+                }
+            }
+            let mut compact = Bits::new(selection.count());
+            for row in 0..compact.len {
+                if match round % 3 {
+                    0 => next() % 2 == 0,
+                    1 => true,
+                    _ => next() % 9 == 0,
+                } {
+                    compact.set(row);
+                }
+            }
+            let mut expected = Bits::new(len);
+            for (source, row) in selection.ones().enumerate() {
+                if compact.get(source) {
+                    expected.set(row as usize);
+                }
+            }
+            assert_eq!(
+                selection.deposit(&compact).words,
+                expected.words,
+                "round {round}"
+            );
+        }
+    }
 
     #[test]
     fn dictionary_ids_follow_store_ids_and_preserve_wtf8_units() -> Result<()> {

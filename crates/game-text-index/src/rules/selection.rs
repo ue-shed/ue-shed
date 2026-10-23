@@ -70,6 +70,10 @@ impl Selection {
                 .collect::<Result<_>>()?,
         })
     }
+    /// The selected subject rows as a bitset, when no row repeats.
+    pub fn mask(&self) -> Option<&Bits> {
+        self.rows.expanded.is_empty().then_some(&self.rows.mask)
+    }
     pub fn from_mask(mask: Bits) -> Self {
         Self {
             rows: Rows {

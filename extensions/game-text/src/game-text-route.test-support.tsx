@@ -16,6 +16,10 @@ import { afterAll, afterEach, beforeEach, expect, vi } from "vitest";
 import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 import { type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
+
+// Quality reports come from the native engine, in one driver process per distinct rule
+// document, which can outlast the component suite's 5 s default under CI load.
+vi.setConfig({ testTimeout: 20_000 });
 export const corpus: TextCorpus = {
 	coverage: {
 		discoveredPackages: 2,

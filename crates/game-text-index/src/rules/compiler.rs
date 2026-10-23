@@ -92,6 +92,7 @@ pub struct Program {
     pub nodes: Vec<Node>,
     pub rules: Vec<CompiledRule>,
     pub roles: HashMap<String, Value>,
+    pub(crate) diagnostic_patterns: [NodeId; 2],
 }
 fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::InvalidInput, message)
@@ -738,10 +739,44 @@ pub fn compile(json: &str) -> Result<Program> {
         .into_iter()
         .filter_map(|index| compiled[index].take())
         .collect();
+    // Diagnostics are independent of rule selection and share the same grammar DAG nodes.
+    let culture = compiler.node(
+        "field",
+        Vec::new(),
+        Value::String("culture".into()),
+        Type::String,
+    )?;
+    let source = compiler.node(
+        "field",
+        Vec::new(),
+        Value::String("line.comparisonSource".into()),
+        Type::String,
+    )?;
+    let latest = compiler.node(
+        "field",
+        Vec::new(),
+        Value::String("latest".into()),
+        Type::String,
+    )?;
+    let diagnostic_patterns = [
+        compiler.node(
+            "formatPattern",
+            vec![source, culture],
+            Value::Null,
+            Type::Object,
+        )?,
+        compiler.node(
+            "formatPattern",
+            vec![latest, culture],
+            Value::Null,
+            Type::Object,
+        )?,
+    ];
     Ok(Program {
         nodes: compiler.nodes,
         rules,
         roles,
+        diagnostic_patterns,
     })
 }
 

@@ -348,36 +348,75 @@ If one can't be expressed exactly, add the smallest general operation that makes
 
 ## 5. Evaluation (native, `crates/game-text-index/src/rules/`)
 
-1. **Compile** each rule to a typed DAG. Identical subexpressions are shared across rules, and `let` bindings become nodes.
-2. **Per distinct input.** A node whose inputs are only string fields, params and literals runs once per distinct input tuple of dictionary IDs, then is gathered to rows.
-3. **Column-at-a-time.**
-    - `when` gives a bitset.
-    - The evidence expressions run only for rows in the bitset.
-    - Child reads touch only the rows that need them.
-4. **`each`.**
-    - Rows with an empty list produce nothing.
-    - A row's bit means "at least one finding".
-    - Findings keep element order.
-5. **Order and parallelism.**
-    - Rules evaluate in reference order.
-    - Independent rules may run in parallel within `RAYON_NUM_THREADS`.
-    - The output is deterministic.
-6. **Diagnostics are a built-in projection, independent of the rules.** They reproduce `localization-checks.ts:860-874`, `:1052-1099` and the `patternIssues(translationPattern)` call (`:1351` at the branch head) exactly.
-    - **Gating.**
-        - Pass 1 runs for every line, keyless and blank-source ones included.
-        - Pass 2 runs only for `checkable` lines.
-        - Translation-pattern diagnostics are emitted whenever the line is comparable and `latest` is not null, even when it is blank.
-    - **Multiplicity:** one diagnostic per issue, duplicates kept.
-    - **Order: two passes per line, as today.**
-        - **Pass 1** (`:860-874`) goes over every culture in order: its unknown reasons, then `reduced_source_checking`.
-        - **Pass 2** (from `:962`) goes over every culture in order:
-            1. `source_unavailable`;
-            2. if not comparable: `translation_unavailable` when `latest` is null, then the next culture;
-            3. source-pattern issues;
-            4. `translation_unavailable`, then the next culture;
-            5. translation-pattern issues.
-    - **Storage:** in the findings layer, in that order per line. `localization-quality-index.ts:826-834` ranks codes by first sighting.
-    - **Policy diagnostics** (`rule_culture_not_in_target`, `localization-policy.ts:33-43`) stay in TS.
+### Values
+
+- **A column** is typed, with a null bitmap: `Bool` (bitset), `Int(Vec<i64>)`, `Num(Vec<f64>)`, `Str(Vec<StrId>)` or `Val(Vec<ValId>)`.
+- **`StrId`** is the store dictionary's ID for a stored string.
+    - A string computed during evaluation (`trim`, `lower`, `slice`, `concat`, `formatRenameArgument`, …) is interned into a per-evaluation side dictionary, whose IDs follow the store's.
+    - Interning hashes the WTF-8 bytes. Never JSON.
+- **`ValId`** indexes a per-evaluation arena of structured values: lists, objects and match records. They are interned by a structural hash of their typed contents.
+- **`serde_json::Value` exists only at emission,** when a finding's evidence is built.
+
+### Subject relations
+
+- **Columns over rows, built once per evaluation from the joined layer.**
+    - Stored strings are their dictionary IDs; the text isn't copied.
+    - Derived fields (`comparisonSource`, `comparable`, `checkable`, `sourceVariants`, `sourceCulture`, `sourceLatestOrigin`, `latest`, `latestOrigin`, `expectedSource`, …) are computed once as columns.
+- **`line_culture` reads `line.*` through a row→line index,** with no per-row copy.
+- **Child `occurrences` use a CSR layout:** offsets per subject row into a vector of occurrence rows. Occurrence fields are columns over occurrence rows.
+    - `matchesRole(o, role)` and `pathHasPrefix(o, prefix)` are computed once per (role or prefix) into a bitset over all occurrences.
+    - Scope reads those bitsets.
+- **Occurrence JSON** (`TextQualityAffectedOccurrence`) is built only for emitted findings, once per distinct occurrence set. It feeds the `places` table.
+
+### Execution
+
+1. **One DAG per subject.** All of a subject's rules compile into one DAG, and identical subexpressions are one node, as today.
+2. **Selections.** A node is evaluated over a selection, which is a sorted row-index vector. Its result is a column aligned to that selection.
+3. **Scalar nodes compute once per distinct input tuple.**
+    - Build a map from the input-ID tuple (`StrId`/`ValId`/scalars) to a result slot.
+    - Evaluate each distinct tuple once, in parallel over tuples with rayon, then scatter.
+    - The per-node memo lives for the whole evaluation, so later selections reuse it.
+4. **`and`, `or` and `if` narrow the selection** for their later arguments. That is short-circuiting by selection, so expensive tails such as format parses only see rows that passed the cheap gates.
+5. **Scope runs before `when`.**
+    - The culture check comes first.
+    - Roles and path prefixes come from the occurrence bitsets: a row is in scope when any of its occurrences is in the bitset.
+6. **`when` produces the rule's mask,** a bitset over subject rows.
+7. **Evidence** (`actual`, `expectation`, `fix`, `extra`, `affected`, `translationOrigin`, `recovery`) is evaluated only over the mask's rows.
+8. **`each`.**
+    - The list column expands into an element relation: a row-index vector plus element `ValId`s.
+    - `when` and evidence run over that relation, and `item` (or `eachAs`) reads the element column.
+    - Emission order is row, then element.
+9. **List operators that bind a variable** (`filter`, `map`, `flatMap`, `any`, `all`, `sort*`) run per row over that row's (small) list.
+    - This is the only per-row loop, and it uses typed values, not JSON.
+    - Per-element scalar work still goes through the distinct-tuple memo.
+10. **References.**
+    - Rules evaluate in dependency order.
+    - `finding(id)` reads the referenced rule's mask.
+    - `findingField` reads the referenced rule's emitted evidence for that row.
+11. **Parallelism.**
+    - Rayon within `RAYON_NUM_THREADS`, over distinct tuples and over row chunks for per-row list operators.
+    - The output is deterministic: findings are ordered by rule, then row, then element.
+12. **Diagnostics** (the projection below) are a single pass over columns, not per-row JSON.
+
+### Diagnostic projection
+
+Diagnostics are independent of rule selection and retain the existing gating, multiplicity and order.
+
+- **Gating.**
+    - Pass 1 runs for every line, keyless and blank-source ones included.
+    - Pass 2 runs only for `checkable` lines.
+    - Translation-pattern diagnostics are emitted whenever the line is comparable and `latest` is not null, even when it is blank.
+- **Multiplicity:** one diagnostic per issue, duplicates kept.
+- **Order: two passes per line, as today.**
+    - **Pass 1** (`:860-874`) goes over every culture in order: its unknown reasons, then `reduced_source_checking`.
+    - **Pass 2** (from `:962`) goes over every culture in order:
+        1. `source_unavailable`;
+        2. if not comparable: `translation_unavailable` when `latest` is null, then the next culture;
+        3. source-pattern issues;
+        4. `translation_unavailable`, then the next culture;
+        5. translation-pattern issues.
+- **Storage:** in the findings layer, in that order per line. `localization-quality-index.ts:826-834` ranks codes by first sighting.
+- **Policy diagnostics** (`rule_culture_not_in_target`, `localization-policy.ts:33-43`) stay in TS.
 
 ## 6. The findings layer
 
@@ -408,7 +447,7 @@ digest("findings-v1" ‖ joined key ‖ canonical document hash ‖ overlay hash
 
 Findings are ordered by row, then emission order.
 
-**Diagnostics:** `diag.rows`, `diag.cultures`, `diag.codes`, in §5.6's order.
+**Diagnostics:** `diag.rows`, `diag.cultures`, `diag.codes`, in §5's diagnostic projection order.
 
 **Metadata:** the rule list (`id`, `kind`, `label`, `subject`, `family`, `severity`, `role`), counts by rule × culture × severity, and the evaluator version.
 

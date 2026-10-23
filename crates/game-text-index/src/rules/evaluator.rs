@@ -1,11 +1,20 @@
+//! Column-at-a-time DAG evaluation with selection short circuiting and tuple memoization.
 use super::HostCollator;
+use super::columns::{Arena, Atom, Bits, Children, Column, FieldColumn, Occurrences, Prepared};
 use super::compiler::{CompiledRule, NodeId, Program, Subject};
-use super::{grammar, regex as js_regex, text};
+use super::kernel::Kernel;
+use super::selection::Selection;
+use super::text;
+use super::value::Value as ScalarValue;
 use crate::{Error, ErrorCode, Result};
-use serde_json::{Value, json};
-use std::collections::HashMap;
+use rayon::prelude::*;
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-type ValueId = u32;
 #[derive(Default)]
 pub struct Relation {
     pub subject: Option<Subject>,
@@ -26,8 +35,80 @@ pub trait SubjectRows {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    /// Compatibility/emission reads. Native execution overrides prepare and never reads row JSON.
     fn field(&mut self, row: usize, name: &str) -> Result<Value>;
     fn occurrences(&mut self, row: usize) -> Result<Vec<Value>>;
+    fn dictionary_len(&self) -> Result<usize> {
+        Ok(0)
+    }
+    fn checkpoint(&self) -> Result<()> {
+        Ok(())
+    }
+    #[doc(hidden)]
+    fn prepare(
+        &mut self,
+        names: &[String],
+        arena: &mut Arena,
+        with_children: bool,
+    ) -> Result<Prepared> {
+        let len = self.len();
+        let mut prepared = Prepared::default();
+        for name in names {
+            let values = (0..len)
+                .map(|row| Ok(ScalarValue::from_json(&self.field(row, name)?)))
+                .collect::<Result<Vec<_>>>()?;
+            let atoms = values
+                .into_iter()
+                .map(|value| arena.intern(value))
+                .collect::<Result<Vec<_>>>()?;
+            prepared.fields.insert(
+                name.clone(),
+                FieldColumn {
+                    column: Arc::new(Column::from_atoms(&atoms, arena)?),
+                    rows: None,
+                },
+            );
+        }
+        if !with_children {
+            return Ok(prepared);
+        }
+        let mut values = HashMap::<String, Vec<Atom>>::new();
+        let mut children = Children {
+            offsets: vec![0],
+            ..Children::default()
+        };
+        let mut count = 0;
+        for row in 0..len {
+            for occurrence in self.occurrences(row)? {
+                let occurrence = ScalarValue::from_json(&occurrence);
+                for name in [
+                    "id",
+                    "packageFile",
+                    "source",
+                    "devNotes",
+                    "location",
+                    "unitStatus",
+                ] {
+                    values
+                        .entry(name.into())
+                        .or_default()
+                        .push(arena.intern(occurrence[name].clone())?);
+                }
+                children.members.push(count);
+                count += 1;
+            }
+            children.offsets.push(count);
+        }
+        arena.occurrences = Occurrences {
+            len: count as usize,
+            fields: values
+                .into_iter()
+                .map(|(name, values)| Ok((name, Arc::new(Column::from_atoms(&values, arena)?))))
+                .collect::<Result<_>>()?,
+        };
+        prepared.children = children;
+        Ok(prepared)
+    }
 }
 impl SubjectRows for Relation {
     fn subject(&self) -> Subject {
@@ -70,855 +151,1038 @@ pub struct Evaluation {
     pub diagnostics: Vec<(Subject, usize, String)>,
     pub masks: HashMap<usize, Vec<u64>>,
 }
+#[derive(Clone, Copy)]
+enum Slot {
+    Value(Atom),
+    Limit,
+}
+enum Computed {
+    Atom(Atom),
+    List(Vec<Atom>),
+    Value(ScalarValue),
+    Limit,
+}
 #[derive(Default)]
-struct Pool {
-    values: Vec<Value>,
-    ids: HashMap<String, ValueId>,
+pub(crate) struct NodeTiming {
+    pub elapsed: Duration,
+    pub scalar: Duration,
+    pub rows: usize,
+    pub tuples: usize,
 }
-impl Pool {
-    fn intern(&mut self, value: Value) -> Result<ValueId> {
-        let key = serde_json::to_string(&value)?;
-        if let Some(id) = self.ids.get(&key) {
-            return Ok(*id);
-        }
-        let id = u32::try_from(self.values.len())?;
-        self.values.push(value);
-        self.ids.insert(key, id);
-        Ok(id)
-    }
-    fn get(&self, id: ValueId) -> &Value {
-        &self.values[id as usize]
-    }
+#[derive(Default)]
+pub(crate) struct EvaluationTimings {
+    pub prepare: Duration,
+    pub execute: Duration,
+    pub emission: Duration,
+    pub diagnostics: Duration,
+    pub nodes: Vec<NodeTiming>,
+    pub projections: Vec<(String, Duration)>,
 }
+#[derive(Clone, Copy)]
+struct Evidence {
+    actual: Atom,
+    expectation: Atom,
+    fix: Atom,
+    extra: Atom,
+    translation_origin: Atom,
+}
+struct Pending {
+    rule: usize,
+    row: u32,
+    subject: Subject,
+    evidence: Evidence,
+    recovery: Atom,
+    affected: Atom,
+}
+type Diagnostics = Vec<(Subject, usize, String)>;
+type TimedEvaluation = (Evaluation, EvaluationTimings, Diagnostics);
 struct Evaluator<'a> {
     program: &'a Program,
-    relation: &'a mut dyn SubjectRows,
-    collator: &'a HostCollator,
-    pool: Pool,
-    fields: HashMap<String, HashMap<usize, ValueId>>,
-    occurrences: HashMap<usize, ValueId>,
-    cache: Vec<HashMap<Vec<ValueId>, ValueId>>,
-    patterns: HashMap<(String, bool), js_regex::JsRegex>,
-    classes: HashMap<ValueId, text::CharacterClass>,
-    variables: HashMap<String, ValueId>,
-    findings: HashMap<(String, usize), Vec<Emission>>,
-}
-fn boolean(value: &Value) -> bool {
-    value.as_bool() == Some(true)
-}
-fn string(value: &Value) -> Result<&str> {
-    value
-        .as_str()
-        .ok_or_else(|| Error::new(ErrorCode::InvalidInput, "Rule operation requires a string."))
-}
-fn list(value: &Value) -> Result<&[Value]> {
-    value
-        .as_array()
-        .map(Vec::as_slice)
-        .ok_or_else(|| Error::new(ErrorCode::InvalidInput, "Rule operation requires a list."))
-}
-fn number(value: &Value) -> Result<f64> {
-    value
-        .as_f64()
-        .ok_or_else(|| Error::new(ErrorCode::InvalidInput, "Rule operation requires a number."))
-}
-fn deep_get(value: &Value, path: &str) -> Value {
-    let mut current = value;
-    for key in path.split('.') {
-        current = if current.is_array() {
-            key.parse::<usize>()
-                .ok()
-                .and_then(|index| current.get(index))
-                .unwrap_or(&Value::Null)
-        } else {
-            current.get(key).unwrap_or(&Value::Null)
-        };
-    }
-    current.clone()
-}
-fn role_matches(occurrence: &Value, role: &Value) -> bool {
-    let Some(scopes) = role["scopes"].as_array() else {
-        return false;
-    };
-    scopes.iter().any(|scope| {
-        scope["matchers"].as_array().is_some_and(|matchers| {
-            matchers.iter().all(|matcher| {
-                let location = &occurrence["location"];
-                let kind = matcher["kind"].as_str().unwrap_or("");
-                let actual = match kind {
-                    "location_kind" => location["kind"].as_str(),
-                    "object_path" => location["objectPath"].as_str(),
-                    "row" if location["kind"] == "data_table_cell" => location["row"].as_str(),
-                    "property_path" if location["kind"] != "string_table_entry" => {
-                        location["propertyPath"].as_str()
-                    }
-                    "string_table_entry" if location["kind"] == "string_table_entry" => {
-                        location["entryKey"].as_str()
-                    }
-                    "class_path" if location["kind"] == "asset_property" => {
-                        location["classPath"].as_str()
-                    }
-                    _ => None,
-                };
-                actual.is_some_and(|actual| {
-                    let expected = matcher["value"].as_str().unwrap_or("");
-                    if kind == "location_kind" || matcher["operator"] == "exact" {
-                        actual == expected
-                    } else {
-                        actual.starts_with(expected)
-                    }
-                })
-            })
-        })
-    })
+    arena: Arena,
+    prepared: Prepared,
+    kernel: Kernel<'a>,
+    literals: Vec<Option<Atom>>,
+    extras: Vec<ScalarValue>,
+    cache: Vec<HashMap<Vec<Atom>, Slot>>,
+    cache_ids: Vec<usize>,
+    references: HashMap<String, usize>,
+    masks: HashMap<usize, Bits>,
+    evidence: HashMap<(usize, u32), Evidence>,
+    children: HashMap<usize, Atom>,
+    timings: Vec<NodeTiming>,
 }
 impl<'a> Evaluator<'a> {
     fn new(
         program: &'a Program,
-        relation: &'a mut dyn SubjectRows,
+        arena: Arena,
+        prepared: Prepared,
         collator: &'a HostCollator,
     ) -> Result<Self> {
-        let mut pool = Pool::default();
-        pool.intern(Value::Null)?;
-        Ok(Self {
+        let mut value = Self {
             program,
-            relation,
-            collator,
-            pool,
-            fields: HashMap::new(),
-            occurrences: HashMap::new(),
-            cache: (0..program.nodes.len()).map(|_| HashMap::new()).collect(),
-            patterns: HashMap::new(),
-            classes: HashMap::new(),
-            variables: HashMap::new(),
-            findings: HashMap::new(),
-        })
-    }
-    fn field_id(&mut self, name: &str, row: usize) -> Result<ValueId> {
-        if let Some(id) = self.fields.get(name).and_then(|values| values.get(&row)) {
-            return Ok(*id);
-        }
-        let value = self.relation.field(row, name)?;
-        let id = self.pool.intern(value)?;
-        self.fields.entry(name.into()).or_default().insert(row, id);
-        Ok(id)
-    }
-    fn value(&mut self, node: NodeId, row: usize) -> Result<Value> {
-        let id = self.evaluate(node, row)?;
-        Ok(self.pool.get(id).clone())
-    }
-    fn bound(&mut self, node: NodeId, row: usize, name: &str, value: Value) -> Result<Value> {
-        let id = self.pool.intern(value)?;
-        let previous = self.variables.insert(name.into(), id);
-        let result = self.value(node, row);
-        if let Some(previous) = previous {
-            self.variables.insert(name.into(), previous);
-        } else {
-            self.variables.remove(name);
-        }
-        result
-    }
-    fn evaluate(&mut self, id: NodeId, row: usize) -> Result<ValueId> {
-        let node = &self.program.nodes[id];
-        let name = node.value.as_str().unwrap_or("");
-        match node.op.as_str() {
-            "lit" => return self.pool.intern(node.value.clone()),
-            "field" => return self.field_id(name, row),
-            "var" => {
-                return self.variables.get(name).copied().ok_or_else(|| {
-                    Error::new(
-                        ErrorCode::InvalidInput,
-                        format!("Unbound expression variable {name}."),
-                    )
-                });
+            arena,
+            prepared,
+            kernel: Kernel::new(collator, &program.roles),
+            literals: vec![None; program.nodes.len()],
+            extras: program
+                .nodes
+                .iter()
+                .map(|node| ScalarValue::from_json(&node.value))
+                .collect(),
+            cache: Vec::new(),
+            cache_ids: Vec::new(),
+            references: program
+                .rules
+                .iter()
+                .map(|rule| (rule.rule.id.clone(), rule.ordinal))
+                .collect(),
+            masks: HashMap::new(),
+            evidence: HashMap::new(),
+            children: HashMap::new(),
+            timings: (0..program.nodes.len())
+                .map(|_| NodeTiming::default())
+                .collect(),
+        };
+        let mut groups = HashMap::new();
+        for (id, node) in program.nodes.iter().enumerate() {
+            let metadata = value.arena.intern(value.extras[id].clone())?;
+            let next = groups.len();
+            let cache = *groups.entry((node.op.clone(), metadata)).or_insert(next);
+            value.cache_ids.push(cache);
+            if node.op == "lit" {
+                value.literals[id] = Some(value.arena.intern(value.extras[id].clone())?);
             }
+        }
+        value.cache = (0..groups.len()).map(|_| HashMap::new()).collect();
+        Ok(value)
+    }
+    fn children(&mut self, row: usize) -> Result<Atom> {
+        let parent = self
+            .prepared
+            .children
+            .rows
+            .as_ref()
+            .map_or(row, |rows| rows[row] as usize);
+        if let Some(value) = self.children.get(&parent) {
+            return Ok(*value);
+        }
+        let members = self.prepared.children.members(row).to_vec();
+        let values = members
+            .into_iter()
+            .map(|row| self.arena.occurrence_id(row))
+            .collect::<Result<_>>()?;
+        let value = self.arena.list(values)?;
+        self.children.insert(parent, value);
+        Ok(value)
+    }
+    fn evaluate(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        if selection.len() == 0 {
+            return Ok(Column::constant(Atom::Null, 0));
+        }
+        let started = Instant::now();
+        let column = self.node(id, selection)?;
+        self.timings[id].elapsed += started.elapsed();
+        self.timings[id].rows += selection.len();
+        Ok(column)
+    }
+    fn node(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        let node = &self.program.nodes[id];
+        match node.op.as_str() {
+            "lit" => Ok(Column::constant(
+                self.literals[id].ok_or("Missing compiled literal.")?,
+                selection.len(),
+            )),
+            "field" => {
+                let name = node.value.as_str().ok_or("Invalid field name.")?;
+                let field = self.prepared.field(name)?;
+                let values = selection
+                    .rows
+                    .iter()
+                    .map(|row| field.get(*row as usize, &self.arena))
+                    .collect::<Vec<_>>();
+                Column::from_atoms(&values, &mut self.arena)
+            }
+            "var" => selection
+                .variables
+                .get(node.value.as_str().unwrap_or(""))
+                .cloned()
+                .ok_or_else(|| "Missing element binding column.".into()),
             "occurrences" => {
-                if let Some(id) = self.occurrences.get(&row) {
-                    return Ok(*id);
-                }
-                let occurrences = self.relation.occurrences(row)?;
-                let id = self.pool.intern(json!(occurrences))?;
-                self.occurrences.insert(row, id);
-                return Ok(id);
+                let values = selection
+                    .rows
+                    .iter()
+                    .map(|row| self.children(*row as usize))
+                    .collect::<Result<Vec<_>>>()?;
+                Column::from_atoms(&values, &mut self.arena)
             }
             "finding" | "findingField" => {
-                let reference = if node.op == "finding" {
-                    name
+                let name = if node.op == "finding" {
+                    node.value.as_str()
                 } else {
-                    node.value[0].as_str().unwrap_or("")
-                };
-                let found = self
-                    .findings
-                    .get(&(reference.to_owned(), row))
-                    .and_then(|values| values.first());
-                let value = if node.op == "finding" {
-                    json!(found.is_some())
-                } else {
-                    found.map_or(Value::Null, |found| deep_get(&json!({"actual":found.actual,"expectation":found.expectation,"fix":found.fix,"extra":found.extra}), node.value[1].as_str().unwrap_or("")))
-                };
-                return self.pool.intern(value);
-            }
-            "and" | "or" => {
-                for arg in &node.args {
-                    let value = self.value(*arg, row)?;
-                    if boolean(&value) == (node.op == "or") {
-                        return self.pool.intern(json!(node.op == "or"));
-                    }
+                    node.value[0].as_str()
                 }
-                return self.pool.intern(json!(node.op == "and"));
-            }
-            "coalesce" => {
-                for arg in &node.args {
-                    let id = self.evaluate(*arg, row)?;
-                    if !self.pool.get(id).is_null() {
-                        return Ok(id);
-                    }
-                }
-                return Ok(0);
-            }
-            "if" => {
-                let condition = self.value(node.args[0], row)?;
-                return self.evaluate(node.args[if boolean(&condition) { 1 } else { 2 }], row);
-            }
-            "filter" | "map" | "flatMap" | "any" | "all" => {
-                let input = self.value(node.args[0], row)?;
-                if input.is_null() {
-                    return Ok(0);
-                }
-                let name = node.value.as_str().unwrap_or("item");
-                let mut output = Vec::new();
-                for value in list(&input)? {
-                    let evaluated = self.bound(node.args[1], row, name, value.clone())?;
-                    match node.op.as_str() {
-                        "filter" if boolean(&evaluated) => output.push(value.clone()),
-                        "map" => output.push(evaluated),
-                        "flatMap" => {
-                            if !evaluated.is_null() {
-                                output.extend_from_slice(list(&evaluated)?);
-                            }
-                        }
-                        "any" if boolean(&evaluated) => return self.pool.intern(json!(true)),
-                        "all" if !boolean(&evaluated) => return self.pool.intern(json!(false)),
-                        _ => {}
-                    }
-                }
-                return self.pool.intern(if node.op == "any" {
-                    json!(false)
-                } else if node.op == "all" {
-                    json!(true)
-                } else {
-                    json!(output)
-                });
-            }
-            "sortCodeUnit" | "sortLocale" => {
-                let input = self.value(node.args[0], row)?;
-                if input.is_null() {
-                    return Ok(0);
-                }
-                let mut values = Vec::new();
-                for value in list(&input)? {
-                    let key = if node.args.len() == 2 {
-                        self.bound(node.args[1], row, "item", value.clone())?
+                .unwrap_or("");
+                let reference = self.references.get(name).copied();
+                let mut values = Vec::with_capacity(selection.len());
+                for row in &selection.rows {
+                    if node.op == "finding" {
+                        values.push(Atom::Bool(
+                            reference
+                                .and_then(|id| self.masks.get(&id))
+                                .is_some_and(|mask| mask.get(*row as usize)),
+                        ));
                     } else {
-                        value.clone()
-                    };
-                    values.push((value.clone(), key));
-                }
-                values.sort_by(|a, b| {
-                    if node.op == "sortLocale" {
-                        self.collator
-                            .compare(a.1.as_str().unwrap_or(""), b.1.as_str().unwrap_or(""))
-                    } else {
-                        text::code_unit_compare(
-                            a.1.as_str().unwrap_or(""),
-                            b.1.as_str().unwrap_or(""),
-                        )
+                        let path = node.value[1].as_str().unwrap_or("");
+                        let value = reference
+                            .and_then(|id| self.evidence.get(&(id, *row)))
+                            .map_or(Atom::Null, |evidence| {
+                                let (field, path) = path.split_once('.').unwrap_or((path, ""));
+                                let value = match field {
+                                    "actual" => evidence.actual,
+                                    "expectation" => evidence.expectation,
+                                    "fix" => evidence.fix,
+                                    "extra" => evidence.extra,
+                                    _ => Atom::Null,
+                                };
+                                if path.is_empty() {
+                                    value
+                                } else {
+                                    self.arena.get_path(value, path)
+                                }
+                            });
+                        values.push(value);
                     }
-                });
-                return self.pool.intern(json!(
-                    values
-                        .into_iter()
-                        .map(|(value, _)| value)
-                        .collect::<Vec<_>>()
-                ));
+                }
+                Column::from_atoms(&values, &mut self.arena)
             }
-            _ => {}
+            "and" | "or" | "coalesce" => self.short_circuit(id, selection),
+            "if" => self.conditional(id, selection),
+            "filter" | "map" | "flatMap" | "any" | "all" | "sortCodeUnit" | "sortLocale" => {
+                self.list_operator(id, selection)
+            }
+            _ => self.scalar(id, selection),
         }
-        let inputs = node
+    }
+    fn short_circuit(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        let node = &self.program.nodes[id];
+        let mut output = vec![
+            if node.op == "coalesce" {
+                Atom::Null
+            } else {
+                Atom::Bool(node.op == "and")
+            };
+            selection.len()
+        ];
+        let mut failed = Bits::new(selection.len());
+        let mut pending = (0..selection.len()).collect::<Vec<_>>();
+        for arg in &node.args {
+            if pending.is_empty() {
+                break;
+            }
+            let narrowed = selection.select(&pending, &mut self.arena)?;
+            let values = self.evaluate(*arg, &narrowed)?;
+            let mut later = Vec::new();
+            for (index, destination) in pending.iter().copied().enumerate() {
+                let value = values.get(index, &self.arena);
+                if values.failed.get(index) {
+                    failed.set(destination);
+                } else if node.op == "coalesce" {
+                    if value == Atom::Null {
+                        later.push(destination);
+                    } else {
+                        output[destination] = value;
+                    }
+                } else if value.boolean() == (node.op == "or") {
+                    output[destination] = Atom::Bool(node.op == "or");
+                } else {
+                    later.push(destination);
+                }
+            }
+            pending = later;
+        }
+        let mut column = Column::from_atoms(&output, &mut self.arena)?;
+        column.failed = failed;
+        Ok(column)
+    }
+    fn conditional(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        let node = &self.program.nodes[id];
+        let condition = self.evaluate(node.args[0], selection)?;
+        let mut output = vec![Atom::Null; selection.len()];
+        let mut failed = condition.failed.clone();
+        for (branch, condition_value) in [(1, true), (2, false)] {
+            let indices = (0..selection.len())
+                .filter(|row| {
+                    !condition.failed.get(*row)
+                        && condition.get(*row, &self.arena).boolean() == condition_value
+                })
+                .collect::<Vec<_>>();
+            let narrowed = selection.select(&indices, &mut self.arena)?;
+            let values = self.evaluate(node.args[branch], &narrowed)?;
+            for (index, destination) in indices.into_iter().enumerate() {
+                output[destination] = values.get(index, &self.arena);
+                if values.failed.get(index) {
+                    failed.set(destination);
+                }
+            }
+        }
+        let mut column = Column::from_atoms(&output, &mut self.arena)?;
+        column.failed = failed;
+        Ok(column)
+    }
+    fn scalar(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        let node = &self.program.nodes[id];
+        let cache = self.cache_ids[id];
+        let columns = node
             .args
             .iter()
-            .map(|arg| self.evaluate(*arg, row))
+            .map(|arg| self.evaluate(*arg, selection))
             .collect::<Result<Vec<_>>>()?;
-        if let Some(result) = self.cache[id].get(&inputs) {
-            return Ok(*result);
+        let started = Instant::now();
+        let mut failures = Bits::new(selection.len());
+        for column in &columns {
+            failures.union(&column.failed);
         }
-        let values = inputs
-            .iter()
-            .map(|id| self.pool.get(*id).clone())
-            .collect::<Vec<_>>();
-        let result = self.operation(&node.op, &node.value, &inputs, &values)?;
-        let result = self.pool.intern(result)?;
-        self.cache[id].insert(inputs, result);
-        Ok(result)
-    }
-    fn regex_matches(
-        &mut self,
-        source: &str,
-        pattern: &str,
-        sensitive: bool,
-        cap: Option<usize>,
-    ) -> Result<Vec<Value>> {
-        let key = (pattern.to_owned(), sensitive);
-        if !self.patterns.contains_key(&key) {
-            self.patterns
-                .insert(key.clone(), js_regex::JsRegex::new(pattern, sensitive)?);
-        }
-        self.patterns
-            .get(&key)
-            .ok_or("Missing compiled regex.")?
-            .matches(source, cap)
-    }
-    fn operation(
-        &mut self,
-        op: &str,
-        extra: &Value,
-        inputs: &[ValueId],
-        values: &[Value],
-    ) -> Result<Value> {
-        let a = values.first().unwrap_or(&Value::Null);
-        let b = values.get(1).unwrap_or(&Value::Null);
-        let c = values.get(2).unwrap_or(&Value::Null);
-        if !["list", "object", "eq", "ne", "isNull", "not"].contains(&op)
-            && values
+        let mut tuples = Vec::new();
+        let mut missing = HashMap::<Vec<Atom>, usize>::new();
+        let mut slots = Vec::with_capacity(selection.len());
+        for row in 0..selection.len() {
+            if failures.get(row) {
+                slots.push((None, None));
+                continue;
+            }
+            let tuple = columns
                 .iter()
-                .enumerate()
-                .any(|(index, value)| value.is_null() && !(op == "slice" && index == 2))
-        {
-            return Ok(Value::Null);
+                .map(|column| column.get(row, &self.arena))
+                .collect::<Vec<_>>();
+            if let Some(value) = self.cache[cache].get(&tuple) {
+                slots.push((Some(*value), None));
+            } else {
+                let next = tuples.len();
+                let slot = *missing.entry(tuple.clone()).or_insert_with(|| {
+                    tuples.push(tuple);
+                    next
+                });
+                slots.push((None, Some(slot)));
+            }
         }
-        Ok(match op {
-            "list" => json!(values),
-            "object" => {
-                let mut object = serde_json::Map::new();
-                for (name, value) in list(extra)?.iter().zip(values) {
-                    if !value.is_null() {
-                        object.insert(string(name)?.into(), value.clone());
-                    }
-                }
-                Value::Object(object)
-            }
-            "get" => deep_get(a, string(b)?),
-            "isNull" => json!(a.is_null()),
-            "not" => json!(!boolean(a)),
-            "eq" => json!(a == b),
-            "ne" => json!(a != b),
-            "lt" | "le" | "gt" | "ge" => {
-                let order = if a.is_string() && b.is_string() {
-                    text::code_unit_compare(string(a)?, string(b)?)
-                } else {
-                    number(a)?
-                        .partial_cmp(&number(b)?)
-                        .ok_or("Invalid numeric comparison.")?
-                };
-                json!(match op {
-                    "lt" => order.is_lt(),
-                    "le" => order.is_le(),
-                    "gt" => order.is_gt(),
-                    _ => order.is_ge(),
+        if matches!(node.op.as_str(), "matchesRole" | "pathHasPrefix") {
+            // Prepare each shared occurrence bitset before tuple workers start, avoiding
+            // competing first-use builds of the same role or prefix in the Rayon pool.
+            let keys = tuples
+                .iter()
+                .filter_map(|tuple| match tuple.as_slice() {
+                    [Atom::Val(_), Atom::Str(key)] => Some(*key),
+                    _ => None,
                 })
+                .collect::<HashSet<_>>();
+            for key in keys {
+                self.kernel
+                    .occurrence_mask(&self.arena, key, node.op == "matchesRole")?;
             }
-            "in" => json!(list(b)?.contains(a)),
-            "add" => json!(
-                values
-                    .iter()
-                    .map(number)
-                    .collect::<Result<Vec<_>>>()?
-                    .iter()
-                    .sum::<f64>()
-            ),
-            "mul" => json!(
-                values
-                    .iter()
-                    .map(number)
-                    .collect::<Result<Vec<_>>>()?
-                    .iter()
-                    .product::<f64>()
-            ),
-            "sub" => json!(number(a)? - number(b)?),
-            "div" => json!(number(a)? / number(b)?),
-            "min" | "max" => {
-                let numbers = values.iter().map(number).collect::<Result<Vec<_>>>()?;
-                json!(
-                    numbers
-                        .into_iter()
-                        .reduce(if op == "min" { f64::min } else { f64::max })
-                )
+        }
+        self.timings[id].tuples += tuples.len();
+        // Bound temporary structured results while keeping tuple slots and interning order stable.
+        // A catalogue node may have millions of distinct tuples on a persisted project.
+        drop(missing);
+        let mut results = Vec::with_capacity(tuples.len());
+        let mut pending = tuples.into_iter();
+        loop {
+            let batch = pending.by_ref().take(4096).collect::<Vec<_>>();
+            if batch.is_empty() {
+                break;
             }
-            "round" => {
-                let factor = 10f64.powf(number(b)?);
-                json!((number(a)? * factor + 0.5).floor() / factor)
-            }
-            "utf16Length" => json!(js_regex::units(string(a)?).len()),
-            "codePoints" => json!(text::code_points(string(a)?).len()),
-            "visibleLength" => json!(text::visible_length(string(a)?)?),
-            "visibleWords" => json!(text::visible_words(string(a)?)?),
-            "interiorLineBreaks" => json!(text::interior_line_breaks(string(a)?)),
-            "trim" => json!(crate::join_policy::trim(string(a)?)),
-            "lower" => json!(string(a)?.to_lowercase()),
-            "normalizeLineEndings" => json!(string(a)?.replace("\r\n", "\n").replace('\r', "\n")),
-            "slice" => {
-                let source = js_regex::units(string(a)?);
-                let len = source.len() as i64;
-                let bound = |number: &Value, default| {
-                    number.as_i64().map_or(default, |value| {
-                        if value < 0 {
-                            (len + value).max(0)
-                        } else {
-                            value.min(len)
-                        }
-                    }) as usize
-                };
-                let start = bound(b, 0);
-                let end = bound(c, len).max(start);
-                json!(js_regex::view(&source[start..end]))
-            }
-            "concat" => json!(
-                values
-                    .iter()
-                    .map(string)
-                    .collect::<Result<Vec<_>>>()?
-                    .concat()
-            ),
-            "startsWith" => {
-                json!(js_regex::units(string(a)?).starts_with(&js_regex::units(string(b)?)))
-            }
-            "endsWith" => {
-                json!(js_regex::units(string(a)?).ends_with(&js_regex::units(string(b)?)))
-            }
-            "contains" => {
-                let source = js_regex::units(string(a)?);
-                let needle = js_regex::units(string(b)?);
-                json!(needle.is_empty() || source.windows(needle.len()).any(|part| part == needle))
-            }
-            "countOccurrences" => {
-                let source = js_regex::units(string(a)?);
-                let needle = js_regex::units(string(b)?);
-                let mut count = 0;
-                let mut offset = 0;
-                if !needle.is_empty() {
-                    while offset + needle.len() <= source.len() {
-                        if source[offset..].starts_with(&needle) {
-                            count += 1;
-                            offset += needle.len();
-                        } else {
-                            offset += 1;
-                        }
+            let arena = &self.arena;
+            let kernel = &self.kernel;
+            let extra = &self.extras[id];
+            let computed = batch
+                .par_iter()
+                .map(|tuple| {
+                    if node.op == "list" {
+                        return Ok(Computed::List(tuple.clone()));
                     }
-                }
-                json!(count)
-            }
-            "findAll" => {
-                let source = js_regex::units(string(a)?);
-                let needles = list(b)?
-                    .iter()
-                    .map(|value| Ok(js_regex::units(string(value)?)))
-                    .collect::<Result<Vec<_>>>()?;
-                let mut found = Vec::new();
-                let mut offset = 0;
-                while offset < source.len() {
-                    if let Some(needle) = needles
-                        .iter()
-                        .find(|needle| !needle.is_empty() && source[offset..].starts_with(needle))
+                    if node.op == "get"
+                        && let [value, Atom::Str(path)] = tuple.as_slice()
                     {
-                        found.push(json!({"match":js_regex::view(needle),"start":offset,"end":offset + needle.len()}));
-                        offset += needle.len();
-                    } else {
-                        offset += 1;
+                        return Ok(Computed::Atom(arena.get_path(*value, arena.text(*path))));
                     }
-                }
-                json!(found)
-            }
-            "anyChar" | "allChars" | "removeClass" | "trimClass" | "leadingClass"
-            | "trailingClass" | "runs" => {
-                let class_id = inputs[1];
-                if let std::collections::hash_map::Entry::Vacant(entry) =
-                    self.classes.entry(class_id)
-                {
-                    entry.insert(text::CharacterClass::compile(b)?);
-                }
-                let class = self
-                    .classes
-                    .get(&class_id)
-                    .ok_or("Missing character class.")?;
-                let points = text::code_points(string(a)?);
-                let start = points
-                    .iter()
-                    .take_while(|point| class.contains(**point))
-                    .count();
-                let end = points.len()
-                    - points
-                        .iter()
-                        .rev()
-                        .take_while(|point| class.contains(**point))
-                        .count();
-                match op {
-                    "anyChar" => json!(points.iter().any(|point| class.contains(*point))),
-                    "allChars" => json!(points.iter().all(|point| class.contains(*point))),
-                    "removeClass" => json!(text::from_points(
-                        points.into_iter().filter(|point| !class.contains(*point))
-                    )),
-                    "leadingClass" => json!(text::from_points(points[..start].iter().copied())),
-                    "trailingClass" => json!(text::from_points(points[end..].iter().copied())),
-                    "trimClass" => {
-                        let side = string(c)?;
-                        let begin = if side == "end" { 0 } else { start };
-                        let end = if side == "start" {
-                            points.len()
-                        } else {
-                            end.max(begin)
-                        };
-                        json!(text::from_points(points[begin..end].iter().copied()))
+                    if node.op == "first" {
+                        return Ok(Computed::Atom(
+                            arena
+                                .elements(tuple[0])?
+                                .and_then(|values| values.first())
+                                .copied()
+                                .unwrap_or_default(),
+                        ));
                     }
-                    _ => {
-                        let mut runs = 0;
-                        let mut length = 0;
-                        let minimum = number(c)? as usize;
-                        for point in points.into_iter().chain([0x110000]) {
-                            if class.contains(point) {
-                                length += 1;
+                    if matches!(node.op.as_str(), "formatIssues" | "formatCompiled") {
+                        return Ok(Computed::Atom(arena.get_path(
+                            tuple[0],
+                            if node.op == "formatIssues" {
+                                "issues"
                             } else {
-                                if length >= minimum && length > 0 {
-                                    runs += 1;
-                                }
-                                length = 0;
-                            }
+                                "compiled"
+                            },
+                        )));
+                    }
+                    match kernel.run(arena, &node.op, extra, tuple) {
+                        Ok(value) => Ok(Computed::Value(value)),
+                        Err(error) if error.code == ErrorCode::LimitExceeded => Ok(Computed::Limit),
+                        Err(error) => Err(error),
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
+            for (tuple, value) in batch.into_iter().zip(computed) {
+                let result = match value {
+                    Computed::Atom(value) => Slot::Value(value),
+                    Computed::List(values) => Slot::Value(self.arena.list(values)?),
+                    Computed::Value(value) => Slot::Value(self.arena.intern(value)?),
+                    Computed::Limit => Slot::Limit,
+                };
+                self.cache[cache].insert(tuple, result);
+                results.push(result);
+            }
+        }
+        let mut output = Vec::with_capacity(selection.len());
+        for (row, (cached, slot)) in slots.into_iter().enumerate() {
+            match cached.or_else(|| slot.map(|slot| results[slot])) {
+                Some(Slot::Value(value)) => output.push(value),
+                Some(Slot::Limit) => {
+                    output.push(Atom::Null);
+                    failures.set(row);
+                }
+                None => output.push(Atom::Null),
+            }
+        }
+        let mut column = Column::from_atoms(&output, &mut self.arena)?;
+        column.failed = failures;
+        self.timings[id].scalar += started.elapsed();
+        Ok(column)
+    }
+    fn list_operator(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        let node = &self.program.nodes[id];
+        let input = self.evaluate(node.args[0], selection)?;
+        if node.op == "any" || node.op == "all" {
+            return self.list_boolean(id, selection, &input);
+        }
+        // Lists are small. Expansion/grouping is parallel by row chunk, with scalar bodies
+        // evaluated over the element relation through the same distinct-tuple memo.
+        let groups = (0..selection.len())
+            .into_par_iter()
+            .map(|row| {
+                if input.failed.get(row) {
+                    return Ok(None);
+                }
+                Ok(self
+                    .arena
+                    .elements(input.get(row, &self.arena))?
+                    .map(<[Atom]>::to_vec))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut parents = Vec::new();
+        let mut elements = Vec::new();
+        let mut offsets = vec![0];
+        for group in &groups {
+            for element in group.iter().flatten() {
+                parents.push(offsets.len() - 1);
+                elements.push(*element);
+            }
+            offsets.push(elements.len());
+        }
+        let mut expanded = selection.select(&parents, &mut self.arena)?;
+        let variable = node.value.as_str().unwrap_or("item").to_owned();
+        expanded
+            .variables
+            .insert(variable, Column::from_atoms(&elements, &mut self.arena)?);
+        let body = if node.args.len() > 1 {
+            self.evaluate(node.args[1], &expanded)?
+        } else {
+            Column::from_atoms(&elements, &mut self.arena)?
+        };
+        let mut failed = input.failed.clone();
+        let mut output = Vec::with_capacity(groups.len());
+        for (row, group) in groups.iter().enumerate() {
+            if group.is_none() {
+                output.push(Atom::Null);
+                continue;
+            }
+            let mut values = Vec::new();
+            let mut sorted = Vec::new();
+            for index in offsets[row]..offsets[row + 1] {
+                if body.failed.get(index) {
+                    failed.set(row);
+                }
+                let evaluated = body.get(index, &self.arena);
+                match node.op.as_str() {
+                    "filter" if evaluated.boolean() => values.push(elements[index]),
+                    "map" => values.push(evaluated),
+                    "flatMap" => {
+                        if let Some(elements) = self.arena.elements(evaluated)? {
+                            values.extend_from_slice(elements);
                         }
-                        json!(runs)
                     }
+                    "sortCodeUnit" | "sortLocale" => sorted.push((elements[index], evaluated)),
+                    _ => {}
                 }
             }
-            "regexMatches" => json!(self.regex_matches(
-                string(a)?,
-                string(b)?,
-                c["caseSensitive"].as_bool().unwrap_or(true),
-                c["cap"].as_u64().map(|cap| cap as usize)
-            )?),
-            "regexTest" => json!(
-                !self
-                    .regex_matches(string(a)?, string(b)?, !string(c)?.contains('i'), Some(1))?
-                    .is_empty()
-            ),
-            "termMatches" => json!(self.regex_matches(
-                string(a)?,
-                &js_regex::term_pattern(string(b)?, "lmn"),
-                boolean(c),
-                None
-            )?),
-            "termListMatches" => {
-                let terms = list(b)?;
-                if terms.is_empty() {
-                    json!([])
-                } else {
-                    let alternation = terms
-                        .iter()
-                        .map(|value| Ok(::regex::escape(string(value)?)))
-                        .collect::<Result<Vec<_>>>()?
-                        .join("|");
-                    let pattern =
-                        js_regex::term_pattern(&format!("(?:{alternation})"), string(&values[3])?)
-                            .replace(
-                                &::regex::escape(&format!("(?:{alternation})")),
-                                &format!("(?:{alternation})"),
-                            );
-                    json!(self.regex_matches(string(a)?, &pattern, boolean(c), None)?)
-                }
-            }
-            "count" => json!(list(a)?.len()),
-            "flatten" => json!(
-                list(a)?
-                    .iter()
-                    .map(list)
-                    .collect::<Result<Vec<_>>>()?
-                    .concat()
-            ),
-            "distinct" => {
-                let mut result = Vec::new();
-                for value in list(a)? {
-                    if !result.contains(value) {
-                        result.push(value.clone());
+            if matches!(node.op.as_str(), "sortCodeUnit" | "sortLocale") {
+                sorted.sort_by(|a, b| {
+                    let a = if let Atom::Str(id) = a.1 {
+                        self.arena.text(id)
+                    } else {
+                        ""
+                    };
+                    let b = if let Atom::Str(id) = b.1 {
+                        self.arena.text(id)
+                    } else {
+                        ""
+                    };
+                    if node.op == "sortLocale" {
+                        self.kernel.collator.compare(a, b)
+                    } else {
+                        text::code_unit_compare(a, b)
                     }
+                });
+                values = sorted.into_iter().map(|(value, _)| value).collect();
+            }
+            output.push(self.arena.list(values)?);
+        }
+        let mut column = Column::from_atoms(&output, &mut self.arena)?;
+        column.failed = failed;
+        Ok(column)
+    }
+    fn list_boolean(
+        &mut self,
+        id: NodeId,
+        selection: &Selection,
+        input: &Column,
+    ) -> Result<Column> {
+        let node = &self.program.nodes[id];
+        let all = node.op == "all";
+        let mut failed = input.failed.clone();
+        let mut output = vec![Atom::Null; selection.len()];
+        let mut pending = Vec::new();
+        for (row, destination) in output.iter_mut().enumerate() {
+            if !failed.get(row)
+                && let Some(elements) = self.arena.elements(input.get(row, &self.arena))?
+            {
+                *destination = Atom::Bool(all);
+                if !elements.is_empty() {
+                    pending.push(row);
                 }
-                json!(result)
             }
-            "first" => list(a)?.first().cloned().unwrap_or(Value::Null),
-            "take" => json!(
-                list(a)?
-                    .iter()
-                    .take(number(b)? as usize)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            ),
-            "drop" => json!(
-                list(a)?
-                    .iter()
-                    .skip(number(b)? as usize)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            ),
-            "concatLists" => json!(
-                values
-                    .iter()
-                    .map(list)
-                    .collect::<Result<Vec<_>>>()?
-                    .concat()
-            ),
-            "minus" => json!(
-                list(a)?
-                    .iter()
-                    .filter(|value| !list(b).unwrap_or(&[]).contains(value))
-                    .cloned()
-                    .collect::<Vec<_>>()
-            ),
-            "zip" => json!(
-                list(a)?
-                    .iter()
-                    .zip(list(b)?)
-                    .map(|(a, b)| json!([a, b]))
-                    .collect::<Vec<_>>()
-            ),
-            "sortByStart" => {
-                let mut values = list(a)?.to_vec();
-                values.sort_by_key(|value| value["start"].as_u64().unwrap_or(0));
-                json!(values)
-            }
-            "matchesRole" => json!(
-                self.program
-                    .roles
-                    .get(string(b)?)
-                    .is_some_and(|role| role_matches(a, role))
-            ),
-            "pathHasPrefix" => json!(
-                a["location"]["objectPath"]
-                    .as_str()
-                    .is_some_and(|path| path.starts_with(b.as_str().unwrap_or("")))
-            ),
-            "formatPattern" => {
-                serde_json::to_value(grammar::format_pattern(string(a)?, string(b)?))?
-            }
-            "formatArgumentNames" | "formatArgumentOrder" => {
-                let mut names = Vec::new();
-                for argument in a["arguments"]
-                    .as_array()
-                    .ok_or("Missing format arguments.")?
+        }
+        let variable = node.value.as_str().unwrap_or("item").to_owned();
+        let mut offset = 0;
+        while !pending.is_empty() {
+            let mut expanded = selection.select(&pending, &mut self.arena)?;
+            let elements = pending
+                .iter()
+                .map(|row| {
+                    Ok(self
+                        .arena
+                        .elements(input.get(*row, &self.arena))?
+                        .ok_or("Missing pending list.")?[offset])
+                })
+                .collect::<Result<Vec<_>>>()?;
+            expanded.variables.insert(
+                variable.clone(),
+                Column::from_atoms(&elements, &mut self.arena)?,
+            );
+            let body = self.evaluate(node.args[1], &expanded)?;
+            let mut later = Vec::new();
+            for (index, row) in pending.into_iter().enumerate() {
+                if body.failed.get(index) {
+                    failed.set(row);
+                } else if body.get(index, &self.arena).boolean() != all {
+                    output[row] = Atom::Bool(!all);
+                } else if self
+                    .arena
+                    .elements(input.get(row, &self.arena))?
+                    .ok_or("Missing list.")?
+                    .len()
+                    > offset + 1
                 {
-                    let name = argument["name"].clone();
-                    if !names.contains(&name) {
-                        names.push(name);
+                    later.push(row);
+                }
+            }
+            pending = later;
+            offset += 1;
+        }
+        let mut column = Column::from_atoms(&output, &mut self.arena)?;
+        column.failed = failed;
+        Ok(column)
+    }
+    fn diagnostics(&mut self, len: usize) -> Result<Vec<(Subject, usize, String)>> {
+        let checkable = self.prepared.field("line.checkable")?.clone();
+        let comparable = self.prepared.field("line.comparable")?.clone();
+        let gathered = self.prepared.field("line.gathered")?.clone();
+        let latest = self.prepared.field("latest")?.clone();
+        let reasons = self.prepared.field("unknownReasons")?.clone();
+        let reduced = self.prepared.field("reducedSourceChecking")?.clone();
+        let source_rows = (0..len)
+            .filter(|row| {
+                checkable.get(*row, &self.arena).boolean()
+                    && comparable.get(*row, &self.arena).boolean()
+            })
+            .map(|row| row as u32)
+            .collect::<Vec<_>>();
+        let translation_rows = source_rows
+            .iter()
+            .copied()
+            .filter(|row| latest.get(*row as usize, &self.arena) != Atom::Null)
+            .collect::<Vec<_>>();
+        let mut issues = Vec::new();
+        for (node, rows) in self
+            .program
+            .diagnostic_patterns
+            .into_iter()
+            .zip([source_rows, translation_rows])
+        {
+            let selection = Selection::new(rows);
+            let patterns = self.evaluate(node, &selection)?;
+            let mut codes = HashMap::<u32, Vec<String>>::new();
+            for (index, row) in selection.rows.iter().copied().enumerate() {
+                let found = self
+                    .arena
+                    .get_path(patterns.get(index, &self.arena), "issues");
+                for issue in self.arena.elements(found)?.unwrap_or_default() {
+                    let code = self.arena.get_path(*issue, "code");
+                    if let Atom::Str(code) = code {
+                        let code = self.arena.text(code);
+                        if matches!(code, "unsupported_culture" | "syntax_limit") {
+                            codes.entry(row).or_default().push(code.into());
+                        }
                     }
                 }
-                if op == "formatArgumentNames" {
-                    names.sort_by(|a, b| {
-                        text::code_unit_compare(a.as_str().unwrap_or(""), b.as_str().unwrap_or(""))
-                    });
-                }
-                json!(names)
             }
-            "formatModifiers" => {
-                let mut modifiers = a["modifiers"]
-                    .as_array()
-                    .ok_or("Missing format modifiers.")?
+            issues.push(codes);
+        }
+        // The two passes stay adjacent for each line, preserving duplicate diagnostics.
+        let parents = checkable.rows.clone();
+        let parent = |row: usize| parents.as_ref().map_or(row as u32, |parents| parents[row]);
+        let mut output = Vec::new();
+        let mut first = 0;
+        while first < len {
+            let mut end = first + 1;
+            while end < len && parent(end) == parent(first) {
+                end += 1;
+            }
+            for row in first..end {
+                for reason in self
+                    .arena
+                    .elements(reasons.get(row, &self.arena))?
+                    .unwrap_or_default()
+                {
+                    if let Atom::Str(reason) = reason {
+                        output.push((Subject::LineCulture, row, self.arena.text(*reason).into()));
+                    }
+                }
+                if reduced.get(row, &self.arena).boolean() {
+                    output.push((Subject::LineCulture, row, "reduced_source_checking".into()));
+                }
+            }
+            if checkable.get(first, &self.arena).boolean() {
+                for row in first..end {
+                    if !gathered.get(row, &self.arena).boolean() {
+                        output.push((Subject::LineCulture, row, "source_unavailable".into()));
+                    }
+                    let absent = latest.get(row, &self.arena) == Atom::Null;
+                    if !comparable.get(row, &self.arena).boolean() {
+                        if absent {
+                            output.push((
+                                Subject::LineCulture,
+                                row,
+                                "translation_unavailable".into(),
+                            ));
+                        }
+                        continue;
+                    }
+                    if let Some(codes) = issues[0].get(&(row as u32)) {
+                        output.extend(
+                            codes
+                                .iter()
+                                .map(|code| (Subject::LineCulture, row, code.clone())),
+                        );
+                    }
+                    if absent {
+                        output.push((Subject::LineCulture, row, "translation_unavailable".into()));
+                        continue;
+                    }
+                    if let Some(codes) = issues[1].get(&(row as u32)) {
+                        output.extend(
+                            codes
+                                .iter()
+                                .map(|code| (Subject::LineCulture, row, code.clone())),
+                        );
+                    }
+                }
+            }
+            first = end;
+        }
+        Ok(output)
+    }
+    fn scope(&mut self, rule: &CompiledRule, len: usize) -> Result<Selection> {
+        let mut selected = (0..len as u32).collect::<Vec<_>>();
+        // Culture gates precede occurrence masks and every rule expression.
+        if rule.rule.subject == Subject::Line {
+            let culture = self.prepared.field("sourceCulture")?;
+            selected.retain(|row| culture.get(*row as usize, &self.arena) != Atom::Null);
+        }
+        if let Some(scope) = &rule.rule.scope {
+            if rule.rule.subject != Subject::UnitSource
+                && let Some(cultures) = scope["cultures"].as_array()
+            {
+                let field = self.prepared.field(if rule.rule.subject == Subject::Line {
+                    "sourceCulture"
+                } else {
+                    "culture"
+                })?;
+                let cultures = cultures
                     .iter()
-                    .map(
-                        |modifier| json!({"argument":modifier["argument"],"name":modifier["name"]}),
-                    )
-                    .collect::<Vec<_>>();
-                modifiers.sort_by(|a, b| {
-                    self.collator
-                        .compare(
-                            a["argument"].as_str().unwrap_or(""),
-                            b["argument"].as_str().unwrap_or(""),
-                        )
-                        .then_with(|| {
-                            self.collator.compare(
-                                a["name"].as_str().unwrap_or(""),
-                                b["name"].as_str().unwrap_or(""),
-                            )
+                    .map(|culture| self.arena.intern(ScalarValue::from_json(culture)))
+                    .collect::<Result<Vec<_>>>()?;
+                selected.retain(|row| cultures.contains(&field.get(*row as usize, &self.arena)));
+            }
+            let mut mask = |name: &str, role: bool| -> Result<Option<Bits>> {
+                let Some(values) = scope[name].as_array() else {
+                    return Ok(None);
+                };
+                let mut mask = Bits::new(self.arena.occurrences.len);
+                for value in values {
+                    let key = self
+                        .arena
+                        .string(value.as_str().ok_or("Invalid occurrence scope.")?)?;
+                    mask.union(
+                        self.kernel
+                            .occurrence_mask(&self.arena, key, role)?
+                            .as_ref(),
+                    );
+                }
+                Ok(Some(mask))
+            };
+            let roles = mask("roles", true)?;
+            let paths = mask("pathPrefixes", false)?;
+            if roles.is_some() || paths.is_some() {
+                selected.retain(|row| {
+                    self.prepared
+                        .children
+                        .members(*row as usize)
+                        .iter()
+                        .any(|occurrence| {
+                            roles
+                                .as_ref()
+                                .is_none_or(|mask| mask.get(*occurrence as usize))
+                                && paths
+                                    .as_ref()
+                                    .is_none_or(|mask| mask.get(*occurrence as usize))
                         })
                 });
-                json!(modifiers)
-            }
-            "formatIssues" => a["issues"].clone(),
-            "formatCompiled" => a["compiled"].clone(),
-            "formatRenameArgument" => {
-                grammar::rename_argument(string(a)?, string(b)?, string(c)?, string(&values[3])?)
-                    .map_or(Value::Null, Value::String)
-            }
-            "richTextCounts" => grammar::rich_text_counts(string(a)?),
-            "richTextValid" => json!(text::rich_valid(string(a)?, string(b)?)),
-            "richTextTagBalance" => text::rich_balance(string(a)?)?,
-            "compareRichTextTags" => text::compare_tags(string(a)?, string(b)?)?,
-            "withoutOptionalArgumentTags" => {
-                json!(text::without_optional_tags(string(a)?, list(b)?)?)
-            }
-            "unrealWhitespace" => text::unreal_whitespace(string(a)?),
-            "unrealUnsafeWhitespace" => json!(text::unsafe_whitespace(string(a)?)),
-            "formatBraceBalance" => text::brace_balance(string(a)?),
-            _ => {
-                return Err(Error::new(
-                    ErrorCode::InvalidInput,
-                    format!("Unknown evaluator operation {op}."),
-                ));
-            }
-        })
-    }
-    fn in_scope(&mut self, rule: &CompiledRule, row: usize) -> Result<bool> {
-        let Some(scope) = &rule.rule.scope else {
-            return Ok(true);
-        };
-        if rule.rule.subject != Subject::UnitSource
-            && let Some(cultures) = scope["cultures"].as_array()
-        {
-            let field = if rule.rule.subject == Subject::Line {
-                "sourceCulture"
-            } else {
-                "culture"
-            };
-            let id = self.field_id(field, row)?;
-            if !cultures.contains(self.pool.get(id)) {
-                return Ok(false);
             }
         }
-        if scope.get("roles").is_none() && scope.get("pathPrefixes").is_none() {
-            return Ok(true);
-        }
-        Ok(self.relation.occurrences(row)?.iter().any(|occurrence| {
-            let role = scope["roles"].as_array().is_none_or(|roles| {
-                roles.iter().any(|id| {
-                    id.as_str()
-                        .and_then(|id| self.program.roles.get(id))
-                        .is_some_and(|role| role_matches(occurrence, role))
-                })
-            });
-            let path = scope["pathPrefixes"].as_array().is_none_or(|prefixes| {
-                prefixes.iter().any(|prefix| {
-                    occurrence["location"]["objectPath"]
-                        .as_str()
-                        .zip(prefix.as_str())
-                        .is_some_and(|(path, prefix)| path.starts_with(prefix))
-                })
-            });
-            role && path
-        }))
+        Ok(Selection::new(selected))
     }
 }
-
 impl Program {
-    /// Predicates run first over subject columns; evidence and places run only for selected rows.
-    /// Scalar DAG nodes cache by input dictionary IDs, sharing work across rules and equal texts.
+    /// Evaluate a subject's shared DAG over typed columns and ordered selections.
     pub fn evaluate(
         &self,
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
     ) -> Result<Evaluation> {
+        self.evaluate_timed(relation, collator)
+            .map(|(evaluation, _)| evaluation)
+    }
+    pub(crate) fn evaluate_timed(
+        &self,
+        relation: &mut dyn SubjectRows,
+        collator: &HostCollator,
+    ) -> Result<(Evaluation, EvaluationTimings)> {
+        self.evaluate_columns(relation, collator, false)
+            .map(|(evaluation, timings, _)| (evaluation, timings))
+    }
+    pub(crate) fn evaluate_with_diagnostics(
+        &self,
+        relation: &mut dyn SubjectRows,
+        collator: &HostCollator,
+    ) -> Result<TimedEvaluation> {
+        self.evaluate_columns(relation, collator, true)
+    }
+    fn evaluate_columns(
+        &self,
+        relation: &mut dyn SubjectRows,
+        collator: &HostCollator,
+        include_diagnostics: bool,
+    ) -> Result<TimedEvaluation> {
+        let started = Instant::now();
         let subject = relation.subject();
-        let length = relation.len();
-        let mut evaluator = Evaluator::new(self, relation, collator)?;
+        let include_diagnostics = include_diagnostics && subject == Subject::LineCulture;
+        let len = relation.len();
+        let rules = self
+            .rules
+            .iter()
+            .filter(|rule| rule.rule.subject == subject)
+            .collect::<Vec<_>>();
         let mut output = Evaluation {
             findings: Vec::new(),
             diagnostics: Vec::new(),
             masks: HashMap::new(),
         };
-        for rule in self
-            .rules
-            .iter()
-            .filter(|rule| rule.rule.subject == subject)
-        {
-            let mut mask = vec![0u64; length.div_ceil(64)];
-            let mut candidates = Vec::new();
-            for row in 0..length {
-                if subject == Subject::Line {
-                    let id = evaluator.field_id("sourceCulture", row)?;
-                    if evaluator.pool.get(id).is_null() {
+        if rules.is_empty() && !include_diagnostics {
+            return Ok((output, EvaluationTimings::default(), Vec::new()));
+        }
+        let mut names = HashSet::new();
+        let mut nodes = HashSet::new();
+        let mut pending = Vec::new();
+        for rule in &rules {
+            pending.extend(
+                [
+                    Some(rule.when),
+                    Some(rule.actual),
+                    Some(rule.expectation),
+                    Some(rule.recovery),
+                    rule.each,
+                    rule.fix,
+                    rule.affected,
+                    rule.translation_origin,
+                    rule.extra,
+                ]
+                .into_iter()
+                .flatten(),
+            );
+            if subject == Subject::Line {
+                names.insert("sourceCulture".to_owned());
+            }
+            if subject != Subject::UnitSource
+                && rule
+                    .rule
+                    .scope
+                    .as_ref()
+                    .is_some_and(|scope| scope["cultures"].is_array())
+            {
+                names.insert(
+                    if subject == Subject::Line {
+                        "sourceCulture"
+                    } else {
+                        "culture"
+                    }
+                    .to_owned(),
+                );
+            }
+        }
+        if include_diagnostics {
+            pending.extend(self.diagnostic_patterns);
+            names.extend(
+                [
+                    "unknownReasons",
+                    "reducedSourceChecking",
+                    "line.checkable",
+                    "line.gathered",
+                    "line.comparable",
+                    "latest",
+                ]
+                .into_iter()
+                .map(str::to_owned),
+            );
+        }
+        while let Some(id) = pending.pop() {
+            if !nodes.insert(id) {
+                continue;
+            }
+            let node = &self.nodes[id];
+            pending.extend_from_slice(&node.args);
+            if node.op == "field" {
+                names.insert(
+                    node.value
+                        .as_str()
+                        .ok_or("Invalid subject field.")?
+                        .to_owned(),
+                );
+            }
+        }
+        let mut names = names.into_iter().collect::<Vec<_>>();
+        names.sort();
+        let mut arena = Arena::new(relation.dictionary_len()?)?;
+        let prepared = relation.prepare(&names, &mut arena, !rules.is_empty())?;
+        prepared.validate(len)?;
+        let projections = prepared.timings.clone();
+        let mut evaluator = Evaluator::new(self, arena, prepared, collator)?;
+        let prepare = started.elapsed();
+        let execute = Instant::now();
+        let mut emissions = Vec::new();
+        for rule in rules {
+            relation.checkpoint()?;
+            let scope = evaluator.scope(rule, len)?;
+            let candidates = if let Some(each) = rule.each {
+                let items = evaluator.evaluate(each, &scope)?;
+                let mut parents = Vec::new();
+                let mut elements = Vec::new();
+                for (row, subject_row) in scope.rows.iter().enumerate() {
+                    if items.failed.get(row) {
+                        output.diagnostics.push((
+                            subject,
+                            *subject_row as usize,
+                            "syntax_limit".into(),
+                        ));
                         continue;
                     }
+                    if let Some(values) =
+                        evaluator.arena.elements(items.get(row, &evaluator.arena))?
+                    {
+                        for value in values {
+                            parents.push(row);
+                            elements.push(*value);
+                        }
+                    }
                 }
-                let items = if let Some(each) = rule.each {
-                    match evaluator.value(each, row) {
-                        Ok(Value::Array(items)) => items,
-                        Ok(Value::Null) => Vec::new(),
-                        Ok(_) => return Err("A rule each expression must return a list.".into()),
-                        Err(error) if error.code == ErrorCode::LimitExceeded => {
-                            output
-                                .diagnostics
-                                .push((subject, row, "syntax_limit".into()));
-                            continue;
-                        }
-                        Err(error) => return Err(error),
-                    }
-                } else {
-                    vec![Value::Null]
-                };
-                for item in items {
-                    let variable = rule.rule.each_as.as_deref().unwrap_or("item");
-                    let item_id = evaluator.pool.intern(item.clone())?;
-                    evaluator.variables.insert(variable.into(), item_id);
-                    match evaluator.value(rule.when, row) {
-                        Ok(value) if boolean(&value) && evaluator.in_scope(rule, row)? => {
-                            mask[row / 64] |= 1 << (row % 64);
-                            candidates.push((row, item));
-                        }
-                        Ok(_) => {}
-                        Err(error) if error.code == ErrorCode::LimitExceeded => {
-                            output
-                                .diagnostics
-                                .push((subject, row, "syntax_limit".into()));
-                        }
-                        Err(error) => return Err(error),
-                    }
+                let mut candidates = scope.select(&parents, &mut evaluator.arena)?;
+                candidates.variables.insert(
+                    rule.rule.each_as.as_deref().unwrap_or("item").into(),
+                    Column::from_atoms(&elements, &mut evaluator.arena)?,
+                );
+                candidates
+            } else {
+                scope
+            };
+            let when = evaluator.evaluate(rule.when, &candidates)?;
+            let mut selected = Vec::new();
+            for (index, row) in candidates.rows.iter().enumerate() {
+                if when.failed.get(index) {
+                    output
+                        .diagnostics
+                        .push((subject, *row as usize, "syntax_limit".into()));
+                } else if when.get(index, &evaluator.arena).boolean() {
+                    selected.push(index);
                 }
             }
-            for (row, item) in candidates {
-                let variable = rule.rule.each_as.as_deref().unwrap_or("item");
-                let id = evaluator.pool.intern(item)?;
-                evaluator.variables.insert(variable.into(), id);
-                let actual = evaluator.value(rule.actual, row)?;
-                let expectation = evaluator.value(rule.expectation, row)?;
-                let mut optional = |node: Option<NodeId>| {
-                    node.map_or(Ok(Value::Null), |node| evaluator.value(node, row))
+            let selected = candidates.select(&selected, &mut evaluator.arena)?;
+            let actual = evaluator.evaluate(rule.actual, &selected)?;
+            let expectation = evaluator.evaluate(rule.expectation, &selected)?;
+            let mut optional = |node| match node {
+                Some(node) => evaluator.evaluate(node, &selected),
+                None => Ok(Column::constant(Atom::Null, selected.len())),
+            };
+            let fix = optional(rule.fix)?;
+            let extra = optional(rule.extra)?;
+            let origin = optional(rule.translation_origin)?;
+            let affected = if let Some(node) = rule.affected {
+                evaluator.evaluate(node, &selected)?
+            } else {
+                let values = selected
+                    .rows
+                    .iter()
+                    .map(|row| evaluator.children(*row as usize))
+                    .collect::<Result<Vec<_>>>()?;
+                Column::from_atoms(&values, &mut evaluator.arena)?
+            };
+            let recovery = evaluator.evaluate(rule.recovery, &selected)?;
+            let mut mask = Bits::new(len);
+            for (index, row) in selected.rows.iter().copied().enumerate() {
+                if [
+                    &actual,
+                    &expectation,
+                    &fix,
+                    &extra,
+                    &origin,
+                    &affected,
+                    &recovery,
+                ]
+                .iter()
+                .any(|column| column.failed.get(index))
+                {
+                    output
+                        .diagnostics
+                        .push((subject, row as usize, "syntax_limit".into()));
+                    continue;
+                }
+                let evidence = Evidence {
+                    actual: actual.get(index, &evaluator.arena),
+                    expectation: expectation.get(index, &evaluator.arena),
+                    fix: fix.get(index, &evaluator.arena),
+                    extra: extra.get(index, &evaluator.arena),
+                    translation_origin: origin.get(index, &evaluator.arena),
                 };
-                let fix = optional(rule.fix)?;
-                let extra = optional(rule.extra)?;
-                let translation_origin = optional(rule.translation_origin)?;
-                let affected = match rule.affected {
-                    Some(node) => list(&evaluator.value(node, row)?)?.to_vec(),
-                    None => evaluator.relation.occurrences(row)?,
-                };
-                let recovery = string(&evaluator.value(rule.recovery, row)?)?.to_owned();
-                let finding = Emission {
+                let places = affected.get(index, &evaluator.arena);
+                if evaluator.arena.elements(places)?.is_none() {
+                    return Err("Finding affected must be an occurrence list.".into());
+                }
+                let recovery = recovery.get(index, &evaluator.arena);
+                if !matches!(recovery, Atom::Str(_)) {
+                    return Err("Finding recovery must be a string.".into());
+                }
+                mask.set(row as usize);
+                evaluator
+                    .evidence
+                    .entry((rule.ordinal, row))
+                    .or_insert(evidence);
+                emissions.push(Pending {
                     rule: rule.ordinal,
                     row,
                     subject,
-                    actual,
-                    expectation,
-                    fix,
-                    extra,
-                    translation_origin,
+                    evidence,
                     recovery,
-                    affected,
-                };
-                evaluator
-                    .findings
-                    .entry((rule.rule.id.clone(), row))
-                    .or_default()
-                    .push(finding.clone());
-                output.findings.push(finding);
+                    affected: places,
+                });
             }
-            output.masks.insert(rule.ordinal, mask);
+            evaluator.masks.insert(rule.ordinal, mask);
+        }
+        let execute = execute.elapsed();
+        let diagnostics_started = Instant::now();
+        let diagnostics = if include_diagnostics {
+            evaluator.diagnostics(len)?
+        } else {
+            Vec::new()
+        };
+        let diagnostics_elapsed = diagnostics_started.elapsed();
+        let emission = Instant::now();
+        let mut places = HashMap::<Atom, Vec<Value>>::new();
+        for pending in emissions {
+            let affected = if let Some(places) = places.get(&pending.affected) {
+                places.clone()
+            } else {
+                let value = evaluator.arena.value(pending.affected).json();
+                let value = value
+                    .as_array()
+                    .ok_or("Finding places are not a list.")?
+                    .clone();
+                places.insert(pending.affected, value.clone());
+                value
+            };
+            let evidence = pending.evidence;
+            let recovery = if let Atom::Str(id) = pending.recovery {
+                evaluator.arena.text(id).to_owned()
+            } else {
+                return Err("Invalid finding recovery.".into());
+            };
+            output.findings.push(Emission {
+                rule: pending.rule,
+                row: pending.row as usize,
+                subject: pending.subject,
+                actual: evaluator.arena.value(evidence.actual).json(),
+                expectation: evaluator.arena.value(evidence.expectation).json(),
+                fix: evaluator.arena.value(evidence.fix).json(),
+                extra: evaluator.arena.value(evidence.extra).json(),
+                translation_origin: evaluator.arena.value(evidence.translation_origin).json(),
+                recovery,
+                affected,
+            });
         }
         output
             .findings
             .sort_by_key(|finding| (finding.rule, finding.row));
-        Ok(output)
+        output.masks = evaluator
+            .masks
+            .into_iter()
+            .map(|(rule, mask)| (rule, mask.words))
+            .collect();
+        let timings = EvaluationTimings {
+            prepare,
+            execute,
+            emission: emission.elapsed(),
+            diagnostics: diagnostics_elapsed,
+            nodes: evaluator.timings,
+            projections,
+        };
+        Ok((output, timings, diagnostics))
     }
 }
 
@@ -1005,6 +1269,191 @@ mod tests {
         assert_eq!(
             result.findings[0].actual["placeholders"],
             json!([{"match":"BAD","start":11,"end":14}])
+        );
+        Ok(())
+    }
+    #[test]
+    fn selections_memoize_shared_scalar_inputs_and_gate_evidence() -> Result<()> {
+        let mut first = rule(
+            "first",
+            json!({"gt":[{"utf16Length":{"field":"source"}},2]}),
+            json!({"object":{"length":{"utf16Length":{"field":"source"}}}}),
+        );
+        first["scope"] = json!({"pathPrefixes":["/Game/Allowed"]});
+        let second = rule(
+            "second",
+            json!({"if":[{"eq":[{"field":"source"},"bad"]},{"regexTest":["x","(",""]},false]}),
+            json!({"object":{"unreachable":{"regexTest":["x","(",""]}}}),
+        );
+        let program = super::super::compile(&serde_json::to_string(
+            &json!({"schemaVersion":4,"roles":[],"rules":[first,second]}),
+        )?)?;
+        let mut relation = Relation {
+            subject: Some(Subject::UnitSource),
+            fields: HashMap::from([(
+                "source".into(),
+                vec![json!("shared"), json!("shared"), json!("x")],
+            )]),
+            occurrences: vec![
+                vec![json!({"location":{"objectPath":"/Game/Allowed.One"}})],
+                vec![json!({"location":{"objectPath":"/Game/Allowed.Two"}})],
+                vec![],
+            ],
+        };
+        let (result, timings) = program.evaluate_timed(&mut relation, &HostCollator::new("en")?)?;
+        assert_eq!(result.findings.len(), 2);
+        assert_eq!(result.findings[0].actual, json!({"length":6}));
+        assert_eq!(
+            program
+                .nodes
+                .iter()
+                .zip(&timings.nodes)
+                .filter(|(node, _)| node.op == "utf16Length")
+                .map(|(_, timing)| timing.tuples)
+                .sum::<usize>(),
+            1
+        );
+        assert!(result.diagnostics.is_empty());
+        Ok(())
+    }
+    #[test]
+    fn scope_precedes_when_and_requires_one_matching_occurrence() -> Result<()> {
+        let mut scoped = rule(
+            "scoped",
+            json!({"if":[{"eq":[{"field":"source"},"bad"]},{"regexTest":["x","(",""]},true]}),
+            json!({"object":{"checked":true}}),
+        );
+        scoped["scope"] = json!({"roles":["ui"],"pathPrefixes":["/Game/Other"]});
+        let program = super::super::compile(&serde_json::to_string(
+            &json!({"schemaVersion":4,"roles":[{"id":"ui","scopes":[{"matchers":[{"kind":"property_path","operator":"exact","value":"Label"}]}]}],"rules":[scoped]}),
+        )?)?;
+        let mut relation = Relation {
+            subject: Some(Subject::UnitSource),
+            fields: HashMap::from([("source".into(), vec![json!("bad"), json!("safe")])]),
+            occurrences: vec![
+                vec![
+                    json!({"location":{"kind":"asset_property","objectPath":"/Game/UI.Menu","propertyPath":"Label"}}),
+                    json!({"location":{"kind":"asset_property","objectPath":"/Game/Other.Item","propertyPath":"Different"}}),
+                ],
+                vec![
+                    json!({"location":{"kind":"asset_property","objectPath":"/Game/Other.Item","propertyPath":"Label"}}),
+                ],
+            ],
+        };
+        let result = program.evaluate(&mut relation, &HostCollator::new("en")?)?;
+        assert_eq!(result.findings.len(), 1);
+        assert_eq!(result.findings[0].row, 1);
+        assert_eq!(result.masks[&0], vec![2]);
+        Ok(())
+    }
+    #[test]
+    fn list_boolean_selections_short_circuit_before_later_elements() -> Result<()> {
+        let definition = rule(
+            "lists",
+            json!(true),
+            json!({"object":{
+                "any":{"any":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},"stop"]},true,{"regexTest":["x","(",""]}]}]},
+                "all":{"all":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},"stop"]},false,{"regexTest":["x","(",""]}]}]}
+            }}),
+        );
+        let program = super::super::compile(&serde_json::to_string(
+            &json!({"schemaVersion":4,"roles":[],"rules":[definition]}),
+        )?)?;
+        let mut relation = Relation {
+            subject: Some(Subject::UnitSource),
+            fields: HashMap::from([("source".into(), vec![json!("same"), json!("same")])]),
+            occurrences: vec![vec![]; 2],
+        };
+        let result = program.evaluate(&mut relation, &HostCollator::new("en")?)?;
+        assert_eq!(result.findings.len(), 2);
+        assert_eq!(result.findings[0].actual, json!({"any":true,"all":false}));
+        Ok(())
+    }
+    #[test]
+    fn typed_diagnostics_keep_two_pass_order_without_enabled_rules() -> Result<()> {
+        struct Rows(Relation);
+        impl SubjectRows for Rows {
+            fn subject(&self) -> Subject {
+                Subject::LineCulture
+            }
+            fn len(&self) -> usize {
+                self.0.len()
+            }
+            fn field(&mut self, row: usize, name: &str) -> Result<Value> {
+                self.0.field(row, name)
+            }
+            fn occurrences(&mut self, _row: usize) -> Result<Vec<Value>> {
+                Ok(Vec::new())
+            }
+            fn prepare(
+                &mut self,
+                names: &[String],
+                arena: &mut Arena,
+                with_children: bool,
+            ) -> Result<Prepared> {
+                let mut prepared = self.0.prepare(names, arena, with_children)?;
+                for (name, field) in &mut prepared.fields {
+                    if name.starts_with("line.") {
+                        field.rows = Some(Arc::from([0, 1, 1]));
+                    }
+                }
+                Ok(prepared)
+            }
+        }
+        let mut rows = Rows(Relation {
+            subject: Some(Subject::LineCulture),
+            fields: HashMap::from([
+                (
+                    "line.checkable".into(),
+                    vec![json!(false), json!(true), json!(true)],
+                ),
+                ("line.comparable".into(), vec![json!(true); 3]),
+                ("line.gathered".into(), vec![json!(false); 3]),
+                (
+                    "line.comparisonSource".into(),
+                    vec![
+                        json!(""),
+                        json!("{Count}|plural(one=x,other=y)"),
+                        json!("{Count}|plural(one=x,other=y)"),
+                    ],
+                ),
+                ("culture".into(), vec![json!("zz"); 3]),
+                ("latest".into(), vec![Value::Null, Value::Null, json!("")]),
+                (
+                    "unknownReasons".into(),
+                    vec![
+                        json!(["unresolved_identity"]),
+                        json!(["incomplete_coverage"]),
+                        json!(["source_unavailable"]),
+                    ],
+                ),
+                (
+                    "reducedSourceChecking".into(),
+                    vec![json!(true), json!(false), json!(false)],
+                ),
+            ]),
+            occurrences: Vec::new(),
+        });
+        let program = super::super::compile(r#"{"schemaVersion":4,"roles":[],"rules":[]}"#)?;
+        let (result, _, diagnostics) =
+            program.evaluate_with_diagnostics(&mut rows, &HostCollator::new("en")?)?;
+        assert!(result.findings.is_empty());
+        assert_eq!(
+            diagnostics
+                .into_iter()
+                .map(|(_, row, code)| (row, code))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, "unresolved_identity".into()),
+                (0, "reduced_source_checking".into()),
+                (1, "incomplete_coverage".into()),
+                (2, "source_unavailable".into()),
+                (1, "source_unavailable".into()),
+                (1, "unsupported_culture".into()),
+                (1, "translation_unavailable".into()),
+                (2, "source_unavailable".into()),
+                (2, "unsupported_culture".into())
+            ]
         );
         Ok(())
     }

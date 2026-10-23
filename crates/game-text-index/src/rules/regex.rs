@@ -1,8 +1,10 @@
 //! JavaScript Unicode regex syntax over a reversible UTF-16 view.
+use super::value::{Value, value};
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result};
 use fancy_regex::{Regex, RegexBuilder};
-use serde_json::{Value, json};
+#[cfg(test)]
+use serde_json::json;
 
 const JS_SPACE: &str =
     r"\x09-\x0d\x20\u{a0}\u{1680}\u{2000}-\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}";
@@ -234,7 +236,7 @@ impl JsRegex {
                 }
             }
             if let Some((unit, next_offset)) = interior {
-                output.push(json!({"match":"","start":unit,"end":unit}));
+                output.push(value!({"match":"","start":unit,"end":unit}));
                 offset = next_offset;
                 continue;
             }
@@ -249,7 +251,7 @@ impl JsRegex {
                 .map_err(|_| "Regex end is not a UTF-16 boundary.")?;
             let start = positions[start_index].1;
             let end = positions[end_index].1;
-            output.push(json!({"match":view(&source_units[start..end]),"start":start,"end":end}));
+            output.push(value!({"match":view(&source_units[start..end]),"start":start,"end":end}));
             offset = if found.start() == found.end() {
                 positions
                     .get(end_index + 1)

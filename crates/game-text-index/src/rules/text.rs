@@ -1,12 +1,30 @@
 use super::grammar::rich_text_counts;
 use super::regex::{JsRegex, units, view};
+use super::value::{Value, value};
 use crate::join_policy::{js_space, trim};
 use crate::{Error, ErrorCode, Result};
-use serde_json::{Value, json};
+#[cfg(test)]
+use serde_json::json;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 const TAG: &str = r#"<([A-Za-z_][\w.-]*)(?:\s+[\w.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*/?>"#;
 const MODIFIER: &str = r#"\|(?:plural|ordinal|gender|hpp)\((?:"(?:[^"\\]|\\.)*"|[^()"])*\)"#;
+
+fn expression(pattern: &'static str) -> Result<Arc<JsRegex>> {
+    static EXPRESSIONS: OnceLock<Mutex<HashMap<&'static str, Arc<JsRegex>>>> = OnceLock::new();
+    let mut expressions = EXPRESSIONS
+        .get_or_init(Mutex::default)
+        .lock()
+        .map_err(|_| "Text grammar cache was poisoned.")?;
+    if let Some(expression) = expressions.get(pattern) {
+        return Ok(Arc::clone(expression));
+    }
+    let expression = Arc::new(JsRegex::new(pattern, true)?);
+    expressions.insert(pattern, Arc::clone(&expression));
+    Ok(expression)
+}
 
 pub fn code_unit_compare(a: &str, b: &str) -> std::cmp::Ordering {
     units(a).cmp(&units(b))
@@ -48,9 +66,9 @@ pub enum CharacterClass {
 impl CharacterClass {
     pub fn compile(value: &Value) -> Result<Self> {
         Ok(match value {
-            Value::String(name) if name == "jsSpace" => Self::JsSpace,
-            Value::String(name) if name == "textCharWhitespace" => Self::TextSpace,
-            Value::String(name) if name == "wide" => Self::Wide,
+            Value::String(name) if name.as_ref() == "jsSpace" => Self::JsSpace,
+            Value::String(name) if name.as_ref() == "textCharWhitespace" => Self::TextSpace,
+            Value::String(name) if name.as_ref() == "wide" => Self::Wide,
             Value::Object(value) if value.contains_key("chars") => Self::Chars(code_points(
                 value["chars"].as_str().ok_or("Invalid character list.")?,
             )),
@@ -109,10 +127,10 @@ pub fn replace_ranges(text: &str, matches: &[Value], replacement: &str) -> Resul
     output.extend_from_slice(&source[offset..]);
     Ok(view(&output))
 }
-fn replace(text: &str, pattern: &str, replacement: &str) -> Result<String> {
+fn replace(text: &str, pattern: &'static str, replacement: &str) -> Result<String> {
     replace_ranges(
         text,
-        &JsRegex::new(pattern, true)?.matches(text, None)?,
+        &expression(pattern)?.matches(text, None)?,
         replacement,
     )
 }
@@ -163,7 +181,7 @@ pub fn interior_line_breaks(text: &str) -> usize {
     line_breaks(trim(text))
 }
 pub fn unreal_whitespace(text: &str) -> Value {
-    json!({"leading":text.chars().take_while(|c| text_space(*c)).collect::<String>(),"trailing":text.chars().rev().take_while(|c| text_space(*c)).collect::<String>().chars().rev().collect::<String>(),"lineBreaks":line_breaks(text)})
+    value!({"leading":text.chars().take_while(|c| text_space(*c)).collect::<String>(),"trailing":text.chars().rev().take_while(|c| text_space(*c)).collect::<String>().chars().rev().collect::<String>(),"lineBreaks":line_breaks(text)})
 }
 pub fn unsafe_whitespace(text: &str) -> bool {
     [text.chars().next(), text.chars().next_back()]
@@ -186,11 +204,11 @@ pub fn brace_balance(text: &str) -> Value {
             closing += 1;
         }
     }
-    json!({"opening":opening,"closing":closing})
+    value!({"opening":opening,"closing":closing})
 }
 
 fn tag_names(text: &str) -> Result<Vec<String>> {
-    Ok(JsRegex::new(TAG, true)?
+    Ok(expression(TAG)?
         .matches(text, None)?
         .into_iter()
         .filter_map(|found| {
@@ -210,8 +228,13 @@ pub fn rich_valid(source: &str, translation: &str) -> bool {
 }
 pub fn rich_balance(text: &str) -> Result<Value> {
     let mut opening = 0;
-    let cpp_scope = regex::Regex::new(r"[A-Za-z0-9_]::[A-Za-z0-9_]")?.is_match(text);
-    for found in JsRegex::new(TAG, true)?.matches(text, None)? {
+    static CPP_SCOPE: OnceLock<std::result::Result<regex::Regex, regex::Error>> = OnceLock::new();
+    let cpp_scope = CPP_SCOPE
+        .get_or_init(|| regex::Regex::new(r"[A-Za-z0-9_]::[A-Za-z0-9_]"))
+        .as_ref()
+        .map_err(|cause| Error::new(ErrorCode::InvalidInput, cause.to_string()))?
+        .is_match(text);
+    for found in expression(TAG)?.matches(text, None)? {
         let matched = found["match"].as_str().ok_or("Missing tag.")?;
         let tag = matched[1..]
             .chars()
@@ -232,11 +255,9 @@ pub fn rich_balance(text: &str) -> Result<Value> {
             opening += 1;
         }
     }
-    opening += JsRegex::new(r"<\{[^{}<>]+\}>", true)?
-        .matches(text, None)?
-        .len();
-    let closing = JsRegex::new("</>", true)?.matches(text, None)?.len();
-    let xml_closings = JsRegex::new(r"</[A-Za-z_][\w.-]*\s*>", true)?
+    opening += expression(r"<\{[^{}<>]+\}>")?.matches(text, None)?.len();
+    let closing = expression("</>")?.matches(text, None)?.len();
+    let xml_closings = expression(r"</[A-Za-z_][\w.-]*\s*>")?
         .matches(text, None)?
         .into_iter()
         .map(|found| {
@@ -246,7 +267,7 @@ pub fn rich_balance(text: &str) -> Result<Value> {
                 .collect::<String>()
         })
         .collect::<Vec<_>>();
-    Ok(json!({"opening":opening,"closing":closing,"xmlClosings":xml_closings}))
+    Ok(value!({"opening":opening,"closing":closing,"xmlClosings":xml_closings}))
 }
 
 pub fn compare_tags(source: &str, translation: &str) -> Result<Value> {
@@ -286,7 +307,7 @@ pub fn compare_tags(source: &str, translation: &str) -> Result<Value> {
         if source_count > 0 {
             for form in translation.keys() {
                 if !source.contains_key(form) {
-                    changed.push(json!({"source":first(source),"translation":form}));
+                    changed.push(value!({"source":first(source),"translation":form}));
                 }
             }
         }
@@ -311,14 +332,14 @@ pub fn compare_tags(source: &str, translation: &str) -> Result<Value> {
         values
     };
     Ok(
-        json!({"sourceTags":unique(source),"translationTags":unique(translation),"missing":missing,"added":added,"changed":changed}),
+        value!({"sourceTags":unique(source),"translationTags":unique(translation),"missing":missing,"added":added,"changed":changed}),
     )
 }
 pub fn without_optional_tags(text: &str, arguments: &[Value]) -> Result<String> {
     let source = units(text);
     let mut output = Vec::new();
     let mut offset = 0;
-    for found in JsRegex::new(r"<[A-Za-z_][\w.-]*>\{([^{}<>|]+)\}</>", true)?.matches(text, None)? {
+    for found in expression(r"<[A-Za-z_][\w.-]*>\{([^{}<>|]+)\}</>")?.matches(text, None)? {
         let matched = found["match"].as_str().ok_or("Missing optional wrapper.")?;
         let begin = matched.find("{").ok_or("Missing optional argument.")?;
         let end = matched.rfind("}").ok_or("Missing optional argument end.")?;

@@ -1,8 +1,8 @@
 //! Unreal's format compiler, inverse argument edit, and compile rich-text validator.
 use super::regex::{units, view};
+use super::value::{Value, value};
 use crate::join_policy::js_space;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Argument {
@@ -473,7 +473,7 @@ pub fn rename_argument(text: &str, from: &str, to: &str, culture: &str) -> Optio
             .iter()
             .zip(&modifier.forms)
             .map(|(renamed, form)| {
-                let quoted = crate::wtf8::view_json(&json!(renamed)).ok()?;
+                let quoted = crate::wtf8::Wtf8Buf::from_view(renamed).json_string();
                 Some(if matches!(modifier.name.as_str(), "plural" | "ordinal") {
                     format!("{}={quoted}", form.name)
                 } else {
@@ -514,7 +514,7 @@ pub fn rich_text_counts(text: &str) -> Value {
             start = None;
         }
     }
-    json!({"opening":opening,"closing":closing})
+    value!({"opening":opening,"closing":closing})
 }
 
 #[cfg(test)]

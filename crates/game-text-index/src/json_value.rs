@@ -11,6 +11,11 @@ pub(crate) fn parse_stored(view: &str) -> Result<serde_json::Value> {
 }
 
 pub(crate) fn parse(text: &str) -> Result<serde_json::Value> {
+    parse_as(text)
+}
+
+/// Decode reversible string views directly into a caller's typed representation.
+pub(crate) fn parse_as<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
     let mut decoder = serde_json::Deserializer::from_str(text);
     serde::de::IgnoredAny::deserialize(&mut decoder)?;
     decoder.end()?;
@@ -60,6 +65,11 @@ pub(crate) fn parse(text: &str) -> Result<serde_json::Value> {
         )?);
     }
     Ok(serde_json::from_str(&output)?)
+}
+
+pub(crate) fn parse_stored_as<T: serde::de::DeserializeOwned>(view: &str) -> Result<T> {
+    let text = Wtf8Buf::from_view(view);
+    parse_as(text.to_utf8()?)
 }
 
 #[cfg(test)]

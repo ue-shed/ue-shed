@@ -1,6 +1,6 @@
 //! Persisted finding evidence, identities, and diagnostics for a pinned joined view.
 use super::{
-    Emission, HostCollator, NativeSubjects, Subject, SubjectRows, compile, javascript_json,
+    Emission, HostCollator, NativeSubjects, Subject, compile, javascript_json,
     localization_identity, source_identity,
 };
 use crate::engine_match::{Projection, checkpoint};
@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, atomic::AtomicBool};
 
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 type Column = (String, String, Vec<u32>);
 pub(crate) struct FindingsLayer {
     reader: Reader,
@@ -105,80 +105,6 @@ fn intern_json(store: &mut Store, domain: &str, values: &[Value]) -> Result<Vec<
             .collect::<Vec<_>>(),
     )
 }
-fn diagnostics(
-    query: &mut EngineQuery,
-    collator: &HostCollator,
-    cancelled: &AtomicBool,
-) -> Result<Vec<(u32, u32, String)>> {
-    let mut rows = NativeSubjects::new(query, Subject::LineCulture, collator, cancelled)?;
-    let mut by_line = BTreeMap::<usize, Vec<(usize, usize)>>::new();
-    for (row, (line, ci)) in rows.cultures.iter().copied().enumerate() {
-        by_line.entry(line).or_default().push((row, ci));
-    }
-    let mut output = Vec::new();
-    for (line, cultures) in by_line {
-        checkpoint(cancelled)?;
-        for (row, ci) in &cultures {
-            for code in rows
-                .field(*row, "unknownReasons")?
-                .as_array()
-                .ok_or("Missing unknown reasons.")?
-            {
-                output.push((
-                    line as u32,
-                    *ci as u32,
-                    code.as_str().ok_or("Invalid unknown reason.")?.into(),
-                ));
-            }
-            if rows.field(*row, "reducedSourceChecking")?.as_bool() == Some(true) {
-                output.push((line as u32, *ci as u32, "reduced_source_checking".into()));
-            }
-        }
-        if rows.line_field(line, "checkable")?.as_bool() != Some(true) {
-            continue;
-        }
-        for (row, ci) in cultures {
-            let culture = rows.field(row, "culture")?;
-            let culture = culture.as_str().ok_or("Missing culture.")?;
-            if rows.line_field(line, "gathered")?.as_bool() != Some(true) {
-                output.push((line as u32, ci as u32, "source_unavailable".into()));
-            }
-            let latest = rows.field(row, "latest")?;
-            if rows.line_field(line, "comparable")?.as_bool() != Some(true) {
-                if latest.is_null() {
-                    output.push((line as u32, ci as u32, "translation_unavailable".into()));
-                }
-                continue;
-            }
-            let source = rows.line_field(line, "comparisonSource")?;
-            for issue in super::grammar::format_pattern(
-                source.as_str().ok_or("Missing comparison source.")?,
-                culture,
-            )
-            .issues
-            {
-                if matches!(issue.code.as_str(), "unsupported_culture" | "syntax_limit") {
-                    output.push((line as u32, ci as u32, issue.code));
-                }
-            }
-            if latest.is_null() {
-                output.push((line as u32, ci as u32, "translation_unavailable".into()));
-                continue;
-            }
-            for issue in super::grammar::format_pattern(
-                latest.as_str().ok_or("Invalid latest translation.")?,
-                culture,
-            )
-            .issues
-            {
-                if matches!(issue.code.as_str(), "unsupported_culture" | "syntax_limit") {
-                    output.push((line as u32, ci as u32, issue.code));
-                }
-            }
-        }
-    }
-    Ok(output)
-}
 
 impl EngineQuery {
     pub fn findings_evaluate(
@@ -223,13 +149,29 @@ impl EngineQuery {
         if store.root["layers"].get(&key).is_none() {
             let mut all = Vec::<Emission>::new();
             let mut regex_diagnostics = Vec::new();
+            let mut base_diagnostics = Vec::new();
+            let mut evaluation_timings = Vec::new();
             let mut lc_lines = Vec::new();
             let mut lc_cultures = Vec::new();
             let mut unit_rows = Vec::new();
             let mut unit_sources = Vec::new();
             for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
+                if subject != Subject::LineCulture
+                    && !program
+                        .rules
+                        .iter()
+                        .any(|rule| rule.rule.subject == subject)
+                {
+                    continue;
+                }
                 let mut subjects = NativeSubjects::new(self, subject, &collator, cancelled)?;
-                let evaluation = program.evaluate(&mut subjects, &collator)?;
+                let (evaluation, timings, diagnostics) =
+                    program.evaluate_with_diagnostics(&mut subjects, &collator)?;
+                evaluation_timings.push(json!({"subject":subject,"prepareMs":timings.prepare.as_secs_f64()*1000.0,"executeMs":timings.execute.as_secs_f64()*1000.0,"diagnosticsMs":timings.diagnostics.as_secs_f64()*1000.0,"emissionMs":timings.emission.as_secs_f64()*1000.0,"tuples":timings.nodes.iter().map(|node| node.tuples).sum::<usize>(),"rowVisits":timings.nodes.iter().map(|node| node.rows).sum::<usize>(),"scalarMs":timings.nodes.iter().map(|node| node.scalar.as_secs_f64()*1000.0).sum::<f64>(),"projections":timings.projections.iter().map(|(name,time)| json!({"column":name,"ms":time.as_secs_f64()*1000.0})).collect::<Vec<_>>()}));
+                for (_, row, code) in diagnostics {
+                    let (line, ci) = subjects.cultures[row];
+                    base_diagnostics.push((line as u32, ci as u32, code));
+                }
                 if subject == Subject::LineCulture {
                     for (line, ci) in &subjects.cultures {
                         lc_lines.push(*line as u32);
@@ -398,7 +340,7 @@ impl EngineQuery {
                     columns.push((format!("r{index}.{name}"), domain.into(), values));
                 }
             }
-            let mut diagnostics = diagnostics(self, &collator, cancelled)?;
+            let mut diagnostics = base_diagnostics;
             diagnostics.extend(regex_diagnostics);
             diagnostics.sort_by_key(|(line, _, _)| *line);
             let codes = store.intern(
@@ -420,7 +362,7 @@ impl EngineQuery {
             ));
             columns.push(("diag.codes".into(), "findings".into(), codes));
             let counts = counts.into_iter().map(|((rule,culture,severity),count)| json!({"rule":rule,"culture":if culture == u32::MAX { Value::Null } else { json!(self.cultures[culture as usize]) },"severity":severity,"count":count})).collect::<Vec<_>>();
-            let metadata = json!({"version":VERSION,"joinedKey":self.reader.joined_key,"collation":collator.locale,"rules":rules,"counts":counts,"diagnosticCount":diagnostics.len()});
+            let metadata = json!({"version":VERSION,"joinedKey":self.reader.joined_key,"collation":collator.locale,"rules":rules,"counts":counts,"diagnosticCount":diagnostics.len(),"evaluationTimings":evaluation_timings});
             store.publish_global(
                 "findings",
                 &key,

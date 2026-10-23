@@ -20,9 +20,8 @@ pub struct NativeSubjects<'a> {
     pub subject: Subject,
     pub cultures: Vec<(usize, usize)>,
     pub units: Vec<UnitSource>,
-    collator: &'a HostCollator,
-    cancelled: &'a AtomicBool,
-    parent_fields: HashMap<(usize, String), Value>,
+    pub(super) collator: &'a HostCollator,
+    pub(super) cancelled: &'a AtomicBool,
     place_cache: HashMap<usize, Vec<Value>>,
 }
 impl<'a> NativeSubjects<'a> {
@@ -75,7 +74,6 @@ impl<'a> NativeSubjects<'a> {
             units,
             collator,
             cancelled,
-            parent_fields: HashMap::new(),
             place_cache: HashMap::new(),
         })
     }
@@ -89,7 +87,7 @@ impl<'a> NativeSubjects<'a> {
             Ok(row)
         }
     }
-    fn manifest_rows(&self, line: usize) -> &[u32] {
+    pub(super) fn manifest_rows(&self, line: usize) -> &[u32] {
         &self.projection.manifest[self.projection.manifest_start[line] as usize
             ..self.projection.manifest_end[line] as usize]
     }
@@ -99,7 +97,7 @@ impl<'a> NativeSubjects<'a> {
             .map(str::to_owned)
             .ok_or_else(|| "Missing manifest input.".into())
     }
-    fn slices(&self, line: usize) -> std::ops::Range<usize> {
+    pub(super) fn slices(&self, line: usize) -> std::ops::Range<usize> {
         self.projection.starts[line] as usize..self.projection.starts[line + 1] as usize
     }
     pub fn line_members(&self, line: usize) -> Vec<u32> {
@@ -239,9 +237,6 @@ impl<'a> NativeSubjects<'a> {
         })
     }
     pub fn line_field(&mut self, line: usize, name: &str) -> Result<Value> {
-        if let Some(value) = self.parent_fields.get(&(line, name.into())) {
-            return Ok(value.clone());
-        }
         let result = match name {
             "lineId" => json!(self.query.packed("line", line)?),
             "source" => json!(self.query.reader.string(self.projection.source[line])?),
@@ -406,8 +401,6 @@ impl<'a> NativeSubjects<'a> {
             }
             _ => return Err(format!("Unknown line field {name}.").into()),
         };
-        self.parent_fields
-            .insert((line, name.into()), result.clone());
         Ok(result)
     }
     fn place(&mut self, member: u32, unit_status: &Value) -> Result<Value> {
@@ -421,6 +414,21 @@ impl<'a> NativeSubjects<'a> {
     }
 }
 impl SubjectRows for NativeSubjects<'_> {
+    fn dictionary_len(&self) -> Result<usize> {
+        self.query.reader.dictionary_count()
+    }
+    fn checkpoint(&self) -> Result<()> {
+        checkpoint(self.cancelled)
+    }
+    fn prepare(
+        &mut self,
+        names: &[String],
+        arena: &mut super::columns::Arena,
+        with_children: bool,
+    ) -> Result<super::columns::Prepared> {
+        self.prepare_columns(names, arena, with_children)
+    }
+
     fn subject(&self) -> Subject {
         self.subject
     }

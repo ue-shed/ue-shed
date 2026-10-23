@@ -834,9 +834,12 @@ guessed.
 | Unknown                  | Available evidence cannot prove a more specific state                                        |
 
 "Not gathered yet" requires an observed identity inside the target's gather scope and a readable
-manifest without that identity. "Not found" requires explicit completion of the manifest's named
-package, including packages with no remaining text. Partial, failed and unscanned packages produce
-typed unknown reasons. Older corpora without per-package completion cannot prove absence.
+manifest without that identity. "Not found" requires either a completed read of the manifest's
+named package without the key, or its absence from the prepared complete project inventory.
+Preparation retains an empty inventory marker even after the last package is deleted. Partial,
+failed and unscanned package reads produce typed unknown reasons. Older corpora without completion
+or complete inventory evidence cannot prove absence. The pure `joinLocalizationTarget` helper
+accepts `completePackageInventory: true` only when its caller holds that evidence.
 
 The primary state precedence is `outside_target`, `not_gathered`, `not_found`, `gathered_only`,
 `changed_since_gather`, `unknown`, `not_synced`, `needs_update`, `not_translated`, `translated`.

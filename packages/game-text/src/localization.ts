@@ -389,7 +389,9 @@ function collapsedPOEntries(file: LocalizationTargetEvidence["cultures"][number]
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
-	target: LocalizationTarget = evidence.target
+	target: LocalizationTarget = evidence.target,
+	/** Only a caller holding the complete project inventory can prove a deleted package absent. */
+	options: { readonly completePackageInventory?: boolean } = {}
 ): LocalizationJoin {
 	const manifest = groupByIdentity(
 		evidence.manifest.status === "read" ? evidence.manifest.value.entries : []
@@ -519,7 +521,11 @@ export function joinLocalizationTarget(
 				)
 					continue;
 				const status = packageCoverage.get(path) ?? packageCoverage.get(alternative);
-				if (status === "complete") structural.push("not_found");
+				if (
+					status === "complete" ||
+					(status === undefined && options.completePackageInventory)
+				)
+					structural.push("not_found");
 				else
 					reasons.push(
 						status === "partial"
@@ -546,7 +552,10 @@ export function joinLocalizationTarget(
 					const status =
 						packageCoverage.get(normalized) ??
 						packageCoverage.get(normalized.replace(/\.uasset$/u, ".umap"));
-					if (status !== "complete")
+					if (
+						status !== "complete" &&
+						!(status === undefined && options.completePackageInventory)
+					)
 						reasons.push(
 							status === "partial"
 								? "package_partial"

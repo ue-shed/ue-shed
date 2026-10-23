@@ -120,18 +120,6 @@ export function corpusDefectsFor(
 			explanations.push(template.why);
 			defectIds.push(...template.defects);
 		}
-		if (subject.case === "edit-deleted-package") {
-			defectIds.push("deleted-package-not-found");
-			predicted.state = "unknown";
-			predicted.facts = predicted.facts.map((fact) =>
-				fact === "not_found" ? "unknown" : fact
-			);
-			predicted.unknownReasons = ["package_not_scanned"];
-			predicted.problems = ["unchecked"];
-			explanations.push(
-				"The complete project inventory proves this generated package was deleted. Today's join treats a missing inventory row as unscanned instead of reporting not_found; both full and incremental scans preserve that error."
-			);
-		}
 
 		if (explanations.length) {
 			const actual = Schema.decodeUnknownSync(Dictionary)(predicted),

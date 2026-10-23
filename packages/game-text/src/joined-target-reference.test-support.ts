@@ -585,7 +585,10 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		);
 	const absenceStatus = (file: string) =>
 		packageStatus(packages, normalizedPackagePath(file)) ??
-		packageStatus(packages, normalizedPackagePath(file).replace(/\.uasset$/u, ".umap"));
+		packageStatus(packages, normalizedPackagePath(file).replace(/\.uasset$/u, ".umap")) ??
+		(Object.keys(reader.manifest.active).some((name) => name.startsWith("package-text."))
+			? 0
+			: undefined);
 	const sameExtra = (a: number, b: number) =>
 		a === b ||
 		localizationTextMatches(

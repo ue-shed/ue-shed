@@ -48,8 +48,8 @@ pub(crate) const L_REASONS: usize = 9;
 /// A line's problems under a request that names no finding, classified through `text_problem`
 /// from the shared table, as the engine does. Queries classify per request instead.
 pub(crate) const L_PROBLEMS: usize = 11;
-/// v6 joins namespace-collapsed PO entries by namespace and effective source.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v6:";
+/// v7 treats absence from a prepared complete package inventory as proven missing content.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v7:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -1038,7 +1038,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                     });
                     if !present {
                         let status = joined.packages.status(&file);
-                        if status == Some(0) {
+                        if joined.packages.absence_is_known(&file) {
                             structural |= 1 << 6;
                         } else {
                             reasons |= status_reason(status);
@@ -1076,13 +1076,16 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 structural |= 1 << 7;
             } else {
                 for manifest_row in &mo[g.ms..g.me] {
-                    let status = manifest_package(
+                    let file = manifest_package(
                         &joined
                             .manifest
                             .path(*manifest_row as usize, &joined.strings)?,
-                    )
-                    .and_then(|f| joined.packages.status(&f));
-                    if status != Some(0) {
+                    );
+                    let status = file.as_ref().and_then(|f| joined.packages.status(f));
+                    if !file
+                        .as_ref()
+                        .is_some_and(|f| joined.packages.absence_is_known(f))
+                    {
                         reasons |= status_reason(status);
                     }
                 }

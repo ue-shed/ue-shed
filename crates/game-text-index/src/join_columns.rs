@@ -295,6 +295,15 @@ impl PackageColumns {
                 .copied()
         })
     }
+    /// Package layers are published from a complete inventory. No layers means preparation has
+    /// not run; an empty published layer means the prepared project really has no packages.
+    pub fn absence_is_known(&self, path: &str) -> bool {
+        match self.status(path) {
+            Some(0) => true,
+            None => !self.names.is_empty(),
+            _ => false,
+        }
+    }
     pub fn unit_id(&self, row: usize, strings: &[String], empty: u32) -> Result<String> {
         let c = &self.occurrence;
         let text = |field: usize| -> Result<&str> {

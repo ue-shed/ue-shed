@@ -131,6 +131,10 @@ impl Fixture {
     }
 
     fn packages(&mut self, rows: &[Value]) -> Result<()> {
+        self.packages_with_status(rows, 0)
+    }
+
+    fn packages_with_status(&mut self, rows: &[Value], status: u32) -> Result<()> {
         let mut columns = Vec::new();
         for field in OCCURRENCE_FIELDS {
             let values = if [
@@ -182,7 +186,7 @@ impl Fixture {
             "source".into(),
             self.ids(&["Content/Text/Example.uasset"])?,
         ));
-        columns.push(("package.status".into(), String::new(), vec![0]));
+        columns.push(("package.status".into(), String::new(), vec![status]));
         columns.push((
             "package.occurrence_start".into(),
             String::new(),
@@ -347,6 +351,80 @@ fn namespace_collapsed_po_entries_join_only_their_source_and_track_pending_impor
                 "Bernstein"
             }
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn complete_inventory_proves_a_deleted_package_absent_but_unprepared_and_failed_reads_do_not()
+-> Result<()> {
+    for (prepared, status, path, expected, reason) in [
+        (
+            false,
+            0,
+            "/Game/Text/Deleted.Deleted.Label",
+            "unknown",
+            Some("package_not_scanned"),
+        ),
+        (
+            true,
+            0,
+            "/Game/Text/Deleted.Deleted.Label",
+            "not_found",
+            None,
+        ),
+        (
+            true,
+            1,
+            "/Game/Text/Example.Example.Label",
+            "unknown",
+            Some("package_partial"),
+        ),
+        (
+            true,
+            2,
+            "/Game/Text/Example.Example.Label",
+            "unknown",
+            Some("package_partial"),
+        ),
+        (
+            true,
+            3,
+            "/Game/Text/Example.Example.Label",
+            "unknown",
+            Some("package_failed"),
+        ),
+    ] {
+        let mut fixture = Fixture::new()?;
+        fixture.file(
+            "Game.manifest",
+            "manifest",
+            &[json!({"namespace":"UI","key":"Deleted","source":"Raw","path":path})],
+        )?;
+        for name in ["en.archive", "de.archive"] {
+            fixture.file(
+                name,
+                "archive",
+                &[json!({"namespace":"UI","key":"Deleted","source":"Raw","translation":"Raw"})],
+            )?;
+        }
+        fixture.file("en.po", "po", &[])?;
+        fixture.file("de.po", "po", &[])?;
+        if prepared {
+            fixture.packages_with_status(&[], status)?;
+        }
+        for line in fixture.lines()? {
+            for mark in line["cultures"].as_array().ok_or("cultures")? {
+                assert_eq!(
+                    mark["state"], expected,
+                    "prepared={prepared} status={status}"
+                );
+                assert_eq!(
+                    mark["unknownReasons"],
+                    json!(reason.into_iter().collect::<Vec<_>>())
+                );
+            }
+        }
     }
     Ok(())
 }

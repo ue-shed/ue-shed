@@ -301,15 +301,22 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		inventory.length - changed.reduce((count, shard) => count + shard.entries.length, 0);
 	const report = () => reportProgress({ phase: "packages", completed, total: inventory.length });
 	report();
-	if (!inventory.length && !Object.keys(manifest.layers).length) {
-		yield* writer.publishCold([
-			{ name: selection[0]!.name, key: selection[0]!.key, source: packageTextColumns([]) }
-		]);
+	if (!inventory.length) {
+		const empty = {
+			name: selection[0]!.name,
+			key: selection[0]!.key,
+			source: packageTextColumns([])
+		};
+		const retired = removed.filter((name) => name !== empty.name);
+		// Retain an empty prepared-inventory marker after deleting the last package, including
+		// when localization layers were imported before this first package preparation.
+		if (!Object.keys(manifest.layers).length) yield* writer.publishCold([empty]);
+		else yield* writer.publishBatch([empty], retired);
 		return {
 			readPackages: 0,
 			reusedPackages: 0,
 			changedShards: 0,
-			removedShards: 0,
+			removedShards: retired.length,
 			published: true,
 			profile: writer.metrics()
 		};

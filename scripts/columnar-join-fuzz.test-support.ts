@@ -588,7 +588,12 @@ export async function compareJoinFuzzInput(
 		a.path < b.path ? -1 : a.path > b.path ? 1 : 0
 	);
 	const corpus = candidateCorpusFromEvents({ projectRoot, inventory, events: records });
-	const raw = applyLocalizationReview(joinLocalizationTarget(corpus, evidence), input.review);
+	const raw = applyLocalizationReview(
+		joinLocalizationTarget(corpus, evidence, evidence.target, {
+			completePackageInventory: true
+		}),
+		input.review
+	);
 	const expected = applyLocalizationKeyChanges(raw, localizationKeyChanges(raw, corpus).pairs);
 	// The corpus keeps no asset classes; the references take them from the records.
 	const assetClasses = new Map(

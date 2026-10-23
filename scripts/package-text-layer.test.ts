@@ -135,6 +135,51 @@ describe("package text layer", () => {
 			expect((await runIn(cache, textCorpusFromPackageTextLayer("."))).units).toEqual([]);
 		});
 	});
+	it("retains a prepared empty inventory after the last package is deleted beside other layers", async () => {
+		await withStore(async (cache) => {
+			const path = "Content/Last.uasset";
+			await runIn(
+				cache,
+				Effect.gen(function* () {
+					const writer = yield* (yield* SharedIndex).writer();
+					yield* writer.publish("unrelated", "unrelated", packageTextColumns([]));
+				})
+			);
+			await runIn(
+				cache,
+				refreshPackageTextLayer({
+					inventory: [{ path, signature: "present", headerData: header(true) }],
+					read: () => Stream.succeed(emptyPackageTextRecord(path))
+				})
+			);
+			await runIn(
+				cache,
+				refreshPackageTextLayer({
+					inventory: [],
+					read: () => Stream.die("No package should be read")
+				})
+			);
+			const root = await runIn(
+				cache,
+				Effect.gen(function* () {
+					return yield* (yield* SharedIndex).inspect();
+				})
+			);
+			expect(
+				Object.keys(root.active).filter((name) => name.startsWith("package-text."))
+			).toEqual(["package-text.0"]);
+			expect(root.active.unrelated).toBe("unrelated");
+			expect(
+				(await runIn(cache, textCorpusFromPackageTextLayer("."))).packageCoverage
+			).toEqual([]);
+			expect(
+				await runIn(
+					cache,
+					refreshPackageTextLayer({ inventory: [], read: () => Stream.empty })
+				)
+			).toMatchObject({ published: false });
+		});
+	});
 	it(
 		"converts retained generated events, flags text packages and preserves the mapped layer oracle",
 		async () => {

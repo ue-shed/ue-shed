@@ -1587,12 +1587,12 @@ export function localizationQualityWorkspaceOf(
 	const reads = localizationQualityReads(source, quality);
 	return {
 		search: (request: WorkspaceQualityRequest) =>
-			hydrateQualityRead(reads.search(request), quality.findings.items),
+			hydrateQualityRead(() => reads.search(request), quality.findings.items),
 		export: (request: WorkspaceQualityRequest) =>
-			hydrateQualityRead(reads.export(request), quality.findings.items),
+			hydrateQualityRead(() => reads.export(request), quality.findings.items),
 		focus: (request: WorkspaceQualityFocusRequest) =>
-			hydrateQualityRead(reads.focus(request), quality.findings.items),
+			hydrateQualityRead(() => reads.focus(request), quality.findings.items),
 		changes: (request: WorkspaceQualityRequest) =>
-			hydrateQualityRead(reads.changes(request), quality.findings.items)
+			hydrateQualityRead(() => reads.changes(request), quality.findings.items)
 	};
 }

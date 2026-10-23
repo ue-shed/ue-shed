@@ -12,11 +12,13 @@ export function materializeQualityRead<A, Item>(
 	return next.value;
 }
 
+/** Starts a fresh read on every run, so retrying or reusing the effect reads again. */
 export function hydrateQualityRead<A, Item, E>(
-	read: QualityRead<A, Item>,
+	start: () => QualityRead<A, Item>,
 	items: (positions: readonly number[]) => Effect.Effect<readonly Item[], E>
 ): Effect.Effect<A, E> {
 	return Effect.gen(function* () {
+		const read = start();
 		let next = read.next();
 		while (!next.done) next = read.next(yield* items(next.value));
 		return next.value;

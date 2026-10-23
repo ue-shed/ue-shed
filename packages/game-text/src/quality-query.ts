@@ -574,9 +574,9 @@ export function asyncTextQualityQueryOf(
 	const reads = textQualityReads(report, list);
 	return {
 		summary: reads.summary,
-		search: (request) => hydrateQualityRead(reads.search(request), list.items),
-		focus: (request) => hydrateQualityRead(reads.focus(request), list.items),
-		export: (filter) => hydrateQualityRead(reads.export(filter), list.items)
+		search: (request) => hydrateQualityRead(() => reads.search(request), list.items),
+		focus: (request) => hydrateQualityRead(() => reads.focus(request), list.items),
+		export: (filter) => hydrateQualityRead(() => reads.export(filter), list.items)
 	};
 }
 

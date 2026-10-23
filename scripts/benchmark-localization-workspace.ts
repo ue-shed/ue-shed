@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Effect, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { GameTextRuleDocument } from "../packages/game-text/src/game-text-rules.ts";
 import {
 	workspaceScaleFixture,
@@ -36,8 +36,11 @@ const build: typeof localizationQualityWorkspaceOf = process.argv[3]
 	? (await import(pathToFileURL(resolve(process.argv[3])).href)).localizationQualityWorkspaceOf
 	: localizationQualityWorkspaceOf;
 if (!Number.isSafeInteger(count) || count < 1) throw new Error("Choose a positive line count.");
-const report = (stage: string, started: number, stop: ReturnType<typeof eventLoopGaps>) => {
-	const gaps = stop();
+const report = (
+	stage: string,
+	started: number,
+	gaps: ReturnType<ReturnType<typeof eventLoopGaps>>
+) => {
 	if (gaps.stallMaxMs > stallLimit) violations.push(`${stage}: ${gaps.stallMaxMs.toFixed(1)} ms`);
 	console.log(
 		JSON.stringify({
@@ -48,21 +51,33 @@ const report = (stage: string, started: number, stop: ReturnType<typeof eventLoo
 		})
 	);
 };
+// The gap sampler's interval keeps the process alive, so it stops however the stage ends.
 const measure = <A>(stage: string, run: () => A) => {
 	const stop = eventLoopGaps();
 	const started = performance.now();
-	const value = run();
-	report(stage, started, stop);
-	return value;
+	let gaps: ReturnType<typeof stop> | undefined;
+	try {
+		const value = run();
+		gaps = stop();
+		report(stage, started, gaps);
+		return value;
+	} finally {
+		if (!gaps) stop();
+	}
 };
 // Pages hydrate asynchronously: time the read through to its result, not its construction.
 const measureRead = <A, E, R>(stage: string, read: () => Effect.Effect<A, E, R>) =>
-	Effect.gen(function* () {
+	Effect.suspend(() => {
 		const stop = eventLoopGaps();
 		const started = performance.now();
-		const value = yield* read();
-		report(stage, started, stop);
-		return value;
+		return read().pipe(
+			Effect.onExit((exit) =>
+				Effect.sync(() => {
+					const gaps = stop();
+					if (Exit.isSuccess(exit)) report(stage, started, gaps);
+				})
+			)
+		);
 	});
 await Effect.runPromise(
 	Effect.scoped(

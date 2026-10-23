@@ -418,9 +418,10 @@ mod tests {
         assert_eq!(error.map(|error| error.code), Some(ErrorCode::InvalidInput));
     }
 
-    /// The rule editor rejects exactly the JavaScript patterns the engine cannot run.
+    /// The rule file admits only patterns the engine compiles, keeps realistic lookbehinds,
+    /// and rejects the ones outside the dialect.
     #[test]
-    fn the_authoring_check_agrees_with_the_engine_compiler() -> Result<()> {
+    fn the_rule_file_admits_only_patterns_the_engine_compiles() -> Result<()> {
         let patterns = [
             r"(?<=a)b",
             r"(?<=.)b",
@@ -518,35 +519,164 @@ mod tests {
             r"(?<=\0)a",
             r"(?<=\cJ|\n)a",
         ];
+        // Realistic lookbehinds the dialect keeps, and ones outside it.
+        let accepted = [
+            r"(?<=a)b",
+            r"(?<=a|bc)d",
+            r"(?<=(?:a|bc))d",
+            r"(?<=(?:)(?:a|bc))d",
+            r"(?<=(?:a|bc)(?:))d",
+            r"(?<=a{2}?)b",
+            r"(?<=a{02,2})b",
+            r"(?<=([]|a))b",
+            r"(?<=(a|b))c",
+            r"(?<=\p{L})b",
+            r"(?<=😀|a)b",
+            r"(?<=x(?:😀|a))b",
+            r"(?<=\bx)y",
+            r"(?<=(?=a+)a)b",
+            r"(?<!a|bb)c",
+            r"(?<=\0)a",
+        ];
+        let rejected = [
+            r"(?<=a+)b",
+            r"(?<=a{1,2})b",
+            r"(?<=(a|bc))d",
+            r"(?<=(a)\1)b",
+            r"(?<=a|b+)c",
+        ];
+        let all = patterns
+            .iter()
+            .chain(&accepted)
+            .chain(&rejected)
+            .collect::<Vec<_>>();
+        let verdicts = authoring_verdicts(&all)?;
+        for (pattern, authored) in all.iter().zip(&verdicts) {
+            require(
+                authored.is_some(),
+                format!("JavaScript rejects {pattern:?}."),
+            )?;
+            // Everything the rule file admits must compile in the engine.
+            if *authored == Some(true) {
+                assert!(JsRegex::new(pattern, true).is_ok(), "pattern {pattern:?}");
+            }
+        }
+        let start = patterns.len();
+        for (pattern, authored) in accepted.iter().zip(&verdicts[start..]) {
+            assert_eq!(*authored, Some(true), "pattern {pattern:?}");
+        }
+        for (pattern, authored) in rejected.iter().zip(&verdicts[start + accepted.len()..]) {
+            assert_eq!(*authored, Some(false), "pattern {pattern:?}");
+        }
+        Ok(())
+    }
+
+    /// The authoring check's verdict on each pattern, or `None` where JavaScript rejects it.
+    fn authoring_verdicts(patterns: &[impl AsRef<str>]) -> Result<Vec<Option<bool>>> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(2)
             .ok_or("Missing repository root.")?;
-        let output = Command::new("node")
+        let mut child = Command::new("node")
             .args([
                 "--import",
                 "tsx",
                 "--input-type=module",
                 "-e",
-                &format!(
-                    "import {{engineRunsPattern}} from './packages/game-text/src/rule-regex.ts'; process.stdout.write(JSON.stringify({}.map(engineRunsPattern)));",
-                    serde_json::to_string(&patterns[..])?
-                ),
+                "import {engineRunsPattern} from './packages/game-text/src/rule-regex.ts'; let s=''; process.stdin.setEncoding('utf8'); process.stdin.on('data', v => s += v); process.stdin.on('end', () => process.stdout.write(JSON.stringify(JSON.parse(s).map(p => { try { new RegExp(p, 'u'); } catch { return null; } return engineRunsPattern(p); }))));",
             ])
             .current_dir(root)
-            .output()?;
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let patterns = patterns.iter().map(AsRef::as_ref).collect::<Vec<_>>();
+        child
+            .stdin
+            .take()
+            .ok_or("Missing Node stdin.")?
+            .write_all(serde_json::to_string(&patterns)?.as_bytes())?;
+        let output = child.wait_with_output()?;
         require(
             output.status.success(),
             std::str::from_utf8(&output.stderr)?,
         )?;
-        let authored = crate::json_value::parse(std::str::from_utf8(&output.stdout)?)?;
-        for (index, pattern) in patterns.iter().enumerate() {
-            assert_eq!(
-                authored[index].as_bool(),
-                Some(JsRegex::new(pattern, true).is_ok()),
-                "pattern {pattern:?}"
-            );
+        let verdicts = crate::json_value::parse(std::str::from_utf8(&output.stdout)?)?;
+        Ok(verdicts
+            .as_array()
+            .ok_or("Missing verdicts.")?
+            .iter()
+            .map(serde_json::Value::as_bool)
+            .collect())
+    }
+
+    /// Lookbehinds generated from the constructs that decide their width, seeded so a failure
+    /// reproduces: every one the rule file admits must compile in the engine.
+    #[test]
+    fn the_engine_compiles_every_generated_lookbehind_the_rule_file_admits() -> Result<()> {
+        const PIECES: [&str; 24] = [
+            "a", "bc", "(?:)", "^", "$", r"\b", "[]", "[^]", ".", "😀", "a{2}", "a{0}", "a?", "a+",
+            "a{1,2}", "(?=x+)", "(?!y)", "(?<=z)", r"\1", "(?:a|)", "(a)", "[ab]", r"\k<n>",
+            "(?<n>)",
+        ];
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % bound as u64) as usize
+        };
+        fn expression(next: &mut impl FnMut(usize) -> usize, depth: usize) -> String {
+            let branches = 1 + next(3);
+            (0..branches)
+                .map(|_| {
+                    (0..next(4))
+                        .map(|_| {
+                            if depth < 2 && next(4) == 0 {
+                                let body = expression(next, depth + 1);
+                                let group = ["(?:", "(", "(?<n>"][next(3)];
+                                let repeat = ["", "", "{2}", "?", "{1}"][next(5)];
+                                format!("{group}{body}){repeat}")
+                            } else {
+                                PIECES[next(PIECES.len())].to_owned()
+                            }
+                        })
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("|")
         }
+        let patterns = (0..6000)
+            .map(|_| {
+                let prefix = ["", "(a)", "x"][next(3)];
+                let behind = ["(?<=", "(?<!"][next(2)];
+                format!("{prefix}{behind}{})d", expression(&mut next, 0))
+            })
+            .collect::<Vec<_>>();
+        let verdicts = authoring_verdicts(&patterns)?;
+        let admitted = patterns
+            .iter()
+            .zip(verdicts)
+            .filter(|(_, authored)| *authored == Some(true))
+            .map(|(pattern, _)| pattern)
+            .collect::<Vec<_>>();
+        // The generator must exercise the dialect, not only patterns outside it.
+        assert!(
+            admitted.len() > 1000,
+            "only {} patterns admitted",
+            admitted.len()
+        );
+        let failures = admitted
+            .iter()
+            .filter(|pattern| JsRegex::new(pattern, true).is_err())
+            .map(|pattern| format!("{pattern:?}"))
+            .collect::<Vec<_>>();
+        assert!(
+            failures.is_empty(),
+            "{} admitted patterns the engine cannot compile:\n{}",
+            failures.len(),
+            failures[..failures.len().min(40)].join("\n")
+        );
         Ok(())
     }
 }

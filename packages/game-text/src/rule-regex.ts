@@ -10,12 +10,14 @@ type Node =
 	| { readonly kind: "backreference" };
 
 /**
- * Whether the native engine runs a pattern that `new RegExp(pattern, "u")` accepted. It runs
- * JavaScript semantics, but every lookbehind must have a fixed width in characters: its body is
- * fixed-width, or is an alternation whose branches each are (non-capturing groups around the
- * whole body are transparent). Fixed width allows exact repeats (`{n}`, `{n,n}`, lazy or not) and
- * nested alternations of equal-width branches, and excludes backreferences; lookarounds take no
- * width. The engine's regex tests pin this predicate against the engine's own compiler.
+ * Whether a pattern that `new RegExp(pattern, "u")` accepted is in the rule language's regex
+ * dialect: JavaScript, with every lookbehind fixed-width in characters. A lookbehind's body is
+ * fixed-width, or an alternation whose branches each are; empty non-capturing groups are ignored
+ * and non-capturing groups around the whole body are transparent. Inside a lookbehind, repeats
+ * are exact (`{n}` or `{n,n}`, lazy or not) of something at least one character wide, nested
+ * alternations have branches of equal width, and there are no backreferences; anchors and
+ * lookarounds take no width. The native engine runs every pattern in the dialect with
+ * JavaScript semantics; its tests check that on listed and on generated patterns.
  */
 export function engineRunsPattern(pattern: string): boolean {
 	return supported(new Parser(pattern).parse());
@@ -31,25 +33,25 @@ function supported(node: Node): boolean {
 		case "repeat":
 			return supported(node.body);
 		case "lookaround":
-			return supported(node.body) && (!node.behind || lookbehindBody(node.body));
+			return supported(node.body) && (!node.behind || lookbehind(node.body));
 		default:
 			return true;
 	}
 }
 
-function lookbehindBody(body: Node): boolean {
-	let top = body;
+function lookbehind(body: Node): boolean {
+	let top = withoutEmptyGroups(body);
 	for (;;) {
 		const only = top.kind === "sequence" && top.items.length === 1 ? top.items[0]! : top;
 		if (only.kind !== "group" || only.capturing) break;
-		top = only.body;
+		top = withoutEmptyGroups(only.body);
 	}
 	return top.kind === "alternation"
 		? top.branches.every((branch) => width(branch) !== undefined)
 		: width(top) !== undefined;
 }
 
-/** The node's fixed width in characters, or `undefined` when it varies. */
+/** The node's fixed width in characters, or `undefined` when the dialect gives it none. */
 function width(node: Node): number | undefined {
 	switch (node.kind) {
 		case "alternation": {
@@ -72,7 +74,9 @@ function width(node: Node): number | undefined {
 			return width(node.body);
 		case "repeat": {
 			const value = width(node.body);
-			return value === undefined || node.exact === undefined ? undefined : value * node.exact;
+			return value === undefined || value === 0 || node.exact === undefined
+				? undefined
+				: value * node.exact;
 		}
 		case "character":
 			return 1;
@@ -82,6 +86,21 @@ function width(node: Node): number | undefined {
 		case "backreference":
 			return undefined;
 	}
+}
+
+/** Empty non-capturing groups match nothing and take no part in the body's shape. */
+function withoutEmptyGroups(node: Node): Node {
+	if (node.kind !== "sequence") return node;
+	const items = node.items.filter(
+		(item) =>
+			!(
+				item.kind === "group" &&
+				!item.capturing &&
+				item.body.kind === "sequence" &&
+				item.body.items.length === 0
+			)
+	);
+	return items.length === node.items.length ? node : { kind: "sequence", items };
 }
 
 class Parser {
@@ -118,26 +137,20 @@ class Parser {
 		const pattern = this.pattern;
 		const character = pattern[this.index]!;
 		if (character === "(") {
-			const opener = ["(?<=", "(?<!", "(?=", "(?!", "(?:"].find((prefix) =>
+			const lookaround = ["(?<=", "(?<!", "(?=", "(?!"].find((prefix) =>
 				pattern.startsWith(prefix, this.index)
 			);
-			let node: (body: Node) => Node;
-			if (opener === "(?<=" || opener === "(?<!" || opener === "(?=" || opener === "(?!") {
-				const behind = opener.startsWith("(?<");
-				node = (body) => ({ kind: "lookaround", behind, body });
-				this.index += opener.length;
-			} else if (opener === "(?:") {
-				node = (body) => ({ kind: "group", capturing: false, body });
-				this.index += 3;
-			} else {
-				node = (body) => ({ kind: "group", capturing: true, body });
-				this.index = pattern.startsWith("(?<", this.index)
-					? pattern.indexOf(">", this.index) + 1
-					: this.index + 1;
-			}
+			const capturing = !lookaround && !pattern.startsWith("(?:", this.index);
+			if (lookaround) this.index += lookaround.length;
+			else if (!capturing) this.index += 3;
+			else if (pattern.startsWith("(?<", this.index))
+				this.index = pattern.indexOf(">", this.index) + 1;
+			else this.index += 1;
 			const body = this.alternation();
 			this.index += 1;
-			return node(body);
+			return lookaround
+				? { kind: "lookaround", behind: lookaround.startsWith("(?<"), body }
+				: { kind: "group", capturing, body };
 		}
 		if (character === "[") {
 			// Unicode mode has no nested classes: the class ends at the first unescaped `]`.
@@ -180,7 +193,7 @@ class Parser {
 		return { kind: "character" };
 	}
 
-	/** `😀`: an escaped surrogate pair is one character. */
+	/** An escaped surrogate pair, `😀`, is one character. */
 	private surrogatePair(): boolean {
 		const high = Number.parseInt(this.pattern.slice(this.index + 2, this.index + 6), 16);
 		const low = this.pattern.startsWith("\\u", this.index + 6)

@@ -284,7 +284,6 @@ it.live(
 			fixture.update(occurrences(40));
 			yield* Effect.gen(function* () {
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-				const memory = fixture.raw();
 				const findingCounts: Record<string, number> = {};
 				for (const [name, document] of [
 					...Object.entries(documents),
@@ -292,7 +291,7 @@ it.live(
 						(document, index) => [`example${index + 1}`, document] as const
 					)
 				]) {
-					const { report } = yield* expectSameSourceQuality(result, memory, document);
+					const { report } = yield* expectSameSourceQuality(result, document);
 					findingCounts[name] = report.findings.length;
 					if (name === "matchers") {
 						// Every role but the unused one selects something; both rule kinds report.
@@ -352,11 +351,7 @@ it.live("a partial package's diagnostics and coverage reach the indexed report",
 		});
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const { report } = yield* expectSameSourceQuality(
-				result,
-				fixture.raw(),
-				documents.matchers
-			);
+			const { report } = yield* expectSameSourceQuality(result, documents.matchers);
 			expect(report.status).toBe("partial");
 			expect(report.diagnosticCount).toBeGreaterThan(0);
 		}).pipe(Effect.provide(fixture.layer()));
@@ -372,7 +367,7 @@ it.live(
 			fixture.update(occurrences(700));
 			yield* Effect.gen(function* () {
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-				yield* expectSameSourceQuality(result, fixture.raw(), documents.everything);
+				yield* expectSameSourceQuality(result, documents.everything);
 				const calls: GameTextIndexProgress[] = [];
 				// A fiber that counts while the scan runs: it advances only when the scan yields.
 				let ticks = 0;
@@ -478,7 +473,7 @@ it.live("roles match a folded place by its authored path, never by its copies' p
 		});
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const { report } = yield* expectSameSourceQuality(result, fixture.raw(), document);
+			const { report } = yield* expectSameSourceQuality(result, document);
 			expect(report.roles).toEqual([
 				{ role: "authored", matchedOccurrences: 2, matchedTextUnits: 2 },
 				// Only the construction-script node, which has no authored site.

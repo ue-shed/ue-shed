@@ -1,11 +1,9 @@
-import { nativeV1SourceReport as evaluateTextQuality } from "./native-rule-reports.test-support.js";
-
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { gameTextCsv } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { gameTextQualityCsv } from "./csv.js";
 import { textCorpusQuery } from "./query.test-support.js";
-
 import { decodeTextQualityRuleDocument, TextQualityRuleDocument } from "./quality-schema.js";
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
@@ -14,7 +12,6 @@ import {
 	makeTextOccurrenceId,
 	makeTextUnitId
 } from "./schema.js";
-
 function corpusOf(sources: readonly string[]): TextCorpus {
 	return {
 		schemaVersion: 1,
@@ -52,7 +49,6 @@ function corpusOf(sources: readonly string[]): TextCorpus {
 		}))
 	};
 }
-
 describe("writer counts", () => {
 	it("uses searchable lines for search, summary and role coverage without changing scan provenance", () => {
 		const corpus = corpusOf(["row one", "row two", "", " \n "]);
@@ -81,11 +77,10 @@ describe("writer counts", () => {
 		expect(query.summary().sources.dataTable).toBe(2);
 		expect(query.summary().searchable).toEqual({ textUnits: 2, textOccurrences: 4 });
 		expect(query.summary().coverage).toEqual(corpus.coverage);
-		const report = evaluateTextQuality(corpus, STARTER_GAME_TEXT_RULES);
+		const report = indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES);
 		expect(report.roles.every((role) => role.matchedTextUnits === 2)).toBe(true);
 		expect(report.roles.every((role) => role.matchedOccurrences === 4)).toBe(true);
 	});
-
 	it("counts the current query and filters, and requires every location to have blank notes", () => {
 		const query = textCorpusQuery(corpusOf(["row one", "row two", "other", ""]));
 		const request = { query: "row", capability: "all" as const, pageSize: 50 };
@@ -120,7 +115,6 @@ describe("writer counts", () => {
 		expect(unshared.counts).toMatchObject({ all: 2, shared: 0 });
 	});
 });
-
 describe("human CSV", () => {
 	it("preserves review signals from the scanned corpus when exporting a filtered selection", () => {
 		const corpus = corpusOf(["same source", "same source"]);
@@ -131,7 +125,6 @@ describe("human CSV", () => {
 		expect(filtered.units).toHaveLength(1);
 		expect(gameTextCsv(filtered, corpus)).toContain("same text under another key");
 	});
-
 	it("protects metadata cells and uses the same UTF-16 character count as focus and checks", () => {
 		const input = corpusOf(["😀"]);
 		const corpus: TextCorpus = {
@@ -156,12 +149,15 @@ describe("human CSV", () => {
 				rule.kind === "character_budget" ? { ...rule, maximumCharacters: 1 } : rule
 			)
 		};
-		const report = evaluateTextQuality(corpus, rules);
+		const report = indexedTestReports(corpus).source(rules);
 		expect(report.findings[0]?.actual).toMatchObject({ characterCount: 2 });
-		expect(gameTextQualityCsv(report, corpus)).toContain('"\'+key","\'-namespace"');
-		expect(gameTextQualityCsv(report, corpus)).toContain("Maximum 1 character · 2 characters");
+		expect(gameTextQualityCsv(report, indexedTestReports(corpus).corpus())).toContain(
+			'"\'+key","\'-namespace"'
+		);
+		expect(gameTextQualityCsv(report, indexedTestReports(corpus).corpus())).toContain(
+			"Maximum 1 character · 2 characters"
+		);
 	});
-
 	it("keeps String Table keys and asset property paths exact in both exports", () => {
 		const input = corpusOf(["row placeholder"]);
 		const corpus: TextCorpus = {
@@ -186,13 +182,15 @@ describe("human CSV", () => {
 				}))
 			}))
 		};
-		const report = evaluateTextQuality(corpus, STARTER_GAME_TEXT_RULES);
-		for (const csv of [gameTextCsv(corpus), gameTextQualityCsv(report, corpus)]) {
+		const report = indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES);
+		for (const csv of [
+			gameTextCsv(corpus),
+			gameTextQualityCsv(report, indexedTestReports(corpus).corpus())
+		]) {
 			expect(csv).toContain('"String table entry","ST_Game","PromptHold",""');
 			expect(csv).toContain('"Asset property","DA_Localization","","EqualSourceFirst"');
 		}
 	});
-
 	it("keeps each conflicting location's own source rather than joining variants", () => {
 		const input = corpusOf(["first"]);
 		const csv = gameTextCsv({
@@ -210,7 +208,6 @@ describe("human CSV", () => {
 		expect(csv).toContain('\r\n"second",');
 		expect(csv).not.toContain('"first second"');
 	});
-
 	it("quotes cells, doubles quotes, preserves newlines, and protects formulas before whitespace", () => {
 		const csv = gameTextCsv(corpusOf(['=SUM(1,2) "quoted"\nnext', " +cmd", "-cmd", "@cmd"]));
 		expect(csv.startsWith('\uFEFF"Source","Translator notes"')).toBe(true);
@@ -222,11 +219,10 @@ describe("human CSV", () => {
 		expect(csv).toContain('"Data table cell","DT_Examples","0","DisplayName"');
 		expect(csv).not.toContain('"/Game/Text/DT_Examples.DT_Examples"');
 	});
-
 	it("exports each finding and affected location, including key and recovery", () => {
 		const corpus = corpusOf(["row placeholder"]);
-		const report = evaluateTextQuality(corpus, STARTER_GAME_TEXT_RULES);
-		const csv = gameTextQualityCsv(report, corpus);
+		const report = indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES);
+		const csv = gameTextQualityCsv(report, indexedTestReports(corpus).corpus());
 		expect(report.findings).toHaveLength(2);
 		expect(csv.split("\r\n")).toHaveLength(6);
 		expect(csv).toContain('"key:0","global"');
@@ -236,7 +232,6 @@ describe("human CSV", () => {
 		expect(csv.endsWith("\r\n")).toBe(true);
 	});
 });
-
 it("decodes the neutral starter document through the existing decoder", async () => {
 	expect(await Effect.runPromise(decodeTextQualityRuleDocument(STARTER_GAME_TEXT_RULES))).toEqual(
 		Schema.decodeUnknownSync(TextQualityRuleDocument)(STARTER_GAME_TEXT_RULES)

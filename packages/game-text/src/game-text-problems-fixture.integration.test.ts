@@ -1,8 +1,3 @@
-import {
-	nativeLocalizationReport as checkLocalizationTarget,
-	nativeSourceReport as evaluateGameTextSourceQuality
-} from "./native-rule-reports.test-support.js";
-
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,11 +9,9 @@ import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { savedFixtureCorpus } from "./saved-corpus.test-support.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { joinLocalizationTarget } from "./localization.js";
-
 import { applyLocalizationKeyChanges, localizationKeyChanges } from "./localization-key-changes.js";
 import type { LocalizationQualityReport } from "./localization-quality-schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
@@ -32,7 +25,6 @@ import { decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import type { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { staleRuntimeCopy } from "./text-copies.js";
 import { TextAudience, TextOutOfScopeReason } from "./text-audience-schema.js";
-
 const Identity = Schema.Struct({ namespace: TextNamespace, key: TextKey });
 const Cases = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
@@ -77,17 +69,14 @@ const Cases = Schema.Struct({
 		with: Schema.Record(Schema.String, Schema.Int)
 	})
 });
-
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 const NAMESPACE_PREFIX = "Fixture.GameTextProblems.";
-
 const kindCounts = (report: LocalizationQualityReport) => {
 	const counts: Record<string, number> = {};
 	for (const finding of report.findings) counts[finding.kind] = (counts[finding.kind] ?? 0) + 1;
 	return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
 };
-
 const hasFinding = (
 	report: LocalizationQualityReport,
 	expected: (typeof Cases.Type.findings)[number]
@@ -104,7 +93,6 @@ const hasFinding = (
 				: finding.identity?.namespace === expected.namespace &&
 					finding.identity?.key === expected.key)
 	);
-
 /** What the UI shows of a line: its state per culture, audience, scope and key change. */
 const lineFacts = (join: LocalizationJoin) =>
 	join.lines
@@ -125,7 +113,6 @@ const lineFacts = (join: LocalizationJoin) =>
 			])
 		)
 		.sort();
-
 function keyed(join: LocalizationJoin, identity: typeof Identity.Type) {
 	const line = join.lines.find(
 		(item) =>
@@ -134,14 +121,12 @@ function keyed(join: LocalizationJoin, identity: typeof Identity.Type) {
 	if (!line) throw new Error(`No line for ${identity.namespace},${identity.key}.`);
 	return line;
 }
-
 const search = (target: LocalizationJoin["target"]): TextCorpusSearchRequest => ({
 	query: "",
 	capability: "all",
 	pageSize: 50,
 	localization: { target }
 });
-
 describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () => {
 	it("reports every authored case, in memory and from the index, with pinned counts", async () => {
 		const cases = Schema.decodeUnknownSync(Schema.fromJsonString(Cases))(
@@ -181,15 +166,12 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 							joined,
 							localizationKeyChanges(joined, corpus).pairs
 						);
-						const without = checkLocalizationTarget(corpus, memoryJoin, evidence);
-						const withRules = checkLocalizationTarget(
-							corpus,
-							memoryJoin,
-							evidence,
-							{},
-							rules
-						);
-
+						const result = yield* (yield* GameTextIndexRefresh).refresh({
+							projectRoot: fixture.root,
+							targetName: cases.target
+						});
+						const without = yield* result.localizationCheck();
+						const withRules = yield* result.localizationCheck(rules, {});
 						// Every authored finding, in the reports it belongs to and only those. Every
 						// mismatch is listed at once.
 						expect(
@@ -206,7 +188,7 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 										];
 							})
 						).toEqual([]);
-						const source = evaluateGameTextSourceQuality(corpus, rules);
+						const source = yield* (yield* result.sourceQuality(rules)).export("all");
 						expect(
 							cases.sourceRules.filter((expected) => {
 								const unit = corpus.units.find((item) =>
@@ -233,7 +215,6 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 									.filter((finding) => finding.kind === "duplicate_source")
 									.map((finding) => finding.actual.source)
 							).toEqual(["Back"]);
-
 						// Signals: one key with several texts, stale compiled copies, scope, key
 						// changes and partly read packages.
 						// Exactly these keys have several texts. The identity cases' own collisions belong to
@@ -283,12 +264,7 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 								.filter((item) => item.code === "package_partially_decoded")
 								.map((item) => item.packageFile?.replace(/\\/gu, "/"))
 						).toEqual(cases.signals.partlyRead);
-
 						// The index: the same lines, problems, signals and quality pages.
-						const result = yield* (yield* GameTextIndexRefresh).refresh({
-							projectRoot: fixture.root,
-							targetName: cases.target
-						});
 						// The index inspects only packages with text; everything else agrees.
 						const { inspectedPackages: _indexed, ...indexedCoverage } =
 							(yield* result.corpus).coverage;
@@ -327,15 +303,9 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 						}
 						for (const ruleDocument of [undefined, rules]) {
 							const indexedSource = ruleDocument
-								? evaluateGameTextSourceQuality(yield* result.corpus, ruleDocument)
+								? yield* (yield* result.sourceQuality(ruleDocument)).export("all")
 								: undefined;
-							const report = checkLocalizationTarget(
-								yield* result.corpus,
-								yield* result.localizationJoin,
-								result.evidence,
-								{},
-								ruleDocument
-							);
+							const report = yield* result.localizationCheck(ruleDocument, {});
 							expect(kindCounts(report)).toEqual(
 								ruleDocument ? cases.counts.with : cases.counts.without
 							);
@@ -389,8 +359,7 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 		} finally {
 			await rm(cacheRoot, { recursive: true, force: true });
 		}
-	}, 180_000);
-
+	}, 180000);
 	it("matches Unreal's own conflict report for keys with several texts", async () => {
 		const cases = Schema.decodeUnknownSync(Schema.fromJsonString(Cases))(
 			await readFile(

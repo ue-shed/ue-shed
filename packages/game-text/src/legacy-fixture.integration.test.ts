@@ -1,5 +1,3 @@
-import { nativeSourceReport as evaluateGameTextSourceQuality } from "./native-rule-reports.test-support.js";
-
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,19 +13,16 @@ import {
 } from "../../../fixtures/legacy-unreal-project/evidence.js";
 import { scanTextCorpus } from "./corpus.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextOccurrence } from "./schema.js";
 import { hasSearchableSource } from "./search.js";
-
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const generated = fileURLToPath(
 	new URL("../../../fixtures/legacy-unreal-project/Generated/", import.meta.url)
 );
 const decodeOccurrence = Schema.decodeUnknownSync(SavedAssetTextOccurrence);
-
 /** The reader's wire spelling, to compare with Unreal's evidence. */
 function wireOccurrence(occurrence: TextOccurrence) {
 	return {
@@ -64,7 +59,6 @@ function wireOccurrence(occurrence: TextOccurrence) {
 		edit_capability: occurrence.editCapability
 	};
 }
-
 for (const version of legacyVersions) {
 	describe.skipIf(!executable)(`UE ${version} legacy game text corpus`, () => {
 		const root = join(generated, version);
@@ -73,7 +67,6 @@ for (const version of legacyVersions) {
 			expectedLegacyOccurrences(readLegacyEvidence(root), (asset) => asset.object_path).map(
 				(occurrence) => decodeOccurrence(occurrence)
 			);
-
 		it("preserves Unreal text occurrences and keeps the native map gap out of coverage", async () => {
 			const corpus = await Effect.runPromise(
 				scanTextCorpus({ projectRoot: root }).pipe(
@@ -95,7 +88,6 @@ for (const version of legacyVersions) {
 			expect(actual).toEqual(expect.arrayContaining(expected()));
 			expect(corpus.diagnostics).toEqual([]);
 		});
-
 		it("indexes the same object paths, which object path roles then match", async () => {
 			const cacheRoot = await mkdtemp(join(tmpdir(), "ue-shed-legacy-index-"));
 			const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
@@ -144,8 +136,9 @@ for (const version of legacyVersions) {
 								checkedUnits: checked.length,
 								checkedOccurrences: checked.flatMap((unit) => unit.occurrences)
 									.length,
-								roles: evaluateGameTextSourceQuality(yield* result.corpus, document)
-									.roles
+								roles: (yield* (yield* result.sourceQuality(document)).export(
+									"all"
+								)).roles
 							};
 						})
 					).pipe(
@@ -172,6 +165,6 @@ for (const version of legacyVersions) {
 			} finally {
 				await rm(cacheRoot, { recursive: true, force: true });
 			}
-		}, 60_000);
+		}, 60000);
 	});
 }

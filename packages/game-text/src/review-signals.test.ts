@@ -1,5 +1,3 @@
-import { nativeLocalizationReport as checkLocalizationTarget } from "./native-rule-reports.test-support.js";
-
 import type { TextCorpusSearchPage } from "./schema.js";
 import type { GameTextIndexError } from "./index-contract.js";
 import { it } from "@effect/vitest";
@@ -9,9 +7,7 @@ import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { textCorpusQuery } from "./query.test-support.js";
-
 import { u32 } from "./joined-target-input.js";
-
 for (const mixed of [false, true])
 	it.live(
 		`matches a full rebuild after same-place and shared-source overlays (mixed=${mixed})`,
@@ -101,7 +97,6 @@ for (const mixed of [false, true])
 				}).pipe(Effect.provide(fixture.layer()));
 			}).pipe(Effect.scoped)
 	);
-
 it.live("does not pair a re-keyed place with its gathered or saved previous identity", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -115,7 +110,7 @@ it.live("does not pair a re-keyed place with its gathered or saved previous iden
 				const indexed = yield* index.refresh(fixture.request);
 				const corpus = fixture.raw();
 				const join = joinLocalizationTarget(corpus, indexed.evidence);
-				const report = checkLocalizationTarget(corpus, join, indexed.evidence, {
+				const report = yield* indexed.localizationCheck(undefined, {
 					checks: ["duplicate_source"]
 				});
 				expect(report.findings).toEqual([]);
@@ -141,7 +136,6 @@ it.live("does not pair a re-keyed place with its gathered or saved previous iden
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("keeps distinct-place duplicates and excludes old keys through source overlays", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -179,7 +173,7 @@ it.live("keeps distinct-place duplicates and excludes old keys through source ov
 					);
 				}
 				const options = { checks: ["duplicate_source" as const] };
-				const report = checkLocalizationTarget(corpus, join, indexed.evidence, options);
+				const report = yield* indexed.localizationCheck(undefined, options);
 				const quality = yield* indexed.localizationQuality(undefined, options);
 				expect(quality.findings.length).toBe(expected ? 1 : 0);
 				expect(report.findings).toHaveLength(quality.findings.length);
@@ -188,7 +182,6 @@ it.live("keeps distinct-place duplicates and excludes old keys through source ov
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 const occurrence = (key: string, source: string, property = key) => ({
 	source,
 	dev_notes: "",
@@ -201,7 +194,6 @@ const occurrence = (key: string, source: string, property = key) => ({
 	},
 	edit_capability: "read_only" as const
 });
-
 it.live("does not transfer duplicate signals between identities sharing an occurrence ID", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -219,7 +211,6 @@ it.live("does not transfer duplicate signals between identities sharing an occur
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("compares canonical place coordinates consistently in memory and the index", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -236,7 +227,6 @@ it.live("compares canonical place coordinates consistently in memory and the ind
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("keeps case-distinct String Table entries as different places", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -258,7 +248,6 @@ it.live("keeps case-distinct String Table entries as different places", () =>
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("excludes unresolved text from both sides of duplicate-source matching", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -304,7 +293,6 @@ it.live("excludes unresolved text from both sides of duplicate-source matching",
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 it.live("measures the longest conflicting source across memory, index and refreshed index", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -350,7 +338,6 @@ it.live("measures the longest conflicting source across memory, index and refres
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
 /** Accept the independent memory oracle and the asynchronous native-shaped test port. */
 function readPage(
 	page: TextCorpusSearchPage | Effect.Effect<TextCorpusSearchPage, GameTextIndexError>

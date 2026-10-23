@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { Schema } from "effect";
 import { LocalizationChange, parsePO } from "../packages/localization/dist/index.js";
-import { nativeLocalizationReport as checkLocalizationTarget } from "../packages/game-text/src/native-rule-reports.test-support.ts";
+import { indexedTestReports } from "../packages/game-text/src/indexed-reports.test-support.ts";
 import { joinLocalizationTarget } from "../packages/game-text/src/localization.ts";
 import {
 	archiveEntry,
@@ -54,14 +54,9 @@ for (const seed of [1, 73139]) {
 					culture.culture === "de" ? { ...culture, culture: cultureCode("ja") } : culture
 				)
 			};
-			const report = checkLocalizationTarget(
-				text,
-				joinLocalizationTarget(text, files),
-				files,
-				{
-					checks: ["argument_modifiers"]
-				}
-			);
+			const report = indexedTestReports(text, files).localization(undefined, {
+				checks: ["argument_modifiers"]
+			});
 			assert.deepEqual(
 				report.findings
 					.filter((finding) => "culture" in finding && finding.culture === "ja")
@@ -117,7 +112,7 @@ for (const seed of [1, 73139]) {
 				)
 			};
 			const join = joinLocalizationTarget(text, files);
-			const report = checkLocalizationTarget(text, join, files, {
+			const report = indexedTestReports(text, files).localization(undefined, {
 				checks: ["format_argument_renamed"]
 			});
 			const finding = report.findings.find(

@@ -1,4 +1,4 @@
-import { nativeLocalizationReport as checkLocalizationTarget } from "./native-rule-reports.test-support.js";
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -98,7 +98,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 			).toBe(true);
 			const text = corpus([]);
 			const joined = joinLocalizationTarget(text, files, files.target);
-			const report = checkLocalizationTarget(text, joined, files);
+			const report = indexedTestReports(text, files).localization(undefined, undefined);
 			let compared = 0;
 			const failures = new Set<string>();
 			for (const entry of expected.entries) {

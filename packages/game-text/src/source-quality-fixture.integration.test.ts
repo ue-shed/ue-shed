@@ -1,5 +1,3 @@
-import { nativeSourceReport as evaluateGameTextSourceQuality } from "./native-rule-reports.test-support.js";
-
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,20 +9,17 @@ import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { GameTextRuleDocument, decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import type { TextCorpus } from "./schema.js";
 import { expectSameSourceQuality } from "./source-quality-index.test-support.js";
-
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 const recovery = "Revise the line.";
 const scope = (kind: string, operator: "exact" | "prefix", value: string) => ({
 	matchers: [{ kind, operator, value }]
 });
-
 /**
  * Roles over the saved fixture's own evidence, read from its corpus: each matcher kind, exact and
  * prefix, on values the fixture has.
@@ -130,7 +125,6 @@ function matcherDocument(corpus: TextCorpus) {
 		]
 	});
 }
-
 describe.skipIf(!executable)("source quality over the saved fixture's index", () => {
 	it("equals the in-memory report and query for the example and matcher documents", async () => {
 		const cacheRoot = await mkdtemp(join(tmpdir(), "ue-shed-source-quality-"));
@@ -164,19 +158,7 @@ describe.skipIf(!executable)("source quality over the saved fixture's index", ()
 						const counts: number[] = [];
 						const matchers = matcherDocument(memory);
 						for (const document of [...examples, matchers]) {
-							const { report } = yield* expectSameSourceQuality(
-								result,
-								undefined,
-								document
-							);
-							// The reader's own corpus reports packages Unreal does not gather apart
-							// from the index; findings and roles agree.
-							const scanned = evaluateGameTextSourceQuality(memory, document);
-							expect([scanned.findings, scanned.roles, scanned.rules]).toEqual([
-								report.findings,
-								report.roles,
-								report.rules
-							]);
+							const { report } = yield* expectSameSourceQuality(result, document);
 							counts.push(report.findings.length);
 							if (document === matchers)
 								expect(
@@ -202,5 +184,5 @@ describe.skipIf(!executable)("source quality over the saved fixture's index", ()
 		} finally {
 			await rm(cacheRoot, { recursive: true, force: true });
 		}
-	}, 120_000);
+	}, 120000);
 });

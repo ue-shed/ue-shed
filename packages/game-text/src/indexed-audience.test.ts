@@ -1,5 +1,3 @@
-import { nativeLocalizationReport as checkLocalizationTarget } from "./native-rule-reports.test-support.js";
-
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -10,7 +8,6 @@ import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-
 import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
@@ -18,16 +15,21 @@ import {
 import type { LocalizationJoin } from "./localization-schema.js";
 import { textCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus, TextCorpusSearchPage, TextCorpusSearchRequest } from "./schema.js";
-
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
-
 // Every occurrence is in Content/Text/Table.uasset, inside the test target's gather paths. The
 // target's GatherTextFromAssets step leaves ShouldGatherFromEditorOnlyData at Unreal's default,
 // false, so it skips editor-only text.
 const occurrence = (
 	key: string,
 	source: string,
-	location: Partial<Extract<Occurrence["location"], { kind: "asset_property" }>> = {},
+	location: Partial<
+		Extract<
+			Occurrence["location"],
+			{
+				kind: "asset_property";
+			}
+		>
+	> = {},
 	gather?: boolean
 ) =>
 	({
@@ -44,7 +46,6 @@ const occurrence = (
 		edit_capability: "read_only",
 		...(gather === undefined ? undefined : { gather_editor_only: gather })
 	}) satisfies Occurrence;
-
 const saved: Occurrence[] = [
 	// Unreal's gather table says editor-only, though the policy table knows nothing about it.
 	occurrence("EditorOnly", "Shown in the Details panel", { property_path: "Description" }, true),
@@ -96,7 +97,6 @@ const saved: Occurrence[] = [
 	// Blank text is never listed; its audience must not leak into listed lines.
 	occurrence("Blank", "", { property_path: "Hint" }, true)
 ];
-
 const expectedAudiences = {
 	EditorOnly: ["editor", "gather_table_editor_only", undefined],
 	Runtime: ["player", "gather_table_runtime", undefined],
@@ -110,7 +110,6 @@ const expectedAudiences = {
 	Mixed: ["editor", "editor_property", "tooltip"],
 	Blank: ["editor", "gather_table_editor_only", undefined]
 };
-
 /** Gathered keys: Enum, Cell and Plain. Everything else is missing from the manifest. */
 async function writeLocalization(projectRoot: string) {
 	const gathered = [
@@ -150,12 +149,10 @@ async function writeLocalization(projectRoot: string) {
 		);
 	}
 }
-
 const keyOfUnit = (corpus: TextCorpus, id: string) => {
 	const unit = corpus.units.find((item) => item.id === id)!;
 	return unit.identity.status === "resolved" ? unit.identity.key : unit.id;
 };
-
 const audienceByLine = (join: LocalizationJoin) =>
 	Object.fromEntries(
 		join.lines.map((line) => [
@@ -167,7 +164,6 @@ const audienceByLine = (join: LocalizationJoin) =>
 			]
 		])
 	);
-
 /** What a page says about audience: its rows in order, totals, facet and groups. */
 const pageAudience = (page: TextCorpusSearchPage) => ({
 	total: page.total,
@@ -176,7 +172,6 @@ const pageAudience = (page: TextCorpusSearchPage) => ({
 	audiences: page.facets?.audiences,
 	groups: page.groups
 });
-
 it.live("audience is stored, filtered, faceted and grouped the same through the index", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -185,7 +180,6 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const memory = fixture.raw();
-
 			// Every occurrence carries the audience its evidence gives, through both paths.
 			const occurrences = (corpus: TextCorpus) =>
 				Object.fromEntries(
@@ -207,7 +201,6 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 			expect(occurrences(memory)).toEqual(expected);
 			expect(occurrences(yield* result.corpus)).toEqual(expected);
 			expect((yield* result.corpus).units).toEqual(memory.units);
-
 			// Lines: the rollup, and editor text the target skips is out of scope.
 			const evidence = yield* Effect.gen(function* () {
 				return yield* (yield* LocalizationEvidence).read({
@@ -235,7 +228,6 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 			// The index lists lines with visible text, as the in-memory query does.
 			const { Blank: _blank, ...visible } = lines;
 			expect(audienceByLine(yield* result.localizationJoin)).toEqual(visible);
-
 			// Search, filters, facets and groups agree without a target and with one.
 			const inMemory = textCorpusQuery(memory, undefined, memoryJoin);
 			const localization = { target: fixture.target.name };
@@ -263,11 +255,10 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 					pageAudience(inMemory.search(request))
 				);
 			}
-
 			// Localization checks skip out-of-scope lines through the index as in memory.
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(memory, memoryJoin, evidence),
+				yield* result.localizationCheck(),
 				memoryJoin
 			);
 			const indexed = localizationQualityWorkspaceOf(
@@ -287,7 +278,6 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				"Test level sign",
 				"Welcome back"
 			]);
-
 			// Exported lines carry the same audience and scope.
 			const exported = {
 				query: "",
@@ -311,7 +301,6 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 					lines: yield* result.query.localizationLines(exported)
 				})
 			).toEqual(audienceByLine({ ...memoryJoin, lines: memoryLines }));
-
 			// The audience facet leaves out its own clause, and counts each line once.
 			const player = yield* result.search({
 				query: "",

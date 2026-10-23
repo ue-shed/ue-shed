@@ -1,12 +1,11 @@
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { Effect } from "effect";
-import { nativeSourceReport } from "./native-rule-reports.test-support.js";
 import { textQualityQuery } from "./quality-query.js";
 import { gameTextCsv as formatCsv } from "./csv.js";
 import { exportGameTextInvestigation as exportInvestigation } from "./investigation.js";
 import { textCorpusQuery, type TextCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus } from "./schema.js";
 import { GameTextIndexError } from "./index-contract.js";
-
 /** Supplies independent in-memory results to export-format tests; never a production backend. */
 export function gameTextCsv(corpus: TextCorpus, reviewCorpus = corpus) {
 	const query = textCorpusQuery(reviewCorpus);
@@ -20,7 +19,6 @@ export function gameTextCsv(corpus: TextCorpus, reviewCorpus = corpus) {
 		)
 	);
 }
-
 export function exportGameTextInvestigation(
 	corpus: TextCorpus,
 	preset: Parameters<typeof exportInvestigation>[1],
@@ -32,7 +30,7 @@ export function exportGameTextInvestigation(
 	return exportInvestigation(
 		{
 			sourceQuality: (document) => {
-				const source = textQualityQuery(nativeSourceReport(corpus, document));
+				const source = textQualityQuery(indexedTestReports(corpus).source(document));
 				return Effect.succeed({
 					summary: source.summary,
 					search: (request) => Effect.succeed(source.search(request)),

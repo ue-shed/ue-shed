@@ -1,8 +1,4 @@
-import {
-	nativeLocalizationReport as checkLocalizationTarget,
-	nativeSourceReport as evaluateGameTextSourceQuality
-} from "../../../../../packages/game-text/src/native-rule-reports.test-support.js";
-
+import { indexedTestReports } from "../../../../../packages/game-text/src/indexed-reports.test-support.js";
 import { referenceNativeQuery } from "../../../../../packages/game-text/src/native-query.test-support.js";
 import { textCorpusQuery } from "../../../../../packages/game-text/src/query.test-support.js";
 import { Effect, Layer, Option, Result, type Scope } from "effect";
@@ -25,7 +21,6 @@ import {
 	localizationQuality,
 	textQualityQuery
 } from "@ue-shed/game-text/corpus";
-
 import { type TextCorpus } from "@ue-shed/game-text/schema";
 import {
 	LocalizationEvidence,
@@ -35,7 +30,6 @@ import {
 	defaultLocalizationReviewPath
 } from "@ue-shed/localization";
 import { WorkbenchProject } from "./project-workspace.js";
-
 /** The event-built implementation stays in host tests as the behavioral oracle. */
 export function oracleGameTextIndexLayer<E>(
 	read: (root: string) => Effect.Effect<TextCorpus, E, Scope.Scope>
@@ -147,12 +141,9 @@ export function oracleGameTextIndexLayer<E>(
 							Effect.sync(() => {
 								if (!join || !files)
 									throw new Error("No target in this test request");
-								return checkLocalizationTarget(
-									corpus,
-									join,
-									files,
-									options,
-									document
+								return indexedTestReports(corpus, files).localization(
+									document,
+									options
 								);
 							}),
 						localizationQuality: (ruleDocument, options) =>
@@ -160,19 +151,16 @@ export function oracleGameTextIndexLayer<E>(
 								if (!join || !files)
 									throw new Error("No target in this oracle request");
 								return localizationQuality(
-									checkLocalizationTarget(
-										corpus,
-										join,
-										files,
-										options,
-										ruleDocument
+									indexedTestReports(corpus, files).localization(
+										ruleDocument,
+										options
 									),
 									join
 								);
 							}),
 						sourceQuality: (ruleDocument) =>
 							Effect.sync(() =>
-								asyncQuery(evaluateGameTextSourceQuality(corpus, ruleDocument))
+								asyncQuery(indexedTestReports(corpus, files).source(ruleDocument))
 							),
 						get localizationJoin(): GameTextIndexRefreshResult["localizationJoin"] {
 							if (!join) throw new Error("No target in this oracle request");
@@ -216,7 +204,6 @@ export function oracleGameTextIndexLayer<E>(
 	);
 	return oracleIndexStepsLayer.pipe(Layer.provideMerge(legacy));
 }
-
 export const workbenchGameTextIndexOracleLayer = Layer.unwrap(
 	Effect.gen(function* () {
 		const scanner = yield* TextCorpusService;
@@ -232,7 +219,6 @@ export const workbenchGameTextIndexOracleLayer = Layer.unwrap(
 		);
 	})
 );
-
 import { makeGameTextLocalization as indexedGameTextLocalization } from "./game-text-localization.js";
 let revisionCount = 0;
 export const makeGameTextLocalizationOracle = (
@@ -269,7 +255,6 @@ export const makeGameTextLocalizationOracle = (
 		)
 	);
 };
-
 /** Object-oracle handles model host ownership without exercising the compact store. */
 export function oracleProjectIndex(projectRoot: string): GameTextProjectIndex {
 	return {
@@ -404,7 +389,6 @@ const oracleIndexStepsLayer = Layer.effect(
 		return steps;
 	})
 );
-
 function asyncQuery(report: Parameters<typeof textQualityQuery>[0]) {
 	const query = textQualityQuery(report);
 	return {

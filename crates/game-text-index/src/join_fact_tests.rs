@@ -223,6 +223,65 @@ impl Fixture {
 }
 
 #[test]
+fn partial_packages_keep_empty_archive_entries_checkable_with_absent_or_blank_saved_source()
+-> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject, SubjectRows};
+    for saved_source in [None, Some("")] {
+        let mut fixture = Fixture::new()?;
+        fixture.file("Game.manifest","manifest",&[json!({"namespace":"UI","key":"K","source":"Source","path":"/Game/Text/Example.Example.Label"})])?;
+        fixture.file(
+            "en.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":"Source","translation":"Source"})],
+        )?;
+        fixture.file(
+            "de.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":"Source","translation":""})],
+        )?;
+        fixture.file("en.po", "po", &[])?;
+        fixture.file("de.po", "po", &[])?;
+        let rows = saved_source.map(|source| vec![json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/Example.Example","property":"Label"})]).unwrap_or_default();
+        fixture.packages_with_status(&rows, 1)?;
+        let lines = fixture.lines()?;
+        if saved_source.is_none() {
+            assert!(
+                lines[0]["cultures"][1]["unknownReasons"]
+                    .as_array()
+                    .is_some_and(|reasons| reasons.contains(&json!("package_partial")))
+            );
+        }
+        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let collator = HostCollator::new("en")?;
+        let cancelled = AtomicBool::new(false);
+        let mut subjects =
+            NativeSubjects::new(&mut query, Subject::LineCulture, &collator, &cancelled)?;
+        let de = subjects
+            .cultures
+            .iter()
+            .position(|(_, ci)| *ci == 1)
+            .ok_or("Missing German row.")?;
+        assert_eq!(subjects.field(de, "latest")?, json!(""));
+        assert_eq!(
+            subjects.field(de, "line.comparisonSource")?,
+            json!("Source")
+        );
+        assert_eq!(subjects.field(de, "line.checkable")?, json!(true));
+        let program = example_program(&["empty_translation"], None)?;
+        let evaluation = program.evaluate(&mut subjects, &collator)?;
+        assert_eq!(
+            evaluation
+                .findings
+                .iter()
+                .filter(|finding| finding.row == de)
+                .count(),
+            1
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn rule_subjects_read_saved_manifest_and_translation_stages_independently() -> Result<()> {
     use crate::rules::{HostCollator, NativeSubjects, Subject, SubjectRows};
     let mut fixture = Fixture::new()?;

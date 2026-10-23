@@ -1,5 +1,3 @@
-import { nativeSourceReport as evaluateGameTextSourceQuality } from "./native-rule-reports.test-support.js";
-
 import { Effect } from "effect";
 import { expect } from "vitest";
 import type { GameTextIndexRefreshResult } from "./index-contract.js";
@@ -11,8 +9,7 @@ import {
 	type AsyncTextQualityQuery
 } from "./quality-query.js";
 import { type GameTextRuleDocument } from "./game-text-rules.js";
-import type { TextCorpus, TextOccurrenceId } from "./schema.js";
-
+import type { TextOccurrenceId } from "./schema.js";
 /** Walks every search page by cursor, as a host does. */
 export const pages = Effect.fn("Test.GameText.sourcePages")(function* (
 	query: TextQualityQuery | AsyncTextQualityQuery,
@@ -29,20 +26,16 @@ export const pages = Effect.fn("Test.GameText.sourcePages")(function* (
 	} while (cursor !== undefined);
 	return result;
 });
-
-/**
- * The indexed query against the in-memory report and query over the index's corpus; with
- * `memory`, that report must also equal the one over a corpus built without the index.
- */
+/** Compare paged index reads with the presentation query over its shipped full report. */
 export const expectSameSourceQuality = Effect.fn("Test.GameText.sameSourceQuality")(function* (
 	result: GameTextIndexRefreshResult,
-	memory: TextCorpus | undefined,
 	document: GameTextRuleDocument
 ) {
-	const report = evaluateGameTextSourceQuality(yield* result.corpus, document);
-	if (memory) expect(evaluateGameTextSourceQuality(memory, document)).toEqual(report);
-	const legacy = textQualityQuery(report);
 	const indexed = yield* result.sourceQuality(document);
+	const report = yield* indexed.export("all");
+	// The corpus fixture is verified by the index tests; the presentation query consumes the
+	// shipped report, rather than deriving another set of source rows in TypeScript.
+	const legacy = textQualityQuery(report);
 	expect(indexed.summary()).toEqual(legacy.summary());
 	for (const filter of TextQualityFilter.literals) {
 		expect(yield* indexed.export(filter)).toEqual(legacy.export(filter));

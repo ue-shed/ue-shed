@@ -674,7 +674,11 @@ it.each(["text", "quality"])(
 					...first,
 					occurrences: Array.from({ length: 51 }, (_, index) => ({
 						...occurrence,
-						id: makeTextOccurrenceId("place:" + index.toString().padStart(3, "0"))
+						id: makeTextOccurrenceId("place:" + index.toString().padStart(3, "0")),
+						location: {
+							...occurrence.location,
+							objectPath: `/Game/Text/ST_Game${index}.ST_Game${index}`
+						}
 					}))
 				}
 			]

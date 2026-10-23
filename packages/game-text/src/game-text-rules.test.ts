@@ -1,16 +1,10 @@
-import {
-	nativeSourceReport as evaluateGameTextSourceQuality,
-	nativeV1SourceReport as evaluateTextQuality,
-	nativeLocalizationReport as checkLocalizationTarget
-} from "./native-rule-reports.test-support.js";
-
+import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { Effect, Schema } from "effect";
 import { it } from "@effect/vitest";
 import { expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { decodeGameTextRuleDocumentJson, TextQualityRuleDocumentV2 } from "./game-text-rules.js";
 import { decodeTextQualityRuleDocumentJson } from "./quality-schema.js";
-
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
 	archiveEntry,
@@ -21,10 +15,7 @@ import {
 	poDocument,
 	unit
 } from "./localization.test-support.js";
-
-import { joinLocalizationTarget } from "./localization.js";
 import { LocalizationQualityReport } from "./localization-quality-schema.js";
-
 const authored = {
 	schemaVersion: 2,
 	roles: [
@@ -65,8 +56,8 @@ it.effect("preserves v1 decoding and evaluation, including the starter", () =>
 		const v1 = yield* decodeTextQualityRuleDocumentJson(json);
 		const union = yield* decodeGameTextRuleDocumentJson(json);
 		expect(union).toEqual(v1);
-		expect(evaluateGameTextSourceQuality(corpus(), union)).toEqual(
-			evaluateTextQuality(corpus(), v1)
+		expect(indexedTestReports(corpus()).source(union)).toEqual(
+			indexedTestReports(corpus()).source(v1)
 		);
 	})
 );
@@ -102,7 +93,7 @@ it.effect("decodes the packaged v2 example and retains source rules in v2 source
 				]
 			})
 		);
-		const report = evaluateGameTextSourceQuality(corpus(), document);
+		const report = indexedTestReports(corpus()).source(document);
 		expect(report.ruleDocumentVersion).toBe(2);
 		expect(report.findings).toMatchObject([
 			{ kind: "character_budget", actual: { source: "Source", characterCount: 6 } }
@@ -120,13 +111,7 @@ it.effect(
 				[archiveEntry("K", "Source", "OK")],
 				poDocument("😀 ALT alt")
 			);
-			const report = checkLocalizationTarget(
-				text,
-				joinLocalizationTarget(text, files, files.target),
-				files,
-				{},
-				document
-			);
+			const report = indexedTestReports(text, files).localization(document, {});
 			expect(report.ruleDocumentVersion).toBe(2);
 			expect(report.ruleDiagnostics).toMatchObject([
 				{ severity: "warning", culture: "ja", code: "rule_culture_not_in_target" }
@@ -191,13 +176,7 @@ it("omits unlisted culture policies without a default and preserves case-sensiti
 			[archiveEntry("K", "Source", "😀 ALT")],
 			poDocument("😀 ALT")
 		);
-	const report = checkLocalizationTarget(
-		text,
-		joinLocalizationTarget(text, files, files.target),
-		files,
-		{},
-		document
-	);
+	const report = indexedTestReports(text, files).localization(document, {});
 	expect(
 		report.findings
 			.filter((finding) => finding.kind === "localization_character_budget")

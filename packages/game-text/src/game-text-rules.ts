@@ -108,8 +108,8 @@ const CustomTerm = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(102
 
 /**
  * A check the project defines. `pattern` reports text a JavaScript regular expression (Unicode
- * mode) matches, or with `report: "no_match"` text it does not match; a lookbehind in it must not
- * contain a variable quantifier or a backreference. `length` reports text
+ * mode) matches, or with `report: "no_match"` text it does not match; a lookbehind in it must have a
+ * fixed width, or be an alternation of fixed-width branches. `length` reports text
  * shorter than `minimum` or longer than `maximum`, in `visible` characters (rich text, modifiers
  * and arguments removed, wide characters counted twice, as `length_outlier` measures) or code
  * point `characters`; `forbidden_term` reports text that uses one of `terms`, matched as the

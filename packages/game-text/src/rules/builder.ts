@@ -1,5 +1,10 @@
-import type { Schema } from "effect";
-import type { Expr, Rule } from "./schema.js";
+import { Predicate } from "effect";
+import type { Expr, JsonValue, Rule } from "./schema.js";
+
+/** An expression argument. A bare scalar is shorthand for its literal. */
+export type Arg = Expr | string | number | boolean | null;
+export const asExpr = (value: Arg): Expr => (Predicate.isObject(value) ? value : { lit: value });
+const e = asExpr;
 
 /** Construct one rule without evaluating or changing its expressions. */
 export const rule = (definition: Rule): Rule => definition;
@@ -10,110 +15,112 @@ export const expr = {
 	param: (name: string): Expr => ({ param: name }),
 	var: (name: string): Expr => ({ var: name }),
 	finding: (name: string): Expr => ({ finding: name }),
-	lit: (value: Schema.Json): Expr => ({ lit: value }),
-	list: (...values: readonly Expr[]): Expr => ({ list: values }),
-	object: (fields: Readonly<Record<string, Expr>>): Expr => ({ object: fields }),
+	lit: (value: JsonValue): Expr => ({ lit: value }),
+	list: (...values: readonly Arg[]): Expr => ({ list: values.map(e) }),
+	object: (fields: Readonly<Record<string, Arg>>): Expr => ({
+		object: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, e(value)]))
+	}),
 	occurrences: (): Expr => ({ occurrences: [] }),
-	not: (value: Expr): Expr => ({ not: value }),
-	isNull: (value: Expr): Expr => ({ isNull: value }),
-	utf16Length: (value: Expr): Expr => ({ utf16Length: value }),
-	codePoints: (value: Expr): Expr => ({ codePoints: value }),
-	visibleLength: (value: Expr): Expr => ({ visibleLength: value }),
-	visibleWords: (value: Expr): Expr => ({ visibleWords: value }),
-	interiorLineBreaks: (value: Expr): Expr => ({ interiorLineBreaks: value }),
-	trim: (value: Expr): Expr => ({ trim: value }),
-	lower: (value: Expr): Expr => ({ lower: value }),
-	normalizeLineEndings: (value: Expr): Expr => ({ normalizeLineEndings: value }),
-	count: (value: Expr): Expr => ({ count: value }),
-	flatten: (value: Expr): Expr => ({ flatten: value }),
-	distinct: (value: Expr): Expr => ({ distinct: value }),
-	first: (value: Expr): Expr => ({ first: value }),
-	sortByStart: (value: Expr): Expr => ({ sortByStart: value }),
-	formatArgumentNames: (value: Expr): Expr => ({ formatArgumentNames: value }),
-	formatArgumentOrder: (value: Expr): Expr => ({ formatArgumentOrder: value }),
-	formatModifiers: (value: Expr): Expr => ({ formatModifiers: value }),
-	formatIssues: (value: Expr): Expr => ({ formatIssues: value }),
-	formatCompiled: (value: Expr): Expr => ({ formatCompiled: value }),
-	richTextCounts: (value: Expr): Expr => ({ richTextCounts: value }),
-	richTextTagBalance: (value: Expr): Expr => ({ richTextTagBalance: value }),
-	unrealWhitespace: (value: Expr): Expr => ({ unrealWhitespace: value }),
-	unrealUnsafeWhitespace: (value: Expr): Expr => ({ unrealUnsafeWhitespace: value }),
-	formatBraceBalance: (value: Expr): Expr => ({ formatBraceBalance: value }),
-	get: (a: Expr, b: Expr): Expr => ({ get: [a, b] }),
-	eq: (a: Expr, b: Expr): Expr => ({ eq: [a, b] }),
-	ne: (a: Expr, b: Expr): Expr => ({ ne: [a, b] }),
-	lt: (a: Expr, b: Expr): Expr => ({ lt: [a, b] }),
-	le: (a: Expr, b: Expr): Expr => ({ le: [a, b] }),
-	gt: (a: Expr, b: Expr): Expr => ({ gt: [a, b] }),
-	ge: (a: Expr, b: Expr): Expr => ({ ge: [a, b] }),
-	in: (a: Expr, b: Expr): Expr => ({ in: [a, b] }),
-	sub: (a: Expr, b: Expr): Expr => ({ sub: [a, b] }),
-	div: (a: Expr, b: Expr): Expr => ({ div: [a, b] }),
-	round: (a: Expr, b: Expr): Expr => ({ round: [a, b] }),
-	startsWith: (a: Expr, b: Expr): Expr => ({ startsWith: [a, b] }),
-	endsWith: (a: Expr, b: Expr): Expr => ({ endsWith: [a, b] }),
-	contains: (a: Expr, b: Expr): Expr => ({ contains: [a, b] }),
-	countOccurrences: (a: Expr, b: Expr): Expr => ({ countOccurrences: [a, b] }),
-	findAll: (a: Expr, b: Expr): Expr => ({ findAll: [a, b] }),
-	anyChar: (a: Expr, b: Expr): Expr => ({ anyChar: [a, b] }),
-	allChars: (a: Expr, b: Expr): Expr => ({ allChars: [a, b] }),
-	removeClass: (a: Expr, b: Expr): Expr => ({ removeClass: [a, b] }),
-	leadingClass: (a: Expr, b: Expr): Expr => ({ leadingClass: [a, b] }),
-	trailingClass: (a: Expr, b: Expr): Expr => ({ trailingClass: [a, b] }),
-	take: (a: Expr, b: Expr): Expr => ({ take: [a, b] }),
-	drop: (a: Expr, b: Expr): Expr => ({ drop: [a, b] }),
-	minus: (a: Expr, b: Expr): Expr => ({ minus: [a, b] }),
-	zip: (a: Expr, b: Expr): Expr => ({ zip: [a, b] }),
-	matchesRole: (a: Expr, b: Expr): Expr => ({ matchesRole: [a, b] }),
-	pathHasPrefix: (a: Expr, b: Expr): Expr => ({ pathHasPrefix: [a, b] }),
-	formatPattern: (a: Expr, b: Expr): Expr => ({ formatPattern: [a, b] }),
-	richTextValid: (a: Expr, b: Expr): Expr => ({ richTextValid: [a, b] }),
-	compareRichTextTags: (a: Expr, b: Expr): Expr => ({ compareRichTextTags: [a, b] }),
-	withoutOptionalArgumentTags: (a: Expr, b: Expr): Expr => ({
-		withoutOptionalArgumentTags: [a, b]
+	not: (value: Arg): Expr => ({ not: e(value) }),
+	isNull: (value: Arg): Expr => ({ isNull: e(value) }),
+	utf16Length: (value: Arg): Expr => ({ utf16Length: e(value) }),
+	codePoints: (value: Arg): Expr => ({ codePoints: e(value) }),
+	visibleLength: (value: Arg): Expr => ({ visibleLength: e(value) }),
+	visibleWords: (value: Arg): Expr => ({ visibleWords: e(value) }),
+	interiorLineBreaks: (value: Arg): Expr => ({ interiorLineBreaks: e(value) }),
+	trim: (value: Arg): Expr => ({ trim: e(value) }),
+	lower: (value: Arg): Expr => ({ lower: e(value) }),
+	normalizeLineEndings: (value: Arg): Expr => ({ normalizeLineEndings: e(value) }),
+	count: (value: Arg): Expr => ({ count: e(value) }),
+	flatten: (value: Arg): Expr => ({ flatten: e(value) }),
+	distinct: (value: Arg): Expr => ({ distinct: e(value) }),
+	first: (value: Arg): Expr => ({ first: e(value) }),
+	sortByStart: (value: Arg): Expr => ({ sortByStart: e(value) }),
+	formatArgumentNames: (value: Arg): Expr => ({ formatArgumentNames: e(value) }),
+	formatArgumentOrder: (value: Arg): Expr => ({ formatArgumentOrder: e(value) }),
+	formatModifiers: (value: Arg): Expr => ({ formatModifiers: e(value) }),
+	formatIssues: (value: Arg): Expr => ({ formatIssues: e(value) }),
+	formatCompiled: (value: Arg): Expr => ({ formatCompiled: e(value) }),
+	richTextCounts: (value: Arg): Expr => ({ richTextCounts: e(value) }),
+	richTextTagBalance: (value: Arg): Expr => ({ richTextTagBalance: e(value) }),
+	unrealWhitespace: (value: Arg): Expr => ({ unrealWhitespace: e(value) }),
+	unrealUnsafeWhitespace: (value: Arg): Expr => ({ unrealUnsafeWhitespace: e(value) }),
+	formatBraceBalance: (value: Arg): Expr => ({ formatBraceBalance: e(value) }),
+	get: (a: Arg, b: Arg): Expr => ({ get: [e(a), e(b)] }),
+	eq: (a: Arg, b: Arg): Expr => ({ eq: [e(a), e(b)] }),
+	ne: (a: Arg, b: Arg): Expr => ({ ne: [e(a), e(b)] }),
+	lt: (a: Arg, b: Arg): Expr => ({ lt: [e(a), e(b)] }),
+	le: (a: Arg, b: Arg): Expr => ({ le: [e(a), e(b)] }),
+	gt: (a: Arg, b: Arg): Expr => ({ gt: [e(a), e(b)] }),
+	ge: (a: Arg, b: Arg): Expr => ({ ge: [e(a), e(b)] }),
+	in: (a: Arg, b: Arg): Expr => ({ in: [e(a), e(b)] }),
+	sub: (a: Arg, b: Arg): Expr => ({ sub: [e(a), e(b)] }),
+	div: (a: Arg, b: Arg): Expr => ({ div: [e(a), e(b)] }),
+	round: (a: Arg, b: Arg): Expr => ({ round: [e(a), e(b)] }),
+	startsWith: (a: Arg, b: Arg): Expr => ({ startsWith: [e(a), e(b)] }),
+	endsWith: (a: Arg, b: Arg): Expr => ({ endsWith: [e(a), e(b)] }),
+	contains: (a: Arg, b: Arg): Expr => ({ contains: [e(a), e(b)] }),
+	countOccurrences: (a: Arg, b: Arg): Expr => ({ countOccurrences: [e(a), e(b)] }),
+	findAll: (a: Arg, b: Arg): Expr => ({ findAll: [e(a), e(b)] }),
+	anyChar: (a: Arg, b: Arg): Expr => ({ anyChar: [e(a), e(b)] }),
+	allChars: (a: Arg, b: Arg): Expr => ({ allChars: [e(a), e(b)] }),
+	removeClass: (a: Arg, b: Arg): Expr => ({ removeClass: [e(a), e(b)] }),
+	leadingClass: (a: Arg, b: Arg): Expr => ({ leadingClass: [e(a), e(b)] }),
+	trailingClass: (a: Arg, b: Arg): Expr => ({ trailingClass: [e(a), e(b)] }),
+	take: (a: Arg, b: Arg): Expr => ({ take: [e(a), e(b)] }),
+	drop: (a: Arg, b: Arg): Expr => ({ drop: [e(a), e(b)] }),
+	minus: (a: Arg, b: Arg): Expr => ({ minus: [e(a), e(b)] }),
+	zip: (a: Arg, b: Arg): Expr => ({ zip: [e(a), e(b)] }),
+	matchesRole: (a: Arg, b: Arg): Expr => ({ matchesRole: [e(a), e(b)] }),
+	pathHasPrefix: (a: Arg, b: Arg): Expr => ({ pathHasPrefix: [e(a), e(b)] }),
+	formatPattern: (a: Arg, b: Arg): Expr => ({ formatPattern: [e(a), e(b)] }),
+	richTextValid: (a: Arg, b: Arg): Expr => ({ richTextValid: [e(a), e(b)] }),
+	compareRichTextTags: (a: Arg, b: Arg): Expr => ({ compareRichTextTags: [e(a), e(b)] }),
+	withoutOptionalArgumentTags: (a: Arg, b: Arg): Expr => ({
+		withoutOptionalArgumentTags: [e(a), e(b)]
 	}),
-	findingField: (a: Expr, b: Expr): Expr => ({ findingField: [a, b] }),
-	if: (a: Expr, b: Expr, c: Expr): Expr => ({ if: [a, b, c] }),
-	slice: (a: Expr, b: Expr, c: Expr): Expr => ({ slice: [a, b, c] }),
-	trimClass: (a: Expr, b: Expr, c: Expr): Expr => ({ trimClass: [a, b, c] }),
-	runs: (a: Expr, b: Expr, c: Expr): Expr => ({ runs: [a, b, c] }),
-	regexMatches: (a: Expr, b: Expr, c: Expr): Expr => ({ regexMatches: [a, b, c] }),
-	regexTest: (a: Expr, b: Expr, c: Expr): Expr => ({ regexTest: [a, b, c] }),
-	termMatches: (a: Expr, b: Expr, c: Expr): Expr => ({ termMatches: [a, b, c] }),
-	and: (...values: readonly Expr[]): Expr => ({ and: values }),
-	or: (...values: readonly Expr[]): Expr => ({ or: values }),
-	coalesce: (...values: readonly Expr[]): Expr => ({ coalesce: values }),
-	add: (...values: readonly Expr[]): Expr => ({ add: values }),
-	mul: (...values: readonly Expr[]): Expr => ({ mul: values }),
-	min: (...values: readonly Expr[]): Expr => ({ min: values }),
-	max: (...values: readonly Expr[]): Expr => ({ max: values }),
-	concat: (...values: readonly Expr[]): Expr => ({ concat: values }),
-	concatLists: (...values: readonly Expr[]): Expr => ({ concatLists: values }),
-	filter: (list: Expr, body: Expr, name?: string): Expr => ({
-		filter: name === undefined ? [list, body] : [list, body, name]
+	findingField: (rule: string, path: string): Expr => ({ findingField: [rule, path] }),
+	if: (a: Arg, b: Arg, c: Arg): Expr => ({ if: [e(a), e(b), e(c)] }),
+	slice: (a: Arg, b: Arg, c: Arg): Expr => ({ slice: [e(a), e(b), e(c)] }),
+	trimClass: (a: Arg, b: Arg, c: Arg): Expr => ({ trimClass: [e(a), e(b), e(c)] }),
+	runs: (a: Arg, b: Arg, c: Arg): Expr => ({ runs: [e(a), e(b), e(c)] }),
+	regexMatches: (a: Arg, b: Arg, c: Arg): Expr => ({ regexMatches: [e(a), e(b), e(c)] }),
+	regexTest: (a: Arg, b: Arg, c: Arg): Expr => ({ regexTest: [e(a), e(b), e(c)] }),
+	termMatches: (a: Arg, b: Arg, c: Arg): Expr => ({ termMatches: [e(a), e(b), e(c)] }),
+	and: (...values: readonly Arg[]): Expr => ({ and: values.map(e) }),
+	or: (...values: readonly Arg[]): Expr => ({ or: values.map(e) }),
+	coalesce: (...values: readonly Arg[]): Expr => ({ coalesce: values.map(e) }),
+	add: (...values: readonly Arg[]): Expr => ({ add: values.map(e) }),
+	mul: (...values: readonly Arg[]): Expr => ({ mul: values.map(e) }),
+	min: (...values: readonly Arg[]): Expr => ({ min: values.map(e) }),
+	max: (...values: readonly Arg[]): Expr => ({ max: values.map(e) }),
+	concat: (...values: readonly Arg[]): Expr => ({ concat: values.map(e) }),
+	concatLists: (...values: readonly Arg[]): Expr => ({ concatLists: values.map(e) }),
+	filter: (list: Arg, body: Arg, name?: string): Expr => ({
+		filter: name === undefined ? [e(list), e(body)] : [e(list), e(body), name]
 	}),
-	map: (list: Expr, body: Expr, name?: string): Expr => ({
-		map: name === undefined ? [list, body] : [list, body, name]
+	map: (list: Arg, body: Arg, name?: string): Expr => ({
+		map: name === undefined ? [e(list), e(body)] : [e(list), e(body), name]
 	}),
-	flatMap: (list: Expr, body: Expr, name?: string): Expr => ({
-		flatMap: name === undefined ? [list, body] : [list, body, name]
+	flatMap: (list: Arg, body: Arg, name?: string): Expr => ({
+		flatMap: name === undefined ? [e(list), e(body)] : [e(list), e(body), name]
 	}),
-	any: (list: Expr, body: Expr, name?: string): Expr => ({
-		any: name === undefined ? [list, body] : [list, body, name]
+	any: (list: Arg, body: Arg, name?: string): Expr => ({
+		any: name === undefined ? [e(list), e(body)] : [e(list), e(body), name]
 	}),
-	all: (list: Expr, body: Expr, name?: string): Expr => ({
-		all: name === undefined ? [list, body] : [list, body, name]
+	all: (list: Arg, body: Arg, name?: string): Expr => ({
+		all: name === undefined ? [e(list), e(body)] : [e(list), e(body), name]
 	}),
-	sortCodeUnit: (list: Expr, by?: Expr): Expr => ({
-		sortCodeUnit: by === undefined ? [list] : [list, by]
+	sortCodeUnit: (list: Arg, by?: Arg): Expr => ({
+		sortCodeUnit: by === undefined ? [e(list)] : [e(list), e(by)]
 	}),
-	sortLocale: (list: Expr, by?: Expr): Expr => ({
-		sortLocale: by === undefined ? [list] : [list, by]
+	sortLocale: (list: Arg, by?: Arg): Expr => ({
+		sortLocale: by === undefined ? [e(list)] : [e(list), e(by)]
 	}),
-	termListMatches: (a: Expr, b: Expr, c: Expr, d: Expr): Expr => ({
-		termListMatches: [a, b, c, d]
+	termListMatches: (a: Arg, b: Arg, c: Arg, d: Arg): Expr => ({
+		termListMatches: [e(a), e(b), e(c), e(d)]
 	}),
-	formatRenameArgument: (a: Expr, b: Expr, c: Expr, d: Expr): Expr => ({
-		formatRenameArgument: [a, b, c, d]
+	formatRenameArgument: (a: Arg, b: Arg, c: Arg, d: Arg): Expr => ({
+		formatRenameArgument: [e(a), e(b), e(c), e(d)]
 	})
 };

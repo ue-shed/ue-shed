@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 import { translateRuleDocument } from "./rules/translate.js";
-import { Rule } from "./rules/schema.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import { expr, rule } from "./rules/builder.js";
 import type { GameTextRuleDocument, CustomLocalizationCheck } from "./game-text-rules.js";
@@ -30,7 +29,6 @@ const Emission = Schema.Struct({
 	)
 });
 const Result = Schema.Struct({
-	rules: Schema.Array(Schema.Struct({ ordinal: Schema.Number, rule: Rule })),
 	findings: Schema.Array(Emission),
 	diagnostics: Schema.Array(
 		Schema.Struct({
@@ -85,12 +83,12 @@ function evaluateV4(
 			{ cause: result.error }
 		);
 	const decoded = Schema.decodeUnknownSync(Schema.fromJsonString(Result))(result.stdout);
-	const rules = new Map(decoded.rules.map(({ ordinal, rule }) => [ordinal, rule]));
 	return {
 		...decoded,
+		// A finding's rule is its ordinal in the document this driver evaluated.
 		findings: decoded.findings.map((finding) => ({
 			...finding,
-			rule: rules.get(finding.rule)!
+			rule: document.rules[finding.rule]!
 		}))
 	};
 }

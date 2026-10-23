@@ -82,23 +82,8 @@ fn main() -> Result<()> {
             }
         }
     }
-    let rules = program
-        .rules
-        .iter()
-        .map(|compiled| {
-            let mut rule = serde_json::to_value(&compiled.rule)?;
-            if let Some(fields) = rule.as_object_mut() {
-                fields.retain(|_, value| !value.is_null());
-            }
-            Ok(json!({"ordinal":compiled.ordinal,"rule":rule}))
-        })
-        .collect::<Result<Vec<_>>>()?;
     std::io::stdout().write_all(
-        javascript_json(
-            &json!({"findings":output,"diagnostics":diagnostics,"rules":rules}),
-            false,
-        )
-        .as_bytes(),
+        javascript_json(&json!({"findings":output,"diagnostics":diagnostics}), false).as_bytes(),
     )?;
     Ok(())
 }

@@ -2129,21 +2129,21 @@ impl Program {
 mod tests {
     use super::*;
     fn rule(id: &str, when: Value, actual: Value) -> Value {
-        json!({"id":id,"kind":id,"label":id,"subject":"unit_source","family":"source","severity":"normal","when":when,"actual":actual,"expectation":{"object":{"review":true}},"recovery":"Review the saved text."})
+        json!({"id":id,"kind":id,"label":id,"subject":"unit_source","family":"source","severity":"normal","when":when,"actual":actual,"expectation":{"object":{"review":{"lit":true}}},"recovery":{"lit":"Review the saved text."}})
     }
     #[test]
     fn evaluates_references_elements_nulls_and_roles_without_a_target() -> Result<()> {
         let mut dependent = rule(
             "dependent",
             json!({"finding":"first"}),
-            json!({"object":{"source":{"field":"source"},"missing":null,"first":{"findingField":["first","actual.value"]}}}),
+            json!({"object":{"source":{"field":"source"},"missing":{"lit":null},"first":{"findingField":["first","actual.value"]}}}),
         );
         dependent["each"] = json!({"lit":["a","b"]});
         dependent["actual"]["object"]["element"] = json!({"var":"item"});
         let first = rule(
             "first",
-            json!({"gt":[{"utf16Length":{"field":"source"}},2]}),
-            json!({"object":{"value":2}}),
+            json!({"gt":[{"utf16Length":{"field":"source"}},{"lit":2}]}),
+            json!({"object":{"value":{"lit":2}}}),
         );
         let program = super::super::compile(&serde_json::to_string(
             &json!({"schemaVersion":4,"roles":[],"rules":[dependent,first]}),
@@ -2173,7 +2173,7 @@ mod tests {
             json!({"finding":"a"}),
             json!({"var":"missing"}),
             json!({"param":"missing"}),
-            json!({"utf16Length":42}),
+            json!({"utf16Length":{"lit":42}}),
         ] {
             let rule = rule("a", expression, json!({"object":{}}));
             assert!(
@@ -2189,8 +2189,8 @@ mod tests {
     fn source_terminology_preserves_both_boundary_sets_and_utf16_offsets() -> Result<()> {
         let rule = rule(
             "terms",
-            json!(true),
-            json!({"object":{"terms":{"termMatches":[{"field":"source"},"bad",false]},"placeholders":{"termListMatches":[{"field":"source"},{"lit":["bad"]},false,"lmnu"]}}}),
+            json!({"lit":true}),
+            json!({"object":{"terms":{"termMatches":[{"field":"source"},{"lit":"bad"},{"lit":false}]},"placeholders":{"termListMatches":[{"field":"source"},{"lit":["bad"]},{"lit":false},{"lit":"lmnu"}]}}}),
         );
         let program = super::super::compile(&serde_json::to_string(
             &json!({"schemaVersion":4,"roles":[],"rules":[rule]}),
@@ -2215,14 +2215,14 @@ mod tests {
     fn selections_memoize_shared_scalar_inputs_and_gate_evidence() -> Result<()> {
         let mut first = rule(
             "first",
-            json!({"gt":[{"utf16Length":{"field":"source"}},2]}),
+            json!({"gt":[{"utf16Length":{"field":"source"}},{"lit":2}]}),
             json!({"object":{"length":{"utf16Length":{"field":"source"}}}}),
         );
         first["scope"] = json!({"pathPrefixes":["/Game/Allowed"]});
         let second = rule(
             "second",
-            json!({"if":[{"eq":[{"field":"source"},"bad"]},{"regexTest":["x","(",""]},false]}),
-            json!({"object":{"unreachable":{"regexTest":["x","(",""]}}}),
+            json!({"if":[{"eq":[{"field":"source"},{"lit":"bad"}]},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]},{"lit":false}]}),
+            json!({"object":{"unreachable":{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]}}}),
         );
         let program = super::super::compile(&serde_json::to_string(
             &json!({"schemaVersion":4,"roles":[],"rules":[first,second]}),
@@ -2259,8 +2259,8 @@ mod tests {
     fn scope_precedes_when_and_requires_one_matching_occurrence() -> Result<()> {
         let mut scoped = rule(
             "scoped",
-            json!({"if":[{"eq":[{"field":"source"},"bad"]},{"regexTest":["x","(",""]},true]}),
-            json!({"object":{"checked":true}}),
+            json!({"if":[{"eq":[{"field":"source"},{"lit":"bad"}]},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]},{"lit":true}]}),
+            json!({"object":{"checked":{"lit":true}}}),
         );
         scoped["scope"] = json!({"roles":["ui"],"pathPrefixes":["/Game/Other"]});
         let program = super::super::compile(&serde_json::to_string(
@@ -2289,10 +2289,10 @@ mod tests {
     fn list_boolean_selections_short_circuit_before_later_elements() -> Result<()> {
         let definition = rule(
             "lists",
-            json!(true),
+            json!({"lit":true}),
             json!({"object":{
-                "any":{"any":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},"stop"]},true,{"regexTest":["x","(",""]}]}]},
-                "all":{"all":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},"stop"]},false,{"regexTest":["x","(",""]}]}]}
+                "any":{"any":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},{"lit":"stop"}]},{"lit":true},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]}]}]},
+                "all":{"all":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},{"lit":"stop"}]},{"lit":false},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]}]}]}
             }}),
         );
         let program = super::super::compile(&serde_json::to_string(

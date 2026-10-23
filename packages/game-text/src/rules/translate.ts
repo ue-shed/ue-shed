@@ -2,9 +2,9 @@ import { resolveLocalizationChecks, type GameTextRuleDocument } from "../game-te
 import type { BuiltInCheckId } from "../localization-check-ids.js";
 import { prepareTextQualityRules } from "../quality.js";
 import type { TextTerminologyEntry } from "../quality-schema.js";
-import { expr as x } from "./builder.js";
+import { type Arg, expr as x } from "./builder.js";
 import { exampleRules } from "./catalogue.js";
-import type { Expr, Rule, RuleDocumentV4 } from "./schema.js";
+import type { Rule, RuleDocumentV4 } from "./schema.js";
 
 const f = x.field,
 	p = x.param,
@@ -13,7 +13,7 @@ const f = x.field,
 	o = x.object;
 const item = v("item");
 const roleOccurrences = (role: string) => x.filter(x.occurrences(), x.matchesRole(item, role));
-const matches = (text: Expr, term: Expr, caseSensitive: Expr) =>
+const matches = (text: Arg, term: Arg, caseSensitive: Arg) =>
 	x.termMatches(text, term, caseSensitive);
 const terms = (entries: readonly TextTerminologyEntry[]) =>
 	entries.flatMap((entry) =>
@@ -98,7 +98,7 @@ export function translateRuleDocument(
 			severity: "normal",
 			kind: rule.kind,
 			role: role.id,
-			recovery: rule.recovery,
+			recovery: x.lit(rule.recovery),
 			affected: roleOccurrences(role.id)
 		} as const;
 		if (rule.kind === "character_budget")
@@ -162,7 +162,7 @@ export function translateRuleDocument(
 			family: "policy",
 			severity: rule.severity ?? "normal",
 			role: rule.role,
-			recovery: rule.recovery,
+			recovery: x.lit(rule.recovery),
 			affected
 		} as const;
 		const eligible = x.and(
@@ -239,10 +239,10 @@ export function translateRuleDocument(
 			subject: check.subject === "source" ? "line" : "line_culture",
 			family: "custom",
 			severity: check.severity ?? "normal",
-			recovery: check.recovery,
+			recovery: x.lit(check.recovery),
 			...(check.scope ? { scope: check.scope } : undefined),
 			extra: o({ check: check.kind, label: check.label, subject: check.subject }),
-			...(check.subject === "source" ? { translationOrigin: "absent" } : undefined)
+			...(check.subject === "source" ? { translationOrigin: x.lit("absent") } : undefined)
 		} as const;
 		if (check.kind === "length") {
 			const length = check.measure === "visible" ? x.visibleLength(text) : x.codePoints(text);

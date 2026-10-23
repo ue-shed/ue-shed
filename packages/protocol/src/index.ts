@@ -552,3 +552,5 @@ export {
 } from "./contract-parser.js";
 
 export { GameTextEngineRequest, GameTextEngineOutcome } from "./game-text-engine.js";
+export { gameTextEngineContract } from "./game-text-contract.generated.js";
+export type * as GameTextContract from "./game-text-contract.generated.js";

@@ -333,13 +333,18 @@ fn rule_subjects_read_saved_manifest_and_translation_stages_independently() -> R
 }
 
 fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::rules::Program> {
+    crate::rules::compile(&example_document(checks, document)?)
+}
+
+/// The translated v4 document's JSON text, as the host sends it.
+fn example_document(checks: &[&str], document: Option<Value>) -> Result<String> {
     let output = std::process::Command::new("node").args(["--import","tsx","--input-type=module","-e","import {translateRuleDocument} from './packages/game-text/src/rules/translate.ts';const [checks,document]=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(translateRuleDocument(document??undefined,{checks})));",&serde_json::to_string(&(checks,document))?])
         .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("Missing repository root.")?).output()?;
     crate::require(
         output.status.success(),
         std::str::from_utf8(&output.stderr)?,
     )?;
-    crate::rules::compile(std::str::from_utf8(&output.stdout)?)
+    Ok(String::from_utf8(output.stdout)?)
 }
 
 #[test]
@@ -690,20 +695,13 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     fixture.file("de.po", "po", &[])?;
     fixture.packages(&[json!({"namespace":"UI","key":"K","source":"Take {Count}","object":"/Game/Text/Example.Example","property":"Label"})])?;
     fixture.lines()?;
-    let program = example_program(&["format_argument_renamed"], None)?;
-    let path = fixture.store.directory.join("rules.json");
-    std::fs::write(
-        &path,
-        serde_json::to_vec(
-            &json!({"schemaVersion":4,"roles":[],"rules":program.rules.iter().map(|rule| &rule.rule).collect::<Vec<_>>()}),
-        )?,
-    )?;
+    let rules = example_document(&["format_argument_renamed"], None)?;
     let configuration = fixture.configuration.clone();
     drop(fixture);
     let cancelled = AtomicBool::new(false);
     let mut query = EngineQuery::open(&configuration, None)?;
     let joined = query.reader.joined_key.clone();
-    let result = crate::json_value::parse(&query.findings_evaluate(&path, "en", &cancelled)?)?;
+    let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let key = result["key"].as_str().ok_or("Missing findings key.")?;
     assert_eq!(result["diagnosticCount"], 0);
     assert_eq!(result["counts"][0]["count"], 1);
@@ -722,7 +720,7 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
         1
     );
     assert_eq!(result["profile"]["cached"], false);
-    let cached = crate::json_value::parse(&query.findings_evaluate(&path, "en", &cancelled)?)?;
+    let cached = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let mut expected_cached = result.clone();
     expected_cached["profile"] = json!({"cached":true});
     assert_eq!(cached, expected_cached);

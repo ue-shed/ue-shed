@@ -1,13 +1,10 @@
-import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import { BuiltInCheckId } from "../localization-check-ids.js";
 import { TextRoleId, TextQualityRuleId } from "../quality-schema.js";
-import { expr, rule } from "./builder.js";
+import { expr } from "./builder.js";
 import { exampleRules } from "./catalogue.js";
-import { Expr, ruleDocumentJsonSchema } from "./schema.js";
+import { ruleOperationNames } from "./schema.js";
 import { canonicalRuleDocument, translateRuleDocument } from "./translate.js";
-import { validateRuleDocument } from "./validate.js";
 
 describe("v4 rule documents", () => {
 	it("covers every Phase 1 built-in with ordinary expressions", () => {
@@ -19,10 +16,9 @@ describe("v4 rule documents", () => {
 		expect(new Set(exampleRules.map((rule) => rule.id))).toEqual(
 			new Set(BuiltInCheckId.literals.filter((id) => !group.has(id)))
 		);
-		expect(validateRuleDocument(translateRuleDocument(undefined)).rules).toHaveLength(22);
+		expect(translateRuleDocument(undefined).rules).toHaveLength(22);
 	});
-	it("constructs and validates every operator, rejecting incorrect arities", () => {
-		const decode = Schema.decodeUnknownSync(Expr);
+	it("constructs every operator, with bare scalars as literals", () => {
 		const calls = [
 			expr.field("source"),
 			expr.param("limit"),
@@ -117,10 +113,16 @@ describe("v4 rule documents", () => {
 			expr.termListMatches("a", "b", "c", "d"),
 			expr.formatRenameArgument("a", "b", "c", "d")
 		];
-		for (const expression of calls)
-			expect(decode(expression, { onExcessProperty: "error" })).toEqual(expression);
-		expect(() => decode({ eq: [1] })).toThrow();
-		expect(() => decode({ unknown: [] })).toThrow();
+		for (const expression of calls) {
+			expect(Object.keys(expression)).toHaveLength(1);
+			expect(ruleOperationNames).toContain(Object.keys(expression)[0]);
+		}
+		expect(expr.eq("a", 1)).toEqual({ eq: [{ lit: "a" }, { lit: 1 }] });
+		expect(expr.object({ a: null })).toEqual({ object: { a: { lit: null } } });
+		expect(expr.filter(expr.list(true), expr.var("x"), "x")).toEqual({
+			filter: [{ list: [{ lit: true }] }, { var: "x" }, "x"]
+		});
+		expect(expr.findingField("a", "b")).toEqual({ findingField: ["a", "b"] });
 	});
 	it("keeps effective check selection, parameters, references and evidence-key order", () => {
 		const translated = translateRuleDocument(
@@ -167,39 +169,5 @@ describe("v4 rule documents", () => {
 			ruleId: "localization.format_arguments",
 			subject: "unit_source"
 		});
-	});
-	it("rejects missing parameters, duplicate IDs, undeclared roles and reference cycles", () => {
-		const base = rule({
-			id: "a",
-			kind: "a",
-			label: "A",
-			subject: "line",
-			family: "builtin",
-			severity: "low",
-			when: true,
-			actual: expr.object({}),
-			expectation: expr.object({}),
-			recovery: "Review it."
-		});
-		const document = (rules: readonly (typeof base)[]) => ({
-			schemaVersion: 4,
-			roles: [],
-			rules
-		});
-		expect(() =>
-			validateRuleDocument(document([{ ...base, when: expr.param("missing") }]))
-		).toThrow();
-		expect(() => validateRuleDocument(document([base, base]))).toThrow();
-		expect(() => validateRuleDocument(document([{ ...base, role: "missing" }]))).toThrow();
-		expect(() =>
-			validateRuleDocument(document([{ ...base, when: expr.finding("a") }]))
-		).toThrow(expect.objectContaining({ code: "rule_cycle" }));
-	});
-	it("checks in the generated JSON Schema", () => {
-		expect(
-			JSON.parse(
-				readFileSync(new URL("./rule-document.schema.json", import.meta.url), "utf8")
-			)
-		).toEqual(ruleDocumentJsonSchema);
 	});
 });

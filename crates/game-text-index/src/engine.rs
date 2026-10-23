@@ -115,8 +115,8 @@ pub enum EngineRequest {
     },
     FindingsEvaluate {
         reader: String,
-        #[serde(rename = "rulesFile")]
-        rules_file: std::path::PathBuf,
+        /// The v4 rule document's JSON text, read by the WTF-8-aware reader.
+        rules: String,
         #[serde(rename = "collationLocale")]
         collation_locale: String,
     },
@@ -182,17 +182,11 @@ impl EngineRequest {
         }
         match self {
             Self::FindingsEvaluate {
-                rules_file,
-                collation_locale,
-                ..
+                collation_locale, ..
             } => {
                 require(
-                    rules_file
-                        .to_str()
-                        .is_some_and(|path| !path.is_empty() && path.len() <= 32767)
-                        && !collation_locale.is_empty()
-                        && collation_locale.len() <= 128,
-                    invalid("Invalid findings rule file or collation locale."),
+                    !collation_locale.is_empty() && collation_locale.len() <= 128,
+                    invalid("Invalid findings collation locale."),
                 )?;
             }
             Self::FindingsLines { key, rows, .. }
@@ -411,12 +405,12 @@ impl EngineSession {
                 let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 let (action, payload) = match request {
                     EngineRequest::FindingsEvaluate {
-                        rules_file,
+                        rules,
                         collation_locale,
                         ..
                     } => (
                         "findings_evaluate",
-                        query.findings_evaluate(rules_file, collation_locale, cancelled)?,
+                        query.findings_evaluate(rules, collation_locale, cancelled)?,
                     ),
                     EngineRequest::FindingsLines { key, rows, .. } => (
                         "findings_lines",
@@ -617,7 +611,7 @@ mod tests {
             assert!(serde_json::from_value::<EngineRequest>(value).is_err());
         }
         let request: EngineRequest = serde_json::from_value(
-            json!({"action":"findings_evaluate","reader":"reader","rulesFile":"rules.json","collationLocale":"sv"}),
+            json!({"action":"findings_evaluate","reader":"reader","rules":"{}","collationLocale":"sv"}),
         )?;
         assert!(request.requires_findings());
         request.validate()?;

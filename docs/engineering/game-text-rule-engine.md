@@ -128,7 +128,7 @@ Child relation `occurrences`: that unit's occurrences with this `source`, in the
 
 ## 3. The rule document, v4
 
-The schema lives in `packages/game-text/src/rules/`, exported as `@ue-shed/game-text/rules`. It is an Effect Schema, and the published JSON Schema is generated from it and checked in.
+The engine owns the v4 document: it is defined in Rust (`crates/game-text-index/src/rules/ir.rs`), and its TypeScript types are generated into `packages/protocol/src/game-text-contract.generated.ts`. A Rust test fails when the generated file drifts. The builder, translator and catalogue live in `packages/game-text/src/rules/`, exported as `@ue-shed/game-text/rules`.
 
 ```jsonc
 {
@@ -184,11 +184,11 @@ Rule IDs are unique, roles are declared, every expression type-checks, every `pa
 
 An expression is JSON.
 
-- **Scalars:** `null`, booleans, numbers and strings are literals.
+- **A literal** is `{"lit":<json>}`, for scalars too. A bare scalar is not an expression; the TypeScript builder writes the `lit` for it.
 - **A list** is `{"list":[...]}`.
 - **An object** is `{"object":{...}}`, and its values are expressions.
-- **A literal JSON value** is `{"lit":<json>}`.
-- **Every other node** has exactly one key, the operator.
+- **Every other node** has exactly one key, the operator. Each operator's arity is part of the IR type.
+- **Nesting** is bounded by the JSON reader: a document nests at most 127 levels, and deeper input is a typed error, never a stack overflow. The default catalogue document nests 29.
 
 **Types:** `bool`, `int` (i64), `number` (f64), `string`, `list<T>`, `object`, `occurrence`, and `null` (allowed anywhere). Functions return null when a required argument is null, unless they say otherwise. Types are checked at load time.
 
@@ -466,9 +466,9 @@ Findings are ordered by row, then emission order.
 
 ## 8. Protocol (ADR 0007: additive, contract minor +1)
 
-**`findings_evaluate {rulesFile, collationLocale}`**
+**`findings_evaluate {rules, collationLocale}`**
 
-- The host writes the canonical v4 JSON to a scoped file.
+- The host sends the canonical v4 JSON inline, as text the engine reads with lone UTF-16 units preserved. The request frame (4 MiB) bounds it.
 - The engine builds or reuses the layer for the pinned joined layer.
 - It returns `{key, rules, counts, diagnosticCount, collation}`, where `collation` is the locale actually used.
 
@@ -501,8 +501,7 @@ Findings are ordered by row, then emission order.
 
 **Schema and types:**
 
-- `RuleDocumentV4`, `Rule`, `Expr`;
-- `ruleDocumentJsonSchema`.
+- `RuleDocumentV4`, `Rule`, `Expr`: types generated from the engine's contract.
 
 **Builder:**
 

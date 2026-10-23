@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { TextCorpusReportHeader } from "./corpus-summary.js";
 import { join } from "node:path";
 import { Clock, Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
-import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
+import { MAX_PROTOCOL_PATH_BYTES, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type {
 	GameTextEngineOutcome,
 	GameTextEngineRequest,
@@ -615,34 +615,33 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const model: NativeIndexReader = {
 		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")((document) =>
 			bulk((lane) =>
-				withStage((directory) =>
-					Effect.gen(function* () {
-						const rulesFile = join(directory, "rules.json");
-						yield* Effect.tryPromise({
-							try: (signal) =>
-								writeFile(rulesFile, canonicalRuleDocument(document), {
-									encoding: "utf8",
-									signal
-								}),
-							catch: (cause) => failed("findings_rules", cause)
-						});
-						const requestStart = yield* Clock.currentTimeNanos;
-						return yield* response(
-							lane,
-							{
-								action: "findings_evaluate",
-								reader: lane.reader,
-								rulesFile,
-								collationLocale: new Intl.Collator().resolvedOptions().locale
-							},
-							FindingsEvaluation
-						).pipe(
-							Effect.tap((result) =>
-								annotateFindingsProfile(result.profile, requestStart)
+				Effect.gen(function* () {
+					// The rule program travels inline, as JSON text the engine reads WTF-8-aware.
+					const rules = canonicalRuleDocument(document);
+					const bytes = Buffer.byteLength(JSON.stringify(rules), "utf8");
+					if (bytes > MAX_PROTOCOL_PATH_BYTES)
+						return yield* Effect.fail(
+							failed(
+								"findings_rules",
+								`The rule policy encodes to ${bytes} bytes; one evaluation request carries at most ${MAX_PROTOCOL_PATH_BYTES}.`
 							)
 						);
-					})
-				)
+					const requestStart = yield* Clock.currentTimeNanos;
+					return yield* response(
+						lane,
+						{
+							action: "findings_evaluate",
+							reader: lane.reader,
+							rules,
+							collationLocale: new Intl.Collator().resolvedOptions().locale
+						},
+						FindingsEvaluation
+					).pipe(
+						Effect.tap((result) =>
+							annotateFindingsProfile(result.profile, requestStart)
+						)
+					);
+				})
 			)
 		),
 		findingsLines: Effect.fn("GameText.native.findingsLines")((key, rows) =>

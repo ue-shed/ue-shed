@@ -53,7 +53,8 @@ export const GameTextFindingsRequest = Schema.Union([
 	Schema.Struct({
 		action: Schema.Literal("findings_evaluate"),
 		reader: Reader,
-		rulesFile: Schema.NonEmptyString.check(Schema.isMaxLength(32767)),
+		/** The v4 rule document's JSON text; the request frame bounds its size. */
+		rules: Schema.NonEmptyString,
 		collationLocale: Schema.NonEmptyString.check(Schema.isMaxLength(128))
 	}),
 	Schema.Struct({

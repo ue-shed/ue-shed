@@ -336,14 +336,13 @@ impl EngineQuery {
 
     pub fn findings_evaluate(
         &mut self,
-        rules_file: &std::path::Path,
+        text: &str,
         locale: &str,
         cancelled: &AtomicBool,
     ) -> Result<String> {
         let elapsed = Measure::start();
         checkpoint(cancelled)?;
-        let text = std::fs::read_to_string(rules_file)?;
-        let program = compile(&text)?;
+        let program = compile(text)?;
         let collator = HostCollator::new(locale)?;
         let key = format!(
             "findings-v1:{}",

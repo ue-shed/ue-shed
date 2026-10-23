@@ -4,6 +4,7 @@ mod columns;
 mod compiler;
 mod evaluator;
 mod grammar;
+pub(crate) mod ir;
 mod kernel;
 mod memo;
 mod occurrences;

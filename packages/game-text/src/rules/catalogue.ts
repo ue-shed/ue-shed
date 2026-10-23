@@ -1,6 +1,6 @@
 import { localizationCheckCatalogue } from "../localization-check-catalogue.js";
 import type { BuiltInCheckId } from "../localization-check-ids.js";
-import { expr as x } from "./builder.js";
+import { type Arg, asExpr, expr as x } from "./builder.js";
 import type { Expr, Rule } from "./schema.js";
 
 const f = x.field;
@@ -39,11 +39,11 @@ const groupKey = (text: Expr) => {
 	return x.if(nonempty(key), key, x.trim(text));
 };
 
-function builtin(
-	id: BuiltInCheckId,
-	subject: Rule["subject"],
-	expressions: Pick<Rule, "when" | "actual" | "expectation" | "recovery"> & Partial<Rule>
-): Rule {
+/** A built-in rule's expressions; recovery guidance may be bare text. */
+type Body = Pick<Rule, "when" | "actual" | "expectation"> &
+	Omit<Partial<Rule>, "recovery"> & { readonly recovery: Arg };
+
+function builtin(id: BuiltInCheckId, subject: Rule["subject"], expressions: Body): Rule {
 	const descriptor = localizationCheckCatalogue[id];
 	return {
 		id,
@@ -64,7 +64,8 @@ function builtin(
 			...(id === "placeholder_text" ? { sourceTerminology: [] } : undefined),
 			...(id === "segment_separator" ? { separator: null } : undefined)
 		},
-		...expressions
+		...expressions,
+		recovery: asExpr(expressions.recovery)
 	};
 }
 const lc = (id: BuiltInCheckId, body: Parameters<typeof builtin>[2]) =>

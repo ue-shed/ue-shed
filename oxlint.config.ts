@@ -15,7 +15,8 @@ export default defineConfig({
 		".pi/**",
 		".roo/**",
 		".windsurf/**",
-		"tools/oxlint/anti-slop/**"
+		"tools/oxlint/anti-slop/**",
+		"**/*.generated.ts"
 	],
 	jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
 	rules: {

@@ -1211,14 +1211,11 @@
 														}
 													]
 												},
-												"rulesFile": {
+												"rules": {
 													"type": "string",
 													"allOf": [
 														{
 															"minLength": 1
-														},
-														{
-															"maxLength": 32767
 														}
 													]
 												},
@@ -1237,7 +1234,7 @@
 											"required": [
 												"action",
 												"reader",
-												"rulesFile",
+												"rules",
 												"collationLocale"
 											],
 											"additionalProperties": false

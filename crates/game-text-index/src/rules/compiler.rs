@@ -1,5 +1,4 @@
 use crate::{Error, ErrorCode, Result, require};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -76,12 +75,6 @@ macro_rules! operations {
             $($variant,)*
         }
         impl Op {
-            fn simple(name: &str) -> Option<Self> {
-                Some(match name {
-                    $($name => Self::$variant,)*
-                    _ => return None,
-                })
-            }
             /// The authored operation name, for profiles and errors.
             pub fn name(&self) -> &'static str {
                 match self {
@@ -204,93 +197,9 @@ impl Op {
     }
 }
 
-/// Where a rule applies, as authored.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Scope {
-    pub roles: Option<Vec<String>>,
-    pub cultures: Option<Vec<String>>,
-    pub path_prefixes: Option<Vec<String>>,
-}
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum MatcherKind {
-    LocationKind,
-    ObjectPath,
-    Row,
-    PropertyPath,
-    StringTableEntry,
-    ClassPath,
-}
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum MatchOperator {
-    Exact,
-    Prefix,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoleMatcher {
-    pub kind: MatcherKind,
-    pub operator: Option<MatchOperator>,
-    pub value: String,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoleScope {
-    pub matchers: Vec<RoleMatcher>,
-}
-/// A named authored role matched against saved occurrence locations.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Role {
-    pub id: String,
-    pub description: Option<String>,
-    pub scopes: Vec<RoleScope>,
-}
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum Subject {
-    Line,
-    LineCulture,
-    UnitSource,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Rule {
-    pub id: String,
-    pub rule_id: Option<String>,
-    pub kind: String,
-    pub label: String,
-    pub subject: Subject,
-    pub family: String,
-    pub enabled: Option<bool>,
-    pub severity: String,
-    #[serde(default)]
-    pub params: serde_json::Map<String, Value>,
-    pub scope: Option<Scope>,
-    pub role: Option<String>,
-    #[serde(default, rename = "let")]
-    pub bindings: serde_json::Map<String, Value>,
-    pub each: Option<Value>,
-    pub each_as: Option<String>,
-    pub when: Value,
-    pub actual: Value,
-    pub expectation: Value,
-    pub fix: Option<Value>,
-    pub affected: Option<Value>,
-    pub translation_origin: Option<Value>,
-    pub extra: Option<Value>,
-    pub recovery: Value,
-    pub counts: Option<bool>,
-}
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Document {
-    schema_version: u32,
-    roles: Vec<Role>,
-    rules: Vec<Rule>,
-}
+use super::ir::Form;
+pub use super::ir::{Document, Expr, MatchOperator, MatcherKind, Role, Rule, Subject};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Null,
@@ -424,178 +333,89 @@ impl Compiler {
             literal_type(value),
         )
     }
-    fn expression(&mut self, value: &Value, rule: &Rule) -> Result<NodeId> {
-        let Value::Object(object) = value else {
-            require(
-                !value.is_array(),
-                invalid("Lists require a list expression."),
-            )?;
-            return self.literal(value);
-        };
-        require(
-            object.len() == 1,
-            invalid("An expression must have exactly one operator."),
-        )?;
-        let (op, argument) = object.iter().next().ok_or("Missing expression operator.")?;
-        let text = |what: &str| {
-            argument
-                .as_str()
-                .map(Arc::<str>::from)
-                .ok_or_else(|| invalid(format!("{what} must be a string.")))
-        };
-        if op == "lit" {
-            return self.literal(argument);
-        }
-        if op == "field" {
-            let name = text("A field name")?;
-            let result = field_type(rule.subject, &name)?;
-            return self.node(Op::Field(name), Vec::new(), result);
-        }
-        if op == "param" {
-            let name = text("A parameter name")?;
-            let value = rule
-                .params
-                .get(&*name)
-                .ok_or_else(|| invalid(format!("Rule {} has no parameter {name}.", rule.id)))?;
-            return self.literal(value);
-        }
-        if op == "var" {
-            let name = text("A variable name")?;
-            if let Some(binding) = rule.bindings.get(&*name) {
-                require(
-                    self.active_bindings.insert(name.to_string()),
-                    invalid("Cyclic let binding."),
-                )?;
-                let result = self.expression(binding, rule);
-                self.active_bindings.remove(&*name);
-                return result;
+    fn expression(&mut self, expression: &Expr, rule: &Rule) -> Result<NodeId> {
+        let (op, arguments, binding) = match expression.form() {
+            Form::Lit(value) => return self.literal(value),
+            Form::Field(name) => {
+                let result = field_type(rule.subject, name)?;
+                return self.node(Op::Field(name.into()), Vec::new(), result);
             }
-            require(
-                self.variables.contains(&*name),
-                invalid(format!("Unknown expression variable {name}.")),
-            )?;
-            return self.node(Op::Var(name), Vec::new(), Type::Any);
-        }
-        if op == "finding" {
-            let name = text("A finding reference")?;
-            return self.node(Op::Finding(name), Vec::new(), Type::Bool);
-        }
-        if op == "occurrences" {
-            require(
-                argument.as_array().is_some_and(Vec::is_empty),
-                invalid("occurrences takes no arguments."),
-            )?;
-            return self.node(
-                Op::Occurrences,
-                Vec::new(),
-                Type::List(Box::new(Type::Occurrence)),
-            );
-        }
-        if op == "object" {
-            let fields = argument
-                .as_object()
-                .ok_or_else(|| invalid("object requires expression fields."))?;
-            let args = fields
-                .values()
-                .map(|expression| self.expression(expression, rule))
-                .collect::<Result<Vec<_>>>()?;
-            let keys = fields.keys().map(|key| Arc::from(key.as_str())).collect();
-            return self.node(Op::Object(keys), args, Type::Object);
-        }
-        let unary = [
-            "not",
-            "isNull",
-            "utf16Length",
-            "codePoints",
-            "visibleLength",
-            "visibleWords",
-            "interiorLineBreaks",
-            "trim",
-            "lower",
-            "normalizeLineEndings",
-            "count",
-            "flatten",
-            "distinct",
-            "first",
-            "sortByStart",
-            "formatArgumentNames",
-            "formatArgumentOrder",
-            "formatModifiers",
-            "formatIssues",
-            "formatCompiled",
-            "richTextCounts",
-            "richTextTagBalance",
-            "unrealWhitespace",
-            "unrealUnsafeWhitespace",
-            "formatBraceBalance",
-        ];
-        let binding = ["filter", "map", "flatMap", "any", "all"];
-        let mut arguments = if unary.contains(&op.as_str()) {
-            vec![argument.clone()]
-        } else {
-            argument
-                .as_array()
-                .ok_or_else(|| invalid(format!("Operator {op} requires an argument list.")))?
-                .clone()
+            Form::Param(name) => {
+                let value = rule
+                    .params
+                    .get(name)
+                    .ok_or_else(|| invalid(format!("Rule {} has no parameter {name}.", rule.id)))?;
+                return self.literal(value);
+            }
+            Form::Var(name) => {
+                if let Some(binding) = rule.bindings.get(name) {
+                    require(
+                        self.active_bindings.insert(name.to_owned()),
+                        invalid("Cyclic let binding."),
+                    )?;
+                    let result = self.expression(binding, rule);
+                    self.active_bindings.remove(name);
+                    return result;
+                }
+                require(
+                    self.variables.contains(name),
+                    invalid(format!("Unknown expression variable {name}.")),
+                )?;
+                return self.node(Op::Var(name.into()), Vec::new(), Type::Any);
+            }
+            Form::Finding(name) => {
+                return self.node(Op::Finding(name.into()), Vec::new(), Type::Bool);
+            }
+            Form::FindingField(reference, path) => {
+                return self.node(
+                    Op::FindingField(reference.into(), path.into()),
+                    Vec::new(),
+                    Type::Any,
+                );
+            }
+            Form::Occurrences => {
+                return self.node(
+                    Op::Occurrences,
+                    Vec::new(),
+                    Type::List(Box::new(Type::Occurrence)),
+                );
+            }
+            Form::Object(fields) => {
+                let args = fields
+                    .values()
+                    .map(|expression| self.expression(expression, rule))
+                    .collect::<Result<Vec<_>>>()?;
+                let keys = fields.keys().map(|key| Arc::from(key.as_str())).collect();
+                return self.node(Op::Object(keys), args, Type::Object);
+            }
+            Form::Apply(op, arguments) => (op, arguments, None),
+            Form::Bind(op, arguments, name) => (op, arguments, Some(name)),
         };
-        let mut extra = Value::Null;
-        if binding.contains(&op.as_str()) && arguments.len() == 3 {
-            extra = arguments.pop().ok_or("Missing binding name.")?;
-            require(
-                extra.is_string(),
-                invalid("A binding name must be a string."),
-            )?;
-        }
-        if op == "findingField" {
-            let [Value::String(reference), Value::String(path)] = arguments.as_slice() else {
-                return Err(invalid("findingField requires a rule ID and path."));
-            };
-            return self.node(
-                Op::FindingField(reference.as_str().into(), path.as_str().into()),
-                Vec::new(),
-                Type::Any,
-            );
-        }
-        let arity = arguments.len();
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(arguments.len());
         for (index, expression) in arguments.iter().enumerate() {
-            let binding_name = if index == 1
-                && (binding.contains(&op.as_str())
-                    || ["sortCodeUnit", "sortLocale"].contains(&op.as_str()))
-            {
-                Some(extra.as_str().unwrap_or("item"))
-            } else {
-                None
-            };
-            let existed = binding_name.is_some_and(|name| !self.variables.insert(name.into()));
+            // A list operator's body sees the element as its variable.
+            let bound = binding.filter(|_| index == 1);
+            let existed = bound.is_some_and(|name| !self.variables.insert(name.into()));
             let argument = self.expression(expression, rule)?;
-            if let Some(name) = binding_name
+            if let Some(name) = bound
                 && !existed
             {
                 self.variables.remove(name);
             }
             args.push(argument);
         }
-        let result = match op.as_str() {
-            "list" => Type::List(Box::new(
+        // Arity is part of each operator's IR type; only argument and result types remain.
+        let result = match &op {
+            Op::List => Type::List(Box::new(
                 args.first()
                     .map_or(Type::Any, |id| self.nodes[*id].result.clone()),
             )),
-            "and" | "or" => {
+            Op::And | Op::Or | Op::Not => {
                 self.arguments(&args, &Type::Bool)?;
                 Type::Bool
             }
-            "not" => {
-                self.arity(arity, 1, op)?;
-                self.arguments(&args, &Type::Bool)?;
-                Type::Bool
-            }
-            "eq" | "ne" => {
-                self.arity(arity, 2, op)?;
-                Type::Bool
-            }
-            "lt" | "le" | "gt" | "ge" => {
-                self.arity(arity, 2, op)?;
+            Op::Eq | Op::Ne | Op::In | Op::IsNull => Type::Bool,
+            Op::Lt | Op::Le | Op::Gt | Op::Ge => {
                 for id in &args {
                     require(
                         matches!(
@@ -607,196 +427,104 @@ impl Compiler {
                 }
                 Type::Bool
             }
-            "in" => {
-                self.arity(arity, 2, op)?;
-                Type::Bool
-            }
-            "isNull" => {
-                self.arity(arity, 1, op)?;
-                Type::Bool
-            }
-            "if" => {
-                self.arity(arity, 3, op)?;
+            Op::If => {
                 self.arguments(&args[..1], &Type::Bool)?;
                 self.nodes[args[1]].result.clone()
             }
-            "coalesce" => args
+            Op::Coalesce => args
                 .first()
                 .map_or(Type::Any, |id| self.nodes[*id].result.clone()),
-            "add" | "mul" | "min" | "max" | "sub" | "div" | "round" => {
-                if ["sub", "div", "round"].contains(&op.as_str()) {
-                    self.arity(arity, 2, op)?;
-                }
+            Op::Add | Op::Mul | Op::Min | Op::Max | Op::Sub | Op::Div | Op::Round => {
                 self.arguments(&args, &Type::Number)?;
                 Type::Number
             }
-            "utf16Length" | "codePoints" | "visibleLength" | "visibleWords"
-            | "interiorLineBreaks" => {
-                self.arity(arity, 1, op)?;
+            Op::Utf16Length
+            | Op::CodePoints
+            | Op::VisibleLength
+            | Op::VisibleWords
+            | Op::InteriorLineBreaks
+            | Op::CountOccurrences => {
                 self.arguments(&args, &Type::String)?;
                 Type::Int
             }
-            "trim" | "lower" | "normalizeLineEndings" => {
-                self.arity(arity, 1, op)?;
+            Op::Trim
+            | Op::Lower
+            | Op::NormalizeLineEndings
+            | Op::Concat
+            | Op::FormatRenameArgument => {
                 self.arguments(&args, &Type::String)?;
                 Type::String
             }
-            "concat" => {
-                self.arguments(&args, &Type::String)?;
-                Type::String
-            }
-            "slice" => {
-                self.arity(arity, 3, op)?;
+            Op::Slice => {
                 self.arguments(&args[..1], &Type::String)?;
                 self.arguments(&args[1..], &Type::Number)?;
                 Type::String
             }
-            "startsWith" | "endsWith" | "contains" => {
-                self.arity(arity, 2, op)?;
+            Op::StartsWith
+            | Op::EndsWith
+            | Op::Contains
+            | Op::UnrealUnsafeWhitespace
+            | Op::RichTextValid => {
                 self.arguments(&args, &Type::String)?;
                 Type::Bool
             }
-            "countOccurrences" => {
-                self.arity(arity, 2, op)?;
-                self.arguments(&args, &Type::String)?;
-                Type::Int
-            }
-            "findAll" => {
-                self.arity(arity, 2, op)?;
+            Op::FindAll | Op::RegexMatches | Op::TermMatches | Op::TermListMatches => {
                 Type::List(Box::new(Type::Object))
             }
-            "anyChar" | "allChars" => {
-                self.arity(arity, 2, op)?;
-                Type::Bool
-            }
-            "removeClass" | "leadingClass" | "trailingClass" => {
-                self.arity(arity, 2, op)?;
-                Type::String
-            }
-            "trimClass" => {
-                self.arity(arity, 3, op)?;
-                Type::String
-            }
-            "runs" => {
-                self.arity(arity, 3, op)?;
-                Type::Int
-            }
-            "regexMatches" | "termMatches" => {
-                self.arity(arity, 3, op)?;
-                Type::List(Box::new(Type::Object))
-            }
-            "regexTest" => {
-                self.arity(arity, 3, op)?;
-                Type::Bool
-            }
-            "termListMatches" => {
-                self.arity(arity, 4, op)?;
-                Type::List(Box::new(Type::Object))
-            }
-            "count" => {
-                self.arity(arity, 1, op)?;
-                Type::Int
-            }
-            "any" | "all" => {
-                self.arity(arity, 2, op)?;
-                Type::Bool
-            }
-            "filter" | "map" | "flatMap" => {
-                self.arity(arity, 2, op)?;
-                Type::List(Box::new(Type::Any))
-            }
-            "flatten" | "distinct" | "sortByStart" => {
-                self.arity(arity, 1, op)?;
-                Type::List(Box::new(Type::Any))
-            }
-            "sortCodeUnit" | "sortLocale" => {
-                require(
-                    (1..=2).contains(&arity),
-                    invalid("A sort requires a list and optional key."),
-                )?;
-                Type::List(Box::new(Type::Any))
-            }
-            "first" => {
-                self.arity(arity, 1, op)?;
-                Type::Any
-            }
-            "take" | "drop" | "minus" | "zip" => {
-                self.arity(arity, 2, op)?;
-                Type::List(Box::new(Type::Any))
-            }
-            "concatLists" => Type::List(Box::new(Type::Any)),
-            "get" => {
-                self.arity(arity, 2, op)?;
+            Op::AnyChar | Op::AllChars | Op::RegexTest | Op::Any(_) | Op::All(_) => Type::Bool,
+            Op::FormatCompiled => Type::Bool,
+            Op::RemoveClass
+            | Op::LeadingClass
+            | Op::TrailingClass
+            | Op::TrimClass
+            | Op::WithoutOptionalArgumentTags => Type::String,
+            Op::Runs | Op::Count => Type::Int,
+            Op::Filter(_)
+            | Op::Map(_)
+            | Op::FlatMap(_)
+            | Op::Flatten
+            | Op::Distinct
+            | Op::SortByStart
+            | Op::SortCodeUnit
+            | Op::SortLocale
+            | Op::Take
+            | Op::Drop
+            | Op::Minus
+            | Op::Zip
+            | Op::ConcatLists
+            | Op::FormatArgumentNames
+            | Op::FormatArgumentOrder
+            | Op::FormatModifiers
+            | Op::FormatIssues => Type::List(Box::new(Type::Any)),
+            Op::First => Type::Any,
+            Op::Get => {
                 self.arguments(&args[1..], &Type::String)?;
                 Type::Any
             }
-            "matchesRole" | "pathHasPrefix" => {
-                self.arity(arity, 2, op)?;
-                Type::Bool
-            }
-            "formatPattern" => {
-                self.arity(arity, 2, op)?;
+            Op::MatchesRole | Op::PathHasPrefix => Type::Bool,
+            Op::FormatPattern => {
                 self.arguments(&args, &Type::String)?;
                 Type::Object
             }
-            "formatArgumentNames" | "formatArgumentOrder" | "formatModifiers" | "formatIssues" => {
-                self.arity(arity, 1, op)?;
-                Type::List(Box::new(Type::Any))
-            }
-            "formatCompiled" => {
-                self.arity(arity, 1, op)?;
-                Type::Bool
-            }
-            "formatRenameArgument" => {
-                self.arity(arity, 4, op)?;
-                self.arguments(&args, &Type::String)?;
-                Type::String
-            }
-            "richTextCounts" | "richTextTagBalance" | "unrealWhitespace" | "formatBraceBalance" => {
-                self.arity(arity, 1, op)?;
+            Op::RichTextCounts
+            | Op::RichTextTagBalance
+            | Op::UnrealWhitespace
+            | Op::FormatBraceBalance
+            | Op::CompareRichTextTags => {
                 self.arguments(&args, &Type::String)?;
                 Type::Object
             }
-            "unrealUnsafeWhitespace" => {
-                self.arity(arity, 1, op)?;
-                self.arguments(&args, &Type::String)?;
-                Type::Bool
+            Op::Lit(_)
+            | Op::Field(_)
+            | Op::Var(_)
+            | Op::Finding(_)
+            | Op::FindingField(..)
+            | Op::Object(_)
+            | Op::Occurrences => {
+                return Err("Leaf operations are lowered before their arguments.".into());
             }
-            "richTextValid" => {
-                self.arity(arity, 2, op)?;
-                self.arguments(&args, &Type::String)?;
-                Type::Bool
-            }
-            "compareRichTextTags" => {
-                self.arity(arity, 2, op)?;
-                self.arguments(&args, &Type::String)?;
-                Type::Object
-            }
-            "withoutOptionalArgumentTags" => {
-                self.arity(arity, 2, op)?;
-                Type::String
-            }
-            _ => return Err(invalid(format!("Unknown expression operator {op}."))),
         };
-        let name = || Arc::<str>::from(extra.as_str().unwrap_or("item"));
-        let operation = match op.as_str() {
-            "filter" => Op::Filter(name()),
-            "map" => Op::Map(name()),
-            "flatMap" => Op::FlatMap(name()),
-            "any" => Op::Any(name()),
-            "all" => Op::All(name()),
-            other => Op::simple(other)
-                .ok_or_else(|| invalid(format!("Unknown expression operator {other}.")))?,
-        };
-        self.node(operation, std::mem::take(&mut args), result)
-    }
-    fn arity(&self, actual: usize, expected: usize, op: &str) -> Result<()> {
-        require(
-            actual == expected,
-            invalid(format!(
-                "Operator {op} expects {expected} arguments, got {actual}."
-            )),
-        )
+        self.node(op, args, result)
     }
     fn arguments(&self, args: &[NodeId], expected: &Type) -> Result<()> {
         for id in args {
@@ -813,10 +541,10 @@ impl Compiler {
 }
 
 pub fn compile(json: &str) -> Result<Program> {
-    let document: Document =
-        serde_json::from_value(crate::json_value::parse(json)?).map_err(|cause| {
-            Error::with_source(ErrorCode::InvalidInput, "Invalid v4 rule document.", cause)
-        })?;
+    // The WTF-8-aware reader keeps lone UTF-16 units; its nesting limit (127) bounds the IR.
+    let document: Document = crate::json_value::parse_as(json).map_err(|cause| {
+        Error::with_source(ErrorCode::InvalidInput, "Invalid v4 rule document.", cause)
+    })?;
     require(
         document.schema_version == 4,
         invalid("The evaluator requires an internal v4 document."),
@@ -870,7 +598,7 @@ pub fn compile(json: &str) -> Result<Program> {
                 .variables
                 .insert(rule.each_as.clone().unwrap_or("item".into()));
         }
-        let mut optional = |value: &Option<Value>| {
+        let mut optional = |value: &Option<Expr>| {
             value
                 .as_ref()
                 .map(|value| compiler.expression(value, &rule))
@@ -1053,6 +781,74 @@ pub fn compile(json: &str) -> Result<Program> {
 mod tests {
     use super::*;
     use std::process::Command;
+
+    /// A one-rule document around `when`, plus extra rule fields as JSON members.
+    fn document(when: &str, extra: &str) -> String {
+        format!(
+            r#"{{"schemaVersion":4,"roles":[],"rules":[{{"id":"a","kind":"a","label":"A","subject":"line","family":"builtin","severity":"low","when":{when},"actual":{{"object":{{}}}},"expectation":{{"object":{{}}}},"recovery":{{"lit":"Review it."}}{extra}}}]}}"#
+        )
+    }
+    fn rejected(text: &str) -> bool {
+        compile(text).is_err_and(|error| error.code == ErrorCode::InvalidInput)
+    }
+
+    #[test]
+    fn literals_are_explicit_and_arity_is_part_of_the_type() -> Result<()> {
+        compile(&document(r#"{"lit":true}"#, ""))?;
+        assert!(rejected(&document("true", "")));
+        assert!(rejected(&document(r#"{"eq":[{"lit":1}]}"#, "")));
+        assert!(rejected(&document(
+            r#"{"eq":[{"lit":1},{"lit":1},{"lit":1}]}"#,
+            ""
+        )));
+        assert!(rejected(&document(r#"{"unknown":[]}"#, "")));
+        assert!(rejected(&document(r#"{"not":{"lit":true},"and":[]}"#, "")));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_missing_parameters_duplicate_ids_unknown_roles_and_cycles() -> Result<()> {
+        assert!(rejected(&document(r#"{"param":"missing"}"#, "")));
+        let rule = document(r#"{"lit":true}"#, "");
+        let rule = &rule[rule.find(r#"{"id""#).ok_or("Missing rule.")?..rule.len() - 2];
+        assert!(rejected(&format!(
+            r#"{{"schemaVersion":4,"roles":[],"rules":[{rule},{rule}]}}"#
+        )));
+        assert!(rejected(&document(
+            r#"{"lit":true}"#,
+            r#","role":"missing""#
+        )));
+        let cycle = compile(&document(r#"{"finding":"a"}"#, "")).err();
+        assert!(cycle.is_some_and(|error| error.to_string().contains("rule_cycle")));
+        Ok(())
+    }
+
+    #[test]
+    fn nesting_is_bounded_by_the_reader_as_a_typed_error() -> Result<()> {
+        // The document, its rule list and the rule are three levels; each `not` adds one.
+        let nested = |levels: usize| {
+            document(
+                &format!(
+                    "{}{}{}",
+                    r#"{"not":"#.repeat(levels - 4),
+                    r#"{"lit":true}"#,
+                    "}".repeat(levels - 4)
+                ),
+                "",
+            )
+        };
+        let (at_limit, past_limit) = (nested(127), nested(128));
+        // A small stack proves the limit is reached before the stack is.
+        std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || -> Result<()> {
+                compile(&at_limit)?;
+                assert!(rejected(&past_limit));
+                Ok(())
+            })?
+            .join()
+            .map_err(|_| "The nesting test thread panicked.")?
+    }
     #[test]
     fn compiles_the_typescript_catalogue_and_shares_subexpressions() -> Result<()> {
         let output = Command::new("node").args(["--import", "tsx", "--input-type=module", "-e", "import {translateRuleDocument} from './packages/game-text/src/rules/translate.ts'; process.stdout.write(JSON.stringify(translateRuleDocument(undefined)));"])

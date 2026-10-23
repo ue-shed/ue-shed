@@ -1,6 +1,7 @@
 //! The engine's contract with its hosts, and the identity both sides compare once per session.
 //!
-//! Rust owns the contract. The host's TypeScript types are generated from these definitions into
+//! Rust owns the contract: the rule IR (`rules/ir.rs`) and the findings replies
+//! (`rules/replies.rs`). The host's TypeScript types are generated from these definitions into
 //! `packages/protocol/src/game-text-contract.generated.ts`; a test fails when that file drifts.
 //! After the handshake neither side validates the other's messages.
 use serde::Serialize;
@@ -8,7 +9,11 @@ use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 
 /// The sources that define the contract, serde attributes and encoding conventions included.
-const SOURCES: [&str; 2] = [include_str!("contract.rs"), include_str!("rules/ir.rs")];
+const SOURCES: [&str; 3] = [
+    include_str!("contract.rs"),
+    include_str!("rules/ir.rs"),
+    include_str!("rules/replies.rs"),
+];
 
 /// The engine's build and contract identity, reported by `capabilities`.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -43,6 +48,11 @@ mod tests {
         Document, Expr, Family, MatchOperator, MatcherKind, Role, RoleMatcher, RoleScope, Rule,
         Scope, Severity, Subject,
     };
+    use crate::rules::replies::{
+        EvaluationProfile, FindingLine, FindingLines, FindingUnits, FindingsEvaluation,
+        LineDiagnostic, Memory, Place, PlaceSet, ProfileSample, ReadProfile, RuleCount,
+        RuleMetadata, RunProfile, SpilledReply, StageSample, SubStageSample, UnitFindings,
+    };
     use ts_rs::{Config, TS};
 
     const GENERATED: &str = "packages/protocol/src/game-text-contract.generated.ts";
@@ -52,7 +62,7 @@ mod tests {
     fn typescript() -> String {
         let config = Config::default();
         let mut text = String::from(
-            "// Generated from crates/game-text-index/src/contract.rs and rules/ir.rs by\n\
+            "// Generated from crates/game-text-index/src/contract.rs, rules/ir.rs and rules/replies.rs by\n\
              // `UE_SHED_UPDATE_GENERATED=1 cargo test -p game-text-index --lib contract`. Do not edit.\n\n",
         );
         let identity = super::identity();
@@ -63,7 +73,10 @@ mod tests {
         ));
         text.push_str(
             "export type JsonValue =\n\t| null\n\t| boolean\n\t| number\n\t| string\n\t\
-             | ReadonlyArray<JsonValue>\n\t| { readonly [key: string]: JsonValue };\n",
+             | ReadonlyArray<JsonValue>\n\t| { readonly [key: string]: JsonValue };\n\n\
+             /** One finding's fields; `places` names its place set. */\n\
+             export type Finding = {\n\treadonly places: number;\n\treadonly id: string;\n\t\
+             readonly [key: string]: JsonValue;\n};\n",
         );
         for declaration in [
             Document::decl(&config),
@@ -78,6 +91,24 @@ mod tests {
             Subject::decl(&config),
             Family::decl(&config),
             Severity::decl(&config),
+            FindingsEvaluation::decl(&config),
+            RuleMetadata::decl(&config),
+            RuleCount::decl(&config),
+            EvaluationProfile::decl(&config),
+            RunProfile::decl(&config),
+            StageSample::decl(&config),
+            SubStageSample::decl(&config),
+            ProfileSample::decl(&config),
+            Memory::decl(&config),
+            FindingLines::decl(&config),
+            FindingLine::decl(&config),
+            LineDiagnostic::decl(&config),
+            FindingUnits::decl(&config),
+            UnitFindings::decl(&config),
+            PlaceSet::decl(&config),
+            Place::decl(&config),
+            ReadProfile::decl(&config),
+            SpilledReply::decl(&config),
         ] {
             text.push_str("\nexport ");
             text.push_str(

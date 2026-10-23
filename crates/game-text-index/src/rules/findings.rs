@@ -2,6 +2,9 @@
 use super::identity::{
     localization_identity_encoded, source_identity_encoded, write_atom, write_ids, write_string,
 };
+use super::replies::{
+    EvaluationProfile, FindingsEvaluation, LayerMetadata, RuleCount, RuleMetadata, RunProfile,
+};
 use super::stages::{Measure, Phase, subject_stage};
 use super::{HostCollator, NativeSubjects, Subject, compile, javascript_json};
 use crate::engine_match::checkpoint;
@@ -21,7 +24,7 @@ pub(crate) struct FindingsLayer {
     reader: Reader,
     pub(super) dictionary: EngineReader,
     record: Value,
-    pub(super) metadata: Value,
+    pub(super) metadata: LayerMetadata,
     columns: HashMap<String, Arc<[u32]>>,
 }
 impl FindingsLayer {
@@ -59,10 +62,10 @@ impl FindingsLayer {
             "Invalid findings snapshot filename.",
         )?;
         let mut reader = Reader::open(&configuration.directory()?.join(file))?;
-        let metadata =
-            crate::json_value::parse(std::str::from_utf8(&section(&mut reader, "join.meta")?)?)?;
+        let metadata: LayerMetadata =
+            crate::json_value::parse_as(std::str::from_utf8(&section(&mut reader, "join.meta")?)?)?;
         require(
-            metadata["joinedKey"] == joined && metadata["version"] == VERSION,
+            metadata.joined_key == joined && metadata.version == VERSION,
             Error::new(
                 ErrorCode::StaleGeneration,
                 "The findings layer does not belong to the pinned joined view.",
@@ -93,8 +96,17 @@ impl FindingsLayer {
     pub(super) fn json(&mut self, id: u32) -> Result<Value> {
         crate::json_value::parse_stored(&self.dictionary.string(id)?)
     }
-    fn result(&self, key: &str, profile: &Value) -> Value {
-        json!({"key":key,"rules":self.metadata["rules"],"counts":self.metadata["counts"],"diagnosticCount":self.metadata["diagnosticCount"],"collation":self.metadata["collation"],"profile":profile})
+    /// `findings_evaluate`'s reply for this layer.
+    fn result(&self, key: &str, profile: EvaluationProfile) -> Result<String> {
+        let reply = FindingsEvaluation {
+            key: key.into(),
+            rules: self.metadata.rules.clone(),
+            counts: self.metadata.counts.clone(),
+            diagnostic_count: self.metadata.diagnostic_count,
+            collation: self.metadata.collation.clone(),
+            profile,
+        };
+        Ok(javascript_json(&serde_json::to_value(&reply)?, false))
     }
 }
 /// One rule's finding columns, encoded as they are published: evidence and place JSON in
@@ -129,7 +141,7 @@ pub(super) struct EvaluatedFindings {
     unit_rows: Vec<u32>,
     unit_sources: Vec<u32>,
     recorder: super::stages::Recorder,
-    pub(super) profile: Value,
+    pub(super) profile: RunProfile,
     #[cfg(test)]
     pub(super) digest: String,
 }
@@ -314,7 +326,7 @@ impl EngineQuery {
             findings,
             base_diagnostics.len() + regex_diagnostics.len(),
         );
-        profile["wallMs"] = json!(elapsed.wall().as_secs_f64() * 1000.0);
+        profile.wall_ms = elapsed.wall().as_secs_f64() * 1000.0;
         Ok(EvaluatedFindings {
             rules,
             findings,
@@ -363,10 +375,7 @@ impl EngineQuery {
             )
         );
         if let Some(layer) = self.findings.get(&key) {
-            return Ok(javascript_json(
-                &layer.result(&key, &json!({"cached":true})),
-                false,
-            ));
+            return layer.result(&key, EvaluationProfile::Cached);
         }
         let mut store = Store::writer(self.configuration.clone())?;
         require(
@@ -376,7 +385,7 @@ impl EngineQuery {
                 "The dictionary generation changed before rule evaluation.",
             ),
         )?;
-        let mut profile = json!({"cached":true});
+        let mut profile = EvaluationProfile::Cached;
         if store.root["layers"].get(&key).is_none() {
             let EvaluatedFindings {
                 rules: mut encoded,
@@ -395,7 +404,22 @@ impl EngineQuery {
             let publish = Measure::start();
             let mut ordered = program.rules.iter().collect::<Vec<_>>();
             ordered.sort_by_key(|rule| rule.ordinal);
-            let rules = ordered.iter().map(|compiled| json!({"id":compiled.rule.id,"ruleId":compiled.rule.rule_id.as_ref().unwrap_or(&compiled.rule.id),"kind":compiled.rule.kind,"label":compiled.rule.label,"subject":compiled.rule.subject,"family":compiled.rule.family,"severity":compiled.rule.severity,"role":compiled.rule.role})).collect::<Vec<_>>();
+            let rules = ordered
+                .iter()
+                .map(|compiled| {
+                    let rule = &compiled.rule;
+                    RuleMetadata {
+                        id: rule.id.clone(),
+                        rule_id: rule.rule_id.clone().unwrap_or_else(|| rule.id.clone()),
+                        kind: rule.kind.clone(),
+                        label: rule.label.clone(),
+                        subject: rule.subject,
+                        family: rule.family,
+                        severity: rule.severity,
+                        role: rule.role.clone(),
+                    }
+                })
+                .collect::<Vec<_>>();
             let mut columns: Vec<Column> = vec![
                 (
                     "subjects.line_culture.lines".into(),
@@ -418,7 +442,7 @@ impl EngineQuery {
                     unit_sources,
                 ),
             ];
-            let mut counts = BTreeMap::<(usize, u32, String), u32>::new();
+            let mut counts = BTreeMap::<(usize, u32), u32>::new();
             for (index, compiled) in ordered.iter().enumerate() {
                 checkpoint(cancelled)?;
                 let RuleColumns {
@@ -429,16 +453,14 @@ impl EngineQuery {
                     id0,
                     id1,
                 } = std::mem::take(&mut encoded[compiled.ordinal]);
-                let severity = rules[index]["severity"].as_str().unwrap_or("");
+                // A rule has one severity, so rule and culture key its count.
                 if compiled.rule.subject == Subject::UnitSource {
                     if !rows.is_empty() {
-                        *counts
-                            .entry((index, u32::MAX, severity.into()))
-                            .or_default() += rows.len() as u32;
+                        *counts.entry((index, u32::MAX)).or_default() += rows.len() as u32;
                     }
                 } else {
                     for ci in &cultures {
-                        *counts.entry((index, *ci, severity.into())).or_default() += 1;
+                        *counts.entry((index, *ci)).or_default() += 1;
                     }
                 }
                 for (name, domain, values) in [
@@ -493,8 +515,26 @@ impl EngineQuery {
                 diagnostics.iter().map(|(_, ci, _)| *ci).collect(),
             ));
             columns.push(("diag.codes".into(), "findings".into(), codes));
-            let counts = counts.into_iter().map(|((rule,culture,severity),count)| json!({"rule":rule,"culture":if culture == u32::MAX { Value::Null } else { json!(self.cultures[culture as usize]) },"severity":severity,"count":count})).collect::<Vec<_>>();
-            let metadata = json!({"version":VERSION,"joinedKey":self.reader.joined_key,"collation":collator.locale,"rules":rules,"counts":counts,"diagnosticCount":diagnostics.len()});
+            let counts = counts
+                .into_iter()
+                .map(|((rule, culture), count)| {
+                    Ok(RuleCount {
+                        rule: rule.try_into()?,
+                        culture: (culture != u32::MAX)
+                            .then(|| self.cultures[culture as usize].clone()),
+                        severity: rules[rule].severity,
+                        count,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let metadata = LayerMetadata {
+                version: VERSION,
+                joined_key: self.reader.joined_key.clone(),
+                collation: collator.locale.clone(),
+                rules,
+                counts,
+                diagnostic_count: diagnostics.len().try_into()?,
+            };
             store.publish_global(
                 "findings",
                 &key,
@@ -505,14 +545,16 @@ impl EngineQuery {
             )?;
             recorder.stage("layer.publish", &publish, findings);
             recorder.memory("layer.publish", super::stages::Memory::default());
-            profile = evaluation_profile;
-            profile["stages"] =
-                recorder.profile(program.rules.len(), findings, diagnostics.len())["stages"].take();
-            profile["wallMs"] = json!(elapsed.elapsed().as_secs_f64() * 1000.0);
+            let mut run = evaluation_profile;
+            run.stages = recorder
+                .profile(program.rules.len(), findings, diagnostics.len())
+                .stages;
+            run.wall_ms = elapsed.elapsed().as_secs_f64() * 1000.0;
+            profile = EvaluationProfile::Run(Box::new(run));
         }
         drop(store);
         let layer = FindingsLayer::open(&self.configuration, &key, &self.reader.joined_key)?;
-        let result = javascript_json(&layer.result(&key, &profile), false);
+        let result = layer.result(&key, profile)?;
         self.findings.insert(key, layer);
         Ok(result)
     }

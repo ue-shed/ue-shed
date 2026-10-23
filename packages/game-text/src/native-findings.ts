@@ -1,74 +1,19 @@
-import { Clock, Context, Effect, Exit, Option, Schema } from "effect";
-import {
+import { Clock, Context, Effect, Exit, Option } from "effect";
+import type { GameTextContract } from "@ue-shed/protocol";
+import type {
 	LocalizationQualityFinding,
 	LocalizationPolicyFinding,
 	LocalizationCustomFinding,
 	LocalizationCheckDiagnostic
 } from "./localization-quality-schema.js";
-import { TextQualityAffectedOccurrence, TextQualityFinding } from "./quality-schema.js";
+import type { TextQualityFinding } from "./quality-schema.js";
 import { snapshotCheck } from "./snapshot-format.js";
-import { localizationFindingHash, localizationFindingId } from "./localization-workspace.js";
-import { textQualityFindingId } from "./quality-query.js";
-import { ruleOperationNames, type RuleDocumentV4 } from "./rules/schema.js";
+import type { RuleDocumentV4 } from "./rules/schema.js";
 import type { GameTextIndexError } from "./index-error.js";
 
-const Row = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffffffff }));
-const Evidence = Schema.Record(Schema.String, Schema.Unknown);
-const Places = Schema.Array(
-	Schema.Struct({ id: Row, occurrences: Schema.Array(TextQualityAffectedOccurrence) })
-);
-const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
-const ProfileSample = Schema.Struct({
-	wallMs: Milliseconds,
-	busyMs: Milliseconds,
-	rows: Count,
-	inputs: Count,
-	memoHits: Count
-});
-const StageName = Schema.String.check(
-	Schema.isPattern(
-		/^(subjects\.(occurrences|columns)|(line|line_culture|unit_source)\.(execute|diagnostics|emission)|layer\.publish)$/
-	)
-);
-const KernelName = Schema.String.check(
-	Schema.isPattern(new RegExp(`^(${ruleOperationNames.join("|")})$`))
-);
-const StageSample = Schema.Struct({
-	...ProfileSample.fields,
-	startOffsetMs: Milliseconds,
-	endOffsetMs: Milliseconds,
-	memory: Schema.Struct({
-		peakWorkingSetBytes: Count,
-		arenaBytes: Count,
-		sideDictionaryBytes: Count,
-		liveNodeColumnsBytes: Count,
-		memosBytes: Count,
-		occurrenceRelationBytes: Count
-	}),
-	kernels: Schema.Record(KernelName, ProfileSample)
-});
-export const FindingsEvaluationProfile = Schema.Union([
-	Schema.Struct({ cached: Schema.Literal(true) }),
-	Schema.Struct({
-		cached: Schema.Literal(false),
-		wallMs: Milliseconds,
-		rules: Count,
-		findings: Count,
-		diagnostics: Count,
-		stages: Schema.Record(StageName, StageSample),
-		kernels: Schema.Record(KernelName, ProfileSample)
-	})
-]);
-const FindingsReadProfile = Schema.Struct({
-	rowsRequested: Count,
-	findingsReturned: Count,
-	responseBytes: Count,
-	fileFallback: Schema.Boolean
-});
 /** Profiles contain only bounded operation names and numbers from this call. */
 export const annotateFindingsProfile = (
-	profile: typeof FindingsEvaluationProfile.Type | typeof FindingsReadProfile.Type,
+	profile: GameTextContract.EvaluationProfile | GameTextContract.ReadProfile,
 	requestStart?: bigint
 ) =>
 	Effect.gen(function* () {
@@ -111,7 +56,8 @@ export const annotateFindingsProfile = (
 			span.attribute(`${prefix}stage.busy_ms`, sample.busyMs);
 			span.attribute(`${prefix}stage.rows`, sample.rows);
 			for (const [field, value] of Object.entries(sample.memory)) {
-				span.attribute(`${prefix}memory.${field}`, value);
+				if (value !== null && value !== undefined)
+					span.attribute(`${prefix}memory.${field}`, value);
 			}
 			const kernels = Object.entries(sample.kernels)
 				.sort((a, b) => b[1].busyMs - a[1].busyMs)
@@ -125,113 +71,51 @@ export const annotateFindingsProfile = (
 			span.end(origin + BigInt(Math.round(sample.endOffsetMs * 1_000_000)), Exit.void);
 		}
 	});
-export const FindingsEvaluation = Schema.Struct({
-	key: Schema.NonEmptyString,
-	rules: Schema.Array(Evidence),
-	counts: Schema.Array(Evidence),
-	diagnosticCount: Row,
-	collation: Schema.String,
-	profile: FindingsEvaluationProfile
-});
-export const NativeFindingLines = Schema.Struct({
-	profile: FindingsReadProfile,
-	places: Places,
-	lines: Schema.Array(
-		Schema.Struct({
-			row: Row,
-			builtIns: Schema.Array(Evidence),
-			policy: Schema.Array(Evidence),
-			custom: Schema.Array(Evidence),
-			diagnostics: Schema.Array(LocalizationCheckDiagnostic)
-		})
-	)
-});
-export const NativeFindingUnits = Schema.Struct({
-	profile: FindingsReadProfile,
-	places: Places,
-	units: Schema.Array(Schema.Struct({ unit: Row, findings: Schema.Array(Evidence) }))
-});
-
-function inflate<S extends Schema.Codec<unknown, unknown>>(
-	places: typeof Places.Type,
-	values: readonly (typeof Evidence.Type)[],
-	schema: S,
-	identity: (finding: S["Type"]) => string
-) {
+/** Resolve each finding's interned places into the host's finding shape. */
+function inflate<F>(
+	places: GameTextContract.FindingLines["places"],
+	values: readonly GameTextContract.Finding[]
+): F[] {
 	const byId = new Map(places.map((place) => [place.id, place.occurrences]));
-	return Effect.forEach(values, (value) =>
-		Effect.gen(function* () {
-			const occurrences = byId.get(Schema.decodeUnknownSync(Row)(value.places));
-			snapshotCheck(
-				occurrences !== undefined,
-				"quality.findings",
-				"A finding's saved places are missing"
-			);
-			const { places: _places, id: _id, ...evidence } = value;
-			const candidate = { ...evidence, affectedOccurrences: occurrences };
-			// Keep evidence member order: reported sorting and source identities use JSON.stringify.
-			const finding = Schema.is(schema)(candidate)
-				? candidate
-				: yield* Schema.decodeUnknownEffect(schema)(candidate);
-			snapshotCheck(
-				identity(finding) === value.id,
-				"quality.findings",
-				"Native and host finding identities differ"
-			);
-			return finding;
-		})
-	);
+	return values.map(({ places: id, id: _id, ...evidence }) => {
+		const occurrences = byId.get(id);
+		snapshotCheck(
+			occurrences !== undefined,
+			"quality.findings",
+			"A finding's saved places are missing"
+		);
+		// Spreading keeps evidence member order, which reported sorting relies on.
+		// SAFETY: the engine writes each finding in its family's host shape, and the session's
+		// handshake checked that host and engine share this contract.
+		// Verified by: localization-custom-checks.test.ts and terminology-boundaries.test.ts.
+		return { ...evidence, affectedOccurrences: occurrences } as F;
+	});
 }
-const localizationIdentity = (
-	finding: LocalizationQualityFinding | LocalizationPolicyFinding | LocalizationCustomFinding
-) => localizationFindingId(localizationFindingHash(finding));
-export const inflateFindingLines = (result: typeof NativeFindingLines.Type) =>
-	Effect.forEach(result.lines, (line) =>
-		Effect.gen(function* () {
-			return {
-				row: line.row,
-				builtIns: yield* inflate(
-					result.places,
-					line.builtIns,
-					LocalizationQualityFinding,
-					localizationIdentity
-				),
-				policy: yield* inflate(
-					result.places,
-					line.policy,
-					LocalizationPolicyFinding,
-					localizationIdentity
-				),
-				custom: yield* inflate(
-					result.places,
-					line.custom,
-					LocalizationCustomFinding,
-					localizationIdentity
-				),
-				diagnostics: line.diagnostics
-			};
-		})
+export const inflateFindingLines = (result: GameTextContract.FindingLines) =>
+	Effect.sync(() =>
+		result.lines.map((line) => ({
+			row: line.row,
+			builtIns: inflate<LocalizationQualityFinding>(result.places, line.builtIns),
+			policy: inflate<LocalizationPolicyFinding>(result.places, line.policy),
+			custom: inflate<LocalizationCustomFinding>(result.places, line.custom),
+			// SAFETY: diagnostic codes are the engine's DIAGNOSTIC_CODES, the host's code union.
+			// Verified by: localization-checks.test.ts reads native syntax_limit diagnostics.
+			diagnostics: line.diagnostics as readonly LocalizationCheckDiagnostic[]
+		}))
 	);
-export const inflateFindingUnits = (result: typeof NativeFindingUnits.Type) =>
-	Effect.forEach(result.units, (unit) =>
-		Effect.gen(function* () {
-			return {
-				unit: unit.unit,
-				findings: yield* inflate(
-					result.places,
-					unit.findings,
-					TextQualityFinding,
-					textQualityFindingId
-				)
-			};
-		})
+export const inflateFindingUnits = (result: GameTextContract.FindingUnits) =>
+	Effect.sync(() =>
+		result.units.map((unit) => ({
+			unit: unit.unit,
+			findings: inflate<TextQualityFinding>(result.places, unit.findings)
+		}))
 	);
 
 /** A reader's native findings; coordinates belong to its pinned joined snapshot. */
 export interface NativeFindings {
 	readonly findingsEvaluate: (
 		document: RuleDocumentV4
-	) => Effect.Effect<typeof FindingsEvaluation.Type, GameTextIndexError>;
+	) => Effect.Effect<GameTextContract.FindingsEvaluation, GameTextIndexError>;
 	readonly findingsLines: (
 		key: string,
 		rows: readonly number[]

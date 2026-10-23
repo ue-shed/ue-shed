@@ -1,3 +1,8 @@
+use super::ir::Family;
+use super::replies::{
+    FindingLine, FindingLines, FindingUnits, LineDiagnostic, Place, PlaceSet, Read, ReadProfile,
+    SpilledReply, UnitFindings,
+};
 use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, SubjectRows, javascript_json};
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
@@ -6,8 +11,24 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 
-fn public_place(occurrence: &Value) -> Value {
-    json!({"id":occurrence["id"],"location":occurrence["location"],"packageFile":occurrence["packageFile"]})
+fn public_place(occurrence: &Value) -> Result<Place> {
+    Ok(Place {
+        id: occurrence["id"]
+            .as_str()
+            .ok_or("A saved occurrence has no ID.")?
+            .into(),
+        location: occurrence["location"].clone(),
+        package_file: occurrence["packageFile"]
+            .as_str()
+            .ok_or("A saved occurrence has no package file.")?
+            .into(),
+    })
+}
+fn place_set(id: u32, affected: &[Value]) -> Result<PlaceSet> {
+    Ok(PlaceSet {
+        id,
+        occurrences: affected.iter().map(public_place).collect::<Result<_>>()?,
+    })
 }
 fn ordered_places(ids: &Value, occurrences: &[Value]) -> Result<Vec<Value>> {
     ids.as_array()
@@ -50,11 +71,11 @@ fn selected_positions(
 }
 
 impl EngineQuery {
-    fn with_findings(
+    fn with_findings<T: Read>(
         &mut self,
         key: &str,
         requested: usize,
-        read: impl FnOnce(&mut Self, &mut FindingsLayer) -> Result<Value>,
+        read: impl FnOnce(&mut Self, &mut FindingsLayer) -> Result<T>,
     ) -> Result<String> {
         let mut layer = if let Some(layer) = self.findings.remove(key) {
             layer
@@ -62,7 +83,7 @@ impl EngineQuery {
             FindingsLayer::open(&self.configuration, key, &self.reader.joined_key)?
         };
         require(
-            layer.metadata["joinedKey"] == self.reader.joined_key,
+            layer.metadata.joined_key == self.reader.joined_key,
             Error::new(
                 ErrorCode::StaleGeneration,
                 "The findings belong to a different joined view.",
@@ -70,21 +91,15 @@ impl EngineQuery {
         )?;
         let result = read(self, &mut layer);
         self.findings.insert(key.into(), layer);
-        let mut value = result?;
-        let rows = value["lines"]
-            .as_array()
-            .or_else(|| value["units"].as_array())
-            .ok_or("Missing findings response rows.")?;
-        let findings = rows
-            .iter()
-            .map(|row| {
-                ["builtIns", "policy", "custom", "findings"]
-                    .iter()
-                    .map(|name| row[*name].as_array().map_or(0, Vec::len))
-                    .sum::<usize>()
-            })
-            .sum::<usize>();
-        value["profile"] = json!({"rowsRequested":requested,"findingsReturned":findings,"responseBytes":0,"fileFallback":false});
+        let mut reply = result?;
+        *reply.profile() = ReadProfile {
+            rows_requested: requested,
+            findings_returned: reply.findings(),
+            response_bytes: 0,
+            file_fallback: false,
+        };
+        let mut value = serde_json::to_value(&reply)?;
+        drop(reply);
         let mut result = javascript_json(&value, false);
         // Iterate to a fixed point because the byte count includes its own decimal digits.
         loop {
@@ -116,7 +131,14 @@ impl EngineQuery {
         }
         self.finding_files.0.retain(|file| file.exists());
         self.finding_files.0.push(path.clone());
-        Ok(javascript_json(&json!({"file":path}), false))
+        let file = path
+            .to_str()
+            .ok_or("The findings file path is not Unicode.")?
+            .to_owned();
+        Ok(javascript_json(
+            &serde_json::to_value(SpilledReply { file })?,
+            false,
+        ))
     }
     pub fn findings_lines(
         &mut self,
@@ -159,12 +181,9 @@ fn read_lines(
     layer: &mut FindingsLayer,
     rows: &[u32],
     cancelled: &AtomicBool,
-) -> Result<Value> {
-    let collator = HostCollator::new(layer.metadata["collation"].as_str().unwrap_or("und"))?;
-    let rules = layer.metadata["rules"]
-        .as_array()
-        .ok_or("Missing findings rules.")?
-        .clone();
+) -> Result<FindingLines> {
+    let collator = HostCollator::new(&layer.metadata.collation)?;
+    let rules = layer.metadata.rules.clone();
     let mut subjects = NativeSubjects::new(query, Subject::Line, &collator, cancelled)?;
     require(
         rows.iter().all(|row| (*row as usize) < subjects.len()),
@@ -176,12 +195,15 @@ fn read_lines(
     let lc_lines = layer.column("subjects.line_culture.lines")?;
     let mut lines = rows
         .iter()
-        .map(|row| json!({"row":row,"builtIns":[],"policy":[],"custom":[],"diagnostics":[]}))
+        .map(|row| FindingLine {
+            row: *row,
+            ..FindingLine::default()
+        })
         .collect::<Vec<_>>();
     let mut places = Vec::new();
     let mut place_ids = HashSet::new();
     for (rule_index, rule) in rules.iter().enumerate() {
-        if rule["subject"] == "unit_source" {
+        if rule.subject == Subject::UnitSource {
             continue;
         }
         let recorded = layer.column(&format!("r{rule_index}.rows"))?;
@@ -204,7 +226,7 @@ fn read_lines(
         )?;
         for position in selected_positions(
             &recorded,
-            if rule["subject"] == "line_culture" {
+            if rule.subject == Subject::LineCulture {
                 Some(&lc_lines)
             } else {
                 None
@@ -212,7 +234,7 @@ fn read_lines(
             rows,
         )? {
             let subject_row = &recorded[position];
-            let line = if rule["subject"] == "line_culture" {
+            let line = if rule.subject == Subject::LineCulture {
                 *lc_lines
                     .get(*subject_row as usize)
                     .ok_or("Finding culture row outside relation.")?
@@ -229,19 +251,19 @@ fn read_lines(
             let occurrences = subjects.occurrences(line as usize)?;
             let affected = ordered_places(&ids, &occurrences)?;
             if place_ids.insert(saved_places[position]) {
-                places.push(json!({"id":saved_places[position],"occurrences":affected.iter().map(public_place).collect::<Vec<_>>()}));
+                places.push(place_set(saved_places[position], &affected)?);
             }
-            let mut finding = json!({"lineId":subjects.query.packed("line",line as usize)?,"target":subjects.query.target["name"],"culture":subjects.query.cultures.get(ci).ok_or("Finding culture outside target.")?,"identity":subjects.line_field(line as usize,"identity")?,"ruleId":rule["ruleId"],"kind":rule["kind"],"severity":rule["severity"],"recovery":stored["recovery"],"actual":stored["actual"],"expectation":stored["expectation"],"manifestLocations":subjects.line_field(line as usize,"manifestLocations")?,"places":saved_places[position],"id":format!("localization-finding:{:08x}{:08x}",id0[position],id1[position])});
+            let mut finding = json!({"lineId":subjects.query.packed("line",line as usize)?,"target":subjects.query.target["name"],"culture":subjects.query.cultures.get(ci).ok_or("Finding culture outside target.")?,"identity":subjects.line_field(line as usize,"identity")?,"ruleId":rule.rule_id,"kind":rule.kind,"severity":rule.severity,"recovery":stored["recovery"],"actual":stored["actual"],"expectation":stored["expectation"],"manifestLocations":subjects.line_field(line as usize,"manifestLocations")?,"places":saved_places[position],"id":format!("localization-finding:{:08x}{:08x}",id0[position],id1[position])});
             finding["translationOrigin"] = if !stored["translationOrigin"].is_null() {
                 stored["translationOrigin"].clone()
             } else {
                 subjects.culture_field(line as usize, ci, "latestOrigin")?
             };
-            if !rule["role"].is_null() {
-                finding["role"] = rule["role"].clone();
+            if let Some(role) = &rule.role {
+                finding["role"] = json!(role);
             }
             let variants = subjects.line_field(line as usize, "sourceVariants")?;
-            if !variants.is_null() && rule["family"] == "builtin" {
+            if !variants.is_null() && rule.family == Family::Builtin {
                 finding["sourceVariants"] = variants;
             }
             if let Some(extra) = stored["extra"].as_object() {
@@ -259,18 +281,16 @@ fn read_lines(
                 };
                 finding["suggestedChange"] = json!({"target":finding["target"],"culture":finding["culture"],"namespace":finding["identity"]["namespace"],"key":finding["identity"]["key"],"source":source,"previousTranslation":previous,"translation":replacement});
             }
-            let family = match rule["family"].as_str() {
-                Some("builtin") => "builtIns",
-                Some("policy") => "policy",
-                Some("custom") => "custom",
-                _ => return Err("Invalid line finding family.".into()),
-            };
             for (destination, row) in rows.iter().enumerate() {
                 if *row == line {
-                    lines[destination][family]
-                        .as_array_mut()
-                        .ok_or("Invalid finding family list.")?
-                        .push(finding.clone());
+                    let line = &mut lines[destination];
+                    match rule.family {
+                        Family::Builtin => &mut line.built_ins,
+                        Family::Policy => &mut line.policy,
+                        Family::Custom => &mut line.custom,
+                        Family::Source => return Err("Invalid line finding family.".into()),
+                    }
+                    .push(finding.clone());
                 }
             }
         }
@@ -285,18 +305,28 @@ fn read_lines(
     for position in selected_positions(&diag_rows, None, rows)? {
         let row = &diag_rows[position];
         if rows.contains(row) {
-            let diagnostic = json!({"lineId":subjects.query.packed("line",*row as usize)?,"culture":subjects.query.cultures.get(diag_cultures[position] as usize).ok_or("Diagnostic culture outside target.")?,"code":layer.dictionary.string(diag_codes[position])?});
+            let diagnostic = LineDiagnostic {
+                line_id: subjects.query.packed("line", *row as usize)?,
+                culture: subjects
+                    .query
+                    .cultures
+                    .get(diag_cultures[position] as usize)
+                    .ok_or("Diagnostic culture outside target.")?
+                    .clone(),
+                code: layer.dictionary.string(diag_codes[position])?,
+            };
             for (destination, selected) in rows.iter().enumerate() {
                 if selected == row {
-                    lines[destination]["diagnostics"]
-                        .as_array_mut()
-                        .ok_or("Invalid diagnostic list.")?
-                        .push(diagnostic.clone());
+                    lines[destination].diagnostics.push(diagnostic.clone());
                 }
             }
         }
     }
-    Ok(json!({"places":places,"lines":lines}))
+    Ok(FindingLines {
+        profile: ReadProfile::default(),
+        places,
+        lines,
+    })
 }
 
 fn read_units(
@@ -304,12 +334,9 @@ fn read_units(
     layer: &mut FindingsLayer,
     units: &[u32],
     cancelled: &AtomicBool,
-) -> Result<Value> {
-    let collator = HostCollator::new(layer.metadata["collation"].as_str().unwrap_or("und"))?;
-    let rules = layer.metadata["rules"]
-        .as_array()
-        .ok_or("Missing findings rules.")?
-        .clone();
+) -> Result<FindingUnits> {
+    let collator = HostCollator::new(&layer.metadata.collation)?;
+    let rules = layer.metadata.rules.clone();
     let unit_rows = layer.column("subjects.unit_source.units")?;
     let sources = layer.column("subjects.unit_source.sources")?;
     let mut subjects = NativeSubjects::new(query, Subject::UnitSource, &collator, cancelled)?;
@@ -324,12 +351,15 @@ fn read_units(
     )?;
     let mut results = units
         .iter()
-        .map(|unit| json!({"unit":unit,"findings":[]}))
+        .map(|unit| UnitFindings {
+            unit: *unit,
+            findings: Vec::new(),
+        })
         .collect::<Vec<_>>();
     let mut places = Vec::new();
     let mut place_ids = HashSet::new();
     for (rule_index, rule) in rules.iter().enumerate() {
-        if rule["subject"] != "unit_source" {
+        if rule.subject != Subject::UnitSource {
             continue;
         }
         let recorded = layer.column(&format!("r{rule_index}.rows"))?;
@@ -380,11 +410,11 @@ fn read_units(
                 )
             });
             if place_ids.insert(saved_places[position]) {
-                places.push(json!({"id":saved_places[position],"occurrences":affected.iter().map(public_place).collect::<Vec<_>>()}));
+                places.push(place_set(saved_places[position], &affected)?);
             }
             let stored = layer.json(evidence[position])?;
             let hash = (u64::from(id0[position]) << 32) | u64::from(id1[position]);
-            let finding = json!({"textUnitId":subjects.query.packed("raw",unit as usize)?,"ruleId":rule["ruleId"],"role":rule["role"],"kind":rule["kind"],"recovery":stored["recovery"],"actual":stored["actual"],"expectation":stored["expectation"],"places":saved_places[position],"id":format!("quality-finding:{hash:x}")});
+            let finding = json!({"textUnitId":subjects.query.packed("raw",unit as usize)?,"ruleId":rule.rule_id,"role":rule.role,"kind":rule.kind,"recovery":stored["recovery"],"actual":stored["actual"],"expectation":stored["expectation"],"places":saved_places[position],"id":format!("quality-finding:{hash:x}")});
             let source = layer.dictionary.string(
                 *sources
                     .get(*row as usize)
@@ -400,13 +430,14 @@ fn read_units(
         for (unit, _, _, finding) in selected {
             for (destination, selected) in units.iter().enumerate() {
                 if *selected == unit {
-                    results[destination]["findings"]
-                        .as_array_mut()
-                        .ok_or("Invalid source finding list.")?
-                        .push(finding.clone());
+                    results[destination].findings.push(finding.clone());
                 }
             }
         }
     }
-    Ok(json!({"places":places,"units":results}))
+    Ok(FindingUnits {
+        profile: ReadProfile::default(),
+        places,
+        units: results,
+    })
 }

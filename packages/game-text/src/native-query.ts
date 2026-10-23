@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Clock, Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
 import { MAX_PROTOCOL_PATH_BYTES, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type {
+	GameTextContract,
 	GameTextEngineOutcome,
 	GameTextEngineRequest,
 	GameTextIndexConfiguration
@@ -33,10 +34,7 @@ import {
 import type { NativeTextQuery } from "./native-query-contract.js";
 import { canonicalRuleDocument } from "./rules/translate.js";
 import {
-	FindingsEvaluation,
 	annotateFindingsProfile,
-	NativeFindingLines,
-	NativeFindingUnits,
 	inflateFindingLines,
 	inflateFindingUnits
 } from "./native-findings.js";
@@ -508,28 +506,37 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			)
 	);
 	const reader = interactive.reader;
-	const findingResponse = <S extends Schema.Codec<unknown, unknown>>(
-		lane: Lane,
-		request: GameTextEngineRequest,
-		schema: S
-	) =>
+	/**
+	 * A findings reply as the contract's type. The session's handshake checked the engine's
+	 * contract, so the reply is parsed, not decoded.
+	 */
+	const engineReply = <T>(lane: Lane, request: GameTextEngineRequest) =>
 		Effect.gen(function* () {
-			const result = yield* response(
-				lane,
-				request,
-				Schema.Union([Schema.Struct({ file: Schema.String }), schema])
-			);
-			if (Schema.is(schema)(result)) return result;
+			const { payload } = yield* lane.execute(request);
+			if (payload === null)
+				return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
+			return yield* parseReply<T>(request.action, payload);
+		});
+	const parseReply = <T>(operation: string, text: string) =>
+		Effect.try({
+			// SAFETY: the engine serializes this reply from the contract type T; the handshake
+			// checked that host and engine were built against the same contract.
+			// Verified by: the Rust contract test regenerates these types from the reply structs.
+			try: (): T => JSON.parse(text),
+			catch: (cause) => failed(operation, cause)
+		});
+	/** A bounded findings read, which the engine spills to a file past one frame. */
+	const findingResponse = <T extends object>(lane: Lane, request: GameTextEngineRequest) =>
+		Effect.gen(function* () {
+			const reply = yield* engineReply<T | GameTextContract.SpilledReply>(lane, request);
+			if (!("file" in reply)) return reply;
 			return yield* Effect.acquireUseRelease(
-				Effect.succeed(result.file),
+				Effect.succeed(reply.file),
 				(file) =>
 					Effect.tryPromise({
 						try: (signal) => readFile(file, { encoding: "utf8", signal }),
 						catch: (cause) => failed("findings_read", cause)
-					}).pipe(
-						Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
-						Effect.mapError((cause) => failed("findings_decode", cause))
-					),
+					}).pipe(Effect.flatMap((text) => parseReply<T>("findings_decode", text))),
 				(file) =>
 					Effect.tryPromise({
 						try: () => rm(file, { force: true }),
@@ -627,16 +634,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 							)
 						);
 					const requestStart = yield* Clock.currentTimeNanos;
-					return yield* response(
-						lane,
-						{
-							action: "findings_evaluate",
-							reader: lane.reader,
-							rules,
-							collationLocale: new Intl.Collator().resolvedOptions().locale
-						},
-						FindingsEvaluation
-					).pipe(
+					return yield* engineReply<GameTextContract.FindingsEvaluation>(lane, {
+						action: "findings_evaluate",
+						reader: lane.reader,
+						rules,
+						collationLocale: new Intl.Collator().resolvedOptions().locale
+					}).pipe(
 						Effect.tap((result) =>
 							annotateFindingsProfile(result.profile, requestStart)
 						)
@@ -646,11 +649,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		),
 		findingsLines: Effect.fn("GameText.native.findingsLines")((key, rows) =>
 			bulk((lane) =>
-				findingResponse(
-					lane,
-					{ action: "findings_lines", reader: lane.reader, key, rows },
-					NativeFindingLines
-				).pipe(
+				findingResponse<GameTextContract.FindingLines>(lane, {
+					action: "findings_lines",
+					reader: lane.reader,
+					key,
+					rows
+				}).pipe(
 					Effect.tap((result) => annotateFindingsProfile(result.profile)),
 					Effect.flatMap(inflateFindingLines),
 					Effect.mapError((cause) => failed("findings_lines", cause))
@@ -659,11 +663,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		),
 		findingsUnits: Effect.fn("GameText.native.findingsUnits")((key, units) =>
 			bulk((lane) =>
-				findingResponse(
-					lane,
-					{ action: "findings_units", reader: lane.reader, key, units },
-					NativeFindingUnits
-				).pipe(
+				findingResponse<GameTextContract.FindingUnits>(lane, {
+					action: "findings_units",
+					reader: lane.reader,
+					key,
+					units
+				}).pipe(
 					Effect.tap((result) => annotateFindingsProfile(result.profile)),
 					Effect.flatMap(inflateFindingUnits),
 					Effect.mapError((cause) => failed("findings_units", cause))

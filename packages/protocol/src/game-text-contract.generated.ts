@@ -1,10 +1,10 @@
-// Generated from crates/game-text-index/src/contract.rs and rules/ir.rs by
+// Generated from crates/game-text-index/src/contract.rs, rules/ir.rs and rules/replies.rs by
 // `UE_SHED_UPDATE_GENERATED=1 cargo test -p game-text-index --lib contract`. Do not edit.
 
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "f10126098bb1963787cdea28d46d14e4c8c6c14efc56ebd1b916d108ce5e393f"
+	contractHash: "c3c2d719e0515f7738caaf05e13ac06c7ed1ad1c36d4d359c8880935adbdd5bf"
 } as const;
 
 export type JsonValue =
@@ -14,6 +14,13 @@ export type JsonValue =
 	| string
 	| ReadonlyArray<JsonValue>
 	| { readonly [key: string]: JsonValue };
+
+/** One finding's fields; `places` names its place set. */
+export type Finding = {
+	readonly places: number;
+	readonly id: string;
+	readonly [key: string]: JsonValue;
+};
 
 export type RuleDocumentV4 = { schemaVersion: 4, roles: ReadonlyArray<Role>, rules: ReadonlyArray<Rule>, };
 
@@ -42,3 +49,56 @@ export type Subject = "line" | "line_culture" | "unit_source";
 export type Family = "builtin" | "policy" | "custom" | "source";
 
 export type Severity = "blocking" | "normal" | "low";
+
+export type FindingsEvaluation = { key: string, rules: ReadonlyArray<RuleMetadata>, counts: ReadonlyArray<RuleCount>, diagnosticCount: number, collation: string, profile: EvaluationProfile, };
+
+export type RuleMetadata = { id: string, ruleId: string, kind: string, label: string, subject: Subject, family: Family, severity: Severity, role: string | null, };
+
+export type RuleCount = { 
+/**
+ * The rule's position in `rules`.
+ */
+rule: number, culture: string | null, severity: Severity, count: number, };
+
+export type EvaluationProfile = { readonly cached: true } | ({ readonly cached: false } & RunProfile);
+
+export type RunProfile = { rules: number, findings: number, diagnostics: number, wallMs: number, stages: { [key in string]: StageSample }, subStages: { [key in string]: SubStageSample }, 
+/**
+ * Bytes held by named owners at named points.
+ */
+holders: { [point: string]: { [holder: string]: number } }, kernels: { [key in string]: ProfileSample }, };
+
+export type StageSample = { startOffsetMs: number, endOffsetMs: number, memory: Memory, kernels: { [key in string]: ProfileSample }, wallMs: number, busyMs: number, rows: number, inputs: number, memoHits: number, };
+
+export type SubStageSample = { heapBytes?: number, heapPeakBytes?: number, wallMs: number, busyMs: number, rows: number, inputs: number, memoHits: number, };
+
+export type ProfileSample = { wallMs: number, busyMs: number, rows: number, inputs: number, memoHits: number, };
+
+export type Memory = { 
+/**
+ * Process counters when the stage ended. In a long-lived engine process the peaks are
+ * lifetime values, so only a fresh process's peak is one evaluation's peak.
+ */
+privateBytes: number, peakPrivateBytes: number | null, workingSetBytes: number, peakWorkingSetBytes: number, 
+/**
+ * With heap counting: live heap at the stage's end, and its peak since the last sample.
+ */
+heapBytes?: number, heapPeakBytes?: number, arenaBytes: number, sideDictionaryBytes: number, liveNodeColumnsBytes: number, memosBytes: number, occurrenceRelationBytes: number, };
+
+export type FindingLines = { profile: ReadProfile, places: ReadonlyArray<PlaceSet>, lines: ReadonlyArray<FindingLine>, };
+
+export type FindingLine = { row: number, builtIns: ReadonlyArray<Finding>, policy: ReadonlyArray<Finding>, custom: ReadonlyArray<Finding>, diagnostics: ReadonlyArray<LineDiagnostic>, };
+
+export type LineDiagnostic = { lineId: string, culture: string, code: string, };
+
+export type FindingUnits = { profile: ReadProfile, places: ReadonlyArray<PlaceSet>, units: ReadonlyArray<UnitFindings>, };
+
+export type UnitFindings = { unit: number, findings: ReadonlyArray<Finding>, };
+
+export type PlaceSet = { id: number, occurrences: ReadonlyArray<Place>, };
+
+export type Place = { id: string, location: { readonly [key: string]: JsonValue }, packageFile: string, };
+
+export type ReadProfile = { rowsRequested: number, findingsReturned: number, responseBytes: number, fileFallback: boolean, };
+
+export type SpilledReply = { file: string, };

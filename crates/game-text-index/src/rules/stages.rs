@@ -1,5 +1,4 @@
 //! One evaluation-owned recorder for bounded product profiles. No corpus values or node IDs.
-use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -34,26 +33,8 @@ impl Default for Recording {
         }
     }
 }
-#[derive(Default, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Memory {
-    /// Process counters when the stage ended. In a long-lived engine process the peaks are
-    /// lifetime values, so only a fresh process's peak is one evaluation's peak.
-    pub private_bytes: u64,
-    pub peak_private_bytes: Option<u64>,
-    pub working_set_bytes: u64,
-    pub peak_working_set_bytes: u64,
-    /// With heap counting: live heap at the stage's end, and its peak since the last sample.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub heap_bytes: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub heap_peak_bytes: Option<u64>,
-    pub arena_bytes: usize,
-    pub side_dictionary_bytes: usize,
-    pub live_node_columns_bytes: usize,
-    pub memos_bytes: usize,
-    pub occurrence_relation_bytes: usize,
-}
+pub(crate) use super::replies::Memory;
+use super::replies::{ProfileSample, RunProfile, StageSample, SubStageSample};
 #[derive(Default)]
 struct Sample {
     start: Option<Duration>,
@@ -363,31 +344,73 @@ impl Recorder {
         sample.busy += busy;
         sample.rows += rows;
     }
-    pub fn profile(&self, rules: usize, findings: usize, diagnostics: usize) -> Value {
+    /// The recorded evaluation; the caller sets its wall time.
+    pub fn profile(&self, rules: usize, findings: usize, diagnostics: usize) -> RunProfile {
         let recording = self
             .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let sample = |sample: &Sample| json!({"wallMs":sample.wall.as_secs_f64()*1000.0,"busyMs":sample.busy.as_secs_f64()*1000.0,"rows":sample.rows,"inputs":sample.inputs,"memoHits":sample.hits});
-        json!({"cached":false,"rules":rules,"findings":findings,"diagnostics":diagnostics,
-            "stages":recording.stages.iter().map(|(name,value)| {
-                let mut result = sample(value);
-                result["startOffsetMs"] = json!(value.start.unwrap_or_default().as_secs_f64()*1000.0);
-                result["endOffsetMs"] = json!(value.end.as_secs_f64()*1000.0);
-                result["memory"] = json!(value.memory);
-                result["kernels"] = json!(recording.stage_kernels.get(name).map(|kernels| kernels.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>()).unwrap_or_default());
-                ((*name).to_owned(),result)
-            }).collect::<serde_json::Map<_,_>>(),
-            "subStages":recording.sub_stages.iter().map(|(name,value)| {
-                let mut result = sample(value);
-                if let Some((live, peak)) = value.heap {
-                    result["heapBytes"] = json!(live);
-                    result["heapPeakBytes"] = json!(peak);
-                }
-                (name.clone(),result)
-            }).collect::<serde_json::Map<_,_>>(),
-            "holders":json!(recording.holders),
-            "kernels":recording.kernels.iter().map(|(name,value)| (name.clone(),sample(value))).collect::<serde_json::Map<_,_>>()})
+        let sample = |sample: &Sample| ProfileSample {
+            wall_ms: sample.wall.as_secs_f64() * 1000.0,
+            busy_ms: sample.busy.as_secs_f64() * 1000.0,
+            rows: sample.rows,
+            inputs: sample.inputs,
+            memo_hits: sample.hits,
+        };
+        let samples = |samples: &BTreeMap<String, Sample>| {
+            samples
+                .iter()
+                .map(|(name, value)| (name.clone(), sample(value)))
+                .collect::<BTreeMap<_, _>>()
+        };
+        RunProfile {
+            rules,
+            findings,
+            diagnostics,
+            wall_ms: 0.0,
+            stages: recording
+                .stages
+                .iter()
+                .map(|(name, value)| {
+                    let stage = StageSample {
+                        sample: sample(value),
+                        start_offset_ms: value.start.unwrap_or_default().as_secs_f64() * 1000.0,
+                        end_offset_ms: value.end.as_secs_f64() * 1000.0,
+                        memory: value.memory.clone(),
+                        kernels: recording
+                            .stage_kernels
+                            .get(name)
+                            .map(samples)
+                            .unwrap_or_default(),
+                    };
+                    ((*name).to_owned(), stage)
+                })
+                .collect(),
+            sub_stages: recording
+                .sub_stages
+                .iter()
+                .map(|(name, value)| {
+                    let stage = SubStageSample {
+                        sample: sample(value),
+                        heap_bytes: value.heap.map(|(live, _)| live),
+                        heap_peak_bytes: value.heap.map(|(_, peak)| peak),
+                    };
+                    (name.clone(), stage)
+                })
+                .collect(),
+            holders: recording
+                .holders
+                .iter()
+                .map(|(point, holders)| {
+                    let holders = holders
+                        .iter()
+                        .map(|(holder, bytes)| ((*holder).to_owned(), *bytes))
+                        .collect();
+                    ((*point).to_owned(), holders)
+                })
+                .collect(),
+            kernels: samples(&recording.kernels),
+        }
     }
 }
 /// A subject's evaluation phases, in order. Each subject records its own, so memory samples

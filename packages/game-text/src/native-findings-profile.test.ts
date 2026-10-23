@@ -1,6 +1,7 @@
-import { Effect, Schema, Tracer } from "effect";
+import { Effect, Tracer } from "effect";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { expect, it } from "vitest";
-import { annotateFindingsProfile, FindingsEvaluationProfile } from "./native-findings.js";
+import { annotateFindingsProfile } from "./native-findings.js";
 import { ruleOperationNames } from "./rules/schema.js";
 
 it("exports stage child spans with measured times and at most 24 kernels", async () => {
@@ -16,19 +17,24 @@ it("exports stage child spans with measured times and at most 24 kernels", async
 	const kernels = Object.fromEntries(
 		ruleOperationNames.map((name, index) => [name, { ...sample, busyMs: index }])
 	);
-	const profile = Schema.decodeUnknownSync(FindingsEvaluationProfile)({
+	const profile: GameTextContract.EvaluationProfile = {
 		cached: false,
 		wallMs: 10,
 		rules: 1,
 		findings: 1,
 		diagnostics: 0,
 		kernels,
+		subStages: {},
+		holders: {},
 		stages: {
 			"line.execute": {
 				...sample,
 				startOffsetMs: 2,
 				endOffsetMs: 4,
 				memory: {
+					privateBytes: 90,
+					peakPrivateBytes: null,
+					workingSetBytes: 80,
 					peakWorkingSetBytes: 100,
 					arenaBytes: 20,
 					sideDictionaryBytes: 10,
@@ -39,7 +45,7 @@ it("exports stage child spans with measured times and at most 24 kernels", async
 				kernels
 			}
 		}
-	});
+	};
 	await Effect.runPromise(
 		annotateFindingsProfile(profile, 1_000n).pipe(
 			Effect.withSpan("GameText.native.findingsEvaluate"),

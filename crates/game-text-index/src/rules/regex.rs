@@ -102,6 +102,16 @@ pub fn rewrite(pattern: &str, case_sensitive: bool) -> Result<String> {
                     "Incomplete regular-expression escape.",
                 )
             })?;
+            // JS character escapes the backtracking engine has no syntax for: NUL and `\cX`.
+            let control = chars
+                .get(index + 2)
+                .filter(|letter| escape == 'c' && letter.is_ascii_alphabetic());
+            if escape == '0' || control.is_some() {
+                let point = control.map_or(0, |letter| u32::from(*letter) % 32);
+                output.push_str(&format!("\\x{{{point:x}}}"));
+                index += if control.is_some() { 3 } else { 2 };
+                continue;
+            }
             let value = match escape {
                 'd' => Some("0-9".to_owned()),
                 'w' => Some(word(case_sensitive).to_owned()),
@@ -158,8 +168,9 @@ pub fn rewrite(pattern: &str, case_sensitive: bool) -> Result<String> {
             index += 2;
             continue;
         }
+        // JS `[]` is a class that matches nothing: one character wide, and quantifiable.
         if !class && chars.get(index..index + 2) == Some(&['[', ']']) {
-            output.push_str("(?!)");
+            output.push_str(r"[^\x{0}-\x{10ffff}]");
             index += 2;
             continue;
         }
@@ -319,7 +330,7 @@ mod tests {
     #[test]
     fn javascript_regex_differential_including_lone_surrogates() -> Result<()> {
         let sources = crate::json_value::parse(
-            r#"["", "a A 0 _", "é K ſ k s", "中１ 1", "a\nb\r\n", "ababa", "😀x𐀀", "x\ud800y\udfff", "\ud800\udc00", "\u00a0\ufeff\u0085", "a\u2028b\u2029", "ac", "bbc", "aab", "ad bcd xd", "ababa abc"]"#,
+            r#"["", "a A 0 _", "é K ſ k s", "中１ 1", "a\nb\r\n", "ababa", "😀x𐀀", "x\ud800y\udfff", "\ud800\udc00", "\u00a0\ufeff\u0085", "a\u2028b\u2029", "ac", "bbc", "aab", "ad bcd xd", "ababa abc", "x\u0000y"]"#,
         )?;
         let patterns = [
             r"\d+",
@@ -345,6 +356,13 @@ mod tests {
             "(?<=(?:a|bc))d",
             "(?<=a{2}?)b",
             "(?<=(a|b))c",
+            "(?<=([]|a))b",
+            "a[]?b",
+            "[]{0}a",
+            "a|[]+",
+            "\\0|\\cJ|\\cj",
+            "[\\0\\cJ]",
+            "(?<=a{02,2})b",
             "(a)b\\1",
             "(a|(b))\\2c",
             "(a)?b\\1",
@@ -479,6 +497,26 @@ mod tests {
             r"(?<=(?:)|a)b",
             r"(?<=[\]|]x|y)z",
             r"(?<=\x41|\u{42}c)d",
+            r"(?<=a{02,2})b",
+            r"(?<=a{2,02})b",
+            r"(?<=a{002})b",
+            r"(?<=a{2,3})b",
+            r"(?<=a{0})b",
+            r"(?<=(a{0}|b{00}))c",
+            r"(?<=([]|a))b",
+            r"(?<=(?:[]|a))b",
+            r"(?<=[]|a)b",
+            r"(?<=x(?:[]|[]))b",
+            r"(?<=([^]|a))b",
+            r"(?<=[^]{2})b",
+            r"(?<=x[])b",
+            r"(?<=[]{2}a)b",
+            r"(?<=[]{1}a)b",
+            r"(?<=[]{0}a)b",
+            r"(?<=[]?a)b",
+            r"[]{2}(?<=a)b",
+            r"(?<=\0)a",
+            r"(?<=\cJ|\n)a",
         ];
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()

@@ -200,7 +200,10 @@ class Parser {
 				character === "{" ? /^\{(\d+)(,(\d*))?\}/u.exec(pattern.slice(this.index)) : null;
 			if (!bounds) return atom;
 			this.index += bounds[0].length;
-			if (bounds[2] === undefined || bounds[3] === bounds[1]) exact = Number(bounds[1]);
+			// Bounds are numbers: `{02,2}` is exact.
+			const least = Number(bounds[1]);
+			if (bounds[2] === undefined || (bounds[3] !== "" && Number(bounds[3]) === least))
+				exact = least;
 		}
 		// A lazy marker changes the order matches are tried, not the width.
 		if (pattern[this.index] === "?") this.index += 1;

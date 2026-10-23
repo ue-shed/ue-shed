@@ -2267,8 +2267,8 @@ mod tests {
         first["scope"] = json!({"pathPrefixes":["/Game/Allowed"]});
         let second = rule(
             "second",
-            json!({"if":[{"eq":[{"field":"source"},{"lit":"bad"}]},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]},{"lit":false}]}),
-            json!({"object":{"unreachable":{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]}}}),
+            json!({"if":[{"eq":[{"field":"source"},{"lit":"bad"}]},{"regexTest":[{"lit":"x"},{"concat":[{"lit":"("}]},{"lit":""}]},{"lit":false}]}),
+            json!({"object":{"unreachable":{"regexTest":[{"lit":"x"},{"concat":[{"lit":"("}]},{"lit":""}]}}}),
         );
         let program = super::super::compile(&serde_json::to_string(
             &json!({"schemaVersion":4,"roles":[],"rules":[first,second]}),
@@ -2305,7 +2305,7 @@ mod tests {
     fn scope_precedes_when_and_requires_one_matching_occurrence() -> Result<()> {
         let mut scoped = rule(
             "scoped",
-            json!({"if":[{"eq":[{"field":"source"},{"lit":"bad"}]},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]},{"lit":true}]}),
+            json!({"if":[{"eq":[{"field":"source"},{"lit":"bad"}]},{"regexTest":[{"lit":"x"},{"concat":[{"lit":"("}]},{"lit":""}]},{"lit":true}]}),
             json!({"object":{"checked":{"lit":true}}}),
         );
         scoped["scope"] = json!({"roles":["ui"],"pathPrefixes":["/Game/Other"]});
@@ -2337,8 +2337,8 @@ mod tests {
             "lists",
             json!({"lit":true}),
             json!({"object":{
-                "any":{"any":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},{"lit":"stop"}]},{"lit":true},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]}]}]},
-                "all":{"all":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},{"lit":"stop"}]},{"lit":false},{"regexTest":[{"lit":"x"},{"lit":"("},{"lit":""}]}]}]}
+                "any":{"any":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},{"lit":"stop"}]},{"lit":true},{"regexTest":[{"lit":"x"},{"concat":[{"lit":"("}]},{"lit":""}]}]}]},
+                "all":{"all":[{"lit":["stop","later"]},{"if":[{"eq":[{"var":"item"},{"lit":"stop"}]},{"lit":false},{"regexTest":[{"lit":"x"},{"concat":[{"lit":"("}]},{"lit":""}]}]}]}
             }}),
         );
         let program = super::super::compile(&serde_json::to_string(

@@ -876,15 +876,27 @@ impl Arena {
     }
     pub fn load_strings(&mut self, reader: &mut EngineReader, ids: &[u32]) -> Result<()> {
         let dedup = super::stages::Measure::start();
-        // Each wanted id once, in id order: a bitset over the store marks the ids not loaded.
-        let mut seen = Bits::new(self.store_count as usize);
-        for id in ids.iter().map(|id| *id as usize) {
-            if id < seen.len && !self.loaded(id) {
-                seen.set(id);
-            }
+        // Each wanted id once, in id order. Most calls ask for a few strings, often loaded
+        // already, so the work follows the request; only a request for a sizable share of the
+        // store dedups through a bitset over it.
+        let mut wanted = ids
+            .iter()
+            .copied()
+            .filter(|id| *id < self.store_count && !self.loaded(*id as usize))
+            .collect::<Vec<_>>();
+        if wanted.is_empty() {
+            return Ok(());
         }
-        let wanted = seen.ones().collect::<Vec<_>>();
-        drop(seen);
+        if wanted.len() < self.store_count as usize / 32 {
+            wanted.sort_unstable();
+            wanted.dedup();
+        } else {
+            let mut seen = Bits::new(self.store_count as usize);
+            for id in &wanted {
+                seen.set(*id as usize);
+            }
+            wanted = seen.ones().collect();
+        }
         self.recorder
             .sub_stage("strings.dedup".into(), &dedup, ids.len());
         let mut measure = super::stages::Measure::start();
@@ -1531,6 +1543,58 @@ mod tests {
                 "{atoms:?}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn large_and_short_masks_select_like_row_lists() -> Result<()> {
+        // Several parallel gather chunks, masks that end before the column does, and empty
+        // and full masks; then the parallel `from_atoms` range against its expected column.
+        let mut arena = Arena::new(0)?;
+        let len = 200_003;
+        let column = Column {
+            // Null rows hold id 0, as `from_atoms` leaves them.
+            data: Data::Str(
+                (0..len)
+                    .map(|row| StrId(if row % 13 == 0 { 0 } else { (row % 977) as u32 }))
+                    .collect(),
+            ),
+            nulls: {
+                let mut nulls = Bits::new(len);
+                (0..len).step_by(13).for_each(|row| nulls.set(row));
+                nulls
+            },
+            failed: Bits::new(len),
+        };
+        let mut sparse = Bits::new(len - 70_000);
+        (0..sparse.len).step_by(3).for_each(|row| sparse.set(row));
+        for mask in [Bits::all(len), Bits::new(len), Bits::all(70_001), sparse] {
+            let rows = mask.ones().map(|row| row as usize).collect::<Vec<_>>();
+            assert_eq!(
+                format!("{:?}", column.select_mask(&mask, None)),
+                format!("{:?}", column.select(&rows, &mut arena)?),
+                "mask of {} rows",
+                rows.len()
+            );
+        }
+        let atoms = (0..len)
+            .map(|row| {
+                if row % 13 == 0 {
+                    Atom::Null
+                } else {
+                    Atom::Str(StrId((row % 977) as u32))
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            format!("{:?}", Column::from_atoms(&atoms, &mut arena)?),
+            format!("{column:?}")
+        );
+        let uniform = vec![Atom::Int(7); len];
+        assert_eq!(
+            format!("{:?}", Column::from_atoms(&uniform, &mut arena)?),
+            format!("{:?}", Column::constant(Atom::Int(7), len))
+        );
         Ok(())
     }
 

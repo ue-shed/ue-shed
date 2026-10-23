@@ -1,7 +1,7 @@
 //! Column-at-a-time DAG evaluation with selection short circuiting and tuple memoization.
 use super::HostCollator;
 use super::columns::{Arena, Atom, Bits, Children, Column, FieldColumn, Occurrences, Prepared};
-use super::compiler::{CompiledRule, NodeId, Program, Subject};
+use super::compiler::{CompiledRule, Literal, NodeId, Op, Program, Subject};
 use super::kernel::Kernel;
 use super::selection::Selection;
 use super::stages::{Measure, Recorder, subject_stage};
@@ -221,7 +221,6 @@ struct Evaluator<'a> {
     prepared: Prepared,
     kernel: Kernel<'a>,
     literals: Vec<Option<Atom>>,
-    extras: Vec<ScalarValue>,
     cache: Vec<FxHashMap<TupleKey, Slot>>,
     packer: Packer,
     cache_last: Vec<usize>,
@@ -285,11 +284,6 @@ impl<'a> Evaluator<'a> {
             kernel: Kernel::new(collator, &program.roles, &arena),
             arena,
             literals: vec![None; program.nodes.len()],
-            extras: program
-                .nodes
-                .iter()
-                .map(|node| ScalarValue::from_json(&node.value))
-                .collect(),
             cache: Vec::new(),
             packer: Packer::default(),
             cache_last: Vec::new(),
@@ -329,12 +323,11 @@ impl<'a> Evaluator<'a> {
         };
         let mut groups = HashMap::new();
         for (id, node) in program.nodes.iter().enumerate() {
-            let metadata = value.arena.intern(value.extras[id].clone())?;
             let next = groups.len();
-            let cache = *groups.entry((node.op.clone(), metadata)).or_insert(next);
+            let cache = *groups.entry(&node.op).or_insert(next);
             value.cache_ids.push(cache);
-            if node.op == "lit" {
-                value.literals[id] = Some(value.arena.intern(value.extras[id].clone())?);
+            if let Op::Lit(literal) = &node.op {
+                value.literals[id] = Some(value.arena.literal(literal)?);
             }
         }
         value.cache = (0..groups.len()).map(|_| FxHashMap::default()).collect();
@@ -345,17 +338,17 @@ impl<'a> Evaluator<'a> {
         value.dense = (0..groups.len()).map(|_| Vec::new()).collect();
         for (id, node) in program.nodes.iter().enumerate() {
             value.independent[id] = !matches!(
-                node.op.as_str(),
-                "var"
-                    | "finding"
-                    | "findingField"
-                    | "filter"
-                    | "map"
-                    | "flatMap"
-                    | "any"
-                    | "all"
-                    | "sortLocale"
-                    | "sortCodeUnit"
+                node.op,
+                Op::Var(_)
+                    | Op::Finding(_)
+                    | Op::FindingField(..)
+                    | Op::Filter(_)
+                    | Op::Map(_)
+                    | Op::FlatMap(_)
+                    | Op::Any(_)
+                    | Op::All(_)
+                    | Op::SortLocale
+                    | Op::SortCodeUnit
             ) && node.args.iter().all(|arg| value.independent[*arg]);
         }
         Ok(value)
@@ -386,27 +379,27 @@ impl<'a> Evaluator<'a> {
         measure.exclude(self.arena.recorder.kernel_wall().saturating_sub(children));
         let op = &self.program.nodes[id].op;
         let structural = matches!(
-            op.as_str(),
-            "lit"
-                | "field"
-                | "var"
-                | "occurrences"
-                | "finding"
-                | "findingField"
-                | "and"
-                | "or"
-                | "if"
-                | "coalesce"
-                | "filter"
-                | "map"
-                | "flatMap"
-                | "any"
-                | "all"
-                | "sortLocale"
-                | "sortCodeUnit"
+            op,
+            Op::Lit(_)
+                | Op::Field(_)
+                | Op::Var(_)
+                | Op::Occurrences
+                | Op::Finding(_)
+                | Op::FindingField(..)
+                | Op::And
+                | Op::Or
+                | Op::If
+                | Op::Coalesce
+                | Op::Filter(_)
+                | Op::Map(_)
+                | Op::FlatMap(_)
+                | Op::Any(_)
+                | Op::All(_)
+                | Op::SortLocale
+                | Op::SortCodeUnit
         );
         self.arena.recorder.kernel(
-            op,
+            op.name(),
             &measure,
             if structural { selection.len() } else { 0 },
             0,
@@ -418,9 +411,9 @@ impl<'a> Evaluator<'a> {
         if selection.len() == 0 {
             return Ok(Column::constant(Atom::Null, 0));
         }
-        let op = self.program.nodes[id].op.as_str();
+        let op = &self.program.nodes[id].op;
         let cacheable = self.independent[id]
-            && (super::vector::cheap(op) || matches!(op, "and" | "or" | "if" | "coalesce"));
+            && (super::vector::cheap(op) || matches!(op, Op::And | Op::Or | Op::If | Op::Coalesce));
         if cacheable
             && self.cheap_columns[id].is_none()
             && selection.len() == self.len
@@ -473,13 +466,12 @@ impl<'a> Evaluator<'a> {
 
     fn node(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
-        match node.op.as_str() {
-            "lit" => Ok(Column::constant(
+        match &node.op {
+            Op::Lit(_) => Ok(Column::constant(
                 self.literals[id].ok_or("Missing compiled literal.")?,
                 selection.len(),
             )),
-            "field" => {
-                let name = node.value.as_str().ok_or("Invalid field name.")?;
+            Op::Field(name) => {
                 let field = self.prepared.field(name)?;
                 let rows = selection
                     .rows
@@ -493,12 +485,12 @@ impl<'a> Evaluator<'a> {
                     .collect::<Vec<_>>();
                 field.column.select(&rows, &mut self.arena)
             }
-            "var" => selection
+            Op::Var(name) => selection
                 .variables
-                .get(node.value.as_str().unwrap_or(""))
+                .get(&**name)
                 .cloned()
                 .ok_or_else(|| "Missing element binding column.".into()),
-            "occurrences" => {
+            Op::Occurrences => {
                 let values = selection
                     .rows
                     .iter()
@@ -506,24 +498,21 @@ impl<'a> Evaluator<'a> {
                     .collect::<Result<Vec<_>>>()?;
                 Column::from_atoms(&values, &mut self.arena)
             }
-            "finding" | "findingField" => {
-                let name = if node.op == "finding" {
-                    node.value.as_str()
-                } else {
-                    node.value[0].as_str()
-                }
-                .unwrap_or("");
-                let reference = self.references.get(name).copied();
+            Op::Finding(_) | Op::FindingField(..) => {
+                let reference = node
+                    .op
+                    .reference()
+                    .and_then(|name| self.references.get(name))
+                    .copied();
                 let mut values = Vec::with_capacity(selection.len());
                 for row in selection.rows.iter() {
-                    if node.op == "finding" {
+                    if let Op::Finding(_) = node.op {
                         values.push(Atom::Bool(
                             reference
                                 .and_then(|id| self.masks.get(&id))
                                 .is_some_and(|mask| mask.get(row as usize)),
                         ));
-                    } else {
-                        let path = node.value[1].as_str().unwrap_or("");
+                    } else if let Op::FindingField(_, path) = &node.op {
                         let value = reference
                             .and_then(|id| self.evidence[id].as_ref())
                             .and_then(|evidence| {
@@ -553,18 +542,22 @@ impl<'a> Evaluator<'a> {
                 }
                 Column::from_atoms(&values, &mut self.arena)
             }
-            "and" | "or" | "coalesce" => self.short_circuit(id, selection),
-            "if" => self.conditional(id, selection),
-            "filter" | "map" | "flatMap" | "any" | "all" | "sortCodeUnit" | "sortLocale" => {
-                self.list_operator(id, selection)
-            }
+            Op::And | Op::Or | Op::Coalesce => self.short_circuit(id, selection),
+            Op::If => self.conditional(id, selection),
+            Op::Filter(_)
+            | Op::Map(_)
+            | Op::FlatMap(_)
+            | Op::Any(_)
+            | Op::All(_)
+            | Op::SortCodeUnit
+            | Op::SortLocale => self.list_operator(id, selection),
             _ => self.scalar(id, selection),
         }
     }
     fn short_circuit(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
-        if node.op != "coalesce" {
-            let and = node.op == "and";
+        if node.op != Op::Coalesce {
+            let and = node.op == Op::And;
             let mut output = if and {
                 Bits::all(selection.len())
             } else {
@@ -605,10 +598,10 @@ impl<'a> Evaluator<'a> {
             });
         }
         let mut output = vec![
-            if node.op == "coalesce" {
+            if node.op == Op::Coalesce {
                 Atom::Null
             } else {
-                Atom::Bool(node.op == "and")
+                Atom::Bool(node.op == Op::And)
             };
             selection.len()
         ];
@@ -625,14 +618,14 @@ impl<'a> Evaluator<'a> {
                 let value = values.get(index, &self.arena);
                 if values.failed.get(index) {
                     failed.set(destination);
-                } else if node.op == "coalesce" {
+                } else if node.op == Op::Coalesce {
                     if value == Atom::Null {
                         later.push(destination);
                     } else {
                         output[destination] = value;
                     }
-                } else if value.boolean() == (node.op == "or") {
-                    output[destination] = Atom::Bool(node.op == "or");
+                } else if value.boolean() == (node.op == Op::Or) {
+                    output[destination] = Atom::Bool(node.op == Op::Or);
                 } else {
                     later.push(destination);
                 }
@@ -683,11 +676,11 @@ impl<'a> Evaluator<'a> {
         }
         if super::vector::cheap(&node.op) {
             use super::columns::Data;
-            if node.op == "isNull"
-                || (node.op == "not"
+            if node.op == Op::IsNull
+                || (node.op == Op::Not
                     && matches!(columns[0].data, Data::Bool(_) | Data::Constant(_)))
             {
-                let mut bits = if node.op == "isNull" {
+                let mut bits = if node.op == Op::IsNull {
                     columns[0].nulls.clone()
                 } else {
                     match &columns[0].data {
@@ -718,7 +711,7 @@ impl<'a> Evaluator<'a> {
                 }
                 self.arena
                     .recorder
-                    .kernel(&node.op, &started, selection.len(), selection.len(), 0);
+                    .kernel(node.op.name(), &started, selection.len(), selection.len(), 0);
                 return Ok(Column {
                     data: Data::Bool(bits),
                     nulls: failures.clone(),
@@ -744,7 +737,7 @@ impl<'a> Evaluator<'a> {
                 }
                 self.arena
                     .recorder
-                    .kernel(&node.op, &started, selection.len(), selection.len(), 0);
+                    .kernel(node.op.name(), &started, selection.len(), selection.len(), 0);
                 return Ok(Column {
                     data: Data::Bool(bits),
                     nulls,
@@ -766,7 +759,7 @@ impl<'a> Evaluator<'a> {
             output.failed = failures;
             self.arena
                 .recorder
-                .kernel(&node.op, &started, selection.len(), selection.len(), 0);
+                .kernel(node.op.name(), &started, selection.len(), selection.len(), 0);
             return Ok(output);
         }
         if !columns.is_empty()
@@ -837,7 +830,7 @@ impl<'a> Evaluator<'a> {
             }
         }
         let nested = self.arena.recorder.kernel_wall();
-        if matches!(node.op.as_str(), "matchesRole" | "pathHasPrefix") {
+        if matches!(node.op, Op::MatchesRole | Op::PathHasPrefix) {
             // Prepare each shared occurrence bitset before tuple workers start, avoiding
             // competing first-use builds of the same role or prefix in the Rayon pool.
             let keys = tuples
@@ -849,7 +842,7 @@ impl<'a> Evaluator<'a> {
                 .collect::<HashSet<_>>();
             for key in keys {
                 self.kernel
-                    .occurrence_mask(&self.arena, key, node.op == "matchesRole")?;
+                    .occurrence_mask(&self.arena, key, node.op == Op::MatchesRole)?;
             }
         }
         let distinct_inputs = tuples.len();
@@ -865,18 +858,17 @@ impl<'a> Evaluator<'a> {
             }
             let arena = &self.arena;
             let kernel = &self.kernel;
-            let extra = &self.extras[id];
             let computed = started
                 .parallel(&batch, |(_, tuple)| {
-                    if node.op == "list" {
+                    if node.op == Op::List {
                         return Ok(Computed::List(tuple.to_vec()));
                     }
-                    if node.op == "get"
+                    if node.op == Op::Get
                         && let [value, Atom::Str(path)] = tuple.as_ref()
                     {
                         return Ok(Computed::Atom(arena.get_path(*value, arena.text(*path))));
                     }
-                    if node.op == "first" {
+                    if node.op == Op::First {
                         return Ok(Computed::Atom(
                             arena
                                 .elements(tuple[0])?
@@ -885,17 +877,17 @@ impl<'a> Evaluator<'a> {
                                 .unwrap_or_default(),
                         ));
                     }
-                    if matches!(node.op.as_str(), "formatIssues" | "formatCompiled") {
+                    if matches!(node.op, Op::FormatIssues | Op::FormatCompiled) {
                         return Ok(Computed::Atom(arena.get_path(
                             tuple[0],
-                            if node.op == "formatIssues" {
+                            if node.op == Op::FormatIssues {
                                 "issues"
                             } else {
                                 "compiled"
                             },
                         )));
                     }
-                    match kernel.run(arena, &node.op, extra, tuple) {
+                    match kernel.run(arena, &node.op, tuple) {
                         Ok(value) => Ok(Computed::Value(value)),
                         Err(error) if error.code == ErrorCode::LimitExceeded => Ok(Computed::Limit),
                         Err(error) => Err(error),
@@ -932,7 +924,7 @@ impl<'a> Evaluator<'a> {
         column.failed = failures;
         started.exclude(self.arena.recorder.kernel_wall().saturating_sub(nested));
         self.arena.recorder.kernel(
-            &node.op,
+            node.op.name(),
             &started,
             selection.len(),
             distinct_inputs,
@@ -952,7 +944,7 @@ impl<'a> Evaluator<'a> {
         let DenseSelection { suffixes, groups } = inputs;
         let node = &self.program.nodes[id];
         let cache = self.cache_ids[id];
-        let pattern = node.op == "formatPattern";
+        let pattern = node.op == Op::FormatPattern;
         let neutral = Vec::new();
         let mut keys = suffixes.clone();
         if pattern {
@@ -1060,7 +1052,7 @@ impl<'a> Evaluator<'a> {
                 inputs.push(Atom::Str(*text));
                 inputs.extend_from_slice(suffix);
                 self.kernel
-                    .run(&self.arena, &node.op, &self.extras[id], &inputs)
+                    .run(&self.arena, &node.op, &inputs)
             });
             for ((text, group), value) in batch.iter().zip(computed) {
                 let value = match value {
@@ -1088,7 +1080,7 @@ impl<'a> Evaluator<'a> {
         let mut output = Column::from_atoms(&output, &mut self.arena)?;
         output.failed = failures;
         self.arena.recorder.kernel(
-            &node.op,
+            node.op.name(),
             &started,
             selection.len(),
             distinct_inputs,
@@ -1099,7 +1091,7 @@ impl<'a> Evaluator<'a> {
     fn list_operator(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
         let input = self.evaluate(node.args[0], selection)?;
-        if node.op == "any" || node.op == "all" {
+        if matches!(node.op, Op::Any(_) | Op::All(_)) {
             return self.list_boolean(id, selection, &input);
         }
         // Lists are small. Expansion/grouping is parallel by row chunk, with scalar bodies
@@ -1119,7 +1111,7 @@ impl<'a> Evaluator<'a> {
             })
             .into_iter()
             .collect::<Result<Vec<_>>>()?;
-        self.arena.recorder.kernel(&node.op, &measure, 0, 0, 0);
+        self.arena.recorder.kernel(node.op.name(), &measure, 0, 0, 0);
         let mut parents = Vec::new();
         let mut elements = Vec::new();
         let mut offsets = vec![0];
@@ -1131,7 +1123,7 @@ impl<'a> Evaluator<'a> {
             offsets.push(elements.len());
         }
         let mut expanded = selection.select(&parents, &mut self.arena)?;
-        let variable = node.value.as_str().unwrap_or("item").to_owned();
+        let variable = node.op.binding().unwrap_or("item").to_owned();
         expanded
             .variables
             .insert(variable, Column::from_atoms(&elements, &mut self.arena)?);
@@ -1154,19 +1146,19 @@ impl<'a> Evaluator<'a> {
                     failed.set(row);
                 }
                 let evaluated = body.get(index, &self.arena);
-                match node.op.as_str() {
-                    "filter" if evaluated.boolean() => values.push(elements[index]),
-                    "map" => values.push(evaluated),
-                    "flatMap" => {
+                match node.op {
+                    Op::Filter(_) if evaluated.boolean() => values.push(elements[index]),
+                    Op::Map(_) => values.push(evaluated),
+                    Op::FlatMap(_) => {
                         if let Some(elements) = self.arena.elements(evaluated)? {
                             values.extend_from_slice(elements);
                         }
                     }
-                    "sortCodeUnit" | "sortLocale" => sorted.push((elements[index], evaluated)),
+                    Op::SortCodeUnit | Op::SortLocale => sorted.push((elements[index], evaluated)),
                     _ => {}
                 }
             }
-            if matches!(node.op.as_str(), "sortCodeUnit" | "sortLocale") {
+            if matches!(node.op, Op::SortCodeUnit | Op::SortLocale) {
                 sorted.sort_by(|a, b| {
                     let a = if let Atom::Str(id) = a.1 {
                         self.arena.text(id)
@@ -1178,7 +1170,7 @@ impl<'a> Evaluator<'a> {
                     } else {
                         ""
                     };
-                    if node.op == "sortLocale" {
+                    if node.op == Op::SortLocale {
                         self.kernel.collator.compare(a, b)
                     } else {
                         text::code_unit_compare(a, b)
@@ -1199,7 +1191,7 @@ impl<'a> Evaluator<'a> {
         input: &Column,
     ) -> Result<Column> {
         let node = &self.program.nodes[id];
-        let all = node.op == "all";
+        let all = matches!(node.op, Op::All(_));
         let mut failed = input.failed.clone();
         let mut output = vec![Atom::Null; selection.len()];
         let mut pending = Vec::new();
@@ -1213,7 +1205,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-        let variable = node.value.as_str().unwrap_or("item").to_owned();
+        let variable = node.op.binding().unwrap_or("item").to_owned();
         let mut offset = 0;
         while !pending.is_empty() {
             let mut expanded = selection.select(&pending, &mut self.arena)?;
@@ -1372,7 +1364,7 @@ impl<'a> Evaluator<'a> {
         }
         if let Some(scope) = &rule.rule.scope {
             if rule.rule.subject != Subject::UnitSource
-                && let Some(cultures) = scope["cultures"].as_array()
+                && let Some(cultures) = &scope.cultures
             {
                 let field = self.prepared.field(if rule.rule.subject == Subject::Line {
                     "sourceCulture"
@@ -1381,19 +1373,17 @@ impl<'a> Evaluator<'a> {
                 })?;
                 let cultures = cultures
                     .iter()
-                    .map(|culture| self.arena.intern(ScalarValue::from_json(culture)))
+                    .map(|culture| self.arena.string(culture).map(Atom::Str))
                     .collect::<Result<Vec<_>>>()?;
                 selected.retain(|row| cultures.contains(&field.get(row as usize, &self.arena)));
             }
-            let mut mask = |name: &str, role: bool| -> Result<Option<Bits>> {
-                let Some(values) = scope[name].as_array() else {
+            let mut mask = |values: &Option<Vec<String>>, role: bool| -> Result<Option<Bits>> {
+                let Some(values) = values else {
                     return Ok(None);
                 };
                 let mut mask = Bits::new(self.arena.occurrences.len);
                 for value in values {
-                    let key = self
-                        .arena
-                        .string(value.as_str().ok_or("Invalid occurrence scope.")?)?;
+                    let key = self.arena.string(value)?;
                     mask.union(
                         self.kernel
                             .occurrence_mask(&self.arena, key, role)?
@@ -1402,8 +1392,8 @@ impl<'a> Evaluator<'a> {
                 }
                 Ok(Some(mask))
             };
-            let roles = mask("roles", true)?;
-            let paths = mask("pathPrefixes", false)?;
+            let roles = mask(&scope.roles, true)?;
+            let paths = mask(&scope.path_prefixes, false)?;
             if roles.is_some() || paths.is_some() {
                 selected.retain(|row| {
                     self.prepared
@@ -1509,7 +1499,7 @@ impl Program {
                     .rule
                     .scope
                     .as_ref()
-                    .is_some_and(|scope| scope["cultures"].is_array())
+                    .is_some_and(|scope| scope.cultures.is_some())
             {
                 names.insert(
                     if subject == Subject::Line {
@@ -1542,13 +1532,8 @@ impl Program {
             }
             let node = &self.nodes[id];
             pending.extend_from_slice(&node.args);
-            if node.op == "field" {
-                names.insert(
-                    node.value
-                        .as_str()
-                        .ok_or("Invalid subject field.")?
-                        .to_owned(),
-                );
+            if let Op::Field(name) = &node.op {
+                names.insert(name.to_string());
             }
         }
         let mut names = names.into_iter().collect::<Vec<_>>();
@@ -1560,17 +1545,20 @@ impl Program {
             Arena::new(relation.dictionary_len()?)?
         };
         for node in &self.nodes {
-            if node.op == "get"
-                && let Some(key) = node
-                    .args
-                    .get(1)
-                    .and_then(|arg| self.nodes[*arg].value.as_str())
+            if node.op == Op::Get
+                && let Some(key) = node.args.get(1).and_then(|arg| match &self.nodes[*arg].op {
+                    Op::Lit(Literal::Str(text))
+                    | Op::Field(text)
+                    | Op::Var(text)
+                    | Op::Finding(text) => Some(&**text),
+                    _ => None,
+                })
             {
                 arena
                     .occurrence_fields
                     .insert(key.split('.').next().unwrap_or(key).to_owned());
             }
-            if matches!(node.op.as_str(), "matchesRole" | "pathHasPrefix") {
+            if matches!(node.op, Op::MatchesRole | Op::PathHasPrefix) {
                 arena.occurrence_fields.insert("location".into());
             }
         }
@@ -1578,7 +1566,7 @@ impl Program {
             rule.rule
                 .scope
                 .as_ref()
-                .is_some_and(|scope| scope["roles"].is_array() || scope["pathPrefixes"].is_array())
+                .is_some_and(|scope| scope.roles.is_some() || scope.path_prefixes.is_some())
         }) {
             arena.occurrence_fields.insert("location".into());
         }
@@ -1919,7 +1907,7 @@ mod tests {
                 .nodes
                 .iter()
                 .zip(&timings.nodes)
-                .filter(|(node, _)| node.op == "utf16Length")
+                .filter(|(node, _)| node.op == Op::Utf16Length)
                 .map(|(_, timing)| timing.tuples)
                 .sum::<usize>(),
             1

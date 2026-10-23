@@ -1,32 +1,33 @@
 //! Cheap operators execute directly on typed atoms, without tuple hashing or value conversion.
 use super::columns::{Arena, Atom};
+use super::compiler::Op;
 use super::text;
 use crate::Result;
 
-pub(super) fn cheap(op: &str) -> bool {
+pub(super) fn cheap(op: &Op) -> bool {
     matches!(
         op,
-        "not"
-            | "isNull"
-            | "eq"
-            | "ne"
-            | "lt"
-            | "le"
-            | "gt"
-            | "ge"
-            | "in"
-            | "add"
-            | "sub"
-            | "mul"
-            | "div"
-            | "min"
-            | "max"
-            | "round"
-            | "get"
-            | "count"
-            | "first"
-            | "formatIssues"
-            | "formatCompiled"
+        Op::Not
+            | Op::IsNull
+            | Op::Eq
+            | Op::Ne
+            | Op::Lt
+            | Op::Le
+            | Op::Gt
+            | Op::Ge
+            | Op::In
+            | Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Div
+            | Op::Min
+            | Op::Max
+            | Op::Round
+            | Op::Get
+            | Op::Count
+            | Op::First
+            | Op::FormatIssues
+            | Op::FormatCompiled
     )
 }
 fn number(atom: Atom) -> Result<f64> {
@@ -49,36 +50,36 @@ fn equal(arena: &Arena, a: Atom, b: Atom) -> bool {
             _ => false,
         }
 }
-pub(super) fn run(arena: &Arena, op: &str, inputs: &[Atom]) -> Result<Atom> {
+pub(super) fn run(arena: &Arena, op: &Op, inputs: &[Atom]) -> Result<Atom> {
     let a = inputs.first().copied().unwrap_or_default();
     let b = inputs.get(1).copied().unwrap_or_default();
     match op {
-        "not" => return Ok(Atom::Bool(!a.boolean())),
-        "isNull" => return Ok(Atom::Bool(a == Atom::Null)),
-        "eq" | "ne" => return Ok(Atom::Bool(equal(arena, a, b) == (op == "eq"))),
-        "get" => {
+        Op::Not => return Ok(Atom::Bool(!a.boolean())),
+        Op::IsNull => return Ok(Atom::Bool(a == Atom::Null)),
+        Op::Eq | Op::Ne => return Ok(Atom::Bool(equal(arena, a, b) == (*op == Op::Eq))),
+        Op::Get => {
             return Ok(if let Atom::Str(path) = b {
                 arena.get_path(a, arena.text(path))
             } else {
                 Atom::Null
             });
         }
-        "formatIssues" | "formatCompiled" => {
+        Op::FormatIssues | Op::FormatCompiled => {
             return Ok(arena.get_path(
                 a,
-                if op == "formatIssues" {
+                if *op == Op::FormatIssues {
                     "issues"
                 } else {
                     "compiled"
                 },
             ));
         }
-        "count" => {
+        Op::Count => {
             return Ok(arena
                 .elements(a)?
                 .map_or(Atom::Null, |values| Atom::Int(values.len() as i64)));
         }
-        "first" => {
+        Op::First => {
             return Ok(arena
                 .elements(a)?
                 .and_then(|values| values.first())
@@ -91,7 +92,7 @@ pub(super) fn run(arena: &Arena, op: &str, inputs: &[Atom]) -> Result<Atom> {
         return Ok(Atom::Null);
     }
     Ok(match op {
-        "lt" | "le" | "gt" | "ge" => {
+        Op::Lt | Op::Le | Op::Gt | Op::Ge => {
             let order = if let (Atom::Str(a), Atom::Str(b)) = (a, b) {
                 text::code_unit_compare(arena.text(a), arena.text(b))
             } else {
@@ -100,13 +101,13 @@ pub(super) fn run(arena: &Arena, op: &str, inputs: &[Atom]) -> Result<Atom> {
                     .ok_or("Invalid numeric comparison.")?
             };
             Atom::Bool(match op {
-                "lt" => order.is_lt(),
-                "le" => order.is_le(),
-                "gt" => order.is_gt(),
+                Op::Lt => order.is_lt(),
+                Op::Le => order.is_le(),
+                Op::Gt => order.is_gt(),
                 _ => order.is_ge(),
             })
         }
-        "in" => Atom::Bool(
+        Op::In => Atom::Bool(
             arena
                 .elements(b)?
                 .unwrap_or_default()
@@ -115,23 +116,23 @@ pub(super) fn run(arena: &Arena, op: &str, inputs: &[Atom]) -> Result<Atom> {
         ),
         _ => {
             let value = match op {
-                "add" => inputs.iter().try_fold(0.0, |value, atom| {
+                Op::Add => inputs.iter().try_fold(0.0, |value, atom| {
                     Ok::<_, crate::Error>(value + number(*atom)?)
                 })?,
-                "mul" => inputs.iter().try_fold(1.0, |value, atom| {
+                Op::Mul => inputs.iter().try_fold(1.0, |value, atom| {
                     Ok::<_, crate::Error>(value * number(*atom)?)
                 })?,
-                "sub" => number(a)? - number(b)?,
-                "div" => number(a)? / number(b)?,
-                "round" => {
+                Op::Sub => number(a)? - number(b)?,
+                Op::Div => number(a)? / number(b)?,
+                Op::Round => {
                     let factor = 10f64.powf(number(b)?);
                     (number(a)? * factor + 0.5).floor() / factor
                 }
-                "min" | "max" => {
+                Op::Min | Op::Max => {
                     let mut values = inputs.iter().map(|atom| number(*atom));
                     let mut value = values.next().transpose()?.unwrap_or(f64::NAN);
                     for next in values {
-                        value = if op == "min" {
+                        value = if *op == Op::Min {
                             value.min(next?)
                         } else {
                             value.max(next?)

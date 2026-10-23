@@ -188,10 +188,10 @@ impl Recorder {
                 .nodes
                 .iter()
                 .map(|node| TestNode {
-                    tuples: if seen.insert(&node.op) {
+                    tuples: if seen.insert(node.op.name()) {
                         recording
                             .kernels
-                            .get(&node.op)
+                            .get(node.op.name())
                             .map_or(0, |sample| sample.inputs)
                     } else {
                         0

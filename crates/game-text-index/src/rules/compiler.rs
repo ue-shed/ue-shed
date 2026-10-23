@@ -2,8 +2,249 @@ use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 pub type NodeId = usize;
+
+/// A rule-authored constant (`lit`, params), typed once at compile time.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Literal {
+    Null,
+    Bool(bool),
+    Int(i64),
+    /// Finite `f64` bits; `-0` is normalised to `0`.
+    Num(u64),
+    Str(Arc<str>),
+    List(Arc<[Literal]>),
+    Object(Arc<[(Arc<str>, Literal)]>),
+}
+impl Literal {
+    fn read(value: &Value) -> Result<Self> {
+        Ok(match value {
+            Value::Null => Self::Null,
+            Value::Bool(value) => Self::Bool(*value),
+            Value::Number(number) => {
+                if let Some(value) = number.as_i64() {
+                    Self::Int(value)
+                } else if let Some(value) = number.as_u64() {
+                    Self::Int(value.try_into()?)
+                } else {
+                    match number.as_f64() {
+                        Some(value) if value.is_finite() => {
+                            Self::Num(if value == 0.0 { 0f64 } else { value }.to_bits())
+                        }
+                        _ => Self::Null,
+                    }
+                }
+            }
+            Value::String(value) => Self::Str(value.as_str().into()),
+            Value::Array(values) => Self::List(
+                values
+                    .iter()
+                    .map(Self::read)
+                    .collect::<Result<Vec<_>>>()?
+                    .into(),
+            ),
+            Value::Object(values) => Self::Object(
+                values
+                    .iter()
+                    .map(|(name, value)| Ok((name.as_str().into(), Self::read(value)?)))
+                    .collect::<Result<Vec<_>>>()?
+                    .into(),
+            ),
+        })
+    }
+}
+
+macro_rules! operations {
+    ($($variant:ident = $name:literal),* $(,)?) => {
+        /// A compiled operation. Payloads are resolved at compile time; dispatch never
+        /// compares operation names.
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        pub enum Op {
+            Lit(Literal),
+            Field(Arc<str>),
+            Var(Arc<str>),
+            Finding(Arc<str>),
+            FindingField(Arc<str>, Arc<str>),
+            Object(Arc<[Arc<str>]>),
+            Filter(Arc<str>),
+            Map(Arc<str>),
+            FlatMap(Arc<str>),
+            Any(Arc<str>),
+            All(Arc<str>),
+            $($variant,)*
+        }
+        impl Op {
+            fn simple(name: &str) -> Option<Self> {
+                Some(match name {
+                    $($name => Self::$variant,)*
+                    _ => return None,
+                })
+            }
+            /// The authored operation name, for profiles and errors.
+            pub fn name(&self) -> &'static str {
+                match self {
+                    Self::Lit(_) => "lit",
+                    Self::Field(_) => "field",
+                    Self::Var(_) => "var",
+                    Self::Finding(_) => "finding",
+                    Self::FindingField(..) => "findingField",
+                    Self::Object(_) => "object",
+                    Self::Filter(_) => "filter",
+                    Self::Map(_) => "map",
+                    Self::FlatMap(_) => "flatMap",
+                    Self::Any(_) => "any",
+                    Self::All(_) => "all",
+                    $(Self::$variant => $name,)*
+                }
+            }
+        }
+    };
+}
+operations! {
+    Occurrences = "occurrences",
+    List = "list",
+    SortCodeUnit = "sortCodeUnit",
+    SortLocale = "sortLocale",
+    Not = "not",
+    IsNull = "isNull",
+    Utf16Length = "utf16Length",
+    CodePoints = "codePoints",
+    VisibleLength = "visibleLength",
+    VisibleWords = "visibleWords",
+    InteriorLineBreaks = "interiorLineBreaks",
+    Trim = "trim",
+    Lower = "lower",
+    NormalizeLineEndings = "normalizeLineEndings",
+    Count = "count",
+    Flatten = "flatten",
+    Distinct = "distinct",
+    First = "first",
+    SortByStart = "sortByStart",
+    FormatArgumentNames = "formatArgumentNames",
+    FormatArgumentOrder = "formatArgumentOrder",
+    FormatModifiers = "formatModifiers",
+    FormatIssues = "formatIssues",
+    FormatCompiled = "formatCompiled",
+    RichTextCounts = "richTextCounts",
+    RichTextTagBalance = "richTextTagBalance",
+    UnrealWhitespace = "unrealWhitespace",
+    UnrealUnsafeWhitespace = "unrealUnsafeWhitespace",
+    FormatBraceBalance = "formatBraceBalance",
+    Get = "get",
+    Eq = "eq",
+    Ne = "ne",
+    Lt = "lt",
+    Le = "le",
+    Gt = "gt",
+    Ge = "ge",
+    In = "in",
+    Sub = "sub",
+    Div = "div",
+    Round = "round",
+    StartsWith = "startsWith",
+    EndsWith = "endsWith",
+    Contains = "contains",
+    CountOccurrences = "countOccurrences",
+    FindAll = "findAll",
+    AnyChar = "anyChar",
+    AllChars = "allChars",
+    RemoveClass = "removeClass",
+    LeadingClass = "leadingClass",
+    TrailingClass = "trailingClass",
+    Take = "take",
+    Drop = "drop",
+    Minus = "minus",
+    Zip = "zip",
+    MatchesRole = "matchesRole",
+    PathHasPrefix = "pathHasPrefix",
+    FormatPattern = "formatPattern",
+    RichTextValid = "richTextValid",
+    CompareRichTextTags = "compareRichTextTags",
+    WithoutOptionalArgumentTags = "withoutOptionalArgumentTags",
+    If = "if",
+    Slice = "slice",
+    TrimClass = "trimClass",
+    Runs = "runs",
+    RegexMatches = "regexMatches",
+    RegexTest = "regexTest",
+    TermMatches = "termMatches",
+    TermListMatches = "termListMatches",
+    FormatRenameArgument = "formatRenameArgument",
+    And = "and",
+    Or = "or",
+    Coalesce = "coalesce",
+    Add = "add",
+    Mul = "mul",
+    Min = "min",
+    Max = "max",
+    Concat = "concat",
+    ConcatLists = "concatLists",
+}
+impl Op {
+    /// The rule a `finding` or `findingField` reads.
+    pub fn reference(&self) -> Option<&str> {
+        match self {
+            Self::Finding(rule) | Self::FindingField(rule, _) => Some(rule),
+            _ => None,
+        }
+    }
+    /// The element variable a list operator binds for its body.
+    pub fn binding(&self) -> Option<&str> {
+        match self {
+            Self::Filter(name) | Self::Map(name) | Self::FlatMap(name) | Self::Any(name)
+            | Self::All(name) => Some(name),
+            Self::SortCodeUnit | Self::SortLocale => Some("item"),
+            _ => None,
+        }
+    }
+}
+
+/// Where a rule applies, as authored.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Scope {
+    pub roles: Option<Vec<String>>,
+    pub cultures: Option<Vec<String>>,
+    pub path_prefixes: Option<Vec<String>>,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MatcherKind {
+    LocationKind,
+    ObjectPath,
+    Row,
+    PropertyPath,
+    StringTableEntry,
+    ClassPath,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchOperator {
+    Exact,
+    Prefix,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleMatcher {
+    pub kind: MatcherKind,
+    pub operator: Option<MatchOperator>,
+    pub value: String,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleScope {
+    pub matchers: Vec<RoleMatcher>,
+}
+/// A named authored role matched against saved occurrence locations.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Role {
+    pub id: String,
+    pub description: Option<String>,
+    pub scopes: Vec<RoleScope>,
+}
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Subject {
@@ -24,7 +265,7 @@ pub struct Rule {
     pub severity: String,
     #[serde(default)]
     pub params: serde_json::Map<String, Value>,
-    pub scope: Option<Value>,
+    pub scope: Option<Scope>,
     pub role: Option<String>,
     #[serde(default, rename = "let")]
     pub bindings: serde_json::Map<String, Value>,
@@ -44,7 +285,7 @@ pub struct Rule {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Document {
     schema_version: u32,
-    roles: Vec<Value>,
+    roles: Vec<Role>,
     rules: Vec<Rule>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,9 +310,8 @@ impl Type {
 }
 #[derive(Debug)]
 pub struct Node {
-    pub op: String,
+    pub op: Op,
     pub args: Vec<NodeId>,
-    pub value: Value,
     pub result: Type,
 }
 #[derive(Debug)]
@@ -91,7 +331,7 @@ pub struct CompiledRule {
 pub struct Program {
     pub nodes: Vec<Node>,
     pub rules: Vec<CompiledRule>,
-    pub roles: HashMap<String, Value>,
+    pub roles: HashMap<String, Role>,
     pub(crate) diagnostic_patterns: [NodeId; 2],
     pub(crate) node_last_consumer: Vec<[usize; 3]>,
     pub(crate) rule_last_reader: Vec<usize>,
@@ -155,25 +395,27 @@ fn field_type(subject: Subject, name: &str) -> Result<Type> {
 
 struct Compiler {
     nodes: Vec<Node>,
-    interned: HashMap<String, NodeId>,
+    interned: HashMap<(Op, Vec<NodeId>), NodeId>,
     active_bindings: HashSet<String>,
     variables: HashSet<String>,
 }
 impl Compiler {
-    fn node(&mut self, op: &str, args: Vec<NodeId>, value: Value, result: Type) -> Result<NodeId> {
-        let key = serde_json::to_string(&(op, &args, &value))?;
+    fn node(&mut self, op: Op, args: Vec<NodeId>, result: Type) -> Result<NodeId> {
+        let key = (op, args);
         if let Some(id) = self.interned.get(&key) {
             return Ok(*id);
         }
         let id = self.nodes.len();
         self.nodes.push(Node {
-            op: op.into(),
-            args,
-            value,
+            op: key.0.clone(),
+            args: key.1.clone(),
             result,
         });
         self.interned.insert(key, id);
         Ok(id)
+    }
+    fn literal(&mut self, value: &Value) -> Result<NodeId> {
+        self.node(Op::Lit(Literal::read(value)?), Vec::new(), literal_type(value))
     }
     fn expression(&mut self, value: &Value, rule: &Rule) -> Result<NodeId> {
         let Value::Object(object) = value else {
@@ -181,62 +423,55 @@ impl Compiler {
                 !value.is_array(),
                 invalid("Lists require a list expression."),
             )?;
-            return self.node("lit", Vec::new(), value.clone(), literal_type(value));
+            return self.literal(value);
         };
         require(
             object.len() == 1,
             invalid("An expression must have exactly one operator."),
         )?;
         let (op, argument) = object.iter().next().ok_or("Missing expression operator.")?;
+        let text = |what: &str| {
+            argument
+                .as_str()
+                .map(Arc::<str>::from)
+                .ok_or_else(|| invalid(format!("{what} must be a string.")))
+        };
         if op == "lit" {
-            return self.node(op, Vec::new(), argument.clone(), literal_type(argument));
+            return self.literal(argument);
         }
         if op == "field" {
-            let name = argument
-                .as_str()
-                .ok_or_else(|| invalid("A field name must be a string."))?;
-            return self.node(
-                op,
-                Vec::new(),
-                argument.clone(),
-                field_type(rule.subject, name)?,
-            );
+            let name = text("A field name")?;
+            let result = field_type(rule.subject, &name)?;
+            return self.node(Op::Field(name), Vec::new(), result);
         }
         if op == "param" {
-            let name = argument
-                .as_str()
-                .ok_or_else(|| invalid("A parameter name must be a string."))?;
+            let name = text("A parameter name")?;
             let value = rule
                 .params
-                .get(name)
+                .get(&*name)
                 .ok_or_else(|| invalid(format!("Rule {} has no parameter {name}.", rule.id)))?;
-            return self.node("lit", Vec::new(), value.clone(), literal_type(value));
+            return self.literal(value);
         }
         if op == "var" {
-            let name = argument
-                .as_str()
-                .ok_or_else(|| invalid("A variable name must be a string."))?;
-            if let Some(binding) = rule.bindings.get(name) {
+            let name = text("A variable name")?;
+            if let Some(binding) = rule.bindings.get(&*name) {
                 require(
-                    self.active_bindings.insert(name.into()),
+                    self.active_bindings.insert(name.to_string()),
                     invalid("Cyclic let binding."),
                 )?;
                 let result = self.expression(binding, rule);
-                self.active_bindings.remove(name);
+                self.active_bindings.remove(&*name);
                 return result;
             }
             require(
-                self.variables.contains(name),
+                self.variables.contains(&*name),
                 invalid(format!("Unknown expression variable {name}.")),
             )?;
-            return self.node(op, Vec::new(), argument.clone(), Type::Any);
+            return self.node(Op::Var(name), Vec::new(), Type::Any);
         }
         if op == "finding" {
-            require(
-                argument.is_string(),
-                invalid("A finding reference must name a rule."),
-            )?;
-            return self.node(op, Vec::new(), argument.clone(), Type::Bool);
+            let name = text("A finding reference")?;
+            return self.node(Op::Finding(name), Vec::new(), Type::Bool);
         }
         if op == "occurrences" {
             require(
@@ -244,9 +479,8 @@ impl Compiler {
                 invalid("occurrences takes no arguments."),
             )?;
             return self.node(
-                op,
+                Op::Occurrences,
                 Vec::new(),
-                Value::Null,
                 Type::List(Box::new(Type::Occurrence)),
             );
         }
@@ -258,12 +492,8 @@ impl Compiler {
                 .values()
                 .map(|expression| self.expression(expression, rule))
                 .collect::<Result<Vec<_>>>()?;
-            return self.node(
-                op,
-                args,
-                serde_json::to_value(fields.keys().collect::<Vec<_>>())?,
-                Type::Object,
-            );
+            let keys = fields.keys().map(|key| Arc::from(key.as_str())).collect();
+            return self.node(Op::Object(keys), args, Type::Object);
         }
         let unary = [
             "not",
@@ -310,11 +540,14 @@ impl Compiler {
             )?;
         }
         if op == "findingField" {
-            require(
-                arguments.len() == 2 && arguments.iter().all(Value::is_string),
-                invalid("findingField requires a rule ID and path."),
-            )?;
-            return self.node(op, Vec::new(), json_array(arguments), Type::Any);
+            let [Value::String(reference), Value::String(path)] = arguments.as_slice() else {
+                return Err(invalid("findingField requires a rule ID and path."));
+            };
+            return self.node(
+                Op::FindingField(reference.as_str().into(), path.as_str().into()),
+                Vec::new(),
+                Type::Any,
+            );
         }
         let arity = arguments.len();
         let mut args = Vec::new();
@@ -538,7 +771,17 @@ impl Compiler {
             }
             _ => return Err(invalid(format!("Unknown expression operator {op}."))),
         };
-        self.node(op, std::mem::take(&mut args), extra, result)
+        let name = || Arc::<str>::from(extra.as_str().unwrap_or("item"));
+        let operation = match op.as_str() {
+            "filter" => Op::Filter(name()),
+            "map" => Op::Map(name()),
+            "flatMap" => Op::FlatMap(name()),
+            "any" => Op::Any(name()),
+            "all" => Op::All(name()),
+            other => Op::simple(other)
+                .ok_or_else(|| invalid(format!("Unknown expression operator {other}.")))?,
+        };
+        self.node(operation, std::mem::take(&mut args), result)
     }
     fn arity(&self, actual: usize, expected: usize, op: &str) -> Result<()> {
         require(
@@ -561,9 +804,6 @@ impl Compiler {
         Ok(())
     }
 }
-fn json_array(values: Vec<Value>) -> Value {
-    Value::Array(values)
-}
 
 pub fn compile(json: &str) -> Result<Program> {
     let document: Document =
@@ -576,12 +816,8 @@ pub fn compile(json: &str) -> Result<Program> {
     )?;
     let mut roles = HashMap::new();
     for role in document.roles {
-        let id = role["id"]
-            .as_str()
-            .ok_or_else(|| invalid("Missing role ID."))?
-            .to_owned();
         require(
-            roles.insert(id, role).is_none(),
+            roles.insert(role.id.clone(), role).is_none(),
             invalid("Duplicate role ID."),
         )?;
     }
@@ -611,12 +847,9 @@ pub fn compile(json: &str) -> Result<Program> {
         if rule.enabled == Some(false) {
             continue;
         }
-        if let Some(scope) = &rule.scope
-            && let Some(ids) = scope["roles"].as_array()
-        {
+        if let Some(ids) = rule.scope.as_ref().and_then(|scope| scope.roles.as_ref()) {
             require(
-                ids.iter()
-                    .all(|role| role.as_str().is_some_and(|id| roles.contains_key(id))),
+                ids.iter().all(|id| roles.contains_key(id)),
                 invalid("Unknown scope role."),
             )?;
         }
@@ -701,14 +934,7 @@ pub fn compile(json: &str) -> Result<Program> {
             }
             let node = &nodes[id];
             node_ids.extend_from_slice(&node.args);
-            let reference = if node.op == "finding" {
-                node.value.as_str()
-            } else if node.op == "findingField" {
-                node.value[0].as_str()
-            } else {
-                None
-            };
-            if let Some(reference) = reference {
+            if let Some(reference) = node.op.reference() {
                 require(
                     subjects
                         .get(reference)
@@ -742,37 +968,13 @@ pub fn compile(json: &str) -> Result<Program> {
         .filter_map(|index| compiled[index].take())
         .collect();
     // Diagnostics are independent of rule selection and share the same grammar DAG nodes.
-    let culture = compiler.node(
-        "field",
-        Vec::new(),
-        Value::String("culture".into()),
-        Type::String,
-    )?;
-    let source = compiler.node(
-        "field",
-        Vec::new(),
-        Value::String("line.comparisonSource".into()),
-        Type::String,
-    )?;
-    let latest = compiler.node(
-        "field",
-        Vec::new(),
-        Value::String("latest".into()),
-        Type::String,
-    )?;
+    let mut field = |name: &str| compiler.node(Op::Field(name.into()), Vec::new(), Type::String);
+    let culture = field("culture")?;
+    let source = field("line.comparisonSource")?;
+    let latest = field("latest")?;
     let diagnostic_patterns = [
-        compiler.node(
-            "formatPattern",
-            vec![source, culture],
-            Value::Null,
-            Type::Object,
-        )?,
-        compiler.node(
-            "formatPattern",
-            vec![latest, culture],
-            Value::Null,
-            Type::Object,
-        )?,
+        compiler.node(Op::FormatPattern, vec![source, culture], Type::Object)?,
+        compiler.node(Op::FormatPattern, vec![latest, culture], Type::Object)?,
     ];
     let mut node_last_consumer = vec![[0; 3]; compiler.nodes.len()];
     let mut rule_last_reader =
@@ -810,14 +1012,7 @@ pub fn compile(json: &str) -> Result<Program> {
                     node_last_consumer[id][subject_index].max(execution);
                 let node = &compiler.nodes[id];
                 stack.extend_from_slice(&node.args);
-                let reference = if node.op == "finding" {
-                    node.value.as_str()
-                } else if node.op == "findingField" {
-                    node.value[0].as_str()
-                } else {
-                    None
-                };
-                if let Some(reference) = reference
+                if let Some(reference) = node.op.reference()
                     && let Some(target) = rules.iter().find(|rule| rule.rule.id == reference)
                 {
                     rule_last_reader[target.ordinal] =
@@ -865,7 +1060,7 @@ mod tests {
             program
                 .nodes
                 .iter()
-                .filter(|node| node.op == "formatPattern")
+                .filter(|node| node.op == Op::FormatPattern)
                 .count(),
             2
         );

@@ -642,6 +642,31 @@ impl Arena {
         self.structured(Structured::Object(fields.into()))
             .map(Atom::Val)
     }
+    /// Intern a compiled rule constant.
+    pub fn literal(&mut self, literal: &super::compiler::Literal) -> Result<Atom> {
+        use super::compiler::Literal;
+        Ok(match literal {
+            Literal::Null => Atom::Null,
+            Literal::Bool(value) => Atom::Bool(*value),
+            Literal::Int(value) => Atom::Int(*value),
+            Literal::Num(bits) => Atom::Num(*bits),
+            Literal::Str(text) => Atom::Str(self.string(text)?),
+            Literal::List(values) => {
+                let values = values
+                    .iter()
+                    .map(|value| self.literal(value))
+                    .collect::<Result<_>>()?;
+                self.list(values)?
+            }
+            Literal::Object(fields) => {
+                let mut interned = Vec::with_capacity(fields.len());
+                for (name, value) in fields.iter() {
+                    interned.push((self.string(name)?, self.literal(value)?));
+                }
+                Atom::Val(self.structured(Structured::Object(interned.into()))?)
+            }
+        })
+    }
     pub fn intern(&mut self, value: Value) -> Result<Atom> {
         Ok(match value {
             Value::Null => Atom::Null,

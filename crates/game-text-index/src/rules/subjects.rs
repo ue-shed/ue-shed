@@ -504,8 +504,12 @@ impl NativeSubjects<'_> {
         }
     }
     /// Load what `occurrences` reads for these subject rows in one batch per arena, so that
-    /// reading them one at a time afterwards finds every string already loaded.
+    /// reading them one at a time afterwards finds every string already loaded. No rows need
+    /// nothing, not even the occurrence children.
     pub(super) fn prefetch_occurrences(&mut self, rows: &[u32]) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
         let mut arena = self.take_read_arena()?;
         let mut members = Vec::new();
         for row in rows {

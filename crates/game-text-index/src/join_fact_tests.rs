@@ -273,6 +273,350 @@ fn rule_subjects_read_saved_manifest_and_translation_stages_independently() -> R
     Ok(())
 }
 
+fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::rules::Program> {
+    let output = std::process::Command::new("node").args(["--import","tsx","--input-type=module","-e","import {translateRuleDocument} from './packages/game-text/src/rules/translate.ts';const [checks,document]=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(translateRuleDocument(document??undefined,{checks})));",&serde_json::to_string(&(checks,document))?])
+        .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("Missing repository root.")?).output()?;
+    crate::require(
+        output.status.success(),
+        std::str::from_utf8(&output.stderr)?,
+    )?;
+    crate::rules::compile(std::str::from_utf8(&output.stdout)?)
+}
+
+#[test]
+fn example_row_checks_emit_the_existing_evidence() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject};
+    let cases = vec![
+        (
+            "format_arguments",
+            "Take {Count} {Item}",
+            "Nimm {Count}",
+            json!({"arguments":["Count"],"missing":["Item"],"added":[]}),
+            json!({"arguments":["Count","Item"]}),
+        ),
+        (
+            "argument_modifiers",
+            "{N}|plural(one=x,other=y)",
+            "{N}|plural(one=x)",
+            json!({"side":"translation","issues":[{"code":"missing_form","modifier":"plural","argument":"N","forms":["other"],"position":3}],"modifiers":[{"argument":"N","name":"plural"}]}),
+            json!({"modifiers":[{"argument":"N","name":"plural"}]}),
+        ),
+        (
+            "rich_text",
+            "<Em>Hello</>",
+            "<Em>Hallo",
+            json!({"opening":1,"closing":0}),
+            json!({"opening":1,"closing":1}),
+        ),
+        (
+            "po_escape_safety",
+            "Line",
+            "Zeile\\n",
+            json!({"positions":[5],"sequences":["\\n"]}),
+            json!({"roundTripSafe":true}),
+        ),
+        (
+            "whitespace",
+            "Hello",
+            " Hallo",
+            json!({"leading":" ","trailing":"","lineBreaks":0}),
+            json!({"leading":"","trailing":"","lineBreaks":0}),
+        ),
+        (
+            "empty_translation",
+            "Empty",
+            "",
+            json!({"entryExists":true,"translation":""}),
+            json!({"nonEmptyTranslation":true}),
+        ),
+        (
+            "missing_translator_notes",
+            "Hello",
+            "Hallo",
+            json!({"noteCount":0}),
+            json!({"minimumNotes":1}),
+        ),
+        (
+            "format_argument_renamed",
+            "Take {Count}",
+            "Nimm {Anzahl}",
+            json!({"arguments":["Anzahl"],"renamed":[{"from":"Anzahl","to":"Count"}]}),
+            json!({"arguments":["Count"]}),
+        ),
+        (
+            "rich_text_tags",
+            "Press <Key>Space</> or <img id=\"pad\"/>",
+            "Leertaste drücken",
+            json!({"tags":[],"missing":["Key","img"],"added":[]}),
+            json!({"tags":["Key","img"]}),
+        ),
+        (
+            "rich_text_tag_case",
+            "<Italic>Note</>",
+            "<italic>Hinweis</>",
+            json!({"changed":[{"source":"Italic","translation":"italic"}]}),
+            json!({"sameCase":true}),
+        ),
+        (
+            "line_breaks",
+            "Torn Pages\nA scrap",
+            "Seiten",
+            json!({"lineBreaks":0}),
+            json!({"lineBreaks":1}),
+        ),
+        (
+            "segment_separator",
+            "First//Second",
+            "Erste",
+            json!({"separator":"//","count":0}),
+            json!({"separator":"//","count":1}),
+        ),
+        (
+            "length_outlier",
+            "A fairly long sentence about the harbour",
+            "Hafen",
+            json!({"length":5,"ratio":0.13}),
+            json!({"sourceLength":40,"minimumRatio":0.33,"maximumRatio":3}),
+        ),
+        (
+            "placeholder_translation",
+            "An actual long sentence",
+            "TODO",
+            json!({"translation":"TODO"}),
+            json!({"translatedText":true}),
+        ),
+        (
+            "rich_text_tags_added",
+            "Plain",
+            "<b>Schlicht</>",
+            json!({"tags":["b"],"added":["b"]}),
+            json!({"tags":[]}),
+        ),
+        (
+            "placeholder_text",
+            "TODO",
+            "Erledigt",
+            json!({"source":"TODO","matches":["TODO"]}),
+            json!({"finalText":true}),
+        ),
+        (
+            "source_whitespace",
+            " Score:  10 ",
+            "Punkte",
+            json!({"source":" Score:  10 ","leading":" ","trailing":" ","repeatedSpaces":1}),
+            json!({"trimmed":true}),
+        ),
+        (
+            "source_markup",
+            "<b>Hi",
+            "Hallo",
+            json!({"source":"<b>Hi","richText":{"opening":1,"closing":0},"braces":{"opening":0,"closing":0}}),
+            json!({"balanced":true}),
+        ),
+        (
+            "number_only_text",
+            "100",
+            "100",
+            json!({"source":"100"}),
+            json!({"cultureInvariant":true}),
+        ),
+    ];
+    for (check, source, translation, actual, expectation) in cases {
+        let mut fixture = Fixture::new()?;
+        fixture.file("Game.manifest","manifest",&[json!({"namespace":"UI","key":"K","source":source,"path":"/Game/Text/Example.Example.Label"})])?;
+        fixture.file(
+            "en.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":source,"translation":source})],
+        )?;
+        fixture.file(
+            "de.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":source,"translation":translation})],
+        )?;
+        fixture.file("en.po", "po", &[])?;
+        fixture.file("de.po", "po", &[])?;
+        fixture.packages(&[json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/Example.Example","property":"Label"})])?;
+        fixture.lines()?;
+        let document = if check == "segment_separator" {
+            Some(json!({"schemaVersion":1,"roles":[],"rules":[],"segmentSeparator":"//"}))
+        } else {
+            None
+        };
+        let program = example_program(&[check], document)?;
+        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let collator = HostCollator::new("en")?;
+        let cancelled = AtomicBool::new(false);
+        let mut findings = Vec::new();
+        for subject in [Subject::Line, Subject::LineCulture] {
+            let mut rows = NativeSubjects::new(&mut query, subject, &collator, &cancelled)?;
+            let evaluation = program.evaluate(&mut rows, &collator)?;
+            findings.extend(evaluation.findings);
+        }
+        let found = findings
+            .iter()
+            .find(|finding| finding.actual == actual && finding.expectation == expectation);
+        assert!(
+            found.is_some(),
+            "{check}: actual findings {findings:?}, expected {actual} / {expectation}"
+        );
+        if check == "format_argument_renamed" {
+            assert_eq!(found.ok_or("Missing rename.")?.fix, "Nimm {Count}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn remaining_source_and_archive_checks_keep_their_evidence() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject};
+    for (check, source, recorded, expected_actual, expected_expectation) in [
+        (
+            "outdated_translation",
+            "New source",
+            "Old source",
+            json!({"translatedSource":"Old source"}),
+            json!({"source":"New source"}),
+        ),
+        (
+            "source_line_endings_changed",
+            "A\nB",
+            "A\r\nB",
+            json!({"translatedSource":"A\r\nB"}),
+            json!({"source":"A\nB"}),
+        ),
+        (
+            "string_table_key_collision",
+            "Text",
+            "Text",
+            json!({"tables":["/Game/Text/A.A","/Game/Text/B.B"],"tableCount":2}),
+            json!({"oneTablePerKey":true}),
+        ),
+    ] {
+        let mut fixture = Fixture::new()?;
+        fixture.file("Game.manifest","manifest",&[json!({"namespace":"UI","key":"K","source":source,"path":"/Game/Text/Example.Example.Label"})])?;
+        fixture.file(
+            "en.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":source,"translation":source})],
+        )?;
+        fixture.file(
+            "de.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":recorded,"translation":"Foreign"})],
+        )?;
+        fixture.file("en.po", "po", &[])?;
+        fixture.file("de.po", "po", &[])?;
+        fixture.packages(&if check == "string_table_key_collision" { vec![json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/A.A","location":2,"row":"K"}),json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/B.B","location":2,"row":"K"})] } else { vec![json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/Example.Example","property":"Label"})] })?;
+        fixture.lines()?;
+        let program = example_program(&[check], None)?;
+        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let collator = HostCollator::new("en")?;
+        let cancelled = AtomicBool::new(false);
+        let mut findings = Vec::new();
+        for subject in [Subject::Line, Subject::LineCulture] {
+            let mut rows = NativeSubjects::new(&mut query, subject, &collator, &cancelled)?;
+            findings.extend(program.evaluate(&mut rows, &collator)?.findings);
+        }
+        assert_eq!(findings.len(), 1, "{check}: {findings:?}");
+        assert_eq!(findings[0].actual, expected_actual, "{check}");
+        assert_eq!(findings[0].expectation, expected_expectation, "{check}");
+    }
+    Ok(())
+}
+
+#[test]
+fn every_authored_kind_uses_the_same_evaluator_and_existing_evidence() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject};
+    let role = json!({"id":"all","scopes":[{"matchers":[{"kind":"object_path","operator":"prefix","value":"/Game/"}]}]});
+    let cases = vec![
+        (
+            json!({"schemaVersion":1,"roles":[role],"rules":[{"id":"budget","kind":"character_budget","role":"all","maximumCharacters":4,"recovery":"Shorten it."}]}),
+            "😀 bad",
+            "Hallo",
+            json!({"characterCount":6,"kind":"character_count","source":"😀 bad"}),
+            json!({"kind":"maximum_characters","maximumCharacters":4}),
+        ),
+        (
+            json!({"schemaVersion":1,"roles":[role],"rules":[{"id":"terms","kind":"terminology","role":"all","caseSensitive":false,"terms":[{"kind":"forbidden","term":"bad"}],"recovery":"Replace it."}]}),
+            "😀 bad",
+            "Hallo",
+            json!({"end":6,"kind":"terminology_match","source":"😀 bad","start":3,"term":"bad"}),
+            json!({"kind":"forbidden_term","term":"bad"}),
+        ),
+        (
+            json!({"schemaVersion":2,"roles":[role],"rules":[],"localizationRules":[{"id":"budget","kind":"localization_character_budget","role":"all","cultures":{"de":2},"recovery":"Shorten it."}]}),
+            "Hi",
+            "Hallo",
+            json!({"kind":"character_count","characterCount":5,"translation":"Hallo"}),
+            json!({"kind":"maximum_characters","maximumCharacters":2}),
+        ),
+        (
+            json!({"schemaVersion":2,"roles":[role],"rules":[],"localizationRules":[{"id":"terms","kind":"localization_terminology","role":"all","caseSensitive":false,"cultures":{"de":[{"kind":"forbidden","term":"bad"}]},"recovery":"Replace it."}]}),
+            "Hi",
+            "😀 bad",
+            json!({"kind":"terminology_match","translation":"😀 bad","start":3,"end":6,"term":"bad"}),
+            json!({"kind":"forbidden_term","term":"bad"}),
+        ),
+        (
+            json!({"schemaVersion":3,"roles":[],"rules":[],"customChecks":[{"id":"pattern","label":"Pattern","kind":"pattern","subject":"translation","pattern":"\\bbad\\b","recovery":"Replace it."}]}),
+            "Hi",
+            "😀 bad",
+            json!({"text":"😀 bad","matches":[{"match":"bad","start":3,"end":6}]}),
+            json!({"pattern":"\\bbad\\b","report":"match"}),
+        ),
+        (
+            json!({"schemaVersion":3,"roles":[],"rules":[],"customChecks":[{"id":"length","label":"Length","kind":"length","subject":"source","measure":"characters","minimum":2,"recovery":"Expand it."}]}),
+            "😀",
+            "Hallo",
+            json!({"text":"😀","length":1}),
+            json!({"measure":"characters","minimum":2}),
+        ),
+        (
+            json!({"schemaVersion":3,"roles":[],"rules":[],"customChecks":[{"id":"terms","label":"Terms","kind":"forbidden_term","subject":"translation","terms":["bad"],"caseSensitive":false,"recovery":"Replace it."}]}),
+            "Hi",
+            "😀 bad",
+            json!({"text":"😀 bad","matches":[{"match":"bad","start":3,"end":6}]}),
+            json!({"terms":["bad"]}),
+        ),
+    ];
+    for (document, source, translation, actual, expectation) in cases {
+        let mut fixture = Fixture::new()?;
+        fixture.file("Game.manifest","manifest",&[json!({"namespace":"UI","key":"K","source":source,"path":"/Game/Text/Example.Example.Label"})])?;
+        fixture.file(
+            "en.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":source,"translation":source})],
+        )?;
+        fixture.file(
+            "de.archive",
+            "archive",
+            &[json!({"namespace":"UI","key":"K","source":source,"translation":translation})],
+        )?;
+        fixture.file("en.po", "po", &[])?;
+        fixture.file("de.po", "po", &[])?;
+        fixture.packages(&[json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/Example.Example","property":"Label"})])?;
+        fixture.lines()?;
+        let program = example_program(&[], Some(document))?;
+        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let collator = HostCollator::new("en")?;
+        let cancelled = AtomicBool::new(false);
+        let mut findings = Vec::new();
+        for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
+            let mut rows = NativeSubjects::new(&mut query, subject, &collator, &cancelled)?;
+            findings.extend(program.evaluate(&mut rows, &collator)?.findings);
+        }
+        assert_eq!(
+            findings.len(),
+            1,
+            "actual findings {findings:?}, expected {actual}"
+        );
+        assert_eq!(findings[0].actual, actual);
+        assert_eq!(findings[0].expectation, expectation);
+    }
+    Ok(())
+}
+
 #[test]
 fn missing_table_entry_retains_unknown_without_claiming_an_unavailable_namespace() -> Result<()> {
     let mut fixture = Fixture::new()?;

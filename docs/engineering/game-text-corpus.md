@@ -94,6 +94,19 @@ Set `RAYON_NUM_THREADS` and `CARGO_BUILD_JOBS` to cap native scans.
    problems, signals and findings, with each finding's evidence. Anything missing, extra or
    different fails, unless it is a known defect.
 
+New expectations set `findingFixes: true` and compare each finding's optional `fix`, with the
+exact proposed-change shape: target, culture, namespace, key, source, previous translation and
+replacement translation. Rename replacements are planted from the recipe's argument slots,
+including nested plural forms. Missing, changed or unexpected fixes fail the comparison.
+Retained version-1 corpora without this marker keep their original evidence-only assertions;
+new generation and fuzz runs assert fixes. The portable fix tests also check the proposed-change
+schema and today's TypeScript implementation without using it to produce expectations.
+
+Both the comparison's native scans and the generator's Unreal subprocesses hold
+`UE_SHED_UNREAL_LOCK`. They create the lease exclusively, record the owner and time, poll every
+30 seconds while another job owns it, and release it after completion or failure. The collapse
+probe runs under its parent's lease.
+
 A second, two-line target checks Unreal's `IdenticalNamespaceAndSource` collapse mode on its own,
 so the main target doesn't depend on how collapse mode behaves.
 

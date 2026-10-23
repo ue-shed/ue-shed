@@ -86,7 +86,10 @@ function width(node: Node): number | undefined {
 
 class Parser {
 	private index = 0;
-	constructor(private readonly pattern: string) {}
+	private readonly pattern: string;
+	constructor(pattern: string) {
+		this.pattern = pattern;
+	}
 
 	parse(): Node {
 		return this.alternation();

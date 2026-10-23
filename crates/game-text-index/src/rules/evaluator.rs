@@ -337,6 +337,15 @@ impl<'a> Evaluator<'a> {
         let op = self.program.nodes[id].op.as_str();
         let cacheable = self.independent[id]
             && (super::vector::cheap(op) || matches!(op, "and" | "or" | "if" | "coalesce"));
+        if cacheable
+            && self.cheap_columns[id].is_none()
+            && selection.len() == self.len
+            && selection.rows.iter().copied().eq(0..self.len as u32)
+        {
+            let column = self.node(id, selection)?;
+            self.cheap_columns[id] = Some((column.clone(), Bits::all(self.len)));
+            return Ok(column);
+        }
         if cacheable {
             let missing = if let Some((_, ready)) = &self.cheap_columns[id] {
                 selection
@@ -384,12 +393,17 @@ impl<'a> Evaluator<'a> {
             "field" => {
                 let name = node.value.as_str().ok_or("Invalid field name.")?;
                 let field = self.prepared.field(name)?;
-                let values = selection
+                let rows = selection
                     .rows
                     .iter()
-                    .map(|row| field.get(*row as usize, &self.arena))
+                    .map(|row| {
+                        field
+                            .rows
+                            .as_ref()
+                            .map_or(*row as usize, |parents| parents[*row as usize] as usize)
+                    })
                     .collect::<Vec<_>>();
-                Column::from_atoms(&values, &mut self.arena)
+                field.column.select(&rows, &mut self.arena)
             }
             "var" => selection
                 .variables
@@ -573,7 +587,75 @@ impl<'a> Evaluator<'a> {
             failures.union(&column.failed);
         }
         if super::vector::cheap(&node.op) {
+            use super::columns::Data;
+            if node.op == "isNull"
+                || (node.op == "not"
+                    && matches!(columns[0].data, Data::Bool(_) | Data::Constant(_)))
+            {
+                let mut bits = if node.op == "isNull" {
+                    columns[0].nulls.clone()
+                } else {
+                    match &columns[0].data {
+                        Data::Bool(values) => {
+                            let mut bits = Bits::all(selection.len());
+                            for ((word, value), null) in bits
+                                .words
+                                .iter_mut()
+                                .zip(&values.words)
+                                .zip(&columns[0].nulls.words)
+                            {
+                                *word &= !value | null;
+                            }
+                            bits
+                        }
+                        Data::Constant(value) => {
+                            if value.boolean() {
+                                Bits::new(selection.len())
+                            } else {
+                                Bits::all(selection.len())
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                };
+                for (word, failed) in bits.words.iter_mut().zip(&failures.words) {
+                    *word &= !failed;
+                }
+                self.arena
+                    .recorder
+                    .kernel(&node.op, &started, selection.len(), selection.len(), 0);
+                return Ok(Column {
+                    data: Data::Bool(bits),
+                    nulls: failures.clone(),
+                    failed: failures,
+                });
+            }
             let mut inputs = vec![Atom::Null; columns.len()];
+            if node.result == super::compiler::Type::Bool {
+                let mut bits = Bits::new(selection.len());
+                let mut nulls = failures.clone();
+                for row in 0..selection.len() {
+                    if failures.get(row) {
+                        continue;
+                    }
+                    for (input, column) in inputs.iter_mut().zip(&columns) {
+                        *input = column.get(row, &self.arena);
+                    }
+                    match super::vector::run(&self.arena, &node.op, &inputs)? {
+                        Atom::Bool(true) => bits.set(row),
+                        Atom::Null => nulls.set(row),
+                        _ => {}
+                    }
+                }
+                self.arena
+                    .recorder
+                    .kernel(&node.op, &started, selection.len(), selection.len(), 0);
+                return Ok(Column {
+                    data: Data::Bool(bits),
+                    nulls,
+                    failed: failures,
+                });
+            }
             let mut output = Vec::with_capacity(selection.len());
             for row in 0..selection.len() {
                 if failures.get(row) {

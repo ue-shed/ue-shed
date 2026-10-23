@@ -755,7 +755,7 @@ test("canonical compare output reports the number and classes of pinned disagree
 	assert.deepEqual(result.unexpected, []);
 	assert.deepEqual(result.stale, []);
 	assert.equal(result.pinned.total, defects.length);
-	assert.equal(result.pinned.byDefect["native-source-override"], 6);
+	assert.equal(result.pinned.byDefect["native-source-override"], undefined);
 	const output = formatCorpusComparisonSummary(
 		subjects.length,
 		differences.length,

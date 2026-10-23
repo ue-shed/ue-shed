@@ -140,7 +140,6 @@ export function corpusDefectsFor(
 	probes: readonly Difference[] = []
 ) {
 	const result: (CorpusKnownDefect & { subject: string })[] = [];
-	const lookup = new Map(subjects.map((subject) => [subjectKey(subject), subject]));
 	for (const subject of subjects) {
 		const predicted = {
 			...subject,
@@ -169,39 +168,6 @@ export function corpusDefectsFor(
 			Object.assign(predicted, Schema.decodeUnknownSync(Dictionary)(template.actual));
 			explanations.push(template.why);
 			defectIds.push(...template.defects);
-		}
-		const native = lookup.get(subjectKey({ ...subject, culture: "en" }));
-		const recipe = subject.case.split("@")[0];
-		if (
-			(recipe === "native-source-override" || recipe === "native-source-override-near") &&
-			subject.culture !== "en" &&
-			native?.stages.archive
-		) {
-			if (recipe === "native-source-override-near") {
-				predicted.state = "translated";
-				predicted.facts = subject.facts.map((fact) =>
-					fact === "needs_update" ? "translated" : fact
-				);
-				predicted.problems = ["up_to_date"];
-				predicted.findings = subject.findings.filter(
-					(finding) => finding.check !== "localization.outdated_translation"
-				);
-			} else {
-				predicted.state = "needs_update";
-				predicted.facts = subject.facts.map((fact) =>
-					fact === "translated" ? "needs_update" : fact
-				);
-				predicted.problems = ["translation"];
-				predicted.findings.push({
-					check: "localization.outdated_translation",
-					actual: { translatedSource: native.stages.archive },
-					expectation: { source: subject.gatheredSource }
-				});
-			}
-			defectIds.push("native-source-override");
-			explanations.push(
-				"LocTextHelper.cpp:1197-1213 and 1240-1252 require the native archive translation as foreign source. Today's join/check compares with raw manifest source, rejecting the current archive in native-source-override and accepting the stale raw-source archive in its near miss."
-			);
 		}
 		if (subject.case === "edit-deleted-package") {
 			defectIds.push("deleted-package-not-found");

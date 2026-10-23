@@ -11,7 +11,7 @@ import {
 	localizationRuleId,
 	type InconsistentTranslationParams
 } from "./localization-check-catalogue.js";
-import { localizationManifestNotes } from "./localization.js";
+import { localizationExpectedSource, localizationManifestNotes } from "./localization.js";
 import { localizationLineUnits } from "./gathered-text.js";
 import {
 	DuplicateSources,
@@ -1109,16 +1109,22 @@ export function checkLocalizationLine(
 			culture.facts.includes("needs_update")
 		) {
 			const translatedSource = culture.archive.source.Text;
+			const expectedSource = localizationExpectedSource(
+				line.manifest[0]!.source,
+				culture.culture,
+				context.nativeCulture,
+				line.cultures.find((mark) => mark.culture === context.nativeCulture)?.archive
+			).Text;
 			if (
-				translatedSource !== manifestSource &&
-				normalizedLineEndings(translatedSource) === normalizedLineEndings(manifestSource)
+				translatedSource !== expectedSource &&
+				normalizedLineEndings(translatedSource) === normalizedLineEndings(expectedSource)
 			)
 				add({
 					...base,
 					ruleId: ruleIdOf("source_line_endings_changed"),
 					kind: "source_line_endings_changed",
 					actual: { translatedSource },
-					expectation: { source: manifestSource },
+					expectation: { source: expectedSource },
 					recovery:
 						"Save the source with the line endings it was translated with, or re-import the translation against the current source."
 				});
@@ -1128,7 +1134,7 @@ export function checkLocalizationLine(
 					ruleId: ruleIdOf("outdated_translation"),
 					kind: "outdated_translation",
 					actual: { translatedSource },
-					expectation: { source: manifestSource },
+					expectation: { source: expectedSource },
 					recovery:
 						"Translate the current source text and import it; Unreal ships the source instead of a translation made for older text."
 				});

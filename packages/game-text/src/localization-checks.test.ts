@@ -57,6 +57,57 @@ function findings(report: LocalizationQualityReport): readonly LocalizationQuali
 	);
 }
 
+it("checks foreign archive staleness against Unreal's native translation", () => {
+	for (const stale of [false, true]) {
+		const text = corpus([unit("K", "Raw source")]);
+		const initial = evidence(
+			[manifestEntry("K", "Raw source")],
+			[archiveEntry("K", stale ? "Raw source" : "Native source", "Foreign text")],
+			success(parsePO(new TextEncoder().encode("")))
+		);
+		const files = {
+			...initial,
+			cultures: initial.cultures.map((culture) => {
+				if (culture.culture !== "en" || culture.archive.status !== "read") return culture;
+				return {
+					...culture,
+					archive: {
+						...culture.archive,
+						value: {
+							...culture.archive.value,
+							entries: [archiveEntry("K", "Raw source", "Native source")]
+						}
+					}
+				};
+			})
+		};
+		// An absent PO leaves the archive as the translation being checked.
+		const join = joinLocalizationTarget(text, files);
+		const foreign = join.lines[0]!.cultures.find((culture) => culture.culture === "de")!;
+		expect(foreign.facts.includes("needs_update")).toBe(stale);
+		const report = checkLocalizationTarget(text, join, files, {
+			checks: ["outdated_translation"]
+		});
+		expect(
+			findings(report).map((finding) => ({
+				kind: finding.kind,
+				actual: finding.actual,
+				expectation: finding.expectation
+			}))
+		).toEqual(
+			stale
+				? [
+						{
+							kind: "outdated_translation",
+							actual: { translatedSource: "Raw source" },
+							expectation: { source: "Native source" }
+						}
+					]
+				: []
+		);
+	}
+});
+
 describe("built-in localization quality checks", () => {
 	it("finds a renamed argument and stages a one-argument rename with PO preconditions", () => {
 		const { text, files, report } = checked("Hello {Name}", "Hallo {Wrong}");

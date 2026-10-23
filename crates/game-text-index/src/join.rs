@@ -48,8 +48,8 @@ pub(crate) const L_REASONS: usize = 9;
 /// A line's problems under a request that names no finding, classified through `text_problem`
 /// from the shared table, as the engine does. Queries classify per request instead.
 pub(crate) const L_PROBLEMS: usize = 11;
-/// v4 distinguishes absent String Table entries from unavailable table namespaces.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v4:";
+/// v5 validates foreign archive sources against native archive translations, as Unreal does.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v5:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -450,6 +450,14 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 .unwrap_or_else(|| format!("<po:{culture}>")),
         );
     }
+    let native_culture = target["nativeCulture"].as_str();
+    let native_path =
+        native_culture.and_then(|culture| target["outputPaths"]["archives"][culture].as_str());
+    if let Some(path) = native_path
+        && !paths.iter().any(|value| value == path)
+    {
+        paths.push(path.to_owned());
+    }
     let mut dependencies = serde_json::Map::new();
     let mut names = store.root["active"]
         .as_object()
@@ -529,10 +537,10 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         .into_iter()
         .map(|bytes| crate::wtf8::Wtf8Buf::from_bytes(bytes).map(|value| value.into_view()))
         .collect::<Result<Vec<_>>>()?;
-    let load = |path: &String| {
+    let load = |path: &str| {
         FileColumns::load(
             store,
-            path.clone(),
+            path.to_owned(),
             input
                 .file_errors
                 .as_ref()
@@ -547,6 +555,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         archives.push(load(&paths[ci * 2 + 1])?);
         pos.push(load(&paths[ci * 2 + 2])?);
     }
+    let native_archive = load(native_path.unwrap_or("<native archive>"))?;
     crate::join_incremental::note_stage("dictionary", &mut stage);
     let packages = PackageColumns::load(store, &strings, &input.project_root, target)?;
     crate::join_incremental::note_stage("load", &mut stage);
@@ -796,6 +805,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let mut visible_occurrence = vec![false; count];
     let mut visible_line = vec![false; joined.groups.len()];
     let mut cursors = vec![[0; 2]; cultures.len()];
+    let mut native_cursor = 0;
     let mut pending_sources = Vec::new();
     let mut pending_rows = Vec::new();
     for row in 0..joined.groups.len() {
@@ -1079,6 +1089,29 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         joined.line[18][row] = file_rows.len() as u32;
         file_rows.extend(unique(row_files));
         joined.line[19][row] = file_rows.len() as u32;
+        let native_override = if g.ns == ABSENT {
+            None
+        } else {
+            let (entry, count) = native_archive.lookup(g.ns, g.key, &mut native_cursor);
+            if count == 1 {
+                let entry = entry as usize;
+                let c = &native_archive.columns;
+                let translation = c[if c[OPTIONS][entry] & 128 != 0 {
+                    SOURCE
+                } else {
+                    TRANSLATION
+                }][entry];
+                // FLocTextHelper::GetExportText/GetRuntimeText use IsExactMatch, including metadata.
+                (c[SOURCE][entry] != translation
+                    || !same_extra(
+                        joined.string(c[SOURCE_EXTRA][entry]),
+                        joined.string(c[TRANSLATION_EXTRA][entry]),
+                    ))
+                .then_some((translation, c[TRANSLATION_EXTRA][entry]))
+            } else {
+                None
+            }
+        };
         for (ci, cursor) in cursors.iter_mut().enumerate() {
             let af = &joined.archives[ci];
             let pf = &joined.pos[ci];
@@ -1134,13 +1167,16 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             if (af.loaded || af.missing) && ac <= 1 && pc == 1 && pt != empty && pt != at {
                 facts |= 1 << 3;
             }
-            let matches = ac == 1
-                && g.me - g.ms == 1
-                && a[SOURCE][ar as usize] == m[SOURCE][first as usize]
-                && same_extra(
-                    joined.string(a[SOURCE_EXTRA][ar as usize]),
-                    joined.string(m[SOURCE_EXTRA][first as usize]),
-                );
+            let matches = ac == 1 && g.me - g.ms == 1 && {
+                let expected = native_override
+                    .filter(|_| Some(cultures[ci].as_str()) != native_culture)
+                    .unwrap_or((m[SOURCE][first as usize], m[SOURCE_EXTRA][first as usize]));
+                a[SOURCE][ar as usize] == expected.0
+                    && same_extra(
+                        joined.string(a[SOURCE_EXTRA][ar as usize]),
+                        joined.string(expected.1),
+                    )
+            };
             if ac == 1 && g.me - g.ms == 1 && !matches {
                 facts |= 1 << 2;
             }

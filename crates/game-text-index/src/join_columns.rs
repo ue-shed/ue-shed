@@ -28,6 +28,7 @@ pub(crate) const PATH: usize = 4;
 pub(crate) const NOTES: usize = 5;
 pub(crate) const METADATA: usize = 6;
 pub(crate) const SOURCE_EXTRA: usize = 7;
+pub(crate) const TRANSLATION_EXTRA: usize = 8;
 pub(crate) const OPTIONS: usize = 10;
 pub(crate) const ORDINAL: usize = 11;
 pub(crate) fn layer(store: &Store, name: &str) -> Result<Option<(Reader, Value)>> {
@@ -90,9 +91,9 @@ impl FileColumns {
                 .ok_or("source availability absent")?;
             result.prefix = meta["pathPrefix"].as_str().unwrap_or("").into();
             for (field, name) in LOCALIZATION_FIELDS.iter().enumerate() {
-                // Translation and PO extras stay in their input snapshots for hydration;
-                // the join consumes their compact flags instead.
-                if field == 8 || field == 9 {
+                // Native translations may be the foreign source, including their metadata.
+                // PO extras are only needed for hydration.
+                if field == 9 {
                     continue;
                 }
                 result.columns[field] = column(&mut reader, &record, &format!("entry.{name}"))?;

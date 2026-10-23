@@ -252,3 +252,55 @@ fn missing_table_entry_retains_unknown_without_claiming_an_unavailable_namespace
     }
     Ok(())
 }
+
+#[test]
+fn foreign_sources_use_native_archive_translations_including_metadata() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    let cases = [
+        ("Current", "Native", "", "Native", "", "translated"),
+        ("Stale", "Native", "", "Raw", "", "needs_update"),
+        ("NoOverride", "Raw", "", "Raw", "", "translated"),
+        (
+            "Metadata",
+            "Raw",
+            r#"{"MetaData":{"Tag":"Native"}}"#,
+            "Raw",
+            r#"{"MetaData":{"Tag":"Native"}}"#,
+            "translated",
+        ),
+        (
+            "StaleMetadata",
+            "Raw",
+            r#"{"MetaData":{"Tag":"Native"}}"#,
+            "Raw",
+            "",
+            "needs_update",
+        ),
+        ("EmptyNative", "", "", "", "", "translated"),
+    ];
+    let manifest = cases.iter().map(|(key, ..)| json!({"namespace":"UI","key":key,"source":"Raw","path":"/Game/Text/Example.Example.Label"})).collect::<Vec<_>>();
+    let native = cases.iter().map(|(key, translation, extra, ..)| json!({"namespace":"UI","key":key,"source":"Raw","translation":translation,"translation-extra":extra})).collect::<Vec<_>>();
+    let foreign = cases.iter().map(|(key, _, _, source, extra, _)| json!({"namespace":"UI","key":key,"source":source,"source-extra":extra,"translation":"Foreign"})).collect::<Vec<_>>();
+    fixture.file("Game.manifest", "manifest", &manifest)?;
+    fixture.file("en.archive", "archive", &native)?;
+    fixture.file("de.archive", "archive", &foreign)?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&cases.iter().map(|(key, ..)| json!({"namespace":"UI","key":key,"source":"Raw","object":"/Game/Text/Example.Example","property":key})).collect::<Vec<_>>())?;
+    let lines = fixture.lines()?;
+    for (key, _, _, _, _, expected) in cases {
+        let line = lines
+            .iter()
+            .find(|line| line["identity"]["key"] == key)
+            .ok_or("expected line")?;
+        let mark = line["cultures"]
+            .as_array()
+            .ok_or("culture marks")?
+            .iter()
+            .find(|mark| mark["culture"] == "de")
+            .ok_or("foreign mark")?;
+        assert_eq!(mark["state"], expected, "{key}");
+        assert_eq!(mark["unknownReasons"], json!([]), "{key}");
+    }
+    Ok(())
+}

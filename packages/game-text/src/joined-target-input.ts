@@ -128,6 +128,7 @@ export const loadJoinFile = Effect.fn("JoinedTarget.file")(function* (
 		"key",
 		"source",
 		"source-extra",
+		"translation-extra",
 		"translation",
 		"options",
 		"ordinal",

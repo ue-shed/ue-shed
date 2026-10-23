@@ -837,7 +837,10 @@ Structural state and current-source drift precede culture translation work, matc
 intent. Uncertainty blocks unsupported translation claims. Non-empty PO text differing from the
 archive takes precedence over archive staleness. Secondary facts retain every applicable state,
 so a changed source can also have an unsynced translation. Native cultures use their native archive
-with the same rules; gathered native translations normally equal the source.
+with the same rules; gathered native translations normally equal the source. For foreign cultures,
+Unreal's NativeText export and runtime source check uses a native archive translation that differs
+from its recorded source, including metadata. A foreign archive recorded against that native
+translation is current; one recorded against the raw manifest source is outdated.
 
 Missing manifest/archive/PO evidence, duplicate identities, unresolved corpus identities or String
 Table namespaces or entries, conflicting current sources, unavailable gather settings, non-project paths and

@@ -313,6 +313,20 @@ export function localizationTextMatches(left: LocalizationText, right: Localizat
 	return sameJson(left, right);
 }
 
+/** Unreal NativeText uses a differing native archive translation as the foreign source. */
+export function localizationExpectedSource(
+	source: LocalizationText,
+	culture: string,
+	nativeCulture: string | null,
+	nativeArchive: ArchiveEntry | null | undefined
+): LocalizationText {
+	return culture !== nativeCulture &&
+		nativeArchive &&
+		!localizationTextMatches(nativeArchive.source, nativeArchive.translation)
+		? nativeArchive.translation
+		: source;
+}
+
 const CommentMetadata = Schema.Struct({ Comment: Schema.optionalKey(Schema.String) });
 
 /**
@@ -532,6 +546,17 @@ export function joinLocalizationTarget(
 			const archives: readonly ArchiveEntry[] = index?.archives.get(key) ?? [];
 			const pos = index?.pos.get(key) ?? [];
 			const archive = archives[0] ?? null;
+			const nativeEntries = cultureIndexes
+				.find((item) => item.culture === target.nativeCulture)
+				?.archives.get(key);
+			const expectedSource =
+				first &&
+				localizationExpectedSource(
+					first.source,
+					culture,
+					target.nativeCulture,
+					nativeEntries?.length === 1 ? nativeEntries[0] : null
+				);
 			const po: POEntry | null = pos[0]?.entry ?? null;
 			const poValue = po?.msgstr["0"] ?? "";
 			const archiveAbsent =
@@ -559,7 +584,8 @@ export function joinLocalizationTarget(
 				entries.length === 1 &&
 				archive &&
 				first &&
-				!localizationTextMatches(archive.source, first.source)
+				expectedSource &&
+				!localizationTextMatches(archive.source, expectedSource)
 			)
 				facts.push("needs_update");
 			if ((index?.archive.status === "read" || archiveAbsent) && archives.length <= 1) {
@@ -567,7 +593,8 @@ export function joinLocalizationTarget(
 				else if (
 					entries.length === 1 &&
 					first &&
-					localizationTextMatches(archive.source, first.source)
+					expectedSource &&
+					localizationTextMatches(archive.source, expectedSource)
 				)
 					facts.push("translated");
 			}

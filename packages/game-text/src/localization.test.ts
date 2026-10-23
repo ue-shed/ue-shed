@@ -141,7 +141,7 @@ describe("localization identity join and precedence", () => {
 		expect(joined.lines[0]?.identity).toEqual({ namespace: gathered, key: "K" });
 		expect(joined.lines[0]?.cultures.map((culture) => culture.state)).toEqual([
 			"translated",
-			"translated"
+			"needs_update"
 		]);
 		expect(joined.lines[0]?.cultures[0]?.po?.identity?.namespace).toBe(gathered);
 		expect(text.units[0]?.identity).toMatchObject({ namespace: saved });
@@ -263,7 +263,7 @@ describe("localization identity join and precedence", () => {
 				expect(line.origin).toEqual({ kind: "corpus", unitIds: [unit.id] });
 				expect(line.cultures.map((culture) => culture.state)).toEqual([
 					"translated",
-					"translated"
+					"needs_update"
 				]);
 				expect(
 					localizationLineUnits(line, units).flatMap((item) => item.occurrences)
@@ -620,7 +620,7 @@ describe("localization identity join and precedence", () => {
 		expect(joined.lines[0]?.origin).toMatchObject({ unitIds: [own.id, reference.id].sort() });
 		expect(joined.lines[0]?.cultures.map((culture) => culture.state)).toEqual([
 			"translated",
-			"translated"
+			"needs_update"
 		]);
 	});
 	it("distinguishes a missing String Table entry from an unavailable table namespace", () => {

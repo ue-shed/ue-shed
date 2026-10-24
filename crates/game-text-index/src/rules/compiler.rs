@@ -1,3 +1,4 @@
+use super::replies::{RuleProblem, RuleProblemCode, RulesCheck};
 use crate::{Error, ErrorCode, Result, require};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -742,9 +743,65 @@ impl Compiler {
     }
 }
 
+/// The rule being compiled, and what a failure there is about.
+struct Fault {
+    rule_id: Option<String>,
+    code: RuleProblemCode,
+}
+impl Fault {
+    fn at(&mut self, rule_id: Option<&str>, code: RuleProblemCode) {
+        self.rule_id = rule_id.map(str::to_owned);
+        self.code = code;
+    }
+}
+/// Compiles a document to report its first problem, with the rule at fault, rather than run it.
+pub fn check(json: &str) -> RulesCheck {
+    let mut fault = Fault {
+        rule_id: None,
+        code: RuleProblemCode::InvalidStructure,
+    };
+    let problem = compile_tracked(json, &mut fault)
+        .err()
+        .map(|error| RuleProblem {
+            rule_id: fault.rule_id,
+            code: fault.code,
+            message: error.to_string(),
+        });
+    RulesCheck { problem }
+}
 pub fn compile(json: &str) -> Result<Program> {
+    compile_tracked(
+        json,
+        &mut Fault {
+            rule_id: None,
+            code: RuleProblemCode::InvalidStructure,
+        },
+    )
+}
+/// A v4 document with its rules still JSON, to find the rule that doesn't decode.
+#[derive(serde::Deserialize)]
+struct Unread {
+    rules: Vec<Value>,
+}
+/// The first rule of a document that doesn't decode, by ID: an unknown operation or a malformed
+/// form. Each is decoded from text, as the document was, so a deep rule needs no more stack.
+fn undecoded_rule(json: &str) -> Option<String> {
+    let unread = crate::json_value::parse_as::<Unread>(json).ok()?;
+    unread
+        .rules
+        .iter()
+        .find(|rule| {
+            serde_json::to_string(rule)
+                .map_or(true, |text| serde_json::from_str::<Rule>(&text).is_err())
+        })
+        .and_then(|rule| rule.get("id")?.as_str().map(str::to_owned))
+}
+fn compile_tracked(json: &str, fault: &mut Fault) -> Result<Program> {
     // The WTF-8-aware reader keeps lone UTF-16 units; its nesting limit (127) bounds the IR.
     let document: Document = crate::json_value::parse_as(json).map_err(|cause| {
+        if let Some(id) = undecoded_rule(json) {
+            fault.at(Some(&id), RuleProblemCode::InvalidExpression);
+        }
         Error::with_source(ErrorCode::InvalidInput, "Invalid v4 rule document.", cause)
     })?;
     require(
@@ -776,6 +833,7 @@ pub fn compile(json: &str) -> Result<Program> {
     };
     let mut compiled = Vec::new();
     for (ordinal, rule) in document.rules.into_iter().enumerate() {
+        fault.at(Some(&rule.id), RuleProblemCode::InvalidStructure);
         require(
             rule.role
                 .as_ref()
@@ -791,6 +849,7 @@ pub fn compile(json: &str) -> Result<Program> {
                 invalid("Unknown scope role."),
             )?;
         }
+        fault.at(Some(&rule.id), RuleProblemCode::InvalidExpression);
         let each = rule
             .each
             .as_ref()
@@ -841,6 +900,7 @@ pub fn compile(json: &str) -> Result<Program> {
     let mut order = Vec::new();
     let mut visiting = HashSet::new();
     let mut visited = HashSet::new();
+    #[allow(clippy::too_many_arguments)]
     fn visit(
         index: usize,
         rules: &[CompiledRule],
@@ -849,15 +909,19 @@ pub fn compile(json: &str) -> Result<Program> {
         visiting: &mut HashSet<usize>,
         visited: &mut HashSet<usize>,
         order: &mut Vec<usize>,
+        fault: &mut Fault,
     ) -> Result<()> {
         if visited.contains(&index) {
             return Ok(());
         }
-        require(
-            visiting.insert(index),
-            invalid("rule_cycle: cyclic rule reference."),
-        )?;
         let rule = &rules[index];
+        if !visiting.insert(index) {
+            fault.at(Some(&rule.rule.id), RuleProblemCode::RuleCycle);
+            return Err(invalid(format!(
+                "rule_cycle: rule {} reads its own findings through finding.",
+                rule.rule.id
+            )));
+        }
         let mut node_ids = vec![rule.when, rule.actual, rule.expectation, rule.recovery];
         node_ids.extend(
             [
@@ -879,14 +943,20 @@ pub fn compile(json: &str) -> Result<Program> {
             let node = &nodes[id];
             node_ids.extend_from_slice(&node.args);
             if let Some(reference) = node.op.reference() {
-                require(
-                    subjects
-                        .get(reference)
-                        .is_none_or(|subject| *subject == rule.rule.subject),
-                    invalid("Finding references must have the same subject."),
-                )?;
+                if subjects
+                    .get(reference)
+                    .is_some_and(|subject| *subject != rule.rule.subject)
+                {
+                    fault.at(Some(&rule.rule.id), RuleProblemCode::InvalidExpression);
+                    return Err(invalid(format!(
+                        "Rule {} reads the findings of {reference}, a rule of another subject.",
+                        rule.rule.id
+                    )));
+                }
                 if let Some(dependency) = rules.iter().position(|rule| rule.rule.id == reference) {
-                    visit(dependency, rules, nodes, subjects, visiting, visited, order)?;
+                    visit(
+                        dependency, rules, nodes, subjects, visiting, visited, order, fault,
+                    )?;
                 }
             }
         }
@@ -904,8 +974,10 @@ pub fn compile(json: &str) -> Result<Program> {
             &mut visiting,
             &mut visited,
             &mut order,
+            fault,
         )?;
     }
+    fault.at(None, RuleProblemCode::InvalidStructure);
     let mut compiled: Vec<Option<CompiledRule>> = compiled.into_iter().map(Some).collect();
     let rules: Vec<CompiledRule> = order
         .into_iter()
@@ -1031,6 +1103,26 @@ mod tests {
         )));
         let cycle = compile(&document(r#"{"finding":"a"}"#, "")).err();
         assert!(cycle.is_some_and(|error| error.to_string().contains("rule_cycle")));
+        Ok(())
+    }
+
+    #[test]
+    fn a_check_names_the_rule_at_fault_and_what_is_wrong() -> Result<()> {
+        let problem =
+            |json: &str| serde_json::to_value(check(json)).map(|value| value["problem"].clone());
+        assert_eq!(problem(&document(r#"{"lit":true}"#, ""))?, Value::Null);
+        assert_eq!(
+            problem(&document(r#"{"finding":"a"}"#, ""))?,
+            serde_json::json!({"ruleId":"a","code":"rule_cycle","message":"rule_cycle: rule a reads its own findings through finding."})
+        );
+        for expression in [r#"{"unknown":[]}"#, r#"{"param":"missing"}"#] {
+            let problem = problem(&document(expression, ""))?;
+            assert_eq!(problem["ruleId"], "a");
+            assert_eq!(problem["code"], "invalid_expression");
+        }
+        let broken = problem("{")?;
+        assert_eq!(broken["code"], "invalid_structure");
+        assert!(broken.get("ruleId").is_none());
         Ok(())
     }
 

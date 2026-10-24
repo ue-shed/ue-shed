@@ -64,8 +64,8 @@ mod tests {
     };
     use crate::rules::replies::{
         EvaluationProfile, FindingsEvaluation, LineDiagnostic, Memory, Place, PlaceSet,
-        ProfileSample, ReadProfile, RoleTotal, RuleCount, RuleMetadata, RunProfile, SpilledReply,
-        StageSample, SubStageSample,
+        ProfileSample, ReadProfile, RoleTotal, RuleCount, RuleMetadata, RuleProblem,
+        RuleProblemCode, RulesCheck, RunProfile, SpilledReply, StageSample, SubStageSample,
     };
     use ts_rs::{Config, TS};
 
@@ -110,6 +110,9 @@ mod tests {
             Family::decl(&config),
             Severity::decl(&config),
             FindingsEvaluation::decl(&config),
+            RulesCheck::decl(&config),
+            RuleProblem::decl(&config),
+            RuleProblemCode::decl(&config),
             RuleMetadata::decl(&config),
             RuleCount::decl(&config),
             RoleTotal::decl(&config),

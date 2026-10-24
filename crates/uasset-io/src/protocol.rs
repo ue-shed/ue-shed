@@ -927,6 +927,7 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     "findings_evaluate",
                     "findings_accept",
                     "findings_query",
+                    "rules_check",
                 ]
                 .contains(&outcome.action.as_str())
                 || outcome

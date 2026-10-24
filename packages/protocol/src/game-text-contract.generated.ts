@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "9ed7ee471bbefb45ce2a06a86e6107b9720841afc503460fb5a986bb677638bb"
+	contractHash: "8332bc58c9ca89f2607a9b200cad8458a5d83a74b0de9116a7eac52634815c4e"
 } as const;
 
 /**
@@ -65,6 +65,12 @@ export type FindingsEvaluation = { key: string, rules: ReadonlyArray<RuleMetadat
  * The document's roles, in its order, with the places each matches.
  */
 roles: ReadonlyArray<RoleTotal>, collation: string, profile: EvaluationProfile, };
+
+export type RulesCheck = { problem: RuleProblem | null, };
+
+export type RuleProblem = { ruleId?: string, code: RuleProblemCode, message: string, };
+
+export type RuleProblemCode = "invalid_expression" | "rule_cycle" | "invalid_structure";
 
 export type RuleMetadata = { id: string, ruleId: string, kind: string, label: string, subject: Subject, family: Family, severity: Severity, role: string | null, 
 /**

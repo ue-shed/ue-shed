@@ -461,6 +461,43 @@ Their findings are `LocalizationCustomFinding`s (`kind: "custom"`, with `check`,
 each finding's rule in its own column, so the number of rules and custom checks is no longer
 limited by the packed facts.
 
+### Complete rules
+
+An entry with `kind: "rule"` is a whole rule in the engine's rule language, for what the checks
+above don't express. It has an `id`, a `label`, a `subject` (`line`, each keyed line's source
+once; `line_culture`, each culture's translation), `when`, `actual`, `expectation` and a
+`recovery` text. `when` holds where the rule has a finding; `actual` and `expectation` are
+objects of expressions, the finding's evidence. Constants are `{ "lit": … }`, `{ "param": … }`
+reads `params`, and `{ "finding": "<rule ID>" }` reads another rule's finding on the same line,
+built-in checks included. Optional: `severity` (`normal`), `scope`, `params`, `let` (named
+expressions), `each` and `eachAs` (a finding per item, read as `item` by default), `counts`
+(`false` keeps its findings out of Browse's `finding` problem), `shadowed` and `enabled`. Any
+other key is `invalid_structure`.
+
+```json
+{
+	"kind": "rule",
+	"id": "ui.exclamation",
+	"label": "Exclamation mark in UI text",
+	"subject": "line_culture",
+	"severity": "low",
+	"params": { "mark": "!" },
+	"when": { "contains": [{ "field": "latest" }, { "param": "mark" }] },
+	"actual": { "object": { "translation": { "field": "latest" } } },
+	"expectation": { "object": { "withoutMark": { "lit": true } } },
+	"recovery": "Drop the exclamation mark."
+}
+```
+
+Its findings are custom findings with `check: "rule"`, `actual` and `expectation` as its
+expressions build them; Quality lists them under `custom.<id>` with the rule's label, which is
+also their problem text, and reports list them in `customChecks`. `customRulesOf(document)`
+gives the custom checks and complete rules that run, in file order. The decoder checks an entry's
+keys; the engine checks its expressions when a workspace loads the rules or `loc check` runs
+them, and fails with a `GameTextRuleDocumentError` naming the rule (`ruleId`):
+`invalid_expression`, or `rule_cycle` when rules read each other's findings in a cycle. An
+overlay patches a complete rule's `params` key by key, as a built-in check's.
+
 `localizationCheckCatalogue` describes every built-in check: its `basis` (`unreal` when the
 finding states what Unreal does with the text, so only its severity and whether it runs are the
 project's; `heuristic` when it is a judgment with thresholds or word lists), its `label`, its

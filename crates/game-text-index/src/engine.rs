@@ -130,6 +130,11 @@ pub enum EngineRequest {
         reader: String,
         payload: String,
     },
+    /// Compiles a v4 rule document and returns its first problem; needs no reader.
+    RulesCheck {
+        /// The v4 rule document's JSON text, read by the WTF-8-aware reader.
+        rules: String,
+    },
 }
 impl EngineRequest {
     pub fn requires_findings(&self) -> bool {
@@ -139,13 +144,14 @@ impl EngineRequest {
                 | Self::FindingsAccept { .. }
                 | Self::FindingsQuery { .. }
                 | Self::Related { .. }
+                | Self::RulesCheck { .. }
         )
     }
     pub fn validate(&self) -> Result<()> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("requestValidate");
         match self {
-            Self::Capabilities => {}
+            Self::Capabilities | Self::RulesCheck { .. } => {}
             Self::Open {
                 configuration,
                 expected_generation,
@@ -335,6 +341,10 @@ impl EngineSession {
             EngineRequest::Capabilities => {
                 outcome.action = "capabilities".into();
                 outcome.contract = Some(crate::contract::identity());
+            }
+            EngineRequest::RulesCheck { rules } => {
+                outcome.action = "rules_check".into();
+                outcome.payload = Some(serde_json::to_string(&crate::rules::check(rules))?);
             }
             EngineRequest::Open {
                 configuration,

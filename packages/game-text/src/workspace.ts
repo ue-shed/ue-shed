@@ -75,6 +75,7 @@ import {
 } from "./entry-schema.js";
 import { investigationRequest, readFindingUnits } from "./investigation.js";
 import { hasBrowseRules, makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
+import { checkCompleteRules } from "./native-findings.js";
 import type { TextFindingsSelection } from "./text-problem-schema.js";
 import type { LocalizationTarget } from "@ue-shed/localization";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
@@ -819,6 +820,20 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				status: "failed" as const
 			};
 		}
+		const checked = yield* checkCompleteRules(index.query, document.value).pipe(Effect.result);
+		if (Result.isFailure(checked))
+			return {
+				status: "failed" as const,
+				error: {
+					code:
+						checked.failure._tag === "GameTextRuleDocumentError"
+							? ("invalid_rules" as const)
+							: ("contract_failure" as const),
+					message: checked.failure.message,
+					recovery: checked.failure.recovery,
+					retrySafe: true
+				}
+			};
 		const prepared = yield* sourceQualityModel(index, document.value).pipe(Effect.result);
 		if (Result.isFailure(prepared))
 			return {

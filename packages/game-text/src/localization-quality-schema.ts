@@ -283,31 +283,44 @@ export const LocalizationQualityFinding = Schema.Union([
 export type LocalizationQualityFinding = typeof LocalizationQualityFinding.Type;
 
 const CustomMatch = Schema.Struct({ match: Schema.String, start: Count, end: Count });
-/**
- * A finding of a check the rule file defines (`customChecks`). `ruleId` is the check's ID and
- * `label` its name; `check` is its kind. `actual.text` is the text checked: the source for a
- * `source` check, the culture's shipped translation for a `translation` check.
- */
-export const LocalizationCustomFinding = Schema.Struct({
+const CustomFields = {
 	...Base,
 	kind: Schema.Literal("custom"),
-	check: Schema.Literals(["pattern", "length", "forbidden_term"]),
 	label: Schema.String,
-	subject: Schema.Literals(["source", "translation"]),
-	actual: Schema.Struct({
-		text: Schema.String,
-		length: Schema.optionalKey(Count),
-		matches: Schema.optionalKey(Schema.Array(CustomMatch).check(Schema.isMaxLength(16)))
+	subject: Schema.Literals(["source", "translation"])
+};
+/**
+ * A finding of a rule the rule file defines (`customChecks`). `ruleId` is the rule's ID and
+ * `label` its name; `check` is its kind, or `rule` for a complete rule. A check's
+ * `actual.text` is the text checked: the source for a `source` check, the culture's shipped
+ * translation for a `translation` check. A complete rule's `actual` and `expectation` are the
+ * objects its expressions build.
+ */
+export const LocalizationCustomFinding = Schema.Union([
+	Schema.Struct({
+		...CustomFields,
+		check: Schema.Literals(["pattern", "length", "forbidden_term"]),
+		actual: Schema.Struct({
+			text: Schema.String,
+			length: Schema.optionalKey(Count),
+			matches: Schema.optionalKey(Schema.Array(CustomMatch).check(Schema.isMaxLength(16)))
+		}),
+		expectation: Schema.Struct({
+			pattern: Schema.optionalKey(Schema.String),
+			report: Schema.optionalKey(Schema.Literals(["match", "no_match"])),
+			measure: Schema.optionalKey(Schema.Literals(["visible", "characters"])),
+			minimum: Schema.optionalKey(Count),
+			maximum: Schema.optionalKey(Count),
+			terms: Schema.optionalKey(Strings)
+		})
 	}),
-	expectation: Schema.Struct({
-		pattern: Schema.optionalKey(Schema.String),
-		report: Schema.optionalKey(Schema.Literals(["match", "no_match"])),
-		measure: Schema.optionalKey(Schema.Literals(["visible", "characters"])),
-		minimum: Schema.optionalKey(Count),
-		maximum: Schema.optionalKey(Count),
-		terms: Schema.optionalKey(Strings)
+	Schema.Struct({
+		...CustomFields,
+		check: Schema.Literal("rule"),
+		actual: Schema.Record(Schema.String, Schema.Json),
+		expectation: Schema.Record(Schema.String, Schema.Json)
 	})
-});
+]);
 export type LocalizationCustomFinding = typeof LocalizationCustomFinding.Type;
 
 /**

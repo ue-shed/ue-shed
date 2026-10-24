@@ -77,6 +77,7 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 					findingsEvaluate: findings.findingsEvaluate,
 					findingsAccept: findings.findingsAccept,
 					findingsQuery: findings.findingsQuery,
+					rulesCheck: findings.rulesCheck,
 					readLocalizationLines: () =>
 						Effect.sync(() => reference.readLocalizationLines()),
 					readCorpus: () => Effect.sync(readCorpus),

@@ -140,13 +140,16 @@ export interface GameTextIndexRefreshResult {
 		ruleDocument?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
 	) => Effect.Effect<QueriedLocalizationQuality, IndexFailure>;
-	/** The complete CLI quality report, including proposals collected before acceptance filtering. */
+	/**
+	 * The complete CLI quality report, including proposals collected before acceptance filtering.
+	 * A complete rule the engine can't run fails it with the rules file's error.
+	 */
 	readonly localizationCheck: (
 		document?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
 	) => Effect.Effect<
 		import("./localization-quality-schema.js").LocalizationQualityReport,
-		IndexFailure
+		IndexFailure | import("./game-text-rules.js").GameTextRuleDocumentError
 	>;
 	/**
 	 * Source quality rules evaluated over the index in bounded pages: the query

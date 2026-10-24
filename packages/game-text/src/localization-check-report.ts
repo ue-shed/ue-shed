@@ -7,7 +7,7 @@ import { enabledLocalizationChecks } from "./localization-checks.js";
 import { localizationRuleId } from "./localization-check-catalogue.js";
 import { localizationEvidenceFileStatuses } from "./localization-status.js";
 import { localizationPolicyRules } from "./localization-policy.js";
-import { customLocalizationChecks, localizationRulesOf } from "./game-text-rules.js";
+import { customRulesOf, localizationRulesOf } from "./game-text-rules.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
 import {
 	LocalizationQualityReport,
@@ -17,7 +17,7 @@ import {
 	type LocalizationCustomFinding,
 	type LocalizationCheckDiagnostic
 } from "./localization-quality-schema.js";
-import { acceptReview, type NativeFindings } from "./native-findings.js";
+import { acceptReview, checkCompleteRules, type NativeFindings } from "./native-findings.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextCorpusQuerySummary } from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
@@ -155,6 +155,7 @@ export const indexedLocalizationCheckReport = Effect.fn("GameText.localizationCh
 		document?: GameTextRuleDocument
 	) {
 		const enabled = enabledLocalizationChecks(join, evidence, options, document);
+		yield* checkCompleteRules(native, document);
 		const evaluated = yield* native.findingsEvaluate(effectiveRuleDocument(document, options));
 		const acceptance = yield* acceptReview(native, evaluated.key, options.review);
 		const read = (fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view">) =>
@@ -213,7 +214,7 @@ export const indexedLocalizationCheckReport = Effect.fn("GameText.localizationCh
 		const policyRules = document
 			? localizationPolicyRules(join.cultures, document)
 			: { rules: [], diagnostics: [] };
-		const customChecks = customLocalizationChecks(document);
+		const customChecks = customRulesOf(document);
 		const files = localizationEvidenceFileStatuses(evidence);
 		return LocalizationQualityReport.make({
 			schemaVersion: 1,

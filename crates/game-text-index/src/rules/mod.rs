@@ -21,7 +21,7 @@ mod tuple;
 mod value;
 mod vector;
 pub use collation::HostCollator;
-pub use compiler::{Program, Rule, Subject, compile};
+pub use compiler::{Program, Rule, Subject, check, compile};
 pub use evaluator::{
     Affected, DIAGNOSTIC_CODES, Diagnostic, Emission, Evaluation, Relation, SubjectRows,
 };

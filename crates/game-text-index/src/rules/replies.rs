@@ -27,6 +27,36 @@ pub struct RuleMetadata {
     /// Whether the rule's findings raise the `finding` problem.
     pub counts: bool,
 }
+/// What a rule document's problem is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RuleProblemCode {
+    /// A rule's expressions: an unknown operation, field, parameter or variable, a type, or a
+    /// reference to a rule of another subject.
+    InvalidExpression,
+    /// A rule reads its own findings through `finding`, directly or through other rules.
+    RuleCycle,
+    /// The document's structure, which the host's decoder checks first.
+    InvalidStructure,
+}
+/// Why a rule document doesn't compile: the rule at fault, when one is.
+#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RuleProblem {
+    #[cfg_attr(test, ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
+    pub code: RuleProblemCode,
+    pub message: String,
+}
+/// What `rules_check` returns: the document's first problem, or none when it compiles.
+#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(TS))]
+pub struct RulesCheck {
+    pub problem: Option<RuleProblem>,
+}
 /// Findings per rule, culture and severity. Source rules have no culture.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(test, derive(TS))]

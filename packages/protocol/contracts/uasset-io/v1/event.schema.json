@@ -69,7 +69,8 @@
 						"findings_evaluate",
 						"findings_accept",
 						"findings_query",
-						"related"
+						"related",
+						"rules_check"
 					]
 				},
 				"capabilities": {

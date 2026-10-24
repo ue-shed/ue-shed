@@ -1287,6 +1287,25 @@
 											},
 											"required": ["action", "reader", "payload"],
 											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["rules_check"]
+												},
+												"rules": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														}
+													]
+												}
+											},
+											"required": ["action", "rules"],
+											"additionalProperties": false
 										}
 									]
 								}

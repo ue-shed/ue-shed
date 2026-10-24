@@ -471,10 +471,14 @@ function problem(finding: Finding): string {
 						finding.actual.term +
 						"”";
 		case "custom":
-			return finding.label + " · " + customProblem(finding);
+			return finding.check === "rule"
+				? finding.label
+				: finding.label + " · " + customProblem(finding);
 	}
 }
 function customProblem(finding: Extract<Finding, { kind: "custom" }>): string {
+	// A complete rule's evidence is its own; its label says what it found.
+	if (finding.check === "rule") return finding.label;
 	const { actual, expectation } = finding;
 	if (finding.check === "length")
 		return (
@@ -677,7 +681,7 @@ function ranges(text: string, finding: Finding, side: "source" | "translation") 
 			if (side === "translation") add(finding.actual.start, finding.actual.end);
 			break;
 		case "custom":
-			if (side === finding.subject)
+			if (finding.check !== "rule" && side === finding.subject)
 				for (const match of finding.actual.matches ?? []) add(match.start, match.end);
 			break;
 		case "rich_text":

@@ -742,6 +742,15 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				}).pipe(Effect.mapError((cause) => failed("findings_accept", cause)))
 			)
 		),
+		rulesCheck: Effect.fn("GameText.native.rulesCheck")((document) =>
+			scopedRead(
+				reads,
+				engineReply<GameTextContract.RulesCheck>(interactive, {
+					action: "rules_check",
+					rules: canonicalRuleDocument(document)
+				}).pipe(Effect.mapError((cause) => failed("rules_check", cause)))
+			)
+		),
 		findingsQuery: Effect.fn("GameText.native.findingsQuery")((request) =>
 			bulk((lane) =>
 				findingResponse<GameTextContract.FindingsPage>(lane, {

@@ -3,6 +3,7 @@ import { screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
 import { STARTER_GAME_TEXT_RULES, type GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import { TextQualityRuleId } from "@ue-shed/game-text/schema";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 import {
@@ -175,4 +176,60 @@ it("offers to load an existing starter rules file and labels invalid rules", asy
 	await user.click(await screen.findByRole("button", { name: "Load existing rules" }));
 	await screen.findByRole("table", { name: "Rules overview" });
 	expect(requested).toEqual([false, false, true]);
+});
+it("lists the file's complete rules, says to edit them there, and saves them as they are", async () => {
+	const user = userEvent.setup({ delay: null });
+	const complete = {
+		kind: "rule",
+		id: TextQualityRuleId.make("ui.exclamation"),
+		label: "Exclamation mark in UI text",
+		subject: "line_culture",
+		severity: "low",
+		when: { contains: [{ field: "latest" }, { lit: "!" }] },
+		actual: { object: {} },
+		expectation: { object: {} },
+		recovery: "Drop the exclamation mark."
+	} as const;
+	const document: GameTextRuleDocument = {
+		...rulesDocument,
+		rules: [...rulesDocument.rules, complete]
+	};
+	const client = makeClient();
+	const saves: GameTextRuleDocument[] = [];
+	mount({
+		...client,
+		chooseQualityRules: () =>
+			client
+				.chooseQualityRules()
+				.pipe(
+					Effect.map((result) =>
+						result.status === "completed" ? { ...result, document } : result
+					)
+				),
+		saveQualityRules: (draft) => {
+			saves.push(draft);
+			return client.saveQualityRules(draft);
+		}
+	});
+	await openQuality(user);
+	await user.click(screen.getByRole("button", { name: "Edit rules" }));
+	const rules = await screen.findByRole("complementary", { name: "Quality rule list" });
+	await user.click(within(rules).getByRole("button", { name: /Exclamation mark in UI text/u }));
+	const form = screen.getByRole("region", { name: "Selected quality rule" });
+	expect(
+		within(form).getByRole("heading", { name: "Exclamation mark in UI text" })
+	).toBeDefined();
+	expect(form.textContent).toContain("Each culture's translation");
+	expect(form.textContent).toContain("Low");
+	expect(within(form).getByText(/Edit it in the rules/u)).toBeDefined();
+	expect(within(form).queryByRole("textbox")).toBeNull();
+	await user.click(within(rules).getByRole("button", { name: /example-limit/u }));
+	const maximum = await screen.findByRole("spinbutton", {
+		name: "Maximum characters for example-limit"
+	});
+	await user.clear(maximum);
+	await user.type(maximum, "12");
+	await user.click(screen.getByRole("button", { name: "Save" }));
+	await waitFor(() => expect(saves).toHaveLength(1));
+	expect(saves[0]?.rules.at(-1)).toEqual(complete);
 });

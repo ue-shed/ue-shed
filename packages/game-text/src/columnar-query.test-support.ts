@@ -455,8 +455,7 @@ export function columnarTextCorpusQuery(
 		const fields = kind === "raw" ? raw : slice;
 		if (!fields.visible![row]) return false;
 		if (search && wanted.length && !sourceMatches(fields, row, wanted)) return false;
-		const flags = fields.signals![row]!,
-			editing = fields.editing![row]!;
+		const editing = fields.editing![row]!;
 		if (
 			(request.capability === "source_editable" && !(editing & 1)) ||
 			(request.capability === "read_only" && !(editing & 2))

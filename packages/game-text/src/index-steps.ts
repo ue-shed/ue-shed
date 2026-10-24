@@ -61,7 +61,7 @@ import { queriedTextQualityQuery } from "./quality-query.js";
 import { enabledLocalizationChecks } from "./localization-checks.js";
 import { localizationRuleId } from "./localization-check-catalogue.js";
 import { localizationPolicyRules } from "./localization-policy.js";
-import { customLocalizationChecks, localizationRulesOf, sourceRulesOf } from "./game-text-rules.js";
+import { customRulesOf, localizationRulesOf, sourceRulesOf } from "./game-text-rules.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import type { GameTextContract } from "@ue-shed/protocol";
@@ -871,7 +871,7 @@ export const makeGameTextIndexSteps = (
 							options,
 							ruleDocument
 						);
-						const customChecks = customLocalizationChecks(ruleDocument);
+						const customChecks = customRulesOf(ruleDocument);
 						return {
 							findings: {
 								key: evaluated.key,

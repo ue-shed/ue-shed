@@ -10,6 +10,8 @@ import type { TextQualityFinding } from "./quality-schema.js";
 import { snapshotCheck } from "./snapshot-format.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import type { GameTextIndexError } from "./index-error.js";
+import { completeRulesOf, ruleProblemError, type GameTextRuleDocument } from "./game-text-rules.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 
 /** Profiles contain only bounded operation names and numbers from this call. */
 export const annotateFindingsProfile = (
@@ -159,4 +161,26 @@ export interface NativeFindings {
 	readonly findingsQuery: (
 		request: GameTextContract.FindingsQueryRequest
 	) => Effect.Effect<FindingsQueryPage, GameTextIndexError>;
+	/** The program's first problem as the engine compiles it, with the rule at fault. */
+	readonly rulesCheck: (
+		document: RuleDocumentV4
+	) => Effect.Effect<GameTextContract.RulesCheck, GameTextIndexError>;
 }
+
+/**
+ * Fails with the rules file error the engine finds in a document's complete rules: an expression
+ * it can't run, or rules that read each other's findings in a cycle. Decoding checked the rest.
+ */
+export const checkCompleteRules = (
+	native: Pick<NativeFindings, "rulesCheck">,
+	document: GameTextRuleDocument | undefined
+) =>
+	completeRulesOf(document).length === 0
+		? Effect.void
+		: native
+				.rulesCheck(effectiveRuleDocument(document))
+				.pipe(
+					Effect.flatMap(({ problem }) =>
+						problem ? Effect.fail(ruleProblemError(problem)) : Effect.void
+					)
+				);

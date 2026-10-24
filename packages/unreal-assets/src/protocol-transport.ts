@@ -584,7 +584,8 @@ export function makeProtocolRequest(
 			request.action === "findings_evaluate" ||
 			request.action === "findings_accept" ||
 			request.action === "findings_query" ||
-			request.action === "related"
+			request.action === "related" ||
+			request.action === "rules_check"
 		)
 			return { ...fields, operation: { kind: "game_text_engine", request } };
 		return { ...fields, operation: { kind: "game_text_engine", request } };

@@ -27,6 +27,12 @@ const FIELDS: [&str; 19] = [
 ];
 type Column = (String, String, Vec<u32>);
 pub(crate) fn packed(values: &[String]) -> Result<(Vec<u32>, Vec<u32>)> {
+    let (bytes, starts) = packed_bytes(values)?;
+    Ok((padded(bytes)?, starts))
+}
+
+/// The values' WTF-8 bytes end to end, and where each starts.
+fn packed_bytes(values: &[String]) -> Result<(Vec<u8>, Vec<u32>)> {
     let mut bytes = Vec::new();
     let mut starts = Vec::new();
     for value in values {
@@ -38,8 +44,66 @@ pub(crate) fn packed(values: &[String]) -> Result<(Vec<u32>, Vec<u32>)> {
         )?;
     }
     starts.push(bytes.len() as u32);
+    Ok((bytes, starts))
+}
+
+fn padded(mut bytes: Vec<u8>) -> Result<Vec<u32>> {
     bytes.resize(bytes.len().div_ceil(4) * 4, 0);
-    Ok((crate::snapshot::integers(&bytes)?, starts))
+    crate::snapshot::integers(&bytes)
+}
+
+/// A search arena under `prefix`: the distinct strings' IDs, their folded bytes, and the
+/// trigram index over those bytes. Search reads them without decoding the dictionary.
+fn arena(
+    result: &mut Vec<Column>,
+    j: &Joined,
+    prefix: &str,
+    domain: &str,
+    ids: BTreeSet<u32>,
+) -> Result<()> {
+    let ids = ids.into_iter().collect::<Vec<_>>();
+    let folded = ids
+        .iter()
+        .map(|id| j.string(*id).to_lowercase())
+        .collect::<Vec<_>>();
+    let (bytes, starts) = packed_bytes(&folded)?;
+    let (keys, offsets, postings) = crate::text_trigrams::build(&starts, &bytes)?;
+    result.push((format!("{prefix}.ids"), domain.into(), ids));
+    result.push((format!("{prefix}.starts"), String::new(), starts));
+    result.push((format!("{prefix}.folded"), String::new(), padded(bytes)?));
+    result.push((format!("{prefix}.tri.keys"), String::new(), keys));
+    result.push((format!("{prefix}.tri.offsets"), String::new(), offsets));
+    result.push((
+        format!("{prefix}.tri.postings"),
+        String::new(),
+        padded(postings)?,
+    ));
+    Ok(())
+}
+
+/// The translation strings search reads: each archive entry's, and each PO entry's that has one,
+/// as `EngineQuery::translation` chooses between an entry's source and translation.
+pub(crate) fn translation_ids(j: &Joined) -> BTreeSet<u32> {
+    let mut ids = BTreeSet::new();
+    for (files, po) in [(&j.archives, false), (&j.pos, true)] {
+        for file in files {
+            let c = &file.columns;
+            for (index, options) in c[OPTIONS].iter().enumerate() {
+                if po && options & 64 == 0 {
+                    continue;
+                }
+                let field = if options & 128 != 0 {
+                    SOURCE
+                } else {
+                    TRANSLATION
+                };
+                if let Some(id) = c[field].get(index) {
+                    ids.insert(*id);
+                }
+            }
+        }
+    }
+    ids
 }
 struct Entries {
     c: Vec<Vec<u32>>,
@@ -337,17 +401,15 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
         .iter()
         .chain(c[O_SOURCE].iter())
         .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let folded = source_ids
-        .iter()
-        .map(|id| j.string(*id).to_lowercase())
-        .collect::<Vec<_>>();
-    let (bytes, starts) = packed(&folded)?;
-    result.push(("query.source.ids".into(), "source".into(), source_ids));
-    result.push(("query.source.starts".into(), String::new(), starts));
-    result.push(("query.source.folded".into(), String::new(), bytes));
+        .collect::<BTreeSet<_>>();
+    arena(&mut result, j, "query.source", "source", source_ids)?;
+    arena(
+        &mut result,
+        j,
+        "query.translation",
+        "translation",
+        translation_ids(j),
+    )?;
     Ok(result)
 }
 

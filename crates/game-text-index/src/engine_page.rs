@@ -37,6 +37,8 @@ impl EngineQuery {
         let (Some(by), Some(opened)) = (request.group, request.open_group.as_ref()) else {
             return Ok(matched);
         };
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchListedRows");
         let p = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
         let localized = request.localization.is_some();

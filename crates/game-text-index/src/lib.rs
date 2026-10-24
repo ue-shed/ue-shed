@@ -51,6 +51,7 @@ pub mod snapshot;
 pub mod store;
 mod summary_state;
 mod text_problem;
+mod text_trigrams;
 #[rustfmt::skip]
 mod text_problem_rules;
 pub mod wtf8;

@@ -300,6 +300,8 @@ impl EngineQuery {
     /// Problem counts over every atom but the `problem` clauses, with the request's counted
     /// findings.
     fn problem_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchProblemCounts");
         let request = request.without_filter(FilterField::Problem);
         let localized = request.localization.is_some();
         let scope = self.culture_scope(request.localization.as_ref())?;
@@ -330,6 +332,8 @@ impl EngineQuery {
         let localized = request.localization.is_some();
         let mut result = json!({});
         if request.wants(Part::Counts) {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("searchCounts");
             result["counts"] = self.search_counts(request, matched, cancelled)?;
             result["total"] = json!(matched.len());
             result["problems"] = self.problem_counts(request, cancelled)?;
@@ -337,6 +341,8 @@ impl EngineQuery {
         if let Some(group) = request.group
             && request.wants(Part::Groups)
         {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("searchGroups");
             let mut groups = self.aggregate(matched, request, group, false, "", cancelled)?;
             groups["by"] = serde_json::to_value(group)?;
             result["groups"] = groups;
@@ -344,6 +350,8 @@ impl EngineQuery {
         if let Some(facets) = &request.facets
             && request.wants(Part::Facets)
         {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("searchFacets");
             let mut values = json!({});
             if let Some(under) = &facets.folder {
                 let rows =
@@ -389,6 +397,8 @@ impl EngineQuery {
                 result["fileScope"] = files;
             }
             if localized {
+                #[cfg(feature = "benchmark-timings")]
+                let _span = crate::benchmark_timings::Span::new("searchLocalizationCounts");
                 result["localization"] = self.localization_counts(request, matched, cancelled)?;
             }
         }
@@ -404,6 +414,8 @@ impl EngineQuery {
         rows: &[u32],
         cancelled: &AtomicBool,
     ) -> Result<(Vec<Value>, Vec<Value>)> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchRowsPresent");
         let counted = request.counted_findings();
         // What put each row in its problems under this request, for hosts to show on the row.
         let explain = |row: &mut Value, problems: u32, signals: u32| {
@@ -418,10 +430,16 @@ impl EngineQuery {
             for row in rows {
                 checkpoint(cancelled)?;
                 let row = *row as usize;
-                let mut preview = self.preview(row)?;
+                let mut preview = {
+                    #[cfg(feature = "benchmark-timings")]
+                    let _span = crate::benchmark_timings::Span::new("rowPreview");
+                    self.preview(row)?
+                };
                 explain(&mut preview, p.problem(row, &scope, counted), p.flags[row]);
                 for sr in p.starts[row] as usize..p.starts[row + 1] as usize {
                     if p.slice.visible[sr] != 0 {
+                        #[cfg(feature = "benchmark-timings")]
+                        let _span = crate::benchmark_timings::Span::new("rowPresentation");
                         let mut unit = self.presentation("slice", sr)?;
                         unit["localization"] = preview["cultures"].clone();
                         unit["problems"] = preview["problems"].clone();
@@ -436,6 +454,8 @@ impl EngineQuery {
             for row in rows {
                 checkpoint(cancelled)?;
                 let row = *row as usize;
+                #[cfg(feature = "benchmark-timings")]
+                let _span = crate::benchmark_timings::Span::new("rowPresentation");
                 let mut unit = self.presentation("raw", row)?;
                 let signals = p.raw.signals[row];
                 explain(
@@ -485,6 +505,8 @@ impl EngineQuery {
         let (Some(by), Some(keys)) = (request.group, request.open_groups.as_ref()) else {
             return Ok(json!([]));
         };
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchOpenGroups");
         let first = request.first_rows.unwrap_or(MAX_PAGE);
         let localized = request.localization.is_some();
         let kind = if localized { "line" } else { "raw" };

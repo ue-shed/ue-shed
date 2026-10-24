@@ -937,6 +937,8 @@ impl EngineQuery {
         if let Some(column) = self.problem_columns.get(&key) {
             return Ok(Arc::clone(column));
         }
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchProblemColumn");
         let p = Projection::open(self, cancelled)?;
         let len = if localized {
             p.source.len()
@@ -968,6 +970,8 @@ impl EngineQuery {
         if let Some(set) = self.atoms.get(&key) {
             return Ok(set);
         }
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchAtom");
         let set = evaluate(self)?;
         self.atoms.insert(key, set.clone());
         Ok(set)
@@ -976,6 +980,8 @@ impl EngineQuery {
     /// The intersection of the request's atoms. Each atom is keyed by what it reads: the
     /// relation, the culture scope where it depends on it, and the findings it counts.
     fn match_rows(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Vec<u32>> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchMatch");
         request.validate()?;
         checkpoint(cancelled)?;
         require(
@@ -1007,8 +1013,7 @@ impl EngineQuery {
             .filter(|term| !term.is_empty())
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        // Translations are searched only when the request names its cultures; the text is then
-        // checked per remaining line, after every atom, rather than as an atom of its own.
+        // Translations are searched only when the request names its cultures.
         let search_translations = request.localization.as_ref().is_some_and(|selection| {
             selection.search_translations == Some(true)
                 && (selection.culture.is_some() || selection.cultures.is_some())
@@ -1022,6 +1027,43 @@ impl EngineQuery {
             }
         };
         let mut sets = Vec::new();
+        if !wanted.is_empty() && search_translations {
+            // Each term is in the line's source, an in-scope culture's archive translation, or its
+            // PO text when that is not synced: today's joined-string test, term by term.
+            let p = Arc::clone(&projection);
+            sets.push(self.atom(
+                format!(
+                    "line|translated-text|{}|{scope:?}",
+                    serde_json::to_string(&lowered)?
+                ),
+                |query| {
+                    let mut terms = Vec::with_capacity(wanted.len());
+                    for term in &wanted {
+                        terms.push((
+                            query.source_matches(term, cancelled)?,
+                            query.translation_matches(term, cancelled)?,
+                        ));
+                    }
+                    let mut texts = Vec::with_capacity(scope.len());
+                    for ci in &scope {
+                        texts.push((*ci, query.culture_translations(*ci, cancelled)?));
+                    }
+                    let hit = |matches: &[u8], text: u32| {
+                        text != 0 && matches.get(text as usize - 1) == Some(&1)
+                    };
+                    RowSet::from_fn(len, cancelled, |row| {
+                        Ok(terms.iter().all(|(sources, translations)| {
+                            sources.get(p.source[row] as usize) == Some(&1)
+                                || texts.iter().any(|(ci, texts)| {
+                                    hit(translations, texts.0[row])
+                                        || (p.cultures[*ci].facts[row] & 8 != 0
+                                            && hit(translations, texts.1[row]))
+                                })
+                        }))
+                    })
+                },
+            )?);
+        }
         if !wanted.is_empty() && !search_translations {
             let matches = self.source_matches(&request.query, cancelled)?;
             let p = Arc::clone(&projection);
@@ -1181,46 +1223,6 @@ impl EngineQuery {
                 })?);
             }
         }
-        let rows = RowSet::intersection(len, &sets)?.in_order(&order, cancelled)?;
-        if wanted.is_empty() || !search_translations {
-            return Ok(rows);
-        }
-        // Translation search reads each remaining line's translations, after every other atom.
-        let mut result = Vec::with_capacity(rows.len());
-        for (index, row) in rows.into_iter().enumerate() {
-            if index & 255 == 0 {
-                checkpoint(cancelled)?;
-            }
-            let line = row as usize;
-            let mut values = vec![self.reader.string(projection.source[line])?];
-            for ci in &scope {
-                // Search includes archive translations and PO text that differs from it.
-                values.push(self.translation_for_search(*ci, line, false)?);
-                if projection.cultures[*ci].facts[line] & 8 != 0 {
-                    values.push(self.translation_for_search(*ci, line, true)?);
-                }
-            }
-            if text_matches(&values.join(" ").to_lowercase(), &wanted) {
-                result.push(row);
-            }
-        }
-        checkpoint(cancelled)?;
-        Ok(result)
-    }
-    fn translation_for_search(&mut self, ci: usize, row: usize, po: bool) -> Result<String> {
-        let prefix = if po { "po" } else { "archive" };
-        let entry = self.reader.value(&format!("c{ci}.{prefix}"), row)?;
-        if entry == 0 {
-            return Ok(String::new());
-        }
-        let culture = self.cultures.get(ci).ok_or("Unknown culture.")?;
-        let path = self.target["outputPaths"][if po { "portableObjects" } else { "archives" }]
-            .get(culture)
-            .and_then(serde_json::Value::as_str)
-            .ok_or("Missing translation input.")?
-            .to_owned();
-        Ok(self
-            .translation(&path, (entry - 1) as usize, po)?
-            .unwrap_or_default())
+        RowSet::intersection(len, &sets)?.in_order(&order, cancelled)
     }
 }

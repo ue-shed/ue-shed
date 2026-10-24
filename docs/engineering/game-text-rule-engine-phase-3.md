@@ -106,7 +106,7 @@ One exception, by design: from step 3 the benchmark reads open groups as the ren
 ## 4. Text search: the trigram index
 
 - **Arenas.** `query.source.{ids,starts,folded}` exists today (`ix/join_query.rs:333-349`). Add `query.translation.{ids,starts,folded}`: every distinct archive translation and PO `msgstr` of every culture, folded as sources are (Rust `to_lowercase`, WTF-8 bytes).
-- **Index.** For each arena, `*.trigrams.{keys,offsets,postings}`: the sorted distinct byte trigrams of the folded strings and, for each, the arena positions that contain it, as delta-encoded varints. They are written when the joined layer is published, next to the arenas.
+- **Index.** For each arena, `*.tri.{keys,offsets,postings}` (store section names stay within 31 characters): the sorted distinct byte trigrams of the folded strings and, for each, the arena positions that contain it, as delta-encoded varints. They are written when the joined layer is published, next to the arenas.
 - **Query.** A folded term of three or more bytes with no lone surrogate takes the intersection of its trigrams' postings, smallest first, and confirms each candidate with `memmem`. A shorter term, or one with a lone surrogate (`ix/engine_text.rs:100-138`), scans the arena as today. A single CJK character is three bytes, so it uses the index.
 - **Strings added by an overlay** (`additions`, `ix/engine_text.rs:49-68`) are scanned, as today.
 - **Semantics are unchanged.**

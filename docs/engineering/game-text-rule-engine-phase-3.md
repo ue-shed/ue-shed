@@ -79,7 +79,7 @@ Every aggregate is a set built from atoms. One traversal walks the union of thei
 
 **Deleted:** the per-facet and per-count re-match (`ix/engine_search.rs:337-414`) and the serialized JSON `QueryCache` (`ix/query_cache.rs`). `counted` on derived requests (`ix/engine_types.rs:175-179`) goes with §6, when the rules' `counts` replace the counted signals; until then the atom and problem-column keys carry it.
 
-**As built (decision 29, proposed):** each aggregate intersects its cached atoms and walks its own rows in display order, rather than all of them sharing one traversal. With the atoms cached, a walk is an AND over 72 KiB and one pass over the order, about a millisecond at 583,507 lines. The single traversal is built only if the step 9 measurement shows the walks matter.
+**As built (decision 29):** each aggregate intersects its cached atoms and walks its own rows in display order, rather than all of them sharing one traversal. With the atoms cached, a walk is an AND over 72 KiB and one pass over the order, about a millisecond at 583,507 lines. The single traversal is built only if the step 9 measurement shows the walks matter.
 
 ### Response parts and groups
 
@@ -91,7 +91,7 @@ Every aggregate is a set built from atoms. One traversal walks the union of thei
     - The answer's `openGroups` lists each named group in the order given, with its first `firstRows` rows in display order as a rows page. The page's `nextCursor` reads the rest with `openGroup`. One walk of the display order fills them all. The page's own rows are empty.
     - At most 500 rows are returned in all. A group past that budget returns `rowsOmitted: true` and no rows, and the host reads it with `openGroup`. A key that names no matching group returns an empty page.
     - `openGroup` with a cursor stays for "more".
-- **Two requests per keystroke (decision 28, proposed).** Which groups are open depends on the header's answer: the renderer opens the first group, or every group when they hold 50 lines or fewer, as well as those the user opened (`ext/game-text-grouped-results.tsx:82-87`). So the renderer sends the header, then one rows request naming its first 20 open groups in group order, instead of one search per open group (`:150-190`). Any group open past those 20, past the row budget or for "more" is read with `openGroup` and `parts: ["rows"]`. No rows read computes an aggregate.
+- **Two requests per keystroke (decision 28).** Which groups are open depends on the header's answer: the renderer opens the first group, or every group when they hold 50 lines or fewer, as well as those the user opened (`ext/game-text-grouped-results.tsx:82-87`). So the renderer sends the header, then one rows request naming its first 20 open groups in group order, instead of one search per open group (`:150-190`). Any group open past those 20, past the row budget or for "more" is read with `openGroup` and `parts: ["rows"]`. No rows read computes an aggregate.
 - **TypeScript.** `TextCorpusSearchRequest` gains `openGroups` and `firstRows`.
     - `search` keeps returning every part.
     - A new `searchRows` sends `parts: ["rows"]` and returns a `TextCorpusRowsPage`: `units`, `nextCursor`, `localization` with `target`, `lines` and `nextCursor`, and `openGroups`. Each host routes it as it routes `search`.
@@ -257,7 +257,7 @@ Counts by filter sum the counts by rule.
     `TextReviewSignal` keeps the four facts.
 
 - **The corpus CSV** keeps its "Review signals" column for the facts. It adds "Findings", the labels of the unit's rules, when the layer is ready (`gt/csv.ts:98-123`, `ix/engine_export.rs:226-227`).
-- **The UI parts** are built after the owner approves mockups: the Finding and Fact menus, row suffixes, the line page's findings and the pending state.
+- **The UI parts** are built as this section describes them: the Finding and Fact menus, row suffixes, the line page's findings and the pending state. The owner reviews them in the running app.
 
 ## 7. Related lines
 
@@ -347,7 +347,7 @@ A rules file entry with `kind: "rule"` is a whole rule in the v4 IR:
 | The native `shared`, `duplicate_source` and `long` signals, `lens` and `line.problems`                                                                                             | §6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | The per-facet re-match, `QueryCache` and `matched`                                                                                                                                 | §3.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `text-problems.ts` in the renderer, `duplicate-sources.ts`, `review-signals.test.ts`                                                                                               | Public exports that Electroswag imports stay until Phase 6; check its imports first. The tests of the deleted `duplicate_source` signal go with it (`gt/joined-duplicate-places.test.ts` and its support); `gt/joined-query-columns.test-support.ts:12` stops importing it.                                                                                                                                                                                                               |
-| The TS reference oracles' signal and problem code (`query.test-support.ts`, `columnar-query.test-support.ts`)                                                                      | The oracles themselves go in Phase 4 (proposed decision 26).                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| The TS reference oracles' signal and problem code (`query.test-support.ts`, `columnar-query.test-support.ts`)                                                                      | The oracles themselves go in Phase 4 (decision 26).                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## 11. Spans and profiles
 
@@ -367,7 +367,9 @@ Every new heavy operation reports bounded stages:
     - related lines: same key, same text, a conflict and a key change;
     - an accepted finding that is current, and one whose translation changed.
 
-## 13. Proposed decisions, for the owner with the mockups
+## 13. Decisions taken in Phase 3
+
+The owner asked for these to be decided and built, and raised once seen (2026-10-24).
 
 22. **Browse's findings are the project's rules.** Without a rule, from the file or the host's overlay, Browse has no finding fields. "Used in several places", "Same text, different keys" and "Long text" appear only when the rules list them. Without a target, only source rules run. `unresolved` and the other facts move to a "Fact" field and stop raising the `finding` problem.
 23. **Browse waits for evaluation.** Finding fields are `pending` while the layer evaluates, about 21 s on the generated 1× project. That happens after every change until Phase 5 makes it incremental.
@@ -388,8 +390,8 @@ Every new heavy operation reports bounded stages:
     - Quality's answer keeps the Phase 1 hash on both projects, and `loc check` stays byte-identical on both canonical corpora.
     - Then delete the scans and the second reader, and the worker once its measurement allows.
 6. **Related lines** (§7). The ID repair adopts them.
-7. **Findings in Browse** (§6), and the UI parts once the owner approves their mockups.
-8. **Complete rules** (§8), and the editor part after its mockup.
+7. **Findings in Browse** (§6), with the UI parts as mocked.
+8. **Complete rules** (§8), with the editor part.
 9. **Parity:** the fixture exact, one 10,000-line fuzz run, and `loc check` byte-identical. Then the Phase 0 measurement set against Phase 2, plus:
     - the index's build time and store size;
     - a related-lines row: one `related` request against the 444-request probe.

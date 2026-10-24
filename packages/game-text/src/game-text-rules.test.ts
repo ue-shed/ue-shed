@@ -385,6 +385,13 @@ describe("applyRuleOverlay", () => {
 			for (const input of [
 				{ patches: [{ id: "whitespace", enabled: false }] },
 				{ patches: [{ id: "menu.limit", params: { id: "x" } }] },
+				// Settings have their own fields, so a later `scope: {}` always clears the scope.
+				{
+					patches: [
+						{ id: "menu.limit", params: { scope: { pathPrefixes: ["/Game/UI/"] } } }
+					]
+				},
+				{ patches: [{ id: "menu.limit", params: { enabled: false } }] },
 				{ patches: [{ id: "menu.limit", params: { maximumCharacters: 0 } }] },
 				{ patches: [{ id: "length_outlier", params: { separator: "//" } }] },
 				{ rules: [{ kind: "placeholder_text" }] },

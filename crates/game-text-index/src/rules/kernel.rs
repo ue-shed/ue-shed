@@ -593,8 +593,16 @@ impl<'a> Kernel<'a> {
             Op::MaxOf => {
                 let mut largest = None::<i64>;
                 for value in list(arena, a)? {
-                    let Atom::Int(value) = *value else {
-                        return Err("maxOf requires whole numbers.".into());
+                    // Arithmetic yields floating-point numbers, whole ones included.
+                    let value = match *value {
+                        Atom::Int(value) => value,
+                        Atom::Num(bits)
+                            if f64::from_bits(bits).fract() == 0.0
+                                && f64::from_bits(bits).abs() < i64::MAX as f64 =>
+                        {
+                            f64::from_bits(bits) as i64
+                        }
+                        _ => return Err("maxOf requires whole numbers.".into()),
                     };
                     largest = Some(largest.map_or(value, |largest| largest.max(value)));
                 }

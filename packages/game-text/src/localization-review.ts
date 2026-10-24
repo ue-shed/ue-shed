@@ -136,6 +136,19 @@ export function withoutAcceptedFindings<F extends AcceptableFinding>(
 
 /** The per-line form, for scans that never hold the whole join. Undefined when nothing is accepted. */
 export function acceptedFindingFilter(file: LocalizationReviewFile | undefined) {
+	const keep = lazyAcceptedFindingFilter(file);
+	return (
+		keep &&
+		((line: LocalizationLine | undefined, finding: AcceptableFinding) =>
+			keep(() => line, finding))
+	);
+}
+
+/**
+ * As `acceptedFindingFilter`, for scans that read lines on demand: it reads a finding's line only
+ * when that finding was accepted.
+ */
+export function lazyAcceptedFindingFilter(file: LocalizationReviewFile | undefined) {
 	if (file === undefined || file.acceptedFindings.length === 0) return undefined;
 	const accepted = new Map(
 		file.acceptedFindings.map((finding) => [
@@ -143,7 +156,7 @@ export function acceptedFindingFilter(file: LocalizationReviewFile | undefined) 
 			finding.fingerprint
 		])
 	);
-	return (line: LocalizationLine | undefined, finding: AcceptableFinding) => {
+	return (lineOf: () => LocalizationLine | undefined, finding: AcceptableFinding) => {
 		if (finding.identity === null) return true;
 		const fingerprint = accepted.get(
 			JSON.stringify([
@@ -154,6 +167,7 @@ export function acceptedFindingFilter(file: LocalizationReviewFile | undefined) 
 			])
 		);
 		if (fingerprint === undefined) return true;
+		const line = lineOf();
 		const culture = line?.cultures.find((item) => item.culture === finding.culture);
 		return (
 			line === undefined ||

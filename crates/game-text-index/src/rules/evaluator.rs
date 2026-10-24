@@ -1062,6 +1062,8 @@ impl<'a> Evaluator<'a> {
             (Atom::Int(_) | Atom::Num(_), Atom::Int(_) | Atom::Num(_)) => {
                 let number = |atom| match atom {
                     Atom::Int(value) => value as f64,
+                    // -0 equals 0, so it orders with it; `total_cmp` would put it first.
+                    Atom::Num(bits) if f64::from_bits(bits) == 0.0 => 0.0,
                     Atom::Num(bits) => f64::from_bits(bits),
                     _ => f64::NAN,
                 };
@@ -1151,7 +1153,8 @@ impl<'a> Evaluator<'a> {
                 let display = self.evaluate(args[3], &all)?;
                 for members in groups.values() {
                     // Each distinct value: its rows, and the code-unit-smallest display.
-                    let mut tally = Vec::<(String, Atom, i64, Atom)>::new();
+                    let mut tally = Vec::<(Atom, i64, Atom)>::new();
+                    let mut positions = FxHashMap::<String, usize>::default();
                     for row in members {
                         if value.failed.get(*row) || display.failed.get(*row) {
                             failed.set(*row);
@@ -1163,29 +1166,33 @@ impl<'a> Evaluator<'a> {
                         }
                         let key = self.key(item);
                         let shown = display.get(*row, &self.arena);
-                        match tally.iter_mut().find(|entry| entry.0 == key) {
-                            Some(entry) => {
-                                entry.2 += 1;
+                        match positions.get(&key) {
+                            Some(&at) => {
+                                let entry = &mut tally[at];
+                                entry.1 += 1;
                                 if text::code_unit_compare(
                                     &self.text_of(shown),
-                                    &self.text_of(entry.3),
+                                    &self.text_of(entry.2),
                                 )
                                 .is_lt()
                                 {
-                                    entry.3 = shown;
+                                    entry.2 = shown;
                                 }
                             }
-                            None => tally.push((key, item, 1, shown)),
+                            None => {
+                                positions.insert(key, tally.len());
+                                tally.push((item, 1, shown));
+                            }
                         }
                     }
                     tally.sort_by(|a, b| {
-                        b.2.cmp(&a.2).then_with(|| {
-                            text::code_unit_compare(&self.text_of(a.3), &self.text_of(b.3))
+                        b.1.cmp(&a.1).then_with(|| {
+                            text::code_unit_compare(&self.text_of(a.2), &self.text_of(b.2))
                         })
                     });
                     let entries = tally
                         .into_iter()
-                        .map(|(_, item, count, shown)| {
+                        .map(|(item, count, shown)| {
                             self.arena.object(vec![
                                 ("value", item),
                                 ("count", Atom::Int(count)),
@@ -1352,8 +1359,12 @@ impl<'a> Evaluator<'a> {
         let mut tuples = Vec::<Option<Box<[u32]>>>::with_capacity(elements.len());
         let mut width = listed.then(|| parts.len() - 1);
         let mut values = Vec::new();
+        // A row with sites, every one with a null `by`, has a null key (§3): its result is null.
+        let mut keyed = vec![false; members.len()];
+        let mut sited = vec![false; members.len()];
         for (element, parent) in parents.iter().enumerate() {
             let row = members[*parent];
+            sited[*parent] = true;
             if element_values
                 .iter()
                 .flatten()
@@ -1375,6 +1386,7 @@ impl<'a> Evaluator<'a> {
                 tuples.push(None);
                 continue;
             }
+            keyed[*parent] = true;
             let mut tuple = vec![ids.of(values[0], &self.arena)];
             if listed {
                 for value in &values[1..] {
@@ -1458,7 +1470,7 @@ impl<'a> Evaluator<'a> {
             // A row fails with the row whose sites it shares.
             if failed.get(members[first]) {
                 failed.set(*row);
-            } else {
+            } else if keyed[first] || !sited[first] {
                 values[*row] = Atom::Bool(found[first]);
             }
         }
@@ -3338,6 +3350,44 @@ mod tests {
                 json!({"rank":0,"first":["xx"],"same":2})
             ]
         );
+        // -0 ties with 0, so relation order decides.
+        let zero = json!({"mul":[{"lit":0},{"if":[{"eq":[{"field":"source"},{"lit":"a"}]},{"lit":1},{"lit":-1}]}]});
+        let ranks = rule(
+            "ranks",
+            json!({"lit":true}),
+            json!({"object":{"rank":{"groupRank":{"by":{"lit":"all"},"order":{"list":[zero]}}}}}),
+        );
+        let mut relation = unit_sources(&["a", "b"], vec![vec![]; 2]);
+        let result = evaluate_one(ranks, &mut relation)?;
+        let ranks = result
+            .findings
+            .iter()
+            .map(|finding| finding.actual["rank"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(ranks, vec![json!(0), json!(1)]);
+        Ok(())
+    }
+    #[test]
+    fn exists_other_is_null_when_every_site_has_a_null_key() -> Result<()> {
+        let other = rule(
+            "other",
+            json!({"lit":true}),
+            json!({"object":{"other":{"existsOther":{
+                "over":{"occurrences":[]},
+                "by":{"lit":null},
+                "differing":{"list":[{"field":"textUnitId"}]}
+            }}}}),
+        );
+        let mut relation =
+            unit_sources(&["x", "x"], vec![vec![json!({"packageFile":"p1"})], vec![]]);
+        let result = evaluate_one(other, &mut relation)?;
+        let actual = result
+            .findings
+            .iter()
+            .map(|finding| finding.actual.clone())
+            .collect::<Vec<_>>();
+        // The first row's one site has a null key; the second row has no site, so no other.
+        assert_eq!(actual, vec![json!({}), json!({"other":false})]);
         Ok(())
     }
     #[test]
@@ -3457,6 +3507,7 @@ mod tests {
                 "indexes":{"regexReplace":[{"lit":"Items[1].Name{2}(\"Key\")"},{"lit":"\\[[^\\]]*\\]|\\{[^}]*\\}|\\(\"[^\"]*\"\\)"},{"lit":""}]},
                 "dollars":{"regexReplace":[{"lit":"ab"},{"lit":"b"},{"lit":"[$&$$]"}]},
                 "largest":{"maxOf":{"list":[{"lit":3},{"lit":5},{"lit":4}]}},
+                "whole":{"maxOf":{"list":[{"add":[{"lit":1},{"lit":1}]},{"lit":1}]}},
                 "none":{"maxOf":{"lit":[]}}
             }}),
         );
@@ -3465,7 +3516,7 @@ mod tests {
         // `none` is null, so the evidence leaves it out.
         assert_eq!(
             result.findings[0].actual,
-            json!({"indexes":"Items.Name","dollars":"a[b$]","largest":5})
+            json!({"indexes":"Items.Name","dollars":"a[b$]","largest":5,"whole":2})
         );
         Ok(())
     }

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
 import {
 	applyLocalizationReview,
+	lazyAcceptedFindingFilter,
 	localizationLineFingerprint,
 	withoutAcceptedFindings
 } from "./localization-review.js";
@@ -171,6 +172,21 @@ describe("localization review state", () => {
 			)
 		);
 		expect(withoutAcceptedFindings(changed, [finding], accepted).accepted).toBe(0);
+		// The lazy form reads a line only for a finding that was accepted.
+		const keep = lazyAcceptedFindingFilter(accepted)!;
+		const read: string[] = [];
+		const lineOf = (id: string) => () => {
+			read.push(id);
+			return base.lines.find((item) => item.id === id);
+		};
+		const other = base.lines.find((item) => item.identity?.key === "L")!;
+		expect(
+			keep(lineOf(other.id), { ...finding, lineId: other.id, identity: other.identity })
+		).toBe(true);
+		expect(keep(lineOf(line.id), { ...finding, identity: null })).toBe(true);
+		expect(read).toEqual([]);
+		expect(keep(lineOf(line.id), finding)).toBe(false);
+		expect(read).toEqual([line.id]);
 	});
 
 	it("reports reviewed and proofread shares once a review file exists", () => {

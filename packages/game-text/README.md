@@ -613,8 +613,8 @@ examples, not built-ins.
 
 A host can change a project's rules without editing its file. `applyRuleOverlay(document, overlay)`
 takes a `GameTextRuleOverlay`: `patches` to rules the file lists (`enabled`, `severity`, `scope`, and
-`params` merged into a check's parameters or a project rule's fields; later patches to the same rule
-win), and `roles` and `rules` it adds under new IDs. Anything else, or a patched file that no longer validates, is
+`params` merged into a check's parameters or a project rule's fields, never its `id`, `kind` or the
+settings above; later patches to the same rule win), and `roles` and `rules` it adds under new IDs. Anything else, or a patched file that no longer validates, is
 `invalid_overlay`. The scans read the patched file as they read a project's.
 
 `localizationProgressReport(corpus, joined, evidence, baseline?)` is pure and browser-safe. It

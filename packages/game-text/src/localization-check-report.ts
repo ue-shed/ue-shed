@@ -10,7 +10,7 @@ import {
 } from "./localization-checks.js";
 import { localizationRuleId } from "./localization-check-catalogue.js";
 import { localizationEvidenceFileStatuses } from "./localization-status.js";
-import { acceptedFindingFilter } from "./localization-review.js";
+import { lazyAcceptedFindingFilter } from "./localization-review.js";
 import { localizationPolicyRules } from "./localization-policy.js";
 import { customLocalizationChecks, localizationRulesOf } from "./game-text-rules.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
@@ -188,8 +188,10 @@ function assembleLocalizationCheckReport(
 			: []
 	);
 	const all = [...builtIns.sort(compareLocalizationFindings), ...policy, ...custom];
-	const keep = acceptedFindingFilter(options.review);
-	const visible = keep ? all.filter((finding) => keep(lineOf(finding.lineId), finding)) : all;
+	const keep = lazyAcceptedFindingFilter(options.review);
+	const visible = keep
+		? all.filter((finding) => keep(() => lineOf(finding.lineId), finding))
+		: all;
 	const files = localizationEvidenceFileStatuses(evidence);
 	return LocalizationQualityReport.make({
 		schemaVersion: 1,

@@ -433,6 +433,9 @@ export const GameTextRuleOverlay = Schema.Struct({
 });
 export type GameTextRuleOverlay = typeof GameTextRuleOverlay.Type;
 
+/** A rule's identity and the settings a patch sets in their own fields, never in `params`. */
+const reservedPatchParams = new Set(["id", "kind", "enabled", "severity", "scope"]);
+
 /** Two patches to one rule as one: the later one's settings win, `params` merged key by key. */
 const mergePatches = (earlier: GameTextRulePatch, later: GameTextRulePatch): GameTextRulePatch => ({
 	...earlier,
@@ -477,11 +480,11 @@ export function applyRuleOverlay(
 	const listed = new Set((document?.rules ?? []).map(ruleEntryId));
 	const patches = new Map<string, GameTextRulePatch>();
 	for (const patch of overlay.patches ?? []) {
-		// A patch changes a rule's settings, never which rule it is.
+		// A patch changes a rule's settings, never which rule it is; `params` holds only
+		// parameters, since the settings have their own fields.
 		if (
 			!listed.has(patch.id) ||
-			patch.params?.kind !== undefined ||
-			patch.params?.id !== undefined
+			Object.keys(patch.params ?? {}).some((key) => reservedPatchParams.has(key))
 		)
 			return Effect.fail(invalid("invalid_overlay"));
 		const earlier = patches.get(patch.id);

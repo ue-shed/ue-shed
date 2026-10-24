@@ -145,37 +145,52 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 ## 5. Documents, defaults and the overlay
 
 - **v4 is public.** `decodeGameTextRuleDocumentJson` accepts version 4. The JSON Schema and the builder are published in `@ue-shed/game-text/rules`. v1–v3 still load through the one translator.
-- **Report versions.** `ruleDocumentVersion` accepts 4 in the localization report and the source summary (`gt/localization-quality-schema.ts:386`, `gt/quality-query.ts:59`).
+- **Report versions.** `ruleDocumentVersion` accepts 4 in the localization report (`gt/localization-quality-schema.ts:386`), the source summary (`gt/quality-query.ts:59`) and the full source report, `TextQualityReport`, which source export returns and its public parser validates (`gt/quality-schema.ts:397-413`).
 - **No file, no rules** (plan decision 1). Without a rules file the effective document is empty: Quality and `loc check` report no findings, only diagnostics. A v3 file keeps today's meaning: its preset and `checks` translate to exactly the rules it enables today.
+- **The rule editor** (`extensions/game-text/src/game-text-rule-state.ts`) learns v4, and Quality gets an empty state for a project with no rules. Both are UI: their design is shown to the owner before they are built.
 
 ### The effective document
 
-It is built in this order, in TS, before `findings_evaluate`:
+It is built in this order, in TS, before `findings_evaluate`, and the result is validated as a v4 document:
 
 1. **Translate** the project document to v4. A v4 document is used as written.
 2. **Apply the overlay** (below).
 3. **Derive** the cross-rule parameters from the result:
-    - `placeholder_text.params.sourceTerminology` from the enabled `unit_source` terminology rules;
+    - `placeholder_text.params.sourceTerminology` from the enabled `unit_source` terminology rules. Each entry carries the rule's role, case sensitivity, terms and its `scope`, and the `placeholder_text` example rule suppresses a placeholder only where that scope admits the line's occurrence (`gt/rules/catalogue.ts:159-177`, `ix/rules/evaluator.rs:1994-2009`). v1–v3 source rules have no `scope`, only a role, so nothing changes for them.
     - `placeholder_translation`'s markers and phrases from `placeholder_text`.
 
-    This is today's copying in the translator (`gt/rules/translate.ts:57-62`), moved to run on every effective document, so an overlay that disables a source terminology rule also removes its placeholder suppression (`gt/localization-quality-index.ts:875`, `gt/localization-workspace.ts:955`). Derived parameters are reserved: a document that sets them has them replaced.
+    This is today's copying in the translator (`gt/rules/translate.ts:50-72`), moved to run on every effective document. An overlay that disables or narrows a source terminology rule therefore also removes or narrows its placeholder suppression (`gt/localization-quality-index.ts:875`, `gt/localization-workspace.ts:955`). Derived parameters are reserved: a document that sets them has them replaced.
 
 ### The host overlay
 
-A v4 document passed with `findings_evaluate`.
+The overlay has its own schema, not a v4 document, because a patch carries no expressions:
 
-- **Patches.** An overlay rule whose `id` is in the project document patches it. It may hold only `id`, `enabled`, `severity`, `params` and `scope`; anything else is `GameTextRuleDocumentError` with the new code `invalid_overlay`. A field the patch leaves out keeps the project's value. `params` merge key by key. `scope: {}` removes the project's scope.
-- **Additions.** Any other overlay rule is added after the project's rules, in overlay order.
-- **Roles.** Overlay roles are added. A role ID declared by both documents is `invalid_overlay`.
+```jsonc
+{
+	"schemaVersion": 4,
+	"roles": [
+		/* TextRole, added to the project's */
+	],
+	"patches": [{ "id": "…", "enabled": false, "severity": "low", "params": {}, "scope": {} }],
+	"rules": [
+		/* complete v4 rules, added */
+	]
+}
+```
+
+- **Patches.** A patch names a rule in the project document; any other `id` is `GameTextRuleDocumentError` with the new code `invalid_overlay`. Every field but `id` is optional. A field the patch leaves out keeps the project's value, `params` merge key by key, and `scope: {}` removes the project's scope.
+- **Rules.** Complete v4 rules, added after the project's rules in overlay order. An `id` the project already uses is `invalid_overlay`.
+- **Roles.** Added. A role ID declared by both documents is `invalid_overlay`.
 - **The key.** The overlay's canonical hash keys the findings layer, beside the rule-set hash (Phase 1 §6).
 - **Hosts.** UE Shed's Workbench and CLI pass no overlay. Electroswag's overlay contents are Phase 6.
 
-### The source report under v4
+### Source rules under v4
 
 - Today the source scan reads `document.rules` as legacy source rules: it prepares them by role and matches native findings back to their authored IDs (`gt/source-quality-index.ts:139, :189`, `gt/quality.ts:85`).
+- Source findings and summaries know two shapes: a role-scoped `character_budget` or `terminology` finding (`gt/quality-schema.ts:344-368`), and summaries count every non-budget finding as terminology (`gt/quality-query.ts:502-515`).
+- So in Phase 2 a v4 `unit_source` rule must name a `role` and have kind `character_budget` or `terminology`, with that kind's evidence shape. Load-time validation rejects anything else with the new code `unsupported_source_rule`. A general source-finding contract waits for findings as query fields in Phase 3.
 - Under v4, the source report is the effective document's `unit_source` rules. Its role summaries come from the document's roles, its rule summaries from those rules' `id`, `ruleId`, `kind`, `label` and `role`, and its counts from the findings layer.
 - v1–v3 documents produce the same report as today, through the translator.
-- **The rule editor** (`extensions/game-text/src/game-text-rule-state.ts`) learns v4, and Quality gets an empty state for a project with no rules. Both are UI: their design is shown to the owner before they are built.
 
 ## 6. Host adoption
 

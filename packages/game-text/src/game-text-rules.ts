@@ -249,38 +249,40 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 	}
 ) {}
 
+/** What a rule file error tells the user, by code. */
+function ruleDocumentErrorText(code: GameTextRuleDocumentError["code"]) {
+	switch (code) {
+		case "invalid_json":
+			return {
+				message: "The Game Text rule file is not valid JSON.",
+				recovery: "Correct the JSON syntax and retry with a version-1 rule file."
+			};
+		case "invalid_overlay":
+			return {
+				message: "The Game Text rule overlay doesn't apply to the project's rule file.",
+				recovery:
+					"Patch only rules the file lists, add rules and roles under new IDs, and keep each patched rule valid."
+			};
+		default:
+			return {
+				message: "The Game Text rule file could not be validated.",
+				recovery:
+					"Use schemaVersion 1 with known rule kinds and check parameters, unique role, rule and culture keys, non-empty terms, positive budgets, patterns the engine runs, and declared roles (scopes included)."
+			};
+	}
+}
+
 function invalid(
 	code: GameTextRuleDocumentError["code"],
 	cause?: unknown
 ): GameTextRuleDocumentError {
-	const fields = {
+	return new GameTextRuleDocumentError({
 		...(cause === undefined ? undefined : { cause }),
 		retrySafe: false,
-		nextStep: "fix_input" as const,
-		code
-	};
-	switch (code) {
-		case "invalid_json":
-			return new GameTextRuleDocumentError({
-				...fields,
-				message: "The Game Text rule file is not valid JSON.",
-				recovery: "Correct the JSON syntax and retry with a version-1 rule file."
-			});
-		case "invalid_overlay":
-			return new GameTextRuleDocumentError({
-				...fields,
-				message: "The Game Text rule overlay doesn't apply to the project's rule file.",
-				recovery:
-					"Patch only rules the file lists, add rules and roles under new IDs, and keep each patched rule valid."
-			});
-		default:
-			return new GameTextRuleDocumentError({
-				...fields,
-				message: "The Game Text rule file could not be validated.",
-				recovery:
-					"Use schemaVersion 1 with known rule kinds and check parameters, unique role, rule and culture keys, non-empty terms, positive budgets, patterns the engine runs, and declared roles (scopes included)."
-			});
-	}
+		nextStep: "fix_input",
+		code,
+		...ruleDocumentErrorText(code)
+	});
 }
 
 /** Called only after JSON/schema validation: inspect keys before JSON loses duplicates. */

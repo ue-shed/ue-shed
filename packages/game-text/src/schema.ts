@@ -540,6 +540,9 @@ export const TextGroup = Schema.Struct({
 });
 export type TextGroup = Schema.Schema.Type<typeof TextGroup>;
 
+/** The most groups one request lists the first rows of. */
+export const MAX_TEXT_OPEN_GROUPS = 20;
+
 /** Bounded entries, worst first, with how many more there are. */
 export const TextGroupList = Schema.Struct({
 	entries: Schema.Array(TextGroup).check(Schema.isMaxLength(MAX_TEXT_GROUPS)),
@@ -751,6 +754,18 @@ export const TextCorpusSearchRequest = Schema.Struct({
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(0xffffffff))
 	),
 	openGroup: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH))),
+	/**
+	 * Groups to list the first rows of, in this order: the answer's `openGroups` carries a page
+	 * for each. Needs `group`; excludes `openGroup`. Read them with `searchRows`.
+	 */
+	openGroups: Schema.optionalKey(
+		Schema.Array(Schema.String.check(Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH))).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(MAX_TEXT_OPEN_GROUPS)
+		)
+	),
+	/** How many rows each open group lists; 50 when absent. Needs `openGroups`. */
+	firstRows: Schema.optionalKey(TextQueryPageSize),
 	facets: Schema.optionalKey(TextFacetRequest),
 	pageSize: TextQueryPageSize,
 	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512)))
@@ -759,9 +774,59 @@ export const TextCorpusSearchRequest = Schema.Struct({
 		request.minGroupSize === undefined || request.group !== undefined
 			? undefined
 			: "A minimum group size needs a group."
+	),
+	Schema.makeFilter((request) =>
+		request.openGroups === undefined ||
+		(request.group !== undefined && request.openGroup === undefined)
+			? undefined
+			: "Open groups need a group and exclude openGroup."
+	),
+	Schema.makeFilter((request) =>
+		request.firstRows === undefined || request.openGroups !== undefined
+			? undefined
+			: "First rows need open groups."
 	)
 );
 export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearchRequest>;
+
+const textCorpusRows = {
+	localization: Schema.optionalKey(
+		Schema.Struct({
+			target: LocalizationQueryPage.fields.target,
+			nextCursor: LocalizationQueryPage.fields.nextCursor,
+			lines: LocalizationQueryPage.fields.lines
+		})
+	),
+	nextCursor: Schema.optional(TextUnitId),
+	units: Schema.Array(TextUnitSearchResult).check(Schema.isMaxLength(MAX_TEXT_QUERY_PAGE_SIZE))
+};
+/** A page of rows without the aggregates: the units, and the lines with a target. */
+export const TextCorpusRows = Schema.Struct(textCorpusRows);
+export type TextCorpusRows = Schema.Schema.Type<typeof TextCorpusRows>;
+
+/**
+ * An open group's first rows, whose cursor continues with `openGroup`. Past the request's row
+ * budget a group, and every one after it, has `rowsOmitted` instead: read it with `openGroup`.
+ */
+export const TextOpenGroupRows = Schema.Struct({
+	key: Schema.String.check(Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH)),
+	page: Schema.optionalKey(TextCorpusRows),
+	rowsOmitted: Schema.optionalKey(Schema.Literal(true))
+});
+export type TextOpenGroupRows = Schema.Schema.Type<typeof TextOpenGroupRows>;
+const textOpenGroups = Schema.optionalKey(
+	Schema.Array(TextOpenGroupRows).check(Schema.isMaxLength(MAX_TEXT_OPEN_GROUPS))
+);
+
+/**
+ * What `searchRows` returns: a page of rows, or with `openGroups` the open groups' first rows,
+ * and no aggregate. The page's own rows are empty when the request names open groups.
+ */
+export const TextCorpusRowsPage = Schema.Struct({
+	...textCorpusRows,
+	openGroups: textOpenGroups
+});
+export type TextCorpusRowsPage = Schema.Schema.Type<typeof TextCorpusRowsPage>;
 
 /**
  * One bounded search page plus counts, optional facets/groups and continuation cursor. Counts
@@ -769,6 +834,8 @@ export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearch
  */
 export const TextCorpusSearchPage = Schema.Struct({
 	localization: Schema.optionalKey(LocalizationQueryPage),
+	/** Each open group's first rows, when the request names open groups. */
+	openGroups: textOpenGroups,
 	fileScope: Schema.optionalKey(TextFileScopeSummary),
 	/** Lines with each problem, over the request without its problem clauses. */
 	problems: Schema.optionalKey(TextProblemCounts),
@@ -799,6 +866,19 @@ export type TextCorpusSearchResult = Schema.Schema.Type<typeof TextCorpusSearchR
 export const parseTextCorpusSearchResult = gameTextResponseParser(
 	TextCorpusSearchResult,
 	"text search result"
+);
+
+/** Host rows result: a ready rows page, or an unavailable query, as for search. */
+export const TextCorpusRowsResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("failed"), error: TextCorpusPublicError }),
+	Schema.Struct({ status: Schema.Literal("ready"), page: TextCorpusRowsPage }),
+	Schema.Struct({ status: Schema.Literal("not_ready") })
+]);
+export type TextCorpusRowsResult = Schema.Schema.Type<typeof TextCorpusRowsResult>;
+/** Validates a host rows response before presentation, as `parseTextCorpusSearchResult` does. */
+export const parseTextCorpusRowsResult = gameTextResponseParser(
+	TextCorpusRowsResult,
+	"text rows result"
 );
 
 /**

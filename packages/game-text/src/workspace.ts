@@ -67,6 +67,7 @@ import {
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
 	type TextCorpusQueryRunResult,
+	type TextCorpusRowsResult,
 	type TextCorpusRunResult,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
@@ -163,6 +164,8 @@ export interface GameTextWorkspaceApi {
 	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
 	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
 	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
+	/** The request's rows, or its open groups' first rows, without the aggregates `search` adds. */
+	readonly searchRows: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusRowsResult>;
 	readonly chooseQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
 	readonly reloadQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
 	readonly createStarterRules: (
@@ -282,6 +285,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		index.sourceQuality(rules);
 	const queryModel = (index: RetainedGameTextIndexResult) => index.query;
 	const querySearch = (index: RetainedGameTextIndexResult) => index.search;
+	const querySearchRows = (index: RetainedGameTextIndexResult) => index.searchRows;
 	const completedQuery = (index: RetainedGameTextIndexResult, cached?: true) =>
 		cached
 			? { status: "completed" as const, summary: index.summary, cached }
@@ -695,6 +699,22 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			return { status: "failed", error: indexPublicFailure(outcome.failure) };
 		const page = outcome.success;
 		return (yield* currentModel(querySearch)) === search
+			? { status: "ready", page }
+			: { status: "not_ready" };
+	});
+
+	const searchRows = Effect.fn("GameText.workspace.searchRows")(function* (
+		input: TextCorpusSearchRequest
+	): Effect.fn.Return<TextCorpusRowsResult, never, Scope.Scope> {
+		const request = yield* projectRelativeRequest(input);
+		if (request.localization) return yield* localization.searchRows(request);
+		const read = yield* currentModel(querySearchRows);
+		if (!read) return { status: "not_ready" };
+		const outcome = yield* read(request).pipe(Effect.result);
+		if (Result.isFailure(outcome))
+			return { status: "failed", error: indexPublicFailure(outcome.failure) };
+		const page = outcome.success;
+		return (yield* currentModel(querySearchRows)) === read
 			? { status: "ready", page }
 			: { status: "not_ready" };
 	});
@@ -1352,6 +1372,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		focus: scoped(focus),
 		progress: scoped(progress),
 		search: scoped(search),
+		searchRows: scoped(searchRows),
 		chooseQualityRules: scoped(chooseQualityRules),
 		reloadQualityRules: scoped(reloadQualityRules),
 		createStarterRules: scoped(createStarterRules),

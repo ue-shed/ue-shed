@@ -36,9 +36,11 @@ import {
 	type LocalizationSelection,
 	parseTextCorpusFocusResult,
 	parseTextCorpusQueryRunResult,
+	parseTextCorpusRowsResult,
 	parseTextCorpusSearchResult,
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
+	type TextCorpusRowsResult,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
@@ -334,6 +336,16 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				"gameText.search",
 				() => window.ueShed.gameText.search(input),
 				parseTextCorpusSearchResult
+			)
+	),
+	searchRows: Effect.fn("GameTextClient.searchRows")(
+		(
+			input: TextCorpusSearchRequest
+		): Effect.Effect<TextCorpusRowsResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.searchRows",
+				() => window.ueShed.gameText.searchRows(input),
+				parseTextCorpusRowsResult
 			)
 	),
 	focus: Effect.fn("GameTextClient.focus")(

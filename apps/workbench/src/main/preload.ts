@@ -209,6 +209,7 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("game-text:configured-refresh", refresh),
 		progress: () => ipcRenderer.invoke("game-text:progress"),
 		search: (request) => ipcRenderer.invoke("game-text:search", request),
+		searchRows: (request) => ipcRenderer.invoke("game-text:search-rows", request),
 		focus: (request) => ipcRenderer.invoke("game-text:focus", request),
 		chooseQualityRules: () => ipcRenderer.invoke("game-text:quality:choose-rules"),
 		reloadQualityRules: () => ipcRenderer.invoke("game-text:quality:reload-rules"),

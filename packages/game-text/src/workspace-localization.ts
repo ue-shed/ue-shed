@@ -51,6 +51,7 @@ import { type GameTextRuleDocument } from "./entry-rules.js";
 import {
 	MAX_LOCALIZATION_CULTURES,
 	type LocalizationJoin,
+	type TextCorpusRowsResult,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "./entry-schema.js";
@@ -189,6 +190,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					readonly review: LocalizationReviewSnapshot | undefined;
 					readonly model: GameTextIndexRefreshResult["query"];
 					readonly search: GameTextIndexRefreshResult["search"];
+					readonly searchRows: GameTextIndexRefreshResult["searchRows"];
 					readonly borrow: RetainedGameTextIndexResult["borrow"];
 					readonly result: LocalizationTargetResult;
 			  }
@@ -440,6 +442,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						sourceQuality: indexed.success.sourceQuality,
 						model,
 						search: indexed.success.search,
+						searchRows: indexed.success.searchRows,
 						borrow: indexed.success.borrow,
 						result,
 						evidence,
@@ -484,6 +487,25 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			)
 				return { status: "not_ready" };
 			const outcome = yield* cached.search(request).pipe(Effect.result);
+			if (Result.isFailure(outcome))
+				return { status: "failed", error: indexPublicFailure(outcome.failure) };
+			const page = outcome.success;
+			if ((yield* current(request.localization.target)) !== cached)
+				return { status: "not_ready" };
+			return { status: "ready", page };
+		});
+		const searchRows = Effect.fn("GameText.workspace.localization.searchRows")(function* (
+			request: TextCorpusSearchRequest
+		): Effect.fn.Return<TextCorpusRowsResult, never, Scope.Scope> {
+			if (!request.localization) return { status: "not_ready" };
+			const cached = yield* current(request.localization.target);
+			if (
+				!cached ||
+				(request.localization.culture &&
+					!cached.join.cultures.includes(request.localization.culture))
+			)
+				return { status: "not_ready" };
+			const outcome = yield* cached.searchRows(request).pipe(Effect.result);
 			if (Result.isFailure(outcome))
 				return { status: "failed", error: indexPublicFailure(outcome.failure) };
 			const page = outcome.success;
@@ -1013,6 +1035,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			targets,
 			select,
 			search,
+			searchRows,
 			/** The selected target's query; absent when not loaded. */
 			targetQuery: (target: LocalizationJoin["target"]) =>
 				current(target).pipe(Effect.map((cached) => cached?.model)),

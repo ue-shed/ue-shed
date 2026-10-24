@@ -86,6 +86,10 @@ export const register = Effect.gen(function* () {
 		const [request] = args;
 		return gameText.search(request);
 	});
+	yield* ipc.register(invokeContracts["game-text:search-rows"], (...args) => {
+		const [request] = args;
+		return gameText.searchRows(request);
+	});
 	yield* ipc.register(invokeContracts["game-text:focus"], (...args) => {
 		const [request] = args;
 		return gameText.focus(request);

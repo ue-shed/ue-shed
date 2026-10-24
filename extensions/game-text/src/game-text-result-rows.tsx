@@ -4,7 +4,7 @@ import { manifestPathOrigin } from "@ue-shed/game-text/rules";
 import {
 	type LocalizationLineId,
 	type LocalizationLinePreview,
-	type TextCorpusSearchPage,
+	type TextCorpusRows,
 	type TextUnitId,
 	type TextUnitSearchResult
 } from "@ue-shed/game-text/schema";
@@ -39,7 +39,7 @@ export function GameTextColumns(props: { readonly culture: string | undefined })
 }
 
 export function GameTextResultRows(props: {
-	readonly page: TextCorpusSearchPage | undefined;
+	readonly page: TextCorpusRows | undefined;
 	readonly culture: string | undefined;
 	/** The picked cultures; every culture when empty or absent. */
 	readonly cultures?: readonly string[];

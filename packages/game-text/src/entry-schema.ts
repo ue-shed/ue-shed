@@ -99,6 +99,7 @@ export { TextQualityRule } from "./game-text-rules.js";
 
 export {
 	MAX_TEXT_GROUPS,
+	MAX_TEXT_OPEN_GROUPS,
 	MAX_TEXT_SOURCE_LENGTH,
 	MAX_TEXT_SOURCE_VALUES,
 	MAX_TEXT_PICKED_LINES,
@@ -124,6 +125,10 @@ export {
 	TextCorpusSearchPage,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult,
+	TextCorpusRows,
+	TextCorpusRowsPage,
+	TextCorpusRowsResult,
+	TextOpenGroupRows,
 	TextCoverageGapCounts,
 	TextCultureFacet,
 	TextEditing,
@@ -161,7 +166,8 @@ export {
 	parseTextCorpusFocusResult,
 	parseTextCorpusQueryRunResult,
 	parseTextCorpusRunResult,
-	parseTextCorpusSearchResult
+	parseTextCorpusSearchResult,
+	parseTextCorpusRowsResult
 } from "./schema.js";
 
 export { GameTextResponseError, gameTextResponseParser } from "./response-parser.js";

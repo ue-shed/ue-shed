@@ -642,7 +642,21 @@ export function GameTextRoute(props: {
 				Effect.flatMap(() => {
 					started = performance.now();
 					return Effect.gen(function* () {
-						let result = yield* props.client.search(request);
+						// A further page reads rows only and joins the page it continues.
+						const continued =
+							request.cursor || request.localizationCursor
+								? untrack(page)
+								: undefined;
+						if (continued) {
+							const rows = yield* props.client.searchRows(request);
+							return rows.status === "ready"
+								? {
+										status: "ready" as const,
+										page: mergePages(continued, rows.page)
+									}
+								: rows;
+						}
+						const result = yield* props.client.search(request);
 						if (
 							result.status !== "ready" ||
 							request.cursor ||
@@ -653,9 +667,9 @@ export function GameTextRoute(props: {
 						while (pageRows(collected) < desired) {
 							const cursor = nextPageCursor(collected);
 							if (!cursor) break;
-							result = yield* props.client.search({ ...request, ...cursor });
-							if (result.status !== "ready") return result;
-							collected = mergePages(collected, result.page);
+							const rows = yield* props.client.searchRows({ ...request, ...cursor });
+							if (rows.status !== "ready") return rows;
+							collected = mergePages(collected, rows.page);
 						}
 						return { status: "ready" as const, page: collected };
 					});
@@ -681,11 +695,7 @@ export function GameTextRoute(props: {
 						previousSearch = signature;
 						setCommittedRequest(baseRequest);
 						setQueryMs(performance.now() - started);
-						setPage((previous) =>
-							(request.cursor || request.localizationCursor) && previous
-								? mergePages(previous, result.page)
-								: result.page
-						);
+						setPage(result.page);
 					} else {
 						showError(
 							result.status === "failed"

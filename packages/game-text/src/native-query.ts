@@ -18,6 +18,7 @@ import {
 	TextCorpusFocus,
 	TextCorpusFocusRequest,
 	TextCorpusQuerySummary,
+	TextCorpusRowsPage,
 	TextCorpusSearchPage,
 	TextCorpusSearchRequest
 } from "./schema.js";
@@ -623,6 +624,18 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			TextCorpusSearchPage
 		);
 	});
+	const searchRows = Effect.fn("GameTextIndex.nativeSearchRows")(function* (
+		request: TextCorpusSearchRequest
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
+			Effect.mapError((cause) => failed("search", cause))
+		);
+		return yield* response(
+			interactive,
+			{ action: "search", reader, payload: JSON.stringify({ ...decoded, parts: ["rows"] }) },
+			TextCorpusRowsPage
+		);
+	});
 	const focus = Effect.fn("GameTextIndex.nativeFocus")(function* (
 		request: TextCorpusFocusRequest
 	) {
@@ -737,6 +750,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		),
 		summary: () => scopedRead(reads, summary()),
 		search: (request) => scopedRead(reads, search(request)),
+		searchRows: (request) => scopedRead(reads, searchRows(request)),
 		focus: (request) => scopedRead(reads, focus(request)),
 		localizationFocus: (id) => scopedRead(reads, localizationFocus(id)),
 		localizationDetail: (request) => scopedRead(reads, localizationDetail(request)),

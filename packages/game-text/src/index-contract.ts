@@ -8,7 +8,12 @@ import type { PackageTextInventoryEntry, refreshPackageTextLayer } from "./packa
 import type { importLocalizationTarget } from "./localization-import.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
 import type { NativeTextQuery } from "./native-query.js";
-import type { TextCorpus, TextCorpusSearchRequest, TextCorpusSearchPage } from "./schema.js";
+import type {
+	TextCorpus,
+	TextCorpusRowsPage,
+	TextCorpusSearchRequest,
+	TextCorpusSearchPage
+} from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
 import type { IndexedLocalizationQualityOptions } from "./localization-quality-index.js";
 import type { LocalizationQuality } from "./localization-workspace.js";
@@ -101,6 +106,10 @@ export interface GameTextIndexRefreshResult {
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchPage, IndexFailure>;
+	/** The request's rows, or its open groups' first rows, without the aggregates. */
+	readonly searchRows: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<TextCorpusRowsPage, IndexFailure>;
 	readonly imported: ImportedTarget;
 	readonly packages: Effect.Success<ReturnType<typeof refreshPackageTextLayer>>;
 	readonly join: Effect.Success<ReturnType<RefreshJoinedTarget>>;

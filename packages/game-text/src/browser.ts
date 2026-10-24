@@ -81,6 +81,7 @@ export {
 	TextTerminologyEntry,
 	parseTextQualityReport,
 	MAX_TEXT_GROUPS,
+	MAX_TEXT_OPEN_GROUPS,
 	MAX_TEXT_SOURCE_LENGTH,
 	MAX_TEXT_SOURCE_VALUES,
 	MAX_TEXT_PICKED_LINES,
@@ -106,6 +107,10 @@ export {
 	TextCorpusSearchPage,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult,
+	TextCorpusRows,
+	TextCorpusRowsPage,
+	TextCorpusRowsResult,
+	TextOpenGroupRows,
 	TextCoverageGapCounts,
 	TextCultureFacet,
 	TextEditing,
@@ -144,6 +149,7 @@ export {
 	parseTextCorpusQueryRunResult,
 	parseTextCorpusRunResult,
 	parseTextCorpusSearchResult,
+	parseTextCorpusRowsResult,
 	GameTextResponseError,
 	gameTextResponseParser
 } from "./entry-schema.js";

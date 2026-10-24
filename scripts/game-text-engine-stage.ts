@@ -8,7 +8,10 @@ import * as currentIndex from "../packages/game-text/dist/entry-index.js";
 import * as currentWorkspace from "../packages/game-text/dist/entry-workspace.js";
 import type { GameTextWorkspaceFileHooks } from "../packages/game-text/dist/entry-workspace.js";
 import * as currentSchema from "../packages/game-text/dist/entry-schema.js";
-import type { TextCorpusSearchPage } from "../packages/game-text/dist/entry-schema.js";
+import type {
+	TextCorpusRowsPage,
+	TextCorpusSearchPage
+} from "../packages/game-text/dist/entry-schema.js";
 import * as currentAssets from "../packages/unreal-assets/dist/index.js";
 import * as currentLocalization from "../packages/localization/dist/index.js";
 import * as currentCorpus from "../packages/game-text/dist/entry-corpus.js";
@@ -273,7 +276,36 @@ export async function runEngineStage(options: EngineStageOptions) {
 			if (reply.status !== "ready") throw new Error(JSON.stringify(reply));
 			return reply.page;
 		};
-		const firstPage = async (read: (request: typeof base) => Promise<TextCorpusSearchPage>) => {
+		const searchRows = async (request: typeof base) => {
+			const reply = await run(workspace.searchRows(request));
+			if (reply.status !== "ready") throw new Error(JSON.stringify(reply));
+			return reply.page;
+		};
+		// Open groups as the renderer reads them: one rows request per 20, and alone past the budget.
+		const openGroupRows = (
+			request: typeof base,
+			keys: readonly string[],
+			read: (request: typeof base, label: string) => Promise<TextCorpusRowsPage>
+		) =>
+			Promise.all(
+				Array.from({ length: Math.ceil(keys.length / 20) }, async (_, chunk) => {
+					const openGroups = keys.slice(chunk * 20, chunk * 20 + 20);
+					const reply = await read(
+						{ ...request, openGroups, firstRows: request.pageSize },
+						`rows-${chunk}`
+					);
+					return Promise.all(
+						(reply.openGroups ?? []).map(
+							(group) =>
+								group.page ?? read({ ...request, openGroup: group.key }, group.key)
+						)
+					);
+				})
+			).then((chunks) => chunks.flat());
+		const firstPage = async (
+			read: (request: typeof base) => Promise<TextCorpusSearchPage>,
+			readRows: (request: typeof base) => Promise<TextCorpusRowsPage>
+		) => {
 			const page = await read(base);
 			const groups = page.groups?.entries ?? [];
 			const fits =
@@ -283,8 +315,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 			return {
 				total: page.total,
 				page,
-				groups: await Promise.all(
-					open.map((group) => read({ ...base, openGroup: group.key }))
+				groups: await openGroupRows(
+					base,
+					open.map((group) => group.key),
+					(request) => readRows(request)
 				)
 			};
 		};
@@ -292,7 +326,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 			await measure(stage, async () => {
 				ready(await run(workspace.configuredRefresh(true)), "completed");
 				ready(await run(workspace.localizationTarget(target)));
-				return firstPage(search);
+				return firstPage(search, searchRows);
 			});
 		} else if (stage === "open") {
 			await measure("open", async () => {
@@ -302,7 +336,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 						.pipe(Effect.provideService(Scope.Scope, scope))
 				);
 				if (Option.isNone(model)) throw new Error("Built index not available.");
-				return firstPage((request) => run(model.value.query.search(request)));
+				return firstPage(
+					(request) => run(model.value.query.search(request)),
+					(request) => run(model.value.query.searchRows(request))
+				);
 			});
 		} else {
 			ready(await run(workspace.configuredRefresh(true)), "completed");
@@ -421,13 +458,15 @@ export async function runEngineStage(options: EngineStageOptions) {
 										host.openGroups === "all" || fits
 											? groups
 											: groups.slice(0, 1);
-									fanout += open.length;
-									const replies = await Promise.all(
-										open.map((group) =>
-											measure(`request:${id}:${group.key}`, () =>
-												search({ ...request, openGroup: group.key })
-											)
-										)
+									const replies = await openGroupRows(
+										request,
+										open.map((group) => group.key),
+										(read, label) => {
+											fanout++;
+											return measure(`request:${id}:${label}`, () =>
+												searchRows(read)
+											);
+										}
 									);
 									return { page, groups: replies };
 								},

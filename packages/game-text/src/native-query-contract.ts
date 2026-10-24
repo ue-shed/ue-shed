@@ -6,6 +6,7 @@ import type {
 	TextCorpusQuerySummary,
 	TextCorpusSearchRequest,
 	TextCorpusSearchPage,
+	TextCorpusRowsPage,
 	TextCorpusFocusRequest,
 	TextCorpusFocus,
 	TextUnit,
@@ -35,6 +36,10 @@ export interface NativeTextQuery extends NativeFindings {
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchPage, GameTextIndexError>;
+	/** The request's rows, or its open groups' first rows, without computing any aggregate. */
+	readonly searchRows: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<TextCorpusRowsPage, GameTextIndexError>;
 	readonly focus: (
 		request: TextCorpusFocusRequest
 	) => Effect.Effect<TextCorpusFocus | undefined, GameTextIndexError>;

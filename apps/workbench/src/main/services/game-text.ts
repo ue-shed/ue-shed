@@ -110,6 +110,7 @@ export function makeWorkbenchGameTextTestLayer(
 					total: 0
 				}),
 			search: () => Effect.succeed({ status: "not_ready" }),
+			searchRows: () => Effect.succeed({ status: "not_ready" }),
 			qualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			qualitySearch: () => Effect.succeed({ status: "not_ready" }),
 			previewQualityRules: () => Effect.succeed({ status: "not_ready" }),

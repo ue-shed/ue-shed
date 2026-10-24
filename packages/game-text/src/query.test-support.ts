@@ -3,6 +3,8 @@ import type {
 	TextCorpusFocus,
 	TextCorpusFocusRequest,
 	TextCorpusQuerySummary,
+	TextCorpusRows,
+	TextCorpusRowsPage,
 	TextCorpusSearchPage,
 	TextCorpusSearchCounts,
 	TextCorpusSearchRequest,
@@ -165,6 +167,54 @@ function matchesLens(
  * In-memory, query-scoped view of a compact text corpus. It normalizes every unit once at refresh
  * time and emits only bounded pages to callers.
  */
+/** A page's rows without its aggregates. */
+const pageRows = (page: TextCorpusSearchPage): TextCorpusRows => ({
+	units: page.units,
+	...(page.nextCursor === undefined ? undefined : { nextCursor: page.nextCursor }),
+	...(page.localization
+		? {
+				localization: {
+					target: page.localization.target,
+					lines: page.localization.lines,
+					...(page.localization.nextCursor === undefined
+						? undefined
+						: { nextCursor: page.localization.nextCursor })
+				}
+			}
+		: undefined)
+});
+
+/**
+ * The rows the engine returns for `parts: ["rows"]`, from `openGroup` reads: each open group's
+ * first page in the order named, and past 500 rows `rowsOmitted` for it and every later group.
+ */
+export function referenceSearchRows(
+	search: (request: TextCorpusSearchRequest) => TextCorpusSearchPage,
+	request: TextCorpusSearchRequest
+): TextCorpusRowsPage {
+	const { openGroups, firstRows, ...base } = request;
+	if (openGroups === undefined) return pageRows(search(base));
+	let budget = 500;
+	const groups = openGroups.map((key) => {
+		const page = pageRows(search({ ...base, openGroup: key, pageSize: firstRows ?? 50 }));
+		const rows = page.localization?.lines.length ?? page.units.length;
+		if (rows > budget) {
+			budget = 0;
+			return { key, rowsOmitted: true as const };
+		}
+		budget -= rows;
+		return { key, page };
+	});
+	const empty = pageRows(search({ ...base, pageSize: 1 }));
+	return {
+		units: [],
+		...(empty.localization
+			? { localization: { target: empty.localization.target, lines: [] } }
+			: undefined),
+		openGroups: groups
+	};
+}
+
 export interface TextCorpusQuery {
 	readonly localizationFocus: (id: LocalizationLineId) => LocalizationLine | undefined;
 	readonly readLocalizationLines: () => readonly LocalizationLine[];

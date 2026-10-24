@@ -101,6 +101,8 @@ Every aggregate is a set built from atoms. One traversal walks the union of thei
 
 Until §6 changes the finding fields, every answer is byte-identical to today's. The native query tests, the TS reference comparisons, the fixture and the benchmark's visible-page hashes (`a2c3e70e…` on 1×, `6b19c93a…` on the released project) must not change.
 
+One exception, by design: from step 3 the benchmark reads open groups as the renderer does, with `searchRows`, so its group replies are rows pages and its answer hash covers the header and those rows. Step 9 hashes the Phase 2 answers through the same projection, the header plus each open group's units, lines and cursors, and compares the two.
+
 ## 4. Text search: the trigram index
 
 - **Arenas.** `query.source.{ids,starts,folded}` exists today (`ix/join_query.rs:333-349`). Add `query.translation.{ids,starts,folded}`: every distinct archive translation and PO `msgstr` of every culture, folded as sources are (Rust `to_lowercase`, WTF-8 bytes).

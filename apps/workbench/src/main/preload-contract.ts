@@ -92,6 +92,7 @@ export const workbenchInvokeChannels = {
 		refreshConfiguredProject: "game-text:configured-refresh",
 		progress: "game-text:progress",
 		search: "game-text:search",
+		searchRows: "game-text:search-rows",
 		focus: "game-text:focus",
 		chooseQualityRules: "game-text:quality:choose-rules",
 		createStarterRules: "game-text:quality:create-starter-rules",

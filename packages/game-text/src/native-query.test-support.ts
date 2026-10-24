@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { textCorpusReportHeader } from "./corpus-summary.js";
 import type { NativeTextQuery } from "./native-query.js";
-import type { TextCorpusQuery } from "./query.test-support.js";
+import { referenceSearchRows, type TextCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus } from "./schema.js";
 import { GameTextIndexError } from "./index-contract.js";
 import {
@@ -53,6 +53,8 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 			read("localization_corpus", () => query.readLocalizationLines()),
 		summary: () => read("summary", query.summary),
 		search: (request) => read("search", () => query.search(request)),
+		searchRows: (request) =>
+			read("search", () => referenceSearchRows((input) => query.search(input), request)),
 		focus: (request) => read("focus", () => query.focus(request)),
 		localizationFocus: (id) => read("localization_focus", () => query.localizationFocus(id)),
 		localizationDetail: (request) =>

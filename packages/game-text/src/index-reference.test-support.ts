@@ -14,6 +14,7 @@ import { openJoinedTarget } from "./joined-target-reader.js";
 import { sharedIndexNodeLayer } from "./shared-index.js";
 import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { GameTextIndexError } from "./index-contract.js";
+import { referenceSearchRows } from "./query.test-support.js";
 import {
 	derivedAggregate,
 	derivedCorpusFingerprint,
@@ -95,6 +96,8 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 						Effect.sync(() => derivedCorpusFingerprint(readCorpus())),
 					summary: () => Effect.sync(reference.summary),
 					search: (request) => Effect.sync(() => reference.search(request)),
+					searchRows: (request) =>
+						Effect.sync(() => referenceSearchRows(reference.search, request)),
 					focus: (request) => Effect.sync(() => reference.focus(request)),
 					localizationFocus: (id) => Effect.sync(() => reference.localizationFocus(id)),
 					localizationDetail: (request) =>

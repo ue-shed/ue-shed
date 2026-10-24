@@ -8,12 +8,18 @@ import {
 	makeTextUnitId,
 	TextQualityRuleId,
 	TextRoleId,
-	type TextCorpus
+	type TextCorpus,
+	type TextCorpusRows,
+	type TextCorpusSearchPage,
+	type TextOpenGroupRows
 } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, beforeEach, expect, vi } from "vitest";
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
+import {
+	referenceSearchRows,
+	textCorpusQuery
+} from "../../../packages/game-text/src/query.test-support.js";
 import { type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
 
@@ -138,6 +144,8 @@ export function makeClient(
 		progress: () =>
 			Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
 		search: (request) => Effect.succeed({ status: "ready", page: query.search(request) }),
+		searchRows: (request) =>
+			Effect.succeed({ status: "ready", page: referenceSearchRows(query.search, request) }),
 		focus: (request) => {
 			const focus = query.focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
@@ -182,10 +190,98 @@ export function makeClient(
 		...overrides
 	};
 }
+
+/** A search page's rows, as a rows read returns them. */
+function searchPageRows(page: TextCorpusSearchPage): TextCorpusRows {
+	return {
+		units: page.units,
+		...(page.nextCursor === undefined ? undefined : { nextCursor: page.nextCursor }),
+		...(page.localization
+			? {
+					localization: {
+						target: page.localization.target,
+						lines: page.localization.lines,
+						...(page.localization.nextCursor === undefined
+							? undefined
+							: { nextCursor: page.localization.nextCursor })
+					}
+				}
+			: undefined)
+	};
+}
+
+/**
+ * Rows reads answered from a client's `search`, as the engine answers them: each open group's
+ * first page from an `openGroup` read, within the 500-row budget. A group whose read fails is
+ * omitted, so the host reads it alone and shows that failure.
+ */
+export function searchRowsFrom(
+	search: GameTextClientApi["search"]
+): GameTextClientApi["searchRows"] {
+	return (request) =>
+		Effect.gen(function* () {
+			const { openGroups, firstRows, ...base } = request;
+			if (openGroups === undefined) {
+				const result = yield* search(base);
+				return result.status === "ready"
+					? { status: "ready" as const, page: searchPageRows(result.page) }
+					: result;
+			}
+			let budget = 500;
+			const groups: TextOpenGroupRows[] = [];
+			for (const key of openGroups) {
+				const result = yield* search({
+					...base,
+					openGroup: key,
+					pageSize: firstRows ?? 50
+				});
+				const page = result.status === "ready" ? searchPageRows(result.page) : undefined;
+				const rows = page ? (page.localization?.lines.length ?? page.units.length) : 0;
+				if (!page || rows > budget) {
+					if (page) budget = 0;
+					groups.push({ key, rowsOmitted: true });
+					continue;
+				}
+				budget -= rows;
+				groups.push({ key, page });
+			}
+			return {
+				status: "ready" as const,
+				page: {
+					units: [],
+					...(base.localization
+						? { localization: { target: base.localization.target, lines: [] } }
+						: undefined),
+					openGroups: groups
+				}
+			};
+		});
+}
+
+/** Waits for every open group's rows, which load after the header that lists the groups. */
+export const groupRows = () =>
+	waitFor(() =>
+		expect(
+			[...document.querySelectorAll("section[data-group] [role='status']")].filter(
+				(status) => status.textContent === "Loading…"
+			)
+		).toHaveLength(0)
+	);
+
+/** The client a test mounts, its rows reads answered from its own `search`. */
+export const withSearchRows = (client: GameTextClientApi): GameTextClientApi => ({
+	...client,
+	searchRows: searchRowsFrom(client.search)
+});
+
 export function mount(client = makeClient(), preferences?: GameTextPreferences, key?: string) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
-			<GameTextRoute client={client} initialPreferences={preferences} projectKey={key} />
+			<GameTextRoute
+				client={withSearchRows(client)}
+				initialPreferences={preferences}
+				projectKey={key}
+			/>
 		</EffectRuntimeProvider>
 	));
 }

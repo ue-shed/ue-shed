@@ -134,6 +134,7 @@ import {
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
+	TextCorpusRowsResult,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
@@ -837,6 +838,11 @@ export const invokeContracts = {
 		channel: "game-text:search",
 		args: Schema.Tuple([TextCorpusSearchRequest]),
 		result: TextCorpusSearchResult
+	}),
+	"game-text:search-rows": invoke({
+		channel: "game-text:search-rows",
+		args: Schema.Tuple([TextCorpusSearchRequest]),
+		result: TextCorpusRowsResult
 	}),
 	"game-text:focus": invoke({
 		channel: "game-text:focus",

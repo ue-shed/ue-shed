@@ -19,7 +19,7 @@ import {
 } from "../../../packages/game-text/src/localization.test-support.js";
 import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
-import { client, mount } from "./game-text-localization.test-support.js";
+import { client, groupRows, mount } from "./game-text-localization.test-support.js";
 describe("Game Text line page", () => {
 	it("switches between split lines sharing a unit without mixing their saved details", async () => {
 		const mixed = splitUnit();
@@ -60,6 +60,7 @@ describe("Game Text line page", () => {
 			}
 		});
 		await screen.findByText("2 matches");
+		await groupRows();
 		const results = screen.getByRole("region", { name: "Results" });
 		const rows = within(results)
 			.getAllByRole("button")
@@ -139,6 +140,7 @@ describe("Game Text line page", () => {
 					).pipe(Effect.as({ status: "ready" as const, page: query.search(request) }))
 			});
 			await screen.findByText("62 matches");
+			await groupRows();
 			if (flat) {
 				await user.click(screen.getByRole("button", { name: "Display" }));
 				await user.click(screen.getByRole("radio", { name: "No grouping" }));
@@ -183,6 +185,7 @@ describe("Game Text translation editing", () => {
 
 	async function stageFrench(user: ReturnType<typeof userEvent.setup>) {
 		await screen.findByText("3 matches");
+		await groupRows();
 		const results = screen.getByRole("region", { name: "Results" });
 		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
 		const translations = await screen.findByRole("region", { name: "Translations" });

@@ -41,6 +41,7 @@ import type {
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
+	TextCorpusRowsResult,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
@@ -161,6 +162,13 @@ export interface GameTextClientApi {
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;
+	/**
+	 * The request's rows, or its open groups' first rows, without the aggregates `search` adds:
+	 * every read with a cursor, and the open groups after a grouped search.
+	 */
+	readonly searchRows: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<TextCorpusRowsResult, GameTextClientError>;
 	readonly chooseQualityRules: () => Effect.Effect<
 		TextQualityQueryRunResult,
 		GameTextClientError

@@ -1,4 +1,7 @@
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
+import {
+	referenceSearchRows,
+	textCorpusQuery
+} from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
@@ -64,6 +67,8 @@ function client(operations: NonNullable<GameTextClientApi["operations"]>): GameT
 			})
 		),
 		search: (request) => Effect.succeed({ status: "ready", page: text.search(request) }),
+		searchRows: (request) =>
+			Effect.succeed({ status: "ready", page: referenceSearchRows(text.search, request) }),
 		focus: (request) => {
 			const focus = text.focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });

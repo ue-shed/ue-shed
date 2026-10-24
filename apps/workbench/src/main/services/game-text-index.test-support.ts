@@ -136,6 +136,7 @@ export function oracleGameTextIndexLayer<E>(
 						summary: reference.summary(),
 						query,
 						search: query.search,
+						searchRows: query.searchRows,
 						// Explicit test facts are evaluated by the same native rule engine.
 						localizationCheck: (document, options) =>
 							Effect.sync(() => {

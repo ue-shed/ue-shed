@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import type {
 	LocalizationLineId,
 	LocalizationLinePreview,
-	TextCorpusSearchPage,
+	TextCorpusRows,
 	TextCorpusSearchRequest,
 	TextGroup,
 	TextGroupBy,
@@ -10,10 +10,12 @@ import type {
 } from "@ue-shed/game-text/schema";
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
+import type { Effect } from "effect";
 import { For, Show, createEffect, createSignal, untrack } from "solid-js";
 import { failureText } from "./game-text-failure.js";
 import { mergePages, nextPageCursor } from "./game-text-pages.js";
-import type { GameTextClientApi } from "./game-text-client.js";
+import type { GameTextClientApi, GameTextClientError } from "./game-text-client.js";
+import { groupFirstPages, type GroupPageResult } from "./game-text-group-pages.js";
 import { GameTextResultRows } from "./game-text-result-rows.js";
 
 const SEVERE = new Set(["key_changed", "conflicting_source"]);
@@ -27,7 +29,7 @@ export interface LoadedRow {
 }
 
 /** A page's rows in display order: localization lines with their first listed unit, or units. */
-export function loadedRows(page: TextCorpusSearchPage): readonly LoadedRow[] {
+export function loadedRows(page: TextCorpusRows): readonly LoadedRow[] {
 	if (!page.localization) return page.units.map((unit) => ({ unit: unit.id, line: undefined }));
 	const units = new Set(page.units.map((unit) => unit.id));
 	return page.localization.lines.map((line) => ({
@@ -63,7 +65,7 @@ export function GroupedResults(props: {
 	readonly groups: readonly TextGroup[];
 	readonly more: number;
 	readonly request: TextCorpusSearchRequest;
-	readonly client: Pick<GameTextClientApi, "search">;
+	readonly client: Pick<GameTextClientApi, "searchRows">;
 	readonly culture: string | undefined;
 	/** The picked cultures; every culture when empty or absent. */
 	readonly cultures?: readonly string[];
@@ -84,6 +86,7 @@ export function GroupedResults(props: {
 		props.more === 0 && props.groups.reduce((sum, group) => sum + group.count, 0) <= 50;
 	const isOpen = (group: TextGroup, index: number) =>
 		toggled().get(group.key) ?? (fits() || index === 0);
+	const firstPage = groupFirstPages(() => props.client);
 	return (
 		<div {...stylex.attrs(styles.list)}>
 			<For each={props.groups} keyed={(group) => group.key}>
@@ -100,6 +103,7 @@ export function GroupedResults(props: {
 						}
 						request={props.request}
 						client={props.client}
+						firstPage={firstPage}
 						culture={props.culture}
 						cultures={props.cultures ?? []}
 						selectedId={props.selectedId}
@@ -128,7 +132,12 @@ function GroupSection(props: {
 	readonly open: boolean;
 	readonly onToggle: () => void;
 	readonly request: TextCorpusSearchRequest;
-	readonly client: Pick<GameTextClientApi, "search">;
+	/** The group's first page, read with the other groups that open in the same update. */
+	readonly firstPage: (
+		request: TextCorpusSearchRequest,
+		key: string
+	) => Effect.Effect<GroupPageResult, GameTextClientError>;
+	readonly client: Pick<GameTextClientApi, "searchRows">;
 	readonly culture: string | undefined;
 	/** The picked cultures; every culture when empty or absent. */
 	readonly cultures?: readonly string[];
@@ -139,7 +148,7 @@ function GroupSection(props: {
 	readonly ticks?: RowTicks | undefined;
 }) {
 	const action = createEffectAction();
-	const [page, setPage] = createSignal<TextCorpusSearchPage>();
+	const [page, setPage] = createSignal<TextCorpusRows>();
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal<string>();
 	let desired = 50;
@@ -148,18 +157,16 @@ function GroupSection(props: {
 	// `after` is the page loaded so far, passed in rather than read back from the signal, which a
 	// write in the same update has not committed yet.
 	const load = (
-		after: TextCorpusSearchPage | undefined,
+		after: TextCorpusRows | undefined,
 		base: TextCorpusSearchRequest,
 		key: string
 	) => {
-		const request: TextCorpusSearchRequest = {
-			...base,
-			openGroup: key,
-			...(after ? nextPageCursor(after) : undefined)
-		};
+		const read = after
+			? props.client.searchRows({ ...base, openGroup: key, ...nextPageCursor(after) })
+			: props.firstPage(base, key);
 		setLoading(true);
 		setError(undefined);
-		action.run(props.client.search(request), {
+		action.run(read, {
 			onSuccess: (result) => {
 				if (result.status !== "ready") {
 					setLoading(false);

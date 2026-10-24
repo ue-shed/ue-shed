@@ -805,6 +805,7 @@ export const makeGameTextIndexSteps = (
 			const { localizationRows, ...query } = native;
 			const summary = yield* query.summary();
 			const search = query.search;
+			const searchRows = query.searchRows;
 			// One quality worker per model, started by its first scan and replaced if it fails.
 			const qualityWorker = options.qualityWorker
 				? yield* qualityWorkerSlot(workerInput, yield* Effect.scope)
@@ -834,6 +835,7 @@ export const makeGameTextIndexSteps = (
 				summary,
 				localization,
 				search,
+				searchRows,
 				evidence: indexedEvidence,
 				corpus,
 				localizationJoin,

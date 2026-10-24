@@ -32,6 +32,7 @@ import {
 	client,
 	filterValues,
 	joined,
+	groupRows,
 	mount,
 	plain,
 	text
@@ -103,6 +104,7 @@ describe("Game Text review state", () => {
 		const { api, requests } = reviewClient();
 		mount(api);
 		await screen.findByText("3 matches");
+		await groupRows();
 		const review = await filterValues(user, "Review");
 		expect(review).toContain("Changed since review 1");
 		expect(review).toContain("Reviewed 1");
@@ -144,6 +146,7 @@ describe("Game Text review state", () => {
 		expect(requests[1]?.changes[0]).toMatchObject({ kind: "clear", flags: ["reviewed"] });
 		await chooseFilter(user, "Review", "Changed since review 1");
 		await screen.findByText("1 match");
+		await groupRows();
 		// Review state shows as its own chip until review becomes a pill.
 		expect(screen.getByRole("button", { name: "Changed since review" })).toBeDefined();
 		const filteredResults = screen.getByRole("region", { name: "Results" });
@@ -167,6 +170,7 @@ describe("Game Text review state", () => {
 			}
 		});
 		await screen.findByText("3 matches");
+		await groupRows();
 		const results = screen.getByRole("region", { name: "Results" });
 		const boxes = within(results).getAllByRole("checkbox", { name: /^Select /u });
 		expect(boxes).toHaveLength(3);
@@ -258,8 +262,10 @@ describe("Game Text key changes", () => {
 			}
 		});
 		await screen.findByText("2 matches");
+		await groupRows();
 		await chooseFilter(user, "Problem", "Key changed 1");
 		await screen.findByText("1 match");
+		await groupRows();
 		const results = screen.getByRole("region", { name: "Results" });
 		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));
 		const change = await screen.findByRole("region", { name: "Key change" });
@@ -302,6 +308,7 @@ describe("Game Text key changes", () => {
 				Effect.succeed({ status: "reviewed", edits: [], files: [], notSynced: 0 })
 		});
 		await screen.findByText("2 matches");
+		await groupRows();
 		const results = screen.getByRole("region", { name: "Results" });
 		for (const box of within(results).getAllByRole("checkbox", { name: /^Select /u }))
 			await user.click(box);

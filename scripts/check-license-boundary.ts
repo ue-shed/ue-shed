@@ -51,6 +51,7 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 		"bit-set bit-vec equivalent indexmap rustc-hash utf16_iter utf8_iter write16"
 	),
 	licensed("Apache-2.0 OR BSL-1.0", "ryu-js"),
+	licensed("Apache-2.0", "fsst-rs"),
 	licensed(
 		"MIT",
 		"fancy-regex game-text-index generic-array process-metrics synstructure ts-rs ts-rs-macros zstd"

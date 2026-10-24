@@ -1,10 +1,12 @@
 //! Bounded native search responses, including counts, localization and facets.
 use crate::engine_match::{Projection, checkpoint};
+use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, mask, selected_bits};
 use crate::engine_types::*;
 use crate::text_problem;
 use crate::{Result, require};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 const COUNT_LABELS: [&str; 9] = [
@@ -318,6 +320,7 @@ impl EngineQuery {
         }
         Ok(record(&PROBLEMS, &problems))
     }
+    /// The answer's aggregates, as its parts ask for them.
     fn search_metadata(
         &mut self,
         request: &SearchRequest,
@@ -325,15 +328,22 @@ impl EngineQuery {
         cancelled: &AtomicBool,
     ) -> Result<Value> {
         let localized = request.localization.is_some();
-        let mut result =
-            json!({"counts":self.search_counts(request,matched,cancelled)?,"total":matched.len()});
-        result["problems"] = self.problem_counts(request, cancelled)?;
-        if let Some(group) = request.group {
+        let mut result = json!({});
+        if request.wants(Part::Counts) {
+            result["counts"] = self.search_counts(request, matched, cancelled)?;
+            result["total"] = json!(matched.len());
+            result["problems"] = self.problem_counts(request, cancelled)?;
+        }
+        if let Some(group) = request.group
+            && request.wants(Part::Groups)
+        {
             let mut groups = self.aggregate(matched, request, group, false, "", cancelled)?;
             groups["by"] = serde_json::to_value(group)?;
             result["groups"] = groups;
         }
-        if let Some(facets) = &request.facets {
+        if let Some(facets) = &request.facets
+            && request.wants(Part::Facets)
+        {
             let mut values = json!({});
             if let Some(under) = &facets.folder {
                 let rows =
@@ -374,48 +384,38 @@ impl EngineQuery {
             }
             result["facets"] = values;
         }
-        if let Some(files) = self.file_scope(matched, request, cancelled)? {
-            result["fileScope"] = files;
-        }
-        if localized {
-            result["localization"] = self.localization_counts(request, matched, cancelled)?;
+        if request.wants(Part::Counts) {
+            if let Some(files) = self.file_scope(matched, request, cancelled)? {
+                result["fileScope"] = files;
+            }
+            if localized {
+                result["localization"] = self.localization_counts(request, matched, cancelled)?;
+            }
         }
         checkpoint(cancelled)?;
         Ok(result)
     }
-    pub fn search(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
-        let matched = self.matching(request, cancelled)?;
-        let listed = self.listed_rows(request, std::sync::Arc::clone(&matched), cancelled)?;
-        let localized = request.localization.is_some();
-        let kind = if localized { "line" } else { "raw" };
-        let cursor = if localized {
-            request.localization_cursor.as_ref()
-        } else {
-            request.cursor.as_ref()
-        };
-        let after = self.after_cursor(kind, &listed, cursor, cancelled)?;
-        let page = &listed[after..listed.len().min(after + request.page_size)];
-        let next = if after + page.len() < listed.len() {
-            page.last()
-                .map(|row| self.packed(kind, *row as usize))
-                .transpose()?
-        } else {
-            None
-        };
-        let mut result = self.search_metadata(request, &matched, cancelled)?;
-        let mut units = Vec::new();
+
+    /// The rows' presentations: with a target, each line's preview and the first visible saved
+    /// unit of it; without one, each unit's. Each says what put the row in its problems.
+    fn present_rows(
+        &mut self,
+        request: &SearchRequest,
+        rows: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<(Vec<Value>, Vec<Value>)> {
         let counted = request.counted_findings();
         // What put each row in its problems under this request, for hosts to show on the row.
         let explain = |row: &mut Value, problems: u32, signals: u32| {
             row["problems"] = json!(selected_bits(&PROBLEMS, problems));
             row["countedFindings"] = json!(selected_bits(&SIGNALS, signals & counted));
         };
-        if localized {
-            let p = Projection::open(self, cancelled)?;
+        let p = Projection::open(self, cancelled)?;
+        let mut units = Vec::new();
+        let mut lines = Vec::new();
+        if request.localization.is_some() {
             let scope = self.culture_scope(request.localization.as_ref())?;
-            let mut localization = result["localization"].take();
-            let mut lines = Vec::new();
-            for row in page {
+            for row in rows {
                 checkpoint(cancelled)?;
                 let row = *row as usize;
                 let mut preview = self.preview(row)?;
@@ -432,14 +432,8 @@ impl EngineQuery {
                 }
                 lines.push(preview);
             }
-            localization["lines"] = json!(lines);
-            if let Some(next) = next {
-                localization["nextCursor"] = json!(next);
-            }
-            result["localization"] = localization;
         } else {
-            let p = Projection::open(self, cancelled)?;
-            for row in page {
+            for row in rows {
                 checkpoint(cancelled)?;
                 let row = *row as usize;
                 let mut unit = self.presentation("raw", row)?;
@@ -451,11 +445,142 @@ impl EngineQuery {
                 );
                 units.push(unit);
             }
+        }
+        Ok((units, lines))
+    }
+
+    /// A rows page: the units, and the lines with a target, with the cursor of the next page.
+    fn rows_page(
+        &self,
+        request: &SearchRequest,
+        mut page: Value,
+        units: Vec<Value>,
+        lines: Vec<Value>,
+        next: Option<String>,
+    ) -> Value {
+        if request.localization.is_some() {
+            let localization = &mut page["localization"];
+            if localization.get("target").is_none() {
+                localization["target"] = self.target["name"].clone();
+            }
+            localization["lines"] = json!(lines);
             if let Some(next) = next {
-                result["nextCursor"] = json!(next);
+                localization["nextCursor"] = json!(next);
+            }
+        } else if let Some(next) = next {
+            page["nextCursor"] = json!(next);
+        }
+        page["units"] = json!(units);
+        page
+    }
+
+    /// Each open group's first rows in display order, in the order the request names them.
+    /// Past the row budget a group, and every one after it, lists none.
+    fn open_group_pages(
+        &mut self,
+        request: &SearchRequest,
+        matched: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        let (Some(by), Some(keys)) = (request.group, request.open_groups.as_ref()) else {
+            return Ok(json!([]));
+        };
+        let first = request.first_rows.unwrap_or(MAX_PAGE);
+        let localized = request.localization.is_some();
+        let kind = if localized { "line" } else { "raw" };
+        let p = Projection::open(self, cancelled)?;
+        let places = Places::open(self)?;
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        let problems =
+            self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
+        let mut ids = Vec::with_capacity(keys.len());
+        let mut found: HashMap<u32, Vec<u32>> = HashMap::new();
+        for key in keys {
+            let id = self.group_id(by, key, &places)?;
+            if let Some(id) = id {
+                found.insert(id, Vec::new());
+            }
+            ids.push(id);
+        }
+        // One walk fills every group with its first rows, and one more to know a page follows.
+        let mut open = found.len();
+        for (index, row) in matched.iter().enumerate() {
+            if open == 0 {
+                break;
+            }
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let id = p.group_key(&places, localized, *row as usize, &problems, by)?;
+            if let Some(rows) = found.get_mut(&id)
+                && rows.len() <= first
+            {
+                rows.push(*row);
+                if rows.len() == first + 1 {
+                    open -= 1;
+                }
             }
         }
-        result["units"] = json!(units);
+        let mut budget = MAX_OPEN_GROUP_ROWS;
+        let mut groups = Vec::with_capacity(keys.len());
+        for (key, id) in keys.iter().zip(ids) {
+            let rows = id
+                .and_then(|id| found.get(&id))
+                .map_or(&[][..], Vec::as_slice);
+            let shown = &rows[..rows.len().min(first)];
+            if shown.len() > budget {
+                budget = 0;
+                groups.push(json!({"key":key,"rowsOmitted":true}));
+                continue;
+            }
+            budget -= shown.len();
+            let next = if rows.len() > first {
+                shown
+                    .last()
+                    .map(|row| self.packed(kind, *row as usize))
+                    .transpose()?
+            } else {
+                None
+            };
+            let (units, lines) = self.present_rows(request, shown, cancelled)?;
+            let page = self.rows_page(request, json!({}), units, lines, next);
+            groups.push(json!({"key":key,"page":page}));
+        }
+        Ok(Value::Array(groups))
+    }
+
+    pub fn search(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        let matched = self.matching(request, cancelled)?;
+        let mut result = self.search_metadata(request, &matched, cancelled)?;
+        if !request.wants(Part::Rows) {
+            return Ok(result);
+        }
+        // With open groups, their pages carry the rows and the page lists none.
+        let (page, next) = if request.open_groups.is_some() {
+            result["openGroups"] = self.open_group_pages(request, &matched, cancelled)?;
+            (Vec::new(), None)
+        } else {
+            let listed = self.listed_rows(request, std::sync::Arc::clone(&matched), cancelled)?;
+            let localized = request.localization.is_some();
+            let kind = if localized { "line" } else { "raw" };
+            let cursor = if localized {
+                request.localization_cursor.as_ref()
+            } else {
+                request.cursor.as_ref()
+            };
+            let after = self.after_cursor(kind, &listed, cursor, cancelled)?;
+            let page = listed[after..listed.len().min(after + request.page_size)].to_vec();
+            let next = if after + page.len() < listed.len() {
+                page.last()
+                    .map(|row| self.packed(kind, *row as usize))
+                    .transpose()?
+            } else {
+                None
+            };
+            (page, next)
+        };
+        let (units, lines) = self.present_rows(request, &page, cancelled)?;
+        let result = self.rows_page(request, result, units, lines, next);
         checkpoint(cancelled)?;
         Ok(result)
     }

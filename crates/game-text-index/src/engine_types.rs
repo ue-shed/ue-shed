@@ -85,6 +85,22 @@ pub enum GroupBy {
     AssetType,
 }
 
+/// A part of a search answer, computed only when asked for.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Part {
+    /// The page's rows and the open groups' rows.
+    Rows,
+    /// `counts`, `total`, `problems`, `fileScope` and the localization tallies.
+    Counts,
+    Facets,
+    Groups,
+}
+
+/// The most groups one request lists the rows of, and the most rows it lists for them.
+pub const MAX_OPEN_GROUPS: usize = 20;
+pub const MAX_OPEN_GROUP_ROWS: usize = 500;
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterField {
@@ -171,7 +187,13 @@ pub struct SearchRequest {
     /// Only groups holding at least this many matching rows; requires `group`.
     pub min_group_size: Option<usize>,
     pub open_group: Option<String>,
+    /// Groups to list the first rows of, in this order; requires `group`, excludes `open_group`.
+    pub open_groups: Option<Vec<String>>,
+    /// How many rows each open group lists, 1–50; 50 when absent. Requires `open_groups`.
+    pub first_rows: Option<usize>,
     pub facets: Option<Facets>,
+    /// The parts of the answer to compute; every part when absent.
+    pub parts: Option<Vec<Part>>,
     /// Set on a request derived from another (a facet or count base without a clause or the
     /// lens): the findings the original request counts. Never read from callers; part of the
     /// cache key when set.
@@ -396,6 +418,31 @@ impl SearchRequest {
         if let Some(group) = &self.open_group {
             bounded(group, MAX_SOURCE_LENGTH, "Group key exceeds its bound.")?;
         }
+        if let Some(groups) = &self.open_groups {
+            require(
+                self.group.is_some() && self.open_group.is_none(),
+                invalid("Open groups need a group and exclude openGroup."),
+            )?;
+            require(
+                !groups.is_empty() && groups.len() <= MAX_OPEN_GROUPS,
+                invalid("Open groups must name between 1 and 20 groups."),
+            )?;
+            for group in groups {
+                bounded(group, MAX_SOURCE_LENGTH, "Group key exceeds its bound.")?;
+            }
+        }
+        if let Some(rows) = self.first_rows {
+            require(
+                self.open_groups.is_some() && (1..=MAX_PAGE).contains(&rows),
+                invalid("First rows must be between 1 and 50, with open groups."),
+            )?;
+        }
+        if let Some(parts) = &self.parts {
+            require(
+                !parts.is_empty(),
+                invalid("Parts must name at least one part."),
+            )?;
+        }
         if let Some(size) = self.min_group_size {
             require(
                 self.group.is_some(),
@@ -447,6 +494,13 @@ impl SearchRequest {
                 .collect()
         });
         result
+    }
+
+    /// Whether the answer computes `part`.
+    pub(crate) fn wants(&self, part: Part) -> bool {
+        self.parts
+            .as_ref()
+            .is_none_or(|parts| parts.contains(&part))
     }
 
     /// The review signals that make a row a finding under this request: the defaults, and the
@@ -581,13 +635,28 @@ mod tests {
             json!({"filter":[{"field":"finding","op":"is","values":SIGNALS}]}),
             json!({"group":"source","minGroupSize":2,"openGroup":long}),
             json!({"group":"asset","minGroupSize":1}),
+            json!({"group":"source","openGroups":["a","b"],"firstRows":1,"parts":["rows"]}),
+            json!({"parts":["counts","facets","groups"]}),
         ] {
             with(valid)?;
         }
         let many = (0..=MAX_SOURCE_VALUES)
             .map(|n| n.to_string())
             .collect::<Vec<_>>();
+        let crowded = (0..=MAX_OPEN_GROUPS)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>();
         for invalid in [
+            json!({"openGroups":["a"]}),
+            json!({"group":"source","openGroup":"a","openGroups":["a"]}),
+            json!({"group":"source","openGroups":[]}),
+            json!({"group":"source","openGroups":crowded}),
+            json!({"group":"source","openGroups":[long.clone() + "x"]}),
+            json!({"group":"source","openGroups":["a"],"firstRows":0}),
+            json!({"group":"source","openGroups":["a"],"firstRows":51}),
+            json!({"group":"source","firstRows":1}),
+            json!({"parts":[]}),
+            json!({"parts":["everything"]}),
             json!({"filter":[{"field":"source","op":"is","values":[""]}]}),
             json!({"filter":[{"field":"source","op":"is","values":[]}]}),
             json!({"filter":[{"field":"source","op":"is","values":many}]}),

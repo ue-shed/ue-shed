@@ -43,32 +43,7 @@ impl EngineQuery {
         let scope = self.culture_scope(request.localization.as_ref())?;
         let problems =
             self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
-        let opened = match by {
-            GroupBy::Problem => PROBLEMS
-                .iter()
-                .position(|value| value == opened)
-                .map(|id| id as u32),
-            GroupBy::Origin => {
-                if opened.is_empty() {
-                    Some(0)
-                } else {
-                    ORIGINS
-                        .iter()
-                        .position(|value| value == opened)
-                        .map(|id| id as u32 + 1)
-                }
-            }
-            GroupBy::Audience => AUDIENCES
-                .iter()
-                .position(|value| value == opened)
-                .map(|id| id as u32),
-            GroupBy::Source => self.reader.find_string(opened)?,
-            _ => places
-                .labels(std::slice::from_ref(opened), false)
-                .iter()
-                .next()
-                .copied(),
-        };
+        let opened = self.group_id(by, opened, &places)?;
         let mut rows = Vec::new();
         if let Some(opened) = opened {
             for (index, row) in matched.iter().enumerate() {
@@ -83,6 +58,41 @@ impl EngineQuery {
         }
         checkpoint(cancelled)?;
         Ok(rows.into())
+    }
+
+    /// A group key's ID under `by`, as `group_key` computes it; `None` when no row can have it.
+    pub(crate) fn group_id(
+        &mut self,
+        by: GroupBy,
+        key: &str,
+        places: &Places,
+    ) -> Result<Option<u32>> {
+        Ok(match by {
+            GroupBy::Problem => PROBLEMS
+                .iter()
+                .position(|value| *value == key)
+                .map(|id| id as u32),
+            GroupBy::Origin => {
+                if key.is_empty() {
+                    Some(0)
+                } else {
+                    ORIGINS
+                        .iter()
+                        .position(|value| *value == key)
+                        .map(|id| id as u32 + 1)
+                }
+            }
+            GroupBy::Audience => AUDIENCES
+                .iter()
+                .position(|value| *value == key)
+                .map(|id| id as u32),
+            GroupBy::Source => self.reader.find_string(key)?,
+            _ => places
+                .labels(&[key.to_owned()], false)
+                .iter()
+                .next()
+                .copied(),
+        })
     }
 
     pub(crate) fn after_cursor(

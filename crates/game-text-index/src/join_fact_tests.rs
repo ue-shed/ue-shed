@@ -466,6 +466,124 @@ fn search_atoms_are_reused_by_their_normal_form_and_never_change_an_answer() -> 
     Ok(())
 }
 
+#[test]
+fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> Result<()> {
+    use crate::engine_types::parse_search_request;
+    let mut fixture = Fixture::new()?;
+    fixture.file("Game.manifest","manifest",&[
+        json!({"namespace":"UI","key":"N","source":"Noted","path":"/Game/Text/Example.Example.Noted"}),
+        json!({"namespace":"UI","key":"P","source":"Plain","path":"/Game/Text/Example.Example.Plain"}),
+        json!({"namespace":"UI","key":"Q","source":"Plain","path":"/Game/Text/Example.Example.Again"}),
+    ])?;
+    fixture.file("en.archive", "archive", &[])?;
+    fixture.file("de.archive", "archive", &[])?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&[
+        json!({"namespace":"UI","key":"N","source":"Noted","object":"/Game/Text/Example.Example","property":"Noted"}),
+        json!({"namespace":"UI","key":"P","source":"Plain","object":"/Game/Text/Example.Example","property":"Plain"}),
+        json!({"namespace":"UI","key":"Q","source":"Plain","object":"/Game/Text/Example.Example","property":"Again"}),
+    ])?;
+    fixture.lines()?;
+    let cancelled = AtomicBool::new(false);
+    let mut query = EngineQuery::open(&fixture.configuration, None)?;
+    let mut search = |value: Value| -> Result<Value> {
+        query.search(&parse_search_request(&value.to_string())?, &cancelled)
+    };
+    let base = json!({"query":"","capability":"all","pageSize":50,"group":"source",
+        "facets":{"origins":true},"localization":{"target":"Game"}});
+    let with = |extra: Value| {
+        let mut value = base.clone();
+        for (key, field) in extra.as_object().into_iter().flatten() {
+            value[key] = field.clone();
+        }
+        value
+    };
+    // Every part is the default answer.
+    let full = search(base.clone())?;
+    assert_eq!(
+        search(with(json!({"parts":["rows","counts","facets","groups"]})))?,
+        full
+    );
+    let groups = search(with(json!({"parts":["groups"]})))?;
+    assert_eq!(groups["groups"], full["groups"]);
+    for absent in [
+        "counts",
+        "total",
+        "problems",
+        "facets",
+        "localization",
+        "units",
+    ] {
+        assert!(groups.get(absent).is_none(), "{absent}");
+    }
+    let entries = full["groups"]["entries"]
+        .as_array()
+        .ok_or("Missing groups.")?;
+    let keys = entries
+        .iter()
+        .map(|entry| entry["key"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(keys.len(), 2);
+    let two = entries
+        .iter()
+        .position(|entry| entry["count"] == 2)
+        .ok_or("Missing the two-line group.")?;
+    let sources = |page: &Value| {
+        page["localization"]["lines"]
+            .as_array()
+            .map(|lines| {
+                lines
+                    .iter()
+                    .map(|line| line["source"].clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    // Open groups list their first rows in the order named; a key nothing has lists none.
+    let rows = search(with(json!({"parts":["rows"],"firstRows":1,
+        "openGroups":[keys[1], keys[0], "Nowhere"]})))?;
+    for absent in ["counts", "groups", "facets"] {
+        assert!(rows.get(absent).is_none(), "{absent}");
+    }
+    assert_eq!(rows["units"], json!([]));
+    assert_eq!(sources(&rows), Vec::<Value>::new());
+    let open = rows["openGroups"]
+        .as_array()
+        .ok_or("Missing open groups.")?;
+    assert_eq!(
+        open.iter()
+            .map(|group| group["key"].clone())
+            .collect::<Vec<_>>(),
+        [keys[1].clone(), keys[0].clone(), json!("Nowhere")]
+    );
+    assert_eq!(sources(&open[2]["page"]), Vec::<Value>::new());
+    // Each open group's page is the first page an `openGroup` read lists, with its cursor.
+    for (index, key) in keys.iter().enumerate() {
+        let page = &open[1 - index]["page"];
+        let read = search(with(json!({"parts":["rows"],"pageSize":1,"openGroup":key})))?;
+        assert_eq!(sources(page), sources(&read));
+        assert_eq!(page["units"], read["units"]);
+        assert_eq!(
+            page["localization"]["nextCursor"],
+            read["localization"]["nextCursor"]
+        );
+    }
+    let example = &open[1 - two]["page"];
+    let cursor = example["localization"]["nextCursor"].clone();
+    assert!(cursor.is_string(), "the two-line group has a next page");
+    let more = search(with(
+        json!({"parts":["rows"],"pageSize":50,"openGroup":keys[two],
+        "localizationCursor":cursor}),
+    ))?;
+    let mut listed = sources(example);
+    listed.extend(sources(&more));
+    let whole = search(with(json!({"parts":["rows"],"openGroup":keys[two]})))?;
+    assert_eq!(listed, sources(&whole));
+    assert_eq!(listed.len(), 2);
+    Ok(())
+}
+
 fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::rules::Program> {
     crate::rules::compile(&example_document(checks, document)?)
 }

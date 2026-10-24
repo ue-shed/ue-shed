@@ -11,7 +11,7 @@ use super::text;
 use super::tuple::{Key as TupleKey, Packer};
 use super::value::Value as ScalarValue;
 use crate::engine_types::REASONS;
-use crate::{Error, ErrorCode, Result};
+use crate::{Error, ErrorCode, Result, require};
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 #[cfg(test)]
@@ -500,6 +500,10 @@ struct Evaluator<'a> {
     unformatted: Arc<Parsed>,
     cheap_columns: Vec<Option<(Column, Bits)>>,
     independent: Vec<bool>,
+    /// Each group aggregate's value for every subject row, computed once.
+    aggregates: Vec<Option<Arc<Column>>>,
+    /// Each corpus count's rows by key, built once.
+    corpus_tables: HashMap<NodeId, Arc<HashMap<String, i64>>>,
     len: usize,
 }
 impl<'a> Evaluator<'a> {
@@ -590,6 +594,8 @@ impl<'a> Evaluator<'a> {
             unformatted: Arc::new(Parsed::new(super::grammar::parse_pattern(""))),
             cheap_columns: (0..program.nodes.len()).map(|_| None).collect(),
             independent: vec![false; program.nodes.len()],
+            aggregates: vec![None; program.nodes.len()],
+            corpus_tables: HashMap::new(),
             len,
             cache_ids: Vec::new(),
             prepared,
@@ -880,8 +886,370 @@ impl<'a> Evaluator<'a> {
             | Op::All(_)
             | Op::SortCodeUnit
             | Op::SortLocale => self.list_operator(id, selection),
+            Op::CorpusCount => self.corpus_count(id, selection),
+            op if op.is_aggregate() => {
+                let column = match &self.aggregates[id] {
+                    Some(column) => Arc::clone(column),
+                    None => {
+                        let column = Arc::new(self.group_aggregate(id)?);
+                        self.aggregates[id] = Some(Arc::clone(&column));
+                        column
+                    }
+                };
+                if let Some(mask) = selection.mask() {
+                    return Ok(column.select_mask(mask, None));
+                }
+                let rows = selection
+                    .rows
+                    .iter()
+                    .map(|row| row as usize)
+                    .collect::<Vec<_>>();
+                column.select(&rows, &mut self.arena)
+            }
             _ => self.scalar(id, selection),
         }
+    }
+    /// A value as a group or tally key: values that compare equal have equal keys.
+    fn key(&self, value: Atom) -> String {
+        self.arena.json(value).to_string()
+    }
+    /// The order `groupRank` sorts by: lists element-wise, strings with the host collator,
+    /// numbers numerically, and null first.
+    fn order(&self, a: Atom, b: Atom) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        if let (Ok(Some(a)), Ok(Some(b))) = (self.arena.elements(a), self.arena.elements(b)) {
+            for (a, b) in a.iter().zip(b) {
+                let order = self.order(*a, *b);
+                if order != Ordering::Equal {
+                    return order;
+                }
+            }
+            return a.len().cmp(&b.len());
+        }
+        match (a, b) {
+            (Atom::Null, Atom::Null) => Ordering::Equal,
+            (Atom::Null, _) => Ordering::Less,
+            (_, Atom::Null) => Ordering::Greater,
+            (Atom::Str(a), Atom::Str(b)) => self
+                .kernel
+                .collator
+                .compare(self.arena.text(a), self.arena.text(b)),
+            (Atom::Int(a), Atom::Int(b)) => a.cmp(&b),
+            (Atom::Bool(a), Atom::Bool(b)) => a.cmp(&b),
+            _ => self.key(a).cmp(&self.key(b)),
+        }
+    }
+    /// A group aggregate's value for every subject row (Phase 2 specification §3.1). Rows outside
+    /// `among`, or whose key is null, are null; a row whose inputs failed fails.
+    fn group_aggregate(&mut self, id: NodeId) -> Result<Column> {
+        let op = self.program.nodes[id].op.clone();
+        let args = self.program.nodes[id].args.clone();
+        let all = Selection::from_mask(Bits::all(self.len));
+        if op == Op::ExistsOther {
+            return self.exists_other(&args, &all);
+        }
+        let by = self.evaluate(args[0], &all)?;
+        let among = self.evaluate(args[1], &all)?;
+        let mut failed = Bits::new(self.len);
+        let mut groups = HashMap::<String, Vec<usize>>::new();
+        for row in 0..self.len {
+            if by.failed.get(row) || among.failed.get(row) {
+                failed.set(row);
+                continue;
+            }
+            let value = by.get(row, &self.arena);
+            if value != Atom::Null && among.get(row, &self.arena).boolean() {
+                groups.entry(self.key(value)).or_default().push(row);
+            }
+        }
+        let mut values = vec![Atom::Null; self.len];
+        match op {
+            Op::GroupCount => {
+                for members in groups.values() {
+                    let count = Atom::Int(i64::try_from(members.len())?);
+                    for row in members {
+                        values[*row] = count;
+                    }
+                }
+            }
+            Op::GroupRank | Op::GroupTake => {
+                let order = self.evaluate(args[2], &all)?;
+                let taken = if op == Op::GroupTake {
+                    let n = match self.literals[args[4]] {
+                        Some(Atom::Int(n)) => usize::try_from(n)?,
+                        _ => return Err("groupTake needs a whole-number n.".into()),
+                    };
+                    Some((self.evaluate(args[3], &all)?, n))
+                } else {
+                    None
+                };
+                for members in groups.values_mut() {
+                    members.sort_by(|a, b| {
+                        self.order(order.get(*a, &self.arena), order.get(*b, &self.arena))
+                            .then(a.cmp(b))
+                    });
+                    if let Some((value, n)) = &taken {
+                        let list = members
+                            .iter()
+                            .take(*n)
+                            .map(|row| value.get(*row, &self.arena))
+                            .collect::<Vec<_>>();
+                        let list = self.arena.list(list)?;
+                        for row in members.iter() {
+                            values[*row] = list;
+                        }
+                    } else {
+                        for (rank, row) in members.iter().enumerate() {
+                            values[*row] = Atom::Int(i64::try_from(rank)?);
+                        }
+                    }
+                }
+                for row in 0..self.len {
+                    if order.failed.get(row)
+                        || taken
+                            .as_ref()
+                            .is_some_and(|(value, _)| value.failed.get(row))
+                    {
+                        failed.set(row);
+                    }
+                }
+            }
+            Op::GroupTally => {
+                let value = self.evaluate(args[2], &all)?;
+                let display = self.evaluate(args[3], &all)?;
+                for members in groups.values() {
+                    // Each distinct value: its rows, and the code-unit-smallest display.
+                    let mut tally = Vec::<(String, Atom, i64, Atom)>::new();
+                    for row in members {
+                        if value.failed.get(*row) || display.failed.get(*row) {
+                            failed.set(*row);
+                            continue;
+                        }
+                        let item = value.get(*row, &self.arena);
+                        if item == Atom::Null {
+                            continue;
+                        }
+                        let key = self.key(item);
+                        let shown = display.get(*row, &self.arena);
+                        match tally.iter_mut().find(|entry| entry.0 == key) {
+                            Some(entry) => {
+                                entry.2 += 1;
+                                if text::code_unit_compare(
+                                    &self.text_of(shown),
+                                    &self.text_of(entry.3),
+                                )
+                                .is_lt()
+                                {
+                                    entry.3 = shown;
+                                }
+                            }
+                            None => tally.push((key, item, 1, shown)),
+                        }
+                    }
+                    tally.sort_by(|a, b| {
+                        b.2.cmp(&a.2).then_with(|| {
+                            text::code_unit_compare(&self.text_of(a.3), &self.text_of(b.3))
+                        })
+                    });
+                    let entries = tally
+                        .into_iter()
+                        .map(|(_, item, count, shown)| {
+                            self.arena.object(vec![
+                                ("value", item),
+                                ("count", Atom::Int(count)),
+                                ("display", shown),
+                            ])
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    let list = self.arena.list(entries)?;
+                    for row in members {
+                        values[*row] = list;
+                    }
+                }
+            }
+            _ => return Err(format!("{} is not a group aggregate.", op.name()).into()),
+        }
+        let mut column = Column::from_atoms(&values, &mut self.arena)?;
+        column.failed = failed;
+        Ok(column)
+    }
+    /// A display value's text for code-unit comparison; non-strings compare as their JSON.
+    fn text_of(&self, value: Atom) -> String {
+        match value {
+            Atom::Str(id) => self.arena.text(id).to_owned(),
+            Atom::Null => String::new(),
+            _ => self.key(value),
+        }
+    }
+    /// `existsOther` (Phase 2 specification §3.1): whether some site of the row has another
+    /// distinct tuple with the same `by` whose every `differing` value differs. Counted by
+    /// inclusion–exclusion over distinct tuples, not pairwise.
+    fn exists_other(&mut self, args: &[NodeId], all: &Selection) -> Result<Column> {
+        let among = self.evaluate(args[1], all)?;
+        let over = self.evaluate(args[2], all)?;
+        let mut failed = Bits::new(self.len);
+        let mut parents = Vec::new();
+        let mut elements = Vec::new();
+        let mut members = vec![false; self.len];
+        for (row, member) in members.iter_mut().enumerate() {
+            if among.failed.get(row) || over.failed.get(row) {
+                failed.set(row);
+                continue;
+            }
+            if !among.get(row, &self.arena).boolean() {
+                continue;
+            }
+            *member = true;
+            if let Some(sites) = self.arena.elements(over.get(row, &self.arena))? {
+                for site in sites {
+                    parents.push(row);
+                    elements.push(*site);
+                }
+            }
+        }
+        let mut expanded = all.select(&parents, &mut self.arena)?;
+        expanded.variables.insert(
+            "item".into(),
+            Column::from_atoms(&elements, &mut self.arena)?,
+        );
+        let by = self.evaluate(args[0], &expanded)?;
+        let differing = self.evaluate(args[3], &expanded)?;
+        // Each element's tuple: its `by` key and its `differing` keys.
+        let mut tuples = Vec::with_capacity(elements.len());
+        let mut width = None;
+        for (index, parent) in parents.iter().enumerate() {
+            if by.failed.get(index) || differing.failed.get(index) {
+                failed.set(*parent);
+                tuples.push(None);
+                continue;
+            }
+            let key = by.get(index, &self.arena);
+            let Some(values) = self.arena.elements(differing.get(index, &self.arena))? else {
+                tuples.push(None);
+                continue;
+            };
+            if key == Atom::Null {
+                tuples.push(None);
+                continue;
+            }
+            require(
+                *width.get_or_insert(values.len()) == values.len(),
+                "existsOther's differing lists must all have the same length.",
+            )?;
+            let values = values
+                .iter()
+                .map(|value| self.key(*value))
+                .collect::<Vec<_>>();
+            tuples.push(Some((self.key(key), values)));
+        }
+        let width = width.unwrap_or(0);
+        require(
+            width < 16,
+            "existsOther compares at most 15 differing values.",
+        )?;
+        // Distinct tuples counted per (by, the values of a subset of the differing dimensions).
+        let distinct = tuples
+            .iter()
+            .flatten()
+            .collect::<std::collections::HashSet<_>>();
+        let mut counts = HashMap::<(u32, &str, Vec<&str>), i64>::new();
+        for (key, values) in &distinct {
+            for subset in 0..1u32 << width {
+                let projected = (0..width)
+                    .filter(|dimension| subset & (1 << dimension) != 0)
+                    .map(|dimension| values[dimension].as_str())
+                    .collect();
+                *counts.entry((subset, key.as_str(), projected)).or_default() += 1;
+            }
+        }
+        let mut found = vec![false; self.len];
+        for (index, tuple) in tuples.iter().enumerate() {
+            let Some((key, values)) = tuple else {
+                continue;
+            };
+            let others = (0..1u32 << width)
+                .map(|subset| {
+                    let projected = (0..width)
+                        .filter(|dimension| subset & (1 << dimension) != 0)
+                        .map(|dimension| values[dimension].as_str())
+                        .collect::<Vec<_>>();
+                    let count = counts[&(subset, key.as_str(), projected)];
+                    if subset.count_ones() % 2 == 0 {
+                        count
+                    } else {
+                        -count
+                    }
+                })
+                .sum::<i64>();
+            if others > 0 {
+                found[parents[index]] = true;
+            }
+        }
+        let values = (0..self.len)
+            .map(|row| {
+                if members[row] {
+                    Atom::Bool(found[row])
+                } else {
+                    Atom::Null
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut column = Column::from_atoms(&values, &mut self.arena)?;
+        column.failed = failed;
+        Ok(column)
+    }
+    /// `corpusCount` (Phase 2 specification §3.2): the corpus rows whose `by` equals the selected
+    /// rows' `key`. The table is built once, from every occurrence in the project.
+    fn corpus_count(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        let args = self.program.nodes[id].args.clone();
+        let table = match self.corpus_tables.get(&id) {
+            Some(table) => Arc::clone(table),
+            None => {
+                let table = Arc::new(self.corpus_table(&args)?);
+                self.corpus_tables.insert(id, Arc::clone(&table));
+                table
+            }
+        };
+        let keys = self.evaluate(args[0], selection)?;
+        let values = (0..selection.len())
+            .map(|index| match keys.get(index, &self.arena) {
+                Atom::Null => Atom::Null,
+                key => Atom::Int(table.get(&self.key(key)).copied().unwrap_or(0)),
+            })
+            .collect::<Vec<_>>();
+        let mut column = Column::from_atoms(&values, &mut self.arena)?;
+        column.failed = keys.failed.clone();
+        Ok(column)
+    }
+    fn corpus_table(&mut self, args: &[NodeId]) -> Result<HashMap<String, i64>> {
+        let mut table = HashMap::new();
+        // The prepared occurrence relation: every occurrence in the project for native subjects.
+        let len = self.arena.occurrences.len;
+        if self.len == 0 || len == 0 {
+            return Ok(table);
+        }
+        // Corpus rows have no subject row; `by` and `among` read only `item` (compiler).
+        let mut corpus = Selection::new(vec![0]).select(&vec![0; len], &mut self.arena)?;
+        let elements = (0..len)
+            .map(|row| self.arena.occurrence_id(u32::try_from(row)?))
+            .collect::<Result<Vec<_>>>()?;
+        corpus.variables.insert(
+            "item".into(),
+            Column::from_atoms(&elements, &mut self.arena)?,
+        );
+        let among = self.evaluate(args[1], &corpus)?;
+        let by = self.evaluate(args[2], &corpus)?;
+        for index in 0..len {
+            require(
+                !among.failed.get(index) && !by.failed.get(index),
+                "A corpus count failed on an occurrence.",
+            )?;
+            let key = by.get(index, &self.arena);
+            if key != Atom::Null && among.get(index, &self.arena).boolean() {
+                *table.entry(self.key(key)).or_default() += 1;
+            }
+        }
+        Ok(table)
     }
     fn short_circuit(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
         let node = &self.program.nodes[id];
@@ -2483,6 +2851,234 @@ mod tests {
         );
         assert_eq!(result.findings[1].actual["element"], "b");
         assert!(result.diagnostics.is_empty());
+        Ok(())
+    }
+    fn evaluate_one(rule: Value, relation: &mut Relation) -> Result<Evaluation> {
+        let program = super::super::compile(&serde_json::to_string(
+            &json!({"schemaVersion":4,"roles":[],"rules":[rule]}),
+        )?)?;
+        program.evaluate(relation, &HostCollator::new("en")?)
+    }
+    fn unit_sources(sources: &[&str], occurrences: Vec<Vec<Value>>) -> Relation {
+        Relation {
+            subject: Some(Subject::UnitSource),
+            fields: HashMap::from([
+                (
+                    "source".into(),
+                    sources.iter().map(|source| json!(source)).collect(),
+                ),
+                (
+                    "textUnitId".into(),
+                    (0..sources.len())
+                        .map(|row| json!(format!("unit{row}")))
+                        .collect(),
+                ),
+            ]),
+            occurrences,
+        }
+    }
+    #[test]
+    fn group_aggregates_count_rank_take_and_tally_over_every_row() -> Result<()> {
+        let initial = json!({"slice":[{"field":"source"},{"lit":0},{"lit":1}]});
+        let order = json!({"list":[{"field":"source"}]});
+        let groups = rule(
+            "groups",
+            json!({"eq":[{"groupRank":{"by":initial,"order":order}},{"lit":0}]}),
+            json!({"object":{
+                "count":{"groupCount":{"by":initial}},
+                "take":{"groupTake":{"by":initial,"order":order,"value":{"field":"source"},"n":{"lit":1}}},
+                "tally":{"groupTally":{"by":{"lit":"all"},"value":initial,"display":{"field":"source"}}}
+            }}),
+        );
+        let mut relation = unit_sources(&["b2", "a", "b1", "c"], vec![vec![]; 4]);
+        let result = evaluate_one(groups, &mut relation)?;
+        // The owner of "b" is "b1", the first by order; ties would fall back to row order.
+        let rows = result
+            .findings
+            .iter()
+            .map(|finding| finding.row)
+            .collect::<Vec<_>>();
+        assert_eq!(rows, vec![1, 2, 3]);
+        // Equal counts order by the shown text, which is the code-unit-smallest of its rows.
+        let tally = json!([
+            {"value":"b","count":2,"display":"b1"},
+            {"value":"a","count":1,"display":"a"},
+            {"value":"c","count":1,"display":"c"}
+        ]);
+        assert_eq!(
+            result.findings[1].actual,
+            json!({"count":2,"take":["b1"],"tally":tally})
+        );
+        assert_eq!(result.findings[0].actual["take"], json!(["a"]));
+        Ok(())
+    }
+    #[test]
+    fn exists_other_needs_another_identity_at_another_place() -> Result<()> {
+        let duplicate = rule(
+            "duplicate",
+            json!({"existsOther":{
+                "over":{"occurrences":[]},
+                "by":{"field":"source"},
+                "differing":{"list":[{"field":"textUnitId"},{"get":[{"var":"item"},{"lit":"packageFile"}]}]}
+            }}),
+            json!({"object":{"source":{"field":"source"}}}),
+        );
+        let place = |file: &str| vec![json!({"packageFile":file})];
+        let mut relation = unit_sources(
+            &["x", "x", "x", "y", "y", "z", "z"],
+            vec![
+                place("p1"),
+                place("p1"),
+                place("p2"),
+                place("p3"),
+                place("p4"),
+                place("p5"),
+                place("p5"),
+            ],
+        );
+        // Rows 3 and 4 share an identity; rows 5 and 6 share a place.
+        relation
+            .fields
+            .get_mut("textUnitId")
+            .ok_or("Missing units.")?[4] = json!("unit3");
+        let result = evaluate_one(duplicate.clone(), &mut relation)?;
+        let rows = result
+            .findings
+            .iter()
+            .map(|finding| finding.row)
+            .collect::<Vec<_>>();
+        assert_eq!(rows, vec![0, 1, 2]);
+        // Random tuples against `DuplicateSources.hasOther` (`gt/duplicate-sources.ts`).
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut random = |bound: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % bound) as usize
+        };
+        for _ in 0..50 {
+            let rows = 1 + random(30);
+            let sources = (0..rows)
+                .map(|_| ["x", "y", "z"][random(3)])
+                .collect::<Vec<_>>();
+            let identities = (0..rows).map(|_| random(4)).collect::<Vec<_>>();
+            let sites = (0..rows)
+                .map(|_| (0..random(4)).map(|_| random(4)).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            let occurrences = sites
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|site| json!({"packageFile":format!("p{site}")}))
+                        .collect()
+                })
+                .collect();
+            let mut relation = unit_sources(&sources, occurrences);
+            relation.fields.insert(
+                "textUnitId".into(),
+                identities
+                    .iter()
+                    .map(|identity| json!(format!("i{identity}")))
+                    .collect(),
+            );
+            let tuples = (0..rows)
+                .flat_map(|row| sites[row].iter().map(move |site| (row, *site)))
+                .collect::<Vec<_>>();
+            // `count - identities - places + pairs > 0`, counted over this source's tuples.
+            let has_other = |row: usize, site: usize| {
+                let count = |test: &dyn Fn(usize, usize) -> bool| {
+                    tuples
+                        .iter()
+                        .filter(|(other, place)| {
+                            sources[*other] == sources[row] && test(*other, *place)
+                        })
+                        .count()
+                };
+                let identity = |other: usize, _| identities[other] == identities[row];
+                let place = |_, other: usize| other == site;
+                count(&|_, _| true) + count(&|other, at| identity(other, at) && place(other, at))
+                    > count(&identity) + count(&place)
+            };
+            let expected = (0..rows)
+                .filter(|row| sites[*row].iter().any(|site| has_other(*row, *site)))
+                .collect::<Vec<_>>();
+            let result = evaluate_one(duplicate.clone(), &mut relation)?;
+            let actual = result
+                .findings
+                .iter()
+                .map(|finding| finding.row)
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected, "{sources:?} {identities:?} {sites:?}");
+        }
+        Ok(())
+    }
+    #[test]
+    fn corpus_counts_build_one_table_and_read_only_the_corpus_row() -> Result<()> {
+        let audience = |name: &str| json!({"get":[{"var":"item"},{"lit":name}]});
+        let count = json!({"corpusCount":{
+            "relation":{"lit":"corpus_occurrence"},
+            "key":audience("audience"),
+            "by":audience("audience"),
+            "among":{"eq":[audience("unitStatus"),{"lit":"resolved"}]}
+        }});
+        let census = rule(
+            "census",
+            json!({"lit":true}),
+            json!({"object":{"counts":{"map":[{"occurrences":[]},count]}}}),
+        );
+        let occurrence =
+            |audience: &str, status: &str| json!({"audience":audience,"unitStatus":status});
+        let mut relation = unit_sources(
+            &["a", "b", "c"],
+            vec![
+                vec![occurrence("player", "resolved")],
+                vec![occurrence("player", "unresolved")],
+                vec![
+                    occurrence("editor", "resolved"),
+                    occurrence("player", "resolved"),
+                ],
+            ],
+        );
+        let result = evaluate_one(census, &mut relation)?;
+        let counts = result
+            .findings
+            .iter()
+            .map(|finding| finding.actual["counts"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(counts, vec![json!([2]), json!([2]), json!([1, 2])]);
+        for invalid in [
+            json!({"map":[{"occurrences":[]},{"groupCount":{"by":{"field":"source"}}}]}),
+            json!({"corpusCount":{"relation":{"lit":"corpus_occurrence"},"key":{"lit":"x"},"by":{"field":"source"}}}),
+            json!({"corpusCount":{"relation":{"lit":"line"},"key":{"lit":"x"},"by":{"var":"item"}}}),
+            json!({"groupCount":{"by":{"field":"source"},"unknown":{"lit":true}}}),
+        ] {
+            let program = super::super::compile(&serde_json::to_string(&json!({
+                "schemaVersion":4,"roles":[],
+                "rules":[rule("invalid",json!({"lit":true}),json!({"object":{"value":invalid}}))]
+            }))?);
+            assert!(program.is_err(), "{invalid}");
+        }
+        Ok(())
+    }
+    #[test]
+    fn regex_replace_and_max_of_follow_javascript() -> Result<()> {
+        let values = rule(
+            "values",
+            json!({"lit":true}),
+            json!({"object":{
+                "indexes":{"regexReplace":[{"lit":"Items[1].Name{2}(\"Key\")"},{"lit":"\\[[^\\]]*\\]|\\{[^}]*\\}|\\(\"[^\"]*\"\\)"},{"lit":""}]},
+                "dollars":{"regexReplace":[{"lit":"ab"},{"lit":"b"},{"lit":"[$&$$]"}]},
+                "largest":{"maxOf":{"list":[{"lit":3},{"lit":5},{"lit":4}]}},
+                "none":{"maxOf":{"lit":[]}}
+            }}),
+        );
+        let mut relation = unit_sources(&["a"], vec![vec![]]);
+        let result = evaluate_one(values, &mut relation)?;
+        // `none` is null, so the evidence leaves it out.
+        assert_eq!(
+            result.findings[0].actual,
+            json!({"indexes":"Items.Name","dollars":"a[b$]","largest":5})
+        );
         Ok(())
     }
     #[test]

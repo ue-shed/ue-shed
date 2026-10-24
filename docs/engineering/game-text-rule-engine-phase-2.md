@@ -95,7 +95,7 @@ A rule can read an aggregate in `let`, `when`, evidence and `affected`. An aggre
 | Operator       | Arguments                    | Result                                                                                                                    |
 | -------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `maxOf`        | list of integers             | The largest, or null for an empty list.                                                                                   |
-| `regexReplace` | string, pattern, replacement | Every match replaced, with Phase 1's JS-compatible dialect, cap and budget. `$&` and `$1`…`$9` as in JS `String.replace`. |
+| `regexReplace` | string, pattern, replacement | Every match replaced, with Phase 1's JS-compatible dialect, cap and budget. In the replacement, `$&` is the match and `$$` a dollar sign; other `$` sequences are literal. Capture groups wait for a rule that needs them. |
 
 ## 4. The rules
 

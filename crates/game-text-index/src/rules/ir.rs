@@ -21,6 +21,7 @@ macro_rules! expressions {
         variadic { $($variadic:ident = $variadic_name:literal),* $(,)? }
         binding { $($binding:ident = $binding_name:literal),* $(,)? }
         sort { $($sort:ident = $sort_name:literal),* $(,)? }
+        named { $($named:ident = $named_name:literal),* $(,)? }
     ) => {
         /// One rule expression.
         #[derive(Clone, Debug, Deserialize)]
@@ -62,6 +63,10 @@ macro_rules! expressions {
                 #[serde(rename = $sort_name)]
                 $sort(#[cfg_attr(test, ts(type = "readonly [Expr] | readonly [Expr, Expr]"))] Sort),
             )*
+            $(
+                #[serde(rename = $named_name)]
+                $named(#[cfg_attr(test, ts(type = "{ [argument: string]: Expr }"))] Named),
+            )*
         }
         impl Expr {
             /// The compiled operation and its arguments, for every operator form.
@@ -87,6 +92,7 @@ macro_rules! expressions {
                         binding.name.as_deref().unwrap_or("item"),
                     ),)*
                     $(Self::$sort(sort) => Form::Bind(Op::$sort, &sort.arguments, "item"),)*
+                    $(Self::$named(named) => Form::Named(Op::$named, &named.0),)*
                 }
             }
         }
@@ -119,6 +125,7 @@ expressions! {
         UnrealWhitespace = "unrealWhitespace",
         UnrealUnsafeWhitespace = "unrealUnsafeWhitespace",
         FormatBraceBalance = "formatBraceBalance",
+        MaxOf = "maxOf",
     }
     binary {
         Get = "get",
@@ -161,6 +168,7 @@ expressions! {
         RegexMatches = "regexMatches",
         RegexTest = "regexTest",
         TermMatches = "termMatches",
+        RegexReplace = "regexReplace",
     }
     quaternary {
         TermListMatches = "termListMatches",
@@ -188,6 +196,14 @@ expressions! {
         SortCodeUnit = "sortCodeUnit",
         SortLocale = "sortLocale",
     }
+    named {
+        GroupCount = "groupCount",
+        GroupRank = "groupRank",
+        GroupTake = "groupTake",
+        GroupTally = "groupTally",
+        ExistsOther = "existsOther",
+        CorpusCount = "corpusCount",
+    }
 }
 
 /// How the compiler lowers one expression.
@@ -203,7 +219,13 @@ pub(super) enum Form<'a> {
     Apply(Op, &'a [Expr]),
     /// A list operator: its second argument sees the element as the named variable.
     Bind(Op, &'a [Expr], &'a str),
+    /// An aggregate: arguments by name, which the compiler checks and orders per operator.
+    Named(Op, &'a IndexMap<String, Expr>),
 }
+
+/// An aggregate's arguments by name (Phase 2 specification §3).
+#[derive(Clone, Debug, Deserialize)]
+pub struct Named(pub IndexMap<String, Expr>);
 
 /// `occurrences` takes an empty argument list.
 #[derive(Clone, Debug)]

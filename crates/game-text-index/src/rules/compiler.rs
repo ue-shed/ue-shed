@@ -174,8 +174,66 @@ operations! {
     Max = "max",
     Concat = "concat",
     ConcatLists = "concatLists",
+    MaxOf = "maxOf",
+    RegexReplace = "regexReplace",
+    GroupCount = "groupCount",
+    GroupRank = "groupRank",
+    GroupTake = "groupTake",
+    GroupTally = "groupTally",
+    ExistsOther = "existsOther",
+    CorpusCount = "corpusCount",
+}
+/// An aggregate's arguments in compiled order: name, whether it is required, and whether it sees
+/// the aggregate's own element as `item` instead of the subject row. `among` defaults to true.
+fn aggregate_arguments(op: &Op) -> &'static [(&'static str, bool, bool)] {
+    match op {
+        Op::GroupCount => &[("by", true, false), ("among", false, false)],
+        Op::GroupRank => &[
+            ("by", true, false),
+            ("among", false, false),
+            ("order", true, false),
+        ],
+        Op::GroupTake => &[
+            ("by", true, false),
+            ("among", false, false),
+            ("order", true, false),
+            ("value", true, false),
+            ("n", true, false),
+        ],
+        Op::GroupTally => &[
+            ("by", true, false),
+            ("among", false, false),
+            ("value", true, false),
+            ("display", true, false),
+        ],
+        Op::ExistsOther => &[
+            ("by", true, true),
+            ("among", false, false),
+            ("over", true, false),
+            ("differing", true, true),
+        ],
+        Op::CorpusCount => &[
+            ("key", true, false),
+            ("among", false, true),
+            ("by", true, true),
+            ("relation", true, false),
+        ],
+        _ => &[],
+    }
 }
 impl Op {
+    /// Reads rows other than the current one (Phase 2 specification §3).
+    pub fn is_aggregate(&self) -> bool {
+        matches!(
+            self,
+            Self::GroupCount
+                | Self::GroupRank
+                | Self::GroupTake
+                | Self::GroupTally
+                | Self::ExistsOther
+                | Self::CorpusCount
+        )
+    }
     /// The rule a `finding` or `findingField` reads.
     pub fn reference(&self) -> Option<&str> {
         match self {
@@ -199,6 +257,7 @@ impl Op {
 
 use super::ir::Form;
 pub use super::ir::{Document, Expr, MatchOperator, MatcherKind, Role, Rule, Subject};
+use indexmap::IndexMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
@@ -391,6 +450,7 @@ impl Compiler {
             }
             Form::Apply(op, arguments) => (op, arguments, None),
             Form::Bind(op, arguments, name) => (op, arguments, Some(name)),
+            Form::Named(op, fields) => return self.aggregate(op, fields, rule),
         };
         let mut args = Vec::with_capacity(arguments.len());
         for (index, expression) in arguments.iter().enumerate() {
@@ -407,7 +467,7 @@ impl Compiler {
         }
         // Rule regexes are JavaScript's; the few constructs the engine cannot run (such as a
         // lookbehind of varying length) reject the document here, not the evaluation reaching them.
-        if matches!(op, Op::RegexMatches | Op::RegexTest)
+        if matches!(op, Op::RegexMatches | Op::RegexTest | Op::RegexReplace)
             && let Some(Op::Lit(Literal::Str(pattern))) = args.get(1).map(|id| &self.nodes[*id].op)
         {
             super::regex::JsRegex::new(pattern, true).map_err(|cause| {
@@ -419,6 +479,15 @@ impl Compiler {
         }
         // Arity is part of each operator's IR type; only argument and result types remain.
         let result = match &op {
+            // Aggregates take named arguments and are typed in `aggregate`.
+            Op::GroupCount
+            | Op::GroupRank
+            | Op::GroupTake
+            | Op::GroupTally
+            | Op::ExistsOther
+            | Op::CorpusCount => {
+                return Err(invalid(format!("{} takes named arguments.", op.name())));
+            }
             Op::List => Type::List(Box::new(
                 args.first()
                     .map_or(Type::Any, |id| self.nodes[*id].result.clone()),
@@ -460,10 +529,23 @@ impl Compiler {
                 self.arguments(&args, &Type::String)?;
                 Type::Int
             }
+            Op::MaxOf => {
+                // Element types are shallow (a mapped list is `List(Any)`); elements are checked
+                // when evaluated.
+                require(
+                    matches!(
+                        self.nodes[args[0]].result,
+                        Type::List(_) | Type::Any | Type::Null
+                    ),
+                    invalid("maxOf requires a list."),
+                )?;
+                Type::Int
+            }
             Op::Trim
             | Op::Lower
             | Op::NormalizeLineEndings
             | Op::Concat
+            | Op::RegexReplace
             | Op::FormatRenameArgument => {
                 self.arguments(&args, &Type::String)?;
                 Type::String
@@ -538,6 +620,110 @@ impl Compiler {
             }
         };
         self.node(op, args, result)
+    }
+    /// An aggregate (Phase 2 specification §3), its named arguments in compiled order.
+    fn aggregate(
+        &mut self,
+        op: Op,
+        fields: &IndexMap<String, Expr>,
+        rule: &Rule,
+    ) -> Result<NodeId> {
+        let name = op.name();
+        let corpus = op == Op::CorpusCount;
+        // Group aggregates are per subject row. A corpus count's key may be an element's, as in
+        // the census over a line's occurrences; its table never is.
+        require(
+            corpus || self.variables.is_empty(),
+            invalid(format!(
+                "Rule {}: {name} can't be inside a list operator's body.",
+                rule.id
+            )),
+        )?;
+        let signature = aggregate_arguments(&op);
+        if let Some(unknown) = fields
+            .keys()
+            .find(|key| !signature.iter().any(|(known, ..)| known == key))
+        {
+            return Err(invalid(format!(
+                "Rule {}: {name} has no argument {unknown}.",
+                rule.id
+            )));
+        }
+        let mut args = Vec::with_capacity(signature.len());
+        for (argument, required, bound) in signature {
+            let Some(expression) = fields.get(*argument) else {
+                require(
+                    !required,
+                    invalid(format!("Rule {}: {name} needs {argument}.", rule.id)),
+                )?;
+                args.push(self.literal(&Value::Bool(true))?);
+                continue;
+            };
+            if !bound {
+                args.push(self.expression(expression, rule)?);
+                continue;
+            }
+            // Only the aggregate's own element is in scope.
+            let outer = std::mem::replace(&mut self.variables, HashSet::from(["item".to_owned()]));
+            let id = self.expression(expression, rule);
+            self.variables = outer;
+            let id = id?;
+            if corpus {
+                self.corpus_only(id, rule)?;
+            }
+            args.push(id);
+        }
+        let literal = |compiler: &Self, index: usize| match &compiler.nodes[args[index]].op {
+            Op::Lit(literal) => Some(literal.clone()),
+            _ => None,
+        };
+        let result = match op {
+            Op::GroupCount | Op::GroupRank | Op::CorpusCount => Type::Int,
+            Op::GroupTake => {
+                require(
+                    matches!(literal(self, 4), Some(Literal::Int(n)) if n >= 0),
+                    invalid(format!(
+                        "Rule {}: groupTake needs a whole-number n.",
+                        rule.id
+                    )),
+                )?;
+                Type::List(Box::new(self.nodes[args[3]].result.clone()))
+            }
+            Op::GroupTally => Type::List(Box::new(Type::Object)),
+            Op::ExistsOther => Type::Bool,
+            _ => return Err(invalid(format!("{name} is not an aggregate."))),
+        };
+        if corpus {
+            require(
+                matches!(literal(self, 3), Some(Literal::Str(relation)) if &*relation == "corpus_occurrence"),
+                invalid(format!(
+                    "Rule {}: corpusCount's relation must be \"corpus_occurrence\".",
+                    rule.id
+                )),
+            )?;
+        }
+        self.node(op, args, result)
+    }
+    /// A corpus count's table reads only the corpus row: no subject field, occurrence list,
+    /// finding or other aggregate.
+    fn corpus_only(&self, id: NodeId, rule: &Rule) -> Result<()> {
+        let mut pending = vec![id];
+        while let Some(id) = pending.pop() {
+            let node = &self.nodes[id];
+            require(
+                !matches!(
+                    node.op,
+                    Op::Field(_) | Op::Occurrences | Op::Finding(_) | Op::FindingField(..)
+                ) && !node.op.is_aggregate(),
+                invalid(format!(
+                    "Rule {}: corpusCount's by and among read only item, not {}.",
+                    rule.id,
+                    node.op.name()
+                )),
+            )?;
+            pending.extend(&node.args);
+        }
+        Ok(())
     }
     fn arguments(&self, args: &[NodeId], expected: &Type) -> Result<()> {
         for id in args {

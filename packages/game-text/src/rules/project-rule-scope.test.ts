@@ -106,6 +106,34 @@ describe("a project rule's scope", () => {
 		]);
 		expect(family({ roles: ["ui"], pathPrefixes: ["/Game/World/"] })([menu, map])).toEqual([]);
 	});
+	it("keeps a custom check's whole scope a gate on the row, since it has no role", () => {
+		const check = (scope: Scope) =>
+			affected(
+				{
+					kind: "pattern",
+					id: "custom.todo",
+					label: "Work in progress",
+					subject: "source",
+					pattern: "TODO",
+					recovery: "Finish it.",
+					scope
+				},
+				(places) => ({
+					line: [
+						{
+							fields: {
+								identity: { namespace: "", key: "K" },
+								sourceCulture: "en",
+								comparisonSource: "TODO text"
+							},
+							occurrences: places
+						}
+					]
+				})
+			);
+		expect(check({ pathPrefixes: ["/Game/World/"] })([menu])).toEqual([]);
+		expect(check({ pathPrefixes: ["/Game/World/"] })([menu, map])).toHaveLength(1);
+	});
 	it("keeps a localization rule's cultures a gate on the whole row", () => {
 		expect(translation({ cultures: ["fr"] })([menu])).toEqual([]);
 		expect(translation({ cultures: ["de"] })([menu])).toEqual([[menu.id]]);

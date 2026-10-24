@@ -103,11 +103,17 @@ export function effectiveRuleDocument(
 		];
 	});
 	// A project rule's scope narrows its role's places, so one occurrence must satisfy both; only
-	// its cultures stay a gate on the whole row.
+	// its cultures stay a gate on the whole row. A custom check has no role, so its whole scope is
+	// that gate, as a built-in check's is.
 	const authored = (rule: { readonly id: string; readonly scope?: Rule["scope"] }) => ({
 		id: rule.id,
 		ruleId: rule.id,
 		...(rule.scope?.cultures ? { scope: { cultures: rule.scope.cultures } } : undefined)
+	});
+	const custom = (check: { readonly id: string; readonly scope?: Rule["scope"] }) => ({
+		id: check.id,
+		ruleId: check.id,
+		...(check.scope ? { scope: check.scope } : undefined)
 	});
 	const placesOf = (role: string, scope: Rule["scope"] | undefined) =>
 		scope?.roles || scope?.pathPrefixes
@@ -269,7 +275,7 @@ export function effectiveRuleDocument(
 						x.not(x.isNull(text))
 					);
 		const base = {
-			...authored(check),
+			...custom(check),
 			label: check.label,
 			kind: "custom",
 			subject: check.subject === "source" ? "line" : "line_culture",

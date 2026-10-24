@@ -4,10 +4,14 @@ import { exampleRules, optInRules } from "./catalogue.js";
 
 type Rows = Parameters<typeof nativeEvaluateRows>[1];
 /** One catalogue rule, enabled, evaluated natively over every row given. */
-const evaluate = (id: string, rows: Rows) => {
+const evaluate = (id: string, rows: Rows, params?: Readonly<Record<string, number>>) => {
 	const rule = [...exampleRules, ...optInRules].find((candidate) => candidate.id === id)!;
 	const result = nativeEvaluateRows(
-		{ schemaVersion: 4, roles: [], rules: [{ ...rule, enabled: true }] },
+		{
+			schemaVersion: 4,
+			roles: [],
+			rules: [{ ...rule, enabled: true, params: { ...rule.params, ...params } }]
+		},
 		rows
 	);
 	return result.findings.map(({ row, actual }) => ({ row, actual }));
@@ -58,8 +62,14 @@ describe("group rules", () => {
 		]);
 	});
 	it("reports the lines that leave the culture's most used translation", () => {
-		const culture = (key: string, name: string, latest: string, isNative = false) => {
-			const shared = line("Milk", key, key.charCodeAt(0), [`p${key}`]);
+		const culture = (
+			key: string,
+			name: string,
+			latest: string,
+			isNative = false,
+			source = "Milk"
+		) => {
+			const shared = line(source, key, key.charCodeAt(0), [`p${key}`]);
 			return {
 				fields: {
 					...Object.fromEntries(
@@ -94,6 +104,15 @@ describe("group rules", () => {
 				}
 			}
 		]);
+		// Five words are a sentence by default, often translated to fit its scene.
+		const sentence = "Open the old harbour gate";
+		const sentences = ["Öffne das Tor", "Öffne das Tor", "Tor öffnen"].map((latest, index) =>
+			culture("ABC"[index]!, "de", latest, false, sentence)
+		);
+		expect(evaluate("inconsistent_translation", { line_culture: sentences })).toEqual([]);
+		expect(
+			evaluate("inconsistent_translation", { line_culture: sentences }, { maximumWords: 5 })
+		).toMatchObject([{ row: 2, actual: { translation: "Tor öffnen" } }]);
 	});
 	it("reports keyless invariant text where its property is localizable elsewhere", () => {
 		const occurrence = (

@@ -125,6 +125,29 @@ export function nativeTermMatches(source: string, term: string, caseSensitive: b
 	}));
 }
 
+/** The native `visibleLength` of one text: characters a reader sees, tags and arguments removed. */
+export function nativeVisibleLength(text: string): number {
+	const definition = rule({
+		id: "length",
+		kind: "length",
+		label: "Length",
+		subject: "unit_source",
+		family: "source",
+		severity: "normal",
+		when: expr.lit(true),
+		actual: expr.object({ length: expr.visibleLength(expr.lit(text)) }),
+		expectation: expr.object({}),
+		recovery: expr.lit("")
+	});
+	const output = evaluateV4(
+		{ schemaVersion: 4, roles: [], rules: [definition] },
+		{ line: [], line_culture: [], unit_source: [{ fields: { source: text }, occurrences: [] }] }
+	);
+	return Schema.decodeUnknownSync(Schema.Struct({ length: Schema.Number }))(
+		output.findings[0]!.actual
+	).length;
+}
+
 /** Custom-kind unit assertions with one explicit source row, evaluated in Rust. */
 export function nativeDetectCustom(check: CustomLocalizationCheck, text: string) {
 	const document = Schema.decodeUnknownSync(importGameTextRuleDocument)({

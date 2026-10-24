@@ -18,11 +18,7 @@ import {
 	withLocalizationCheckTable
 } from "./localization-check-table.js";
 import { evaluateCatalogueRule } from "./native-text-shape.test-support.js";
-import {
-	translationGroupKey,
-	visibleTextLength,
-	consistentTranslationCandidate
-} from "./localization-text-shape.js";
+import { nativeVisibleLength } from "./native-rule-reports.test-support.js";
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 
@@ -97,9 +93,6 @@ describe("localization check catalogue", () => {
 				{ words: ["nyi"] }
 			)
 		).toBeUndefined();
-		const words5 = { minimumLength: 3, maximumWords: 5 };
-		expect(consistentTranslationCandidate("Open the old harbour gate")).toBe(false);
-		expect(consistentTranslationCandidate("Open the old harbour gate", words5)).toBe(true);
 	});
 
 	it("emits literal Unicode placeholders without examining catalogue IR", () => {
@@ -199,9 +192,9 @@ it("compares rich-text tags by name and case", () => {
 		).toBeUndefined();
 });
 it("measures visible length and flags only clear outliers", () => {
-	expect(visibleTextLength("<b>Hi</> {Name}|plural(one=x,other=y)  there")).toBe(8);
-	expect(visibleTextLength("  a  \tb \n")).toBe(3);
-	expect(visibleTextLength("\u{20000}x")).toBe(3);
+	expect(nativeVisibleLength("<b>Hi</> {Name}|plural(one=x,other=y)  there")).toBe(8);
+	expect(nativeVisibleLength("  a  \tb \n")).toBe(3);
+	expect(nativeVisibleLength("\u{20000}x")).toBe(3);
 	expect(
 		evaluateCatalogueRule("length_outlier", {
 			...translationFacts,
@@ -289,9 +282,6 @@ it("recognizes placeholder translations, Slate tag syntax and interior line brea
 			latest: "Tu madre.\r\n"
 		})
 	).toBeUndefined();
-	expect(
-		["thanks", "Danke!", " danke ", "Karte  öffnen.", "..."].map(translationGroupKey)
-	).toEqual(["thanks", "danke", "danke", "karteöffnen", "..."]);
 });
 it("finds placeholders, number-only text and source whitespace", () => {
 	const found = evaluateCatalogueRule("placeholder_text", {

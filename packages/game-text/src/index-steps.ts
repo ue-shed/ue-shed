@@ -866,12 +866,14 @@ export const makeGameTextIndexSteps = (
 					Effect.suspend(() =>
 						indexedSourceQuality(joined, summary, ruleDocument, query)
 					),
+				// The report reads findings and lines in pages, never the whole corpus or join.
 				localizationCheck: (document, options) =>
 					Effect.gen(function* () {
+						const header = yield* query.readCorpusReportHeader();
 						return yield* indexedLocalizationCheckReport(
 							joined,
-							yield* corpus,
-							yield* localizationJoin,
+							{ status: summary.status, ...header },
+							yield* localizationRows(indexedLocalizationLinesRequest(joined)),
 							indexedEvidence,
 							query,
 							options,

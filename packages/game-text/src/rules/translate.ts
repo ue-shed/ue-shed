@@ -42,55 +42,47 @@ export function translateRuleDocument(
 ): RuleDocumentV4 {
 	const resolved = resolveLocalizationChecks(document);
 	const sourceRules = document ? prepareTextQualityRules(document) : [];
-	// Hosts run the group checks in TS until they read them from the engine (Phase 2 step 4).
-	const hostGroups = new Set([
-		"duplicate_source",
-		"inconsistent_translation",
-		"culture_invariant_text"
-	]);
-	const rules: Rule[] = exampleRules
-		.filter((rule) => !hostGroups.has(rule.id))
-		.map((definition) => {
-			// SAFETY: exampleRules only contains catalogue check IDs.
-			// Verified by: rules/schema.test.ts checks catalogue coverage and translated settings.
-			const id = definition.id as BuiltInCheckId;
-			const setting = resolved[id];
-			const params = {
-				...definition.params,
-				...setting.params,
-				...(id === "placeholder_translation"
-					? {
-							sourceMarkers: resolved.placeholder_text.params.markers,
-							sourcePhrases: resolved.placeholder_text.params.phrases
-						}
-					: undefined),
-				...(id === "placeholder_text"
-					? {
-							sourceTerminology: sourceRules.flatMap(({ rule, role, terms }) =>
-								rule.kind === "terminology"
-									? [
-											{
-												role: role.id,
-												caseSensitive: rule.caseSensitive,
-												terms: terms.map(({ term }) => term)
-											}
-										]
-									: []
-							)
-						}
-					: undefined)
-			};
-			return {
-				...definition,
-				enabled:
-					setting.enabled &&
-					!options.disabledChecks?.includes(id) &&
-					(!options.checks || options.checks.includes(id)),
-				severity: setting.severity,
-				...(setting.scope ? { scope: setting.scope } : undefined),
-				params
-			};
-		});
+	const rules: Rule[] = exampleRules.map((definition) => {
+		// SAFETY: exampleRules only contains catalogue check IDs.
+		// Verified by: rules/schema.test.ts checks catalogue coverage and translated settings.
+		const id = definition.id as BuiltInCheckId;
+		const setting = resolved[id];
+		const params = {
+			...definition.params,
+			...setting.params,
+			...(id === "placeholder_translation"
+				? {
+						sourceMarkers: resolved.placeholder_text.params.markers,
+						sourcePhrases: resolved.placeholder_text.params.phrases
+					}
+				: undefined),
+			...(id === "placeholder_text"
+				? {
+						sourceTerminology: sourceRules.flatMap(({ rule, role, terms }) =>
+							rule.kind === "terminology"
+								? [
+										{
+											role: role.id,
+											caseSensitive: rule.caseSensitive,
+											terms: terms.map(({ term }) => term)
+										}
+									]
+								: []
+						)
+					}
+				: undefined)
+		};
+		return {
+			...definition,
+			enabled:
+				setting.enabled &&
+				!options.disabledChecks?.includes(id) &&
+				(!options.checks || options.checks.includes(id)),
+			severity: setting.severity,
+			...(setting.scope ? { scope: setting.scope } : undefined),
+			params
+		};
+	});
 	const used = new Set(exampleRules.flatMap((rule) => [rule.id, rule.ruleId ?? rule.id]));
 	const authored = (family: Rule["family"], id: string) => {
 		const translated = used.has(id) ? `${family}:${id}` : id;

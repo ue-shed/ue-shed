@@ -14,7 +14,7 @@ describe("v4 rule documents", () => {
 		expect(exampleRules).toHaveLength(BuiltInCheckId.literals.length);
 		expect(optInRules.map((rule) => rule.id)).toEqual(["shared", "long"]);
 		const translated = translateRuleDocument(undefined).rules.map((rule) => rule.id);
-		expect(translated).toHaveLength(22);
+		expect(translated).toHaveLength(25);
 		expect(translated).not.toContain("shared");
 		expect(translated).not.toContain("long");
 	});

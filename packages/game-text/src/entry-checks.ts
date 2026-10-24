@@ -11,24 +11,9 @@ export {
 } from "./id-repair.js";
 
 export {
-	type LocalizationLineCheckContext,
-	type LocalizationTranslationVariants,
 	compareLocalizationFindings,
 	compareReportedLocalizationFindings,
-	enabledLocalizationChecks,
-	invariantTextPlace,
-	localizationConflictingSource,
-	localizationCultureInvariantUnits,
-	localizationDuplicateCandidate,
-	localizationDuplicatePlaces,
-	localizationDuplicateSources,
-	localizationLocalizableProperties,
-	localizationPropertiesWhereLocalizable,
-	localizationPropertyKey,
-	localizationRuleContext,
-	localizationSourceCulture,
-	localizationTranslationVariants,
-	reportableInvariantText
+	enabledLocalizationChecks
 } from "./localization-checks.js";
 
 export {

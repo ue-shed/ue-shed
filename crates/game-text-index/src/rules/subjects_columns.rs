@@ -395,6 +395,84 @@ impl<'a, 'q> Projector<'a, 'q> {
             "gathered" => values.extend(
                 (0..len).map(|row| Atom::Bool(!self.subjects.manifest_rows(row).is_empty())),
             ),
+            "allOutside" => {
+                let outside = STATES
+                    .iter()
+                    .position(|state| *state == "outside_target")
+                    .ok_or("Missing outside_target state.")? as u32;
+                let cultures = &self.subjects.projection.cultures;
+                values.extend((0..len).map(|row| {
+                    Atom::Bool(cultures.iter().all(|culture| culture.state[row] == outside))
+                }));
+            }
+            "conflicting" => {
+                let bit = 1u32
+                    << REASONS
+                        .iter()
+                        .position(|reason| *reason == "conflicting_source")
+                        .ok_or("Missing conflicting_source reason.")?;
+                let cultures = &self.subjects.projection.cultures;
+                values.extend((0..len).map(|row| {
+                    Atom::Bool(
+                        cultures
+                            .iter()
+                            .any(|culture| culture.reasons[row] & bit != 0),
+                    )
+                }));
+            }
+            "joinPosition" => {
+                for row in 0..len {
+                    values.push(Atom::Int(i64::try_from(row)?));
+                }
+            }
+            "duplicateSites" => {
+                let data = Arc::clone(&self.subjects.occurrences);
+                for field in ["object", "property", "row"] {
+                    self.strings(&data.columns[field])?;
+                }
+                self.manifest()?;
+                let p = &self.subjects.projection;
+                let subjects = &self.subjects;
+                let file = &self.manifest;
+                let arena = &self.arena;
+                // Saved places first; a line with none falls back to its manifest paths.
+                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
+                    let saved = (p.starts[*row] as usize..p.starts[*row + 1] as usize)
+                        .flat_map(|slice| p.slice.members(slice).iter())
+                        .map(|member| data.duplicate_place(*member as usize, arena))
+                        .collect::<Vec<_>>();
+                    if !saved.is_empty() {
+                        return saved;
+                    }
+                    let Some(file) = file else {
+                        return saved;
+                    };
+                    subjects
+                        .manifest_rows(*row)
+                        .iter()
+                        .filter_map(|entry| {
+                            let entry = *entry as usize;
+                            let path = format!(
+                                "{}{}",
+                                if file.options[entry] & 1024 != 0 {
+                                    &file.prefix
+                                } else {
+                                    ""
+                                },
+                                arena.text(StrId(file.path[entry]))
+                            );
+                            super::occurrences::manifest_duplicate_place(&path)
+                        })
+                        .collect()
+                });
+                for list in lists {
+                    let list = list
+                        .iter()
+                        .map(|site| Ok(Atom::Str(self.arena.string(site)?)))
+                        .collect::<Result<Vec<_>>>()?;
+                    values.push(self.arena.list(list)?);
+                }
+            }
             "originKind" => {
                 let evidence = self.string("evidence")?;
                 let corpus = self.string("corpus")?;
@@ -852,6 +930,27 @@ impl<'a, 'q> Projector<'a, 'q> {
                             _ => unresolved,
                         })
                         .collect()
+                }
+                "unresolvedReason" => {
+                    self.strings(&data.columns["key"])?;
+                    let invariant = self.string("culture_invariant")?;
+                    let missing = self.string("missing_key")?;
+                    (0..data.len())
+                        .map(|row| match data.unresolved_reason(row) {
+                            Some("culture_invariant") => invariant,
+                            Some(_) => missing,
+                            None => Atom::Null,
+                        })
+                        .collect()
+                }
+                "audience" => {
+                    let names = crate::engine_types::AUDIENCES
+                        .iter()
+                        .map(|name| self.string(name))
+                        .collect::<Result<Vec<_>>>()?;
+                    (0..data.len())
+                        .map(|row| Ok(names[data.audience(row)?]))
+                        .collect::<Result<Vec<_>>>()?
                 }
                 "id" => {
                     let rows = (0..data.len() as u32).collect::<Vec<_>>();

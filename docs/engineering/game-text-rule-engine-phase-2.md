@@ -44,20 +44,16 @@ Behaviour is defined by today's TypeScript, cited as `file:line` under `packages
 
 ### `occurrences` (child of `line`)
 
-| Field      | Type           | Definition                 |
-| ---------- | -------------- | -------------------------- |
-| `audience` | string \| null | The occurrence's audience. |
+| Field              | Type           | Definition                                                                                                         |
+| ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `audience`         | string         | `player`, `editor` or `unknown`.                                                                                   |
+| `unresolvedReason` | string \| null | `culture_invariant` or `missing_key` when `unitStatus` is `unresolved` (`ix/engine_query.rs:456`); otherwise null. |
 
-The census key (§4.3) reads `location`, which Phase 1 already exposes.
+Rules read them by name. They are not part of a published place: places keep Phase 1's six fields, so finding output is unchanged. Phase 1's `unitStatus` already means "with a key": `resolved` and `string_table` both require one. The census key (§4.3) reads `location`.
 
 ### `corpus_occurrence` (new relation)
 
-Every saved occurrence in the project: every unit and package shard, not limited to the target or its gather coverage (`gt/localization-checks.ts:100-153`). It has the `occurrences` fields plus:
-
-| Field        | Type   | Definition                                                                           |
-| ------------ | ------ | ------------------------------------------------------------------------------------ |
-| `unitStatus` | string | `resolved`, `string_table_entry`, `string_table_reference` or the unresolved reason. |
-| `hasKey`     | bool   | The occurrence's identity has a non-empty key.                                       |
+Every saved occurrence in the project: every unit and package shard, not limited to the target or its gather coverage (`gt/localization-checks.ts:100-153`). Its fields are the `occurrences` fields. It is the occurrence relation Phase 1 already builds from every package shard (`ix/rules/occurrences.rs`), read without a line.
 
 Only corpus aggregates read it (§3.2). It is never a rule's subject.
 
@@ -125,8 +121,8 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 ### 4.3 `culture_invariant_text` (`line`, severity low)
 
 - **Census:** for an occurrence, `propertyKey` (`localizationPropertyKey`, `gt/localization-checks.ts:99-117`): an asset property gives `p\0classPath\0propertyPath`, a DataTable cell gives `d\0objectPath\0propertyPath`, and a String Table entry gives null. In both keys the whole `propertyPath` has its container indexes `[..]`, `{..}` and `("..")` removed with `regexReplace` (`PROPERTY_INDEX`, `:100`). The DataTable row is not part of the key.
-- **Invariant count:** `corpusCount` among culture-invariant occurrences where `invariantTextPlace` holds: not audience `editor`, not a String Table entry, no `/debug/i` in the package path, not a `TextRenderComponent` property (`:167-177`).
-- **Localizable count:** `corpusCount` among occurrences with a resolved or String Table identity and a key, with no other filter (`:135-153`). The two filters differ; that is today's behaviour, not a typo.
+- **Invariant count:** `corpusCount` among occurrences whose `unresolvedReason` is `culture_invariant` and where `invariantTextPlace` holds: `audience` not `editor`, not a String Table entry, no `/debug/i` in the package path, not a `TextRenderComponent` property (`:167-177`).
+- **Localizable count:** `corpusCount` among occurrences whose `unitStatus` is `resolved` or `string_table`, with no other filter (`:135-153`). The two filters differ; that is today's behaviour, not a typo.
 - **When:** keyless line; `source` has a letter; every occurrence is unresolved culture-invariant, and there is one; some occurrence passes `invariantTextPlace` and its property's localizable count ≥ its invariant count (`:86-98, :125-132, :183-190, :553-560`).
 - **Evidence:** `actual {source}`, `expectation {localizable: true}`, under `sourceCulture`, `translationOrigin "absent"`.
 

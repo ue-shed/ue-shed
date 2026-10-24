@@ -51,6 +51,7 @@ impl Relation {
         Ok(Value::Object(place))
     }
 }
+/// An occurrence's fields as places show them.
 const OCCURRENCE_FIELDS: [&str; 6] = [
     "id",
     "packageFile",
@@ -59,6 +60,8 @@ const OCCURRENCE_FIELDS: [&str; 6] = [
     "location",
     "unitStatus",
 ];
+/// Fields rules can read beyond what places show; they are never part of a published place.
+const OCCURRENCE_RULE_FIELDS: [&str; 2] = ["audience", "unresolvedReason"];
 /// The occurrences a finding affects: relation rows in emission order and their IDs. Places are
 /// hydrated from the index only when they are read.
 #[derive(Debug, Default)]
@@ -162,7 +165,7 @@ pub trait SubjectRows {
         for row in 0..len {
             for occurrence in self.occurrences(row)? {
                 let occurrence = ScalarValue::from_json(&occurrence);
-                for name in OCCURRENCE_FIELDS {
+                for name in OCCURRENCE_FIELDS.into_iter().chain(OCCURRENCE_RULE_FIELDS) {
                     values
                         .entry(name.into())
                         .or_default()

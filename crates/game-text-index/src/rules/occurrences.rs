@@ -6,7 +6,7 @@ use crate::{Result, require};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const FIELDS: [&str; 10] = [
+const FIELDS: [&str; 11] = [
     "source",
     "notes",
     "location",
@@ -17,6 +17,7 @@ const FIELDS: [&str; 10] = [
     "identity",
     "namespace",
     "key",
+    "audience",
 ];
 #[derive(Clone, Copy)]
 pub(crate) enum UnitStatus {
@@ -178,6 +179,52 @@ impl OccurrenceData {
             UnitStatus::Unresolved => "unresolved",
         }
     }
+    /// Where the occurrence is saved, for telling a duplicate at one place from one elsewhere
+    /// (`duplicateOccurrencePlace`): its package file, object and field, with the DataTable row
+    /// or String Table entry. Only compared, never shown. Its strings must be loaded.
+    pub fn duplicate_place(&self, row: usize, arena: &Arena) -> String {
+        use crate::join_policy::{file_key, normalized, trim};
+        let text = |field| arena.text(StrId(self.value(row, field)));
+        let file = file_key(&self.files[self.packages[row] as usize]);
+        let object = text("object");
+        match self.value(row, "location") {
+            2 => serde_json::json!([file, normalized(trim(object)).to_lowercase(), text("row")]),
+            kind => {
+                let path = if kind == 1 {
+                    format!("{object}.{}.{}", text("row"), text("property"))
+                } else {
+                    format!("{object}.{}", text("property"))
+                };
+                let place = crate::join_marks::manifest_place(&path).unwrap_or(path);
+                serde_json::json!([file, place])
+            }
+        }
+        .to_string()
+    }
+    /// Why an unresolved occurrence has no key; `None` when it resolves.
+    pub fn unresolved_reason(&self, row: usize) -> Option<&'static str> {
+        match self.statuses[row] {
+            UnitStatus::Unresolved if self.value(row, "identity") == 2 => Some("culture_invariant"),
+            UnitStatus::Unresolved => Some("missing_key"),
+            UnitStatus::Resolved | UnitStatus::StringTable => None,
+        }
+    }
+    /// The occurrence's audience, as an index into `AUDIENCES`.
+    pub fn audience(&self, row: usize) -> Result<usize> {
+        let index = (self.value(row, "audience") & 3) as usize;
+        require(
+            index < crate::engine_types::AUDIENCES.len(),
+            "Invalid occurrence audience.",
+        )?;
+        Ok(index)
+    }
+}
+
+/// A gathered manifest path's place, comparable with `OccurrenceData::duplicate_place`
+/// (`duplicateManifestPlace`); `None` when the path names no place.
+pub(crate) fn manifest_duplicate_place(path: &str) -> Option<String> {
+    crate::join_marks::manifest_place(path)
+        .map(|place| serde_json::json!([crate::join_policy::file_key(path), place]).to_string())
 }
 
 impl Arena {

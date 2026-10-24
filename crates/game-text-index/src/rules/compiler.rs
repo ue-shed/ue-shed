@@ -275,10 +275,11 @@ fn field_type(subject: Subject, name: &str) -> Result<Type> {
             "lineId" | "source" | "manifestSource" | "comparisonSource" | "sourceCulture"
             | "sourceLatestOrigin" | "nativeCulture" | "originKind" => Type::String,
             "identity" => Type::Object,
-            "sourceVariants" | "manifestNotes" | "manifestLocations" | "stringTables" => {
-                Type::List(Box::new(Type::String))
-            }
-            "comparable" | "checkable" | "gathered" | "bytecodeOnly" => Type::Bool,
+            "sourceVariants" | "manifestNotes" | "manifestLocations" | "stringTables"
+            | "duplicateSites" => Type::List(Box::new(Type::String)),
+            "comparable" | "checkable" | "gathered" | "bytecodeOnly" | "allOutside"
+            | "conflicting" => Type::Bool,
+            "joinPosition" => Type::Number,
             _ => return None,
         })
     };

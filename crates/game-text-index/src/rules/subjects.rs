@@ -490,6 +490,70 @@ impl<'a> NativeSubjects<'a> {
                 tables.sort_by(|a, b| super::text::code_unit_compare(a, b));
                 json!(tables)
             }
+            "allOutside" => {
+                let outside = STATES
+                    .iter()
+                    .position(|state| *state == "outside_target")
+                    .ok_or("Missing outside_target state.")? as u32;
+                json!(
+                    self.projection
+                        .cultures
+                        .iter()
+                        .all(|culture| culture.state[line] == outside)
+                )
+            }
+            "conflicting" => {
+                let bit = 1u32
+                    << REASONS
+                        .iter()
+                        .position(|reason| *reason == "conflicting_source")
+                        .ok_or("Missing conflicting_source reason.")?;
+                json!(
+                    self.projection
+                        .cultures
+                        .iter()
+                        .any(|culture| culture.reasons[line] & bit != 0)
+                )
+            }
+            "joinPosition" => json!(line),
+            "duplicateSites" => {
+                let members = self.line_members(line);
+                let mut sites = Vec::new();
+                if members.is_empty() {
+                    // A line with no saved place falls back to its manifest paths.
+                    let entries = self.manifest_rows(line).to_vec();
+                    if !entries.is_empty() {
+                        let path = self.manifest_path()?;
+                        for entry in entries {
+                            let value = self.query.evidence_entry(&path, entry as usize)?;
+                            let location =
+                                value["path"].as_str().ok_or("Missing manifest location.")?;
+                            sites.extend(super::occurrences::manifest_duplicate_place(location));
+                        }
+                    }
+                } else {
+                    let data = Arc::clone(&self.occurrences);
+                    let strings = members
+                        .iter()
+                        .flat_map(|row| PLACE_STRINGS.map(|field| data.value(*row as usize, field)))
+                        .collect::<Vec<_>>();
+                    let mut arena = match self.place_arena.take() {
+                        Some(arena) => arena,
+                        None => super::columns::Arena::new(self.query.reader.dictionary_count()?)?,
+                    };
+                    let loaded = arena.load_strings(&mut self.query.reader, &strings);
+                    if loaded.is_ok() {
+                        sites.extend(
+                            members
+                                .iter()
+                                .map(|member| data.duplicate_place(*member as usize, &arena)),
+                        );
+                    }
+                    self.place_arena = Some(arena);
+                    loaded?;
+                }
+                json!(sites)
+            }
             _ => return Err(format!("Unknown line field {name}.").into()),
         };
         Ok(result)

@@ -20,6 +20,7 @@ fancy-regex = "=0.16.2"
 ryu-js = "=1.0.2"
 rayon = "1.11"
 zstd = "0.13"
+fsst-rs = "0.6"
 sha2 = "0.10"
 rustc-hash = "=2.1.3"
 process-metrics = { path = "../process-metrics" }

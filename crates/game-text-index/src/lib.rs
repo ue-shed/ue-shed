@@ -12,6 +12,7 @@ pub mod benchmark_timings;
 pub mod builder;
 mod dependency_graph;
 pub mod dictionary;
+mod dictionary_image;
 pub mod engine;
 mod engine_aggregate;
 mod engine_asset_types;

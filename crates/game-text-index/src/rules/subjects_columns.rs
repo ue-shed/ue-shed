@@ -421,8 +421,11 @@ impl<'a, 'q> Projector<'a, 'q> {
                 }));
             }
             "joinPosition" => {
-                for row in 0..len {
-                    values.push(Atom::Int(i64::try_from(row)?));
+                for position in self.subjects.join_positions()?.iter() {
+                    values.push(match *position {
+                        u32::MAX => Atom::Null,
+                        position => Atom::Int(i64::from(position)),
+                    });
                 }
             }
             "duplicateSites" => {

@@ -2,21 +2,21 @@ import { describe, expect, it } from "vitest";
 import { BuiltInCheckId } from "../localization-check-ids.js";
 import { TextRoleId, TextQualityRuleId } from "../quality-schema.js";
 import { expr } from "./builder.js";
-import { exampleRules } from "./catalogue.js";
+import { exampleRules, optInRules } from "./catalogue.js";
 import { ruleOperationNames } from "./schema.js";
 import { canonicalRuleDocument, translateRuleDocument } from "./translate.js";
 
 describe("v4 rule documents", () => {
-	it("covers every Phase 1 built-in with ordinary expressions", () => {
-		const group = new Set([
-			"duplicate_source",
-			"inconsistent_translation",
-			"culture_invariant_text"
-		]);
-		expect(new Set(exampleRules.map((rule) => rule.id))).toEqual(
-			new Set(BuiltInCheckId.literals.filter((id) => !group.has(id)))
+	it("covers every built-in with ordinary expressions; only v4 enables the opt-in rules", () => {
+		expect(exampleRules.map((rule) => rule.id)).toEqual(
+			expect.arrayContaining([...BuiltInCheckId.literals])
 		);
-		expect(translateRuleDocument(undefined).rules).toHaveLength(22);
+		expect(exampleRules).toHaveLength(BuiltInCheckId.literals.length);
+		expect(optInRules.map((rule) => rule.id)).toEqual(["shared", "long"]);
+		const translated = translateRuleDocument(undefined).rules.map((rule) => rule.id);
+		expect(translated).toHaveLength(22);
+		expect(translated).not.toContain("shared");
+		expect(translated).not.toContain("long");
 	});
 	it("constructs every operator, with bare scalars as literals", () => {
 		const calls = [
@@ -53,6 +53,7 @@ describe("v4 rule documents", () => {
 			expr.unrealWhitespace("value"),
 			expr.unrealUnsafeWhitespace("value"),
 			expr.formatBraceBalance("value"),
+			expr.maxOf("value"),
 			expr.get("a", "b"),
 			expr.eq("a", "b"),
 			expr.ne("a", "b"),
@@ -111,7 +112,14 @@ describe("v4 rule documents", () => {
 			expr.sortLocale(expr.list(1)),
 			expr.sortLocale(expr.list(1), expr.var("item")),
 			expr.termListMatches("a", "b", "c", "d"),
-			expr.formatRenameArgument("a", "b", "c", "d")
+			expr.formatRenameArgument("a", "b", "c", "d"),
+			expr.regexReplace("a", "b", "c"),
+			expr.groupCount({ by: "a" }),
+			expr.groupRank({ by: "a", order: expr.list("b") }),
+			expr.groupTake({ by: "a", order: expr.list("b"), value: "c", n: 1 }),
+			expr.groupTally({ by: "a", value: "b", display: "c" }),
+			expr.existsOther({ over: expr.list("a"), by: "b", differing: expr.list("c") }),
+			expr.corpusCount({ by: "a", key: "b" })
 		];
 		for (const expression of calls) {
 			expect(Object.keys(expression)).toHaveLength(1);
@@ -123,6 +131,16 @@ describe("v4 rule documents", () => {
 			filter: [{ list: [{ lit: true }] }, { var: "x" }, "x"]
 		});
 		expect(expr.findingField("a", "b")).toEqual({ findingField: ["a", "b"] });
+		expect(expr.groupCount({ by: "a" })).toEqual({
+			groupCount: { by: { lit: "a" } }
+		});
+		expect(expr.corpusCount({ by: "a", key: "b" })).toEqual({
+			corpusCount: {
+				relation: { lit: "corpus_occurrence" },
+				by: { lit: "a" },
+				key: { lit: "b" }
+			}
+		});
 	});
 	it("keeps effective check selection, parameters, references and evidence-key order", () => {
 		const translated = translateRuleDocument(

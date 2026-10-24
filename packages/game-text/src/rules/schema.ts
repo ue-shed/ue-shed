@@ -25,7 +25,8 @@ const unary = [
 	"richTextTagBalance",
 	"unrealWhitespace",
 	"unrealUnsafeWhitespace",
-	"formatBraceBalance"
+	"formatBraceBalance",
+	"maxOf"
 ] as const;
 const binary = [
 	"get",
@@ -68,7 +69,8 @@ const ternary = [
 	"runs",
 	"regexMatches",
 	"regexTest",
-	"termMatches"
+	"termMatches",
+	"regexReplace"
 ] as const;
 const variadic = [
 	"and",
@@ -82,6 +84,14 @@ const variadic = [
 	"concatLists"
 ] as const;
 const binding = ["filter", "map", "flatMap", "any", "all"] as const;
+const aggregate = [
+	"groupCount",
+	"groupRank",
+	"groupTake",
+	"groupTally",
+	"existsOther",
+	"corpusCount"
+] as const;
 
 /** Finite operation names shared with native profile decoding. */
 export const ruleOperationNames = [
@@ -90,6 +100,7 @@ export const ruleOperationNames = [
 	...ternary,
 	...variadic,
 	...binding,
+	...aggregate,
 	"lit",
 	"list",
 	"object",

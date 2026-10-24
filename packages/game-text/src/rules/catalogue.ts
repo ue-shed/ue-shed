@@ -203,7 +203,102 @@ const unreported = x.if(
 	null
 );
 
-/** Opt-in v4 definitions for every built-in that reads its own row, in the existing check catalogue order. */
+// Group checks read other rows through aggregates, computed over every row whatever the scope.
+/** `localizationDuplicateCandidate`, on a line or, with `line.`, on one of its cultures. */
+const duplicateCandidate = (prefix: "" | "line.") =>
+	x.and(
+		x.not(x.isNull(f(`${prefix}joinPosition`))),
+		x.not(x.isNull(f(`${prefix}identity`))),
+		nonempty(x.trim(f(`${prefix}source`))),
+		x.anyChar(f(`${prefix}source`), category("L")),
+		x.not(f(`${prefix}allOutside`)),
+		x.not(f(`${prefix}conflicting`))
+	);
+/**
+ * A candidate with another identity at another place (`DuplicateSources.hasOther`). A line
+ * without a saved place has one of its own. Tuples are distinct, so a line's cultures count once.
+ */
+const keptDuplicate = (prefix: "" | "line.") => {
+	const identity = f(`${prefix}identity`),
+		sites = f(`${prefix}duplicateSites`);
+	return x.existsOther({
+		over: x.if(
+			positive(x.count(sites)),
+			sites,
+			x.list(x.concat("unknown:", g(identity, "namespace"), "\u0000", g(identity, "key")))
+		),
+		by: f(`${prefix}source`),
+		differing: x.list(identity, item),
+		among: duplicateCandidate(prefix)
+	});
+};
+const keptLine = keptDuplicate("");
+const duplicates = { by: f("source"), among: keptLine };
+const identityOrder = x.list(
+	g(f("identity"), "namespace"),
+	g(f("identity"), "key"),
+	f("joinPosition")
+);
+const sharedSource = f("line.source");
+/** `localizationTranslationVariants` counts these: a kept line's shipped translation, not native. */
+const variantRow = x.and(
+	keptDuplicate("line."),
+	x.anyChar(sharedSource, category("L")),
+	x.ge(x.visibleLength(sharedSource), p("minimumLength")),
+	x.le(x.visibleWords(sharedSource), p("maximumWords")),
+	x.not(f("isNative")),
+	x.not(x.isNull(translation)),
+	translated
+);
+const variantGroup = { by: x.list(sharedSource, f("culture")), among: variantRow };
+const variants = x.groupTally({
+	...variantGroup,
+	value: groupKey(translation),
+	display: translation
+});
+const majority = x.first(variants);
+/** The culture ships the source untranslated on most of these lines. */
+const majorityUntranslated = x.eq(g(majority, "value"), groupKey(sharedSource));
+const PROPERTY_INDEX = String.raw`\[[^\]]*\]|\{[^}]*\}|\("[^"]*"\)`;
+/** `localizationPropertyKey`: the saved property, container indexes removed. */
+const propertyKey = (occurrence: Expr) => {
+	const location = g(occurrence, "location"),
+		kind = g(location, "kind");
+	const path = x.regexReplace(g(location, "propertyPath"), PROPERTY_INDEX, "");
+	return x.if(
+		x.eq(kind, "asset_property"),
+		x.concat("p\u0000", g(location, "classPath"), "\u0000", path),
+		x.if(
+			x.eq(kind, "data_table_cell"),
+			x.concat("d\u0000", g(location, "objectPath"), "\u0000", path),
+			null
+		)
+	);
+};
+/**
+ * `invariantTextPlace`: not editor text, a String Table entry, a debug package or a text render.
+ * The package path is the object path up to the first dot after its last slash.
+ */
+const invariantTextPlace = (occurrence: Expr) => {
+	const location = g(occurrence, "location"),
+		kind = g(location, "kind");
+	return x.and(
+		x.ne(g(occurrence, "audience"), "editor"),
+		x.ne(kind, "string_table_entry"),
+		x.not(x.regexTest(g(location, "objectPath"), "debug.*/|(?:^|/)[^/.]*debug", "i")),
+		x.not(
+			x.and(
+				x.eq(kind, "asset_property"),
+				x.endsWith(g(location, "classPath"), ".TextRenderComponent")
+			)
+		)
+	);
+};
+const occurrence = v("occurrence");
+const propertyCount = (among: Expr) =>
+	x.corpusCount({ by: propertyKey(item), key: propertyKey(occurrence), among });
+
+/** v4 definitions of every built-in check, in the existing check catalogue order. */
 export const exampleRules: readonly Rule[] = [
 	lc("format_arguments", {
 		when: x.and(
@@ -323,6 +418,27 @@ export const exampleRules: readonly Rule[] = [
 		actual: o({ noteCount: 0 }),
 		expectation: o({ minimumNotes: 1 }),
 		recovery: "Add translator context to a source occurrence or manifest-producing source."
+	}),
+	builtin("duplicate_source", "line", {
+		// The group's first identity in order reports once for the group.
+		when: x.and(
+			keptLine,
+			x.ge(x.groupCount(duplicates), 2),
+			x.eq(x.groupRank({ ...duplicates, order: identityOrder }), 0)
+		),
+		actual: o({
+			source: f("source"),
+			identityCount: x.groupCount(duplicates),
+			identities: x.groupTake({
+				...duplicates,
+				order: identityOrder,
+				value: f("identity"),
+				n: 5
+			})
+		}),
+		expectation: o({ reviewDistinctKeys: true }),
+		recovery:
+			"Review whether these distinct identities need different context or should share a key. Equal text never links translations."
 	}),
 	lc("format_argument_renamed", {
 		when: x.and(canComparePattern, positive(x.count(pairs))),
@@ -453,6 +569,39 @@ export const exampleRules: readonly Rule[] = [
 					: "Save the source with the line endings it was translated with, or re-import the translation against the current source."
 		})
 	),
+	builtin("inconsistent_translation", "line_culture", {
+		// Two variants at least and one most used. Where most lines ship the source untranslated
+		// and under half as many translate it, the culture keeps it untranslated on purpose;
+		// otherwise those untranslated lines are the ones to fix.
+		when: x.and(
+			variantRow,
+			x.ge(x.count(variants), 2),
+			x.ne(g(majority, "count"), g(g(variants, "1"), "count")),
+			x.if(
+				majorityUntranslated,
+				x.and(
+					x.ge(
+						x.mul(x.sub(x.groupCount(variantGroup), g(majority, "count")), 2),
+						g(majority, "count")
+					),
+					x.eq(groupKey(translation), g(majority, "value"))
+				),
+				x.ne(groupKey(translation), g(majority, "value"))
+			)
+		),
+		actual: o({
+			translation,
+			variants: x.map(
+				x.take(variants, 5),
+				o({ translation: g(item, "display"), lines: g(item, "count") })
+			),
+			variantCount: x.count(variants),
+			untranslated: x.if(x.eq(groupKey(translation), groupKey(sharedSource)), true, null)
+		}),
+		expectation: o({ consistentTranslation: true }),
+		recovery:
+			"Use the culture's usual translation of this text, or add translator notes that explain why this key differs."
+	}),
 	lc("rich_text_tags_added", {
 		let: {
 			additions: x.filter(
@@ -480,6 +629,39 @@ export const exampleRules: readonly Rule[] = [
 		expectation: o({ translatedText: true }),
 		recovery:
 			"Translate the line; the culture ships this placeholder to players in place of the text."
+	}),
+	builtin("culture_invariant_text", "line", {
+		// Every saved occurrence is culture invariant, and one is where invariant text is a slip:
+		// its property holds at least as much localizable text across the project.
+		when: x.and(
+			x.isNull(f("identity")),
+			x.anyChar(f("source"), category("L")),
+			positive(x.count(x.occurrences())),
+			x.all(x.occurrences(), x.eq(g(item, "unresolvedReason"), "culture_invariant")),
+			x.any(
+				x.occurrences(),
+				x.and(
+					invariantTextPlace(occurrence),
+					x.ge(
+						propertyCount(
+							x.in(g(item, "unitStatus"), x.lit(["resolved", "string_table"]))
+						),
+						propertyCount(
+							x.and(
+								x.eq(g(item, "unresolvedReason"), "culture_invariant"),
+								invariantTextPlace(item)
+							)
+						)
+					)
+				),
+				"occurrence"
+			)
+		),
+		actual: o({ source: f("source") }),
+		expectation: o({ localizable: true }),
+		translationOrigin: x.lit("absent"),
+		recovery:
+			"Make the text localizable (clear Culture Invariant, or use NSLOCTEXT/LOCTEXT or a String Table) so the gather collects it; keep it invariant only if players never see it."
 	}),
 	sourceRule("placeholder_text", {
 		when: positive(x.count(sourcePlaceholderRanges)),
@@ -556,4 +738,53 @@ export const exampleRules: readonly Rule[] = [
 		recovery:
 			"Give each String Table its own namespace or rename the key; Unreal keeps one entry per namespace and key."
 	})
+];
+
+/** Browse's review signals as rules. Only a v4 document enables them; the v1–v3 translator never does. */
+const optIn = (
+	id: "shared" | "long",
+	label: string,
+	params: NonNullable<Rule["params"]>,
+	body: Pick<Rule, "when" | "actual" | "expectation"> & { readonly recovery: string }
+): Rule => ({
+	id,
+	ruleId: `localization.${id}`,
+	kind: id,
+	label,
+	subject: "line",
+	family: "builtin",
+	severity: "low",
+	params,
+	...body,
+	recovery: x.lit(body.recovery)
+});
+/** The longest distinct saved source, in UTF-16 units, as the native `long` signal measures it. */
+const longest = x.maxOf(
+	x.map(x.distinct(x.map(x.occurrences(), g(item, "source"))), x.utf16Length(item))
+);
+export const optInRules: readonly Rule[] = [
+	optIn(
+		"shared",
+		"Used in several places",
+		{},
+		{
+			when: x.gt(x.count(x.occurrences()), 1),
+			actual: o({ occurrences: x.count(x.occurrences()) }),
+			expectation: o({ singleUse: true }),
+			recovery:
+				"Check that the text means the same in every place; give a place its own key where its context differs."
+		}
+	),
+	optIn(
+		"long",
+		"Long text",
+		{ limit: 40 },
+		{
+			when: x.ge(longest, p("limit")),
+			actual: o({ length: longest }),
+			expectation: o({ maximumLength: p("limit") }),
+			recovery:
+				"Check that the text and its translations fit where they are shown; translations often run longer."
+		}
+	)
 ];

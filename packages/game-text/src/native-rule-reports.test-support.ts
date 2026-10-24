@@ -175,6 +175,12 @@ export function nativeDetectCustom(check: CustomLocalizationCheck, text: string)
 }
 import { GameTextRuleDocument as importGameTextRuleDocument } from "./game-text-rules.js";
 
+/** Evaluate a v4 document against explicit rows of every subject, as group rules need. */
+export const nativeEvaluateRows = (
+	document: RuleDocumentV4,
+	rows: Partial<Parameters<typeof evaluateV4>[1]>
+) => evaluateV4(document, { line: [], line_culture: [], unit_source: [], ...rows });
+
 /** Evaluate one native expression definition against explicit unit-test facts. */
 export function nativeEvaluateRule(
 	definition: RuleDocumentV4["rules"][number],

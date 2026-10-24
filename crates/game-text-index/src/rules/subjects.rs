@@ -54,6 +54,7 @@ pub struct NativeSubjects<'a> {
     read_arena: Option<super::columns::Arena>,
     /// The strings `places` reads, kept for the rest of this read.
     place_arena: Option<super::columns::Arena>,
+    join_positions: Option<Arc<[u32]>>,
 }
 impl<'a> NativeSubjects<'a> {
     pub fn new(
@@ -153,6 +154,7 @@ impl<'a> NativeSubjects<'a> {
             occurrences,
             read_arena: None,
             place_arena: None,
+            join_positions: None,
         })
     }
     pub(super) fn occurrence_text_id(&self, row: u32) -> Result<&str> {
@@ -167,6 +169,31 @@ impl<'a> NativeSubjects<'a> {
             .copied()
             .flatten()
             .map_or("", |id| arena.text(id)))
+    }
+    /// Each line's position in the join, as the host's join rows list it
+    /// (`indexedLocalizationLinesRequest`), or `u32::MAX` for a line outside the join: a hidden
+    /// source, or saved places that are all hidden.
+    pub(super) fn join_positions(&mut self) -> Result<Arc<[u32]>> {
+        if let Some(positions) = &self.join_positions {
+            return Ok(Arc::clone(positions));
+        }
+        let target = self.query.target["name"]
+            .as_str()
+            .ok_or("Missing target name.")?;
+        let request = crate::engine_types::parse_search_request(
+            &json!({"query":"","capability":"all","pageSize":50,"localization":{"target":target}})
+                .to_string(),
+        )?;
+        let rows = self.query.matching(&request, self.cancelled)?;
+        let mut positions = vec![u32::MAX; self.projection.source.len()];
+        for (position, row) in rows.iter().enumerate() {
+            *positions
+                .get_mut(*row as usize)
+                .ok_or("Join row outside the lines.")? = u32::try_from(position)?;
+        }
+        let positions: Arc<[u32]> = positions.into();
+        self.join_positions = Some(Arc::clone(&positions));
+        Ok(positions)
     }
     pub fn line_row(&self, row: usize) -> Result<usize> {
         if self.subject == Subject::LineCulture {
@@ -515,7 +542,10 @@ impl<'a> NativeSubjects<'a> {
                         .any(|culture| culture.reasons[line] & bit != 0)
                 )
             }
-            "joinPosition" => json!(line),
+            "joinPosition" => match self.join_positions()?[line] {
+                u32::MAX => Value::Null,
+                position => json!(position),
+            },
             "duplicateSites" => {
                 let members = self.line_members(line);
                 let mut sites = Vec::new();

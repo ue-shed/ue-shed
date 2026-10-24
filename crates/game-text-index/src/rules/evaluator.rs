@@ -1238,14 +1238,15 @@ impl<'a> Evaluator<'a> {
             Column::from_atoms(&elements, &mut self.arena)?,
         );
         let among = self.evaluate(args[1], &corpus)?;
-        let by = self.evaluate(args[2], &corpus)?;
-        for index in 0..len {
-            require(
-                !among.failed.get(index) && !by.failed.get(index),
-                "A corpus count failed on an occurrence.",
-            )?;
+        let failed = "A corpus count failed on an occurrence.";
+        require(!among.failed.any(), failed)?;
+        // `by` runs only where `among` holds: a census key is costly and most rows don't count.
+        let members = corpus.select_bits(&among.booleans(&self.arena), &mut self.arena)?;
+        let by = self.evaluate(args[2], &members)?;
+        require(!by.failed.any(), failed)?;
+        for index in 0..members.len() {
             let key = by.get(index, &self.arena);
-            if key != Atom::Null && among.get(index, &self.arena).boolean() {
+            if key != Atom::Null {
                 *table.entry(self.key(key)).or_default() += 1;
             }
         }

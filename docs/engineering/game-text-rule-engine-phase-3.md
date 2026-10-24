@@ -31,7 +31,7 @@ Behaviour is defined by today's code, cited as `file:line` under `packages/game-
 ### The line page's culture scope (decision 6, `archive-missing-entry`)
 
 - **Today:** `localization_detail` returns every culture (`ix/engine_detail.rs:91-98`), and the renderer computes the line's problems from all of them in TS (`ext/game-text-line-page.tsx:23-32`). The list computes the row with its scope (`ix/engine_search.rs:465`).
-- **Fix:** `LocalizationDetailRequest` and the public `LocalizationFocusRequest` gain `cultures` (the list's scope; omitted means every culture) and `findings` (a findings layer key, §6). The reply gains `problems`: the line's problems computed natively with that scope and layer, exactly as the list row computes them. The line page shows `problems` and stops calling `textProblems`. Translations outside the scope are still listed; only problems are scoped.
+- **Fix:** `LocalizationDetailRequest` and the public `LocalizationFocusRequest` gain `cultures` (the list's scope; omitted means every culture) and `findings` (a findings layer key, §6). The reply gains `problems`: the line's problems computed natively with that scope and layer, exactly as the list row computes them. The line page shows `problems` and stops calling `textProblems`. Translations outside the scope are still listed; only problems are scoped. Until §6 lands, the detail counts the default findings, so it matches a list request that names none; after §6 it matches every list request.
 - **The probe** (`scripts/compare-game-text-corpus.ts:395-417`) recomputes problems from every translation, so removing the pin alone keeps the disagreement. It passes the case's culture and asserts the returned `problems`. It also asserts them once with no culture, against the all-cultures answer.
 
 ## 3. The query core
@@ -66,7 +66,7 @@ Behaviour is defined by today's code, cited as `file:line` under `packages/game-
 
 ### Facets and counts, without a re-match
 
-Every aggregate is a set built from atoms, and each walks its set once. Their selections are today's, listed so nothing is re-matched:
+Every aggregate is a set built from atoms. One traversal walks the union of their sets, and each row updates every aggregate whose set holds it, so facets, counts and tallies take one pass (plan: "facets in one pass"). Their selections are today's, listed so nothing is re-matched:
 
 | Aggregate                                                  | Selection                                                                                                                                                                                                                       |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -86,7 +86,7 @@ Every aggregate is a set built from atoms, and each walks its set once. Their se
     - Each open group's entry carries its first `firstRows` rows in display order, and a cursor when there are more. One walk of the display order fills them all. Closed groups stay aggregates.
     - At most 500 rows are returned in all, in group order. A group past that budget returns `rowsOmitted: true` and no rows, and the host asks for it with `openGroup`, as today.
     - `openGroup` with a cursor stays for "more".
-- The renderer asks for its open groups' rows in the header request, instead of one search per open group (`ext/game-text-grouped-results.tsx:150-190`).
+- The renderer asks for the rows of its first 20 open groups, in group order, in the header request, instead of one search per open group (`ext/game-text-grouped-results.tsx:82-99, :150-190`). Any group open past those 20, past the row budget or for "more" is read with `openGroup` and `parts: ["rows"]`, so the read computes no aggregate.
 
 ### Parity
 
@@ -133,11 +133,15 @@ A test pins `order.source` with several rules matching several units, so the rul
 
 The layer's evaluator version rises, so every existing layer rebuilds once.
 
-### Review acceptance in the join
+### Review acceptance: `findings_accept`
 
-The join already receives the whole review file (`gt/index-steps.ts:685-686`) and computes record fingerprints (`ix/join_marks.rs:326-360`). It adds `review.accepted.{rows,cultures,rules}`: each accepted finding whose line resolves by (namespace, key) and whose fingerprint equals that line's and culture's `localizationLineFingerprint`, computed as the records' fingerprints are.
+A caller chooses the review file a read applies, or none: the scan and the CLI apply `options.review`, which may differ from the file the join read, and an omitted review filters nothing (`gt/localization-quality-index.ts:181-186`, `gt/localization-check-report.ts:191-194`, `gt/localization-quality-index.test.ts:567-606`). So acceptance is an input to reads, not part of the join.
 
-A finding is **accepted** when it isn't `keyless` and its (line row, culture, `ruleId`) is in that table. This is `lazyAcceptedFindingFilter` (`gt/localization-review.ts:151-178`), including keeping a finding whose line or culture is missing. Queries hide accepted findings unless they ask for them (below), and so does Browse (§6).
+- **`findings_accept {key, previous?, accepted}`** takes up to 5,000 of a review file's accepted findings (`check`, `culture`, `namespace`, `key`, `fingerprint`) and returns an `acceptance` key. A larger file is sent in chunks, each naming the `previous` key, so the set is their union.
+- For each entry the engine resolves the line by (namespace, key) and computes `localizationLineFingerprint` for that culture, as the join computes review records' fingerprints (`ix/join_marks.rs:326-360`). It keeps the entries whose fingerprints match, as a set of (line row, culture, check).
+- Acceptance sets are cached by (findings key, digest of the entries), like findings layers.
+- A finding is **accepted** under an acceptance key when it isn't `keyless` and its (line row, culture, `ruleId`) is in the set. This is `lazyAcceptedFindingFilter` (`gt/localization-review.ts:151-178`), including keeping a finding whose line or culture is missing.
+- The workspace and the CLI register the review they apply today (`gt/workspace-localization.ts:529`, `apps/cli/src/workflows/localization-check.ts:130`) once per evaluation, and pass its key. A read without a key hides nothing.
 
 ### `findings_query`
 
@@ -150,10 +154,11 @@ A finding is **accepted** when it isn't `keyless` and its (line row, culture, `r
 	"severities": ["low"], // optional
 	"fixable": true, // optional
 	"change": true, // optional: only findings with a suggested change
-	"accepted": "include", // optional; default "hide"
+	"acceptance": "…", // optional: hide what this review accepted
 	"line": "…", // optional: one line's findings, for the line page
 	"id": "localization-finding:…", // optional: one finding, for focus
 	"order": "severity", // or "report" or "line"
+	"after": "quality-finding:…", // optional: a finding-ID cursor
 	"offset": 0,
 	"limit": 50, // 0–5,000
 	"counts": true, // optional
@@ -168,7 +173,9 @@ A finding is **accepted** when it isn't `keyless` and its (line row, culture, `r
 | `workspace` | `unit_source`, `line` and `line_culture` | Accepted findings; shadowed findings when the program has an enabled `unit_source` rule | `gt/localization-workspace.ts:961-988, :1083-1101`     |
 | `report`    | `line` and `line_culture`                | Accepted findings                                                                       | `loc check`: `gt/localization-check-report.ts:166-207` |
 
-`accepted: "include"` keeps accepted findings: the CLI's proposals are collected before acceptance is applied (`gt/localization-check-report.ts:184-189`).
+Accepted findings are hidden only under an `acceptance` key. The CLI's proposals are read without one, since it collects them before acceptance applies (`gt/localization-check-report.ts:184-189`).
+
+**The cursor.** `after` names a finding ID. The rows start after the first finding with that ID in the request's order, and only if that finding is in the selection; otherwise they start at the first. This is the source search's cursor (`gt/quality-query.ts:529-545`): equal findings share an ID and a cursor names the first. The engine finds the position by the ID lanes (`r{r}.id0`, `r{r}.id1`), without paging through. Tests pin a duplicate ID, an unknown ID and an ID outside the filter.
 
 **Selection.** Within the view, a finding is selected when its culture is the requested one, its rule and severity are listed, and it has a change or is `fixable` if asked. A `unit_source` finding has no culture and is always in the culture selection. These are today's culture filter (`gt/localization-quality-index.ts:270-271`) and workspace filter (`gt/localization-workspace.ts:1050`).
 
@@ -187,7 +194,7 @@ A finding is **accepted** when it isn't `keyless` and its (line row, culture, `r
 
 | Scope                                       | Counts                                                                                                                                |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| The view and the culture selection          | `all`, by rule, by severity, and `accepted`: the findings acceptance hid. These feed the filter list and the severity counts.         |
+| The view and the culture selection          | `all`, by rule, by severity, and `accepted`: the findings the acceptance key hid. These feed the filter list and the severity counts. |
 | Every filter of the request                 | `total`, `fixable`.                                                                                                                   |
 | The culture selection only, for diagnostics | `limits`: diagnostics by code, in first-seen order (`gt/localization-quality-index.ts:331-341`, `gt/localization-workspace.ts:1119`). |
 
@@ -205,9 +212,9 @@ Counts by filter sum the counts by rule.
 
 **The CLI report** is these reads:
 
-- `findings`: view `report`, order `report`, by 5,000;
+- `findings`: view `report`, order `report`, the review's `acceptance` key, by 5,000;
 - `checkDiagnostics`: the `diagnostics` pages;
-- `changes`: view `report`, rule `format_argument_renamed`, `change`, `accepted: "include"`, order `line`;
+- `changes`: view `report`, rule `format_argument_renamed`, `change`, no acceptance key, order `line`;
 - `rules` and `acceptedFindings`: the counts.
 
 ## 6. Findings in Browse
@@ -216,14 +223,14 @@ Counts by filter sum the counts by rule.
     - `SearchRequest` gains `findings`: a findings layer key.
     - The workspace evaluates the effective document, the project's file with the host overlay applied (`applyRuleOverlay`, `gt/game-text-rules.ts:473-508`), whenever it has an enabled rule and the index is ready. An overlay alone is enough; a file isn't required.
     - With a target selected, every rule runs. Without one, only `unit_source` rules run, as source rules do today (`gt/game-text-rules.ts:67-85`), so corpus mode keeps the source rules' findings.
-    - The workspace passes the key once the layer is ready. The page reports `findings: {status}`: `none` (no enabled rule), `pending` (evaluating) or `ready`.
-- **Rows.** A finding belongs to a listed row when it isn't accepted, it isn't hidden as `shadowed`, and:
+    - The workspace passes the key once the layer is ready, with the `acceptance` key of the review it applies (§5). The page reports `findings: {status}`: `none` (no enabled rule), `pending` (evaluating) or `ready`.
+- **Rows.** A finding belongs to a listed row when it isn't accepted under the request's acceptance key, it isn't hidden as `shadowed` (as the `workspace` view hides it), and:
     - for a `line` or `line_culture` finding, it is on that line and its culture is in the request's culture scope. Without a culture scope, every culture is.
     - for a `unit_source` finding, the line holds one of its affected occurrences.
     - in corpus mode, a line finding belongs to the raw units of the line's slices, and a `unit_source` finding to its unit.
 - **`finding` clauses** name rule IDs: a built-in check's name, or a project rule's or complete rule's `id`. A clause naming a rule not in the layer is invalid. Without a layer, `finding is` matches nothing. The engine keeps each rule's rows per culture scope used, in the atom cache.
 - **The finding facet.** `facets.findings: true` returns every rule of the layer, in program order, with its label and the rows it has a finding on. The selection is every atom except the `finding` clauses, as other field facets select. Rules with no rows are returned with 0; the menu hides them unless chosen, as it does other values (`ext/game-text-filter-menu.tsx:113-114`).
-- **The fact facet.** The chip counts already count the facts (`ix/engine_search.rs:32-160`); the `fact` field's counts are those.
+- **The fact facet.** `facets.facts: true` counts the rows with each of the four facts. The selection is every atom except the `fact` clauses, as other field facets select. Today's chip counts don't serve: they count only `unresolved` and `conflicting` of the four (`ix/engine_search.rs:10-19, :147-151`), and `readOnly` is editing capability, not `evidence_only`. The chip counts keep their other members and lose `shared`, `duplicate_source` and `long`.
 - **Grouping by finding.** `group: "finding"` makes one group per rule, keyed by the rule ID, in program order.
     - A row is in every rule's group it has a finding for, so a row can be in several groups. Rows without a finding are in no group.
     - A group's count is its rows. The page's `total` stays the number of distinct rows.
@@ -243,20 +250,24 @@ Counts by filter sum the counts by rule.
 
 ## 7. Related lines
 
-`related {target?, selection: {kind: "line" | "unit", id}, pageSize}` returns four sections, each with at most 50 members and a `complete` flag:
+`related {target?, selection: {kind: "line" | "unit", id}, pageSize}` returns `self` and four sections, each with at most 50 members and a `complete` flag.
 
-| Section     | Members                                                                                       | Today                                                                           |
-| ----------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `sameKey`   | Other units with the same gathered identity.                                                  | A `translation_key` search (`scripts/game-text-engine-stage.ts:510-531`)        |
-| `sameText`  | Other resolved units with another identity whose consistent source equals this one's exactly. | The ID repair's text search and filter (`ext/game-text-id-repairs.tsx:264-280`) |
-| `conflict`  | For a line with `conflicting_source`, its units whose source differs from the gathered one.   | Cause pages (`scripts/game-text-engine-stage.ts:476-494`)                       |
-| `keyChange` | The line paired with this one by key-change pairing.                                          | The detail's `keyChange`                                                        |
+**Members** are of two kinds, as selections are (`ix/engine_detail.rs:29-51`):
 
-The reply also carries `self`, the selected unit as a member, so a caller that lists the selection with its partners needs nothing else. A member is:
+- **A unit member:** the unit's search result; its first `pageSize` places, with `complete`; and, with a target, the translations of its line per culture as `localization_detail` gives them, with `complete` when every culture is listed.
+- **A line member**, with a target only: the line's preview; its unit IDs (none for a line only in gathered text, at most 50, with `complete`); and its translations as above.
 
-- the unit's search result;
-- its first `pageSize` places, with `complete`;
-- with a target, its translations per culture as `localization_detail` gives them, with `complete` when every culture is listed.
+**Sections**, by the selection's kind:
+
+| Section     | Unit selection                                                                                               | Line selection                                              | Today                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `self`      | The unit                                                                                                     | The line                                                    |                                                                                 |
+| `sameKey`   | Other units with the same gathered identity                                                                  | Empty: a line holds every unit of its key, listed in `self` | A `translation_key` search (`scripts/game-text-engine-stage.ts:510-531`)        |
+| `sameText`  | Other resolved units with another identity whose consistent source equals this one's exactly                 | Other lines whose source equals this one's exactly          | The ID repair's text search and filter (`ext/game-text-id-repairs.tsx:264-280`) |
+| `conflict`  | For a line with `conflicting_source`, the units of the unit's key whose source differs from the gathered one | The same, for the line's key                                | Cause pages (`scripts/game-text-engine-stage.ts:476-494`)                       |
+| `keyChange` | The line paired with the unit's line by key-change pairing, a line member                                    | The line paired with this one                               | The detail's `keyChange`                                                        |
+
+Without a target, only unit sections with unit members exist: `sameKey` and `sameText`.
 
 The ID repair (`ext/game-text-id-repairs.tsx:251-321`) makes one `related` request in place of a search plus a focus and a detail per unit.
 
@@ -317,15 +328,15 @@ A rules file entry with `kind: "rule"` is a whole rule in the v4 IR:
 
 ## 10. Deleted
 
-| What                                                                                                                                                                               | Notes                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The TS scans: `indexedLocalizationQuality`, `indexedSourceQuality`, and `LocalizationFindingList` with its groups, positions and hash checks                                       | `gt/localization-quality-index.ts`, `gt/source-quality-index.ts`. The presentation helpers they share with reports move to their callers. `indexedSourceQuality` and `LocalizationFindingList` are public (`gt/entry-index.ts:94`, `gt/index.ts:546`, `gt/entry-corpus.ts:119-125`); they go with a changeset note if Electroswag doesn't import them, and otherwise stay as adapters until Phase 6.   |
-| The Quality worker: `quality-worker.ts`, `quality-worker-node.ts`, `quality-worker-protocol.ts`, `worker-calls.ts`                                                                 | With their build, test-script, lint-baseline and README references (`apps/workbench/tsup.config.ts:15`, `scripts/check-effect-architecture.ts`, `scripts/test-public-packages.ts:177-178`, `packages/game-text/ADOPTING.md:89`, `packages/game-text/README.md:112`).                                                                                                                                   |
-| The second TS reader, from production: `indexed-policy-data.ts`, `joined-query-reader.ts`, `hydrateJoinedTarget` and what only it uses, and the `shared-string-file.ts` sync reads | `readJoinedTarget`, `openJoinedTarget` and the public `result.joined` handle stay: they pin and describe the layer. The reference oracles and the join fuzz harness still read through it until Phase 4 (`gt/joined-query-data.test-support.ts:25-33`, `scripts/columnar-join-fuzz.test-support.ts:926-928`), so what they use moves into test support, and the fuzz comparison drops `line.problems`. |
-| The native `shared`, `duplicate_source` and `long` signals, `lens` and `line.problems`                                                                                             | §6.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| The per-facet re-match, `QueryCache` and `matched`                                                                                                                                 | §3.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `text-problems.ts` in the renderer, `duplicate-sources.ts`, `review-signals.test.ts`                                                                                               | Public exports that Electroswag imports stay until Phase 6; check its imports first. The tests of the deleted `duplicate_source` signal go with it (`gt/joined-duplicate-places.test.ts` and its support); `gt/joined-query-columns.test-support.ts:12` stops importing it.                                                                                                                            |
-| The TS reference oracles' signal and problem code (`query.test-support.ts`, `columnar-query.test-support.ts`)                                                                      | The oracles themselves go in Phase 4 (proposed decision 26).                                                                                                                                                                                                                                                                                                                                           |
+| What                                                                                                                                                                               | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The TS scans: `indexedLocalizationQuality`, `indexedSourceQuality`, and `LocalizationFindingList` with its groups, positions and hash checks                                       | `gt/localization-quality-index.ts`, `gt/source-quality-index.ts`. The presentation helpers they share with reports move to their callers. `indexedLocalizationQuality`, `indexedSourceQuality`, `LocalizationFindingList` and their signature types are public (`gt/entry-index.ts:85-94`, `gt/index.ts:542-546`, `gt/entry-corpus.ts:119-125`). Each goes with a changeset note if Electroswag doesn't import it, and otherwise stays as an adapter over `findings_query` until Phase 6. |
+| The Quality worker: `quality-worker.ts`, `quality-worker-node.ts`, `quality-worker-protocol.ts`, `worker-calls.ts`                                                                 | With their build, test-script, lint-baseline and README references (`apps/workbench/tsup.config.ts:15`, `scripts/check-effect-architecture.ts`, `scripts/test-public-packages.ts:177-178`, `packages/game-text/ADOPTING.md:89`, `packages/game-text/README.md:112`).                                                                                                                                                                                                                      |
+| The second TS reader, from production: `indexed-policy-data.ts`, `joined-query-reader.ts`, `hydrateJoinedTarget` and what only it uses, and the `shared-string-file.ts` sync reads | `readJoinedTarget`, `openJoinedTarget` and the public `result.joined` handle stay: they pin and describe the layer. The reference oracles and the join fuzz harness still read through it until Phase 4 (`gt/joined-query-data.test-support.ts:25-33`, `scripts/columnar-join-fuzz.test-support.ts:926-928`), so what they use moves into test support, and the fuzz comparison drops `line.problems`.                                                                                    |
+| The native `shared`, `duplicate_source` and `long` signals, `lens` and `line.problems`                                                                                             | §6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| The per-facet re-match, `QueryCache` and `matched`                                                                                                                                 | §3.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `text-problems.ts` in the renderer, `duplicate-sources.ts`, `review-signals.test.ts`                                                                                               | Public exports that Electroswag imports stay until Phase 6; check its imports first. The tests of the deleted `duplicate_source` signal go with it (`gt/joined-duplicate-places.test.ts` and its support); `gt/joined-query-columns.test-support.ts:12` stops importing it.                                                                                                                                                                                                               |
+| The TS reference oracles' signal and problem code (`query.test-support.ts`, `columnar-query.test-support.ts`)                                                                      | The oracles themselves go in Phase 4 (proposed decision 26).                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## 11. Spans and profiles
 
@@ -360,7 +371,7 @@ Every new heavy operation reports bounded stages:
 2. **Row sets** (§3): atoms, the cache, facets and counts from sets, and problems as a cached column. Answers stay byte-identical. Delete the re-match, `QueryCache` and `matched`.
 3. **Response parts and groups with first rows.** The renderer's grouped results adopt them.
 4. **The trigram index** (§4), with identical answers and its build cost recorded.
-5. **Findings layer v2, acceptance in the join, and `findings_query`** (§5). Quality, `loc check` and the status report adopt it.
+5. **Findings layer v2, `findings_accept` and `findings_query`** (§5). Quality, `loc check` and the status report adopt it.
     - Quality's answer keeps the Phase 1 hash on both projects, and `loc check` stays byte-identical on both canonical corpora.
     - Then delete the scans and the second reader, and the worker once its measurement allows.
 6. **Related lines** (§7). The ID repair adopts them.

@@ -587,7 +587,7 @@ test("canonical seed covers every recipe and source kind; density repeats recipe
 					.map((text) => text.case.split("@")[0])
 			)
 		).size,
-		160
+		161
 	);
 	assert.deepEqual(
 		new Set(plan.packages.flatMap((owner) => owner.texts.map((text) => text.kind))),

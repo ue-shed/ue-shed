@@ -819,6 +819,20 @@ function recipeBatch({
 		{ localizable: true },
 		"en"
 	);
+	// A near miss: a Blueprint variable is its own property, which holds no localizable text, so
+	// its invariant text is meant to be invariant.
+	const ownProperty = add(
+		"culture-invariant-own-property",
+		"Silent sign label",
+		{ mode: "invariant", namespace: "", key: "", gathered: false },
+		blueprint
+	);
+	state(ownProperty, "unknown", ["unchecked"]);
+	facts(ownProperty, ["not_translated", "unknown"]);
+	signals(ownProperty, ["unresolved"], ["unchecked"]);
+	for (const culture of corpusCultures)
+		ownProperty.cultures[culture]!.unknownReasons = ["unresolved_identity"];
+	ownProperty.absent.push("localization.culture_invariant_text");
 	add("package-namespace", "Editor package label", {}, rows);
 	add("blueprint-variable", "Blueprint harbor label", {}, blueprint);
 	const scaffold = add(

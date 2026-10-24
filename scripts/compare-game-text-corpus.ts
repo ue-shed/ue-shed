@@ -23,6 +23,9 @@ import {
 	formatCorpusComparisonSummary
 } from "./game-text-corpus-defects.ts";
 
+/** Browse's review signals that are also opt-in checks under the same IDs. */
+const signalCheckIds = ["shared", "long"] as const;
+
 /** A corpus folder, not a repository fixture. Never launches Unreal or changes its inputs. */
 async function compareGameTextCorpusLocked(
 	corpusRoot: string,
@@ -79,6 +82,31 @@ async function compareGameTextCorpusLocked(
 					const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify(plan.rules));
 					const quality = yield* model.localizationQuality(rules);
 					const sourceQuality = yield* (yield* model.sourceQuality(rules)).export("all");
+					// Browse's shared and long signals are also opt-in checks. A file listing only
+					// them must report the lines Browse marks, and no others.
+					const signalRules = yield* decodeGameTextRuleDocumentJson(
+						JSON.stringify({
+							schemaVersion: 1,
+							roles: [],
+							rules: signalCheckIds.map((kind) => ({ kind }))
+						})
+					);
+					const signalQuality = yield* model.localizationQuality(signalRules);
+					const signalChecksByLine = new Map<string, string[]>();
+					for (const { finding } of yield* signalQuality.findings.items(
+						Array.from({ length: signalQuality.findings.length }, (_, i) => i)
+					))
+						if ("culture" in finding)
+							signalChecksByLine.set(finding.lineId, [
+								...(signalChecksByLine.get(finding.lineId) ?? []),
+								finding.kind
+							]);
+					const signalChecks: {
+						case: string;
+						subject: string;
+						expected: unknown;
+						actual: unknown;
+					}[] = [];
 					const findings = yield* quality.findings.items(
 						Array.from({ length: quality.findings.length }, (_, i) => i)
 					);
@@ -319,6 +347,26 @@ async function compareGameTextCorpusLocked(
 									),
 									absent: []
 								});
+						const signalled = [
+							...new Set(
+								line.cultures.flatMap(
+									(mark) =>
+										queryFacts.get(`${line.id}\0${mark.culture}`)?.signals ?? []
+								)
+							)
+						]
+							.filter((signal) => signalCheckIds.some((id) => id === signal))
+							.sort();
+						const checked = [...(signalChecksByLine.get(line.id) ?? [])].sort();
+						if (!isDeepStrictEqual(signalled, checked))
+							signalChecks.push({
+								case:
+									[...matches.values()][0]?.text.case ??
+									`unplanned:${line.identity?.key ?? line.id}`,
+								subject: "signal-checks",
+								expected: signalled,
+								actual: checked
+							});
 						for (const { owner, text, source } of matches.values()) {
 							for (const probe of plan.probes.filter(
 								(probe) => probe.case === text.case
@@ -425,7 +473,7 @@ async function compareGameTextCorpusLocked(
 							}
 						}
 					}
-					return { subjects, observations };
+					return { subjects, observations, signalChecks };
 				})
 			).pipe(
 				Effect.provide(
@@ -461,7 +509,11 @@ async function compareGameTextCorpusLocked(
 				});
 		const differences = [
 			...diffCorpus(expected, scanned.subjects),
-			...scanned.observations.filter((item) => !isDeepStrictEqual(item.expected, item.actual))
+			...scanned.observations.filter(
+				(item) => !isDeepStrictEqual(item.expected, item.actual)
+			),
+			// Never pinned: a signal check must agree with Browse's signal.
+			...scanned.signalChecks
 		];
 		const activeSubjects = [...expected.subjects];
 		const activeProbes = [...scanned.observations];

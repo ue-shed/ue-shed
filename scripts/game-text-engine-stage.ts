@@ -218,7 +218,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 		const source = options.records
 			? retainedPackageSource(options.records)
 			: gameTextIndexSourceNodeLayer(options.cache).pipe(Layer.provide(AssetReaderLive));
-		const layer = gameTextIndexRefreshLayer(options.cache, { qualityWorker: true }).pipe(
+		// `quality-in-process` scans on this event loop, as a host without the worker would.
+		const layer = gameTextIndexRefreshLayer(options.cache, {
+			qualityWorker: stage !== "quality-in-process"
+		}).pipe(
 			Layer.provide(source),
 			Layer.provide(GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))),
 			Layer.provide(LocalizationEvidenceNodeLive)
@@ -304,8 +307,12 @@ export async function runEngineStage(options: EngineStageOptions) {
 		} else {
 			ready(await run(workspace.configuredRefresh(true)), "completed");
 			ready(await run(workspace.localizationTarget(target)));
-			if (stage === "quality" || stage === "quality-default") {
-				if (stage === "quality") {
+			if (
+				stage === "quality" ||
+				stage === "quality-default" ||
+				stage === "quality-in-process"
+			) {
+				if (stage !== "quality-default") {
 					const document = await run(
 						decodeGameTextRuleDocumentJson(
 							await readFile(

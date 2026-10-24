@@ -66,7 +66,13 @@ const runs = Number(values.runs);
 const longRuns = Number(values["long-runs"]);
 if (!Number.isSafeInteger(runs) || runs < 1 || !Number.isSafeInteger(longRuns) || longRuns < 1)
 	throw new Error("--runs and --long-runs must be positive integers.");
-const longStages = new Set(["records", "build", "quality", "quality-default"]);
+const longStages = new Set([
+	"records",
+	"build",
+	"quality",
+	"quality-default",
+	"quality-in-process"
+]);
 const mix = decodeEngineRequestMix(JSON.parse(await readFile(values.mix, "utf8")));
 if (values.worker) {
 	const { runEngineStage } = await import("./game-text-engine-stage.ts");
@@ -107,6 +113,7 @@ if (values.worker) {
 		"cached-reopen",
 		"quality",
 		"quality-default",
+		"quality-in-process",
 		"overhead",
 		"overhead:small",
 		...mix.hosts.map((host) => `typing:${host.name}:${host.openGroups}`),

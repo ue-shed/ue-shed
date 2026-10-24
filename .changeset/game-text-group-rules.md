@@ -13,3 +13,6 @@ helpers that evaluated these checks: `localizationDuplicateSources`,
 `localizationPropertiesWhereLocalizable`, `localizationPropertyKey`,
 `localizationCultureInvariantUnits`, `localizationConflictingSource`, `localizationSourceCulture`,
 `localizationRuleContext` and their types.
+
+Browse's `shared` and `long` review signals are also checks, `SourceCheckId`s with their own
+finding shapes and workspace filters. They are opt-in: no preset runs them.

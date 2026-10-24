@@ -288,8 +288,10 @@ it.live(
 					});
 					expect(hydrated).toBe(0);
 					const all = legacy.search({ target: join.target, filter: "all" });
+					// A version-2 file can't enable the opt-in checks.
 					for (const filter of BuiltInQualityFilter.literals)
-						expect([filter, all.counts[filter]]).not.toEqual([filter, 0]);
+						if (filter !== "shared" && filter !== "long")
+							expect([filter, all.counts[filter]]).not.toEqual([filter, 0]);
 					expect(all.suggestedFixCount).toBeGreaterThan(0);
 					whitespace.push(all.counts.whitespace);
 					// Source-level checks: one finding per line, under the native culture only.
@@ -348,6 +350,7 @@ it.live(
 						)
 					).toBe(true);
 					for (const filter of sourceLevel) {
+						if (filter === "shared" || filter === "long") continue;
 						const found = legacy.export({ target: join.target, filter }).findings;
 						expect(new Set(found.map(({ culture }) => culture))).toEqual(
 							new Set([join.nativeCulture])

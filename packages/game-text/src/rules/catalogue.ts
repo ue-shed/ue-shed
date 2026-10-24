@@ -295,6 +295,11 @@ const occurrence = v("occurrence");
 const propertyCount = (among: Expr) =>
 	x.corpusCount({ by: propertyKey(item), key: propertyKey(occurrence), among });
 
+/** The longest distinct saved source, in UTF-16 units, as the native `long` signal measures it. */
+const longest = x.maxOf(
+	x.map(x.distinct(x.map(x.occurrences(), g(item, "source"))), x.utf16Length(item))
+);
+
 /** v4 definitions of every built-in check, in the existing check catalogue order. */
 export const exampleRules: readonly Rule[] = [
 	lc("format_arguments", {
@@ -734,54 +739,20 @@ export const exampleRules: readonly Rule[] = [
 		expectation: o({ oneTablePerKey: true }),
 		recovery:
 			"Give each String Table its own namespace or rename the key; Unreal keeps one entry per namespace and key."
+	}),
+	// Browse's review signals. Their own occurrences decide; gathered-only lines have none.
+	builtin("shared", "line", {
+		when: x.gt(x.count(x.occurrences()), 1),
+		actual: o({ occurrences: x.count(x.occurrences()) }),
+		expectation: o({ singleUse: true }),
+		recovery:
+			"Check that the text means the same in every place; give a place its own key where its context differs."
+	}),
+	builtin("long", "line", {
+		when: x.ge(longest, p("limit")),
+		actual: o({ length: longest }),
+		expectation: o({ maximumLength: p("limit") }),
+		recovery:
+			"Check that the text and its translations fit where they are shown; translations often run longer."
 	})
-];
-
-/** Browse's review signals as rules. Only a v4 document enables them; the v1–v3 translator never does. */
-const optIn = (
-	id: "shared" | "long",
-	label: string,
-	params: NonNullable<Rule["params"]>,
-	body: Pick<Rule, "when" | "actual" | "expectation"> & { readonly recovery: string }
-): Rule => ({
-	id,
-	ruleId: `localization.${id}`,
-	kind: id,
-	label,
-	subject: "line",
-	family: "builtin",
-	severity: "low",
-	params,
-	...body,
-	recovery: x.lit(body.recovery)
-});
-/** The longest distinct saved source, in UTF-16 units, as the native `long` signal measures it. */
-const longest = x.maxOf(
-	x.map(x.distinct(x.map(x.occurrences(), g(item, "source"))), x.utf16Length(item))
-);
-export const optInRules: readonly Rule[] = [
-	optIn(
-		"shared",
-		"Used in several places",
-		{},
-		{
-			when: x.gt(x.count(x.occurrences()), 1),
-			actual: o({ occurrences: x.count(x.occurrences()) }),
-			expectation: o({ singleUse: true }),
-			recovery:
-				"Check that the text means the same in every place; give a place its own key where its context differs."
-		}
-	),
-	optIn(
-		"long",
-		"Long text",
-		{ limit: 40 },
-		{
-			when: x.ge(longest, p("limit")),
-			actual: o({ length: longest }),
-			expectation: o({ maximumLength: p("limit") }),
-			recovery:
-				"Check that the text and its translations fit where they are shown; translations often run longer."
-		}
-	)
 ];

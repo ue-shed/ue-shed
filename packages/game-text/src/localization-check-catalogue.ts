@@ -140,6 +140,10 @@ export const SegmentSeparatorParams = Schema.Struct({
 });
 export type SegmentSeparatorParams = typeof SegmentSeparatorParams.Type;
 
+/** `long`: a saved source of at least `limit` UTF-16 code units, as Browse's Long text chip measures it. */
+export const LongTextParams = Schema.Struct({ limit: withDefault(PositiveInt, 40) });
+export type LongTextParams = typeof LongTextParams.Type;
+
 /** One built-in check: what it is, how it is rated by default and what it can be tuned with. */
 export interface LocalizationCheckDescriptor<
 	Id extends BuiltInCheckId,
@@ -154,6 +158,8 @@ export interface LocalizationCheckDescriptor<
 	readonly label: string;
 	/** The severity a finding has unless the project rates the check otherwise. */
 	readonly severity: CheckSeverity;
+	/** Runs only when a project asks for it: no preset or starter file includes it. */
+	readonly optIn: boolean;
 	/** The check's parameters; every field has a default, so `{}` decodes to `defaults`. */
 	readonly params: Schema.Codec<Params, EncodedParams>;
 	readonly defaults: Params;
@@ -169,6 +175,7 @@ function check<Id extends BuiltInCheckId, Params extends object, EncodedParams>(
 		readonly basis: CheckBasis;
 		readonly label: string;
 		readonly severity: CheckSeverity;
+		readonly optIn?: true;
 		readonly params: Schema.Codec<Params, EncodedParams>;
 		readonly condition: (params: Params) => string;
 	}
@@ -184,6 +191,7 @@ function check<Id extends BuiltInCheckId, Params extends object, EncodedParams>(
 				? "source"
 				: "localization",
 		...descriptor,
+		optIn: descriptor.optIn ?? false,
 		defaults,
 		defaultCondition: descriptor.condition(defaults)
 	};
@@ -447,6 +455,25 @@ export const localizationCheckCatalogue = {
 		severity: "normal",
 		params: NoCheckParams,
 		condition: fixed("One namespace and key declared by more than one String Table")
+	}),
+	// Browse's review signals, as checks a project lists to run.
+	shared: check("shared", {
+		basis: "heuristic",
+		label: "Used in several places",
+		severity: "low",
+		optIn: true,
+		params: NoCheckParams,
+		condition: fixed(
+			"Text saved in more than one place, which may need a different meaning in each"
+		)
+	}),
+	long: check("long", {
+		basis: "heuristic",
+		label: "Long text",
+		severity: "low",
+		optIn: true,
+		params: LongTextParams,
+		condition: (params) => `A saved source of ${params.limit} or more UTF-16 code units`
 	})
 } as const satisfies {
 	readonly [Id in BuiltInCheckId]: LocalizationCheckDescriptor<Id, object, unknown>;

@@ -358,8 +358,8 @@ record them as `localization.<id>`. Pass `{ culture?, checks?, disabledChecks? }
 They need no rule document. A version-3 `Config/UEShed/GameTextRules.json` sets each check's
 policy under `checks`, keyed by check ID: `enabled`, `severity` (`blocking`, `normal` or `low`),
 `scope` and `params` (the catalogue's parameters; unlisted fields keep their defaults). `preset`
-is `default` (every check runs with its catalogue severity) or `none` (only the checks the file
-enables run). Version 3 rejects unknown keys, so a misspelt check or parameter is an
+is `default` (every check runs with its catalogue severity, but the opt-in `shared` and `long`) or
+`none` (only the checks the file enables run). Version 3 rejects unknown keys, so a misspelt check or parameter is an
 `invalid_structure` error rather than ignored. Version 2 adds per-culture project policy and
 progress reports, described below, and version 3 keeps them.
 
@@ -383,7 +383,8 @@ V1 and v2 files keep loading: their `disabledLocalizationChecks` (any built-in I
 `format_argument_renamed` and `rich_text_tag_case`). `migrateGameTextRuleDocument(document)`
 writes a v1 or v2 file as v3 with the same behaviour, and `resolveLocalizationChecks(document)`
 returns each check's resolved `enabled`, `severity`, `scope` and `params`. Every check is on by
-default, except `segment_separator` until it has a separator. The host's `checks` and
+default, except `segment_separator` until it has a separator, and `shared` and `long`, Browse's
+review signals, which a file enables. The host's `checks` and
 `disabledChecks` options still narrow what runs.
 
 A check's `scope` limits where its findings are reported. Every listed dimension must hold: the
@@ -486,6 +487,8 @@ CSV exports carry the severity.
 | `source_markup`               | unreal    | normal   | Unclosed rich-text tags, `</Name>` closings or unpaired format braces in the source                                                                |
 | `number_only_text`            | heuristic | low      | Localizable text with digits and no letters or arguments, which could be culture invariant                                                         |
 | `string_table_key_collision`  | unreal    | normal   | One namespace and key declared by more than one String Table                                                                                       |
+| `shared`                      | heuristic | low      | Text saved in more than one place, which may need a different meaning in each                                                                      |
+| `long`                        | heuristic | low      | A saved source of 40 or more UTF-16 code units                                                                                                     |
 
 <!-- end of check table -->
 

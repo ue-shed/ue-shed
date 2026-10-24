@@ -264,6 +264,20 @@ export const LocalizationQualityFinding = Schema.Union([
 			tableCount: Count
 		}),
 		expectation: Schema.Struct({ oneTablePerKey: Schema.Literal(true) })
+	}),
+	Schema.Struct({
+		...SourceBase,
+		kind: Schema.Literal("shared"),
+		/** Saved occurrences, compiled copies folded. */
+		actual: Schema.Struct({ occurrences: Count }),
+		expectation: Schema.Struct({ singleUse: Schema.Literal(true) })
+	}),
+	Schema.Struct({
+		...SourceBase,
+		kind: Schema.Literal("long"),
+		/** The longest distinct saved source, in UTF-16 code units. */
+		actual: Schema.Struct({ length: Count }),
+		expectation: Schema.Struct({ maximumLength: Count })
 	})
 ]);
 export type LocalizationQualityFinding = typeof LocalizationQualityFinding.Type;

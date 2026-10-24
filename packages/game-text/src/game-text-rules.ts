@@ -82,9 +82,9 @@ export const LocalizationCheckSettings = Schema.Struct(checkSettingFields);
 export type LocalizationCheckSettings = typeof LocalizationCheckSettings.Type;
 
 /**
- * Where checks start before the rule file's settings: `default` runs every built-in check with
- * the catalogue's severity (and `segment_separator` once it has a separator); `none` runs only the
- * checks the file enables.
+ * Where checks start before the rule file's settings: `default` runs every built-in check but the
+ * opt-in `shared` and `long`, with the catalogue's severity (and `segment_separator` once it has a
+ * separator); `none` runs only the checks the file enables.
  */
 export const LocalizationCheckPreset = Schema.Literals(["default", "none"]);
 export type LocalizationCheckPreset = typeof LocalizationCheckPreset.Type;
@@ -365,8 +365,8 @@ const resolvedCache = new WeakMap<GameTextRuleDocument, ResolvedLocalizationChec
 
 /**
  * Each built-in check's settings under a rule file: v3 `checks` over its preset, or the v1 and v2
- * fields as their v3 equivalents. Without a file, every check runs with the catalogue's severity
- * and defaults. `segment_separator` runs only once it has a separator. Resolved once per document.
+ * fields as their v3 equivalents. Without a file, every check but the opt-in ones runs with the
+ * catalogue's severity and defaults. `segment_separator` runs only once it has a separator. Resolved once per document.
  */
 export function resolveLocalizationChecks(
 	document: GameTextRuleDocument | undefined
@@ -388,7 +388,8 @@ export function resolveLocalizationChecks(
 			const setting = settings[id];
 			const params = setting?.params ?? localizationCheckDefaults[id];
 			const enabled =
-				(setting?.enabled ?? presetEnabled) && (id !== "segment_separator" || separated);
+				(setting?.enabled ?? (presetEnabled && !localizationCheckCatalogue[id].optIn)) &&
+				(id !== "segment_separator" || separated);
 			return [
 				id,
 				{

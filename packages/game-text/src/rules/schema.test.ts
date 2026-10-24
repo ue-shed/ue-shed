@@ -2,21 +2,23 @@ import { describe, expect, it } from "vitest";
 import { BuiltInCheckId } from "../localization-check-ids.js";
 import { TextRoleId, TextQualityRuleId } from "../quality-schema.js";
 import { expr } from "./builder.js";
-import { exampleRules, optInRules } from "./catalogue.js";
+import { exampleRules } from "./catalogue.js";
 import { ruleOperationNames } from "./schema.js";
 import { canonicalRuleDocument, translateRuleDocument } from "./translate.js";
 
 describe("v4 rule documents", () => {
-	it("covers every built-in with ordinary expressions; only v4 enables the opt-in rules", () => {
+	it("covers every built-in with ordinary expressions; no preset enables the opt-in checks", () => {
 		expect(exampleRules.map((rule) => rule.id)).toEqual(
 			expect.arrayContaining([...BuiltInCheckId.literals])
 		);
 		expect(exampleRules).toHaveLength(BuiltInCheckId.literals.length);
-		expect(optInRules.map((rule) => rule.id)).toEqual(["shared", "long"]);
-		const translated = translateRuleDocument(undefined).rules.map((rule) => rule.id);
-		expect(translated).toHaveLength(25);
-		expect(translated).not.toContain("shared");
-		expect(translated).not.toContain("long");
+		const enabled = translateRuleDocument(undefined)
+			.rules.filter((rule) => rule.enabled)
+			.map((rule) => rule.id);
+		expect(enabled).toHaveLength(BuiltInCheckId.literals.length - 3);
+		expect(enabled).not.toContain("segment_separator");
+		expect(enabled).not.toContain("shared");
+		expect(enabled).not.toContain("long");
 	});
 	it("constructs every operator, with bare scalars as literals", () => {
 		const calls = [

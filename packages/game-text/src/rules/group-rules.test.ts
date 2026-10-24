@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { nativeEvaluateRows } from "../native-rule-reports.test-support.js";
-import { exampleRules, optInRules } from "./catalogue.js";
+import { exampleRules } from "./catalogue.js";
 
 type Rows = Parameters<typeof nativeEvaluateRows>[1];
 /** One catalogue rule, enabled, evaluated natively over every row given. */
 const evaluate = (id: string, rows: Rows, params?: Readonly<Record<string, number>>) => {
-	const rule = [...exampleRules, ...optInRules].find((candidate) => candidate.id === id)!;
+	const rule = exampleRules.find((candidate) => candidate.id === id)!;
 	const result = nativeEvaluateRows(
 		{
 			schemaVersion: 4,

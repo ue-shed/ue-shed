@@ -29,8 +29,8 @@ export const LocalizationCheckId = Schema.Literals([
 export type LocalizationCheckId = typeof LocalizationCheckId.Type;
 
 /**
- * Built-in checks of the source text itself. They need no rule file and report once per line,
- * under the line's source culture, as `missing_translator_notes` does.
+ * Built-in checks of the source text itself. They report once per line, under the line's source
+ * culture, as `missing_translator_notes` does.
  */
 export const SourceCheckId = Schema.Literals([
 	"culture_invariant_text",
@@ -38,7 +38,9 @@ export const SourceCheckId = Schema.Literals([
 	"source_whitespace",
 	"source_markup",
 	"number_only_text",
-	"string_table_key_collision"
+	"string_table_key_collision",
+	"shared",
+	"long"
 ]);
 export type SourceCheckId = typeof SourceCheckId.Type;
 

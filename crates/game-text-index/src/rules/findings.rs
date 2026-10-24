@@ -61,9 +61,9 @@ impl FindingsLayer {
             std::path::Path::new(file).components().count() == 1,
             "Invalid findings snapshot filename.",
         )?;
-        let mut reader = Reader::open(&configuration.directory()?.join(file))?;
+        let reader = Reader::open(&configuration.directory()?.join(file))?;
         let metadata: LayerMetadata =
-            crate::json_value::parse_as(std::str::from_utf8(&section(&mut reader, "join.meta")?)?)?;
+            crate::json_value::parse_as(std::str::from_utf8(&section(&reader, "join.meta")?)?)?;
         require(
             metadata.joined_key == joined && metadata.version == VERSION,
             Error::new(
@@ -83,7 +83,7 @@ impl FindingsLayer {
         if let Some(value) = self.columns.get(name) {
             return Ok(Arc::clone(value));
         }
-        let bytes = section(&mut self.reader, name)?;
+        let bytes = section(&self.reader, name)?;
         let value: Arc<[u32]> = if self.record["stringColumns"].get(name).is_some() {
             decode_ids(&bytes, self.record["idEncoding"] == "delta32")?
         } else {

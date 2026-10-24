@@ -224,7 +224,7 @@ pub fn bounded(path: &Path, limit: u64) -> Result<Vec<u8>> {
     require(bytes.len() as u64 <= limit, "bounded file grew")?;
     Ok(bytes)
 }
-pub fn section(reader: &mut Reader, name: &str) -> Result<Vec<u8>> {
+pub fn section(reader: &Reader, name: &str) -> Result<Vec<u8>> {
     let id = reader
         .entries
         .iter()
@@ -258,7 +258,7 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
     filename(physical, "snapshot-")?;
     let mut reader = Reader::open(&directory.join(physical))?;
     reader.verify()?;
-    let root: Value = serde_json::from_slice(&section(&mut reader, "index.meta")?)?;
+    let root: Value = serde_json::from_slice(&section(&reader, "index.meta")?)?;
     require(
         root["version"] == 2
             && root["active"].is_object()
@@ -286,7 +286,7 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
     for record in root["layers"].as_object().ok_or("invalid layers")?.values() {
         let file = record["file"].as_str().ok_or("invalid layer name")?;
         filename(file, "layer-")?;
-        let mut layer = Reader::open(&directory.join(file))?;
+        let layer = Reader::open(&directory.join(file))?;
         require(
             layer
                 .entries
@@ -295,7 +295,7 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
                 .is_some_and(|entry| entry.raw <= 1024 * 1024),
             "shared metadata bound",
         )?;
-        let mut metadata: Value = serde_json::from_slice(&section(&mut layer, "shared.meta")?)?;
+        let mut metadata: Value = serde_json::from_slice(&section(&layer, "shared.meta")?)?;
         metadata["bytes"] = record["bytes"].clone();
         require(
             metadata == *record,
@@ -413,17 +413,17 @@ pub fn dictionary_bytes(directory: &Path, root: &Value) -> Result<Vec<Vec<u8>>> 
             segment["start"].as_u64() == Some(values.len() as u64),
             "dictionary range",
         )?;
-        let mut reader =
+        let reader =
             Reader::open(&directory.join(segment["file"].as_str().ok_or("segment name")?))?;
-        let offsets = integers(&section(&mut reader, "front.offsets")?)?;
-        let frames = integers(&section(&mut reader, "front.frames")?)?;
+        let offsets = integers(&section(&reader, "front.offsets")?)?;
+        let frames = integers(&section(&reader, "front.frames")?)?;
         require(offsets.len() == frames.len(), "front directory lengths")?;
         let begin = values.len();
         let mut current = u32::MAX;
         let mut data = Vec::new();
         for (block, &frame) in frames.iter().enumerate() {
             if current != frame {
-                data = section(&mut reader, &format!("front.b{frame}"))?;
+                data = section(&reader, &format!("front.b{frame}"))?;
                 current = frame;
             }
             let end = if frames.get(block + 1) == Some(&frame) {
@@ -478,10 +478,10 @@ pub fn dictionary_selected_strings(
         if selected.is_empty() {
             continue;
         }
-        let mut reader =
+        let reader =
             Reader::open(&directory.join(segment["file"].as_str().ok_or("segment file")?))?;
-        let offsets = integers(&section(&mut reader, "front.offsets")?)?;
-        let frames = integers(&section(&mut reader, "front.frames")?)?;
+        let offsets = integers(&section(&reader, "front.offsets")?)?;
+        let frames = integers(&section(&reader, "front.frames")?)?;
         require(
             offsets.len() == frames.len() && offsets.len() == (count as usize).div_ceil(64),
             "front directory lengths",
@@ -495,7 +495,7 @@ pub fn dictionary_selected_strings(
             let block = local / 64;
             let frame = frames[block];
             if frame != current_frame {
-                data = section(&mut reader, &format!("front.b{frame}"))?;
+                data = section(&reader, &format!("front.b{frame}"))?;
                 current_frame = frame;
             }
             if block != current_block {
@@ -546,7 +546,7 @@ struct LocalStrings {
     reusable: bool,
 }
 fn local_strings(file: &Path) -> Result<LocalStrings> {
-    let mut reader = Reader::open(file)?;
+    let reader = Reader::open(file)?;
     let mut domains: Vec<(String, Vec<Vec<u8>>)> = Vec::new();
     for index in 0..reader.entries.len() {
         let entry = reader.entries[index].clone();
@@ -577,7 +577,7 @@ fn encode_local_layer(
     generation: &Value,
     segment_count: usize,
 ) -> Result<Value> {
-    let mut reader = Reader::open(input)?;
+    let reader = Reader::open(input)?;
     let mut writer = Writer::new(&directory.join(format!("{}.tmp", token())))?;
     let mut order = Vec::new();
     let mut string_columns = BTreeMap::new();
@@ -709,7 +709,7 @@ impl Store {
                 files.len() == 1 && old["storeGeneration"] == self.root["generation"],
                 "reuse preflight generation",
             )?;
-            let mut previous = Reader::open(
+            let previous = Reader::open(
                 &self
                     .directory
                     .join(old["file"].as_str().ok_or("previous layer file")?),
@@ -719,7 +719,7 @@ impl Store {
                 .iter()
                 .any(|entry| entry.name == "reuse.meta")
             {
-                serde_json::from_slice::<Value>(&section(&mut previous, "reuse.meta")?)?
+                serde_json::from_slice::<Value>(&section(&previous, "reuse.meta")?)?
             } else {
                 Value::Null
             }
@@ -727,7 +727,7 @@ impl Store {
             Value::Null
         };
         for file in files {
-            let mut reader = Reader::open(file)?;
+            let reader = Reader::open(file)?;
             let mut file_domains = BTreeSet::new();
             for index in 0..reader.entries.len() {
                 if reader.entries[index].kind != 4 {
@@ -870,12 +870,12 @@ impl Store {
     pub fn publish_local(&mut self, name: &str, key: &str, input: &Path) -> Result<Value> {
         if self.root["active"][name].as_str() == Some(key) {
             let record = self.root["layers"][key].clone();
-            let mut cached = Reader::open(
+            let cached = Reader::open(
                 &self
                     .directory
                     .join(record["file"].as_str().ok_or("layer file")?),
             )?;
-            section(&mut cached, "shared.meta")?;
+            section(&cached, "shared.meta")?;
             return Ok(record);
         }
         let record = self.prepare_local(name, key, input)?;
@@ -888,7 +888,7 @@ impl Store {
     }
     pub(crate) fn obsolete_bytes(&mut self, old: &Value, next: &Value) -> Result<u64> {
         fn ids(directory: &Path, record: &Value) -> Result<BTreeSet<u32>> {
-            let mut reader =
+            let reader =
                 Reader::open(&directory.join(record["file"].as_str().ok_or("layer file")?))?;
             let mut result = BTreeSet::new();
             for name in record["stringColumns"]
@@ -897,7 +897,7 @@ impl Store {
                 .keys()
             {
                 result.extend(decode_ids(
-                    &section(&mut reader, name)?,
+                    &section(&reader, name)?,
                     record["idEncoding"] == "delta32",
                 )?);
             }
@@ -1041,12 +1041,12 @@ impl Store {
             .and_then(|key| self.root["layers"].get(key))
             .cloned();
         if let Some(record) = self.root["layers"].get(key).cloned() {
-            let mut cached = Reader::open(
+            let cached = Reader::open(
                 &self
                     .directory
                     .join(record["file"].as_str().ok_or("layer file")?),
             )?;
-            section(&mut cached, "shared.meta")?;
+            section(&cached, "shared.meta")?;
             if let Some(old) = old
                 && track_garbage
                 && old["key"] != record["key"]
@@ -1318,17 +1318,14 @@ impl Store {
         let mut live = vec![false; values.len()];
         for key in &active {
             let record = &self.root["layers"][key];
-            let mut reader =
+            let reader =
                 Reader::open(&self.directory.join(record["file"].as_str().ok_or("file")?))?;
             for name in record["stringColumns"]
                 .as_object()
                 .ok_or("string columns")?
                 .keys()
             {
-                for id in decode_ids(
-                    &section(&mut reader, name)?,
-                    record["idEncoding"] == "delta32",
-                )? {
+                for id in decode_ids(&section(&reader, name)?, record["idEncoding"] == "delta32")? {
                     *live
                         .get_mut(id as usize)
                         .ok_or("shared ID outside dictionary")? = true;
@@ -1364,15 +1361,12 @@ impl Store {
                     domain_order.push(domain.to_owned());
                 }
             }
-            let mut reader =
+            let reader =
                 Reader::open(&self.directory.join(segment["file"].as_str().ok_or("file")?))?;
             let mut ownership = Vec::new();
             if domains.len() > 1 {
                 for block in 0..count.div_ceil(8 * 1024 * 1024) {
-                    ownership.extend(integers(&section(
-                        &mut reader,
-                        &format!("front.o{block}"),
-                    )?)?);
+                    ownership.extend(integers(&section(&reader, &format!("front.o{block}"))?)?);
                 }
                 require(ownership.len() == count, "ownership length")?;
             }
@@ -1424,7 +1418,7 @@ impl Store {
         let mut layers = serde_json::Map::new();
         for key in &active {
             let previous = &old["layers"][key];
-            let mut reader = Reader::open(
+            let reader = Reader::open(
                 &self
                     .directory
                     .join(previous["file"].as_str().ok_or("file")?),
@@ -1565,9 +1559,9 @@ mod tests {
             order.push(writer.add("file.meta", 0, "", b"{}", 1)?);
             writer.finish(&file, &order)?;
             let record = store.publish_local("probe.po", &format!("po-{version}"), &file)?;
-            let mut reader =
+            let reader =
                 Reader::open(&store.directory.join(record["file"].as_str().ok_or("file")?))?;
-            let ids = decode_ids(&section(&mut reader, "entry.source")?, true)?;
+            let ids = decode_ids(&section(&reader, "entry.source")?, true)?;
             let values = dictionary_bytes(&store.directory, &store.root)?;
             assert_eq!(
                 values[ids[299] as usize],
@@ -1702,7 +1696,7 @@ mod tests {
             vec!["", "Probe"]
         );
         let old = directory.join(manifest["physicalSnapshot"].as_str().unwrap());
-        let mut reader = Reader::open(&old).unwrap();
+        let reader = Reader::open(&old).unwrap();
         assert_eq!(
             store
                 .intern("source", &["Probe".into(), "new source".into()])
@@ -1714,8 +1708,7 @@ mod tests {
         let mut reopened = Store::writer(config.clone()).unwrap();
         reopened.publish_root().unwrap();
         assert!(!old.exists());
-        let kept: Value =
-            serde_json::from_slice(&section(&mut reader, "index.meta").unwrap()).unwrap();
+        let kept: Value = serde_json::from_slice(&section(&reader, "index.meta").unwrap()).unwrap();
         assert_eq!(kept, root);
         drop(reader);
         drop(reopened);
@@ -1777,8 +1770,8 @@ mod tests {
         let old_file = store
             .directory
             .join(initial["layers"]["content-key"]["file"].as_str().unwrap());
-        let mut old_reader = Reader::open(&old_file).unwrap();
-        let before = section(&mut old_reader, "entry.source").unwrap();
+        let old_reader = Reader::open(&old_file).unwrap();
+        let before = section(&old_reader, "entry.source").unwrap();
         let compacted = store.compact(true).unwrap();
         assert!(compacted.compacted);
         assert_eq!(compacted.dead_bytes, 14);
@@ -1788,14 +1781,14 @@ mod tests {
             ["retained value"]
         );
         let record = &store.root["layers"]["content-key"];
-        let mut current =
+        let current =
             Reader::open(&store.directory.join(record["file"].as_str().unwrap())).unwrap();
         assert_eq!(
-            decode_ids(&section(&mut current, "entry.source").unwrap(), true).unwrap(),
+            decode_ids(&section(&current, "entry.source").unwrap(), true).unwrap(),
             [0]
         );
         assert!(!old_file.exists());
-        assert_eq!(section(&mut old_reader, "entry.source").unwrap(), before);
+        assert_eq!(section(&old_reader, "entry.source").unwrap(), before);
         open_root(&config).unwrap();
         drop(current);
         drop(old_reader);

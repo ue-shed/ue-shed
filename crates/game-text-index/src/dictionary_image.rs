@@ -23,76 +23,91 @@ pub(crate) struct SegmentImage {
     bytes: Vec<u8>,
 }
 
-/// Each wanted frame's blocks, decoded in order, expanding each frame once.
-fn each_block(
-    reader: &mut Reader,
+/// One frame's strings in ID order: the frame is expanded once and its blocks decoded.
+fn frame_strings(
+    reader: &Reader,
     offsets: &[u32],
     frames: &[u32],
-    wanted: impl Fn(u32) -> bool,
-    mut visit: impl FnMut(Vec<Vec<u8>>) -> Result<()>,
-) -> Result<()> {
-    let mut loaded: Option<(u32, Vec<u8>)> = None;
-    for (block, frame) in frames.iter().enumerate() {
-        if !wanted(*frame) {
-            continue;
-        }
-        if loaded.as_ref().is_none_or(|(id, _)| id != frame) {
-            loaded = Some((*frame, section(reader, &format!("front.b{frame}"))?));
-        }
-        let bytes = &loaded.as_ref().ok_or("Dictionary frame is absent.")?.1;
+    blocks: std::ops::Range<usize>,
+) -> Result<Vec<Vec<u8>>> {
+    let frame = frames[blocks.start];
+    let bytes = section(reader, &format!("front.b{frame}"))?;
+    let mut strings = Vec::new();
+    for block in blocks.clone() {
         let start = *offsets
             .get(block)
             .ok_or("Dictionary block outside offsets.")? as usize;
-        let end = if frames.get(block + 1) == Some(frame) {
+        let end = if block + 1 < blocks.end {
             offsets[block + 1] as usize
         } else {
             bytes.len()
         };
-        visit(decode_a64_bytes(
+        strings.extend(decode_a64_bytes(
             bytes.get(start..end).ok_or("Dictionary block range.")?,
-        )?)?;
+        )?);
     }
-    Ok(())
+    Ok(strings)
 }
 
 impl SegmentImage {
     /// Images a segment from its frames: trains the symbol table on a stride of them, then
-    /// compresses every string in ID order.
-    pub fn build(reader: &mut Reader, offsets: &[u32], frames: &[u32], count: u32) -> Result<Self> {
-        let mut training = Vec::new();
-        each_block(
-            reader,
-            offsets,
-            frames,
-            |frame| frame % TRAINING_STRIDE == 0,
-            |strings| {
-                training.extend(strings);
-                Ok(())
-            },
+    /// expands and compresses the frames in parallel, joining them in ID order. Readers load
+    /// sections at explicit offsets, so the frames load at once.
+    pub fn build(reader: &Reader, offsets: &[u32], frames: &[u32], count: u32) -> Result<Self> {
+        use rayon::prelude::*;
+        require(
+            offsets.len() == frames.len(),
+            "Dictionary block columns differ in length.",
         )?;
-        let compressor = fsst::Compressor::train(&training.iter().map(Vec::as_slice).collect());
+        // Each frame's run of blocks; a frame's blocks are adjacent.
+        let mut runs = Vec::new();
+        for block in 0..frames.len() {
+            if block == 0 || frames[block] != frames[block - 1] {
+                runs.push(block..block + 1);
+            } else if let Some(run) = runs.last_mut() {
+                run.end = block + 1;
+            }
+        }
+        let training = runs
+            .par_iter()
+            .enumerate()
+            .filter(|(index, _)| (*index as u32).is_multiple_of(TRAINING_STRIDE))
+            .map(|(_, run)| frame_strings(reader, offsets, frames, run.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        let compressor =
+            fsst::Compressor::train(&training.iter().flatten().map(Vec::as_slice).collect());
         drop(training);
-        let mut starts = Vec::with_capacity(count as usize + 1);
-        let mut bytes = Vec::new();
-        each_block(
-            reader,
-            offsets,
-            frames,
-            |_| true,
-            |strings| {
-                for value in strings {
-                    starts.push(u32::try_from(bytes.len())?);
-                    bytes.extend_from_slice(&compressor.compress(&value));
+        // Each frame's string lengths and compressed bytes.
+        let compressed = runs
+            .par_iter()
+            .map(|run| -> Result<(Vec<u32>, Vec<u8>)> {
+                let mut lengths = Vec::new();
+                let mut bytes = Vec::new();
+                for value in frame_strings(reader, offsets, frames, run.clone())? {
+                    let encoded = compressor.compress(&value);
+                    lengths.push(u32::try_from(encoded.len())?);
+                    bytes.extend_from_slice(&encoded);
                 }
-                Ok(())
-            },
-        )?;
+                Ok((lengths, bytes))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut starts = Vec::with_capacity(count as usize + 1);
+        let mut bytes = Vec::with_capacity(compressed.iter().map(|(_, bytes)| bytes.len()).sum());
+        for (lengths, frame) in compressed {
+            let mut at = u32::try_from(bytes.len())?;
+            for length in lengths {
+                starts.push(at);
+                at = at
+                    .checked_add(length)
+                    .ok_or("Dictionary image past 4 GiB.")?;
+            }
+            bytes.extend_from_slice(&frame);
+        }
         starts.push(u32::try_from(bytes.len())?);
         require(
             starts.len() == count as usize + 1,
             "Dictionary segment count differs from its blocks.",
         )?;
-        bytes.shrink_to_fit();
         Ok(Self {
             compressor,
             starts,
@@ -192,8 +207,8 @@ mod tests {
         }
         let path = directory.join("segment.snapshot");
         writer.finish(&path, &order)?;
-        let mut reader = Reader::open(&path)?;
-        let image = SegmentImage::build(&mut reader, &offsets, &frames, strings.len() as u32)?;
+        let reader = Reader::open(&path)?;
+        let image = SegmentImage::build(&reader, &offsets, &frames, strings.len() as u32)?;
         assert_eq!(image.len(), strings.len());
         for (local, value) in strings.iter().enumerate() {
             assert_eq!(&image.get(local)?, value);

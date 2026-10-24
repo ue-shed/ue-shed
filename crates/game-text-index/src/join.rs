@@ -519,12 +519,12 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     );
     if input.force != Some(true) && store.root["active"]["joined"] == key {
         let record = &store.root["layers"][&key];
-        let mut reader = crate::snapshot::Reader::open(
+        let reader = crate::snapshot::Reader::open(
             &store
                 .directory
                 .join(record["file"].as_str().ok_or("joined file")?),
         )?;
-        crate::store::section(&mut reader, "shared.meta")?;
+        crate::store::section(&reader, "shared.meta")?;
         return Ok(JoinOutcome {
             rebuilt: false,
             strategy: None,

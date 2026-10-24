@@ -538,7 +538,7 @@ fn publish_ids(
             crate::Error::new(crate::ErrorCode::InvalidInput, "retained layer absent"),
         )?;
     }
-    let mut reader = Reader::open(file)?;
+    let reader = Reader::open(file)?;
     let mut writer = Writer::new(&store.directory.join(format!("{}.tmp", token())))?;
     let mut order = Vec::new();
     let mut columns = serde_json::Map::new();

@@ -380,6 +380,21 @@ pub struct Reader {
     file: File,
     pub entries: Vec<Entry>,
 }
+
+/// Fills `buffer` from `offset` without the file's shared position, so readers on several
+/// threads can load sections of one file at once.
+fn read_exact_at(file: &File, mut buffer: &mut [u8], mut offset: u64) -> Result<()> {
+    while !buffer.is_empty() {
+        #[cfg(windows)]
+        let read = std::os::windows::fs::FileExt::seek_read(file, buffer, offset)?;
+        #[cfg(unix)]
+        let read = std::os::unix::fs::FileExt::read_at(file, buffer, offset)?;
+        require(read > 0, "truncated section")?;
+        buffer = &mut buffer[read..];
+        offset += read as u64;
+    }
+    Ok(())
+}
 impl Reader {
     pub fn open(path: &Path) -> Result<Self> {
         OPENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -504,14 +519,13 @@ impl Reader {
         }
         Ok(Self { file, entries })
     }
-    pub fn load(&mut self, id: usize) -> Result<Vec<u8>> {
+    pub fn load(&self, id: usize) -> Result<Vec<u8>> {
         let e = &self.entries[id];
         LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         STORED.fetch_add(e.stored as u64, std::sync::atomic::Ordering::Relaxed);
         RAW.fetch_add(e.raw as u64, std::sync::atomic::Ordering::Relaxed);
-        self.file.seek(SeekFrom::Start(e.offset))?;
         let mut b = vec![0; e.stored as usize];
-        self.file.read_exact(&mut b)?;
+        read_exact_at(&self.file, &mut b, e.offset)?;
         let raw = decode_section(e.codec, b, e.raw as usize)?;
         require(
             raw.len() == e.raw as usize && crc32fast::hash(&raw) == e.crc,
@@ -519,7 +533,7 @@ impl Reader {
         )?;
         let mut pad = [0; 3];
         let n = (4 - e.stored as usize % 4) % 4;
-        self.file.read_exact(&mut pad[..n])?;
+        read_exact_at(&self.file, &mut pad[..n], e.offset + u64::from(e.stored))?;
         require(pad[..n].iter().all(|&x| x == 0), "padding")?;
         if e.kind == 4 {
             strings_bytes(&raw).map_err(|error| {
@@ -579,7 +593,7 @@ mod tests {
         let mut w = Writer::new(&payload).unwrap();
         let id = w.column("values", &(0..1000).collect::<Vec<_>>()).unwrap();
         w.finish(&path, &[id]).unwrap();
-        let mut r = Reader::open(&path).unwrap();
+        let r = Reader::open(&path).unwrap();
         assert_eq!(integers(&r.load(0).unwrap()).unwrap().len(), 1000);
         drop(r);
         assert!(Writer::new(&path).is_err());

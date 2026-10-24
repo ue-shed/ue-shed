@@ -54,7 +54,7 @@ struct Pages {
 }
 impl Pages {
     fn open(path: &std::path::Path, generation: &str) -> Result<(Self, u32)> {
-        let mut reader = Reader::open(path)?;
+        let reader = Reader::open(path)?;
         require(
             reader
                 .entries
@@ -63,7 +63,7 @@ impl Pages {
                 .is_some_and(|e| e.raw <= 1024 * 1024),
             "Dependency metadata exceeds its bound",
         )?;
-        let meta: Metadata = serde_json::from_slice(&section(&mut reader, "graph.meta")?)?;
+        let meta: Metadata = serde_json::from_slice(&section(&reader, "graph.meta")?)?;
         require(
             meta.version == VERSION && meta.generation == generation,
             "Dependency base generation",

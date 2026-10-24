@@ -82,7 +82,7 @@ impl FileColumns {
             return Ok(result);
         }
         if let Some((mut reader, record)) = layer(store, &result.name)? {
-            let meta: Value = serde_json::from_slice(&section(&mut reader, "file.meta")?)?;
+            let meta: Value = serde_json::from_slice(&section(&reader, "file.meta")?)?;
             let count = meta["count"].as_u64().ok_or("file count absent")? as usize;
             result.loaded = true;
             result.missing = false;

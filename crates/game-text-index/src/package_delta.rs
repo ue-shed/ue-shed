@@ -104,7 +104,7 @@ impl Records {
 }
 
 fn authored(store: &mut Store, file: &std::path::Path, bounded: bool) -> Result<Records> {
-    let mut reader = Reader::open(file)?;
+    let reader = Reader::open(file)?;
     let mut maps = BTreeMap::<String, Vec<u32>>::new();
     let mut bulk = BTreeMap::<String, Vec<Vec<u8>>>::new();
     for index in 0..reader.entries.len() {
@@ -181,12 +181,12 @@ pub(crate) fn publish(
                 record["storeGeneration"] == store.root["generation"],
                 "cached package generation",
             )?;
-            let mut cached = Reader::open(
+            let cached = Reader::open(
                 &store
                     .directory
                     .join(record["file"].as_str().ok_or("cached package file")?),
             )?;
-            crate::store::section(&mut cached, "shared.meta")?;
+            crate::store::section(&cached, "shared.meta")?;
             if input.key != input.previous_key {
                 let old = store.root["layers"][&input.previous_key].clone();
                 let obsolete = store.obsolete_bytes(&old, &record)?;

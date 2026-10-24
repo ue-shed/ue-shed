@@ -343,7 +343,7 @@ fn build_inner(
     let mut bytes = 0;
     let mut runs = Vec::new();
     for (layer, range) in layers.iter().zip(&ranges) {
-        let mut reader = Reader::open(&layer.file)?;
+        let reader = Reader::open(&layer.file)?;
         let mut positions = BTreeMap::<String, usize>::new();
         for id in 0..reader.entries.len() {
             let e = reader.entries[id].clone();

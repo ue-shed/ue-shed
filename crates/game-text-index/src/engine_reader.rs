@@ -160,7 +160,7 @@ impl EngineReader {
         )?;
         let generation = text(&root, "generation")?;
         let directory = configuration.directory()?;
-        let mut joined = open_layer(&directory, &root, &joined_key)?;
+        let joined = open_layer(&directory, &root, &joined_key)?;
         require(
             joined
                 .reader
@@ -170,7 +170,7 @@ impl EngineReader {
                 .is_some_and(|entry| entry.raw <= 16 * 1024 * 1024),
             "Joined metadata exceeds its bound.",
         )?;
-        let meta = parse(&section(&mut joined.reader, "join.meta")?)?;
+        let meta = parse(&section(&joined.reader, "join.meta")?)?;
         require(
             meta["generation"] == generation,
             Error::new(
@@ -234,9 +234,9 @@ impl EngineReader {
             .ok_or("Invalid dictionary segments.")?
         {
             let path = directory.join(text(record, "file")?);
-            let mut reader = Reader::open(&path)?;
-            let offsets = integers(&section(&mut reader, "front.offsets")?)?;
-            let frames = integers(&section(&mut reader, "front.frames")?)?;
+            let reader = Reader::open(&path)?;
+            let offsets = integers(&section(&reader, "front.offsets")?)?;
+            let frames = integers(&section(&reader, "front.frames")?)?;
             let start = u32::try_from(record["start"].as_u64().ok_or("Invalid segment start.")?)?;
             let count = u32::try_from(record["count"].as_u64().ok_or("Invalid segment count.")?)?;
             require(
@@ -326,7 +326,7 @@ impl EngineReader {
             .layers
             .get_mut(key)
             .ok_or("Query input was not pinned.")?;
-        let bytes = section(&mut layer.reader, name)?;
+        let bytes = section(&layer.reader, name)?;
         let values: Arc<[u32]> = if layer.record["stringColumns"].get(name).is_some() {
             decode_ids(&bytes, layer.record["idEncoding"] == "delta32")?
         } else {
@@ -355,7 +355,7 @@ impl EngineReader {
             .ok_or("Query input was not pinned.")?;
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("inputMetadata");
-        parse(&section(&mut layer.reader, section_name)?)
+        parse(&section(&layer.reader, section_name)?)
     }
 
     /// Packed byte arenas use numeric physical sections. Read them directly so native query
@@ -396,7 +396,7 @@ impl EngineReader {
                 layer.record["stringColumns"].get(&field).is_none(),
                 "A string-ID column is not a byte arena.",
             )?;
-            bytes.extend_from_slice(&section(&mut layer.reader, &field)?);
+            bytes.extend_from_slice(&section(&layer.reader, &field)?);
         }
         let bytes: Arc<[u8]> = bytes.into();
         self.raw_bytes().insert(name.into(), Arc::clone(&bytes));
@@ -547,7 +547,7 @@ impl EngineReader {
             .filter(|segment| segment.image.is_none())
             .try_for_each(|segment| -> Result<()> {
                 let image = Arc::new(SegmentImage::build(
-                    &mut segment.reader,
+                    &segment.reader,
                     &segment.offsets,
                     &segment.frames,
                     segment.count,

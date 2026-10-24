@@ -400,6 +400,77 @@ intended.
 The owner reviewed these results on 2026-10-24 and accepted them for Phase 2, single-run rows
 included. Phase 2 merged in #168.
 
+## Phase 3 results
+
+Plan 059 Phase 3, measured on 2026-10-25 at `357c650e` against Phase 2's accepted head
+(`19ac7882`), both on that day with the same harness, machine and caps, so the Phase 2 column is
+re-measured rather than copied. Build and Quality ran once each; open, cached reopen, selection
+and typing three times. Quality also ran once more on each commit with its rule preview timed, so
+its row is the whole path from loading the rules to the first Quality page.
+
+| Path                                         |       Generated 1× | Released 10-culture project |
+| -------------------------------------------- | -----------------: | --------------------------: |
+| Cold build to visible page                   |  68.105 → 66.515 s |         111.077 → 108.639 s |
+| Open to visible page                         |    1.935 → 1.958 s |             1.836 → 1.896 s |
+| Cached reopen to visible page                |    2.993 → 3.073 s |             6.126 → 6.189 s |
+| Quality, loading the rules to the first page | 184.021 → 30.059 s |          375.701 → 34.634 s |
+| … of which the rule preview                  |  40.198 → 29.604 s |           57.313 → 34.198 s |
+| … of which the first Quality page            |  143.823 → 0.455 s |           318.388 → 0.436 s |
+| Workbench selection, two requests            |   57.41 → 54.83 ms |            82.00 → 79.03 ms |
+| Electroswag selection, two requests          |   57.27 → 55.53 ms |            82.43 → 79.63 ms |
+| Saturated related-line probe, 444 requests   | 787.84 → 636.30 ms |          604.74 → 546.19 ms |
+| One `related` request for the same review    |          198.05 ms |                   129.11 ms |
+
+| Keystroke p50 / p95, Phase 2 → Phase 3                            |                   Generated 1× |        Released 10-culture project |
+| ----------------------------------------------------------------- | -----------------------------: | ---------------------------------: |
+| Workbench default, matching 1–2 characters                        |       557 / 595 → 300 / 354 ms |           285 / 402 → 111 / 203 ms |
+| Workbench default, matching 3+ characters                         |       584 / 609 → 323 / 371 ms |             209 / 239 → 54 / 71 ms |
+| Workbench all-open, matching 1–2 characters                       |       826 / 861 → 403 / 433 ms |       1,139 / 1,252 → 204 / 342 ms |
+| Workbench all-open, matching 3+ characters                        |       839 / 865 → 412 / 445 ms |         776 / 1,023 → 158 / 167 ms |
+| Electroswag default, matching 1–2 characters                      |       589 / 647 → 300 / 353 ms |           299 / 399 → 107 / 160 ms |
+| Electroswag default, matching 3+ characters                       |       618 / 642 → 316 / 353 ms |             199 / 260 → 48 / 73 ms |
+| No-match query and its prefixes, p95 (WB default / all-open / ES) | 27 / 22 / 25 → 21 / 22 / 21 ms | 205 / 864 / 224 → 51 / 150 / 47 ms |
+
+A keystroke matches when it sent more than a header request. CJK keystrokes stay at 11–25 ms on
+both projects.
+
+**Quality.** The first page is now one `findings_query` over the engine's layer, so it no
+longer depends on the corpus size. What remains is the rule evaluation, which the preview runs once
+for Quality and Browse. Quality's largest event-loop gap is 22 ms on 1× and 24 ms on the released
+project, against the Phase 2 worker's 113 ms and 536 ms; the worker is deleted. Quality's sampled
+RSS maximum is 4.25 → 4.48 GiB on 1× and 4.34 → 4.72 GiB on the released project, preview
+included.
+
+**Findings are unchanged.** Quality's answer has the same SHA-256 at both commits on both projects
+under this harness (`9c42c489…` on 1×, `1c820f57…` on the released project). The Phase 2 record's
+`ff1c131a…` and `b1b3fe87…` come from the harness before step 5; dumps at Phase 2's accepted head
+and at Phase 3's step 4 and 5 all digest to the current values.
+
+**The index.** The cold build is 2.3% faster on 1× and 2.2% on the released project; its sampled
+RSS maximum is 2.51 → 2.67 GiB on 1× and 4.04 → 3.85 GiB on the released project. The store is
+43.5 → 44.2 MB on 1× and 129.7 → 187.5 MB on the released project, both with their findings layers.
+On the released project, the joined layer grew from 36.9 to 99.5 MB: it gained the trigram index
+over folded sources and every culture's translations (spec §4) and lost
+`query.occurrence.places`. The dependency graph shrank from 13.0 to 7.3 MB without the duplicate
+recompute's postings. The layer hasn't been split by section.
+
+**Open and cached reopen** are 1–3% slower in three runs each; neither has been profiled.
+
+**Related lines.** One `related` request gives the review the 444-request probe assembles in
+198 ms on 1× and 129 ms on the released project. The probe itself is 19% and 10% faster.
+
+**Parity.**
+
+- `loc check` is byte-identical to Phase 2's on both canonical corpora with the starter rules file.
+- The corpus fixture compares 1,120 subjects on each canonical corpus with no disagreement, pinned or
+  unexpected. The planted answers now project Browse as Phase 3 shows it: its signals are the four
+  facts, and without a findings layer no line has the `finding` problem. The `shared` and `long`
+  probe reads those checks through Browse's findings layer, and every line's findings are the rules
+  the report lists for it.
+- One 10,000-line fuzz run on UE 5.8 (seed 73131: 11,042 lines, 44,168 subjects) has no unexpected
+  disagreement and no stale defect, before and after a package edit, and its incremental and full
+  scans agree.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

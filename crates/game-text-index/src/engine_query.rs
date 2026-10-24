@@ -31,7 +31,8 @@ pub struct EngineQuery {
     pub cultures: Vec<String>,
     sources: Option<SourceSearch>,
     source_matches: HashMap<String, Arc<[u8]>>,
-    pub(crate) matched: HashMap<String, Arc<[u32]>>,
+    /// Each search predicate's rows, by its normalized form.
+    pub(crate) atoms: crate::engine_rows::AtomCache,
     pub(crate) places: Option<Arc<crate::engine_places::Places>>,
     pub(crate) projection: Option<Arc<crate::engine_match::Projection>>,
     /// The occurrence relation finding reads share, built once per reader.
@@ -237,7 +238,7 @@ impl EngineQuery {
             cultures,
             sources: None,
             source_matches: HashMap::new(),
-            matched: HashMap::new(),
+            atoms: Default::default(),
             places: None,
             projection: None,
             asset_types: None,

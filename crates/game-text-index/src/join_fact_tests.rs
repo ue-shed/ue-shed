@@ -405,6 +405,67 @@ fn manifest_notes_count_for_saved_lines_and_the_detail_keeps_the_list_culture_sc
     Ok(())
 }
 
+#[test]
+fn search_atoms_are_reused_by_their_normal_form_and_never_change_an_answer() -> Result<()> {
+    use crate::engine_types::parse_search_request;
+    let mut fixture = Fixture::new()?;
+    fixture.file("Game.manifest","manifest",&[
+        json!({"namespace":"UI","key":"N","source":"Noted","path":"/Game/Text/Example.Example.Noted","notes":"Manifest context","options":4}),
+        json!({"namespace":"UI","key":"P","source":"Plain","path":"/Game/Text/Example.Example.Plain"}),
+        json!({"namespace":"UI","key":"Q","source":"Played","path":"/Game/Text/Example.Example.Played"}),
+    ])?;
+    fixture.file("en.archive", "archive", &[])?;
+    fixture.file(
+        "de.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"N","source":"Noted","translation":"Notiert"})],
+    )?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&[
+        json!({"namespace":"UI","key":"N","source":"Noted","object":"/Game/Text/Example.Example","property":"Noted"}),
+        json!({"namespace":"UI","key":"P","source":"Plain","object":"/Game/Text/Example.Example","property":"Plain"}),
+        json!({"namespace":"UI","key":"Q","source":"Played","object":"/Game/Text/Example.Example","property":"Played"}),
+    ])?;
+    fixture.lines()?;
+    let cancelled = AtomicBool::new(false);
+    let mut warm = EngineQuery::open(&fixture.configuration, None)?;
+    let missing = json!([{"field":"notes","op":"is","values":["missing"]}]);
+    let target = json!({"target":"Game"});
+    let german = json!({"target":"Game","culture":"de","searchTranslations":true});
+    let requests = [
+        json!({"query":"","capability":"all","pageSize":50,"filter":missing,"localization":target}),
+        json!({"query":"pl","capability":"all","pageSize":50,"filter":missing,"localization":target}),
+        json!({"query":"pl","capability":"all","pageSize":50,"filter":missing,"localization":target}),
+        json!({"query":"no","capability":"all","pageSize":50,"filter":missing,"localization":target}),
+        json!({"query":"notiert","capability":"all","pageSize":50,"localization":german}),
+        json!({"query":"pla","capability":"all","pageSize":50,"withoutNotes":true}),
+    ];
+    let mut atoms = Vec::new();
+    let mut listed = Vec::new();
+    for value in &requests {
+        let request = parse_search_request(&value.to_string())?;
+        let answer = warm.search(&request, &cancelled)?;
+        let cold = EngineQuery::open(&fixture.configuration, None)?.search(&request, &cancelled)?;
+        assert_eq!(answer, cold, "{value}");
+        atoms.push(warm.atoms.len());
+        listed.push(
+            answer["localization"]["lines"]
+                .as_array()
+                .map(|lines| lines.iter().map(|line| line["source"].clone()).collect())
+                .unwrap_or_else(Vec::new),
+        );
+    }
+    assert_eq!(listed[1], [json!("Plain"), json!("Played")]);
+    assert_eq!(listed[3], Vec::<Value>::new());
+    // A translation search matches the German text, after every other atom.
+    assert_eq!(listed[4], [json!("Noted")]);
+    // A repeated request reuses every atom; one that changes only its text adds one.
+    assert_eq!(atoms[2], atoms[1]);
+    assert_eq!(atoms[3], atoms[2] + 1);
+    Ok(())
+}
+
 fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::rules::Program> {
     crate::rules::compile(&example_document(checks, document)?)
 }

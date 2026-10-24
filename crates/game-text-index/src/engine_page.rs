@@ -37,10 +37,6 @@ impl EngineQuery {
         let (Some(by), Some(opened)) = (request.group, request.open_group.as_ref()) else {
             return Ok(matched);
         };
-        let key = serde_json::to_string(&("group", request.matching_key()?, by, opened))?;
-        if let Some(rows) = self.matched.get(&key) {
-            return Ok(Arc::clone(rows));
-        }
         let p = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
         let localized = request.localization.is_some();
@@ -91,9 +87,7 @@ impl EngineQuery {
             }
         }
         checkpoint(cancelled)?;
-        let rows: Arc<[u32]> = rows.into();
-        self.remember_matches(key, Arc::clone(&rows));
-        Ok(rows)
+        Ok(rows.into())
     }
 
     pub(crate) fn after_cursor(

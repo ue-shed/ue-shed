@@ -885,22 +885,36 @@ impl<'a, 'q> Projector<'a, 'q> {
                 .recorder
                 .sub_stage(format!("occurrences.{name}"), &step, data.len());
         }
-        // The order follows the reader and the collation only, so reads that each start a new
-        // arena share one build instead of sorting every line's occurrences again.
-        if line
-            && self.arena.line_children.is_none()
-            && let Some((locale, children)) = &self.subjects.query.line_children
-            && *locale == self.subjects.collator.locale
-        {
-            self.arena.line_children = Some(Arc::clone(children));
-        }
         if line && let Some(children) = &self.arena.line_children {
             let mut children = (**children).clone();
             children.rows = parents;
             return Ok(children);
         }
-        if !line && let Some(children) = &self.subjects.query.unit_children {
-            return Ok((**children).clone());
+        // The order follows the reader and the collation only, so reads that each start a new
+        // arena share one build instead of grouping every line or unit again. An adopted order
+        // records its groups as a build does, so a profile has the same stages either way.
+        let cached = if line {
+            self.subjects
+                .query
+                .line_children
+                .as_ref()
+                .filter(|(locale, _)| *locale == self.subjects.collator.locale)
+                .map(|(_, children)| Arc::clone(children))
+        } else {
+            self.subjects.query.unit_children.clone()
+        };
+        if let Some(shared) = cached {
+            let mut children = (*shared).clone();
+            if line {
+                children.rows = parents;
+                self.arena.line_children = Some(shared);
+            }
+            self.arena.recorder.sub_stage(
+                "occurrences.groups".into(),
+                &super::stages::Measure::start(),
+                children.offsets.len() - 1,
+            );
+            return Ok(children);
         }
         let mut groups = if line {
             (0..self.subjects.projection.source.len())

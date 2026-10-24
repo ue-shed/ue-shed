@@ -30,15 +30,19 @@ fn place_set(id: u32, affected: &[Value]) -> Result<PlaceSet> {
         occurrences: affected.iter().map(public_place).collect::<Result<_>>()?,
     })
 }
-fn ordered_places(ids: &Value, occurrences: &[Value]) -> Result<Vec<Value>> {
-    ids.as_array()
-        .ok_or("Invalid interned occurrence list.")?
-        .iter()
+/// A set's places in its own order, each the first of its subject's occurrences with that ID.
+fn ordered_places(ids: &[String], occurrences: &[Value]) -> Result<Vec<Value>> {
+    let mut by_id = HashMap::new();
+    for occurrence in occurrences {
+        if let Some(id) = occurrence["id"].as_str() {
+            by_id.entry(id).or_insert(occurrence);
+        }
+    }
+    ids.iter()
         .map(|id| {
-            occurrences
-                .iter()
-                .find(|occurrence| occurrence["id"] == *id)
-                .cloned()
+            by_id
+                .get(id.as_str())
+                .map(|occurrence| (*occurrence).clone())
                 .ok_or_else(|| "A finding occurrence is absent from its pinned subject.".into())
         })
         .collect()
@@ -292,7 +296,7 @@ fn read_lines(
             checkpoint(cancelled)?;
             let ci = cultures[position] as usize;
             let stored = layer.json(evidence[position])?;
-            let ids = layer.json(saved_places[position])?;
+            let ids = layer.place_set(saved_places[position])?;
             if let std::collections::hash_map::Entry::Vacant(slot) = line_places.entry(line) {
                 slot.insert(subjects.occurrences(line as usize)?);
             }
@@ -430,7 +434,7 @@ fn read_units(
                 continue;
             }
             checkpoint(cancelled)?;
-            let ids = layer.json(saved_places[position])?;
+            let ids = layer.place_set(saved_places[position])?;
             let occurrences = subjects.occurrences(*row as usize)?;
             let mut affected = ordered_places(&ids, &occurrences)?;
             let first = affected

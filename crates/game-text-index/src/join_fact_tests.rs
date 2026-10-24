@@ -768,6 +768,47 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
 }
 
 #[test]
+fn persisted_place_sets_may_exceed_one_dictionary_string() -> Result<()> {
+    // One line placed 6,000 times under long object paths: its finding's place set, as one JSON
+    // string, would pass the dictionary's 1 MiB string cap.
+    let occurrences = 6000;
+    let mut fixture = Fixture::new()?;
+    fixture.file("Game.manifest","manifest",&[json!({"namespace":"UI","key":"K","source":"Take {Count}","path":"/Game/Text/Example.Example.Label"})])?;
+    fixture.file(
+        "en.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"K","source":"Take {Count}","translation":"Take {Count}"})],
+    )?;
+    fixture.file("de.archive","archive",&[json!({"namespace":"UI","key":"K","source":"Take {Count}","translation":"Nimm {Anzahl}"})])?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    let deep = "Nested".repeat(30);
+    fixture.packages(
+        &(0..occurrences)
+            .map(|index| json!({"namespace":"UI","key":"K","source":"Take {Count}","object":format!("/Game/Text/Example.Example.{deep}_{index}"),"property":"Label"}))
+            .collect::<Vec<_>>(),
+    )?;
+    fixture.lines()?;
+    let rules = example_document(&["format_argument_renamed"], None)?;
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    let cancelled = AtomicBool::new(false);
+    let mut query = EngineQuery::open(&configuration, None)?;
+    let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
+    let key = result["key"].as_str().ok_or("Missing findings key.")?;
+    let lines = crate::json_value::parse(&query.findings_lines(key, &[0], &cancelled)?)?;
+    let places = lines["places"].as_array().ok_or("Missing places.")?;
+    assert_eq!(places.len(), 1);
+    let placed = places[0]["occurrences"]
+        .as_array()
+        .ok_or("Missing occurrences.")?;
+    assert_eq!(placed.len(), occurrences);
+    assert!(crate::rules::javascript_json(&places[0], false).len() > 1024 * 1024);
+    assert_eq!(lines["lines"][0]["builtIns"][0]["places"], places[0]["id"]);
+    Ok(())
+}
+
+#[test]
 fn missing_table_entry_retains_unknown_without_claiming_an_unavailable_namespace() -> Result<()> {
     let mut fixture = Fixture::new()?;
     for (name, format) in [

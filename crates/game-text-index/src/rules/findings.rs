@@ -1,6 +1,6 @@
 //! Persisted finding evidence, identities, and diagnostics for a pinned joined view.
 use super::identity::{
-    localization_identity_encoded, source_identity_encoded, write_atom, write_ids, write_string,
+    localization_identity_encoded, source_identity_encoded, write_atom, write_string,
 };
 use super::replies::{
     EvaluationProfile, FindingsEvaluation, LayerMetadata, RuleCount, RuleMetadata, RunProfile,
@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, atomic::AtomicBool};
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 type Column = (String, String, Vec<u32>);
 pub(crate) struct FindingsLayer {
     reader: Reader,
@@ -96,6 +96,21 @@ impl FindingsLayer {
     pub(super) fn json(&mut self, id: u32) -> Result<Value> {
         crate::json_value::parse_stored(&self.dictionary.string(id)?)
     }
+    /// A place set's occurrence IDs, in the order the finding names them.
+    pub(super) fn place_set(&mut self, set: u32) -> Result<Vec<String>> {
+        let offsets = self.column("places.offsets")?;
+        let members = self.column("places.members")?;
+        let (start, end) = (
+            *offsets
+                .get(set as usize)
+                .ok_or("Place set outside layer.")? as usize,
+            *offsets
+                .get(set as usize + 1)
+                .ok_or("Place set outside layer.")? as usize,
+        );
+        self.dictionary
+            .strings_batch(members.get(start..end).ok_or("Invalid place set range.")?)
+    }
     /// `findings_evaluate`'s reply for this layer.
     fn result(&self, key: &str, profile: EvaluationProfile) -> Result<String> {
         let reply = FindingsEvaluation {
@@ -109,14 +124,14 @@ impl FindingsLayer {
         Ok(javascript_json(&serde_json::to_value(&reply)?, false))
     }
 }
-/// One rule's finding columns, encoded as they are published: evidence and place JSON in
-/// the stored string view, and the identity hash halves.
+/// One rule's finding columns, encoded as they are published: evidence JSON in the stored
+/// string view, each finding's place set, and the identity hash halves.
 #[derive(Default)]
 pub(super) struct RuleColumns {
     rows: Vec<u32>,
     cultures: Vec<u32>,
     evidence: Vec<String>,
-    places: Vec<String>,
+    places: Vec<Arc<super::Affected>>,
     id0: Vec<u32>,
     id1: Vec<u32>,
 }
@@ -124,7 +139,7 @@ struct Encoded {
     row: u32,
     culture: u32,
     evidence: String,
-    places: String,
+    places: Arc<super::Affected>,
     hash: [u32; 2],
 }
 
@@ -251,7 +266,7 @@ impl EngineQuery {
             findings += encoded.len();
             let encoded_bytes = encoded
                 .iter()
-                .map(|encoded| encoded.evidence.capacity() + encoded.places.capacity() + 16)
+                .map(|encoded| encoded.evidence.capacity() + 16)
                 .sum::<usize>();
             for (finding, encoded) in evaluated.findings.iter().zip(encoded) {
                 let columns = &mut rules[finding.rule];
@@ -441,6 +456,53 @@ impl EngineQuery {
                     unit_sources,
                 ),
             ];
+            // Each occurrence ID is one dictionary string and each distinct place set one range of
+            // them: a set can name thousands of occurrences, past one string's size cap.
+            let mut id_rows = HashMap::<Arc<str>, usize>::new();
+            let mut id_bytes = Vec::new();
+            for rule in &encoded {
+                for affected in &rule.places {
+                    for id in &affected.ids {
+                        let id = id.as_ref().ok_or("A finding occurrence has no ID.")?;
+                        if !id_rows.contains_key(id) {
+                            id_rows.insert(Arc::clone(id), id_bytes.len());
+                            id_bytes.push(Wtf8Buf::from_view(id).into_bytes());
+                        }
+                    }
+                }
+            }
+            let interned = store.intern_bytes("findings.places", &id_bytes)?;
+            drop(id_bytes);
+            let mut set_offsets = vec![0u32];
+            let mut set_members = Vec::new();
+            let mut sets = HashMap::<Vec<u32>, u32>::new();
+            // Findings share their sets' allocations, so most repeats resolve by address.
+            let mut shared = HashMap::<usize, u32>::new();
+            let mut place_set = |affected: &Arc<super::Affected>| -> Result<u32> {
+                let address = Arc::as_ptr(affected) as usize;
+                if let Some(set) = shared.get(&address) {
+                    return Ok(*set);
+                }
+                let members = affected
+                    .ids
+                    .iter()
+                    .map(|id| {
+                        id.as_ref()
+                            .map(|id| interned[id_rows[id]])
+                            .ok_or_else(|| "A finding occurrence has no ID.".into())
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let next = u32::try_from(set_offsets.len() - 1)?;
+                let set = *sets.entry(members).or_insert_with_key(|members| {
+                    set_members.extend_from_slice(members);
+                    next
+                });
+                if set == next {
+                    set_offsets.push(u32::try_from(set_members.len())?);
+                }
+                shared.insert(address, set);
+                Ok(set)
+            };
             let mut counts = BTreeMap::<(usize, u32), u32>::new();
             for (index, compiled) in ordered.iter().enumerate() {
                 checkpoint(cancelled)?;
@@ -468,8 +530,8 @@ impl EngineQuery {
                     ("evidence", "findings", store.intern("findings", &evidence)?),
                     (
                         "places",
-                        "findings.places",
-                        store.intern("findings.places", &places)?,
+                        "",
+                        places.iter().map(&mut place_set).collect::<Result<_>>()?,
                     ),
                     ("id0", "", id0),
                     ("id1", "", id1),
@@ -477,6 +539,12 @@ impl EngineQuery {
                     columns.push((format!("r{index}.{name}"), domain.into(), values));
                 }
             }
+            columns.push(("places.offsets".into(), String::new(), set_offsets));
+            columns.push((
+                "places.members".into(),
+                "findings.places".into(),
+                set_members,
+            ));
             let mut diagnostics = base_diagnostics;
             diagnostics.extend(regex_diagnostics);
             diagnostics.sort_by_key(|(line, _, _)| *line);
@@ -624,21 +692,11 @@ fn encode_findings(
                 }
             }
             json.push('}');
-            let mut places = String::new();
-            write_ids(
-                &finding
-                    .affected
-                    .ids
-                    .iter()
-                    .map(Option::as_deref)
-                    .collect::<Vec<_>>(),
-                &mut places,
-            );
             Ok(Encoded {
                 row: finding.row,
                 culture: culture as u32,
                 evidence: Wtf8Buf::from_utf8(&json).into_view(),
-                places: Wtf8Buf::from_utf8(&places).into_view(),
+                places: Arc::clone(&finding.affected),
                 hash,
             })
         })
@@ -748,9 +806,7 @@ fn check_encoding(
         };
         require(
             encoded.evidence == Wtf8Buf::from_utf8(&javascript_json(&value, false)).into_view()
-                && encoded.places
-                    == Wtf8Buf::from_utf8(&javascript_json(&json!(finding.affected.ids), false))
-                        .into_view()
+                && encoded.places.ids == finding.affected.ids
                 && encoded.hash == hash
                 && encoded.culture == culture as u32,
             format!("Direct finding encoding differs for rule {rule_id}."),

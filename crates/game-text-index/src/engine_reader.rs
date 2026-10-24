@@ -322,6 +322,8 @@ impl EngineReader {
             .layers
             .get_mut(key)
             .ok_or("Query input was not pinned.")?;
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("inputMetadata");
         parse(&section(&mut layer.reader, section_name)?)
     }
 
@@ -566,6 +568,8 @@ impl EngineReader {
 
     fn block(&mut self, segment_index: usize, block: usize) -> Result<Vec<Vec<u8>>> {
         let (bytes, range) = self.block_bytes(segment_index, block)?;
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("dictionaryBlock");
         decode_a64_bytes(bytes.get(range).ok_or("Dictionary block range.")?)
     }
     /// A dictionary block's encoded bytes: its frame, through the frame cache, and its range.
@@ -583,6 +587,8 @@ impl EngineReader {
         let bytes = if let Some(bytes) = self.frames.get(&cache_key) {
             Arc::clone(bytes)
         } else {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("dictionaryFrame");
             let bytes: Arc<[u8]> = section(&mut segment.reader, &format!("front.b{frame}"))?.into();
             while self.frame_bytes + bytes.len() > FRAME_CACHE_BYTES {
                 let Some(old) = self.frame_order.pop_front() else {

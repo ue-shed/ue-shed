@@ -62,11 +62,11 @@ fn arena(
     ids: BTreeSet<u32>,
 ) -> Result<()> {
     let ids = ids.into_iter().collect::<Vec<_>>();
-    let folded = ids
-        .iter()
-        .map(|id| j.string(*id).to_lowercase())
-        .collect::<Vec<_>>();
-    let (bytes, starts) = packed_bytes(&folded)?;
+    let (bytes, starts) = packed_bytes(
+        &ids.iter()
+            .map(|id| j.string(*id).to_lowercase())
+            .collect::<Vec<_>>(),
+    )?;
     let (keys, offsets, postings) = crate::text_trigrams::build(&starts, &bytes)?;
     result.push((format!("{prefix}.ids"), domain.into(), ids));
     result.push((format!("{prefix}.starts"), String::new(), starts));

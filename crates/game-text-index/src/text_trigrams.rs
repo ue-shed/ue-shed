@@ -3,51 +3,87 @@
 //! narrow a term of three or more bytes to the strings `memmem` then confirms.
 use crate::engine_match::checkpoint;
 use crate::{Result, require};
-use rayon::slice::ParallelSliceMut;
 use std::sync::{Arc, atomic::AtomicBool};
+
+/// Every possible trigram: one entry each in the build's tables.
+const TRIGRAMS: usize = 1 << 24;
 
 fn key(bytes: &[u8]) -> u32 {
     (u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2])
 }
 
-fn push_varint(out: &mut Vec<u8>, mut value: u32) {
+fn varint_len(value: u32) -> u32 {
+    (32 - value.leading_zeros()).div_ceil(7).max(1)
+}
+
+fn put_varint(out: &mut [u8], at: &mut u32, mut value: u32) {
     while value >= 0x80 {
-        out.push(value as u8 | 0x80);
+        out[*at as usize] = value as u8 | 0x80;
+        *at += 1;
         value >>= 7;
     }
-    out.push(value as u8);
+    out[*at as usize] = value as u8;
+    *at += 1;
+}
+
+/// Calls `visit` once for each trigram a string holds, in arena order, with the trigram and its
+/// posting's delta: the distance from the previous string that held it, or from 0. `last` holds,
+/// per trigram, one past the last position visited.
+fn each_posting(
+    starts: &[u32],
+    bytes: &[u8],
+    last: &mut [u32],
+    mut visit: impl FnMut(usize, u32) -> Result<()>,
+) -> Result<()> {
+    last.fill(0);
+    for position in 0..u32::try_from(starts.len().saturating_sub(1))? {
+        let text = bytes
+            .get(starts[position as usize] as usize..starts[position as usize + 1] as usize)
+            .ok_or("Arena range outside its bytes.")?;
+        for window in text.windows(3) {
+            let trigram = key(window) as usize;
+            if last[trigram] != position + 1 {
+                visit(trigram, position - last[trigram].saturating_sub(1))?;
+                last[trigram] = position + 1;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The arena's sorted distinct trigrams, each one's range in the postings, and the postings: the
-/// positions of the strings that hold it, ascending, as delta-encoded varints.
+/// positions of the strings that hold it, ascending, as delta-encoded varints. Two passes over
+/// the arena, sizing each trigram's postings and then writing them in place, so the build holds
+/// the postings and two tables of one entry per possible trigram, not an entry per occurrence.
 pub(crate) fn build(starts: &[u32], bytes: &[u8]) -> Result<(Vec<u32>, Vec<u32>, Vec<u8>)> {
-    let mut pairs = Vec::new();
-    for position in 0..starts.len().saturating_sub(1) {
-        let text = bytes
-            .get(starts[position] as usize..starts[position + 1] as usize)
-            .ok_or("Arena range outside its bytes.")?;
-        pairs.extend(
-            text.windows(3)
-                .map(|window| u64::from(key(window)) << 32 | position as u64),
-        );
-    }
-    pairs.par_sort_unstable();
-    pairs.dedup();
+    let mut last = vec![0u32; TRIGRAMS];
+    // Each trigram's postings length, then its write cursor.
+    let mut cursor = vec![0u32; TRIGRAMS];
+    each_posting(starts, bytes, &mut last, |trigram, delta| {
+        cursor[trigram] = cursor[trigram]
+            .checked_add(varint_len(delta))
+            .ok_or("Trigram postings past 4 GiB.")?;
+        Ok(())
+    })?;
     let mut keys = Vec::new();
     let mut offsets = Vec::new();
-    let mut postings = Vec::new();
-    let mut previous = 0;
-    for pair in pairs {
-        let (trigram, position) = ((pair >> 32) as u32, pair as u32);
-        if keys.last() != Some(&trigram) {
-            keys.push(trigram);
-            offsets.push(u32::try_from(postings.len())?);
-            previous = 0;
+    let mut total = 0u32;
+    for (trigram, length) in cursor.iter_mut().enumerate() {
+        if *length > 0 {
+            keys.push(trigram as u32);
+            offsets.push(total);
+            total = total
+                .checked_add(*length)
+                .ok_or("Trigram postings past 4 GiB.")?;
+            *length = offsets[offsets.len() - 1];
         }
-        push_varint(&mut postings, position - previous);
-        previous = position;
     }
-    offsets.push(u32::try_from(postings.len())?);
+    offsets.push(total);
+    let mut postings = vec![0u8; total as usize];
+    each_posting(starts, bytes, &mut last, |trigram, delta| {
+        put_varint(&mut postings, &mut cursor[trigram], delta);
+        Ok(())
+    })?;
     Ok((keys, offsets, postings))
 }
 
@@ -141,6 +177,37 @@ impl Trigrams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn postings_list_each_string_that_holds_a_trigram_once_in_order() -> Result<()> {
+        let mut texts = vec!["aaaa", "abcabc", "", "xy", "bcab"];
+        // Positions past 127 and 16383 take two- and three-byte varints.
+        texts.extend(std::iter::repeat_n("", 200));
+        texts.push("abcd");
+        texts.extend(std::iter::repeat_n("", 20_000));
+        texts.extend(["aaaa", "\u{4f60}\u{597d}"]);
+        let mut bytes = Vec::new();
+        let mut starts = vec![0];
+        let mut expected = BTreeMap::<u32, Vec<u32>>::new();
+        for (position, text) in texts.iter().enumerate() {
+            bytes.extend_from_slice(text.as_bytes());
+            starts.push(bytes.len() as u32);
+            for window in text.as_bytes().windows(3) {
+                let list = expected.entry(key(window)).or_default();
+                if list.last() != Some(&(position as u32)) {
+                    list.push(position as u32);
+                }
+            }
+        }
+        let (keys, offsets, postings) = build(&starts, &bytes)?;
+        assert_eq!(keys, expected.keys().copied().collect::<Vec<_>>());
+        let index = Trigrams::new(keys.into(), offsets.into(), postings.into())?;
+        for (at, positions) in expected.values().enumerate() {
+            assert_eq!(&index.positions(at)?, positions);
+        }
+        Ok(())
+    }
 
     #[test]
     fn candidates_hold_every_trigram_and_include_every_containing_string() -> Result<()> {

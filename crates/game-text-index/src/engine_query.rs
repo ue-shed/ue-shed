@@ -612,6 +612,8 @@ impl EngineQuery {
     }
 
     pub fn culture_mark(&mut self, ci: usize, row: usize) -> Result<Value> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("previewCulture");
         let prefix = format!("c{ci}.");
         let facts = self.reader.value(&(prefix.clone() + "facts"), row)?;
         let state = self.reader.value(&(prefix.clone() + "state"), row)? as usize;
@@ -692,6 +694,8 @@ impl EngineQuery {
             .map(str::to_owned);
         let mut locations = Vec::new();
         if begin != end {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("previewLocations");
             let name = name.ok_or("Manifest path is absent.")?;
             let paths = self.reader.input_column(&name, "entry.path")?;
             let options = self.reader.input_column(&name, "entry.options")?;

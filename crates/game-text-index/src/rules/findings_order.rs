@@ -228,6 +228,7 @@ mod tests {
             family: Family::Builtin,
             severity: Severity::Normal,
             role: None,
+            counts: true,
         }
     }
 

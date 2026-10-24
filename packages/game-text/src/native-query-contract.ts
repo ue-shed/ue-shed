@@ -107,4 +107,12 @@ export interface NativeTextQuery extends NativeFindings {
 export interface NativeTextExport {
 	readonly corpus: TextCorpus;
 	readonly reviewSignals: ReadonlyMap<TextUnit["id"], readonly TextReviewSignal[]>;
+	/** With a findings layer: each rule's label, and each unit's rules in program order. */
+	readonly findings?: NativeExportFindings;
+}
+
+/** The findings an export's units have, by rule ID. */
+export interface NativeExportFindings {
+	readonly labels: ReadonlyMap<string, string>;
+	readonly units: ReadonlyMap<TextUnit["id"], readonly string[]>;
 }

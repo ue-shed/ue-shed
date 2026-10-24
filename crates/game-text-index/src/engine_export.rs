@@ -78,6 +78,7 @@ impl EngineQuery {
             output.write_all(b"[")?;
             let mut first = true;
             let scope = self.culture_scope(request.localization.as_ref())?;
+            let findings = self.request_findings(request, cancelled)?;
             for row in rows.iter() {
                 checkpoint(cancelled)?;
                 separator(&mut output, &mut first)?;
@@ -86,7 +87,7 @@ impl EngineQuery {
                         *row as usize,
                         fields,
                         &scope,
-                        request.counted_findings(),
+                        findings.as_deref(),
                         cancelled,
                     )?,
                     None => self.localization_line(*row as usize, cancelled)?,
@@ -201,10 +202,31 @@ impl EngineQuery {
             }
         }
         let summary = self.summary(cancelled)?;
+        // With a findings layer each unit lists its rules, and the file their labels once.
+        let findings = match &request.findings {
+            Some(selection) => {
+                let every = self.culture_scope(None)?;
+                Some(self.finding_rows(selection, false, &every, cancelled)?)
+            }
+            None => None,
+        };
         output.write_all(b"{\"schemaVersion\":1,\"status\":")?;
         value(output, &summary["status"])?;
         output.write_all(b",\"coverage\":")?;
         value(output, &summary["coverage"])?;
+        if let Some(findings) = &findings {
+            output.write_all(b",\"findingRules\":")?;
+            value(
+                output,
+                &serde_json::json!(
+                    findings
+                        .rules
+                        .iter()
+                        .map(|rule| serde_json::json!({"id":rule.id,"label":rule.label}))
+                        .collect::<Vec<_>>()
+                ),
+            )?;
+        }
         output.write_all(b",\"units\":[")?;
         let mut first = true;
         for (index, row) in p.raw.order.iter().enumerate() {
@@ -225,6 +247,14 @@ impl EngineQuery {
             value(output, &presentation["source"])?;
             output.write_all(b",\"reviewSignals\":")?;
             value(output, &presentation["reviewSignals"])?;
+            if let Some(findings) = &findings {
+                let mut listed = serde_json::json!({});
+                crate::engine_search::list_findings(&mut listed, findings, row);
+                output.write_all(b",\"findings\":")?;
+                value(output, &listed["findings"])?;
+                output.write_all(b",\"findingsOmitted\":")?;
+                value(output, &listed["findingsOmitted"])?;
+            }
             output.write_all(b",\"occurrences\":[")?;
             let mut first_occurrence = true;
             for member in p.raw.members(row) {

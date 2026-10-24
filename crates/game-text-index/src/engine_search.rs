@@ -3,23 +3,24 @@ use crate::engine_match::{Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, mask, selected_bits};
 use crate::engine_types::*;
-use crate::text_problem;
+use crate::rules::FindingRows;
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-const COUNT_LABELS: [&str; 9] = [
+const COUNT_LABELS: [&str; 6] = [
     "all",
-    "shared",
-    "duplicate_source",
-    "long",
     "unresolved",
     "conflicting",
     "editable",
     "readOnly",
     "withoutNotes",
 ];
+/// The `signals` bits of the counted facts, `unresolved` and `conflicting`.
+const COUNTED_FACTS: [u32; 2] = [1 << FACT_SHIFT, 1 << (FACT_SHIFT + 1)];
+/// The rule IDs one row lists; `findingsOmitted` counts the rest.
+const MAX_ROW_FINDINGS: usize = 32;
 fn record(labels: &[&str], values: &[usize]) -> Value {
     Value::Object(
         labels
@@ -28,6 +29,20 @@ fn record(labels: &[&str], values: &[usize]) -> Value {
             .map(|(label, value)| (label.to_string(), json!(value)))
             .collect(),
     )
+}
+
+/// The rule IDs with a finding on a row, the first `MAX_ROW_FINDINGS` in program order, and how
+/// many more there are.
+pub(crate) fn list_findings(value: &mut Value, findings: &FindingRows, row: usize) {
+    let rules = findings.of(row).collect::<Vec<_>>();
+    value["findings"] = json!(
+        rules
+            .iter()
+            .take(MAX_ROW_FINDINGS)
+            .map(|rule| findings.rules[*rule].id.as_str())
+            .collect::<Vec<_>>()
+    );
+    value["findingsOmitted"] = json!(rules.len().saturating_sub(MAX_ROW_FINDINGS));
 }
 
 impl EngineQuery {
@@ -49,19 +64,19 @@ impl EngineQuery {
                     checkpoint(cancelled)?;
                 }
                 let row = *row as usize;
-                for (bit, count) in counts[1..6].iter_mut().enumerate() {
-                    if p.flags[row] & (1 << bit) != 0 {
+                for (fact, count) in COUNTED_FACTS.iter().zip(counts[1..3].iter_mut()) {
+                    if p.flags[row] & fact != 0 {
                         *count += 1;
                     }
                 }
                 if p.editing[row] & 1 != 0 {
-                    counts[6] += 1;
+                    counts[3] += 1;
                 }
                 if p.editing[row] & 2 != 0 {
-                    counts[7] += 1;
+                    counts[4] += 1;
                 }
                 if p.notes[row] == 0 {
-                    counts[8] += 1;
+                    counts[5] += 1;
                 }
             }
             let mut origin_request = request.clone();
@@ -78,10 +93,7 @@ impl EngineQuery {
             }
         } else {
             let mut base = request.clone();
-            // Counts relax the lens, not what the request counts as a finding.
-            base.counted = Some(request.counted_findings());
             base.capability = Capability::All;
-            base.lens = None;
             base.without_notes = None;
             if let Some(location) = &mut base.location {
                 location.kinds = None;
@@ -95,13 +107,6 @@ impl EngineQuery {
                 let flags = p.raw.signals[row];
                 let editing = p.raw.editing[row];
                 let no_notes = p.raw.notes[row] == 0;
-                let lens = request.lens.as_ref().is_none_or(|lens| {
-                    lens == "all"
-                        || SIGNALS
-                            .iter()
-                            .position(|value| value == lens)
-                            .is_some_and(|bit| flags & (1 << bit) != 0)
-                });
                 let kinds = request
                     .location
                     .as_ref()
@@ -116,28 +121,28 @@ impl EngineQuery {
                         })
                         != 0;
                 let notes = request.without_notes != Some(true) || no_notes;
-                if lens && notes && kinds {
+                if notes && kinds {
                     if editing & 1 != 0 {
-                        counts[6] += 1;
+                        counts[3] += 1;
                     }
                     if editing & 2 != 0 {
-                        counts[7] += 1;
+                        counts[4] += 1;
                     }
                 }
-                if lens && capability && kinds && no_notes {
-                    counts[8] += 1;
+                if capability && kinds && no_notes {
+                    counts[5] += 1;
                 }
-                if lens && capability && notes {
+                if capability && notes {
                     for (bit, count) in origins.iter_mut().enumerate() {
                         if p.raw.origins[row] & (1 << bit) != 0 {
                             *count += 1;
                         }
                     }
                 }
-                if lens && capability && notes && kinds {
+                if capability && notes && kinds {
                     counts[0] += 1;
-                    for (bit, count) in counts[1..6].iter_mut().enumerate() {
-                        if flags & (1 << bit) != 0 {
+                    for (fact, count) in COUNTED_FACTS.iter().zip(counts[1..3].iter_mut()) {
+                        if flags & fact != 0 {
                             *count += 1;
                         }
                     }
@@ -297,16 +302,39 @@ impl EngineQuery {
             facets.into_iter().map(|(_, _, value)| value).collect(),
         ))
     }
-    /// Problem counts over every atom but the `problem` clauses, with the request's counted
-    /// findings.
+    /// The rows with each fact, over every atom but the `fact` clauses.
+    fn fact_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        let rows = self.matching(&request.without_filter(FilterField::Fact), cancelled)?;
+        let p = Projection::open(self, cancelled)?;
+        let localized = request.localization.is_some();
+        let mut counts = [0usize; FACTS.len()];
+        for (index, row) in rows.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let row = *row as usize;
+            let signals = if localized {
+                p.flags[row]
+            } else {
+                p.raw.signals[row]
+            } >> FACT_SHIFT;
+            for (bit, count) in counts.iter_mut().enumerate() {
+                if signals & (1 << bit) != 0 {
+                    *count += 1;
+                }
+            }
+        }
+        Ok(record(&FACTS, &counts))
+    }
+    /// Problem counts over every atom but the `problem` clauses, with the request's findings.
     fn problem_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchProblemCounts");
         let request = request.without_filter(FilterField::Problem);
         let localized = request.localization.is_some();
         let scope = self.culture_scope(request.localization.as_ref())?;
-        let column =
-            self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
+        let findings = self.request_findings(&request, cancelled)?;
+        let column = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
         let rows = self.matching(&request, cancelled)?;
         let mut problems = [0usize; PROBLEMS.len()];
         for (index, row) in rows.iter().enumerate() {
@@ -343,7 +371,16 @@ impl EngineQuery {
         {
             #[cfg(feature = "benchmark-timings")]
             let _span = crate::benchmark_timings::Span::new("searchGroups");
-            let mut groups = self.aggregate(matched, request, group, false, "", cancelled)?;
+            let mut groups = if group == GroupBy::Finding {
+                match self.request_findings(request, cancelled)? {
+                    Some(findings) => {
+                        self.finding_groups(matched, request, &findings, false, cancelled)?
+                    }
+                    None => json!({"entries":[],"more":0}),
+                }
+            } else {
+                self.aggregate(matched, request, group, false, "", cancelled)?
+            };
             groups["by"] = serde_json::to_value(group)?;
             result["groups"] = groups;
         }
@@ -390,6 +427,19 @@ impl EngineQuery {
             if facets.cultures == Some(true) && localized {
                 values["cultures"] = self.culture_facets(request, matched, cancelled)?;
             }
+            if facets.findings == Some(true) {
+                values["findings"] = match self.request_findings(request, cancelled)? {
+                    Some(findings) => {
+                        let rows = self
+                            .matching(&request.without_filter(FilterField::Finding), cancelled)?;
+                        self.finding_groups(&rows, request, &findings, true, cancelled)?
+                    }
+                    None => json!({"entries":[],"more":0}),
+                };
+            }
+            if facets.facts == Some(true) {
+                values["facts"] = self.fact_counts(request, cancelled)?;
+            }
             result["facets"] = values;
         }
         if request.wants(Part::Counts) {
@@ -407,7 +457,8 @@ impl EngineQuery {
     }
 
     /// The rows' presentations: with a target, each line's preview and the first visible saved
-    /// unit of it; without one, each unit's. Each says what put the row in its problems.
+    /// unit of it; without one, each unit's. Each lists its problems and, with a findings layer,
+    /// the rules with a finding on it.
     fn present_rows(
         &mut self,
         request: &SearchRequest,
@@ -416,11 +467,17 @@ impl EngineQuery {
     ) -> Result<(Vec<Value>, Vec<Value>)> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchRowsPresent");
-        let counted = request.counted_findings();
-        // What put each row in its problems under this request, for hosts to show on the row.
-        let explain = |row: &mut Value, problems: u32, signals: u32| {
+        let findings = self.request_findings(request, cancelled)?;
+        let explain = |row: &mut Value, problems: u32, at: usize| {
             row["problems"] = json!(selected_bits(&PROBLEMS, problems));
-            row["countedFindings"] = json!(selected_bits(&SIGNALS, signals & counted));
+            if let Some(findings) = &findings {
+                list_findings(row, findings, at);
+            }
+        };
+        let finding = |row: usize| {
+            findings
+                .as_ref()
+                .is_some_and(|findings| findings.counted.contains(row))
         };
         let p = Projection::open(self, cancelled)?;
         let mut units = Vec::new();
@@ -435,15 +492,18 @@ impl EngineQuery {
                     let _span = crate::benchmark_timings::Span::new("rowPreview");
                     self.preview(row)?
                 };
-                explain(&mut preview, p.problem(row, &scope, counted), p.flags[row]);
+                explain(&mut preview, p.problem(row, &scope, finding(row)), row);
                 for sr in p.starts[row] as usize..p.starts[row + 1] as usize {
                     if p.slice.visible[sr] != 0 {
                         #[cfg(feature = "benchmark-timings")]
                         let _span = crate::benchmark_timings::Span::new("rowPresentation");
                         let mut unit = self.presentation("slice", sr)?;
                         unit["localization"] = preview["cultures"].clone();
-                        unit["problems"] = preview["problems"].clone();
-                        unit["countedFindings"] = preview["countedFindings"].clone();
+                        for field in ["problems", "findings", "findingsOmitted"] {
+                            if let Some(value) = preview.get(field) {
+                                unit[field] = value.clone();
+                            }
+                        }
                         units.push(unit);
                         break;
                     }
@@ -457,12 +517,7 @@ impl EngineQuery {
                 #[cfg(feature = "benchmark-timings")]
                 let _span = crate::benchmark_timings::Span::new("rowPresentation");
                 let mut unit = self.presentation("raw", row)?;
-                let signals = p.raw.signals[row];
-                explain(
-                    &mut unit,
-                    text_problem::settle(text_problem::signals(signals, counted)),
-                    signals,
-                );
+                explain(&mut unit, p.row_problem(false, row, &[], finding(row)), row);
                 units.push(unit);
             }
         }
@@ -513,12 +568,20 @@ impl EngineQuery {
         let p = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
         let scope = self.culture_scope(request.localization.as_ref())?;
-        let problems =
-            self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
+        let findings = self.request_findings(request, cancelled)?;
+        let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
         let mut ids = Vec::with_capacity(keys.len());
         let mut found: HashMap<u32, Vec<u32>> = HashMap::new();
         for key in keys {
-            let id = self.group_id(by, key, &places)?;
+            // A finding group is its rule's position in the layer.
+            let id = if by == GroupBy::Finding {
+                findings
+                    .as_deref()
+                    .and_then(|findings| findings.rule(key))
+                    .map(|rule| rule as u32)
+            } else {
+                self.group_id(by, key, &places)?
+            };
             if let Some(id) = id {
                 found.insert(id, Vec::new());
             }
@@ -533,14 +596,23 @@ impl EngineQuery {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
             }
-            let id = p.group_key(&places, localized, *row as usize, &problems, by)?;
-            if let Some(rows) = found.get_mut(&id)
-                && rows.len() <= first
-            {
-                rows.push(*row);
-                if rows.len() == first + 1 {
-                    open -= 1;
+            let mut fill = |id: u32| {
+                if let Some(rows) = found.get_mut(&id)
+                    && rows.len() <= first
+                {
+                    rows.push(*row);
+                    if rows.len() == first + 1 {
+                        open -= 1;
+                    }
                 }
+            };
+            match &findings {
+                Some(findings) if by == GroupBy::Finding => {
+                    for rule in findings.of(*row as usize) {
+                        fill(rule as u32);
+                    }
+                }
+                _ => fill(p.group_key(&places, localized, *row as usize, &problems, by)?),
             }
         }
         let mut budget = MAX_OPEN_GROUP_ROWS;

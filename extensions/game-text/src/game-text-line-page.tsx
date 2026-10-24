@@ -15,6 +15,7 @@ import { Button } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo } from "solid-js";
 import { cultureSummary } from "./game-text-culture-state.js";
+import { rowFindings } from "./game-text-result-rows.js";
 
 const SEVERE = new Set<TextProblem>(["key_changed", "conflicting_source"]);
 const WAITING = new Set<TextProblem>(["not_gathered", "changed_since_gather", "translation"]);
@@ -28,6 +29,7 @@ export function lineProblems(
 	detail: LocalizationFocus | undefined
 ): readonly TextProblem[] {
 	if (detail?.problems) return detail.problems;
+	if (focus?.unit.problems) return focus.unit.problems;
 	return textProblems({
 		signals: focus?.unit.reviewSignals ?? [],
 		keyChanged: detail?.keyChange?.direction === "to",
@@ -188,6 +190,8 @@ export function LineProblem(props: {
 export function LineProperties(props: {
 	readonly focus: TextCorpusFocus | undefined;
 	readonly detail: LocalizationFocus | undefined;
+	/** Rule labels by ID, for the line's findings. */
+	readonly rules?: ReadonlyMap<string, string> | undefined;
 }) {
 	const problems = () => lineProblems(props.focus, props.detail).slice(1);
 	const key = () => {
@@ -233,7 +237,9 @@ export function LineProperties(props: {
 		const gathered = props.detail?.translatorNotes;
 		return [...new Set([...(saved ?? []), ...(gathered ?? [])])];
 	};
-	const findings = () =>
+	// The project's rules with a finding on the line, in the list's culture scope with a target.
+	const findings = () => rowFindings(props.detail ?? props.focus?.unit ?? {}, props.rules);
+	const facts = () =>
 		(props.focus?.unit.reviewSignals ?? [])
 			.filter((signal) => signal !== "evidence_only")
 			.map(textReviewSignalLabel);
@@ -322,6 +328,10 @@ export function LineProperties(props: {
 				<Show when={findings().length > 0}>
 					<dt {...stylex.attrs(styles.term)}>Findings</dt>
 					<dd {...stylex.attrs(styles.value)}>{findings().join(" · ")}</dd>
+				</Show>
+				<Show when={facts().length > 0}>
+					<dt {...stylex.attrs(styles.term)}>Facts</dt>
+					<dd {...stylex.attrs(styles.value)}>{facts().join(" · ")}</dd>
 				</Show>
 			</dl>
 		</section>

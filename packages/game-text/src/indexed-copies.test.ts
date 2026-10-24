@@ -373,11 +373,11 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 							: item
 				);
 			const request = { query: "", capability: "all", pageSize: 50 } as const;
-			// Incremental joins take edits between texts of 40 characters or more.
+			// Place text edits join incrementally, whatever the texts' length.
 			const long = "Press any button to begin a new adventure";
 			const longer = "Press any button to begin your next adventure";
 			for (const [title, compiled, expected, strategy] of [
-				[long, "Play", ["New tooltip", long, "v1.2"], "full"],
+				[long, "Play", ["New tooltip", long, "v1.2"], "incremental"],
 				[longer, "Play", ["New tooltip", longer, "v1.2"], "incremental"],
 				// The copy's text and the place's copy flags change: a full join.
 				[longer, longer, ["New tooltip", "v1.2"], "full"]

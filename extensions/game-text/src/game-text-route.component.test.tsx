@@ -127,34 +127,43 @@ it("opens a line as a page, steps to the next line and goes back to the list", a
 	);
 	expect(screen.queryByRole("region", { name: "Properties" })).toBeNull();
 });
-it("offers only findings that have lines", async () => {
+it("offers only facts that have lines, and no findings without a findings layer", async () => {
 	const first = corpus.units[0];
 	if (!first) throw new Error("Missing test line");
-	const shared = {
+	const conflicting = {
 		...corpus,
 		units: [
 			{
 				...first,
+				source: {
+					status: "conflicting" as const,
+					values: [first.occurrences[0]!.source, "Other text"]
+				},
 				occurrences: [
 					...first.occurrences,
-					{ ...first.occurrences[0]!, id: makeTextOccurrenceId("another") }
+					{
+						...first.occurrences[0]!,
+						id: makeTextOccurrenceId("another"),
+						source: "Other text"
+					}
 				]
 			},
 			...corpus.units.slice(1)
 		]
 	};
 	const user = userEvent.setup({ delay: null });
-	mount(makeClient(shared));
+	mount(makeClient(conflicting));
 	await screen.findByText("2 matches");
 	await groupRows();
 	await user.click(screen.getByRole("button", { name: /^Filter(, \d+ active)?$/u }));
-	await user.click(screen.getByRole("menuitem", { name: /^Finding/u }));
-	const findings = within(screen.getByRole("menu", { name: "Finding" }));
+	expect(screen.queryByRole("menuitem", { name: /^Finding/u })).toBeNull();
+	await user.click(screen.getByRole("menuitem", { name: /^Fact/u }));
+	const facts = within(screen.getByRole("menu", { name: "Fact" }));
 	expect(
-		findings.getByRole("menuitemcheckbox", { name: "Used in several places 1" })
+		facts.getByRole("menuitemcheckbox", { name: "Same key, different text 1" })
 	).toBeDefined();
-	// Findings without lines stay out of the menu.
-	expect(findings.queryByRole("menuitemcheckbox", { name: /^Long text/u })).toBeNull();
+	// Facts without lines stay out of the menu.
+	expect(facts.queryByRole("menuitemcheckbox", { name: /^Not localizable/u })).toBeNull();
 });
 it("debounces source-only search, shows Searching and never flashes a false empty state", async () => {
 	const release = await runtime.runPromise(Deferred.make<void>());

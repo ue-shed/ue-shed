@@ -374,6 +374,8 @@ export interface AsyncTextQualityQuery<E = import("./index-failure.js").IndexFai
 	readonly search: (request: TextQualitySearchRequest) => Effect.Effect<TextQualitySearchPage, E>;
 	readonly export: (filter: TextQualityFilter) => Effect.Effect<TextQualityReport, E>;
 	readonly summary: () => TextQualityQuerySummary;
+	/** The engine findings layer the query reads, which Browse shows; none for in-memory quality. */
+	readonly findingsKey?: string;
 }
 /**
  * A report's findings by position, in report order. A list may keep only compact facts and
@@ -669,6 +671,7 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 			// Verified by: source-quality-index.test.ts compares every page with the in-memory query.
 			page.findings as readonly QueriedSourceFinding[];
 		return {
+			findingsKey: evaluation.key,
 			summary: () => summary,
 			search: (request: TextQualitySearchRequest) =>
 				Effect.gen(function* () {

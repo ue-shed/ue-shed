@@ -361,6 +361,28 @@ impl EngineQuery {
         if let Some(line) = line {
             result["localization"] = self.preview(line)?;
         }
+        // The unit lists its line's problems and findings in a localization selection, in every
+        // culture, else its own, as a search row has them.
+        let every = self.culture_scope(None)?;
+        let (localized, at) = if kind == "slice" {
+            (true, line.ok_or("Missing focused line.")?)
+        } else {
+            (false, row)
+        };
+        let findings = match &request.findings {
+            Some(selection) => Some(self.finding_rows(selection, localized, &every, cancelled)?),
+            None => None,
+        };
+        let finding = findings
+            .as_ref()
+            .is_some_and(|findings| findings.counted.contains(at));
+        result["unit"]["problems"] = json!(crate::engine_query::selected_bits(
+            &crate::engine_types::PROBLEMS,
+            p.row_problem(localized, at, &every, finding)
+        ));
+        if let Some(findings) = &findings {
+            crate::engine_search::list_findings(&mut result["unit"], findings, at);
+        }
         if end < members.len() {
             result["nextOccurrenceCursor"] = result["occurrences"]
                 .as_array()

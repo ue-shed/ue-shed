@@ -17,7 +17,7 @@ import { textGroupOf, textGroups } from "./text-groups.js";
 
 const facts: TextFacts = {
 	problems: ["not_gathered", "finding"],
-	findings: ["long"],
+	findings: ["length_outlier"],
 	translation: [],
 	origins: ["data_table"],
 	paths: ["content/ui/dt_menu.uasset", "/game/ui/dt_menu.dt_menu"],
@@ -31,16 +31,17 @@ const facts: TextFacts = {
 describe("text problems", () => {
 	it("lists every problem worst first, and up to date alone when there is none", () => {
 		expect(textProblems({ signals: [], keyChanged: false })).toEqual(["up_to_date"]);
-		expect(textProblems({ signals: ["shared", "conflicting"], keyChanged: true })).toEqual([
-			"key_changed",
-			"conflicting_source",
-			"finding"
-		]);
-		// Long is a review signal; it is a finding only when the request names it.
-		expect(textProblems({ signals: ["long"], keyChanged: false })).toEqual(["up_to_date"]);
 		expect(
-			textProblems({ signals: ["long"], keyChanged: false, countedFindings: ["long"] })
-		).toEqual(["finding"]);
+			textProblems({
+				signals: ["unresolved", "conflicting"],
+				keyChanged: true,
+				finding: true
+			})
+		).toEqual(["key_changed", "conflicting_source", "finding"]);
+		// Facts other than `conflicting` raise nothing; findings come from the rules that count.
+		expect(textProblems({ signals: ["unresolved"], keyChanged: false })).toEqual([
+			"up_to_date"
+		]);
 		// Evidence only is a fact about where text lives, not a problem.
 		expect(textProblems({ signals: ["evidence_only"], keyChanged: false })).toEqual([
 			"up_to_date"
@@ -67,20 +68,21 @@ describe("text problems", () => {
 		expect(matchesTextFilter(facts, both, "problem")).toBe(true);
 	});
 
-	it("matches exact sources and every review signal, and groups by source with a minimum", () => {
+	it("matches exact sources, facts and findings, and groups by source with a minimum", () => {
 		const sourced: TextFacts = {
 			...facts,
-			reviewSignals: ["long", "conflicting"],
+			reviewSignals: ["unresolved", "conflicting"],
 			sources: ["Blue cap", "Red cap"]
 		};
 		const is = (filter: TextFilter, item = sourced) => matchesTextFilter(item, filter);
 		expect(is([{ field: "source", op: "is", values: ["Red cap"] }])).toBe(true);
 		expect(is([{ field: "source", op: "is", values: ["red cap", "Red cap "] }])).toBe(false);
 		expect(is([{ field: "source", op: "is_not", values: ["Blue cap"] }])).toBe(false);
-		expect(is([{ field: "finding", op: "is", values: ["conflicting"] }])).toBe(true);
-		// Without review signals a finding clause reads the actionable findings.
+		expect(is([{ field: "fact", op: "is", values: ["conflicting"] }])).toBe(true);
+		// Without facts a fact clause matches none; finding clauses name the rules with findings.
+		expect(is([{ field: "fact", op: "is", values: ["conflicting"] }], facts)).toBe(false);
+		expect(is([{ field: "finding", op: "is", values: ["length_outlier"] }], facts)).toBe(true);
 		expect(is([{ field: "finding", op: "is", values: ["conflicting"] }], facts)).toBe(false);
-		expect(is([{ field: "finding", op: "is", values: ["long"] }], facts)).toBe(true);
 		expect(is([{ field: "source", op: "is", values: ["Red cap"] }], facts)).toBe(false);
 		const lines = ["Mushroom", "Mushroom", "Stem", "Mushroom", "Cap"].map(
 			(source): TextFacts => ({ ...facts, sources: [source] })
@@ -196,14 +198,12 @@ describe("problems in the query", () => {
 			"Done",
 			"Long"
 		]);
-		// Naming long counts it as a finding for every problem in that request.
-		const long: TextFilter = [{ field: "finding", op: "is", values: ["long"] }];
-		const named = query.search({ ...request, filter: long });
-		expect(named.problems).toMatchObject({ finding: 1, up_to_date: 0 });
-		expect(named.localization?.lines.map((line) => line.countedFindings)).toEqual([["long"]]);
-		expect(keys([...long, { field: "problem", op: "is", values: ["finding"] }])).toEqual([
-			"Long"
-		]);
+		// A finding clause names rules; without a findings layer it selects no line.
+		const rule: TextFilter = [{ field: "finding", op: "is", values: ["length_outlier"] }];
+		const named = query.search({ ...request, filter: rule });
+		expect(named.total).toBe(0);
+		expect(named.problems?.finding).toBe(0);
+		expect(keys([{ field: "problem", op: "is", values: ["finding"] }])).toEqual([]);
 	});
 
 	it("combines clauses and narrows problem counts by the other clauses", () => {

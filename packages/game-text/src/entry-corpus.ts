@@ -26,6 +26,7 @@ export {
 	GameTextInvestigationPresetResult,
 	GameTextInvestigationQuery,
 	exportGameTextInvestigation,
+	investigationRequest,
 	readFindingUnits,
 	type IndexedInvestigationSource,
 	gameTextInvestigationCsv

@@ -11,7 +11,8 @@ const GROUP_LABELS = {
 	origin: "Origin",
 	namespace: "Namespace",
 	audience: "Audience",
-	source: "Source text"
+	source: "Source text",
+	finding: "Finding"
 } satisfies Record<TextGroupBy, string>;
 
 /** Source groups answer host queries (texts under several keys); the list does not offer them. */
@@ -20,17 +21,22 @@ const MENU_GROUPS: readonly TextGroupBy[] = TextGroupBy.literals.filter(
 );
 
 /**
- * How the list is laid out: grouped by problem (the default), folder, asset, origin, namespace or
- * audience.
+ * How the list is laid out: grouped by problem (the default), folder, asset, origin, namespace,
+ * audience or, when the project has rules, finding.
  */
 export function DisplayMenu(props: {
 	readonly group: TextGroupBy | undefined;
 	readonly disabled: boolean;
+	/** Whether the project has rules whose findings Browse shows. */
+	readonly findings: boolean;
 	readonly onGroupChange: (group: TextGroupBy | undefined) => void;
 }) {
 	const id = createUniqueId();
 	const [open, setOpen] = createSignal(false);
-	const choices = [undefined, ...MENU_GROUPS];
+	const choices = () => [
+		undefined,
+		...MENU_GROUPS.filter((group) => props.findings || group !== "finding")
+	];
 	let radios: HTMLDivElement | undefined;
 	const checked = () => radios?.querySelector<HTMLButtonElement>('[aria-checked="true"]');
 	// A radio group is one stop: it opens on the current choice, and arrows change the choice.
@@ -47,14 +53,15 @@ export function DisplayMenu(props: {
 		if (step === 0 && event.key !== "Home" && event.key !== "End") return;
 		event.preventDefault();
 		event.stopPropagation();
-		const current = choices.indexOf(props.group);
+		const listed = choices();
+		const current = listed.indexOf(props.group);
 		const next =
 			event.key === "Home"
 				? 0
 				: event.key === "End"
-					? choices.length - 1
-					: (current + step + choices.length) % choices.length;
-		props.onGroupChange(choices[next]);
+					? listed.length - 1
+					: (current + step + listed.length) % listed.length;
+		props.onGroupChange(listed[next]);
 		queueMicrotask(() => checked()?.focus());
 	};
 	return (
@@ -87,7 +94,7 @@ export function DisplayMenu(props: {
 				{...stylex.attrs(styles.group)}
 			>
 				<span {...stylex.attrs(styles.head)}>Group by</span>
-				<For each={choices}>
+				<For each={choices()}>
 					{(choice) => (
 						<button
 							type="button"

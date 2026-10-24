@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, atomic::AtomicBool};
 
-const VERSION: u32 = 4;
+const VERSION: u32 = 5;
 type Column = (String, String, Vec<u32>);
 pub(crate) struct FindingsLayer {
     reader: Reader,
@@ -569,6 +569,7 @@ impl EngineQuery {
                         family: rule.family,
                         severity: rule.severity,
                         role: rule.role.clone(),
+                        counts: rule.counts.unwrap_or(true),
                     }
                 })
                 .collect::<Vec<_>>();

@@ -262,8 +262,9 @@ export async function runEngineStage(options: EngineStageOptions) {
 		const targetName = options.target ?? targetReply.targets[0]?.name;
 		if (!targetName) throw new Error("The project has no localization target.");
 		const target = LocalizationTargetName.make(targetName);
+		const { lens: _lens, ...list } = mix.list;
 		const base = Schema.decodeUnknownSync(TextCorpusSearchRequest)({
-			...mix.list,
+			...list,
 			localization: { target }
 		});
 		const ready = <A extends { readonly status: string }>(reply: A, expected = "ready") => {
@@ -523,8 +524,14 @@ export async function runEngineStage(options: EngineStageOptions) {
 											query: "",
 											capability: "all",
 											pageSize: selection.pageSize,
-											lens: "conflicting",
-											filter: [{ field: "asset", op: "is", values: files }],
+											filter: [
+												{
+													field: "fact",
+													op: "is",
+													values: ["conflicting"]
+												},
+												{ field: "asset", op: "is", values: files }
+											],
 											...cursor
 										})
 									)

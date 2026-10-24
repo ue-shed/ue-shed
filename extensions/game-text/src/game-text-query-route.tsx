@@ -1,5 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import {
+	investigationRequest,
 	staleRuntimeCopy,
 	type GameTextInvestigationPreset,
 	type TextQualityFindingId,
@@ -60,7 +61,7 @@ import {
 	type PreferencesSaveResult,
 	type GameTextPreferences
 } from "./game-text-preferences.js";
-import { clauseParts } from "./game-text-filter-model.js";
+import { clauseParts, type RuleLabels } from "./game-text-filter-model.js";
 import { DisplayMenu } from "./game-text-display-menu.js";
 import { FacetsPane } from "./game-text-facets.js";
 import { FolderBrowser } from "./game-text-folder-browser.js";
@@ -154,7 +155,6 @@ export function GameTextRoute(props: {
 	const [query, setQuery] = createSignal(initial?.query ?? "");
 	// Saved toggles and lenses became filter pills; these keep their defaults in requests.
 	const [capability, setCapability] = createSignal(initial?.capability ?? "all");
-	const [lens, setLens] = createSignal(initial?.lens ?? "all");
 	const [withoutNotes, setWithoutNotes] = createSignal(initial?.withoutNotes ?? false);
 	const [where, setWhere] = createSignal(initial?.where);
 	const [filter, setFilter] = createSignal<TextFilter>(initial?.filter ?? []);
@@ -508,7 +508,14 @@ export function GameTextRoute(props: {
 	const filterCounts = (): FilterCounts => {
 		const current = searching() ? undefined : page();
 		if (current === undefined)
-			return { choices: {}, folders: undefined, assets: undefined, assetTypes: undefined };
+			return {
+				choices: {},
+				folders: undefined,
+				assets: undefined,
+				assetTypes: undefined,
+				findings: undefined,
+				findingsStatus: page()?.findings?.status
+			};
 		const states = current.localization?.stateCounts;
 		const counts = current.counts;
 		return {
@@ -523,12 +530,9 @@ export function GameTextRoute(props: {
 								not_synced: states.not_synced
 							}
 						}),
-				finding: {
-					shared: counts.shared,
-					duplicate_source: counts.duplicate_source,
-					long: counts.long,
-					unresolved: counts.unresolved
-				},
+				...(current.facets?.facts === undefined
+					? undefined
+					: { fact: current.facets.facts }),
 				origin: counts.origins,
 				editing: { editable: counts.editable, read_only: counts.readOnly },
 				notes: {
@@ -553,9 +557,18 @@ export function GameTextRoute(props: {
 			},
 			folders: current.facets?.folders,
 			assets: current.facets?.assets,
-			assetTypes: current.facets?.assetTypes
+			assetTypes: current.facets?.assetTypes,
+			findings: current.facets?.findings,
+			findingsStatus: current.findings?.status
 		};
 	};
+	// Rule labels by ID, for finding pills, row suffixes and the line page.
+	const ruleLabels = createMemo(
+		(): RuleLabels =>
+			new Map(
+				(page()?.facets?.findings?.entries ?? []).map((entry) => [entry.key, entry.label])
+			)
+	);
 	const searchRequest = createMemo((): TextCorpusSearchRequest => {
 		const selected = localization.selection();
 		const clauses = selected
@@ -571,7 +584,6 @@ export function GameTextRoute(props: {
 		return {
 			query: query(),
 			capability: capability(),
-			lens: lens(),
 			withoutNotes: withoutNotes(),
 			...whereField(),
 			...(clauses.length > 0 ? { filter: clauses } : undefined),
@@ -582,6 +594,8 @@ export function GameTextRoute(props: {
 				origins: true,
 				audiences: true,
 				assetTypes: true,
+				findings: true,
+				facts: true,
 				...(selected ? { cultures: true } : undefined)
 			},
 			...(selected ? { localization: selected } : undefined),
@@ -593,7 +607,7 @@ export function GameTextRoute(props: {
 			[
 				query() ? `“${query()}”` : undefined,
 				...filter().map((clause) => {
-					const parts = clauseParts(clause);
+					const parts = clauseParts(clause, ruleLabels());
 					return `${parts.field} ${parts.op} ${parts.values}`;
 				}),
 				localization.state()
@@ -696,6 +710,16 @@ export function GameTextRoute(props: {
 						setCommittedRequest(baseRequest);
 						setQueryMs(performance.now() - started);
 						setPage(result.page);
+						// The rules are still checking: the same search reads their findings once
+						// they are done, unless another search replaced it.
+						if (
+							result.page.findings?.status === "pending" &&
+							!request.cursor &&
+							!request.localizationCursor
+						)
+							setTimeout(() => {
+								if (generation === searchGeneration) requestPage(request);
+							}, 2000);
 					} else {
 						showError(
 							result.status === "failed"
@@ -779,7 +803,6 @@ export function GameTextRoute(props: {
 		if (preferences.editSession) edits.restore(preferences.editSession);
 		setQuery(preferences.query);
 		setCapability(preferences.capability);
-		setLens(preferences.lens);
 		setWithoutNotes(preferences.withoutNotes ?? false);
 		setWhere(preferences.where);
 		setFilter(preferences.filter ?? []);
@@ -866,7 +889,6 @@ export function GameTextRoute(props: {
 			preferences: {
 				query: query(),
 				capability: capability(),
-				lens: lens(),
 				withoutNotes: withoutNotes(),
 				// A changed-file list lasts for the session; pills and grouping are saved.
 				where: textWhere(where()?.kinds, where()?.pathPrefix),
@@ -1003,13 +1025,12 @@ export function GameTextRoute(props: {
 			);
 		});
 	const restorePreset = (preset: GameTextInvestigationPreset) => {
-		const { localization: selected, ...saved } = preset.query;
+		const { localization: selected, ...saved } = investigationRequest(preset.query);
 		restore({
 			...saved,
 			qualityFilter: saved.workspaceFilter ?? saved.qualityFilter,
 			...localizationPreferences(selected),
 			withoutNotes: saved.withoutNotes ?? false,
-			lens: saved.lens ?? "all",
 			selectedId: undefined,
 			qualityDocument: preset.rules
 		});
@@ -1092,7 +1113,6 @@ export function GameTextRoute(props: {
 							mode: mode() === "quality" ? "quality" : "corpus",
 							query: query(),
 							capability: capability(),
-							lens: lens(),
 							withoutNotes: withoutNotes(),
 							...whereField(),
 							...(searchRequest().filter
@@ -1631,6 +1651,10 @@ export function GameTextRoute(props: {
 												group() === "none" ? undefined : groupField()?.group
 											}
 											disabled={loading() && !summary()}
+											findings={
+												page()?.findings !== undefined &&
+												page()?.findings?.status !== "none"
+											}
 											onGroupChange={(next) => setGroup(next ?? "none")}
 										/>
 										{exports()}
@@ -1666,7 +1690,11 @@ export function GameTextRoute(props: {
 									}
 								>
 									<div {...stylex.attrs(styles.bar)}>
-										<FilterPills filter={filter()} onChange={setFilter} />
+										<FilterPills
+											filter={filter()}
+											onChange={setFilter}
+											rules={ruleLabels()}
+										/>
 										<Show when={localization.state()}>
 											{(state) => (
 												<Chip
@@ -1714,6 +1742,7 @@ export function GameTextRoute(props: {
 													onSelect={(unit, line) => {
 														selectRow({ unit, line });
 													}}
+													rules={ruleLabels()}
 													checked={ticks()?.checked}
 													onCheck={ticks()?.onCheck}
 													checking={ticks()?.checking}
@@ -1735,6 +1764,7 @@ export function GameTextRoute(props: {
 													onSelect={(unit, line) => {
 														selectRow({ unit, line });
 													}}
+													rules={ruleLabels()}
 													onLoaded={groupLoaded}
 													ticks={ticks()}
 												/>
@@ -1756,7 +1786,6 @@ export function GameTextRoute(props: {
 														setFilter([]);
 														setWhere(undefined);
 														setCapability("all");
-														setLens("all");
 														setWithoutNotes(false);
 														localization.setState(undefined);
 														localization.setReview(undefined);
@@ -2016,6 +2045,7 @@ export function GameTextRoute(props: {
 												<LineProperties
 													focus={focus()}
 													detail={localization.detail()}
+													rules={ruleLabels()}
 												/>
 											</Show>
 										</div>

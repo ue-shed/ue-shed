@@ -637,7 +637,6 @@ const hashScript = `(async () => {
 	const base = {
 		query: "",
 		capability: "all",
-		lens: "all",
 		withoutNotes: false,
 		facets: { assets: true, origins: true, audiences: true, assetTypes: true },
 		pageSize: 50

@@ -15,19 +15,16 @@ import {
 	type TextTranslationState
 } from "./schema.js";
 import { matchesTextPathPrefix, textFileKey } from "./text-origin.js";
-import {
-	TEXT_FINDING_SIGNALS,
-	TEXT_PROBLEMS,
-	TEXT_PROBLEM_LABELS,
-	TEXT_PROBLEM_RULES
-} from "./text-problem-rules.js";
+import type { TextCountedFindings } from "./text-problem-schema.js";
+import { TEXT_PROBLEMS, TEXT_PROBLEM_LABELS, TEXT_PROBLEM_RULES } from "./text-problem-rules.js";
 
 export { TEXT_PROBLEM_LABELS };
 
 /** What a filter can ask about one line or text unit. */
 export interface TextFacts {
 	readonly problems: readonly TextProblem[];
-	readonly findings: readonly TextFinding[];
+	/** The rules with a finding on the text, by ID, which `finding` clauses read. */
+	readonly findings: readonly string[];
 	readonly translation: readonly TextTranslationState[];
 	readonly origins: readonly TextOriginKind[];
 	/** Normalized object paths, package files and gathered source paths. */
@@ -44,10 +41,7 @@ export interface TextFacts {
 	 * every key a unit's occurrences gather to. Absent or empty matches no `translation_key`.
 	 */
 	readonly translationKeys?: readonly string[];
-	/**
-	 * Every review signal, which `finding` clauses read when present; `findings` otherwise. Absent
-	 * signals leave `finding` to the actionable subset.
-	 */
+	/** The text's facts, which `fact` clauses read; absent matches none. */
 	readonly reviewSignals?: readonly TextReviewSignal[];
 	/**
 	 * The exact source texts: a line's source, or a unit's sources in UTF-16 order. Absent matches
@@ -67,45 +61,20 @@ export function needsWork(problems: readonly TextProblem[]): boolean {
 	return worst !== undefined && TEXT_PROBLEM_RULES[worst].work;
 }
 
-const findingSignals = new Set<TextReviewSignal>([
-	"shared",
-	"duplicate_source",
-	"long",
-	"unresolved"
-]);
-
-function isFinding(signal: TextReviewSignal): signal is TextFinding {
-	return findingSignals.has(signal);
+function isFinding(signal: TextReviewSignal): signal is TextFinding & TextReviewSignal {
+	return signal === "unresolved";
 }
-
-/** A review signal a request can count as a finding. */
-export type TextCountedFinding = (typeof TEXT_FINDING_SIGNALS)[number];
-const nameable = new Set<TextReviewSignal>(TEXT_FINDING_SIGNALS);
 
 /**
- * The review signals that make a line a finding under a request, as the engine counts them: the
- * default findings, and every finding the filter's `finding is` clauses or the lens name.
+ * The review signals of `signals` that once counted as findings.
+ * @deprecated No signal makes a finding: findings come from the project's rules, so this lists
+ * none. Read a row's `findings`.
  */
-export function countedFindings(request: {
-	readonly filter?: TextFilter | undefined;
-	readonly lens?: string | undefined;
-}): readonly TextCountedFinding[] {
-	const named = new Set<string>(TEXT_PROBLEM_RULES.finding.signals);
-	for (const clause of request.filter ?? [])
-		if (clause.field === "finding" && clause.op === "is")
-			for (const value of clause.values) named.add(value);
-	if (request.lens !== undefined) named.add(request.lens);
-	return TEXT_FINDING_SIGNALS.filter((signal) => named.has(signal));
-}
-
-/** The review signals of `signals` that count as findings: `countedFindings`, or the defaults. */
 export function textCountedFindings(
-	signals: readonly TextReviewSignal[],
-	counted: readonly TextReviewSignal[] = TEXT_PROBLEM_RULES.finding.signals
-): readonly TextCountedFinding[] {
-	return TEXT_FINDING_SIGNALS.filter(
-		(signal) => nameable.has(signal) && counted.includes(signal) && signals.includes(signal)
-	);
+	_signals: readonly TextReviewSignal[],
+	_counted?: readonly TextReviewSignal[]
+): readonly TextCountedFindings[number][] {
+	return [];
 }
 
 /** Translation work in the given cultures' marks. */
@@ -125,23 +94,21 @@ export function translationStates(
 /**
  * Every problem a line has, worst first; `up_to_date` alone when it has none, from
  * `TEXT_PROBLEM_RULES`. `marks` are the cultures in scope, absent for text that no localization
- * target covers. `countedFindings` are the signals that make a finding under the request
- * (`countedFindings`); absent, the defaults.
+ * target covers. `finding` says a rule that counts has a finding on the text.
  */
 export function textProblems(input: {
 	readonly signals: readonly TextReviewSignal[];
 	readonly keyChanged: boolean;
 	readonly marks?: readonly LocalizationCultureMark[];
-	readonly countedFindings?: readonly TextReviewSignal[];
+	readonly finding?: boolean;
 }): readonly TextProblem[] {
 	const marks = input.marks ?? [];
 	const found = new Set<TextProblem>();
 	if (input.keyChanged) found.add("key_changed");
 	for (const problem of TEXT_PROBLEMS) {
 		const rule: TextProblemRule = TEXT_PROBLEM_RULES[problem];
-		const signals = problem === "finding" ? [] : rule.signals;
 		if (
-			signals.some((signal) => input.signals.includes(signal)) ||
+			rule.signals.some((signal) => input.signals.includes(signal)) ||
 			marks.some(
 				(mark) =>
 					rule.states.includes(mark.state) ||
@@ -151,14 +118,14 @@ export function textProblems(input: {
 		)
 			found.add(problem);
 	}
-	if (textCountedFindings(input.signals, input.countedFindings).length > 0) found.add("finding");
+	if (input.finding === true) found.add("finding");
 	if (found.size === 0) return ["up_to_date"];
 	return TextProblem.literals.filter((problem) => found.has(problem));
 }
 
 /**
- * Keeps the actionable TextFinding subset of review signals. Conflicting, evidence-only and
- * compiled-copy signals remain available separately and are not converted into this subset.
+ * Keeps the review signals that are also a `TextFinding`: `unresolved`.
+ * @deprecated Findings come from the project's rules: read a row's `findings`.
  */
 export function textFindings(signals: readonly TextReviewSignal[]): readonly TextFinding[] {
 	return signals.filter(isFinding);
@@ -168,10 +135,10 @@ function clauseHas(facts: TextFacts, clause: TextFilterClause): boolean {
 	switch (clause.field) {
 		case "problem":
 			return clause.values.some((value) => facts.problems.includes(value));
-		case "finding": {
-			const signals: readonly string[] = facts.reviewSignals ?? facts.findings;
-			return clause.values.some((value) => signals.includes(value));
-		}
+		case "finding":
+			return clause.values.some((value) => facts.findings.includes(value));
+		case "fact":
+			return clause.values.some((value) => facts.reviewSignals?.includes(value) === true);
 		case "translation":
 			return clause.values.some((value) => facts.translation.includes(value));
 		case "origin":

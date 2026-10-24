@@ -395,6 +395,7 @@ fn manifest_notes_count_for_saved_lines_and_the_detail_keeps_the_list_culture_sc
         culture_offset: None,
         location_offset: None,
         po_context_offset: None,
+        findings: None,
     };
     let english = query.localization_detail(&detail(Some("en")), &cancelled)?;
     assert_eq!(english["problems"], json!(["up_to_date"]));
@@ -1398,5 +1399,215 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
         )?,
         Value::Null
     );
+    Ok(())
+}
+
+#[test]
+fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    let texts = [
+        ("Args", "Take {Count} {Item}", "Nimm {Count}"),
+        ("Spaced", "Open ", "Öffnen "),
+        ("Plain", "Plain", "Schlicht"),
+    ];
+    fixture.file(
+        "Game.manifest",
+        "manifest",
+        &texts
+            .iter()
+            .map(|(key, source, _)| json!({"namespace":"UI","key":key,"source":source,"path":format!("/Game/Text/Example.Example.{key}")}))
+            .collect::<Vec<_>>(),
+    )?;
+    for culture in ["en", "de"] {
+        fixture.file(
+            &format!("{culture}.archive"),
+            "archive",
+            &texts
+                .iter()
+                .map(|(key, source, translation)| json!({"namespace":"UI","key":key,"source":source,"translation":if culture == "de" { *translation } else { *source }}))
+                .collect::<Vec<_>>(),
+        )?;
+        fixture.file(&format!("{culture}.po"), "po", &[])?;
+    }
+    fixture.packages(
+        &texts
+            .iter()
+            .map(|(key, source, _)| json!({"namespace":"UI","key":key,"source":source,"object":format!("/Game/Text/{key}.{key}"),"property":"Label"}))
+            .collect::<Vec<_>>(),
+    )?;
+    fixture.lines()?;
+    let rules = example_document(
+        &["format_arguments", "source_whitespace"],
+        Some(
+            json!({"schemaVersion":1,"roles":[{"id":"all","scopes":[{"matchers":[{"kind":"object_path","operator":"prefix","value":"/Game/"}]}]}],"rules":[{"kind":"format_arguments"},{"kind":"source_whitespace"},{"id":"terms","kind":"terminology","role":"all","caseSensitive":false,"terms":[{"kind":"forbidden","term":"take"}],"recovery":"Replace it."}]}),
+        ),
+    )?;
+    // Evaluating writes the findings layer, so the fixture releases its writer first.
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    let mut query = EngineQuery::open(&configuration, None)?;
+    let cancelled = AtomicBool::new(false);
+    let evaluated = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
+    let key = evaluated["key"].as_str().ok_or("Missing findings key.")?;
+    let search = |query: &mut EngineQuery, patch: Value| -> Result<Value> {
+        let mut request = json!({"query":"","capability":"all","pageSize":50,"localization":{"target":"Game"},"findings":{"key":key}});
+        for (field, value) in patch.as_object().ok_or("object")? {
+            request[field] = value.clone();
+        }
+        query.search(
+            &crate::engine_types::parse_search_request(&request.to_string())?,
+            &cancelled,
+        )
+    };
+    let keys = |page: &Value| -> Vec<Value> {
+        page["localization"]["lines"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|line| line["identity"]["key"].clone())
+            .collect()
+    };
+    let facet = |page: &Value| -> Vec<(Value, Value)> {
+        page["facets"]["findings"]["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|entry| (entry["key"].clone(), entry["count"].clone()))
+            .collect()
+    };
+
+    // Each line lists the rules with a finding on it, and those that count raise `finding`.
+    let page = search(&mut query, json!({"facets":{"findings":true,"facts":true}}))?;
+    let line = |key: &str| -> Result<Value> {
+        page["localization"]["lines"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|line| line["identity"]["key"] == key)
+            .cloned()
+            .ok_or_else(|| format!("Missing line {key}.").into())
+    };
+    // A source rule's finding is on the line holding its unit.
+    assert_eq!(
+        line("Args")?["findings"],
+        json!(["localization.format_arguments", "terms"])
+    );
+    assert_eq!(
+        line("Spaced")?["findings"],
+        json!(["localization.source_whitespace"])
+    );
+    assert_eq!(line("Plain")?["findings"], json!([]));
+    assert_eq!(line("Args")?["findingsOmitted"], json!(0));
+    assert!(
+        line("Args")?["problems"]
+            .as_array()
+            .ok_or("problems")?
+            .contains(&json!("finding"))
+    );
+    assert!(
+        !line("Plain")?["problems"]
+            .as_array()
+            .ok_or("problems")?
+            .contains(&json!("finding"))
+    );
+    assert_eq!(
+        facet(&page),
+        vec![
+            (json!("localization.format_arguments"), json!(1)),
+            (json!("localization.source_whitespace"), json!(1)),
+            (json!("terms"), json!(1))
+        ]
+    );
+    assert_eq!(
+        page["facets"]["facts"],
+        json!({"unresolved":0,"conflicting":0,"evidence_only":3,"compiled_copy_differs":0})
+    );
+    assert_eq!(page["problems"]["finding"], json!(2));
+
+    // Finding clauses name rules; a rule outside the layer has no rows.
+    let only = search(
+        &mut query,
+        json!({"filter":[{"field":"finding","op":"is","values":["localization.format_arguments"]}],"facets":{"findings":true}}),
+    )?;
+    assert_eq!(keys(&only), vec![json!("Args")]);
+    // The facet leaves out its own clause.
+    assert_eq!(facet(&only), facet(&page));
+    let others = search(
+        &mut query,
+        json!({"filter":[{"field":"finding","op":"is_not","values":["localization.format_arguments"]}]}),
+    )?;
+    assert_eq!(others["total"], json!(2));
+    let dropped = search(
+        &mut query,
+        json!({"filter":[{"field":"finding","op":"is","values":["invented"]}]}),
+    )?;
+    assert_eq!(dropped["total"], json!(0));
+
+    // One group per rule, in program order; a line is in each rule's group it has a finding of.
+    let grouped = search(
+        &mut query,
+        json!({"group":"finding","openGroups":["localization.source_whitespace"]}),
+    )?;
+    let groups = grouped["groups"]["entries"]
+        .as_array()
+        .ok_or("Missing groups.")?
+        .iter()
+        .map(|entry| (entry["key"].clone(), entry["count"].clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(groups, facet(&page));
+    assert_eq!(
+        keys(&grouped["openGroups"][0]["page"]),
+        vec![json!("Spaced")]
+    );
+
+    // A culture scope without the finding's culture leaves its line findings out; a source
+    // finding has no culture.
+    let english = search(
+        &mut query,
+        json!({"localization":{"target":"Game","cultures":["en"]},"facets":{"findings":true}}),
+    )?;
+    assert_eq!(
+        facet(&english),
+        vec![
+            (json!("localization.format_arguments"), json!(0)),
+            (json!("localization.source_whitespace"), json!(1)),
+            (json!("terms"), json!(1))
+        ]
+    );
+
+    // Without a target, Browse lists the source rules' findings on their units.
+    let corpus = json!({"query":"","capability":"all","pageSize":50,"findings":{"key":key,"sourceOnly":true},"facets":{"findings":true}});
+    let units = query.search(
+        &crate::engine_types::parse_search_request(&corpus.to_string())?,
+        &cancelled,
+    )?;
+    assert_eq!(facet(&units), vec![(json!("terms"), json!(1))]);
+    let args = units["units"]
+        .as_array()
+        .ok_or("Missing units.")?
+        .iter()
+        .find(|unit| unit["source"]["value"] == "Take {Count} {Item}")
+        .ok_or("Missing args unit.")?;
+    assert_eq!(args["findings"], json!(["terms"]));
+
+    // Without a layer no row has a finding, and no line has the `finding` problem.
+    let plain = search(
+        &mut query,
+        json!({"findings":null,"filter":[{"field":"finding","op":"is","values":["localization.format_arguments"]}]}),
+    );
+    assert!(plain.is_err(), "null fields are rejected");
+    let mut request = json!({"query":"","capability":"all","pageSize":50,"localization":{"target":"Game"},"filter":[{"field":"finding","op":"is","values":["localization.format_arguments"]}]});
+    let none = query.search(
+        &crate::engine_types::parse_search_request(&request.to_string())?,
+        &cancelled,
+    )?;
+    assert_eq!(none["total"], json!(0));
+    request["filter"] = json!([{"field":"fact","op":"is","values":["unresolved"]}]);
+    let facts = query.search(
+        &crate::engine_types::parse_search_request(&request.to_string())?,
+        &cancelled,
+    )?;
+    assert_eq!(facts["total"], json!(0));
+    assert_eq!(facts["problems"]["finding"], json!(0));
     Ok(())
 }

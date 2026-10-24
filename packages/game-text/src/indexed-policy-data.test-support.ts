@@ -36,7 +36,7 @@ import {
 	type TextCorpusDiagnosticSummary,
 	type TextPackageCoverageSummary
 } from "./corpus-summary.js";
-import type { TextUnit, TextOccurrence, TextReviewSignal } from "./schema.js";
+import type { TextUnit, TextOccurrence } from "./schema.js";
 import type { SavedTextRepresentationCopy } from "./representation-copies.js";
 
 import { decodeTextAudience, textAudienceFields } from "./text-audience.js";
@@ -48,16 +48,6 @@ type MutableDiagnosticCounts = {
 type MutablePackageCounts = {
 	-readonly [K in keyof TextPackageCoverageSummary["counts"]]: TextPackageCoverageSummary["counts"][K];
 };
-
-export const querySignals = [
-	"shared",
-	"duplicate_source",
-	"long",
-	"unresolved",
-	"conflicting",
-	"evidence_only",
-	"compiled_copy_differs"
-] as const satisfies readonly TextReviewSignal[];
 
 /** The largest page hydrateJoinedTarget accepts. */
 const MAX_HYDRATED_PAGE_LINES = 10000;

@@ -129,8 +129,7 @@ impl Entries {
         gathered: u32,
         raw_index: &[u32],
         occurrence_line: &[u32],
-        group_flags: &[u32],
-        duplicate: &[bool],
+        conflicting: &[bool],
     ) {
         let c = &j.packages.occurrence;
         self.c[0][row] = first as u32;
@@ -167,13 +166,13 @@ impl Entries {
             if paths_seen.insert(file) {
                 paths.push(file);
             }
-            flags |= group_flags[if gathered == ABSENT {
+            if conflicting[if gathered == ABSENT {
                 occurrence_line[i]
             } else {
                 gathered
-            } as usize];
-            if duplicate[i] {
-                flags |= 2;
+            } as usize]
+            {
+                flags |= 16;
             }
             origins |= 1
                 << match c[O_LOCATION][i] {
@@ -208,9 +207,6 @@ impl Entries {
         let word_count = words(longest);
         self.sources.extend(values);
         self.files.extend(paths);
-        if characters_count >= 40 {
-            flags |= 4;
-        }
         if c[O_IDENTITY][first] >= 2 || c[O_KEY][first] == j.empty {
             flags |= 8;
         }
@@ -257,9 +253,8 @@ impl Entries {
 pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     let count = j.groups.len();
     let mut occurrence_line = vec![0; j.order.len()];
-    let mut group_flags = vec![0; count];
-    let places = crate::package_evidence::places(j);
-    let duplicate = crate::package_evidence::duplicates(j, &places);
+    // A line holding several resolved texts conflicts; every unit on it carries the fact.
+    let mut conflicting = vec![false; count];
     let c = &j.packages.occurrence;
     for (row, g) in j.groups.iter().enumerate() {
         let mut sources = HashSet::new();
@@ -272,7 +267,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
             let source = c[O_SOURCE][i];
             sources.insert(source);
         }
-        group_flags[row] = u32::from(g.oe - g.os > 1) | if sources.len() > 1 { 16 } else { 0 };
+        conflicting[row] = sources.len() > 1;
     }
     let raw_representatives = j
         .raw_order
@@ -315,8 +310,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
             ABSENT,
             &raw_index,
             &occurrence_line,
-            &group_flags,
-            &duplicate,
+            &conflicting,
         );
     }
     let mut slice = Entries::new(representatives.len());
@@ -329,19 +323,15 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
                 row as u32,
                 &raw_index,
                 &occurrence_line,
-                &group_flags,
-                &duplicate,
+                &conflicting,
             );
         }
     }
-    let mut result = vec![
-        ("query.occurrence.places".into(), String::new(), places),
-        (
-            "query.occurrence.sources".into(),
-            "source".into(),
-            c[O_SOURCE].clone(),
-        ),
-    ];
+    let mut result = vec![(
+        "query.occurrence.sources".into(),
+        "source".into(),
+        c[O_SOURCE].clone(),
+    )];
     raw.append("raw", &mut result);
     slice.append("slice", &mut result);
     let mut raw_order = (0..names.len() as u32).collect::<Vec<_>>();
@@ -357,19 +347,20 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     ));
     let mut line_names = Vec::new();
     for row in 0..count {
-        let identity =
-            if line_starts[row] != line_starts[row + 1] && j.string(j.line[1][row]).is_empty() {
-                format!(
-                    "unresolved:{}",
-                    names[raw_index[representatives[line_starts[row] as usize] as usize] as usize]
-                )
-            } else {
-                crate::wtf8::Wtf8Buf::from_utf8(&crate::wtf8::view_json(&serde_json::json!([
-                    j.string(j.line[0][row]),
-                    j.string(j.line[1][row])
-                ]))?)
-                .to_view()
-            };
+        let identity = if line_starts[row] != line_starts[row + 1]
+            && j.string(j.line[crate::join::L_KEY][row]).is_empty()
+        {
+            format!(
+                "unresolved:{}",
+                names[raw_index[representatives[line_starts[row] as usize] as usize] as usize]
+            )
+        } else {
+            crate::wtf8::Wtf8Buf::from_utf8(&crate::wtf8::view_json(&serde_json::json!([
+                j.string(j.line[crate::join::L_NS][row]),
+                j.string(j.line[crate::join::L_KEY][row])
+            ]))?)
+            .to_view()
+        };
         line_names.push(format!(
             "{}:{identity}",
             crate::wtf8::Wtf8Buf::from_utf8(target).to_view()

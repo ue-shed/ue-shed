@@ -10,12 +10,6 @@ import { occurrenceTextAudience } from "./text-audience.js";
  */
 export function textReviewSignalLabel(signal: TextReviewSignal): string {
 	switch (signal) {
-		case "shared":
-			return "used in several places";
-		case "duplicate_source":
-			return "same text under another key";
-		case "long":
-			return "long";
 		case "unresolved":
 			return "not localizable";
 		case "conflicting":
@@ -94,10 +88,17 @@ export function spreadsheetCsv(rows: Iterable<readonly (string | number)[]>): st
 	);
 }
 
-/** One row per searchable line's saved location. Optional context keeps scan-wide review signals. */
+/**
+ * One row per searchable line's saved location. Optional context keeps scan-wide review signals.
+ * With `findings`, a Findings column lists the labels of each unit's rules.
+ */
 export function gameTextCsv(
 	corpus: Pick<TextCorpus, "units">,
-	reviewSignals: ReadonlyMap<TextCorpus["units"][number]["id"], readonly TextReviewSignal[]>
+	reviewSignals: ReadonlyMap<TextCorpus["units"][number]["id"], readonly TextReviewSignal[]>,
+	findings?: {
+		readonly labels: ReadonlyMap<string, string>;
+		readonly units: ReadonlyMap<TextCorpus["units"][number]["id"], readonly string[]>;
+	}
 ): string {
 	return spreadsheetCsv(
 		(function* () {
@@ -115,6 +116,7 @@ export function gameTextCsv(
 				"Characters",
 				"Words",
 				"Review signals",
+				...(findings ? ["Findings"] : []),
 				"Audience",
 				"Text unit ID",
 				"Package file"
@@ -125,6 +127,9 @@ export function gameTextCsv(
 					throw new Error(
 						"CSV export is missing native review signals for a selected unit."
 					);
+				const ruleLabels = (findings?.units.get(unit.id) ?? []).map(
+					(rule) => findings?.labels.get(rule) ?? rule
+				);
 				for (const occurrence of unit.occurrences) {
 					yield [
 						occurrence.source,
@@ -145,6 +150,7 @@ export function gameTextCsv(
 							.filter((signal) => signal !== "evidence_only")
 							.map(textReviewSignalLabel)
 							.join("; "),
+						...(findings ? [ruleLabels.join("; ")] : []),
 						TEXT_AUDIENCE_LABELS[occurrenceTextAudience(occurrence).audience],
 						unit.id,
 						occurrence.packageFile

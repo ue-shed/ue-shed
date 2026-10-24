@@ -197,23 +197,17 @@ describe("index queries", () => {
 								})).total
 							).toBe(all - 5);
 
-							// Every stored signal filters: the key holding two texts conflicts.
+							// Every stored fact filters: the key holding two texts conflicts.
 							const conflicting = yield* search(true, {
-								filter: [{ field: "finding", op: "is", values: ["conflicting"] }]
+								filter: [{ field: "fact", op: "is", values: ["conflicting"] }]
 							});
 							expect(lineKeys(conflicting)).toEqual(["UI/Cap"]);
 							yield* search(false, {
-								filter: [{ field: "finding", op: "is", values: ["evidence_only"] }]
+								filter: [{ field: "fact", op: "is", values: ["evidence_only"] }]
 							});
 
 							// Texts under several keys, in one query.
-							const shared = {
-								filter: [
-									{ field: "finding", op: "is", values: ["duplicate_source"] }
-								] satisfies TextFilter,
-								group: "source",
-								minGroupSize: 2
-							} as const;
+							const shared = { group: "source", minGroupSize: 2 } as const;
 							const groups = (yield* search(true, shared)).groups;
 							expect(groups?.by).toBe("source");
 							expect(

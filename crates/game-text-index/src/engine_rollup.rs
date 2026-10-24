@@ -5,6 +5,7 @@ use crate::engine_match::{Kind, Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, audience, selected_bits};
 use crate::engine_types::*;
+use crate::rules::FindingRows;
 use crate::{Error, ErrorCode, Result, require};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -34,7 +35,10 @@ pub enum Dimension {
     Audience,
     Origin,
     Problem,
+    /// The rules of the search's findings layer with a finding on the row.
     Finding,
+    /// The row's facts.
+    ReviewSignal,
     Asset,
     Gathered,
 }
@@ -245,13 +249,9 @@ impl EngineQuery {
         let localized = request.search.localization.is_some();
         let kind = if localized { Kind::Line } else { Kind::Raw };
         let scope = self.culture_scope(request.search.localization.as_ref())?;
+        let findings = self.request_findings(&request.search, cancelled)?;
         let problems = if request.by.contains(&Dimension::Problem) {
-            self.problem_column(
-                localized,
-                &scope,
-                request.search.counted_findings(),
-                cancelled,
-            )?
+            self.problem_column(localized, &scope, findings.as_deref(), cancelled)?
         } else {
             std::sync::Arc::from([])
         };
@@ -362,11 +362,16 @@ impl EngineQuery {
                         projection.raw.origins[row]
                     }),
                     Dimension::Problem => bits(problems[row]),
-                    Dimension::Finding => bits(if localized {
-                        projection.flags[row]
-                    } else {
-                        projection.raw.signals[row]
+                    Dimension::Finding => findings.as_ref().map_or_else(Vec::new, |findings| {
+                        findings.of(row).map(|rule| rule as u32).collect()
                     }),
+                    Dimension::ReviewSignal => bits(
+                        if localized {
+                            projection.flags[row]
+                        } else {
+                            projection.raw.signals[row]
+                        } >> FACT_SHIFT,
+                    ),
                     Dimension::Asset => {
                         let mut assets = Vec::new();
                         projection.each_file(kind, row, &mut |file| {
@@ -496,8 +501,18 @@ impl EngineQuery {
                         Dimension::Problem => {
                             (format!("{code:08}"), json!(PROBLEMS[*code as usize]))
                         }
-                        Dimension::Finding => {
-                            (format!("{code:08}"), json!(SIGNALS[*code as usize]))
+                        Dimension::Finding => (
+                            format!("{code:08}"),
+                            json!(
+                                findings
+                                    .as_ref()
+                                    .and_then(|findings| findings.rules.get(*code as usize))
+                                    .ok_or("Unknown finding rule.")?
+                                    .id
+                            ),
+                        ),
+                        Dimension::ReviewSignal => {
+                            (format!("{code:08}"), json!(FACTS[*code as usize]))
                         }
                         Dimension::Audience => {
                             (format!("{code:08}"), json!(AUDIENCES[*code as usize]))
@@ -627,7 +642,7 @@ impl EngineQuery {
         row: usize,
         fields: &[&str],
         scope: &[usize],
-        counted: u32,
+        findings: Option<&FindingRows>,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
         let preview = self.preview(row)?;
@@ -648,14 +663,15 @@ impl EngineQuery {
                 "marks" => {
                     result.insert("marks".into(), preview["cultures"].clone());
                 }
-                "problems" | "signals" => {
+                "problems" => {
                     let projection = Projection::open(self, cancelled)?;
-                    let (labels, value): (&[&str], u32) = if *field == "problems" {
-                        (&PROBLEMS, projection.problem(row, scope, counted))
-                    } else {
-                        (&SIGNALS, projection.flags[row])
-                    };
-                    result.insert((*field).into(), json!(selected_bits(labels, value)));
+                    let finding = findings.is_some_and(|findings| findings.counted.contains(row));
+                    let problems = projection.problem(row, scope, finding);
+                    result.insert("problems".into(), json!(selected_bits(&PROBLEMS, problems)));
+                }
+                "signals" => {
+                    let projection = Projection::open(self, cancelled)?;
+                    result.insert("signals".into(), json!(facts(projection.flags[row])));
                 }
                 "places" => {
                     let places = self.line_places(row, cancelled)?;

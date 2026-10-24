@@ -163,9 +163,9 @@ describe("Game Text at the scale of a shipping game", () => {
 			const untranslated = rows.filter(
 				(index) => index % 50 !== 0 && index % 70 !== 0 && index % 30 === 0
 			).length;
+			// The lines that reuse the next line's text have no finding without a findings layer.
 			const upToDate = rows.filter(
-				(index) =>
-					index % 50 !== 0 && index % 70 !== 0 && index % 30 !== 0 && index % 20 > 1
+				(index) => index % 50 !== 0 && index % 70 !== 0 && index % 30 !== 0
 			).length;
 			expect(plain.value.total).toBe(LINES);
 			expect(plain.value.problems).toEqual({
@@ -174,7 +174,7 @@ describe("Game Text at the scale of a shipping game", () => {
 				not_gathered: notGathered,
 				changed_since_gather: changed,
 				translation: untranslated,
-				finding: LINES / 10,
+				finding: 0,
 				unchecked: 0,
 				up_to_date: upToDate
 			});

@@ -235,7 +235,7 @@ const duplicateCandidate = (prefix: "" | "line.") =>
 		x.not(f(`${prefix}conflicting`))
 	);
 /**
- * A candidate with another identity at another place (`DuplicateSources.hasOther`). A line
+ * A candidate with another identity at another place. A line
  * without a saved place has one of its own, its identity, which no saved place equals. Tuples
  * are distinct, so a line's cultures count once.
  */

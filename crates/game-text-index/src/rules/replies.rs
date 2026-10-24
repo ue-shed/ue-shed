@@ -24,6 +24,8 @@ pub struct RuleMetadata {
     pub family: Family,
     pub severity: Severity,
     pub role: Option<String>,
+    /// Whether the rule's findings raise the `finding` problem.
+    pub counts: bool,
 }
 /// Findings per rule, culture and severity. Source rules have no culture.
 #[derive(Clone, Debug, Deserialize, Serialize)]

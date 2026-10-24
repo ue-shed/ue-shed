@@ -72,6 +72,8 @@ export function GroupedResults(props: {
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
+	/** Rule labels by ID, for the findings rows list. */
+	readonly rules?: ReadonlyMap<string, string> | undefined;
 	/**
 	 * A group's rows, in order, each time it loads a page, and how to load its next page when it
 	 * has one; the line page steps through them.
@@ -109,6 +111,7 @@ export function GroupedResults(props: {
 						selectedId={props.selectedId}
 						selectedLocalizationId={props.selectedLocalizationId}
 						onSelect={props.onSelect}
+						rules={props.rules}
 						{...(props.onLoaded === undefined
 							? undefined
 							: { onLoaded: props.onLoaded })}
@@ -144,6 +147,7 @@ function GroupSection(props: {
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
+	readonly rules?: ReadonlyMap<string, string> | undefined;
 	readonly onLoaded?: GroupLoaded;
 	readonly ticks?: RowTicks | undefined;
 }) {
@@ -302,6 +306,7 @@ function GroupSection(props: {
 								selectedId={props.selectedId}
 								selectedLocalizationId={props.selectedLocalizationId}
 								onSelect={props.onSelect}
+								rules={props.rules}
 								checked={props.ticks?.checked}
 								onCheck={props.ticks?.onCheck}
 								checking={props.ticks?.checking}

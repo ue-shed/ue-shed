@@ -18,12 +18,7 @@ import type {
 	TextProblem,
 	TextReviewSignal
 } from "./schema.js";
-import {
-	countedFindings,
-	textCountedFindings,
-	textProblemCounts,
-	textProblems
-} from "./text-problems.js";
+import { textCountedFindings, textProblemCounts, textProblems } from "./text-problems.js";
 import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -106,8 +101,8 @@ const packages = [
 	}
 ];
 
-const finding = (...values: TextReviewSignal[]): TextFilter[number] => ({
-	field: "finding",
+const fact = (...values: TextReviewSignal[]): TextFilter[number] => ({
+	field: "fact",
 	op: "is",
 	values
 });
@@ -117,18 +112,15 @@ const problem = (...values: TextProblem[]): TextFilter[number] => ({
 	values
 });
 
-// Requests with and without finding clauses: what counts as a finding follows each one.
-const variants: readonly Pick<TextCorpusSearchRequest, "filter" | "lens">[] = [
+// Requests with fact and problem clauses. Without a findings layer no row has a finding, so a
+// `finding` clause or problem selects none.
+const variants: readonly Pick<TextCorpusSearchRequest, "filter">[] = [
 	{},
-	{ filter: [finding("long")] },
-	{ filter: [finding("long", "shared")] },
-	{ filter: [{ field: "finding", op: "is_not", values: ["long"] }] },
-	{ lens: "long" },
-	// Counts relax the lens and facets drop their own clause; neither changes what counts.
-	{ lens: "long", filter: [problem("finding")] },
-	{ lens: "long", filter: [finding("long")] },
+	{ filter: [fact("unresolved")] },
+	{ filter: [fact("unresolved", "conflicting")] },
+	{ filter: [{ field: "fact", op: "is_not", values: ["unresolved"] }] },
 	{ filter: [problem("finding")] },
-	{ filter: [finding("long"), problem("finding")] },
+	{ filter: [fact("conflicting"), problem("conflicting_source")] },
 	{ filter: [problem("unchecked")] },
 	{ filter: [problem("changed_since_gather")] },
 	{ filter: [problem("up_to_date")] }
@@ -156,12 +148,12 @@ function explained(page: TextCorpusSearchPage) {
 		? page.localization.lines.map((line) => ({
 				key: line.identity?.key ?? line.id,
 				problems: line.problems,
-				countedFindings: line.countedFindings
+				findings: line.findings
 			}))
 		: page.units.map((unit) => ({
 				key: unit.identity.status === "resolved" ? unit.identity.key : unit.id,
 				problems: unit.problems,
-				countedFindings: unit.countedFindings
+				findings: unit.findings
 			}));
 	return {
 		rows: rows.sort((left, right) => left.key.localeCompare(right.key)),
@@ -174,7 +166,7 @@ function explained(page: TextCorpusSearchPage) {
 }
 
 describe("text problems in the engine and textProblems", () => {
-	it("maps states, facts, reasons and signals through the shared table", () => {
+	it("maps states, facts and reasons through the shared table", () => {
 		const mark = (state: string, unknownReasons: string[] = [], facts: string[] = []) =>
 			Schema.decodeUnknownSync(LocalizationCultureMark)({
 				culture: "de",
@@ -193,19 +185,13 @@ describe("text problems in the engine and textProblems", () => {
 		]);
 		expect(problems([mark("translated", [], ["not_synced"])])).toEqual(["translation"]);
 		expect(problems([mark("gathered_only")])).toEqual(["up_to_date"]);
-		expect(problems([mark("translated")], ["long"])).toEqual(["up_to_date"]);
-		expect(problems([mark("translated")], ["shared"])).toEqual(["finding"]);
-		expect(
-			textProblems({
-				signals: ["long"],
-				keyChanged: false,
-				countedFindings: countedFindings({ filter: [finding("long")] })
-			})
-		).toEqual(["finding"]);
-		expect(
-			countedFindings({ filter: [finding("conflicting", "long")], lens: "shared" })
-		).toEqual(["shared", "duplicate_source", "long", "unresolved"]);
-		expect(textCountedFindings(["long", "shared", "conflicting"])).toEqual(["shared"]);
+		// Facts raise only `conflicting_source`; `finding` comes from the rules that count.
+		expect(problems([mark("translated")], ["unresolved"])).toEqual(["up_to_date"]);
+		expect(problems([mark("translated")], ["conflicting"])).toEqual(["conflicting_source"]);
+		expect(textProblems({ signals: ["unresolved"], keyChanged: false, finding: true })).toEqual(
+			["finding"]
+		);
+		expect(textCountedFindings(["unresolved", "conflicting"])).toEqual([]);
 		expect(TEXT_PROBLEMS.indexOf("unchecked")).toBe(TEXT_PROBLEMS.length - 2);
 	});
 
@@ -294,12 +280,11 @@ describe("text problems in the engine and textProblems", () => {
 										expect(explained(page), label).toEqual(
 											explained(inMemory.search(request))
 										);
-										const counted = countedFindings(request);
 										const rows = explained(page).rows;
 										for (const row of rows)
 											for (const item of row.problems!) seen.add(item);
-										// A row has the problem its filter asked for, and shows
-										// every finding that counted.
+										// A row has the problem its filter asked for, and without
+										// a findings layer neither a finding nor the problem.
 										const asked: readonly string[] | undefined =
 											request.filter?.find(
 												(clause) => clause.field === "problem"
@@ -312,10 +297,12 @@ describe("text problems in the engine and textProblems", () => {
 													),
 													label
 												).toBe(true);
-										for (const row of rows)
+										for (const row of rows) {
 											expect(row.problems!.includes("finding"), label).toBe(
-												row.countedFindings!.length > 0
+												false
 											);
+											expect(row.findings, label).toBeUndefined();
+										}
 										if (!scoped || asked !== undefined) continue;
 										// Every line, as the engine reads its inputs.
 										const {
@@ -333,8 +320,7 @@ describe("text problems in the engine and textProblems", () => {
 												textProblems({
 													signals: line.signals,
 													keyChanged: line.keyChange?.direction === "to",
-													marks: line.marks,
-													countedFindings: counted
+													marks: line.marks
 												})
 											);
 										expect(page.problems, label).toEqual(
@@ -345,7 +331,6 @@ describe("text problems in the engine and textProblems", () => {
 								[
 									"changed_since_gather",
 									"conflicting_source",
-									"finding",
 									"not_gathered",
 									"translation",
 									"unchecked",

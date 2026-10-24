@@ -55,8 +55,8 @@ pub(crate) struct FindingsAcceptRequest {
 /// The findings a review accepted, as (line row, culture index, rule ID): each entry whose line
 /// and culture exist and whose fingerprint is the line's current one for that culture.
 pub(crate) struct Acceptance {
-    layer: String,
-    entries: HashSet<(u32, u32, String)>,
+    pub(super) layer: String,
+    pub(super) entries: HashSet<(u32, u32, String)>,
 }
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]

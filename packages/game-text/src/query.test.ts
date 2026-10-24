@@ -90,19 +90,7 @@ describe("text corpus query context", () => {
 		};
 		const query = textCorpusQuery(duplicate);
 
-		expect(query.summary().review).toMatchObject({
-			all: 2,
-			duplicateSource: 2,
-			shared: 1
-		});
-		expect(
-			query.search({ capability: "all", lens: "duplicate_source", pageSize: 50, query: "" })
-				.units
-		).toHaveLength(2);
-		expect(
-			query.search({ capability: "all", lens: "shared", pageSize: 50, query: "" }).units[0]
-				?.reviewSignals
-		).toContain("shared");
+		expect(query.summary().review).toEqual({ all: 2, unresolved: 0, conflicting: 0 });
 	});
 });
 

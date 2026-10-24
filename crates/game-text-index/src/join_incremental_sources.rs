@@ -125,8 +125,6 @@ impl Sources<'_> {
     pub fn queries(
         &mut self,
         lines: &BTreeSet<usize>,
-        edits: &BTreeMap<usize, u32>,
-        previous: &BTreeMap<usize, u32>,
         hot: &mut Hot,
     ) -> Result<Option<SourceEdits>> {
         let mut updated = SourceEdits::new();
@@ -183,7 +181,6 @@ impl Sources<'_> {
                         row as usize,
                         words(longest),
                     );
-                    let longest_characters = characters(longest);
                     let flags = self
                         .joined
                         .get(&(prefix.clone() + "signals"), row as usize)?;
@@ -202,16 +199,11 @@ impl Sources<'_> {
                         hot,
                         &(prefix.clone() + "signals"),
                         row as usize,
-                        (flags & !(4 | 16))
-                            | if longest_characters >= 40 { 4 } else { 0 }
-                            | if conflict { 16 } else { 0 },
+                        (flags & !16) | if conflict { 16 } else { 0 },
                     );
                     updated.entry(kind.into()).or_default().insert(row, values);
                 }
             }
-        }
-        if !edits.is_empty() {
-            self.duplicates(edits, previous, hot)?;
         }
         if hot.values().any(|rows| rows.len() > 8192) {
             return Ok(None);
@@ -232,98 +224,6 @@ impl Sources<'_> {
             }
         }
         Ok(false)
-    }
-
-    fn duplicates(
-        &mut self,
-        edits: &BTreeMap<usize, u32>,
-        previous: &BTreeMap<usize, u32>,
-        hot: &mut Hot,
-    ) -> Result<()> {
-        let dirty = edits
-            .values()
-            .chain(previous.values())
-            .copied()
-            .collect::<BTreeSet<_>>();
-        let mut candidates = BTreeSet::new();
-        let mut visited = 0usize;
-        for source in &dirty {
-            for route in self.graph.source_members(*source)? {
-                candidates.insert(("raw", route.raw));
-                candidates.insert(("slice", route.slice));
-                visited += 1;
-            }
-        }
-        let mut queries = Vec::new();
-        let mut needed = BTreeSet::new();
-        for (kind, row) in candidates {
-            let prefix = format!("query.{kind}.");
-            let flags = self
-                .joined
-                .get(&(prefix.clone() + "signals"), row as usize)?;
-            if self
-                .joined
-                .get(&(prefix.clone() + "identity"), row as usize)?
-                != 0
-                || flags & 8 != 0
-            {
-                continue;
-            }
-            let mut routes = Vec::new();
-            for member in self.graph.members(kind, row)? {
-                let route = self.graph.route(member)?;
-                needed.insert(route.source);
-                routes.push(route);
-            }
-            queries.push((prefix, row, flags, routes));
-        }
-        let mut count = HashMap::<u32, i64>::new();
-        let mut identities = HashMap::<(u32, u32), i64>::new();
-        let mut locations = HashMap::<(u32, u32), i64>::new();
-        let mut pairs = HashMap::<(u32, u32, u32), i64>::new();
-        for source in needed {
-            for route in self.graph.source_members(source)? {
-                visited += 1;
-                if !route.eligible {
-                    continue;
-                }
-                *count.entry(source).or_default() += 1;
-                *identities.entry((source, route.line)).or_default() += 1;
-                *locations.entry((source, route.place)).or_default() += 1;
-                *pairs.entry((source, route.line, route.place)).or_default() += 1;
-            }
-        }
-        note("dependencySourceMembersVisited", json!(visited));
-        note("dependencyQueryGroupsVisited", json!(queries.len()));
-        for (prefix, row, flags, routes) in queries {
-            let duplicate = routes.iter().any(|route| {
-                count.get(&route.source).copied().unwrap_or(0)
-                    - identities
-                        .get(&(route.source, route.line))
-                        .copied()
-                        .unwrap_or(0)
-                    - locations
-                        .get(&(route.source, route.place))
-                        .copied()
-                        .unwrap_or(0)
-                    + pairs
-                        .get(&(route.source, route.line, route.place))
-                        .copied()
-                        .unwrap_or(0)
-                    > 0
-            });
-            let field = prefix + "signals";
-            let flags = hot
-                .get(&field)
-                .and_then(|rows| rows.get(&row))
-                .copied()
-                .unwrap_or(flags);
-            let updated = (flags & !2) | (u32::from(duplicate) * 2);
-            if updated != flags {
-                set(hot, &field, row as usize, updated);
-            }
-        }
-        Ok(())
     }
 }
 

@@ -41,15 +41,19 @@ pub const REASONS: [&str; 18] = [
     "ambiguous_po_identity",
     "string_table_entry_missing",
 ];
-pub const SIGNALS: [&str; 7] = [
-    "shared",
-    "duplicate_source",
-    "long",
+/// A row's facts, stored as its `signals` bits from `FACT_SHIFT` up.
+pub const FACTS: [&str; 4] = [
     "unresolved",
     "conflicting",
     "evidence_only",
     "compiled_copy_differs",
 ];
+/// The first fact's bit in a row's `signals`. The bits below it are retired.
+pub const FACT_SHIFT: u32 = 3;
+/// The facts a row's `signals` hold.
+pub fn facts(signals: u32) -> Vec<&'static str> {
+    crate::engine_query::selected_bits(&FACTS, signals >> FACT_SHIFT)
+}
 pub(crate) use crate::text_problem::PROBLEMS;
 pub const ORIGINS: [&str; 5] = ["string_table", "data_table", "asset", "cpp", "other_source"];
 pub const AUDIENCES: [&str; 3] = ["player", "editor", "unknown"];
@@ -80,6 +84,8 @@ pub enum GroupBy {
     Audience,
     /// Exact source text: a line's source, or a unit's first source in UTF-16 order.
     Source,
+    /// The rules with a finding on the row, one group per rule; a row can be in several.
+    Finding,
     /// The main asset class of a line's packages. Facets only: requests cannot group by it.
     #[serde(skip)]
     AssetType,
@@ -105,7 +111,10 @@ pub const MAX_OPEN_GROUP_ROWS: usize = 500;
 #[serde(rename_all = "snake_case")]
 pub enum FilterField {
     Problem,
+    /// Rule IDs of the request's findings layer.
     Finding,
+    /// The four facts.
+    Fact,
     Translation,
     Origin,
     Folder,
@@ -166,6 +175,32 @@ pub struct Facets {
     pub audiences: Option<bool>,
     pub cultures: Option<bool>,
     pub asset_types: Option<bool>,
+    /// Every rule of the findings layer, in program order, with the rows it has a finding on.
+    pub findings: Option<bool>,
+    /// The rows with each fact.
+    pub facts: Option<bool>,
+}
+
+/// The findings layer a read shows, and the review acceptance whose findings it hides.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FindingsSelection {
+    pub key: String,
+    pub acceptance: Option<String>,
+    /// Only the layer's source rules, as Browse without a target lists them.
+    pub source_only: Option<bool>,
+}
+
+impl FindingsSelection {
+    fn validate(&self) -> Result<()> {
+        for value in std::iter::once(&self.key).chain(&self.acceptance) {
+            require(
+                !value.is_empty() && characters(value) <= 256,
+                invalid("Invalid findings selection."),
+            )?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -178,7 +213,6 @@ pub struct SearchRequest {
     pub localization: Option<LocalizationScope>,
     pub localization_cursor: Option<String>,
     pub without_notes: Option<bool>,
-    pub lens: Option<String>,
     #[serde(rename = "where")]
     pub location: Option<LocationScope>,
     pub filter: Option<Vec<Clause>>,
@@ -194,11 +228,8 @@ pub struct SearchRequest {
     pub facets: Option<Facets>,
     /// The parts of the answer to compute; every part when absent.
     pub parts: Option<Vec<Part>>,
-    /// Set on a request derived from another (a facet or count base without a clause or the
-    /// lens): the findings the original request counts. Never read from callers; part of the
-    /// cache key when set.
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub counted: Option<u32>,
+    /// The findings layer whose rules the `finding` field, problem, facet and group read.
+    pub findings: Option<FindingsSelection>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -215,6 +246,8 @@ pub struct FocusRequest {
     pub page_size: usize,
     pub occurrence_cursor: Option<String>,
     pub localization: Option<FocusSelection>,
+    /// The findings layer whose rules the focused row lists.
+    pub findings: Option<FindingsSelection>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -235,6 +268,8 @@ pub struct LocalizationDetailRequest {
     pub culture_offset: Option<usize>,
     pub location_offset: Option<usize>,
     pub po_context_offset: Option<usize>,
+    /// The findings layer whose rules the line lists, in its culture scope.
+    pub findings: Option<FindingsSelection>,
 }
 
 pub fn parse_detail_request(payload: &str) -> Result<LocalizationDetailRequest> {
@@ -268,6 +303,9 @@ pub fn parse_detail_request(payload: &str) -> Result<LocalizationDetailRequest> 
     }
     if let Some(cultures) = &request.cultures {
         list(cultures, 256, 128, "Invalid culture scope.")?;
+    }
+    if let Some(findings) = &request.findings {
+        findings.validate()?;
     }
     Ok(request)
 }
@@ -354,11 +392,8 @@ impl SearchRequest {
         {
             bounded(cursor, 32767, "Search cursor exceeds its bound.")?;
         }
-        if let Some(lens) = &self.lens {
-            require(
-                lens == "all" || SIGNALS[..5].contains(&lens.as_str()),
-                invalid("Unknown search lens."),
-            )?;
+        if let Some(findings) = &self.findings {
+            findings.validate()?;
         }
         if let Some(location) = &self.location {
             if let Some(kinds) = &location.kinds {
@@ -381,7 +416,8 @@ impl SearchRequest {
             for clause in filters {
                 let (allowed, max, length): (&[&str], usize, u32) = match clause.field {
                     FilterField::Problem => (&PROBLEMS, PROBLEMS.len(), 64),
-                    FilterField::Finding => (&SIGNALS, SIGNALS.len(), 64),
+                    FilterField::Finding => (&[], 256, 256),
+                    FilterField::Fact => (&FACTS, FACTS.len(), 64),
                     FilterField::Translation => (&["missing", "to_update", "not_synced"], 3, 64),
                     FilterField::Origin => (&ORIGINS, 5, 64),
                     FilterField::Editing => (&["editable", "read_only"], 2, 64),
@@ -482,10 +518,9 @@ impl SearchRequest {
         Ok(())
     }
 
-    /// The request without its `field` clauses. Findings it counts stay those of `self`.
+    /// The request without its `field` clauses.
     pub fn without_filter(&self, field: FilterField) -> Self {
         let mut result = self.clone();
-        result.counted = Some(self.counted_findings());
         result.filter = self.filter.as_ref().map(|clauses| {
             clauses
                 .iter()
@@ -501,24 +536,6 @@ impl SearchRequest {
         self.parts
             .as_ref()
             .is_none_or(|parts| parts.contains(&part))
-    }
-
-    /// The review signals that make a row a finding under this request: the defaults, and the
-    /// findings its `finding is` clauses and lens name. Every problem in the request uses them.
-    pub(crate) fn counted_findings(&self) -> u32 {
-        if let Some(counted) = self.counted {
-            return counted;
-        }
-        let clauses = self
-            .filter
-            .iter()
-            .flatten()
-            .filter(|clause| clause.field == FilterField::Finding && clause.op == FilterOp::Is);
-        crate::text_problem::counted_findings(
-            clauses
-                .flat_map(|clause| clause.values.iter().map(String::as_str))
-                .chain(self.lens.as_deref()),
-        )
     }
 }
 
@@ -544,6 +561,9 @@ impl FocusRequest {
         if let Some(cursor) = &self.occurrence_cursor {
             bounded(cursor, 32767, "Occurrence cursor exceeds its bound.")?;
         }
+        if let Some(findings) = &self.findings {
+            findings.validate()?;
+        }
         Ok(())
     }
 }
@@ -555,16 +575,25 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn a_relaxed_base_keeps_the_original_findings_and_callers_cannot_set_them() -> Result<()> {
+    fn findings_selections_name_a_layer_and_retired_request_fields_are_rejected() -> Result<()> {
         let request = parse_search_request(
-            r#"{"query":"","capability":"all","pageSize":1,"lens":"long","filter":[{"field":"problem","op":"is","values":["finding"]}]}"#,
+            r#"{"query":"","capability":"all","pageSize":1,"findings":{"key":"layer","acceptance":"review"},"filter":[{"field":"finding","op":"is","values":["custom.rule"]}]}"#,
         )?;
-        let base = request.without_filter(FilterField::Problem);
-        assert_eq!(base.counted_findings(), request.counted_findings());
-        assert!(
-            parse_search_request(r#"{"query":"","capability":"all","pageSize":1,"counted":4}"#)
-                .is_err()
+        assert_eq!(
+            request.findings,
+            Some(FindingsSelection {
+                key: "layer".into(),
+                acceptance: Some("review".into()),
+                source_only: None,
+            })
         );
+        for retired in [
+            r#"{"query":"","capability":"all","pageSize":1,"lens":"long"}"#,
+            r#"{"query":"","capability":"all","pageSize":1,"counted":4}"#,
+            r#"{"query":"","capability":"all","pageSize":1,"findings":{"key":""}}"#,
+        ] {
+            assert!(parse_search_request(retired).is_err(), "{retired}");
+        }
         Ok(())
     }
 
@@ -632,7 +661,9 @@ mod tests {
         let long = "x".repeat(MAX_SOURCE_LENGTH as usize);
         for valid in [
             json!({"filter":[{"field":"source","op":"is","values":["Mushroom", " Mushroom ", long]}]}),
-            json!({"filter":[{"field":"finding","op":"is","values":SIGNALS}]}),
+            json!({"filter":[{"field":"fact","op":"is","values":FACTS}]}),
+            json!({"filter":[{"field":"finding","op":"is","values":["whitespace","custom.rule"]}]}),
+            json!({"group":"finding","openGroups":["whitespace"]}),
             json!({"group":"source","minGroupSize":2,"openGroup":long}),
             json!({"group":"asset","minGroupSize":1}),
             json!({"group":"source","openGroups":["a","b"],"firstRows":1,"parts":["rows"]}),
@@ -661,7 +692,8 @@ mod tests {
             json!({"filter":[{"field":"source","op":"is","values":[]}]}),
             json!({"filter":[{"field":"source","op":"is","values":many}]}),
             json!({"filter":[{"field":"source","op":"is","values":[long.clone() + "x"]}]}),
-            json!({"filter":[{"field":"finding","op":"is","values":["up_to_date"]}]}),
+            json!({"filter":[{"field":"fact","op":"is","values":["shared"]}]}),
+            json!({"filter":[{"field":"finding","op":"is","values":[""]}]}),
             json!({"minGroupSize":2}),
             json!({"group":"source","minGroupSize":0}),
             json!({"group":"source","minGroupSize":-1}),

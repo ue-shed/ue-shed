@@ -4,6 +4,7 @@ use crate::engine_match::{Kind, Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, audience};
 use crate::engine_types::*;
+use crate::rules::FindingRows;
 use crate::text_problem::{self, PROBLEM_LABELS};
 use crate::wtf8::Wtf8Buf;
 use crate::{Result, require};
@@ -113,18 +114,22 @@ impl Places {
     }
 }
 impl Projection {
-    /// A line's problems, or a unit's (`textProblems` without marks) outside a target.
+    /// A line's problems, or a unit's (`textProblems` without marks) outside a target, with
+    /// `finding` when a rule that counts has a finding on it.
     pub(crate) fn row_problem(
         &self,
         localized: bool,
         row: usize,
         scope: &[usize],
-        counted: u32,
+        finding: bool,
     ) -> u32 {
         if localized {
-            return self.problem(row, scope, counted);
+            return self.problem(row, scope, finding);
         }
-        text_problem::settle(text_problem::signals(self.raw.signals[row], counted))
+        text_problem::settle(
+            text_problem::signals(self.raw.signals[row])
+                | if finding { text_problem::FINDING } else { 0 },
+        )
     }
     /// A row's group under `by`; `problems` is the request's problem column.
     pub(crate) fn group_key(
@@ -175,6 +180,7 @@ impl Projection {
                 }
             }
             GroupBy::AssetType => return Err("Asset types are a facet, not a group.".into()),
+            GroupBy::Finding => return Err("A row can have several findings.".into()),
             GroupBy::Asset | GroupBy::Folder => {
                 let mut key = 0;
                 self.each_file(kind, row, &mut |file| {
@@ -189,6 +195,53 @@ impl Projection {
     }
 }
 impl EngineQuery {
+    /// One entry per rule of the layer in program order, with the rows it has a finding on. A
+    /// row counts in every rule it has a finding of. A facet lists every rule; groups list those
+    /// with at least the request's minimum size.
+    pub(crate) fn finding_groups(
+        &mut self,
+        rows: &[u32],
+        request: &SearchRequest,
+        findings: &FindingRows,
+        facet: bool,
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        let localized = request.localization.is_some();
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        let problems = self.problem_column(localized, &scope, Some(findings), cancelled)?;
+        let worst_none = (PROBLEMS.len() - 1) as u32;
+        let mut tallies = vec![(0usize, 0usize, worst_none); findings.rules.len()];
+        for (index, row) in rows.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let row = *row as usize;
+            let bits = problems[row];
+            for rule in findings.of(row) {
+                let tally = &mut tallies[rule];
+                tally.0 += 1;
+                tally.1 += usize::from(bits & text_problem::WORK != 0);
+                tally.2 = tally.2.min(bits.trailing_zeros());
+            }
+        }
+        let minimum = if facet {
+            0
+        } else {
+            request.min_group_size.unwrap_or(1)
+        };
+        let entries = findings
+            .rules
+            .iter()
+            .zip(tallies)
+            .filter(|(_, (count, _, _))| *count >= minimum)
+            .map(|(rule, (count, work, worst))| {
+                json!({"key":rule.id,"label":rule.label,"count":count,"needWork":work,"worst":PROBLEMS[worst as usize]})
+            })
+            .collect::<Vec<_>>();
+        let more = entries.len().saturating_sub(MAX_GROUPS);
+        Ok(json!({"entries":entries.into_iter().take(MAX_GROUPS).collect::<Vec<_>>(),"more":more}))
+    }
+
     pub(crate) fn aggregate(
         &mut self,
         rows: &[u32],
@@ -203,8 +256,8 @@ impl EngineQuery {
         let localized = request.localization.is_some();
         let kind = if localized { Kind::Line } else { Kind::Raw };
         let scope = self.culture_scope(request.localization.as_ref())?;
-        let problems =
-            self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
+        let findings = self.request_findings(request, cancelled)?;
+        let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
         let parent = Self::normalized_path(under)
             .trim_end_matches('/')
             .to_owned();

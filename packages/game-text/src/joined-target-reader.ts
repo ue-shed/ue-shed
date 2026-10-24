@@ -9,7 +9,6 @@ import { SharedIndex } from "./shared-index.js";
 import { snapshotCheck, snapshotFailure } from "./snapshot-format.js";
 import { LocalizationKeyChangePair } from "./localization-key-changes.js";
 import { localizationStates, LocalizationUnknownReason } from "./localization-schema.js";
-import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 import { JoinedSourceCacheMeta } from "./joined-source-cache-contract.js";
 import { u32 } from "./joined-target-input.js";
 import type { SharedIndexReader } from "./shared-index.js";
@@ -254,7 +253,6 @@ export const inspectJoinedTarget = Effect.fn("JoinedTarget.inspect")(function* (
 		snapshotCheck(position === maximum, prefix, "Input rows not exhausted");
 	}
 	for (const [name, mask] of [
-		["line.problems", (1 << TEXT_PROBLEMS.length) - 1],
 		["line.reasons", (1 << LocalizationUnknownReason.literals.length) - 1],
 		["line.facts", 1023]
 	] as const)

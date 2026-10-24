@@ -101,18 +101,15 @@ const scope = { query: "", capability: "all", pageSize: 50, localization: { targ
 // Other keys holding exactly this text (case, whitespace and lone surrogates count).
 search({ ...scope, filter: [{ field: "source", op: "is", values: [line.source] }] });
 // Keys holding several texts, and texts under several keys, project-wide.
-search({ ...scope, filter: [{ field: "finding", op: "is", values: ["conflicting"] }] });
-search({
-	...scope,
-	filter: [{ field: "finding", op: "is", values: ["duplicate_source"] }],
-	group: "source",
-	minGroupSize: 2
-});
+search({ ...scope, filter: [{ field: "fact", op: "is", values: ["conflicting"] }] });
+search({ ...scope, group: "source", minGroupSize: 2 });
 // One of those texts' lines.
 search({ ...scope, group: "source", minGroupSize: 2, openGroup: "Mushroom" });
 ```
 
-`finding` takes every review signal. A `source` clause takes up to 50 exact texts; a unit with
+`fact` takes the four facts: `unresolved`, `conflicting`, `evidence_only` and
+`compiled_copy_differs`. `finding` names rules of the request's findings layer, which a workspace
+sets from the project's rules (see the README's "Findings in Browse"). A `source` clause takes up to 50 exact texts; a unit with
 conflicting sources matches any of them. An `asset_type` clause takes up to 50 class paths and
 matches text whose saved places include a package with that main asset class; `facets.assetTypes`
 lists the types with readable labels. `group: "source"` keys and labels each group by its text

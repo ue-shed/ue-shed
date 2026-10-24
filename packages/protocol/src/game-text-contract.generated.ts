@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "963df2121c23f5fe26fca8b8b38d12e8bf476bb002f8eb2a8c6aad84968a5908"
+	contractHash: "9ed7ee471bbefb45ce2a06a86e6107b9720841afc503460fb5a986bb677638bb"
 } as const;
 
 /**
@@ -66,7 +66,11 @@ export type FindingsEvaluation = { key: string, rules: ReadonlyArray<RuleMetadat
  */
 roles: ReadonlyArray<RoleTotal>, collation: string, profile: EvaluationProfile, };
 
-export type RuleMetadata = { id: string, ruleId: string, kind: string, label: string, subject: Subject, family: Family, severity: Severity, role: string | null, };
+export type RuleMetadata = { id: string, ruleId: string, kind: string, label: string, subject: Subject, family: Family, severity: Severity, role: string | null, 
+/**
+ * Whether the rule's findings raise the `finding` problem.
+ */
+counts: boolean, };
 
 export type RuleCount = { 
 /**

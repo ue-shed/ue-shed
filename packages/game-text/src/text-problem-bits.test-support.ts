@@ -4,9 +4,8 @@
  * joined columns store them.
  */
 import { LocalizationState, LocalizationUnknownReason } from "./localization-schema.js";
-import { TextReviewSignal, type TextFilter } from "./schema.js";
+import { TextReviewSignal } from "./schema.js";
 import { TEXT_PROBLEMS, TEXT_PROBLEM_RULES, type TextProblemRule } from "./text-problem-rules.js";
-import { countedFindings } from "./text-problems.js";
 
 const bitsOf = (values: readonly string[], vocabulary: readonly string[]) =>
 	values.reduce((bits, value) => bits | (1 << vocabulary.indexOf(value)), 0);
@@ -20,10 +19,20 @@ const factMasks = masks("facts", LocalizationState.literals);
 const reasonMasks = masks("reasons", LocalizationUnknownReason.literals);
 const signalMasks = masks("signals", TextReviewSignal.literals);
 
+/** The first fact's bit in a stored `signals` column; the bits below it are retired. */
+export const FACT_SHIFT = 3;
+
+/** The facts stored `signals` bits hold. */
+export const signalFacts = (signals: number): TextReviewSignal[] =>
+	TextReviewSignal.literals.filter((_, bit) => signals & (1 << (bit + FACT_SHIFT)));
+
+/** A fact's bit in a stored `signals` column. */
+export const factBit = (fact: TextReviewSignal) =>
+	1 << (TextReviewSignal.literals.indexOf(fact) + FACT_SHIFT);
+
 export const problemBit = (problem: (typeof TEXT_PROBLEMS)[number]) =>
 	1 << TEXT_PROBLEMS.indexOf(problem);
 export const FINDING_BIT = problemBit("finding");
-const FINDING = FINDING_BIT;
 export const KEY_CHANGED_BIT = problemBit("key_changed");
 export const UP_TO_DATE_BIT = problemBit("up_to_date");
 /** Problems that leave a line work before it ships. */
@@ -32,21 +41,12 @@ export const WORK_PROBLEM_BITS = TEXT_PROBLEMS.reduce(
 	0
 );
 
-/**
- * The signal bits a request counts as findings. A request derived from another (a facet or count
- * base) carries the original's in `counted`.
- */
-export const countedFindingBits = (request: {
-	readonly filter?: TextFilter | undefined;
-	readonly lens?: string | undefined;
-	readonly counted?: number | undefined;
-}) => request.counted ?? bitsOf(countedFindings(request), TextReviewSignal.literals);
-
-/** The problems signal bits raise, with `counted` the signals that make a finding. */
-export function signalProblemBits(signals: number, counted: number): number {
-	let bits = signals & counted ? FINDING : 0;
+/** The problems a stored `signals` column's facts raise. Without a findings layer, none is `finding`. */
+export function signalProblemBits(signals: number): number {
+	const facts = signals >> FACT_SHIFT;
+	let bits = 0;
 	signalMasks.forEach((mask, index) => {
-		if (signals & mask && 1 << index !== FINDING) bits |= 1 << index;
+		if (facts & mask) bits |= 1 << index;
 	});
 	return bits;
 }

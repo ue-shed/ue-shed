@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-pub(crate) const LINE_FIELDS: [&str; 22] = [
+pub(crate) const LINE_FIELDS: [&str; 21] = [
     "namespace",
     "key",
     "source",
@@ -20,7 +20,6 @@ pub(crate) const LINE_FIELDS: [&str; 22] = [
     "manifest_end",
     "reasons",
     "facts",
-    "problems",
     "origins",
     "editing",
     "notes",
@@ -44,12 +43,27 @@ pub(crate) const CULTURE_FIELDS: [&str; 7] = [
 pub(crate) const L_NS: usize = 0;
 pub(crate) const L_KEY: usize = 1;
 pub(crate) const L_SOURCE: usize = 2;
+pub(crate) const L_SOURCE_WORDS: usize = 3;
+pub(crate) const L_SOURCE_VISIBLE: usize = 4;
+pub(crate) const L_OCC_START: usize = 5;
+pub(crate) const L_OCC_END: usize = 6;
+pub(crate) const L_MANIFEST_START: usize = 7;
+pub(crate) const L_MANIFEST_END: usize = 8;
 pub(crate) const L_REASONS: usize = 9;
-/// A line's problems under a request that names no finding, classified through `text_problem`
-/// from the shared table, as the engine does. Queries classify per request instead.
-pub(crate) const L_PROBLEMS: usize = 11;
-/// v7 treats absence from a prepared complete package inventory as proven missing content.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v7:";
+pub(crate) const L_FACTS: usize = 10;
+pub(crate) const L_ORIGINS: usize = 11;
+pub(crate) const L_EDITING: usize = 12;
+pub(crate) const L_NOTES: usize = 13;
+pub(crate) const L_KEY_CHANGE: usize = 14;
+pub(crate) const L_FOLDER_START: usize = 15;
+pub(crate) const L_FOLDER_END: usize = 16;
+pub(crate) const L_FILE_START: usize = 17;
+pub(crate) const L_FILE_END: usize = 18;
+pub(crate) const L_SPLIT_UNIT: usize = 19;
+pub(crate) const L_AUDIENCE: usize = 20;
+/// v8 drops the persisted `line.problems` column and the retired shared, duplicate source and long
+/// signals; queries classify problems per request.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v8:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -817,8 +831,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     };
     let mut folder_rows = Vec::new();
     let mut file_rows = Vec::new();
-    let mut visible_occurrence = vec![false; count];
-    let mut visible_line = vec![false; joined.groups.len()];
     let mut cursors = vec![[0; 2]; cultures.len()];
     let mut native_cursor = 0;
     let collapsed = target["collapseMode"] == "IdenticalNamespaceAndSource";
@@ -855,8 +867,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         let mut editing = 0;
         // A line's notes are its places' dev notes and its manifest entries' notes, wherever it is.
         let mut notes = u32::from(joined.manifest_notes(row));
-        let mut visible = false;
-        let mut empty_problems = 0;
         let occurrence_rows = &joined.order[g.os..g.oe];
         let authored = occurrence_rows
             .iter()
@@ -883,7 +893,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             if row_units.insert(representative) {
                 let mut members = Vec::new();
                 let mut values = HashSet::new();
-                let mut length = 0;
                 let mut searchable = false;
                 let mut member = representative as u32;
                 while member != ABSENT {
@@ -898,24 +907,11 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                     members.push(index);
                     let source = c[O_SOURCE][index];
                     if values.insert(source) {
-                        let value = joined.string(source);
-                        length = length.max(characters(value));
-                        searchable |= !trim(value).is_empty();
+                        searchable |= !trim(joined.string(source)).is_empty();
                     }
                 }
-                // Unresolved text is a finding by default; long text only when a request names it.
-                let problems =
-                    if c[O_IDENTITY][representative] >= 2 || c[O_KEY][representative] == empty {
-                        crate::text_problem::FINDING
-                    } else {
-                        0
-                    };
-                empty_problems |= problems;
                 if searchable {
-                    visible = true;
-                    joined.line[L_PROBLEMS][row] |= problems;
                     for member in members {
-                        visible_occurrence[member] = true;
                         origins |= 1
                             << match c[O_LOCATION][member] {
                                 2 => 0,
@@ -948,13 +944,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             if coverage >= 2 {
                 coverage_reasons |= 1 << (coverage + 10);
             }
-        }
-        if !visible {
-            joined.line[L_PROBLEMS][row] |= empty_problems;
-        }
-        visible_line[row] = visible;
-        if g.oe - g.os > 1 {
-            joined.line[L_PROBLEMS][row] |= crate::text_problem::FINDING;
         }
         if g.ns == ABSENT {
             let reason = if !has_reference {
@@ -989,8 +978,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         let initial = joined.string(source);
         let initial_words = words(initial);
         let initial_visible = u32::from(!trim(initial).is_empty());
-        joined.line[3][row] = initial_words;
-        joined.line[4][row] = initial_visible;
+        joined.line[L_SOURCE_WORDS][row] = initial_words;
+        joined.line[L_SOURCE_VISIBLE][row] = initial_visible;
         if sources.len() > 1 {
             let mut occurrences = occurrence_rows.to_vec();
             occurrences.sort_by(|a, b| {
@@ -1101,24 +1090,24 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             }
             editing = 2;
         }
-        joined.line[0][row] = if g.ns == ABSENT { empty } else { g.ns };
-        joined.line[1][row] = if g.ns == ABSENT { empty } else { g.key };
-        joined.line[5][row] = g.os as u32;
-        joined.line[6][row] = g.oe as u32;
-        joined.line[7][row] = g.ms as u32;
-        joined.line[8][row] = g.me as u32;
-        joined.line[9][row] = reasons;
-        joined.line[10][row] = structural;
-        joined.line[12][row] = origins;
-        joined.line[13][row] = editing;
-        joined.line[14][row] = notes;
-        joined.line[21][row] = audience | (out_of_scope << 4);
-        joined.line[16][row] = folder_rows.len() as u32;
+        joined.line[L_NS][row] = if g.ns == ABSENT { empty } else { g.ns };
+        joined.line[L_KEY][row] = if g.ns == ABSENT { empty } else { g.key };
+        joined.line[L_OCC_START][row] = g.os as u32;
+        joined.line[L_OCC_END][row] = g.oe as u32;
+        joined.line[L_MANIFEST_START][row] = g.ms as u32;
+        joined.line[L_MANIFEST_END][row] = g.me as u32;
+        joined.line[L_REASONS][row] = reasons;
+        joined.line[L_FACTS][row] = structural;
+        joined.line[L_ORIGINS][row] = origins;
+        joined.line[L_EDITING][row] = editing;
+        joined.line[L_NOTES][row] = notes;
+        joined.line[L_AUDIENCE][row] = audience | (out_of_scope << 4);
+        joined.line[L_FOLDER_START][row] = folder_rows.len() as u32;
         folder_rows.extend(unique(row_folders));
-        joined.line[17][row] = folder_rows.len() as u32;
-        joined.line[18][row] = file_rows.len() as u32;
+        joined.line[L_FOLDER_END][row] = folder_rows.len() as u32;
+        joined.line[L_FILE_START][row] = file_rows.len() as u32;
         file_rows.extend(unique(row_files));
-        joined.line[19][row] = file_rows.len() as u32;
+        joined.line[L_FILE_END][row] = file_rows.len() as u32;
         let native_override = if g.ns == ABSENT {
             None
         } else {
@@ -1249,24 +1238,18 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     for (row, id) in pending_rows.into_iter().zip(ids) {
         joined.line[L_SOURCE][row] = id;
     }
-    let places = crate::package_evidence::places(&joined);
-    let duplicate = crate::package_evidence::duplicates(&joined, &places);
     let mut unit_first = HashMap::<u32, usize>::new();
-    for (row, _) in visible_line.iter().enumerate().take(joined.groups.len()) {
+    for row in 0..joined.groups.len() {
         let g = joined.groups[row];
         for i in &joined.order[g.os..g.oe] {
-            let i = *i as usize;
-            let representative = joined.unit[i];
+            let representative = joined.unit[*i as usize];
             if let Some(previous) = unit_first.get(&representative).copied() {
                 if previous != row {
-                    joined.line[20][row] = 1;
-                    joined.line[20][previous] = 1;
+                    joined.line[L_SPLIT_UNIT][row] = 1;
+                    joined.line[L_SPLIT_UNIT][previous] = 1;
                 }
             } else {
                 unit_first.insert(representative, row);
-            }
-            if duplicate[i] && (visible_occurrence[i] || !visible_line[row]) {
-                joined.line[L_PROBLEMS][row] |= crate::text_problem::FINDING;
             }
         }
     }
@@ -1317,11 +1300,11 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     crate::join_incremental::note_stage("query", &mut stage);
     let graph = crate::dependency_graph::Graph::rebuild(store, &joined, &query_columns)?;
     crate::join_incremental::note_stage("graph", &mut stage);
-    let first_folders = joined.line[16]
+    let first_folders = joined.line[L_FOLDER_START]
         .iter()
         .enumerate()
         .map(|(row, start)| {
-            if *start == joined.line[17][row] {
+            if *start == joined.line[L_FOLDER_END][row] {
                 empty
             } else {
                 folder_column[*start as usize]

@@ -4,6 +4,7 @@ use crate::engine_places::{Places, Prefix};
 use crate::engine_query::{EngineQuery, audience, mask};
 use crate::engine_rows::RowSet;
 use crate::engine_types::*;
+use crate::rules::FindingRows;
 use crate::text_problem;
 use crate::{Error, ErrorCode, Result, require};
 use std::collections::HashSet;
@@ -20,6 +21,27 @@ pub(crate) fn checkpoint(cancelled: &AtomicBool) -> Result<()> {
 }
 
 type Column = Arc<[u32]>;
+
+/// A `finding` clause's rows: `is` holds on the rows of any rule it names. Without a findings
+/// layer no row has a finding, and no row has one of a rule outside the layer: a saved pill keeps
+/// naming a rule the project has since dropped.
+fn finding_clause(findings: Option<&FindingRows>, clause: &Clause, len: usize) -> Result<RowSet> {
+    let has = match findings {
+        None => RowSet::from_rows(len, &[])?,
+        Some(findings) => RowSet::union(
+            len,
+            clause
+                .values
+                .iter()
+                .filter_map(|id| findings.rule(id).map(|rule| &findings.sets[rule])),
+        ),
+    };
+    Ok(if clause.op == FilterOp::Is {
+        has
+    } else {
+        has.complement()
+    })
+}
 fn text_matches(value: &str, terms: &[String]) -> bool {
     let value = crate::wtf8::Wtf8Buf::from_view(value).to_utf16();
     terms.iter().all(|term| {
@@ -204,8 +226,8 @@ pub(crate) struct Projection {
     empty_ids: Arc<std::collections::BTreeSet<u32>>,
     pub raw: Rows,
     pub slice: Rows,
-    slice_raw: Column,
-    slice_line: Column,
+    pub(crate) slice_raw: Column,
+    pub(crate) slice_line: Column,
     pub starts: Column,
     pub order: Column,
     pub source: Column,
@@ -457,14 +479,16 @@ impl Projection {
         } | if c.review[row] == 3 { 8 } else { 0 }
             | if has("machine_translated") { 16 } else { 0 })
     }
-    /// A line's problems in the cultures of `scope`, as `textProblems` reports them.
-    pub fn problem(&self, row: usize, scope: &[usize], counted: u32) -> u32 {
+    /// A line's problems in the cultures of `scope`, as `textProblems` reports them, with
+    /// `finding` when a rule that counts has a finding on it.
+    pub fn problem(&self, row: usize, scope: &[usize], finding: bool) -> u32 {
         let key_change = self.key_change[row];
         let mut bits = if key_change > 0 && key_change & 1 == 0 {
             text_problem::KEY_CHANGED
         } else {
             0
-        } | text_problem::signals(self.flags[row], counted);
+        } | text_problem::signals(self.flags[row])
+            | if finding { text_problem::FINDING } else { 0 };
         for ci in scope {
             let c = &self.cultures[*ci];
             bits |= text_problem::culture(c.state[row], c.facts[row], c.reasons[row]);
@@ -502,7 +526,7 @@ impl PreparedClause {
     ) -> Result<Self> {
         let labels: &[&str] = match clause.field {
             FilterField::Problem => &PROBLEMS,
-            FilterField::Finding => &SIGNALS,
+            FilterField::Fact => &FACTS,
             FilterField::Translation => &["", "missing", "to_update", "not_synced"],
             FilterField::Origin => &ORIGINS,
             FilterField::Editing => &["editable", "read_only"],
@@ -759,7 +783,8 @@ impl Projection {
                     & clause.mask
                     != 0
             }
-            FilterField::Finding => flags & clause.mask != 0,
+            FilterField::Fact => (flags >> FACT_SHIFT) & clause.mask != 0,
+            FilterField::Finding => return Err("Finding clauses read the findings layer.".into()),
             FilterField::Origin => {
                 (if line {
                     self.origins[row]
@@ -883,7 +908,7 @@ impl Projection {
         }
         Ok(true)
     }
-    /// Whether a raw row or a slice is visible and meets the capability, notes, lens and `where`.
+    /// Whether a raw row or a slice is visible and meets the capability, notes and `where`.
     fn eligible(
         &self,
         places: &Places,
@@ -897,17 +922,6 @@ impl Projection {
             || (request.capability == Capability::SourceEditable && rows.editing[row] & 1 == 0)
             || (request.capability == Capability::ReadOnly && rows.editing[row] & 2 == 0)
             || (request.without_notes == Some(true) && rows.notes[row] != 0)
-        {
-            return Ok(false);
-        }
-        if let Some(lens) = &request.lens
-            && lens != "all"
-            && rows.signals[row]
-                & (1 << SIGNALS
-                    .iter()
-                    .position(|value| value == lens)
-                    .ok_or("Unknown validated lens.")?)
-                == 0
         {
             return Ok(false);
         }
@@ -927,17 +941,21 @@ impl EngineQuery {
         Ok(self.match_rows(request, cancelled)?.into())
     }
 
-    /// Every row's problems in a culture scope, with the findings a request counts: a line's
-    /// with a target, a unit's (`textProblems` without marks) without one. Built once and read
-    /// by the `problem` clause, problem counts and every group and facet tally.
+    /// Every row's problems in a culture scope, with `finding` from the counted rows of a
+    /// findings layer: a line's with a target, a unit's (`textProblems` without marks) without
+    /// one. Built once and read by the `problem` clause, problem counts and every group and
+    /// facet tally.
     pub(crate) fn problem_column(
         &mut self,
         localized: bool,
         scope: &[usize],
-        counted: u32,
+        findings: Option<&FindingRows>,
         cancelled: &AtomicBool,
     ) -> Result<Arc<[u32]>> {
-        let key = format!("{localized}|{scope:?}|{counted}");
+        let key = format!(
+            "{localized}|{scope:?}|{}",
+            findings.map_or("", |findings| findings.key.as_str())
+        );
         if let Some(column) = self.problem_columns.get(&key) {
             return Ok(Arc::clone(column));
         }
@@ -954,7 +972,8 @@ impl EngineQuery {
             if row & 4095 == 0 {
                 checkpoint(cancelled)?;
             }
-            column.push(p.row_problem(localized, row, scope, counted));
+            let finding = findings.is_some_and(|findings| findings.counted.contains(row));
+            column.push(p.row_problem(localized, row, scope, finding));
         }
         let column: Arc<[u32]> = column.into();
         // A few scopes are live at once; past that, columns are rebuilt as they are asked for.
@@ -981,8 +1000,26 @@ impl EngineQuery {
         Ok(set)
     }
 
+    /// A request's findings layer rows, in its relation and culture scope.
+    pub(crate) fn request_findings(
+        &mut self,
+        request: &SearchRequest,
+        cancelled: &AtomicBool,
+    ) -> Result<Option<Arc<FindingRows>>> {
+        let Some(selection) = &request.findings else {
+            return Ok(None);
+        };
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        Ok(Some(self.finding_rows(
+            selection,
+            request.localization.is_some(),
+            &scope,
+            cancelled,
+        )?))
+    }
+
     /// The intersection of the request's atoms. Each atom is keyed by what it reads: the
-    /// relation, the culture scope where it depends on it, and the findings it counts.
+    /// relation, the culture scope where it depends on it, and the findings layer it reads.
     fn match_rows(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Vec<u32>> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchMatch");
@@ -1022,7 +1059,10 @@ impl EngineQuery {
             selection.search_translations == Some(true)
                 && (selection.culture.is_some() || selection.cultures.is_some())
         });
-        let counted = request.counted_findings();
+        let findings = self.request_findings(request, cancelled)?;
+        let findings_key = findings
+            .as_ref()
+            .map_or(String::new(), |findings| findings.key.clone());
         let scoped = |field: FilterField| {
             if localized && matches!(field, FilterField::Problem | FilterField::Translation) {
                 scope.clone()
@@ -1107,17 +1147,22 @@ impl EngineQuery {
             }
         }
         for clause in request.filter.as_deref().unwrap_or(&[]) {
+            if clause.field == FilterField::Finding {
+                sets.push(finding_clause(findings.as_deref(), clause, len)?);
+                continue;
+            }
             let clause_scope = scoped(clause.field);
-            let clause_counted = if clause.field == FilterField::Problem {
-                counted
+            // Problems read the layer's counted rows; no other clause reads the layer.
+            let clause_findings = if clause.field == FilterField::Problem {
+                findings_key.as_str()
             } else {
-                0
+                ""
             };
             let p = Arc::clone(&projection);
             let at = Arc::clone(&places);
             sets.push(self.atom(
                 format!(
-                    "{relation}|clause|{}|{clause_scope:?}|{clause_counted}",
+                    "{relation}|clause|{}|{clause_scope:?}|{clause_findings}",
                     serde_json::to_string(clause)?
                 ),
                 |query| {
@@ -1126,7 +1171,7 @@ impl EngineQuery {
                         prepared.problems = Some(query.problem_column(
                             localized,
                             &clause_scope,
-                            clause_counted,
+                            findings.as_deref(),
                             cancelled,
                         )?);
                     }
@@ -1145,7 +1190,6 @@ impl EngineQuery {
                 serde_json::to_string(&(
                     request.capability,
                     request.without_notes,
-                    &request.lens,
                     &request.location
                 ))?
             ),
@@ -1158,7 +1202,6 @@ impl EngineQuery {
                 }
                 let unrestricted = request.capability == Capability::All
                     && request.without_notes != Some(true)
-                    && request.lens.as_ref().is_none_or(|lens| lens == "all")
                     && request.location.is_none();
                 RowSet::from_fn(len, cancelled, |row| {
                     // A line with saved places is eligible when one place meets every condition.
@@ -1174,7 +1217,6 @@ impl EngineQuery {
                         return Ok(false);
                     }
                     Ok(request.capability != Capability::SourceEditable
-                        && request.lens.as_ref().is_none_or(|lens| lens == "all")
                         && !(request.without_notes == Some(true) && p.notes[row] != 0)
                         && p.scope(&at, Kind::Line, row, request, &location)?)
                 })

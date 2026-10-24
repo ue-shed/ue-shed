@@ -37,6 +37,48 @@ impl RowSet {
         })
     }
 
+    /// The listed rows of `0..len`; a row may be listed more than once.
+    pub fn from_rows(len: usize, rows: &[u32]) -> Result<Self> {
+        let mut words = vec![0u64; len.div_ceil(64)];
+        for row in rows {
+            let row = *row as usize;
+            crate::require(row < len, "A row outside its relation.")?;
+            words[row / 64] |= 1 << (row % 64);
+        }
+        Ok(Self {
+            words: words.into(),
+            len,
+        })
+    }
+
+    /// The rows in any of the sets, none when there are none.
+    pub fn union<'a>(len: usize, sets: impl IntoIterator<Item = &'a RowSet>) -> Self {
+        let mut words = vec![0u64; len.div_ceil(64)];
+        for set in sets {
+            for (word, other) in words.iter_mut().zip(set.words.iter()) {
+                *word |= other;
+            }
+        }
+        Self {
+            words: words.into(),
+            len,
+        }
+    }
+
+    /// The rows of the relation the set leaves out.
+    pub fn complement(&self) -> Self {
+        let mut words = self.words.iter().map(|word| !word).collect::<Vec<_>>();
+        if !self.len.is_multiple_of(64)
+            && let Some(last) = words.last_mut()
+        {
+            *last &= (1u64 << (self.len % 64)) - 1;
+        }
+        Self {
+            words: words.into(),
+            len: self.len,
+        }
+    }
+
     pub fn contains(&self, row: usize) -> bool {
         row < self.len && self.words[row / 64] & (1 << (row % 64)) != 0
     }

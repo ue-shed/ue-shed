@@ -10,7 +10,8 @@ export const EngineRequestMix = Schema.Struct({
 	list: Schema.Struct({
 		query: Schema.Literal(""),
 		capability: Schema.Literal("all"),
-		lens: Schema.Literal("all"),
+		/** Mixes recorded before searches lost their lens carry it; requests leave it out. */
+		lens: Schema.optionalKey(Schema.Literal("all")),
 		withoutNotes: Schema.Literal(false),
 		group: Schema.Literal("problem"),
 		pageSize: Schema.Literal(50),

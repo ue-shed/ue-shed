@@ -133,6 +133,7 @@ export {
 	TextCultureFacet,
 	TextEditing,
 	TextFacetRequest,
+	TextFactCounts,
 	TextFacets,
 	TextFileScopeSummary,
 	TextFilter,

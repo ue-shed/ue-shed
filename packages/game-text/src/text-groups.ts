@@ -25,10 +25,15 @@ interface Placed {
 
 /**
  * The group a line falls in: its worst problem, first file's folder or file, origin, namespace,
- * audience or exact source text (a unit's first source in UTF-16 order).
+ * audience, exact source text (a unit's first source in UTF-16 order) or first rule with a
+ * finding on it. The engine puts a row in each of its rules' groups.
  */
 export function textGroupOf(facts: TextFacts, by: TextGroupBy): Placed {
 	switch (by) {
+		case "finding": {
+			const rule = facts.findings[0] ?? "";
+			return { key: rule, label: rule };
+		}
 		case "problem": {
 			const worst = facts.problems[0] ?? "up_to_date";
 			return { key: worst, label: TEXT_PROBLEM_LABELS[worst] };

@@ -127,7 +127,7 @@ impl EngineQuery {
             mixed += usize::from(mask.count_ones() > 1);
         }
         Ok(
-            json!({"schemaVersion":1,"status":if partial>0 || failed>0 {"partial"} else {"complete"},"diagnosticCount":diagnostics,"notGatherablePackages":excluded,"coverage":coverage,"searchable":{"textUnits":counts["all"],"textOccurrences":visible_occurrences},"review":{"all":counts["all"],"shared":counts["shared"],"duplicateSource":counts["duplicate_source"],"long":counts["long"],"unresolved":counts["unresolved"],"conflicting":counts["conflicting"]},"sources":{"assetProperty":asset,"dataTable":table,"stringTable":string_table,"mixed":mixed},"counts":counts}),
+            json!({"schemaVersion":1,"status":if partial>0 || failed>0 {"partial"} else {"complete"},"diagnosticCount":diagnostics,"notGatherablePackages":excluded,"coverage":coverage,"searchable":{"textUnits":counts["all"],"textOccurrences":visible_occurrences},"review":{"all":counts["all"],"unresolved":counts["unresolved"],"conflicting":counts["conflicting"]},"sources":{"assetProperty":asset,"dataTable":table,"stringTable":string_table,"mixed":mixed},"counts":counts}),
         )
     }
 }

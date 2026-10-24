@@ -551,7 +551,7 @@ impl EngineQuery {
             "id":self.packed("raw", raw)?, "identity":self.occurrence_identity(first)?, "source":source,
             "contexts":contexts,"occurrenceCount":members.len(),"remainingContextCount":members.len().saturating_sub(3),
             "characterCount":self.value(kind,"characters",row)?,"wordCount":self.value(kind,"words",row)?,
-            "reviewSignals":selected_bits(&SIGNALS,self.value(kind,"signals",row)?),
+            "reviewSignals":facts(self.value(kind,"signals",row)?),
             "locationKinds":location_kinds,
             "audience":audience(self.value(kind,"audience",row)?)
         }))

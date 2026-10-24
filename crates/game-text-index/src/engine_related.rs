@@ -255,6 +255,7 @@ impl EngineQuery {
                 page_size,
                 occurrence_cursor: None,
                 localization: None,
+                findings: None,
             },
             cancelled,
         )?;
@@ -313,6 +314,7 @@ impl EngineQuery {
                 culture_offset: None,
                 location_offset: None,
                 po_context_offset: None,
+                findings: None,
             },
             cancelled,
         )?;

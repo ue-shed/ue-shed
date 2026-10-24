@@ -921,7 +921,6 @@ export async function compareJoinFuzzInput(
 				slicePresentations,
 				join: yield* hydrateJoinedTarget(joined, 0, 10000),
 				corpus: yield* textCorpusFromPackageTextLayer(projectRoot),
-				problems: yield* u32(joined.layer, "line.problems"),
 				origins: yield* u32(joined.layer, "line.origins"),
 				editing: yield* u32(joined.layer, "line.editing"),
 				notes: yield* u32(joined.layer, "line.notes")
@@ -985,26 +984,26 @@ export async function compareJoinFuzzInput(
 			oracle.focus({ id: unit.id, pageSize: 2 }),
 			actual.query.rawFocus[row]
 		);
-	// Search rows add the request's problems and counted findings to the unit presentation.
+	// Search rows and focus add the problems to the unit presentation.
+	const withoutProblems = <T extends { readonly problems?: unknown }>({
+		problems: _problems,
+		...unit
+	}: T) => unit;
 	compare(
 		"query.columns.raw",
-		oracle
-			.search({ query: "", capability: "all", pageSize: 1000 })
-			.units.map(({ problems: _problems, countedFindings: _counted, ...unit }) => unit),
+		oracle.search({ query: "", capability: "all", pageSize: 1000 }).units.map(withoutProblems),
 		actual.rawPresentations
 	);
 	for (const slice of actual.slicePresentations) {
 		if (!slice.visible) continue;
 		const line = actual.join.lines[slice.line]!;
-		compare(
-			"query.columns.slice",
-			oracle.focus({
-				id: slice.unit.id,
-				pageSize: 2,
-				localization: { target: expected.target, id: line.id }
-			})?.unit,
-			slice.unit
-		);
+		const focused = oracle.focus({
+			id: slice.unit.id,
+			pageSize: 2,
+			localization: { target: expected.target, id: line.id }
+		})?.unit;
+		const presentation = focused && withoutProblems(focused);
+		compare("query.columns.slice", presentation, slice.unit);
 	}
 	const nativeFocus: import("../packages/game-text/src/schema.ts").TextCorpusFocusRequest[] = [
 		...actual.rawPresentations.map((unit) => ({ id: unit.id, pageSize: 2 })),
@@ -1103,26 +1102,6 @@ export async function compareJoinFuzzInput(
 					actual.query.focus[lineIndex]!.units[unitIndex]
 				);
 			}
-	}
-	for (let bit = 0; bit < TextProblem.literals.length; bit++) {
-		const problem = TextProblem.literals[bit]!;
-		const ids = new Set(
-			oracle
-				.localizationLines({
-					...base,
-					filter: [{ field: "problem", op: "is", values: [problem] }]
-				})
-				.map((line) => line.id)
-		);
-		for (let row = 0; row < actual.join.lines.length; row++) {
-			const line = actual.join.lines[row]!;
-			if (line.source.trim() !== "")
-				compare(
-					`column.problem.${problem}`,
-					ids.has(line.id),
-					Boolean(actual.problems[row]! & (1 << bit))
-				);
-		}
 	}
 	// Facet membership is line scoped, including saved units split into several gathered lines.
 	for (const [field, values] of [

@@ -1566,6 +1566,8 @@ export interface LocalizationQualityWorkspace {
 
 /** Quality the engine serves: every page, focus and proposal is a findings query. */
 export interface QueriedLocalizationQuality {
+	/** The engine findings layer and review acceptance the workspace reads, which Browse shows. */
+	readonly findings?: { readonly key: string; readonly acceptance?: string };
 	readonly workspace: LocalizationQualityWorkspace;
 	/** In-memory quality only: its workspace listing a source report's findings too. */
 	readonly withSource?: (source: TextQualityReport | undefined) => LocalizationQualityWorkspace;

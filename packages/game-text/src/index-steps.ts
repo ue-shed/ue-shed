@@ -873,6 +873,10 @@ export const makeGameTextIndexSteps = (
 						);
 						const customChecks = customLocalizationChecks(ruleDocument);
 						return {
+							findings: {
+								key: evaluated.key,
+								...(acceptance ? { acceptance } : undefined)
+							},
 							workspace: queriedLocalizationQualityWorkspace({
 								findings: query,
 								key: evaluated.key,

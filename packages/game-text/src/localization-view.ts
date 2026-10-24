@@ -13,6 +13,7 @@ import { localizationManifestNotes } from "./localization.js";
 import { LocalizationFileProblem } from "./localization-status.js";
 import { TextUnitId } from "./identifiers.js";
 import { TEXT_PROBLEMS } from "./text-problem-rules.js";
+import { TextFindingsSelection, textRowFindingFields } from "./text-problem-schema.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Page = Schema.Array(Schema.String).check(Schema.isMaxLength(50));
@@ -89,7 +90,9 @@ export const LocalizationFocusRequest = Schema.Struct({
 	),
 	cultureOffset: Schema.optionalKey(Count),
 	locationOffset: Schema.optionalKey(Count),
-	poContextOffset: Schema.optionalKey(Count)
+	poContextOffset: Schema.optionalKey(Count),
+	/** The findings layer the line lists, in its culture scope; a workspace sets it. */
+	findings: Schema.optionalKey(TextFindingsSelection)
 });
 export type LocalizationFocusRequest = typeof LocalizationFocusRequest.Type;
 const CultureTranslationState = Schema.Literals([
@@ -149,10 +152,12 @@ export const LocalizationFocus = Schema.Struct({
 	translations: Schema.Array(LocalizationTranslation).check(Schema.isMaxLength(50)),
 	totalCultures: Count,
 	/**
-	 * The line's problems, worst first, in the request's culture scope, as the list's row has them
-	 * for a request that names no finding. Every culture's translation is listed regardless.
+	 * The line's problems, worst first, in the request's culture scope, as the list's row has them.
+	 * Every culture's translation is listed regardless.
 	 */
 	problems: Schema.optionalKey(Schema.Array(Schema.Literals(TEXT_PROBLEMS))),
+	/** With a findings layer: the rules with a finding on the line, and how many more there are. */
+	...textRowFindingFields,
 	scopeSummary: Schema.optionalKey(LocalizationScopeSummary),
 	keyChange: Schema.optionalKey(LocalizationKeyChange),
 	nextCultureOffset: Schema.optionalKey(Count),

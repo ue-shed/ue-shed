@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-const VERSION: u32 = 3;
+const VERSION: u32 = 4;
 const PAGE: usize = 16_384;
 const PAGE_CACHE: usize = 8 * 1024 * 1024;
 const MAX_MOVES: usize = 8192;
@@ -157,18 +157,12 @@ impl Pages {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Route {
-    pub member: u32,
     pub line: u32,
-    pub raw: u32,
-    pub slice: u32,
-    pub place: u32,
     pub source: u32,
-    pub eligible: bool,
 }
 #[derive(Default)]
 struct Moves {
     members: BTreeMap<u32, u32>,
-    sources: BTreeMap<u32, BTreeSet<u32>>,
 }
 pub(crate) struct Graph {
     pages: RefCell<Pages>,
@@ -244,7 +238,6 @@ impl Graph {
         for (member, source) in state.moves {
             require(member < count, "Dependency move row")?;
             moves.members.insert(member, source);
-            moves.sources.entry(source).or_default().insert(member);
         }
         Ok(Some(Self {
             pages: RefCell::new(pages),
@@ -284,50 +277,40 @@ impl Graph {
         }
         columns.insert("occ.line".into(), lines);
         adjacency(&mut columns, "line", line_members);
+        // Every occurrence is a member of exactly one raw unit and one slice.
         for kind in ["raw", "slice"] {
             let starts = get(&format!("query.{kind}.member_start"))?;
             let ends = get(&format!("query.{kind}.member_end"))?;
             let members = get(&format!("query.{kind}.members"))?;
             require(starts.len() == ends.len(), "Dependency membership lengths")?;
-            let mut routes = vec![ABSENT; count];
+            let mut seen = vec![false; count];
             let mut groups = Vec::new();
-            for (row, (start, end)) in starts.iter().zip(ends).enumerate() {
+            for (start, end) in starts.iter().zip(ends) {
                 let selected = members
                     .get(*start as usize..*end as usize)
                     .ok_or("Dependency member range")?;
                 for member in selected {
-                    let slot = routes
+                    let slot = seen
                         .get_mut(*member as usize)
                         .ok_or("Dependency member row")?;
-                    require(*slot == ABSENT, "Duplicate dependency membership")?;
-                    *slot = row as u32;
+                    require(!*slot, "Duplicate dependency membership")?;
+                    *slot = true;
                 }
                 groups.push(selected.to_vec());
             }
-            columns.insert(format!("occ.{kind}"), routes);
-            adjacency(&mut columns, kind, groups);
-        }
-        let c = &joined.packages.occurrence;
-        columns.insert("occ.place".into(), get("query.occurrence.places")?.clone());
-        columns.insert("occ.source".into(), c[O_SOURCE].clone());
-        columns.insert(
-            "occ.eligible".into(),
-            (0..count)
-                .map(|i| u32::from(c[O_IDENTITY][i] == 0 && c[O_KEY][i] != joined.empty))
-                .collect(),
-        );
-        for field in ["line", "raw", "slice", "place", "source", "eligible"] {
             require(
-                columns[&format!("occ.{field}")].len() == count,
-                "Dependency occurrence length",
-            )?;
-        }
-        for field in ["line", "raw", "slice"] {
-            require(
-                !columns[&format!("occ.{field}")].contains(&ABSENT),
+                seen.iter().all(|seen| *seen),
                 "Incomplete dependency membership",
             )?;
+            adjacency(&mut columns, kind, groups);
         }
+        require(
+            !columns["occ.line"].contains(&ABSENT),
+            "Incomplete dependency membership",
+        )?;
+        let c = &joined.packages.occurrence;
+        require(c[O_SOURCE].len() == count, "Dependency occurrence length")?;
+        columns.insert("occ.source".into(), c[O_SOURCE].clone());
         // Logical site coordinates exclude text, namespace/key and referenced target.
         columns.insert(
             "site.package".into(),
@@ -352,7 +335,6 @@ impl Graph {
         let mut definitions = vec![ABSENT; count];
         let mut definition_keys = vec![ABSENT; count];
         let mut references = BTreeMap::<(u32, u32), Vec<u32>>::new();
-        let mut sources = BTreeMap::<u32, Vec<u32>>::new();
         for member in 0..count {
             let package = joined.packages.package_row[member];
             if previous_package != Some(package) {
@@ -368,10 +350,6 @@ impl Graph {
             let next = sites.entry(site).or_insert(0u32);
             ordinal.push(*next);
             *next += 1;
-            sources
-                .entry(c[O_SOURCE][member])
-                .or_default()
-                .push(member as u32);
             if c[O_IDENTITY][member] == 1 {
                 references
                     .entry((c[O_NS][member], c[O_KEY][member]))
@@ -388,8 +366,6 @@ impl Graph {
         columns.insert("site.ordinal".into(), ordinal);
         columns.insert("occ.def_table".into(), definitions);
         columns.insert("occ.def_key".into(), definition_keys);
-        columns.insert("source.keys".into(), sources.keys().copied().collect());
-        adjacency(&mut columns, "source", sources.into_values());
         columns.insert("ref.table".into(), references.keys().map(|k| k.0).collect());
         columns.insert("ref.key".into(), references.keys().map(|k| k.1).collect());
         adjacency(&mut columns, "ref", references.into_values());
@@ -488,62 +464,16 @@ impl Graph {
     pub(crate) fn route(&self, member: u32) -> Result<Route> {
         require(member < self.count, "Dependency occurrence row")?;
         let row = member as usize;
-        let eligible = self.get("occ.eligible", row)?;
-        require(eligible <= 1, "Dependency eligibility flag")?;
         let source = self.moves.borrow().members.get(&member).copied();
         Ok(Route {
-            member,
             line: self.get("occ.line", row)?,
-            raw: self.get("occ.raw", row)?,
-            slice: self.get("occ.slice", row)?,
-            place: self.get("occ.place", row)?,
             source: source.unwrap_or(self.get("occ.source", row)?),
-            eligible: eligible == 1,
         })
     }
     pub(crate) fn identity_line(&self, namespace: u32, key: u32) -> Result<Option<u32>> {
         self.find_pair("id.namespace", "id.key", (namespace, key))?
             .map(|row| self.get("id.line", row))
             .transpose()
-    }
-    pub(crate) fn source_members(&self, source: u32) -> Result<Vec<Route>> {
-        let count = self.pages.borrow().count("source.keys")?;
-        let (mut low, mut high) = (0, count);
-        while low < high {
-            let middle = (low + high) / 2;
-            if self.get("source.keys", middle)? < source {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
-        let mut selected = BTreeSet::new();
-        if low < count && self.get("source.keys", low)? == source {
-            for member in self.adjacent("source", low)? {
-                if self
-                    .moves
-                    .borrow()
-                    .members
-                    .get(&member)
-                    .copied()
-                    .unwrap_or(source)
-                    == source
-                {
-                    selected.insert(member);
-                }
-            }
-        }
-        if let Some(members) = self.moves.borrow().sources.get(&source) {
-            selected.extend(members);
-        }
-        selected
-            .into_iter()
-            .map(|member| {
-                let route = self.route(member)?;
-                require(route.source == source, "Dependency source posting")?;
-                Ok(route)
-            })
-            .collect()
     }
     pub(crate) fn members(&self, kind: &str, row: u32) -> Result<Vec<u32>> {
         require(
@@ -559,17 +489,9 @@ impl Graph {
         )?;
         let base = self.get("occ.source", member as usize)?;
         let mut moves = self.moves.borrow_mut();
-        if let Some(previous) = moves.members.remove(&member)
-            && let Some(rows) = moves.sources.get_mut(&previous)
-        {
-            rows.remove(&member);
-            if rows.is_empty() {
-                moves.sources.remove(&previous);
-            }
-        }
+        moves.members.remove(&member);
         if after != base {
             moves.members.insert(member, after);
-            moves.sources.entry(after).or_default().insert(member);
         }
         Ok(())
     }
@@ -646,30 +568,17 @@ mod tests {
             view_prefix: None,
         }
     }
-    fn source_index(columns: &mut Columns) {
-        let mut sources = BTreeMap::<u32, Vec<u32>>::new();
-        for (row, source) in columns["occ.source"].iter().enumerate() {
-            sources.entry(*source).or_default().push(row as u32);
-        }
-        columns.insert("source.keys".into(), sources.keys().copied().collect());
-        adjacency(columns, "source", sources.into_values());
-    }
     fn fixture(count: usize) -> Columns {
         let mut columns = Columns::new();
-        for name in ["occ.line", "occ.raw", "occ.slice", "site.object"] {
+        for name in ["occ.line", "site.object"] {
             columns.insert(name.into(), (0..count as u32).collect());
         }
-        columns.insert(
-            "occ.place".into(),
-            (0..count as u32).map(|n| n % 7).collect(),
-        );
         columns.insert(
             "occ.source".into(),
             (0..count as u32)
                 .map(|n| if n < 5 { 42 } else { 100 + n })
                 .collect(),
         );
-        columns.insert("occ.eligible".into(), vec![1; count]);
         columns.insert("occ.def_table".into(), vec![ABSENT; count]);
         columns.insert("occ.def_key".into(), vec![ABSENT; count]);
         columns.get_mut("occ.def_table").expect("fixture column")[0..2].copy_from_slice(&[10, 10]);
@@ -684,7 +593,6 @@ mod tests {
         columns.insert("id.namespace".into(), vec![10, 10]);
         columns.insert("id.key".into(), vec![20, 21]);
         columns.insert("id.line".into(), vec![100, 101]);
-        source_index(&mut columns);
         columns
     }
 
@@ -696,7 +604,7 @@ mod tests {
         let count = 128;
         let mut columns = fixture(count);
         let graph = Graph::write(&store, count as u32, columns.clone())?;
-        assert_eq!(graph.source_members(42)?.len(), 5);
+        assert_eq!(graph.route(4)?.source, 42);
         assert_eq!(graph.identity_line(10, 20)?, Some(100));
         assert_eq!(graph.identity_line(10, 21)?, Some(101));
         assert_eq!(graph.identity_line(10, 22)?, None);
@@ -705,8 +613,8 @@ mod tests {
         assert!(graph.consumers(127)?.is_empty());
         let site = graph.get("site.object", 0)?;
         graph.move_source(0, 42, 43)?;
-        assert_eq!(graph.source_members(42)?.len(), 4);
-        assert_eq!(graph.source_members(43)?[0].member, 0);
+        assert_eq!(graph.route(0)?.source, 43);
+        assert_eq!(graph.route(1)?.source, 42);
         assert_eq!(graph.get("site.object", 0)?, site);
         assert_eq!(graph.consumers(0)?, BTreeSet::from([2]));
         graph.commit(&store, "revision-1")?;
@@ -723,7 +631,6 @@ mod tests {
         columns.insert("ref.key".into(), vec![21, 22]);
         columns.insert("ref.start".into(), vec![0, 2, 3]);
         columns.insert("ref.members".into(), vec![2, 3, 4]);
-        source_index(&mut columns);
         let graph = Graph::write(&store, count as u32, columns)?;
         assert!(graph.consumers(0)?.is_empty());
         assert_eq!(graph.consumers(1)?, BTreeSet::from([2, 3]));
@@ -747,7 +654,7 @@ mod tests {
             let graph = Graph::open(&store, "revision-1")?.ok_or("Missing graph")?;
             graph.move_source(7, 107, 42)?;
             assert!(graph.move_source(7, 107, 43).is_err());
-            assert_eq!(graph.source_members(42)?.len(), 6);
+            assert_eq!(graph.route(7)?.source, 42);
         }
         let graph = Graph::open(&store, "revision-1")?.ok_or("Missing graph after rollback")?;
         assert_eq!(graph.route(7)?.source, 107);
@@ -815,8 +722,8 @@ mod tests {
         graph.commit(&store, "revision-1")?;
         let graph = Graph::open(&store, "revision-1")?.ok_or("Missing graph")?;
         let last = count as u32 - 1;
-        assert_eq!(graph.route(last)?.member, last);
-        assert_eq!(graph.source_members(42)?.len(), 5);
+        assert_eq!(graph.route(last)?.line, last);
+        assert_eq!(graph.route(0)?.source, 42);
         assert_eq!(graph.members("raw", last)?, vec![last]);
         assert!(
             graph.pages.borrow().loads < 32,
@@ -842,7 +749,7 @@ mod tests {
         file.seek(SeekFrom::Start(offset))?;
         file.write_all(&[byte[0] ^ 0xff])?;
         file.sync_all()?;
-        assert_eq!(graph.route(last)?.member, last);
+        assert_eq!(graph.route(last)?.line, last);
         assert!(graph.route(PAGE as u32 + 3).is_err());
         drop(file);
         drop(graph);

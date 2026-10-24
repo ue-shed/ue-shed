@@ -25,6 +25,7 @@ import {
 import { LocalizationLine, type LocalizationLineId } from "./localization-schema.js";
 import { LocalizationFocus, LocalizationFocusRequest } from "./localization-view.js";
 import { TEXT_AUDIENCE_POLICY } from "./text-audience.js";
+import { TextRuleId, textRowFindingFields } from "./text-problem-schema.js";
 import {
 	TextAggregate,
 	TextAggregateRequest,
@@ -43,8 +44,15 @@ const benchmark = channel("ue-shed.game-text-benchmark");
 
 const NativeExportFile = Schema.Struct({
 	...TextCorpus.fields,
+	findingRules: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ id: TextRuleId, label: Schema.String }))
+	),
 	units: Schema.Array(
-		Schema.Struct({ ...TextUnit.fields, reviewSignals: Schema.Array(TextReviewSignal) })
+		Schema.Struct({
+			...TextUnit.fields,
+			reviewSignals: Schema.Array(TextReviewSignal),
+			...textRowFindingFields
+		})
 	)
 });
 
@@ -305,12 +313,32 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				const file = yield* Schema.decodeUnknownEffect(
 					Schema.fromJsonString(NativeExportFile)
 				)(text).pipe(Effect.mapError((cause) => failed("export_decode", cause)));
+				const { findingRules, ...corpus } = file;
 				return {
 					corpus: {
-						...file,
-						units: file.units.map(({ reviewSignals: _, ...unit }) => unit)
+						...corpus,
+						units: file.units.map(
+							({
+								reviewSignals: _signals,
+								findings: _findings,
+								findingsOmitted: _omitted,
+								...unit
+							}) => unit
+						)
 					},
-					reviewSignals: new Map(file.units.map((unit) => [unit.id, unit.reviewSignals]))
+					reviewSignals: new Map(file.units.map((unit) => [unit.id, unit.reviewSignals])),
+					...(findingRules
+						? {
+								findings: {
+									labels: new Map(
+										findingRules.map((rule) => [rule.id, rule.label])
+									),
+									units: new Map(
+										file.units.map((unit) => [unit.id, unit.findings ?? []])
+									)
+								}
+							}
+						: undefined)
 				};
 			})
 		);

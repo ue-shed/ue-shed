@@ -379,7 +379,6 @@ describe("Game Text identity cases in the saved fixture", () => {
 			expect(new Set(locked.map((occurrence) => occurrence.id)).size).toBe(2);
 			const matches = textCorpusQuery(corpus).search({
 				capability: "all",
-				lens: "duplicate_source",
 				pageSize: 50,
 				query: "The door is locked"
 			}).units;

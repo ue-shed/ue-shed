@@ -36,6 +36,7 @@ impl EngineQuery {
                     page_size: 1,
                     occurrence_cursor: None,
                     localization: None,
+                    findings: None,
                 },
                 cancelled,
             )?;
@@ -52,8 +53,8 @@ impl EngineQuery {
         let p = Projection::open(self, cancelled)?;
         let preview = self.preview(row)?;
         let mut result = json!({"id":preview["id"],"origin":preview["origin"],"identity":preview["identity"],"source":preview["source"]});
-        // The line's problems in the list's culture scope, as the list's row computes them for a
-        // request that names no finding.
+        // The line's problems and findings in the list's culture scope, as the list's row
+        // computes them.
         let scope = self.culture_scope(Some(&LocalizationScope {
             target: request.target.clone(),
             culture: request.culture.clone(),
@@ -63,10 +64,17 @@ impl EngineQuery {
             key_changed: None,
             search_translations: None,
         }))?;
-        result["problems"] = json!(selected_bits(
-            &PROBLEMS,
-            p.problem(row, &scope, crate::text_problem::DEFAULT_FINDINGS)
-        ));
+        let findings = match &request.findings {
+            Some(selection) => Some(self.finding_rows(selection, true, &scope, cancelled)?),
+            None => None,
+        };
+        let finding = findings
+            .as_ref()
+            .is_some_and(|findings| findings.counted.contains(row));
+        result["problems"] = json!(selected_bits(&PROBLEMS, p.problem(row, &scope, finding)));
+        if let Some(findings) = &findings {
+            crate::engine_search::list_findings(&mut result, findings, row);
+        }
         if let Some(change) = preview.get("keyChange") {
             result["keyChange"] = change.clone();
         }

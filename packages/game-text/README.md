@@ -160,11 +160,27 @@ in search, checks and human CSV use JavaScript string length (UTF-16 code units)
 
 `gameTextCsv(corpus)` produces one human-readable row per saved location of each searchable line.
 Pass the full scan as its optional second argument when exporting a filtered corpus to retain the
-same review signals shown in search.
-`gameTextQualityCsv(report, corpus)` produces one row per finding and affected location. Both are
-browser-safe, quote every cell, protect spreadsheet formulas, and include a UTF-8 BOM and final CRLF.
-`gameTextInvestigationCsv` keeps its provenance-oriented layout, and `exportGameTextInvestigation`
-remains the JSON provenance document.
+same review signals shown in search, and Browse's findings as its third to add a Findings column.
+
+### Findings in Browse
+
+Browse's findings are the project's rules. A workspace evaluates the published rules document (the
+rules file with the host's overlay) and sets `findings: { key, acceptance?, sourceOnly? }` on every
+search, rows read, focus and line detail; a host's own value is replaced. With a target selected,
+every rule runs and the target review's accepted findings are hidden; without one, only source
+rules do. The page's `findings.status` is `none` without a rule that runs there, `pending` while
+the rules evaluate, and `ready` once the page reads their findings.
+
+- `finding` clauses name rule IDs; `fact` clauses take the four facts. `facets.findings` lists
+  every rule in program order with its rows (0 when it has none); `facets.facts` counts each fact.
+- `group: "finding"` makes one group per rule; a row is in each of its rules' groups.
+- A row has the `finding` problem when a rule whose `counts` is not `false` has a finding on it.
+- Rows, focus and detail list `findings`, the first 32 rule IDs in program order, and
+  `findingsOmitted`.
+  `gameTextQualityCsv(report, corpus)` produces one row per finding and affected location. Both are
+  browser-safe, quote every cell, protect spreadsheet formulas, and include a UTF-8 BOM and final CRLF.
+  `gameTextInvestigationCsv` keeps its provenance-oriented layout, and `exportGameTextInvestigation`
+  remains the JSON provenance document.
 
 Localization quality investigation presets and exports use schema version 2 and retain
 `workspaceFilter`, target and culture. Older readers reject these documents instead of dropping
@@ -385,7 +401,7 @@ start with `localization.`.
 ```
 
 `STARTER_CHECKS` is every check but `segment_separator`, which needs a separator, and the opt-in
-`shared` and `long`, Browse's review signals. `resolveLocalizationChecks(document)` returns each
+`shared` and `long`. `resolveLocalizationChecks(document)` returns each
 check's resolved `enabled`, `severity`, `scope` and `params`, and `effectiveRuleDocument(document,
 options?)` the rule program the engine runs. The host's `checks` and `disabledChecks` options still
 narrow what runs.

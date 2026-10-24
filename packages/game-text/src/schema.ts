@@ -10,7 +10,14 @@ import {
 } from "./localization-schema.js";
 import { TextAudience, TextAudienceReason } from "./text-audience-schema.js";
 import { gameTextResponseParser } from "./response-parser.js";
-import { TextCountedFindings, TextRowProblems } from "./text-problem-schema.js";
+import {
+	TextCountedFindings,
+	TextFindingsSelection,
+	TextFindingsStatus,
+	TextRowProblems,
+	TextRuleId,
+	textRowFindingFields
+} from "./text-problem-schema.js";
 import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 export * from "./identifiers.js";
 export * from "./text-audience-schema.js";
@@ -324,8 +331,8 @@ export const TextFileScopeSummary = Schema.Struct({
 export type TextFileScopeSummary = Schema.Schema.Type<typeof TextFileScopeSummary>;
 
 /**
- * Convenience review filter for shared, duplicate, long, unresolved or conflicting text. These
- * review categories do not decide whether Unreal can read the asset.
+ * Convenience review filter for shared, duplicate, long, unresolved or conflicting text.
+ * @deprecated Searches have no lens: filter by `finding` (the project's rules) or `fact`.
  */
 export const TextReviewLens = Schema.Literals([
 	"all",
@@ -335,16 +342,14 @@ export const TextReviewLens = Schema.Literals([
 	"unresolved",
 	"conflicting"
 ]);
+/** @deprecated See `TextReviewLens`. */
 export type TextReviewLens = Schema.Schema.Type<typeof TextReviewLens>;
 
 /**
- * Review evidence attached to a text unit, including compiled-copy differences and
- * evidence-only lines. Signals are distinct from the smaller actionable TextFinding subset.
+ * A row's facts: unresolved identity, conflicting sources, evidence-only lines and compiled-copy
+ * differences. `fact` clauses filter by them; findings come from the project's rules instead.
  */
 export const TextReviewSignal = Schema.Literals([
-	"shared",
-	"duplicate_source",
-	"long",
 	"unresolved",
 	"conflicting",
 	"evidence_only",
@@ -367,8 +372,12 @@ export type TextReviewSignal = Schema.Schema.Type<typeof TextReviewSignal>;
 export const TextProblem = Schema.Literals(TEXT_PROBLEMS);
 export type TextProblem = Schema.Schema.Type<typeof TextProblem>;
 
-/** Findings: reused text, the same text under different keys, long text, unlocalizable text. */
+/**
+ * Findings: reused text, the same text under different keys, long text, unlocalizable text.
+ * @deprecated Findings are the project's rules: `finding` clauses name rule IDs.
+ */
 export const TextFinding = Schema.Literals(["shared", "duplicate_source", "long", "unresolved"]);
+/** @deprecated See `TextFinding`. */
 export type TextFinding = Schema.Schema.Type<typeof TextFinding>;
 
 /** Translation work in one culture: no translation, one written for older text, or not in Unreal. */
@@ -457,13 +466,15 @@ const clause = <const Field extends string, Value extends Schema.Top>(
  * One filter pill: a line matches `is` when it has any of the values, and `is_not` when it has
  * none of them. Folders match by path prefix. A translation key selects the lines Unreal
  * translates by that key; without a target, a saved unit has the keys its occurrences gather to.
- * `finding` takes any review signal. `source` matches exact source text: a line's source, or any
+ * `finding` names rules of the request's findings layer: without one no row has a finding, nor
+ * one of a rule outside it. `fact` takes the four facts. `source` matches exact source text: a line's source, or any
  * of a unit's sources. `asset_type` matches a line when any of its saved places is in a package
  * of that type, and `is_not` when none is; text outside saved packages has no type.
  */
 export const TextFilterClause = Schema.Union([
 	clause("problem", TextProblem, TextProblem.literals.length),
-	clause("finding", TextReviewSignal, TextReviewSignal.literals.length),
+	clause("finding", TextRuleId, 256),
+	clause("fact", TextReviewSignal, TextReviewSignal.literals.length),
 	clause("translation", TextTranslationState, TextTranslationState.literals.length),
 	clause("origin", TextOriginKind, TextOriginKind.literals.length),
 	clause("folder", Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)), 50),
@@ -522,7 +533,9 @@ export const TextGroupBy = Schema.Literals([
 	"origin",
 	"namespace",
 	"audience",
-	"source"
+	"source",
+	/** One group per rule of the findings layer, in program order; a row is in each of its rules. */
+	"finding"
 ]);
 export type TextGroupBy = Schema.Schema.Type<typeof TextGroupBy>;
 
@@ -558,9 +571,22 @@ export const TextFacetRequest = Schema.Struct({
 	origins: Schema.optionalKey(Schema.Boolean),
 	audiences: Schema.optionalKey(Schema.Boolean),
 	cultures: Schema.optionalKey(Schema.Boolean),
-	assetTypes: Schema.optionalKey(Schema.Boolean)
+	assetTypes: Schema.optionalKey(Schema.Boolean),
+	/** Every rule of the findings layer, in program order, with the rows it has a finding on. */
+	findings: Schema.optionalKey(Schema.Boolean),
+	/** The rows with each fact. */
+	facts: Schema.optionalKey(Schema.Boolean)
 });
 export type TextFacetRequest = Schema.Schema.Type<typeof TextFacetRequest>;
+
+/** The rows with each fact, over the request without its fact clauses. */
+export const TextFactCounts = Schema.Struct({
+	unresolved: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	conflicting: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	evidence_only: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	compiled_copy_differs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type TextFactCounts = Schema.Schema.Type<typeof TextFactCounts>;
 
 /** Per-culture translation work for the culture picker, over the request without its culture set. */
 export const TextCultureFacet = Schema.Struct({
@@ -588,7 +614,13 @@ export const TextFacets = Schema.Struct({
 	 * Lines by asset type (`TextAssetType` keys, `textAssetTypeLabel` labels), over the request
 	 * without its asset type clauses. A line in packages of several types counts in each.
 	 */
-	assetTypes: Schema.optionalKey(TextGroupList)
+	assetTypes: Schema.optionalKey(TextGroupList),
+	/**
+	 * Every rule of the findings layer in program order (rule ID keys, label labels), over the
+	 * request without its finding clauses; a rule with no rows counts 0.
+	 */
+	findings: Schema.optionalKey(TextGroupList),
+	facts: Schema.optionalKey(TextFactCounts)
 });
 export type TextFacets = Schema.Schema.Type<typeof TextFacets>;
 
@@ -628,8 +660,10 @@ export const TextUnitSearchResult = Schema.Struct({
 	reviewSignals: Schema.Array(TextReviewSignal),
 	/** In a search page: the row's problems under the request, worst first. */
 	problems: Schema.optionalKey(TextRowProblems),
-	/** In a search page: the review signals that made the row a finding under the request. */
+	/** @deprecated Nothing sets it: read `findings`. */
 	countedFindings: Schema.optionalKey(TextCountedFindings),
+	/** With a findings layer: the rules with a finding on the row, and how many more there are. */
+	...textRowFindingFields,
 	/** Whitespace-delimited words in that same longest source, never the joined variants. */
 	wordCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	/** Player if any occurrence is player text, else unknown if any is, else editor. */
@@ -644,9 +678,6 @@ export type TextUnitSearchResult = Schema.Schema.Type<typeof TextUnitSearchResul
 export const TextCorpusSearchCounts = Schema.Struct({
 	// Review counts intersect the whole request. Toggle counts exclude their own toggle.
 	all: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	shared: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	duplicate_source: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	long: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	unresolved: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	conflicting: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	editable: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -682,9 +713,6 @@ export const TextCorpusQuerySummary = Schema.Struct({
 	diagnosticCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	review: Schema.Struct({
 		all: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-		shared: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-		duplicateSource: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-		long: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 		unresolved: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 		conflicting: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 	}),
@@ -732,7 +760,6 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	withoutNotes: Schema.optional(Schema.Boolean),
 	capability: TextCapabilityFilter,
 	cursor: Schema.optional(TextUnitId),
-	lens: Schema.optional(TextReviewLens),
 	where: Schema.optionalKey(TextWhere),
 	/** Filter pills, applied on top of the other fields. */
 	filter: Schema.optionalKey(TextFilter),
@@ -767,6 +794,11 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	/** How many rows each open group lists; 50 when absent. Needs `openGroups`. */
 	firstRows: Schema.optionalKey(TextQueryPageSize),
 	facets: Schema.optionalKey(TextFacetRequest),
+	/**
+	 * The findings layer the `finding` field, problem, facet and group read. A workspace sets it
+	 * from the project's rules; a host's own value is replaced.
+	 */
+	findings: Schema.optionalKey(TextFindingsSelection),
 	pageSize: TextQueryPageSize,
 	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512)))
 }).check(
@@ -842,6 +874,8 @@ export const TextCorpusSearchPage = Schema.Struct({
 	/** Every group of the matching lines, when the request groups them. */
 	groups: Schema.optionalKey(Schema.Struct({ by: TextGroupBy, ...TextGroupList.fields })),
 	facets: Schema.optionalKey(TextFacets),
+	/** From a workspace: whether the page's finding fields are filled. */
+	findings: Schema.optionalKey(TextFindingsStatus),
 	counts: TextCorpusSearchCounts,
 	nextCursor: Schema.optional(TextUnitId),
 	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -891,7 +925,9 @@ export const TextCorpusFocusRequest = Schema.Struct({
 		Schema.Struct({ target: LocalizationSelection.fields.target, id: LocalizationLineId })
 	),
 	occurrenceCursor: Schema.optional(TextOccurrenceId),
-	pageSize: TextQueryPageSize
+	pageSize: TextQueryPageSize,
+	/** The findings layer the unit lists; a workspace sets it as for search. */
+	findings: Schema.optionalKey(TextFindingsSelection)
 });
 export type TextCorpusFocusRequest = Schema.Schema.Type<typeof TextCorpusFocusRequest>;
 

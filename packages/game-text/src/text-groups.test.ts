@@ -159,7 +159,7 @@ describe("text groups and facets", () => {
 		const byFolder = query.search({ ...request, group: "folder" }).groups?.entries;
 		expect(byFolder?.map((entry) => [entry.label, entry.worst, entry.needWork])).toEqual([
 			["Content/Text/UI/Menus", "not_gathered", 2],
-			["Content/Text/Quests/Act1", "finding", 0],
+			["Content/Text/Quests/Act1", "up_to_date", 0],
 			["Content/Text/UI/HUD", "up_to_date", 0],
 			["Source/Game/Private", "up_to_date", 0]
 		]);
@@ -167,7 +167,6 @@ describe("text groups and facets", () => {
 		expect(byProblem?.map((entry) => entry.key)).toEqual([
 			"not_gathered",
 			"changed_since_gather",
-			"finding",
 			"up_to_date"
 		]);
 	});

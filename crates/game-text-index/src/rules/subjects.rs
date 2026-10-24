@@ -47,7 +47,7 @@ pub struct NativeSubjects<'a> {
     pub(crate) projection: Arc<Projection>,
     pub subject: Subject,
     pub cultures: CultureRows,
-    pub units: Vec<UnitSource>,
+    pub units: Arc<[UnitSource]>,
     pub(super) collator: &'a HostCollator,
     pub(super) cancelled: &'a AtomicBool,
     pub(super) occurrences: Arc<super::occurrences::OccurrenceData>,
@@ -84,7 +84,7 @@ impl<'a> NativeSubjects<'a> {
     ) -> Result<Self> {
         let projection = Projection::open(query, cancelled)?;
         let mut cultures = CultureRows::default();
-        let mut units: Vec<UnitSource> = Vec::new();
+        let mut units: Arc<[UnitSource]> = Arc::default();
         if subject == Subject::LineCulture {
             let mut order = (0..query.cultures.len()).collect::<Vec<_>>();
             order.sort_by(|a, b| collator.compare(&query.cultures[*a], &query.cultures[*b]));
@@ -113,7 +113,13 @@ impl<'a> NativeSubjects<'a> {
                 cultures: indices.into(),
             };
         }
-        if subject == Subject::UnitSource {
+        // A reader's unit sources never change; finding reads, a page of units each, share them.
+        if subject == Subject::UnitSource
+            && let Some(cached) = &query.unit_sources
+        {
+            units = Arc::clone(cached);
+        } else if subject == Subject::UnitSource {
+            let mut built: Vec<UnitSource> = Vec::new();
             for unit in 0..projection.raw.visible.len() {
                 if projection.raw.visible[unit] == 0 {
                     continue;
@@ -122,10 +128,10 @@ impl<'a> NativeSubjects<'a> {
                 for member in projection.raw.members(unit) {
                     let source = occurrences.value(*member as usize, "source");
                     if let Some(row) = groups.get(&source) {
-                        units[*row].members.push(*member);
+                        built[*row].members.push(*member);
                     } else {
-                        groups.insert(source, units.len());
-                        units.push(UnitSource {
+                        groups.insert(source, built.len());
+                        built.push(UnitSource {
                             unit,
                             source,
                             members: vec![*member],
@@ -133,6 +139,8 @@ impl<'a> NativeSubjects<'a> {
                     }
                 }
             }
+            units = built.into();
+            query.unit_sources = Some(Arc::clone(&units));
         }
         Ok(Self {
             query,

@@ -30,15 +30,19 @@ fn place_set(id: u32, affected: &[Value]) -> Result<PlaceSet> {
         occurrences: affected.iter().map(public_place).collect::<Result<_>>()?,
     })
 }
-fn ordered_places(ids: &Value, occurrences: &[Value]) -> Result<Vec<Value>> {
-    ids.as_array()
-        .ok_or("Invalid interned occurrence list.")?
-        .iter()
+/// A set's places in its own order, each the first of its subject's occurrences with that ID.
+fn ordered_places(ids: &[String], occurrences: &[Value]) -> Result<Vec<Value>> {
+    let mut by_id = HashMap::new();
+    for occurrence in occurrences {
+        if let Some(id) = occurrence["id"].as_str() {
+            by_id.entry(id).or_insert(occurrence);
+        }
+    }
+    ids.iter()
         .map(|id| {
-            occurrences
-                .iter()
-                .find(|occurrence| occurrence["id"] == *id)
-                .cloned()
+            by_id
+                .get(id.as_str())
+                .map(|occurrence| (*occurrence).clone())
                 .ok_or_else(|| "A finding occurrence is absent from its pinned subject.".into())
         })
         .collect()
@@ -110,9 +114,19 @@ impl EngineQuery {
             let fallback = bytes > 16 * 1024 * 1024;
             bytes = base + bytes.to_string().len() + if fallback { "true" } else { "false" }.len();
         }
+        let placeholder = format!("\"profile\":{}", javascript_json(&value["profile"], false));
         value["profile"]["responseBytes"] = json!(bytes);
         value["profile"]["fileFallback"] = json!(bytes > 16 * 1024 * 1024);
-        result = javascript_json(&value, false);
+        // The profile holds numbers and a flag beside top-level arrays, so its text is the
+        // reply's first member or its last: replace it there rather than encode the reply again.
+        let profile = format!("\"profile\":{}", javascript_json(&value["profile"], false));
+        let at = [1, result.len().saturating_sub(placeholder.len() + 1)]
+            .into_iter()
+            .find(|at| result.get(*at..at + placeholder.len()) == Some(placeholder.as_str()));
+        match at {
+            Some(at) => result.replace_range(at..at + placeholder.len(), &profile),
+            None => result = javascript_json(&value, false),
+        }
         // A reply at the threshold can have no consistent count: one byte over it when it says
         // no fallback, one byte under when it says fallback. It settles as a fallback reply.
         let mut rounds = 0;
@@ -282,7 +296,7 @@ fn read_lines(
             checkpoint(cancelled)?;
             let ci = cultures[position] as usize;
             let stored = layer.json(evidence[position])?;
-            let ids = layer.json(saved_places[position])?;
+            let ids = layer.place_set(saved_places[position])?;
             if let std::collections::hash_map::Entry::Vacant(slot) = line_places.entry(line) {
                 slot.insert(subjects.occurrences(line as usize)?);
             }
@@ -420,7 +434,7 @@ fn read_units(
                 continue;
             }
             checkpoint(cancelled)?;
-            let ids = layer.json(saved_places[position])?;
+            let ids = layer.place_set(saved_places[position])?;
             let occurrences = subjects.occurrences(*row as usize)?;
             let mut affected = ordered_places(&ids, &occurrences)?;
             let first = affected

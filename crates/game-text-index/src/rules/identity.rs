@@ -57,49 +57,56 @@ pub(crate) fn write_atom(arena: &Arena, atom: Atom, sorted: bool, out: &mut Stri
             }
             Structured::Scalar(value) => write_atom(arena, *value, sorted, out),
             // Occurrence views and objects with repeated keys keep the general encoding.
-            _ => out.push_str(&javascript_json(&arena.json(atom), sorted)),
+            _ => write_javascript_json(&arena.json(atom), sorted, out),
         },
     }
 }
 
 /// JSON with JavaScript number formatting, reversible UTF-16 strings, and optional key sorting.
 pub fn javascript_json(value: &Value, sorted: bool) -> String {
+    let mut out = String::new();
+    write_javascript_json(value, sorted, &mut out);
+    out
+}
+/// `javascript_json` appended to `out`, so a reply's nested values share one buffer.
+fn write_javascript_json(value: &Value, sorted: bool, out: &mut String) {
     match value {
-        Value::Null => "null".into(),
-        Value::Bool(value) => value.to_string(),
+        Value::Null => out.push_str("null"),
+        Value::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
         Value::Number(number) => {
             let number = number.as_f64().unwrap_or(f64::NAN);
             if number.is_finite() {
-                ryu_js::Buffer::new().format_finite(number).to_owned()
+                out.push_str(ryu_js::Buffer::new().format_finite(number));
             } else {
-                "null".into()
+                out.push_str("null");
             }
         }
-        Value::String(text) => Wtf8Buf::from_view(text).json_string(),
-        Value::Array(values) => format!(
-            "[{}]",
-            values
-                .iter()
-                .map(|value| javascript_json(value, sorted))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
+        Value::String(text) => out.push_str(&Wtf8Buf::from_view(text).json_string()),
+        Value::Array(values) => {
+            out.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_javascript_json(value, sorted, out);
+            }
+            out.push(']');
+        }
         Value::Object(values) => {
             let mut keys = values.keys().collect::<Vec<_>>();
             if sorted {
                 keys.sort_by(|a, b| super::text::code_unit_compare(a, b));
             }
-            format!(
-                "{{{}}}",
-                keys.into_iter()
-                    .map(|key| format!(
-                        "{}:{}",
-                        Wtf8Buf::from_view(key).json_string(),
-                        javascript_json(&values[key], sorted)
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            )
+            out.push('{');
+            for (index, key) in keys.into_iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&Wtf8Buf::from_view(key).json_string());
+                out.push(':');
+                write_javascript_json(&values[key], sorted, out);
+            }
+            out.push('}');
         }
     }
 }

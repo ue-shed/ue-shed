@@ -184,10 +184,21 @@ fn persisted_findings_lines_timing() -> Result<()> {
         .ok()
         .and_then(|calls| calls.parse::<u32>().ok())
         .unwrap_or(4);
+    // Workspace Quality reads one scan page a call, 64 to 256 lines.
+    let size = std::env::var("UE_SHED_GAME_TEXT_TIMING_ROWS")
+        .ok()
+        .and_then(|rows| rows.parse::<u32>().ok())
+        .unwrap_or(5000);
+    // Source Quality reads units the same way.
+    let units = std::env::var("UE_SHED_GAME_TEXT_TIMING_UNITS").is_ok();
     for call in 0..calls {
-        let rows = (call * 5000..(call + 1) * 5000).collect::<Vec<_>>();
+        let rows = (call * size..(call + 1) * size).collect::<Vec<_>>();
         let started = std::time::Instant::now();
-        let reply = query.findings_lines(key, &rows, &cancelled)?;
+        let reply = if units {
+            query.findings_units(key, &rows, &cancelled)?
+        } else {
+            query.findings_lines(key, &rows, &cancelled)?
+        };
         println!(
             "{}",
             json!({"call": call, "ms": started.elapsed().as_secs_f64() * 1000.0, "bytes": reply.len()})

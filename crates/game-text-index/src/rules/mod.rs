@@ -35,8 +35,10 @@ mod identity;
 pub use identity::{javascript_json, localization_identity, source_identity};
 mod findings;
 mod findings_read;
+pub(crate) use columns::Children;
 pub(crate) use findings::FindingsLayer;
 pub(crate) use occurrences::OccurrenceData;
+pub(crate) use subjects::UnitSource;
 
 #[cfg(test)]
 mod timing;

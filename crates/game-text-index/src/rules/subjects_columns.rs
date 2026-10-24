@@ -890,6 +890,32 @@ impl<'a, 'q> Projector<'a, 'q> {
             children.rows = parents;
             return Ok(children);
         }
+        // The order follows the reader and the collation only, so reads that each start a new
+        // arena share one build instead of grouping every line or unit again. An adopted order
+        // records its groups as a build does, so a profile has the same stages either way.
+        let cached = if line {
+            self.subjects
+                .query
+                .line_children
+                .as_ref()
+                .filter(|(locale, _)| *locale == self.subjects.collator.locale)
+                .map(|(_, children)| Arc::clone(children))
+        } else {
+            self.subjects.query.unit_children.clone()
+        };
+        if let Some(shared) = cached {
+            let mut children = (*shared).clone();
+            if line {
+                children.rows = parents;
+                self.arena.line_children = Some(shared);
+            }
+            self.arena.recorder.sub_stage(
+                "occurrences.groups".into(),
+                &super::stages::Measure::start(),
+                children.offsets.len() - 1,
+            );
+            return Ok(children);
+        }
         let mut groups = if line {
             (0..self.subjects.projection.source.len())
                 .map(|row| self.subjects.line_members(row))
@@ -940,7 +966,12 @@ impl<'a, 'q> Projector<'a, 'q> {
         if line {
             let mut shared = children.clone();
             shared.rows = None;
-            self.arena.line_children = Some(Arc::new(shared));
+            let shared = Arc::new(shared);
+            self.subjects.query.line_children =
+                Some((self.subjects.collator.locale.clone(), Arc::clone(&shared)));
+            self.arena.line_children = Some(shared);
+        } else {
+            self.subjects.query.unit_children = Some(Arc::new(children.clone()));
         }
         self.arena.recorder.sub_stage(
             "occurrences.groups".into(),

@@ -495,17 +495,10 @@ test("manifest contexts follow Unreal key metadata identity, retaining only the 
 	}
 });
 
-test("every native signal, localization state, text problem and source kind appears", () => {
+// Browse's `finding` problem needs a findings layer, which the comparison reads separately.
+test("every fact, localization state, problem without a layer and source kind appears", () => {
 	const subjects = plan.expectations.subjects;
-	for (const signal of [
-		"shared",
-		"duplicate_source",
-		"long",
-		"unresolved",
-		"conflicting",
-		"evidence_only",
-		"compiled_copy_differs"
-	])
+	for (const signal of ["unresolved", "conflicting", "evidence_only", "compiled_copy_differs"])
 		assert.ok(
 			subjects.some((subject) => subject.signals.includes(signal)),
 			signal
@@ -532,7 +525,6 @@ test("every native signal, localization state, text problem and source kind appe
 		"not_gathered",
 		"changed_since_gather",
 		"translation",
-		"finding",
 		"unchecked",
 		"up_to_date"
 	])

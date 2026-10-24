@@ -23,7 +23,7 @@ import {
 	formatCorpusComparisonSummary
 } from "./game-text-corpus-defects.ts";
 
-/** Browse's review signals that are also opt-in checks under the same IDs. */
+/** Opt-in checks the comparison also reads through Browse, as a findings layer. */
 const signalCheckIds = ["shared", "long"] as const;
 
 /** A corpus folder, not a repository fixture. Never launches Unreal or changes its inputs. */
@@ -82,8 +82,8 @@ async function compareGameTextCorpusLocked(
 					const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify(plan.rules));
 					const quality = yield* model.localizationCheck(rules);
 					const sourceQuality = yield* (yield* model.sourceQuality(rules)).export("all");
-					// Browse's shared and long signals are also opt-in checks. A file listing only
-					// them must report the lines Browse marks, and no others.
+					// Browse's findings are the rules': with a layer of only the shared and long
+					// checks, each line's findings are the rules the report lists for it, and no others.
 					const signalRules = yield* decodeGameTextRuleDocumentJson(
 						JSON.stringify({
 							schemaVersion: 1,
@@ -92,13 +92,33 @@ async function compareGameTextCorpusLocked(
 						})
 					);
 					const signalReport = yield* model.localizationCheck(signalRules);
-					const signalChecksByLine = new Map<string, string[]>();
+					const signalChecksByLine = new Map<string, Set<string>>();
 					for (const finding of signalReport.findings)
 						if ("culture" in finding)
-							signalChecksByLine.set(finding.lineId, [
-								...(signalChecksByLine.get(finding.lineId) ?? []),
-								finding.kind
-							]);
+							signalChecksByLine.set(
+								finding.lineId,
+								(signalChecksByLine.get(finding.lineId) ?? new Set()).add(
+									finding.ruleId
+								)
+							);
+					const signalLayer = (yield* model.localizationQuality(signalRules)).findings;
+					if (!signalLayer)
+						throw new Error("The shared and long checks made no findings layer.");
+					const browseFindings = new Map<string, readonly string[]>();
+					let findingsCursor: LocalizationLineId | undefined;
+					do {
+						const page = yield* model.search({
+							query: "",
+							capability: "all",
+							pageSize: 50,
+							findings: signalLayer,
+							localization: { target: model.localization.target },
+							...(findingsCursor ? { localizationCursor: findingsCursor } : undefined)
+						});
+						for (const line of page.localization?.lines ?? [])
+							browseFindings.set(line.id, line.findings ?? []);
+						findingsCursor = page.localization?.nextCursor;
+					} while (findingsCursor !== undefined);
 					const signalChecks: {
 						case: string;
 						subject: string;
@@ -343,16 +363,7 @@ async function compareGameTextCorpusLocked(
 									),
 									absent: []
 								});
-						const signalled = [
-							...new Set(
-								line.cultures.flatMap(
-									(mark) =>
-										queryFacts.get(`${line.id}\0${mark.culture}`)?.signals ?? []
-								)
-							)
-						]
-							.filter((signal) => signalCheckIds.some((id) => id === signal))
-							.sort();
+						const signalled = [...(browseFindings.get(line.id) ?? [])].sort();
 						const checked = [...(signalChecksByLine.get(line.id) ?? [])].sort();
 						if (!isDeepStrictEqual(signalled, checked))
 							signalChecks.push({

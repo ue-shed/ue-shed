@@ -463,6 +463,8 @@ has every table.
 
 ### Phase 3: the query engine
 
+The specification is [Game Text rule engine, Phase 3](../docs/engineering/game-text-rule-engine-phase-3.md).
+
 - Bitset predicates over the IR.
 - Findings as filter, group and facet fields, including Browse chips. The native `shared`, `long`
   and `duplicate_source` signals are deleted then (decision 16).

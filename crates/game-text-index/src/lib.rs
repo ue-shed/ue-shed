@@ -25,6 +25,7 @@ mod engine_page;
 mod engine_places;
 mod engine_query;
 mod engine_reader;
+mod engine_related;
 mod engine_rollup;
 mod engine_rows;
 mod engine_search;

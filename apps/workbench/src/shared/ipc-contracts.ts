@@ -121,6 +121,8 @@ import {
 	LocalizationTargetResult,
 	LocalizationFocusRequest,
 	LocalizationFocusResult,
+	RelatedLinesRequest,
+	RelatedLinesResult,
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
@@ -833,6 +835,11 @@ export const invokeContracts = {
 		channel: "game-text:localization:focus",
 		args: Schema.Tuple([LocalizationFocusRequest]),
 		result: LocalizationFocusResult
+	}),
+	"game-text:related": invoke({
+		channel: "game-text:related",
+		args: Schema.Tuple([RelatedLinesRequest]),
+		result: RelatedLinesResult
 	}),
 	"game-text:search": invoke({
 		channel: "game-text:search",

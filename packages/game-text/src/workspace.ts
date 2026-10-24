@@ -1,3 +1,4 @@
+import type { RelatedLinesRequest, RelatedLinesResult } from "./related-lines.js";
 import { indexPublicFailure } from "./index-public-error.js";
 import { type IndexFailure } from "./index-contract.js";
 import {
@@ -151,6 +152,8 @@ export interface GameTextWorkspaceApi {
 	readonly localizationFocus: (
 		request: LocalizationFocusRequest
 	) => Effect.Effect<LocalizationFocusResult>;
+	/** A selection's related units and lines, with their places and translations. */
+	readonly related: (request: RelatedLinesRequest) => Effect.Effect<RelatedLinesResult>;
 	readonly investigationExport: (
 		query: GameTextInvestigationQuery,
 		format: InvestigationFormat
@@ -732,6 +735,21 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		return result.success === undefined
 			? { status: "not_found" as const }
 			: { status: "found" as const, focus: result.success };
+	});
+
+	const related = Effect.fn("GameText.workspace.related")(function* (
+		request: RelatedLinesRequest
+	) {
+		const model = yield* request.target
+			? localization.targetQuery(request.target)
+			: currentModel(queryModel);
+		if (!model) return { status: "not_ready" as const };
+		const result = yield* model.related(request).pipe(Effect.result);
+		if (Result.isFailure(result))
+			return { status: "failed" as const, error: indexPublicFailure(result.failure) };
+		return result.success === undefined
+			? { status: "not_found" as const }
+			: { status: "found" as const, related: result.success };
 	});
 
 	const prepareQualityRules = Effect.fn("GameText.workspace.prepareQualityRules")(function* (
@@ -1363,6 +1381,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		localizationTargets: scoped(localization.targets),
 		localizationTarget: scoped(localization.select),
 		localizationFocus: scoped(localization.focus),
+		related: scoped(related),
 		investigationExport: scoped(investigationExport),
 		investigationSave: scoped(investigationSave),
 		investigationOpen: scoped(investigationOpen),

@@ -21,6 +21,8 @@ import {
 	LocalizationTargetResult,
 	LocalizationFocusResult,
 	type LocalizationFocusRequest,
+	RelatedLinesResult,
+	type RelatedLinesRequest,
 	parseTextQualityFocusResult,
 	parseTextQualityQueryRunResult,
 	parseTextQualityRuleUpdateResult,
@@ -261,6 +263,13 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				() => window.ueShed.gameText.localizationFocus(request),
 				Schema.decodeUnknownEffect(LocalizationFocusResult)
 			)
+	),
+	related: Effect.fn("GameTextClient.related")((request: RelatedLinesRequest) =>
+		invokeRequest(
+			"gameText.related",
+			() => window.ueShed.gameText.related(request),
+			Schema.decodeUnknownEffect(RelatedLinesResult)
+		)
 	),
 	reloadQualityRules: Effect.fn("GameTextClient.reloadQualityRules")(() =>
 		invokeRequest(

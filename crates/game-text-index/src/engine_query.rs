@@ -62,6 +62,8 @@ pub struct EngineQuery {
     validated_ids: HashSet<String>,
     id_indexes: HashMap<String, Arc<IdIndex>>,
     unit_lines: Option<Arc<[u32]>>,
+    /// Units and lines by exact source, for related lines, built on the first request.
+    pub(crate) related_index: Option<Arc<crate::engine_related::RelatedIndex>>,
     /// Unreal word counts by source text ID, filled by aggregates.
     pub(crate) line_break_words: HashMap<u32, u32>,
     /// The corpus fingerprint, computed once per reader.
@@ -266,6 +268,7 @@ impl EngineQuery {
             validated_ids: HashSet::new(),
             id_indexes: HashMap::new(),
             unit_lines: None,
+            related_index: None,
             line_break_words: HashMap::new(),
             fingerprint: None,
             package_lists: None,

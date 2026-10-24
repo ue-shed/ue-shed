@@ -39,7 +39,7 @@ export const GameTextEnginePreviousRequest = Schema.Union([
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader, payload: Payload })
 	)
 ]);
-/** Additive findings actions, requiring uasset-io minor 20. */
+/** Additive actions, requiring uasset-io minor 20: findings and related lines. */
 export const GameTextFindingsRequest = Schema.Union([
 	Schema.Struct({
 		action: Schema.Literal("findings_evaluate"),
@@ -54,7 +54,9 @@ export const GameTextFindingsRequest = Schema.Union([
 		reader: Reader,
 		payload: Schema.String.check(Schema.isMaxLength(8 * 1024 * 1024))
 	}),
-	Schema.Struct({ action: Schema.Literal("findings_query"), reader: Reader, payload: Payload })
+	Schema.Struct({ action: Schema.Literal("findings_query"), reader: Reader, payload: Payload }),
+	/** A selection's related units and lines, with their evidence. */
+	Schema.Struct({ action: Schema.Literal("related"), reader: Reader, payload: Payload })
 ]);
 /** Native snapshot reads and persisted finding evaluation share one process scope. */
 export const GameTextEngineRequest = Schema.Union([
@@ -85,7 +87,8 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"localization_corpus",
 		"findings_evaluate",
 		"findings_accept",
-		"findings_query"
+		"findings_query",
+		"related"
 	]),
 	capabilities: Schema.Array(Schema.Literal("game_text_engine_v1")),
 	reader: Schema.NullOr(Reader),

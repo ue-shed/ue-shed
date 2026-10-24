@@ -57,6 +57,7 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 			read("search", () => referenceSearchRows((input) => query.search(input), request)),
 		focus: (request) => read("focus", () => query.focus(request)),
 		localizationFocus: (id) => read("localization_focus", () => query.localizationFocus(id)),
+		related: () => Effect.die("This reference query has no related lines."),
 		localizationDetail: (request) =>
 			read("localization_detail", () => query.localizationDetail(request)),
 		localizationLines: (request) =>

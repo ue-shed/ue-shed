@@ -316,6 +316,13 @@ for subsequent pages. `localizationFocus(lineId)` returns every culture and full
 kind of line; ordinary corpus `focus` also includes localization details. Evidence-only IDs have a
 distinct `LocalizationEvidenceLineId` brand and never masquerade as `TextUnitId`.
 
+`workspace.related({ target?, selection, pageSize })` reads a unit's or a target line's related
+members in one engine request: `sameKey` (the unit's other units under its key), `sameText` (other
+resolved units, or lines, with exactly its source) and, with a target, `conflict` (the line's units
+with another source) and `keyChange` (the line its key change pairs with). Each section lists at
+most 50 members and says whether that is all of them; each unit member carries its first `pageSize`
+places and, with a target, its line and translations.
+
 Precedence: `outside_target`, `not_gathered`, `not_found`, `gathered_only`, `changed_since_gather`,
 `unknown`, `not_synced`, `needs_update`, `not_translated`, `translated`. Structural facts come first;
 uncertainty blocks unsupported translation claims. A non-empty PO translation differing from the

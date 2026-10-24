@@ -98,6 +98,11 @@ pub enum EngineRequest {
         reader: String,
         payload: String,
     },
+    /// A selection's related units and lines: same key, same text, conflict and key change.
+    Related {
+        reader: String,
+        payload: String,
+    },
     LocalizationExport {
         reader: String,
         payload: String,
@@ -133,6 +138,7 @@ impl EngineRequest {
             Self::FindingsEvaluate { .. }
                 | Self::FindingsAccept { .. }
                 | Self::FindingsQuery { .. }
+                | Self::Related { .. }
         )
     }
     pub fn validate(&self) -> Result<()> {
@@ -167,6 +173,7 @@ impl EngineRequest {
             | Self::LocalizationCorpus { reader, .. }
             | Self::Export { reader, .. }
             | Self::LocalizationDetail { reader, .. }
+            | Self::Related { reader, .. }
             | Self::LocalizationExport { reader, .. }
             | Self::LocalizationFocusExport { reader, .. }
             | Self::FindingsEvaluate { reader, .. }
@@ -240,6 +247,13 @@ impl EngineRequest {
                     invalid("Native query payload exceeds its bound."),
                 )?;
                 crate::engine_types::parse_detail_request(payload)?;
+            }
+            Self::Related { payload, .. } => {
+                require(
+                    payload.len() <= 512 * 1024,
+                    invalid("Native query payload exceeds its bound."),
+                )?;
+                crate::engine_related::parse_related_request(payload)?;
             }
             Self::LocalizationExport { payload, .. } => {
                 require(
@@ -405,6 +419,7 @@ impl EngineSession {
             | EngineRequest::LocalizationCorpus { reader, .. }
             | EngineRequest::Export { reader, .. }
             | EngineRequest::LocalizationDetail { reader, .. }
+            | EngineRequest::Related { reader, .. }
             | EngineRequest::LocalizationExport { reader, .. }
             | EngineRequest::LocalizationFocusExport { reader, .. }
             | EngineRequest::FindingsEvaluate { reader, .. }
@@ -433,6 +448,9 @@ impl EngineSession {
                     ),
                     EngineRequest::Search { payload, .. } => {
                         ("search", query.search_json(payload, cancelled)?)
+                    }
+                    EngineRequest::Related { payload, .. } => {
+                        ("related", query.related_json(payload, cancelled)?)
                     }
                     EngineRequest::Corpus { output, .. } => {
                         let request = parse_search_request(

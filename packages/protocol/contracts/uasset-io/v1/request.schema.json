@@ -1257,6 +1257,36 @@
 											},
 											"required": ["action", "reader", "payload"],
 											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["related"]
+												},
+												"reader": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 128
+														}
+													]
+												},
+												"payload": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 524288
+														}
+													]
+												}
+											},
+											"required": ["action", "reader", "payload"],
+											"additionalProperties": false
 										}
 									]
 								}

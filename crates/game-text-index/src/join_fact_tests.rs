@@ -1279,3 +1279,124 @@ fn complete_inventory_proves_a_deleted_package_absent_but_unprepared_and_failed_
     }
     Ok(())
 }
+
+#[test]
+fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    let entry = |key: &str, source: &str| json!({"namespace":"UI","key":key,"source":source,"path":format!("/Game/Text/Example.Example.{key}")});
+    fixture.file(
+        "Game.manifest",
+        "manifest",
+        &[entry("A", "Exit"), entry("B", "Exit"), entry("C", "Open")],
+    )?;
+    for culture in ["en", "de"] {
+        fixture.file(
+            &format!("{culture}.archive"),
+            "archive",
+            &[
+                json!({"namespace":"UI","key":"A","source":"Exit","translation":if culture == "de" {"Beenden"} else {"Exit"}}),
+                json!({"namespace":"UI","key":"B","source":"Exit","translation":if culture == "de" {"Verlassen"} else {"Exit"}}),
+            ],
+        )?;
+        fixture.file(&format!("{culture}.po"), "po", &[])?;
+    }
+    let place = |key: &str, source: &str, object: &str| json!({"namespace":"UI","key":key,"source":source,"object":object,"property":"Label"});
+    fixture.packages(&[
+        place("A", "Exit", "/Game/Text/A.A"),
+        place("B", "Exit", "/Game/Text/B.B"),
+        place("C", "Open", "/Game/Text/C.C"),
+        place("C", "Opened", "/Game/Text/D.D"),
+    ])?;
+    let lines = fixture.lines()?;
+    let line = |key: &str| -> Result<&Value> {
+        lines
+            .iter()
+            .find(|line| line["identity"]["key"] == key)
+            .ok_or_else(|| format!("Missing line {key}.").into())
+    };
+    let unit = |key: &str| -> Result<String> {
+        Ok(line(key)?["origin"]["unitIds"][0]
+            .as_str()
+            .ok_or("Missing unit.")?
+            .to_owned())
+    };
+    let (a, b, c) = (unit("A")?, unit("B")?, unit("C")?);
+    let line_c = line("C")?["id"]
+        .as_str()
+        .ok_or("Missing line ID.")?
+        .to_owned();
+    let mut query = EngineQuery::open(&fixture.configuration, None)?;
+    let cancelled = AtomicBool::new(false);
+    let related = |query: &mut EngineQuery, request: Value| {
+        query.related(
+            &crate::engine_related::parse_related_request(&request.to_string())?,
+            &cancelled,
+        )
+    };
+    let ids = |section: &Value| -> Vec<Value> {
+        section["members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|member| member["unit"]["id"].clone())
+            .collect()
+    };
+    let found = related(
+        &mut query,
+        json!({"target":"Game","selection":{"kind":"unit","id":a},"pageSize":50}),
+    )?;
+    assert_eq!(found["self"]["unit"]["id"], json!(a));
+    assert_eq!(found["self"]["complete"], true);
+    assert_eq!(
+        found["self"]["translations"].as_array().map(Vec::len),
+        Some(2)
+    );
+    assert_eq!(found["self"]["translationsComplete"], true);
+    assert_eq!(found["self"]["line"]["id"], line("A")?["id"]);
+    assert_eq!(found["self"]["line"]["identity"]["key"], "A");
+    assert_eq!(ids(&found["sameText"]), [json!(b)]);
+    assert_eq!(found["sameText"]["complete"], true);
+    assert_eq!(
+        found["sameText"]["members"][0]["translations"][1]["culture"],
+        "de"
+    );
+    assert_eq!(ids(&found["sameKey"]), Vec::<Value>::new());
+    assert_eq!(ids(&found["conflict"]), Vec::<Value>::new());
+    assert_eq!(found["keyChange"]["members"], json!([]));
+    // A unit with two saved sources conflicts with its key's gathered source.
+    let conflicting = related(
+        &mut query,
+        json!({"target":"Game","selection":{"kind":"unit","id":c},"pageSize":1}),
+    )?;
+    assert_eq!(ids(&conflicting["conflict"]), [json!(c)]);
+    assert_eq!(conflicting["sameText"]["members"], json!([]));
+    assert_eq!(
+        conflicting["self"]["occurrences"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(conflicting["self"]["complete"], false);
+    // A line's own units are its self member's; its sections list lines and units.
+    let by_line = related(
+        &mut query,
+        json!({"target":"Game","selection":{"kind":"line","id":line_c},"pageSize":50}),
+    )?;
+    assert_eq!(by_line["self"]["kind"], "line");
+    assert_eq!(by_line["self"]["unitIds"], json!([c]));
+    assert_eq!(ids(&by_line["conflict"]), [json!(c)]);
+    // Without a target there are only unit sections, and no translations.
+    let untargeted = related(
+        &mut query,
+        json!({"selection":{"kind":"unit","id":b},"pageSize":50}),
+    )?;
+    assert_eq!(ids(&untargeted["sameText"]), [json!(a)]);
+    assert!(untargeted.get("conflict").is_none());
+    assert!(untargeted["self"].get("translations").is_none());
+    assert_eq!(
+        related(
+            &mut query,
+            json!({"target":"Other","selection":{"kind":"unit","id":a},"pageSize":50}),
+        )?,
+        Value::Null
+    );
+    Ok(())
+}

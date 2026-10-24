@@ -68,7 +68,8 @@
 						"localization_corpus",
 						"findings_evaluate",
 						"findings_accept",
-						"findings_query"
+						"findings_query",
+						"related"
 					]
 				},
 				"capabilities": {

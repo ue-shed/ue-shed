@@ -34,6 +34,7 @@ import {
 } from "./index-reads.js";
 
 import type { NativeTextQuery } from "./native-query-contract.js";
+import { RelatedLines, RelatedLinesRequest } from "./related-lines.js";
 import { canonicalRuleDocument } from "./rules/effective.js";
 import { annotateFindingsProfile, inflateFindingsPage } from "./native-findings.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
@@ -639,6 +640,26 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		);
 		return result ?? undefined;
 	});
+	const related = Effect.fn("GameTextIndex.nativeRelated")(function* (
+		request: RelatedLinesRequest
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(RelatedLinesRequest)(request).pipe(
+			Effect.mapError((cause) => failed("related", cause))
+		);
+		const result = yield* response(
+			interactive,
+			{ action: "related", reader, payload: JSON.stringify(decoded) },
+			Schema.NullOr(RelatedLines)
+		);
+		if (result)
+			yield* Effect.annotateCurrentSpan({
+				"game_text.related.same_key": result.sameKey.members.length,
+				"game_text.related.same_text": result.sameText.members.length,
+				"game_text.related.conflict": result.conflict?.members.length ?? 0,
+				"game_text.related.key_change": result.keyChange?.members.length ?? 0
+			});
+		return result ?? undefined;
+	});
 	/** A read on the bulk lane, which opens on first use. */
 	const bulk = <A>(read: (lane: Lane) => Effect.Effect<A, GameTextIndexError>) =>
 		scopedRead(bulkReads, Effect.flatMap(bulkLane, read));
@@ -722,6 +743,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		focus: (request) => scopedRead(reads, focus(request)),
 		localizationFocus: (id) => scopedRead(reads, localizationFocus(id)),
 		localizationDetail: (request) => scopedRead(reads, localizationDetail(request)),
+		related: (request) => scopedRead(reads, related(request)),
 		readCorpus: () => exported(undefined).pipe(Effect.map((result) => result.corpus)),
 		readLocalizationLines: () => bulk(readLocalizationLines),
 		localizationLines: (request) => bulk((lane) => localizationLines(lane, request)),

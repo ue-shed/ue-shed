@@ -186,6 +186,10 @@ impl Rows {
     pub fn sources(&self, row: usize) -> &[u32] {
         &self.sources[self.source_start[row] as usize..self.source_end[row] as usize]
     }
+    /// Whether a row's identity is resolved: saved with a namespace and a non-empty key.
+    pub fn resolved(&self, row: usize) -> bool {
+        self.namespace_defined[row]
+    }
 }
 
 pub(crate) struct Culture {

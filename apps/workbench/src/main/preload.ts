@@ -200,6 +200,7 @@ const workbenchRendererApi = {
 		localizationTargets: () => ipcRenderer.invoke("game-text:localization:targets"),
 		localizationTarget: (target) => ipcRenderer.invoke("game-text:localization:target", target),
 		localizationFocus: (request) => ipcRenderer.invoke("game-text:localization:focus", request),
+		related: (request) => ipcRenderer.invoke("game-text:related", request),
 		investigationExport: (query, format) =>
 			ipcRenderer.invoke("game-text:investigation-export", query, format),
 		investigationSave: (query) => ipcRenderer.invoke("game-text:investigation-save", query),

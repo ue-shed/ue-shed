@@ -598,6 +598,23 @@ export async function runEngineStage(options: EngineStageOptions) {
 						},
 						related
 					);
+					// The same review's evidence as one request: the unit's same key, same text,
+					// conflict and key change, with every member's places and translations.
+					await measure(
+						"electroswag:related",
+						async () =>
+							expectFound(
+								await run(
+									workspace.related({
+										target,
+										selection: { kind: "unit", id: unit.id },
+										pageSize: selection.pageSize
+									})
+								),
+								"related"
+							),
+						1
+					);
 				}
 				for (const host of ["workbench", "electroswag"].filter(
 					(host) => !scenarioHost || host === scenarioHost

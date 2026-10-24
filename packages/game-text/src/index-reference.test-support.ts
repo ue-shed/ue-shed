@@ -100,6 +100,7 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 						Effect.sync(() => referenceSearchRows(reference.search, request)),
 					focus: (request) => Effect.sync(() => reference.focus(request)),
 					localizationFocus: (id) => Effect.sync(() => reference.localizationFocus(id)),
+					related: () => Effect.die("This reference query has no related lines."),
 					localizationDetail: (request) =>
 						Effect.sync(() => reference.localizationDetail(request)),
 					localizationLines: (request) =>

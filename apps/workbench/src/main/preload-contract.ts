@@ -85,6 +85,7 @@ export const workbenchInvokeChannels = {
 		localizationTargets: "game-text:localization:targets",
 		localizationTarget: "game-text:localization:target",
 		localizationFocus: "game-text:localization:focus",
+		related: "game-text:related",
 		investigationExport: "game-text:investigation-export",
 		investigationSave: "game-text:investigation-save",
 		investigationOpen: "game-text:investigation-open",

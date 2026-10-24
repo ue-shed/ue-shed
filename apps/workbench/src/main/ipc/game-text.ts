@@ -59,6 +59,9 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:localization:focus"], (request) =>
 		gameText.localizationFocus(request)
 	);
+	yield* ipc.register(invokeContracts["game-text:related"], (request) =>
+		gameText.related(request)
+	);
 	yield* ipc.register(invokeContracts["game-text:quality:reload-rules"], () =>
 		gameText.reloadQualityRules()
 	);

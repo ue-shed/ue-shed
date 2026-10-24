@@ -25,6 +25,8 @@ import type {
 	LocalizationTargetResult,
 	LocalizationFocusRequest,
 	LocalizationFocusResult,
+	RelatedLinesRequest,
+	RelatedLinesResult,
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
@@ -131,6 +133,10 @@ export interface GameTextClientApi {
 	readonly localizationFocus?: (
 		request: LocalizationFocusRequest
 	) => Effect.Effect<LocalizationFocusResult, GameTextClientError>;
+	/** A selection's related units and lines, with their places and translations. */
+	readonly related?: (
+		request: RelatedLinesRequest
+	) => Effect.Effect<RelatedLinesResult, GameTextClientError>;
 	readonly projectKey?: () => Effect.Effect<string | undefined, GameTextClientError>;
 	readonly reloadQualityRules?: () => Effect.Effect<
 		TextQualityQueryRunResult,

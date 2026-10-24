@@ -8,7 +8,12 @@ import {
 	textIdRepairSupport,
 	textIdRepairEditLabel
 } from "@ue-shed/game-text/checks";
-import { LocalizationEdit, type LocalizationFocus } from "@ue-shed/game-text/corpus";
+import {
+	LocalizationEdit,
+	type LocalizationFocus,
+	type RelatedLines,
+	type RelatedUnit
+} from "@ue-shed/game-text/corpus";
 import type {
 	LocalizationSelection,
 	TextCorpusFocus,
@@ -35,6 +40,13 @@ interface TranslationMove {
 	readonly seenTranslation: string | null;
 }
 
+/** A related unit's translations, with its line's identity, as a merge carries them. */
+interface UnitTranslations {
+	readonly unitId: string;
+	readonly identity: LocalizationFocus["identity"];
+	readonly translations: LocalizationFocus["translations"];
+}
+
 interface PickedFix {
 	readonly title: string;
 	readonly changes: readonly TextIdRepairChange[];
@@ -46,10 +58,7 @@ interface PickedFix {
 export function GameTextIdRepairs(props: {
 	readonly focus: TextCorpusFocus;
 	readonly detail: LocalizationFocus | undefined;
-	readonly client: Pick<
-		GameTextClientApi,
-		"idRepairs" | "focus" | "search" | "localizationFocus" | "locateAsset"
-	>;
+	readonly client: Pick<GameTextClientApi, "idRepairs" | "related" | "locateAsset">;
 	readonly projectKey: string | undefined;
 	readonly target: LocalizationSelection["target"] | undefined;
 	readonly nativeCulture: string | undefined;
@@ -69,8 +78,10 @@ export function GameTextIdRepairs(props: {
 		readonly failed: boolean;
 	}>();
 	const [locked, setLocked] = createSignal(false);
+	// The selection's related units, read once per selection; same text comes from them.
+	const [found, setFound] = createSignal<RelatedLines>();
 	const [related, setRelated] = createSignal<readonly TextCorpusFocus[]>();
-	const [translations, setTranslations] = createSignal<readonly LocalizationFocus[]>([]);
+	const [translations, setTranslations] = createSignal<readonly UnitTranslations[]>([]);
 	const [relatedLoading, setRelatedLoading] = createSignal(false);
 	const [relatedError, setRelatedError] = createSignal<string>();
 	const [choices, setChoices] = createSignal<Readonly<Record<string, string>>>({});
@@ -87,11 +98,13 @@ export function GameTextIdRepairs(props: {
 			setReceipt(undefined);
 			setWorking(false);
 			setLocked(false);
+			setFound(undefined);
 			setRelated(undefined);
 			setRelatedError(undefined);
 			setRelatedLoading(false);
 			setSurvivor(undefined);
 			setMessage(undefined);
+			readRelated();
 		}
 	);
 	const complete = () => props.focus.occurrences.length === props.focus.totalOccurrences;
@@ -100,7 +113,7 @@ export function GameTextIdRepairs(props: {
 		(props.detail !== undefined && props.detail.nextCultureOffset === undefined);
 	const groups = createMemo(() => textIdConflictGroups(props.focus));
 	const isConflict = () => props.focus.unit.source.status === "conflicting";
-	const duplicate = () => props.focus.unit.reviewSignals.includes("duplicate_source");
+	const duplicate = () => (found()?.sameText.members.length ?? 0) > 0;
 	const unsupported = () =>
 		picked()?.changes.filter(
 			(item) => textIdRepairSupport(item.occurrence, item.edit) !== undefined
@@ -248,68 +261,24 @@ export function GameTextIdRepairs(props: {
 			}
 		);
 	};
-	const loadRelated = () => {
-		const source = props.focus.unit.source;
-		if (source.status !== "consistent" || relatedLoading()) return;
+	/** One request for the selection's related units: their places and translations. */
+	function readRelated() {
+		const related = props.client.related;
+		if (props.focus.unit.source.status !== "consistent" || !related) return;
 		const generation = revision;
 		const target = props.target;
 		setRelatedLoading(true);
-		setRelatedError(undefined);
 		relatedAction.run(
-			Effect.gen(function* () {
-				if (target && !props.client.localizationFocus)
-					return {
-						error: "This host cannot review translations. Open the target in a host with localization support before merging."
-					};
-				const result = yield* props.client.search({
-					query: source.value.slice(0, 512),
-					capability: "all",
-					pageSize: 50
-				});
-				if (result.status !== "ready")
-					return { error: "Matching keys are not available. Rescan and try again." };
-				if (result.page.nextCursor)
-					return {
-						error: "Too many matches to review together. Narrow the text in Unreal or review the keys individually."
-					};
-				const units = result.page.units.filter(
-					(unit) =>
-						unit.source.status === "consistent" &&
-						unit.source.value === source.value &&
-						unit.identity.status === "resolved"
-				);
-				const focuses: TextCorpusFocus[] = [];
-				const details: LocalizationFocus[] = [];
-				for (const unit of units) {
-					const found = yield* props.client.focus({ id: unit.id, pageSize: 50 });
-					if (found.status !== "found" || found.focus.nextOccurrenceCursor)
-						return {
-							error: "Load every place before merging these keys. Review a smaller set in Unreal."
-						};
-					focuses.push(found.focus);
-					if (target && props.client.localizationFocus) {
-						const detail = yield* props.client.localizationFocus({
-							target,
-							selection: { kind: "unit", id: unit.id }
-						});
-						if (detail.status !== "found" || detail.focus.nextCultureOffset)
-							return {
-								error: "All translations must be available before merging. Open the target and retry."
-							};
-						details.push(detail.focus);
-					}
-				}
-				return { focuses, details };
+			related({
+				...(target ? { target } : undefined),
+				selection: { kind: "unit", id: props.focus.unit.id },
+				pageSize: 50
 			}),
 			{
 				onSuccess: (result) => {
 					if (generation !== revision) return;
 					setRelatedLoading(false);
-					if (result.error) setRelatedError(result.error);
-					else {
-						setRelated(result.focuses);
-						setTranslations(result.details ?? []);
-					}
+					if (result.status === "found") setFound(result.related);
 				},
 				onFailure: (cause) => {
 					if (generation !== revision) return;
@@ -317,6 +286,63 @@ export function GameTextIdRepairs(props: {
 					setRelatedError(failureText("Couldn’t compare these keys.", cause));
 				}
 			}
+		);
+	}
+	/** The selection and the keys holding its text, once each has every place and translation. */
+	const loadRelated = () => {
+		const result = found();
+		setRelatedError(undefined);
+		if (!result) {
+			setRelatedError("Matching keys are not available. Rescan and try again.");
+			return;
+		}
+		if (!result.sameText.complete || !result.sameKey.complete) {
+			setRelatedError(
+				"Too many matches to review together. Narrow the text in Unreal or review the keys individually."
+			);
+			return;
+		}
+		// The selection's key moves with it, so its units with the same text merge too.
+		const source = props.focus.unit.source;
+		const sameKey = result.sameKey.members.filter(
+			(member) =>
+				member.kind === "unit" &&
+				member.unit.source.status === "consistent" &&
+				source.status === "consistent" &&
+				member.unit.source.value === source.value
+		);
+		const units = [result.self, ...sameKey, ...result.sameText.members].filter(
+			(member): member is RelatedUnit => member.kind === "unit"
+		);
+		if (units.some((unit) => !unit.complete)) {
+			setRelatedError(
+				"Load every place before merging these keys. Review a smaller set in Unreal."
+			);
+			return;
+		}
+		if (
+			props.target &&
+			units.some((unit) => !unit.line || unit.translationsComplete === false)
+		) {
+			setRelatedError(
+				"All translations must be available before merging. Open the target and retry."
+			);
+			return;
+		}
+		setRelated(
+			units.map(({ unit, occurrences, totalOccurrences }) => ({
+				unit,
+				occurrences,
+				totalOccurrences,
+				diagnostics: []
+			}))
+		);
+		setTranslations(
+			units.map((unit) => ({
+				unitId: unit.unit.id,
+				identity: unit.line?.identity ?? null,
+				translations: unit.translations ?? []
+			}))
 		);
 	};
 	const cultures = createMemo(() => {
@@ -335,9 +361,7 @@ export function GameTextIdRepairs(props: {
 		const keep = survivor();
 		const identity = keep?.unit.identity;
 		if (!keep || identity?.status !== "resolved") return;
-		const detail = translations().find(
-			(item) => item.origin.kind === "corpus" && item.origin.unitIds.includes(keep.unit.id)
-		);
+		const detail = translations().find((item) => item.unitId === keep.unit.id);
 		const source = keep.unit.source;
 		if (source.status !== "consistent") return;
 		const namespace = keep.occurrences[0]

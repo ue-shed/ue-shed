@@ -106,6 +106,16 @@ export {
 } from "./localization-status.js";
 
 export {
+	RelatedLine,
+	RelatedLines,
+	RelatedLinesRequest,
+	RelatedLinesResult,
+	RelatedMember,
+	RelatedSection,
+	RelatedUnit
+} from "./related-lines.js";
+
+export {
 	LocalizationFocus,
 	LocalizationFocusRequest,
 	LocalizationFocusResult,

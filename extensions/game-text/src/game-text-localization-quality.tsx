@@ -158,7 +158,7 @@ export function GameTextLocalizationQuality(props: {
 	const load = (offset?: number) => {
 		const selected = untrack(selection),
 			operation = props.client.localizationQualitySearch;
-		if (!selected || !operation) return;
+		if (!selected || !operation || !untrack(() => props.document)) return;
 		const version = ++revision;
 		setLoading(true);
 		search.run(
@@ -408,583 +408,633 @@ export function GameTextLocalizationQuality(props: {
 		props.summary
 			? { ...props.summary, rules: page()?.rules ?? props.summary.rules }
 			: undefined;
+	// Without a rules file nothing runs, so Quality shows only how to add one.
 	return (
-		<div {...stylex.attrs(styles.workspace)}>
-			<Show when={!props.document}>{props.setup}</Show>
-			<div {...stylex.attrs(styles.bar)}>
-				<For
-					each={filters().filter(
-						(filter) =>
-							filter === "all" ||
-							filter === props.filter ||
-							(page()?.counts[filter] ?? 0) > 0
-					)}
-				>
-					{(filter) => (
-						<Chip
-							label={workspaceQualityLabel(filter, customLabels())}
-							selected={props.filter === filter}
-							count={loading() ? undefined : page()?.counts[filter]}
-							onClick={() => props.onFilterChange(filter)}
-						/>
-					)}
-				</For>
-				<div
-					title="Exports and presets include the matching source and translation findings."
-					{...stylex.attrs(styles.exports)}
-				>
-					{props.exports}
-				</div>
-				<Show when={(page()?.suggestedFixCount ?? 0) > 0}>
-					<Button size="compact" tone="quiet" disabled={loading()} onClick={resolveAll}>
-						Resolve all: copy suggested fixes (
-						{page()?.suggestedFixCount.toLocaleString()})
-					</Button>
-				</Show>
-				<Show when={props.document}>
-					<Button
-						size="compact"
-						tone="quiet"
-						disabled={props.disabled}
-						onClick={props.onReloadRules}
-					>
-						Reload rules
-					</Button>
-					<Button
-						size="compact"
-						tone="quiet"
-						disabled={props.disabled}
-						onClick={() => setEditing(!editing())}
-					>
-						{editing() ? "Close rules" : "Edit rules"}
-					</Button>
-				</Show>
-				<Show when={editing()}>
-					<Button
-						size="compact"
-						tone="quiet"
-						disabled={props.disabled}
-						onClick={props.onLoadRules}
-					>
-						Choose another rules file…
-					</Button>
-				</Show>
-			</div>
-			<Show
-				when={
-					!loading() &&
-					((page()?.limits.length ?? 0) > 0 || (page()?.unsupportedRuleCultures ?? 0) > 0)
-				}
-			>
-				<p {...stylex.attrs(styles.empty)}>
-					Checks limited:{" "}
-					{(page()?.limits ?? [])
-						.map(
-							(limit) =>
-								checkLimitLabels[limit.code] +
-								" (" +
-								limit.count.toLocaleString() +
-								")"
-						)
-						.join(" · ")}
-					<Show when={(page()?.unsupportedRuleCultures ?? 0) > 0}>
-						{" "}
-						· Some rules name cultures outside this target.
-					</Show>
-				</p>
-			</Show>
-			<Show when={message()}>
-				<span
-					role={failed() ? "alert" : "status"}
-					{...stylex.attrs(styles.muted, failed() && styles.warning)}
-				>
-					{message()}
-				</span>
-			</Show>
-			<Show
-				when={!editing()}
-				fallback={
-					<Show when={props.editor.state()}>
-						{(state) => (
-							<Show when={editorSummary()}>
-								{(summary) => (
-									<GameTextRuleEditor
-										disabled={props.disabled}
-										editor={props.editor}
-										state={state()}
-										summary={summary()}
-									/>
-								)}
-							</Show>
+		<Show when={props.document} fallback={props.setup}>
+			<div {...stylex.attrs(styles.workspace)}>
+				<div {...stylex.attrs(styles.bar)}>
+					<For
+						each={filters().filter(
+							(filter) =>
+								filter === "all" ||
+								filter === props.filter ||
+								(page()?.counts[filter] ?? 0) > 0
 						)}
+					>
+						{(filter) => (
+							<Chip
+								label={workspaceQualityLabel(filter, customLabels())}
+								selected={props.filter === filter}
+								count={loading() ? undefined : page()?.counts[filter]}
+								onClick={() => props.onFilterChange(filter)}
+							/>
+						)}
+					</For>
+					<div
+						title="Exports and presets include the matching source and translation findings."
+						{...stylex.attrs(styles.exports)}
+					>
+						{props.exports}
+					</div>
+					<Show when={(page()?.suggestedFixCount ?? 0) > 0}>
+						<Button
+							size="compact"
+							tone="quiet"
+							disabled={loading()}
+							onClick={resolveAll}
+						>
+							Resolve all: copy suggested fixes (
+							{page()?.suggestedFixCount.toLocaleString()})
+						</Button>
 					</Show>
-				}
-			>
-				<div {...stylex.attrs(styles.grid)}>
-					<section aria-label="Findings" {...stylex.attrs(styles.pane)}>
-						<For each={page()?.findings ?? []}>
-							{(finding) => (
-								<button
-									type="button"
-									aria-current={
-										props.selectedId === finding.id ? "true" : undefined
-									}
-									onClick={() => props.onSelectionChange(finding.id)}
-									{...stylex.attrs(
-										styles.row,
-										props.selectedId === finding.id && styles.selected
+					<Show when={props.document}>
+						<Button
+							size="compact"
+							tone="quiet"
+							disabled={props.disabled}
+							onClick={props.onReloadRules}
+						>
+							Reload rules
+						</Button>
+						<Button
+							size="compact"
+							tone="quiet"
+							disabled={props.disabled}
+							onClick={() => setEditing(!editing())}
+						>
+							{editing() ? "Close rules" : "Edit rules"}
+						</Button>
+					</Show>
+					<Show when={editing()}>
+						<Button
+							size="compact"
+							tone="quiet"
+							disabled={props.disabled}
+							onClick={props.onLoadRules}
+						>
+							Choose another rules file…
+						</Button>
+					</Show>
+				</div>
+				<Show
+					when={
+						!loading() &&
+						((page()?.limits.length ?? 0) > 0 ||
+							(page()?.unsupportedRuleCultures ?? 0) > 0)
+					}
+				>
+					<p {...stylex.attrs(styles.empty)}>
+						Checks limited:{" "}
+						{(page()?.limits ?? [])
+							.map(
+								(limit) =>
+									checkLimitLabels[limit.code] +
+									" (" +
+									limit.count.toLocaleString() +
+									")"
+							)
+							.join(" · ")}
+						<Show when={(page()?.unsupportedRuleCultures ?? 0) > 0}>
+							{" "}
+							· Some rules name cultures outside this target.
+						</Show>
+					</p>
+				</Show>
+				<Show when={message()}>
+					<span
+						role={failed() ? "alert" : "status"}
+						{...stylex.attrs(styles.muted, failed() && styles.warning)}
+					>
+						{message()}
+					</span>
+				</Show>
+				<Show
+					when={!editing()}
+					fallback={
+						<Show when={props.editor.state()}>
+							{(state) => (
+								<Show when={editorSummary()}>
+									{(summary) => (
+										<GameTextRuleEditor
+											disabled={props.disabled}
+											editor={props.editor}
+											state={state()}
+											summary={summary()}
+										/>
 									)}
-								>
-									<span {...stylex.attrs(styles.rowText)}>{finding.source}</span>
-									<span {...stylex.attrs(styles.context)}>
-										<Show when={finding.severity === "blocking"}>
-											<span {...stylex.attrs(styles.danger)}>Blocking</span>
-											{" · "}
-										</Show>
-										{finding.problem}
-									</span>
-									<span {...stylex.attrs(styles.context, styles.mono)}>
-										{finding.context.startsWith(finding.problem + " · ")
-											? finding.context.slice(finding.problem.length + 3)
-											: finding.context}
-									</span>
-								</button>
+								</Show>
 							)}
-						</For>
-						<Show when={loading()}>
-							<p role="status" {...stylex.attrs(styles.empty)}>
-								Loading findings…
-							</p>
 						</Show>
-						<Show when={!loading() && page()?.total === 0}>
-							<p {...stylex.attrs(styles.empty)}>
-								No findings match this filter. Results cover the scanned, readable
-								text; an incomplete scan can miss findings.
-							</p>
-						</Show>
-						<Show when={page()?.nextOffset !== undefined}>
-							<Button disabled={loading()} onClick={() => load(page()?.nextOffset)}>
-								Show{" "}
-								{Math.min(
-									50,
-									(page()?.total ?? 0) - (page()?.findings.length ?? 0)
-								)}{" "}
-								more
-							</Button>
-						</Show>
-					</section>
-					<aside aria-label="Finding detail" {...stylex.attrs(styles.pane)}>
-						<div {...stylex.attrs(styles.detail)}>
-							<Show
-								when={!detailLoading() || focus()}
-								fallback={
-									<p role="status" {...stylex.attrs(styles.empty)}>
-										Loading finding details…
-									</p>
-								}
-							>
+					}
+				>
+					<div {...stylex.attrs(styles.grid)}>
+						<section aria-label="Findings" {...stylex.attrs(styles.pane)}>
+							<For each={page()?.findings ?? []}>
+								{(finding) => (
+									<button
+										type="button"
+										aria-current={
+											props.selectedId === finding.id ? "true" : undefined
+										}
+										onClick={() => props.onSelectionChange(finding.id)}
+										{...stylex.attrs(
+											styles.row,
+											props.selectedId === finding.id && styles.selected
+										)}
+									>
+										<span {...stylex.attrs(styles.rowText)}>
+											{finding.source}
+										</span>
+										<span {...stylex.attrs(styles.context)}>
+											<Show when={finding.severity === "blocking"}>
+												<span {...stylex.attrs(styles.danger)}>
+													Blocking
+												</span>
+												{" · "}
+											</Show>
+											{finding.problem}
+										</span>
+										<span {...stylex.attrs(styles.context, styles.mono)}>
+											{finding.context.startsWith(finding.problem + " · ")
+												? finding.context.slice(finding.problem.length + 3)
+												: finding.context}
+										</span>
+									</button>
+								)}
+							</For>
+							<Show when={loading()}>
+								<p role="status" {...stylex.attrs(styles.empty)}>
+									Loading findings…
+								</p>
+							</Show>
+							<Show when={!loading() && page()?.total === 0}>
+								<p {...stylex.attrs(styles.empty)}>
+									No findings match this filter. Results cover the scanned,
+									readable text; an incomplete scan can miss findings.
+								</p>
+							</Show>
+							<Show when={page()?.nextOffset !== undefined}>
+								<Button
+									disabled={loading()}
+									onClick={() => load(page()?.nextOffset)}
+								>
+									Show{" "}
+									{Math.min(
+										50,
+										(page()?.total ?? 0) - (page()?.findings.length ?? 0)
+									)}{" "}
+									more
+								</Button>
+							</Show>
+						</section>
+						<aside aria-label="Finding detail" {...stylex.attrs(styles.pane)}>
+							<div {...stylex.attrs(styles.detail)}>
 								<Show
-									when={focus()}
+									when={!detailLoading() || focus()}
 									fallback={
-										<Show
-											when={!loading() && page()}
-											fallback={
-												loading() ? (
-													<p
-														role="status"
-														{...stylex.attrs(styles.muted)}
-													>
-														Loading quality checks…
+										<p role="status" {...stylex.attrs(styles.empty)}>
+											Loading finding details…
+										</p>
+									}
+								>
+									<Show
+										when={focus()}
+										fallback={
+											<Show
+												when={!loading() && page()}
+												fallback={
+													loading() ? (
+														<p
+															role="status"
+															{...stylex.attrs(styles.muted)}
+														>
+															Loading quality checks…
+														</p>
+													) : undefined
+												}
+											>
+												<table
+													aria-label="Rules overview"
+													{...stylex.attrs(styles.table)}
+												>
+													<thead>
+														<tr>
+															<th>Rule</th>
+															<th>Findings</th>
+														</tr>
+													</thead>
+													<tbody>
+														<For each={page()?.rules ?? []}>
+															{(rule) => (
+																<tr>
+																	<td title={rule.ruleId}>
+																		{ruleLabel(rule.ruleId)}
+																	</td>
+																	<td>{rule.findingCount}</td>
+																</tr>
+															)}
+														</For>
+													</tbody>
+												</table>
+												<table
+													aria-label="Roles overview"
+													{...stylex.attrs(styles.table)}
+												>
+													<thead>
+														<tr>
+															<th>Role</th>
+															<th>Lines in scope</th>
+														</tr>
+													</thead>
+													<tbody>
+														<For each={props.summary?.roles ?? []}>
+															{(role) => (
+																<tr>
+																	<td>{role.role}</td>
+																	<td>
+																		<Show
+																			when={
+																				role.matchedTextUnits >
+																				0
+																			}
+																			fallback={
+																				<span
+																					{...stylex.attrs(
+																						styles.warning
+																					)}
+																				>
+																					None: check this
+																					role's matchers
+																				</span>
+																			}
+																		>
+																			{role.matchedTextUnits}
+																		</Show>
+																	</td>
+																</tr>
+															)}
+														</For>
+													</tbody>
+												</table>
+												<span {...stylex.attrs(styles.muted)}>
+													Select a finding to see its source, translation
+													and how to fix it.
+												</span>
+											</Show>
+										}
+									>
+										<Show when={localizedFocus()}>
+											{(finding) => (
+												<>
+													<span {...stylex.attrs(styles.muted)}>
+														{workspaceQualityLabel(
+															finding().check,
+															customLabels()
+														)}{" "}
+														· {finding().culture}
+													</span>
+													<span {...stylex.attrs(styles.muted)}>
+														Source
+													</span>
+													<h2 {...stylex.attrs(styles.title)}>
+														<FindingText
+															text={finding().source}
+															ranges={finding().sourceRanges}
+														/>
+													</h2>
+													<span {...stylex.attrs(styles.muted)}>
+														{finding().translationOrigin === "po"
+															? "Translation in PO, not synced"
+															: finding().translationOrigin ===
+																  "archive"
+																? "Translation the game uses"
+																: "No translation"}
+													</span>
+													<p {...stylex.attrs(styles.notes)}>
+														<FindingText
+															text={
+																finding().translation ??
+																"No translation"
+															}
+															ranges={finding().translationRanges}
+														/>
 													</p>
-												) : undefined
+													<Show when={finding().truncated}>
+														<span {...stylex.attrs(styles.muted)}>
+															Text preview shortened.
+														</span>
+													</Show>
+													<span {...stylex.attrs(styles.findingFacts)}>
+														{finding().problem}
+													</span>
+													<h3 {...stylex.attrs(styles.section)}>
+														How to fix
+													</h3>
+													<p {...stylex.attrs(styles.notes)}>
+														{finding().recovery}
+													</p>
+													<Show
+														when={
+															props.client.localizationReview &&
+															finding().translations.identity
+														}
+													>
+														{(identity) => (
+															<div
+																{...stylex.attrs(
+																	styles.inlineAction
+																)}
+															>
+																<Button
+																	size="compact"
+																	tone="quiet"
+																	disabled={
+																		props.disabled ||
+																		accepting()
+																	}
+																	title="Stop reporting this finding until the source or translation changes."
+																	onClick={() =>
+																		accept(
+																			finding(),
+																			identity()
+																		)
+																	}
+																>
+																	Accept as intended
+																</Button>
+															</div>
+														)}
+													</Show>
+													<Show when={finding().suggestedChange}>
+														{(change) => (
+															<section
+																aria-label="Suggested fix"
+																{...stylex.attrs(
+																	styles.detailSection
+																)}
+															>
+																<h3
+																	{...stylex.attrs(
+																		styles.section
+																	)}
+																>
+																	Suggested fix
+																</h3>
+																<span
+																	{...stylex.attrs(styles.muted)}
+																>
+																	Before
+																</span>
+																<p {...stylex.attrs(styles.notes)}>
+																	<FindingText
+																		text={
+																			change()
+																				.previousTranslation ??
+																			""
+																		}
+																		ranges={
+																			changeRanges(
+																				change()
+																					.previousTranslation ??
+																					"",
+																				change().translation
+																			).before
+																		}
+																	/>
+																</p>
+																<span
+																	{...stylex.attrs(styles.muted)}
+																>
+																	After
+																</span>
+																<p {...stylex.attrs(styles.notes)}>
+																	<FindingText
+																		text={change().translation}
+																		ranges={
+																			changeRanges(
+																				change()
+																					.previousTranslation ??
+																					"",
+																				change().translation
+																			).after
+																		}
+																	/>
+																</p>
+																<Button
+																	size="compact"
+																	tone="quiet"
+																	onClick={() =>
+																		writeClipboard(
+																			JSON.stringify(
+																				{
+																					schemaVersion: 1,
+																					provenance: {
+																						producer:
+																							"ue-shed.localization.checks",
+																						files: []
+																					},
+																					changes: [
+																						change()
+																					]
+																				},
+																				null,
+																				2
+																			),
+																			"Change set copied."
+																		)
+																	}
+																>
+																	Copy change set
+																</Button>
+																<span
+																	{...stylex.attrs(styles.muted)}
+																>
+																	Edit the translation in Text to
+																	stage it, or copy the change set
+																	for ue-shed loc apply.
+																</span>
+															</section>
+														)}
+													</Show>
+													<Show when={finding().textUnitId}>
+														{(id) => (
+															<div
+																{...stylex.attrs(
+																	styles.inlineAction
+																)}
+															>
+																<Button
+																	size="compact"
+																	onClick={() =>
+																		props.onShowText(id())
+																	}
+																>
+																	Show key and translator notes
+																</Button>
+															</div>
+														)}
+													</Show>
+												</>
+											)}
+										</Show>
+										<Show when={sourceFocus()}>
+											{(finding) => (
+												<>
+													<span {...stylex.attrs(styles.muted)}>
+														{finding().kind === "character_budget"
+															? "Character limit"
+															: "Terminology"}
+													</span>
+													<h2 {...stylex.attrs(styles.title)}>
+														<FindingText
+															text={finding().sourceExcerpt}
+															ranges={sourceRanges()}
+														/>
+													</h2>
+													<Show when={finding().sourceTruncated}>
+														<span {...stylex.attrs(styles.muted)}>
+															Text preview shortened.
+														</span>
+													</Show>
+													<span {...stylex.attrs(styles.findingFacts)}>
+														{qualityFindingFacts(finding())}
+													</span>
+													<h3 {...stylex.attrs(styles.section)}>
+														How to fix
+													</h3>
+													<p {...stylex.attrs(styles.notes)}>
+														{finding().recovery}
+													</p>
+													<div {...stylex.attrs(styles.inlineAction)}>
+														<Button
+															size="compact"
+															onClick={() =>
+																props.onShowText(
+																	finding().textUnitId
+																)
+															}
+														>
+															Show key and translator notes
+														</Button>
+													</div>
+												</>
+											)}
+										</Show>
+										<h3 {...stylex.attrs(styles.section)}>Where it appears</h3>
+										<For each={occurrences()}>
+											{(occurrence) => (
+												<article {...stylex.attrs(styles.card)}>
+													<strong>
+														{textLocationLabel(occurrence.location)}
+													</strong>
+													<code {...stylex.attrs(styles.mono)}>
+														{occurrence.location.objectPath}
+													</code>
+													<span {...stylex.attrs(styles.muted)}>
+														{locationDetail(occurrence.location)}
+													</span>
+													<details>
+														<summary {...stylex.attrs(styles.muted)}>
+															Saved file
+														</summary>
+														<code {...stylex.attrs(styles.mono)}>
+															{occurrence.packageFile}
+														</code>
+													</details>
+													<div {...stylex.attrs(styles.bar)}>
+														<CopyButton
+															label="Copy asset path"
+															value={occurrence.location.objectPath}
+														/>
+														<ShowInUnrealButton
+															client={props.client}
+															objectPath={
+																occurrence.location.objectPath
+															}
+														/>
+													</div>
+												</article>
+											)}
+										</For>
+										<Show
+											when={
+												localizedFocus()?.nextOccurrenceOffset !== undefined
 											}
 										>
-											<table
-												aria-label="Rules overview"
-												{...stylex.attrs(styles.table)}
+											<Button
+												size="compact"
+												onClick={() => {
+													const current = localizedFocus();
+													if (current)
+														loadFocus(
+															current.id,
+															current.nextOccurrenceOffset
+														);
+												}}
 											>
-												<thead>
-													<tr>
-														<th>Rule</th>
-														<th>Findings</th>
-													</tr>
-												</thead>
-												<tbody>
-													<For each={page()?.rules ?? []}>
-														{(rule) => (
-															<tr>
-																<td title={rule.ruleId}>
-																	{ruleLabel(rule.ruleId)}
-																</td>
-																<td>{rule.findingCount}</td>
-															</tr>
-														)}
-													</For>
-												</tbody>
-											</table>
-											<table
-												aria-label="Roles overview"
-												{...stylex.attrs(styles.table)}
-											>
-												<thead>
-													<tr>
-														<th>Role</th>
-														<th>Lines in scope</th>
-													</tr>
-												</thead>
-												<tbody>
-													<For each={props.summary?.roles ?? []}>
-														{(role) => (
-															<tr>
-																<td>{role.role}</td>
-																<td>
-																	<Show
-																		when={
-																			role.matchedTextUnits >
-																			0
-																		}
-																		fallback={
-																			<span
-																				{...stylex.attrs(
-																					styles.warning
-																				)}
-																			>
-																				None: check this
-																				role's matchers
-																			</span>
-																		}
-																	>
-																		{role.matchedTextUnits}
-																	</Show>
-																</td>
-															</tr>
-														)}
-													</For>
-												</tbody>
-											</table>
-											<span {...stylex.attrs(styles.muted)}>
-												Select a finding to see its source, translation and
-												how to fix it.
-											</span>
+												Show{" "}
+												{textCountLabel(
+													Math.min(
+														50,
+														(localizedFocus()?.totalOccurrences ??
+															sourceFocus()?.totalOccurrences ??
+															0) - occurrences().length
+													),
+													"more location"
+												)}
+											</Button>
 										</Show>
-									}
-								>
-									<Show when={localizedFocus()}>
-										{(finding) => (
-											<>
-												<span {...stylex.attrs(styles.muted)}>
-													{workspaceQualityLabel(
-														finding().check,
-														customLabels()
-													)}{" "}
-													· {finding().culture}
-												</span>
-												<span {...stylex.attrs(styles.muted)}>Source</span>
-												<h2 {...stylex.attrs(styles.title)}>
-													<FindingText
-														text={finding().source}
-														ranges={finding().sourceRanges}
-													/>
-												</h2>
-												<span {...stylex.attrs(styles.muted)}>
-													{finding().translationOrigin === "po"
-														? "Translation in PO, not synced"
-														: finding().translationOrigin === "archive"
-															? "Translation the game uses"
-															: "No translation"}
-												</span>
-												<p {...stylex.attrs(styles.notes)}>
-													<FindingText
-														text={
-															finding().translation ??
-															"No translation"
-														}
-														ranges={finding().translationRanges}
-													/>
-												</p>
-												<Show when={finding().truncated}>
-													<span {...stylex.attrs(styles.muted)}>
-														Text preview shortened.
-													</span>
-												</Show>
-												<span {...stylex.attrs(styles.findingFacts)}>
-													{finding().problem}
-												</span>
-												<h3 {...stylex.attrs(styles.section)}>
-													How to fix
-												</h3>
-												<p {...stylex.attrs(styles.notes)}>
-													{finding().recovery}
-												</p>
-												<Show
-													when={
-														props.client.localizationReview &&
-														finding().translations.identity
+										<Show when={sourceFocus()?.nextOccurrenceCursor}>
+											<Button
+												size="compact"
+												onClick={() => {
+													const current = sourceFocus();
+													if (current)
+														loadFocus(
+															current.id,
+															current.affectedOccurrences.length
+														);
+												}}
+											>
+												Show{" "}
+												{textCountLabel(
+													Math.min(
+														50,
+														(localizedFocus()?.totalOccurrences ??
+															sourceFocus()?.totalOccurrences ??
+															0) - occurrences().length
+													),
+													"more location"
+												)}
+											</Button>
+										</Show>
+										<Show when={localizedFocus()}>
+											{(finding) => (
+												<TranslationsDetail
+													model={props.localization}
+													focus={finding().translations}
+													onMore={(_, offset) =>
+														loadFocus(finding().id, offset)
 													}
-												>
-													{(identity) => (
-														<div {...stylex.attrs(styles.inlineAction)}>
-															<Button
-																size="compact"
-																tone="quiet"
-																disabled={
-																	props.disabled || accepting()
-																}
-																title="Stop reporting this finding until the source or translation changes."
-																onClick={() =>
-																	accept(finding(), identity())
-																}
-															>
-																Accept as intended
-															</Button>
-														</div>
-													)}
-												</Show>
-												<Show when={finding().suggestedChange}>
-													{(change) => (
-														<section
-															aria-label="Suggested fix"
-															{...stylex.attrs(styles.detailSection)}
-														>
-															<h3 {...stylex.attrs(styles.section)}>
-																Suggested fix
-															</h3>
-															<span {...stylex.attrs(styles.muted)}>
-																Before
-															</span>
-															<p {...stylex.attrs(styles.notes)}>
-																<FindingText
-																	text={
-																		change()
-																			.previousTranslation ??
-																		""
-																	}
-																	ranges={
-																		changeRanges(
-																			change()
-																				.previousTranslation ??
-																				"",
-																			change().translation
-																		).before
-																	}
-																/>
-															</p>
-															<span {...stylex.attrs(styles.muted)}>
-																After
-															</span>
-															<p {...stylex.attrs(styles.notes)}>
-																<FindingText
-																	text={change().translation}
-																	ranges={
-																		changeRanges(
-																			change()
-																				.previousTranslation ??
-																				"",
-																			change().translation
-																		).after
-																	}
-																/>
-															</p>
-															<Button
-																size="compact"
-																tone="quiet"
-																onClick={() =>
-																	writeClipboard(
-																		JSON.stringify(
-																			{
-																				schemaVersion: 1,
-																				provenance: {
-																					producer:
-																						"ue-shed.localization.checks",
-																					files: []
-																				},
-																				changes: [change()]
-																			},
-																			null,
-																			2
-																		),
-																		"Change set copied."
-																	)
-																}
-															>
-																Copy change set
-															</Button>
-															<span {...stylex.attrs(styles.muted)}>
-																Edit the translation in Text to
-																stage it, or copy the change set for
-																ue-shed loc apply.
-															</span>
-														</section>
-													)}
-												</Show>
-												<Show when={finding().textUnitId}>
-													{(id) => (
-														<div {...stylex.attrs(styles.inlineAction)}>
-															<Button
-																size="compact"
-																onClick={() =>
-																	props.onShowText(id())
-																}
-															>
-																Show key and translator notes
-															</Button>
-														</div>
-													)}
-												</Show>
-											</>
-										)}
-									</Show>
-									<Show when={sourceFocus()}>
-										{(finding) => (
-											<>
-												<span {...stylex.attrs(styles.muted)}>
-													{finding().kind === "character_budget"
-														? "Character limit"
-														: "Terminology"}
-												</span>
-												<h2 {...stylex.attrs(styles.title)}>
-													<FindingText
-														text={finding().sourceExcerpt}
-														ranges={sourceRanges()}
-													/>
-												</h2>
-												<Show when={finding().sourceTruncated}>
-													<span {...stylex.attrs(styles.muted)}>
-														Text preview shortened.
-													</span>
-												</Show>
-												<span {...stylex.attrs(styles.findingFacts)}>
-													{qualityFindingFacts(finding())}
-												</span>
-												<h3 {...stylex.attrs(styles.section)}>
-													How to fix
-												</h3>
-												<p {...stylex.attrs(styles.notes)}>
-													{finding().recovery}
-												</p>
-												<div {...stylex.attrs(styles.inlineAction)}>
-													<Button
-														size="compact"
-														onClick={() =>
-															props.onShowText(finding().textUnitId)
-														}
-													>
-														Show key and translator notes
-													</Button>
-												</div>
-											</>
-										)}
-									</Show>
-									<h3 {...stylex.attrs(styles.section)}>Where it appears</h3>
-									<For each={occurrences()}>
-										{(occurrence) => (
-											<article {...stylex.attrs(styles.card)}>
-												<strong>
-													{textLocationLabel(occurrence.location)}
-												</strong>
-												<code {...stylex.attrs(styles.mono)}>
-													{occurrence.location.objectPath}
-												</code>
-												<span {...stylex.attrs(styles.muted)}>
-													{locationDetail(occurrence.location)}
-												</span>
-												<details>
-													<summary {...stylex.attrs(styles.muted)}>
-														Saved file
-													</summary>
-													<code {...stylex.attrs(styles.mono)}>
-														{occurrence.packageFile}
-													</code>
-												</details>
-												<div {...stylex.attrs(styles.bar)}>
-													<CopyButton
-														label="Copy asset path"
-														value={occurrence.location.objectPath}
-													/>
-													<ShowInUnrealButton
-														client={props.client}
-														objectPath={occurrence.location.objectPath}
-													/>
-												</div>
-											</article>
-										)}
-									</For>
-									<Show
-										when={localizedFocus()?.nextOccurrenceOffset !== undefined}
-									>
-										<Button
-											size="compact"
-											onClick={() => {
-												const current = localizedFocus();
-												if (current)
-													loadFocus(
-														current.id,
-														current.nextOccurrenceOffset
-													);
-											}}
-										>
-											Show{" "}
-											{textCountLabel(
-												Math.min(
-													50,
-													(localizedFocus()?.totalOccurrences ??
-														sourceFocus()?.totalOccurrences ??
-														0) - occurrences().length
-												),
-												"more location"
+													onMoreContext={(culture) =>
+														loadFocus(
+															finding().id,
+															undefined,
+															finding().translations.translations.find(
+																(mark) => mark.culture === culture
+															)?.nextContextOffset
+														)
+													}
+												/>
 											)}
-										</Button>
-									</Show>
-									<Show when={sourceFocus()?.nextOccurrenceCursor}>
-										<Button
-											size="compact"
-											onClick={() => {
-												const current = sourceFocus();
-												if (current)
-													loadFocus(
-														current.id,
-														current.affectedOccurrences.length
-													);
-											}}
-										>
-											Show{" "}
-											{textCountLabel(
-												Math.min(
-													50,
-													(localizedFocus()?.totalOccurrences ??
-														sourceFocus()?.totalOccurrences ??
-														0) - occurrences().length
-												),
-												"more location"
-											)}
-										</Button>
-									</Show>
-									<Show when={localizedFocus()}>
-										{(finding) => (
-											<TranslationsDetail
-												model={props.localization}
-												focus={finding().translations}
-												onMore={(_, offset) =>
-													loadFocus(finding().id, offset)
-												}
-												onMoreContext={(culture) =>
-													loadFocus(
-														finding().id,
-														undefined,
-														finding().translations.translations.find(
-															(mark) => mark.culture === culture
-														)?.nextContextOffset
-													)
-												}
-											/>
-										)}
+										</Show>
 									</Show>
 								</Show>
-							</Show>
-						</div>
-					</aside>
-				</div>
-			</Show>
-		</div>
+							</div>
+						</aside>
+					</div>
+				</Show>
+			</div>
+		</Show>
 	);
 }

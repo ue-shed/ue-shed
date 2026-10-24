@@ -174,10 +174,10 @@ Every entry has a `kind` and may set `enabled` (default true) and `scope`.
 
 - **One namespace.** Rule IDs are unique across the file, built-in names included (`duplicate_rule_id`). Nothing is renamed to `family:id`.
 - **Closed schema.** Unknown keys are rejected everywhere, and an entry whose `kind` is unknown is `invalid_structure`. The decoder keeps today's other checks: duplicate culture keys, unique role IDs, and declared roles in `role` and `scope.roles`.
-- **Complete rules wait for Phase 3** (plan decision 19, proposed). A rule with its own expressions has no finding shape that reports can carry until findings become query fields; until then the file holds references only.
+- **Complete rules wait for Phase 3** (plan decision 19). A rule with its own expressions has no finding shape that reports can carry until findings become query fields; until then the file holds references only.
 - **No file, no rules** (plan decision 1). Without a rules file the effective document is empty: Quality and `loc check` report no findings, only diagnostics. The starter file lists the checks that run by default today: every check but `segment_separator`.
 - **Report versions.** `ruleDocumentVersion` is `1` in the localization report (`gt/localization-quality-schema.ts:386`), the source summary (`gt/quality-query.ts:59`) and the full source report, `TextQualityReport` (`gt/quality-schema.ts:397-413`).
-- **The rule editor** (`extensions/game-text/src/game-text-rule-editor.tsx`) keeps its screens. It edits the same records, now in one list, so only where it reads and writes them changes. Its v1-to-v2 upgrade goes: there is nothing to upgrade. Quality's empty state for a project without a rules file is UI: its design is shown to the owner before it is built.
+- **The rule editor** (`extensions/game-text/src/game-text-rule-editor.tsx`) keeps its screens. It edits the same records, now in one list, so only where it reads and writes them changes. Its v1-to-v2 upgrade goes: there is nothing to upgrade. Without a rules file, Quality shows how to add one in place of findings: **Create rules file** writes the starter, and **Choose a rules file…** loads one (plan decision 20, approved on 2026-10-24).
 
 ### The effective document
 
@@ -233,6 +233,8 @@ The overlay uses the file's own entries, plus patches:
 - `loc check` reads findings and the lines it reports through the engine in pages. `assembleLocalizationCheckReport` stops hydrating the whole corpus and join (`gt/index-steps.ts:869-880`).
 - On both the generated 1× and the released project, that hydration fails today: the corpus export is longer than a V8 string, and the line export is over 2 GiB (2.8 and 2.6 GB). After Phase 2, `loc check` runs on both.
 - Its JSON output must be byte-identical to today's on both canonical fixture corpora, checked once as in Phase 1 §10.
+- It prints the report in parts, a top-level member and a finding at a time, with the same bytes: the released project's report is longer than a V8 string.
+- `--rules <file>` checks with that file in place of the project's own (plan decision 21). Without either, nothing runs and one stderr line says so.
 
 ## 7. Deleted
 

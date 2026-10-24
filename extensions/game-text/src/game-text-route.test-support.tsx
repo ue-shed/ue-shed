@@ -209,6 +209,6 @@ export async function chooseFilter(
 export async function openQuality(user: ReturnType<typeof userEvent.setup>) {
 	await screen.findByRole("region", { name: "Results" });
 	await user.click(screen.getByRole("tab", { name: "Quality checks" }));
-	await user.click(screen.getByRole("button", { name: "Load rules" }));
+	await user.click(screen.getByRole("button", { name: "Choose a rules file…" }));
 	return screen.findByRole("region", { name: "Findings" });
 }

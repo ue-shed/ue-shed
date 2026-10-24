@@ -324,6 +324,9 @@ export const styles = stylex.create({
 		fontSize: 12,
 		lineHeight: 1.5
 	},
+	/** Quality without a rules file: what to do, centered where the findings would be. */
+	rulesEmpty: { alignItems: "center", textAlign: "center", padding: tokens.space4 },
+	rulesEmptyText: { margin: 0, maxWidth: 520, color: tokens.colorTextMuted, lineHeight: 1.5 },
 	detailSection: { display: "flex", flexDirection: "column", gap: tokens.space2 },
 	problemMessage: {
 		margin: 0,

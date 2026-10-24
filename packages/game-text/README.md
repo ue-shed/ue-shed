@@ -579,11 +579,12 @@ namespace/key, manifest source, current PO translation (archive fallback when ab
 translation. The report carries version-1 provenance. No check applies or writes a proposal.
 
 ```sh
-ue-shed loc check <project-root> --target <name> [--culture <c>] [--check <id>]...
+ue-shed loc check <project-root> --target <name> [--rules <file>] [--culture <c>] [--check <id>]...
 ue-shed loc check <project-root> --target <name> --changes suggestions.json
 ```
 
-The CLI's optional `--changes` exclusively creates a new JSON proposal. It rejects existing files
+`loc check` runs the project's rules file, or the file `--rules` names; without either it runs no
+checks and says so on stderr. The CLI's optional `--changes` exclusively creates a new JSON proposal. It rejects existing files
 and non-JSON destinations and never edits localization evidence. Engine-recorded validator tests
 compare each shipped translation against both committed fixture oracles.
 

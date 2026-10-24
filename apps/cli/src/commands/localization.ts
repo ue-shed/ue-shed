@@ -173,9 +173,10 @@ export const localizationCommand = Command.make("loc").pipe(
 				culture: Flag.String("culture").pipe(Flag.optional),
 				checks: Flag.Literals("check", BuiltInCheckId.literals).pipe(Flag.atMost(64)),
 				changes: Flag.String("changes").pipe(Flag.optional),
+				rules: Flag.String("rules").pipe(Flag.optional),
 				reader: Flag.String("reader").pipe(Flag.optional)
 			},
-			({ projectRoot, target, culture, checks, changes, reader }) =>
+			({ projectRoot, target, culture, checks, changes, rules, reader }) =>
 				runLocalizationCheck({
 					_tag: "LocalizationCheck",
 					projectRoot,
@@ -183,6 +184,7 @@ export const localizationCommand = Command.make("loc").pipe(
 					checks,
 					...(Option.isSome(culture) ? { culture: culture.value } : undefined),
 					...(Option.isSome(changes) ? { changes: changes.value } : undefined),
+					...(Option.isSome(rules) ? { rules: rules.value } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
 				})
 		).pipe(

@@ -116,7 +116,7 @@ export const guides: readonly Guide[] = [
 			},
 			{
 				title: "Check the writing",
-				text: "Open Quality checks. Create rules file starts with examples, or Load rules opens your rules. Review the rules and roles overview, then select a finding to see a highlighted term and How to fix. Edit rules, Preview and Save update checks without changing game text."
+				text: "Open Quality checks. Create rules file starts with the built-in checks and examples, or Choose a rules file opens your rules. Review the rules and roles overview, then select a finding to see a highlighted term and How to fix. Edit rules, Preview and Save update checks without changing game text."
 			},
 			{
 				title: "Take the results away",

@@ -107,7 +107,9 @@ export const CliCommand = Schema.TaggedUnion({
 		target: Schema.String,
 		culture: Schema.optionalKey(Schema.String),
 		checks: Schema.Array(BuiltInCheckId),
-		changes: Schema.optionalKey(Schema.String)
+		changes: Schema.optionalKey(Schema.String),
+		/** A rules file in place of the project's own. */
+		rules: Schema.optionalKey(Schema.String)
 	},
 	LocalizationExport: {
 		...Project,

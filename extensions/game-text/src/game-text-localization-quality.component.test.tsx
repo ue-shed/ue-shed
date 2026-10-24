@@ -232,6 +232,21 @@ describe("localization quality and reports", () => {
 		expect(screen.queryByRole("table", { name: "Rules overview" })).toBeNull();
 		expect(screen.getByRole("tab", { name: "Quality checks" })).toBeTruthy();
 	});
+	it("shows only how to add rules, and checks nothing, without a rules file", async () => {
+		const qualitySearch = vi.fn(() => Effect.never);
+		mount(
+			{ ...client(), localizationQualitySearch: qualitySearch },
+			{ qualityDocument: undefined }
+		);
+		const setup = await screen.findByRole("region", { name: "Quality rules setup" });
+		expect(
+			within(setup).getByRole("heading", { name: "No quality rules for this project" })
+		).toBeTruthy();
+		expect(within(setup).getByRole("button", { name: "Choose a rules file…" })).toBeTruthy();
+		expect(screen.queryByRole("region", { name: "Findings" })).toBeNull();
+		expect(screen.queryByRole("button", { name: /^All findings/u })).toBeNull();
+		expect(qualitySearch).not.toHaveBeenCalled();
+	});
 	it("renders a dense native-first report and baseline save/compare/export flows", async () => {
 		const user = userEvent.setup({ delay: null }),
 			api = client();

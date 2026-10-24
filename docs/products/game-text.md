@@ -646,7 +646,8 @@ drafts produce typed recovery guidance and leave the prior valid rules and repor
 scope cannot broaden a role to the whole project. Choosing another project clears the retained rule
 file and quality review; rescanning the same project retains its rules and reevaluates the checks.
 
-The **Quality checks** tab presents character limits and terminology findings. With nothing
+Without a rules file nothing is checked, and the **Quality checks** tab shows **Create rules file**
+and **Choose a rules file…** in place of findings. With one, the tab presents its findings. With nothing
 selected, its rules and roles overview shows findings and lines in scope, warning when a role has
 none. Selecting a finding highlights the matched term and explains **How to fix** it. **Show key
 and translator notes** opens the line in Text. **Edit rules** retains character limits, forbidden
@@ -1018,11 +1019,13 @@ of a shared source whose translation is not the one most lines use (every line w
 each finding is one line a translator can open and fix or accept.
 
 ```sh
-ue-shed loc check <project-root> --target <name> [--culture <c>] [--check <id>]...
+ue-shed loc check <project-root> --target <name> [--rules <file>] [--culture <c>] [--check <id>]...
 ue-shed loc check <project-root> --target <name> --changes suggestions.json
 ```
 
-Check output is schema-versioned JSON. A single missing and single added argument can produce a
+`loc check` runs the project's rules file, or the file `--rules` names, which suits a project that
+can't take a file; without either it runs no checks and says so on stderr. Check output is
+schema-versioned JSON. A single missing and single added argument can produce a
 rename proposal, including names inside modifier forms. Proposals are version-1 change sets with
 source and previous-translation preconditions and evidence provenance. `--changes` exclusively
 creates a new JSON proposal; it never overwrites a file or writes PO, manifests, archives, locres or

@@ -185,7 +185,7 @@ test("keeps reviewed and saved Game Text rules across tabs, navigation, and pres
 		await workbench.scanGameText();
 		const page = workbench.page;
 		await page.getByRole("tab", { name: /^Quality checks/ }).click();
-		await page.getByRole("button", { name: "Load rules" }).click();
+		await page.getByRole("button", { name: "Choose a rules file…" }).click();
 		await page.getByRole("button", { name: "Edit rules", exact: true }).click();
 		const maximum = page.getByRole("spinbutton", {
 			name: "Maximum characters for fixture.prompt.characters"
@@ -256,7 +256,7 @@ test("restores Game Text and Texture Audit searches after navigating away", asyn
 		dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
 	}, resolve("../../fixtures/unreal-project/FixtureSource/Text/quality-rules.json"));
 	await page.getByRole("tab", { name: /^Quality checks/ }).click();
-	await page.getByRole("button", { name: "Load rules", exact: true }).click();
+	await page.getByRole("button", { name: "Choose a rules file…", exact: true }).click();
 	await expect(page.getByRole("button", { name: /^All findings/, pressed: true })).toBeVisible();
 	await workbench.openRoute("Showcase");
 	await workbench.openRoute("Game Text");

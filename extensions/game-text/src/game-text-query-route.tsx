@@ -1013,10 +1013,16 @@ export function GameTextRoute(props: {
 			document: qualityDocument(),
 			summary: qualitySummary()
 		}),
-		({ mode: currentMode, active, culture }) => {
+		({ mode: currentMode, active, culture, document }) => {
 			workspaceCountAction.cancel();
 			setWorkspaceFindingCount(undefined);
-			if (currentMode !== "quality" || !active || !props.client.localizationQualitySearch)
+			// Without a rules file nothing is checked, so there is nothing to count.
+			if (
+				currentMode !== "quality" ||
+				!active ||
+				!document ||
+				!props.client.localizationQualitySearch
+			)
 				return;
 			workspaceCountAction.run(
 				props.client.localizationQualitySearch({
@@ -1112,10 +1118,11 @@ export function GameTextRoute(props: {
 	);
 
 	const rulesSetup = () => (
-		<section aria-label="Quality rules setup" {...stylex.attrs(styles.card)}>
-			<p>
-				<strong>Set up Quality checks</strong> with a rules file for character limits and
-				terminology. The starter file contains examples you can customize.
+		<section aria-label="Quality rules setup" {...stylex.attrs(styles.card, styles.rulesEmpty)}>
+			<h2 {...stylex.attrs(styles.heading)}>No quality rules for this project</h2>
+			<p {...stylex.attrs(styles.rulesEmptyText)}>
+				Quality checks only what a rules file turns on, and this project has none yet.
+				Create one to start with the built-in checks; you can turn any of them off later.
 			</p>
 			<Show when={qualityFailure()}>
 				{(issue) => (
@@ -1140,9 +1147,14 @@ export function GameTextRoute(props: {
 					</Button>
 				</Show>
 				<Button disabled={operations.busy()} onClick={() => loadRules()}>
-					Load rules
+					Choose a rules file…
 				</Button>
 			</div>
+			<Show when={props.client.createStarterRules}>
+				<p {...stylex.attrs(styles.muted)}>
+					Creates the project's rules file with the starter rules.
+				</p>
+			</Show>
 		</section>
 	);
 	return (

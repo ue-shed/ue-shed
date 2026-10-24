@@ -569,13 +569,16 @@ Decided on 2026-10-24, for Phase 2:
     translator are deleted rather than kept beside v4. The file restarts at version 1: one list of
     entries, each a built-in check by name with its settings or one of today's project rules. This
     replaces decision 14's v4 authoring format.
-
-Proposed on 2026-10-24, for the owner's review:
-
 19. **Complete rules in the file wait for Phase 3.** A rule with its own expressions has no finding
     shape that reports can carry until findings become query fields. Until then, today's custom
     checks cover project-defined rules. Decision 3's JSON IR authoring arrives with that finding
     shape.
+20. **No rules file is shown, not silent.** Without one, Quality shows "No quality rules for this
+    project" with **Create rules file** (the starter) and **Choose a rules file…** in place of
+    findings, and `loc check` prints one line to stderr. The rule editor's v1-to-v2 upgrade is
+    gone, and its "Add translation …" buttons always show.
+21. **`loc check --rules <file>`** checks with a file in place of the project's own, so a project
+    that can't take a file, such as a read-only one, can be checked from the CLI.
 
 Decided in Phase 0:
 

@@ -1,7 +1,7 @@
 //! Column-at-a-time DAG evaluation with selection short circuiting and tuple memoization.
 use super::HostCollator;
 use super::columns::{
-    Arena, Atom, Bits, Children, Column, FieldColumn, Occurrences, Prepared, StrId,
+    Arena, Atom, Bits, Children, Column, FieldColumn, Occurrences, Prepared, StrId, Structured,
 };
 use super::compiler::{CompiledRule, Literal, NodeId, Op, Program, Subject};
 use super::kernel::Kernel;
@@ -51,21 +51,123 @@ impl Relation {
         Ok(Value::Object(place))
     }
 }
-/// Dense IDs of value keys (`Evaluator::key`): equal values share an ID. Memoized per atom, so a
-/// value repeated across rows is keyed once.
+/// Dense IDs of values, equal under `Evaluator::key` (numbers by value, objects whatever their
+/// member order), built from the values' parts instead of their written keys. Memoized per atom,
+/// so a value repeated across rows is identified once.
 #[derive(Default)]
 struct KeyIds {
     atoms: FxHashMap<Atom, u32>,
-    keys: HashMap<String, u32>,
+    texts: FxHashMap<Box<str>, u32>,
+    shapes: FxHashMap<Box<[u32]>, u32>,
+    next: u32,
 }
 impl KeyIds {
-    fn of(&mut self, atom: Atom, evaluator: &Evaluator<'_>) -> u32 {
+    // `null` (and non-finite numbers, which keys write as `null`), `false` and `true`.
+    const NULL: u32 = 0;
+    const FALSE: u32 = 1;
+    const TRUE: u32 = 2;
+    // Shape tags, the first element of a shape's parts.
+    const NUMBER: u32 = 0;
+    const LIST: u32 = 1;
+    const OBJECT: u32 = 2;
+    fn of(&mut self, atom: Atom, arena: &Arena) -> u32 {
         if let Some(id) = self.atoms.get(&atom) {
             return *id;
         }
-        let next = u32::try_from(self.keys.len()).unwrap_or(u32::MAX);
-        let id = *self.keys.entry(evaluator.key(atom)).or_insert(next);
+        let id = match atom {
+            Atom::Null => Self::NULL,
+            Atom::Bool(value) => [Self::FALSE, Self::TRUE][usize::from(value)],
+            Atom::Int(value) => self.number(value as f64),
+            Atom::Num(bits) => self.number(f64::from_bits(bits)),
+            Atom::Str(text) => self.text(arena.text(text)),
+            Atom::Val(value) => match &arena.values[value.0 as usize] {
+                Structured::List(values) => {
+                    let mut parts = vec![Self::LIST];
+                    for value in values.iter() {
+                        parts.push(self.of(*value, arena));
+                    }
+                    self.shape(parts)
+                }
+                Structured::Object(fields)
+                    if fields.iter().enumerate().all(|(index, (key, _))| {
+                        fields[..index]
+                            .iter()
+                            .all(|(other, _)| arena.text(*other) != arena.text(*key))
+                    }) =>
+                {
+                    let mut members = fields
+                        .iter()
+                        .map(|(key, value)| (self.text(arena.text(*key)), self.of(*value, arena)))
+                        .collect::<Vec<_>>();
+                    self.object(&mut members)
+                }
+                Structured::Scalar(value) => self.of(*value, arena),
+                // Occurrence views and objects with repeated keys are keyed as the JSON they
+                // present, as `write_atom` writes them.
+                _ => self.json(&arena.json(atom)),
+            },
+        };
         self.atoms.insert(atom, id);
+        id
+    }
+    fn json(&mut self, value: &Value) -> u32 {
+        match value {
+            Value::Null => Self::NULL,
+            Value::Bool(value) => [Self::FALSE, Self::TRUE][usize::from(*value)],
+            Value::Number(number) => self.number(number.as_f64().unwrap_or(f64::NAN)),
+            Value::String(text) => self.text(text),
+            Value::Array(values) => {
+                let mut parts = vec![Self::LIST];
+                for value in values {
+                    parts.push(self.json(value));
+                }
+                self.shape(parts)
+            }
+            Value::Object(fields) => {
+                let mut members = fields
+                    .iter()
+                    .map(|(key, value)| (self.text(key), self.json(value)))
+                    .collect::<Vec<_>>();
+                self.object(&mut members)
+            }
+        }
+    }
+    fn fresh(&mut self) -> u32 {
+        self.next += 1;
+        Self::TRUE + self.next
+    }
+    /// Numbers equal as keys write the same JavaScript text: equal finite values, `-0` as `0`.
+    fn number(&mut self, value: f64) -> u32 {
+        if !value.is_finite() {
+            return Self::NULL;
+        }
+        let bits = if value == 0.0 { 0 } else { value.to_bits() };
+        #[allow(clippy::cast_possible_truncation)]
+        self.shape(vec![Self::NUMBER, (bits >> 32) as u32, bits as u32])
+    }
+    fn text(&mut self, text: &str) -> u32 {
+        if let Some(id) = self.texts.get(text) {
+            return *id;
+        }
+        let id = self.fresh();
+        self.texts.insert(text.into(), id);
+        id
+    }
+    /// Members in name order; names are unique, so the order is canonical.
+    fn object(&mut self, members: &mut [(u32, u32)]) -> u32 {
+        members.sort_unstable();
+        let mut parts = vec![Self::OBJECT];
+        for (name, value) in members.iter() {
+            parts.extend([*name, *value]);
+        }
+        self.shape(parts)
+    }
+    fn shape(&mut self, parts: Vec<u32>) -> u32 {
+        if let Some(id) = self.shapes.get(parts.as_slice()) {
+            return *id;
+        }
+        let id = self.fresh();
+        self.shapes.insert(parts.into_boxed_slice(), id);
         id
     }
 }
@@ -95,7 +197,7 @@ pub(super) fn occurrence_rows(arena: &Arena, set: Atom) -> Result<Vec<u32>> {
         .iter()
         .map(|atom| {
             if let Atom::Val(id) = atom
-                && let super::columns::Structured::Occurrence(row) = arena.values[id.0 as usize]
+                && let Structured::Occurrence(row) = arena.values[id.0 as usize]
             {
                 Ok(row)
             } else {
@@ -1273,10 +1375,10 @@ impl<'a> Evaluator<'a> {
                 tuples.push(None);
                 continue;
             }
-            let mut tuple = vec![ids.of(values[0], self)];
+            let mut tuple = vec![ids.of(values[0], &self.arena)];
             if listed {
                 for value in &values[1..] {
-                    tuple.push(ids.of(*value, self));
+                    tuple.push(ids.of(*value, &self.arena));
                 }
             } else {
                 let Some(listed) = self.arena.elements(values[1])? else {
@@ -1288,7 +1390,7 @@ impl<'a> Evaluator<'a> {
                     "existsOther's differing lists must all have the same length.",
                 )?;
                 for value in listed {
-                    tuple.push(ids.of(*value, self));
+                    tuple.push(ids.of(*value, &self.arena));
                 }
             }
             tuples.push(Some(tuple.into()));
@@ -3236,6 +3338,66 @@ mod tests {
                 json!({"rank":0,"first":["xx"],"same":2})
             ]
         );
+        Ok(())
+    }
+    #[test]
+    fn key_ids_agree_with_written_keys() -> Result<()> {
+        let mut arena = Arena::new(0)?;
+        let mut atoms = [
+            json!(null),
+            json!(false),
+            json!(true),
+            json!(0),
+            json!(1),
+            json!(1.0),
+            json!(2.5),
+            json!("1"),
+            json!("a"),
+            json!(""),
+            json!([]),
+            json!([null]),
+            json!([[]]),
+            json!({}),
+            json!([1, "a"]),
+            json!([1.0, "a"]),
+            json!(["a", 1]),
+            json!({"a": 1, "b": [2]}),
+            json!({"b": [2.0], "a": 1}),
+            json!({"a": "b"}),
+            json!({"b": "a"}),
+        ]
+        .into_iter()
+        .map(|value| arena.intern(ScalarValue::from_json(&value)))
+        .collect::<Result<Vec<_>>>()?;
+        let one = arena.string("a")?;
+        let repeated = arena.object(vec![("a", Atom::Int(1)), ("a", Atom::Int(2))])?;
+        let wrapped = Atom::Val(arena.structured(Structured::Scalar(Atom::Str(one)))?);
+        atoms.extend([
+            Atom::Int(3),
+            Atom::Num(3.0f64.to_bits()),
+            Atom::Num((-0.0f64).to_bits()),
+            Atom::Num(f64::NAN.to_bits()),
+            Atom::Num(f64::INFINITY.to_bits()),
+            repeated,
+            wrapped,
+        ]);
+        let key = |atom| {
+            let mut key = String::new();
+            super::super::identity::write_atom(&arena, atom, true, &mut key);
+            key
+        };
+        let mut ids = KeyIds::default();
+        for a in &atoms {
+            for b in &atoms {
+                assert_eq!(
+                    ids.of(*a, &arena) == ids.of(*b, &arena),
+                    key(*a) == key(*b),
+                    "{} {}",
+                    key(*a),
+                    key(*b)
+                );
+            }
+        }
         Ok(())
     }
     #[test]

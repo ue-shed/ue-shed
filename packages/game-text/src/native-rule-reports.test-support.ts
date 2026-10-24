@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
-import { translateRuleDocument } from "./rules/translate.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import { expr, rule } from "./rules/builder.js";
 import type { GameTextRuleDocument, CustomLocalizationCheck } from "./game-text-rules.js";
@@ -49,7 +49,7 @@ function evaluate(
 	},
 	options: LocalizationCheckOptions = {}
 ) {
-	return evaluateV4(translateRuleDocument(document, options), rows);
+	return evaluateV4(effectiveRuleDocument(document, options), rows);
 }
 function evaluateV4(
 	document: RuleDocumentV4,
@@ -151,10 +151,9 @@ export function nativeVisibleLength(text: string): number {
 /** Custom-kind unit assertions with one explicit source row, evaluated in Rust. */
 export function nativeDetectCustom(check: CustomLocalizationCheck, text: string) {
 	const document = Schema.decodeUnknownSync(importGameTextRuleDocument)({
-		schemaVersion: 3,
+		schemaVersion: 1,
 		roles: [],
-		rules: [],
-		customChecks: [{ ...check, subject: "source" }]
+		rules: [{ ...check, subject: "source" }]
 	});
 	const row = Schema.decodeUnknownSync(Row)({
 		fields: {

@@ -1,27 +1,31 @@
 import { Schema } from "effect";
 import { CultureCode } from "@ue-shed/localization/browser";
 import type { LocalizationJoin } from "./localization-schema.js";
-import type { TextQualityRuleDocumentV2, TextQualityRuleDocumentV3 } from "./game-text-rules.js";
-
-/** A rule file with localization rules: version 2 or later. */
-type PolicyDocument = TextQualityRuleDocumentV2 | TextQualityRuleDocumentV3;
+import {
+	localizationRulesOf,
+	type GameTextRuleDocument,
+	type LocalizationProjectRule
+} from "./game-text-rules.js";
 import type { LocalizationRuleDiagnostic } from "./localization-quality-schema.js";
+import type { TextRole } from "./quality-schema.js";
 
-type LocalizationRule = NonNullable<PolicyDocument["localizationRules"]>[number];
-type TextRole = PolicyDocument["roles"][number];
-export type LocalizationPolicyRule = { readonly rule: LocalizationRule; readonly role: TextRole };
+export type LocalizationPolicyRule = {
+	readonly rule: LocalizationProjectRule;
+	readonly role: TextRole;
+};
 
-/** Rules in evaluation order with their roles, and the diagnostics that need no lines. */
+/**
+ * The file's localization rules that run, by ID, with their roles, and the diagnostics that need
+ * no lines.
+ */
 export function localizationPolicyRules(
 	cultures: LocalizationJoin["cultures"],
-	document: PolicyDocument
+	document: GameTextRuleDocument
 ) {
 	const diagnostics: LocalizationRuleDiagnostic[] = [];
 	const rules: LocalizationPolicyRule[] = [];
 	const roles = new Map(document.roles.map((role) => [role.id, role]));
-	for (const rule of [...(document.localizationRules ?? [])].sort((a, b) =>
-		a.id.localeCompare(b.id)
-	)) {
+	for (const rule of localizationRulesOf(document).sort((a, b) => a.id.localeCompare(b.id))) {
 		for (const key of Object.keys(rule.cultures).sort()) {
 			const culture = Schema.decodeUnknownSync(CultureCode)(key);
 			if (!cultures.includes(culture))

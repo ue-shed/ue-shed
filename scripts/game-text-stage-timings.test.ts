@@ -7,6 +7,7 @@ import { GameTextIndexRefresh } from "../packages/game-text/src/index-refresh.ts
 import { makeIndexRegressionFixture } from "../packages/game-text/src/index-refresh-regressions.test-support.ts";
 import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
+import { STARTER_CHECK_RULES } from "../packages/game-text/src/starter-rules.ts";
 import { coveredMs, makeStageRecorder } from "./game-text-stage-timings.ts";
 
 it("counts overlapping intervals once and adds separate ones", () => {
@@ -50,7 +51,7 @@ it.live("records the join and quality scan stages of a real index build", () =>
 		yield* Effect.gen(function* () {
 			const refresh = yield* GameTextIndexRefresh;
 			const result = yield* refresh.refresh(fixture.request);
-			yield* result.localizationQuality(undefined, { review: result.review.file });
+			yield* result.localizationQuality(STARTER_CHECK_RULES, { review: result.review.file });
 		}).pipe(Effect.scoped, Effect.provide(fixture.layer()), Effect.withTracer(recorder.tracer));
 		const counts = recorder.counts();
 		for (const stage of ["inputs", "order", "lines", "query_places", "publish"])

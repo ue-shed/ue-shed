@@ -17,8 +17,8 @@ import {
 	type LocalizationQualityFinding,
 	LocalizationQualityReport
 } from "./localization-quality-schema.js";
-import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
-import { TextQualityRuleDocument } from "./quality-schema.js";
+import { STARTER_CHECK_RULES, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
+import { GameTextRuleDocument } from "./game-text-rules.js";
 function checked(
 	source: string,
 	translation: string,
@@ -41,7 +41,7 @@ function checked(
 	return {
 		text,
 		files,
-		report: indexedTestReports(text, files).localization(undefined, options)
+		report: indexedTestReports(text, files).localization(STARTER_CHECK_RULES, options)
 	};
 }
 function findings(report: LocalizationQualityReport): readonly LocalizationQualityFinding[] {
@@ -101,13 +101,17 @@ describe("built-in localization quality checks", () => {
 			success(parsePO(new TextEncoder().encode("")))
 		);
 		expect(
-			findings(indexedTestReports(text, files).localization(undefined, undefined)).some(
+			findings(
+				indexedTestReports(text, files).localization(STARTER_CHECK_RULES, undefined)
+			).some(
 				(finding) =>
 					finding.kind === "argument_modifiers" && finding.actual.side === "source"
 			)
 		).toBe(true);
 		expect(() =>
-			indexedTestReports(text, files).localization(undefined, { culture: cultureCode("fr") })
+			indexedTestReports(text, files).localization(STARTER_CHECK_RULES, {
+				culture: cultureCode("fr")
+			})
 		).toThrow("selection is invalid");
 	});
 	it("reports equal-source identities without linking their translations and orders findings stably", () => {
@@ -118,7 +122,7 @@ describe("built-in localization quality checks", () => {
 			success(parsePO(new TextEncoder().encode("")))
 		);
 		const joined = joinLocalizationTarget(text, files, files.target);
-		const report = indexedTestReports(text, files).localization(undefined, undefined);
+		const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, undefined);
 		// A fact about the shared text: once per text, on the first key, under the native culture.
 		const shared = findings(report).filter((finding) => finding.kind === "duplicate_source");
 		expect(shared.map((finding) => [finding.identity?.key, finding.culture])).toEqual([
@@ -129,7 +133,9 @@ describe("built-in localization quality checks", () => {
 		expect(
 			joined.lines.find((line) => line.identity?.key === "B")?.cultures[0]?.archive
 		).toBeNull();
-		expect(indexedTestReports(text, files).localization(undefined, undefined)).toEqual(report);
+		expect(
+			indexedTestReports(text, files).localization(STARTER_CHECK_RULES, undefined)
+		).toEqual(report);
 	});
 	it("supports built-in filters and compatible v1 disabling without a rule document", () => {
 		const selected = findings(
@@ -137,9 +143,11 @@ describe("built-in localization quality checks", () => {
 		);
 		expect(selected.length).toBeGreaterThan(0);
 		expect(selected.every((finding) => finding.kind === "format_argument_renamed")).toBe(true);
-		const doc = Schema.decodeUnknownSync(TextQualityRuleDocument)({
+		const doc = Schema.decodeUnknownSync(GameTextRuleDocument)({
 			...STARTER_GAME_TEXT_RULES,
-			disabledLocalizationChecks: ["format_argument_renamed"]
+			rules: STARTER_GAME_TEXT_RULES.rules.map((entry) =>
+				entry.kind === "format_argument_renamed" ? { ...entry, enabled: false } : entry
+			)
 		});
 		const { text, files } = checked("{Name}", "{Wrong}");
 		const report = indexedTestReports(text, files).localization(doc, {});
@@ -147,9 +155,6 @@ describe("built-in localization quality checks", () => {
 			false
 		);
 		expect(report.changes.changes).toEqual([]);
-		expect(
-			Schema.decodeUnknownSync(TextQualityRuleDocument)(STARTER_GAME_TEXT_RULES).schemaVersion
-		).toBe(1);
 	});
 	it("reports syntax limits without claiming argument differences or staging guesses", () => {
 		const report = checked(`{Name}${"x".repeat(1000001)}`, "{Wrong}").report;
@@ -189,7 +194,7 @@ it("checks foreign archive staleness against Unreal's native translation", () =>
 		const join = joinLocalizationTarget(text, files);
 		const foreign = join.lines[0]!.cultures.find((culture) => culture.culture === "de")!;
 		expect(foreign.facts.includes("needs_update")).toBe(stale);
-		const report = indexedTestReports(text, files).localization(undefined, {
+		const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, {
 			checks: ["outdated_translation"]
 		});
 		expect(
@@ -239,7 +244,7 @@ it("distinguishes an existing empty entry from missing translation evidence", ()
 	).toBe(true);
 	const text = corpus();
 	const files = evidence([manifestEntry()], [], success(parsePO(new TextEncoder().encode(""))));
-	const report = indexedTestReports(text, files).localization(undefined, undefined);
+	const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, undefined);
 	expect(findings(report).some((finding) => finding.kind === "empty_translation")).toBe(false);
 	expect(
 		report.checkDiagnostics.some((diagnostic) => diagnostic.code === "translation_unavailable")
@@ -266,7 +271,7 @@ it("checks gathered-only pending text and Crowdin text using manifest source", (
 				culture.reducedSourceChecking
 		)
 	).toBe(true);
-	const report = indexedTestReports(text, files).localization(undefined, {
+	const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, {
 		culture: cultureCode("de")
 	});
 	const finding = findings(report).find((finding) => finding.kind === "format_argument_renamed");
@@ -299,7 +304,7 @@ it("finds missing notes once per line and accepts occurrence and manifest notes"
 	]);
 	const files = evidence();
 	expect(
-		findings(indexedTestReports(text, files).localization(undefined, undefined)).some(
+		findings(indexedTestReports(text, files).localization(STARTER_CHECK_RULES, undefined)).some(
 			(finding) => finding.kind === "missing_translator_notes"
 		)
 	).toBe(false);
@@ -307,9 +312,9 @@ it("finds missing notes once per line and accepts occurrence and manifest notes"
 		{ ...manifestEntry(), metadata: { Info: { Comment: "Source context" } } }
 	]);
 	expect(
-		findings(indexedTestReports(corpus(), notes).localization(undefined, undefined)).some(
-			(finding) => finding.kind === "missing_translator_notes"
-		)
+		findings(
+			indexedTestReports(corpus(), notes).localization(STARTER_CHECK_RULES, undefined)
+		).some((finding) => finding.kind === "missing_translator_notes")
 	).toBe(false);
 });
 it("excludes blank-source noise while retaining raw coverage", () => {

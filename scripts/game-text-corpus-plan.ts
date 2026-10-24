@@ -11,6 +11,43 @@ import {
 } from "./game-text-corpus-contract.ts";
 
 /** This module authors intent. It deliberately imports no UE Shed package or check implementation. */
+
+/**
+ * The built-in checks a starter rules file lists, written out rather than imported: every check
+ * but the opt-in `shared` and `long`, and `segment_separator`, which the plan's file sets with its
+ * separator.
+ */
+const STARTER_CHECKS = [
+	"format_arguments",
+	"argument_modifiers",
+	"rich_text",
+	"po_escape_safety",
+	"whitespace",
+	"empty_translation",
+	"missing_translator_notes",
+	"duplicate_source",
+	"format_argument_renamed",
+	"rich_text_tags",
+	"rich_text_tag_case",
+	"line_breaks",
+	"length_outlier",
+	"outdated_translation",
+	"inconsistent_translation",
+	"rich_text_tags_added",
+	"source_line_endings_changed",
+	"placeholder_translation",
+	"culture_invariant_text",
+	"placeholder_text",
+	"source_whitespace",
+	"source_markup",
+	"number_only_text",
+	"string_table_key_collision"
+] as const;
+/** The plan's built-in checks: the starter's, and the separator check with the fixture's `//`. */
+const builtInCheckEntries = (): object[] => [
+	...STARTER_CHECKS.map((kind) => ({ kind })),
+	{ kind: "segment_separator", params: { separator: "//" } }
+];
 export interface PlannedCulture {
 	translation: string;
 	expectedSource: string;
@@ -406,12 +443,14 @@ function recipeBatch({
 			expectations,
 			probes,
 			rules: {
-				schemaVersion: 3,
+				schemaVersion: 1,
 				roles,
-				rules: sourceRules,
-				localizationRules,
-				checks: { segment_separator: { params: { separator: "//" } } },
-				customChecks
+				rules: [
+					...builtInCheckEntries(),
+					...sourceRules,
+					...localizationRules,
+					...customChecks
+				]
 			}
 		};
 	}
@@ -2154,15 +2193,15 @@ export function planCorpus({
 	const Rules = Schema.Struct({
 		schemaVersion: Schema.Int,
 		roles: Schema.Array(Schema.Json),
-		rules: Schema.Array(Schema.Json),
-		localizationRules: Schema.Array(Schema.Json),
-		customChecks: Schema.Array(Schema.Json),
-		checks: Schema.Json
+		rules: Schema.Array(Schema.Json)
 	});
+	// Built-in checks are listed once; project rules and roles have IDs, renamed per batch.
+	const hasId = (item: typeof Schema.Json.Type) =>
+		Schema.is(Schema.Struct({ id: Schema.String }))(item);
 	const documents = batches.map((batch, i) => {
 		const data = Schema.decodeUnknownSync(Rules)(batch.rules);
 		const names = new Map<string, string>();
-		for (const group of [data.roles, data.rules, data.localizationRules, data.customChecks])
+		for (const group of [data.roles, data.rules])
 			for (const item of group) {
 				const record = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
 					item
@@ -2193,12 +2232,12 @@ export function planCorpus({
 		);
 	});
 	plan.rules = {
-		schemaVersion: 3,
+		schemaVersion: 1,
 		roles: documents.flatMap((d) => d.roles),
-		rules: documents.flatMap((d) => d.rules),
-		localizationRules: documents.flatMap((d) => d.localizationRules),
-		customChecks: documents.flatMap((d) => d.customChecks),
-		checks: documents[0]!.checks
+		rules: [
+			...documents[0]!.rules.filter((item) => !hasId(item)),
+			...documents.flatMap((d) => d.rules.filter(hasId))
+		]
 	};
 	if (scenario === "main") {
 		const pools = new Map<string, { owner: PlannedPackage; capacity: number }>();
@@ -2362,15 +2401,22 @@ export function planCorpus({
 				};
 			})
 		}));
-		const checks = Schema.decodeUnknownSync(
+		// Custom checks drop their path scopes: the saved places moved.
+		const entries = Schema.decodeUnknownSync(
 			Schema.Array(Schema.Record(Schema.String, Schema.Json))
-		)(record.customChecks);
-		record.customChecks = checks.map((check) => {
+		)(record.rules);
+		record.rules = entries.map((entry) => {
+			if (
+				entry.kind !== "pattern" &&
+				entry.kind !== "length" &&
+				entry.kind !== "forbidden_term"
+			)
+				return entry;
 			const scope = {
-				...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(check.scope)
+				...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(entry.scope)
 			};
 			delete scope.pathPrefixes;
-			return { ...check, scope };
+			return { ...entry, scope };
 		});
 		plan.rules = record;
 

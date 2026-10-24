@@ -102,4 +102,4 @@ export {
 
 export { LocalizationCheckScope, localizationCheckInScope } from "./localization-check-scope.js";
 
-export { customLocalizationChecks } from "./localization-custom-checks.js";
+export { customLocalizationChecks } from "./game-text-rules.js";

@@ -15,6 +15,7 @@ import {
 import type { LocalizationJoin } from "./localization-schema.js";
 import { textCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus, TextCorpusSearchPage, TextCorpusSearchRequest } from "./schema.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
 // Every occurrence is in Content/Text/Table.uasset, inside the test target's gather paths. The
 // target's GatherTextFromAssets step leaves ShouldGatherFromEditorOnlyData at Unreal's default,
@@ -258,12 +259,12 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 			// Localization checks skip out-of-scope lines through the index as in memory.
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				yield* result.localizationCheck(),
+				yield* result.localizationCheck(STARTER_CHECK_RULES),
 				memoryJoin
 			);
 			const indexed = localizationQualityWorkspaceOf(
 				undefined,
-				yield* result.localizationQuality()
+				yield* result.localizationQuality(STARTER_CHECK_RULES)
 			);
 			const all = { target: fixture.target.name, filter: "all" } as const;
 			expect(yield* indexed.export(all)).toEqual(legacy.export(all));

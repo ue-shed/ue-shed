@@ -13,6 +13,7 @@ import {
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import type { TextCorpus, TextLocation } from "./schema.js";
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
 // The fixture's one package is Content/Text/Table.uasset, Unreal's /Game/Text/Table. UE 4.27 saves
@@ -102,7 +103,7 @@ const unrealLocations = {
 	}
 } satisfies Record<string, TextLocation>;
 const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
-	schemaVersion: 2,
+	schemaVersion: 1,
 	roles: [
 		{
 			id: "text_folder",
@@ -148,14 +149,15 @@ const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 			]
 		}
 	],
-	rules: ["text_folder", "table_asset", "widget_class", "first_row", "menu"].map((role) => ({
-		id: `source.${role}`,
-		kind: "character_budget",
-		role,
-		maximumCharacters: 3,
-		recovery: "Shorten the line."
-	})),
-	localizationRules: [
+	rules: [
+		...STARTER_CHECK_RULES.rules,
+		...["text_folder", "table_asset", "widget_class", "first_row", "menu"].map((role) => ({
+			id: `source.${role}`,
+			kind: "character_budget",
+			role,
+			maximumCharacters: 3,
+			recovery: "Shorten the line."
+		})),
 		{
 			id: "translation.first_row",
 			kind: "localization_character_budget",

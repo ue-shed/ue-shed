@@ -11,6 +11,7 @@ import {
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { localizationQualityWorkspace, localizationReportPage } from "./localization-workspace.js";
 import { createLocalizationBaseline, localizationProgressReport } from "./localization-reports.js";
 export function qualityFixture(count = 1) {
@@ -35,7 +36,7 @@ export function qualityFixture(count = 1) {
 	);
 	const join = joinLocalizationTarget(text, files);
 	const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
-		schemaVersion: 2,
+		schemaVersion: 1,
 		roles: [
 			{
 				id: "menu",
@@ -45,15 +46,14 @@ export function qualityFixture(count = 1) {
 			}
 		],
 		rules: [
+			...STARTER_CHECK_RULES.rules,
 			{
 				id: "source.limit",
 				kind: "character_budget",
 				role: "menu",
 				maximumCharacters: 3,
 				recovery: "Shorten the line."
-			}
-		],
-		localizationRules: [
+			},
 			{
 				id: "translation.limit",
 				kind: "localization_character_budget",

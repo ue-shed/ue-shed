@@ -123,13 +123,6 @@ export function createGameTextRuleState(options: {
 			}
 		);
 	};
-	const upgrade = () => {
-		const current = state()?.draft;
-		if (!current || current.schemaVersion !== 1 || busy()) return;
-		const upgraded: GameTextRuleDocument = { ...current, schemaVersion: 2 };
-		changeDraft(upgraded);
-		run("preview", upgraded);
-	};
 	// Whether a rules file is attached is the host's to say; a restored draft keeps that answer.
 	const restore = (saved: RuleEditorState) => {
 		action.cancel();
@@ -156,8 +149,7 @@ export function createGameTextRuleState(options: {
 		restore,
 		discard,
 		changeDraft,
-		run,
-		upgrade
+		run
 	};
 }
 
@@ -197,11 +189,8 @@ export function draftProblems(
 ): readonly RuleDraftProblem[] {
 	if (!document) return [];
 	const problems: RuleDraftProblem[] = [];
-	const rules = [
-		...document.rules,
-		...(document.schemaVersion !== 1 ? (document.localizationRules ?? []) : [])
-	];
-	for (const rule of rules) {
+	for (const rule of document.rules) {
+		if (!("recovery" in rule)) continue;
 		const add = (field: string, message: string) =>
 			problems.push({ ruleId: rule.id, field, message: `${rule.id}: ${message}` });
 		if (!rule.recovery.trim())

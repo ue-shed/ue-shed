@@ -5,6 +5,7 @@ import {
 	LocalizationProgressReport,
 	LocalizationStatusReport
 } from "@ue-shed/game-text/corpus";
+import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_CHECK_RULES } from "@ue-shed/game-text/rules";
 import { LocalizationQualityReport, TextProblem } from "@ue-shed/game-text/schema";
 import { LocalizationChangeSet } from "@ue-shed/localization/browser";
 import { ConfigProvider, Effect, FileSystem, Layer, ManagedRuntime, Ref, Schema } from "effect";
@@ -313,6 +314,18 @@ describe.skipIf(!executable)("localization check CLI with the real reader", () =
 			const fs = yield* FileSystem.FileSystem;
 			const directory = yield* fs.makeTempDirectoryScoped();
 			const changesPath = join(directory, "suggestions.json");
+			// Without a rules file no check runs: the project lists the starter's for this run.
+			const rulesPath = join(fixture.root, GAME_TEXT_RULES_RELATIVE_PATH);
+			yield* Effect.acquireRelease(
+				fs
+					.makeDirectory(dirname(rulesPath), { recursive: true })
+					.pipe(
+						Effect.andThen(
+							fs.writeFileString(rulesPath, JSON.stringify(STARTER_CHECK_RULES))
+						)
+					),
+				() => fs.remove(dirname(rulesPath), { recursive: true }).pipe(Effect.orDie)
+			);
 			const output = yield* Ref.make("");
 			const exit = yield* Ref.make(0);
 			const runtime = Layer.succeed(
@@ -603,7 +616,9 @@ describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality pr
 				qualityFilter: "all",
 				workspaceFilter: "format_argument_renamed",
 				localization: { target: "FixtureGame", culture: "de" }
-			}
+			},
+			// Without rules nothing runs; the Workbench list replays the starter's checks.
+			rules: STARTER_CHECK_RULES
 		};
 		const presetPath = join(fixture.root, "Saved", "localization-quality.json");
 		await mkdir(dirname(presetPath), { recursive: true });

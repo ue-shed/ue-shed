@@ -69,7 +69,7 @@ effectIt.live(
 				{ kind: "preferred", term: "approved term", alternatives: ["draft term"] }
 			];
 			const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
-				schemaVersion: 2,
+				schemaVersion: 1,
 				roles: [
 					{
 						id: "all",
@@ -84,9 +84,7 @@ effectIt.live(
 						caseSensitive: false,
 						recovery: "Use approved terms.",
 						terms
-					}
-				],
-				localizationRules: [
+					},
 					{
 						id: "translation.terms",
 						kind: "localization_terminology",

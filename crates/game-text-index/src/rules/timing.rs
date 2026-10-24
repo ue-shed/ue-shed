@@ -98,7 +98,7 @@ fn timing_inputs() -> Result<(EngineQuery, Value)> {
         .map_err(|cause| crate::Error::new(crate::ErrorCode::InvalidInput, cause.to_string()))?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let catalogue = Command::new("node")
-        .args(["--import","tsx","--input-type=module","-e",r#"import {canonicalRuleDocument,translateRuleDocument} from "./packages/game-text/src/rules/translate.ts"; console.log(JSON.stringify({node:process.versions.node,locale:new Intl.Collator().resolvedOptions().locale,rules:canonicalRuleDocument(translateRuleDocument())}));"#])
+        .args(["--import","tsx","--input-type=module","-e",r#"import {canonicalRuleDocument,effectiveRuleDocument} from "./packages/game-text/src/rules/effective.ts"; import {STARTER_CHECK_RULES} from "./packages/game-text/src/starter-rules.ts"; console.log(JSON.stringify({node:process.versions.node,locale:new Intl.Collator().resolvedOptions().locale,rules:canonicalRuleDocument(effectiveRuleDocument(STARTER_CHECK_RULES))}));"#])
         .current_dir(&root)
         .output()?;
     require(

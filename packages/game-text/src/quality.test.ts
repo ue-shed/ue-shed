@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
+import { parseTextQualityReport } from "./quality-schema.js";
 import {
-	parseTextQualityReport,
-	decodeTextQualityRuleDocument,
-	decodeTextQualityRuleDocumentJson,
-	TextQualityRuleDocumentError
-} from "./quality-schema.js";
+	decodeGameTextRuleDocument,
+	decodeGameTextRuleDocumentJson,
+	GameTextRuleDocumentError
+} from "./game-text-rules.js";
 import { matchesTextRole } from "./quality.js";
 import {
 	makeTextOccurrenceId,
@@ -19,7 +19,9 @@ import {
 	type TextCorpus,
 	type TextOccurrence
 } from "./schema.js";
-const fixtureRules = fileURLToPath(new URL("../fixtures/quality-rules.v1.json", import.meta.url));
+const fixtureRules = fileURLToPath(
+	new URL("../fixtures/quality-rules.source.json", import.meta.url)
+);
 const menuOccurrence: TextOccurrence = {
 	devNotes: "",
 	editCapability: "source_editable",
@@ -138,7 +140,7 @@ it.effect("preserves Unicode case folding, literal offsets and immutable occurre
 		});
 		const input = { ...corpus, units };
 		const before = JSON.stringify(input);
-		const rules = yield* decodeTextQualityRuleDocument({
+		const rules = yield* decodeGameTextRuleDocument({
 			schemaVersion: 1,
 			roles: [
 				{
@@ -180,7 +182,7 @@ it.effect(
 	() =>
 		Effect.gen(function* () {
 			const json = yield* Effect.promise(() => readFile(fixtureRules, "utf8"));
-			const document = yield* decodeTextQualityRuleDocumentJson(json);
+			const document = yield* decodeGameTextRuleDocumentJson(json);
 			const first = indexedTestReports(corpus).source(document);
 			const second = indexedTestReports(corpus).source(document);
 			expect(second).toEqual(first);
@@ -237,14 +239,14 @@ it.effect(
 );
 it.effect("returns typed actionable failures without echoing authored rule contents", () =>
 	Effect.gen(function* () {
-		const invalidJson = yield* decodeTextQualityRuleDocumentJson("{secret-authored-term").pipe(
+		const invalidJson = yield* decodeGameTextRuleDocumentJson("{secret-authored-term").pipe(
 			Effect.flip
 		);
-		expect(invalidJson).toBeInstanceOf(TextQualityRuleDocumentError);
+		expect(invalidJson).toBeInstanceOf(GameTextRuleDocumentError);
 		expect(invalidJson.code).toBe("invalid_json");
 		expect(invalidJson.recovery).toContain("JSON syntax");
 		expect(invalidJson.message).not.toContain("secret-authored-term");
-		const emptyScope = yield* decodeTextQualityRuleDocument({
+		const emptyScope = yield* decodeGameTextRuleDocument({
 			roles: [{ id: "role", scopes: [{ matchers: [] }] }],
 			rules: [
 				{
@@ -259,7 +261,7 @@ it.effect("returns typed actionable failures without echoing authored rule conte
 		}).pipe(Effect.flip);
 		expect(emptyScope.code).toBe("invalid_structure");
 		expect(emptyScope.recovery).toContain("non-empty");
-		const emptyEvidence = yield* decodeTextQualityRuleDocument({
+		const emptyEvidence = yield* decodeGameTextRuleDocument({
 			roles: [
 				{
 					id: "role",
@@ -283,7 +285,7 @@ it.effect("returns typed actionable failures without echoing authored rule conte
 			schemaVersion: 1
 		}).pipe(Effect.flip);
 		expect(emptyEvidence.code).toBe("invalid_structure");
-		const unknownRole = yield* decodeTextQualityRuleDocument({
+		const unknownRole = yield* decodeGameTextRuleDocument({
 			roles: [
 				{
 					id: "declared",
@@ -307,7 +309,7 @@ it.effect("returns typed actionable failures without echoing authored rule conte
 );
 it.effect("rejects duplicate IDs and never constructs an implicit whole-project role", () =>
 	Effect.gen(function* () {
-		const duplicate = yield* decodeTextQualityRuleDocument({
+		const duplicate = yield* decodeGameTextRuleDocument({
 			roles: [
 				{
 					id: "same",
@@ -330,7 +332,7 @@ it.effect("rejects duplicate IDs and never constructs an implicit whole-project 
 			schemaVersion: 1
 		}).pipe(Effect.flip);
 		expect(duplicate.code).toBe("duplicate_role_id");
-		const duplicateRules = yield* decodeTextQualityRuleDocument({
+		const duplicateRules = yield* decodeGameTextRuleDocument({
 			roles: [
 				{
 					id: "role",
@@ -348,7 +350,7 @@ it.effect("rejects duplicate IDs and never constructs an implicit whole-project 
 		}).pipe(Effect.flip);
 		expect(duplicateRules.code).toBe("duplicate_rule_id");
 		const json = yield* Effect.promise(() => readFile(fixtureRules, "utf8"));
-		const document = yield* decodeTextQualityRuleDocumentJson(json);
+		const document = yield* decodeGameTextRuleDocumentJson(json);
 		const role = document.roles.at(0);
 		expect(role).toBeDefined();
 		if (role === undefined) return;
@@ -364,7 +366,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			gameTextInvestigationCsv
 		} = yield* Effect.promise(() => import("./investigation.js"));
 		const { Schema } = yield* Effect.promise(() => import("effect"));
-		const rules = yield* decodeTextQualityRuleDocumentJson(
+		const rules = yield* decodeGameTextRuleDocumentJson(
 			yield* Effect.promise(() => readFile(fixtureRules, "utf8"))
 		);
 		const preset = {

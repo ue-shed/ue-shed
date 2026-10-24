@@ -4,17 +4,20 @@ import { TextRoleId, TextQualityRuleId } from "../quality-schema.js";
 import { expr } from "./builder.js";
 import { exampleRules } from "./catalogue.js";
 import { ruleOperationNames } from "./schema.js";
-import { canonicalRuleDocument, translateRuleDocument } from "./translate.js";
+import { STARTER_CHECK_RULES, STARTER_CHECKS } from "../starter-rules.js";
+import { canonicalRuleDocument, effectiveRuleDocument } from "./effective.js";
 
 describe("v4 rule documents", () => {
-	it("covers every built-in with ordinary expressions; no preset enables the opt-in checks", () => {
+	it("covers every built-in with ordinary expressions; a file runs only what it lists", () => {
 		expect(exampleRules.map((rule) => rule.id)).toEqual(
 			expect.arrayContaining([...BuiltInCheckId.literals])
 		);
 		expect(exampleRules).toHaveLength(BuiltInCheckId.literals.length);
-		const enabled = translateRuleDocument(undefined)
+		expect(effectiveRuleDocument(undefined).rules).toEqual([]);
+		const enabled = effectiveRuleDocument(STARTER_CHECK_RULES)
 			.rules.filter((rule) => rule.enabled)
 			.map((rule) => rule.id);
+		expect(new Set(enabled)).toEqual(new Set(STARTER_CHECKS));
 		expect(enabled).toHaveLength(BuiltInCheckId.literals.length - 3);
 		expect(enabled).not.toContain("segment_separator");
 		expect(enabled).not.toContain("shared");
@@ -145,26 +148,38 @@ describe("v4 rule documents", () => {
 		});
 	});
 	it("keeps effective check selection, parameters, references and evidence-key order", () => {
-		const translated = translateRuleDocument(
+		const effective = effectiveRuleDocument(
 			{
-				schemaVersion: 3,
+				schemaVersion: 1,
 				roles: [],
-				rules: [],
-				checks: { format_arguments: { params: { optionalArguments: ["Player"] } } }
+				rules: [
+					{ kind: "format_argument_renamed" },
+					{ kind: "format_arguments", params: { optionalArguments: ["Player"] } }
+				]
 			},
 			{ checks: ["format_arguments"], disabledChecks: ["format_argument_renamed"] }
 		);
-		expect(translated.rules.filter((rule) => rule.enabled).map((rule) => rule.id)).toEqual([
+		expect(effective.rules.filter((rule) => rule.enabled).map((rule) => rule.id)).toEqual([
 			"format_arguments"
 		]);
-		expect(translated.rules[0]?.params).toEqual({ optionalArguments: ["Player"] });
-		const canonical = canonicalRuleDocument(translated);
+		expect(effective.rules[0]?.params).toEqual({ optionalArguments: ["Player"] });
+		const canonical = canonicalRuleDocument(effective);
 		expect(JSON.parse(canonical).rules).toHaveLength(1);
 		expect(canonical.indexOf('"arguments":')).toBeLessThan(canonical.indexOf('"missing":'));
 	});
-	it("names colliding authored rules without changing the emitted rule ID", () => {
-		const role = TextRoleId.make("all");
-		const translated = translateRuleDocument({
+	it("keeps project rule IDs and derives parameters from the rules that run", () => {
+		const role = TextRoleId.make("menu");
+		const terms = (id: string, enabled: boolean) => ({
+			kind: "terminology" as const,
+			id: TextQualityRuleId.make(id),
+			role,
+			enabled,
+			caseSensitive: true,
+			terms: [{ kind: "forbidden" as const, term: id.toUpperCase() }],
+			scope: { pathPrefixes: ["/Game/UI/"] },
+			recovery: "Use the glossary."
+		});
+		const effective = effectiveRuleDocument({
 			schemaVersion: 1,
 			roles: [
 				{
@@ -175,19 +190,30 @@ describe("v4 rule documents", () => {
 				}
 			],
 			rules: [
-				{
-					id: TextQualityRuleId.make("localization.format_arguments"),
-					role,
-					kind: "character_budget",
-					maximumCharacters: 4,
-					recovery: "Shorten it."
-				}
+				terms("off", false),
+				{ kind: "placeholder_translation" },
+				{ kind: "placeholder_text", enabled: false, params: { markers: ["XXX"] } },
+				terms("on", true)
 			]
 		});
-		expect(translated.rules.at(-1)).toMatchObject({
-			id: "source:localization.format_arguments",
-			ruleId: "localization.format_arguments",
-			subject: "unit_source"
+		// Built-in checks in catalogue order, then project rules.
+		expect(effective.rules.map((rule) => [rule.id, rule.ruleId, rule.subject])).toEqual([
+			["placeholder_translation", "localization.placeholder_translation", "line_culture"],
+			["placeholder_text", "localization.placeholder_text", "line"],
+			["on", "on", "unit_source"]
+		]);
+		expect(effective.rules[1]?.params?.sourceTerminology).toEqual([
+			{
+				role: "menu",
+				caseSensitive: true,
+				terms: ["ON"],
+				scope: { pathPrefixes: ["/Game/UI/"] }
+			}
+		]);
+		// A disabled placeholder_text still lends placeholder_translation its markers.
+		expect(effective.rules[0]?.params).toMatchObject({
+			sourceMarkers: ["XXX"],
+			sourcePhrases: ["lorem ipsum", "to be translated", "placeholder"]
 		});
 	});
 });

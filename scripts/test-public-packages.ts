@@ -580,7 +580,7 @@ try {
 			"    const joined = joinLocalizationTarget(corpus, evidence, target);",
 			"    const checks = checkLocalizationTarget(corpus, joined, evidence);",
 			"    yield* Schema.decodeUnknownEffect(LocalizationQualityReport)(checks);",
-			"    const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify({ schemaVersion: 2, roles: [{ id: 'menu', scopes: [{ matchers: [{ kind: 'location_kind', value: 'string_table_entry' }] }] }], rules: [], localizationRules: [{ kind: 'localization_character_budget', id: 'menu.translation', role: 'menu', cultures: { de: 12 }, recovery: 'Shorten this translation.' }] }));",
+			"    const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify({ schemaVersion: 1, roles: [{ id: 'menu', scopes: [{ matchers: [{ kind: 'location_kind', value: 'string_table_entry' }] }] }], rules: [{ kind: 'localization_character_budget', id: 'menu.translation', role: 'menu', cultures: { de: 12 }, recovery: 'Shorten this translation.' }] }));",
 			"    yield* Schema.decodeUnknownEffect(LocalizationQualityReport)(checkLocalizationTarget(corpus, joined, evidence, {}, rules));",
 			"    const baseline = createLocalizationBaseline(corpus, evidence, '2026-10-07T00:00:00Z');",
 			"    const baselineRoundTrip = decodeLocalizationBaselineJson(JSON.stringify(baseline));",

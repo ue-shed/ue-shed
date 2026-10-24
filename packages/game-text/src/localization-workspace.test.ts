@@ -87,7 +87,7 @@ describe("bounded localization workspace", () => {
 		expect(changes.document.provenance.files).toEqual([]);
 	});
 
-	it("preserves v2 rules in existing source investigation exports", async () => {
+	it("preserves the rules file in source investigation exports", async () => {
 		const { text, document } = qualityFixture();
 		const preset = Schema.decodeUnknownSync(GameTextInvestigationPreset)({
 			schemaVersion: 1,
@@ -113,7 +113,7 @@ describe("bounded localization workspace", () => {
 		expect(exported.preset.rules).toEqual(document);
 		expect(exported.result).toMatchObject({
 			mode: "quality",
-			report: { ruleDocumentVersion: 2, findings: [{ kind: "character_budget" }] }
+			report: { ruleDocumentVersion: 1, findings: [{ kind: "character_budget" }] }
 		});
 	});
 

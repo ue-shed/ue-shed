@@ -4,12 +4,13 @@ import { Effect, Layer, Schema, Stream } from "effect";
 import { LocalizationTarget } from "@ue-shed/localization";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { GameTextIndexSource } from "./index-refresh.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 
 export const workspaceScaleRules = Schema.decodeUnknownSync(GameTextRuleDocument)({
-	schemaVersion: 2,
+	schemaVersion: 1,
 	roles: [
 		{
 			id: "labels",
@@ -17,6 +18,7 @@ export const workspaceScaleRules = Schema.decodeUnknownSync(GameTextRuleDocument
 		}
 	],
 	rules: [
+		...STARTER_CHECK_RULES.rules,
 		{
 			id: "source.limit",
 			kind: "character_budget",
@@ -31,9 +33,7 @@ export const workspaceScaleRules = Schema.decodeUnknownSync(GameTextRuleDocument
 			caseSensitive: true,
 			terms: [{ kind: "forbidden", term: "TODO" }],
 			recovery: "Finish the label."
-		}
-	],
-	localizationRules: [
+		},
 		{
 			id: "translation.limit",
 			kind: "localization_character_budget",

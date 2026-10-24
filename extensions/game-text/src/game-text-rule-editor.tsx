@@ -1,6 +1,10 @@
 import * as stylex from "@stylexjs/stylex";
 import type { TextQualityQuerySummary } from "@ue-shed/game-text/corpus";
-import type { LocalizationProjectRule, GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import type {
+	GameTextRuleDocument,
+	GameTextRuleEntry,
+	LocalizationProjectRule
+} from "@ue-shed/game-text/rules";
 import type {
 	TextQualityRule,
 	TextRoleMatcher,
@@ -21,11 +25,21 @@ import {
 
 type EditableRule = TextQualityRule | LocalizationProjectRule;
 
+function sourceRule(entry: GameTextRuleEntry): entry is TextQualityRule {
+	return entry.kind === "character_budget" || entry.kind === "terminology";
+}
+
+function localizationRule(entry: GameTextRuleEntry): entry is LocalizationProjectRule {
+	return (
+		entry.kind === "localization_character_budget" || entry.kind === "localization_terminology"
+	);
+}
+
+/** The rules the editor shows: source and localization rules, in the file's order. */
 function documentRules(document: GameTextRuleDocument): readonly EditableRule[] {
-	return [
-		...document.rules,
-		...(document.schemaVersion !== 1 ? (document.localizationRules ?? []) : [])
-	];
+	return document.rules.filter(
+		(entry): entry is EditableRule => sourceRule(entry) || localizationRule(entry)
+	);
 }
 
 function characterBudgetRule(rule: EditableRule | undefined) {
@@ -66,7 +80,9 @@ function replaceRule(
 ): GameTextRuleDocument {
 	return {
 		...document,
-		rules: document.rules.map((rule) => (rule.id === ruleId ? update(rule) : rule))
+		rules: document.rules.map((entry) =>
+			sourceRule(entry) && entry.id === ruleId ? update(entry) : entry
+		)
 	};
 }
 
@@ -92,11 +108,10 @@ function replaceLocalizationRule(
 	document: GameTextRuleDocument,
 	updated: LocalizationProjectRule
 ): GameTextRuleDocument {
-	if (document.schemaVersion === 1) return document;
 	return {
 		...document,
-		localizationRules: (document.localizationRules ?? []).map((rule) =>
-			rule.id === updated.id ? updated : rule
+		rules: document.rules.map((entry) =>
+			localizationRule(entry) && entry.id === updated.id ? updated : entry
 		)
 	};
 }
@@ -106,12 +121,12 @@ function replaceRecovery(
 	id: TextQualityRule["id"],
 	recovery: string
 ): GameTextRuleDocument {
-	const source = replaceRule(document, id, (rule) => ({ ...rule, recovery }));
-	if (source.schemaVersion === 1 || !source.localizationRules) return source;
 	return {
-		...source,
-		localizationRules: source.localizationRules.map((rule) =>
-			rule.id === id ? { ...rule, recovery } : rule
+		...document,
+		rules: document.rules.map((entry) =>
+			(sourceRule(entry) || localizationRule(entry)) && entry.id === id
+				? { ...entry, recovery }
+				: entry
 		)
 	};
 }
@@ -149,7 +164,7 @@ export function GameTextRuleEditor(props: {
 	const addLocalizationRule = (kind: LocalizationProjectRule["kind"]) => {
 		const document = draft();
 		const role = document.roles[0]?.id;
-		if (document.schemaVersion === 1 || !role) return;
+		if (!role) return;
 		let index = 1;
 		while (rules().some((rule) => rule.id === "translation.rule." + index)) index++;
 		const id = TextQualityRuleId.make("translation.rule." + index);
@@ -171,10 +186,7 @@ export function GameTextRuleEditor(props: {
 						caseSensitive: false,
 						recovery: "Use the preferred term."
 					};
-		changeDraft({
-			...document,
-			localizationRules: [...(document.localizationRules ?? []), rule]
-		});
+		changeDraft({ ...document, rules: [...document.rules, rule] });
 		setSelectedRuleId(id);
 	};
 	const selectedBudgetRule = () => characterBudgetRule(selectedRule());
@@ -190,24 +202,22 @@ export function GameTextRuleEditor(props: {
 					<span>Rules</span>
 					<b {...stylex.attrs(styles.panelCount)}>{rules().length}</b>
 				</header>
-				<Show when={draft().schemaVersion !== 1}>
-					<div {...stylex.attrs(styles.addTerms)}>
-						<button
-							type="button"
-							onClick={() => addLocalizationRule("localization_character_budget")}
-							{...stylex.attrs(styles.smallButton)}
-						>
-							Add translation character limit
-						</button>
-						<button
-							type="button"
-							onClick={() => addLocalizationRule("localization_terminology")}
-							{...stylex.attrs(styles.smallButton)}
-						>
-							Add translation terminology
-						</button>
-					</div>
-				</Show>
+				<div {...stylex.attrs(styles.addTerms)}>
+					<button
+						type="button"
+						onClick={() => addLocalizationRule("localization_character_budget")}
+						{...stylex.attrs(styles.smallButton)}
+					>
+						Add translation character limit
+					</button>
+					<button
+						type="button"
+						onClick={() => addLocalizationRule("localization_terminology")}
+						{...stylex.attrs(styles.smallButton)}
+					>
+						Add translation terminology
+					</button>
+				</div>
 				<For each={rules()}>
 					{(rule) => (
 						<button
@@ -577,16 +587,6 @@ export function GameTextRuleEditor(props: {
 						>
 							Discard edits
 						</button>
-						<Show when={draft().schemaVersion === 1}>
-							<button
-								type="button"
-								disabled={props.editor.busy()}
-								onClick={props.editor.upgrade}
-								{...stylex.attrs(styles.actionButton)}
-							>
-								Upgrade to version 2
-							</button>
-						</Show>
 						<button
 							type="button"
 							disabled={!dirty() || props.editor.busy()}

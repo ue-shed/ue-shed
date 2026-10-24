@@ -19,7 +19,7 @@ Behaviour is defined by today's TypeScript, cited as `file:line` under `packages
 **Also in Phase 2:**
 
 - Group and corpus aggregates in the IR (§3).
-- v4 becomes a public authoring format. No rule is on without a rules file, and hosts can pass an overlay (§5).
+- The rules file format restarts at version 1, a list of references to the engine's rules; v1–v3 and the translator are deleted. No rule is on without a rules file, and hosts can pass an overlay (§5).
 - Quality and `loc check` read every finding from the engine, and the TS check engine is deleted (§6, §7). The Quality worker goes if a measurement allows it; the second TS reader waits for Phase 3.
 
 **Decided for Phase 2** ([plan decisions 15 and 16](../../plans/059-game-text-query-and-rule-engine.md#decisions)):
@@ -104,7 +104,7 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 ### 4.1 `duplicate_source` (`line`, severity low)
 
 - **Candidate** (`localizationDuplicateCandidate`, `:255-263`): in the join (`joinPosition` not null); `identity` not null; `trim(source)` not empty; `source` has a letter (`\p{L}`); not `allOutside`; not `conflicting`. Gathered-only lines are candidates.
-- **Kept:** `existsOther` over the line's sites, by `source`, differing in identity and site, among candidates. A line with no site uses the site `unknown:<identity>` (`:313`).
+- **Kept:** `existsOther` over the line's sites, by `source`, differing in identity and site, among candidates. A line with no saved place uses its identity as its one site, which no saved place equals (today's `unknown:<identity>`, `:313`).
 - **Group:** kept lines by `source`, among kept lines. It reports when `groupCount ≥ 2` and `groupRank = 0`.
 - **Order:** namespace, then key, with the host collator, then `joinPosition` (`:302-307`).
 - **Evidence:** `actual {source, identityCount: groupCount, identities: groupTake(n 5) of identity}`, where each identity is the `{namespace, key}` object the public schema requires (`gt/localization-quality-schema.ts:115`, `gt/localization-checks.ts:326`); `expectation {reviewDistinctKeys: true}`. The `[namespace, key]` JSON today's code builds at `:310` is only a comparison key for the place test, never evidence.
@@ -131,62 +131,93 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 - `shared`: the line has more than one saved occurrence, with compiled copies folded, as Phase 1's `occurrences` already are. `actual {occurrences: count}`, `expectation {singleUse: true}`.
 - `long`: `maxOf` the UTF-16 lengths of the line's distinct occurrence sources is at least `limit`, default 40 (`ix/join_query.rs:146-148`). `actual {length}`, `expectation {maximumLength: limit}`.
 - Both are new kinds with new identities; no review file refers to them. Labels: "Used in several places" and "Long text" (`gt/csv.ts:13-18`).
-- The v1–v3 translator never enables them, so existing rules files report exactly what they report today. A v4 document opts in.
+- A rules file opts in with `{"kind": "shared"}` or `{"kind": "long"}`; the starter file lists neither.
 
 ### 4.5 Identity and order
 
 - `duplicate_source`, `inconsistent_translation` and `culture_invariant_text` findings are byte-identical to today's, identity included (Phase 1 §7). A finding with a null identity still can't be accepted (`gt/localization-review.ts:147`).
 - Finding order is unchanged: `compareLocalizationFindings` and `compareReportedLocalizationFindings`.
 
-## 5. Documents, defaults and the overlay
+## 5. The rules file, defaults and the overlay
 
-- **v4 is public.** `decodeGameTextRuleDocumentJson` accepts version 4. The JSON Schema and the builder are published in `@ue-shed/game-text/rules`. v1–v3 still load through the one translator.
-- **Report versions.** `ruleDocumentVersion` accepts 4 in the localization report (`gt/localization-quality-schema.ts:386`), the source summary (`gt/quality-query.ts:59`) and the full source report, `TextQualityReport`, which source export returns and its public parser validates (`gt/quality-schema.ts:397-413`).
-- **No file, no rules** (plan decision 1). Without a rules file the effective document is empty: Quality and `loc check` report no findings, only diagnostics. A v3 file keeps today's meaning: its preset and `checks` translate to exactly the rules it enables today.
-- **The rule editor** (`extensions/game-text/src/game-text-rule-state.ts`) learns v4, and Quality gets an empty state for a project with no rules. Both are UI: their design is shown to the owner before they are built.
-
-### The effective document
-
-It is built in this order, in TS, before `findings_evaluate`, and the result is validated as a v4 document:
-
-1. **Translate** the project document to v4. A v4 document is used as written.
-2. **Apply the overlay** (below).
-3. **Derive** the cross-rule parameters from the result:
-    - `placeholder_text.params.sourceTerminology` from the enabled `unit_source` terminology rules. Each entry carries the rule's role, case sensitivity, terms and its `scope`, and the `placeholder_text` example rule suppresses a placeholder only where that scope admits the line's occurrence (`gt/rules/catalogue.ts:159-177`, `ix/rules/evaluator.rs:1994-2009`). v1–v3 source rules have no `scope`, only a role, so nothing changes for them.
-    - `placeholder_translation`'s markers and phrases from `placeholder_text`.
-
-    This is today's copying in the translator (`gt/rules/translate.ts:50-72`), moved to run on every effective document. An overlay that disables or narrows a source terminology rule therefore also removes or narrows its placeholder suppression (`gt/localization-quality-index.ts:875`, `gt/localization-workspace.ts:955`). Derived parameters are reserved: a document that sets them has them replaced.
-
-### The host overlay
-
-The overlay has its own schema, not a v4 document, because a patch carries no expressions:
+No project uses a rules file yet, so the format is reset rather than extended ([plan decision 18](../../plans/059-game-text-query-and-rule-engine.md#decisions)). Version 1–3 files, `migrateGameTextRuleDocument` and the translator are deleted. The file restarts at `schemaVersion: 1` and lists the rules a project runs, by reference. The v4 program stays the engine's internal input: the effective document below is built from the file.
 
 ```jsonc
 {
-	"schemaVersion": 4,
+	"schemaVersion": 1,
+	"roles": [
+		/* TextRole, as before */
+	],
+	"rules": [
+		{ "kind": "placeholder_text", "severity": "low", "params": { "markers": ["TODO"] } },
+		{
+			"kind": "terminology",
+			"id": "menu.terms",
+			"role": "menu",
+			"caseSensitive": false,
+			"terms": [{ "kind": "forbidden", "term": "OK" }],
+			"recovery": "Use the glossary term."
+		}
+	]
+}
+```
+
+Every entry has a `kind` and may set `enabled` (default true) and `scope`.
+
+- **Built-in checks.** `kind` names one of the catalogue's checks, `shared` and `long` included. The rule's ID is that name, so each appears at most once. `severity` and `params` are optional; `params` merge over the catalogue's defaults key by key. `segment_separator` needs `params.separator`.
+- **Project rules.** The other kinds are today's rule records with their fields, limits and checks, now in one list:
+    - `character_budget` and `terminology`: subject `unit_source`, today's source rules.
+    - `localization_character_budget` and `localization_terminology`: subject `line_culture`, today's localization rules, with an optional `severity`.
+    - `pattern`, `length` and `forbidden_term`: today's custom checks, with `label`, `subject: "source" | "translation"` and an optional `severity`.
+
+    Each has its own `id` and a `recovery`; the first four name a declared `role`. Their expressions are today's translator code, moved into the catalogue.
+
+- **One namespace.** Rule IDs are unique across the file, built-in names included (`duplicate_rule_id`). Nothing is renamed to `family:id`.
+- **Closed schema.** Unknown keys are rejected everywhere, and an entry whose `kind` is unknown is `invalid_structure`. The decoder keeps today's other checks: duplicate culture keys, unique role IDs, and declared roles in `role` and `scope.roles`.
+- **Complete rules wait for Phase 3** (plan decision 19, proposed). A rule with its own expressions has no finding shape that reports can carry until findings become query fields; until then the file holds references only.
+- **No file, no rules** (plan decision 1). Without a rules file the effective document is empty: Quality and `loc check` report no findings, only diagnostics. The starter file lists the checks that run by default today: every check but `segment_separator`.
+- **Report versions.** `ruleDocumentVersion` is `1` in the localization report (`gt/localization-quality-schema.ts:386`), the source summary (`gt/quality-query.ts:59`) and the full source report, `TextQualityReport` (`gt/quality-schema.ts:397-413`).
+- **The rule editor** (`extensions/game-text/src/game-text-rule-editor.tsx`) keeps its screens. It edits the same records, now in one list, so only where it reads and writes them changes. Its v1-to-v2 upgrade goes: there is nothing to upgrade. Quality's empty state for a project without a rules file is UI: its design is shown to the owner before it is built.
+
+### The effective document
+
+It is built in TS before `findings_evaluate`, and the result is validated as a v4 program:
+
+1. **Apply the overlay** (below) to the file's entries. Project rules write some settings into their expressions, so patches apply before expansion, not to the expanded rules.
+2. **Expand** the entries. A built-in entry becomes its catalogue rule with the entry's settings, and a project rule becomes a complete rule. The program lists built-in rules in catalogue order, then source and localization rules by ID, then custom checks in entry order, as the translator did. Reports sort findings as before.
+3. **Derive** the cross-rule parameters from the result:
+    - `placeholder_text.params.sourceTerminology` from the enabled `terminology` rules. Each entry carries the rule's role, case sensitivity, terms and `scope`. The `placeholder_text` rule suppresses a placeholder only where that scope admits the line's occurrence (`gt/rules/catalogue.ts:159-177`), by role and path prefix as a rule's own `scope` admits occurrences (`ix/rules/evaluator.rs`, `Evaluator::scope`).
+    - `placeholder_translation`'s markers and phrases from `placeholder_text`'s params, whether it is enabled or not; without it, from the catalogue's defaults.
+
+    This is today's copying in the translator (`gt/rules/translate.ts:50-72`), moved to run on every effective document. An overlay that disables or narrows a terminology rule therefore also removes or narrows its placeholder suppression. Derived parameters are reserved: a file or overlay that sets them is `invalid_structure`.
+
+### The host overlay
+
+The overlay uses the file's own entries, plus patches:
+
+```jsonc
+{
+	"schemaVersion": 1,
 	"roles": [
 		/* TextRole, added to the project's */
 	],
 	"patches": [{ "id": "…", "enabled": false, "severity": "low", "params": {}, "scope": {} }],
 	"rules": [
-		/* complete v4 rules, added */
+		/* entries, as in the rules file, added */
 	]
 }
 ```
 
-- **Patches.** A patch names a rule in the project document; any other `id` is `GameTextRuleDocumentError` with the new code `invalid_overlay`. Every field but `id` is optional. A field the patch leaves out keeps the project's value, `params` merge key by key, and `scope: {}` removes the project's scope.
-- **Rules.** Complete v4 rules, added after the project's rules in overlay order. An `id` the project already uses is `invalid_overlay`.
-- **Roles.** Added. A role ID declared by both documents is `invalid_overlay`.
-- **The key.** The overlay's canonical hash keys the findings layer, beside the rule-set hash (Phase 1 §6).
-- **Hosts.** UE Shed's Workbench and CLI pass no overlay. Electroswag's overlay contents are Phase 6.
+- **Patches.** A patch names a rule in the project's file: a built-in check by its kind, a project rule by its `id`. Any other `id` is `GameTextRuleDocumentError` with the new code `invalid_overlay`. Every field but `id` is optional. A field the patch leaves out keeps the project's value; `params` merge key by key into a built-in check's `params` or a project rule's own fields; `scope: {}` removes the project's scope. The patched file must still decode, or the overlay is `invalid_overlay`.
+- **Rules.** Entries added after the project's, in overlay order. An `id` the project already uses is `invalid_overlay`.
+- **Roles.** Added. A role ID declared by both is `invalid_overlay`.
+- **The key.** The overlay is applied before the engine sees the program, and the program's canonical JSON keys the findings layer (Phase 1 §6), so it already covers the overlay.
+- **Hosts.** `applyRuleOverlay(file, overlay)` returns the patched file, which the scans read as they read a project's file. UE Shed's Workbench and CLI pass no overlay. Electroswag's overlay, and where it applies it, are Phase 6.
 
-### Source rules under v4
+### Source rules
 
-- Today the source scan reads `document.rules` as legacy source rules: it prepares them by role and matches native findings back to their authored IDs (`gt/source-quality-index.ts:139, :189`, `gt/quality.ts:85`).
-- Source findings and summaries know two shapes: a role-scoped `character_budget` or `terminology` finding (`gt/quality-schema.ts:344-368`), and summaries count every non-budget finding as terminology (`gt/quality-query.ts:502-515`).
-- So in Phase 2 a v4 `unit_source` rule must name a `role` and have kind `character_budget` or `terminology`, with that kind's evidence shape. Load-time validation rejects anything else with the new code `unsupported_source_rule`. A general source-finding contract waits for findings as query fields in Phase 3.
-- Under v4, the source report is the effective document's `unit_source` rules. Its role summaries come from the document's roles, its rule summaries from those rules' `id`, `ruleId`, `kind`, `label` and `role`, and its counts from the findings layer.
-- v1–v3 documents produce the same report as today, through the translator.
+- The source scan reads the effective document's `unit_source` rules, which only `character_budget` and `terminology` entries make. Source findings and summaries keep their two shapes (`gt/quality-schema.ts:344-368`, `gt/quality-query.ts:502-515`).
+- Its role summaries come from the file's roles, its rule summaries from those rules' `id`, `kind`, `label` and `role`, and its counts from the findings layer. Today it re-prepares `document.rules` (`gt/source-quality-index.ts:139, :189`, `gt/quality.ts:85`).
 
 ## 6. Host adoption
 
@@ -195,6 +226,7 @@ The overlay has its own schema, not a v4 document, because a patch carries no ex
 - `check(lines)` takes every built-in finding from `findings_lines`, group rules included. The corpus passes are deleted: `duplicateSources`, the translation pass and the census (`gt/localization-quality-index.ts:351-602, :652-674`).
 - The scan still reads lines page by page for presentation, review acceptance and `keep`, until Phase 3. It and the source scan hydrate through `IndexedPolicyData` (`gt/localization-quality-index.ts:838, :1066`, `gt/source-quality-index.ts:128`), so the second TS reader stays until Phase 3 replaces both scans (plan decision 17).
 - The scan still pages, sorts and hydrates in TS until Phase 3, about 150 s on 1×. The Quality worker (`apps/workbench/src/main/workbench-live.ts:189-191`) is deleted only when the in-process scan is measured on both projects and its largest event-loop gap is no worse than the worker's: 121 ms on 1× at Phase 1. Otherwise the worker stays until Phase 3, and the plan records why.
+- **Measured** at `769f7503` (`quality-in-process` in the engine benchmark): in process, the largest gap is 741 ms on 1× and 882 ms on the released project; with the worker, 115 ms and 528 ms. The worker stays until Phase 3.
 
 ### The CLI
 
@@ -204,19 +236,20 @@ The overlay has its own schema, not a v4 document, because a patch carries no ex
 
 ## 7. Deleted
 
-| What                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Notes                                                                                                                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `localization-checks.ts` group checks, `localization-text-shape.ts`                                                                                                                                                                                                                                                                                                                                                                                                       | The comparators and the rule-selection helpers move to where their callers are, or to the translator. `duplicate-sources.ts` stays until Phase 3: the reference tests of Browse's native `duplicate_source` signal use it (decision 16). |
-| The public group helpers: `localizationDuplicateSources`, `localizationDuplicateCandidate`, `localizationDuplicatePlaces`, `localizationTranslationVariants`, `invariantTextPlace`, `reportableInvariantText`, `localizationLocalizableProperties`, `localizationPropertiesWhereLocalizable`, `localizationPropertyKey`, `localizationCultureInvariantUnits`, and their plumbing: `localizationConflictingSource`, `localizationSourceCulture`, `localizationRuleContext` | Exported from `gt/entry-checks.ts`, `gt/index.ts` and `gt/browser.ts`. Check Electroswag's imports first; any it uses stay until Phase 6.                                                                                                |
-| `quality-worker.ts`, `quality-worker-node.ts`, `quality-worker-protocol.ts`, `worker-calls.ts`                                                                                                                                                                                                                                                                                                                                                                            | With their build, test-script, lint-baseline and README references, once the measurement in §6 allows it.                                                                                                                                |
-| `localization-policy.ts`, `localization-custom-checks.ts`, `quality.ts`                                                                                                                                                                                                                                                                                                                                                                                                   | What remains of them is ordering and metadata; it moves into the translator or the catalogue.                                                                                                                                            |
+| What                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Notes                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `localization-checks.ts` group checks, `localization-text-shape.ts`                                                                                                                                                                                                                                                                                                                                                                                                       | The comparators and the rule-selection helpers move to where their callers are. `duplicate-sources.ts` stays until Phase 3: the reference tests of Browse's native `duplicate_source` signal use it (decision 16). |
+| The public group helpers: `localizationDuplicateSources`, `localizationDuplicateCandidate`, `localizationDuplicatePlaces`, `localizationTranslationVariants`, `invariantTextPlace`, `reportableInvariantText`, `localizationLocalizableProperties`, `localizationPropertiesWhereLocalizable`, `localizationPropertyKey`, `localizationCultureInvariantUnits`, and their plumbing: `localizationConflictingSource`, `localizationSourceCulture`, `localizationRuleContext` | Exported from `gt/entry-checks.ts`, `gt/index.ts` and `gt/browser.ts`. Check Electroswag's imports first; any it uses stay until Phase 6.                                                                          |
+| `quality-worker.ts`, `quality-worker-node.ts`, `quality-worker-protocol.ts`, `worker-calls.ts`                                                                                                                                                                                                                                                                                                                                                                            | With their build, test-script, lint-baseline and README references, once the measurement in §6 allows it.                                                                                                          |
+| `localization-policy.ts`, `quality.ts`'s `prepareTextQualityRules`                                                                                                                                                                                                                                                                                                                                                                                                        | Reports read rule metadata from the effective document.                                                                                                                                                            |
+| The v1–v3 rules file: its schemas and decoders, presets, `migrateGameTextRuleDocument`, `localization-custom-checks.ts`, the translator (`rules/translate.ts`, now `rules/effective.ts`), the v1 and v2 fixtures and their compatibility tests                                                                                                                                                                                                                            | The reset (§5). The translator's rule code moves into the catalogue.                                                                                                                                               |
 
 The second TS reader (`joined-target-reader.ts` hydration, `joined-query-reader.ts`, `indexed-policy-data.ts`, the `shared-string-file.ts` sync reads) is not deleted in Phase 2. Both retained scans hydrate through it (§6), so it goes in Phase 3 with them (plan decision 17).
 
 ## 8. Fixture
 
 - No expectation changes for `duplicate_source`, `inconsistent_translation`, `culture_invariant_text` or the Browse signals (decisions 15 and 16).
-- A v4 probe enables `shared` and `long` and expects them on the planted cases: the 38–41 and surrogate `long` cases, and the `shared-identity`, String Table and `incremental-conflict` `shared` cases (`scripts/game-text-corpus-plan.ts:681-700, :930-933, :1099-1135, :1548-1549`).
+- The fixture's rules files are rewritten in the new format with unchanged expectations. A probe file lists `shared` and `long` and expects them on the planted cases: the 38–41 and surrogate `long` cases, and the `shared-identity`, String Table and `incremental-conflict` `shared` cases (`scripts/game-text-corpus-plan.ts:681-700, :930-933, :1099-1135, :1548-1549`).
 - A near-miss case is added for `culture_invariant_text`, which has none: a property whose localizable count is below its invariant count.
 
 ## 9. Order of work, one commit per step at least
@@ -225,5 +258,5 @@ The second TS reader (`joined-target-reader.ts` hydration, `joined-query-reader.
 2. **The aggregates** (§3), with unit tests, including `existsOther` against `DuplicateSources` on random tuples.
 3. **The five rules** in the catalogue, matching today's TS per check on the existing check tests and both corpora.
 4. **Host adoption** (§6): Quality and `loc check` read group findings from the engine. Then delete the TS group checks, and the worker if the event-loop measurement allows it.
-5. **v4 public and the overlay** (§5). The UI parts wait for the owner's review of their design.
+5. **The rules file reset and the overlay** (§5). The UI parts wait for the owner's review of their design.
 6. **Parity:** the fixture exact, `loc check` byte-identical on both canonical corpora, one 10,000-line fuzz run. Then the Phase 0 measurement set against the baseline, and the owner review.

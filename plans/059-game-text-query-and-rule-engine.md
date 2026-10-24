@@ -434,12 +434,14 @@ The specification is [Game Text rule engine, Phase 2](../docs/engineering/game-t
 - `shared`, `duplicate_source`, `long`, `inconsistent_translation` and `culture_invariant_text`
   become rules.
 - No rule is on by default (decision 1), and rules come only from the project's file and the host
-  overlay. v4 becomes the public authoring format, and the rule editor learns it.
+  overlay. The rules file restarts at version 1, a list of rules by reference (decision 18).
 - There is one `duplicate_source` rule, and it keeps the Quality check's behaviour (decision 15).
 - Browse keeps its native `shared`, `long` and `duplicate_source` signals until Phase 3 (decision
   16).
-- Delete the TS check engine. The worker goes if the in-process scan measures as responsive; the
-  second reader goes in Phase 3 (decision 17).
+- Delete the TS check engine. The second reader goes in Phase 3 (decision 17).
+- The Quality worker stays until Phase 3. Without it, Quality's largest event-loop gap was 741 ms on
+  the generated 1× project and 882 ms on the released one, against the worker's 115 ms and 528 ms.
+  The gaps are the TS scan's paging, sorting and hydration, which Phase 3 replaces.
 
 ### Phase 3: the query engine
 
@@ -563,6 +565,17 @@ Decided on 2026-10-24, for Phase 2:
 17. **The second TS reader goes in Phase 3.** Quality's localization and source scans hydrate their
     pages through it until Phase 3 replaces them. Replacing those reads in Phase 2 would build what
     Phase 3 deletes.
+18. **The rules file format is reset.** No project uses a rules file yet, so v1–v3 and the
+    translator are deleted rather than kept beside v4. The file restarts at version 1: one list of
+    entries, each a built-in check by name with its settings or one of today's project rules. This
+    replaces decision 14's v4 authoring format.
+
+Proposed on 2026-10-24, for the owner's review:
+
+19. **Complete rules in the file wait for Phase 3.** A rule with its own expressions has no finding
+    shape that reports can carry until findings become query fields. Until then, today's custom
+    checks cover project-defined rules. Decision 3's JSON IR authoring arrives with that finding
+    shape.
 
 Decided in Phase 0:
 

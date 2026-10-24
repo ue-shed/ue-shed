@@ -2,10 +2,10 @@ import { indexedTestReports } from "../../../packages/game-text/src/indexed-repo
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
+import { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,
-	TextQualityRuleDocument,
 	TextQualityRuleId,
 	TextRoleId,
 	type TextCorpus
@@ -79,7 +79,7 @@ export const corpus: TextCorpus = {
 		}
 	]
 };
-export const rulesDocument = TextQualityRuleDocument.make({
+export const rulesDocument = GameTextRuleDocument.make({
 	schemaVersion: 1,
 	roles: [
 		{

@@ -13,7 +13,7 @@ import type {
 	LocalizationQualityFinding
 } from "./localization-quality-schema.js";
 import { localizationPolicyRules } from "./localization-policy.js";
-import { customLocalizationChecks } from "./localization-custom-checks.js";
+import { customLocalizationChecks, localizationRulesOf } from "./game-text-rules.js";
 import { acceptedFindingFilter } from "./localization-review.js";
 import type { LocalizationLine } from "./localization-schema.js";
 import {
@@ -30,7 +30,7 @@ import {
 } from "./localization-workspace.js";
 import { IndexedPolicyData } from "./indexed-policy-data.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
-import { translateRuleDocument } from "./rules/translate.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 import type { NativeFindings } from "./native-findings.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextQualityRuleId } from "./quality-schema.js";
@@ -178,12 +178,11 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 		nativeCulture: target.nativeCulture,
 		cultures: target.cultures
 	};
-	const evaluated = yield* native.findingsEvaluate(translateRuleDocument(ruleDocument, options));
+	const evaluated = yield* native.findingsEvaluate(effectiveRuleDocument(ruleDocument, options));
 	const enabled = enabledLocalizationChecks(join, evidence, options, ruleDocument);
-	const policy =
-		ruleDocument !== undefined && ruleDocument.schemaVersion !== 1
-			? localizationPolicyRules(target.cultures, ruleDocument)
-			: undefined;
+	const policy = ruleDocument
+		? localizationPolicyRules(target.cultures, ruleDocument)
+		: undefined;
 	const keep = acceptedFindingFilter(options.review);
 	const customChecks = customLocalizationChecks(ruleDocument);
 	const count = data.joined.meta.count,
@@ -619,9 +618,7 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 		metadata: {
 			join,
 			rules: [
-				...(ruleDocument !== undefined && ruleDocument.schemaVersion !== 1
-					? (ruleDocument.localizationRules ?? []).map((rule) => rule.id)
-					: []),
+				...localizationRulesOf(ruleDocument).map((rule) => rule.id),
 				...enabled.map(localizationRuleId),
 				...customChecks.map((custom) => custom.id)
 			],

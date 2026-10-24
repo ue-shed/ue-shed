@@ -1,4 +1,10 @@
-import { resolveLocalizationChecks, type GameTextRuleDocument } from "../game-text-rules.js";
+import {
+	customLocalizationChecks,
+	isBuiltInCheckEntry,
+	localizationRulesOf,
+	resolveLocalizationChecks,
+	type GameTextRuleDocument
+} from "../game-text-rules.js";
 import type { BuiltInCheckId } from "../localization-check-ids.js";
 import { prepareTextQualityRules } from "../quality.js";
 import type { TextTerminologyEntry } from "../quality-schema.js";
@@ -32,8 +38,13 @@ const terms = (entries: readonly TextTerminologyEntry[]) =>
 		)
 	);
 
-/** Translate the effective v1–v3 policy into the one native expression language. */
-export function translateRuleDocument(
+/**
+ * The program the engine runs for a rules file: the built-in checks it lists, with its settings,
+ * then its source and localization rules by ID, then its custom checks in file order. Parameters
+ * one rule takes from others are derived here, from the rules that run. Without a file, nothing
+ * runs. `checks` and `disabledChecks` narrow the built-in checks further.
+ */
+export function effectiveRuleDocument(
 	document: GameTextRuleDocument | undefined,
 	options: {
 		readonly checks?: readonly BuiltInCheckId[];
@@ -41,15 +52,20 @@ export function translateRuleDocument(
 	} = {}
 ): RuleDocumentV4 {
 	const resolved = resolveLocalizationChecks(document);
+	const listed = new Set(
+		(document?.rules ?? []).filter(isBuiltInCheckEntry).map((entry) => entry.kind)
+	);
 	const sourceRules = document ? prepareTextQualityRules(document) : [];
-	const rules: Rule[] = exampleRules.map((definition) => {
+	const rules: Rule[] = exampleRules.flatMap((definition) => {
 		// SAFETY: exampleRules only contains catalogue check IDs.
-		// Verified by: rules/schema.test.ts checks catalogue coverage and translated settings.
+		// Verified by: rules/schema.test.ts checks catalogue coverage and effective settings.
 		const id = definition.id as BuiltInCheckId;
+		if (!listed.has(id)) return [];
 		const setting = resolved[id];
 		const params = {
 			...definition.params,
 			...setting.params,
+			// Derived from other rules, so a file can't set them.
 			...(id === "placeholder_translation"
 				? {
 						sourceMarkers: resolved.placeholder_text.params.markers,
@@ -64,7 +80,8 @@ export function translateRuleDocument(
 										{
 											role: role.id,
 											caseSensitive: rule.caseSensitive,
-											terms: terms.map(({ term }) => term)
+											terms: terms.map(({ term }) => term),
+											...(rule.scope ? { scope: rule.scope } : undefined)
 										}
 									]
 								: []
@@ -72,26 +89,27 @@ export function translateRuleDocument(
 					}
 				: undefined)
 		};
-		return {
-			...definition,
-			enabled:
-				setting.enabled &&
-				!options.disabledChecks?.includes(id) &&
-				(!options.checks || options.checks.includes(id)),
-			severity: setting.severity,
-			...(setting.scope ? { scope: setting.scope } : undefined),
-			params
-		};
+		return [
+			{
+				...definition,
+				enabled:
+					setting.enabled &&
+					!options.disabledChecks?.includes(id) &&
+					(!options.checks || options.checks.includes(id)),
+				severity: setting.severity,
+				...(setting.scope ? { scope: setting.scope } : undefined),
+				params
+			}
+		];
 	});
-	const used = new Set(exampleRules.flatMap((rule) => [rule.id, rule.ruleId ?? rule.id]));
-	const authored = (family: Rule["family"], id: string) => {
-		const translated = used.has(id) ? `${family}:${id}` : id;
-		used.add(translated);
-		return { id: translated, ruleId: id };
-	};
+	const authored = (rule: { readonly id: string; readonly scope?: Rule["scope"] }) => ({
+		id: rule.id,
+		ruleId: rule.id,
+		...(rule.scope ? { scope: rule.scope } : undefined)
+	});
 	for (const { rule, role, terms: preparedTerms } of sourceRules) {
 		const base = {
-			...authored("source", rule.id),
+			...authored(rule),
 			label: rule.id,
 			subject: "unit_source",
 			family: "source",
@@ -149,13 +167,11 @@ export function translateRuleDocument(
 				expectation: g(item, "expectation")
 			});
 	}
-	const policy =
-		document && document.schemaVersion !== 1 ? (document.localizationRules ?? []) : [];
-	for (const rule of [...policy].sort((a, b) => a.id.localeCompare(b.id))) {
+	for (const rule of localizationRulesOf(document).sort((a, b) => a.id.localeCompare(b.id))) {
 		if (!document?.roles.some((role) => role.id === rule.role)) continue;
 		const affected = roleOccurrences(rule.role);
 		const base = {
-			...authored("policy", rule.id),
+			...authored(rule),
 			kind: rule.kind,
 			label: rule.id,
 			subject: "line_culture",
@@ -222,7 +238,7 @@ export function translateRuleDocument(
 				expectation: g(item, "expectation")
 			});
 	}
-	for (const check of document?.schemaVersion === 3 ? (document.customChecks ?? []) : []) {
+	for (const check of customLocalizationChecks(document)) {
 		const text = check.subject === "source" ? f("comparisonSource") : f("latest");
 		const eligible =
 			check.subject === "source"
@@ -233,14 +249,13 @@ export function translateRuleDocument(
 						x.not(x.isNull(text))
 					);
 		const base = {
-			...authored("custom", check.id),
+			...authored(check),
 			label: check.label,
 			kind: "custom",
 			subject: check.subject === "source" ? "line" : "line_culture",
 			family: "custom",
 			severity: check.severity ?? "normal",
 			recovery: x.lit(check.recovery),
-			...(check.scope ? { scope: check.scope } : undefined),
 			extra: o({ check: check.kind, label: check.label, subject: check.subject }),
 			...(check.subject === "source" ? { translationOrigin: x.lit("absent") } : undefined)
 		} as const;

@@ -20,19 +20,20 @@ import { LocalizationQualityReport as ReportSchema } from "./localization-qualit
 import {
 	CustomLocalizationCheck,
 	GameTextRuleDocument,
-	TextQualityRuleDocumentV3,
 	decodeGameTextRuleDocumentJson
 } from "./game-text-rules.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import {
 	localizationQualityWorkspace,
 	workspaceQualityCsv,
 	workspaceQualityLabel
 } from "./localization-workspace.js";
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
-type CustomChecks = NonNullable<(typeof TextQualityRuleDocumentV3.Encoded)["customChecks"]>;
+type CustomChecks = ReadonlyArray<typeof CustomLocalizationCheck.Encoded>;
+/** The starter's checks, then these. */
 const document = (customChecks: CustomChecks) =>
 	Schema.decodeUnknownSync(GameTextRuleDocument)({
-		schemaVersion: 3,
+		schemaVersion: 1,
 		roles: [
 			{
 				id: "ui",
@@ -41,14 +42,13 @@ const document = (customChecks: CustomChecks) =>
 				]
 			}
 		],
-		rules: [],
-		customChecks
+		rules: [...STARTER_CHECK_RULES.rules, ...customChecks]
 	});
 const failure = (customChecks: CustomChecks) => {
 	const result = Effect.runSync(
 		Effect.result(
 			decodeGameTextRuleDocumentJson(
-				JSON.stringify({ schemaVersion: 3, roles: [], rules: [], customChecks })
+				JSON.stringify({ schemaVersion: 1, roles: [], rules: customChecks })
 			)
 		)
 	);

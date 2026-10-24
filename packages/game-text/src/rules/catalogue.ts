@@ -157,6 +157,26 @@ const sourceSpaces = o({
 	repeatedSpaces: x.runs(x.trim(sourceText), x.lit({ chars: " " }), 2)
 });
 const sourcePlaceholderRanges = placeholders(sourceText);
+/** Whether a terminology rule's scope admits an occurrence, as a rule's own `scope` does. */
+const scopeAdmits = (occurrence: Expr, scope: Expr) =>
+	x.and(
+		x.or(
+			x.isNull(g(scope, "roles")),
+			x.any(
+				x.coalesce(g(scope, "roles"), x.list()),
+				x.matchesRole(occurrence, v("scopeRole")),
+				"scopeRole"
+			)
+		),
+		x.or(
+			x.isNull(g(scope, "pathPrefixes")),
+			x.any(
+				x.coalesce(g(scope, "pathPrefixes"), x.list()),
+				x.pathHasPrefix(occurrence, v("prefix")),
+				"prefix"
+			)
+		)
+	);
 const reportedPlaceholderRanges = x.flatMap(
 	x.filter(
 		p("sourceTerminology"),
@@ -164,7 +184,8 @@ const reportedPlaceholderRanges = x.flatMap(
 			x.occurrences(),
 			x.and(
 				x.eq(g(v("occurrence"), "source"), sourceText),
-				x.matchesRole(v("occurrence"), g(v("termRule"), "role"))
+				x.matchesRole(v("occurrence"), g(v("termRule"), "role")),
+				scopeAdmits(v("occurrence"), x.coalesce(g(v("termRule"), "scope"), o({})))
 			),
 			"occurrence"
 		),

@@ -1,4 +1,8 @@
-import { type TextQualityRuleDocument, TextQualityRuleId, TextRoleId } from "./quality-schema.js";
+import { Schema } from "effect";
+import { GameTextRuleDocument } from "./game-text-rules.js";
+import { localizationCheckCatalogue } from "./localization-check-catalogue.js";
+import { BuiltInCheckId } from "./localization-check-ids.js";
+import { TextQualityRuleId, TextRoleId } from "./quality-schema.js";
 
 /**
  * Default project-relative starter-policy location. Hosts may choose another rules file; this
@@ -6,8 +10,21 @@ import { type TextQualityRuleDocument, TextQualityRuleId, TextRoleId } from "./q
  */
 export const GAME_TEXT_RULES_RELATIVE_PATH = "Config/UEShed/GameTextRules.json";
 
-/** Examples to replace with a project's own scopes, budgets and vocabulary. */
-export const STARTER_GAME_TEXT_RULES: TextQualityRuleDocument = {
+/**
+ * The checks a starter file runs: every built-in check but the opt-in ones, and
+ * `segment_separator`, which needs the project's separator.
+ */
+export const STARTER_CHECKS: readonly BuiltInCheckId[] = BuiltInCheckId.literals.filter(
+	(id) => !localizationCheckCatalogue[id].optIn && id !== "segment_separator"
+);
+
+/** A rules file that runs the starter's checks with their catalogue settings, and nothing else. */
+export const STARTER_CHECK_RULES: GameTextRuleDocument = Schema.decodeUnknownSync(
+	GameTextRuleDocument
+)({ schemaVersion: 1, roles: [], rules: STARTER_CHECKS.map((kind) => ({ kind })) });
+
+/** The starter's checks, and examples to replace with a project's own scopes, budgets and vocabulary. */
+export const STARTER_GAME_TEXT_RULES: GameTextRuleDocument = {
 	schemaVersion: 1,
 	roles: [
 		{
@@ -29,6 +46,7 @@ export const STARTER_GAME_TEXT_RULES: TextQualityRuleDocument = {
 		}
 	],
 	rules: [
+		...STARTER_CHECK_RULES.rules,
 		{
 			id: TextQualityRuleId.make("example-name-limit"),
 			kind: "character_budget",

@@ -56,7 +56,7 @@ export const TextQualityQuerySummary = Schema.Struct({
 	findingCount: Count,
 	roles: Schema.Array(TextQualityRoleSummary),
 	rules: Schema.Array(TextQualityRuleSummary),
-	ruleDocumentVersion: Schema.Literals([1, 2, 3]),
+	ruleDocumentVersion: Schema.Literal(1),
 	schemaVersion: Schema.Literal(1),
 	status: TextCorpus.fields.status,
 	terminologyCount: Count

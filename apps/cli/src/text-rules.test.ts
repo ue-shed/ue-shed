@@ -5,7 +5,7 @@ import { it } from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { createStarterTextRules, TextRulesFileError } from "@ue-shed/game-text/index";
-import { decodeTextQualityRuleDocumentJson } from "@ue-shed/game-text/schema";
+import { decodeGameTextRuleDocumentJson } from "@ue-shed/game-text/rules";
 import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 
@@ -31,7 +31,7 @@ it.effect("text rules init creates the default file and refuses to overwrite it"
 			const path = join(root, "Config", "UEShed", "GameTextRules.json");
 			expect((yield* Ref.get(output)).trim()).toBe(path);
 			const original = yield* Effect.promise(() => readFile(path, "utf8"));
-			yield* decodeTextQualityRuleDocumentJson(original);
+			yield* decodeGameTextRuleDocumentJson(original);
 			const cliFailure = yield* runCli(["text", "rules", "init", root]).pipe(
 				Effect.provide(runtime),
 				Effect.flip
@@ -47,7 +47,7 @@ it.effect("text rules init creates the default file and refuses to overwrite it"
 			yield* runCli(["text", "rules", "init", root, "--output", "custom.json"]).pipe(
 				Effect.provide(runtime)
 			);
-			yield* decodeTextQualityRuleDocumentJson(
+			yield* decodeGameTextRuleDocumentJson(
 				yield* Effect.promise(() => readFile(custom, "utf8"))
 			);
 			yield* Effect.promise(() => writeFile(custom, "existing content"));

@@ -1071,7 +1071,7 @@ mod tests {
     }
     #[test]
     fn compiles_the_typescript_catalogue_and_shares_subexpressions() -> Result<()> {
-        let output = Command::new("node").args(["--import", "tsx", "--input-type=module", "-e", "import {translateRuleDocument} from './packages/game-text/src/rules/translate.ts'; process.stdout.write(JSON.stringify(translateRuleDocument(undefined)));"])
+        let output = Command::new("node").args(["--import", "tsx", "--input-type=module", "-e", "import {effectiveRuleDocument} from './packages/game-text/src/rules/effective.ts'; import {STARTER_CHECK_RULES} from './packages/game-text/src/starter-rules.ts'; process.stdout.write(JSON.stringify(effectiveRuleDocument(STARTER_CHECK_RULES)));"])
             .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("Missing repository root.")?).output()?;
         require(
             output.status.success(),

@@ -12,8 +12,8 @@ import { localizationRuleId } from "./localization-check-catalogue.js";
 import { localizationEvidenceFileStatuses } from "./localization-status.js";
 import { acceptedFindingFilter } from "./localization-review.js";
 import { localizationPolicyRules } from "./localization-policy.js";
-import { customLocalizationChecks } from "./localization-custom-checks.js";
-import { translateRuleDocument } from "./rules/translate.js";
+import { customLocalizationChecks, localizationRulesOf } from "./game-text-rules.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 import {
 	LocalizationQualityReport,
 	type LocalizationCheckOptions,
@@ -173,10 +173,9 @@ function assembleLocalizationCheckReport(
 		diagnostics.push(...selected(result.diagnostics));
 	}
 
-	const policyRules =
-		document && document.schemaVersion !== 1
-			? localizationPolicyRules(join.cultures, document)
-			: { rules: [], diagnostics: [] };
+	const policyRules = document
+		? localizationPolicyRules(join.cultures, document)
+		: { rules: [], diagnostics: [] };
 	const customChecks = customLocalizationChecks(document);
 	const policyOrder = policyRules.rules.map(({ rule }) => rule.id),
 		customOrder = customChecks.map((check) => check.id);
@@ -194,7 +193,7 @@ function assembleLocalizationCheckReport(
 	const files = localizationEvidenceFileStatuses(evidence);
 	return LocalizationQualityReport.make({
 		schemaVersion: 1,
-		ruleDocumentVersion: document?.schemaVersion ?? 1,
+		ruleDocumentVersion: 1,
 		status: corpus.status,
 		coverage: corpus.coverage,
 		diagnostics: corpus.diagnostics,
@@ -207,10 +206,7 @@ function assembleLocalizationCheckReport(
 		checkDiagnostics: diagnostics,
 		roles: [],
 		rules: [
-			...(document && document.schemaVersion !== 1
-				? (document.localizationRules ?? []).map((rule) => rule.id)
-				: []
-			).map((ruleId) => ({
+			...localizationRulesOf(document).map(({ id: ruleId }) => ({
 				ruleId,
 				findingCount: visible.filter((finding) => finding.ruleId === ruleId).length
 			})),
@@ -231,9 +227,7 @@ function assembleLocalizationCheckReport(
 			},
 			changes
 		},
-		...(document && document.schemaVersion !== 1
-			? { ruleDiagnostics: policyRules.diagnostics }
-			: undefined),
+		...(document ? { ruleDiagnostics: policyRules.diagnostics } : undefined),
 		...(options.review ? { acceptedFindings: all.length - visible.length } : undefined),
 		...(customChecks.length
 			? { customChecks: customChecks.map(({ id, label }) => ({ ruleId: id, label })) }
@@ -263,7 +257,7 @@ export const indexedLocalizationCheckReport = Effect.fn("GameText.localizationCh
 		const target = data.joined.meta.input.target;
 		const join = { target: target.name, cultures: target.cultures };
 		const enabled = enabledLocalizationChecks(join, evidence, options, document);
-		const evaluated = yield* native.findingsEvaluate(translateRuleDocument(document, options));
+		const evaluated = yield* native.findingsEvaluate(effectiveRuleDocument(document, options));
 		// Report order is line ID order, ties in join order.
 		const ids = Array.from(joinRows, (row) => data.lineId(row));
 		const collator = new Intl.Collator();

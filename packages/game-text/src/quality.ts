@@ -1,10 +1,6 @@
 import type { TextLocation } from "./schema.js";
-import type {
-	TextQualityRule,
-	TextQualityRuleDocument,
-	TextRole,
-	TextRoleMatcher
-} from "./quality-schema.js";
+import type { GameTextRuleDocument, TextQualityRule } from "./game-text-rules.js";
+import type { TextRole, TextRoleMatcher } from "./quality-schema.js";
 
 function matchesValue(actual: string, expected: string, operator: "exact" | "prefix"): boolean {
 	return operator === "exact" ? actual === expected : actual.startsWith(expected);
@@ -81,12 +77,20 @@ export interface PreparedTextQualityRule {
 	readonly terms: ReturnType<typeof prepareTerminology>;
 }
 
-/** The document's rules in report order (by ID), each with its role; a rule without one drops. */
+/**
+ * The file's source rules that run, in report order (by ID), each with its role; a rule without
+ * one drops.
+ */
 export function prepareTextQualityRules(
-	document: Pick<TextQualityRuleDocument, "roles" | "rules">
+	document: Pick<GameTextRuleDocument, "roles" | "rules">
 ): readonly PreparedTextQualityRule[] {
 	const roleById = new Map(document.roles.map((role) => [role.id, role]));
-	return [...document.rules]
+	return document.rules
+		.filter(
+			(entry): entry is TextQualityRule =>
+				(entry.kind === "character_budget" || entry.kind === "terminology") &&
+				entry.enabled !== false
+		)
 		.sort((left, right) => left.id.localeCompare(right.id))
 		.flatMap((rule) => {
 			const role = roleById.get(rule.role);

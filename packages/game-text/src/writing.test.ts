@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { gameTextQualityCsv } from "./csv.js";
 import { textCorpusQuery } from "./query.test-support.js";
-import { decodeTextQualityRuleDocument, TextQualityRuleDocument } from "./quality-schema.js";
+import { GameTextRuleDocument, decodeGameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
 	type TextCorpus,
@@ -233,7 +233,7 @@ describe("human CSV", () => {
 	});
 });
 it("decodes the neutral starter document through the existing decoder", async () => {
-	expect(await Effect.runPromise(decodeTextQualityRuleDocument(STARTER_GAME_TEXT_RULES))).toEqual(
-		Schema.decodeUnknownSync(TextQualityRuleDocument)(STARTER_GAME_TEXT_RULES)
+	expect(await Effect.runPromise(decodeGameTextRuleDocument(STARTER_GAME_TEXT_RULES))).toEqual(
+		Schema.decodeUnknownSync(GameTextRuleDocument)(STARTER_GAME_TEXT_RULES)
 	);
 });

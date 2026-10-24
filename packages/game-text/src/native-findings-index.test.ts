@@ -4,6 +4,7 @@ import { expect } from "vitest";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { localizationQualityWorkspaceOf } from "./localization-workspace.js";
 
 it.effect("reads native findings through both compact indexes and the CLI report", () =>
@@ -31,6 +32,7 @@ it.effect("reads native findings through both compact indexes and the CLI report
 						}
 					],
 					rules: [
+						...STARTER_CHECK_RULES.rules,
 						{
 							id: "limit",
 							role: "all",

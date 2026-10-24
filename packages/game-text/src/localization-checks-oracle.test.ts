@@ -1,3 +1,4 @@
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { indexedTestReports } from "./indexed-reports.test-support.js";
 
 import { readFileSync } from "node:fs";
@@ -98,7 +99,10 @@ describe("built-ins against Unreal's recorded validators", () => {
 			).toBe(true);
 			const text = corpus([]);
 			const joined = joinLocalizationTarget(text, files, files.target);
-			const report = indexedTestReports(text, files).localization(undefined, undefined);
+			const report = indexedTestReports(text, files).localization(
+				STARTER_CHECK_RULES,
+				undefined
+			);
 			let compared = 0;
 			const failures = new Set<string>();
 			for (const entry of expected.entries) {

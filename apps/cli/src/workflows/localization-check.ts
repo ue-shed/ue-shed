@@ -111,7 +111,7 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 										code: "rules_unreadable",
 										message: "The project quality rules could not be read.",
 										recovery:
-											"Repair the Game Text rules file or remove it to use all built-ins."
+											"Repair the Game Text rules file; without one, no rules run."
 									})
 						)
 					);

@@ -71,7 +71,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 		"game-text/dist/entry-corpus.js",
 		currentCorpus
 	);
-	const { decodeGameTextRuleDocumentJson } = await load(
+	const { decodeGameTextRuleDocumentJson, STARTER_CHECK_RULES } = await load(
 		"game-text/dist/entry-rules.js",
 		currentRules
 	);
@@ -312,17 +312,19 @@ export async function runEngineStage(options: EngineStageOptions) {
 				stage === "quality-default" ||
 				stage === "quality-in-process"
 			) {
-				if (stage !== "quality-default") {
-					const document = await run(
-						decodeGameTextRuleDocumentJson(
-							await readFile(
-								new URL("./game-text-engine-rules.json", import.meta.url),
-								"utf8"
-							)
-						)
-					);
-					ready(await run(workspace.previewQualityRules(document)), "completed");
-				}
+				// Without a rules file nothing runs: `quality-default` previews the starter's checks.
+				const document =
+					stage === "quality-default"
+						? STARTER_CHECK_RULES
+						: await run(
+								decodeGameTextRuleDocumentJson(
+									await readFile(
+										new URL("./game-text-engine-rules.json", import.meta.url),
+										"utf8"
+									)
+								)
+							);
+				ready(await run(workspace.previewQualityRules(document)), "completed");
 				await measure(stage, async () =>
 					ready(await run(workspace.localizationQualitySearch({ target, filter: "all" })))
 				);

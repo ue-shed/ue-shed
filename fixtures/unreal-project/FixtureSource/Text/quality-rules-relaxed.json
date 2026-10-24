@@ -7,7 +7,10 @@
 			"scopes": [
 				{
 					"matchers": [
-						{ "kind": "location_kind", "value": "string_table_entry" },
+						{
+							"kind": "location_kind",
+							"value": "string_table_entry"
+						},
 						{
 							"kind": "string_table_entry",
 							"operator": "prefix",
@@ -20,6 +23,78 @@
 	],
 	"rules": [
 		{
+			"kind": "format_arguments"
+		},
+		{
+			"kind": "argument_modifiers"
+		},
+		{
+			"kind": "rich_text"
+		},
+		{
+			"kind": "po_escape_safety"
+		},
+		{
+			"kind": "whitespace"
+		},
+		{
+			"kind": "empty_translation"
+		},
+		{
+			"kind": "missing_translator_notes"
+		},
+		{
+			"kind": "duplicate_source"
+		},
+		{
+			"kind": "format_argument_renamed"
+		},
+		{
+			"kind": "rich_text_tags"
+		},
+		{
+			"kind": "rich_text_tag_case"
+		},
+		{
+			"kind": "line_breaks"
+		},
+		{
+			"kind": "length_outlier"
+		},
+		{
+			"kind": "outdated_translation"
+		},
+		{
+			"kind": "inconsistent_translation"
+		},
+		{
+			"kind": "rich_text_tags_added"
+		},
+		{
+			"kind": "source_line_endings_changed"
+		},
+		{
+			"kind": "placeholder_translation"
+		},
+		{
+			"kind": "culture_invariant_text"
+		},
+		{
+			"kind": "placeholder_text"
+		},
+		{
+			"kind": "source_whitespace"
+		},
+		{
+			"kind": "source_markup"
+		},
+		{
+			"kind": "number_only_text"
+		},
+		{
+			"kind": "string_table_key_collision"
+		},
+		{
 			"kind": "character_budget",
 			"id": "fixture.prompt.characters",
 			"role": "fixture.prompt",
@@ -31,7 +106,12 @@
 			"id": "fixture.prompt.terms",
 			"role": "fixture.prompt",
 			"caseSensitive": false,
-			"terms": [{ "kind": "forbidden", "term": "skip" }],
+			"terms": [
+				{
+					"kind": "forbidden",
+					"term": "skip"
+				}
+			],
 			"recovery": "Replace the forbidden term and review the affected context."
 		}
 	]

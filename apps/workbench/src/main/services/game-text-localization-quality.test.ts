@@ -4,7 +4,7 @@ import { expect } from "vitest";
 import { LocalizationTarget, makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
 import { corpus, evidence, cultureCode } from "./game-text-localization.test-support.js";
 import { GameTextIndexSteps } from "@ue-shed/game-text/index";
-import { GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import { GameTextRuleDocument, STARTER_CHECK_RULES } from "@ue-shed/game-text/rules";
 import {
 	makeGameTextLocalizationOracle as makeGameTextLocalization,
 	oracleGameTextIndexLayer,
@@ -20,7 +20,7 @@ const fixture = {
 	files,
 	join: { target: files.target.name },
 	document: Schema.decodeUnknownSync(GameTextRuleDocument)({
-		schemaVersion: 2,
+		schemaVersion: 1,
 		roles: [
 			{
 				id: "menu",
@@ -30,15 +30,14 @@ const fixture = {
 			}
 		],
 		rules: [
+			...STARTER_CHECK_RULES.rules,
 			{
 				id: "source.limit",
 				kind: "character_budget",
 				role: "menu",
 				maximumCharacters: 3,
 				recovery: "Shorten the line."
-			}
-		],
-		localizationRules: [
+			},
 			{
 				id: "translation.limit",
 				kind: "localization_character_budget",
@@ -79,15 +78,13 @@ it.effect(
 				status: "ready",
 				page: { total: 2, counts: { character_budget: 2 } }
 			});
-			if (fixture.document.schemaVersion !== 2) throw new Error("V2 fixture required");
 			yield* Ref.set(document, {
 				...fixture.document,
-				localizationRules:
-					fixture.document.localizationRules?.map((rule) =>
-						rule.kind === "localization_character_budget"
-							? { ...rule, cultures: Object.fromEntries([["de", 100]]) }
-							: rule
-					) ?? []
+				rules: fixture.document.rules.map((rule) =>
+					rule.kind === "localization_character_budget"
+						? { ...rule, cultures: Object.fromEntries([["de", 100]]) }
+						: rule
+				)
 			});
 			expect(yield* host.qualitySearch(request)).toMatchObject({
 				status: "ready",

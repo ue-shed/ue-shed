@@ -8,6 +8,7 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { joinLocalizationTarget } from "./localization.js";
 import { textCorpusQuery } from "./query.test-support.js";
 import { u32 } from "./joined-target-input.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 for (const mixed of [false, true])
 	it.live(
 		`matches a full rebuild after same-place and shared-source overlays (mixed=${mixed})`,
@@ -110,11 +111,11 @@ it.live("does not pair a re-keyed place with its gathered or saved previous iden
 				const indexed = yield* index.refresh(fixture.request);
 				const corpus = fixture.raw();
 				const join = joinLocalizationTarget(corpus, indexed.evidence);
-				const report = yield* indexed.localizationCheck(undefined, {
+				const report = yield* indexed.localizationCheck(STARTER_CHECK_RULES, {
 					checks: ["duplicate_source"]
 				});
 				expect(report.findings).toEqual([]);
-				const quality = yield* indexed.localizationQuality(undefined, {
+				const quality = yield* indexed.localizationQuality(STARTER_CHECK_RULES, {
 					checks: ["duplicate_source"]
 				});
 				expect(quality.findings.length).toBe(0);
@@ -173,8 +174,8 @@ it.live("keeps distinct-place duplicates and excludes old keys through source ov
 					);
 				}
 				const options = { checks: ["duplicate_source" as const] };
-				const report = yield* indexed.localizationCheck(undefined, options);
-				const quality = yield* indexed.localizationQuality(undefined, options);
+				const report = yield* indexed.localizationCheck(STARTER_CHECK_RULES, options);
+				const quality = yield* indexed.localizationQuality(STARTER_CHECK_RULES, options);
 				expect(quality.findings.length).toBe(expected ? 1 : 0);
 				expect(report.findings).toHaveLength(quality.findings.length);
 				if (source.startsWith("B")) expect(indexed.joined.meta.version).toBe(4);

@@ -147,9 +147,11 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 							target: fixture.target.name,
 							selection: { kind: "line", id: expected[0]!.id }
 						});
-						expect(yield* model.query.localizationDetail(detail)).toEqual(
-							localizationFocusPage(model.localization, expected[0]!, detail)
-						);
+						// The engine adds the line's problems; with no culture scope, every culture's.
+						expect(yield* model.query.localizationDetail(detail)).toEqual({
+							...localizationFocusPage(model.localization, expected[0]!, detail),
+							problems: ["translation"]
+						});
 					}).pipe(
 						Effect.provide(
 							fixture.layer(

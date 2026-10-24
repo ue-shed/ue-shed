@@ -12,6 +12,7 @@ import {
 import { localizationManifestNotes } from "./localization.js";
 import { LocalizationFileProblem } from "./localization-status.js";
 import { TextUnitId } from "./identifiers.js";
+import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Page = Schema.Array(Schema.String).check(Schema.isMaxLength(50));
@@ -78,6 +79,14 @@ export const LocalizationFocusRequest = Schema.Struct({
 		Schema.Struct({ kind: Schema.Literal("line"), id: LocalizationLineId }),
 		Schema.Struct({ kind: Schema.Literal("unit"), id: TextUnitId })
 	]),
+	/** The list's culture scope, as its selection names it: `problems` uses only these cultures. */
+	culture: Schema.optionalKey(CultureCode),
+	cultures: Schema.optionalKey(
+		Schema.Array(CultureCode).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)
+		)
+	),
 	cultureOffset: Schema.optionalKey(Count),
 	locationOffset: Schema.optionalKey(Count),
 	poContextOffset: Schema.optionalKey(Count)
@@ -139,6 +148,11 @@ export const LocalizationFocus = Schema.Struct({
 	totalLocations: Count,
 	translations: Schema.Array(LocalizationTranslation).check(Schema.isMaxLength(50)),
 	totalCultures: Count,
+	/**
+	 * The line's problems, worst first, in the request's culture scope, as the list's row has them
+	 * for a request that names no finding. Every culture's translation is listed regardless.
+	 */
+	problems: Schema.optionalKey(Schema.Array(Schema.Literals(TEXT_PROBLEMS))),
 	scopeSummary: Schema.optionalKey(LocalizationScopeSummary),
 	keyChange: Schema.optionalKey(LocalizationKeyChange),
 	nextCultureOffset: Schema.optionalKey(Count),

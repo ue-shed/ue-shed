@@ -119,9 +119,14 @@ export interface CorpusPlan {
 	cultures: readonly string[];
 	packages: PlannedPackage[];
 	rules: object;
-	probes: { case: string; kind: string; culture: string; expected: typeof Schema.Json.Type }[];
+	/** Without a culture, a probe reads every culture. */
+	probes: { case: string; kind: string; culture?: string; expected: typeof Schema.Json.Type }[];
 	expectations: CorpusExpectations;
 }
+
+/** A probe's subject in comparisons: its kind and culture, `*` for every culture. */
+export const probeSubject = (probe: CorpusPlan["probes"][number]) =>
+	`probe:${probe.kind}:${probe.culture ?? "*"}`;
 const PlannedCultureSchema = Schema.Struct({
 	translation: Schema.String,
 	expectedSource: Schema.String,
@@ -165,7 +170,7 @@ export const CorpusPlanSchema = Schema.Struct({
 		Schema.Struct({
 			case: Schema.String,
 			kind: Schema.String,
-			culture: Schema.String,
+			culture: Schema.optionalKey(Schema.String),
 			expected: Schema.Json
 		})
 	),
@@ -1408,11 +1413,17 @@ function recipeBatch({
 	translation(staleResource, "Neue Übersetzung");
 	staleResource.cultures.de!.resourceTranslation = "Alte Übersetzung";
 	staleResource.cultures.de!.compilePending = true;
+	// The line page keeps the list's culture scope: only German has translation work.
 	probes.push({
 		case: "archive-missing-entry",
 		kind: "line-page-problems",
 		culture: "en",
 		expected: ["up_to_date"]
+	});
+	probes.push({
+		case: "archive-missing-entry",
+		kind: "line-page-problems",
+		expected: ["translation"]
 	});
 	for (const value of ["45678", "!!!"]) {
 		const a = add(`duplicate-native-only-${value}-a`, value);

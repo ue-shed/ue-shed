@@ -1,7 +1,10 @@
 //! Interactive localization detail: select and page evidence before crossing the process boundary.
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
-use crate::engine_types::{FocusRequest, LocalizationDetailRequest, MAX_PAGE};
+use crate::engine_query::selected_bits;
+use crate::engine_types::{
+    FocusRequest, LocalizationDetailRequest, LocalizationScope, MAX_PAGE, PROBLEMS,
+};
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
@@ -49,6 +52,21 @@ impl EngineQuery {
         let p = Projection::open(self, cancelled)?;
         let preview = self.preview(row)?;
         let mut result = json!({"id":preview["id"],"origin":preview["origin"],"identity":preview["identity"],"source":preview["source"]});
+        // The line's problems in the list's culture scope, as the list's row computes them for a
+        // request that names no finding.
+        let scope = self.culture_scope(Some(&LocalizationScope {
+            target: request.target.clone(),
+            culture: request.culture.clone(),
+            cultures: request.cultures.clone(),
+            state: None,
+            review: None,
+            key_changed: None,
+            search_translations: None,
+        }))?;
+        result["problems"] = json!(selected_bits(
+            &PROBLEMS,
+            p.problem(row, &scope, crate::text_problem::DEFAULT_FINDINGS)
+        ));
         if let Some(change) = preview.get("keyChange") {
             result["keyChange"] = change.clone();
         }

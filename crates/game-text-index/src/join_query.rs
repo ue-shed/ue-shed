@@ -84,7 +84,8 @@ impl Entries {
         let mut origins = 0;
         let mut audience = 0;
         let mut editing = 0;
-        let mut notes = 0;
+        // A slice also has its line's manifest notes; a raw unit has no line to take them from.
+        let mut notes = u32::from(gathered != ABSENT && j.manifest_notes(gathered as usize));
         let mut member = first as u32;
         while member != ABSENT {
             let i = member as usize;

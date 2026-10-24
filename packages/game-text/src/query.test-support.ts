@@ -440,6 +440,8 @@ export function textCorpusQuery(
 			)
 				return false;
 			if (line.source.trim() === "") return false;
+			// Manifest notes belong to every saved slice of the line.
+			if (request.withoutNotes && manifestNotes(line)) return false;
 			if (
 				line.origin.kind === "corpus" &&
 				!lineEntries(line).some((entry) => eligible.has(entry))
@@ -449,10 +451,6 @@ export function textCorpusQuery(
 				line.origin.kind === "evidence" &&
 				(request.capability === "source_editable" ||
 					(request.lens !== undefined && request.lens !== "all") ||
-					(request.withoutNotes &&
-						line.manifest.some(
-							(entry) => localizationManifestNotes(entry).length > 0
-						)) ||
 					!evidenceMatchesWhere(line, request.where, files))
 			)
 				return false;
@@ -489,6 +487,12 @@ export function textCorpusQuery(
 			? manifestOrigins(line.manifest.map((entry) => entry.path))
 			: [...new Set(lineEntries(line).flatMap((entry) => entry.origins))];
 	const lineEntries = (line: Pick<LocalizationLine, "id">) => entriesByLine.get(line.id) ?? [];
+	const manifestNotes = (line: LocalizationLine) =>
+		line.manifest.some((entry) => localizationManifestNotes(entry).length > 0);
+	// A line's notes are its saved occurrences' developer notes and its gathered manifest notes.
+	const lineWithoutNotes = (line: LocalizationLine) =>
+		!manifestNotes(line) &&
+		(line.origin.kind === "evidence" || lineEntries(line).every((entry) => entry.withoutNotes));
 	const lineSignals = (entries: ReturnType<typeof lineEntries>) => [
 		...new Set(entries.flatMap((entry) => entry.presentation.reviewSignals))
 	];
@@ -532,13 +536,7 @@ export function textCorpusQuery(
 			editing: evidence
 				? ["read_only"]
 				: [...new Set(entries.flatMap((entry) => entry.editing))],
-			notes: (
-				evidence
-					? line.manifest.every((entry) => localizationManifestNotes(entry).length === 0)
-					: entries.every((entry) => entry.withoutNotes)
-			)
-				? "missing"
-				: "present",
+			notes: lineWithoutNotes(line) ? "missing" : "present",
 			audience: lineTextAudience(entries.map((entry) => entry.facts.audience)),
 			translationKeys: line.identity ? [gatheredIdentityKey(line.identity)] : [],
 			reviewSignals: signals,
@@ -770,18 +768,13 @@ export function textCorpusQuery(
 				for (const line of matched) {
 					if (line.origin.kind === "evidence") {
 						counts.readOnly++;
-						if (
-							line.manifest.every(
-								(entry) => localizationManifestNotes(entry).length === 0
-							)
-						)
-							counts.withoutNotes++;
+						if (lineWithoutNotes(line)) counts.withoutNotes++;
 						continue;
 					}
 					const entries = lineEntries(line);
 					if (entries.some((entry) => entry.hasEditable)) counts.editable++;
 					if (entries.some((entry) => entry.hasReadOnly)) counts.readOnly++;
-					if (entries.every((entry) => entry.withoutNotes)) counts.withoutNotes++;
+					if (lineWithoutNotes(line)) counts.withoutNotes++;
 					for (const signal of new Set(
 						entries.flatMap((entry) => entry.presentation.reviewSignals)
 					))

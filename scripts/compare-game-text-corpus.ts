@@ -15,7 +15,7 @@ import {
 	type CorpusFinding
 } from "./game-text-corpus-contract.ts";
 import { gatheredNamespace } from "./game-text-corpus-localization.ts";
-import { decodeCorpusPlan } from "./game-text-corpus-plan.ts";
+import { decodeCorpusPlan, probeSubject } from "./game-text-corpus-plan.ts";
 import { ensureUassetExecutable } from "./native-tools.ts";
 import { withCorpusUnrealLock } from "./game-text-corpus-lock.ts";
 import {
@@ -392,33 +392,19 @@ async function compareGameTextCorpusLocked(
 								else if (probe.kind === "localization-word-count")
 									observed = localizationWordCount(source);
 								else {
+									// The line page reads the line with the list's culture scope.
 									const detail = yield* model.query.localizationDetail({
 										target: model.localization.target,
-										selection: { kind: "line", id: line.id }
+										selection: { kind: "line", id: line.id },
+										...(probe.culture === undefined
+											? undefined
+											: { culture: CultureCode.make(probe.culture) })
 									});
-									const id =
-										line.origin.kind === "corpus"
-											? line.origin.unitIds[0]
-											: undefined;
-									const focus = id
-										? yield* model.query.focus({
-												id,
-												localization: {
-													target: model.localization.target,
-													id: line.id
-												},
-												pageSize: 50
-											})
-										: undefined;
-									observed = textProblems({
-										signals: focus?.unit.reviewSignals ?? [],
-										keyChanged: detail?.keyChange?.direction === "to",
-										marks: detail?.translations ?? []
-									});
+									observed = detail?.problems ?? null;
 								}
 								observations.push({
 									case: probe.case,
-									subject: `probe:${probe.kind}:${probe.culture}`,
+									subject: probeSubject(probe),
 									expected: probe.expected,
 									actual: observed ?? null
 								});
@@ -496,14 +482,12 @@ async function compareGameTextCorpusLocked(
 		for (const probe of plan.probes)
 			if (
 				!scanned.observations.some(
-					(item) =>
-						item.case === probe.case &&
-						item.subject === `probe:${probe.kind}:${probe.culture}`
+					(item) => item.case === probe.case && item.subject === probeSubject(probe)
 				)
 			)
 				scanned.observations.push({
 					case: probe.case,
-					subject: `probe:${probe.kind}:${probe.culture}`,
+					subject: probeSubject(probe),
 					expected: probe.expected,
 					actual: null
 				});

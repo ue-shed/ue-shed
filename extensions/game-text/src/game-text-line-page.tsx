@@ -19,11 +19,15 @@ import { cultureSummary } from "./game-text-culture-state.js";
 const SEVERE = new Set<TextProblem>(["key_changed", "conflicting_source"]);
 const WAITING = new Set<TextProblem>(["not_gathered", "changed_since_gather", "translation"]);
 
-/** Every problem the open line has, worst first, from its saved text and its translations. */
+/**
+ * Every problem the open line has, worst first: the engine's, in the list's culture scope, when
+ * the line has translations; otherwise from its saved text.
+ */
 export function lineProblems(
 	focus: TextCorpusFocus | undefined,
 	detail: LocalizationFocus | undefined
 ): readonly TextProblem[] {
+	if (detail?.problems) return detail.problems;
 	return textProblems({
 		signals: focus?.unit.reviewSignals ?? [],
 		keyChanged: detail?.keyChange?.direction === "to",

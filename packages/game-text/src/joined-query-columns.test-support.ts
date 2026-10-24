@@ -86,6 +86,8 @@ export function* joinedDuplicateSourcesSteps(
 export function* joinedQueryColumns(input: {
 	readonly packages: JoinPackages;
 	readonly line: Record<string, Uint32Array>;
+	/** Lines whose manifest entries carry notes; their slices have those notes too. */
+	readonly manifestNotes: Uint8Array;
 	readonly order: Uint32Array;
 	readonly rawOrder: Uint32Array;
 	readonly representative: Uint32Array;
@@ -221,7 +223,8 @@ export function* joinedQueryColumns(input: {
 			origins = 0,
 			audience = 0,
 			editing = 0,
-			notes = 0,
+			// A slice also has its line's manifest notes; a raw unit has no line to take them from.
+			notes = gathered !== absent && input.manifestNotes[gathered] ? 1 : 0,
 			characters = 0,
 			words = 0,
 			visible = false;

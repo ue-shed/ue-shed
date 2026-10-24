@@ -238,7 +238,8 @@ const expectFacetOracle = Effect.fn("JoinOracle.facets")(function* (
 			expect(columns.origins![row]).toBe(origins);
 			expect(columns.editing![row]).toBe(editing);
 			expect(Boolean(columns.notes![row])).toBe(
-				occurrences.some((item) => item.devNotes.trim() !== "")
+				occurrences.some((item) => item.devNotes.trim() !== "") ||
+					oracle.manifest.some((item) => localizationManifestNotes(item).length > 0)
 			);
 		} else {
 			const origins = oracle.manifest.reduce(

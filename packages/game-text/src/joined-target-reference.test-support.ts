@@ -619,6 +619,24 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	}
 	// Unreal skips editor-only text when the target does not gather editor-only data.
 	const skipsEditorOnlyData = localizationGathersEditorOnlyData(input.target) === false;
+	/** Lines with a manifest entry carrying notes or an `Info.Comment`, as localizationManifestNotes reads. */
+	const manifestNotes = new Uint8Array(count);
+	const hasManifestNotes = (ms: number, me: number) => {
+		for (let i = ms; i < me; i++) {
+			const manifestIndex = mo[i]!;
+			if (
+				m.options![manifestIndex]! & 4 &&
+				strings.string(m.notes![manifestIndex]!).trim() !== ""
+			)
+				return true;
+			if (m.options![manifestIndex]! & 8) {
+				const info = noteMetadata(strings.string(m.metadata![manifestIndex]!) || "{}");
+				if (Option.isSome(info) && (info.value.Info?.Comment ?? "").trim() !== "")
+					return true;
+			}
+		}
+		return false;
+	};
 	let row = 0;
 	for (const group of groups()) {
 		const { os, oe, ms, me, ns, key: keyId } = group;
@@ -650,9 +668,14 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			audience = 0,
 			origins = 0,
 			editing = 0,
+			// A line's notes are its places' dev notes and its manifest entries' notes, wherever it is.
 			notes = 0,
 			visible = false,
 			emptyProblems = 0;
+		if (hasManifestNotes(ms, me)) {
+			manifestNotes[row] = 1;
+			notes = 1;
+		}
 		for (let i = os; i < oe; i++) {
 			const occurrence = order[i]!,
 				pkg = packages.packageRow[occurrence]!;
@@ -826,16 +849,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			for (let i = ms; i < me; i++) {
 				const manifestIndex = mo[i]!,
 					value = path(manifestIndex);
-				if (
-					m.options![manifestIndex]! & 4 &&
-					strings.string(m.notes![manifestIndex]!).trim() !== ""
-				)
-					notes = 1;
-				if (m.options![manifestIndex]! & 8) {
-					const info = noteMetadata(strings.string(m.metadata![manifestIndex]!) || "{}");
-					if (Option.isSome(info) && (info.value.Info?.Comment ?? "").trim() !== "")
-						notes = 1;
-				}
 				if (
 					manifestPackageFile(value) ||
 					value.replaceAll("\\", "/").replace(/^\.\//u, "").startsWith("/")
@@ -1020,6 +1033,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			duplicates,
 			packages,
 			line,
+			manifestNotes,
 			order,
 			rawOrder,
 			representative: unit,

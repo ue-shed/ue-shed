@@ -129,6 +129,21 @@ impl Joined {
             self.manifest.columns[SOURCE][self.manifest.order[g.ms] as usize]
         }
     }
+    /// Whether a manifest entry of the line carries translator notes: its developer notes or its
+    /// metadata's `Info.Comment`, as `localizationManifestNotes` reads them.
+    pub fn manifest_notes(&self, row: usize) -> bool {
+        let g = self.groups[row];
+        let m = &self.manifest.columns;
+        self.manifest.order[g.ms..g.me].iter().any(|index| {
+            let index = *index as usize;
+            (m[OPTIONS][index] & 4 != 0 && !trim(self.string(m[NOTES][index])).is_empty())
+                || (m[OPTIONS][index] & 8 != 0 && {
+                    let metadata = serde_json::from_str::<Value>(self.string(m[METADATA][index]))
+                        .unwrap_or(Value::Null);
+                    !trim(metadata["Info"]["Comment"].as_str().unwrap_or("")).is_empty()
+                })
+        })
+    }
     pub fn translation(&self, row: usize, ci: usize) -> Option<u32> {
         let marks = &self.cultures[ci];
         let po = marks[1][row] & (1 << 3) != 0;
@@ -838,7 +853,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         let mut structural = 0;
         let mut origins = 0;
         let mut editing = 0;
-        let mut notes = 0;
+        // A line's notes are its places' dev notes and its manifest entries' notes, wherever it is.
+        let mut notes = u32::from(joined.manifest_notes(row));
         let mut visible = false;
         let mut empty_problems = 0;
         let occurrence_rows = &joined.order[g.os..g.oe];
@@ -1051,16 +1067,6 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             for manifest_row in &mo[g.ms..g.me] {
                 let index = *manifest_row as usize;
                 let value = joined.manifest.path(index, &joined.strings)?;
-                if m[OPTIONS][index] & 4 != 0 && !trim(joined.string(m[NOTES][index])).is_empty() {
-                    notes = 1;
-                }
-                if m[OPTIONS][index] & 8 != 0 {
-                    let metadata = serde_json::from_str::<Value>(joined.string(m[METADATA][index]))
-                        .unwrap_or(Value::Null);
-                    if !trim(metadata["Info"]["Comment"].as_str().unwrap_or("")).is_empty() {
-                        notes = 1;
-                    }
-                }
                 if manifest_package(&value).is_some() || normalized(&value).starts_with('/') {
                     gathered_only = false;
                 }

@@ -207,6 +207,9 @@ pub struct DetailSelection {
 pub struct LocalizationDetailRequest {
     pub target: String,
     pub selection: DetailSelection,
+    /// The list's culture scope, as `LocalizationScope` names it; its problems use only these.
+    pub culture: Option<String>,
+    pub cultures: Option<Vec<String>>,
     pub culture_offset: Option<usize>,
     pub location_offset: Option<usize>,
     pub po_context_offset: Option<usize>,
@@ -237,6 +240,12 @@ pub fn parse_detail_request(payload: &str) -> Result<LocalizationDetailRequest> 
             !value.is_empty() && characters(value) <= 32767,
             invalid("Invalid localization selection identity."),
         )?;
+    }
+    if let Some(culture) = &request.culture {
+        bounded(culture, 128, "Invalid culture scope.")?;
+    }
+    if let Some(cultures) = &request.cultures {
+        list(cultures, 256, 128, "Invalid culture scope.")?;
     }
     Ok(request)
 }

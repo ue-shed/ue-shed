@@ -332,6 +332,79 @@ fn rule_subjects_read_saved_manifest_and_translation_stages_independently() -> R
     Ok(())
 }
 
+#[test]
+fn manifest_notes_count_for_saved_lines_and_the_detail_keeps_the_list_culture_scope() -> Result<()>
+{
+    use crate::engine_types::{DetailSelection, LocalizationDetailRequest, parse_search_request};
+    let mut fixture = Fixture::new()?;
+    // `Noted` has translator notes only in its manifest entry; `Plain` has none anywhere.
+    fixture.file("Game.manifest","manifest",&[
+        json!({"namespace":"UI","key":"N","source":"Noted","path":"/Game/Text/Example.Example.Noted","notes":"Manifest context","options":4}),
+        json!({"namespace":"UI","key":"P","source":"Plain","path":"/Game/Text/Example.Example.Plain"}),
+    ])?;
+    fixture.file(
+        "en.archive",
+        "archive",
+        &[
+            json!({"namespace":"UI","key":"N","source":"Noted","translation":"Noted"}),
+            json!({"namespace":"UI","key":"P","source":"Plain","translation":"Plain"}),
+        ],
+    )?;
+    // Only German has translation work: `Plain` has no German translation.
+    fixture.file(
+        "de.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"N","source":"Noted","translation":"Notiert"})],
+    )?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&[
+        json!({"namespace":"UI","key":"N","source":"Noted","object":"/Game/Text/Example.Example","property":"Noted"}),
+        json!({"namespace":"UI","key":"P","source":"Plain","object":"/Game/Text/Example.Example","property":"Plain"}),
+    ])?;
+    let lines = fixture.lines()?;
+    let plain = lines
+        .iter()
+        .find(|line| line["source"] == "Plain")
+        .and_then(|line| line["id"].as_str())
+        .ok_or("Missing the plain line.")?
+        .to_owned();
+    let mut query = EngineQuery::open(&fixture.configuration, None)?;
+    let cancelled = AtomicBool::new(false);
+    let without_notes = parse_search_request(
+        &json!({"query":"","capability":"all","pageSize":50,"withoutNotes":true,
+            "localization":{"target":"Game"}})
+        .to_string(),
+    )?;
+    let page = query.search(&without_notes, &cancelled)?;
+    let listed = page["localization"]["lines"]
+        .as_array()
+        .ok_or("Missing lines.")?
+        .iter()
+        .map(|line| line["source"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(listed, [json!("Plain")]);
+    let detail = |culture: Option<&str>| LocalizationDetailRequest {
+        target: "Game".into(),
+        selection: DetailSelection {
+            kind: "line".into(),
+            id: plain.clone(),
+        },
+        culture: culture.map(str::to_owned),
+        cultures: None,
+        culture_offset: None,
+        location_offset: None,
+        po_context_offset: None,
+    };
+    let english = query.localization_detail(&detail(Some("en")), &cancelled)?;
+    assert_eq!(english["problems"], json!(["up_to_date"]));
+    let every = query.localization_detail(&detail(None), &cancelled)?;
+    assert_eq!(every["problems"], json!(["translation"]));
+    // Translations outside the scope are still listed.
+    assert_eq!(english["translations"].as_array().map(Vec::len), Some(2));
+    Ok(())
+}
+
 fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::rules::Program> {
     crate::rules::compile(&example_document(checks, document)?)
 }

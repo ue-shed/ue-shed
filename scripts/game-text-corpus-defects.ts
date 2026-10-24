@@ -15,26 +15,8 @@ export interface CorpusKnownDefect {
 	actual: typeof Schema.Json.Type;
 	rightAnswer: typeof Schema.Json.Type;
 }
-export const corpusKnownDefects: readonly CorpusKnownDefect[] = [
-	{
-		case: "manifest-notes-only",
-		defects: ["manifest-notes-filter"],
-		kind: "probe",
-		status: "defect",
-		actual: true,
-		rightAnswer: false,
-		why: "No translator notes must use effective notes, including manifest notes. Quality accepts that context; the native filter incorrectly ignores it."
-	},
-	{
-		case: "archive-missing-entry",
-		defects: ["detail-culture-scope"],
-		kind: "probe",
-		status: "defect",
-		actual: ["translation"],
-		rightAnswer: ["up_to_date"],
-		why: "The line page must retain the selected culture scope. Its all-culture recomputation incorrectly adds translation work from another culture."
-	}
-];
+/** Today's engine agrees with every planted answer; a newly found defect is pinned here. */
+export const corpusKnownDefects: readonly CorpusKnownDefect[] = [];
 
 const Dictionary = Schema.Record(Schema.String, Schema.Json);
 const isStringArray = Schema.is(Schema.Array(Schema.String));

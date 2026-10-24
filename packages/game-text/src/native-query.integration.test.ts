@@ -185,6 +185,8 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 									}
 								).toEqual({
 									...expected,
+									// The engine adds the line's problems, in every culture.
+									problems: ["translation", "unchecked"],
 									translations: expected.translations.map(normalizeMark)
 								});
 								expect(JSON.stringify(actual).length).toBeLessThan(100000);

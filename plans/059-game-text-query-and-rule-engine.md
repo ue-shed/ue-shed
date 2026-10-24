@@ -433,19 +433,16 @@ has every table.
   become rules.
 - No rule is on by default (decision 1), and rules come only from the project's file and the host
   overlay. v4 becomes the public authoring format, and the rule editor learns it.
-- There is one `duplicate_source`. Today the fixture records two behaviours:
-    - the native signal leaves out lines that are only in gathered text;
-    - the Quality check leaves out text made only of digits or punctuation.
-
-    Decide what the single rule does with each case, and update the fixture's expectations in the
-    same change.
-
+- There is one `duplicate_source` rule, and it keeps the Quality check's behaviour (decision 15).
+- Browse keeps its native `shared`, `long` and `duplicate_source` signals until Phase 3 (decision
+  16).
 - Delete the TS check engine, the worker and the second reader.
 
 ### Phase 3: the query engine
 
 - Bitset predicates over the IR.
-- Findings as filter, group and facet fields, including Browse chips.
+- Findings as filter, group and facet fields, including Browse chips. The native `shared`, `long`
+  and `duplicate_source` signals are deleted then (decision 16).
 - The engine sorts, pages and counts findings. The workspace Quality indexes stop re-checking lines.
 - Facets in one pass.
 - Separate response parts, groups with their first rows, and related lines.
@@ -546,6 +543,20 @@ Decided on 2026-10-23, for Phase 1 (details in the
     - Numbers are formatted as JavaScript formats them.
 14. **v4 rule documents stay internal in Phase 1.** They become the public authoring format in
     Phase 2, with the rule editor.
+
+Decided on 2026-10-24, for Phase 2:
+
+15. **`duplicate_source` keeps the Quality check's behaviour.**
+    - Lines that exist only in gathered text take part. Leaving them out would drop 131 groups on
+      the generated 1× project and 258 on the released project. Those are real duplicates, such as
+      code text.
+    - Text with no letter doesn't. Including it would add 127 groups of digits and punctuation on
+      the released project, and none on 1×. A shared key isn't the fix for those, and
+      `number_only_text` already covers numbers.
+    - One finding per group, on the first key, so finding identity is unchanged.
+16. **Browse keeps its native signals until Phase 3.** Its `shared`, `long` and `duplicate_source`
+    chips and filters stay native in Phase 2, and are deleted when Browse reads findings in Phase 3.
+    Until then, Browse's `duplicate_source` keeps its own definition, as today.
 
 Decided in Phase 0:
 

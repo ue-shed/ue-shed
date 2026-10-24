@@ -126,20 +126,18 @@ impl Projection {
         }
         text_problem::settle(text_problem::signals(self.raw.signals[row], counted))
     }
+    /// A row's group under `by`; `problems` is the request's problem column.
     pub(crate) fn group_key(
         &self,
         places: &Places,
         localized: bool,
         row: usize,
-        scope: &[usize],
+        problems: &[u32],
         by: GroupBy,
-        counted: u32,
     ) -> Result<u32> {
         let kind = if localized { Kind::Line } else { Kind::Raw };
         Ok(match by {
-            GroupBy::Problem => self
-                .row_problem(localized, row, scope, counted)
-                .trailing_zeros(),
+            GroupBy::Problem => problems[row].trailing_zeros(),
             GroupBy::Origin => {
                 let bits = if localized {
                     self.origins[row]
@@ -205,6 +203,8 @@ impl EngineQuery {
         let localized = request.localization.is_some();
         let kind = if localized { Kind::Line } else { Kind::Raw };
         let scope = self.culture_scope(request.localization.as_ref())?;
+        let problems =
+            self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
         let parent = Self::normalized_path(under)
             .trim_end_matches('/')
             .to_owned();
@@ -229,7 +229,7 @@ impl EngineQuery {
                 checkpoint(cancelled)?;
             }
             let row = *row as usize;
-            let bits = projection.row_problem(localized, row, &scope, request.counted_findings());
+            let bits = problems[row];
             let worst = bits.trailing_zeros();
             let mut visit = |key: u32, label: u32| {
                 let tally = tallies.entry(key).or_insert(Tally {
@@ -296,14 +296,7 @@ impl EngineQuery {
                     }
                 }
                 _ => {
-                    let key = projection.group_key(
-                        &places,
-                        localized,
-                        row,
-                        &scope,
-                        by,
-                        request.counted_findings(),
-                    )?;
+                    let key = projection.group_key(&places, localized, row, &problems, by)?;
                     visit(key, key);
                 }
             }

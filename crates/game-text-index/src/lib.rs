@@ -47,7 +47,6 @@ pub mod rules;
 mod line_break_tables;
 mod package_delta;
 mod package_evidence;
-mod query_cache;
 pub mod snapshot;
 pub mod store;
 mod summary_state;

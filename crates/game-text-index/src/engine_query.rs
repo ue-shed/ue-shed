@@ -23,7 +23,8 @@ pub struct EngineQuery {
     pub(crate) finding_files: FindingFiles,
     pub(crate) audience_rules: Vec<String>,
     pub(crate) summary_cache: Option<Value>,
-    pub(crate) metadata_cache: crate::query_cache::QueryCache,
+    /// Every row's problems by relation, culture scope and counted findings.
+    pub(crate) problem_columns: HashMap<String, Arc<[u32]>>,
     pub(crate) row_ranks: HashMap<String, Arc<[u32]>>,
     pub(crate) copy_starts: HashMap<usize, Arc<[usize]>>,
     pub reader: EngineReader,
@@ -230,7 +231,7 @@ impl EngineQuery {
             line_children: None,
             unit_sources: None,
             unit_children: None,
-            metadata_cache: crate::query_cache::QueryCache::default(),
+            problem_columns: HashMap::new(),
             row_ranks: HashMap::new(),
             copy_starts: HashMap::new(),
             reader,

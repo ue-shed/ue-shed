@@ -485,6 +485,8 @@ struct PreparedClause {
     sources: HashSet<u32>,
     /// The asset types and which of them the clause names, for `asset_type` clauses.
     asset_types: Option<(Arc<AssetTypes>, Vec<bool>)>,
+    /// Every row's problems in the clause's scope, for `problem` clauses.
+    problems: Option<Arc<[u32]>>,
 }
 impl PreparedClause {
     fn new(
@@ -536,6 +538,7 @@ impl PreparedClause {
             } else {
                 None
             },
+            problems: None,
         })
     }
 }
@@ -734,7 +737,6 @@ impl Projection {
         kind: Kind,
         row: usize,
         scope: &[usize],
-        counted: u32,
         clause: &PreparedClause,
     ) -> Result<bool> {
         let line = matches!(kind, Kind::Line);
@@ -746,12 +748,12 @@ impl Projection {
         };
         let has = match clause.field {
             FilterField::Problem => {
-                let bits = if line {
-                    self.problem(row, scope, counted)
-                } else {
-                    text_problem::settle(text_problem::signals(flags, counted))
-                };
-                bits & clause.mask != 0
+                clause
+                    .problems
+                    .as_ref()
+                    .ok_or("Problem clause without its problems.")?[row]
+                    & clause.mask
+                    != 0
             }
             FilterField::Finding => flags & clause.mask != 0,
             FilterField::Origin => {
@@ -921,6 +923,42 @@ impl EngineQuery {
         Ok(self.match_rows(request, cancelled)?.into())
     }
 
+    /// Every row's problems in a culture scope, with the findings a request counts: a line's
+    /// with a target, a unit's (`textProblems` without marks) without one. Built once and read
+    /// by the `problem` clause, problem counts and every group and facet tally.
+    pub(crate) fn problem_column(
+        &mut self,
+        localized: bool,
+        scope: &[usize],
+        counted: u32,
+        cancelled: &AtomicBool,
+    ) -> Result<Arc<[u32]>> {
+        let key = format!("{localized}|{scope:?}|{counted}");
+        if let Some(column) = self.problem_columns.get(&key) {
+            return Ok(Arc::clone(column));
+        }
+        let p = Projection::open(self, cancelled)?;
+        let len = if localized {
+            p.source.len()
+        } else {
+            p.raw.visible.len()
+        };
+        let mut column = Vec::with_capacity(len);
+        for row in 0..len {
+            if row & 4095 == 0 {
+                checkpoint(cancelled)?;
+            }
+            column.push(p.row_problem(localized, row, scope, counted));
+        }
+        let column: Arc<[u32]> = column.into();
+        // A few scopes are live at once; past that, columns are rebuilt as they are asked for.
+        if self.problem_columns.len() >= 8 {
+            self.problem_columns.clear();
+        }
+        self.problem_columns.insert(key, Arc::clone(&column));
+        Ok(column)
+    }
+
     /// An atom's set, from the cache or evaluated over every row.
     fn atom(
         &mut self,
@@ -1037,10 +1075,18 @@ impl EngineQuery {
                     serde_json::to_string(clause)?
                 ),
                 |query| {
-                    let prepared = PreparedClause::new(query, &p, clause, &at, cancelled)?;
+                    let mut prepared = PreparedClause::new(query, &p, clause, &at, cancelled)?;
+                    if clause.field == FilterField::Problem {
+                        prepared.problems = Some(query.problem_column(
+                            localized,
+                            &clause_scope,
+                            clause_counted,
+                            cancelled,
+                        )?);
+                    }
                     let kind = if localized { Kind::Line } else { Kind::Raw };
                     RowSet::from_fn(len, cancelled, |row| {
-                        p.clause_holds(&at, kind, row, &clause_scope, clause_counted, &prepared)
+                        p.clause_holds(&at, kind, row, &clause_scope, &prepared)
                     })
                 },
             )?);

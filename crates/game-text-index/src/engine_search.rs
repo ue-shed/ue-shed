@@ -35,18 +35,6 @@ impl EngineQuery {
         matched: &[u32],
         cancelled: &AtomicBool,
     ) -> Result<Value> {
-        self.cached_metadata(
-            format!("counts:{}", request.matching_key()?),
-            cancelled,
-            |query| query.compute_search_counts(request, matched, cancelled),
-        )
-    }
-    fn compute_search_counts(
-        &mut self,
-        request: &SearchRequest,
-        matched: &[u32],
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
         let p = Projection::open(self, cancelled)?;
         // Accumulate numeric columns directly. Constructing JSON numbers and looking up map
         // keys for every row made counts proportional to millions of JSON allocations.
@@ -159,18 +147,6 @@ impl EngineQuery {
         Ok(result)
     }
     fn localization_counts(
-        &mut self,
-        request: &SearchRequest,
-        matched: &[u32],
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
-        self.cached_metadata(
-            format!("localization:{}", request.matching_key()?),
-            cancelled,
-            |query| query.compute_localization_counts(request, matched, cancelled),
-        )
-    }
-    fn compute_localization_counts(
         &mut self,
         request: &SearchRequest,
         matched: &[u32],
@@ -319,49 +295,30 @@ impl EngineQuery {
             facets.into_iter().map(|(_, _, value)| value).collect(),
         ))
     }
-    fn search_metadata(
-        &mut self,
-        request: &SearchRequest,
-        matched: &[u32],
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
-        self.cached_metadata(
-            format!(
-                "response:{}",
-                serde_json::to_string(&request.without_page())?
-            ),
-            cancelled,
-            |query| query.compute_search_metadata(request, matched, cancelled),
-        )
-    }
+    /// Problem counts over every atom but the `problem` clauses, with the request's counted
+    /// findings.
     fn problem_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
         let request = request.without_filter(FilterField::Problem);
-        self.cached_metadata(
-            format!("problems:{}", request.matching_key()?),
-            cancelled,
-            |query| {
-                let p = Projection::open(query, cancelled)?;
-                let localized = request.localization.is_some();
-                let scope = query.culture_scope(request.localization.as_ref())?;
-                let rows = query.matching(&request, cancelled)?;
-                let mut problems = [0usize; PROBLEMS.len()];
-                for (index, row) in rows.iter().enumerate() {
-                    if index & 255 == 0 {
-                        checkpoint(cancelled)?;
-                    }
-                    let mask =
-                        p.row_problem(localized, *row as usize, &scope, request.counted_findings());
-                    for (bit, count) in problems.iter_mut().enumerate() {
-                        if mask & (1 << bit) != 0 {
-                            *count += 1;
-                        }
-                    }
+        let localized = request.localization.is_some();
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        let column =
+            self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
+        let rows = self.matching(&request, cancelled)?;
+        let mut problems = [0usize; PROBLEMS.len()];
+        for (index, row) in rows.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let mask = column[*row as usize];
+            for (bit, count) in problems.iter_mut().enumerate() {
+                if mask & (1 << bit) != 0 {
+                    *count += 1;
                 }
-                Ok(record(&PROBLEMS, &problems))
-            },
-        )
+            }
+        }
+        Ok(record(&PROBLEMS, &problems))
     }
-    fn compute_search_metadata(
+    fn search_metadata(
         &mut self,
         request: &SearchRequest,
         matched: &[u32],

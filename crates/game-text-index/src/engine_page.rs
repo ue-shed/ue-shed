@@ -41,6 +41,8 @@ impl EngineQuery {
         let places = Places::open(self)?;
         let localized = request.localization.is_some();
         let scope = self.culture_scope(request.localization.as_ref())?;
+        let problems =
+            self.problem_column(localized, &scope, request.counted_findings(), cancelled)?;
         let opened = match by {
             GroupBy::Problem => PROBLEMS
                 .iter()
@@ -73,14 +75,7 @@ impl EngineQuery {
                 if index & 255 == 0 {
                     checkpoint(cancelled)?;
                 }
-                let key = p.group_key(
-                    &places,
-                    localized,
-                    *row as usize,
-                    &scope,
-                    by,
-                    request.counted_findings(),
-                )?;
+                let key = p.group_key(&places, localized, *row as usize, &problems, by)?;
                 if key == opened {
                     rows.push(*row);
                 }

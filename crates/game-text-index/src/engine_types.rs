@@ -449,15 +449,6 @@ impl SearchRequest {
         result
     }
 
-    pub(crate) fn without_page(&self) -> Self {
-        let mut result = self.clone();
-        result.page_size = 1;
-        result.cursor = None;
-        result.localization_cursor = None;
-        result.open_group = None;
-        result
-    }
-
     /// The review signals that make a row a finding under this request: the defaults, and the
     /// findings its `finding is` clauses and lens name. Every problem in the request uses them.
     pub(crate) fn counted_findings(&self) -> u32 {
@@ -474,14 +465,6 @@ impl SearchRequest {
                 .flat_map(|clause| clause.values.iter().map(String::as_str))
                 .chain(self.lens.as_deref()),
         )
-    }
-
-    pub(crate) fn matching_key(&self) -> Result<String> {
-        let mut result = self.without_page();
-        result.group = None;
-        result.min_group_size = None;
-        result.facets = None;
-        Ok(serde_json::to_string(&result)?)
     }
 }
 
@@ -518,43 +501,12 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn cache_keys_ignore_pagination_but_preserve_scope_and_response_shape() -> Result<()> {
+    fn a_relaxed_base_keeps_the_original_findings_and_callers_cannot_set_them() -> Result<()> {
         let request = parse_search_request(
-            r#"{"query":"source","capability":"all","pageSize":1,"localization":{"target":"Game","cultures":["de"]}}"#,
+            r#"{"query":"","capability":"all","pageSize":1,"lens":"long","filter":[{"field":"problem","op":"is","values":["finding"]}]}"#,
         )?;
-        let key = request.matching_key()?;
-        let mut page = request.clone();
-        page.page_size = 50;
-        page.localization_cursor = Some("next-line".into());
-        page.group = Some(GroupBy::Asset);
-        page.open_group = Some("Content/Example.uasset".into());
-        page.facets = Some(Facets {
-            assets: Some(true),
-            ..Default::default()
-        });
-        assert_eq!(key, page.matching_key()?);
-        assert_ne!(
-            serde_json::to_string(&request.without_page())?,
-            serde_json::to_string(&page.without_page())?
-        );
-        let mut scope = request.clone();
-        scope
-            .localization
-            .as_mut()
-            .ok_or("Test localization scope")?
-            .cultures = Some(vec!["en".into()]);
-        assert_ne!(key, scope.matching_key()?);
-        scope = request.clone();
-        scope.query = "different".into();
-        assert_ne!(key, scope.matching_key()?);
-        scope = request.clone();
-        scope.without_notes = Some(true);
-        assert_ne!(key, scope.matching_key()?);
-        // A relaxed base keeps the original's findings and so its own cache key; callers
-        // cannot set them.
-        scope = request.clone();
-        scope.counted = Some(scope.counted_findings() | 4);
-        assert_ne!(key, scope.matching_key()?);
+        let base = request.without_filter(FilterField::Problem);
+        assert_eq!(base.counted_findings(), request.counted_findings());
         assert!(
             parse_search_request(r#"{"query":"","capability":"all","pageSize":1,"counted":4}"#)
                 .is_err()
@@ -655,14 +607,6 @@ mod tests {
                 "{invalid}"
             );
         }
-        // A minimum size changes the groups listed, never the rows that match.
-        let grouped = with(json!({"group":"source","minGroupSize":3}))?;
-        let plain = with(json!({}))?;
-        assert_eq!(grouped.matching_key()?, plain.matching_key()?);
-        assert_ne!(
-            serde_json::to_string(&grouped.without_page())?,
-            serde_json::to_string(&with(json!({"group":"source"}))?.without_page())?
-        );
         Ok(())
     }
 

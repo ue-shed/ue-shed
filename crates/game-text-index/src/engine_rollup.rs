@@ -245,6 +245,16 @@ impl EngineQuery {
         let localized = request.search.localization.is_some();
         let kind = if localized { Kind::Line } else { Kind::Raw };
         let scope = self.culture_scope(request.search.localization.as_ref())?;
+        let problems = if request.by.contains(&Dimension::Problem) {
+            self.problem_column(
+                localized,
+                &scope,
+                request.search.counted_findings(),
+                cancelled,
+            )?
+        } else {
+            std::sync::Arc::from([])
+        };
         let cultures: Vec<usize> = match request
             .search
             .localization
@@ -351,12 +361,7 @@ impl EngineQuery {
                     } else {
                         projection.raw.origins[row]
                     }),
-                    Dimension::Problem => bits(projection.row_problem(
-                        localized,
-                        row,
-                        &scope,
-                        request.search.counted_findings(),
-                    )),
+                    Dimension::Problem => bits(problems[row]),
                     Dimension::Finding => bits(if localized {
                         projection.flags[row]
                     } else {

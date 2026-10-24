@@ -77,16 +77,25 @@ Every aggregate is a set built from atoms. One traversal walks the union of thei
 | Culture facets                                             | The request without `localization.cultures` (`:282-294`). Every atom that depends on the culture scope is rebuilt for that scope: `text` with translation search, `problem`, `translation`, `state`, `review` and `finding`.    |
 | Localization state and review counts, group aggregates     | The match.                                                                                                                                                                                                                      |
 
-**Deleted:** the per-facet and per-count re-match (`ix/engine_search.rs:337-414`), the serialized JSON `QueryCache` (`ix/query_cache.rs`), and `counted` on derived requests (`ix/engine_types.rs:175-179`), whose value the problem column's key now carries.
+**Deleted:** the per-facet and per-count re-match (`ix/engine_search.rs:337-414`) and the serialized JSON `QueryCache` (`ix/query_cache.rs`). `counted` on derived requests (`ix/engine_types.rs:175-179`) goes with §6, when the rules' `counts` replace the counted signals; until then the atom and problem-column keys carry it.
+
+**As built (decision 29, proposed):** each aggregate intersects its cached atoms and walks its own rows in display order, rather than all of them sharing one traversal. With the atoms cached, a walk is an AND over 72 KiB and one pass over the order, about a millisecond at 583,507 lines. The single traversal is built only if the step 9 measurement shows the walks matter.
 
 ### Response parts and groups
 
 - `SearchRequest` gains `parts`: any of `rows`, `counts`, `facets` and `groups`. Omitted means all of them, today's answer. A part not asked for is not computed.
-- **Open groups.** `SearchRequest` gains `openGroups` (at most 20 group keys) and `firstRows` (1–50), both needing `group`. `group` stays the field it is today.
-    - Each open group's entry carries its first `firstRows` rows in display order, and a cursor when there are more. One walk of the display order fills them all. Closed groups stay aggregates.
-    - At most 500 rows are returned in all, in group order. A group past that budget returns `rowsOmitted: true` and no rows, and the host asks for it with `openGroup`, as today.
+    - `rows`: the page's rows and the open groups' rows.
+    - `counts`: `counts`, `total`, `problems`, `fileScope` and the localization tallies.
+    - `facets` and `groups`: those keys.
+- **Open groups.** `SearchRequest` gains `openGroups` (1–20 group keys) and `firstRows` (1–50, default 50), both needing `group`. `openGroups` excludes `openGroup`. `group` stays the field it is today.
+    - The answer's `openGroups` lists each named group in the order given, with its first `firstRows` rows in display order as a rows page. The page's `nextCursor` reads the rest with `openGroup`. One walk of the display order fills them all. The page's own rows are empty.
+    - At most 500 rows are returned in all. A group past that budget returns `rowsOmitted: true` and no rows, and the host reads it with `openGroup`. A key that names no matching group returns an empty page.
     - `openGroup` with a cursor stays for "more".
-- The renderer asks for the rows of its first 20 open groups, in group order, in the header request, instead of one search per open group (`ext/game-text-grouped-results.tsx:82-99, :150-190`). Any group open past those 20, past the row budget or for "more" is read with `openGroup` and `parts: ["rows"]`, so the read computes no aggregate.
+- **Two requests per keystroke (decision 28, proposed).** Which groups are open depends on the header's answer: the renderer opens the first group, or every group when they hold 50 lines or fewer, as well as those the user opened (`ext/game-text-grouped-results.tsx:82-87`). So the renderer sends the header, then one rows request naming its first 20 open groups in group order, instead of one search per open group (`:150-190`). Any group open past those 20, past the row budget or for "more" is read with `openGroup` and `parts: ["rows"]`. No rows read computes an aggregate.
+- **TypeScript.** `TextCorpusSearchRequest` gains `openGroups` and `firstRows`.
+    - `search` keeps returning every part.
+    - A new `searchRows` sends `parts: ["rows"]` and returns a `TextCorpusRowsPage`: `units`, `nextCursor`, `localization` with `target`, `lines` and `nextCursor`, and `openGroups`. Each host routes it as it routes `search`.
+    - Every read with a cursor, grouped or not, uses `searchRows`.
 
 ### Parity
 
@@ -364,6 +373,8 @@ Every new heavy operation reports bounded stages:
 25. **The corpus CSV gains a Findings column.** Its "Review signals" column keeps the four facts.
 26. **The TS reference oracles go in Phase 4**, when every request changes shape. Phase 3 deletes their signal and problem code; they stay the reference for facts.
 27. **Complete rules report as custom findings** with check `rule`, and can't propose fixes.
+28. **Two requests per keystroke in grouped Browse:** the header, then one rows request for the first 20 open groups (§3). The header can't carry the open groups' rows, because the renderer's default-open rule needs the header's groups. Typing in the all-open state goes from 1 + N requests to 2.
+29. **Each aggregate walks its own rows** from cached atoms, rather than sharing one traversal, unless the step 9 measurement shows the walks matter (§3).
 
 ## 14. Order of work, one commit per step at least
 

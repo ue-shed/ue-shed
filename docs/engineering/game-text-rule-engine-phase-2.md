@@ -20,7 +20,7 @@ Behaviour is defined by today's TypeScript, cited as `file:line` under `packages
 
 - Group and corpus aggregates in the IR (§3).
 - v4 becomes a public authoring format. No rule is on without a rules file, and hosts can pass an overlay (§5).
-- Quality and `loc check` read every finding from the engine; the TS check engine, the Quality worker and the second TS reader are deleted (§6, §7).
+- Quality and `loc check` read every finding from the engine, and the TS check engine is deleted (§6, §7). The Quality worker goes if a measurement allows it; the second TS reader waits for Phase 3.
 
 **Decided for Phase 2** ([plan decisions 15 and 16](../../plans/059-game-text-query-and-rule-engine.md#decisions)):
 
@@ -44,11 +44,11 @@ Behaviour is defined by today's TypeScript, cited as `file:line` under `packages
 
 ### `occurrences` (child of `line`)
 
-| Field         | Type           | Definition                                                     |
-| ------------- | -------------- | -------------------------------------------------------------- |
-| `audience`    | string \| null | The occurrence's audience.                                     |
-| `tableColumn` | string \| null | For a DataTable cell, the column; otherwise null.              |
-| `tableObject` | string \| null | For a DataTable cell, the table's object path; otherwise null. |
+| Field      | Type           | Definition                 |
+| ---------- | -------------- | -------------------------- |
+| `audience` | string \| null | The occurrence's audience. |
+
+The census key (§4.3) reads `location`, which Phase 1 already exposes.
 
 ### `corpus_occurrence` (new relation)
 
@@ -69,13 +69,13 @@ Arguments are named, as an object: `{"groupCount": {"by": …, "among": …}}`. 
 
 ### 3.1 Group aggregates over the subject relation
 
-| Operator      | Arguments                                   | Result                                                                                                                                                                                                                           |
-| ------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `groupCount`  | `by`, `among`                               | Integer: the rows with this row's `by`.                                                                                                                                                                                          |
-| `groupRank`   | `by`, `order` (a list), `among`             | Integer: this row's 0-based position in its group, ordered by each `order` expression in turn (strings with the host collator, Phase 1 decision 12), then by relation order. Rank 0 is the group's owner.                        |
-| `groupTake`   | `by`, `order`, `value`, `n`, `among`        | List: `value` of the first `n` rows in `groupRank` order.                                                                                                                                                                        |
-| `groupTally`  | `by`, `value`, `display`, `among`           | List of `{value, count, display}`, one per distinct non-null `value` in the group: `count` rows have it, and `display` is the code-unit-smallest `display` among them. Ordered by `count` descending, then `value` by code unit. |
-| `existsOther` | `over`, `by`, `differing` (a list), `among` | Bool, below.                                                                                                                                                                                                                     |
+| Operator      | Arguments                                   | Result                                                                                                                                                                                                                                                                                                                                       |
+| ------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `groupCount`  | `by`, `among`                               | Integer: the rows with this row's `by`.                                                                                                                                                                                                                                                                                                      |
+| `groupRank`   | `by`, `order` (a list), `among`             | Integer: this row's 0-based position in its group, ordered by each `order` expression in turn (strings with the host collator, Phase 1 decision 12), then by relation order. Rank 0 is the group's owner.                                                                                                                                    |
+| `groupTake`   | `by`, `order`, `value`, `n`, `among`        | List: `value` of the first `n` rows in `groupRank` order.                                                                                                                                                                                                                                                                                    |
+| `groupTally`  | `by`, `value`, `display`, `among`           | List of `{value, count, display}`, one per distinct non-null `value` in the group: `count` rows have it, and `display` is the code-unit-smallest `display` among them. Ordered by `count` descending, then by that `display` by code unit (`gt/localization-checks.ts:393, :424`), so a list cut to its first entries keeps today's members. |
+| `existsOther` | `over`, `by`, `differing` (a list), `among` | Bool, below.                                                                                                                                                                                                                                                                                                                                 |
 
 `existsOther` is the anti-self-join `duplicate_source` needs (`gt/duplicate-sources.ts:32-42`).
 
@@ -111,7 +111,7 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 - **Kept:** `existsOther` over the line's sites, by `source`, differing in identity and site, among candidates. A line with no site uses the site `unknown:<identity>` (`:313`).
 - **Group:** kept lines by `source`, among kept lines. It reports when `groupCount ≥ 2` and `groupRank = 0`.
 - **Order:** namespace, then key, with the host collator, then `joinPosition` (`:302-307`).
-- **Evidence:** `actual {source, identityCount: groupCount, identities: groupTake(n 5) of JSON [namespace, key]}`; `expectation {reviewDistinctKeys: true}`.
+- **Evidence:** `actual {source, identityCount: groupCount, identities: groupTake(n 5) of identity}`, where each identity is the `{namespace, key}` object the public schema requires (`gt/localization-quality-schema.ts:115`, `gt/localization-checks.ts:326`); `expectation {reviewDistinctKeys: true}`. The `[namespace, key]` JSON today's code builds at `:310` is only a comparison key for the place test, never evidence.
 - **Reported** under `sourceCulture` (`:616`), with today's `affected`, `manifestLocations` and `translationOrigin` (`:512-521, :598, :605-613`).
 
 ### 4.2 `inconsistent_translation` (`line_culture`, severity normal)
@@ -124,7 +124,7 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 
 ### 4.3 `culture_invariant_text` (`line`, severity low)
 
-- **Census:** for an occurrence, `propertyKey` (`gt/localization-checks.ts:100-117`): an asset property gives `p\0classPath\0propertyPath` with `[..]`, `{..}` and `("..")` removed (`regexReplace`); a DataTable cell gives `d\0tableObject\0tableColumn`; a String Table entry gives null.
+- **Census:** for an occurrence, `propertyKey` (`localizationPropertyKey`, `gt/localization-checks.ts:99-117`): an asset property gives `p\0classPath\0propertyPath`, a DataTable cell gives `d\0objectPath\0propertyPath`, and a String Table entry gives null. In both keys the whole `propertyPath` has its container indexes `[..]`, `{..}` and `("..")` removed with `regexReplace` (`PROPERTY_INDEX`, `:100`). The DataTable row is not part of the key.
 - **Invariant count:** `corpusCount` among culture-invariant occurrences where `invariantTextPlace` holds: not audience `editor`, not a String Table entry, no `/debug/i` in the package path, not a `TextRenderComponent` property (`:167-177`).
 - **Localizable count:** `corpusCount` among occurrences with a resolved or String Table identity and a key, with no other filter (`:135-153`). The two filters differ; that is today's behaviour, not a typo.
 - **When:** keyless line; `source` has a letter; every occurrence is unresolved culture-invariant, and there is one; some occurrence passes `invariantTextPlace` and its property's localizable count ≥ its invariant count (`:86-98, :125-132, :183-190, :553-560`).
@@ -145,12 +145,36 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 ## 5. Documents, defaults and the overlay
 
 - **v4 is public.** `decodeGameTextRuleDocumentJson` accepts version 4. The JSON Schema and the builder are published in `@ue-shed/game-text/rules`. v1–v3 still load through the one translator.
+- **Report versions.** `ruleDocumentVersion` accepts 4 in the localization report and the source summary (`gt/localization-quality-schema.ts:386`, `gt/quality-query.ts:59`).
 - **No file, no rules** (plan decision 1). Without a rules file the effective document is empty: Quality and `loc check` report no findings, only diagnostics. A v3 file keeps today's meaning: its preset and `checks` translate to exactly the rules it enables today.
-- **The host overlay** is a v4 document passed with `findings_evaluate`:
-    - A rule whose `id` is in the project document is patched: the overlay's `enabled`, `severity`, `params` and `scope` replace the project's.
-    - Any other overlay rule is added.
-    - The overlay's canonical hash keys the findings layer, beside the rule-set hash (Phase 1 §6).
-    - UE Shed's Workbench and CLI pass no overlay. Electroswag's overlay contents are Phase 6.
+
+### The effective document
+
+It is built in this order, in TS, before `findings_evaluate`:
+
+1. **Translate** the project document to v4. A v4 document is used as written.
+2. **Apply the overlay** (below).
+3. **Derive** the cross-rule parameters from the result:
+    - `placeholder_text.params.sourceTerminology` from the enabled `unit_source` terminology rules;
+    - `placeholder_translation`'s markers and phrases from `placeholder_text`.
+
+    This is today's copying in the translator (`gt/rules/translate.ts:57-62`), moved to run on every effective document, so an overlay that disables a source terminology rule also removes its placeholder suppression (`gt/localization-quality-index.ts:875`, `gt/localization-workspace.ts:955`). Derived parameters are reserved: a document that sets them has them replaced.
+
+### The host overlay
+
+A v4 document passed with `findings_evaluate`.
+
+- **Patches.** An overlay rule whose `id` is in the project document patches it. It may hold only `id`, `enabled`, `severity`, `params` and `scope`; anything else is `GameTextRuleDocumentError` with the new code `invalid_overlay`. A field the patch leaves out keeps the project's value. `params` merge key by key. `scope: {}` removes the project's scope.
+- **Additions.** Any other overlay rule is added after the project's rules, in overlay order.
+- **Roles.** Overlay roles are added. A role ID declared by both documents is `invalid_overlay`.
+- **The key.** The overlay's canonical hash keys the findings layer, beside the rule-set hash (Phase 1 §6).
+- **Hosts.** UE Shed's Workbench and CLI pass no overlay. Electroswag's overlay contents are Phase 6.
+
+### The source report under v4
+
+- Today the source scan reads `document.rules` as legacy source rules: it prepares them by role and matches native findings back to their authored IDs (`gt/source-quality-index.ts:139, :189`, `gt/quality.ts:85`).
+- Under v4, the source report is the effective document's `unit_source` rules. Its role summaries come from the document's roles, its rule summaries from those rules' `id`, `ruleId`, `kind`, `label` and `role`, and its counts from the findings layer.
+- v1–v3 documents produce the same report as today, through the translator.
 - **The rule editor** (`extensions/game-text/src/game-text-rule-state.ts`) learns v4, and Quality gets an empty state for a project with no rules. Both are UI: their design is shown to the owner before they are built.
 
 ## 6. Host adoption
@@ -158,7 +182,7 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 ### The workspace quality index
 
 - `check(lines)` takes every built-in finding from `findings_lines`, group rules included. The corpus passes are deleted: `duplicateSources`, the translation pass and the census (`gt/localization-quality-index.ts:351-602, :652-674`).
-- The scan still reads lines page by page for presentation, review acceptance and `keep`, until Phase 3.
+- The scan still reads lines page by page for presentation, review acceptance and `keep`, until Phase 3. It and the source scan hydrate through `IndexedPolicyData` (`gt/localization-quality-index.ts:838, :1066`, `gt/source-quality-index.ts:128`), so the second TS reader stays until Phase 3 replaces both scans (plan decision 17).
 - The scan still pages, sorts and hydrates in TS until Phase 3, about 150 s on 1×. The Quality worker (`apps/workbench/src/main/workbench-live.ts:189-191`) is deleted only when the in-process scan is measured on both projects and its largest event-loop gap is no worse than the worker's: 121 ms on 1× at Phase 1. Otherwise the worker stays until Phase 3, and the plan records why.
 
 ### The CLI
@@ -169,13 +193,14 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 
 ## 7. Deleted
 
-| What                                                                                                                                                                                                                                                                                                                                                         | Notes                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `localization-checks.ts` group checks, `localization-text-shape.ts`, `duplicate-sources.ts`                                                                                                                                                                                                                                                                  | The comparators and the rule-selection helpers move to where their callers are, or to the translator.                                                                                                                                               |
-| The public group helpers: `localizationDuplicateSources`, `localizationDuplicateCandidate`, `localizationDuplicatePlaces`, `localizationTranslationVariants`, `invariantTextPlace`, `reportableInvariantText`, `localizationLocalizableProperties`, `localizationPropertiesWhereLocalizable`, `localizationPropertyKey`, `localizationCultureInvariantUnits` | Exported from `gt/entry-checks.ts`, `gt/index.ts` and `gt/browser.ts`. Check Electroswag's imports first; any it uses stay until Phase 6.                                                                                                           |
-| `quality-worker.ts`, `quality-worker-node.ts`, `quality-worker-protocol.ts`, `worker-calls.ts`                                                                                                                                                                                                                                                               | With their build, test-script, lint-baseline and README references, once the measurement in §6 allows it.                                                                                                                                           |
-| `joined-target-reader.ts` hydration, `joined-query-reader.ts`, `indexed-policy-data.ts`, `shared-string-file.ts` sync reads                                                                                                                                                                                                                                  | `readIndexedLocalizationEvidence` (index open) and `indexedLocalizationStatusReport` (the CLI's status report, `apps/cli/src/workflows/localization.ts:204`) become engine reads first. `inspectJoinedTarget` stays for scripts only if still used. |
-| `localization-policy.ts`, `localization-custom-checks.ts`, `quality.ts`                                                                                                                                                                                                                                                                                      | What remains of them is ordering and metadata; it moves into the translator or the catalogue.                                                                                                                                                       |
+| What                                                                                                                                                                                                                                                                                                                                                         | Notes                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `localization-checks.ts` group checks, `localization-text-shape.ts`, `duplicate-sources.ts`                                                                                                                                                                                                                                                                  | The comparators and the rule-selection helpers move to where their callers are, or to the translator.                                     |
+| The public group helpers: `localizationDuplicateSources`, `localizationDuplicateCandidate`, `localizationDuplicatePlaces`, `localizationTranslationVariants`, `invariantTextPlace`, `reportableInvariantText`, `localizationLocalizableProperties`, `localizationPropertiesWhereLocalizable`, `localizationPropertyKey`, `localizationCultureInvariantUnits` | Exported from `gt/entry-checks.ts`, `gt/index.ts` and `gt/browser.ts`. Check Electroswag's imports first; any it uses stay until Phase 6. |
+| `quality-worker.ts`, `quality-worker-node.ts`, `quality-worker-protocol.ts`, `worker-calls.ts`                                                                                                                                                                                                                                                               | With their build, test-script, lint-baseline and README references, once the measurement in §6 allows it.                                 |
+| `localization-policy.ts`, `localization-custom-checks.ts`, `quality.ts`                                                                                                                                                                                                                                                                                      | What remains of them is ordering and metadata; it moves into the translator or the catalogue.                                             |
+
+The second TS reader (`joined-target-reader.ts` hydration, `joined-query-reader.ts`, `indexed-policy-data.ts`, the `shared-string-file.ts` sync reads) is not deleted in Phase 2. Both retained scans hydrate through it (§6), so it goes in Phase 3 with them (plan decision 17).
 
 ## 8. Fixture
 
@@ -189,6 +214,5 @@ Each rule is an example in the v4 catalogue (`gt/rules/catalogue.ts`), written w
 2. **The aggregates** (§3), with unit tests, including `existsOther` against `DuplicateSources` on random tuples.
 3. **The five rules** in the catalogue, matching today's TS per check on the existing check tests and both corpora.
 4. **Host adoption** (§6): Quality and `loc check` read group findings from the engine. Then delete the TS group checks, and the worker if the event-loop measurement allows it.
-5. **The second reader:** engine reads for evidence and status, then delete it.
-6. **v4 public and the overlay** (§5). The UI parts wait for the owner's review of their design.
-7. **Parity:** the fixture exact, `loc check` byte-identical on both canonical corpora, one 10,000-line fuzz run. Then the Phase 0 measurement set against the baseline, and the owner review.
+5. **v4 public and the overlay** (§5). The UI parts wait for the owner's review of their design.
+6. **Parity:** the fixture exact, `loc check` byte-identical on both canonical corpora, one 10,000-line fuzz run. Then the Phase 0 measurement set against the baseline, and the owner review.

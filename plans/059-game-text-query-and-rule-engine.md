@@ -340,8 +340,8 @@ Illustrative syntax:
 | Item                                                                                                                                             | Phase                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
 | **TS check engine:** `localization-checks.ts`, `localization-policy.ts`, `localization-custom-checks.ts` and `quality.ts` evaluation             | 1–2                             |
-| **Quality worker and its sync channel:** `quality-worker*.ts`, `worker-calls.ts`                                                                 | 2                               |
-| **Second TS snapshot reader:** `joined-target-reader.ts`, `joined-query-reader.ts`, `indexed-policy-data.ts`, `shared-string-file.ts` sync reads | 2                               |
+| **Quality worker and its sync channel:** `quality-worker*.ts`, `worker-calls.ts`                                                                 | 2, or 3 (Phase 2 spec §6)       |
+| **Second TS snapshot reader:** `joined-target-reader.ts`, `joined-query-reader.ts`, `indexed-policy-data.ts`, `shared-string-file.ts` sync reads | 3 (decision 17)                 |
 | **TS mirrors of engine logic:** `joinLocalizationTarget`, `text-problems.ts` in the renderer, the reference `*.test-support.ts` oracles          | 2–3, as the fixture covers them |
 | **Dead native code:** `join_overlay::publish`, `localization_page`, `localization_focus`                                                         | 1                               |
 | **The per-facet re-match** and the serialized JSON response cache                                                                                | 3                               |
@@ -438,7 +438,8 @@ The specification is [Game Text rule engine, Phase 2](../docs/engineering/game-t
 - There is one `duplicate_source` rule, and it keeps the Quality check's behaviour (decision 15).
 - Browse keeps its native `shared`, `long` and `duplicate_source` signals until Phase 3 (decision
   16).
-- Delete the TS check engine, the worker and the second reader.
+- Delete the TS check engine. The worker goes if the in-process scan measures as responsive; the
+  second reader goes in Phase 3 (decision 17).
 
 ### Phase 3: the query engine
 
@@ -559,6 +560,9 @@ Decided on 2026-10-24, for Phase 2:
 16. **Browse keeps its native signals until Phase 3.** Its `shared`, `long` and `duplicate_source`
     chips and filters stay native in Phase 2, and are deleted when Browse reads findings in Phase 3.
     Until then, Browse's `duplicate_source` keeps its own definition, as today.
+17. **The second TS reader goes in Phase 3.** Quality's localization and source scans hydrate their
+    pages through it until Phase 3 replaces them. Replacing those reads in Phase 2 would build what
+    Phase 3 deletes.
 
 Decided in Phase 0:
 

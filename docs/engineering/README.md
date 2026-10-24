@@ -41,6 +41,7 @@ UE Shed code should be functional, typed, observable, and well tested.
 | [Game Text gather coverage](game-text-gather-coverage.md)             | Saved-scan gaps, manifest evidence and Unreal gather authority        |
 | [Game Text test corpus](game-text-corpus.md)                          | Generate a scratch corpus with planted right answers                  |
 | [Game Text rule engine](game-text-rule-engine.md)                     | Rule subjects, the expression IR, findings layer and identity         |
+| [Game Text rule engine, Phase 2](game-text-rule-engine-phase-2.md)    | Group and corpus aggregates, group rules, v4 and the host overlay     |
 | [SQLite Project Index](sqlite-project-index.md)                       | Previous Catalog and current test oracle                              |
 | [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence                                   |
 | [Releases](releases.md)                                               | Local pre-1.0 releases and post-1.0 CI plan                           |

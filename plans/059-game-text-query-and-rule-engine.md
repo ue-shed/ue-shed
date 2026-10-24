@@ -428,6 +428,8 @@ has every table.
 
 ### Phase 2: group rules and corpus aggregates
 
+The specification is [Game Text rule engine, Phase 2](../docs/engineering/game-text-rule-engine-phase-2.md).
+
 - Add group aggregates, corpus aggregates and references across rows.
 - `shared`, `duplicate_source`, `long`, `inconsistent_translation` and `culture_invariant_text`
   become rules.

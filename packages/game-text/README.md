@@ -205,7 +205,8 @@ place at its compiled path, where object path roles match it.
 `textQualityQueryOf(report, list)` builds the query over any `TextQualityFindingList`, a report's
 findings by position that may be rebuilt on demand.
 
-`STARTER_GAME_TEXT_RULES` contains neutral v1 examples to customize. A trusted Node host can use
+`STARTER_GAME_TEXT_RULES` lists the starter's checks (`STARTER_CHECKS`) and two neutral source rules
+to customize; `STARTER_CHECK_RULES` lists the checks alone. A trusted Node host can use
 `createStarterTextRules(projectRoot, output?)` to create it exclusively, or use the CLI:
 
 ```sh
@@ -355,36 +356,34 @@ file provenance/diagnostics and unchanged corpus coverage. Source-quality report
 Check IDs are stable string literals: `LocalizationCheckId` for checks of a translation against its
 source and `SourceCheckId` for checks of the source itself; `BuiltInCheckId` is both. Review files
 record them as `localization.<id>`. Pass `{ culture?, checks?, disabledChecks? }` to select them.
-They need no rule document. A version-3 `Config/UEShed/GameTextRules.json` sets each check's
-policy under `checks`, keyed by check ID: `enabled`, `severity` (`blocking`, `normal` or `low`),
-`scope` and `params` (the catalogue's parameters; unlisted fields keep their defaults). `preset`
-is `default` (every check runs with its catalogue severity) or `none` (only the checks the file
-enables run). Version 3 rejects unknown keys, so a misspelt check or parameter is an
-`invalid_structure` error rather than ignored. Version 2 adds per-culture project policy and
-progress reports, described below, and version 3 keeps them.
+A project's rules file, `Config/UEShed/GameTextRules.json` by default, lists the rules it runs:
+nothing runs that it doesn't list, and without a file nothing runs. Each entry in `rules` has a
+`kind`. A built-in check is listed by its ID, with optional `enabled` (default true), `severity`
+(`blocking`, `normal` or `low`), `scope` and `params` (the catalogue's parameters; unlisted fields
+keep their defaults). The other kinds are project rules with their own `id`, described below. A
+project rule's `scope` narrows its `role`: its roles and path prefixes must admit an occurrence that
+has the role, and its cultures select the cultures it checks.
+Unknown keys are rejected, so a misspelt check or parameter is an `invalid_structure` error rather
+than ignored. Rule IDs are unique across the file; a project rule's ID can't be a check's ID or
+start with `localization.`.
 
 ```json
 {
-	"schemaVersion": 3,
+	"schemaVersion": 1,
 	"roles": [],
-	"rules": [],
-	"checks": {
-		"length_outlier": { "severity": "low", "params": { "maximumRatio": 4 } },
-		"segment_separator": { "params": { "separator": "//" } },
-		"missing_translator_notes": { "enabled": false }
-	}
+	"rules": [
+		{ "kind": "length_outlier", "severity": "low", "params": { "maximumRatio": 4 } },
+		{ "kind": "segment_separator", "params": { "separator": "//" } },
+		{ "kind": "whitespace" }
+	]
 }
 ```
 
-V1 and v2 files keep loading: their `disabledLocalizationChecks` (any built-in ID),
-`segmentSeparator`, `optionalTags` and `optionalArguments` read as the equivalent v3 settings
-(`enabled: false`; `segment_separator`'s `separator`; the `optionalTags` of `rich_text_tags` and
-`rich_text_tags_added`; the `optionalArguments` of those two, `format_arguments`,
-`format_argument_renamed` and `rich_text_tag_case`). `migrateGameTextRuleDocument(document)`
-writes a v1 or v2 file as v3 with the same behaviour, and `resolveLocalizationChecks(document)`
-returns each check's resolved `enabled`, `severity`, `scope` and `params`. Every check is on by
-default, except `segment_separator` until it has a separator. The host's `checks` and
-`disabledChecks` options still narrow what runs.
+`STARTER_CHECKS` is every check but `segment_separator`, which needs a separator, and the opt-in
+`shared` and `long`, Browse's review signals. `resolveLocalizationChecks(document)` returns each
+check's resolved `enabled`, `severity`, `scope` and `params`, and `effectiveRuleDocument(document,
+options?)` the rule program the engine runs. The host's `checks` and `disabledChecks` options still
+narrow what runs.
 
 A check's `scope` limits where its findings are reported. Every listed dimension must hold: the
 finding's culture is one of `cultures`, and one saved place of its line is both at a place of one
@@ -396,12 +395,11 @@ placeholder translation instead of its length, missing tags instead of added one
 instead of a dropped and an added argument), the first check takes it only when it runs and is in
 scope for the line and culture; otherwise the second reports it.
 
-A version-3 file can define its own checks in `customChecks` (up to 512), reported beside the
-built-in ones with the same evidence, review and workspace model. Each has an `id` (its rule ID,
-unique among the file's rules and not starting with `localization.`), a `label`, an optional
+A file can define its own checks, reported beside the built-in ones with the same evidence, review
+and workspace model. Each has an `id` (its rule ID), a `label`, an optional
 `severity` (`normal` when absent) and `scope`, a `recovery` text and a `subject`: `source` checks
 a keyed line's source once, under its source culture; `translation` checks each culture's shipped
-translation, the native culture aside. The kinds are:
+translation, the native culture aside. Their kinds are:
 
 - `pattern`: text a JavaScript regular expression (Unicode mode; `caseSensitive: false` adds the
   `i` flag) matches, or with `report: "no_match"` text it does not match. A pattern that does not
@@ -417,7 +415,9 @@ the first match.
 
 ```json
 {
-	"customChecks": [
+	"schemaVersion": 1,
+	"roles": [],
+	"rules": [
 		{
 			"id": "no-wip",
 			"label": "Work in progress",
@@ -450,8 +450,8 @@ findings and review marks record. The table below is generated from the catalogu
 
 Every localization finding has a `severity`: the rule file's `severity` for its check, or the
 catalogue's (the table's column) when the file sets none: `blocking` (players see wrong or
-untranslated text), `normal` or `low`. Version-2 and version-3 `localizationRules` may set their
-own `severity` too (`normal` when absent). Severity is never part of the finding's ID. Indexed
+untranslated text), `normal` or `low`. Localization rules and custom checks may set their own
+`severity` too (`normal` when absent). Severity is never part of the finding's ID. Indexed
 scans store each finding's severity beside its other facts, so workspace pages list blocking
 findings first, then normal, then low, each in report order, and count findings by severity in
 `severityCounts` from what the scan reported, not from the check's default; summaries, focus and
@@ -486,6 +486,8 @@ CSV exports carry the severity.
 | `source_markup`               | unreal    | normal   | Unclosed rich-text tags, `</Name>` closings or unpaired format braces in the source                                                                |
 | `number_only_text`            | heuristic | low      | Localizable text with digits and no letters or arguments, which could be culture invariant                                                         |
 | `string_table_key_collision`  | unreal    | normal   | One namespace and key declared by more than one String Table                                                                                       |
+| `shared`                      | heuristic | low      | Text saved in more than one place, which may need a different meaning in each                                                                      |
+| `long`                        | heuristic | low      | A saved source of 40 or more UTF-16 code units                                                                                                     |
 
 <!-- end of check table -->
 
@@ -579,38 +581,44 @@ namespace/key, manifest source, current PO translation (archive fallback when ab
 translation. The report carries version-1 provenance. No check applies or writes a proposal.
 
 ```sh
-ue-shed loc check <project-root> --target <name> [--culture <c>] [--check <id>]...
+ue-shed loc check <project-root> --target <name> [--rules <file>] [--culture <c>] [--check <id>]...
 ue-shed loc check <project-root> --target <name> --changes suggestions.json
 ```
 
-The CLI's optional `--changes` exclusively creates a new JSON proposal. It rejects existing files
+`loc check` runs the project's rules file, or the file `--rules` names; without either it runs no
+checks and says so on stderr. The CLI's optional `--changes` exclusively creates a new JSON proposal. It rejects existing files
 and non-JSON destinations and never edits localization evidence. Engine-recorded validator tests
 compare each shipped translation against both committed fixture oracles.
 
 ## Culture rules and progress reports
 
-`TextQualityRuleDocumentV2` derives from the v1 document. `decodeGameTextRuleDocumentJson` accepts
-both versions; the original v1 decoder and `evaluateTextQuality` retain their contracts.
-`evaluateGameTextSourceQuality` and `text review` evaluate either version's source rules. `loc check`
-combines translation policy and built-ins in the same report. The starter stays v1: choosing budgets
-and glossaries for a culture requires project knowledge.
+Source rules (`character_budget` and `terminology`) check each text unit with a place of their
+`role` once, without a localization target. Localization rules check each culture's shipped
+translation. `evaluateGameTextSourceQuality` and `text review` evaluate the source rules; `loc check`
+combines localization rules and built-ins in the same report. The starter's source rules are
+examples: choosing budgets and glossaries for a culture requires project knowledge.
 
-V2 adds `localizationRules`, an array of role-scoped rules. A `localization_character_budget` rule
-has `cultures: { "de": 32, "fr": 36 }` and optional `defaultMaximumCharacters`. Without a default,
-unlisted cultures have no budget. There are no multipliers. A `localization_terminology` rule has
-`caseSensitive` and `cultures: { "de": [{ "kind": "forbidden", "term": "..." }] }`; preferred entries
-reuse v1's `term` and `alternatives`. An unlisted culture has no glossary. Both check the shipped
-translation selected by `localizationShippedTranslation`, count UTF-16 code units, and report the
-same case-sensitive/insensitive substring matches and UTF-16 offsets as v1. Only occurrences
-matching the role appear in policy evidence; gathered-only lines cannot acquire an asset role.
+A `localization_character_budget` rule has a `role`, `cultures: { "de": 32, "fr": 36 }` and optional
+`defaultMaximumCharacters`. Without a default, unlisted cultures have no budget. There are no
+multipliers. A `localization_terminology` rule has `caseSensitive` and
+`cultures: { "de": [{ "kind": "forbidden", "term": "..." }] }`; preferred entries take a `term` and
+`alternatives`, as source terminology does. An unlisted culture has no glossary. Both check the
+shipped translation selected by `localizationShippedTranslation`, count UTF-16 code units, and report
+the same case-sensitive/insensitive substring matches and UTF-16 offsets as source rules. Only
+occurrences matching the role appear in policy evidence; gathered-only lines cannot acquire an asset
+role.
 
 Unknown target cultures appear in `ruleDiagnostics` as warnings because rules are project-wide.
 Duplicate culture keys (including escaped JSON keys), duplicate role/rule IDs, undeclared roles,
-empty terms and non-positive budgets fail with typed recovery guidance. Both versions support
-`disabledLocalizationChecks`, `segmentSeparator` (1–16 characters), `optionalTags` and
-`optionalArguments`. See
-[the v2 example](fixtures/quality-rules.v2.json) for an authored document; its limits and terms are
+empty terms and non-positive budgets fail with typed recovery guidance. See
+[the example](fixtures/quality-rules.localization.json) for an authored file; its limits and terms are
 examples, not built-ins.
+
+A host can change a project's rules without editing its file. `applyRuleOverlay(document, overlay)`
+takes a `GameTextRuleOverlay`: `patches` to rules the file lists (`enabled`, `severity`, `scope`, and
+`params` merged into a check's parameters or a project rule's fields, never its `id`, `kind` or the
+settings above; later patches to the same rule win), and `roles` and `rules` it adds under new IDs. Anything else, or a patched file that no longer validates, is
+`invalid_overlay`. The scans read the patched file as they read a project's.
 
 `localizationProgressReport(corpus, joined, evidence, baseline?)` is pure and browser-safe. It
 reports every primary state's line/source-word counts, independent `notSynced` counts including

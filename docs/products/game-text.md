@@ -646,7 +646,8 @@ drafts produce typed recovery guidance and leave the prior valid rules and repor
 scope cannot broaden a role to the whole project. Choosing another project clears the retained rule
 file and quality review; rescanning the same project retains its rules and reevaluates the checks.
 
-The **Quality checks** tab presents character limits and terminology findings. With nothing
+Without a rules file nothing is checked, and the **Quality checks** tab shows **Create rules file**
+and **Choose a rules file…** in place of findings. With one, the tab presents its findings. With nothing
 selected, its rules and roles overview shows findings and lines in scope, warning when a role has
 none. Selecting a finding highlights the matched term and explains **How to fix** it. **Show key
 and translator notes** opens the line in Text. **Edit rules** retains character limits, forbidden
@@ -946,13 +947,13 @@ Localization checks are quality findings over the same corpus and report model:
   boundary whitespace, line-break counts, a project segment separator, length outliers, existing
   empty translation entries, translations made for older source, shared source translated
   inconsistently, missing translator notes, and the same source under different keys;
-- built-in source checks need no rule file: culture-invariant text players will see untranslated,
+- built-in source checks: culture-invariant text players will see untranslated,
   placeholder text, source whitespace, unbalanced source markup, number-only text that could be
   culture invariant, and keys two String Tables declare;
 - every localization finding has a severity (blocking, normal or low); lists show blocking
   findings first;
 - missing translation evidence is a check diagnostic rather than a claim that a translation is empty;
-- version-2 project rules add role budgets and glossary terms per culture, evaluated on that
+- project localization rules add role budgets and glossary terms per culture, evaluated on that
   culture's shipped translation with the same substring and UTF-16 offset evidence as source rules.
 
 `checkLocalizationTarget` is pure and available from both Game Text package entries. It checks the
@@ -975,14 +976,13 @@ decorator names without case).
 UE Shed adds checks the compile validator does not perform: source/translation argument and modifier
 comparison, malformed modifier parameters that Unreal treats as literals, whitespace and line-break
 drift relative to source, PO escape safety, empty entries, notes, and duplicate source identities.
-These are evidence-based built-ins; no rule file is required. A version-3 project rule file sets
-each check's policy under `checks`: whether it runs, its severity, its scope and its parameters,
-over a `default` or `none` preset. Version-1 and version-2 files keep loading, and their
-`disabledLocalizationChecks`, `segmentSeparator` (text such as `"//"` that joins a line's
-segments and must appear as often in each translation), `optionalTags` (rich-text tags a
-translation may add or leave out) and `optionalArguments` (arguments the game always supplies)
-read as the equivalent check settings; `migrateGameTextRuleDocument` rewrites them as version 3.
-A check's scope (cultures, roles, object path prefixes) is applied after it finds something, and a
+These are evidence-based built-ins. A project's rules file lists the checks it runs, each with
+optional `enabled`, `severity`, `scope` and `params`; nothing runs that it doesn't list, and without
+a file nothing runs. The starter file lists every check except the opt-in `shared` and `long` and
+`segment_separator`, which runs only with a `separator` (text such as `"//"` that joins a line's
+segments and must appear as often in each translation). Other parameters include the rich-text
+checks' `optionalTags` (tags a translation may add or leave out) and `optionalArguments`
+(arguments the game always supplies). A check's scope (cultures, roles, object path prefixes) is applied after it finds something, and a
 check that takes another's finding (a placeholder translation instead of its length) does so only
 when it runs and is in scope, so an out-of-scope check never hides an in-scope one. None changes
 the source rules. `localizationCheckCatalogue` describes every check: whether
@@ -992,11 +992,11 @@ check table is generated from it, so hosts can show the same descriptions instea
 own.
 
 This falls short of [base, not constraints](../vision-and-architecture.md#base-not-constraints).
-The parsers follow Unreal, and a version-3 rule file now sets each built-in's severity and the
+The parsers follow Unreal, and a project's rules file sets each built-in's severity and the
 heuristics' thresholds and word lists (length ratios, placeholder words and markers, short-text
 limits). Some policy is still fixed in code (the audience and debug-content rules behind
-`culture_invariant_text`, boundary whitespace policy) and is open work. A version-3 file can define
-its own checks (`customChecks`: patterns, lengths and forbidden terms on the source or each
+`culture_invariant_text`, boundary whitespace policy) and is open work. A rules file can define
+its own checks (`pattern`, `length` and `forbidden_term` entries on the source or each
 translation, each scoped by culture, role and path) that report beside the built-ins with the same
 evidence, review and workspace model.
 Hosts whose projects cannot store translator notes (packages saved by UE 4.27 and by UE5 before 5.8;
@@ -1019,24 +1019,25 @@ of a shared source whose translation is not the one most lines use (every line w
 each finding is one line a translator can open and fix or accept.
 
 ```sh
-ue-shed loc check <project-root> --target <name> [--culture <c>] [--check <id>]...
+ue-shed loc check <project-root> --target <name> [--rules <file>] [--culture <c>] [--check <id>]...
 ue-shed loc check <project-root> --target <name> --changes suggestions.json
 ```
 
-Check output is schema-versioned JSON. A single missing and single added argument can produce a
+`loc check` runs the project's rules file, or the file `--rules` names, which suits a project that
+can't take a file; without either it runs no checks and says so on stderr. Check output is
+schema-versioned JSON. A single missing and single added argument can produce a
 rename proposal, including names inside modifier forms. Proposals are version-1 change sets with
 source and previous-translation preconditions and evidence provenance. `--changes` exclusively
 creates a new JSON proposal; it never overwrites a file or writes PO, manifests, archives, locres or
 locmeta. Applying proposals and Workbench check views are later slices.
 
-Version-2 rules derive from v1 and retain source rules and roles. `localizationRules` contains
+Localization rules sit in the rules file's `rules` list beside source rules and checks:
 `localization_character_budget` rules with an explicit culture-to-maximum map and optional default
 for unlisted cultures, or `localization_terminology` rules with culture-to-term lists. There are no
 implicit expansion multipliers or glossary defaults. Unknown target cultures are warning diagnostics
 because a project rule file may serve several targets. Duplicate culture keys, empty terms,
-non-positive budgets and invalid role references are typed failures. V1 decoding/evaluation and the
-v1 starter remain available unchanged; source review in the CLI also accepts v2. Rules only assign
-roles from saved occurrences, so gathered-only evidence cannot acquire an asset role.
+non-positive budgets and invalid role references are typed failures. Rules only assign roles from
+saved occurrences, so gathered-only evidence cannot acquire an asset role.
 
 ```sh
 ue-shed loc report <project-root> --target <name> [--baseline <file>] [--save-baseline <file>]

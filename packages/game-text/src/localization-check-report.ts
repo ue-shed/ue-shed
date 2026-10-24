@@ -1,27 +1,19 @@
 import { Effect } from "effect";
 import type { LocalizationTargetEvidence } from "@ue-shed/localization";
-import { textCorpusDiagnosticSummary } from "./corpus-summary.js";
+import type { TextCorpusReportHeader } from "./corpus-summary.js";
 import { IndexedPolicyData } from "./indexed-policy-data.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
-import { localizationLineUnits } from "./gathered-text.js";
 import {
-	checkLocalizationGroups,
 	compareLocalizationFindings,
 	compareReportedLocalizationFindings,
-	enabledLocalizationChecks,
-	localizationDuplicateCandidate,
-	localizationDuplicatePlaces,
-	localizationDuplicateSources,
-	localizationLocalizableProperties,
-	localizationRuleContext,
-	localizationTranslationVariants
+	enabledLocalizationChecks
 } from "./localization-checks.js";
 import { localizationRuleId } from "./localization-check-catalogue.js";
 import { localizationEvidenceFileStatuses } from "./localization-status.js";
-import { withoutAcceptedFindings } from "./localization-review.js";
+import { lazyAcceptedFindingFilter } from "./localization-review.js";
 import { localizationPolicyRules } from "./localization-policy.js";
-import { customLocalizationChecks } from "./localization-custom-checks.js";
-import { translateRuleDocument } from "./rules/translate.js";
+import { customLocalizationChecks, localizationRulesOf } from "./game-text-rules.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 import {
 	LocalizationQualityReport,
 	type LocalizationCheckOptions,
@@ -32,8 +24,9 @@ import {
 } from "./localization-quality-schema.js";
 import type { NativeFindings } from "./native-findings.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
-import type { TextCorpus } from "./schema.js";
-import type { LocalizationJoin } from "./localization-schema.js";
+import type { TextCorpusQuerySummary } from "./schema.js";
+import type { LocalizationJoin, LocalizationLine } from "./localization-schema.js";
+import type { BuiltInCheckId } from "./localization-check-ids.js";
 
 type CheckedLine = Effect.Success<ReturnType<NativeFindings["findingsLines"]>>[number];
 
@@ -149,48 +142,23 @@ function reportedFinding(finding: ReportedFinding): ReportedFinding {
 	} as ReportedFinding;
 }
 
-/** Assemble the public report; only corpus group checks evaluate here. */
-export function assembleLocalizationCheckReport(
-	corpus: TextCorpus,
-	join: LocalizationJoin,
+/** The corpus facts a report shows: its status, coverage and diagnostics, never its units. */
+type ReportCorpus = Pick<TextCorpusQuerySummary, "status"> & TextCorpusReportHeader;
+
+/**
+ * Assemble the public report from the engine's findings; nothing evaluates here. `checked` are
+ * the join's lines in report order, and `lineOf` hydrates the few lines accepted findings need.
+ */
+function assembleLocalizationCheckReport(
+	corpus: ReportCorpus,
+	join: Pick<LocalizationJoin, "target" | "cultures">,
 	evidence: LocalizationTargetEvidence,
-	checked: ReadonlyMap<string, CheckedLine>,
+	enabled: readonly BuiltInCheckId[],
+	checked: readonly CheckedLine[],
+	lineOf: (id: string) => LocalizationLine | undefined,
 	options: LocalizationCheckOptions = {},
 	document?: GameTextRuleDocument
 ) {
-	const enabled = enabledLocalizationChecks(join, evidence, options, document);
-	const lines = [...join.lines].sort((a, b) => a.id.localeCompare(b.id));
-	const byUnit = new Map(corpus.units.map((unit) => [unit.id, unit]));
-	const duplicates = localizationDuplicateSources();
-	for (const [position, line] of join.lines.entries())
-		if (localizationDuplicateCandidate(line))
-			duplicates.add(line.source, line.identity!, position, -1, () =>
-				localizationDuplicatePlaces(
-					line,
-					localizationLineUnits(line, byUnit).flatMap((unit) => unit.occurrences)
-				)
-			);
-	const { shared } = duplicates.finish();
-	const ruleContext = localizationRuleContext(document);
-	const variants = localizationTranslationVariants(
-		shared,
-		join.nativeCulture,
-		ruleContext.checks.inconsistent_translation.params
-	);
-	if (enabled.includes("inconsistent_translation"))
-		for (const line of join.lines) variants.add(line);
-	const context = {
-		...ruleContext,
-		target: join.target,
-		nativeCulture: join.nativeCulture,
-		options,
-		enabled,
-		duplicates: shared,
-		translations: variants.finish(),
-		localizableProperties: enabled.includes("culture_invariant_text")
-			? localizationLocalizableProperties(corpus.units)
-			: new Set<string>()
-	};
 	const builtIns: LocalizationQualityFinding[] = [],
 		policy: LocalizationPolicyFinding[] = [],
 		custom: LocalizationCustomFinding[] = [],
@@ -198,19 +166,16 @@ export function assembleLocalizationCheckReport(
 	const selected = <F extends { readonly culture: string }>(values: readonly F[]) =>
 		values.filter((value) => !options.culture || value.culture === options.culture);
 
-	for (const line of lines) {
-		const result = checked.get(line.id)!;
+	for (const result of checked) {
 		builtIns.push(...selected(result.builtIns));
 		policy.push(...selected(result.policy));
 		custom.push(...selected(result.custom));
 		diagnostics.push(...selected(result.diagnostics));
-		checkLocalizationGroups(line, () => localizationLineUnits(line, byUnit), context, builtIns);
 	}
 
-	const policyRules =
-		document && document.schemaVersion !== 1
-			? localizationPolicyRules(join.cultures, document)
-			: { rules: [], diagnostics: [] };
+	const policyRules = document
+		? localizationPolicyRules(join.cultures, document)
+		: { rules: [], diagnostics: [] };
 	const customChecks = customLocalizationChecks(document);
 	const policyOrder = policyRules.rules.map(({ rule }) => rule.id),
 		customOrder = customChecks.map((check) => check.id);
@@ -223,36 +188,37 @@ export function assembleLocalizationCheckReport(
 			: []
 	);
 	const all = [...builtIns.sort(compareLocalizationFindings), ...policy, ...custom];
-	const visible = withoutAcceptedFindings(join, all, options.review);
+	const keep = lazyAcceptedFindingFilter(options.review);
+	const visible = keep
+		? all.filter((finding) => keep(() => lineOf(finding.lineId), finding))
+		: all;
 	const files = localizationEvidenceFileStatuses(evidence);
 	return LocalizationQualityReport.make({
 		schemaVersion: 1,
-		ruleDocumentVersion: document?.schemaVersion ?? 1,
+		ruleDocumentVersion: 1,
 		status: corpus.status,
 		coverage: corpus.coverage,
-		...textCorpusDiagnosticSummary(corpus.diagnostics),
+		diagnostics: corpus.diagnostics,
+		diagnosticCount: corpus.diagnosticCount,
+		diagnosticCounts: corpus.diagnosticCounts,
+		diagnosticsOmitted: corpus.diagnosticsOmitted,
 		target: join.target,
 		gatherEvidence: files,
-		findings: [...visible.findings]
-			.sort(compareReportedLocalizationFindings)
-			.map(reportedFinding),
+		findings: [...visible].sort(compareReportedLocalizationFindings).map(reportedFinding),
 		checkDiagnostics: diagnostics,
 		roles: [],
 		rules: [
-			...(document && document.schemaVersion !== 1
-				? (document.localizationRules ?? []).map((rule) => rule.id)
-				: []
-			).map((ruleId) => ({
+			...localizationRulesOf(document).map(({ id: ruleId }) => ({
 				ruleId,
-				findingCount: visible.findings.filter((finding) => finding.ruleId === ruleId).length
+				findingCount: visible.filter((finding) => finding.ruleId === ruleId).length
 			})),
 			...enabled.map((id) => ({
 				ruleId: localizationRuleId(id),
-				findingCount: visible.findings.filter((finding) => finding.kind === id).length
+				findingCount: visible.filter((finding) => finding.kind === id).length
 			})),
 			...customOrder.map((ruleId) => ({
 				ruleId,
-				findingCount: visible.findings.filter((finding) => finding.ruleId === ruleId).length
+				findingCount: visible.filter((finding) => finding.ruleId === ruleId).length
 			}))
 		],
 		changes: {
@@ -263,42 +229,65 @@ export function assembleLocalizationCheckReport(
 			},
 			changes
 		},
-		...(document && document.schemaVersion !== 1
-			? { ruleDiagnostics: policyRules.diagnostics }
-			: undefined),
-		...(options.review ? { acceptedFindings: visible.accepted } : undefined),
+		...(document ? { ruleDiagnostics: policyRules.diagnostics } : undefined),
+		...(options.review ? { acceptedFindings: all.length - visible.length } : undefined),
 		...(customChecks.length
 			? { customChecks: customChecks.map(({ id, label }) => ({ ruleId: id, label })) }
 			: undefined)
 	});
 }
 
-/** CLI report assembly over native row findings and the remaining corpus group checks. */
+/** Lines whose findings one engine read returns. */
+const FINDING_PAGE_LINES = 5000;
+
+/**
+ * The CLI report over the engine's findings, group checks included. It reads the join's lines
+ * as rows, their findings in pages, and hydrates only lines an accepted finding names, so it
+ * never holds the corpus or the join. `joinRows` are the join's lines in the join's order.
+ */
 export const indexedLocalizationCheckReport = Effect.fn("GameText.localizationCheckReport")(
 	function* (
 		joined: JoinedTargetReader,
-		corpus: TextCorpus,
-		join: LocalizationJoin,
+		corpus: ReportCorpus,
+		joinRows: Uint32Array,
 		evidence: LocalizationTargetEvidence,
 		native: NativeFindings,
 		options: LocalizationCheckOptions = {},
 		document?: GameTextRuleDocument
 	) {
-		enabledLocalizationChecks(join, evidence, options, document);
-		const evaluated = yield* native.findingsEvaluate(translateRuleDocument(document, options));
-		const data = new IndexedPolicyData(joined),
-			rows = new Map<string, number>();
-		for (let row = 0; row < data.joined.meta.count; row++) rows.set(data.lineId(row), row);
-		const lines = [...join.lines].sort((a, b) => a.id.localeCompare(b.id)),
-			checked = new Map<string, CheckedLine>();
-		for (let start = 0; start < lines.length; start += 5000) {
-			const batch = lines.slice(start, start + 5000),
-				results = yield* native.findingsLines(
+		const data = new IndexedPolicyData(joined);
+		const target = data.joined.meta.input.target;
+		const join = { target: target.name, cultures: target.cultures };
+		const enabled = enabledLocalizationChecks(join, evidence, options, document);
+		const evaluated = yield* native.findingsEvaluate(effectiveRuleDocument(document, options));
+		// Report order is line ID order, ties in join order.
+		const ids = Array.from(joinRows, (row) => data.lineId(row));
+		const collator = new Intl.Collator();
+		const order = Array.from(ids.keys())
+			.sort((a, b) => collator.compare(ids[a]!, ids[b]!))
+			.map((position) => joinRows[position]!);
+		const checked: CheckedLine[] = [];
+		for (let start = 0; start < order.length; start += FINDING_PAGE_LINES)
+			checked.push(
+				...(yield* native.findingsLines(
 					evaluated.key,
-					batch.map((line) => rows.get(line.id)!)
-				);
-			batch.forEach((line, index) => checked.set(line.id, results[index]!));
-		}
-		return assembleLocalizationCheckReport(corpus, join, evidence, checked, options, document);
+					order.slice(start, start + FINDING_PAGE_LINES)
+				))
+			);
+		const rowOf = new Map(ids.map((id, position) => [id, joinRows[position]!]));
+		const lineOf = (id: string) => {
+			const row = rowOf.get(id);
+			return row === undefined ? undefined : data.line(row);
+		};
+		return assembleLocalizationCheckReport(
+			corpus,
+			join,
+			evidence,
+			enabled,
+			checked,
+			lineOf,
+			options,
+			document
+		);
 	}
 );

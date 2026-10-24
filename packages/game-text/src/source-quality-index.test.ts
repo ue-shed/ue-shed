@@ -232,7 +232,7 @@ const documents = {
 		]
 	}),
 	everything: decode({
-		schemaVersion: 2,
+		schemaVersion: 1,
 		roles: [matcherRoles[5]],
 		rules: [
 			{
@@ -241,9 +241,7 @@ const documents = {
 				role: "everything",
 				maximumCharacters: 1,
 				recovery
-			}
-		],
-		localizationRules: [
+			},
 			{
 				id: "translation.limit",
 				kind: "localization_character_budget",
@@ -273,7 +271,7 @@ const exampleDocuments = Effect.promise(async () => {
 				)
 			)
 		);
-	return [await read("quality-rules.v1.json"), await read("quality-rules.v2.json")];
+	return [await read("quality-rules.source.json"), await read("quality-rules.localization.json")];
 });
 
 it.live(

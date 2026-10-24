@@ -129,7 +129,7 @@ describe.skipIf(!executable)("source quality over the saved fixture's index", ()
 	it("equals the in-memory report and query for the example and matcher documents", async () => {
 		const cacheRoot = await mkdtemp(join(tmpdir(), "ue-shed-source-quality-"));
 		const examples = await Promise.all(
-			["quality-rules.v1.json", "quality-rules.v2.json"].map(async (name) =>
+			["quality-rules.source.json", "quality-rules.localization.json"].map(async (name) =>
 				Effect.runSync(
 					decodeGameTextRuleDocumentJson(
 						await readFile(

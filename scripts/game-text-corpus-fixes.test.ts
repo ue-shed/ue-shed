@@ -3,6 +3,7 @@ import { test } from "vitest";
 import { Schema } from "effect";
 import { LocalizationChange, parsePO } from "../packages/localization/dist/index.js";
 import { indexedTestReports } from "../packages/game-text/src/indexed-reports.test-support.ts";
+import { STARTER_CHECK_RULES } from "../packages/game-text/src/starter-rules.ts";
 import { joinLocalizationTarget } from "../packages/game-text/src/localization.ts";
 import {
 	archiveEntry,
@@ -54,7 +55,7 @@ for (const seed of [1, 73139]) {
 					culture.culture === "de" ? { ...culture, culture: cultureCode("ja") } : culture
 				)
 			};
-			const report = indexedTestReports(text, files).localization(undefined, {
+			const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, {
 				checks: ["argument_modifiers"]
 			});
 			assert.deepEqual(
@@ -112,7 +113,7 @@ for (const seed of [1, 73139]) {
 				)
 			};
 			const join = joinLocalizationTarget(text, files);
-			const report = indexedTestReports(text, files).localization(undefined, {
+			const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, {
 				checks: ["format_argument_renamed"]
 			});
 			const finding = report.findings.find(

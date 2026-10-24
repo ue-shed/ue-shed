@@ -16,6 +16,7 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import type { TextOccurrence } from "./schema.js";
 import { hasSearchableSource } from "./search.js";
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -91,7 +92,7 @@ for (const version of legacyVersions) {
 		it("indexes the same object paths, which object path roles then match", async () => {
 			const cacheRoot = await mkdtemp(join(tmpdir(), "ue-shed-legacy-index-"));
 			const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
-				schemaVersion: 2,
+				schemaVersion: 1,
 				roles: [
 					{
 						id: "legacy",
@@ -109,6 +110,7 @@ for (const version of legacyVersions) {
 					}
 				],
 				rules: [
+					...STARTER_CHECK_RULES.rules,
 					{
 						id: "legacy.limit",
 						kind: "character_budget",

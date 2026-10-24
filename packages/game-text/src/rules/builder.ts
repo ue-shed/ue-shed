@@ -5,6 +5,9 @@ import type { Expr, JsonValue, Rule } from "./schema.js";
 export type Arg = Expr | string | number | boolean | null;
 export const asExpr = (value: Arg): Expr => (Predicate.isObject(value) ? value : { lit: value });
 const e = asExpr;
+/** An aggregate's named arguments. */
+const named = (args: Readonly<Record<string, Arg>>) =>
+	Object.fromEntries(Object.entries(args).map(([name, value]) => [name, e(value)]));
 
 /** Construct one rule without evaluating or changing its expressions. */
 export const rule = (definition: Rule): Rule => definition;
@@ -46,6 +49,7 @@ export const expr = {
 	unrealWhitespace: (value: Arg): Expr => ({ unrealWhitespace: e(value) }),
 	unrealUnsafeWhitespace: (value: Arg): Expr => ({ unrealUnsafeWhitespace: e(value) }),
 	formatBraceBalance: (value: Arg): Expr => ({ formatBraceBalance: e(value) }),
+	maxOf: (value: Arg): Expr => ({ maxOf: e(value) }),
 	get: (a: Arg, b: Arg): Expr => ({ get: [e(a), e(b)] }),
 	eq: (a: Arg, b: Arg): Expr => ({ eq: [e(a), e(b)] }),
 	ne: (a: Arg, b: Arg): Expr => ({ ne: [e(a), e(b)] }),
@@ -87,6 +91,7 @@ export const expr = {
 	regexMatches: (a: Arg, b: Arg, c: Arg): Expr => ({ regexMatches: [e(a), e(b), e(c)] }),
 	regexTest: (a: Arg, b: Arg, c: Arg): Expr => ({ regexTest: [e(a), e(b), e(c)] }),
 	termMatches: (a: Arg, b: Arg, c: Arg): Expr => ({ termMatches: [e(a), e(b), e(c)] }),
+	regexReplace: (a: Arg, b: Arg, c: Arg): Expr => ({ regexReplace: [e(a), e(b), e(c)] }),
 	and: (...values: readonly Arg[]): Expr => ({ and: values.map(e) }),
 	or: (...values: readonly Arg[]): Expr => ({ or: values.map(e) }),
 	coalesce: (...values: readonly Arg[]): Expr => ({ coalesce: values.map(e) }),
@@ -122,5 +127,20 @@ export const expr = {
 	}),
 	formatRenameArgument: (a: Arg, b: Arg, c: Arg, d: Arg): Expr => ({
 		formatRenameArgument: [e(a), e(b), e(c), e(d)]
+	}),
+	groupCount: (args: { by: Arg; among?: Arg }): Expr => ({ groupCount: named(args) }),
+	groupRank: (args: { by: Arg; order: Arg; among?: Arg }): Expr => ({ groupRank: named(args) }),
+	groupTake: (args: { by: Arg; order: Arg; value: Arg; n: number; among?: Arg }): Expr => ({
+		groupTake: named(args)
+	}),
+	groupTally: (args: { by: Arg; value: Arg; display: Arg; among?: Arg }): Expr => ({
+		groupTally: named(args)
+	}),
+	existsOther: (args: { over: Arg; by: Arg; differing: Arg; among?: Arg }): Expr => ({
+		existsOther: named(args)
+	}),
+	/** Counts `corpus_occurrence` rows, the only corpus relation. */
+	corpusCount: (args: { by: Arg; key: Arg; among?: Arg }): Expr => ({
+		corpusCount: named({ relation: "corpus_occurrence", ...args })
 	})
 };

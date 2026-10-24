@@ -11,24 +11,9 @@ export {
 } from "./id-repair.js";
 
 export {
-	type LocalizationLineCheckContext,
-	type LocalizationTranslationVariants,
 	compareLocalizationFindings,
 	compareReportedLocalizationFindings,
-	enabledLocalizationChecks,
-	invariantTextPlace,
-	localizationConflictingSource,
-	localizationCultureInvariantUnits,
-	localizationDuplicateCandidate,
-	localizationDuplicatePlaces,
-	localizationDuplicateSources,
-	localizationLocalizableProperties,
-	localizationPropertiesWhereLocalizable,
-	localizationPropertyKey,
-	localizationRuleContext,
-	localizationSourceCulture,
-	localizationTranslationVariants,
-	reportableInvariantText
+	enabledLocalizationChecks
 } from "./localization-checks.js";
 
 export {
@@ -117,4 +102,4 @@ export {
 
 export { LocalizationCheckScope, localizationCheckInScope } from "./localization-check-scope.js";
 
-export { customLocalizationChecks } from "./localization-custom-checks.js";
+export { customLocalizationChecks } from "./game-text-rules.js";

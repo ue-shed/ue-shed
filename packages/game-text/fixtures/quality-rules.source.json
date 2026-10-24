@@ -1,0 +1,141 @@
+{
+	"schemaVersion": 1,
+	"roles": [
+		{
+			"id": "ui.prompt",
+			"description": "Generic fixture prompts and labels",
+			"scopes": [
+				{
+					"matchers": [
+						{
+							"kind": "location_kind",
+							"value": "data_table_cell"
+						},
+						{
+							"kind": "object_path",
+							"operator": "prefix",
+							"value": "/Game/Fixture/Text/"
+						},
+						{
+							"kind": "property_path",
+							"operator": "exact",
+							"value": "Label"
+						}
+					]
+				},
+				{
+					"matchers": [
+						{
+							"kind": "location_kind",
+							"value": "string_table_entry"
+						},
+						{
+							"kind": "string_table_entry",
+							"operator": "prefix",
+							"value": "Prompt"
+						}
+					]
+				}
+			]
+		}
+	],
+	"rules": [
+		{
+			"kind": "format_arguments"
+		},
+		{
+			"kind": "argument_modifiers"
+		},
+		{
+			"kind": "rich_text"
+		},
+		{
+			"kind": "po_escape_safety"
+		},
+		{
+			"kind": "whitespace"
+		},
+		{
+			"kind": "empty_translation"
+		},
+		{
+			"kind": "missing_translator_notes"
+		},
+		{
+			"kind": "duplicate_source"
+		},
+		{
+			"kind": "format_argument_renamed"
+		},
+		{
+			"kind": "rich_text_tags"
+		},
+		{
+			"kind": "rich_text_tag_case"
+		},
+		{
+			"kind": "line_breaks"
+		},
+		{
+			"kind": "length_outlier"
+		},
+		{
+			"kind": "outdated_translation"
+		},
+		{
+			"kind": "inconsistent_translation"
+		},
+		{
+			"kind": "rich_text_tags_added"
+		},
+		{
+			"kind": "source_line_endings_changed"
+		},
+		{
+			"kind": "placeholder_translation"
+		},
+		{
+			"kind": "culture_invariant_text"
+		},
+		{
+			"kind": "placeholder_text"
+		},
+		{
+			"kind": "source_whitespace"
+		},
+		{
+			"kind": "source_markup"
+		},
+		{
+			"kind": "number_only_text"
+		},
+		{
+			"kind": "string_table_key_collision"
+		},
+		{
+			"kind": "character_budget",
+			"id": "ui.prompt.characters",
+			"role": "ui.prompt",
+			"maximumCharacters": 10,
+			"recovery": "Shorten the prompt or revise the project-authored budget."
+		},
+		{
+			"kind": "terminology",
+			"id": "ui.prompt.terms",
+			"role": "ui.prompt",
+			"caseSensitive": false,
+			"terms": [
+				{
+					"kind": "forbidden",
+					"term": "old"
+				},
+				{
+					"kind": "preferred",
+					"term": "select",
+					"alternatives": ["press", "click"]
+				}
+			],
+			"recovery": "Use the preferred project terminology and review the affected context."
+		}
+	]
+}

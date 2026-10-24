@@ -1,8 +1,5 @@
 {
-	"schemaVersion": 2,
-	"segmentSeparator": "//",
-	"optionalArguments": ["ParentLabel"],
-	"optionalTags": ["npcname"],
+	"schemaVersion": 1,
 	"roles": [
 		{
 			"id": "menu",
@@ -35,6 +32,101 @@
 	],
 	"rules": [
 		{
+			"kind": "format_arguments",
+			"params": {
+				"optionalArguments": ["ParentLabel"]
+			}
+		},
+		{
+			"kind": "argument_modifiers"
+		},
+		{
+			"kind": "rich_text"
+		},
+		{
+			"kind": "po_escape_safety"
+		},
+		{
+			"kind": "whitespace"
+		},
+		{
+			"kind": "empty_translation"
+		},
+		{
+			"kind": "missing_translator_notes"
+		},
+		{
+			"kind": "duplicate_source"
+		},
+		{
+			"kind": "format_argument_renamed",
+			"params": {
+				"optionalArguments": ["ParentLabel"]
+			}
+		},
+		{
+			"kind": "rich_text_tags",
+			"params": {
+				"optionalTags": ["npcname"],
+				"optionalArguments": ["ParentLabel"]
+			}
+		},
+		{
+			"kind": "rich_text_tag_case",
+			"params": {
+				"optionalArguments": ["ParentLabel"]
+			}
+		},
+		{
+			"kind": "line_breaks"
+		},
+		{
+			"kind": "segment_separator",
+			"params": {
+				"separator": "//"
+			}
+		},
+		{
+			"kind": "length_outlier"
+		},
+		{
+			"kind": "outdated_translation"
+		},
+		{
+			"kind": "inconsistent_translation"
+		},
+		{
+			"kind": "rich_text_tags_added",
+			"params": {
+				"optionalTags": ["npcname"],
+				"optionalArguments": ["ParentLabel"]
+			}
+		},
+		{
+			"kind": "source_line_endings_changed"
+		},
+		{
+			"kind": "placeholder_translation"
+		},
+		{
+			"kind": "culture_invariant_text"
+		},
+		{
+			"kind": "placeholder_text"
+		},
+		{
+			"kind": "source_whitespace"
+		},
+		{
+			"kind": "source_markup"
+		},
+		{
+			"kind": "number_only_text"
+		},
+		{
+			"kind": "string_table_key_collision"
+		},
+		{
 			"id": "menu.limit",
 			"kind": "character_budget",
 			"role": "menu",
@@ -46,16 +138,21 @@
 			"kind": "terminology",
 			"role": "lines",
 			"caseSensitive": true,
-			"terms": [{ "kind": "forbidden", "term": "TODO" }],
+			"terms": [
+				{
+					"kind": "forbidden",
+					"term": "TODO"
+				}
+			],
 			"recovery": "Write the final text."
-		}
-	],
-	"localizationRules": [
+		},
 		{
 			"id": "menu.translation-limit",
 			"kind": "localization_character_budget",
 			"role": "menu",
-			"cultures": { "de": 12 },
+			"cultures": {
+				"de": 12
+			},
 			"recovery": "Shorten the translation."
 		}
 	]

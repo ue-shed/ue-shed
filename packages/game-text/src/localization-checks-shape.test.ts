@@ -27,9 +27,13 @@ import {
 	localizationQualityWorkspaceOf,
 	workspaceQualityCsv
 } from "./localization-workspace.js";
-import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
-import { GameTextRuleDocument } from "./game-text-rules.js";
-import { TextQualityRuleDocument } from "./quality-schema.js";
+import { STARTER_CHECK_RULES, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
+import type { BuiltInCheckId } from "./localization-check-ids.js";
+import {
+	type BuiltInCheckEntry,
+	GameTextRuleDocument,
+	isBuiltInCheckEntry
+} from "./game-text-rules.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
 const provenance = {
@@ -54,7 +58,7 @@ function report(
 	text: TextCorpus,
 	files: ReturnType<typeof evidence>,
 	options: LocalizationCheckOptions = {},
-	rules?: GameTextRuleDocument
+	rules: GameTextRuleDocument = STARTER_CHECK_RULES
 ) {
 	const joined = joinLocalizationTarget(text, files, files.target);
 	return {
@@ -67,7 +71,7 @@ function line(
 	source: string,
 	translation: string,
 	options: LocalizationCheckOptions = {},
-	rules?: GameTextRuleDocument
+	rules: GameTextRuleDocument = STARTER_CHECK_RULES
 ) {
 	const text = corpus([unit("K", source)]);
 	return report(
@@ -77,8 +81,30 @@ function line(
 		rules
 	).report;
 }
-const rules = (fields: Partial<TextQualityRuleDocument>) =>
-	Schema.decodeUnknownSync(TextQualityRuleDocument)({ ...STARTER_GAME_TEXT_RULES, ...fields });
+/** Parameters for some built-in checks, as a rules file writes them. */
+type CheckParams = {
+	readonly [Id in BuiltInCheckId]?: Extract<
+		typeof BuiltInCheckEntry.Encoded,
+		{ readonly kind: Id }
+	>["params"];
+};
+/** The starter file, with these checks' parameters; a check it doesn't list is added. */
+const starter = (params: CheckParams = {}) =>
+	Schema.decodeUnknownSync(GameTextRuleDocument)({
+		...STARTER_GAME_TEXT_RULES,
+		rules: [
+			...STARTER_GAME_TEXT_RULES.rules.map((entry) =>
+				isBuiltInCheckEntry(entry) && entry.kind in params
+					? { ...entry, params: params[entry.kind] }
+					: entry
+			),
+			...Object.entries(params)
+				.filter(
+					([kind]) => !STARTER_GAME_TEXT_RULES.rules.some((entry) => entry.kind === kind)
+				)
+				.map(([kind, value]) => ({ kind, params: value }))
+		]
+	});
 /** The kinds a line's German translation gets. */
 const kinds = (value: LocalizationQualityReport) =>
 	findings(value)
@@ -120,7 +146,15 @@ function another(key: string, source: string, objectPath: string): TextUnit {
 }
 describe("translation shape checks", () => {
 	it("lets a translation add optional arguments, their tags and optional tags", () => {
-		const optional = rules({ optionalArguments: ["ParentLabel"], optionalTags: ["italic"] });
+		const optionalArguments = ["ParentLabel"],
+			optionalTags = ["italic"];
+		const optional = starter({
+			format_arguments: { optionalArguments },
+			format_argument_renamed: { optionalArguments },
+			rich_text_tag_case: { optionalArguments },
+			rich_text_tags: { optionalTags, optionalArguments },
+			rich_text_tags_added: { optionalTags, optionalArguments }
+		});
 		const added = "<PlayerName>{ParentLabel}</>, cookie! Yummy nummy!";
 		expect(kinds(line("Cookie! Yummy nummy!", added))).toEqual(
 			expect.arrayContaining(["format_arguments", "rich_text_tags_added"])
@@ -148,10 +182,7 @@ describe("translation shape checks", () => {
 			noPO()
 		);
 		expect(kind(report(text, files).report, "segment_separator")).toEqual([]);
-		const rules = Schema.decodeUnknownSync(TextQualityRuleDocument)({
-			...STARTER_GAME_TEXT_RULES,
-			segmentSeparator: "//"
-		});
+		const rules = starter({ segment_separator: { separator: "//" } });
 		const checked = report(text, files, {}, rules).report;
 		expect(kind(checked, "segment_separator", "de")[0]).toMatchObject({
 			actual: { separator: "//", count: 0 },
@@ -289,10 +320,10 @@ describe("translated inconsistently", () => {
 });
 describe("built-in source checks", () => {
 	it("lists a placeholder once where the workspace also shows the rule file's source findings", () => {
-		const starter = rules({});
+		const document = starter();
 		const hydrated: number[] = [];
 		const unreported: unknown[] = [];
-		const workspace = (source: string, document: TextQualityRuleDocument) => {
+		const workspace = (source: string, document: GameTextRuleDocument) => {
 			const text = corpus([unit("K", source)]);
 			const files = evidence(
 				[manifestEntry("K", source)],
@@ -331,18 +362,18 @@ describe("built-in source checks", () => {
 				)
 				.map((finding) => [finding.filter, finding.problem]);
 		// Every placeholder is a forbidden term's finding: the built-in's is left out.
-		const covered = workspace("Choose a placeholder name", starter);
+		const covered = workspace("Choose a placeholder name", document);
 		expect(problems(covered).map(([filter]) => filter)).toEqual(["terminology"]);
 		const page = Effect.runSync(covered.search({ target: target.name, filter: "all" }));
 		expect(page.counts.placeholder_text).toBe(0);
 		expect(page.total).toBe(page.findings.length);
 		// Some are: the built-in names only the others.
-		expect(problems(workspace("TODO: placeholder name", starter))).toContainEqual([
+		expect(problems(workspace("TODO: placeholder name", document))).toContainEqual([
 			"placeholder_text",
 			"en · Placeholder “TODO”"
 		]);
 		// A role that does not select the line's place leaves the placeholder to the built-in.
-		const elsewhere = Schema.decodeUnknownSync(TextQualityRuleDocument)({
+		const elsewhere = Schema.decodeUnknownSync(GameTextRuleDocument)({
 			...STARTER_GAME_TEXT_RULES,
 			roles: [
 				...STARTER_GAME_TEXT_RULES.roles,
@@ -358,6 +389,7 @@ describe("built-in source checks", () => {
 				}
 			],
 			rules: [
+				...STARTER_CHECK_RULES.rules,
 				{
 					id: "elsewhere-terms",
 					kind: "terminology",

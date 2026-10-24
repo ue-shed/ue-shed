@@ -298,13 +298,15 @@ test("records the real Game Text quality workflow", async ({
 		);
 		await qualityTab.click();
 		const setup = page.getByRole("region", { name: "Quality rules setup" });
-		await expect(setup).toContainText("Set up writing checks");
+		await expect(setup).toContainText("No quality rules for this project");
 		await expect(setup.getByRole("button", { name: "Create rules file" })).toBeVisible();
-		await expect(setup.getByRole("button", { name: "Load rules", exact: true })).toBeEnabled();
+		await expect(
+			setup.getByRole("button", { name: "Choose a rules file…", exact: true })
+		).toBeEnabled();
 		await page.screenshot({ path: testInfo.outputPath("04-quality-setup.png") });
 		await page.waitForTimeout(1_200);
 
-		await setup.getByRole("button", { name: "Load rules", exact: true }).click();
+		await setup.getByRole("button", { name: "Choose a rules file…", exact: true }).click();
 		const findings = page.getByRole("region", { name: "Findings" });
 		const findingDetail = page.getByRole("complementary", { name: "Finding detail" });
 		const allFindings = page.getByRole("button", { name: /^All findings [\d,]+$/u });

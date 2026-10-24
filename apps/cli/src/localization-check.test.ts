@@ -4,7 +4,7 @@ import { it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Ref, Result, Schema } from "effect";
 import { expect } from "vitest";
 import { LocalizationChangeSet } from "@ue-shed/localization/browser";
-import { CliRuntime } from "./cli-runtime.js";
+import { CliRuntime, json, printJsonInParts } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 import { writeLocalizationCheckChanges } from "./workflows/localization-check.js";
 
@@ -99,6 +99,113 @@ it.effect("loc check rejects unsupported cultures with safe actionable failures"
 		expect(report.error.message).not.toContain("Private");
 		expect(report.error.recovery.length).toBeGreaterThan(0);
 		expect(yield* Ref.get(exit)).toBe(2);
+	})
+);
+
+/** Runs the CLI, collecting what it prints, its stderr and its exit code. */
+const run = (args: readonly string[]) =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exit = yield* Ref.make(0);
+		const runtime = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (text) => Ref.update(output, (value) => value + text),
+				printError: (text) => Ref.update(errors, (value) => value + text),
+				setExitCode: (code) => Ref.set(exit, code)
+			})
+		);
+		yield* runCli(args).pipe(Effect.provide(runtime));
+		return {
+			output: yield* Ref.get(output),
+			errors: yield* Ref.get(errors),
+			exit: yield* Ref.get(exit)
+		};
+	});
+const Report = Schema.Struct({
+	findings: Schema.Array(Schema.Struct({ kind: Schema.String })),
+	rules: Schema.Array(Schema.Struct({ ruleId: Schema.String }))
+});
+
+it.effect("loc check runs the file --rules names, and says when no rules file ran", () =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const directory = yield* fs.makeTempDirectoryScoped();
+		const rules = join(directory, "rules.json");
+		yield* fs.writeFileString(
+			rules,
+			JSON.stringify({
+				schemaVersion: 1,
+				roles: [],
+				rules: [{ kind: "missing_translator_notes" }]
+			})
+		);
+		const project = resolve("fixtures/unreal-427-localization");
+		const base = ["loc", "check", project, "--target", "Fixture427"];
+		const given = yield* run([...base, "--rules", rules]);
+		expect(given.exit).toBe(0);
+		expect(given.errors).not.toContain("No rules file");
+		const report = Schema.decodeUnknownSync(Schema.fromJsonString(Report))(given.output);
+		expect(report.rules.map((rule) => rule.ruleId)).toEqual([
+			"localization.missing_translator_notes"
+		]);
+		expect(
+			report.findings.every((finding) => finding.kind === "missing_translator_notes")
+		).toBe(true);
+		// The fixture has no rules file of its own: nothing runs, and stderr says why.
+		const none = yield* run(base);
+		expect(none.exit).toBe(0);
+		expect(Schema.decodeUnknownSync(Schema.fromJsonString(Report))(none.output).rules).toEqual(
+			[]
+		);
+		expect(none.errors).toContain("No rules file: no checks ran.");
+		const missing = yield* run([...base, "--rules", join(directory, "missing.json")]);
+		expect(missing.exit).toBe(2);
+		const failure = Schema.decodeUnknownSync(Schema.fromJsonString(Failure))(missing.output);
+		expect(failure.error.code).toBe("rules_unreadable");
+		expect(failure.error.message).not.toContain(directory);
+	}).pipe(Effect.provide(NodeServices.layer))
+);
+
+it.effect("prints a report in parts with the same bytes as one string", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const runtime = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (text) => Ref.update(output, (value) => value + text),
+				printError: () => Effect.void,
+				setExitCode: () => Effect.void
+			})
+		);
+		const same = <Value extends object>(
+			value: Value,
+			parts: readonly (keyof Value & string)[]
+		) =>
+			Effect.gen(function* () {
+				yield* Ref.set(output, "");
+				yield* printJsonInParts(value, parts).pipe(Effect.provide(runtime));
+				expect(yield* Ref.get(output)).toBe(json(value));
+			});
+		yield* same({}, []);
+		yield* same({ findings: [] }, ["findings"]);
+		yield* same({ findings: [], skipped: undefined }, ["findings"]);
+		yield* same(
+			{
+				schemaVersion: 1,
+				findings: [
+					{ text: 'line\nbreak "quoted" ü 😀', nested: { list: [1, [], {}] } },
+					null,
+					7
+				],
+				checkDiagnostics: [{ code: "x" }],
+				coverage: { total: 2, cultures: ["de", "fr"] },
+				omitted: undefined,
+				last: []
+			},
+			["findings", "checkDiagnostics"]
+		);
 	})
 );
 

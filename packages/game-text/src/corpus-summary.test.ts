@@ -1,3 +1,4 @@
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
@@ -95,7 +96,7 @@ describe("bounded corpus reports", () => {
 			}))
 		};
 		const report = indexedTestReports(reportText).source({
-			schemaVersion: 3,
+			schemaVersion: 1,
 			roles: [],
 			rules: []
 		});
@@ -105,7 +106,10 @@ describe("bounded corpus reports", () => {
 		expect(textQualityQuery(report).summary().diagnosticCount).toBe(1000);
 		expect(textQualityQuery(report).export("all").diagnosticCount).toBe(1000);
 		const files = evidence();
-		const checked = indexedTestReports(reportText, files).localization(undefined, undefined);
+		const checked = indexedTestReports(reportText, files).localization(
+			STARTER_CHECK_RULES,
+			undefined
+		);
 		expect(checked.diagnostics).toHaveLength(200);
 		expect(checked.diagnosticCount).toBe(1000);
 		expect(checked.diagnosticsOmitted).toBe(800);

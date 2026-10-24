@@ -9,9 +9,9 @@ import {
 	asyncTextQualityQueryOf,
 	type AsyncTextQualityQuery
 } from "./quality-query.js";
-import { translateRuleDocument } from "./rules/translate.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 import type { NativeFindings } from "./native-findings.js";
-import type { GameTextRuleDocument } from "./game-text-rules.js";
+import { sourceRulesOf, type GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextQualityFinding } from "./quality-schema.js";
 import type { TextCorpus, TextLocation } from "./schema.js";
 import { snapshotCheck } from "./snapshot-format.js";
@@ -137,9 +137,9 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 	reportProgress({ phase: "source_quality", completed: 0, total: totalTextUnits, findings: 0 });
 
 	const roles = [...document.roles].sort((left, right) => left.id.localeCompare(right.id));
-	const rules = [...document.rules].sort((left, right) => left.id.localeCompare(right.id));
+	const rules = sourceRulesOf(document).sort((left, right) => left.id.localeCompare(right.id));
 	const prepared = prepareTextQualityRules(document);
-	const evaluated = yield* native.findingsEvaluate(translateRuleDocument(document));
+	const evaluated = yield* native.findingsEvaluate(effectiveRuleDocument(document));
 	snapshotCheck(prepared.length < 0x10000, "quality.source", "Too many rules");
 	const reader = occurrenceReader(data);
 

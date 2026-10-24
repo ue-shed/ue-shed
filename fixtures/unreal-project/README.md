@@ -127,7 +127,7 @@ compares Unreal's own `Game_Conflicts.txt`.
 | Tag case changed             | `rich_text_tag_case` (fr)                                   | `ST_FixtureProblemLines` · `TagCase`                |
 | Optional tag                 | `rich_text_tags_added` (fr) only without `optionalTags`     | `ST_FixtureProblemLines` · `OptionalTag`            |
 | Unbalanced tag               | `rich_text` (de)                                            | `ST_FixtureProblemLines` · `UnbalancedTag`          |
-| `//` separator dropped       | `segment_separator` (de) with `segmentSeparator`            | `ST_FixtureProblemLines` · `Separator`              |
+| `//` separator dropped       | `segment_separator` (de) with its `separator`               | `ST_FixtureProblemLines` · `Separator`              |
 | Edge whitespace              | `whitespace` (de)                                           | `ST_FixtureProblemLines` · `EdgeWhitespace`         |
 | Interior line break dropped  | `line_breaks` (fr)                                          | `ST_FixtureProblemLines` · `LineBreak`              |
 | Much shorter translation     | `length_outlier` (de)                                       | `ST_FixtureProblemLines` · `LengthOutlier`          |

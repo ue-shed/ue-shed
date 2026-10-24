@@ -7,11 +7,15 @@ import {
 	TextCorpusScanError,
 	type IndexFailure
 } from "@ue-shed/game-text/index";
-import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "@ue-shed/game-text/rules";
+import {
+	GAME_TEXT_RULES_RELATIVE_PATH,
+	GameTextRuleDocument,
+	STARTER_CHECK_RULES,
+	STARTER_GAME_TEXT_RULES
+} from "@ue-shed/game-text/rules";
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,
-	TextQualityRuleDocument,
 	TextQualityRuleId,
 	TextRoleId,
 	TextUnit
@@ -756,7 +760,7 @@ it.effect("returns not_configured without a project root", () =>
 
 const qualityRoleId = TextRoleId.make("menu.prompt");
 const qualityRuleId = TextQualityRuleId.make("menu.prompt.characters");
-const validQualityDocument = TextQualityRuleDocument.make({
+const validQualityDocument = GameTextRuleDocument.make({
 	roles: [
 		{
 			id: qualityRoleId,
@@ -854,9 +858,8 @@ it.effect(
 			expect(reviewed).toEqual({
 				error: {
 					code: "invalid_rules",
-					message: "The Game Text quality rule file is not valid JSON.",
-					recovery:
-						"Correct the JSON syntax and retry with a version-1, version-2 or version-3 rule document.",
+					message: "The Game Text rule file is not valid JSON.",
+					recovery: "Correct the JSON syntax and retry with a version-1 rule file.",
 					retrySafe: true
 				},
 				status: "failed"
@@ -912,7 +915,7 @@ it.effect(
 	"previews validated rule edits, rejects invalid drafts, and saves the active file",
 	() => {
 		const files = new Map<string, Uint8Array>();
-		const revisedDocument = TextQualityRuleDocument.make({
+		const revisedDocument = GameTextRuleDocument.make({
 			roles: [
 				{
 					id: qualityRoleId,
@@ -930,7 +933,7 @@ it.effect(
 			],
 			schemaVersion: 1
 		});
-		const invalidDocument = TextQualityRuleDocument.make({
+		const invalidDocument = GameTextRuleDocument.make({
 			roles: [
 				{
 					id: qualityRoleId,
@@ -1105,6 +1108,10 @@ it("exports the selected target's localization quality list as a replayable repo
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
 				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				// Without rules nothing runs; preview the starter's checks.
+				expect((yield* service.previewQualityRules(STARTER_CHECK_RULES)).status).toBe(
+					"completed"
+				);
 				// Without a loaded target the export reports guidance instead of an empty list.
 				expect(yield* service.investigationExport(query, "json")).toMatchObject({
 					status: "failed"

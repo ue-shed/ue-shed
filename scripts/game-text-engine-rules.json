@@ -1,85 +1,78 @@
 {
-	"schemaVersion": 3,
-	"preset": "none",
+	"schemaVersion": 1,
 	"roles": [],
-	"rules": [],
-	"checks": {
-		"format_arguments": {
-			"enabled": true,
+	"rules": [
+		{
+			"kind": "format_arguments",
 			"severity": "normal",
 			"params": {
 				"optionalArguments": []
 			}
 		},
-		"argument_modifiers": {
-			"enabled": true,
+		{
+			"kind": "argument_modifiers",
 			"severity": "normal",
 			"params": {}
 		},
-		"rich_text": {
-			"enabled": true,
+		{
+			"kind": "rich_text",
 			"severity": "normal",
 			"params": {}
 		},
-		"po_escape_safety": {
-			"enabled": true,
+		{
+			"kind": "po_escape_safety",
 			"severity": "normal",
 			"params": {}
 		},
-		"whitespace": {
-			"enabled": true,
+		{
+			"kind": "whitespace",
 			"severity": "normal",
 			"params": {}
 		},
-		"empty_translation": {
-			"enabled": true,
+		{
+			"kind": "empty_translation",
 			"severity": "normal",
 			"params": {}
 		},
-		"missing_translator_notes": {
-			"enabled": true,
+		{
+			"kind": "missing_translator_notes",
 			"severity": "low",
 			"params": {}
 		},
-		"duplicate_source": {
-			"enabled": true,
+		{
+			"kind": "duplicate_source",
 			"severity": "low",
 			"params": {}
 		},
-		"format_argument_renamed": {
-			"enabled": true,
+		{
+			"kind": "format_argument_renamed",
 			"severity": "normal",
 			"params": {
 				"optionalArguments": []
 			}
 		},
-		"rich_text_tags": {
-			"enabled": true,
+		{
+			"kind": "rich_text_tags",
 			"severity": "normal",
 			"params": {
 				"optionalTags": [],
 				"optionalArguments": []
 			}
 		},
-		"rich_text_tag_case": {
-			"enabled": true,
+		{
+			"kind": "rich_text_tag_case",
 			"severity": "low",
 			"params": {
 				"optionalArguments": []
 			}
 		},
-		"line_breaks": {
-			"enabled": true,
+		{
+			"kind": "line_breaks",
 			"severity": "normal",
 			"params": {}
 		},
-		"segment_separator": {
-			"enabled": false,
-			"severity": "normal",
-			"params": {}
-		},
-		"length_outlier": {
-			"enabled": true,
+		{
+			"kind": "length_outlier",
 			"severity": "normal",
 			"params": {
 				"minimumSourceLength": 20,
@@ -89,34 +82,34 @@
 				"compactMinimumRatio": 0.25
 			}
 		},
-		"outdated_translation": {
-			"enabled": true,
+		{
+			"kind": "outdated_translation",
 			"severity": "blocking",
 			"params": {}
 		},
-		"inconsistent_translation": {
-			"enabled": true,
+		{
+			"kind": "inconsistent_translation",
 			"severity": "normal",
 			"params": {
 				"minimumLength": 3,
 				"maximumWords": 4
 			}
 		},
-		"rich_text_tags_added": {
-			"enabled": true,
+		{
+			"kind": "rich_text_tags_added",
 			"severity": "low",
 			"params": {
 				"optionalTags": [],
 				"optionalArguments": []
 			}
 		},
-		"source_line_endings_changed": {
-			"enabled": true,
+		{
+			"kind": "source_line_endings_changed",
 			"severity": "low",
 			"params": {}
 		},
-		"placeholder_translation": {
-			"enabled": true,
+		{
+			"kind": "placeholder_translation",
 			"severity": "normal",
 			"params": {
 				"words": [
@@ -138,38 +131,38 @@
 				"minimumPunctuationSourceWords": 3
 			}
 		},
-		"culture_invariant_text": {
-			"enabled": true,
+		{
+			"kind": "culture_invariant_text",
 			"severity": "low",
 			"params": {}
 		},
-		"placeholder_text": {
-			"enabled": true,
+		{
+			"kind": "placeholder_text",
 			"severity": "normal",
 			"params": {
 				"markers": ["TODO", "TBD", "FIXME"],
 				"phrases": ["lorem ipsum", "to be translated", "placeholder"]
 			}
 		},
-		"source_whitespace": {
-			"enabled": true,
+		{
+			"kind": "source_whitespace",
 			"severity": "low",
 			"params": {}
 		},
-		"source_markup": {
-			"enabled": true,
+		{
+			"kind": "source_markup",
 			"severity": "normal",
 			"params": {}
 		},
-		"number_only_text": {
-			"enabled": true,
+		{
+			"kind": "number_only_text",
 			"severity": "low",
 			"params": {}
 		},
-		"string_table_key_collision": {
-			"enabled": true,
+		{
+			"kind": "string_table_key_collision",
 			"severity": "normal",
 			"params": {}
 		}
-	}
+	]
 }

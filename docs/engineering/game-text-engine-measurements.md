@@ -1,9 +1,10 @@
-# Game Text engine baseline and transport experiment
+# Game Text engine measurements
 
 Plan 059 Phase 0, measured on 2026-10-23 at `8b4ce3a4` with the uncommitted measurement
 harness. This is a new record because it fixes the host request sequences and measures the
 current native engine's public APIs. Earlier pipeline experiments remain in
-[shared-index measurements](game-text-shared-index-measurements.md).
+[shared-index measurements](game-text-shared-index-measurements.md). Each later phase is measured
+against this baseline: see [Phase 1 results](#phase-1-results).
 
 ## Reproduction
 
@@ -187,7 +188,7 @@ findings; retain all three raw samples rather than treating its slowest pass as 
 | ----------------------------------- | ---------------: | --------------------------: | ---------------------------: | ----------------------------: |
 | Matching 1–2 character prefixes     |               24 |          204.88 / 389.44 ms |         862.86 / 1,143.93 ms |            215.62 / 389.35 ms |
 | Matching 3+ character prefixes      |                9 |          196.54 / 229.78 ms |         758.86 / 1,019.08 ms |            184.18 / 254.98 ms |
-| CJK, no matching rows               |                6 |            11.55 / 12.09 ms |             12.18 / 16.66 ms |              12.87 / 13.36 ms |
+| CJK                                 |                6 |            11.55 / 12.09 ms |             12.18 / 16.66 ms |              12.87 / 13.36 ms |
 | No-match query and its prefixes     |               51 |            9.24 / 206.72 ms |             7.81 / 827.53 ms |              9.45 / 213.16 ms |
 
 The initial prefix of the eventual no-match query does match rows here. Its high p95 is therefore
@@ -206,6 +207,195 @@ whole-keystroke percentile.
 | Released Workbench default   |        33, 185.85 / 343.78 ms |         36, 12.02 / 44.92 ms |
 | Released Workbench all-open  |        33, 189.01 / 344.77 ms |      186, 239.11 / 792.41 ms |
 | Released Electroswag default |        33, 203.03 / 346.90 ms |          36, 9.91 / 48.16 ms |
+
+## Phase 1 results
+
+Plan 059 Phase 1, measured on 2026-10-24 at `0bd6dbf6`, the head of #167. The harness, commands,
+machine and caps are the baseline's. Build and Quality ran once each (`--long-runs 1`), where the
+baseline ran them three times; the interactive stages ran three times, as before. The same
+scripts reproduce every baseline number above exactly from the baseline's results files, so
+the two columns are computed the same way.
+
+| 1× path                                    | Runs | Baseline median | Phase 1 median | Change | Phase 1 p95 | Sampled tree RSS maximum | V8 heap maximum |
+| ------------------------------------------ | ---: | --------------: | -------------: | -----: | ----------: | -----------------------: | --------------: |
+| Cold build to visible page                 |    1 |        66.999 s |       68.395 s |  +2.1% |    68.395 s |                 2.59 GiB |         244 MiB |
+| Open to visible page                       |    3 |         1.897 s |        1.923 s |  +1.4% |     1.954 s |                 0.70 GiB |          75 MiB |
+| Cached reopen to visible page              |    3 |         2.957 s |        2.962 s |  +0.2% |     2.968 s |                 0.77 GiB |         131 MiB |
+| Quality, captured default checks           |    1 |        94.110 s |      153.005 s | +62.6% |   153.005 s |                 3.40 GiB |         321 MiB |
+| Workbench selection, two requests          |    3 |        55.72 ms |       57.37 ms |  +3.0% |    57.38 ms |                 0.77 GiB |         131 MiB |
+| Electroswag selection, two requests        |    3 |        56.34 ms |       55.47 ms |  −1.5% |    56.49 ms |                 0.77 GiB |         131 MiB |
+| Saturated related-line probe, 444 requests |    3 |       784.24 ms |      789.03 ms |  +0.6% |   847.78 ms |                 0.89 GiB |         130 MiB |
+
+| Released-project path                      | Runs | Baseline median | Phase 1 median | Change | Phase 1 p95 | Sampled tree RSS maximum | V8 heap maximum |
+| ------------------------------------------ | ---: | --------------: | -------------: | -----: | ----------: | -----------------------: | --------------: |
+| Cold build to visible page                 |    1 |       108.189 s |      112.164 s |  +3.7% |   112.164 s |                 3.94 GiB |         273 MiB |
+| Open to visible page                       |    3 |         1.812 s |        1.816 s |  +0.2% |     1.824 s |                 0.66 GiB |          78 MiB |
+| Cached reopen to visible page              |    3 |         6.068 s |        6.115 s |  +0.8% |     6.172 s |                 0.80 GiB |         186 MiB |
+| Quality, captured default checks           |    1 |       176.291 s |      336.059 s | +90.6% |   336.059 s |                 3.76 GiB |         300 MiB |
+| Workbench selection, two requests          |    3 |        83.29 ms |       81.94 ms |  −1.6% |    82.45 ms |                 0.85 GiB |         173 MiB |
+| Electroswag selection, two requests        |    3 |        83.38 ms |       83.37 ms |   0.0% |    83.45 ms |                 0.81 GiB |         145 MiB |
+| Saturated related-line probe, 444 requests |    3 |       638.17 ms |      600.51 ms |  −5.9% |   613.28 ms |                 1.11 GiB |         149 MiB |
+
+Quality's sampled tree RSS maximum rose from 2.42 to 3.40 GiB on 1× and from 2.76 to 3.76 GiB on
+the released project. The cold build's fell from 2.69 to 2.59 GiB and from 4.34 to 3.94 GiB. The
+selection rows now include the prepared reader's nearest sample, which the baseline didn't keep,
+so their RSS has no baseline to compare. The implicit-default Quality lane wasn't run.
+
+Keystroke categories pool the same prefixes as the baseline tables. On the released project those
+tables count every prefix that returns rows as matching, including the two CJK prefixes and the
+no-match query's first three. The CJK query sends two requests per keystroke there, so it does
+return rows: the baseline table's "no matching rows" label was wrong and is corrected above.
+
+| 1× keystroke category           | Samples per host | Workbench default p50 / p95 | Workbench all-open p50 / p95 | Electroswag default p50 / p95 |
+| ------------------------------- | ---------------: | --------------------------: | ---------------------------: | ----------------------------: |
+| Matching 1–2 characters, before |                9 |          563.85 / 598.98 ms |           775.93 / 812.91 ms |            588.01 / 612.52 ms |
+| Matching 1–2 characters, now    |                9 |          558.64 / 583.45 ms |           821.66 / 853.46 ms |            585.08 / 616.13 ms |
+| Matching 3+ characters, before  |               12 |          557.96 / 583.34 ms |           768.17 / 788.04 ms |            581.99 / 597.92 ms |
+| Matching 3+ characters, now     |               12 |          583.89 / 703.70 ms |         840.29 / 1,014.68 ms |            606.12 / 652.44 ms |
+| CJK, before                     |                6 |            16.23 / 19.75 ms |             17.82 / 25.29 ms |              17.71 / 19.47 ms |
+| CJK, now                        |                6 |            17.25 / 26.67 ms |             16.60 / 23.48 ms |              18.67 / 24.59 ms |
+| No-match and prefixes, before   |               51 |            15.74 / 21.03 ms |             15.52 / 19.62 ms |              17.82 / 28.82 ms |
+| No-match and prefixes, now      |               51 |            18.98 / 28.83 ms |             17.01 / 26.74 ms |              17.72 / 22.90 ms |
+
+| Released-project keystroke category | Samples per host | Workbench default p50 / p95 | Workbench all-open p50 / p95 | Electroswag default p50 / p95 |
+| ----------------------------------- | ---------------: | --------------------------: | ---------------------------: | ----------------------------: |
+| Matching 1–2 characters, before     |               24 |          204.88 / 389.44 ms |         862.86 / 1,143.93 ms |            215.62 / 389.35 ms |
+| Matching 1–2 characters, now        |               24 |          210.67 / 386.51 ms |         910.76 / 1,147.67 ms |            234.33 / 389.06 ms |
+| Matching 3+ characters, before      |                9 |          196.54 / 229.78 ms |         758.86 / 1,019.08 ms |            184.18 / 254.98 ms |
+| Matching 3+ characters, now         |                9 |          200.41 / 232.12 ms |         776.63 / 1,010.74 ms |            187.11 / 253.33 ms |
+| CJK, before                         |                6 |            11.55 / 12.09 ms |             12.18 / 16.66 ms |              12.87 / 13.36 ms |
+| CJK, now                            |                6 |            12.39 / 14.87 ms |             11.54 / 17.72 ms |              13.24 / 13.75 ms |
+| No-match and prefixes, before       |               51 |            9.24 / 206.72 ms |             7.81 / 827.53 ms |              9.45 / 213.16 ms |
+| No-match and prefixes, now          |               51 |            9.40 / 221.52 ms |             8.70 / 884.40 ms |             10.62 / 236.05 ms |
+
+| Project and host state       | Header requests: n, before → now p50 / p95 | Group requests: n, before → now p50 / p95 |
+| ---------------------------- | -----------------------------------------: | ----------------------------------------: |
+| 1× Workbench default         |   21, 494.41 / 518.29 → 509.73 / 544.44 ms |      21, 59.69 / 77.18 → 62.05 / 72.46 ms |
+| 1× Workbench all-open        |   21, 477.83 / 504.43 → 513.86 / 639.45 ms | 105, 186.87 / 303.96 → 207.04 / 317.34 ms |
+| 1× Electroswag default       |   21, 523.26 / 538.24 → 538.99 / 562.19 ms |      21, 60.28 / 72.39 → 60.73 / 76.62 ms |
+| Released Workbench default   |   33, 185.85 / 343.78 → 193.02 / 339.89 ms |      36, 12.02 / 44.92 → 12.11 / 46.96 ms |
+| Released Workbench all-open  |   33, 189.01 / 344.77 → 197.06 / 341.70 ms | 186, 239.11 / 792.41 → 239.58 / 790.92 ms |
+| Released Electroswag default |   33, 203.03 / 346.90 → 206.91 / 346.21 ms |       36, 9.91 / 48.16 → 10.07 / 48.37 ms |
+
+### Findings against the baseline
+
+Quality returns **222,592 findings** on 1× (baseline 222,872), SHA-256
+`ff1c131a4479b268896506748c6ca372a8a0c06f426babff93129fb1a2ffe8b2`, and **274,829** on the released
+project (baseline 276,122), SHA-256 `b1b3fe87d0851ac81d1a0449e02b443f51b8fbcaf7f860fe2d1675d6542f0c30`.
+To check the difference, every finding was paged out of `localizationQualitySearch` from both
+versions, each on a copy of its measured cache, and the two lists were compared by finding ID:
+
+- **No finding is new** on either project.
+- **Removed: 280 findings on 1× and 1,293 on the released project.** All are `whitespace` findings
+  on empty translations: 28 lines in ten cultures on 1×, 294 lines on the released project. Each of
+  those lines still reports `empty_translation`, and none of its other findings changed. This is
+  the removed `empty-translation-whitespace` pin.
+- **Changed: 2,022 released-project findings on 578 lines.** Each keeps its ID, severity and
+  problem, but its first location moves from the compiled copy of a Blueprint text literal
+  (`ScriptBytecode[N]` on the compiled function) to the authored graph pin it came from
+  (`Pins[N].DefaultTextValue`), and it lists one location fewer. This is the compiled-copy repair.
+  No 1× finding changed.
+- The other fact repairs change no finding on either project.
+
+Build, open and cached reopen still agree with each other on each project
+(`a2c3e70ee52370e0370fd22c8f3c776163885d4dcad331d7bd3d0c91b3674245` on 1×,
+`6b19c93a7b0663f0f8d490e44f3a11903f7a2c6eaceca53084282bb7461ff784` on the released project), but
+not with the baseline: the visible page's answer grew by 626 bytes on 1× and 620 on the released
+project. The harness keeps hashes, not answers, so the change hasn't been compared field by field.
+
+### Regressions
+
+Against the baseline medians:
+
+- **Quality, captured default checks:** +62.6% on 1× and +90.6% on the released project, with about
+  1 GiB more sampled RSS on both.
+- **Keystrokes that return rows**, mostly 2–10% slower at p50:
+    - 1×, three or more characters: +4.6% (p95 +20.6%) in the Workbench default state, +9.4%
+      (+28.8%) all-open and +4.1% (+9.1%) in Electroswag.
+    - 1× all-open, one or two characters: +5.9% (+5.0%). Its group requests are 10.8% slower.
+    - Released, one or two characters: +5.6% all-open and +8.7% in Electroswag.
+    - Header requests: +3.0% to +7.5% at p50 on 1× (all-open p95 +26.8%), and +1.9% to +4.3% on the
+      released project.
+- **CJK and no-match rows:** up to about 3 ms slower at p50 and 8 ms at p95 on 1×, and some are
+  faster. On the released project their p95 is 7–11% higher; it's set by the no-match query's first
+  prefixes, which return rows.
+- **Cold build:** +2.1% on 1× and +3.7% on the released project, each from one run.
+
+Open, cached reopen, selection, the related-line probe and the released project's three-character
+keystrokes are within 3% at the median, or faster. The released probe is 5.9% faster; the 1×
+probe's p95 is 7.2% higher.
+
+Measured parts of the Quality stage, from #166 and #167: Quality reads every line's findings back
+from the engine as JSON, about 1.3 GB on 1×. It does so in about 2,300 line reads of 64 to 256
+lines and about 4,600 unit reads of 256 units. After the first read, a 256-line read took about
+55 ms and a 256-unit read 0.7 ms. Evaluating the default catalogue took 12.75 s. The rest of the
+stage hasn't been attributed, and the keystroke and build changes haven't been profiled.
+
+The owner reviewed these results on 2026-10-24 and accepted them for Phase 1. Phase 3 moves
+sorting, paging and counting of findings into the engine, and Quality stops re-checking lines.
+
+## Phase 2 results
+
+Plan 059 Phase 2, measured on 2026-10-24 at `769f7503` with the same harness, machine and caps.
+Build and Quality ran once each, as in Phase 1. The interactive stages also ran once, where Phase 1
+ran them three times, so their Phase 2 values are single runs. The Phase 1 values are that record's
+medians. The later Phase 2 commits change no finding. The rules file reset, the review fixes and the
+CLI work keep the engine's 1× catalogue digest, and the opt-in `shared` and `long` checks aren't in
+the starter file.
+
+| Path                                       |        Generated 1× | Released 10-culture project |
+| ------------------------------------------ | ------------------: | --------------------------: |
+| Cold build to visible page                 |   68.395 → 68.610 s |         112.164 → 110.968 s |
+| Open to visible page                       |     1.923 → 1.902 s |             1.816 → 1.808 s |
+| Cached reopen to visible page              |     2.962 → 2.974 s |             6.115 → 6.039 s |
+| Quality, captured default checks           | 153.005 → 155.755 s |         336.059 → 300.365 s |
+| Quality in process, without its worker     |           159.631 s |                   345.195 s |
+| Workbench selection, two requests          |   57.37 → 59.95 ms¹ |           81.94 → 85.64 ms¹ |
+| Electroswag selection, two requests        |   55.47 → 58.16 ms¹ |           83.37 → 83.03 ms¹ |
+| Saturated related-line probe, 444 requests | 789.03 → 849.06 ms¹ |         600.51 → 712.05 ms¹ |
+
+¹ One Phase 2 run.
+
+Quality is +1.8% on 1× and −10.6% on the released project. The three group checks now run in the
+engine, and the TypeScript passes that computed them are deleted. Quality's sampled RSS maximum fell
+from 3.40 to 3.19 GiB on 1× and from 3.76 to 3.72 GiB on the released project. The released cold
+build's rose from 3.94 to 4.59 GiB in this one run; 1×'s fell from 2.59 to 2.55 GiB.
+
+**Findings are unchanged.** Quality's answer has the Phase 1 SHA-256 on both projects
+(`ff1c131a…` on 1×, `b1b3fe87…` on the released project), in its worker and in process. Build, open
+and cached reopen have the Phase 1 answers (`a2c3e70e…`, `6b19c93a…`).
+
+**The Quality worker stays.** In process, Quality's largest event-loop gap is 741 ms on 1× and
+882 ms on the released project; with the worker, 115 ms and 528 ms. Phase 2 required no worse than
+the worker's (spec §6). The gaps are the TypeScript scan's paging, sorting and hydration, which
+Phase 3 replaces.
+
+**The engine's catalogue** (the 1× timing test at the Phase 2 head) has 24 rules and takes 21.0 s,
+against 11.9 s for Phase 1's 21. The group rules account for most of the difference:
+`duplicate_source` 3.3 s, `inconsistent_translation` 3.1 s and `culture_invariant_text` 0.5 s.
+`existsOther`'s sub-stages are inputs 0.6 s, signatures 0.2 s, sites 0.1 s, tuples 1.8 s, count
+1.5 s and match 0.8 s. Its first version took 33.5 s. Expanding each row signature once took it to
+8.4 s, and interning values structurally to 5.2 s, each with the same digest.
+
+**`loc check`:**
+
+- On both canonical corpora, its output with the starter checks is byte-identical to Phase 2's
+  output before the reset, except for one added `"ruleDiagnostics": []`, which reports carry
+  whenever a rules file exists. With `--rules` it is identical to that.
+- On the released project, with `--rules` and the starter checks, it completes in 326 s. Its report
+  is 625 MB and has 274,829 findings, Quality's count. Before the CLI printed the report in parts,
+  `JSON.stringify` of that report exceeded V8's string limit.
+- The generated 1× project keeps its text in benchmark records, so the CLI sees its 583,507-line
+  join but no packages. It completes in 56 s with 164,426 findings from six evidence checks.
+
+**The corpus fixture.** Both canonical corpora compare with 1,120 subjects and the two pinned
+disagreements (`detail-culture-scope`, `manifest-notes-filter`), none unexpected or stale. The new
+`shared` and `long` probe agrees with Browse on every line. One 10,000-line fuzz run on UE 5.8
+(seed 73131: 11,042 lines, 44,168 subjects) has no unexpected disagreement and no stale defect,
+before and after a package edit, and its incremental and full scans agree. Its first run showed
+the near miss's expectation was wrong, not the engine: Browse's `unresolved` signal still counts
+as a finding problem until Phase 3 (plan decision 16). Quality's check reported nothing there, as
+intended.
 
 ## Instrumentation details
 

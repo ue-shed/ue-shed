@@ -25,6 +25,7 @@ import { decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import type { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { staleRuntimeCopy } from "./text-copies.js";
 import { TextAudience, TextOutOfScopeReason } from "./text-audience-schema.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 const Identity = Schema.Struct({ namespace: TextNamespace, key: TextKey });
 const Cases = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
@@ -170,7 +171,7 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 							projectRoot: fixture.root,
 							targetName: cases.target
 						});
-						const without = yield* result.localizationCheck();
+						const without = yield* result.localizationCheck(STARTER_CHECK_RULES);
 						const withRules = yield* result.localizationCheck(rules, {});
 						// Every authored finding, in the reports it belongs to and only those. Every
 						// mismatch is listed at once.
@@ -301,13 +302,14 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 									.reviewSignals
 							).toContain("compiled_copy_differs");
 						}
-						for (const ruleDocument of [undefined, rules]) {
-							const indexedSource = ruleDocument
+						for (const ruleDocument of [STARTER_CHECK_RULES, rules]) {
+							const authored = ruleDocument === rules;
+							const indexedSource = authored
 								? yield* (yield* result.sourceQuality(ruleDocument)).export("all")
 								: undefined;
 							const report = yield* result.localizationCheck(ruleDocument, {});
 							expect(kindCounts(report)).toEqual(
-								ruleDocument ? cases.counts.with : cases.counts.without
+								authored ? cases.counts.with : cases.counts.without
 							);
 							expect(
 								report.findings

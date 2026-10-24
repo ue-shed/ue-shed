@@ -169,7 +169,7 @@ it("offers to load an existing starter rules file and labels invalid rules", asy
 	await user.click(screen.getByRole("tab", { name: "Quality checks" }));
 	await user.click(screen.getByRole("button", { name: "Create rules file" }));
 	await screen.findByRole("button", { name: "Load existing rules" });
-	await user.click(screen.getByRole("button", { name: "Load rules" }));
+	await user.click(screen.getByRole("button", { name: "Choose a rules file…" }));
 	await screen.findByRole("tab", { name: "Quality checks, rules invalid" });
 	await user.click(screen.getByRole("button", { name: "Create rules file" }));
 	await user.click(await screen.findByRole("button", { name: "Load existing rules" }));

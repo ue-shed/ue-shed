@@ -1,11 +1,7 @@
 // @vitest-environment jsdom
 import { LocalizationEdit } from "@ue-shed/game-text/corpus";
-import {
-	LocalizationSelection,
-	TextQualityRuleDocument,
-	TextQualityRuleId,
-	TextRoleId
-} from "@ue-shed/game-text/schema";
+import { GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import { LocalizationSelection, TextQualityRuleId, TextRoleId } from "@ue-shed/game-text/schema";
 import { Effect, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -16,7 +12,7 @@ import {
 	type GameTextPreferences
 } from "./game-text-preferences.js";
 
-const rules = TextQualityRuleDocument.make({
+const rules = GameTextRuleDocument.make({
 	schemaVersion: 1,
 	roles: [
 		{

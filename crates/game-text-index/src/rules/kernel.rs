@@ -147,6 +147,26 @@ fn count(atom: Atom) -> Option<u64> {
         None
     }
 }
+/// A `regexReplace` replacement for one match: `$&` is the match and `$$` a dollar sign; any other
+/// `$` is literal, as in JavaScript.
+fn js_replacement(replacement: &str, matched: &str) -> String {
+    let mut output = String::with_capacity(replacement.len());
+    let mut characters = replacement.chars().peekable();
+    while let Some(character) = characters.next() {
+        match (character, characters.peek()) {
+            ('$', Some('&')) => {
+                characters.next();
+                output.push_str(matched);
+            }
+            ('$', Some('$')) => {
+                characters.next();
+                output.push('$');
+            }
+            _ => output.push(character),
+        }
+    }
+    output
+}
 fn atoms(values: &[Atom]) -> Out {
     Out::List(values.iter().copied().map(Out::Atom).collect())
 }
@@ -549,6 +569,45 @@ impl<'a> Kernel<'a> {
                 None
             )?),
             Op::TermListMatches => self.term_list_matches(arena, inputs)?,
+            // Every match replaced, as JavaScript's `replace` with a global regex; the replacement
+            // understands `$&` (the match) and `$$` (a dollar sign).
+            Op::RegexReplace => {
+                let source = string(arena, a)?;
+                let found = self.regex_matches(source, string(arena, b)?, true, None)?;
+                if found.is_empty() {
+                    Out::Atom(a)
+                } else {
+                    let replacement = string(arena, c)?;
+                    let units = js_regex::units(source);
+                    let mut output = Vec::with_capacity(units.len());
+                    let mut last = 0;
+                    for found in &found {
+                        output.extend_from_slice(&units[last..found.start]);
+                        output.extend(js_regex::units(&js_replacement(replacement, &found.text)));
+                        last = found.end;
+                    }
+                    output.extend_from_slice(&units[last..]);
+                    out!(js_regex::view(&output))
+                }
+            }
+            Op::MaxOf => {
+                let mut largest = None::<i64>;
+                for value in list(arena, a)? {
+                    // Arithmetic yields floating-point numbers, whole ones included.
+                    let value = match *value {
+                        Atom::Int(value) => value,
+                        Atom::Num(bits)
+                            if f64::from_bits(bits).fract() == 0.0
+                                && f64::from_bits(bits).abs() < i64::MAX as f64 =>
+                        {
+                            f64::from_bits(bits) as i64
+                        }
+                        _ => return Err("maxOf requires whole numbers.".into()),
+                    };
+                    largest = Some(largest.map_or(value, |largest| largest.max(value)));
+                }
+                largest.map_or(Out::NULL, |value| Out::Atom(Atom::Int(value)))
+            }
             Op::Flatten => {
                 let mut flattened = Vec::new();
                 for value in list(arena, a)? {

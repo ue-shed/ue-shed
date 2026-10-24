@@ -8,6 +8,7 @@ import {
 	GameTextIndexRefresh,
 	GameTextIndexSource,
 	GameTextRuleDocument,
+	STARTER_CHECK_RULES,
 	gameTextIndexRefreshLayer,
 	textQualityQuery,
 	type GameTextIndexRefreshResult
@@ -151,14 +152,20 @@ export function eventLoopGaps(intervalMs = stallIntervalMs) {
 	};
 }
 
-/** Runs the opened index's localization quality scan with Workbench's options. */
+/**
+ * Runs the opened index's localization quality scan with Workbench's options and the starter's
+ * checks; without a rules file nothing would run.
+ */
 export async function scaleQuality(result: GameTextIndexRefreshResult, tracer?: Tracer.Tracer) {
 	if (!result.localizationQuality)
 		throw new Error("The opened index does not offer localization quality.");
 	const stalls = eventLoopGaps();
 	try {
 		const quality = await Effect.runPromise(
-			traced(result.localizationQuality(undefined, { review: result.review.file }), tracer)
+			traced(
+				result.localizationQuality(STARTER_CHECK_RULES, { review: result.review.file }),
+				tracer
+			)
 		);
 		const measured = stalls();
 		// Findings by check, from the finding columns; no line is read.

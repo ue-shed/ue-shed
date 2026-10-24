@@ -242,8 +242,9 @@ part.
 offline, missing-plugin, not-found and failed feedback stays visible; **Opened** appears only after
 Unreal confirms the action.
 
-Open **Quality checks** and choose **Create rules file** to create examples at
-`Config/UEShed/GameTextRules.json`, or **Load rules** to choose an existing file. Creation never
+Open **Quality checks**: without a rules file nothing is checked. Choose **Create rules file** to
+create the built-in checks and examples at `Config/UEShed/GameTextRules.json`, or **Choose a rules
+file…** to load an existing one. Creation never
 overwrites a file. With nothing selected, the rules and roles overview shows findings and lines in
 scope, including a warning when a role matches none. Filter by **Character limits** or
 **Terminology**, then select a finding to see the highlighted term and **How to fix** guidance.

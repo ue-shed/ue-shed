@@ -3,7 +3,7 @@
 export type { Expr, Rule, RuleDocumentV4 } from "./rules/schema.js";
 export { rule, expr } from "./rules/builder.js";
 export { exampleRules } from "./rules/catalogue.js";
-export { translateRuleDocument, canonicalRuleDocument } from "./rules/translate.js";
+export { effectiveRuleDocument, canonicalRuleDocument } from "./rules/effective.js";
 
 export { LocalizationWordCount, localizationWordCount } from "./localization-words.js";
 
@@ -11,20 +11,30 @@ export {
 	CustomLocalizationCheck,
 	GameTextRuleDocument,
 	GameTextRuleDocumentError,
+	BuiltInCheckEntry,
+	GameTextRuleEntry,
+	GameTextRuleOverlay,
+	GameTextRulePatch,
+	applyRuleOverlay,
+	decodeGameTextRuleDocument,
+	isBuiltInCheckEntry,
+	localizationRulesOf,
+	ruleEntryId,
+	sourceRulesOf,
 	GameTextSourceQualityReport,
-	LocalizationCheckPreset,
-	LocalizationCheckSettings,
 	LocalizationProjectRule,
 	type ResolvedLocalizationCheck,
 	type ResolvedLocalizationChecks,
-	TextQualityRuleDocumentV2,
-	TextQualityRuleDocumentV3,
 	decodeGameTextRuleDocumentJson,
-	migrateGameTextRuleDocument,
 	resolveLocalizationChecks
 } from "./game-text-rules.js";
 
-export { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
+export {
+	GAME_TEXT_RULES_RELATIVE_PATH,
+	STARTER_CHECKS,
+	STARTER_CHECK_RULES,
+	STARTER_GAME_TEXT_RULES
+} from "./starter-rules.js";
 
 export {
 	type SavedTextAudienceInput,

@@ -13,6 +13,7 @@ import {
 	QualityWorkerReply,
 	qualityWorkerFailure
 } from "./quality-worker-protocol.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 
 const occurrence = (key: string, source: string) => ({
 	source,
@@ -69,11 +70,14 @@ it.live(
 				["K", "A", "B"].map((key) => occurrence(key, ` Source {Name} ${key}  `))
 			);
 			const rules = Schema.decodeUnknownSync(GameTextRuleDocument)({
-				schemaVersion: 3,
+				schemaVersion: 1,
 				roles: [],
-				rules: [],
-				checks: { missing_translator_notes: { severity: "low" } },
-				customChecks: [
+				rules: [
+					...STARTER_CHECK_RULES.rules.map((entry) =>
+						entry.kind === "missing_translator_notes"
+							? { ...entry, severity: "low" }
+							: entry
+					),
 					{
 						id: "custom-source",
 						label: "Source marker",
@@ -193,7 +197,9 @@ for (const mode of ["interrupt", "failure"] as const)
 				const fixture = yield* makeIndexRegressionFixture();
 				yield* Effect.gen(function* () {
 					const model = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-					const scan = yield* Effect.forkChild(model.localizationQuality());
+					const scan = yield* Effect.forkChild(
+						model.localizationQuality(STARTER_CHECK_RULES)
+					);
 					const abandoned = yield* Effect.promise(() => registered);
 					if (mode === "interrupt") yield* Fiber.interrupt(scan);
 					else
@@ -202,7 +208,7 @@ for (const mode of ["interrupt", "failure"] as const)
 							code: "unavailable"
 						});
 					expect(abandoned.threadId).toBe(-1);
-					const retried = yield* model.localizationQuality();
+					const retried = yield* model.localizationQuality(STARTER_CHECK_RULES);
 					expect(retried.findings.length).toBeGreaterThan(0);
 					expect([...workers].filter((worker) => worker.threadId !== -1)).toHaveLength(1);
 				}).pipe(Effect.scoped, Effect.provide(fixture.layer(false, fixture.source, true)));
@@ -239,11 +245,13 @@ it.live(
 			const fixture = yield* makeIndexRegressionFixture();
 			yield* Effect.gen(function* () {
 				const model = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-				const scan = yield* Effect.forkChild(model.localizationQuality());
+				const scan = yield* Effect.forkChild(
+					model.localizationQuality(STARTER_CHECK_RULES)
+				);
 				const done = yield* Effect.promise(() => completed);
 				yield* Fiber.interrupt(scan);
 				done.deliver(); // Now ignored by the host; no result objects can release this scan.
-				const next = yield* model.localizationQuality(); // Same port: cancellation ran first.
+				const next = yield* model.localizationQuality(STARTER_CHECK_RULES); // Same port: cancellation ran first.
 				expect(next.findings.length).toBeGreaterThan(0);
 				const post = MessagePort.prototype.postMessage;
 				const calls = vi

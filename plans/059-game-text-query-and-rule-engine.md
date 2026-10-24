@@ -14,7 +14,9 @@
 ## Status
 
 - **State**: In progress. Phase 0 is complete: the fixture merged in #162, and the baseline and
-  transport decision are recorded.
+  transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
+  owner's review are recorded. Phase 2 is implemented, and its measurements are recorded for the
+  owner's review.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -339,8 +341,8 @@ Illustrative syntax:
 | Item                                                                                                                                             | Phase                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
 | **TS check engine:** `localization-checks.ts`, `localization-policy.ts`, `localization-custom-checks.ts` and `quality.ts` evaluation             | 1–2                             |
-| **Quality worker and its sync channel:** `quality-worker*.ts`, `worker-calls.ts`                                                                 | 2                               |
-| **Second TS snapshot reader:** `joined-target-reader.ts`, `joined-query-reader.ts`, `indexed-policy-data.ts`, `shared-string-file.ts` sync reads | 2                               |
+| **Quality worker and its sync channel:** `quality-worker*.ts`, `worker-calls.ts`                                                                 | 2, or 3 (Phase 2 spec §6)       |
+| **Second TS snapshot reader:** `joined-target-reader.ts`, `joined-query-reader.ts`, `indexed-policy-data.ts`, `shared-string-file.ts` sync reads | 3 (decision 17)                 |
 | **TS mirrors of engine logic:** `joinLocalizationTarget`, `text-problems.ts` in the renderer, the reference `*.test-support.ts` oracles          | 2–3, as the fixture covers them |
 | **Dead native code:** `join_overlay::publish`, `localization_page`, `localization_focus`                                                         | 1                               |
 | **The per-facet re-match** and the serialized JSON response cache                                                                                | 3                               |
@@ -381,9 +383,10 @@ The [measurement record](../docs/engineering/game-text-engine-measurements.md) h
 mix, commands, complete tables and probe coverage. Engine compute and column construction,
 especially for all rows, are the Phase 3 and 4 work.
 
-### Phase 1: facts, the IR and rules that read only their own row
+### Phase 1: facts, the IR and rules that read only their own row (complete)
 
-The specification is [Game Text rule engine](../docs/engineering/game-text-rule-engine.md).
+The specification is [Game Text rule engine](../docs/engineering/game-text-rule-engine.md). It
+merged in #164–#167.
 
 - **Fact repairs: done.** Missing String Table entries, native-source overrides, compiled copies,
   `IdenticalNamespaceAndSource` and deleted packages now match the fixture. The wired-pin `shared`
@@ -401,30 +404,74 @@ The specification is [Game Text rule engine](../docs/engineering/game-text-rule-
   in TypeScript until Phase 3.
 - **Parity:** the fixture is exact. The `empty-translation-whitespace` pin is removed.
 
+Phase 1 medians, measured at `0bd6dbf6` against the Phase 0 baseline:
+
+| Path                                            |       Generated 1× | Released 10-culture project |
+| ----------------------------------------------- | -----------------: | --------------------------: |
+| Cold build to visible page                      |  66.999 → 68.395 s |         108.189 → 112.164 s |
+| Open to visible page                            |    1.897 → 1.923 s |             1.812 → 1.816 s |
+| Cached reopen                                   |    2.957 → 2.962 s |             6.068 → 6.115 s |
+| Quality, captured defaults                      | 94.110 → 153.005 s |         176.291 → 336.059 s |
+| Workbench matching 1–2-character keystroke, p95 | 598.98 → 583.45 ms |          389.44 → 386.51 ms |
+| Saturated related-line probe, 444 requests      | 784.24 → 789.03 ms |          638.17 → 600.51 ms |
+
+- **Quality regressed:** +62.6% on 1× and +90.6% on the released project. The record lists its
+  measured parts; the stage as a whole hasn't been attributed. Matching keystrokes are also mostly
+  2–10% slower at p50.
+- **Findings:** a finding-by-finding comparison with the baseline found nothing new. The removed
+  findings are the `whitespace` findings on empty translations. The changed ones name the authored
+  pin instead of a compiled copy.
+- **Owner review, 2026-10-24:** accepted for Phase 1. Phase 3 is where Quality's read path is
+  replaced.
+
+The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-1-results)
+has every table.
+
 ### Phase 2: group rules and corpus aggregates
+
+The specification is [Game Text rule engine, Phase 2](../docs/engineering/game-text-rule-engine-phase-2.md).
 
 - Add group aggregates, corpus aggregates and references across rows.
 - `shared`, `duplicate_source`, `long`, `inconsistent_translation` and `culture_invariant_text`
   become rules.
 - No rule is on by default (decision 1), and rules come only from the project's file and the host
-  overlay. v4 becomes the public authoring format, and the rule editor learns it.
-- There is one `duplicate_source`. Today the fixture records two behaviours:
-    - the native signal leaves out lines that are only in gathered text;
-    - the Quality check leaves out text made only of digits or punctuation.
+  overlay. The rules file restarts at version 1, a list of rules by reference (decision 18).
+- There is one `duplicate_source` rule, and it keeps the Quality check's behaviour (decision 15).
+- Browse keeps its native `shared`, `long` and `duplicate_source` signals until Phase 3 (decision
+  16).
+- Delete the TS check engine. The second reader goes in Phase 3 (decision 17).
+- The Quality worker stays until Phase 3. Without it, Quality's largest event-loop gap was 741 ms on
+  the generated 1× project and 882 ms on the released one, against the worker's 115 ms and 528 ms.
+  The gaps are the TS scan's paging, sorting and hydration, which Phase 3 replaces.
 
-    Decide what the single rule does with each case, and update the fixture's expectations in the
-    same change.
+Phase 2 against Phase 1, measured at `769f7503`:
 
-- Delete the TS check engine, the worker and the second reader.
+| Path                                                 |        Generated 1× | Released 10-culture project |
+| ---------------------------------------------------- | ------------------: | --------------------------: |
+| Quality, captured defaults                           | 153.005 → 155.755 s |         336.059 → 300.365 s |
+| Saturated related-line probe, 444 requests (one run) |  789.03 → 849.06 ms |          600.51 → 712.05 ms |
+
+- **Findings are unchanged:** Quality's answer has the Phase 1 hash on both projects.
+- **`loc check` completes on the released project**, with 274,829 findings, Quality's count, and
+  prints byte-identical output on both canonical corpora.
+- **Not re-measured:** the probe rows and the released cold build's RSS (3.94 → 4.59 GiB) are one
+  run each.
+
+The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-2-results)
+has every table.
 
 ### Phase 3: the query engine
 
 - Bitset predicates over the IR.
-- Findings as filter, group and facet fields, including Browse chips.
+- Findings as filter, group and facet fields, including Browse chips. The native `shared`, `long`
+  and `duplicate_source` signals are deleted then (decision 16).
 - The engine sorts, pages and counts findings. The workspace Quality indexes stop re-checking lines.
 - Facets in one pass.
 - Separate response parts, groups with their first rows, and related lines.
 - The trigram index.
+- The fixture's two open defects are in query paths:
+    - the "no translator notes" filter must count manifest notes (`manifest-notes-only`);
+    - the line page must keep the selected culture scope (`archive-missing-entry`).
 
 ### Phase 4: streaming API
 
@@ -518,6 +565,37 @@ Decided on 2026-10-23, for Phase 1 (details in the
     - Numbers are formatted as JavaScript formats them.
 14. **v4 rule documents stay internal in Phase 1.** They become the public authoring format in
     Phase 2, with the rule editor.
+
+Decided on 2026-10-24, for Phase 2:
+
+15. **`duplicate_source` keeps the Quality check's behaviour.**
+    - Lines that exist only in gathered text take part. Leaving them out would drop 131 groups on
+      the generated 1× project and 258 on the released project. Those are real duplicates, such as
+      code text.
+    - Text with no letter doesn't. Including it would add 127 groups of digits and punctuation on
+      the released project, and none on 1×. A shared key isn't the fix for those, and
+      `number_only_text` already covers numbers.
+    - One finding per group, on the first key, so finding identity is unchanged.
+16. **Browse keeps its native signals until Phase 3.** Its `shared`, `long` and `duplicate_source`
+    chips and filters stay native in Phase 2, and are deleted when Browse reads findings in Phase 3.
+    Until then, Browse's `duplicate_source` keeps its own definition, as today.
+17. **The second TS reader goes in Phase 3.** Quality's localization and source scans hydrate their
+    pages through it until Phase 3 replaces them. Replacing those reads in Phase 2 would build what
+    Phase 3 deletes.
+18. **The rules file format is reset.** No project uses a rules file yet, so v1–v3 and the
+    translator are deleted rather than kept beside v4. The file restarts at version 1: one list of
+    entries, each a built-in check by name with its settings or one of today's project rules. This
+    replaces decision 14's v4 authoring format.
+19. **Complete rules in the file wait for Phase 3.** A rule with its own expressions has no finding
+    shape that reports can carry until findings become query fields. Until then, today's custom
+    checks cover project-defined rules. Decision 3's JSON IR authoring arrives with that finding
+    shape.
+20. **No rules file is shown, not silent.** Without one, Quality shows "No quality rules for this
+    project" with **Create rules file** (the starter) and **Choose a rules file…** in place of
+    findings, and `loc check` prints one line to stderr. The rule editor's v1-to-v2 upgrade is
+    gone, and its "Add translation …" buttons always show.
+21. **`loc check --rules <file>`** checks with a file in place of the project's own, so a project
+    that can't take a file, such as a read-only one, can be checked from the CLI.
 
 Decided in Phase 0:
 

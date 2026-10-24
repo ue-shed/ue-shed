@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
-import { translateRuleDocument } from "./rules/translate.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import { expr, rule } from "./rules/builder.js";
 import type { GameTextRuleDocument, CustomLocalizationCheck } from "./game-text-rules.js";
@@ -49,7 +49,7 @@ function evaluate(
 	},
 	options: LocalizationCheckOptions = {}
 ) {
-	return evaluateV4(translateRuleDocument(document, options), rows);
+	return evaluateV4(effectiveRuleDocument(document, options), rows);
 }
 function evaluateV4(
 	document: RuleDocumentV4,
@@ -125,13 +125,35 @@ export function nativeTermMatches(source: string, term: string, caseSensitive: b
 	}));
 }
 
+/** The native `visibleLength` of one text: characters a reader sees, tags and arguments removed. */
+export function nativeVisibleLength(text: string): number {
+	const definition = rule({
+		id: "length",
+		kind: "length",
+		label: "Length",
+		subject: "unit_source",
+		family: "source",
+		severity: "normal",
+		when: expr.lit(true),
+		actual: expr.object({ length: expr.visibleLength(expr.lit(text)) }),
+		expectation: expr.object({}),
+		recovery: expr.lit("")
+	});
+	const output = evaluateV4(
+		{ schemaVersion: 4, roles: [], rules: [definition] },
+		{ line: [], line_culture: [], unit_source: [{ fields: { source: text }, occurrences: [] }] }
+	);
+	return Schema.decodeUnknownSync(Schema.Struct({ length: Schema.Number }))(
+		output.findings[0]!.actual
+	).length;
+}
+
 /** Custom-kind unit assertions with one explicit source row, evaluated in Rust. */
 export function nativeDetectCustom(check: CustomLocalizationCheck, text: string) {
 	const document = Schema.decodeUnknownSync(importGameTextRuleDocument)({
-		schemaVersion: 3,
+		schemaVersion: 1,
 		roles: [],
-		rules: [],
-		customChecks: [{ ...check, subject: "source" }]
+		rules: [{ ...check, subject: "source" }]
 	});
 	const row = Schema.decodeUnknownSync(Row)({
 		fields: {
@@ -174,6 +196,12 @@ export function nativeDetectCustom(check: CustomLocalizationCheck, text: string)
 		: undefined;
 }
 import { GameTextRuleDocument as importGameTextRuleDocument } from "./game-text-rules.js";
+
+/** Evaluate a v4 document against explicit rows of every subject, as group rules need. */
+export const nativeEvaluateRows = (
+	document: RuleDocumentV4,
+	rows: Partial<Parameters<typeof evaluateV4>[1]>
+) => evaluateV4(document, { line: [], line_culture: [], unit_source: [], ...rows });
 
 /** Evaluate one native expression definition against explicit unit-test facts. */
 export function nativeEvaluateRule(

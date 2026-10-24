@@ -86,9 +86,6 @@ export {
 	TextQualityFinding,
 	TextQualityReport,
 	TextQualityRoleSummary,
-	TextQualityRule,
-	TextQualityRuleDocument,
-	TextQualityRuleDocumentError,
 	TextQualityRuleId,
 	TextQualityRuleSummary,
 	TextRole,
@@ -96,10 +93,9 @@ export {
 	TextRoleMatcher,
 	TextRoleScope,
 	TextTerminologyEntry,
-	decodeTextQualityRuleDocument,
-	decodeTextQualityRuleDocumentJson,
 	parseTextQualityReport
 } from "./quality-schema.js";
+export { TextQualityRule } from "./game-text-rules.js";
 
 export {
 	MAX_TEXT_GROUPS,

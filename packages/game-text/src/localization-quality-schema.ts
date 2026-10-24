@@ -264,6 +264,20 @@ export const LocalizationQualityFinding = Schema.Union([
 			tableCount: Count
 		}),
 		expectation: Schema.Struct({ oneTablePerKey: Schema.Literal(true) })
+	}),
+	Schema.Struct({
+		...SourceBase,
+		kind: Schema.Literal("shared"),
+		/** Saved occurrences, compiled copies folded. */
+		actual: Schema.Struct({ occurrences: Count }),
+		expectation: Schema.Struct({ singleUse: Schema.Literal(true) })
+	}),
+	Schema.Struct({
+		...SourceBase,
+		kind: Schema.Literal("long"),
+		/** The longest distinct saved source, in UTF-16 code units. */
+		actual: Schema.Struct({ length: Count }),
+		expectation: Schema.Struct({ maximumLength: Count })
 	})
 ]);
 export type LocalizationQualityFinding = typeof LocalizationQualityFinding.Type;
@@ -383,7 +397,7 @@ export const LocalizationQualityReport = TextQualityReport.mapFields((fields) =>
 	customChecks: Schema.optionalKey(
 		Schema.Array(Schema.Struct({ ruleId: TextQualityRuleId, label: Schema.String }))
 	),
-	ruleDocumentVersion: Schema.Literals([1, 2, 3]),
+	ruleDocumentVersion: Schema.Literal(1),
 	ruleDiagnostics: Schema.optionalKey(Schema.Array(LocalizationRuleDiagnostic)),
 	target: LocalizationTargetName,
 	gatherEvidence: Schema.Array(LocalizationFileStatus),

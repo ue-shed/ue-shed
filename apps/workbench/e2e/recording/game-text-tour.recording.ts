@@ -462,7 +462,7 @@ test("records a captioned tour of Game Text", async ({ browserName: _browserName
 			await say(
 				"A project can add its own rules: character limits per role and preferred terms."
 			);
-			await setup.getByRole("button", { name: "Load rules", exact: true }).click();
+			await setup.getByRole("button", { name: "Choose a rules file…", exact: true }).click();
 		}
 		const findings = page.getByRole("region", { name: "Findings" });
 		await expect(findings.getByText("Loading findings…", { exact: true })).toBeHidden();

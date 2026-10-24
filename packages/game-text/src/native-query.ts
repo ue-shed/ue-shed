@@ -33,7 +33,7 @@ import {
 } from "./index-reads.js";
 
 import type { NativeTextQuery } from "./native-query-contract.js";
-import { canonicalRuleDocument } from "./rules/translate.js";
+import { canonicalRuleDocument } from "./rules/effective.js";
 import {
 	annotateFindingsProfile,
 	inflateFindingLines,

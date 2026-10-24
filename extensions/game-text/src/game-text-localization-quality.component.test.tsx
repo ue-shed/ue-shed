@@ -8,9 +8,9 @@ import {
 	localizationQualityWorkspace,
 	textQualityQuery
 } from "@ue-shed/game-text/corpus";
-import { GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import type { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime, Schema } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { qualityFixture } from "../../../packages/game-text/src/localization-workspace.test-support.js";
 import { cultureCode } from "../../../packages/game-text/src/localization.test-support.js";
@@ -232,6 +232,21 @@ describe("localization quality and reports", () => {
 		expect(screen.queryByRole("table", { name: "Rules overview" })).toBeNull();
 		expect(screen.getByRole("tab", { name: "Quality checks" })).toBeTruthy();
 	});
+	it("shows only how to add rules, and checks nothing, without a rules file", async () => {
+		const qualitySearch = vi.fn(() => Effect.never);
+		mount(
+			{ ...client(), localizationQualitySearch: qualitySearch },
+			{ qualityDocument: undefined }
+		);
+		const setup = await screen.findByRole("region", { name: "Quality rules setup" });
+		expect(
+			within(setup).getByRole("heading", { name: "No quality rules for this project" })
+		).toBeTruthy();
+		expect(within(setup).getByRole("button", { name: "Choose a rules file…" })).toBeTruthy();
+		expect(screen.queryByRole("region", { name: "Findings" })).toBeNull();
+		expect(screen.queryByRole("button", { name: /^All findings/u })).toBeNull();
+		expect(qualitySearch).not.toHaveBeenCalled();
+	});
 	it("renders a dense native-first report and baseline save/compare/export flows", async () => {
 		const user = userEvent.setup({ delay: null }),
 			api = client();
@@ -383,55 +398,30 @@ describe("localization quality and reports", () => {
 		expect(save).not.toHaveBeenCalled();
 		await user.click(screen.getByRole("button", { name: "Save" }));
 		await screen.findByText("Rule file saved.");
-		expect(save.mock.calls[0]?.[0]).toMatchObject({
-			schemaVersion: 2,
-			localizationRules: [
-				{ cultures: { de: 50, en: 10 }, defaultMaximumCharacters: 25 },
-				{
-					recovery: "Use the approved German wording.",
-					caseSensitive: true,
-					cultures: {
-						de: [
-							{
-								kind: "preferred",
-								term: "Guten Tag",
-								alternatives: ["Hallo", "Willkommen"]
-							},
-							{ kind: "forbidden", term: "vermeiden" }
-						]
-					}
-				}
-			]
-		});
-	}, 30_000);
-	it("upgrades v1 by previewing without saving and retains source rule fields", async () => {
-		const user = userEvent.setup({ delay: null }),
-			api = client();
-		const preview = vi.fn(api.previewQualityRules),
-			save = vi.fn(api.saveQualityRules);
-		const v1 = Schema.decodeUnknownSync(GameTextRuleDocument)({
-			...fixture.document,
-			schemaVersion: 1
-		});
-		mount(
-			{
-				...api,
-				chooseQualityRules: () => preview(v1),
-				previewQualityRules: preview,
-				saveQualityRules: save
-			},
-			{ qualityDocument: v1 }
-		);
-		await user.click(await screen.findByRole("button", { name: "Edit rules" }));
-		await user.click(screen.getByRole("button", { name: "Choose another rules file…" }));
-		await user.click(screen.getByRole("button", { name: "Upgrade to version 2" }));
-		await screen.findByText("Preview updated. Changes are not saved yet.");
-		expect(preview.mock.calls.at(-1)?.[0]).toMatchObject({ schemaVersion: 2, rules: v1.rules });
-		expect(save).not.toHaveBeenCalled();
+		const saved = save.mock.calls[0]?.[0];
+		expect(saved?.schemaVersion).toBe(1);
 		expect(
-			screen.getByRole("spinbutton", { name: "Maximum characters for source.limit" })
-		).toBeTruthy();
-		await user.click(screen.getByRole("button", { name: "Save" }));
-		await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+			saved?.rules.filter(
+				(rule) =>
+					rule.kind === "localization_character_budget" ||
+					rule.kind === "localization_terminology"
+			)
+		).toMatchObject([
+			{ cultures: { de: 50, en: 10 }, defaultMaximumCharacters: 25 },
+			{
+				recovery: "Use the approved German wording.",
+				caseSensitive: true,
+				cultures: {
+					de: [
+						{
+							kind: "preferred",
+							term: "Guten Tag",
+							alternatives: ["Hallo", "Willkommen"]
+						},
+						{ kind: "forbidden", term: "vermeiden" }
+					]
+				}
+			}
+		]);
 	}, 30_000);
 });

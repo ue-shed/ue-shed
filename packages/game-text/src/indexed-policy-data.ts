@@ -18,7 +18,6 @@ import {
 import { textCorpusWithExcludedPackages } from "./package-text-candidates.js";
 import { comparePackageTextPathBytes } from "./package-text-order.js";
 import { TextUnitId } from "./identifiers.js";
-import { duplicateOccurrencePlace } from "./duplicate-sources.js";
 import { hydrateJoinedTarget, type JoinedTargetReader } from "./joined-target-reader.js";
 import { synchronousJoinedTarget } from "./joined-query-reader.js";
 import { sourcePatchKind } from "./joined-source-patches.js";
@@ -216,38 +215,6 @@ export class IndexedPolicyData {
 			this.packageFiles.set(memo, file);
 		}
 		return file;
-	}
-	/**
-	 * `duplicateOccurrencePlace` of a stored occurrence, from its location columns and package
-	 * file alone; building the whole occurrence also decodes its text and classifies its audience.
-	 */
-	occurrencePlace(global: number): string {
-		const { shard, row } = this.occurrenceShard(global);
-		const kind = this.packageColumn(shard, "occurrence.location")[row]!;
-		const [objectPath, propertyPath, name] = this.strings([
-			this.packageColumn(shard, "occurrence.object")[row]!,
-			this.packageColumn(shard, "occurrence.property")[row]!,
-			this.packageColumn(shard, "occurrence.row")[row]!
-		]);
-		return duplicateOccurrencePlace({
-			packageFile: this.occurrencePackageFile(shard, row),
-			location:
-				kind === 0
-					? {
-							kind: "asset_property",
-							objectPath: objectPath!,
-							classPath: "",
-							propertyPath: propertyPath!
-						}
-					: kind === 1
-						? {
-								kind: "data_table_cell",
-								objectPath: objectPath!,
-								row: name!,
-								propertyPath: propertyPath!
-							}
-						: { kind: "string_table_entry", objectPath: objectPath!, entryKey: name! }
-		});
 	}
 	occurrence(global: number): TextOccurrence {
 		const { shard, row } = this.occurrenceShard(global);

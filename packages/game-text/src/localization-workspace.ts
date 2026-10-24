@@ -80,7 +80,9 @@ export const BuiltInQualityFilter = Schema.Literals([
 	"string_table_key_collision",
 	"rich_text_tags_added",
 	"source_line_endings_changed",
-	"placeholder_translation"
+	"placeholder_translation",
+	"shared",
+	"long"
 ]);
 export type BuiltInQualityFilter = typeof BuiltInQualityFilter.Type;
 /** A custom check's filter: `custom.` and the check's rule ID. */
@@ -441,6 +443,10 @@ function problem(finding: Finding): string {
 				textCountLabel(finding.actual.tableCount, "String Table") +
 				" with one namespace"
 			);
+		case "shared":
+			return "Used in " + textCountLabel(finding.actual.occurrences, "place");
+		case "long":
+			return "Long text · " + textCountLabel(finding.actual.length, "character");
 		case "character_budget":
 		case "localization_character_budget":
 			return (

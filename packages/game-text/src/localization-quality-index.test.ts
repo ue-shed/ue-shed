@@ -10,7 +10,7 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 import type { LocalizationCheckOptions } from "./localization-quality-schema.js";
 import { localizationLineFingerprint } from "./localization-review.js";
-import { SourceCheckId } from "./localization-check-ids.js";
+import { type BuiltInCheckId, SourceCheckId } from "./localization-check-ids.js";
 import {
 	BuiltInQualityFilter,
 	WorkspaceQualityFilter,
@@ -19,7 +19,8 @@ import {
 	type WorkspaceQualityRequest
 } from "./localization-workspace.js";
 import { TextQualityFindingId } from "./quality-query.js";
-import { GameTextRuleDocument, migrateGameTextRuleDocument } from "./game-text-rules.js";
+import { type BuiltInCheckEntry, GameTextRuleDocument } from "./game-text-rules.js";
+import { STARTER_CHECK_RULES, STARTER_CHECKS } from "./starter-rules.js";
 /**
  * One problem per key pattern; German carries the translation problems. `deSource` is the source
  * German's archive entry records, when it was translated from older text; `dePO` is a pending PO
@@ -88,11 +89,25 @@ const occurrence = (key: string, source: string, index: number) => ({
 	},
 	edit_capability: "read_only" as const
 });
+const optionalArguments = ["ParentLabel"],
+	optionalTags = ["npcname"];
+/** Parameters for some built-in checks, as a rules file writes them. */
+type CheckParams = {
+	readonly [Id in BuiltInCheckId]?: Extract<
+		typeof BuiltInCheckEntry.Encoded,
+		{ readonly kind: Id }
+	>["params"];
+};
+/** Parameters of the starter's checks this file sets. */
+const checkParams: CheckParams = {
+	format_arguments: { optionalArguments },
+	format_argument_renamed: { optionalArguments },
+	rich_text_tag_case: { optionalArguments },
+	rich_text_tags: { optionalTags, optionalArguments },
+	rich_text_tags_added: { optionalTags, optionalArguments }
+};
 const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
-	schemaVersion: 2,
-	segmentSeparator: "//",
-	optionalArguments: ["ParentLabel"],
-	optionalTags: ["npcname"],
+	schemaVersion: 1,
 	roles: [
 		{
 			id: "menu",
@@ -102,6 +117,10 @@ const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 		}
 	],
 	rules: [
+		...STARTER_CHECKS.map((kind) =>
+			kind in checkParams ? { kind, params: checkParams[kind] } : { kind }
+		),
+		{ kind: "segment_separator", params: { separator: "//" } },
 		{
 			id: "source.limit",
 			kind: "character_budget",
@@ -117,9 +136,7 @@ const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 			caseSensitive: true,
 			terms: [{ kind: "forbidden", term: "TODO" }],
 			recovery: "Finish the text."
-		}
-	],
-	localizationRules: [
+		},
 		{
 			id: "translation.limit",
 			kind: "localization_character_budget",
@@ -288,8 +305,10 @@ it.live(
 					});
 					expect(hydrated).toBe(0);
 					const all = legacy.search({ target: join.target, filter: "all" });
+					// The file doesn't list the opt-in checks.
 					for (const filter of BuiltInQualityFilter.literals)
-						expect([filter, all.counts[filter]]).not.toEqual([filter, 0]);
+						if (filter !== "shared" && filter !== "long")
+							expect([filter, all.counts[filter]]).not.toEqual([filter, 0]);
 					expect(all.suggestedFixCount).toBeGreaterThan(0);
 					whitespace.push(all.counts.whitespace);
 					// Source-level checks: one finding per line, under the native culture only.
@@ -348,6 +367,7 @@ it.live(
 						)
 					).toBe(true);
 					for (const filter of sourceLevel) {
+						if (filter === "shared" || filter === "long") continue;
 						const found = legacy.export({ target: join.target, filter }).findings;
 						expect(new Set(found.map(({ culture }) => culture))).toEqual(
 							new Set([join.nativeCulture])
@@ -401,7 +421,7 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 	optionSets: readonly LocalizationCheckOptions[] = [{}]
 ) {
 	const join = yield* result.localizationJoin;
-	for (const rules of [undefined, document])
+	for (const rules of [STARTER_CHECK_RULES, document])
 		for (const options of optionSets) {
 			const source = rules
 				? yield* (yield* result.sourceQuality(rules)).export("all")
@@ -478,7 +498,7 @@ it.live("checks report each place once, its compiled Blueprint copies folded in"
 		);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const report = yield* result.localizationCheck(undefined, undefined);
+			const report = yield* result.localizationCheck(STARTER_CHECK_RULES, undefined);
 			const found = (kind: string) =>
 				report.findings.filter((finding) => finding.kind === kind);
 			for (const kind of ["culture_invariant_text", "rich_text_tags_added"]) {
@@ -521,7 +541,7 @@ it.live("rows the query hides are neither checked nor counted in the limits", ()
 			expect(join.lines.map((line) => line.identity?.key)).toEqual(["K"]);
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				yield* result.localizationCheck(undefined, undefined),
+				yield* result.localizationCheck(STARTER_CHECK_RULES, undefined),
 				join
 			);
 			expect(legacy.search({ target: join.target, filter: "all" }).limits).toContainEqual({
@@ -587,7 +607,7 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 			// Lines checked as one block count once each.
 			let last: GameTextIndexProgress | undefined;
 			const quality = yield* result
-				.localizationQuality(undefined, { review })
+				.localizationQuality(STARTER_CHECK_RULES, { review })
 				.pipe(
 					Effect.provideService(GameTextIndexProgressReporter, (step) => (last = step))
 				);
@@ -617,12 +637,12 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 			expect(join.lines.length).toBeGreaterThan(512);
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				yield* result.localizationCheck(undefined, undefined),
+				yield* result.localizationCheck(STARTER_CHECK_RULES, undefined),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(
 				undefined,
-				yield* result.localizationQuality()
+				yield* result.localizationQuality(STARTER_CHECK_RULES)
 			);
 			for (const culture of [undefined, ...join.cultures]) {
 				const request = {
@@ -638,7 +658,7 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 			// Progress: once before the scan, then per page, ending at every line and finding.
 			const progress: GameTextIndexProgress[] = [];
 			const reported = yield* result
-				.localizationQuality()
+				.localizationQuality(STARTER_CHECK_RULES)
 				.pipe(
 					Effect.provideService(GameTextIndexProgressReporter, (step) =>
 						progress.push(step)
@@ -662,7 +682,7 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 				findings: reported.findings.length
 			});
 			// The callback changes nothing: the same findings, order and IDs.
-			const plain = yield* result.localizationQuality();
+			const plain = yield* result.localizationQuality(STARTER_CHECK_RULES);
 			expect(reported.findings.length).toBe(plain.findings.length);
 			const everyPosition = Array.from(
 				{ length: plain.findings.length },
@@ -681,19 +701,20 @@ it.live("the indexed scan stores each finding's severity as the rule file rates 
 		const fixture = yield* makeIndexRegressionFixture();
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, keys));
 		fixture.update(gathered.map(({ key, source }, index) => occurrence(key, source, index)));
-		const migrated = migrateGameTextRuleDocument(document);
 		const rated = Schema.decodeUnknownSync(GameTextRuleDocument)({
-			...migrated,
-			localizationRules: (migrated.localizationRules ?? []).map((rule) =>
-				rule.id === "translation.limit" ? { ...rule, severity: "blocking" } : rule
-			),
-			checks: {
-				...migrated.checks,
-				length_outlier: { severity: "blocking" },
-				outdated_translation: { severity: "low" },
-				// Scoped out of German: missing tags leave added tags to their own check.
-				rich_text_tags: { ...migrated.checks?.rich_text_tags, scope: { cultures: ["fr"] } }
-			}
+			...document,
+			rules: document.rules.map((entry) =>
+				"id" in entry && entry.id === "translation.limit"
+					? { ...entry, severity: "blocking" }
+					: entry.kind === "length_outlier"
+						? { ...entry, severity: "blocking" }
+						: entry.kind === "outdated_translation"
+							? { ...entry, severity: "low" }
+							: // Scoped out of German: missing tags leave added tags to their own check.
+								entry.kind === "rich_text_tags"
+								? { ...entry, scope: { cultures: ["fr"] } }
+								: entry
+			)
 		});
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
@@ -738,7 +759,6 @@ it.live("custom checks scan as the in-memory checks do, past the old filter and 
 		const fixture = yield* makeIndexRegressionFixture();
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, keys));
 		fixture.update(gathered.map(({ key, source }, index) => occurrence(key, source, index)));
-		const migrated = migrateGameTextRuleDocument(document);
 		// More custom filters than six filter bits held, each with its own rule.
 		const lengths = Array.from({ length: 80 }, (_, index) => ({
 			id: `length.${index}`,
@@ -752,8 +772,9 @@ it.live("custom checks scan as the in-memory checks do, past the old filter and 
 			...(index % 5 === 0 ? { scope: { roles: ["menu"] } } : undefined)
 		}));
 		const custom = Schema.decodeUnknownSync(GameTextRuleDocument)({
-			...migrated,
-			customChecks: [
+			...document,
+			rules: [
+				...document.rules,
 				...lengths,
 				{
 					id: "no-hallo",
@@ -820,22 +841,24 @@ it.live("custom regex checks preserve whitespace and zero-width truth in indexed
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, entries));
 		fixture.update(entries.map(({ key, source }, index) => occurrence(key, source, index)));
 		const checks = Schema.decodeUnknownSync(GameTextRuleDocument)({
-			schemaVersion: 3,
+			schemaVersion: 1,
 			roles: [],
-			rules: [],
-			customChecks: ["source", "translation"].flatMap((subject) =>
-				[
-					{ id: `${subject}-space`, pattern: "^\\s*$" },
-					{ id: `${subject}-lookahead`, pattern: "(?=TODO)" },
-					{ id: `${subject}-no-match`, pattern: "(?=TODO)", report: "no_match" }
-				].map((check) => ({
-					...check,
-					subject,
-					kind: "pattern",
-					label: check.id,
-					recovery: "Review text."
-				}))
-			)
+			rules: [
+				...STARTER_CHECK_RULES.rules,
+				...["source", "translation"].flatMap((subject) =>
+					[
+						{ id: `${subject}-space`, pattern: "^\\s*$" },
+						{ id: `${subject}-lookahead`, pattern: "(?=TODO)" },
+						{ id: `${subject}-no-match`, pattern: "(?=TODO)", report: "no_match" }
+					].map((check) => ({
+						...check,
+						subject,
+						kind: "pattern",
+						label: check.id,
+						recovery: "Review text."
+					}))
+				)
+			]
 		});
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
@@ -872,13 +895,13 @@ it.live("the indexed scan yields between pages and stops when interrupted", () =
 					step: () => undefined
 				})
 			);
-			const quality = yield* result.localizationQuality();
+			const quality = yield* result.localizationQuality(STARTER_CHECK_RULES);
 			done = true;
 			yield* Fiber.join(other);
 			expect(quality.findings.length).toBeGreaterThan(0);
 			// Another fiber ran while the scan was in progress.
 			expect(turns).toBeGreaterThan(1);
-			const scan = yield* Effect.forkChild(result.localizationQuality());
+			const scan = yield* Effect.forkChild(result.localizationQuality(STARTER_CHECK_RULES));
 			yield* Fiber.interrupt(scan);
 			const exit = yield* Fiber.await(scan);
 			expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
@@ -900,12 +923,12 @@ it.live("proposals past the first 100 count the rest without reading their lines
 			const join = yield* result.localizationJoin;
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				yield* result.localizationCheck(undefined, undefined),
+				yield* result.localizationCheck(STARTER_CHECK_RULES, undefined),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(
 				undefined,
-				yield* result.localizationQuality()
+				yield* result.localizationQuality(STARTER_CHECK_RULES)
 			);
 			for (const request of [
 				{ target: join.target, filter: "all" as const },

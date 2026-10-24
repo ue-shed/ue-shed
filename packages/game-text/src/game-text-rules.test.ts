@@ -1,11 +1,18 @@
 import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { Effect, Schema } from "effect";
 import { it } from "@effect/vitest";
-import { expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { decodeGameTextRuleDocumentJson, TextQualityRuleDocumentV2 } from "./game-text-rules.js";
-import { decodeTextQualityRuleDocumentJson } from "./quality-schema.js";
-import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
+import { describe, expect } from "vitest";
+import {
+	GameTextRuleDocument,
+	GameTextRuleOverlay,
+	applyRuleOverlay,
+	decodeGameTextRuleDocument,
+	decodeGameTextRuleDocumentJson,
+	resolveLocalizationChecks
+} from "./game-text-rules.js";
+import { localizationCheckDefaults } from "./localization-check-catalogue.js";
+import { BuiltInCheckId } from "./localization-check-ids.js";
+import { STARTER_CHECKS, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
 	archiveEntry,
 	corpus,
@@ -16,17 +23,19 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { LocalizationQualityReport } from "./localization-quality-schema.js";
+
+const menu = {
+	id: "menu",
+	scopes: [{ matchers: [{ kind: "location_kind", value: "string_table_entry" }] }]
+};
 const authored = {
-	schemaVersion: 2,
-	roles: [
-		{
-			id: "menu",
-			scopes: [{ matchers: [{ kind: "location_kind", value: "string_table_entry" }] }]
-		}
-	],
-	rules: [],
-	disabledLocalizationChecks: ["missing_translator_notes"],
-	localizationRules: [
+	schemaVersion: 1,
+	roles: [menu],
+	rules: [
+		// Every starter check but the notes, which therefore don't run.
+		...STARTER_CHECKS.filter((id) => id !== "missing_translator_notes").map((kind) => ({
+			kind
+		})),
 		{
 			kind: "localization_character_budget",
 			id: "menu.budget",
@@ -50,15 +59,24 @@ const authored = {
 		}
 	]
 };
-it.effect("preserves v1 decoding and evaluation, including the starter", () =>
+const decodeFailure = <Input>(input: Input) =>
+	decodeGameTextRuleDocument(input).pipe(
+		Effect.flip,
+		Effect.map((error) => error.code)
+	);
+
+it.effect("decodes the starter file, which runs its example source rules", () =>
 	Effect.gen(function* () {
-		const json = JSON.stringify(STARTER_GAME_TEXT_RULES);
-		const v1 = yield* decodeTextQualityRuleDocumentJson(json);
-		const union = yield* decodeGameTextRuleDocumentJson(json);
-		expect(union).toEqual(v1);
-		expect(indexedTestReports(corpus()).source(union)).toEqual(
-			indexedTestReports(corpus()).source(v1)
+		const starter = yield* decodeGameTextRuleDocumentJson(
+			JSON.stringify(STARTER_GAME_TEXT_RULES)
 		);
+		expect(starter).toEqual(STARTER_GAME_TEXT_RULES);
+		const report = indexedTestReports(corpus()).source(starter);
+		expect(report.ruleDocumentVersion).toBe(1);
+		expect(report.rules.map((rule) => rule.ruleId)).toEqual([
+			"example-name-limit",
+			"example-terminology"
+		]);
 	})
 );
 it.effect("rejects malformed JSON with safe syntax recovery", () =>
@@ -73,16 +91,13 @@ it.effect("rejects malformed JSON with safe syntax recovery", () =>
 		expect(`${error.message} ${error.recovery}`).not.toContain("secret-project-term");
 	})
 );
-it.effect("decodes the packaged v2 example and retains source rules in v2 source evaluation", () =>
+it.effect("runs source rules beside localization rules", () =>
 	Effect.gen(function* () {
-		const example = yield* decodeGameTextRuleDocumentJson(
-			readFileSync(new URL("../fixtures/quality-rules.v2.json", import.meta.url), "utf8")
-		);
-		expect(example.schemaVersion).toBe(2);
 		const document = yield* decodeGameTextRuleDocumentJson(
 			JSON.stringify({
 				...authored,
 				rules: [
+					...authored.rules,
 					{
 						kind: "character_budget",
 						id: "source.budget",
@@ -94,14 +109,14 @@ it.effect("decodes the packaged v2 example and retains source rules in v2 source
 			})
 		);
 		const report = indexedTestReports(corpus()).source(document);
-		expect(report.ruleDocumentVersion).toBe(2);
+		expect(report.ruleDocumentVersion).toBe(1);
 		expect(report.findings).toMatchObject([
 			{ kind: "character_budget", actual: { source: "Source", characterCount: 6 } }
 		]);
 	})
 );
 it.effect(
-	"validates v2 policy, checks pending PO text, and warns about project-wide cultures",
+	"validates localization rules, checks pending PO text, and warns about project-wide cultures",
 	() =>
 		Effect.gen(function* () {
 			const document = yield* decodeGameTextRuleDocumentJson(JSON.stringify(authored));
@@ -112,7 +127,7 @@ it.effect(
 				poDocument("😀 ALT alt")
 			);
 			const report = indexedTestReports(text, files).localization(document, {});
-			expect(report.ruleDocumentVersion).toBe(2);
+			expect(report.ruleDocumentVersion).toBe(1);
 			expect(report.ruleDiagnostics).toMatchObject([
 				{ severity: "warning", culture: "ja", code: "rule_culture_not_in_target" }
 			]);
@@ -165,7 +180,7 @@ it.effect(
 		})
 );
 it("omits unlisted culture policies without a default and preserves case-sensitive offsets", () => {
-	const document = Schema.decodeUnknownSync(Schema.fromJsonString(TextQualityRuleDocumentV2))(
+	const document = Schema.decodeUnknownSync(Schema.fromJsonString(GameTextRuleDocument))(
 		JSON.stringify(authored)
 			.replace(',"defaultMaximumCharacters":6', "")
 			.replace('"caseSensitive":false', '"caseSensitive":true')
@@ -189,4 +204,205 @@ it("omits unlisted culture policies without a default and preserves case-sensiti
 	).toEqual([
 		{ kind: "terminology_match", translation: "😀 ALT", term: "ALT", start: 3, end: 6 }
 	]);
+});
+
+describe("the rules file", () => {
+	it.effect("decodes each built-in check with its own parameters", () =>
+		Effect.gen(function* () {
+			const document = yield* decodeGameTextRuleDocument({
+				schemaVersion: 1,
+				roles: [],
+				rules: BuiltInCheckId.literals.map((kind) =>
+					kind === "segment_separator"
+						? { kind, params: { separator: "//" } }
+						: { kind, params: {} }
+				)
+			});
+			const resolved = resolveLocalizationChecks(document);
+			for (const id of BuiltInCheckId.literals) {
+				expect(resolved[id].enabled).toBe(true);
+				expect(resolved[id].params).toEqual(
+					id === "segment_separator" ? { separator: "//" } : localizationCheckDefaults[id]
+				);
+			}
+			// A parameter of another check is an unknown key.
+			expect(
+				yield* decodeFailure({
+					schemaVersion: 1,
+					roles: [],
+					rules: [{ kind: "length_outlier", params: { separator: "//" } }]
+				})
+			).toBe("invalid_structure");
+		})
+	);
+	it.effect("runs only what it lists, and nothing without a file", () =>
+		Effect.gen(function* () {
+			expect(
+				BuiltInCheckId.literals.filter(
+					(id) => resolveLocalizationChecks(undefined)[id].enabled
+				)
+			).toEqual([]);
+			const resolved = resolveLocalizationChecks(
+				yield* decodeGameTextRuleDocument({
+					schemaVersion: 1,
+					roles: [],
+					rules: [
+						{ kind: "long", severity: "normal", params: { limit: 12 } },
+						{ kind: "whitespace", enabled: false }
+					]
+				})
+			);
+			expect(BuiltInCheckId.literals.filter((id) => resolved[id].enabled)).toEqual(["long"]);
+			expect(resolved.long).toEqual({
+				enabled: true,
+				severity: "normal",
+				params: { limit: 12 }
+			});
+			expect(resolved.whitespace.severity).toBe("normal");
+		})
+	);
+	it.effect("rejects unknown kinds and keys, reused IDs, and IDs that pass for a check's", () =>
+		Effect.gen(function* () {
+			const file = (rules: readonly object[], roles: readonly object[] = [menu]) => ({
+				schemaVersion: 1,
+				roles,
+				rules
+			});
+			const budget = (id: string) => ({
+				kind: "character_budget",
+				id,
+				role: "menu",
+				maximumCharacters: 8,
+				recovery: "Shorten it."
+			});
+			expect(yield* decodeFailure(file([{ kind: "no_such_check" }]))).toBe(
+				"invalid_structure"
+			);
+			expect(yield* decodeFailure(file([{ kind: "whitespace", note: "x" }]))).toBe(
+				"invalid_structure"
+			);
+			expect(yield* decodeFailure({ ...file([]), preset: "default" })).toBe(
+				"invalid_structure"
+			);
+			expect(
+				yield* decodeFailure(file([{ kind: "whitespace" }, { kind: "whitespace" }]))
+			).toBe("duplicate_rule_id");
+			expect(yield* decodeFailure(file([budget("a"), budget("a")]))).toBe(
+				"duplicate_rule_id"
+			);
+			expect(yield* decodeFailure(file([budget("whitespace")]))).toBe("invalid_structure");
+			expect(yield* decodeFailure(file([budget("localization.mine")]))).toBe(
+				"invalid_structure"
+			);
+			expect(yield* decodeFailure(file([{ kind: "segment_separator" }]))).toBe(
+				"invalid_structure"
+			);
+			expect(
+				yield* decodeFailure(file([{ kind: "whitespace", scope: { roles: ["missing"] } }]))
+			).toBe("unknown_role_id");
+			expect(
+				yield* decodeFailure(
+					file(
+						[menu, menu].map(() => budget("a")),
+						[menu, menu]
+					)
+				)
+			).toBe("duplicate_role_id");
+			// Turned off, the separator check needs no separator.
+			yield* decodeGameTextRuleDocument(
+				file([{ kind: "segment_separator", enabled: false }])
+			);
+		})
+	);
+});
+
+describe("applyRuleOverlay", () => {
+	const overlay = Schema.decodeUnknownSync(GameTextRuleOverlay);
+	const project = Schema.decodeUnknownSync(GameTextRuleDocument)({
+		schemaVersion: 1,
+		roles: [menu],
+		rules: [
+			{ kind: "length_outlier", severity: "low", scope: { cultures: ["de"] } },
+			{ kind: "placeholder_text", params: { markers: ["TODO"] } },
+			{
+				kind: "character_budget",
+				id: "menu.limit",
+				role: "menu",
+				maximumCharacters: 8,
+				recovery: "Shorten it."
+			}
+		]
+	});
+	it.effect("patches listed rules and adds rules and roles after the project's", () =>
+		Effect.gen(function* () {
+			const patched = yield* applyRuleOverlay(
+				project,
+				overlay({
+					schemaVersion: 1,
+					roles: [{ id: "hud", scopes: menu.scopes }],
+					patches: [
+						{ id: "length_outlier", enabled: false, scope: {} },
+						{
+							id: "placeholder_text",
+							severity: "blocking",
+							params: { phrases: ["tbd"], markers: ["FIXME"] }
+						},
+						{
+							id: "menu.limit",
+							params: { maximumCharacters: 12 },
+							scope: { roles: ["hud"] }
+						},
+						// A later patch to the same rule wins key by key.
+						{ id: "placeholder_text", params: { markers: ["WIP"] } }
+					],
+					rules: [{ kind: "shared" }]
+				})
+			);
+			expect(patched.roles.map((role) => role.id)).toEqual(["menu", "hud"]);
+			expect(patched.rules).toEqual([
+				{ kind: "length_outlier", severity: "low", enabled: false },
+				{
+					kind: "placeholder_text",
+					severity: "blocking",
+					params: { markers: ["WIP"], phrases: ["tbd"] }
+				},
+				{
+					kind: "character_budget",
+					id: "menu.limit",
+					role: "menu",
+					maximumCharacters: 12,
+					scope: { roles: ["hud"] },
+					recovery: "Shorten it."
+				},
+				{ kind: "shared" }
+			]);
+			const unchanged = yield* applyRuleOverlay(project, { schemaVersion: 1 });
+			expect(unchanged).toEqual(project);
+		})
+	);
+	it.effect("rejects patches to unlisted rules, reused IDs and patches that break a rule", () =>
+		Effect.gen(function* () {
+			for (const input of [
+				{ patches: [{ id: "whitespace", enabled: false }] },
+				{ patches: [{ id: "menu.limit", params: { id: "x" } }] },
+				// Settings have their own fields, so a later `scope: {}` always clears the scope.
+				{
+					patches: [
+						{ id: "menu.limit", params: { scope: { pathPrefixes: ["/Game/UI/"] } } }
+					]
+				},
+				{ patches: [{ id: "menu.limit", params: { enabled: false } }] },
+				{ patches: [{ id: "menu.limit", params: { maximumCharacters: 0 } }] },
+				{ patches: [{ id: "length_outlier", params: { separator: "//" } }] },
+				{ rules: [{ kind: "placeholder_text" }] },
+				{ roles: [menu] }
+			]) {
+				const error = yield* applyRuleOverlay(
+					project,
+					overlay({ schemaVersion: 1, ...input })
+				).pipe(Effect.flip);
+				expect(error.code).toBe("invalid_overlay");
+			}
+		})
+	);
 });

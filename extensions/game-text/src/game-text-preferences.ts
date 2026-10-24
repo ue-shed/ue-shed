@@ -4,7 +4,12 @@ import {
 	WorkspaceQualityFilter,
 	LocalizationEdit
 } from "@ue-shed/game-text/corpus";
-import { GameTextRuleDocument, LocalizationProjectRule } from "@ue-shed/game-text/rules";
+import {
+	BuiltInCheckEntry,
+	CustomLocalizationCheck,
+	GameTextRuleDocument,
+	LocalizationProjectRule
+} from "@ue-shed/game-text/rules";
 import {
 	LocalizationSelection,
 	LocalizationLineId,
@@ -80,20 +85,18 @@ const DraftLocalizationRule = Schema.Union([
 		cultures: Schema.Record(Schema.String, Schema.Array(DraftTerm))
 	}))
 ]);
-const [DocumentV1, DocumentV2, DocumentV3] = GameTextRuleDocument.members;
-const DraftDocument = Schema.Union([
-	DocumentV1.mapFields((fields) => ({ ...fields, rules: Schema.Array(DraftSourceRule) })),
-	DocumentV2.mapFields((fields) => ({
-		...fields,
-		rules: Schema.Array(DraftSourceRule),
-		localizationRules: Schema.optionalKey(Schema.Array(DraftLocalizationRule))
-	})),
-	DocumentV3.mapFields((fields) => ({
-		...fields,
-		rules: Schema.Array(DraftSourceRule),
-		localizationRules: Schema.optionalKey(Schema.Array(DraftLocalizationRule))
-	}))
-]);
+// The editor edits source and localization rules; the file's other entries pass through it whole.
+const DraftDocument = GameTextRuleDocument.mapFields((fields) => ({
+	...fields,
+	rules: Schema.Array(
+		Schema.Union([
+			BuiltInCheckEntry,
+			DraftSourceRule,
+			DraftLocalizationRule,
+			CustomLocalizationCheck
+		])
+	)
+}));
 
 /**
  * A stored field that no longer fits its schema is dropped alone, instead of discarding every

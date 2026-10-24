@@ -336,9 +336,9 @@ fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::ru
     crate::rules::compile(&example_document(checks, document)?)
 }
 
-/// The translated v4 document's JSON text, as the host sends it.
+/// The effective v4 document's JSON text, as the host sends it; without a document, the starter's checks.
 fn example_document(checks: &[&str], document: Option<Value>) -> Result<String> {
-    let output = std::process::Command::new("node").args(["--import","tsx","--input-type=module","-e","import {translateRuleDocument} from './packages/game-text/src/rules/translate.ts';const [checks,document]=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(translateRuleDocument(document??undefined,{checks})));",&serde_json::to_string(&(checks,document))?])
+    let output = std::process::Command::new("node").args(["--import","tsx","--input-type=module","-e","import {effectiveRuleDocument} from './packages/game-text/src/rules/effective.ts';import {STARTER_CHECK_RULES} from './packages/game-text/src/starter-rules.ts';const [checks,document]=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(effectiveRuleDocument(document??STARTER_CHECK_RULES,{checks})));",&serde_json::to_string(&(checks,document))?])
         .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("Missing repository root.")?).output()?;
     crate::require(
         output.status.success(),
@@ -503,7 +503,9 @@ fn example_row_checks_emit_the_existing_evidence() -> Result<()> {
         fixture.packages(&[json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/Example.Example","property":"Label"})])?;
         fixture.lines()?;
         let document = if check == "segment_separator" {
-            Some(json!({"schemaVersion":1,"roles":[],"rules":[],"segmentSeparator":"//"}))
+            Some(
+                json!({"schemaVersion":1,"roles":[],"rules":[{"kind":"segment_separator","params":{"separator":"//"}}]}),
+            )
         } else {
             None
         };
@@ -609,35 +611,35 @@ fn every_authored_kind_uses_the_same_evaluator_and_existing_evidence() -> Result
             json!({"kind":"forbidden_term","term":"bad"}),
         ),
         (
-            json!({"schemaVersion":2,"roles":[role],"rules":[],"localizationRules":[{"id":"budget","kind":"localization_character_budget","role":"all","cultures":{"de":2},"recovery":"Shorten it."}]}),
+            json!({"schemaVersion":1,"roles":[role],"rules":[{"id":"budget","kind":"localization_character_budget","role":"all","cultures":{"de":2},"recovery":"Shorten it."}]}),
             "Hi",
             "Hallo",
             json!({"kind":"character_count","characterCount":5,"translation":"Hallo"}),
             json!({"kind":"maximum_characters","maximumCharacters":2}),
         ),
         (
-            json!({"schemaVersion":2,"roles":[role],"rules":[],"localizationRules":[{"id":"terms","kind":"localization_terminology","role":"all","caseSensitive":false,"cultures":{"de":[{"kind":"forbidden","term":"bad"}]},"recovery":"Replace it."}]}),
+            json!({"schemaVersion":1,"roles":[role],"rules":[{"id":"terms","kind":"localization_terminology","role":"all","caseSensitive":false,"cultures":{"de":[{"kind":"forbidden","term":"bad"}]},"recovery":"Replace it."}]}),
             "Hi",
             "😀 bad",
             json!({"kind":"terminology_match","translation":"😀 bad","start":3,"end":6,"term":"bad"}),
             json!({"kind":"forbidden_term","term":"bad"}),
         ),
         (
-            json!({"schemaVersion":3,"roles":[],"rules":[],"customChecks":[{"id":"pattern","label":"Pattern","kind":"pattern","subject":"translation","pattern":"\\bbad\\b","recovery":"Replace it."}]}),
+            json!({"schemaVersion":1,"roles":[],"rules":[{"id":"pattern","label":"Pattern","kind":"pattern","subject":"translation","pattern":"\\bbad\\b","recovery":"Replace it."}]}),
             "Hi",
             "😀 bad",
             json!({"text":"😀 bad","matches":[{"match":"bad","start":3,"end":6}]}),
             json!({"pattern":"\\bbad\\b","report":"match"}),
         ),
         (
-            json!({"schemaVersion":3,"roles":[],"rules":[],"customChecks":[{"id":"length","label":"Length","kind":"length","subject":"source","measure":"characters","minimum":2,"recovery":"Expand it."}]}),
+            json!({"schemaVersion":1,"roles":[],"rules":[{"id":"length","label":"Length","kind":"length","subject":"source","measure":"characters","minimum":2,"recovery":"Expand it."}]}),
             "😀",
             "Hallo",
             json!({"text":"😀","length":1}),
             json!({"measure":"characters","minimum":2}),
         ),
         (
-            json!({"schemaVersion":3,"roles":[],"rules":[],"customChecks":[{"id":"terms","label":"Terms","kind":"forbidden_term","subject":"translation","terms":["bad"],"caseSensitive":false,"recovery":"Replace it."}]}),
+            json!({"schemaVersion":1,"roles":[],"rules":[{"id":"terms","label":"Terms","kind":"forbidden_term","subject":"translation","terms":["bad"],"caseSensitive":false,"recovery":"Replace it."}]}),
             "Hi",
             "😀 bad",
             json!({"text":"😀 bad","matches":[{"match":"bad","start":3,"end":6}]}),

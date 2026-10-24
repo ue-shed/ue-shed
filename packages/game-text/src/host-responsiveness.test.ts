@@ -4,6 +4,7 @@ import { expect } from "vitest";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { GameTextIndexSteps } from "./index-steps.js";
 import { makeSyntheticHostFixture, withEventLoopGaps } from "./host-responsiveness.test-support.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 
 /** Run alone through `pnpm test:game-text:responsiveness`, which `pnpm check` includes. Timer
  * gaps measure the whole process, so parallel test files would turn their load into failures.
@@ -100,7 +101,9 @@ it.live.skipIf(!enabled)(
 					const result = yield* service.refresh(fixture.request);
 					const scanned = yield* withEventLoopGaps(
 						result
-							.localizationQuality(undefined, { review: result.review.file })
+							.localizationQuality(STARTER_CHECK_RULES, {
+								review: result.review.file
+							})
 							.pipe(
 								Effect.tap((quality) =>
 									Effect.sync(() => quality.findings.items([0, 1, 2]))

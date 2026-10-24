@@ -62,7 +62,7 @@ const fixtureTextQualityRules = join(
 	"packages",
 	"game-text",
 	"fixtures",
-	"quality-rules.v1.json"
+	"quality-rules.source.json"
 );
 
 describe("ue-shed CLI commands", () => {

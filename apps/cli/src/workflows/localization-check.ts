@@ -7,7 +7,7 @@ import {
 	GAME_TEXT_RULES_RELATIVE_PATH
 } from "@ue-shed/game-text/rules";
 import { observeCliOperation } from "../cli-operation.js";
-import { CliRuntime, printJson } from "../cli-runtime.js";
+import { CliRuntime, printJson, printJsonInParts } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { loadLocalizationContext } from "./localization.js";
 
@@ -94,9 +94,16 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 				const result = yield* Effect.gen(function* () {
 					const { check, selection, review } = yield* loadLocalizationContext(command);
 					const fs = yield* FileSystem.FileSystem;
-					const rulesPath = join(command.projectRoot, GAME_TEXT_RULES_RELATIVE_PATH);
+					// `--rules` names a file that must exist; the project's own is optional.
+					const rulesPath =
+						command.rules ?? join(command.projectRoot, GAME_TEXT_RULES_RELATIVE_PATH);
 					const rules = yield* Effect.gen(function* () {
-						if (!(yield* fs.exists(rulesPath))) return undefined;
+						if (command.rules === undefined && !(yield* fs.exists(rulesPath))) {
+							yield* (yield* CliRuntime).printError(
+								"No rules file: no checks ran. Create one with `ue-shed text rules init <project-root>`, or pass --rules <file>.\n"
+							);
+							return undefined;
+						}
 						return yield* fs
 							.readFileString(rulesPath)
 							.pipe(Effect.flatMap(decodeGameTextRuleDocumentJson));
@@ -109,9 +116,9 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 										retrySafe: false,
 										nextStep: "fix_input",
 										code: "rules_unreadable",
-										message: "The project quality rules could not be read.",
+										message: "The Game Text rules file could not be read.",
 										recovery:
-											"Repair the Game Text rules file or remove it to use all built-ins."
+											"Check the rules file's path and repair it; without a file, no rules run."
 									})
 						)
 					);
@@ -137,7 +144,8 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 					yield* runtime.setExitCode(2);
 					return;
 				}
-				yield* printJson(result.success);
+				// A large project's report is longer than one string can be.
+				yield* printJsonInParts(result.success, ["findings", "checkDiagnostics"]);
 			})
 		)
 );

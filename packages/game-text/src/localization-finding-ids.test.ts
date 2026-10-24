@@ -1,3 +1,4 @@
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { parsePO } from "@ue-shed/localization/browser";
 import { describe, expect, it } from "vitest";
@@ -54,7 +55,7 @@ describe("finding IDs of unchanged checks", () => {
 			success(parsePO(new TextEncoder().encode("")))
 		);
 		const join = joinLocalizationTarget(text, files, files.target);
-		const report = indexedTestReports(text, files).localization(undefined, undefined);
+		const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, undefined);
 		const workspace = localizationQualityWorkspace(undefined, report, join);
 		const ids = Object.fromEntries(
 			workspace
@@ -77,7 +78,7 @@ describe("finding places", () => {
 			success(parsePO(new TextEncoder().encode("")))
 		);
 		const join = joinLocalizationTarget(text, files, files.target);
-		const report = indexedTestReports(text, files).localization(undefined, undefined);
+		const report = indexedTestReports(text, files).localization(STARTER_CHECK_RULES, undefined);
 		const workspace = localizationQualityWorkspace(undefined, report, join);
 		const { findings } = workspace.export({ target: join.target, filter: "all" });
 		expect(findings.length).toBeGreaterThan(0);

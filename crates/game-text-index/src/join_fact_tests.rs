@@ -705,7 +705,10 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     let key = result["key"].as_str().ok_or("Missing findings key.")?;
     assert_eq!(result["diagnosticCount"], 0);
     assert_eq!(result["counts"][0]["count"], 1);
-    let lines = crate::json_value::parse(&query.findings_lines(key, &[0], &cancelled)?)?;
+    let reply = query.findings_lines(key, &[0], &cancelled)?;
+    let lines = crate::json_value::parse(&reply)?;
+    // The profile is set in the encoded reply; the text must be the reply's own encoding.
+    assert_eq!(reply, crate::rules::javascript_json(&lines, false));
     let finding = &lines["lines"][0]["builtIns"][0];
     assert_eq!(
         finding["actual"],

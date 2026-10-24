@@ -899,6 +899,9 @@ impl<'a, 'q> Projector<'a, 'q> {
             children.rows = parents;
             return Ok(children);
         }
+        if !line && let Some(children) = &self.subjects.query.unit_children {
+            return Ok((**children).clone());
+        }
         let mut groups = if line {
             (0..self.subjects.projection.source.len())
                 .map(|row| self.subjects.line_members(row))
@@ -953,6 +956,8 @@ impl<'a, 'q> Projector<'a, 'q> {
             self.subjects.query.line_children =
                 Some((self.subjects.collator.locale.clone(), Arc::clone(&shared)));
             self.arena.line_children = Some(shared);
+        } else {
+            self.subjects.query.unit_children = Some(Arc::new(children.clone()));
         }
         self.arena.recorder.sub_stage(
             "occurrences.groups".into(),

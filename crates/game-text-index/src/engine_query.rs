@@ -38,6 +38,9 @@ pub struct EngineQuery {
     pub(crate) occurrence_data: Option<Arc<crate::rules::OccurrenceData>>,
     /// Each line's occurrences in a collation's order, built once per reader and locale.
     pub(crate) line_children: Option<(String, Arc<crate::rules::Children>)>,
+    /// Each visible unit's occurrences grouped by source, and their occurrence CSR, per reader.
+    pub(crate) unit_sources: Option<Arc<[crate::rules::UnitSource]>>,
+    pub(crate) unit_children: Option<Arc<crate::rules::Children>>,
     pub(crate) asset_types: Option<Arc<crate::engine_asset_types::AssetTypes>>,
     package_names: Vec<String>,
     package_starts: Vec<u32>,
@@ -224,6 +227,8 @@ impl EngineQuery {
             summary_cache: None,
             occurrence_data: None,
             line_children: None,
+            unit_sources: None,
+            unit_children: None,
             metadata_cache: crate::query_cache::QueryCache::default(),
             row_ranks: HashMap::new(),
             copy_starts: HashMap::new(),

@@ -295,7 +295,7 @@ impl EngineQuery {
                 lc_cultures.extend_from_slice(subjects.cultures.cultures());
             }
             if subject == Subject::UnitSource {
-                for unit in &subjects.units {
+                for unit in subjects.units.iter() {
                     unit_rows.push(unit.unit as u32);
                     unit_sources.push(unit.source);
                 }

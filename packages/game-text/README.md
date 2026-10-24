@@ -360,7 +360,9 @@ A project's rules file, `Config/UEShed/GameTextRules.json` by default, lists the
 nothing runs that it doesn't list, and without a file nothing runs. Each entry in `rules` has a
 `kind`. A built-in check is listed by its ID, with optional `enabled` (default true), `severity`
 (`blocking`, `normal` or `low`), `scope` and `params` (the catalogue's parameters; unlisted fields
-keep their defaults). The other kinds are project rules with their own `id`, described below.
+keep their defaults). The other kinds are project rules with their own `id`, described below. A
+project rule's `scope` narrows its `role`: its roles and path prefixes must admit an occurrence that
+has the role, and its cultures select the cultures it checks.
 Unknown keys are rejected, so a misspelt check or parameter is an `invalid_structure` error rather
 than ignored. Rule IDs are unique across the file; a project rule's ID can't be a check's ID or
 start with `localization.`.

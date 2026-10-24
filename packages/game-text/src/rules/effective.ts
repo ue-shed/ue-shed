@@ -9,7 +9,7 @@ import type { BuiltInCheckId } from "../localization-check-ids.js";
 import { prepareTextQualityRules } from "../quality.js";
 import type { TextTerminologyEntry } from "../quality-schema.js";
 import { type Arg, expr as x } from "./builder.js";
-import { exampleRules } from "./catalogue.js";
+import { exampleRules, scopeAdmits } from "./catalogue.js";
 import type { Rule, RuleDocumentV4 } from "./schema.js";
 
 const f = x.field,
@@ -102,11 +102,31 @@ export function effectiveRuleDocument(
 			}
 		];
 	});
+	// A project rule's scope narrows its role's places, so one occurrence must satisfy both; only
+	// its cultures stay a gate on the whole row.
 	const authored = (rule: { readonly id: string; readonly scope?: Rule["scope"] }) => ({
 		id: rule.id,
 		ruleId: rule.id,
-		...(rule.scope ? { scope: rule.scope } : undefined)
+		...(rule.scope?.cultures ? { scope: { cultures: rule.scope.cultures } } : undefined)
 	});
+	const placesOf = (role: string, scope: Rule["scope"] | undefined) =>
+		scope?.roles || scope?.pathPrefixes
+			? x.filter(
+					x.occurrences(),
+					x.and(
+						x.matchesRole(item, role),
+						scopeAdmits(
+							item,
+							x.lit({
+								...(scope.roles ? { roles: [...scope.roles] } : undefined),
+								...(scope.pathPrefixes
+									? { pathPrefixes: [...scope.pathPrefixes] }
+									: undefined)
+							})
+						)
+					)
+				)
+			: roleOccurrences(role);
 	for (const { rule, role, terms: preparedTerms } of sourceRules) {
 		const base = {
 			...authored(rule),
@@ -117,7 +137,7 @@ export function effectiveRuleDocument(
 			kind: rule.kind,
 			role: role.id,
 			recovery: x.lit(rule.recovery),
-			affected: roleOccurrences(role.id)
+			affected: placesOf(role.id, rule.scope)
 		} as const;
 		if (rule.kind === "character_budget")
 			rules.push({
@@ -169,7 +189,7 @@ export function effectiveRuleDocument(
 	}
 	for (const rule of localizationRulesOf(document).sort((a, b) => a.id.localeCompare(b.id))) {
 		if (!document?.roles.some((role) => role.id === rule.role)) continue;
-		const affected = roleOccurrences(rule.role);
+		const affected = placesOf(rule.role, rule.scope);
 		const base = {
 			...authored(rule),
 			kind: rule.kind,

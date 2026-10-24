@@ -1,9 +1,5 @@
 import { Effect, Schema } from "effect";
-import {
-	hydrateQualityRead,
-	materializeQualityRead,
-	type QualityRead
-} from "./quality-hydration.js";
+import { materializeQualityRead, type QualityRead } from "./quality-hydration.js";
 import {
 	CultureCode,
 	LocalizationTargetName,
@@ -14,9 +10,15 @@ import { TextCorpus, TextLocation, TextUnitId } from "./schema.js";
 import {
 	TextQualityFindingId,
 	TextQualityFocus,
+	textQualityFindingFocus,
 	textQualityFindingId,
 	textQualityQuery
 } from "./quality-query.js";
+import type { GameTextContract } from "@ue-shed/protocol";
+import type { NativeFindings, QueriedFinding } from "./native-findings.js";
+import type { GameTextIndexError } from "./index-error.js";
+import type { IndexFailure } from "./index-failure.js";
+import type { LocalizationFocusRequest } from "./localization-view.js";
 import {
 	TextQualityAffectedOccurrence,
 	TextQualityRuleSummary,
@@ -26,7 +28,11 @@ import {
 	LocalizationCheckDiagnostic,
 	type LocalizationQualityReport
 } from "./localization-quality-schema.js";
-import { LocalizationFocus, localizationFocusPage } from "./localization-view.js";
+import {
+	LocalizationFocus,
+	localizationFocusPage,
+	localizationScopeSummary
+} from "./localization-view.js";
 import {
 	LocalizationUnknownReason,
 	type LocalizationJoin,
@@ -553,7 +559,7 @@ export function eligibleLocalizationChange(finding: Finding | SourceFinding) {
  * The source text a localization finding is about: the checked text for source checks, else the
  * gathered source, else the first of conflicting texts, never the join's joined text.
  */
-function findingSource(finding: Finding, line: LocalizationLine | undefined): string {
+function findingSource(finding: Finding, line: QualityLineFacts | undefined): string {
 	switch (finding.kind) {
 		case "duplicate_source":
 		case "culture_invariant_text":
@@ -564,8 +570,22 @@ function findingSource(finding: Finding, line: LocalizationLine | undefined): st
 			return finding.actual.source;
 	}
 	const variants = "sourceVariants" in finding ? finding.sourceVariants : undefined;
-	return line?.manifest[0]?.source.Text ?? variants?.[0] ?? line?.source ?? "";
+	return line?.manifestSource ?? variants?.[0] ?? line?.source ?? "";
 }
+/** What a finding's summary reads of its line. */
+interface QualityLineFacts {
+	readonly manifestSource: string | undefined;
+	readonly manifestPath: string | undefined;
+	readonly source: string | undefined;
+	readonly key: string | undefined;
+}
+const lineFacts = (line: LocalizationLine | undefined): QualityLineFacts | undefined =>
+	line && {
+		manifestSource: line.manifest[0]?.source.Text,
+		manifestPath: line.manifest[0]?.path,
+		source: line.source,
+		key: line.identity?.key
+	};
 /**
  * Builds a bounded workspace finding preview from structured evidence and an optional joined
  * line. Keeps the original finding/line available alongside presentation text.
@@ -575,20 +595,25 @@ export function workspaceQualityItem(
 	line: LocalizationLine | undefined,
 	sourceKey?: string
 ): WorkspaceQualityItem {
+	return { finding, line, summary: qualitySummary(finding, lineFacts(line), sourceKey) };
+}
+function qualitySummary(
+	finding: Finding | SourceFinding,
+	line: QualityLineFacts | undefined,
+	sourceKey?: string
+): WorkspaceFinding {
 	const localized = "culture" in finding;
 	const id = localized
 		? localizationFindingId(localizationFindingHash(finding))
 		: textQualityFindingId(finding);
 	const location = finding.affectedOccurrences[0]?.location;
 	const context =
-		(location
-			? textAssetName(location.objectPath)
-			: (line?.manifest[0]?.path ?? "Source file")) +
+		(location ? textAssetName(location.objectPath) : (line?.manifestPath ?? "Source file")) +
 		" · " +
 		(localized
 			? (finding.identity?.key ?? "No key")
 			: (sourceKey ??
-				line?.identity?.key ??
+				line?.key ??
 				(location?.kind === "string_table_entry" ? location.entryKey : finding.ruleId))) +
 		" · " +
 		(finding.kind === "custom"
@@ -612,7 +637,7 @@ export function workspaceQualityItem(
 		...(location ? { location } : undefined),
 		locations: finding.affectedOccurrences.length
 	};
-	return { finding, line, summary };
+	return summary;
 }
 function ranges(text: string, finding: Finding, side: "source" | "translation") {
 	const matches: Array<{ start: number; end: number }> = [];
@@ -689,24 +714,9 @@ function ranges(text: string, finding: Finding, side: "source" | "translation") 
 	return matches.sort((a, b) => a.start - b.start);
 }
 
-/** A compact group of positions sharing the scan facts used for workspace selection. */
-export interface LocalizationFindingGroup {
-	readonly culture: CultureCode;
-	readonly filter: WorkspaceQualityFilter;
-	/** The severity the scan stored for these findings. */
-	readonly severity: CheckSeverity;
-	readonly ruleId: RuleId;
-	readonly eligible: boolean;
-	readonly reportedBySource: boolean;
-	/** Ascending positions in the finding list, sharing all the facts above. */
-	readonly positions: Uint32Array;
-}
-
-/** Localization findings in report order. Facts are cheap; only `items` reads lines. */
-export interface LocalizationFindingList {
+/** A report's localization findings in report order, as the in-memory workspace reads them. */
+interface LocalizationFindingList {
 	readonly length: number;
-	/** Optional compact selection index, prepared cooperatively by indexed scans. */
-	readonly groups?: readonly LocalizationFindingGroup[];
 	culture(position: number): CultureCode;
 	filter(position: number): WorkspaceQualityFilter;
 	/** The severity the finding was reported with, as the rule file rated its check or rule. */
@@ -720,19 +730,14 @@ export interface LocalizationFindingList {
 	reportedBySource(position: number): boolean;
 	/** The first position with this ID within the culture selection. */
 	find(id: TextQualityFindingId, culture: CultureCode | undefined): number | undefined;
-	items(
-		positions: readonly number[]
-	): Effect.Effect<readonly WorkspaceQualityItem[], import("./index-failure.js").IndexFailure>;
+	items(positions: readonly number[]): readonly WorkspaceQualityItem[];
 	/** Check diagnostic counts in first-seen order. */
 	limits(
 		culture: CultureCode | undefined
 	): ReadonlyArray<{ code: LocalizationCheckDiagnostic["code"]; count: number }>;
 }
-/**
- * Retained localization quality report metadata used with lazily hydrated findings. Counts,
- * diagnostics and provenance survive without materializing every finding at once.
- */
-export interface LocalizationQualityMetadata {
+/** What the in-memory workspace lists besides a report's findings. */
+interface LocalizationQualityMetadata {
 	readonly join: Pick<LocalizationJoin, "target" | "nativeCulture" | "cultures">;
 	readonly rules: readonly RuleId[];
 	/** The rule file's custom checks, with their labels, in the file's order. */
@@ -742,12 +747,10 @@ export interface LocalizationQualityMetadata {
 	readonly coverage: TextCorpus["coverage"];
 	/** The line a source finding's unit belongs to, for its context. */
 	readonly lineOfUnit: (id: TextUnitId) => LocalizationLine | undefined;
-	/** Optional source-summary context without hydrating the unit's complete localization line. */
-	readonly sourceKeyOfUnit?: (id: TextUnitId) => string | undefined;
 }
 
-/** Findings and metadata a quality workspace reads, however they are stored. */
-export interface LocalizationQuality {
+/** Findings and metadata the in-memory workspace reads. */
+interface LocalizationQuality {
 	readonly findings: LocalizationFindingList;
 	readonly metadata: LocalizationQualityMetadata;
 }
@@ -776,11 +779,7 @@ export function localizationQualityWorkspace(
 function materializedLocalizationQuality(
 	report: LocalizationQualityReport,
 	join: LocalizationJoin
-): Omit<LocalizationQuality, "findings"> & {
-	findings: Omit<LocalizationFindingList, "items"> & {
-		items: (positions: readonly number[]) => readonly WorkspaceQualityItem[];
-	};
-} {
+): LocalizationQuality {
 	const lines = new Map(join.lines.map((line) => [line.id, line]));
 	const units = new Map(
 		join.lines.flatMap((line) =>
@@ -853,19 +852,25 @@ function materializedLocalizationQuality(
 	};
 }
 
-/** An already materialized report with the same async interface as native findings. */
+/**
+ * A whole report's quality in memory, in the shape an index serves, for hosts and tests without
+ * an index. Its workspace lists a source report's findings when `localizationQualityWorkspaceOf`
+ * is given one.
+ */
 export function localizationQuality(
 	report: LocalizationQualityReport,
 	join: LocalizationJoin
-): LocalizationQuality {
-	const quality = materializedLocalizationQuality(report, join);
-	return {
-		...quality,
-		findings: {
-			...quality.findings,
-			items: (positions) => Effect.succeed(quality.findings.items(positions))
-		}
+): QueriedLocalizationQuality {
+	const withSource = (source: TextQualityReport | undefined): LocalizationQualityWorkspace => {
+		const memory = localizationQualityWorkspace(source, report, join);
+		return {
+			search: (request) => Effect.sync(() => memory.search(request)),
+			export: (request) => Effect.sync(() => memory.export(request)),
+			focus: (request) => Effect.sync(() => memory.focus(request)),
+			changes: (request) => Effect.sync(() => memory.changes(request))
+		};
 	};
+	return { workspace: withSource(undefined), withSource };
 }
 
 /**
@@ -874,19 +879,22 @@ export function localizationQuality(
  * ID are unchanged.
  */
 function withoutSourceReported(item: WorkspaceQualityItem): WorkspaceQualityItem {
-	const { finding, line } = item;
-	if (!("culture" in finding) || finding.kind !== "placeholder_text") return item;
-	const left = finding.unreportedMatches;
-	if (!left?.length || left.length === finding.actual.matches.length) return item;
 	return {
 		...item,
-		summary: {
-			...workspaceQualityItem(
-				{ ...finding, actual: { ...finding.actual, matches: left } },
-				line
-			).summary,
-			id: item.summary.id
-		}
+		summary: withoutSourceReportedSummary(item.finding, item.summary, lineFacts(item.line))
+	};
+}
+function withoutSourceReportedSummary(
+	finding: Finding | SourceFinding,
+	summary: WorkspaceFinding,
+	line: QualityLineFacts | undefined
+): WorkspaceFinding {
+	if (!("culture" in finding) || finding.kind !== "placeholder_text") return summary;
+	const left = finding.unreportedMatches;
+	if (!left?.length || left.length === finding.actual.matches.length) return summary;
+	return {
+		...qualitySummary({ ...finding, actual: { ...finding.actual, matches: left } }, line),
+		id: summary.id
 	};
 }
 
@@ -913,51 +921,13 @@ function localizationQualityReads(
 	const sourceItem = (finding: SourceFinding) => {
 		// A source summary with an occurrence already has its asset context. Only the joined key
 		// is missing; reading all translations and evidence for that key costs far more.
-		const item =
-			metadata.sourceKeyOfUnit && finding.affectedOccurrences[0]
-				? workspaceQualityItem(
-						finding,
-						undefined,
-						metadata.sourceKeyOfUnit(finding.textUnitId)
-					)
-				: workspaceQualityItem(finding, metadata.lineOfUnit(finding.textUnitId));
+		const item = workspaceQualityItem(finding, metadata.lineOfUnit(finding.textUnitId));
 		pageSources.set(item.summary.id, finding);
 		return item;
 	};
 	const sourceItemAt = (position: number) => sourceItem(sourceFindings[position]!);
 	const sourceCount = sourceFindings.length,
 		total = sourceCount + list.length;
-	let sourceGroups:
-		| Array<{ filter: SourceFinding["kind"]; ruleId: RuleId; positions: Uint32Array }>
-		| undefined;
-	const groupedSource = () => {
-		if (sourceGroups) return sourceGroups;
-		const byRule = new Map<RuleId, { character_budget?: number[]; terminology?: number[] }>();
-		const groups: Array<{
-			filter: SourceFinding["kind"];
-			ruleId: RuleId;
-			positions: number[];
-		}> = [];
-		for (let position = 0; position < sourceCount; position++) {
-			const finding = sourceFindings[position]!;
-			let rule = byRule.get(finding.ruleId);
-			if (!rule) {
-				rule = {};
-				byRule.set(finding.ruleId, rule);
-			}
-			let positions = rule[finding.kind];
-			if (!positions) {
-				positions = [];
-				rule[finding.kind] = positions;
-				groups.push({ filter: finding.kind, ruleId: finding.ruleId, positions });
-			}
-			positions.push(position);
-		}
-		return (sourceGroups = groups.map((group) => ({
-			...group,
-			positions: Uint32Array.from(group.positions)
-		})));
-	};
 	// One list shows source and localization findings: a placeholder is reported once. The checks
 	// ran with the rule document the source report comes from, and recorded which placeholders
 	// its terminology reports; nothing is hydrated here.
@@ -1052,7 +1022,7 @@ function localizationQualityReads(
 			suggestedFixCount += eligible;
 			return true;
 		};
-		for (let position = 0; position < (list.groups ? 0 : total); position++) {
+		for (let position = 0; position < total; position++) {
 			if (!inCulture(request, position)) continue;
 			const filter = filterAt(position),
 				rule = ruleAt(position),
@@ -1071,35 +1041,6 @@ function localizationQualityReads(
 					positions: Uint32Array.from(matchedBySeverity[severity]),
 					base: 0
 				});
-		if (list.groups)
-			for (const group of groupedSource()) {
-				const severity = workspaceQualitySeverity(group.filter);
-				if (record(group.filter, severity, group.ruleId, group.positions.length, 0))
-					runs[severity].push({
-						positions: group.positions,
-						base: 0
-					});
-			}
-		for (const group of list.groups ?? []) {
-			if (
-				(source && group.reportedBySource) ||
-				(request.culture && request.culture !== group.culture)
-			)
-				continue;
-			if (
-				record(
-					group.filter,
-					group.severity,
-					group.ruleId,
-					group.positions.length,
-					group.eligible ? group.positions.length : 0
-				)
-			)
-				runs[group.severity].push({
-					positions: group.positions,
-					base: sourceCount
-				});
-		}
 		const counts = Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts)(
 			Object.fromEntries([
 				...BuiltInQualityFilter.literals.map((filter) => [
@@ -1238,7 +1179,7 @@ function localizationQualityReads(
 			}
 			if (!line) return { status: "not_found" } as const;
 			const mark = line.cultures.find((mark) => mark.culture === finding.culture);
-			const sourceText = findingSource(finding, line);
+			const sourceText = findingSource(finding, lineFacts(line));
 			const translation = mark ? localizationShippedTranslation(mark).value : null;
 			const detail = localizationFocusPage(
 				metadata.join,
@@ -1585,20 +1526,313 @@ export function workspaceQualityCsv(report: WorkspaceQualityReport): string {
 	]);
 }
 
-/** The workspace over native findings hydrates its selected positions asynchronously. */
+/**
+ * The workspace of a quality read. Queried quality lists the rule file's source findings itself,
+ * so `source` is read only by in-memory quality.
+ */
 export function localizationQualityWorkspaceOf(
 	source: TextQualityReport | undefined,
-	quality: LocalizationQuality
-) {
-	const reads = localizationQualityReads(source, quality);
+	quality: QueriedLocalizationQuality
+): LocalizationQualityWorkspace {
+	return quality.withSource ? quality.withSource(source) : quality.workspace;
+}
+
+/** What a queried Quality workspace lists besides its findings, as the scan reported it. */
+export interface QueriedQualityMetadata {
+	readonly join: Pick<LocalizationJoin, "target" | "nativeCulture" | "cultures">;
+	/** The page's rule list: source rules by ID, then the target's rules in report order. */
+	readonly rules: readonly RuleId[];
+	readonly customChecks?: ReadonlyArray<{ readonly ruleId: RuleId; readonly label: string }>;
+	readonly unsupportedRuleCultures: number;
+	readonly status: TextCorpus["status"];
+	readonly coverage: TextCorpus["coverage"];
+}
+
+/** A workspace's Quality reads, however they are served. */
+export interface LocalizationQualityWorkspace {
+	readonly search: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceQualityPage, IndexFailure>;
+	readonly export: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceQualityReport, IndexFailure>;
+	readonly focus: (
+		request: WorkspaceQualityFocusRequest
+	) => Effect.Effect<WorkspaceQualityFocusResult, IndexFailure>;
+	readonly changes: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceChangesResult, IndexFailure>;
+}
+
+/** Quality the engine serves: every page, focus and proposal is a findings query. */
+export interface QueriedLocalizationQuality {
+	readonly workspace: LocalizationQualityWorkspace;
+	/** In-memory quality only: its workspace listing a source report's findings too. */
+	readonly withSource?: (source: TextQualityReport | undefined) => LocalizationQualityWorkspace;
+}
+
+/** The workspace filter a rule's findings show under. */
+function ruleFilter(rule: GameTextContract.RuleMetadata): Exclude<WorkspaceQualityFilter, "all"> {
+	if (rule.kind === "localization_character_budget") return "character_budget";
+	if (rule.kind === "localization_terminology") return "terminology";
+	if (rule.kind === "custom") return customQualityFilter(rule.ruleId);
+	// SAFETY: built-in and source rule kinds are the workspace's filter names.
+	// Verified by: findings-query.test.ts lists every rule's findings under its filter.
+	return rule.kind as Exclude<WorkspaceQualityFilter, "all">;
+}
+
+/**
+ * The Quality workspace over a findings layer. Pages list blocking findings, then normal, then
+ * low; within a severity, source findings first, then line findings in report order, as the
+ * scan listed them. `acceptance` names the review the workspace applies.
+ */
+export function queriedLocalizationQualityWorkspace(options: {
+	readonly findings: Pick<NativeFindings, "findingsQuery">;
+	readonly key: string;
+	readonly rules: readonly GameTextContract.RuleMetadata[];
+	readonly acceptance: string | undefined;
+	readonly metadata: QueriedQualityMetadata;
+	readonly detail: (
+		request: LocalizationFocusRequest
+	) => Effect.Effect<LocalizationFocus | undefined, GameTextIndexError>;
+}): LocalizationQualityWorkspace {
+	const { findings, key, rules, acceptance, metadata } = options;
+	const filterOfRule = new Map(rules.map((rule) => [rule.ruleId, ruleFilter(rule)]));
+	const customFilters = (metadata.customChecks ?? []).map(({ ruleId, label }) => ({
+		filter: customQualityFilter(ruleId),
+		label
+	}));
+	const query = (
+		request: Pick<WorkspaceQualityRequest, "culture" | "filter">,
+		fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view" | "order">
+	) =>
+		findings.findingsQuery({
+			key,
+			view: "workspace",
+			order: "severity",
+			...(request.culture ? { culture: request.culture } : undefined),
+			...(acceptance ? { acceptance } : undefined),
+			...(request.filter === "all"
+				? undefined
+				: {
+						rules: [...filterOfRule]
+							.filter(([, filter]) => filter === request.filter)
+							.map(([ruleId]) => ruleId)
+					}),
+			...fields
+		});
+	const summaryOf = (finding: QueriedFinding): WorkspaceFinding => {
+		if (!("culture" in finding))
+			return qualitySummary(finding, undefined, finding.sourceKey ?? undefined);
+		const facts: QualityLineFacts = {
+			manifestSource: finding.manifestSource ?? undefined,
+			manifestPath: finding.manifestLocations[0],
+			source: finding.lineSource,
+			key: finding.identity?.key
+		};
+		return withoutSourceReportedSummary(finding, qualitySummary(finding, facts), facts);
+	};
+	const search = Effect.fn("GameText.quality.search")(function* (
+		request: WorkspaceQualityRequest
+	) {
+		const offset = request.offset ?? 0;
+		const page = yield* query(request, { offset, limit: 50, counts: true });
+		const counts = page.counts!;
+		const typeCounts = new Map<WorkspaceQualityFilter, number>();
+		const ruleCounts = new Map<string, number>();
+		for (const { ruleId, count } of counts.rules) {
+			ruleCounts.set(ruleId, count);
+			const filter = filterOfRule.get(ruleId);
+			if (filter) typeCounts.set(filter, (typeCounts.get(filter) ?? 0) + count);
+		}
+		const result: WorkspaceQualityPage = {
+			findings: page.findings.map(summaryOf),
+			total: page.total,
+			counts: Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts)(
+				Object.fromEntries([
+					...BuiltInQualityFilter.literals.map((filter) => [
+						filter,
+						filter === "all" ? counts.all : (typeCounts.get(filter) ?? 0)
+					]),
+					...customFilters.map(({ filter }) => [filter, typeCounts.get(filter) ?? 0])
+				])
+			),
+			customFilters,
+			severityCounts: counts.severities,
+			// SAFETY: diagnostic codes are the engine's DIAGNOSTIC_CODES, the host's code union.
+			// Verified by: localization-checks.test.ts reads native syntax_limit diagnostics.
+			limits: counts.limits as WorkspaceQualityPage["limits"],
+			unsupportedRuleCultures: metadata.unsupportedRuleCultures,
+			suggestedFixCount: counts.fixable,
+			rules: metadata.rules.map((ruleId) => ({
+				ruleId,
+				findingCount: ruleCounts.get(ruleId) ?? 0
+			})),
+			...(offset + 50 < page.total ? { nextOffset: offset + 50 } : undefined)
+		};
+		return result;
+	});
 	return {
-		search: (request: WorkspaceQualityRequest) =>
-			hydrateQualityRead(() => reads.search(request), quality.findings.items),
-		export: (request: WorkspaceQualityRequest) =>
-			hydrateQualityRead(() => reads.export(request), quality.findings.items),
-		focus: (request: WorkspaceQualityFocusRequest) =>
-			hydrateQualityRead(() => reads.focus(request), quality.findings.items),
-		changes: (request: WorkspaceQualityRequest) =>
-			hydrateQualityRead(() => reads.changes(request), quality.findings.items)
+		search,
+		export: Effect.fn("GameText.quality.export")(function* (request: WorkspaceQualityRequest) {
+			const { nextOffset: _offset, ...page } = yield* search({ ...request, offset: 0 });
+			const all: WorkspaceFinding[] = [];
+			for (let offset = 0; offset === 0 || offset < page.total; offset += 5000) {
+				const next = yield* query(request, { offset, limit: 5000 });
+				all.push(...next.findings.map(summaryOf));
+				if (next.findings.length < 5000) break;
+			}
+			return {
+				...page,
+				findings: all,
+				corpusCoverage: metadata.coverage,
+				status: metadata.status,
+				target: request.target,
+				filter: request.filter,
+				...(request.culture ? { culture: request.culture } : undefined)
+			};
+		}),
+		focus: Effect.fn("GameText.quality.focus")(function* (
+			request: WorkspaceQualityFocusRequest
+		) {
+			const page = yield* query(
+				{ ...(request.culture ? { culture: request.culture } : undefined), filter: "all" },
+				{ id: request.id, limit: 1 }
+			);
+			const finding = page.findings[0];
+			if (!finding) return { status: "not_found" } as const;
+			const summary = summaryOf(finding);
+			if (!("culture" in finding)) {
+				const offset = request.occurrenceOffset ?? 0;
+				const previous = offset ? finding.affectedOccurrences[offset - 1]?.id : undefined;
+				return {
+					status: "found" as const,
+					focus: {
+						kind: "source" as const,
+						focus: textQualityFindingFocus(finding, {
+							id: summary.id,
+							pageSize: 50,
+							...(previous ? { occurrenceCursor: previous } : undefined)
+						})
+					}
+				};
+			}
+			const detail = yield* options.detail({
+				target: request.target,
+				culture: finding.culture,
+				selection: { kind: "line", id: finding.lineId },
+				locationOffset: request.occurrenceOffset ?? 0,
+				poContextOffset: request.poContextOffset ?? 0
+			});
+			if (!detail) return { status: "not_found" } as const;
+			// The focus shows the finding's culture alone, as the line's other cultures are not
+			// what it is about.
+			const translations = detail.translations.filter(
+				(translation) => translation.culture === finding.culture
+			);
+			const {
+				problems: _problems,
+				scopeSummary: _summary,
+				nextCultureOffset: _next,
+				...rest
+			} = detail;
+			const scope =
+				translations[0] && localizationScopeSummary(translations[0].state, request.target);
+			const translationsPage: LocalizationFocus = {
+				...rest,
+				translations,
+				totalCultures: translations.length,
+				...(scope ? { scopeSummary: scope } : undefined)
+			};
+			const facts: QualityLineFacts = {
+				manifestSource: finding.manifestSource ?? undefined,
+				manifestPath: finding.manifestLocations[0],
+				source: finding.lineSource,
+				key: finding.identity?.key
+			};
+			const sourceText = findingSource(finding, facts);
+			const translation = finding.shippedTranslation;
+			const change = eligibleLocalizationChange(finding);
+			const offset = request.occurrenceOffset ?? 0;
+			return {
+				status: "found" as const,
+				focus: {
+					kind: "localization" as const,
+					id: summary.id,
+					source: sourceText.slice(0, 4096),
+					translation: translation?.slice(0, 4096) ?? null,
+					translationOrigin: finding.translationOrigin,
+					sourceRanges: ranges(sourceText, finding, "source"),
+					translationRanges: ranges(translation ?? "", finding, "translation"),
+					truncated: sourceText.length > 4096 || (translation?.length ?? 0) > 4096,
+					...(summary.sourceVariants
+						? { sourceVariants: summary.sourceVariants }
+						: undefined),
+					problem: summary.problem,
+					recovery: finding.recovery,
+					check: summary.filter,
+					severity: summary.severity,
+					ruleId: finding.ruleId,
+					culture: finding.culture,
+					affectedOccurrences: finding.affectedOccurrences.slice(offset, offset + 50),
+					totalOccurrences: finding.affectedOccurrences.length,
+					...(offset + 50 < finding.affectedOccurrences.length
+						? { nextOccurrenceOffset: offset + 50 }
+						: undefined),
+					translations: translationsPage,
+					...(detail.origin.kind === "corpus" && detail.origin.unitIds[0]
+						? { textUnitId: detail.origin.unitIds[0] }
+						: undefined),
+					...(change ? { suggestedChange: change } : undefined)
+				}
+			};
+		}),
+		changes: Effect.fn("GameText.quality.changes")(function* (
+			request: WorkspaceQualityRequest
+		) {
+			const changes: LocalizationChange[] = [];
+			const seen = new Set<string>();
+			let remaining = 0,
+				bytes = 0,
+				read = 0,
+				total = 0;
+			// Only format-argument findings suggest changes: one per line and culture, and a line's
+			// identity is unique, so changes past the first 100 are counted without reading them.
+			do {
+				const page = yield* query(request, { fixable: true, offset: read, limit: 128 });
+				total = page.total;
+				read += page.findings.length;
+				for (const finding of page.findings) {
+					const change = eligibleLocalizationChange(finding);
+					if (!change) continue;
+					const id = JSON.stringify([
+						change.target,
+						change.culture,
+						change.namespace,
+						change.key
+					]);
+					if (seen.has(id)) continue;
+					seen.add(id);
+					const size = new TextEncoder().encode(JSON.stringify(change)).length;
+					if (changes.length === 100 || bytes + size > 1_000_000) {
+						remaining++;
+						continue;
+					}
+					changes.push(change);
+					bytes += size;
+				}
+				if (page.findings.length === 0) break;
+			} while (read < total && changes.length < 100);
+			remaining += total - read;
+			return {
+				status: "ready" as const,
+				document: {
+					schemaVersion: 1 as const,
+					provenance: { producer: "ue-shed.localization.checks", files: [] },
+					changes
+				},
+				remaining
+			};
+		})
 	};
 }

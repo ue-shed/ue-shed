@@ -36,6 +36,15 @@ pub struct RuleCount {
     pub count: u32,
 }
 /// Stored with a findings layer, and read back by every reply.
+/// The places a role's scopes match, over the visible units, whether or not a rule's finding does.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RoleTotal {
+    pub role: String,
+    pub matched_occurrences: u32,
+    pub matched_text_units: u32,
+}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct LayerMetadata {
@@ -45,6 +54,7 @@ pub(super) struct LayerMetadata {
     pub rules: Vec<RuleMetadata>,
     pub counts: Vec<RuleCount>,
     pub diagnostic_count: u32,
+    pub roles: Vec<RoleTotal>,
 }
 
 /// `findings_evaluate`'s reply: the layer's key and summary.
@@ -56,6 +66,8 @@ pub struct FindingsEvaluation {
     pub rules: Vec<RuleMetadata>,
     pub counts: Vec<RuleCount>,
     pub diagnostic_count: u32,
+    /// The document's roles, in its order, with the places each matches.
+    pub roles: Vec<RoleTotal>,
     pub collation: String,
     pub profile: EvaluationProfile,
 }
@@ -204,20 +216,6 @@ pub struct PlaceSet {
     pub id: u32,
     pub occurrences: Vec<Place>,
 }
-/// A line's findings by family, and its pattern diagnostics.
-#[derive(Clone, Debug, Default, Serialize)]
-#[cfg_attr(test, derive(TS))]
-#[serde(rename_all = "camelCase")]
-pub struct FindingLine {
-    pub row: u32,
-    #[cfg_attr(test, ts(type = "Array<Finding>"))]
-    pub built_ins: Vec<Value>,
-    #[cfg_attr(test, ts(type = "Array<Finding>"))]
-    pub policy: Vec<Value>,
-    #[cfg_attr(test, ts(type = "Array<Finding>"))]
-    pub custom: Vec<Value>,
-    pub diagnostics: Vec<LineDiagnostic>,
-}
 /// A culture whose pattern could not be checked on a line.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(TS))]
@@ -226,30 +224,6 @@ pub struct LineDiagnostic {
     pub line_id: String,
     pub culture: String,
     pub code: String,
-}
-/// `findings_lines`' reply.
-#[derive(Clone, Debug, Default, Serialize)]
-#[cfg_attr(test, derive(TS))]
-pub struct FindingLines {
-    pub profile: ReadProfile,
-    pub places: Vec<PlaceSet>,
-    pub lines: Vec<FindingLine>,
-}
-/// A raw unit's source findings.
-#[derive(Clone, Debug, Default, Serialize)]
-#[cfg_attr(test, derive(TS))]
-pub struct UnitFindings {
-    pub unit: u32,
-    #[cfg_attr(test, ts(type = "Array<Finding>"))]
-    pub findings: Vec<Value>,
-}
-/// `findings_units`' reply.
-#[derive(Clone, Debug, Default, Serialize)]
-#[cfg_attr(test, derive(TS))]
-pub struct FindingUnits {
-    pub profile: ReadProfile,
-    pub places: Vec<PlaceSet>,
-    pub units: Vec<UnitFindings>,
 }
 /// A read too large for one frame, written to a file the host reads and deletes.
 #[derive(Clone, Debug, Serialize)]
@@ -262,23 +236,4 @@ pub struct SpilledReply {
 pub(super) trait Read: Serialize {
     fn findings(&self) -> usize;
     fn profile(&mut self) -> &mut ReadProfile;
-}
-impl Read for FindingLines {
-    fn findings(&self) -> usize {
-        self.lines
-            .iter()
-            .map(|line| line.built_ins.len() + line.policy.len() + line.custom.len())
-            .sum()
-    }
-    fn profile(&mut self) -> &mut ReadProfile {
-        &mut self.profile
-    }
-}
-impl Read for FindingUnits {
-    fn findings(&self) -> usize {
-        self.units.iter().map(|unit| unit.findings.len()).sum()
-    }
-    fn profile(&mut self) -> &mut ReadProfile {
-        &mut self.profile
-    }
 }

@@ -221,10 +221,9 @@ export async function runEngineStage(options: EngineStageOptions) {
 		const source = options.records
 			? retainedPackageSource(options.records)
 			: gameTextIndexSourceNodeLayer(options.cache).pipe(Layer.provide(AssetReaderLive));
-		// `quality-in-process` scans on this event loop, as a host without the worker would.
-		const layer = gameTextIndexRefreshLayer(options.cache, {
-			qualityWorker: stage !== "quality-in-process"
-		}).pipe(
+		// Quality runs in the engine, so `quality-in-process`, kept for earlier runs' names, is
+		// `quality`.
+		const layer = gameTextIndexRefreshLayer(options.cache).pipe(
 			Layer.provide(source),
 			Layer.provide(GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))),
 			Layer.provide(LocalizationEvidenceNodeLive)

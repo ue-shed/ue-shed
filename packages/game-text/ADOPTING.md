@@ -85,9 +85,9 @@ All `model.query` operations return Effects. `model.summary` is cached native me
 return bounded pages. Each model owns a native process and pinned read-only snapshot in its
 caller's scope. The native read path holds no writer lease. Failures remain typed failures;
 refresh and open a new model to recover. Input preparation still uses
-`localization-import-worker.js`, `package-text-worker.js` and `cold-layer-worker.js`; optional
-quality scans use `quality-worker.js`. Bundled hosts must emit those entries with their
-package dependencies or leave the installed package unbundled. There is no search-worker bundle.
+`localization-import-worker.js`, `package-text-worker.js` and `cold-layer-worker.js`. Bundled
+hosts must emit those entries with their package dependencies or leave the installed package
+unbundled. There is no search-worker or quality-worker bundle.
 
 Use `query.localizationDetail(request)` for interactive evidence, including culture, location and
 PO-context offsets. Text focus carries a localization preview. `localizationFocus(id)` and

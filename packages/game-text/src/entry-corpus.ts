@@ -119,10 +119,8 @@ export {
 export {
 	BuiltInQualityFilter,
 	CustomQualityFilter,
-	type LocalizationFindingGroup,
-	type LocalizationFindingList,
-	type LocalizationQuality,
-	type LocalizationQualityMetadata,
+	type LocalizationQualityWorkspace,
+	type QueriedLocalizationQuality,
 	WorkspaceChangesResult,
 	WorkspaceFinding,
 	WorkspaceLocalizationFindingFocus,

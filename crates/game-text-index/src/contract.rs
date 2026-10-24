@@ -12,12 +12,13 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 7] = [
+const SOURCES: [&str; 8] = [
     include_str!("contract.rs"),
     include_str!("rules/ir.rs"),
     include_str!("rules/replies.rs"),
     include_str!("engine.rs"),
     include_str!("rules/findings_read.rs"),
+    include_str!("rules/findings_query.rs"),
     include_str!("rules/identity.rs"),
     include_str!("wtf8.rs"),
 ];
@@ -53,14 +54,18 @@ pub fn identity() -> ContractIdentity {
 
 #[cfg(test)]
 mod tests {
+    use crate::rules::findings_query::{
+        AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
+        Order, Page, QueryRequest, RuleTotal, View,
+    };
     use crate::rules::ir::{
         Document, Expr, Family, MatchOperator, MatcherKind, Role, RoleMatcher, RoleScope, Rule,
         Scope, Severity, Subject,
     };
     use crate::rules::replies::{
-        EvaluationProfile, FindingLine, FindingLines, FindingUnits, FindingsEvaluation,
-        LineDiagnostic, Memory, Place, PlaceSet, ProfileSample, ReadProfile, RuleCount,
-        RuleMetadata, RunProfile, SpilledReply, StageSample, SubStageSample, UnitFindings,
+        EvaluationProfile, FindingsEvaluation, LineDiagnostic, Memory, Place, PlaceSet,
+        ProfileSample, ReadProfile, RoleTotal, RuleCount, RuleMetadata, RunProfile, SpilledReply,
+        StageSample, SubStageSample,
     };
     use ts_rs::{Config, TS};
 
@@ -107,17 +112,25 @@ mod tests {
             FindingsEvaluation::decl(&config),
             RuleMetadata::decl(&config),
             RuleCount::decl(&config),
+            RoleTotal::decl(&config),
             EvaluationProfile::decl(&config),
             RunProfile::decl(&config),
             StageSample::decl(&config),
             SubStageSample::decl(&config),
             ProfileSample::decl(&config),
             Memory::decl(&config),
-            FindingLines::decl(&config),
-            FindingLine::decl(&config),
+            FindingsAcceptRequest::decl(&config),
+            AcceptedFinding::decl(&config),
+            QueryRequest::decl(&config),
+            View::decl(&config),
+            Order::decl(&config),
+            Page::decl(&config),
+            FindingsPage::decl(&config),
+            Counts::decl(&config),
+            RuleTotal::decl(&config),
+            CodeCount::decl(&config),
+            Diagnostics::decl(&config),
             LineDiagnostic::decl(&config),
-            FindingUnits::decl(&config),
-            UnitFindings::decl(&config),
             PlaceSet::decl(&config),
             Place::decl(&config),
             ReadProfile::decl(&config),

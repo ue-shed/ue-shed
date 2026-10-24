@@ -80,7 +80,7 @@ async function compareGameTextCorpusLocked(
 						lines: yield* model.query.readLocalizationLines()
 					};
 					const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify(plan.rules));
-					const quality = yield* model.localizationQuality(rules);
+					const quality = yield* model.localizationCheck(rules);
 					const sourceQuality = yield* (yield* model.sourceQuality(rules)).export("all");
 					// Browse's shared and long signals are also opt-in checks. A file listing only
 					// them must report the lines Browse marks, and no others.
@@ -91,11 +91,9 @@ async function compareGameTextCorpusLocked(
 							rules: signalCheckIds.map((kind) => ({ kind }))
 						})
 					);
-					const signalQuality = yield* model.localizationQuality(signalRules);
+					const signalReport = yield* model.localizationCheck(signalRules);
 					const signalChecksByLine = new Map<string, string[]>();
-					for (const { finding } of yield* signalQuality.findings.items(
-						Array.from({ length: signalQuality.findings.length }, (_, i) => i)
-					))
+					for (const finding of signalReport.findings)
 						if ("culture" in finding)
 							signalChecksByLine.set(finding.lineId, [
 								...(signalChecksByLine.get(finding.lineId) ?? []),
@@ -107,9 +105,7 @@ async function compareGameTextCorpusLocked(
 						expected: unknown;
 						actual: unknown;
 					}[] = [];
-					const findings = yield* quality.findings.items(
-						Array.from({ length: quality.findings.length }, (_, i) => i)
-					);
+					const findings = quality.findings.map((finding) => ({ finding }));
 					const findingsByLine = new Map<string, CorpusFinding[]>();
 					for (const { finding } of findings)
 						if ("culture" in finding) {

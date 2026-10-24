@@ -50,9 +50,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30000,
@@ -155,9 +153,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								fixture.source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30000,

@@ -20,9 +20,16 @@ pub(crate) struct PreparationTimings {
 /// Each line's archive translation and PO text in one culture, 0 for none, else string ID + 1.
 pub(crate) type CultureTexts = Arc<(Vec<u32>, Vec<u32>)>;
 
+/// Line rows by their (namespace, key) string IDs.
+pub(crate) type IdentityLines = Arc<HashMap<(u32, u32), Vec<u32>>>;
+
 pub struct EngineQuery {
     pub(crate) configuration: Configuration,
     pub(crate) findings: HashMap<String, crate::rules::FindingsLayer>,
+    /// Review acceptance sets by key, each for one findings layer.
+    pub(crate) acceptances: HashMap<String, Arc<crate::rules::Acceptance>>,
+    /// Line rows by their (namespace, key) string IDs, built on the first acceptance.
+    pub(crate) identity_lines: Option<IdentityLines>,
     pub(crate) finding_files: FindingFiles,
     pub(crate) audience_rules: Vec<String>,
     pub(crate) summary_cache: Option<Value>,
@@ -230,6 +237,8 @@ impl EngineQuery {
         Ok(Self {
             configuration: configuration.clone(),
             findings: HashMap::new(),
+            acceptances: HashMap::new(),
+            identity_lines: None,
             finding_files: FindingFiles::default(),
             audience_rules: Vec::new(),
             summary_cache: None,

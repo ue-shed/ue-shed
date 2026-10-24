@@ -352,9 +352,7 @@ describe("text problems in the engine and textProblems", () => {
 									"up_to_date"
 								].sort()
 							);
-						}).pipe(
-							Effect.provide(fixture.layer(false, fixture.source, false, builder))
-						);
+						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})
 				)
 			);

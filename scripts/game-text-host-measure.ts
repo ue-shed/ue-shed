@@ -244,14 +244,7 @@ export async function measureGameTextHosts(
 		);
 		return;
 	}
-	const indexLayer = gameTextIndexRefreshLayer(
-		cache,
-		host === "workbench"
-			? {
-					qualityWorker: true
-				}
-			: {}
-	).pipe(
+	const indexLayer = gameTextIndexRefreshLayer(cache).pipe(
 		Layer.provide(source),
 		Layer.provide(builderLayer),
 		Layer.provide(selectedBuilder),

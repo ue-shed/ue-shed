@@ -369,6 +369,8 @@ pub(crate) struct Evidence {
     pub fix: Atom,
     pub extra: Atom,
     pub translation_origin: Atom,
+    /// `Bool(true)` when the rule's `shadowed` holds for the finding.
+    pub shadowed: Atom,
 }
 /// A finding as evaluation produced it: interned evidence in the evaluation's arena.
 pub(crate) struct Finding {
@@ -2770,6 +2772,7 @@ impl Program {
                     rule.affected,
                     rule.translation_origin,
                     rule.extra,
+                    rule.shadowed,
                 ]
                 .into_iter()
                 .flatten(),
@@ -2932,6 +2935,7 @@ impl Program {
             let fix = optional(rule.fix)?;
             let extra = optional(rule.extra)?;
             let origin = optional(rule.translation_origin)?;
+            let shadowed = optional(rule.shadowed)?;
             let affected = if let Some(node) = rule.affected {
                 evaluator.evaluate(node, &selected)?
             } else {
@@ -2954,6 +2958,7 @@ impl Program {
                     &fix,
                     &extra,
                     &origin,
+                    &shadowed,
                     &affected,
                     &recovery,
                 ]
@@ -2969,6 +2974,7 @@ impl Program {
                     fix: fix.get(index, &evaluator.arena),
                     extra: extra.get(index, &evaluator.arena),
                     translation_origin: origin.get(index, &evaluator.arena),
+                    shadowed: shadowed.get(index, &evaluator.arena),
                 };
                 let places = affected.get(index, &evaluator.arena);
                 if evaluator.arena.elements(places)?.is_none() {

@@ -244,9 +244,7 @@ describe("index queries", () => {
 								pageSize: 1
 							});
 							yield* search(true, { group: "asset", minGroupSize: 2 });
-						}).pipe(
-							Effect.provide(fixture.layer(false, fixture.source, false, builder))
-						);
+						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})
 				)
 			);

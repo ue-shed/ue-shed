@@ -102,7 +102,6 @@ effectIt.live(
 				const report = yield* indexed.localizationCheck(document, { checks: [] });
 				expect(report.findings).toHaveLength(6);
 				const quality = yield* indexed.localizationQuality(document, { checks: [] });
-				expect(quality.findings.length).toBe(6);
 				const sourceReport = yield* (yield* indexed.sourceQuality(document)).export("all");
 				const memory = localizationQualityWorkspace(
 					sourceReport,

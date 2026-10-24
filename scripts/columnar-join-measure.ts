@@ -16,9 +16,9 @@ import {
 import { u32 } from "../packages/game-text/src/joined-target-input.ts";
 import {
 	openJoinedTarget,
-	inspectJoinedTarget,
-	hydrateJoinedTarget
+	inspectJoinedTarget
 } from "../packages/game-text/src/joined-target-reader.ts";
+import { hydrateJoinedTarget } from "../packages/game-text/src/joined-target-hydrate.test-support.ts";
 import { LocalizationLine } from "../packages/game-text/src/localization-schema.ts";
 import { packageTextJsonLines } from "../packages/game-text/src/package-text-ndjson.ts";
 import { compareLocalizationJoins } from "./localization-join-oracle.test-support.ts";

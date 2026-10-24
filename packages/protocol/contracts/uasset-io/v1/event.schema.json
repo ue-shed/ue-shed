@@ -62,14 +62,13 @@
 						"corpus_report_header",
 						"corpus_fingerprint",
 						"aggregate",
-						"rows",
 						"localization_detail",
 						"localization_export",
 						"localization_focus_export",
 						"localization_corpus",
 						"findings_evaluate",
-						"findings_lines",
-						"findings_units"
+						"findings_accept",
+						"findings_query"
 					]
 				},
 				"capabilities": {

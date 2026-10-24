@@ -115,10 +115,6 @@ it.live("does not pair a re-keyed place with its gathered or saved previous iden
 					checks: ["duplicate_source"]
 				});
 				expect(report.findings).toEqual([]);
-				const quality = yield* indexed.localizationQuality(STARTER_CHECK_RULES, {
-					checks: ["duplicate_source"]
-				});
-				expect(quality.findings.length).toBe(0);
 				for (const query of [textCorpusQuery(corpus, undefined, join), indexed.query]) {
 					const request = { query: "", capability: "all" as const, pageSize: 50 };
 					expect((yield* readPage(query.search(request))).counts.duplicate_source).toBe(
@@ -175,9 +171,7 @@ it.live("keeps distinct-place duplicates and excludes old keys through source ov
 				}
 				const options = { checks: ["duplicate_source" as const] };
 				const report = yield* indexed.localizationCheck(STARTER_CHECK_RULES, options);
-				const quality = yield* indexed.localizationQuality(STARTER_CHECK_RULES, options);
-				expect(quality.findings.length).toBe(expected ? 1 : 0);
-				expect(report.findings).toHaveLength(quality.findings.length);
+				expect(report.findings).toHaveLength(expected ? 1 : 0);
 				if (source.startsWith("B")) expect(indexed.joined.meta.version).toBe(4);
 			}
 		}).pipe(Effect.provide(fixture.layer()));

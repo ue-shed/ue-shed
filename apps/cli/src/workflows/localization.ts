@@ -185,7 +185,7 @@ const filterField = Effect.fn("Cli.localization.filter")(function* (command: {
 export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(function* (
 	command: LocalizationStatusCommand | LocalizationSearchCommand
 ) {
-	const { joined, query, evidence, selection } = yield* loadLocalizationContext(command);
+	const { query, evidence, selection } = yield* loadLocalizationContext(command);
 	const files =
 		command.changedFiles === undefined
 			? undefined
@@ -201,7 +201,7 @@ export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(
 		...(command.group === undefined ? undefined : { group: command.group })
 	});
 	yield* Metric.update(Metric.counter("cli.localization.status.lines"), page.total);
-	return indexedLocalizationStatusReport(joined, evidence, page);
+	return yield* indexedLocalizationStatusReport(query, evidence, page);
 });
 
 export const runLocalizationStatus = Effect.fn("Cli.workflow.localization_status")(

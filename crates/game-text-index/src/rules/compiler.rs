@@ -297,12 +297,15 @@ pub struct CompiledRule {
     pub affected: Option<NodeId>,
     pub translation_origin: Option<NodeId>,
     pub extra: Option<NodeId>,
+    pub shadowed: Option<NodeId>,
     pub recovery: NodeId,
 }
 pub struct Program {
     pub nodes: Vec<Node>,
     pub rules: Vec<CompiledRule>,
     pub roles: HashMap<String, Role>,
+    /// The document's role IDs, in its order.
+    pub document_roles: Vec<String>,
     pub(crate) diagnostic_patterns: [NodeId; 2],
     pub(crate) node_last_consumer: Vec<[usize; 3]>,
     pub(crate) rule_last_reader: Vec<usize>,
@@ -749,6 +752,7 @@ pub fn compile(json: &str) -> Result<Program> {
         invalid("The evaluator requires an internal v4 document."),
     )?;
     let mut roles = HashMap::new();
+    let document_roles = document.roles.iter().map(|role| role.id.clone()).collect();
     for role in document.roles {
         require(
             roles.insert(role.id.clone(), role).is_none(),
@@ -807,6 +811,10 @@ pub fn compile(json: &str) -> Result<Program> {
         let affected = optional(&rule.affected)?;
         let translation_origin = optional(&rule.translation_origin)?;
         let extra = optional(&rule.extra)?;
+        let shadowed = optional(&rule.shadowed)?;
+        if let Some(shadowed) = shadowed {
+            compiler.arguments(&[shadowed], &Type::Bool)?;
+        }
         let when = compiler.expression(&rule.when, &rule)?;
         compiler.arguments(&[when], &Type::Bool)?;
         let actual = compiler.expression(&rule.actual, &rule)?;
@@ -826,6 +834,7 @@ pub fn compile(json: &str) -> Result<Program> {
             affected,
             translation_origin,
             extra,
+            shadowed,
             recovery,
         });
     }
@@ -857,6 +866,7 @@ pub fn compile(json: &str) -> Result<Program> {
                 rule.affected,
                 rule.translation_origin,
                 rule.extra,
+                rule.shadowed,
             ]
             .into_iter()
             .flatten(),
@@ -933,6 +943,7 @@ pub fn compile(json: &str) -> Result<Program> {
                     rule.affected,
                     rule.translation_origin,
                     rule.extra,
+                    rule.shadowed,
                 ]
                 .into_iter()
                 .flatten(),
@@ -972,6 +983,7 @@ pub fn compile(json: &str) -> Result<Program> {
         nodes: compiler.nodes,
         rules,
         roles,
+        document_roles,
         diagnostic_patterns,
     })
 }

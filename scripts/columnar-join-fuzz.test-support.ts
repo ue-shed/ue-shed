@@ -23,9 +23,9 @@ import {
 import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import {
 	openJoinedTarget,
-	hydrateJoinedTarget,
 	inspectJoinedTarget
 } from "../packages/game-text/src/joined-target-reader.ts";
+import { hydrateJoinedTarget } from "../packages/game-text/src/joined-target-hydrate.test-support.ts";
 import { u32 } from "../packages/game-text/src/joined-target-input.ts";
 import {
 	joinLocalizationTarget,
@@ -33,7 +33,7 @@ import {
 	localizationKeyChanges,
 	applyLocalizationReview
 } from "../packages/game-text/src/index.ts";
-import { indexedLocalizationStatusReport } from "../packages/game-text/src/index-context.ts";
+import { joinedStatusReport } from "../packages/game-text/src/indexed-policy-data.test-support.ts";
 import { localizationStatusReport } from "../packages/game-text/src/localization-status.ts";
 import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
 import {
@@ -896,11 +896,7 @@ export async function compareJoinFuzzInput(
 			return {
 				query: {
 					summary: candidate.summary(),
-					statusReport: indexedLocalizationStatusReport(
-						joined,
-						evidence,
-						candidate.search(base)
-					),
+					statusReport: joinedStatusReport(joined, evidence, candidate.search(base)),
 					exports: [candidate.export(base), candidate.export(unlocalized)],
 					lines: candidate.localizationLines(base),
 					searches: requests.map((request) => candidate.search(request)),

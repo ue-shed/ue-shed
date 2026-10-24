@@ -22,12 +22,12 @@ import {
 	addSourceTrigrams,
 	rejectSourceTrigrams
 } from "./joined-source-cache.test-support.js";
-import { IndexedPolicyData, querySignals } from "./indexed-policy-data.js";
+import { IndexedPolicyData, querySignals } from "./indexed-policy-data.test-support.js";
 export {
 	querySignals,
 	reuseJoinedQueryProjection,
 	type JoinedQueryProjection
-} from "./indexed-policy-data.js";
+} from "./indexed-policy-data.test-support.js";
 
 /** Columnar query oracle, excluded from production packages. */
 export class JoinedQueryData extends IndexedPolicyData {

@@ -1,9 +1,8 @@
-import { Schema, type Effect } from "effect";
-import {
-	hydrateQualityRead,
-	materializeQualityRead,
-	type QualityRead
-} from "./quality-hydration.js";
+import { Effect, Schema } from "effect";
+import type { GameTextContract } from "@ue-shed/protocol";
+import type { FindingsQueryPage, NativeFindings, QueriedSourceFinding } from "./native-findings.js";
+import type { GameTextIndexError } from "./index-error.js";
+import { materializeQualityRead, type QualityRead } from "./quality-hydration.js";
 import {
 	TextQualityAffectedOccurrence,
 	TextQualityRoleSummary,
@@ -368,22 +367,13 @@ export interface TextQualityQuery {
 }
 
 /** Source-quality presentation backed by asynchronous native hydration. */
-export interface AsyncTextQualityQuery {
+export interface AsyncTextQualityQuery<E = import("./index-failure.js").IndexFailure> {
 	readonly focus: (
 		request: TextQualityFocusRequest
-	) => Effect.Effect<TextQualityFocus | undefined, import("./index-failure.js").IndexFailure>;
-	readonly search: (
-		request: TextQualitySearchRequest
-	) => Effect.Effect<TextQualitySearchPage, import("./index-failure.js").IndexFailure>;
-	readonly export: (
-		filter: TextQualityFilter
-	) => Effect.Effect<TextQualityReport, import("./index-failure.js").IndexFailure>;
+	) => Effect.Effect<TextQualityFocus | undefined, E>;
+	readonly search: (request: TextQualitySearchRequest) => Effect.Effect<TextQualitySearchPage, E>;
+	readonly export: (filter: TextQualityFilter) => Effect.Effect<TextQualityReport, E>;
 	readonly summary: () => TextQualityQuerySummary;
-}
-export interface AsyncTextQualityFindingList extends Omit<TextQualityFindingList, "items"> {
-	readonly items: (
-		positions: readonly number[]
-	) => Effect.Effect<readonly TextQualityFinding[], import("./index-failure.js").IndexFailure>;
 }
 /**
  * A report's findings by position, in report order. A list may keep only compact facts and
@@ -420,6 +410,14 @@ function findingSummary(
 		sourceExcerpt: excerpt(sourceOf(finding), 512),
 		textUnitId: finding.textUnitId
 	};
+}
+
+/** One source finding's focus page, as a query over its report gives it. */
+export function textQualityFindingFocus(
+	finding: TextQualityFinding,
+	request: TextQualityFocusRequest
+): TextQualityFocus {
+	return findingFocus(finding, textQualityFindingId(finding), request);
 }
 
 function findingFocus(
@@ -566,20 +564,6 @@ function textQualityReads(
 	};
 }
 
-/** Native presentation hydrates only the selected finding positions. */
-export function asyncTextQualityQueryOf(
-	report: Omit<TextQualityReport, "findings">,
-	list: AsyncTextQualityFindingList
-): AsyncTextQualityQuery {
-	const reads = textQualityReads(report, list);
-	return {
-		summary: reads.summary,
-		search: (request) => hydrateQualityRead(() => reads.search(request), list.items),
-		focus: (request) => hydrateQualityRead(() => reads.focus(request), list.items),
-		export: (filter) => hydrateQualityRead(() => reads.export(filter), list.items)
-	};
-}
-
 /** Pure presentation over already materialized findings. */
 export function textQualityQueryOf(
 	report: Omit<TextQualityReport, "findings">,
@@ -609,3 +593,119 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 		items: (positions) => positions.map((position) => findings[position]!)
 	});
 }
+
+/**
+ * The source quality query over a findings layer: the layer's `unit_source` findings in the
+ * source report's order, each read a findings query. Counts are read once, when it opens.
+ */
+export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
+	function* (options: {
+		readonly findings: Pick<NativeFindings, "findingsQuery">;
+		readonly evaluation: GameTextContract.FindingsEvaluation;
+		readonly report: Omit<TextQualityReport, "findings" | "roles" | "rules">;
+	}) {
+		const { findings, evaluation, report } = options;
+		const sourceRules = evaluation.rules.filter((rule) => rule.subject === "unit_source");
+		const ids = (filter: TextQualityFilter) =>
+			sourceRules
+				.filter((rule) => filter === "all" || rule.kind === filter)
+				.map((rule) => rule.ruleId);
+		const query = (
+			filter: TextQualityFilter,
+			fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view" | "order" | "rules">
+		) =>
+			findings.findingsQuery({
+				key: evaluation.key,
+				view: "workspace",
+				order: "source",
+				rules: ids(filter),
+				...fields
+			});
+		const counted = yield* query("all", { limit: 0, counts: true });
+		const counts = new Map(counted.counts!.rules.map(({ ruleId, count }) => [ruleId, count]));
+		const rules = [...sourceRules]
+			.sort((left, right) => left.ruleId.localeCompare(right.ruleId))
+			.map((rule) => ({ findingCount: counts.get(rule.ruleId) ?? 0, ruleId: rule.ruleId }));
+		const roles = [...evaluation.roles]
+			.sort((left, right) => left.role.localeCompare(right.role))
+			.map(({ role, matchedOccurrences, matchedTextUnits }) => ({
+				matchedOccurrences,
+				matchedTextUnits,
+				role
+			}));
+		let characterBudgetCount = 0,
+			findingCount = 0;
+		for (const rule of sourceRules) {
+			const count = counts.get(rule.ruleId) ?? 0;
+			findingCount += count;
+			if (rule.kind === "character_budget") characterBudgetCount += count;
+		}
+		const header: Omit<TextQualityReport, "findings"> = {
+			...report,
+			roles: Schema.decodeUnknownSync(Schema.Array(TextQualityRoleSummary))(roles),
+			rules: Schema.decodeUnknownSync(Schema.Array(TextQualityRuleSummary))(rules)
+		};
+		const summary: TextQualityQuerySummary = {
+			characterBudgetCount,
+			coverage: report.coverage,
+			diagnosticCount: report.diagnosticCount,
+			findingCount,
+			roles: header.roles,
+			rules: header.rules,
+			ruleDocumentVersion: report.ruleDocumentVersion,
+			schemaVersion: 1,
+			status: report.status,
+			terminologyCount: findingCount - characterBudgetCount
+		};
+		const idOf = (finding: QueriedSourceFinding) => TextQualityFindingId.make(finding.id);
+		const strip = ({
+			id: _id,
+			sourceKey: _key,
+			...finding
+		}: QueriedSourceFinding): TextQualityFinding => finding;
+		const sourceFindings = (page: FindingsQueryPage) =>
+			// SAFETY: every rule this query names is a `unit_source` rule, and the engine returns
+			// only the named rules' findings.
+			// Verified by: source-quality-index.test.ts compares every page with the in-memory query.
+			page.findings as readonly QueriedSourceFinding[];
+		return {
+			summary: () => summary,
+			search: (request: TextQualitySearchRequest) =>
+				Effect.gen(function* () {
+					// One past the page says whether another follows.
+					const page = yield* query(request.filter, {
+						...(request.cursor ? { after: request.cursor } : undefined),
+						limit: request.pageSize + 1
+					});
+					const found = sourceFindings(page);
+					const shown = found.slice(0, request.pageSize);
+					const final = shown.at(-1);
+					return {
+						findings: shown.map((finding) =>
+							findingSummary(strip(finding), idOf(finding))
+						),
+						total: page.total,
+						...(final !== undefined && found.length > request.pageSize
+							? { nextCursor: idOf(final) }
+							: undefined)
+					};
+				}),
+			focus: (request: TextQualityFocusRequest) =>
+				Effect.gen(function* () {
+					const page = yield* query("all", { id: request.id, limit: 1 });
+					const finding = sourceFindings(page)[0];
+					return finding && findingFocus(strip(finding), idOf(finding), request);
+				}),
+			export: (filter: TextQualityFilter) =>
+				Effect.gen(function* () {
+					const all: TextQualityFinding[] = [];
+					for (let offset = 0; ; offset += 5000) {
+						const page = yield* query(filter, { offset, limit: 5000 });
+						all.push(...sourceFindings(page).map(strip));
+						if (page.findings.length < 5000) break;
+					}
+					return { ...header, findings: all };
+				})
+		} satisfies AsyncTextQualityQuery<GameTextIndexError>;
+	}
+);

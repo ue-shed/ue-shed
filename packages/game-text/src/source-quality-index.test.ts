@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { it } from "@effect/vitest";
-import { Effect, Fiber, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { expect } from "vitest";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
@@ -357,7 +357,7 @@ it.live("a partial package's diagnostics and coverage reach the indexed report",
 );
 
 it.live(
-	"the scan reports progress page by page, yields between pages and keeps every unit",
+	"source quality reports progress before and after the engine checks, and keeps every unit",
 	() =>
 		Effect.gen(function* () {
 			const fixture = yield* makeIndexRegressionFixture();
@@ -367,39 +367,18 @@ it.live(
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 				yield* expectSameSourceQuality(result, documents.everything);
 				const calls: GameTextIndexProgress[] = [];
-				// A fiber that counts while the scan runs: it advances only when the scan yields.
-				let ticks = 0;
-				const ticked: number[] = [];
-				const counter = yield* Effect.forkChild(
-					Effect.forever(Effect.sync(() => ticks++).pipe(Effect.andThen(Effect.yieldNow)))
-				);
 				const indexed = yield* result.sourceQuality(documents.everything).pipe(
 					Effect.provideService(GameTextIndexProgressReporter, (progress) => {
 						calls.push(progress);
-						ticked.push(ticks);
 					})
 				);
-				yield* Fiber.interrupt(counter);
 				// The generated keys, the shared key, the conflicting key and the invariant text.
 				const total = 700 + 1 + 1 + 1;
 				const phase = "source_quality";
-				expect(calls[0]).toEqual({ phase, completed: 0, total, findings: 0 });
-				expect(calls.length).toBeGreaterThanOrEqual(4);
-				expect(calls.at(-1)).toEqual({
-					phase,
-					completed: total,
-					total,
-					findings: indexed.summary().findingCount
-				});
-				for (let index = 1; index < calls.length; index++) {
-					expect(calls[index]!.total).toBe(total);
-					expect(calls[index]!.completed).toBeGreaterThan(calls[index - 1]!.completed);
-					expect(calls[index]!.findings!).toBeGreaterThanOrEqual(
-						calls[index - 1]!.findings!
-					);
-				}
-				// The counter ran between pages.
-				expect(ticked.at(-1)!).toBeGreaterThan(ticked[1]!);
+				expect(calls).toEqual([
+					{ phase, completed: 0, total, findings: 0 },
+					{ phase, completed: total, total, findings: indexed.summary().findingCount }
+				]);
 				// No rule reads nothing: progress still starts and ends.
 				const empty: GameTextIndexProgress[] = [];
 				yield* result

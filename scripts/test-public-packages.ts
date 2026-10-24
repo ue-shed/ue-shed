@@ -174,8 +174,7 @@ try {
 		gameTextFiles.some((name) => name.includes(".test-support.")),
 		false
 	);
-	assert.ok(gameTextFiles.includes("package/dist/quality-worker.js"));
-	assert.ok(gameTextFiles.includes("package/dist/quality-worker-node.js"));
+	assert.equal(gameTextFiles.includes("package/dist/quality-worker.js"), false);
 	const gameTextAdoption = JSON.parse(
 		run(
 			"tar",

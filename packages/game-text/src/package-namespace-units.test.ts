@@ -191,9 +191,7 @@ describe("saved text in several packages", () => {
 									"/Game/Text/WBP_Menu.WBP_Menu"
 								]
 							);
-						}).pipe(
-							Effect.provide(fixture.layer(false, fixture.source, false, builder))
-						);
+						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})
 				)
 			);

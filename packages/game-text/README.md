@@ -109,11 +109,9 @@ retired and the call uses a local query over the model's pinned generation. Late
 calls reuse that local query. This also covers worker loss before its exit callback can run;
 a busy worker can take the same fallback. Asynchronous searches retain their 30-second deadline.
 
-`qualityWorker: true` runs `localizationQuality` scans in a worker per opened model, started by
-the first scan. The caller keeps the findings' facts and groups; `items`, `find`, `lineOfUnit`
-and `sourceKeyOfUnit` block the caller while the worker reads them, and the worker keeps a scan
-until both its `findings` and `metadata` objects are collected. Interrupting a scan cancels it in
-the worker. If the worker cannot start or fails, the scan runs on the caller's thread instead.
+`localizationQuality` and `sourceQuality` run in the engine: it checks a rule document once,
+and the workspace reads each page, focus, export and proposal as a findings query. The host thread
+does no scanning, so `qualityWorker` has no effect; it is removed in Phase 6.
 
 For host-owned composition, use `GameTextIndexSteps` from `gameTextIndexStepsLayer(cacheRoot)`:
 

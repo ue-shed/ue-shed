@@ -75,8 +75,8 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 				};
 				const reader: Effect.Success<ReturnType<typeof openNativeTextQuery>> = {
 					findingsEvaluate: findings.findingsEvaluate,
-					findingsLines: findings.findingsLines,
-					findingsUnits: findings.findingsUnits,
+					findingsAccept: findings.findingsAccept,
+					findingsQuery: findings.findingsQuery,
 					readLocalizationLines: () =>
 						Effect.sync(() => reference.readLocalizationLines()),
 					readCorpus: () => Effect.sync(readCorpus),
@@ -104,8 +104,6 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 						Effect.sync(() => reference.localizationDetail(request)),
 					localizationLines: (request) =>
 						Effect.sync(() => reference.localizationLines(request)),
-					localizationRows: (request) =>
-						Effect.sync(() => reference.localizationRows(request)),
 					exportWithSignals: (request) =>
 						Effect.sync(() => {
 							const corpus = reference.export(request);

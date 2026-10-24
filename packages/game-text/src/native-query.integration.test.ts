@@ -64,9 +64,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							expect(queryPids.length).toBeGreaterThanOrEqual(2);
 							return { query: model.query, page };
 						})
-					).pipe(
-						Effect.provide(fixture.layer(false, fixture.source, false, implementation))
-					);
+					).pipe(Effect.provide(fixture.layer(fixture.source, implementation)));
 					const closed = yield* prepare;
 					const failed = yield* closed.query
 						.search({ query: "", capability: "all", pageSize: 1 })
@@ -204,9 +202,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								fixture.source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30000,
@@ -345,9 +341,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								fixture.source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30000,
@@ -526,9 +520,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								fixture.source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30_000,

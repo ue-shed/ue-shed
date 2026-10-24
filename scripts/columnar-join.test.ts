@@ -13,10 +13,10 @@ import { textCorpusFromExtractionEvents } from "../packages/game-text/src/corpus
 import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
 import {
-	hydrateJoinedTarget,
 	inspectJoinedTarget,
 	openJoinedTarget
 } from "../packages/game-text/src/joined-target-reader.ts";
+import { hydrateJoinedTarget } from "../packages/game-text/src/joined-target-hydrate.test-support.ts";
 import {
 	refreshPackageTextLayer,
 	packageTextShard,

@@ -163,7 +163,7 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 				})
 			});
 		})
-	).pipe(Layer.provide(fixture.layer(true)));
+	).pipe(Layer.provide(fixture.layer()));
 	const current = () =>
 		Effect.gen(function* () {
 			const root = yield* Ref.get(selectedRoot);

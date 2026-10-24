@@ -1,10 +1,10 @@
 import { Clock, Context, Effect, Exit, Option } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
+import type { LocalizationAcceptedFinding } from "@ue-shed/localization/browser";
 import type {
 	LocalizationQualityFinding,
 	LocalizationPolicyFinding,
-	LocalizationCustomFinding,
-	LocalizationCheckDiagnostic
+	LocalizationCustomFinding
 } from "./localization-quality-schema.js";
 import type { TextQualityFinding } from "./quality-schema.js";
 import { snapshotCheck } from "./snapshot-format.js";
@@ -71,57 +71,92 @@ export const annotateFindingsProfile = (
 			span.end(origin + BigInt(Math.round(sample.endOffsetMs * 1_000_000)), Exit.void);
 		}
 	});
-/** Resolve each finding's interned places into the host's finding shape. */
-function inflate<F>(
-	places: GameTextContract.FindingLines["places"],
-	values: readonly GameTextContract.Finding[]
-): F[] {
-	const byId = new Map(places.map((place) => [place.id, place.occurrences]));
-	return values.map(({ places: id, id: _id, ...evidence }) => {
-		const occurrences = byId.get(id);
-		snapshotCheck(
-			occurrences !== undefined,
-			"quality.findings",
-			"A finding's saved places are missing"
-		);
-		// Spreading keeps evidence member order, which reported sorting relies on.
-		// SAFETY: the engine writes each finding in its family's host shape, and the session's
-		// handshake checked that host and engine share this contract.
-		// Verified by: localization-custom-checks.test.ts and terminology-boundaries.test.ts.
-		return { ...evidence, affectedOccurrences: occurrences } as F;
-	});
+/** A line finding as `findings_query` returns it: the host shape and what a list reads of its line. */
+export type QueriedLineFinding = (
+	| LocalizationQualityFinding
+	| LocalizationPolicyFinding
+	| LocalizationCustomFinding
+) & {
+	readonly id: string;
+	readonly manifestSource: string | null;
+	readonly lineSource: string;
+	/** The translation the culture ships next: its PO text when not synced, else its archive's. */
+	readonly shippedTranslation: string | null;
+	readonly family: "builtin" | "policy" | "custom";
+};
+/** A source finding as `findings_query` returns it, with its line's key. */
+export type QueriedSourceFinding = TextQualityFinding & {
+	readonly id: string;
+	readonly sourceKey: string | null;
+};
+export type QueriedFinding = QueriedLineFinding | QueriedSourceFinding;
+/** A `findings_query` page with its findings' places resolved. */
+export interface FindingsQueryPage extends Omit<
+	GameTextContract.FindingsPage,
+	"findings" | "places" | "profile"
+> {
+	readonly findings: readonly QueriedFinding[];
 }
-export const inflateFindingLines = (result: GameTextContract.FindingLines) =>
-	Effect.sync(() =>
-		result.lines.map((line) => ({
-			row: line.row,
-			builtIns: inflate<LocalizationQualityFinding>(result.places, line.builtIns),
-			policy: inflate<LocalizationPolicyFinding>(result.places, line.policy),
-			custom: inflate<LocalizationCustomFinding>(result.places, line.custom),
-			// SAFETY: diagnostic codes are the engine's DIAGNOSTIC_CODES, the host's code union.
-			// Verified by: localization-checks.test.ts reads native syntax_limit diagnostics.
-			diagnostics: line.diagnostics as readonly LocalizationCheckDiagnostic[]
-		}))
-	);
-export const inflateFindingUnits = (result: GameTextContract.FindingUnits) =>
-	Effect.sync(() =>
-		result.units.map((unit) => ({
-			unit: unit.unit,
-			findings: inflate<TextQualityFinding>(result.places, unit.findings)
-		}))
-	);
+export const inflateFindingsPage = (result: GameTextContract.FindingsPage) =>
+	Effect.sync((): FindingsQueryPage => {
+		const { findings, places, profile: _profile, ...rest } = result;
+		const byId = new Map(places.map((place) => [place.id, place.occurrences]));
+		return {
+			...rest,
+			findings: findings.map(({ places: id, ...evidence }) => {
+				const occurrences = byId.get(id);
+				snapshotCheck(
+					occurrences !== undefined,
+					"quality.findings",
+					"A finding's saved places are missing"
+				);
+				const finding = {
+					...evidence,
+					affectedOccurrences: occurrences
+				};
+				// SAFETY: the engine writes each finding in its family's host shape, with the
+				// fields its query adds; the handshake checked the shared contract.
+				// Verified by: findings-query.test.ts compares queried pages with the in-memory
+				// workspace's.
+				return finding as QueriedFinding;
+			})
+		};
+	});
+
+/**
+ * Registers the accepted findings of the review a read applies, or none. A review without
+ * accepted findings hides nothing, so it has no key.
+ */
+export const acceptReview = (
+	native: Pick<NativeFindings, "findingsAccept">,
+	key: string,
+	review: { readonly acceptedFindings: ReadonlyArray<LocalizationAcceptedFinding> } | undefined
+) =>
+	review === undefined || review.acceptedFindings.length === 0
+		? Effect.succeed(undefined)
+		: native.findingsAccept(
+				key,
+				review.acceptedFindings.map(({ check, culture, namespace, key, fingerprint }) => ({
+					check,
+					...(culture === null ? undefined : { culture }),
+					namespace,
+					key,
+					fingerprint
+				}))
+			);
 
 /** A reader's native findings; coordinates belong to its pinned joined snapshot. */
 export interface NativeFindings {
 	readonly findingsEvaluate: (
 		document: RuleDocumentV4
 	) => Effect.Effect<GameTextContract.FindingsEvaluation, GameTextIndexError>;
-	readonly findingsLines: (
+	/** Registers a review's accepted findings for a layer; reads pass the returned key. */
+	readonly findingsAccept: (
 		key: string,
-		rows: readonly number[]
-	) => Effect.Effect<Effect.Success<ReturnType<typeof inflateFindingLines>>, GameTextIndexError>;
-	readonly findingsUnits: (
-		key: string,
-		units: readonly number[]
-	) => Effect.Effect<Effect.Success<ReturnType<typeof inflateFindingUnits>>, GameTextIndexError>;
+		accepted: ReadonlyArray<GameTextContract.AcceptedFinding>
+	) => Effect.Effect<string, GameTextIndexError>;
+	/** One page of a layer's findings, filtered, ordered and counted by the engine. */
+	readonly findingsQuery: (
+		request: GameTextContract.FindingsQueryRequest
+	) => Effect.Effect<FindingsQueryPage, GameTextIndexError>;
 }

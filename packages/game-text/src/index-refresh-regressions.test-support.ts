@@ -124,12 +124,7 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 			});
 		})
 	).pipe(Layer.provide(LocalizationEvidenceNodeLive));
-	const layer = (
-		_worker = false,
-		suppliedSource = source,
-		qualityWorker = false,
-		implementation = typeScriptIndexBuilderLayer
-	) => {
+	const layer = (suppliedSource = source, implementation = typeScriptIndexBuilderLayer) => {
 		// Use the real positioned-file adapter, with in-process parsing for these tiny fixtures.
 		// Worker lifecycle and atomic cold staging have dedicated integration tests.
 		const files = { ...LocalizationImportSource.defaultValue() };
@@ -145,9 +140,7 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 				})
 			)
 		).pipe(Layer.provide(implementation));
-		return gameTextIndexRefreshLayer(join(projectRoot, "cache"), {
-			qualityWorker
-		}).pipe(
+		return gameTextIndexRefreshLayer(join(projectRoot, "cache")).pipe(
 			Layer.provide(suppliedSource),
 			Layer.provide(fixtureBuilder),
 			Layer.provide(implementation),

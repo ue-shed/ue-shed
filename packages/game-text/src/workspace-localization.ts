@@ -553,15 +553,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						Effect.gen(function* () {
 							// The scan pins the index itself while it reads.
 							yield* retained.borrow;
-							// Indexed source rules read only the units their findings name.
-							const source = !document
-								? undefined
-								: yield* (yield* retained.sourceQuality(document)).export("all");
-							// Indexed targets check page by page, yielding between pages.
-							return localizationQualityWorkspaceOf(
-								source,
-								yield* retained.quality(document, options)
-							);
+							const quality = yield* retained.quality(document, options);
+							// Queried quality lists source and target findings in one query; only
+							// in-memory quality reads the source report beside it.
+							const source =
+								document && quality.withSource
+									? yield* (yield* retained.sourceQuality(document)).export("all")
+									: undefined;
+							return localizationQualityWorkspaceOf(source, quality);
 						})
 					).pipe(Effect.forkIn(serviceScope));
 					yield* Ref.set(qualityCache, { join: retained.join, document, scan });

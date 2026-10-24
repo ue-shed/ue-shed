@@ -47,7 +47,7 @@ it.live(
 						})
 					});
 				})
-			).pipe(Layer.provide(fixture.layer(true)));
+			).pipe(Layer.provide(fixture.layer()));
 			yield* Effect.gen(function* () {
 				const steps = yield* GameTextIndexSteps;
 				const project = yield* steps.refreshProject({ projectRoot: fixture.projectRoot });

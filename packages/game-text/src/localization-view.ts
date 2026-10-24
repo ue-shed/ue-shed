@@ -177,6 +177,14 @@ function scopeSummary(
 ): typeof LocalizationScopeSummary.Type | undefined {
 	const state = line.cultures[0]?.state;
 	if (!state || !line.cultures.every((mark) => mark.state === state)) return undefined;
+	return localizationScopeSummary(state, target);
+}
+
+/** What a focus says of a line whose every culture is in `state`, when that state is about scope. */
+export function localizationScopeSummary(
+	state: LocalizationLine["cultures"][number]["state"],
+	target: LocalizationJoin["target"]
+): typeof LocalizationScopeSummary.Type | undefined {
 	switch (state) {
 		case "outside_target":
 			return {

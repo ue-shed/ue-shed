@@ -157,19 +157,6 @@ impl<'a> NativeSubjects<'a> {
             join_positions: None,
         })
     }
-    pub(super) fn occurrence_text_id(&self, row: u32) -> Result<&str> {
-        let arena = self
-            .read_arena
-            .as_ref()
-            .ok_or("Missing read occurrence relation.")?;
-        Ok(arena
-            .occurrences
-            .ids
-            .get(row as usize)
-            .copied()
-            .flatten()
-            .map_or("", |id| arena.text(id)))
-    }
     /// Each line's position in the join, as the host's join rows list it
     /// (`indexedLocalizationLinesRequest`), or `u32::MAX` for a line outside the join: a hidden
     /// source, or saved places that are all hidden.

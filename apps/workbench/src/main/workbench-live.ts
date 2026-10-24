@@ -186,9 +186,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 			Effect.gen(function* () {
 				const app = yield* ElectronApp;
 				const cacheRoot = join(yield* app.getPath("userData"), "project-catalogs-v1");
-				return gameTextIndexRefreshLayer(cacheRoot, {
-					qualityWorker: true
-				}).pipe(
+				return gameTextIndexRefreshLayer(cacheRoot).pipe(
 					Layer.provide(
 						gameTextIndexSourceNodeLayer(cacheRoot, {
 							refreshProjectIndex: false

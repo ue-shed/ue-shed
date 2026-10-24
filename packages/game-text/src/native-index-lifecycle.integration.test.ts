@@ -185,7 +185,7 @@ describe.skipIf(!executable)("native committed Game Text reopen", () => {
 						timeoutMs: 30_000,
 						catalogTimeoutMs: 30_000
 					});
-					const layer = fixture.layer(false, fixture.source, false, implementation);
+					const layer = fixture.layer(fixture.source, implementation);
 					yield* Effect.scoped(
 						Effect.gen(function* () {
 							yield* (yield* GameTextIndexSteps).prepareTarget({

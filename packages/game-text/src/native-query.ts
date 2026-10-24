@@ -35,11 +35,7 @@ import {
 
 import type { NativeTextQuery } from "./native-query-contract.js";
 import { canonicalRuleDocument } from "./rules/effective.js";
-import {
-	annotateFindingsProfile,
-	inflateFindingLines,
-	inflateFindingUnits
-} from "./native-findings.js";
+import { annotateFindingsProfile, inflateFindingsPage } from "./native-findings.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
 
 const benchmark = channel("ue-shed.game-text-benchmark");
@@ -50,12 +46,6 @@ const NativeExportFile = Schema.Struct({
 		Schema.Struct({ ...TextUnit.fields, reviewSignals: Schema.Array(TextReviewSignal) })
 	)
 });
-interface NativeIndexReader extends NativeTextQuery {
-	/** Internal row coordinates for a policy scan of this pinned native view. */
-	readonly localizationRows: (
-		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
-	) => Effect.Effect<Uint32Array, GameTextIndexError>;
-}
 
 const failed = (operation: string, cause: unknown) =>
 	new GameTextIndexError({
@@ -97,7 +87,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		Scope.Scope
 	>;
 }): Effect.fn.Return<
-	NativeIndexReader,
+	NativeTextQuery,
 	GameTextIndexError,
 	NativeGameTextEngineClient | Scope.Scope
 > {
@@ -520,44 +510,6 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				);
 			})
 		);
-	const localizationRows = Effect.fn("GameTextIndex.nativePolicyRows")(
-		(lane: Lane, request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) =>
-			withStage((directory) =>
-				Effect.gen(function* () {
-					const output = join(directory, "rows.u32");
-					const result = yield* response(
-						lane,
-						{
-							action: "rows",
-							reader: lane.reader,
-							output,
-							payload: JSON.stringify({ ...request, pageSize: 50 })
-						},
-						Schema.Struct({
-							count: Schema.Int.check(
-								Schema.isGreaterThanOrEqualTo(0),
-								Schema.isLessThanOrEqualTo(0xffffffff)
-							)
-						})
-					);
-					const bytes = yield* Effect.tryPromise({
-						try: (signal) => readFile(output, { signal }),
-						catch: (cause) => failed("policy_rows", cause)
-					});
-					if (bytes.length !== result.count * 4)
-						return yield* Effect.fail(
-							failed(
-								"policy_rows",
-								"Native row payload length differs from its declared count."
-							)
-						);
-					const rows = new Uint32Array(result.count);
-					for (let index = 0; index < rows.length; index++)
-						rows[index] = bytes.readUInt32LE(index * 4);
-					return rows;
-				})
-			)
-	);
 	const reader = interactive.reader;
 	/**
 	 * A findings reply as the contract's type. The session's handshake checked the engine's
@@ -692,7 +644,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		scopedRead(bulkReads, Effect.flatMap(bulkLane, read));
 	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
 		bulk((lane) => exportWithSignals(lane, request));
-	const model: NativeIndexReader = {
+	const model: NativeTextQuery = {
 		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")((document) =>
 			bulk((lane) =>
 				Effect.gen(function* () {
@@ -720,31 +672,47 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				})
 			)
 		),
-		findingsLines: Effect.fn("GameText.native.findingsLines")((key, rows) =>
+		findingsAccept: Effect.fn("GameText.native.findingsAccept")((key, accepted) =>
 			bulk((lane) =>
-				findingResponse<GameTextContract.FindingLines>(lane, {
-					action: "findings_lines",
-					reader: lane.reader,
-					key,
-					rows
-				}).pipe(
-					Effect.tap((result) => annotateFindingsProfile(result.profile)),
-					Effect.flatMap(inflateFindingLines),
-					Effect.mapError((cause) => failed("findings_lines", cause))
-				)
+				Effect.gen(function* () {
+					// Larger reviews go in chunks, each naming the set it adds to.
+					let previous: string | undefined;
+					for (let start = 0; start === 0 || start < accepted.length; start += 5000) {
+						const reply = yield* engineReply<{ readonly acceptance: string }>(lane, {
+							action: "findings_accept",
+							reader: lane.reader,
+							payload: JSON.stringify({
+								key,
+								...(previous === undefined ? undefined : { previous }),
+								accepted: accepted.slice(start, start + 5000)
+							})
+						});
+						previous = reply.acceptance;
+					}
+					return previous!;
+				}).pipe(Effect.mapError((cause) => failed("findings_accept", cause)))
 			)
 		),
-		findingsUnits: Effect.fn("GameText.native.findingsUnits")((key, units) =>
+		findingsQuery: Effect.fn("GameText.native.findingsQuery")((request) =>
 			bulk((lane) =>
-				findingResponse<GameTextContract.FindingUnits>(lane, {
-					action: "findings_units",
+				findingResponse<GameTextContract.FindingsPage>(lane, {
+					action: "findings_query",
 					reader: lane.reader,
-					key,
-					units
+					payload: JSON.stringify(request)
 				}).pipe(
+					Effect.tap((result) =>
+						Effect.annotateCurrentSpan(
+							Object.fromEntries(
+								Object.entries(result.stages).map(([stage, ms]) => [
+									`game_text.findings.query.stage_ms.${stage}`,
+									ms
+								])
+							)
+						)
+					),
 					Effect.tap((result) => annotateFindingsProfile(result.profile)),
-					Effect.flatMap(inflateFindingUnits),
-					Effect.mapError((cause) => failed("findings_units", cause))
+					Effect.flatMap(inflateFindingsPage),
+					Effect.mapError((cause) => failed("findings_query", cause))
 				)
 			)
 		),
@@ -757,7 +725,6 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		readCorpus: () => exported(undefined).pipe(Effect.map((result) => result.corpus)),
 		readLocalizationLines: () => bulk(readLocalizationLines),
 		localizationLines: (request) => bulk((lane) => localizationLines(lane, request)),
-		localizationRows: (request) => bulk((lane) => localizationRows(lane, request)),
 		exportWithSignals: exported,
 		export: (request) => exported(request).pipe(Effect.map((result) => result.corpus)),
 		aggregate: (request) => bulk((lane) => aggregate(lane, request)),

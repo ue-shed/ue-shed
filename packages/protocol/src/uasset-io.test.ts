@@ -25,22 +25,20 @@ const fixture = async (path: string): Promise<Schema.Json> =>
 	);
 
 describe("uasset IO protocol v1", () => {
-	it("negotiates findings at minor 20 and bounds each requested row batch", async () => {
+	it("negotiates findings at minor 20 and bounds each findings payload", async () => {
 		const base = Schema.decodeUnknownSync(UAssetIoRequest)(
 			await fixture("valid/game-text-engine-capabilities-request.json")
 		);
-		for (const action of ["findings_lines", "findings_units"] as const) {
+		for (const [action, bound] of [
+			["findings_query", 512 * 1024],
+			["findings_accept", 8 * 1024 * 1024]
+		] as const) {
 			const request = {
 				...base,
 				contract: { ...base.contract, version: { major: 1, minor: 20 } },
 				operation: {
 					kind: "game_text_engine",
-					request: {
-						action,
-						reader: "reader",
-						key: "findings-v1:test",
-						[action === "findings_lines" ? "rows" : "units"]: [0, 0xffffffff]
-					}
+					request: { action, reader: "reader", payload: "{}" }
 				}
 			};
 			expect(Schema.is(UAssetIoRequest)(request)).toBe(true);
@@ -50,18 +48,28 @@ describe("uasset IO protocol v1", () => {
 					contract: { ...request.contract, version: { major: 1, minor: 19 } }
 				})
 			).toBe(false);
-			const field = action === "findings_lines" ? "rows" : "units";
-			for (const rows of [[-1], [0x100000000], Array.from({ length: 5001 }, () => 0)])
-				expect(
-					Schema.is(UAssetIoRequest)({
-						...request,
-						operation: {
-							...request.operation,
-							request: { ...request.operation.request, [field]: rows }
-						}
-					})
-				).toBe(false);
+			expect(
+				Schema.is(UAssetIoRequest)({
+					...request,
+					operation: {
+						...request.operation,
+						request: { ...request.operation.request, payload: " ".repeat(bound + 1) }
+					}
+				})
+			).toBe(false);
 		}
+		// The page reads the TypeScript scans used went with them.
+		for (const action of ["findings_lines", "findings_units", "rows"])
+			expect(
+				Schema.is(UAssetIoRequest)({
+					...base,
+					contract: { ...base.contract, version: { major: 1, minor: 20 } },
+					operation: {
+						kind: "game_text_engine",
+						request: { action, reader: "reader", key: "findings-v1:test", rows: [0] }
+					}
+				})
+			).toBe(false);
 	});
 	it("keeps Effect schemas conformant with the language-neutral JSON Schema", async () => {
 		for (const [name, contract] of [

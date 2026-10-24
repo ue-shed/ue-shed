@@ -62,11 +62,6 @@ pub enum EngineRequest {
         reader: String,
         payload: String,
     },
-    Rows {
-        reader: String,
-        payload: String,
-        output: std::path::PathBuf,
-    },
     Corpus {
         reader: String,
         output: std::path::PathBuf,
@@ -120,22 +115,24 @@ pub enum EngineRequest {
         #[serde(rename = "collationLocale")]
         collation_locale: String,
     },
-    FindingsLines {
+    /// A review's accepted findings for a findings layer; returns an acceptance key.
+    FindingsAccept {
         reader: String,
-        key: String,
-        rows: Vec<u32>,
+        payload: String,
     },
-    FindingsUnits {
+    /// Filters, orders, pages and counts a findings layer's findings.
+    FindingsQuery {
         reader: String,
-        key: String,
-        units: Vec<u32>,
+        payload: String,
     },
 }
 impl EngineRequest {
     pub fn requires_findings(&self) -> bool {
         matches!(
             self,
-            Self::FindingsEvaluate { .. } | Self::FindingsLines { .. } | Self::FindingsUnits { .. }
+            Self::FindingsEvaluate { .. }
+                | Self::FindingsAccept { .. }
+                | Self::FindingsQuery { .. }
         )
     }
     pub fn validate(&self) -> Result<()> {
@@ -169,13 +166,12 @@ impl EngineRequest {
             | Self::Aggregate { reader, .. }
             | Self::LocalizationCorpus { reader, .. }
             | Self::Export { reader, .. }
-            | Self::Rows { reader, .. }
             | Self::LocalizationDetail { reader, .. }
             | Self::LocalizationExport { reader, .. }
             | Self::LocalizationFocusExport { reader, .. }
             | Self::FindingsEvaluate { reader, .. }
-            | Self::FindingsLines { reader, .. }
-            | Self::FindingsUnits { reader, .. } => {
+            | Self::FindingsAccept { reader, .. }
+            | Self::FindingsQuery { reader, .. } => {
                 require(
                     !reader.is_empty() && reader.len() <= 128,
                     invalid("Invalid native reader handle."),
@@ -191,13 +187,17 @@ impl EngineRequest {
                     invalid("Invalid findings collation locale."),
                 )?;
             }
-            Self::FindingsLines { key, rows, .. }
-            | Self::FindingsUnits {
-                key, units: rows, ..
-            } => {
+            Self::FindingsAccept { payload, .. } => {
+                // 5,000 accepted findings, each with its key, namespace and fingerprint.
                 require(
-                    !key.is_empty() && key.len() <= 1024 && rows.len() <= 5000,
-                    invalid("Invalid findings key or row selection."),
+                    payload.len() <= 8 * 1024 * 1024,
+                    invalid("Native query payload exceeds its bound."),
+                )?;
+            }
+            Self::FindingsQuery { payload, .. } => {
+                require(
+                    payload.len() <= 512 * 1024,
+                    invalid("Native query payload exceeds its bound."),
                 )?;
             }
             Self::Export { payload, .. } => {
@@ -209,7 +209,6 @@ impl EngineRequest {
             }
             Self::Search { payload, .. }
             | Self::Focus { payload, .. }
-            | Self::Rows { payload, .. }
             | Self::LocalizationFocusExport { payload, .. } => {
                 require(
                     payload.len() <= 512 * 1024,
@@ -263,7 +262,6 @@ impl EngineRequest {
         | Self::Aggregate { output, .. }
         | Self::LocalizationCorpus { output, .. }
         | Self::Export { output, .. }
-        | Self::Rows { output, .. }
         | Self::LocalizationExport { output, .. }
         | Self::LocalizationFocusExport { output, .. } = self
         {
@@ -406,13 +404,12 @@ impl EngineSession {
             | EngineRequest::Aggregate { reader, .. }
             | EngineRequest::LocalizationCorpus { reader, .. }
             | EngineRequest::Export { reader, .. }
-            | EngineRequest::Rows { reader, .. }
             | EngineRequest::LocalizationDetail { reader, .. }
             | EngineRequest::LocalizationExport { reader, .. }
             | EngineRequest::LocalizationFocusExport { reader, .. }
             | EngineRequest::FindingsEvaluate { reader, .. }
-            | EngineRequest::FindingsLines { reader, .. }
-            | EngineRequest::FindingsUnits { reader, .. } => {
+            | EngineRequest::FindingsAccept { reader, .. }
+            | EngineRequest::FindingsQuery { reader, .. } => {
                 let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 let (action, payload) = match request {
                     EngineRequest::FindingsEvaluate {
@@ -423,55 +420,19 @@ impl EngineSession {
                         "findings_evaluate",
                         query.findings_evaluate(rules, collation_locale, cancelled)?,
                     ),
-                    EngineRequest::FindingsLines { key, rows, .. } => (
-                        "findings_lines",
-                        query.findings_lines(key, rows, cancelled)?,
+                    EngineRequest::FindingsAccept { payload, .. } => (
+                        "findings_accept",
+                        query.findings_accept(payload, cancelled)?,
                     ),
-                    EngineRequest::FindingsUnits { key, units, .. } => (
-                        "findings_units",
-                        query.findings_units(key, units, cancelled)?,
-                    ),
+                    EngineRequest::FindingsQuery { payload, .. } => {
+                        ("findings_query", query.findings_query(payload, cancelled)?)
+                    }
                     EngineRequest::Summary { .. } => (
                         "summary",
                         crate::wtf8::view_json(&query.summary(cancelled)?)?,
                     ),
                     EngineRequest::Search { payload, .. } => {
                         ("search", query.search_json(payload, cancelled)?)
-                    }
-                    EngineRequest::Rows {
-                        payload, output, ..
-                    } => {
-                        let request = parse_search_request(payload)?;
-                        require(
-                            request.localization.is_some(),
-                            invalid("Localization rows require a selected target."),
-                        )?;
-                        let rows = query.matching(&request, cancelled)?;
-                        use std::io::Write;
-                        let file = std::fs::OpenOptions::new()
-                            .write(true)
-                            .create_new(true)
-                            .open(output)?;
-                        let mut writer = std::io::BufWriter::new(file);
-                        let result = (|| -> Result<()> {
-                            for (index, row) in rows.iter().enumerate() {
-                                if index & 255 == 0 {
-                                    checkpoint(cancelled)?;
-                                }
-                                writer.write_all(&row.to_le_bytes())?;
-                            }
-                            writer.flush()?;
-                            Ok(())
-                        })();
-                        drop(writer);
-                        if result.is_err() {
-                            let _ = std::fs::remove_file(output);
-                        }
-                        result?;
-                        (
-                            "rows",
-                            serde_json::to_string(&serde_json::json!({"count":rows.len()}))?,
-                        )
                     }
                     EngineRequest::Corpus { output, .. } => {
                         let request = parse_search_request(
@@ -604,22 +565,23 @@ mod tests {
 
     #[test]
     fn findings_requests_are_bounded_and_require_the_new_contract() -> Result<()> {
-        for action in ["findings_lines", "findings_units"] {
-            let field = if action == "findings_lines" {
-                "rows"
-            } else {
-                "units"
-            };
-            let mut value = json!({"action":action,"reader":"reader","key":"findings-v1:test"});
-            value[field] = json!([0, u32::MAX]);
+        for (action, bound) in [("findings_query", 512 * 1024), ("findings_accept", 8 << 20)] {
+            let mut value = json!({"action":action,"reader":"reader","payload":"{}"});
             let request: EngineRequest = serde_json::from_value(value.clone())?;
             assert!(request.requires_findings());
             request.validate()?;
-            value[field] = json!(vec![0; 5001]);
-            let request: EngineRequest = serde_json::from_value(value.clone())?;
+            value["payload"] = json!(" ".repeat(bound + 1));
+            let request: EngineRequest = serde_json::from_value(value)?;
             assert!(request.validate().is_err());
-            value[field] = json!([-1]);
-            assert!(serde_json::from_value::<EngineRequest>(value).is_err());
+        }
+        // The page reads the scans used are gone with them.
+        for action in ["findings_lines", "findings_units", "rows"] {
+            assert!(
+                serde_json::from_value::<EngineRequest>(
+                    json!({"action":action,"reader":"reader","key":"findings-v1:test","rows":[0]})
+                )
+                .is_err()
+            );
         }
         let request: EngineRequest = serde_json::from_value(
             json!({"action":"findings_evaluate","reader":"reader","rules":"{}","collationLocale":"sv"}),

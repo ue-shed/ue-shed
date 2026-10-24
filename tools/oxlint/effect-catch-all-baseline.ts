@@ -54,7 +54,6 @@ export const effectCatchAllBaseline = [
 	"packages/game-text/src/localization-import.ts",
 	"packages/game-text/src/native-index-builder.ts",
 	"packages/game-text/src/native-query.ts",
-	"packages/game-text/src/quality-worker.ts",
 	"packages/game-text/src/workspace-id-repairs.ts",
 	"packages/game-text/src/workspace-investigation.ts",
 	"packages/game-text/src/workspace-localization.ts",

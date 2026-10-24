@@ -902,47 +902,6 @@
 											"properties": {
 												"action": {
 													"type": "string",
-													"enum": ["rows"]
-												},
-												"reader": {
-													"type": "string",
-													"allOf": [
-														{
-															"minLength": 1
-														},
-														{
-															"maxLength": 128
-														}
-													]
-												},
-												"payload": {
-													"type": "string",
-													"allOf": [
-														{
-															"maxLength": 524288
-														}
-													]
-												},
-												"output": {
-													"type": "string",
-													"allOf": [
-														{
-															"minLength": 1
-														},
-														{
-															"maxLength": 32767
-														}
-													]
-												}
-											},
-											"required": ["action", "reader", "payload", "output"],
-											"additionalProperties": false
-										},
-										{
-											"type": "object",
-											"properties": {
-												"action": {
-													"type": "string",
 													"enum": [
 														"export",
 														"aggregate",
@@ -1244,7 +1203,7 @@
 											"properties": {
 												"action": {
 													"type": "string",
-													"enum": ["findings_lines"]
+													"enum": ["findings_accept"]
 												},
 												"reader": {
 													"type": "string",
@@ -1257,38 +1216,16 @@
 														}
 													]
 												},
-												"key": {
+												"payload": {
 													"type": "string",
 													"allOf": [
 														{
-															"minLength": 1
-														},
-														{
-															"maxLength": 1024
-														}
-													]
-												},
-												"rows": {
-													"type": "array",
-													"items": {
-														"type": "integer",
-														"allOf": [
-															{
-																"minimum": 0
-															},
-															{
-																"maximum": 4294967295
-															}
-														]
-													},
-													"allOf": [
-														{
-															"maxItems": 5000
+															"maxLength": 8388608
 														}
 													]
 												}
 											},
-											"required": ["action", "reader", "key", "rows"],
+											"required": ["action", "reader", "payload"],
 											"additionalProperties": false
 										},
 										{
@@ -1296,7 +1233,7 @@
 											"properties": {
 												"action": {
 													"type": "string",
-													"enum": ["findings_units"]
+													"enum": ["findings_query"]
 												},
 												"reader": {
 													"type": "string",
@@ -1309,38 +1246,16 @@
 														}
 													]
 												},
-												"key": {
+												"payload": {
 													"type": "string",
 													"allOf": [
 														{
-															"minLength": 1
-														},
-														{
-															"maxLength": 1024
-														}
-													]
-												},
-												"units": {
-													"type": "array",
-													"items": {
-														"type": "integer",
-														"allOf": [
-															{
-																"minimum": 0
-															},
-															{
-																"maximum": 4294967295
-															}
-														]
-													},
-													"allOf": [
-														{
-															"maxItems": 5000
+															"maxLength": 524288
 														}
 													]
 												}
 											},
-											"required": ["action", "reader", "key", "units"],
+											"required": ["action", "reader", "payload"],
 											"additionalProperties": false
 										}
 									]

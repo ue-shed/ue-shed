@@ -15,8 +15,8 @@ import type {
 	TextCorpusSearchPage
 } from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
-import type { IndexedLocalizationQualityOptions } from "./localization-quality-index.js";
-import type { LocalizationQuality } from "./localization-workspace.js";
+import type { LocalizationCheckOptions } from "./localization-quality-schema.js";
+import type { QueriedLocalizationQuality } from "./localization-workspace.js";
 import type { AsyncTextQualityQuery } from "./quality-query.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import { LocalizationKeyChangePair } from "./localization-key-changes.js";
@@ -62,6 +62,13 @@ export class GameTextIndexSource extends Context.Service<
 		) => Stream.Stream<{ readonly path: string; readonly file: string }, GameTextIndexError>;
 	}
 >()("@ue-shed/game-text/GameTextIndexSource") {}
+
+/**
+ * Check options of an indexed quality read. Progress goes to `GameTextIndexProgressReporter`: a
+ * `localization_quality` event before the engine checks, with no lines checked, and one after,
+ * with every line checked and the findings the checks found.
+ */
+export type IndexedLocalizationQualityOptions = LocalizationCheckOptions;
 
 /**
  * A project and optional localization target to prepare. changedFiles absent means full
@@ -124,15 +131,15 @@ export interface GameTextIndexRefreshResult {
 	readonly evidence: LocalizationTargetEvidence;
 	readonly review: LocalizationReviewSnapshot;
 	/**
-	 * Localization quality checked over the index in bounded pages, with findings kept as columns.
-	 * The scan yields between pages and can be interrupted, and reports `localization_quality`
-	 * progress through `GameTextIndexProgressReporter`. Arguments are in the same order as
-	 * `sourceQuality`: the rule document first.
+	 * Localization quality over the index: the engine checks the rule document once per document,
+	 * and the workspace reads its findings a page at a time. It can be interrupted, and reports
+	 * `localization_quality` progress through `GameTextIndexProgressReporter`. Arguments are in
+	 * the same order as `sourceQuality`: the rule document first.
 	 */
 	readonly localizationQuality: (
 		ruleDocument?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
-	) => Effect.Effect<LocalizationQuality, IndexFailure>;
+	) => Effect.Effect<QueriedLocalizationQuality, IndexFailure>;
 	/** The complete CLI quality report, including proposals collected before acceptance filtering. */
 	readonly localizationCheck: (
 		document?: GameTextRuleDocument,

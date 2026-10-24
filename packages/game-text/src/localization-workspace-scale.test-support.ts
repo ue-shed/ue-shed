@@ -169,7 +169,7 @@ export const workspaceScaleFixture = Effect.fn("Test.GameText.workspaceScale")(f
 		}
 	});
 	return {
-		fixture: { request: fixture.request, layer: () => fixture.layer(false, sourceLayer) },
+		fixture: { request: fixture.request, layer: () => fixture.layer(sourceLayer) },
 		target
 	};
 });

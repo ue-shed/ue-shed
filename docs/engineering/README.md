@@ -37,7 +37,7 @@ UE Shed code should be functional, typed, observable, and well tested.
 | [Binary Project Index](binary-project-index.md)                       | Canonical Catalog storage and lifecycle                               |
 | [Game Text snapshots](game-text-snapshots.md)                         | Compact domain format, bounds and Node store lifecycle                |
 | [Native Game Text preparation](native-game-text-index.md)             | Production writer, incremental joins, composition and measurements    |
-| [Game Text engine baseline](game-text-engine-measurements.md)         | Host API replay, resource caps, overhead and the transport experiment |
+| [Game Text engine measurements](game-text-engine-measurements.md)     | Plan 059's baseline, transport experiment and each phase against them |
 | [Game Text gather coverage](game-text-gather-coverage.md)             | Saved-scan gaps, manifest evidence and Unreal gather authority        |
 | [Game Text test corpus](game-text-corpus.md)                          | Generate a scratch corpus with planted right answers                  |
 | [Game Text rule engine](game-text-rule-engine.md)                     | Rule subjects, the expression IR, findings layer and identity         |

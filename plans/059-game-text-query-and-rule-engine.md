@@ -14,7 +14,8 @@
 ## Status
 
 - **State**: In progress. Phase 0 is complete: the fixture merged in #162, and the baseline and
-  transport decision are recorded.
+  transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
+  owner's review are recorded. Phase 2 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -381,9 +382,10 @@ The [measurement record](../docs/engineering/game-text-engine-measurements.md) h
 mix, commands, complete tables and probe coverage. Engine compute and column construction,
 especially for all rows, are the Phase 3 and 4 work.
 
-### Phase 1: facts, the IR and rules that read only their own row
+### Phase 1: facts, the IR and rules that read only their own row (complete)
 
-The specification is [Game Text rule engine](../docs/engineering/game-text-rule-engine.md).
+The specification is [Game Text rule engine](../docs/engineering/game-text-rule-engine.md). It
+merged in #164–#167.
 
 - **Fact repairs: done.** Missing String Table entries, native-source overrides, compiled copies,
   `IdenticalNamespaceAndSource` and deleted packages now match the fixture. The wired-pin `shared`
@@ -400,6 +402,29 @@ The specification is [Game Text rule engine](../docs/engineering/game-text-rule-
 - The workspace Quality indexes and `ue-shed loc check` read it. Sorting, paging and counting stay
   in TypeScript until Phase 3.
 - **Parity:** the fixture is exact. The `empty-translation-whitespace` pin is removed.
+
+Phase 1 medians, measured at `0bd6dbf6` against the Phase 0 baseline:
+
+| Path                                            |       Generated 1× | Released 10-culture project |
+| ----------------------------------------------- | -----------------: | --------------------------: |
+| Cold build to visible page                      |  66.999 → 68.395 s |         108.189 → 112.164 s |
+| Open to visible page                            |    1.897 → 1.923 s |             1.812 → 1.816 s |
+| Cached reopen                                   |    2.957 → 2.962 s |             6.068 → 6.115 s |
+| Quality, captured defaults                      | 94.110 → 153.005 s |         176.291 → 336.059 s |
+| Workbench matching 1–2-character keystroke, p95 | 598.98 → 583.45 ms |          389.44 → 386.51 ms |
+| Saturated related-line probe, 444 requests      | 784.24 → 789.03 ms |          638.17 → 600.51 ms |
+
+- **Quality regressed:** +62.6% on 1× and +90.6% on the released project. The record lists its
+  measured parts; the stage as a whole hasn't been attributed. Matching keystrokes are also mostly
+  2–10% slower at p50.
+- **Findings:** a finding-by-finding comparison with the baseline found nothing new. The removed
+  findings are the `whitespace` findings on empty translations. The changed ones name the authored
+  pin instead of a compiled copy.
+- **Owner review, 2026-10-24:** accepted for Phase 1. Phase 3 is where Quality's read path is
+  replaced.
+
+The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-1-results)
+has every table.
 
 ### Phase 2: group rules and corpus aggregates
 
@@ -425,6 +450,9 @@ The specification is [Game Text rule engine](../docs/engineering/game-text-rule-
 - Facets in one pass.
 - Separate response parts, groups with their first rows, and related lines.
 - The trigram index.
+- The fixture's two open defects are in query paths:
+    - the "no translator notes" filter must count manifest notes (`manifest-notes-only`);
+    - the line page must keep the selected culture scope (`archive-missing-entry`).
 
 ### Phase 4: streaming API
 

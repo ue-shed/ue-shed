@@ -334,6 +334,69 @@ stage hasn't been attributed, and the keystroke and build changes haven't been p
 The owner reviewed these results on 2026-10-24 and accepted them for Phase 1. Phase 3 moves
 sorting, paging and counting of findings into the engine, and Quality stops re-checking lines.
 
+## Phase 2 results
+
+Plan 059 Phase 2, measured on 2026-10-24 at `769f7503` with the same harness, machine and caps.
+Build and Quality ran once each, as in Phase 1. The interactive stages also ran once, where Phase 1
+ran them three times, so their Phase 2 values are single runs. The Phase 1 values are that record's
+medians. The later Phase 2 commits change no finding. The rules file reset, the review fixes and the
+CLI work keep the engine's 1× catalogue digest, and the opt-in `shared` and `long` checks aren't in
+the starter file.
+
+| Path                                       |        Generated 1× | Released 10-culture project |
+| ------------------------------------------ | ------------------: | --------------------------: |
+| Cold build to visible page                 |   68.395 → 68.610 s |         112.164 → 110.968 s |
+| Open to visible page                       |     1.923 → 1.902 s |             1.816 → 1.808 s |
+| Cached reopen to visible page              |     2.962 → 2.974 s |             6.115 → 6.039 s |
+| Quality, captured default checks           | 153.005 → 155.755 s |         336.059 → 300.365 s |
+| Quality in process, without its worker     |           159.631 s |                   345.195 s |
+| Workbench selection, two requests          |   57.37 → 59.95 ms¹ |           81.94 → 85.64 ms¹ |
+| Electroswag selection, two requests        |   55.47 → 58.16 ms¹ |           83.37 → 83.03 ms¹ |
+| Saturated related-line probe, 444 requests | 789.03 → 849.06 ms¹ |         600.51 → 712.05 ms¹ |
+
+¹ One Phase 2 run.
+
+Quality is +1.8% on 1× and −10.6% on the released project. The three group checks now run in the
+engine, and the TypeScript passes that computed them are deleted. Quality's sampled RSS maximum fell
+from 3.40 to 3.19 GiB on 1× and from 3.76 to 3.72 GiB on the released project. The released cold
+build's rose from 3.94 to 4.59 GiB in this one run; 1×'s fell from 2.59 to 2.55 GiB.
+
+**Findings are unchanged.** Quality's answer has the Phase 1 SHA-256 on both projects
+(`ff1c131a…` on 1×, `b1b3fe87…` on the released project), in its worker and in process. Build, open
+and cached reopen have the Phase 1 answers (`a2c3e70e…`, `6b19c93a…`).
+
+**The Quality worker stays.** In process, Quality's largest event-loop gap is 741 ms on 1× and
+882 ms on the released project; with the worker, 115 ms and 528 ms. Phase 2 required no worse than
+the worker's (spec §6). The gaps are the TypeScript scan's paging, sorting and hydration, which
+Phase 3 replaces.
+
+**The engine's catalogue** (the 1× timing test at the Phase 2 head) has 24 rules and takes 21.0 s,
+against 11.9 s for Phase 1's 21. The group rules account for most of the difference:
+`duplicate_source` 3.3 s, `inconsistent_translation` 3.1 s and `culture_invariant_text` 0.5 s.
+`existsOther`'s sub-stages are inputs 0.6 s, signatures 0.2 s, sites 0.1 s, tuples 1.8 s, count
+1.5 s and match 0.8 s. Its first version took 33.5 s. Expanding each row signature once took it to
+8.4 s, and interning values structurally to 5.2 s, each with the same digest.
+
+**`loc check`:**
+
+- On both canonical corpora, its output with the starter checks is byte-identical to Phase 2's
+  output before the reset, except for one added `"ruleDiagnostics": []`, which reports carry
+  whenever a rules file exists. With `--rules` it is identical to that.
+- On the released project, with `--rules` and the starter checks, it completes in 326 s. Its report
+  is 625 MB and has 274,829 findings, Quality's count. Before the CLI printed the report in parts,
+  `JSON.stringify` of that report exceeded V8's string limit.
+- The generated 1× project keeps its text in benchmark records, so the CLI sees its 583,507-line
+  join but no packages. It completes in 56 s with 164,426 findings from six evidence checks.
+
+**The corpus fixture.** Both canonical corpora compare with 1,120 subjects and the two pinned
+disagreements (`detail-culture-scope`, `manifest-notes-filter`), none unexpected or stale. The new
+`shared` and `long` probe agrees with Browse on every line. One 10,000-line fuzz run on UE 5.8
+(seed 73131: 11,042 lines, 44,168 subjects) has no unexpected disagreement and no stale defect,
+before and after a package edit, and its incremental and full scans agree. Its first run showed
+the near miss's expectation was wrong, not the engine: Browse's `unresolved` signal still counts
+as a finding problem until Phase 3 (plan decision 16). Quality's check reported nothing there, as
+intended.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

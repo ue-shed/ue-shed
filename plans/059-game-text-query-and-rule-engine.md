@@ -15,7 +15,8 @@
 
 - **State**: In progress. Phase 0 is complete: the fixture merged in #162, and the baseline and
   transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
-  owner's review are recorded. Phase 2 is next.
+  owner's review are recorded. Phase 2 is implemented, and its measurements are recorded for the
+  owner's review.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -442,6 +443,22 @@ The specification is [Game Text rule engine, Phase 2](../docs/engineering/game-t
 - The Quality worker stays until Phase 3. Without it, Quality's largest event-loop gap was 741 ms on
   the generated 1× project and 882 ms on the released one, against the worker's 115 ms and 528 ms.
   The gaps are the TS scan's paging, sorting and hydration, which Phase 3 replaces.
+
+Phase 2 against Phase 1, measured at `769f7503`:
+
+| Path                                                 |        Generated 1× | Released 10-culture project |
+| ---------------------------------------------------- | ------------------: | --------------------------: |
+| Quality, captured defaults                           | 153.005 → 155.755 s |         336.059 → 300.365 s |
+| Saturated related-line probe, 444 requests (one run) |  789.03 → 849.06 ms |          600.51 → 712.05 ms |
+
+- **Findings are unchanged:** Quality's answer has the Phase 1 hash on both projects.
+- **`loc check` completes on the released project**, with 274,829 findings, Quality's count, and
+  prints byte-identical output on both canonical corpora.
+- **Not re-measured:** the probe rows and the released cold build's RSS (3.94 → 4.59 GiB) are one
+  run each.
+
+The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-2-results)
+has every table.
 
 ### Phase 3: the query engine
 

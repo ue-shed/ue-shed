@@ -51,6 +51,24 @@ impl Relation {
         Ok(Value::Object(place))
     }
 }
+/// Dense IDs of value keys (`Evaluator::key`): equal values share an ID. Memoized per atom, so a
+/// value repeated across rows is keyed once.
+#[derive(Default)]
+struct KeyIds {
+    atoms: FxHashMap<Atom, u32>,
+    keys: HashMap<String, u32>,
+}
+impl KeyIds {
+    fn of(&mut self, atom: Atom, evaluator: &Evaluator<'_>) -> u32 {
+        if let Some(id) = self.atoms.get(&atom) {
+            return *id;
+        }
+        let next = u32::try_from(self.keys.len()).unwrap_or(u32::MAX);
+        let id = *self.keys.entry(evaluator.key(atom)).or_insert(next);
+        self.atoms.insert(atom, id);
+        id
+    }
+}
 /// An occurrence's fields as places show them.
 const OCCURRENCE_FIELDS: [&str; 6] = [
     "id",
@@ -909,9 +927,12 @@ impl<'a> Evaluator<'a> {
             _ => self.scalar(id, selection),
         }
     }
-    /// A value as a group or tally key: values that compare equal have equal keys.
+    /// A value as a group, tally or corpus key. Values that compare equal have equal keys:
+    /// numbers by value and objects whatever their member order, as `eq` compares them.
     fn key(&self, value: Atom) -> String {
-        self.arena.json(value).to_string()
+        let mut key = String::new();
+        super::identity::write_atom(&self.arena, value, true, &mut key);
+        key
     }
     /// The order `groupRank` sorts by: lists element-wise, strings with the host collator,
     /// numbers numerically, and null first.
@@ -935,6 +956,15 @@ impl<'a> Evaluator<'a> {
                 .collator
                 .compare(self.arena.text(a), self.arena.text(b)),
             (Atom::Int(a), Atom::Int(b)) => a.cmp(&b),
+            // Arithmetic yields floating-point numbers, whole ones included.
+            (Atom::Int(_) | Atom::Num(_), Atom::Int(_) | Atom::Num(_)) => {
+                let number = |atom| match atom {
+                    Atom::Int(value) => value as f64,
+                    Atom::Num(bits) => f64::from_bits(bits),
+                    _ => f64::NAN,
+                };
+                number(a).total_cmp(&number(b))
+            }
             (Atom::Bool(a), Atom::Bool(b)) => a.cmp(&b),
             _ => self.key(a).cmp(&self.key(b)),
         }
@@ -1081,122 +1111,266 @@ impl<'a> Evaluator<'a> {
             _ => self.key(value),
         }
     }
+    /// Whether a node reads nothing of its row: no field, occurrence list, finding or aggregate.
+    fn item_only(&self, id: NodeId) -> bool {
+        let mut pending = vec![id];
+        while let Some(id) = pending.pop() {
+            let node = &self.program.nodes[id];
+            if node.op.is_aggregate()
+                || matches!(
+                    node.op,
+                    Op::Field(_) | Op::Occurrences | Op::Finding(_) | Op::FindingField(..)
+                )
+            {
+                return false;
+            }
+            pending.extend_from_slice(&node.args);
+        }
+        true
+    }
+    /// Whether a node reads the `item` variable anywhere below it.
+    fn reads_item(&self, id: NodeId) -> bool {
+        let mut pending = vec![id];
+        while let Some(id) = pending.pop() {
+            let node = &self.program.nodes[id];
+            if matches!(&node.op, Op::Var(name) if &**name == "item") {
+                return true;
+            }
+            pending.extend_from_slice(&node.args);
+        }
+        false
+    }
     /// `existsOther` (Phase 2 specification §3.1): whether some site of the row has another
     /// distinct tuple with the same `by` whose every `differing` value differs. Counted by
     /// inclusion–exclusion over distinct tuples, not pairwise.
+    ///
+    /// Tuples are distinct, so rows holding the same site list and row-level values (the same
+    /// atoms) give the same answer: only the first such row is expanded into its sites. A line's
+    /// cultures share their line's atoms. Tuple values compare by dense IDs of their keys.
     fn exists_other(&mut self, args: &[NodeId], all: &Selection) -> Result<Column> {
+        let mut measure = Measure::start();
         let among = self.evaluate(args[1], all)?;
         let over = self.evaluate(args[2], all)?;
         let mut failed = Bits::new(self.len);
-        let mut parents = Vec::new();
-        let mut elements = Vec::new();
-        let mut members = vec![false; self.len];
-        for (row, member) in members.iter_mut().enumerate() {
+        let mut members = Vec::new();
+        for row in 0..self.len {
             if among.failed.get(row) || over.failed.get(row) {
                 failed.set(row);
+            } else if among.get(row, &self.arena).boolean() {
+                members.push(row);
+            }
+        }
+        self.exists_other_stage("inputs", &mut measure, self.len);
+        // `by` and each `differing` value, read per row unless they read the site.
+        let differing = &self.program.nodes[args[3]];
+        let listed = differing.op == Op::List;
+        let mut parts = vec![args[0]];
+        if listed {
+            parts.extend_from_slice(&differing.args);
+        } else {
+            parts.push(args[3]);
+        }
+        let member_rows = all.select(&members, &mut self.arena)?;
+        let mut row_values = Vec::with_capacity(parts.len());
+        for part in &parts {
+            row_values.push(if self.reads_item(*part) {
+                None
+            } else {
+                Some(self.evaluate(*part, &member_rows)?)
+            });
+        }
+        self.exists_other_stage("parts", &mut measure, members.len());
+        // Rows share a signature only when the parts read per site read nothing of the row.
+        let shared = parts
+            .iter()
+            .zip(&row_values)
+            .all(|(part, value)| value.is_some() || self.item_only(*part));
+        let mut ids = KeyIds::default();
+        let mut signatures = FxHashMap::<Vec<Atom>, usize>::default();
+        let mut representative = vec![usize::MAX; members.len()];
+        let mut signature = Vec::with_capacity(parts.len() + 1);
+        for (index, row) in members.iter().enumerate() {
+            if row_values
+                .iter()
+                .flatten()
+                .any(|column| column.failed.get(index))
+            {
+                failed.set(*row);
                 continue;
             }
-            if !among.get(row, &self.arena).boolean() {
+            if !shared {
+                representative[index] = index;
                 continue;
             }
-            *member = true;
-            if let Some(sites) = self.arena.elements(over.get(row, &self.arena))? {
+            signature.clear();
+            signature.push(over.get(*row, &self.arena));
+            for column in row_values.iter().flatten() {
+                signature.push(column.get(index, &self.arena));
+            }
+            representative[index] = match signatures.get(&signature) {
+                Some(first) => *first,
+                None => {
+                    signatures.insert(signature.clone(), index);
+                    index
+                }
+            };
+        }
+        let distinct_rows = signatures.len();
+        drop(signatures);
+        self.exists_other_stage("signatures", &mut measure, distinct_rows);
+        // Expand each representative into its sites.
+        let mut parents = Vec::new();
+        let mut elements = Vec::new();
+        for (index, row) in members.iter().enumerate() {
+            if representative[index] != index {
+                continue;
+            }
+            if let Some(sites) = self.arena.elements(over.get(*row, &self.arena))? {
                 for site in sites {
-                    parents.push(row);
+                    parents.push(index);
                     elements.push(*site);
                 }
             }
         }
-        let mut expanded = all.select(&parents, &mut self.arena)?;
+        let mut expanded = member_rows.select(&parents, &mut self.arena)?;
         expanded.variables.insert(
             "item".into(),
             Column::from_atoms(&elements, &mut self.arena)?,
         );
-        let by = self.evaluate(args[0], &expanded)?;
-        let differing = self.evaluate(args[3], &expanded)?;
-        // Each element's tuple: its `by` key and its `differing` keys.
-        let mut tuples = Vec::with_capacity(elements.len());
-        let mut width = None;
-        for (index, parent) in parents.iter().enumerate() {
-            if by.failed.get(index) || differing.failed.get(index) {
-                failed.set(*parent);
-                tuples.push(None);
-                continue;
-            }
-            let key = by.get(index, &self.arena);
-            let Some(values) = self.arena.elements(differing.get(index, &self.arena))? else {
-                tuples.push(None);
-                continue;
-            };
-            if key == Atom::Null {
-                tuples.push(None);
-                continue;
-            }
-            require(
-                *width.get_or_insert(values.len()) == values.len(),
-                "existsOther's differing lists must all have the same length.",
-            )?;
-            let values = values
-                .iter()
-                .map(|value| self.key(*value))
-                .collect::<Vec<_>>();
-            tuples.push(Some((self.key(key), values)));
+        let mut element_values = Vec::with_capacity(parts.len());
+        for (part, row_value) in parts.iter().zip(&row_values) {
+            element_values.push(if row_value.is_none() {
+                Some(self.evaluate(*part, &expanded)?)
+            } else {
+                None
+            });
         }
+        self.exists_other_stage("sites", &mut measure, elements.len());
+        // Each site's tuple: the ID of its `by`, then of each `differing` value.
+        let mut tuples = Vec::<Option<Box<[u32]>>>::with_capacity(elements.len());
+        let mut width = listed.then(|| parts.len() - 1);
+        let mut values = Vec::new();
+        for (element, parent) in parents.iter().enumerate() {
+            let row = members[*parent];
+            if element_values
+                .iter()
+                .flatten()
+                .any(|column| column.failed.get(element))
+            {
+                failed.set(row);
+                tuples.push(None);
+                continue;
+            }
+            values.clear();
+            for (row_value, element_value) in row_values.iter().zip(&element_values) {
+                values.push(match (row_value, element_value) {
+                    (Some(column), _) => column.get(*parent, &self.arena),
+                    (_, Some(column)) => column.get(element, &self.arena),
+                    _ => Atom::Null,
+                });
+            }
+            if values[0] == Atom::Null {
+                tuples.push(None);
+                continue;
+            }
+            let mut tuple = vec![ids.of(values[0], self)];
+            if listed {
+                for value in &values[1..] {
+                    tuple.push(ids.of(*value, self));
+                }
+            } else {
+                let Some(listed) = self.arena.elements(values[1])? else {
+                    tuples.push(None);
+                    continue;
+                };
+                require(
+                    *width.get_or_insert(listed.len()) == listed.len(),
+                    "existsOther's differing lists must all have the same length.",
+                )?;
+                for value in listed {
+                    tuple.push(ids.of(*value, self));
+                }
+            }
+            tuples.push(Some(tuple.into()));
+        }
+        self.exists_other_stage("tuples", &mut measure, tuples.len());
         let width = width.unwrap_or(0);
         require(
             width < 16,
             "existsOther compares at most 15 differing values.",
         )?;
-        // Distinct tuples counted per (by, the values of a subset of the differing dimensions).
+        // Distinct tuples counted per (subset of the differing dimensions, by, their values).
+        let project = |subset: u32, tuple: &[u32], into: &mut Vec<u32>| {
+            into.clear();
+            into.push(subset);
+            into.push(tuple[0]);
+            for dimension in 0..width {
+                if subset & (1 << dimension) != 0 {
+                    into.push(tuple[dimension + 1]);
+                }
+            }
+        };
         let distinct = tuples
             .iter()
             .flatten()
             .collect::<std::collections::HashSet<_>>();
-        let mut counts = HashMap::<(u32, &str, Vec<&str>), i64>::new();
-        for (key, values) in &distinct {
+        let mut counts = FxHashMap::<Box<[u32]>, i64>::default();
+        let mut key = Vec::with_capacity(width + 2);
+        for tuple in distinct {
             for subset in 0..1u32 << width {
-                let projected = (0..width)
-                    .filter(|dimension| subset & (1 << dimension) != 0)
-                    .map(|dimension| values[dimension].as_str())
-                    .collect();
-                *counts.entry((subset, key.as_str(), projected)).or_default() += 1;
+                project(subset, tuple, &mut key);
+                match counts.get_mut(&key[..]) {
+                    Some(count) => *count += 1,
+                    None => {
+                        counts.insert(key.as_slice().into(), 1);
+                    }
+                }
             }
         }
-        let mut found = vec![false; self.len];
-        for (index, tuple) in tuples.iter().enumerate() {
-            let Some((key, values)) = tuple else {
+        self.exists_other_stage("count", &mut measure, counts.len());
+        let mut found = vec![false; members.len()];
+        for (tuple, parent) in tuples.iter().zip(&parents) {
+            let Some(tuple) = tuple else {
                 continue;
             };
-            let others = (0..1u32 << width)
-                .map(|subset| {
-                    let projected = (0..width)
-                        .filter(|dimension| subset & (1 << dimension) != 0)
-                        .map(|dimension| values[dimension].as_str())
-                        .collect::<Vec<_>>();
-                    let count = counts[&(subset, key.as_str(), projected)];
-                    if subset.count_ones() % 2 == 0 {
-                        count
-                    } else {
-                        -count
-                    }
-                })
-                .sum::<i64>();
+            let mut others = 0;
+            for subset in 0..1u32 << width {
+                project(subset, tuple, &mut key);
+                let count = counts[&key[..]];
+                others += if subset.count_ones() % 2 == 0 {
+                    count
+                } else {
+                    -count
+                };
+            }
             if others > 0 {
-                found[parents[index]] = true;
+                found[*parent] = true;
             }
         }
-        let values = (0..self.len)
-            .map(|row| {
-                if members[row] {
-                    Atom::Bool(found[row])
-                } else {
-                    Atom::Null
-                }
-            })
-            .collect::<Vec<_>>();
+        let mut values = vec![Atom::Null; self.len];
+        for (index, row) in members.iter().enumerate() {
+            let first = representative[index];
+            if first == usize::MAX {
+                continue;
+            }
+            // A row fails with the row whose sites it shares.
+            if failed.get(members[first]) {
+                failed.set(*row);
+            } else {
+                values[*row] = Atom::Bool(found[first]);
+            }
+        }
         let mut column = Column::from_atoms(&values, &mut self.arena)?;
         column.failed = failed;
+        self.exists_other_stage("match", &mut measure, self.len);
         Ok(column)
+    }
+    /// Record one step of `existsOther` and start timing the next.
+    fn exists_other_stage(&self, step: &str, measure: &mut Measure, rows: usize) {
+        self.arena
+            .recorder
+            .sub_stage(format!("existsOther.{step}"), measure, rows);
+        *measure = Measure::start();
     }
     /// `corpusCount` (Phase 2 specification §3.2): the corpus rows whose `by` equals the selected
     /// rows' `key`. The table is built once, from every occurrence in the project.
@@ -2949,7 +3123,16 @@ mod tests {
             .map(|finding| finding.row)
             .collect::<Vec<_>>();
         assert_eq!(rows, vec![0, 1, 2]);
-        // Random tuples against `DuplicateSources.hasOther` (`gt/duplicate-sources.ts`).
+        // Random tuples against `DuplicateSources.hasOther` (`gt/duplicate-sources.ts`), with
+        // `differing` written three ways: as a list, with a site value that also reads a field
+        // (so rows never share a signature), and as an expression that yields a list.
+        let site = json!({"get":[{"var":"item"},{"lit":"packageFile"}]});
+        let mixed = json!({"concat":[site, {"slice":[{"field":"source"},{"lit":0},{"lit":0}]}]});
+        let formulations = [
+            json!({"list":[{"field":"textUnitId"}, site]}),
+            json!({"list":[{"field":"textUnitId"}, mixed]}),
+            json!({"if":[{"lit":true},{"list":[{"field":"textUnitId"}, site]},{"lit":[]}]}),
+        ];
         let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
         let mut random = |bound: u64| {
             seed ^= seed << 13;
@@ -3003,14 +3186,56 @@ mod tests {
             let expected = (0..rows)
                 .filter(|row| sites[*row].iter().any(|site| has_other(*row, *site)))
                 .collect::<Vec<_>>();
-            let result = evaluate_one(duplicate.clone(), &mut relation)?;
-            let actual = result
-                .findings
-                .iter()
-                .map(|finding| finding.row)
-                .collect::<Vec<_>>();
-            assert_eq!(actual, expected, "{sources:?} {identities:?} {sites:?}");
+            for differing in &formulations {
+                let mut rule = duplicate.clone();
+                rule["when"]["existsOther"]["differing"] = differing.clone();
+                let result = evaluate_one(rule, &mut relation)?;
+                let actual = result
+                    .findings
+                    .iter()
+                    .map(|finding| finding.row)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    actual, expected,
+                    "{differing} {sources:?} {identities:?} {sites:?}"
+                );
+            }
         }
+        Ok(())
+    }
+    #[test]
+    fn aggregates_order_numbers_by_value_and_group_equal_values() -> Result<()> {
+        // Arithmetic yields floating-point numbers: 10.0 ranks after 2.0, not before it.
+        let length = json!({"add":[{"utf16Length":{"field":"source"}},{"lit":0}]});
+        // Equal values written differently: member order, and an integer against a float.
+        let shape = json!({"if":[
+            {"eq":[{"field":"source"},{"lit":"xx"}]},
+            {"lit":{"a":1,"b":2}},
+            {"object":{"b":{"lit":2.0},"a":{"lit":1}}}
+        ]});
+        let values = rule(
+            "values",
+            json!({"lit":true}),
+            json!({"object":{
+                "rank":{"groupRank":{"by":{"lit":"all"},"order":{"list":[length]}}},
+                "first":{"groupTake":{"by":{"lit":"all"},"order":{"list":[length]},"value":{"field":"source"},"n":{"lit":1}}},
+                "same":{"groupCount":{"by":shape}}
+            }}),
+        );
+        let mut relation = unit_sources(&["yyyyyyyyyy", "xx"], vec![vec![]; 2]);
+        let result = evaluate_one(values, &mut relation)?;
+        let actual = result
+            .findings
+            .iter()
+            .map(|finding| finding.actual.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual,
+            vec![
+                json!({"rank":1,"first":["xx"],"same":2}),
+                json!({"rank":0,"first":["xx"],"same":2})
+            ]
+        );
         Ok(())
     }
     #[test]

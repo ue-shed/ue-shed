@@ -216,17 +216,14 @@ const duplicateCandidate = (prefix: "" | "line.") =>
 	);
 /**
  * A candidate with another identity at another place (`DuplicateSources.hasOther`). A line
- * without a saved place has one of its own. Tuples are distinct, so a line's cultures count once.
+ * without a saved place has one of its own, its identity, which no saved place equals. Tuples
+ * are distinct, so a line's cultures count once.
  */
 const keptDuplicate = (prefix: "" | "line.") => {
 	const identity = f(`${prefix}identity`),
 		sites = f(`${prefix}duplicateSites`);
 	return x.existsOther({
-		over: x.if(
-			positive(x.count(sites)),
-			sites,
-			x.list(x.concat("unknown:", g(identity, "namespace"), "\u0000", g(identity, "key")))
-		),
+		over: x.if(positive(x.count(sites)), sites, x.list(identity)),
 		by: f(`${prefix}source`),
 		differing: x.list(identity, item),
 		among: duplicateCandidate(prefix)

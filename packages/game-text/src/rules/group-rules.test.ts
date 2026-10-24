@@ -61,6 +61,26 @@ describe("group rules", () => {
 			}
 		]);
 	});
+	it("gives each line without a saved place a place of its own", () => {
+		// Joined with a separator, these two identities would read the same.
+		const pair = [
+			{ namespace: "a\u0000b", key: "c" },
+			{ namespace: "a", key: "b\u0000c" }
+		].map((identity, position) => ({
+			fields: { ...line("Pair", "unused", position, []), identity },
+			occurrences: []
+		}));
+		expect(evaluate("duplicate_source", { line: pair })).toEqual([
+			{
+				row: 1,
+				actual: {
+					source: "Pair",
+					identityCount: 2,
+					identities: [pair[1]!.fields.identity, pair[0]!.fields.identity]
+				}
+			}
+		]);
+	});
 	it("reports the lines that leave the culture's most used translation", () => {
 		const culture = (
 			key: string,

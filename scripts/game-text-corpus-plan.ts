@@ -820,8 +820,8 @@ function recipeBatch({
 		"en"
 	);
 	// A near miss: a Blueprint variable is its own property, which holds no localizable text, so
-	// its invariant text is meant to be invariant. Browse's `unresolved` signal still counts as a
-	// finding problem until Phase 3 (plan decision 16); Quality's check reports nothing.
+	// its invariant text is meant to be invariant. Browse's own `unresolved` signal still counts as
+	// a finding problem, as on the planted case; Quality's check reports nothing.
 	const ownProperty = add(
 		"culture-invariant-own-property",
 		"Silent sign label",

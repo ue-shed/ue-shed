@@ -15,8 +15,8 @@
 
 - **State**: In progress. Phase 0 is complete: the fixture merged in #162, and the baseline and
   transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
-  owner's review are recorded. Phase 2 is implemented, and its measurements are recorded for the
-  owner's review.
+  owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
+  review are recorded. Phase 3 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -456,6 +456,7 @@ Phase 2 against Phase 1, measured at `769f7503`:
   prints byte-identical output on both canonical corpora.
 - **Not re-measured:** the probe rows and the released cold build's RSS (3.94 → 4.59 GiB) are one
   run each.
+- **Owner review, 2026-10-24:** accepted for Phase 2.
 
 The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-2-results)
 has every table.

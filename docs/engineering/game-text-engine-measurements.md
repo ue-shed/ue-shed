@@ -397,6 +397,9 @@ the near miss's expectation was wrong, not the engine: Browse's `unresolved` sig
 as a finding problem until Phase 3 (plan decision 16). Quality's check reported nothing there, as
 intended.
 
+The owner reviewed these results on 2026-10-24 and accepted them for Phase 2, single-run rows
+included. Phase 2 merged in #168.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

@@ -70,36 +70,33 @@ impl EngineQuery {
         cancelled: &AtomicBool,
     ) -> Result<()> {
         let rows = self.matching(selection, cancelled)?;
-        let mut lines = Vec::with_capacity(rows.len());
+        // Only the sort keys are held: each line's fields are read again as its row is written,
+        // so the engine never holds the selection's lines. Code-unit order is the same on every
+        // machine, unlike locale collation; a line without an identity sorts after every
+        // namespace.
+        let mut keyed = Vec::with_capacity(rows.len());
         for row in rows.iter() {
             checkpoint(cancelled)?;
-            lines.push(self.localization_line_fields(
+            let line = self.localization_line_fields(
                 *row as usize,
-                &FIELDS,
+                &["identity", "source"],
                 &[],
                 None,
                 cancelled,
-            )?);
-        }
-        // Code-unit order is the same on every machine, unlike locale collation. A line without
-        // an identity sorts after every namespace.
-        let key = |line: &Value| -> (String, String) {
-            match line["identity"].as_object() {
+            )?;
+            let (namespace, key) = match line["identity"].as_object() {
                 Some(identity) => (
                     text(&identity["namespace"]).to_owned(),
                     text(&identity["key"]).to_owned(),
                 ),
                 None => ("\u{ffff}".into(), String::new()),
-            }
-        };
-        let mut keyed = lines
-            .into_iter()
-            .map(|line| (key(&line), line))
-            .collect::<Vec<_>>();
-        keyed.sort_by(|((a_ns, a_key), a), ((b_ns, b_key), b)| {
+            };
+            keyed.push((namespace, key, text(&line["source"]).to_owned(), *row));
+        }
+        keyed.sort_by(|(a_ns, a_key, a_source, _), (b_ns, b_key, b_source, _)| {
             crate::join::ordinal(a_ns, b_ns)
                 .then_with(|| crate::join::ordinal(a_key, b_key))
-                .then_with(|| crate::join::ordinal(text(&a["source"]), text(&b["source"])))
+                .then_with(|| crate::join::ordinal(a_source, b_source))
         });
         let picked = selection
             .cultures
@@ -134,10 +131,10 @@ impl EngineQuery {
         }
         Spreadsheet::row(&mut out, &header);
         sink.write(&out)?;
-        for (index, (_, line)) in keyed.iter().enumerate() {
-            if index & 255 == 0 {
-                checkpoint(cancelled)?;
-            }
+        for (_, _, _, row) in keyed {
+            checkpoint(cancelled)?;
+            let line =
+                self.localization_line_fields(row as usize, &FIELDS, &[], None, cancelled)?;
             let manifest = line["manifest"].as_array().map_or(&[][..], Vec::as_slice);
             let places = line["places"].as_array().map_or(&[][..], Vec::as_slice);
             let paths = if manifest.is_empty() {

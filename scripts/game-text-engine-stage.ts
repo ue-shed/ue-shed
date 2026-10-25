@@ -214,7 +214,13 @@ export async function runEngineStage(options: EngineStageOptions) {
 		};
 	}
 	const scope = await Effect.runPromise(Scope.make());
-	const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
+	// `UE_SHED_GAME_TEXT_STAGES` records every span the stage ends, and their `*.stage_ms.*`
+	// attributes, beside the results.
+	const recorder = process.env.UE_SHED_GAME_TEXT_STAGES
+		? (await import("./game-text-stage-timings.ts")).makeStageRecorder()
+		: undefined;
+	const run = <A, E>(effect: Effect.Effect<A, E>) =>
+		Effect.runPromise(recorder ? Effect.withTracer(effect, recorder.tracer) : effect);
 	const timer = setInterval(sample, 25);
 	try {
 		const source = options.records
@@ -891,6 +897,11 @@ export async function runEngineStage(options: EngineStageOptions) {
 			await writeFile(
 				join(process.env.UE_SHED_GAME_TEXT_MEASURE_DIR, `ts-${process.pid}.ndjson`),
 				timings.map((timing) => JSON.stringify(timing)).join("\n") + "\n"
+			);
+		if (recorder)
+			await writeFile(
+				join(options.output, "stages.json"),
+				JSON.stringify(recorder.counts(), null, "\t")
 			);
 	}
 	return {

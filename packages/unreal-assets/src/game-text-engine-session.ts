@@ -122,9 +122,13 @@ export const answerRows = (answer: EngineAnswer, part: string): BatchRow[] => {
 	return rows;
 };
 
+/** Watches one request's progress; it runs on the session's thread, so it must be cheap. */
+export type EngineProgressObserver = (progress: GameTextContract.EngineProgress) => void;
+
 interface Pending {
 	readonly parts: ArrayBuffer[];
 	readonly batches: EngineBatch[];
+	readonly progress: EngineProgressObserver | undefined;
 	readonly resume: (effect: Effect.Effect<EngineAnswer, AssetReaderError>) => void;
 	/** Output bytes and the largest frame, for the reader's protocol observer. */
 	outputBytes: number;
@@ -305,6 +309,11 @@ class Worker {
 				pending.parts.push(frame.body);
 				return;
 			case FrameKind.progress:
+				try {
+					pending.progress?.(contractJson<GameTextContract.EngineProgress>(frame.body));
+				} catch {
+					// A progress observer's failure must never change the request.
+				}
 				return;
 			case FrameKind.end: {
 				const { profile } = contractJson<GameTextContract.EngineEnd>(frame.body);
@@ -402,7 +411,9 @@ export class GameTextEngineSession {
 	 * waiting and sends `cancel`; an engine that doesn't end the request in time is restarted.
 	 */
 	call(
-		request: GameTextContract.EngineRequest | EngineProbe
+		request: GameTextContract.EngineRequest | EngineProbe,
+		/** Watches the request's progress frames, for requests that report progress. */
+		progress?: EngineProgressObserver
 	): Effect.Effect<EngineAnswer, AssetReaderError> {
 		return Effect.callback<EngineAnswer, AssetReaderError>((resume) => {
 			let worker: Worker;
@@ -441,6 +452,7 @@ export class GameTextEngineSession {
 			worker.pending.set(id, {
 				parts: [],
 				batches: [],
+				progress,
 				resume,
 				outputBytes: 0,
 				largestFrameBytes: 0

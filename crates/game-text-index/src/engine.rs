@@ -259,8 +259,38 @@ impl Profile {
     }
 }
 
+/// How far a request is: the stage it is in, and its count in that stage's unit.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "EngineProgress"))]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub stage: &'static str,
+    pub completed: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub total: Option<u32>,
+    /// What `completed` and `total` count: `stages` or `rules`.
+    pub unit: &'static str,
+}
+
+/// Where a request reports its progress. Threads of one request share it; the session sends at
+/// most one report each 100 ms, and every stage boundary.
+pub trait Reporter: Send + Sync {
+    fn report(&self, progress: &Progress, boundary: bool);
+}
+/// A reporter for answers no host watches.
+pub struct Unwatched;
+impl Reporter for Unwatched {
+    fn report(&self, _: &Progress, _: bool) {}
+}
+
 /// Where a request's answer goes while the engine produces it.
 pub trait Reply {
+    /// Where the request reports its progress.
+    fn reporter(&self) -> Arc<dyn Reporter> {
+        Arc::new(Unwatched)
+    }
     /// One JSON part of the answer.
     fn part(&mut self, body: Vec<u8>) -> Result<()>;
     /// One column batch. It waits while the host holds as many unconsumed batches as flow
@@ -364,8 +394,21 @@ impl EngineSession {
                         "Game Text dictionary changed before the reader opened.",
                     ),
                 )?;
+                let reporter = reply.reporter();
+                let stage = |stage, completed| {
+                    reporter.report(
+                        &Progress {
+                            stage,
+                            completed,
+                            total: Some(3),
+                            unit: "stages",
+                        },
+                        true,
+                    );
+                };
                 // Load the persisted text-search arena before exposing a ready reader. This
                 // is measured as preparation, so the first typed term pays only matching work.
+                stage("sourceSearch", 0);
                 let source_started = Instant::now();
                 query.prepare_source_search(cancelled)?;
                 stage_seconds.insert(
@@ -374,6 +417,7 @@ impl EngineSession {
                 );
                 // Summary counters no longer load the numeric query projection as a side effect.
                 // Keep that required preparation in opening instead of deferring it to page one.
+                stage("projection", 1);
                 let projection_started = Instant::now();
                 crate::engine_match::Projection::open(&query, cancelled)?;
                 stage_seconds.insert(
@@ -382,6 +426,7 @@ impl EngineSession {
                 );
                 // Focus, cursors, picked lines and line details look rows up by ID; index the
                 // packed IDs and each unit's line once so none of them scans every row.
+                stage("ids", 2);
                 let index_started = Instant::now();
                 let (_, raw) = query.id_index_with_timings("raw")?;
                 let (_, line) = query.id_index_with_timings("line")?;
@@ -451,10 +496,11 @@ impl EngineSession {
                         ..
                     } => (
                         "findings_evaluate",
-                        Some(query.findings_evaluate(
+                        Some(query.findings_evaluate_reporting(
                             &text(rules)?,
                             collation_locale,
                             cancelled,
+                            reply.reporter(),
                         )?),
                     ),
                     EngineRequest::FindingsAccept { request, .. } => (

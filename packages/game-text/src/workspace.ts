@@ -87,8 +87,10 @@ import {
 	Deferred,
 	Duration,
 	Effect,
+	PubSub,
 	Ref,
 	Semaphore,
+	Stream,
 	type Scope
 } from "effect";
 import type {
@@ -167,6 +169,11 @@ export interface GameTextWorkspaceApi {
 	readonly configuredRefresh: (refresh?: boolean) => Effect.Effect<TextCorpusQueryRunResult>;
 	readonly configuredScan: () => Effect.Effect<TextCorpusRunResult>;
 	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
+	/**
+	 * The workspace's progress, then each change to it: the host's project progress while it
+	 * enumerates or scans, then Game Text's own stages. Consecutive equal values are sent once.
+	 */
+	readonly progressChanges: () => Stream.Stream<GameTextWorkspaceProgress>;
 	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
 	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
 	/** The request's rows, or its open groups' first rows, without the aggregates `search` adds. */
@@ -216,9 +223,20 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const workspaceScope = yield* Effect.scope;
 	const rulesRelativePath = host.rulesRelativePath ?? GAME_TEXT_RULES_RELATIVE_PATH;
 	let indexProgress: GameTextIndexProgress | undefined;
+	// Anything progress reads changed; a subscriber reads progress again. Signals waiting for a
+	// slow subscriber collapse into one.
+	const progressChanged = yield* PubSub.sliding<void>(1);
+	const signalProgress = () => {
+		PubSub.publishUnsafe(progressChanged, undefined);
+	};
 	const reportProgress = (value: GameTextIndexProgress) => {
 		indexProgress = value;
+		signalProgress();
 	};
+	if (host.project.progressChanges)
+		yield* Stream.runForEach(host.project.progressChanges(), () =>
+			Effect.sync(signalProgress)
+		).pipe(Effect.forkIn(workspaceScope));
 	const steps = yield* GameTextIndexSteps;
 	const refreshIndex = yield* makeRetainedGameTextIndexWith(
 		Effect.fn("GameText.workspace.prepareWorkspace")(function* (request) {
@@ -258,6 +276,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const dialog = host.files;
 	const files = host.files;
 	const activity = yield* Ref.make({ scans: 0, operation: false });
+	/** Whether a scan or an operation runs is part of progress. */
+	const activityChanged = Effect.sync(signalProgress);
 	const operationBusyReason = () =>
 		Ref.get(activity).pipe(
 			Effect.map((value) =>
@@ -276,9 +296,13 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					value.operation ? [false, value] : [true, { ...value, scans: value.scans + 1 }]
 				).pipe(publication.withPermit);
 				if (!admitted) return unavailable();
+				yield* activityChanged;
 				return yield* restore(scan).pipe(
 					Effect.ensuring(
-						Ref.update(activity, (value) => ({ ...value, scans: value.scans - 1 }))
+						Ref.update(activity, (value) => ({
+							...value,
+							scans: value.scans - 1
+						})).pipe(Effect.andThen(activityChanged))
 					)
 				);
 			})
@@ -1422,8 +1446,11 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				value.operation || value.scans > 0
 					? [false, value]
 					: [true, { ...value, operation: true }]
+			).pipe(Effect.tap(() => activityChanged)),
+		endOperation: () =>
+			Ref.update(activity, (value) => ({ ...value, operation: false })).pipe(
+				Effect.andThen(activityChanged)
 			),
-		endOperation: () => Ref.update(activity, (value) => ({ ...value, operation: false })),
 		refreshAfterOperation: (target, gather) =>
 			Effect.scoped(
 				Effect.gen(function* () {
@@ -1468,6 +1495,27 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		configuredScan: () => sharedScan(fullScan),
 		focus: scoped(focus),
 		progress: scoped(progress),
+		progressChanges: () =>
+			Stream.unwrap(
+				Effect.gen(function* () {
+					// Subscribed before the first read, so no change between them is missed.
+					const changes = yield* PubSub.subscribe(progressChanged);
+					return Stream.concat(
+						Stream.make(undefined),
+						Stream.fromSubscription(changes)
+					).pipe(
+						Stream.mapEffect(() => progress()),
+						Stream.changesWith(
+							(left, right) =>
+								left.phase === right.phase &&
+								left.stage === right.stage &&
+								left.completed === right.completed &&
+								left.total === right.total &&
+								left.detail === right.detail
+						)
+					);
+				})
+			),
 		search: scoped(search),
 		searchRows: scoped(searchRows),
 		chooseQualityRules: scoped(chooseQualityRules),

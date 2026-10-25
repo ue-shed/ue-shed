@@ -26,3 +26,10 @@ findings page no longer spills to one. An `EngineAnswer` carries its `batches`, 
 relations and their columns are generated as `GameTextContract.Relations`. The engine requests
 lose their `output` paths, `SpilledReply` is removed, and `ReadProfile` drops `responseBytes` and
 `fileFallback`; `EngineProfile` counts `batches`, `batchBytes` and `creditStallMs`.
+
+The engine reports progress as it works: opening reports its preparation stages and an
+evaluation each rule it runs. `NativeGameTextEngineClient.execute` and `findingsEvaluate` take a
+progress observer, and a quality scan's `localization_quality` and `source_quality` progress
+counts rules rather than lines. The workspace's `progressChanges()` streams its progress and each
+change to it, and a host's project port may supply `progressChanges` so the workspace follows it
+without polling.

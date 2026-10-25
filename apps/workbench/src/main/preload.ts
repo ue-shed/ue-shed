@@ -209,6 +209,12 @@ const workbenchRendererApi = {
 		refreshConfiguredProject: (refresh = true) =>
 			ipcRenderer.invoke("game-text:configured-refresh", refresh),
 		progress: () => ipcRenderer.invoke("game-text:progress"),
+		onProgress: (listener: (progress: WorkbenchTaskProgress) => void) => {
+			const handler = (_event: Electron.IpcRendererEvent, progress: WorkbenchTaskProgress) =>
+				listener(progress);
+			ipcRenderer.on("game-text:progress-changed", handler);
+			return () => ipcRenderer.removeListener("game-text:progress-changed", handler);
+		},
 		search: (request) => ipcRenderer.invoke("game-text:search", request),
 		searchRows: (request) => ipcRenderer.invoke("game-text:search-rows", request),
 		focus: (request) => ipcRenderer.invoke("game-text:focus", request),

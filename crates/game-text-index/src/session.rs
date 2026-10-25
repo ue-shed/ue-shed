@@ -5,7 +5,7 @@
 //! contract's generated types; the request body is read WTF-8-aware, so lone UTF-16 units and the
 //! rule IR travel inline. After the handshake neither side checks the other's frames: a malformed
 //! one is a defect, and the session ends.
-use crate::engine::{EngineRequest, EngineSession, Profile, Reply};
+use crate::engine::{EngineRequest, EngineSession, Profile, Progress, Reply, Reporter};
 use crate::{Error, ErrorCode, Result};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -25,6 +25,8 @@ pub const MAX_BODY: usize = 8 << 20;
 pub const LAST: u8 = 1;
 /// Batches a request may send that the host hasn't consumed.
 pub const WINDOW: u32 = 8;
+/// The least time between a request's progress frames, stage boundaries aside.
+const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
 /// What a frame carries. Hosts send the first three; the engine sends the rest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -441,8 +443,31 @@ struct Job {
 
 /// A request's answer as it goes out: each part and batch is queued for the writer as soon as
 /// the engine produces it, and batches wait for the host to consume earlier ones.
+/// A request's progress, as `progress` frames: at most one each 100 ms, and every boundary.
+struct Paced {
+    shared: Arc<Shared>,
+    class: Class,
+    id: u32,
+    last: Mutex<Option<Instant>>,
+}
+impl Reporter for Paced {
+    fn report(&self, progress: &Progress, boundary: bool) {
+        let mut last = relock(self.last.lock());
+        if !boundary && last.is_some_and(|at| at.elapsed() < PROGRESS_EVERY) {
+            return;
+        }
+        *last = Some(Instant::now());
+        drop(last);
+        if let Ok(body) = serde_json::to_vec(progress) {
+            self.shared
+                .outbox
+                .push(self.class, frame(Kind::Progress, 0, self.id, &body));
+        }
+    }
+}
+
 struct Outgoing<'a> {
-    shared: &'a Shared,
+    shared: &'a Arc<Shared>,
     class: Class,
     id: u32,
     flow: &'a Flow,
@@ -451,6 +476,14 @@ struct Outgoing<'a> {
     stalled: Duration,
 }
 impl Reply for Outgoing<'_> {
+    fn reporter(&self) -> Arc<dyn Reporter> {
+        Arc::new(Paced {
+            shared: Arc::clone(self.shared),
+            class: self.class,
+            id: self.id,
+            last: Mutex::new(None),
+        })
+    }
     fn part(&mut self, body: Vec<u8>) -> Result<()> {
         self.shared
             .outbox
@@ -499,7 +532,7 @@ fn failure(id: u32, code: ErrorCode, message: String) -> Vec<u8> {
 
 /// Runs one request and queues its frames. A panic is contained to the request: shared state is
 /// immutable or behind locks that don't poison, so the session goes on.
-fn run(shared: &Shared, job: Job) {
+fn run(shared: &Arc<Shared>, job: Job) {
     let Job {
         id,
         class,

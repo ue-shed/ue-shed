@@ -7,7 +7,7 @@ import {
 	type LocalizationCultureState
 } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, beforeEach, expect, vi } from "vitest";
 import {
 	archiveEntry,
@@ -168,8 +168,7 @@ export function client(
 			).focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
-		progress: () =>
-			Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
+		progress: Stream.make({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
 		locateAsset: (objectPath) =>
 			Effect.succeed({
 				status: "located",

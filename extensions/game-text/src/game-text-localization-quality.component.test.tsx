@@ -13,7 +13,7 @@ import {
 } from "@ue-shed/game-text/corpus";
 import type { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { qualityFixture } from "../../../packages/game-text/src/localization-workspace.test-support.js";
 import { cultureCode } from "../../../packages/game-text/src/localization.test-support.js";
@@ -52,8 +52,7 @@ function client(): GameTextClientApi {
 			const focus = text.focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
-		progress: () =>
-			Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
+		progress: Stream.make({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
 		locateAsset: () => Effect.die("Not used"),
 		chooseQualityRules: () => reviewed(document),
 		previewQualityRules: reviewed,

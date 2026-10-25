@@ -185,12 +185,13 @@ Today's `search` request carries Browse's own filter types: `Clause { field, op,
 
 ## 7. Progress
 
-- **`progress` frames** carry `{ stage, completed, total?, unit }`. The engine sends at most one every 100 ms per request, plus one at each stage boundary.
-    - `findings_evaluate` reports per rule and per row chunk. Today the host reports two events, before and after (`gt/index-steps.ts:807-828`).
-    - `open` reports its preparation stages (`ix/engine.rs:375-408`).
+- **`progress` frames** carry `{ stage, completed, total?, unit }`. The engine sends at most one every 100 ms per request, plus one at each stage boundary. A request reports through a thread-safe reporter the session paces, so rayon workers inside an evaluation report too.
+    - `findings_evaluate` reports each stage it enters and each rule it runs, in `rules` of the document's rules. Evaluation runs a rule over the whole relation at once, so a rule is its smallest unit of work; there are no row chunks to count. Today the host reports two events, before and after (`gt/index-steps.ts:807-828`).
+    - `open` reports its three preparation stages (`ix/engine.rs:375-408`).
     - A sink reports rows written.
-- **TypeScript.** A call that reports progress returns `{ progress: Stream<Progress>, result: Effect<…> }`. The workspace publishes progress through a `PubSub` instead of holding the latest event (`gt/workspace.ts:218-221`).
-- **Workbench** forwards it to the renderer as `game-text:progress` events through the window's `send` (`apps/workbench/src/main/adapters/electron-window.ts:203-220`). The route subscribes to them; its 250 ms poll (`ext/game-text-query-route.tsx:309`) and the `game-text:progress` request are deleted.
+- **TypeScript.** A request that reports progress takes an observer, which the session calls for each `progress` frame. That is Game Text's existing progress shape, `GameTextIndexProgressReporter`: an operation-scoped callback the host provides, with no state shared between operations. A quality scan's `localization_quality` and `source_quality` events count rules, not lines, and the line count the scan read only for its progress goes. Opening reports `opening` with its stages.
+- **The workspace** signals every change to what its progress reads (Game Text's stages, its scans and operations, and the host's project progress) through a sliding `PubSub`, and `progressChanges()` streams the progress, then each change, once per distinct value. It keeps `progress()` for a one-off read. The host's project port gains an optional `progressChanges`; Workbench's project progress becomes a `SubscriptionRef`.
+- **Workbench** forwards the changes to the window as `game-text:progress-changed` events through its `send`, at most ten a second, the last always sent (`apps/workbench/src/main/adapters/electron-window.ts:203-220`). The route subscribes to the client's `progress` stream, and its 250 ms poll (`ext/game-text-query-route.tsx:309`) is deleted. The `game-text:progress` request stays as the stream's first read: a route that mounts mid-phase, during a stage with no counts such as joining, would otherwise show nothing until the next change.
 - **Operations' 500 ms state poll** (`ext/game-text-operations.tsx:122`) reads operation state, not the engine, and stays.
 
 ## 8. Sinks

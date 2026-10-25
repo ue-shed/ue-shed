@@ -305,10 +305,7 @@ export function GameTextRoute(props: {
 		const started = performance.now();
 		preparationStarted = started;
 		setElapsedSeconds(0);
-		progressSubscription.subscribe(
-			Stream.fromEffectSchedule(props.client.progress(), Schedule.spaced("250 millis")),
-			{ onValue: setProgress }
-		);
+		progressSubscription.subscribe(props.client.progress, { onValue: setProgress });
 		elapsedSubscription.subscribe(
 			Stream.fromEffectSchedule(
 				Effect.sync(() => Math.floor((performance.now() - started) / 1000)),
@@ -756,7 +753,10 @@ export function GameTextRoute(props: {
 		setError(undefined);
 		setSearchFailed(false);
 		setScanNotice(undefined);
-		setProgress({ completed: 0, total: 0, phase: "idle", stage: "game_text" });
+		// A route already following progress has the host's current value; a reset would hide it
+		// until the next change.
+		if (!observingProgress)
+			setProgress({ completed: 0, total: 0, phase: "idle", stage: "game_text" });
 		refreshAction.run(props.client.loadConfiguredProject(refresh), {
 			onFailure: (cause) => {
 				setPreparing(false);

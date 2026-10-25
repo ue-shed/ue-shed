@@ -4,18 +4,26 @@ import { AssetReaderError, type AssetReaderConfiguration } from "./asset-reader.
 import {
 	answerJson,
 	type EngineAnswer,
+	type EngineProgressObserver,
 	GameTextEngineSession,
 	type GameTextEngineProcessFactory
 } from "./game-text-engine-session.js";
 
-export { answerJson, answerRows, type EngineAnswer } from "./game-text-engine-session.js";
+export {
+	answerJson,
+	answerRows,
+	type EngineAnswer,
+	type EngineProgressObserver
+} from "./game-text-engine-session.js";
 
 /** Native engine calls share their process scope; reader handles never escape that scope. */
 export class NativeGameTextEngineClient extends Context.Service<
 	NativeGameTextEngineClient,
 	{
+		/** Runs a request; `progress` watches its progress frames, when it sends any. */
 		readonly execute: (
-			request: GameTextContract.EngineRequest
+			request: GameTextContract.EngineRequest,
+			progress?: EngineProgressObserver
 		) => Effect.Effect<EngineAnswer, AssetReaderError>;
 	}
 >()("@ue-shed/unreal-assets/NativeGameTextEngineClient") {}
@@ -59,9 +67,10 @@ export const nativeGameTextEngineClientLayer = (
 				(session) => Effect.promise(() => session.close())
 			);
 			const call = Effect.fn("NativeGameTextEngine.call")(function* (
-				request: GameTextContract.EngineRequest
+				request: GameTextContract.EngineRequest,
+				progress?: EngineProgressObserver
 			) {
-				const answer = yield* session.call(request);
+				const answer = yield* session.call(request, progress);
 				yield* Effect.annotateCurrentSpan({
 					"game_text.engine.action": request.action,
 					"game_text.engine.batches": answer.profile.batches,
@@ -99,12 +108,12 @@ export const nativeGameTextEngineClientLayer = (
 				yield* Ref.set(verified, session.generation);
 			});
 			return NativeGameTextEngineClient.of({
-				execute: Effect.fn("NativeGameTextEngine.execute")(function* (request) {
+				execute: Effect.fn("NativeGameTextEngine.execute")(function* (request, progress) {
 					const generation = session.generation;
 					if (generation === undefined || generation !== (yield* Ref.get(verified)))
 						yield* handshake;
 					const checked = yield* Ref.get(verified);
-					const answer = yield* call(request);
+					const answer = yield* call(request, progress);
 					// Only a call starts a process. A different one means the checked process exited and
 					// this call ran on its unchecked replacement; one that exited after replying is fine.
 					const now = session.generation;

@@ -14,7 +14,7 @@ import {
 	type TextOpenGroupRows
 } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, beforeEach, expect, vi } from "vitest";
 import {
 	referenceSearchRows,
@@ -141,8 +141,7 @@ export function makeClient(
 	return {
 		loadConfiguredProject: () =>
 			Effect.succeed({ status: "completed", summary: query.summary() }),
-		progress: () =>
-			Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
+		progress: Stream.make({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
 		search: (request) => Effect.succeed({ status: "ready", page: query.search(request) }),
 		searchRows: (request) =>
 			Effect.succeed({ status: "ready", page: referenceSearchRows(query.search, request) }),

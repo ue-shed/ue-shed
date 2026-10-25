@@ -73,8 +73,7 @@ function client(operations: NonNullable<GameTextClientApi["operations"]>): GameT
 			const focus = text.focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
-		progress: () =>
-			Effect.succeed({ phase: "idle", completed: 0, total: 0, stage: "game_text" }),
+		progress: Stream.make({ phase: "idle", completed: 0, total: 0, stage: "game_text" }),
 		locateAsset: () => Effect.die("unused"),
 		chooseQualityRules: () => Effect.die("unused"),
 		qualityFocus: () => Effect.die("unused"),

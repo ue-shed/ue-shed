@@ -148,8 +148,10 @@ export const acceptReview = (
 
 /** A reader's native findings; coordinates belong to its pinned joined snapshot. */
 export interface NativeFindings {
+	/** Evaluates a document; `progress` watches the engine's stages and the rules it runs. */
 	readonly findingsEvaluate: (
-		document: RuleDocumentV4
+		document: RuleDocumentV4,
+		progress?: (progress: GameTextContract.EngineProgress) => void
 	) => Effect.Effect<GameTextContract.FindingsEvaluation, GameTextIndexError>;
 	/** Registers a review's accepted findings for a layer; reads pass the returned key. */
 	readonly findingsAccept: (

@@ -1,5 +1,5 @@
 import type { LocalizationFileAccess } from "@ue-shed/localization";
-import type { Effect, Layer } from "effect";
+import type { Effect, Layer, Stream } from "effect";
 
 /**
  * The project a host has selected. The workspace never chooses or changes the project; it reads
@@ -51,6 +51,11 @@ export interface GameTextWorkspaceProject {
 	>;
 	/** The host's own project progress, shown while the host enumerates or scans the project. */
 	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
+	/**
+	 * Each change to the host's project progress, so the workspace's progress follows it without
+	 * polling. A host without one is read when Game Text's own progress changes.
+	 */
+	readonly progressChanges?: () => Stream.Stream<unknown>;
 }
 
 /**

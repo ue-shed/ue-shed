@@ -58,7 +58,7 @@ pub fn identity() -> ContractIdentity {
 #[cfg(test)]
 mod tests {
     use crate::batch::{BatchHeader, ColumnHeader, ColumnType, Missing, StringsHeader};
-    use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile};
+    use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile, Progress};
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
         Order, Page, QueryRequest, RuleTotal, View,
@@ -114,6 +114,7 @@ mod tests {
             EngineFailure::decl(&config),
             EngineError::decl(&config),
             Profile::decl(&config),
+            Progress::decl(&config),
             IoMetrics::decl(&config),
             BatchHeader::decl(&config),
             ColumnHeader::decl(&config),

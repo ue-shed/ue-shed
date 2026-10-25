@@ -191,6 +191,7 @@ export {
 	answerJson,
 	answerRows,
 	type EngineAnswer,
+	type EngineProgressObserver,
 	NativeGameTextEngineClient,
 	nativeGameTextEngineClientLayer
 } from "./game-text-engine-client.js";

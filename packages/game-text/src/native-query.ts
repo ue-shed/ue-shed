@@ -4,10 +4,12 @@ import {
 	answerJson,
 	answerRows,
 	type EngineAnswer,
+	type EngineProgressObserver,
 	NativeGameTextEngineClient
 } from "@ue-shed/unreal-assets";
 import type { GameTextContract, GameTextIndexConfiguration } from "@ue-shed/protocol";
 import { GameTextIndexError } from "./index-contract.js";
+import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { TextCorpusReportHeader } from "./corpus-summary.js";
 import {
 	TextCorpus,
@@ -93,7 +95,8 @@ const failed = (operation: string, cause: unknown) =>
 interface Pinned {
 	readonly reader: string;
 	readonly execute: (
-		request: GameTextContract.EngineRequest
+		request: GameTextContract.EngineRequest,
+		progress?: EngineProgressObserver
 	) => Effect.Effect<EngineAnswer, GameTextIndexError>;
 }
 
@@ -114,23 +117,29 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 > {
 	const engine = yield* NativeGameTextEngineClient;
 	const execute = Effect.fn("GameTextIndex.nativeCall")(
-		(request: GameTextContract.EngineRequest) =>
-			engine.execute(request).pipe(
+		(request: GameTextContract.EngineRequest, progress?: EngineProgressObserver) =>
+			engine.execute(request, progress).pipe(
 				Effect.mapError((cause) => failed(request.action, cause)),
 				Effect.tapError(() => input.onFailure ?? Effect.void)
 			)
 	);
+	const reportProgress = yield* GameTextIndexProgressReporter;
 	// The reader closes with the model's scope.
 	const opened = yield* Effect.acquireRelease(
-		execute({
-			action: "open",
-			configuration: input.configuration,
-			expectedGeneration: input.generation,
-			expectedJoined: input.joinedKey,
-			policy: {
-				audienceRules: input.audienceRules ?? TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
-			}
-		}).pipe(Effect.map(answerJson<GameTextContract.OpenReply>)),
+		execute(
+			{
+				action: "open",
+				configuration: input.configuration,
+				expectedGeneration: input.generation,
+				expectedJoined: input.joinedKey,
+				policy: {
+					audienceRules:
+						input.audienceRules ?? TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
+				}
+			},
+			({ completed, total }) =>
+				reportProgress({ phase: "opening", completed, total: total ?? 0 })
+		).pipe(Effect.map(answerJson<GameTextContract.OpenReply>)),
 		(opened) =>
 			opened === undefined
 				? Effect.void
@@ -353,9 +362,13 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	 * A findings reply as the contract's type. The session's handshake checked the engine's
 	 * contract, so the reply is parsed, not decoded.
 	 */
-	const engineReply = <T>(pinned: Pinned, request: GameTextContract.EngineRequest) =>
+	const engineReply = <T>(
+		pinned: Pinned,
+		request: GameTextContract.EngineRequest,
+		progress?: EngineProgressObserver
+	) =>
 		Effect.gen(function* () {
-			const reply = answerJson<T>(yield* pinned.execute(request));
+			const reply = answerJson<T>(yield* pinned.execute(request, progress));
 			if (reply === undefined)
 				return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
 			return reply;
@@ -474,16 +487,24 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
 		exportWithSignals(pinned, request);
 	const model: NativeTextQuery = {
-		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")(function* (document) {
-			const requestStart = yield* Clock.currentTimeNanos;
-			return yield* engineReply<GameTextContract.FindingsEvaluation>(pinned, {
-				action: "findings_evaluate",
-				reader,
-				// The rule program travels inline; the engine reads it WTF-8-aware.
-				rules: enabledRuleDocument(document),
-				collationLocale: new Intl.Collator().resolvedOptions().locale
-			}).pipe(Effect.tap((result) => annotateFindingsProfile(result.profile, requestStart)));
-		}),
+		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")(
+			function* (document, progress) {
+				const requestStart = yield* Clock.currentTimeNanos;
+				return yield* engineReply<GameTextContract.FindingsEvaluation>(
+					pinned,
+					{
+						action: "findings_evaluate",
+						reader,
+						// The rule program travels inline; the engine reads it WTF-8-aware.
+						rules: enabledRuleDocument(document),
+						collationLocale: new Intl.Collator().resolvedOptions().locale
+					},
+					progress
+				).pipe(
+					Effect.tap((result) => annotateFindingsProfile(result.profile, requestStart))
+				);
+			}
+		),
 		findingsAccept: Effect.fn("GameText.native.findingsAccept")(function* (key, accepted) {
 			// Larger reviews go in chunks, each naming the set it adds to.
 			let previous: string | undefined;

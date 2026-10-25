@@ -175,9 +175,10 @@ impl EngineQuery {
         collator: &HostCollator,
         cancelled: &AtomicBool,
         request: Option<&Measure>,
+        reporter: Option<Arc<dyn crate::engine::Reporter>>,
     ) -> Result<EvaluatedFindings> {
         self.reader.begin_evaluation()?;
-        let evaluated = self.evaluate_scoped(program, collator, cancelled, request);
+        let evaluated = self.evaluate_scoped(program, collator, cancelled, request, reporter);
         self.reader.end_evaluation();
         evaluated
     }
@@ -187,12 +188,16 @@ impl EngineQuery {
         collator: &HostCollator,
         cancelled: &AtomicBool,
         request: Option<&Measure>,
+        reporter: Option<Arc<dyn crate::engine::Reporter>>,
     ) -> Result<EvaluatedFindings> {
         let elapsed = Measure::start();
         #[cfg(test)]
         let mut elapsed = elapsed;
         let mut arena = super::columns::Arena::new(self.reader.dictionary_count()?)?;
         arena.recorder = super::stages::Recorder::at(request.unwrap_or(&elapsed));
+        if let Some(reporter) = reporter {
+            arena.recorder.report_to(reporter, program.rules.len());
+        }
         let mut rules = (0..program
             .rules
             .iter()
@@ -500,6 +505,21 @@ impl EngineQuery {
         locale: &str,
         cancelled: &AtomicBool,
     ) -> Result<String> {
+        self.findings_evaluate_reporting(
+            text,
+            locale,
+            cancelled,
+            Arc::new(crate::engine::Unwatched),
+        )
+    }
+    /// Evaluates a rule document, reporting each rule it evaluates to `reporter`.
+    pub fn findings_evaluate_reporting(
+        &self,
+        text: &str,
+        locale: &str,
+        cancelled: &AtomicBool,
+        reporter: Arc<dyn crate::engine::Reporter>,
+    ) -> Result<String> {
         let elapsed = Measure::start();
         checkpoint(cancelled)?;
         let program = compile(text)?;
@@ -555,7 +575,13 @@ impl EngineQuery {
                 profile: evaluation_profile,
                 #[cfg(test)]
                     digest: _,
-            } = self.evaluate_findings(&program, &collator, cancelled, Some(&elapsed))?;
+            } = self.evaluate_findings(
+                &program,
+                &collator,
+                cancelled,
+                Some(&elapsed),
+                Some(reporter),
+            )?;
             let publish = Measure::start();
             let mut ordered = program.rules.iter().collect::<Vec<_>>();
             ordered.sort_by_key(|rule| rule.ordinal);

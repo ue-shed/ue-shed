@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "ae01ec623f170d569a509e865a822757773148651c00435fc81feb8989b009f3"
+	contractHash: "bcdd431ae6dcd1e3659f8ec6f9b8c9f13f9817f7cdca9435300d6eb241fe281f"
 } as const;
 
 /**
@@ -78,6 +78,12 @@ batches: number, batchBytes: number,
  * How long the request waited for the host to consume its batches.
  */
 creditStallMs: number, };
+
+export type EngineProgress = { stage: string, completed: number, total?: number, 
+/**
+ * What `completed` and `total` count: `stages` or `rules`.
+ */
+unit: string, };
 
 export type IoMetrics = { opens: number, sectionLoads: number, storedBytes: number, rawBytes: number, fullVerifies: number, indexBytes: number, writtenBytes: number, };
 

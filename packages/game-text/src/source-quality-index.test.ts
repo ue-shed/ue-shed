@@ -1,3 +1,4 @@
+import { effectiveRuleDocument, enabledRuleDocument } from "./rules/effective.js";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { it } from "@effect/vitest";
@@ -9,6 +10,28 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { GameTextRuleDocument, decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 import { expectSameSourceQuality } from "./source-quality-index.test-support.js";
+
+/**
+ * A quality scan's progress in rules: nothing run first, every rule run last with the findings,
+ * and between them, as the engine paces them, rising counts of rules run.
+ */
+const expectRuleProgress = (
+	events: readonly GameTextIndexProgress[],
+	phase: GameTextIndexProgress["phase"],
+	rules: number,
+	findings: number
+) => {
+	expect(events[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
+	expect(events.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
+	const between = events.slice(1, -1);
+	for (const [index, event] of between.entries()) {
+		expect(event).toEqual({ phase, completed: event.completed, total: rules });
+		expect(event.completed).toBeGreaterThan(
+			index === 0 ? 0 : between[index - 1]!.completed - 1
+		);
+		expect(event.completed).toBeLessThanOrEqual(rules);
+	}
+};
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
 
@@ -357,7 +380,7 @@ it.live("a partial package's diagnostics and coverage reach the indexed report",
 );
 
 it.live(
-	"source quality reports progress before and after the engine checks, and keeps every unit",
+	"source quality reports progress in rules as the engine runs them, and keeps every unit",
 	() =>
 		Effect.gen(function* () {
 			const fixture = yield* makeIndexRegressionFixture();
@@ -372,13 +395,13 @@ it.live(
 						calls.push(progress);
 					})
 				);
-				// The generated keys, the shared key, the conflicting key and the invariant text.
-				const total = 700 + 1 + 1 + 1;
 				const phase = "source_quality";
-				expect(calls).toEqual([
-					{ phase, completed: 0, total, findings: 0 },
-					{ phase, completed: total, total, findings: indexed.summary().findingCount }
-				]);
+				expectRuleProgress(
+					calls,
+					phase,
+					enabledRuleDocument(effectiveRuleDocument(documents.everything)).rules.length,
+					indexed.summary().findingCount
+				);
 				// No rule reads nothing: progress still starts and ends.
 				const empty: GameTextIndexProgress[] = [];
 				yield* result
@@ -388,8 +411,10 @@ it.live(
 							empty.push(progress)
 						)
 					);
-				expect(empty[0]).toEqual({ phase, completed: 0, total, findings: 0 });
-				expect(empty.at(-1)).toEqual({ phase, completed: total, total, findings: 0 });
+				const none = enabledRuleDocument(effectiveRuleDocument(documents.none)).rules
+					.length;
+				expect(empty[0]).toEqual({ phase, completed: 0, total: none, findings: 0 });
+				expect(empty.at(-1)).toEqual({ phase, completed: none, total: none, findings: 0 });
 			}).pipe(Effect.provide(fixture.layer()));
 		}).pipe(Effect.scoped),
 	120_000

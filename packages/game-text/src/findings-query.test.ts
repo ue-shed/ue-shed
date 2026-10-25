@@ -1,3 +1,4 @@
+import { effectiveRuleDocument, enabledRuleDocument } from "./rules/effective.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -21,6 +22,28 @@ import {
 import { TextQualityFindingId } from "./quality-query.js";
 import { type BuiltInCheckEntry, GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES, STARTER_CHECKS } from "./starter-rules.js";
+
+/**
+ * A quality scan's progress in rules: nothing run first, every rule run last with the findings,
+ * and between them, as the engine paces them, rising counts of rules run.
+ */
+const expectRuleProgress = (
+	events: readonly GameTextIndexProgress[],
+	phase: GameTextIndexProgress["phase"],
+	rules: number,
+	findings: number
+) => {
+	expect(events[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
+	expect(events.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
+	const between = events.slice(1, -1);
+	for (const [index, event] of between.entries()) {
+		expect(event).toEqual({ phase, completed: event.completed, total: rules });
+		expect(event.completed).toBeGreaterThan(
+			index === 0 ? 0 : between[index - 1]!.completed - 1
+		);
+		expect(event.completed).toBeLessThanOrEqual(rules);
+	}
+};
 /**
  * One problem per key pattern; German carries the translation problems. `deSource` is the source
  * German's archive entry records, when it was translated from older text; `dePO` is a pending PO
@@ -601,10 +624,13 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 				.pipe(
 					Effect.provideService(GameTextIndexProgressReporter, (step) => (last = step))
 				);
+			const rules = enabledRuleDocument(
+				effectiveRuleDocument(STARTER_CHECK_RULES, { review })
+			).rules.length;
 			expect(last).toEqual({
 				phase: "localization_quality",
-				completed: join.lines.length,
-				total: join.lines.length,
+				completed: rules,
+				total: rules,
 				findings: (yield* result.localizationCheck(STARTER_CHECK_RULES, {})).findings.length
 			});
 		}).pipe(Effect.provide(fixture.layer()));
@@ -645,7 +671,7 @@ it.live("queried quality over more lines than a page equals the in-memory checks
 					legacy.search({ ...request, offset: 500 })
 				);
 			}
-			// Progress: once before the engine checks, with nothing checked, and once after.
+			// Progress in rules: before the engine runs, as it runs each rule, and after.
 			const progress: GameTextIndexProgress[] = [];
 			const reported = yield* result
 				.localizationQuality(STARTER_CHECK_RULES)
@@ -654,14 +680,14 @@ it.live("queried quality over more lines than a page equals the in-memory checks
 						progress.push(step)
 					)
 				);
-			const totalLines = join.lines.length;
-			const phase = "localization_quality";
 			const request = { target: join.target, filter: "all" as const };
 			const exported = yield* reported.workspace.export(request);
-			expect(progress).toEqual([
-				{ phase, completed: 0, total: totalLines, findings: 0 },
-				{ phase, completed: totalLines, total: totalLines, findings: exported.total }
-			]);
+			expectRuleProgress(
+				progress,
+				"localization_quality",
+				enabledRuleDocument(effectiveRuleDocument(STARTER_CHECK_RULES)).rules.length,
+				exported.total
+			);
 			// The callback changes nothing: the same findings, order and IDs.
 			const plain = yield* result.localizationQuality(STARTER_CHECK_RULES);
 			expect(yield* plain.workspace.export(request)).toEqual(exported);

@@ -8,7 +8,7 @@ import {
 	type TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Deferred, Effect } from "effect";
+import { Deferred, Effect, Stream } from "effect";
 import { expect, it, vi } from "vitest";
 import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
@@ -626,13 +626,14 @@ it("keeps scan progress visible until the scan completes", async () => {
 				scanning = true;
 				return Deferred.await(response);
 			},
-			progress: () =>
+			progress: Stream.fromEffect(
 				Effect.sync(() => ({
 					completed: scanning ? 1 : 0,
 					total: scanning ? 2 : 0,
 					phase: scanning ? "scanning" : "idle",
 					stage: "game_text"
 				}))
+			)
 		}),
 		undefined,
 		"progress-project"
@@ -665,14 +666,13 @@ it("keeps progress through translations and the first results query", async () =
 			localizationTargets: () => Deferred.await(translations),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),
-			progress: () =>
-				Effect.succeed({
-					completed: 3,
-					total: 21,
-					phase: "scanning",
-					stage: "game_text",
-					detail: "Reading localization files"
-				}),
+			progress: Stream.make({
+				completed: 3,
+				total: 21,
+				phase: "scanning",
+				stage: "game_text",
+				detail: "Reading localization files"
+			}),
 			search: () => Deferred.await(firstPage)
 		})
 	);

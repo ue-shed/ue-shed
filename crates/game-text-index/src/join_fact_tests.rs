@@ -6,6 +6,7 @@ use crate::join_columns::OCCURRENCE_FIELDS;
 use crate::store::{Configuration, Store};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 struct Fixture {
@@ -1013,6 +1014,59 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     assert_eq!(
         unstaged(query.findings_page(crate::json_value::parse(&page(key, 50))?, &cancelled)?),
         unstaged(lines)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_evaluation_reports_its_stages_and_each_rule_it_runs() -> Result<()> {
+    #[derive(Default)]
+    struct Reports(std::sync::Mutex<Vec<(crate::engine::Progress, bool)>>);
+    impl crate::engine::Reporter for Reports {
+        fn report(&self, progress: &crate::engine::Progress, boundary: bool) {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push((progress.clone(), boundary));
+        }
+    }
+    let mut fixture = Fixture::new()?;
+    fixture.file("Game.manifest","manifest",&[json!({"namespace":"UI","key":"K","source":"Take {Count}","path":"/Game/Text/Example.Example.Label"})])?;
+    fixture.file(
+        "en.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"K","source":"Take {Count}","translation":"Take {Count}"})],
+    )?;
+    fixture.file("de.archive","archive",&[json!({"namespace":"UI","key":"K","source":"Take {Count}","translation":"Nimm {Anzahl}"})])?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&[json!({"namespace":"UI","key":"K","source":"Take {Count}","object":"/Game/Text/Example.Example","property":"Label"})])?;
+    fixture.lines()?;
+    let rules = example_document(&["format_argument_renamed", "whitespace"], None)?;
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    let cancelled = AtomicBool::new(false);
+    let query = EngineQuery::open(&configuration, None)?;
+    let reports = Arc::new(Reports::default());
+    query.findings_evaluate_reporting(&rules, "en", &cancelled, Arc::clone(&reports) as _)?;
+    let reports = reports
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Stage boundaries name their stage; each rule run counts one more of the document's rules.
+    assert!(reports.iter().any(|(progress, boundary)| *boundary
+        && progress.stage == "relation.occurrences"
+        && progress.completed == 0));
+    let counted = reports
+        .iter()
+        .filter(|(_, boundary)| !boundary)
+        .map(|(progress, _)| progress.completed)
+        .collect::<Vec<_>>();
+    assert_eq!(counted, [1, 2]);
+    assert!(
+        reports
+            .iter()
+            .all(|(progress, _)| progress.unit == "rules" && progress.total == Some(2))
     );
     Ok(())
 }

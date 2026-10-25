@@ -41,7 +41,8 @@ import {
 	Ref,
 	Schema,
 	Semaphore,
-	Stream
+	Stream,
+	SubscriptionRef
 } from "effect";
 import { join } from "node:path";
 import {
@@ -124,6 +125,8 @@ export interface WorkbenchProjectApi {
 	readonly inputAtlas: () => Effect.Effect<EnhancedInputRunResultValue>;
 	readonly openRecent: (projectRoot: string) => Effect.Effect<WorkbenchProjectState>;
 	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
+	/** The project's progress, then each change to it. */
+	readonly progressChanges: () => Stream.Stream<WorkbenchTaskProgress>;
 	readonly recent: () => Effect.Effect<readonly WorkbenchRecentProject[]>;
 	/** Selected identity only; config queries must not require a package-index refresh. */
 	readonly selectedProject: () => Effect.Effect<
@@ -180,7 +183,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		const selectedSummary = yield* Ref.make<Option.Option<ProjectSummaryInventory>>(
 			Option.none()
 		);
-		const projectIndexProgress = yield* Ref.make<WorkbenchTaskProgress>({
+		const projectIndexProgress = yield* SubscriptionRef.make<WorkbenchTaskProgress>({
 			completed: 0,
 			phase: "idle",
 			stage: "project_index",
@@ -357,30 +360,34 @@ export const WorkbenchProjectLive = Layer.effect(
 			).pipe(
 				Stream.provideService(ProjectIndex, projectIndexImplementation),
 				Stream.tap((event) =>
-					Ref.update(projectIndexProgress, (previous): WorkbenchTaskProgress => {
-						if (event._tag === "Started") {
+					SubscriptionRef.update(
+						projectIndexProgress,
+						(previous): WorkbenchTaskProgress => {
+							if (event._tag === "Started") {
+								return {
+									completed: 0,
+									phase: "enumerating",
+									stage: "project_index",
+									total: 0
+								};
+							}
+							if (event._tag === "Progress") {
+								return {
+									completed: event.completedPackages,
+									phase:
+										event.phase === "enumerating" ? "enumerating" : "scanning",
+									stage: "project_index",
+									total: event.totalPackages ?? previous.total
+								};
+							}
 							return {
-								completed: 0,
-								phase: "enumerating",
+								completed: event.summary.packageCount,
+								phase: "ready",
 								stage: "project_index",
-								total: 0
+								total: event.summary.packageCount
 							};
 						}
-						if (event._tag === "Progress") {
-							return {
-								completed: event.completedPackages,
-								phase: event.phase === "enumerating" ? "enumerating" : "scanning",
-								stage: "project_index",
-								total: event.totalPackages ?? previous.total
-							};
-						}
-						return {
-							completed: event.summary.packageCount,
-							phase: "ready",
-							stage: "project_index",
-							total: event.summary.packageCount
-						};
-					})
+					)
 				),
 				Stream.runFold(
 					() => Option.none<ProjectIndexSummary>(),
@@ -388,7 +395,7 @@ export const WorkbenchProjectLive = Layer.effect(
 						event._tag === "Completed" ? Option.some(event.summary) : current
 				),
 				Effect.onExit((exit) =>
-					Ref.update(
+					SubscriptionRef.update(
 						projectIndexProgress,
 						(previous): WorkbenchTaskProgress => ({
 							...previous,
@@ -541,7 +548,7 @@ export const WorkbenchProjectLive = Layer.effect(
 				}
 
 				const committed = yield* recoverInventory(projectRoot, status.summary);
-				yield* Ref.set(projectIndexProgress, {
+				yield* SubscriptionRef.set(projectIndexProgress, {
 					completed: status.summary.packageCount,
 					phase: "ready",
 					stage: "project_index",
@@ -678,8 +685,9 @@ export const WorkbenchProjectLive = Layer.effect(
 			);
 		});
 		const progress = Effect.fn("Workbench.WorkbenchProject.progress")(function* () {
-			return yield* Ref.get(projectIndexProgress);
+			return yield* SubscriptionRef.get(projectIndexProgress);
 		});
+		const progressChanges = () => SubscriptionRef.changes(projectIndexProgress);
 		const open = Effect.fn("Workbench.WorkbenchProject.open")(function* (
 			projectRoot: string,
 			forceRefresh: boolean
@@ -968,6 +976,7 @@ export const WorkbenchProjectLive = Layer.effect(
 			inputAtlas,
 			openRecent,
 			progress,
+			progressChanges,
 			recent,
 			selectedProject,
 			savedProject,
@@ -981,6 +990,7 @@ export type WorkbenchProjectTestApi = Omit<
 	| "candidates"
 	| "openRecent"
 	| "progress"
+	| "progressChanges"
 	| "recent"
 	| "selectedProject"
 	| "refresh"
@@ -990,7 +1000,13 @@ export type WorkbenchProjectTestApi = Omit<
 	Partial<
 		Pick<
 			WorkbenchProjectApi,
-			"candidates" | "progress" | "selectedProject" | "refresh" | "count" | "sample"
+			| "candidates"
+			| "progress"
+			| "progressChanges"
+			| "selectedProject"
+			| "refresh"
+			| "count"
+			| "sample"
 		>
 	> &
 	(
@@ -1025,6 +1041,7 @@ export function makeWorkbenchProjectTestLayer(
 			refresh: service.refresh ?? service.current,
 			count: service.count ?? unindexed,
 			candidates: service.candidates ?? unindexed,
+			progressChanges: service.progressChanges ?? (() => Stream.empty),
 			progress:
 				service.progress ??
 				(() =>

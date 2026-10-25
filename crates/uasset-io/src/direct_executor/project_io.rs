@@ -579,7 +579,9 @@ pub(crate) fn extract_texture_with_cancellation(
 /// read, so the default uses the machine's cores, bounded so each worker's package and decoded
 /// model stay within a predictable memory budget. Requests can still set `limits.concurrency`.
 fn default_projection_workers() -> usize {
-    std::thread::available_parallelism().map_or(4, |cores| cores.get().clamp(4, 8))
+    // Twelve workers are the fastest count measured whose reader peak stays under 5 GiB on the
+    // released project.
+    std::thread::available_parallelism().map_or(4, |cores| cores.get().clamp(4, 12))
 }
 
 #[derive(Clone, Copy)]

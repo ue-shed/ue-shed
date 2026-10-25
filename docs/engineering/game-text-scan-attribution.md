@@ -800,3 +800,159 @@ this cancellation failure. Their retained baselines and the already passing benc
 comparisons remain unchanged; no new exclusions were introduced. The cancellation matrix and
 four-input byte-identity gate remain incomplete. The lead's separate memory work is not
 re-measured or resolved by this follow-up.
+
+### Cancellation lifecycle fix
+
+The reader-running-to-completion hypothesis was not borne out. Before the fix, a controlled
+mid-read regression showed that the package and import finalizers did run before
+`Fiber.interrupt` returned, but **after the writer session had already been released**.
+Effect's `forkChild` supervision interrupts children when their parent fiber terminates;
+that is later than unwinding the writer's nested resource scopes. The branches were not
+detached, and no uninterruptible reader operation explained the long post-interrupt lifetime.
+
+A bounded diagnostic reran localization cancellation against the pre-fix product code and
+retained at most three process-tree observations (PID, role and cumulative CPU only; no command
+lines, input identities or memory samples). At 447 ms and 3,153 ms after interrupt returned,
+the sole surviving descendant was the same `native-session` process, PID 20988, with only
+15.625 ms CPU at both observations. No native one-shot reader remained. That session exited
+at 59.360 s; interrupt had returned in 23 ms and the retry succeeded in 83.309 s. The artifact
+is `$results\cancel-localization-native-r10.json`.
+
+The long-lived descendant was the idle writer. Its session finalizer sent native `end`
+successfully while unwinding an interrupted parse, setting `endedCleanly = true`. The pool
+invalidation finalizer checked only that flag, so it returned the interrupted operation's
+client to the pool instead of closing it. The configured usage TTL is 30 s, and Effect 4.0.4's
+usage strategy checks once per TTL: retirement can take almost 60 s. This explains the
+observed 59 s lifetime without a reader continuing extraction. Finalizers run with Effect's
+normal interruption masking; the problem was scope ordering and successful-end bookkeeping,
+not a long uninterruptible read.
+
+The fix retains one writer session and both concurrent branches inside `prepareTarget`:
+
+- Fork both branches with `Effect.forkScoped` inside a nested `Effect.scoped`. Closing that
+  scope interrupts the branches and awaits their finalizers before closing the writer lease.
+- Reuse a native writer only if native `end` succeeded **and the enclosing session scope
+  completed successfully**. Failed or interrupted sessions invalidate their clients, so a
+  clean native `end` cannot leave a canceled operation's writer waiting for pool expiry.
+
+The localization-error path still explicitly interrupts the package branch and returns the
+same error; the source-view fallback remains outside the failed writer session. Memory
+budgeting, publication ordering, the reader/writer binaries and snapshot algorithms are
+unchanged. No memory probe is part of this fix's verification; the lead retains that STOP.
+
+The product fix is commit `1e95a59e`. Two regression tests were demonstrated red before their
+corresponding changes, then green:
+
+- `index-concurrent.test.ts` holds the import and a fake package source mid-read, interrupts
+  `prepareTarget`, and requires both finalizers before writer-session release and a bounded
+  interrupt completion. The old code released the session before the read finalizer.
+- `native-index-lifecycle.integration.test.ts` interrupts an idle native session while its
+  enclosing builder layer stays open. It records the real writer PID with the protocol
+  observer and requires it to have exited when interruption completes. The previous release
+  logic left the PID alive; closing the whole builder layer cannot mask the failure in this test.
+
+The targeted index/localization-import/package-text tests, stage-recorder tests and native
+builder/lifecycle integration tests passed: **17 files, 88 tests**. The existing concurrent
+localization-error and sequential-publication comparisons remain green. `pnpm -s run typecheck`
+and `pnpm -s run check:static` passed, the latter including 336 architecture tests. Red/green
+evidence is retained as `$results\cancel-fix-before-order.log`, `cancel-fix-before-writer.log`,
+`cancel-fix-tests.log`, `cancel-fix-typecheck.log` and `cancel-fix-check-static.log`.
+
+The first fixed extraction probe returned from interrupt in 289 ms, but the original probe
+context retained one idle session through its 120.092 s exit-poll timeout. The same PID
+recorded 2,250 ms CPU at 458 ms and 3,116 ms, and the retry succeeded in 78.169 s. This is
+retained as `$results\cancel-packages-fixed-r1.json`, not counted as a passing result.
+The remaining lifetime belonged to the host fixture: `ProjectIndexProcess.makeProcessService`
+owns a long-lived query session in the enclosing service layer. Once inventory has completed,
+canceling Game Text does not cancel that separate host service. Parse interruption had
+previously canceled inventory before its session could become idle, hiding this ownership issue.
+
+Probe commit `162e76f5` makes the inventory/scan boundary explicit. Each repetition reads the
+production package inventory in a separately scoped service layer, closes that layer, and
+asserts **zero descendants before starting the timed refresh**. The read-only inventory is
+then supplied to the production source, retaining its real package reads, staging and bundle
+verification. No live Project Index PID is excluded. The timed writer/builder stays open
+across interruption, the complete child-exit check and the immediate same-process/same-cache
+retry. All scan descendants, including idle writers, are still counted; the deadlines are
+unchanged. This matches the Workbench's host-maintained inventory and avoids closing the
+whole builder as a way to mask the native writer regression.
+
+The earlier three passing localization samples (`cancel-localization-fixed-r1..3.json`) and
+the extraction timeout remain diagnostic artifacts. The final matrix uses fresh
+`cancel-{localization,packages,joining}-prepared-r{1,2,3}` cache roots and JSON files consistently
+for all nine runs. The two targeted concurrency/lifecycle files also passed after the probe
+change (9 tests), including an assertion that the interrupted prepare used exactly one writer
+session. Native Node TypeScript execution is used throughout; no loader helper is excluded.
+
+The first join setup stopped before any timed refresh because its immediate inventory-exit
+check saw a descendant. The setup check now waits at most 3 s for its separately closed
+inventory scope/process enumeration to settle, recording any remaining PID/role evidence and
+failing if it does not reach zero. This wait precedes the timed refresh and changes neither
+cancellation deadline. The accepted join repetitions used fresh `prepared2` cache roots;
+the aborted setup cache was not reused and produced no cancellation result.
+
+#### Completed cancellation matrix
+
+All nine accepted repetitions passed. Values are in repetition order, not sorted. Child-exit
+times are conservative process-enumeration bounds measured after interrupt returns, with no
+idle-CPU allowance. Every run recorded `interrupted: true`, `childrenRemaining: 0`,
+`inventoryChildrenRemaining: 0`, and `secondRefreshOk: true`, without interrupt/retry errors.
+
+| Interrupted during | Interrupt return, ms | Child-exit poll, ms |     Immediate retry, s |
+| ------------------ | -------------------: | ------------------: | ---------------------: |
+| Localization parse |           33, 34, 36 |       410, 406, 408 | 73.684, 74.737, 75.038 |
+| Package extraction |        221, 254, 205 |       417, 513, 416 | 74.006, 75.383, 75.968 |
+| Join               |           72, 69, 63 |       425, 432, 424 | 15.882, 16.024, 15.928 |
+
+Worst interrupt return was **254 ms ≤500 ms**; worst exit poll was **513 ms ≤3,000 ms**.
+The interrupt delays remained 1 s after localization starts, 5 s after package reading starts,
+and 0.5 s after joining starts. Each repetition used a fresh Game Text cache and an immediate
+second refresh in the same process, same builder context and same cache, without repairs.
+The shared lock was released between repetitions, with turns yielded to the reader-memory
+agent. The final numeric aggregate is `$results\cancel-prepared-summary.json`.
+Individual artifacts are `cancel-localization-prepared-r1..3.json`,
+`cancel-packages-prepared-r1..3.json`, and `cancel-joining-prepared2-r1..3.json`.
+
+#### Canonical byte comparisons after the fix
+
+Both canonical corpora were cold-built once with the fixed product and the same benchmark
+harness, warmed external project-index caches, stage recorder, Node/thread settings and
+unchanged fixed base executable. Changed outputs are `$results\changed-ue57` and
+`$results\changed-ue58`; their `caches\run-1` stores were compared against the retained
+`baseline-ue57` / `baseline-ue58` stores using the unchanged comparator and **exactly the same
+exclusions** as the benchmark pairs above.
+
+| Corpus | Package layers | Localization + observation layers | Joined layers | Dictionaries | Stored data sections compared | Result                                  |
+| ------ | -------------: | --------------------------------: | ------------: | -----------: | ----------------------------: | --------------------------------------- |
+| UE 5.7 |             44 |                                19 |             1 |           15 |                         2,295 | Equal with existing identity exclusions |
+| UE 5.8 |             44 |                                19 |             1 |           15 |                         2,295 | Equal with existing identity exclusions |
+
+Each comparison accounted for all **84** shared-store files: 15 dictionary snapshots matched
+whole-file bytes, while 69 files differed only in the already documented generation/name/key
+metadata and its framing. Every non-metadata stored payload and descriptor, including
+dependency-graph data, matched. Both roots, manifests and graph state were checked with the
+same normalization/checksum validation; no exclusions were added. Full paired filenames are
+retained in `$results\identity-ue57.json` and `identity-ue58.json`.
+There were **no unexplained differences**. Canonical measured build walls were 1.868 s and
+1.802 s (one run each; no repeated timing claim).
+
+The two benchmark inputs were also cold-built once again with the lifecycle fix and fixed
+base executable, using the same warmed-index harness. These new parity outputs are
+`$results\fixed-released` and `fixed-1x`; all earlier outputs remain retained. Their
+`caches\run-1` stores were compared directly against the original retained baseline stores.
+
+| Fixed benchmark pair | Package layers | Localization + observation layers | Joined layers | Dictionaries | Stored data sections compared | Result                                  |
+| -------------------- | -------------: | --------------------------------: | ------------: | -----------: | ----------------------------: | --------------------------------------- |
+| Released project     |            256 |                                43 |             1 |           22 |                        13,272 | Equal with existing identity exclusions |
+| 1× project           |            256 |                                43 |             1 |           22 |                        13,017 | Equal with existing identity exclusions |
+
+Each fixed benchmark store again accounted for 327 files: 22 whole-file identical dictionary
+snapshots and 305 files differing only in the existing normalized metadata/framing. Exact
+paired filenames are retained in `$results\identity-fixed-released.json` and
+`identity-fixed-1x.json`; stage spans remain under each parity output's `run-1\build` directory.
+There were **no unexplained differences on any of the four inputs**. No additional exclusions
+were needed, and the comparator was unchanged.
+
+The requested cancellation matrix and four-input byte-identity gate are now **complete and
+passing**. The previous memory STOP remains assigned to the lead; it was neither remeasured
+nor claimed resolved here. No Unreal Editor, Perforce write, push, PR or merge was used.

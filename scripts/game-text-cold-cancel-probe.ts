@@ -3,8 +3,9 @@
  * how long the interrupt takes to return, how long until every native child has
  * exited, and whether an immediate second refresh on the same cache
  * succeeds. Each repetition uses a fresh cache so the interrupted stage is cold.
+ * Host inventory is prepared and its query session closed before the timed refresh.
  *
- * node --import tsx scripts/game-text-cold-cancel-probe.ts --project <dir> \
+ * node scripts/game-text-cold-cancel-probe.ts --project <dir> \
  *   --cache-root <dir> --phase localization|packages|joining --reps 3 --out <json>
  */
 import { execFile } from "node:child_process";
@@ -134,9 +135,19 @@ async function repetition(rep: number, targetName: string) {
 	await mkdir(cache, { recursive: true });
 	// Inventory belongs to the host; close its native query session before the timed refresh.
 	const inventory = await prepareInventory(cache);
-	const inventoryChildrenRemaining = (await nativeChildren()).length;
-	if (inventoryChildrenRemaining)
+	const inventoryClosedAt = performance.now();
+	let inventoryChildren = await nativeChildren();
+	if (inventoryChildren.length)
+		process.stdout.write(`${JSON.stringify({ inventoryChildren })}\n`);
+	while (inventoryChildren.length && performance.now() - inventoryClosedAt < 3000) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		inventoryChildren = await nativeChildren();
+	}
+	const inventoryChildrenRemaining = inventoryChildren.length;
+	if (inventoryChildrenRemaining) {
+		process.stdout.write(`${JSON.stringify({ inventoryChildren })}\n`);
 		throw new Error("Inventory preparation left descendants alive.");
+	}
 	const scope = await Effect.runPromise(Scope.make());
 	try {
 		const context = await buildContext(cache, scope, inventory);

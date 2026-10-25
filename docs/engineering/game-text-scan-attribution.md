@@ -672,7 +672,7 @@ peak is a lower bound. Progress labels interleave under concurrency, so `package
 reported phase, not a claim that localization was inactive. No claim is made about memory
 distribution or repeatability from this single run.
 
-The runner stopped immediately after reading this completed probe's result. No cancellation
+The initial runner stopped immediately after reading this completed probe's result. No cancellation
 probe was run, so interrupt return ≤0.5 s, child exit ≤3 s, and immediate successful refresh are
 **unverified for this implementation**. No changed canonical-corpus build was started. The
 completed measurement caches were inspected read-only afterward; no further cold measurement
@@ -743,3 +743,60 @@ fixture/fuzz/export acceptance runs, and Phase 4.5's final three-run measurement
 not run: this task changes only TypeScript host code and verification tooling, and the memory
 STOP prevents claiming complete acceptance. The temporary detached baseline worktree was removed;
 all baseline measurement caches remain available at the paths above.
+
+### Follow-up: cancellation and canonical parity
+
+The lead took ownership of the memory STOP and authorized completion of the two outstanding
+gates without another memory probe or a product change. This follow-up tested the exact
+`0b3cf301` implementation, rebuilt its TypeScript packages, and used the same Node 26.12.0,
+fixed base reader/writer (SHA-256 unchanged), thread caps and external temporary directories.
+Every heavy command acquired the shared lock; separate invocations were prepared to release
+it between repetitions so the other agent's memory measurements could take turns.
+
+**STOP: localization cancellation exceeded the 3 s child-exit limit in its first valid
+repetition.** No product or tracked verification code was changed.
+
+| Phase / repetition      |   Interrupt return | Descendants exited | Children remaining at final poll | Immediate second refresh |
+| ----------------------- | -----------------: | -----------------: | -------------------------------: | ------------------------ |
+| Localization parse, 1   |              24 ms |          59,202 ms |                                0 | Succeeded, 84.120 s      |
+| Localization parse, 2–3 | Not run after STOP |                  — |                                — | —                        |
+| Package extraction, 1–3 | Not run after STOP |                  — |                                — | —                        |
+| Join, 1–3               | Not run after STOP |                  — |                                — | —                        |
+
+The interrupt fired 1,000 ms after the first `localization` progress event. `interruptMs`
+measures `Fiber.interrupt`; `idleMs` measures time from its completion until a process-tree
+enumeration finds no remaining non-shell descendants. Despite the historical field name,
+idle CPU does not satisfy this probe. Sampler shells are excluded. The result has
+`interrupted: true`, `secondRefreshOk: true`, and no interrupt or second-refresh error.
+The immediate retry used the same cache and process, after the exit check, with no manual
+cache repair. Interrupt return passed 0.5 s; child exit failed 3 s by a wide margin.
+
+The valid invocation was
+`node scripts/game-text-cold-cancel-probe.ts --project "$project" --cache-root "$freshCache"
+--phase localization --reps 1 --out "$result"`.
+Its artifact is `$results\cancel-localization-native-r1.json`, and the fresh cache is
+`$results\cancel-localization-native-r1\rep-1`. The intended matrix was three independent
+invocations per phase, each with a fresh cache and its own immediate same-process retry;
+the runner checked each result and stopped on this first failure.
+
+One preceding `node --import tsx` invocation is retained separately at
+`$results\cancel-localization-r1.json` and excluded from the acceptance results. It returned
+from interrupt in 21 ms and retried successfully in 83.201 s, but exhausted the probe's
+120 s child-wait bound with one descendant remaining. A read-only process-tree inspection
+identified that descendant as the persistent `esbuild.exe` service started by `tsx`, with
+no native child present at that inspection. Native Node TypeScript execution removes that
+top-level loader service without changing the implementation or the probe. The valid rerun
+still failed the exit gate, so that failure is not dismissed as the original loader artifact.
+
+The native writer pool retains cleanly ended clients with a 30 s TTL
+(`packages/game-text/src/native-index-builder.ts:491–510`), and session finalization decides
+invalidation from whether native `end` completed (`:527–552`). This is an investigation anchor,
+not an established explanation of the 59.202 s sample: the probe retains aggregate descendant
+counts, not per-child lifetime evidence. No new heavy diagnostic run or product fix followed
+the STOP.
+
+Changed builds of both canonical corpora and their byte comparisons were not started after
+this cancellation failure. Their retained baselines and the already passing benchmark-pair
+comparisons remain unchanged; no new exclusions were introduced. The cancellation matrix and
+four-input byte-identity gate remain incomplete. The lead's separate memory work is not
+re-measured or resolved by this follow-up.

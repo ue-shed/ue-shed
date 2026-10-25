@@ -214,9 +214,7 @@ describe("translation_key filter", () => {
 									true
 								)).lines
 							).toEqual(["/Subtitle", "/Title"]);
-						}).pipe(
-							Effect.provide(fixture.layer(false, fixture.source, false, builder))
-						);
+						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})
 				)
 			);

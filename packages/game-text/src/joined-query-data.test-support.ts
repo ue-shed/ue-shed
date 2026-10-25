@@ -22,12 +22,12 @@ import {
 	addSourceTrigrams,
 	rejectSourceTrigrams
 } from "./joined-source-cache.test-support.js";
-import { IndexedPolicyData, querySignals } from "./indexed-policy-data.js";
+import { IndexedPolicyData } from "./indexed-policy-data.test-support.js";
+import { signalFacts } from "./text-problem-bits.test-support.js";
 export {
-	querySignals,
 	reuseJoinedQueryProjection,
 	type JoinedQueryProjection
-} from "./indexed-policy-data.js";
+} from "./indexed-policy-data.test-support.js";
 
 /** Columnar query oracle, excluded from production packages. */
 export class JoinedQueryData extends IndexedPolicyData {
@@ -288,9 +288,7 @@ export class JoinedQueryData extends IndexedPolicyData {
 			remainingContextCount: Math.max(0, members.length - contexts.length),
 			characterCount: this.column(prefix + "characters")[row]!,
 			wordCount: this.column(prefix + "words")[row]!,
-			reviewSignals: querySignals.filter(
-				(_, bit) => this.column(prefix + "signals")[row]! & (1 << bit)
-			),
+			reviewSignals: signalFacts(this.column(prefix + "signals")[row]!),
 			locationKinds: [
 				...(origins & 4 ? ["asset_property" as const] : []),
 				...(origins & 2 ? ["data_table_cell" as const] : []),

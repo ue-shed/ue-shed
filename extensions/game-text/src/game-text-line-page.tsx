@@ -15,15 +15,21 @@ import { Button } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo } from "solid-js";
 import { cultureSummary } from "./game-text-culture-state.js";
+import { rowFindings } from "./game-text-result-rows.js";
 
 const SEVERE = new Set<TextProblem>(["key_changed", "conflicting_source"]);
 const WAITING = new Set<TextProblem>(["not_gathered", "changed_since_gather", "translation"]);
 
-/** Every problem the open line has, worst first, from its saved text and its translations. */
+/**
+ * Every problem the open line has, worst first: the engine's, in the list's culture scope, when
+ * the line has translations; otherwise from its saved text.
+ */
 export function lineProblems(
 	focus: TextCorpusFocus | undefined,
 	detail: LocalizationFocus | undefined
 ): readonly TextProblem[] {
+	if (detail?.problems) return detail.problems;
+	if (focus?.unit.problems) return focus.unit.problems;
 	return textProblems({
 		signals: focus?.unit.reviewSignals ?? [],
 		keyChanged: detail?.keyChange?.direction === "to",
@@ -131,10 +137,15 @@ export function LinePageHeader(props: {
 	);
 }
 
-/** The worst problem, said once at the top of the page, in its severity colour. */
+/**
+ * What the open line needs, at the top of its page: its worst problem in a sentence, then the
+ * project's rules with a finding on it.
+ */
 export function LineProblem(props: {
 	readonly focus: TextCorpusFocus | undefined;
 	readonly detail: LocalizationFocus | undefined;
+	/** Rule labels by ID, for the line's findings. */
+	readonly rules?: ReadonlyMap<string, string> | undefined;
 }) {
 	const onlyUnsynced = createMemo(
 		() =>
@@ -144,38 +155,55 @@ export function LineProblem(props: {
 			)
 	);
 	const worst = () => lineProblems(props.focus, props.detail)[0] ?? "up_to_date";
+	const sentence = () => problemSentence(worst(), props.detail);
+	// The project's rules with a finding on the line, in the list's culture scope with a target.
+	const findings = () => rowFindings(props.detail ?? props.focus?.unit ?? {}, props.rules);
+	// A finding alone is no translation work, so it takes the neutral tone.
 	const tone = createMemo(() =>
-		SEVERE.has(worst())
-			? "severe"
-			: onlyUnsynced() && worst() === "translation"
-				? "sync"
-				: "waiting"
+		sentence() === undefined
+			? "finding"
+			: SEVERE.has(worst())
+				? "severe"
+				: onlyUnsynced() && worst() === "translation"
+					? "sync"
+					: "waiting"
 	);
 	return (
-		<Show when={problemSentence(worst(), props.detail)}>
-			{(sentence) => (
-				<p
-					role="note"
-					aria-label="What this line needs"
-					{...stylex.attrs(
-						styles.callout,
-						tone() === "severe" && styles.calloutSevere,
-						tone() === "sync" && styles.calloutSync,
-						tone() === "waiting" && styles.calloutWaiting
+		<Show when={sentence() !== undefined || findings().length > 0}>
+			<div
+				role="note"
+				aria-label="What this line needs"
+				{...stylex.attrs(
+					styles.callout,
+					tone() === "severe" && styles.calloutSevere,
+					tone() === "sync" && styles.calloutSync,
+					tone() === "waiting" && styles.calloutWaiting,
+					tone() === "finding" && styles.calloutFinding
+				)}
+			>
+				<Show when={sentence()}>
+					{(text) => (
+						<p {...stylex.attrs(styles.calloutLine)}>
+							<strong
+								{...stylex.attrs(
+									tone() === "severe" && styles.severe,
+									tone() === "sync" && styles.sync,
+									tone() === "waiting" && styles.waiting
+								)}
+							>
+								{TEXT_PROBLEM_LABELS[worst()]}
+							</strong>{" "}
+							{text()}
+						</p>
 					)}
-				>
-					<strong
-						{...stylex.attrs(
-							tone() === "severe" && styles.severe,
-							tone() === "sync" && styles.sync,
-							tone() === "waiting" && styles.waiting
-						)}
-					>
-						{TEXT_PROBLEM_LABELS[worst()]}
-					</strong>{" "}
-					{sentence()}
-				</p>
-			)}
+				</Show>
+				<Show when={findings().length > 0}>
+					<p {...stylex.attrs(styles.calloutLine)}>
+						<strong {...stylex.attrs(styles.findingLabel)}>Findings</strong>{" "}
+						{findings().join(" · ")}
+					</p>
+				</Show>
+			</div>
 		</Show>
 	);
 }
@@ -185,7 +213,11 @@ export function LineProperties(props: {
 	readonly focus: TextCorpusFocus | undefined;
 	readonly detail: LocalizationFocus | undefined;
 }) {
-	const problems = () => lineProblems(props.focus, props.detail).slice(1);
+	// The banner says the worst problem and names the findings, so neither repeats here.
+	const problems = () =>
+		lineProblems(props.focus, props.detail)
+			.slice(1)
+			.filter((problem) => problem !== "finding");
 	const key = () => {
 		const identity = props.detail?.identity ?? undefined;
 		if (identity) return { namespace: identity.namespace, key: identity.key };
@@ -229,7 +261,7 @@ export function LineProperties(props: {
 		const gathered = props.detail?.translatorNotes;
 		return [...new Set([...(saved ?? []), ...(gathered ?? [])])];
 	};
-	const findings = () =>
+	const facts = () =>
 		(props.focus?.unit.reviewSignals ?? [])
 			.filter((signal) => signal !== "evidence_only")
 			.map(textReviewSignalLabel);
@@ -315,9 +347,9 @@ export function LineProperties(props: {
 						</>
 					)}
 				</Show>
-				<Show when={findings().length > 0}>
-					<dt {...stylex.attrs(styles.term)}>Findings</dt>
-					<dd {...stylex.attrs(styles.value)}>{findings().join(" · ")}</dd>
+				<Show when={facts().length > 0}>
+					<dt {...stylex.attrs(styles.term)}>Facts</dt>
+					<dd {...stylex.attrs(styles.value)}>{facts().join(" · ")}</dd>
 				</Show>
 			</dl>
 		</section>
@@ -342,6 +374,8 @@ const styles = stylex.create({
 	grow: { flex: 1 },
 	position: { color: tokens.colorTextMuted, fontSize: 12, fontVariantNumeric: "tabular-nums" },
 	callout: {
+		display: "grid",
+		gap: 6,
 		margin: 0,
 		paddingBlock: 10,
 		paddingInline: 12,
@@ -362,6 +396,12 @@ const styles = stylex.create({
 		borderColor: "rgba(242, 153, 74, 0.35)",
 		backgroundColor: "rgba(242, 153, 74, 0.06)"
 	},
+	calloutFinding: {
+		borderColor: tokens.colorBorderStrong,
+		backgroundColor: tokens.colorSurfaceInset
+	},
+	calloutLine: { margin: 0 },
+	findingLabel: { color: tokens.colorTextStrong },
 	severe: { color: tokens.colorDanger },
 	waiting: { color: tokens.colorWarning },
 	properties: { display: "grid", gap: 8, alignContent: "start", padding: tokens.space4 },

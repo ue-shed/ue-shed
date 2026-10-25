@@ -1,9 +1,4 @@
 import type { JoinedTargetInput } from "./joined-target.js";
-import {
-	KEY_CHANGED_BIT,
-	cultureProblemBits,
-	settleProblemBits
-} from "./text-problem-bits.test-support.js";
 import { Effect } from "effect";
 import {
 	LocalizationIdentity,
@@ -269,17 +264,6 @@ export const finishJoinedTarget = Effect.fn("JoinedTarget.marks")(function* (
 					marks.review_record![row] = recordIndex + 1;
 				}
 			}
-	}
-	for (let row = 0; row < count; row++) {
-		let problems = line.problems![row]!;
-		if (line.key_change![row] && !(line.key_change![row]! & 1)) problems |= KEY_CHANGED_BIT;
-		for (const marks of culture)
-			problems |= cultureProblemBits(
-				marks.state![row]!,
-				marks.facts![row]!,
-				marks.reasons![row]!
-			);
-		line.problems![row] = settleProblemBits(problems);
 	}
 	return { pairs, ambiguous, oldCandidates: oldRows.length };
 });

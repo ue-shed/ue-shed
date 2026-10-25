@@ -2,7 +2,9 @@
 use crate::engine_asset_types::AssetTypes;
 use crate::engine_places::{Places, Prefix};
 use crate::engine_query::{EngineQuery, audience, mask};
+use crate::engine_rows::RowSet;
 use crate::engine_types::*;
+use crate::rules::FindingRows;
 use crate::text_problem;
 use crate::{Error, ErrorCode, Result, require};
 use std::collections::HashSet;
@@ -19,6 +21,27 @@ pub(crate) fn checkpoint(cancelled: &AtomicBool) -> Result<()> {
 }
 
 type Column = Arc<[u32]>;
+
+/// A `finding` clause's rows: `is` holds on the rows of any rule it names. Without a findings
+/// layer no row has a finding, and no row has one of a rule outside the layer: a saved pill keeps
+/// naming a rule the project has since dropped.
+fn finding_clause(findings: Option<&FindingRows>, clause: &Clause, len: usize) -> Result<RowSet> {
+    let has = match findings {
+        None => RowSet::from_rows(len, &[])?,
+        Some(findings) => RowSet::union(
+            len,
+            clause
+                .values
+                .iter()
+                .filter_map(|id| findings.rule(id).map(|rule| &findings.sets[rule])),
+        ),
+    };
+    Ok(if clause.op == FilterOp::Is {
+        has
+    } else {
+        has.complement()
+    })
+}
 fn text_matches(value: &str, terms: &[String]) -> bool {
     let value = crate::wtf8::Wtf8Buf::from_view(value).to_utf16();
     terms.iter().all(|term| {
@@ -185,6 +208,10 @@ impl Rows {
     pub fn sources(&self, row: usize) -> &[u32] {
         &self.sources[self.source_start[row] as usize..self.source_end[row] as usize]
     }
+    /// Whether a row's identity is resolved: saved with a namespace and a non-empty key.
+    pub fn resolved(&self, row: usize) -> bool {
+        self.namespace_defined[row]
+    }
 }
 
 pub(crate) struct Culture {
@@ -199,8 +226,8 @@ pub(crate) struct Projection {
     empty_ids: Arc<std::collections::BTreeSet<u32>>,
     pub raw: Rows,
     pub slice: Rows,
-    slice_raw: Column,
-    slice_line: Column,
+    pub(crate) slice_raw: Column,
+    pub(crate) slice_line: Column,
     pub starts: Column,
     pub order: Column,
     pub source: Column,
@@ -452,14 +479,16 @@ impl Projection {
         } | if c.review[row] == 3 { 8 } else { 0 }
             | if has("machine_translated") { 16 } else { 0 })
     }
-    /// A line's problems in the cultures of `scope`, as `textProblems` reports them.
-    pub fn problem(&self, row: usize, scope: &[usize], counted: u32) -> u32 {
+    /// A line's problems in the cultures of `scope`, as `textProblems` reports them, with
+    /// `finding` when a rule that counts has a finding on it.
+    pub fn problem(&self, row: usize, scope: &[usize], finding: bool) -> u32 {
         let key_change = self.key_change[row];
         let mut bits = if key_change > 0 && key_change & 1 == 0 {
             text_problem::KEY_CHANGED
         } else {
             0
-        } | text_problem::signals(self.flags[row], counted);
+        } | text_problem::signals(self.flags[row])
+            | if finding { text_problem::FINDING } else { 0 };
         for ci in scope {
             let c = &self.cultures[*ci];
             bits |= text_problem::culture(c.state[row], c.facts[row], c.reasons[row]);
@@ -484,70 +513,72 @@ struct PreparedClause {
     sources: HashSet<u32>,
     /// The asset types and which of them the clause names, for `asset_type` clauses.
     asset_types: Option<(Arc<AssetTypes>, Vec<bool>)>,
+    /// Every row's problems in the clause's scope, for `problem` clauses.
+    problems: Option<Arc<[u32]>>,
 }
-struct Predicates {
-    clauses: Vec<PreparedClause>,
-    path: Option<Prefix>,
-    files: Option<HashSet<u32>>,
-    counted: u32,
-}
-impl Predicates {
+impl PreparedClause {
     fn new(
         query: &mut EngineQuery,
         projection: &Projection,
-        request: &SearchRequest,
+        clause: &Clause,
         places: &Places,
         cancelled: &AtomicBool,
     ) -> Result<Self> {
-        let mut clauses = Vec::new();
-        for clause in request.filter.as_deref().unwrap_or(&[]) {
-            let labels: &[&str] = match clause.field {
-                FilterField::Problem => &PROBLEMS,
-                FilterField::Finding => &SIGNALS,
-                FilterField::Translation => &["", "missing", "to_update", "not_synced"],
-                FilterField::Origin => &ORIGINS,
-                FilterField::Editing => &["editable", "read_only"],
-                FilterField::Notes => &["missing", "present"],
-                FilterField::Audience => &AUDIENCES,
-                _ => &[],
-            };
-            clauses.push(PreparedClause {
-                field: clause.field,
-                op: clause.op,
-                mask: mask(labels, &clause.values),
-                labels: places.labels(&clause.values, clause.field == FilterField::Asset),
-                prefixes: if clause.field == FilterField::Folder {
-                    clause
-                        .values
-                        .iter()
-                        .map(|value| places.prefix(value))
-                        .collect::<Result<_>>()?
-                } else {
-                    Vec::new()
-                },
-                translation: if clause.field == FilterField::TranslationKey {
-                    projection.translation_rows(query, places, &clause.values, cancelled)?
-                } else {
-                    TranslationRows::default()
-                },
-                // Each value is looked up in the dictionary once; rows then compare string IDs.
-                sources: if clause.field == FilterField::Source {
-                    query.source_ids(&clause.values)?
-                } else {
-                    HashSet::new()
-                },
-                asset_types: if clause.field == FilterField::AssetType {
-                    let types = AssetTypes::open(query, cancelled)?;
-                    let wanted = types.wanted(&clause.values);
-                    Some((types, wanted))
-                } else {
-                    None
-                },
-            });
-        }
+        let labels: &[&str] = match clause.field {
+            FilterField::Problem => &PROBLEMS,
+            FilterField::Fact => &FACTS,
+            FilterField::Translation => &["", "missing", "to_update", "not_synced"],
+            FilterField::Origin => &ORIGINS,
+            FilterField::Editing => &["editable", "read_only"],
+            FilterField::Notes => &["missing", "present"],
+            FilterField::Audience => &AUDIENCES,
+            _ => &[],
+        };
+        Ok(Self {
+            field: clause.field,
+            op: clause.op,
+            mask: mask(labels, &clause.values),
+            labels: places.labels(&clause.values, clause.field == FilterField::Asset),
+            prefixes: if clause.field == FilterField::Folder {
+                clause
+                    .values
+                    .iter()
+                    .map(|value| places.prefix(value))
+                    .collect::<Result<_>>()?
+            } else {
+                Vec::new()
+            },
+            translation: if clause.field == FilterField::TranslationKey {
+                projection.translation_rows(query, places, &clause.values, cancelled)?
+            } else {
+                TranslationRows::default()
+            },
+            // Each value is looked up in the dictionary once; rows then compare string IDs.
+            sources: if clause.field == FilterField::Source {
+                query.source_ids(&clause.values)?
+            } else {
+                HashSet::new()
+            },
+            asset_types: if clause.field == FilterField::AssetType {
+                let types = AssetTypes::open(query, cancelled)?;
+                let wanted = types.wanted(&clause.values);
+                Some((types, wanted))
+            } else {
+                None
+            },
+            problems: None,
+        })
+    }
+}
+/// A request's `where` path prefix and changed files, prepared once.
+struct Location {
+    path: Option<Prefix>,
+    files: Option<HashSet<u32>>,
+}
+impl Location {
+    fn new(request: &SearchRequest, places: &Places) -> Result<Self> {
         let location = request.location.as_ref();
         Ok(Self {
-            clauses,
             path: location
                 .and_then(|scope| scope.path_prefix.as_deref())
                 .map(|value| places.prefix(value))
@@ -555,7 +586,6 @@ impl Predicates {
             files: location
                 .and_then(|scope| scope.files.as_deref())
                 .map(|values| places.labels(values, true)),
-            counted: request.counted_findings(),
         })
     }
 }
@@ -728,13 +758,14 @@ impl Projection {
             Ok(None)
         }
     }
-    fn filter(
+    /// Whether a row meets one clause, with its operator applied.
+    fn clause_holds(
         &self,
         places: &Places,
         kind: Kind,
         row: usize,
         scope: &[usize],
-        prepared: &Predicates,
+        clause: &PreparedClause,
     ) -> Result<bool> {
         let line = matches!(kind, Kind::Line);
         let rows = self.rows(kind);
@@ -743,108 +774,104 @@ impl Projection {
         } else {
             rows.signals[row]
         };
-        for clause in &prepared.clauses {
-            let has = match clause.field {
-                FilterField::Problem => {
-                    let bits = if line {
-                        self.problem(row, scope, prepared.counted)
-                    } else {
-                        text_problem::settle(text_problem::signals(flags, prepared.counted))
-                    };
-                    bits & clause.mask != 0
-                }
-                FilterField::Finding => flags & clause.mask != 0,
-                FilterField::Origin => {
-                    (if line {
-                        self.origins[row]
-                    } else {
-                        rows.origins[row]
-                    }) & clause.mask
-                        != 0
-                }
-                FilterField::Editing => {
-                    (if line {
-                        self.editing[row]
-                    } else {
-                        rows.editing[row]
-                    }) & clause.mask
-                        != 0
-                }
-                FilterField::Notes => {
-                    clause.mask
-                        & (if (if line {
-                            self.notes[row]
-                        } else {
-                            rows.notes[row]
-                        }) != 0
-                        {
-                            2
-                        } else {
-                            1
-                        })
-                        != 0
-                }
-                FilterField::Audience => {
-                    let value = audience(if line {
-                        self.audience[row]
-                    } else {
-                        rows.audience[row]
-                    });
-                    clause.mask
-                        & (1 << AUDIENCES
-                            .iter()
-                            .position(|label| *label == value)
-                            .ok_or("Unknown audience.")?)
-                        != 0
-                }
-                FilterField::Translation => {
-                    line && scope.iter().any(|ci| {
-                        let c = &self.cultures[*ci];
-                        ((1 << c.state[row]) | (c.facts[row] & 8)) & clause.mask != 0
-                    })
-                }
-                FilterField::Folder => {
-                    let mut has = false;
-                    for prefix in &clause.prefixes {
-                        if self.path_matches(places, kind, row, prefix)? {
-                            has = true;
-                            break;
-                        }
-                    }
-                    has
-                }
-                FilterField::Asset => self.has_file(places, kind, row, &clause.labels)?,
-                FilterField::Namespace => self
-                    .namespace(places, kind, row)?
-                    .is_some_and(|value| clause.labels.contains(&value)),
-                FilterField::TranslationKey => match kind {
-                    Kind::Line => clause.translation.lines.contains(&(row as u32)),
-                    Kind::Slice => clause.translation.lines.contains(&self.slice_line[row]),
-                    Kind::Raw => clause.translation.raw.contains(&(row as u32)),
-                },
-                FilterField::AssetType => {
-                    let (types, wanted) = clause
-                        .asset_types
-                        .as_ref()
-                        .ok_or("Asset type clause without types.")?;
-                    types.each(self, kind, row, &mut |kind| wanted[kind as usize])?
-                }
-                // A unit with conflicting sources has each of them.
-                FilterField::Source => {
-                    if line {
-                        clause.sources.contains(&self.source[row])
-                    } else {
-                        rows.sources(row)
-                            .iter()
-                            .any(|id| clause.sources.contains(id))
-                    }
-                }
-            };
-            if (clause.op == FilterOp::Is && !has) || (clause.op == FilterOp::IsNot && has) {
-                return Ok(false);
+        let has = match clause.field {
+            FilterField::Problem => {
+                clause
+                    .problems
+                    .as_ref()
+                    .ok_or("Problem clause without its problems.")?[row]
+                    & clause.mask
+                    != 0
             }
-        }
-        Ok(true)
+            FilterField::Fact => (flags >> FACT_SHIFT) & clause.mask != 0,
+            FilterField::Finding => return Err("Finding clauses read the findings layer.".into()),
+            FilterField::Origin => {
+                (if line {
+                    self.origins[row]
+                } else {
+                    rows.origins[row]
+                }) & clause.mask
+                    != 0
+            }
+            FilterField::Editing => {
+                (if line {
+                    self.editing[row]
+                } else {
+                    rows.editing[row]
+                }) & clause.mask
+                    != 0
+            }
+            FilterField::Notes => {
+                clause.mask
+                    & (if (if line {
+                        self.notes[row]
+                    } else {
+                        rows.notes[row]
+                    }) != 0
+                    {
+                        2
+                    } else {
+                        1
+                    })
+                    != 0
+            }
+            FilterField::Audience => {
+                let value = audience(if line {
+                    self.audience[row]
+                } else {
+                    rows.audience[row]
+                });
+                clause.mask
+                    & (1 << AUDIENCES
+                        .iter()
+                        .position(|label| *label == value)
+                        .ok_or("Unknown audience.")?)
+                    != 0
+            }
+            FilterField::Translation => {
+                line && scope.iter().any(|ci| {
+                    let c = &self.cultures[*ci];
+                    ((1 << c.state[row]) | (c.facts[row] & 8)) & clause.mask != 0
+                })
+            }
+            FilterField::Folder => {
+                let mut has = false;
+                for prefix in &clause.prefixes {
+                    if self.path_matches(places, kind, row, prefix)? {
+                        has = true;
+                        break;
+                    }
+                }
+                has
+            }
+            FilterField::Asset => self.has_file(places, kind, row, &clause.labels)?,
+            FilterField::Namespace => self
+                .namespace(places, kind, row)?
+                .is_some_and(|value| clause.labels.contains(&value)),
+            FilterField::TranslationKey => match kind {
+                Kind::Line => clause.translation.lines.contains(&(row as u32)),
+                Kind::Slice => clause.translation.lines.contains(&self.slice_line[row]),
+                Kind::Raw => clause.translation.raw.contains(&(row as u32)),
+            },
+            FilterField::AssetType => {
+                let (types, wanted) = clause
+                    .asset_types
+                    .as_ref()
+                    .ok_or("Asset type clause without types.")?;
+                types.each(self, kind, row, &mut |kind| wanted[kind as usize])?
+            }
+            // A unit with conflicting sources has each of them.
+            FilterField::Source => {
+                if line {
+                    clause.sources.contains(&self.source[row])
+                } else {
+                    rows.sources(row)
+                        .iter()
+                        .any(|id| clause.sources.contains(id))
+                }
+            }
+        };
+        Ok(has == (clause.op == FilterOp::Is))
     }
     fn scope(
         &self,
@@ -852,7 +879,7 @@ impl Projection {
         kind: Kind,
         row: usize,
         request: &SearchRequest,
-        prepared: &Predicates,
+        prepared: &Location,
     ) -> Result<bool> {
         let line = matches!(kind, Kind::Line);
         let rows = self.rows(kind);
@@ -881,14 +908,14 @@ impl Projection {
         }
         Ok(true)
     }
+    /// Whether a raw row or a slice is visible and meets the capability, notes and `where`.
     fn eligible(
         &self,
         places: &Places,
         kind: Kind,
         row: usize,
         request: &SearchRequest,
-        prepared: &Predicates,
-        filter: bool,
+        prepared: &Location,
     ) -> Result<bool> {
         let rows = self.rows(kind);
         if rows.visible[row] == 0
@@ -898,23 +925,12 @@ impl Projection {
         {
             return Ok(false);
         }
-        if let Some(lens) = &request.lens
-            && lens != "all"
-            && rows.signals[row]
-                & (1 << SIGNALS
-                    .iter()
-                    .position(|value| value == lens)
-                    .ok_or("Unknown validated lens.")?)
-                == 0
-        {
-            return Ok(false);
-        }
-        Ok((!filter || self.filter(places, kind, row, &[], prepared)?)
-            && self.scope(places, kind, row, request, prepared)?)
+        self.scope(places, kind, row, request, prepared)
     }
 }
 
 impl EngineQuery {
+    /// The request's rows, in display order.
     pub fn matching(
         &mut self,
         request: &SearchRequest,
@@ -922,33 +938,91 @@ impl EngineQuery {
     ) -> Result<Arc<[u32]>> {
         request.validate()?;
         checkpoint(cancelled)?;
-        let key = request.matching_key()?;
-        if let Some(rows) = self.matched.get(&key) {
-            return Ok(Arc::clone(rows));
-        }
-        let rows: Arc<[u32]> = self.match_rows(request, cancelled)?.into();
-        self.remember_matches(key, Arc::clone(&rows));
-        Ok(rows)
+        Ok(self.match_rows(request, cancelled)?.into())
     }
 
-    pub(crate) fn remember_matches(&mut self, key: String, rows: Arc<[u32]>) {
-        let bytes = rows.len().saturating_mul(4).saturating_add(key.len());
-        if self.matched.len() >= 16
-            || self
-                .matched
-                .iter()
-                .map(|(key, rows)| rows.len().saturating_mul(4).saturating_add(key.len()))
-                .sum::<usize>()
-                .saturating_add(bytes)
-                > 32 * 1024 * 1024
-        {
-            self.matched.clear();
+    /// Every row's problems in a culture scope, with `finding` from the counted rows of a
+    /// findings layer: a line's with a target, a unit's (`textProblems` without marks) without
+    /// one. Built once and read by the `problem` clause, problem counts and every group and
+    /// facet tally.
+    pub(crate) fn problem_column(
+        &mut self,
+        localized: bool,
+        scope: &[usize],
+        findings: Option<&FindingRows>,
+        cancelled: &AtomicBool,
+    ) -> Result<Arc<[u32]>> {
+        let key = format!(
+            "{localized}|{scope:?}|{}",
+            findings.map_or("", |findings| findings.key.as_str())
+        );
+        if let Some(column) = self.problem_columns.get(&key) {
+            return Ok(Arc::clone(column));
         }
-        if bytes <= 32 * 1024 * 1024 {
-            self.matched.insert(key, Arc::clone(&rows));
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchProblemColumn");
+        let p = Projection::open(self, cancelled)?;
+        let len = if localized {
+            p.source.len()
+        } else {
+            p.raw.visible.len()
+        };
+        let mut column = Vec::with_capacity(len);
+        for row in 0..len {
+            if row & 4095 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let finding = findings.is_some_and(|findings| findings.counted.contains(row));
+            column.push(p.row_problem(localized, row, scope, finding));
         }
+        let column: Arc<[u32]> = column.into();
+        // A few scopes are live at once; past that, columns are rebuilt as they are asked for.
+        if self.problem_columns.len() >= 8 {
+            self.problem_columns.clear();
+        }
+        self.problem_columns.insert(key, Arc::clone(&column));
+        Ok(column)
     }
+
+    /// An atom's set, from the cache or evaluated over every row.
+    fn atom(
+        &mut self,
+        key: String,
+        evaluate: impl FnOnce(&mut Self) -> Result<RowSet>,
+    ) -> Result<RowSet> {
+        if let Some(set) = self.atoms.get(&key) {
+            return Ok(set);
+        }
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchAtom");
+        let set = evaluate(self)?;
+        self.atoms.insert(key, set.clone());
+        Ok(set)
+    }
+
+    /// A request's findings layer rows, in its relation and culture scope.
+    pub(crate) fn request_findings(
+        &mut self,
+        request: &SearchRequest,
+        cancelled: &AtomicBool,
+    ) -> Result<Option<Arc<FindingRows>>> {
+        let Some(selection) = &request.findings else {
+            return Ok(None);
+        };
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        Ok(Some(self.finding_rows(
+            selection,
+            request.localization.is_some(),
+            &scope,
+            cancelled,
+        )?))
+    }
+
+    /// The intersection of the request's atoms. Each atom is keyed by what it reads: the
+    /// relation, the culture scope where it depends on it, and the findings layer it reads.
     fn match_rows(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Vec<u32>> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchMatch");
         request.validate()?;
         checkpoint(cancelled)?;
         require(
@@ -961,184 +1035,240 @@ impl EngineQuery {
                     .any(|clause| clause.field == FilterField::Translation),
             invalid("Translation filters need a localization target."),
         )?;
+        let localized = request.localization.is_some();
         let scope = self.culture_scope(request.localization.as_ref())?;
         let projection = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
-        let prepared = Predicates::new(self, &projection, request, &places, cancelled)?;
-        let wanted = request
-            .query
-            .to_lowercase()
+        let relation = if localized { "line" } else { "raw" };
+        let (len, order) = if localized {
+            (projection.source.len(), Arc::clone(&projection.order))
+        } else {
+            (
+                projection.raw.visible.len(),
+                Arc::clone(&projection.raw.order),
+            )
+        };
+        let lowered = request.query.to_lowercase();
+        let wanted = lowered
             .split(crate::join_policy::js_space)
             .filter(|term| !term.is_empty())
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        let source_matches = if wanted.is_empty() {
-            None
-        } else {
-            Some(self.source_matches(&request.query, cancelled)?)
-        };
+        // Translations are searched only when the request names its cultures.
         let search_translations = request.localization.as_ref().is_some_and(|selection| {
             selection.search_translations == Some(true)
                 && (selection.culture.is_some() || selection.cultures.is_some())
         });
-        let picked = if request.localization.is_some() {
-            request
-                .lines
-                .as_ref()
-                .map(|lines| {
-                    lines
-                        .iter()
-                        .map(|id| self.find_id("line", id))
-                        .collect::<Result<Vec<_>>>()
-                        .map(|rows| rows.into_iter().flatten().collect::<HashSet<_>>())
-                })
-                .transpose()?
-        } else {
-            None
-        };
-        let order = if request.localization.is_some() {
-            &projection.order
-        } else {
-            &projection.raw.order
-        };
-        let mut result = Vec::new();
-        for (index, row) in order.iter().enumerate() {
-            if index & 255 == 0 {
-                checkpoint(cancelled)?;
+        let findings = self.request_findings(request, cancelled)?;
+        let findings_key = findings
+            .as_ref()
+            .map_or(String::new(), |findings| findings.key.clone());
+        let scoped = |field: FilterField| {
+            if localized && matches!(field, FilterField::Problem | FilterField::Translation) {
+                scope.clone()
+            } else {
+                Vec::new()
             }
-            let row = *row as usize;
-            let Some(selection) = &request.localization else {
-                let sources = projection.raw.sources(row);
-                if sources.len() == 1
-                    && source_matches
-                        .as_ref()
-                        .is_some_and(|matches| matches.get(sources[0] as usize) != Some(&1))
-                {
-                    continue;
-                }
-                if !projection.eligible(&places, Kind::Raw, row, request, &prepared, true)? {
-                    continue;
-                }
-                if source_matches.is_some() && sources.len() != 1 {
-                    let source = self.reader.strings(sources)?.join(" ").to_lowercase();
-                    if !text_matches(&source, &wanted) {
-                        continue;
+        };
+        let mut sets = Vec::new();
+        if !wanted.is_empty() && search_translations {
+            // Each term is in the line's source, an in-scope culture's archive translation, or its
+            // PO text when that is not synced: today's joined-string test, term by term.
+            let p = Arc::clone(&projection);
+            sets.push(self.atom(
+                format!(
+                    "line|translated-text|{}|{scope:?}",
+                    serde_json::to_string(&lowered)?
+                ),
+                |query| {
+                    let mut terms = Vec::with_capacity(wanted.len());
+                    for term in &wanted {
+                        terms.push((
+                            query.source_matches(term, cancelled)?,
+                            query.translation_matches(term, cancelled)?,
+                        ));
                     }
-                }
-                result.push(row as u32);
+                    let mut texts = Vec::with_capacity(scope.len());
+                    for ci in &scope {
+                        texts.push((*ci, query.culture_translations(*ci, cancelled)?));
+                    }
+                    let hit = |matches: &[u8], text: u32| {
+                        text != 0 && matches.get(text as usize - 1) == Some(&1)
+                    };
+                    RowSet::from_fn(len, cancelled, |row| {
+                        Ok(terms.iter().all(|(sources, translations)| {
+                            sources.get(p.source[row] as usize) == Some(&1)
+                                || texts.iter().any(|(ci, texts)| {
+                                    hit(translations, texts.0[row])
+                                        || (p.cultures[*ci].facts[row] & 8 != 0
+                                            && hit(translations, texts.1[row]))
+                                })
+                        }))
+                    })
+                },
+            )?);
+        }
+        if !wanted.is_empty() && !search_translations {
+            let matches = self.source_matches(&request.query, cancelled)?;
+            let p = Arc::clone(&projection);
+            sets.push(self.atom(
+                format!("{relation}|text|{}", serde_json::to_string(&lowered)?),
+                |query| {
+                    RowSet::from_fn(len, cancelled, |row| {
+                        if localized {
+                            return Ok(matches.get(p.source[row] as usize) == Some(&1));
+                        }
+                        let sources = p.raw.sources(row);
+                        if sources.len() == 1 {
+                            return Ok(matches.get(sources[0] as usize) == Some(&1));
+                        }
+                        let source = query.reader.strings(sources)?.join(" ").to_lowercase();
+                        Ok(text_matches(&source, &wanted))
+                    })
+                },
+            )?);
+        }
+        if localized {
+            let p = Arc::clone(&projection);
+            sets.push(self.atom("line|visible".into(), |_| {
+                RowSet::from_fn(len, cancelled, |row| Ok(p.source_visible[row] != 0))
+            })?);
+            if let Some(lines) = &request.lines {
+                sets.push(self.atom(
+                    format!("line|picked|{}", serde_json::to_string(lines)?),
+                    |query| {
+                        let mut picked = HashSet::new();
+                        for id in lines {
+                            picked.extend(query.find_id("line", id)?);
+                        }
+                        RowSet::from_fn(len, cancelled, |row| Ok(picked.contains(&row)))
+                    },
+                )?);
+            }
+        }
+        for clause in request.filter.as_deref().unwrap_or(&[]) {
+            if clause.field == FilterField::Finding {
+                sets.push(finding_clause(findings.as_deref(), clause, len)?);
                 continue;
+            }
+            let clause_scope = scoped(clause.field);
+            // Problems read the layer's counted rows; no other clause reads the layer.
+            let clause_findings = if clause.field == FilterField::Problem {
+                findings_key.as_str()
+            } else {
+                ""
             };
-            if !search_translations
-                && source_matches
-                    .as_ref()
-                    .is_some_and(|matches| matches.get(projection.source[row] as usize) != Some(&1))
-            {
-                continue;
-            }
-            if projection.source_visible[row] == 0
-                || picked.as_ref().is_some_and(|rows| !rows.contains(&row))
-                || !projection.filter(&places, Kind::Line, row, &scope, &prepared)?
-            {
-                continue;
-            }
-            if projection.starts[row] != projection.starts[row + 1] {
+            let p = Arc::clone(&projection);
+            let at = Arc::clone(&places);
+            sets.push(self.atom(
+                format!(
+                    "{relation}|clause|{}|{clause_scope:?}|{clause_findings}",
+                    serde_json::to_string(clause)?
+                ),
+                |query| {
+                    let mut prepared = PreparedClause::new(query, &p, clause, &at, cancelled)?;
+                    if clause.field == FilterField::Problem {
+                        prepared.problems = Some(query.problem_column(
+                            localized,
+                            &clause_scope,
+                            findings.as_deref(),
+                            cancelled,
+                        )?);
+                    }
+                    let kind = if localized { Kind::Line } else { Kind::Raw };
+                    RowSet::from_fn(len, cancelled, |row| {
+                        p.clause_holds(&at, kind, row, &clause_scope, &prepared)
+                    })
+                },
+            )?);
+        }
+        let p = Arc::clone(&projection);
+        let at = Arc::clone(&places);
+        sets.push(self.atom(
+            format!(
+                "{relation}|eligible|{}",
+                serde_json::to_string(&(
+                    request.capability,
+                    request.without_notes,
+                    &request.location
+                ))?
+            ),
+            |_| {
+                let location = Location::new(request, &at)?;
+                if !localized {
+                    return RowSet::from_fn(len, cancelled, |row| {
+                        p.eligible(&at, Kind::Raw, row, request, &location)
+                    });
+                }
                 let unrestricted = request.capability == Capability::All
                     && request.without_notes != Some(true)
-                    && request.lens.as_ref().is_none_or(|lens| lens == "all")
                     && request.location.is_none();
-                let mut eligible = unrestricted && projection.saved_visible[row];
-                if !unrestricted {
-                    for sr in projection.starts[row] as usize..projection.starts[row + 1] as usize {
-                        if projection.eligible(
-                            &places,
-                            Kind::Slice,
-                            sr,
-                            request,
-                            &prepared,
-                            false,
-                        )? {
-                            eligible = true;
-                            break;
+                RowSet::from_fn(len, cancelled, |row| {
+                    // A line with saved places is eligible when one place meets every condition.
+                    if p.starts[row] != p.starts[row + 1] {
+                        if unrestricted {
+                            return Ok(p.saved_visible[row]);
                         }
+                        for sr in p.starts[row] as usize..p.starts[row + 1] as usize {
+                            if p.eligible(&at, Kind::Slice, sr, request, &location)? {
+                                return Ok(true);
+                            }
+                        }
+                        return Ok(false);
                     }
-                }
-                if !eligible {
-                    continue;
-                }
-            } else if request.capability == Capability::SourceEditable
-                || request.lens.as_ref().is_some_and(|lens| lens != "all")
-                || (request.without_notes == Some(true) && projection.notes[row] != 0)
-                || !projection.scope(&places, Kind::Line, row, request, &prepared)?
-            {
-                continue;
-            }
+                    Ok(request.capability != Capability::SourceEditable
+                        && !(request.without_notes == Some(true) && p.notes[row] != 0)
+                        && p.scope(&at, Kind::Line, row, request, &location)?)
+                })
+            },
+        )?);
+        if let Some(selection) = &request.localization {
             if let Some(review) = &selection.review {
                 let bit = 1
                     << REVIEWS
                         .iter()
                         .position(|value| value == review)
                         .ok_or("Unknown validated review lens.")?;
-                let mut has = false;
-                for ci in &scope {
-                    if projection.review(self, row, *ci)? & bit != 0 {
-                        has = true;
-                        break;
-                    }
-                }
-                if !has {
-                    continue;
-                }
+                let p = Arc::clone(&projection);
+                let at_scope = scope.clone();
+                sets.push(
+                    self.atom(format!("line|review|{review}|{scope:?}"), |query| {
+                        RowSet::from_fn(len, cancelled, |row| {
+                            for ci in &at_scope {
+                                if p.review(query, row, *ci)? & bit != 0 {
+                                    return Ok(true);
+                                }
+                            }
+                            Ok(false)
+                        })
+                    })?,
+                );
             }
-            if selection.key_changed == Some(true)
-                && !(projection.key_change[row] > 0 && projection.key_change[row] & 1 == 0)
-            {
-                continue;
+            if selection.key_changed == Some(true) {
+                let p = Arc::clone(&projection);
+                sets.push(self.atom("line|keyChanged".into(), |_| {
+                    RowSet::from_fn(len, cancelled, |row| {
+                        Ok(p.key_change[row] > 0 && p.key_change[row] & 1 == 0)
+                    })
+                })?);
             }
-            if let Some(state) = &selection.state
-                && !scope.iter().any(|ci| {
-                    let c = &projection.cultures[*ci];
-                    if state == "not_synced" {
-                        c.facts[row] & 8 != 0
-                    } else {
-                        STATES[c.state[row] as usize] == state
-                    }
-                })
-            {
-                continue;
+            if let Some(state) = &selection.state {
+                let p = Arc::clone(&projection);
+                let at_scope = scope.clone();
+                sets.push(self.atom(format!("line|state|{state}|{scope:?}"), |_| {
+                    RowSet::from_fn(len, cancelled, |row| {
+                        Ok(at_scope.iter().any(|ci| {
+                            let c = &p.cultures[*ci];
+                            if state == "not_synced" {
+                                c.facts[row] & 8 != 0
+                            } else {
+                                STATES[c.state[row] as usize] == state
+                            }
+                        }))
+                    })
+                })?);
             }
-            if source_matches.is_some() && search_translations {
-                let mut values = vec![self.reader.string(projection.source[row])?];
-                for ci in &scope {
-                    // Search includes archive translations and PO text that differs from it.
-                    values.push(self.translation_for_search(*ci, row, false)?);
-                    if projection.cultures[*ci].facts[row] & 8 != 0 {
-                        values.push(self.translation_for_search(*ci, row, true)?);
-                    }
-                }
-                let text = values.join(" ").to_lowercase();
-                if !text_matches(&text, &wanted) {
-                    continue;
-                }
-            }
-            result.push(row as u32);
         }
-        checkpoint(cancelled)?;
-        Ok(result)
-    }
-    fn translation_for_search(&mut self, ci: usize, row: usize, po: bool) -> Result<String> {
-        let prefix = if po { "po" } else { "archive" };
-        let entry = self.reader.value(&format!("c{ci}.{prefix}"), row)?;
-        if entry == 0 {
-            return Ok(String::new());
-        }
-        let culture = self.cultures.get(ci).ok_or("Unknown culture.")?;
-        let path = self.target["outputPaths"][if po { "portableObjects" } else { "archives" }]
-            .get(culture)
-            .and_then(serde_json::Value::as_str)
-            .ok_or("Missing translation input.")?
-            .to_owned();
-        Ok(self
-            .translation(&path, (entry - 1) as usize, po)?
-            .unwrap_or_default())
+        RowSet::intersection(len, &sets)?.in_order(&order, cancelled)
     }
 }

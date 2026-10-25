@@ -1,9 +1,9 @@
 //! Which problems a line or unit has, from the shared table `text_problem_rules.rs` that
-//! `textProblems` also reads. A name the table uses outside `STATES`, `REASONS` or `SIGNALS`
-//! fails the build.
-use crate::engine_types::{REASONS, SIGNALS, STATES};
+//! `textProblems` also reads. A name the table uses outside `STATES`, `REASONS` or `FACTS`
+//! fails the build. `finding` comes from the findings of the project's rules, not the table.
+use crate::engine_types::{FACT_SHIFT, FACTS, REASONS, STATES};
 use crate::text_problem_rules::{
-    FINDING_SIGNALS, PROBLEM_FACTS, PROBLEM_REASONS, PROBLEM_SIGNALS, PROBLEM_STATES, PROBLEM_WORK,
+    PROBLEM_FACTS, PROBLEM_REASONS, PROBLEM_SIGNALS, PROBLEM_STATES, PROBLEM_WORK,
 };
 pub(crate) use crate::text_problem_rules::{PROBLEM_LABELS, PROBLEMS};
 
@@ -71,7 +71,7 @@ pub(crate) const WORK: u32 = {
 const STATE_MASKS: [u32; PROBLEMS.len()] = masks(PROBLEM_STATES, &STATES);
 const FACT_MASKS: [u32; PROBLEMS.len()] = masks(PROBLEM_FACTS, &STATES);
 const REASON_MASKS: [u32; PROBLEMS.len()] = masks(PROBLEM_REASONS, &REASONS);
-const SIGNAL_MASKS: [u32; PROBLEMS.len()] = masks(PROBLEM_SIGNALS, &SIGNALS);
+const SIGNAL_MASKS: [u32; PROBLEMS.len()] = masks(PROBLEM_SIGNALS, &FACTS);
 
 /// The problems one culture's mark raises: its state index, and its fact and reason bits.
 pub(crate) fn culture(state: u32, facts: u32, reasons: u32) -> u32 {
@@ -89,26 +89,12 @@ pub(crate) fn culture(state: u32, facts: u32, reasons: u32) -> u32 {
     bits
 }
 
-/// The review signals that make a line a finding when a request names none.
-pub(crate) const DEFAULT_FINDINGS: u32 = SIGNAL_MASKS[position("finding", &PROBLEMS) as usize];
-/// The review signals a request can count as findings by naming them in a `finding` clause.
-const NAMEABLE_FINDINGS: u32 = names(&FINDING_SIGNALS, &SIGNALS);
-
-/// The findings a request counts: the defaults, and every finding its `is` clauses or lens name.
-pub(crate) fn counted_findings<'a>(named: impl IntoIterator<Item = &'a str>) -> u32 {
-    named
-        .into_iter()
-        .filter_map(|name| SIGNALS.iter().position(|signal| *signal == name))
-        .fold(DEFAULT_FINDINGS, |bits, index| {
-            bits | (1 << index) & NAMEABLE_FINDINGS
-        })
-}
-
-/// The problems review signals raise; `counted` are the signals that make a finding.
-pub(crate) fn signals(signals: u32, counted: u32) -> u32 {
-    let mut bits = if signals & counted != 0 { FINDING } else { 0 };
+/// The problems a row's facts raise, from its `signals` bits.
+pub(crate) fn signals(signals: u32) -> u32 {
+    let facts = signals >> FACT_SHIFT;
+    let mut bits = 0;
     for (problem, mask) in SIGNAL_MASKS.iter().enumerate() {
-        if signals & mask != 0 && 1 << problem != FINDING {
+        if facts & mask != 0 {
             bits |= 1 << problem;
         }
     }
@@ -148,17 +134,10 @@ mod tests {
         for name in ["translated", "gathered_only", "outside_target"] {
             assert_eq!(culture(state(name), 0, 0), 0, "{name}");
         }
-        let signal = |name| 1 << position(name, &SIGNALS);
-        let defaults = counted_findings([]);
-        assert_eq!(signals(signal("long"), defaults), 0);
-        assert_eq!(signals(signal("shared"), defaults), FINDING);
-        assert_eq!(
-            signals(signal("conflicting"), defaults),
-            problem("conflicting_source")
-        );
-        let named = counted_findings(["long", "conflicting", "unknown"]);
-        assert_eq!(named, defaults | signal("long"));
-        assert_eq!(signals(signal("long"), named), FINDING);
+        let fact = |name| 1 << (position(name, &FACTS) + FACT_SHIFT);
+        assert_eq!(signals(fact("unresolved")), 0);
+        assert_eq!(signals(fact("conflicting")), problem("conflicting_source"));
+        assert_eq!(signals(0b111), 0, "the retired bits raise nothing");
         assert_eq!(settle(0), UP_TO_DATE);
         assert_eq!(WORK, 0b11111);
         assert_eq!(PROBLEMS.len(), PROBLEM_LABELS.len());

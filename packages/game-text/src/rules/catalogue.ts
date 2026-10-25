@@ -203,26 +203,25 @@ const overlapsPlaceholder = (range: Expr) =>
 		x.and(x.lt(g(item, "start"), g(range, "end")), x.lt(g(range, "start"), g(item, "end")))
 	);
 const reported = x.filter(reportedPlaceholderRanges, overlapsPlaceholder(v("range")), "range");
-const unreported = x.if(
-	positive(x.count(reported)),
-	x.map(
-		x.filter(
-			sourcePlaceholderRanges,
-			x.not(
-				x.any(
-					reported,
-					x.and(
-						x.lt(g(item, "start"), g(v("placeholder"), "end")),
-						x.lt(g(v("placeholder"), "start"), g(item, "end"))
-					)
+const unreportedMatches = x.map(
+	x.filter(
+		sourcePlaceholderRanges,
+		x.not(
+			x.any(
+				reported,
+				x.and(
+					x.lt(g(item, "start"), g(v("placeholder"), "end")),
+					x.lt(g(v("placeholder"), "start"), g(item, "end"))
 				)
-			),
-			"placeholder"
+			)
 		),
-		g(item, "match")
+		"placeholder"
 	),
-	null
+	g(item, "match")
 );
+const unreported = x.if(positive(x.count(reported)), unreportedMatches, null);
+/** The source terminology reports every placeholder: lists of source findings show it instead. */
+const reportedBySource = x.and(positive(x.count(reported)), x.eq(x.count(unreportedMatches), 0));
 
 // Group checks read other rows through aggregates, computed over every row whatever the scope.
 /** `localizationDuplicateCandidate`, on a line or, with `line.`, on one of its cultures. */
@@ -236,7 +235,7 @@ const duplicateCandidate = (prefix: "" | "line.") =>
 		x.not(f(`${prefix}conflicting`))
 	);
 /**
- * A candidate with another identity at another place (`DuplicateSources.hasOther`). A line
+ * A candidate with another identity at another place. A line
  * without a saved place has one of its own, its identity, which no saved place equals. Tuples
  * are distinct, so a line's cultures count once.
  */
@@ -694,6 +693,7 @@ export const exampleRules: readonly Rule[] = [
 		}),
 		expectation: o({ finalText: true }),
 		extra: o({ unreportedMatches: unreported }),
+		shadowed: reportedBySource,
 		recovery:
 			"Replace the placeholder with final text, or keep the line out of the build until it has some."
 	}),

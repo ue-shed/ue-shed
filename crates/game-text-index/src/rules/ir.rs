@@ -411,6 +411,9 @@ pub struct Rule {
     pub translation_origin: Option<Expr>,
     #[cfg_attr(test, ts(optional))]
     pub extra: Option<Expr>,
+    /// Whether a finding is hidden where source findings list the same text: a bool per finding.
+    #[cfg_attr(test, ts(optional))]
+    pub shadowed: Option<Expr>,
     pub recovery: Expr,
     #[cfg_attr(test, ts(optional))]
     pub counts: Option<bool>,

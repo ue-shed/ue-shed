@@ -26,6 +26,7 @@ export {
 	GameTextInvestigationPresetResult,
 	GameTextInvestigationQuery,
 	exportGameTextInvestigation,
+	investigationRequest,
 	readFindingUnits,
 	type IndexedInvestigationSource,
 	gameTextInvestigationCsv
@@ -106,6 +107,16 @@ export {
 } from "./localization-status.js";
 
 export {
+	RelatedLine,
+	RelatedLines,
+	RelatedLinesRequest,
+	RelatedLinesResult,
+	RelatedMember,
+	RelatedSection,
+	RelatedUnit
+} from "./related-lines.js";
+
+export {
 	LocalizationFocus,
 	LocalizationFocusRequest,
 	LocalizationFocusResult,
@@ -119,10 +130,8 @@ export {
 export {
 	BuiltInQualityFilter,
 	CustomQualityFilter,
-	type LocalizationFindingGroup,
-	type LocalizationFindingList,
-	type LocalizationQuality,
-	type LocalizationQualityMetadata,
+	type LocalizationQualityWorkspace,
+	type QueriedLocalizationQuality,
 	WorkspaceChangesResult,
 	WorkspaceFinding,
 	WorkspaceLocalizationFindingFocus,

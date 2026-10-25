@@ -15,6 +15,15 @@ import {
 
 const benchmark = channel("ue-shed.game-text-benchmark");
 
+/** The actions uasset-io added in minor 20: findings, related lines and rule checks. */
+const FINDINGS_ACTIONS: ReadonlySet<GameTextEngineRequest["action"]> = new Set([
+	"findings_evaluate",
+	"findings_accept",
+	"findings_query",
+	"related",
+	"rules_check"
+]);
+
 /** Native engine calls share their process scope; reader handles never escape that scope. */
 export class NativeGameTextEngineClient extends Context.Service<
 	NativeGameTextEngineClient,
@@ -62,7 +71,7 @@ export const nativeGameTextEngineClientLayer = (
 						maximumOutputBytes: 64 * 1024 ** 2,
 						timeoutMs: configuration.catalogTimeoutMs
 					},
-					{ contractMinor: request.action.startsWith("findings_") ? 20 : 15 }
+					{ contractMinor: FINDINGS_ACTIONS.has(request.action) ? 20 : 15 }
 				);
 				// The benchmark's client stage; requests are no longer Schema-decoded here.
 				if (encodeStarted !== undefined)
@@ -82,8 +91,9 @@ export const nativeGameTextEngineClientLayer = (
 						path:
 							request.action === "open"
 								? request.configuration.projectKey
-								: request.action === "capabilities"
-									? "capabilities"
+								: request.action === "capabilities" ||
+									  request.action === "rules_check"
+									? request.action
 									: request.reader,
 						request: protocolRequest,
 						expected: "game_text_engine",

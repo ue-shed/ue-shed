@@ -1,6 +1,6 @@
 //! Native Game Text query execution over one pinned snapshot. JavaScript receives bounded values.
 use crate::engine_reader::EngineReader;
-use crate::engine_text::SourceSearch;
+use crate::engine_text::TextArena;
 use crate::engine_types::*;
 use crate::join_policy::{normalized, trim};
 use crate::store::Configuration;
@@ -17,21 +17,36 @@ pub(crate) struct PreparationTimings {
     pub build: Duration,
 }
 
+/// Each line's archive translation and PO text in one culture, 0 for none, else string ID + 1.
+pub(crate) type CultureTexts = Arc<(Vec<u32>, Vec<u32>)>;
+
+/// Line rows by their (namespace, key) string IDs.
+pub(crate) type IdentityLines = Arc<HashMap<(u32, u32), Vec<u32>>>;
+
 pub struct EngineQuery {
     pub(crate) configuration: Configuration,
     pub(crate) findings: HashMap<String, crate::rules::FindingsLayer>,
+    /// Review acceptance sets by key, each for one findings layer.
+    pub(crate) acceptances: HashMap<String, Arc<crate::rules::Acceptance>>,
+    /// Line rows by their (namespace, key) string IDs, built on the first acceptance.
+    pub(crate) identity_lines: Option<IdentityLines>,
     pub(crate) finding_files: FindingFiles,
     pub(crate) audience_rules: Vec<String>,
     pub(crate) summary_cache: Option<Value>,
-    pub(crate) metadata_cache: crate::query_cache::QueryCache,
+    /// Every row's problems by relation, culture scope and counted findings.
+    pub(crate) problem_columns: HashMap<String, Arc<[u32]>>,
     pub(crate) row_ranks: HashMap<String, Arc<[u32]>>,
     pub(crate) copy_starts: HashMap<usize, Arc<[usize]>>,
     pub reader: EngineReader,
     pub target: Value,
     pub cultures: Vec<String>,
-    sources: Option<SourceSearch>,
+    sources: Option<TextArena>,
     source_matches: HashMap<String, Arc<[u8]>>,
-    pub(crate) matched: HashMap<String, Arc<[u32]>>,
+    translations: Option<TextArena>,
+    translation_matches: HashMap<String, Arc<[u8]>>,
+    culture_translations: HashMap<usize, CultureTexts>,
+    /// Each search predicate's rows, by its normalized form.
+    pub(crate) atoms: crate::engine_rows::AtomCache,
     pub(crate) places: Option<Arc<crate::engine_places::Places>>,
     pub(crate) projection: Option<Arc<crate::engine_match::Projection>>,
     /// The occurrence relation finding reads share, built once per reader.
@@ -47,6 +62,8 @@ pub struct EngineQuery {
     validated_ids: HashSet<String>,
     id_indexes: HashMap<String, Arc<IdIndex>>,
     unit_lines: Option<Arc<[u32]>>,
+    /// Units and lines by exact source, for related lines, built on the first request.
+    pub(crate) related_index: Option<Arc<crate::engine_related::RelatedIndex>>,
     /// Unreal word counts by source text ID, filled by aggregates.
     pub(crate) line_break_words: HashMap<u32, u32>,
     /// The corpus fingerprint, computed once per reader.
@@ -222,6 +239,8 @@ impl EngineQuery {
         Ok(Self {
             configuration: configuration.clone(),
             findings: HashMap::new(),
+            acceptances: HashMap::new(),
+            identity_lines: None,
             finding_files: FindingFiles::default(),
             audience_rules: Vec::new(),
             summary_cache: None,
@@ -229,7 +248,7 @@ impl EngineQuery {
             line_children: None,
             unit_sources: None,
             unit_children: None,
-            metadata_cache: crate::query_cache::QueryCache::default(),
+            problem_columns: HashMap::new(),
             row_ranks: HashMap::new(),
             copy_starts: HashMap::new(),
             reader,
@@ -237,7 +256,10 @@ impl EngineQuery {
             cultures,
             sources: None,
             source_matches: HashMap::new(),
-            matched: HashMap::new(),
+            translations: None,
+            translation_matches: HashMap::new(),
+            culture_translations: HashMap::new(),
+            atoms: Default::default(),
             places: None,
             projection: None,
             asset_types: None,
@@ -246,6 +268,7 @@ impl EngineQuery {
             validated_ids: HashSet::new(),
             id_indexes: HashMap::new(),
             unit_lines: None,
+            related_index: None,
             line_break_words: HashMap::new(),
             fingerprint: None,
             package_lists: None,
@@ -528,7 +551,7 @@ impl EngineQuery {
             "id":self.packed("raw", raw)?, "identity":self.occurrence_identity(first)?, "source":source,
             "contexts":contexts,"occurrenceCount":members.len(),"remainingContextCount":members.len().saturating_sub(3),
             "characterCount":self.value(kind,"characters",row)?,"wordCount":self.value(kind,"words",row)?,
-            "reviewSignals":selected_bits(&SIGNALS,self.value(kind,"signals",row)?),
+            "reviewSignals":facts(self.value(kind,"signals",row)?),
             "locationKinds":location_kinds,
             "audience":audience(self.value(kind,"audience",row)?)
         }))
@@ -601,6 +624,8 @@ impl EngineQuery {
     }
 
     pub fn culture_mark(&mut self, ci: usize, row: usize) -> Result<Value> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("previewCulture");
         let prefix = format!("c{ci}.");
         let facts = self.reader.value(&(prefix.clone() + "facts"), row)?;
         let state = self.reader.value(&(prefix.clone() + "state"), row)? as usize;
@@ -681,6 +706,8 @@ impl EngineQuery {
             .map(str::to_owned);
         let mut locations = Vec::new();
         if begin != end {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("previewLocations");
             let name = name.ok_or("Manifest path is absent.")?;
             let paths = self.reader.input_column(&name, "entry.path")?;
             let options = self.reader.input_column(&name, "entry.options")?;
@@ -728,7 +755,15 @@ impl EngineQuery {
     ) -> Result<()> {
         crate::engine_match::checkpoint(cancelled)?;
         if self.sources.is_none() {
-            self.sources = Some(SourceSearch::open(self, cancelled)?);
+            let lines = self.reader.column("line.source")?;
+            let raw = self.column("raw", "sources")?;
+            let references = lines.iter().chain(raw.iter()).copied();
+            self.sources = Some(TextArena::open(
+                self,
+                "query.source",
+                references,
+                cancelled,
+            )?);
         }
         Ok(())
     }
@@ -749,25 +784,122 @@ impl EngineQuery {
             .as_ref()
             .ok_or("Source search was not opened.")?
             .matching(&lowered, cancelled)?;
-        if self.source_matches.len() >= 16
-            || self
-                .source_matches
-                .values()
-                .map(|value| value.len())
-                .sum::<usize>()
-                .saturating_add(matches.len())
-                > 32 * 1024 * 1024
-        {
-            self.source_matches.clear();
-        }
-        if matches.len() <= 32 * 1024 * 1024 {
-            self.source_matches.insert(lowered, Arc::clone(&matches));
-        }
+        remember(&mut self.source_matches, lowered, &matches);
         Ok(matches)
+    }
+
+    /// Each translation string's match for `query`, over every culture's archive and PO text.
+    pub(crate) fn translation_matches(
+        &mut self,
+        query: &str,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<Arc<[u8]>> {
+        crate::engine_match::checkpoint(cancelled)?;
+        let lowered = query.to_lowercase();
+        if let Some(value) = self.translation_matches.get(&lowered) {
+            return Ok(Arc::clone(value));
+        }
+        if self.translations.is_none() {
+            let mut references = Vec::new();
+            for ci in 0..self.cultures.len() {
+                let texts = self.culture_translations(ci, cancelled)?;
+                let (archive, po) = &*texts;
+                references.extend(
+                    archive
+                        .iter()
+                        .chain(po)
+                        .filter(|id| **id != 0)
+                        .map(|id| id - 1),
+                );
+            }
+            let arena =
+                TextArena::open(self, "query.translation", references.into_iter(), cancelled)?;
+            self.translations = Some(arena);
+        }
+        let matches = self
+            .translations
+            .as_ref()
+            .ok_or("Translation search was not opened.")?
+            .matching(&lowered, cancelled)?;
+        remember(&mut self.translation_matches, lowered, &matches);
+        Ok(matches)
+    }
+
+    /// Each line's archive translation and PO text in culture `ci`, as search reads them: the
+    /// entry's source when its options say so, and PO text only where the entry has it.
+    pub(crate) fn culture_translations(
+        &mut self,
+        ci: usize,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<CultureTexts> {
+        if let Some(value) = self.culture_translations.get(&ci) {
+            return Ok(Arc::clone(value));
+        }
+        let culture = self.cultures.get(ci).ok_or("Unknown culture.")?.clone();
+        let mut texts = Vec::with_capacity(2);
+        for po in [false, true] {
+            let entries = self
+                .reader
+                .column(&format!("c{ci}.{}", if po { "po" } else { "archive" }))?;
+            let path = self.target["outputPaths"][if po { "portableObjects" } else { "archives" }]
+                .get(&culture)
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let mut ids = vec![0; entries.len()];
+            if let Some(path) = path.filter(|_| entries.iter().any(|entry| *entry != 0)) {
+                let options = self.reader.input_column(&path, "entry.options")?;
+                let sources = self.reader.input_column(&path, "entry.source")?;
+                let translations = self.reader.input_column(&path, "entry.translation")?;
+                for (row, entry) in entries.iter().enumerate() {
+                    if row & 4095 == 0 {
+                        crate::engine_match::checkpoint(cancelled)?;
+                    }
+                    let Some(index) = entry.checked_sub(1).map(|index| index as usize) else {
+                        continue;
+                    };
+                    let options = *options.get(index).ok_or("Translation row outside file.")?;
+                    if po && options & 64 == 0 {
+                        continue;
+                    }
+                    let values = if options & 128 != 0 {
+                        &sources
+                    } else {
+                        &translations
+                    };
+                    ids[row] = values.get(index).ok_or("Translation row outside values.")? + 1;
+                }
+            }
+            texts.push(ids);
+        }
+        let po = texts.pop().ok_or("Missing PO translations.")?;
+        let archive = texts.pop().ok_or("Missing archive translations.")?;
+        let value = Arc::new((archive, po));
+        if self.culture_translations.len() >= 8 {
+            self.culture_translations.clear();
+        }
+        self.culture_translations.insert(ci, Arc::clone(&value));
+        Ok(value)
     }
 
     pub fn normalized_path(value: &str) -> String {
         normalized(trim(value)).to_lowercase()
+    }
+}
+
+/// Keeps a search's matches, within 16 searches and 32 MiB.
+fn remember(cache: &mut HashMap<String, Arc<[u8]>>, key: String, matches: &Arc<[u8]>) {
+    if cache.len() >= 16
+        || cache
+            .values()
+            .map(|value| value.len())
+            .sum::<usize>()
+            .saturating_add(matches.len())
+            > 32 * 1024 * 1024
+    {
+        cache.clear();
+    }
+    if matches.len() <= 32 * 1024 * 1024 {
+        cache.insert(key, Arc::clone(matches));
     }
 }
 

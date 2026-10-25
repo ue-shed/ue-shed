@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import { corpus, target, unit } from "../../../packages/game-text/src/localization.test-support.js";
 import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
-import { client, mount, second } from "./game-text-localization.test-support.js";
+import { client, groupRows, mount, second } from "./game-text-localization.test-support.js";
 import { storedGameTextPreferences } from "./game-text-preferences.js";
 describe("Game Text all-languages export", () => {
 	it("opens a preset on its saved target, cultures and translation filters", async () => {
@@ -71,6 +71,7 @@ it("keeps typed translations across a rescan, review writes and a fresh mount", 
 	};
 	const first = mount(api);
 	await screen.findByText("3 matches");
+	await groupRows();
 	const row = within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
 		name: /^Welcome/u
 	});
@@ -182,6 +183,7 @@ it.each([
 		});
 		const user = userEvent.setup({ delay: null });
 		await screen.findByText("1 match");
+		await groupRows();
 		if (removeTarget) {
 			await screen.findByRole("button", { name: /^Culture:/u });
 			empty = true;
@@ -195,6 +197,7 @@ it.each([
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
 		await screen.findByText("1 match");
+		await groupRows();
 		expect(screen.getByRole("region", { name: "Results" }).textContent).toContain(
 			op === "is_not" ? "Fresh line" : "First source"
 		);

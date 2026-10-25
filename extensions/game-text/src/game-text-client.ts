@@ -25,6 +25,8 @@ import type {
 	LocalizationTargetResult,
 	LocalizationFocusRequest,
 	LocalizationFocusResult,
+	RelatedLinesRequest,
+	RelatedLinesResult,
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
@@ -41,6 +43,7 @@ import type {
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
+	TextCorpusRowsResult,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
@@ -130,6 +133,10 @@ export interface GameTextClientApi {
 	readonly localizationFocus?: (
 		request: LocalizationFocusRequest
 	) => Effect.Effect<LocalizationFocusResult, GameTextClientError>;
+	/** A selection's related units and lines, with their places and translations. */
+	readonly related?: (
+		request: RelatedLinesRequest
+	) => Effect.Effect<RelatedLinesResult, GameTextClientError>;
 	readonly projectKey?: () => Effect.Effect<string | undefined, GameTextClientError>;
 	readonly reloadQualityRules?: () => Effect.Effect<
 		TextQualityQueryRunResult,
@@ -161,6 +168,13 @@ export interface GameTextClientApi {
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;
+	/**
+	 * The request's rows, or its open groups' first rows, without the aggregates `search` adds:
+	 * every read with a cursor, and the open groups after a grouped search.
+	 */
+	readonly searchRows: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<TextCorpusRowsResult, GameTextClientError>;
 	readonly chooseQualityRules: () => Effect.Effect<
 		TextQualityQueryRunResult,
 		GameTextClientError

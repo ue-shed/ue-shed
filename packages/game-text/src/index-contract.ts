@@ -8,10 +8,15 @@ import type { PackageTextInventoryEntry, refreshPackageTextLayer } from "./packa
 import type { importLocalizationTarget } from "./localization-import.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
 import type { NativeTextQuery } from "./native-query.js";
-import type { TextCorpus, TextCorpusSearchRequest, TextCorpusSearchPage } from "./schema.js";
+import type {
+	TextCorpus,
+	TextCorpusRowsPage,
+	TextCorpusSearchRequest,
+	TextCorpusSearchPage
+} from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
-import type { IndexedLocalizationQualityOptions } from "./localization-quality-index.js";
-import type { LocalizationQuality } from "./localization-workspace.js";
+import type { LocalizationCheckOptions } from "./localization-quality-schema.js";
+import type { QueriedLocalizationQuality } from "./localization-workspace.js";
 import type { AsyncTextQualityQuery } from "./quality-query.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import { LocalizationKeyChangePair } from "./localization-key-changes.js";
@@ -59,6 +64,13 @@ export class GameTextIndexSource extends Context.Service<
 >()("@ue-shed/game-text/GameTextIndexSource") {}
 
 /**
+ * Check options of an indexed quality read. Progress goes to `GameTextIndexProgressReporter`: a
+ * `localization_quality` event before the engine checks, with no lines checked, and one after,
+ * with every line checked and the findings the checks found.
+ */
+export type IndexedLocalizationQualityOptions = LocalizationCheckOptions;
+
+/**
  * A project and optional localization target to prepare. changedFiles absent means full
  * refresh, while an empty list permits reuse; review tolerance and key-change choices remain
  * explicit host policy.
@@ -101,6 +113,10 @@ export interface GameTextIndexRefreshResult {
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchPage, IndexFailure>;
+	/** The request's rows, or its open groups' first rows, without the aggregates. */
+	readonly searchRows: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<TextCorpusRowsPage, IndexFailure>;
 	readonly imported: ImportedTarget;
 	readonly packages: Effect.Success<ReturnType<typeof refreshPackageTextLayer>>;
 	readonly join: Effect.Success<ReturnType<RefreshJoinedTarget>>;
@@ -115,22 +131,25 @@ export interface GameTextIndexRefreshResult {
 	readonly evidence: LocalizationTargetEvidence;
 	readonly review: LocalizationReviewSnapshot;
 	/**
-	 * Localization quality checked over the index in bounded pages, with findings kept as columns.
-	 * The scan yields between pages and can be interrupted, and reports `localization_quality`
-	 * progress through `GameTextIndexProgressReporter`. Arguments are in the same order as
-	 * `sourceQuality`: the rule document first.
+	 * Localization quality over the index: the engine checks the rule document once per document,
+	 * and the workspace reads its findings a page at a time. It can be interrupted, and reports
+	 * `localization_quality` progress through `GameTextIndexProgressReporter`. Arguments are in
+	 * the same order as `sourceQuality`: the rule document first.
 	 */
 	readonly localizationQuality: (
 		ruleDocument?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
-	) => Effect.Effect<LocalizationQuality, IndexFailure>;
-	/** The complete CLI quality report, including proposals collected before acceptance filtering. */
+	) => Effect.Effect<QueriedLocalizationQuality, IndexFailure>;
+	/**
+	 * The complete CLI quality report, including proposals collected before acceptance filtering.
+	 * A complete rule the engine can't run fails it with the rules file's error.
+	 */
 	readonly localizationCheck: (
 		document?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
 	) => Effect.Effect<
 		import("./localization-quality-schema.js").LocalizationQualityReport,
-		IndexFailure
+		IndexFailure | import("./game-text-rules.js").GameTextRuleDocumentError
 	>;
 	/**
 	 * Source quality rules evaluated over the index in bounded pages: the query

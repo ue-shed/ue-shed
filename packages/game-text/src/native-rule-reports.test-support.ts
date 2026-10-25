@@ -186,11 +186,13 @@ export function nativeDetectCustom(check: CustomLocalizationCheck, text: string)
 		},
 		{ checks: [] }
 	).findings.find((finding) => finding.rule.family === "custom");
+	// A custom check's finding: the union's first member.
+	const checkFinding = LocalizationCustomFinding.members[0];
 	return finding
 		? Schema.decodeUnknownSync(
 				Schema.Struct({
-					actual: LocalizationCustomFinding.fields.actual,
-					expectation: LocalizationCustomFinding.fields.expectation
+					actual: checkFinding.fields.actual,
+					expectation: checkFinding.fields.expectation
 				})
 			)(finding)
 		: undefined;

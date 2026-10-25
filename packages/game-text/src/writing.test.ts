@@ -73,7 +73,7 @@ describe("writer counts", () => {
 		expect(page.total).toBe(2);
 		expect(page.counts.all).toBe(page.total);
 		expect(query.summary().counts).toEqual(page.counts);
-		expect(query.summary().review).toMatchObject({ all: 2, shared: 2, unresolved: 0 });
+		expect(query.summary().review).toEqual({ all: 2, unresolved: 0, conflicting: 0 });
 		expect(query.summary().sources.dataTable).toBe(2);
 		expect(query.summary().searchable).toEqual({ textUnits: 2, textOccurrences: 4 });
 		expect(query.summary().coverage).toEqual(corpus.coverage);
@@ -86,7 +86,6 @@ describe("writer counts", () => {
 		const request = { query: "row", capability: "all" as const, pageSize: 50 };
 		expect(query.search(request).counts).toMatchObject({
 			all: 2,
-			shared: 2,
 			editable: 1,
 			readOnly: 1,
 			withoutNotes: 1
@@ -100,30 +99,37 @@ describe("writer counts", () => {
 		expect(
 			query.search({ ...request, capability: "read_only", withoutNotes: true }).total
 		).toBe(0);
-		const long = query.search({ ...request, lens: "long" });
-		expect(long.counts.all).toBe(long.total);
-		expect(long.total).toBe(0);
 		expect(query.search({ ...request, query: "key:" }).total).toBe(0);
-		const single = corpusOf(["row one", "row two"]);
-		const unshared = textCorpusQuery({
-			...single,
-			units: single.units.map((unit) => ({
-				...unit,
-				occurrences: unit.occurrences.slice(0, 1)
-			}))
-		}).search(request);
-		expect(unshared.counts).toMatchObject({ all: 2, shared: 0 });
 	});
 });
 describe("human CSV", () => {
 	it("preserves review signals from the scanned corpus when exporting a filtered selection", () => {
-		const corpus = corpusOf(["same source", "same source"]);
+		// The first key has two texts across its locations; only that line is editable.
+		const input = corpusOf(["same source", "same source"]);
+		const corpus: TextCorpus = {
+			...input,
+			units: input.units.map((unit, index) =>
+				index === 0
+					? {
+							...unit,
+							source: {
+								status: "conflicting",
+								values: ["same source", "Same source"]
+							},
+							occurrences: unit.occurrences.map((occurrence, location) => ({
+								...occurrence,
+								source: location === 0 ? "same source" : "Same source"
+							}))
+						}
+					: unit
+			)
+		};
 		const filtered = textCorpusQuery(corpus).export({
 			query: "",
 			capability: "source_editable"
 		});
 		expect(filtered.units).toHaveLength(1);
-		expect(gameTextCsv(filtered, corpus)).toContain("same text under another key");
+		expect(gameTextCsv(filtered, corpus)).toContain("key has different text");
 	});
 	it("protects metadata cells and uses the same UTF-16 character count as focus and checks", () => {
 		const input = corpusOf(["😀"]);

@@ -44,21 +44,29 @@ it.effect("summarizes span wall time and in-step stage attributes by name", () =
 	})
 );
 
-it.live("records the join and quality scan stages of a real index build", () =>
+it.live("records the join, findings evaluation and findings query stages of a real index", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
 		const recorder = makeStageRecorder();
 		yield* Effect.gen(function* () {
 			const refresh = yield* GameTextIndexRefresh;
 			const result = yield* refresh.refresh(fixture.request);
-			yield* result.localizationQuality(STARTER_CHECK_RULES, { review: result.review.file });
+			const quality = yield* result.localizationQuality(STARTER_CHECK_RULES, {
+				review: result.review.file
+			});
+			yield* quality.workspace.search({ target: result.localization.target, filter: "all" });
 		}).pipe(Effect.scoped, Effect.provide(fixture.layer()), Effect.withTracer(recorder.tracer));
 		const counts = recorder.counts();
 		for (const stage of ["inputs", "order", "lines", "query_places", "publish"])
 			expect(counts[`stage.JoinedTarget.refresh.join.stage_ms.${stage}`]).toBeGreaterThan(0);
-		for (const stage of ["prepare", "units", "order", "scan", "scan.check", "columns"])
+		// The engine's evaluation stages are child spans; the query's are attributes.
+		for (const stage of ["relation.occurrences", "layer.order"])
+			expect(counts[`stage.GameText.native.findingsEvaluate.${stage}.count`]).toBe(1);
+		for (const stage of ["select", "order", "page", "compose", "counts"])
 			expect(
-				counts[`stage.GameText.localizationQuality.game_text.quality.stage_ms.${stage}`]
+				counts[
+					`stage.GameText.native.findingsQuery.game_text.findings.query.stage_ms.${stage}`
+				]
 			).toBeGreaterThanOrEqual(0);
 		expect(counts["stage.PackageText.refresh.package-text.stage_ms.selection"]).toBeDefined();
 		expect(counts["stage.GameTextIndex.openTarget.count"]).toBe(1);

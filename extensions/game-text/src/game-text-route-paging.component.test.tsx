@@ -111,32 +111,45 @@ it("does not reopen a line when the list is back before the next page arrives", 
 });
 it("steps back to the previous group's last line, loading the pages it has not shown", async () => {
 	const first = corpus.units[0]!;
-	const savedLine = (id: string, source: string) => {
+	const savedLine = (id: string, source: string, other?: string) => {
 		const identity = { status: "resolved" as const, namespace: "UI", key: id };
+		const occurrences = first.occurrences.map((occurrence) => ({
+			...occurrence,
+			id: makeTextOccurrenceId(`occurrence:${id}`),
+			identity,
+			// Each line is its own String Table entry: keys at one place are not duplicates.
+			location:
+				occurrence.location.kind === "string_table_entry"
+					? { ...occurrence.location, entryKey: id }
+					: occurrence.location,
+			source
+		}));
 		return {
 			...first,
 			id: makeTextUnitId(id),
 			identity,
-			occurrences: first.occurrences.map((occurrence) => ({
-				...occurrence,
-				id: makeTextOccurrenceId(`occurrence:${id}`),
-				identity,
-				// Each line is its own String Table entry: keys at one place are not duplicates.
-				location:
-					occurrence.location.kind === "string_table_entry"
-						? { ...occurrence.location, entryKey: id }
-						: occurrence.location,
-				source
-			})),
-			source: { status: "consistent" as const, value: source }
+			...(other === undefined
+				? { occurrences, source: { status: "consistent" as const, value: source } }
+				: {
+						// A second place holds other text under the same key.
+						occurrences: [
+							...occurrences,
+							{
+								...occurrences[0]!,
+								id: makeTextOccurrenceId(`occurrence:${id}:other`),
+								source: other
+							}
+						],
+						source: { status: "conflicting" as const, values: [source, other] }
+					})
 		};
 	};
 	const input: TextCorpus = {
 		...corpus,
 		units: [
-			// 62 lines with the same text are findings; one line on its own is up to date.
+			// 62 lines whose key has two texts conflict; one line on its own is up to date.
 			...Array.from({ length: 62 }, (_, index) =>
-				savedLine("same-line:" + index.toString().padStart(3, "0"), "Same text")
+				savedLine("conflicting-line:" + index.toString().padStart(3, "0"), "One", "Two")
 			),
 			savedLine("unique-line", "Unique line")
 		]
@@ -158,14 +171,14 @@ it("steps back to the previous group's last line, loading the pages it has not s
 		await user.click(await within(results).findByRole("button", { name: /^Unique line/u }));
 	};
 	const page = () => screen.getByRole("complementary", { name: "Text focus" });
-	// The findings group is open with its first page loaded.
+	// The conflicting group is open with its first page loaded.
 	await openUnique();
 	await within(page()).findByText("63 of 63");
 	await user.click(within(page()).getByRole("button", { name: "Previous line" }));
 	await within(page()).findByText("62 of 63", undefined, { timeout: 3000 });
 	// Closed, the group opens and loads every page before its last line is picked.
 	await user.click(within(page()).getByRole("button", { name: /Lines/u }));
-	await user.click(header(/Findings/u));
+	await user.click(header(/Same key, different text/u));
 	await openUnique();
 	await within(page()).findByText("63 of 63");
 	await user.click(within(page()).getByRole("button", { name: "Previous line" }));

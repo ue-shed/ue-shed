@@ -72,7 +72,7 @@ function eagerItems(
 }
 
 it.live(
-	"generated indexed and in-memory pages equal eager presentation, with bounded hydration",
+	"generated queried and in-memory pages equal eager presentation",
 	() =>
 		Effect.gen(function* () {
 			const { fixture, target } = yield* workspaceScaleFixture(2048, 4);
@@ -84,34 +84,13 @@ it.live(
 				);
 				const report = yield* result.localizationCheck(workspaceScaleRules);
 				const quality = yield* result.localizationQuality(workspaceScaleRules);
-				for (const rules of [source, undefined]) {
+				// The queried workspace reads source findings from its own query, as the
+				// in-memory one reads them from the source report.
+				{
+					const rules = source;
 					const expected = eagerItems(rules, report, join);
 					const memory = localizationQualityWorkspace(rules, report, join);
-					let hydrated = 0,
-						sourceLines = 0,
-						facts = 0;
-					const indexed = localizationQualityWorkspaceOf(rules, {
-						...quality,
-						metadata: {
-							...quality.metadata,
-							lineOfUnit: (id) => {
-								sourceLines++;
-								return quality.metadata.lineOfUnit(id);
-							}
-						},
-						findings: {
-							...quality.findings,
-							filter: (position) => {
-								facts++;
-								return quality.findings.filter(position);
-							},
-							items: (positions) => {
-								hydrated += positions.length;
-								return quality.findings.items(positions);
-							}
-						}
-					});
-					expect([hydrated, sourceLines, facts]).toEqual([0, 0, 0]);
+					const indexed = localizationQualityWorkspaceOf(rules, quality);
 					for (const culture of [undefined, ...target.cultures]) {
 						const inCulture = expected.filter(
 							({ summary }) =>
@@ -158,9 +137,7 @@ it.live(
 									offset,
 									...(culture ? { culture } : undefined)
 								};
-								const before = hydrated + sourceLines;
 								const page = yield* indexed.search(request);
-								expect(hydrated + sourceLines - before).toBeLessThanOrEqual(50);
 								expect(page).toEqual(memory.search(request));
 								expect(page.findings).toEqual(
 									selected.slice(offset, offset + 50).map((item) => item.summary)
@@ -173,9 +150,6 @@ it.live(
 									);
 								expect(page.suggestedFixCount).toBe(suggestedFixCount);
 								expect(page.counts).toEqual(counts);
-								const beforeFacts = facts;
-								yield* indexed.search({ ...request, offset: offset + 50 });
-								expect(facts).toBe(beforeFacts);
 							}
 						}
 					}
@@ -203,7 +177,6 @@ it.live(
 					expect(yield* indexed.changes({ target: target.name, filter: "all" })).toEqual(
 						memory.changes({ target: target.name, filter: "all" })
 					);
-					expect(sourceLines).toBe(0);
 				}
 			}).pipe(Effect.provide(fixture.layer()));
 		}),

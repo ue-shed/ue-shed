@@ -1,23 +1,26 @@
 //! Bounded native search responses, including counts, localization and facets.
 use crate::engine_match::{Projection, checkpoint};
+use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, mask, selected_bits};
 use crate::engine_types::*;
-use crate::text_problem;
+use crate::rules::FindingRows;
 use crate::{Result, require};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-const COUNT_LABELS: [&str; 9] = [
+const COUNT_LABELS: [&str; 6] = [
     "all",
-    "shared",
-    "duplicate_source",
-    "long",
     "unresolved",
     "conflicting",
     "editable",
     "readOnly",
     "withoutNotes",
 ];
+/// The `signals` bits of the counted facts, `unresolved` and `conflicting`.
+const COUNTED_FACTS: [u32; 2] = [1 << FACT_SHIFT, 1 << (FACT_SHIFT + 1)];
+/// The rule IDs one row lists; `findingsOmitted` counts the rest.
+const MAX_ROW_FINDINGS: usize = 32;
 fn record(labels: &[&str], values: &[usize]) -> Value {
     Value::Object(
         labels
@@ -28,20 +31,22 @@ fn record(labels: &[&str], values: &[usize]) -> Value {
     )
 }
 
+/// The rule IDs with a finding on a row, the first `MAX_ROW_FINDINGS` in program order, and how
+/// many more there are.
+pub(crate) fn list_findings(value: &mut Value, findings: &FindingRows, row: usize) {
+    let rules = findings.of(row).collect::<Vec<_>>();
+    value["findings"] = json!(
+        rules
+            .iter()
+            .take(MAX_ROW_FINDINGS)
+            .map(|rule| findings.rules[*rule].id.as_str())
+            .collect::<Vec<_>>()
+    );
+    value["findingsOmitted"] = json!(rules.len().saturating_sub(MAX_ROW_FINDINGS));
+}
+
 impl EngineQuery {
     pub(crate) fn search_counts(
-        &mut self,
-        request: &SearchRequest,
-        matched: &[u32],
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
-        self.cached_metadata(
-            format!("counts:{}", request.matching_key()?),
-            cancelled,
-            |query| query.compute_search_counts(request, matched, cancelled),
-        )
-    }
-    fn compute_search_counts(
         &mut self,
         request: &SearchRequest,
         matched: &[u32],
@@ -59,19 +64,19 @@ impl EngineQuery {
                     checkpoint(cancelled)?;
                 }
                 let row = *row as usize;
-                for (bit, count) in counts[1..6].iter_mut().enumerate() {
-                    if p.flags[row] & (1 << bit) != 0 {
+                for (fact, count) in COUNTED_FACTS.iter().zip(counts[1..3].iter_mut()) {
+                    if p.flags[row] & fact != 0 {
                         *count += 1;
                     }
                 }
                 if p.editing[row] & 1 != 0 {
-                    counts[6] += 1;
+                    counts[3] += 1;
                 }
                 if p.editing[row] & 2 != 0 {
-                    counts[7] += 1;
+                    counts[4] += 1;
                 }
                 if p.notes[row] == 0 {
-                    counts[8] += 1;
+                    counts[5] += 1;
                 }
             }
             let mut origin_request = request.clone();
@@ -88,10 +93,7 @@ impl EngineQuery {
             }
         } else {
             let mut base = request.clone();
-            // Counts relax the lens, not what the request counts as a finding.
-            base.counted = Some(request.counted_findings());
             base.capability = Capability::All;
-            base.lens = None;
             base.without_notes = None;
             if let Some(location) = &mut base.location {
                 location.kinds = None;
@@ -105,13 +107,6 @@ impl EngineQuery {
                 let flags = p.raw.signals[row];
                 let editing = p.raw.editing[row];
                 let no_notes = p.raw.notes[row] == 0;
-                let lens = request.lens.as_ref().is_none_or(|lens| {
-                    lens == "all"
-                        || SIGNALS
-                            .iter()
-                            .position(|value| value == lens)
-                            .is_some_and(|bit| flags & (1 << bit) != 0)
-                });
                 let kinds = request
                     .location
                     .as_ref()
@@ -126,28 +121,28 @@ impl EngineQuery {
                         })
                         != 0;
                 let notes = request.without_notes != Some(true) || no_notes;
-                if lens && notes && kinds {
+                if notes && kinds {
                     if editing & 1 != 0 {
-                        counts[6] += 1;
+                        counts[3] += 1;
                     }
                     if editing & 2 != 0 {
-                        counts[7] += 1;
+                        counts[4] += 1;
                     }
                 }
-                if lens && capability && kinds && no_notes {
-                    counts[8] += 1;
+                if capability && kinds && no_notes {
+                    counts[5] += 1;
                 }
-                if lens && capability && notes {
+                if capability && notes {
                     for (bit, count) in origins.iter_mut().enumerate() {
                         if p.raw.origins[row] & (1 << bit) != 0 {
                             *count += 1;
                         }
                     }
                 }
-                if lens && capability && notes && kinds {
+                if capability && notes && kinds {
                     counts[0] += 1;
-                    for (bit, count) in counts[1..6].iter_mut().enumerate() {
-                        if flags & (1 << bit) != 0 {
+                    for (fact, count) in COUNTED_FACTS.iter().zip(counts[1..3].iter_mut()) {
+                        if flags & fact != 0 {
                             *count += 1;
                         }
                     }
@@ -159,18 +154,6 @@ impl EngineQuery {
         Ok(result)
     }
     fn localization_counts(
-        &mut self,
-        request: &SearchRequest,
-        matched: &[u32],
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
-        self.cached_metadata(
-            format!("localization:{}", request.matching_key()?),
-            cancelled,
-            |query| query.compute_localization_counts(request, matched, cancelled),
-        )
-    }
-    fn compute_localization_counts(
         &mut self,
         request: &SearchRequest,
         matched: &[u32],
@@ -319,64 +302,93 @@ impl EngineQuery {
             facets.into_iter().map(|(_, _, value)| value).collect(),
         ))
     }
+    /// The rows with each fact, over every atom but the `fact` clauses.
+    fn fact_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        let rows = self.matching(&request.without_filter(FilterField::Fact), cancelled)?;
+        let p = Projection::open(self, cancelled)?;
+        let localized = request.localization.is_some();
+        let mut counts = [0usize; FACTS.len()];
+        for (index, row) in rows.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let row = *row as usize;
+            let signals = if localized {
+                p.flags[row]
+            } else {
+                p.raw.signals[row]
+            } >> FACT_SHIFT;
+            for (bit, count) in counts.iter_mut().enumerate() {
+                if signals & (1 << bit) != 0 {
+                    *count += 1;
+                }
+            }
+        }
+        Ok(record(&FACTS, &counts))
+    }
+    /// Problem counts over every atom but the `problem` clauses, with the request's findings.
+    fn problem_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchProblemCounts");
+        let request = request.without_filter(FilterField::Problem);
+        let localized = request.localization.is_some();
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        let findings = self.request_findings(&request, cancelled)?;
+        let column = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
+        let rows = self.matching(&request, cancelled)?;
+        let mut problems = [0usize; PROBLEMS.len()];
+        for (index, row) in rows.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let mask = column[*row as usize];
+            for (bit, count) in problems.iter_mut().enumerate() {
+                if mask & (1 << bit) != 0 {
+                    *count += 1;
+                }
+            }
+        }
+        Ok(record(&PROBLEMS, &problems))
+    }
+    /// The answer's aggregates, as its parts ask for them.
     fn search_metadata(
         &mut self,
         request: &SearchRequest,
         matched: &[u32],
         cancelled: &AtomicBool,
     ) -> Result<Value> {
-        self.cached_metadata(
-            format!(
-                "response:{}",
-                serde_json::to_string(&request.without_page())?
-            ),
-            cancelled,
-            |query| query.compute_search_metadata(request, matched, cancelled),
-        )
-    }
-    fn problem_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
-        let request = request.without_filter(FilterField::Problem);
-        self.cached_metadata(
-            format!("problems:{}", request.matching_key()?),
-            cancelled,
-            |query| {
-                let p = Projection::open(query, cancelled)?;
-                let localized = request.localization.is_some();
-                let scope = query.culture_scope(request.localization.as_ref())?;
-                let rows = query.matching(&request, cancelled)?;
-                let mut problems = [0usize; PROBLEMS.len()];
-                for (index, row) in rows.iter().enumerate() {
-                    if index & 255 == 0 {
-                        checkpoint(cancelled)?;
-                    }
-                    let mask =
-                        p.row_problem(localized, *row as usize, &scope, request.counted_findings());
-                    for (bit, count) in problems.iter_mut().enumerate() {
-                        if mask & (1 << bit) != 0 {
-                            *count += 1;
-                        }
-                    }
-                }
-                Ok(record(&PROBLEMS, &problems))
-            },
-        )
-    }
-    fn compute_search_metadata(
-        &mut self,
-        request: &SearchRequest,
-        matched: &[u32],
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
         let localized = request.localization.is_some();
-        let mut result =
-            json!({"counts":self.search_counts(request,matched,cancelled)?,"total":matched.len()});
-        result["problems"] = self.problem_counts(request, cancelled)?;
-        if let Some(group) = request.group {
-            let mut groups = self.aggregate(matched, request, group, false, "", cancelled)?;
+        let mut result = json!({});
+        if request.wants(Part::Counts) {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("searchCounts");
+            result["counts"] = self.search_counts(request, matched, cancelled)?;
+            result["total"] = json!(matched.len());
+            result["problems"] = self.problem_counts(request, cancelled)?;
+        }
+        if let Some(group) = request.group
+            && request.wants(Part::Groups)
+        {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("searchGroups");
+            let mut groups = if group == GroupBy::Finding {
+                match self.request_findings(request, cancelled)? {
+                    Some(findings) => {
+                        self.finding_groups(matched, request, &findings, false, cancelled)?
+                    }
+                    None => json!({"entries":[],"more":0}),
+                }
+            } else {
+                self.aggregate(matched, request, group, false, "", cancelled)?
+            };
             groups["by"] = serde_json::to_value(group)?;
             result["groups"] = groups;
         }
-        if let Some(facets) = &request.facets {
+        if let Some(facets) = &request.facets
+            && request.wants(Part::Facets)
+        {
+            #[cfg(feature = "benchmark-timings")]
+            let _span = crate::benchmark_timings::Span::new("searchFacets");
             let mut values = json!({});
             if let Some(under) = &facets.folder {
                 let rows =
@@ -415,90 +427,254 @@ impl EngineQuery {
             if facets.cultures == Some(true) && localized {
                 values["cultures"] = self.culture_facets(request, matched, cancelled)?;
             }
+            if facets.findings == Some(true) {
+                values["findings"] = match self.request_findings(request, cancelled)? {
+                    Some(findings) => {
+                        let rows = self
+                            .matching(&request.without_filter(FilterField::Finding), cancelled)?;
+                        self.finding_groups(&rows, request, &findings, true, cancelled)?
+                    }
+                    None => json!({"entries":[],"more":0}),
+                };
+            }
+            if facets.facts == Some(true) {
+                values["facts"] = self.fact_counts(request, cancelled)?;
+            }
             result["facets"] = values;
         }
-        if let Some(files) = self.file_scope(matched, request, cancelled)? {
-            result["fileScope"] = files;
-        }
-        if localized {
-            result["localization"] = self.localization_counts(request, matched, cancelled)?;
+        if request.wants(Part::Counts) {
+            if let Some(files) = self.file_scope(matched, request, cancelled)? {
+                result["fileScope"] = files;
+            }
+            if localized {
+                #[cfg(feature = "benchmark-timings")]
+                let _span = crate::benchmark_timings::Span::new("searchLocalizationCounts");
+                result["localization"] = self.localization_counts(request, matched, cancelled)?;
+            }
         }
         checkpoint(cancelled)?;
         Ok(result)
     }
-    pub fn search(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
-        let matched = self.matching(request, cancelled)?;
-        let listed = self.listed_rows(request, std::sync::Arc::clone(&matched), cancelled)?;
-        let localized = request.localization.is_some();
-        let kind = if localized { "line" } else { "raw" };
-        let cursor = if localized {
-            request.localization_cursor.as_ref()
-        } else {
-            request.cursor.as_ref()
-        };
-        let after = self.after_cursor(kind, &listed, cursor, cancelled)?;
-        let page = &listed[after..listed.len().min(after + request.page_size)];
-        let next = if after + page.len() < listed.len() {
-            page.last()
-                .map(|row| self.packed(kind, *row as usize))
-                .transpose()?
-        } else {
-            None
-        };
-        let mut result = self.search_metadata(request, &matched, cancelled)?;
-        let mut units = Vec::new();
-        let counted = request.counted_findings();
-        // What put each row in its problems under this request, for hosts to show on the row.
-        let explain = |row: &mut Value, problems: u32, signals: u32| {
+
+    /// The rows' presentations: with a target, each line's preview and the first visible saved
+    /// unit of it; without one, each unit's. Each lists its problems and, with a findings layer,
+    /// the rules with a finding on it.
+    fn present_rows(
+        &mut self,
+        request: &SearchRequest,
+        rows: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<(Vec<Value>, Vec<Value>)> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchRowsPresent");
+        let findings = self.request_findings(request, cancelled)?;
+        let explain = |row: &mut Value, problems: u32, at: usize| {
             row["problems"] = json!(selected_bits(&PROBLEMS, problems));
-            row["countedFindings"] = json!(selected_bits(&SIGNALS, signals & counted));
+            if let Some(findings) = &findings {
+                list_findings(row, findings, at);
+            }
         };
-        if localized {
-            let p = Projection::open(self, cancelled)?;
+        let finding = |row: usize| {
+            findings
+                .as_ref()
+                .is_some_and(|findings| findings.counted.contains(row))
+        };
+        let p = Projection::open(self, cancelled)?;
+        let mut units = Vec::new();
+        let mut lines = Vec::new();
+        if request.localization.is_some() {
             let scope = self.culture_scope(request.localization.as_ref())?;
-            let mut localization = result["localization"].take();
-            let mut lines = Vec::new();
-            for row in page {
+            for row in rows {
                 checkpoint(cancelled)?;
                 let row = *row as usize;
-                let mut preview = self.preview(row)?;
-                explain(&mut preview, p.problem(row, &scope, counted), p.flags[row]);
+                let mut preview = {
+                    #[cfg(feature = "benchmark-timings")]
+                    let _span = crate::benchmark_timings::Span::new("rowPreview");
+                    self.preview(row)?
+                };
+                explain(&mut preview, p.problem(row, &scope, finding(row)), row);
                 for sr in p.starts[row] as usize..p.starts[row + 1] as usize {
                     if p.slice.visible[sr] != 0 {
+                        #[cfg(feature = "benchmark-timings")]
+                        let _span = crate::benchmark_timings::Span::new("rowPresentation");
                         let mut unit = self.presentation("slice", sr)?;
                         unit["localization"] = preview["cultures"].clone();
-                        unit["problems"] = preview["problems"].clone();
-                        unit["countedFindings"] = preview["countedFindings"].clone();
+                        for field in ["problems", "findings", "findingsOmitted"] {
+                            if let Some(value) = preview.get(field) {
+                                unit[field] = value.clone();
+                            }
+                        }
                         units.push(unit);
                         break;
                     }
                 }
                 lines.push(preview);
             }
+        } else {
+            for row in rows {
+                checkpoint(cancelled)?;
+                let row = *row as usize;
+                #[cfg(feature = "benchmark-timings")]
+                let _span = crate::benchmark_timings::Span::new("rowPresentation");
+                let mut unit = self.presentation("raw", row)?;
+                explain(&mut unit, p.row_problem(false, row, &[], finding(row)), row);
+                units.push(unit);
+            }
+        }
+        Ok((units, lines))
+    }
+
+    /// A rows page: the units, and the lines with a target, with the cursor of the next page.
+    fn rows_page(
+        &self,
+        request: &SearchRequest,
+        mut page: Value,
+        units: Vec<Value>,
+        lines: Vec<Value>,
+        next: Option<String>,
+    ) -> Value {
+        if request.localization.is_some() {
+            let localization = &mut page["localization"];
+            if localization.get("target").is_none() {
+                localization["target"] = self.target["name"].clone();
+            }
             localization["lines"] = json!(lines);
             if let Some(next) = next {
                 localization["nextCursor"] = json!(next);
             }
-            result["localization"] = localization;
-        } else {
-            let p = Projection::open(self, cancelled)?;
-            for row in page {
-                checkpoint(cancelled)?;
-                let row = *row as usize;
-                let mut unit = self.presentation("raw", row)?;
-                let signals = p.raw.signals[row];
-                explain(
-                    &mut unit,
-                    text_problem::settle(text_problem::signals(signals, counted)),
-                    signals,
-                );
-                units.push(unit);
+        } else if let Some(next) = next {
+            page["nextCursor"] = json!(next);
+        }
+        page["units"] = json!(units);
+        page
+    }
+
+    /// Each open group's first rows in display order, in the order the request names them.
+    /// Past the row budget a group, and every one after it, lists none.
+    fn open_group_pages(
+        &mut self,
+        request: &SearchRequest,
+        matched: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        let (Some(by), Some(keys)) = (request.group, request.open_groups.as_ref()) else {
+            return Ok(json!([]));
+        };
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchOpenGroups");
+        let first = request.first_rows.unwrap_or(MAX_PAGE);
+        let localized = request.localization.is_some();
+        let kind = if localized { "line" } else { "raw" };
+        let p = Projection::open(self, cancelled)?;
+        let places = Places::open(self)?;
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        let findings = self.request_findings(request, cancelled)?;
+        let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
+        let mut ids = Vec::with_capacity(keys.len());
+        let mut found: HashMap<u32, Vec<u32>> = HashMap::new();
+        for key in keys {
+            // A finding group is its rule's position in the layer.
+            let id = if by == GroupBy::Finding {
+                findings
+                    .as_deref()
+                    .and_then(|findings| findings.rule(key))
+                    .map(|rule| rule as u32)
+            } else {
+                self.group_id(by, key, &places)?
+            };
+            if let Some(id) = id {
+                found.insert(id, Vec::new());
             }
-            if let Some(next) = next {
-                result["nextCursor"] = json!(next);
+            ids.push(id);
+        }
+        // One walk fills every group with its first rows, and one more to know a page follows.
+        let mut open = found.len();
+        for (index, row) in matched.iter().enumerate() {
+            if open == 0 {
+                break;
+            }
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let mut fill = |id: u32| {
+                if let Some(rows) = found.get_mut(&id)
+                    && rows.len() <= first
+                {
+                    rows.push(*row);
+                    if rows.len() == first + 1 {
+                        open -= 1;
+                    }
+                }
+            };
+            match &findings {
+                Some(findings) if by == GroupBy::Finding => {
+                    for rule in findings.of(*row as usize) {
+                        fill(rule as u32);
+                    }
+                }
+                _ => fill(p.group_key(&places, localized, *row as usize, &problems, by)?),
             }
         }
-        result["units"] = json!(units);
+        let mut budget = MAX_OPEN_GROUP_ROWS;
+        let mut groups = Vec::with_capacity(keys.len());
+        for (key, id) in keys.iter().zip(ids) {
+            let rows = id
+                .and_then(|id| found.get(&id))
+                .map_or(&[][..], Vec::as_slice);
+            let shown = &rows[..rows.len().min(first)];
+            if shown.len() > budget {
+                budget = 0;
+                groups.push(json!({"key":key,"rowsOmitted":true}));
+                continue;
+            }
+            budget -= shown.len();
+            let next = if rows.len() > first {
+                shown
+                    .last()
+                    .map(|row| self.packed(kind, *row as usize))
+                    .transpose()?
+            } else {
+                None
+            };
+            let (units, lines) = self.present_rows(request, shown, cancelled)?;
+            let page = self.rows_page(request, json!({}), units, lines, next);
+            groups.push(json!({"key":key,"page":page}));
+        }
+        Ok(Value::Array(groups))
+    }
+
+    pub fn search(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        let matched = self.matching(request, cancelled)?;
+        let mut result = self.search_metadata(request, &matched, cancelled)?;
+        if !request.wants(Part::Rows) {
+            return Ok(result);
+        }
+        // With open groups, their pages carry the rows and the page lists none.
+        let (page, next) = if request.open_groups.is_some() {
+            result["openGroups"] = self.open_group_pages(request, &matched, cancelled)?;
+            (Vec::new(), None)
+        } else {
+            let listed = self.listed_rows(request, std::sync::Arc::clone(&matched), cancelled)?;
+            let localized = request.localization.is_some();
+            let kind = if localized { "line" } else { "raw" };
+            let cursor = if localized {
+                request.localization_cursor.as_ref()
+            } else {
+                request.cursor.as_ref()
+            };
+            let after = self.after_cursor(kind, &listed, cursor, cancelled)?;
+            let page = listed[after..listed.len().min(after + request.page_size)].to_vec();
+            let next = if after + page.len() < listed.len() {
+                page.last()
+                    .map(|row| self.packed(kind, *row as usize))
+                    .transpose()?
+            } else {
+                None
+            };
+            (page, next)
+        };
+        let (units, lines) = self.present_rows(request, &page, cancelled)?;
+        let result = self.rows_page(request, result, units, lines, next);
         checkpoint(cancelled)?;
         Ok(result)
     }

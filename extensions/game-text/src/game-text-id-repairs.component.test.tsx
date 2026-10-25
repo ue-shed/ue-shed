@@ -8,7 +8,7 @@ import {
 	type TextCorpusFocus,
 	type TextIdRepairPlan
 } from "@ue-shed/game-text/schema";
-import { LocalizationFocus } from "@ue-shed/game-text/corpus";
+import { LocalizationFocus, type RelatedUnit } from "@ue-shed/game-text/corpus";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { createSignal } from "solid-js";
@@ -58,6 +58,8 @@ function mount(
 		readonly failed?: boolean;
 		readonly incomplete?: boolean;
 		readonly related?: readonly TextCorpusFocus[];
+		/** The selection's other units under its key. */
+		readonly sameKey?: readonly TextCorpusFocus[];
 		readonly details?: readonly LocalizationFocus[];
 		readonly withTarget?: boolean;
 	} = {}
@@ -70,38 +72,42 @@ function mount(
 	const target = options.withTarget
 		? LocalizationSelection.fields.target.make("Game")
 		: undefined;
-	const client: Pick<GameTextClientApi, "idRepairs" | "focus" | "search" | "locateAsset"> = {
-		focus: ({ id }) =>
-			Effect.succeed({
+	// The engine's related units: the selection, then the other keys holding its text.
+	const member = (item: TextCorpusFocus): RelatedUnit => {
+		const detail = options.details?.find(
+			(entry) => entry.origin.kind === "corpus" && entry.origin.unitIds.includes(item.unit.id)
+		);
+		return {
+			kind: "unit",
+			unit: item.unit,
+			occurrences: item.occurrences,
+			totalOccurrences: item.totalOccurrences,
+			complete: item.occurrences.length === item.totalOccurrences,
+			...(target && detail
+				? {
+						line: { id: detail.id, identity: detail.identity },
+						translations: detail.translations,
+						translationsComplete: detail.nextCultureOffset === undefined
+					}
+				: undefined)
+		};
+	};
+	const client: Pick<GameTextClientApi, "idRepairs" | "related" | "locateAsset"> = {
+		related: ({ selection }) => {
+			const items = options.related ?? [];
+			const self = items.find((item) => item.unit.id === selection.id) ?? focus;
+			return Effect.succeed({
 				status: "found",
-				focus: options.related?.find((item) => item.unit.id === id) ?? focus
-			}),
-		search: () =>
-			Effect.succeed({
-				status: "ready",
-				page: {
-					units: options.related?.map((item) => item.unit) ?? [],
-					total: options.related?.length ?? 0,
-					counts: {
-						all: 2,
-						shared: 0,
-						duplicate_source: 2,
-						long: 0,
-						unresolved: 0,
-						conflicting: 0,
-						editable: 0,
-						readOnly: 2,
-						withoutNotes: 2,
-						origins: {
-							asset: 2,
-							data_table: 0,
-							string_table: 0,
-							cpp: 0,
-							other_source: 0
-						}
+				related: {
+					self: member(self),
+					sameKey: { members: (options.sameKey ?? []).map(member), complete: true },
+					sameText: {
+						members: items.filter((item) => item.unit.id !== self.unit.id).map(member),
+						complete: true
 					}
 				}
-			}),
+			});
+		},
 		locateAsset: () => Effect.never,
 		idRepairs: {
 			prepare: (request) =>
@@ -154,19 +160,6 @@ function mount(
 				})
 		}
 	};
-	const localizationFocus: NonNullable<GameTextClientApi["localizationFocus"]> = ({
-		selection
-	}) => {
-		const detail = options.details?.find(
-			(item) =>
-				selection.kind === "unit" &&
-				item.origin.kind === "corpus" &&
-				item.origin.unitIds.includes(selection.id)
-		);
-		return Effect.succeed(
-			detail ? { status: "found", focus: detail } : { status: "not_ready" }
-		);
-	};
 	function Panel() {
 		const [current, setCurrent] = createSignal(
 			options.incomplete ? { ...focus, totalOccurrences: 3 } : (options.related?.[0] ?? focus)
@@ -185,7 +178,7 @@ function mount(
 			<GameTextIdRepairs
 				focus={current()}
 				detail={options.details?.[0]}
-				client={{ ...client, localizationFocus }}
+				client={client}
 				projectKey="C:/Fixture"
 				target={target}
 				nativeCulture={undefined}
@@ -251,7 +244,7 @@ it("requires an explicit surviving key and translation, staging only after verif
 				id: TextUnitId.make(key),
 				identity,
 				source: { status: "consistent", value: "Lamp on" },
-				reviewSignals: ["duplicate_source"]
+				reviewSignals: []
 			},
 			occurrences: [{ ...focus.occurrences[index]!, source: "Lamp on", identity }],
 			totalOccurrences: 1
@@ -290,6 +283,54 @@ it("requires an explicit surviving key and translation, staging only after verif
 		translation: "Licht an",
 		seenTranslation: "Lampe an"
 	});
+});
+
+it("moves the selection's units with the same text along with its key", async () => {
+	const unit = (id: string, key: string, place: number): TextCorpusFocus => {
+		const identity = { status: "resolved", namespace: "UI", key } as const;
+		return {
+			...focus,
+			unit: {
+				...focus.unit,
+				id: TextUnitId.make(id),
+				identity,
+				source: { status: "consistent", value: "Lamp on" },
+				reviewSignals: []
+			},
+			occurrences: [{ ...focus.occurrences[place]!, source: "Lamp on", identity }],
+			totalOccurrences: 1
+		};
+	};
+	const test = mount({
+		related: [unit("Lamp", "Lamp", 0), unit("AnotherLamp", "AnotherLamp", 1)],
+		sameKey: [
+			unit("LampCopy", "Lamp", 1),
+			{
+				...unit("LampOther", "Lamp", 0),
+				unit: {
+					...unit("LampOther", "Lamp", 0).unit,
+					source: { status: "consistent", value: "Lamp off" }
+				}
+			}
+		]
+	});
+	const user = userEvent.setup();
+	await user.click(screen.getByRole("button", { name: "Compare matching keys" }));
+	const keys = await screen.findAllByRole("radio");
+	expect(keys).toHaveLength(3);
+	await user.click(keys[2]!);
+	await user.click(screen.getByRole("button", { name: "Preview merge" }));
+	await user.click(screen.getByRole("button", { name: "Check in Unreal" }));
+	expect(
+		new Set(
+			test
+				.plan()
+				?.request.changes.map(
+					(change) => change.edit.kind === "adopt_key" && change.edit.key
+				)
+		)
+	).toEqual(new Set(["AnotherLamp"]));
+	expect(test.plan()?.request.changes).toHaveLength(2);
 });
 
 it("waits for every culture before splitting and never stages translations after a failed apply", async () => {

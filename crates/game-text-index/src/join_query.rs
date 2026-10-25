@@ -27,6 +27,12 @@ const FIELDS: [&str; 19] = [
 ];
 type Column = (String, String, Vec<u32>);
 pub(crate) fn packed(values: &[String]) -> Result<(Vec<u32>, Vec<u32>)> {
+    let (bytes, starts) = packed_bytes(values)?;
+    Ok((padded(bytes)?, starts))
+}
+
+/// The values' WTF-8 bytes end to end, and where each starts.
+fn packed_bytes(values: &[String]) -> Result<(Vec<u8>, Vec<u32>)> {
     let mut bytes = Vec::new();
     let mut starts = Vec::new();
     for value in values {
@@ -38,8 +44,66 @@ pub(crate) fn packed(values: &[String]) -> Result<(Vec<u32>, Vec<u32>)> {
         )?;
     }
     starts.push(bytes.len() as u32);
+    Ok((bytes, starts))
+}
+
+fn padded(mut bytes: Vec<u8>) -> Result<Vec<u32>> {
     bytes.resize(bytes.len().div_ceil(4) * 4, 0);
-    Ok((crate::snapshot::integers(&bytes)?, starts))
+    crate::snapshot::integers(&bytes)
+}
+
+/// A search arena under `prefix`: the distinct strings' IDs, their folded bytes, and the
+/// trigram index over those bytes. Search reads them without decoding the dictionary.
+fn arena(
+    result: &mut Vec<Column>,
+    j: &Joined,
+    prefix: &str,
+    domain: &str,
+    ids: BTreeSet<u32>,
+) -> Result<()> {
+    let ids = ids.into_iter().collect::<Vec<_>>();
+    let (bytes, starts) = packed_bytes(
+        &ids.iter()
+            .map(|id| j.string(*id).to_lowercase())
+            .collect::<Vec<_>>(),
+    )?;
+    let (keys, offsets, postings) = crate::text_trigrams::build(&starts, &bytes)?;
+    result.push((format!("{prefix}.ids"), domain.into(), ids));
+    result.push((format!("{prefix}.starts"), String::new(), starts));
+    result.push((format!("{prefix}.folded"), String::new(), padded(bytes)?));
+    result.push((format!("{prefix}.tri.keys"), String::new(), keys));
+    result.push((format!("{prefix}.tri.offsets"), String::new(), offsets));
+    result.push((
+        format!("{prefix}.tri.postings"),
+        String::new(),
+        padded(postings)?,
+    ));
+    Ok(())
+}
+
+/// The translation strings search reads: each archive entry's, and each PO entry's that has one,
+/// as `EngineQuery::translation` chooses between an entry's source and translation.
+pub(crate) fn translation_ids(j: &Joined) -> BTreeSet<u32> {
+    let mut ids = BTreeSet::new();
+    for (files, po) in [(&j.archives, false), (&j.pos, true)] {
+        for file in files {
+            let c = &file.columns;
+            for (index, options) in c[OPTIONS].iter().enumerate() {
+                if po && options & 64 == 0 {
+                    continue;
+                }
+                let field = if options & 128 != 0 {
+                    SOURCE
+                } else {
+                    TRANSLATION
+                };
+                if let Some(id) = c[field].get(index) {
+                    ids.insert(*id);
+                }
+            }
+        }
+    }
+    ids
 }
 struct Entries {
     c: Vec<Vec<u32>>,
@@ -65,8 +129,7 @@ impl Entries {
         gathered: u32,
         raw_index: &[u32],
         occurrence_line: &[u32],
-        group_flags: &[u32],
-        duplicate: &[bool],
+        conflicting: &[bool],
     ) {
         let c = &j.packages.occurrence;
         self.c[0][row] = first as u32;
@@ -84,7 +147,8 @@ impl Entries {
         let mut origins = 0;
         let mut audience = 0;
         let mut editing = 0;
-        let mut notes = 0;
+        // A slice also has its line's manifest notes; a raw unit has no line to take them from.
+        let mut notes = u32::from(gathered != ABSENT && j.manifest_notes(gathered as usize));
         let mut member = first as u32;
         while member != ABSENT {
             let i = member as usize;
@@ -102,13 +166,13 @@ impl Entries {
             if paths_seen.insert(file) {
                 paths.push(file);
             }
-            flags |= group_flags[if gathered == ABSENT {
+            if conflicting[if gathered == ABSENT {
                 occurrence_line[i]
             } else {
                 gathered
-            } as usize];
-            if duplicate[i] {
-                flags |= 2;
+            } as usize]
+            {
+                flags |= 16;
             }
             origins |= 1
                 << match c[O_LOCATION][i] {
@@ -143,9 +207,6 @@ impl Entries {
         let word_count = words(longest);
         self.sources.extend(values);
         self.files.extend(paths);
-        if characters_count >= 40 {
-            flags |= 4;
-        }
         if c[O_IDENTITY][first] >= 2 || c[O_KEY][first] == j.empty {
             flags |= 8;
         }
@@ -192,9 +253,8 @@ impl Entries {
 pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     let count = j.groups.len();
     let mut occurrence_line = vec![0; j.order.len()];
-    let mut group_flags = vec![0; count];
-    let places = crate::package_evidence::places(j);
-    let duplicate = crate::package_evidence::duplicates(j, &places);
+    // A line holding several resolved texts conflicts; every unit on it carries the fact.
+    let mut conflicting = vec![false; count];
     let c = &j.packages.occurrence;
     for (row, g) in j.groups.iter().enumerate() {
         let mut sources = HashSet::new();
@@ -207,7 +267,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
             let source = c[O_SOURCE][i];
             sources.insert(source);
         }
-        group_flags[row] = u32::from(g.oe - g.os > 1) | if sources.len() > 1 { 16 } else { 0 };
+        conflicting[row] = sources.len() > 1;
     }
     let raw_representatives = j
         .raw_order
@@ -250,8 +310,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
             ABSENT,
             &raw_index,
             &occurrence_line,
-            &group_flags,
-            &duplicate,
+            &conflicting,
         );
     }
     let mut slice = Entries::new(representatives.len());
@@ -264,19 +323,15 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
                 row as u32,
                 &raw_index,
                 &occurrence_line,
-                &group_flags,
-                &duplicate,
+                &conflicting,
             );
         }
     }
-    let mut result = vec![
-        ("query.occurrence.places".into(), String::new(), places),
-        (
-            "query.occurrence.sources".into(),
-            "source".into(),
-            c[O_SOURCE].clone(),
-        ),
-    ];
+    let mut result = vec![(
+        "query.occurrence.sources".into(),
+        "source".into(),
+        c[O_SOURCE].clone(),
+    )];
     raw.append("raw", &mut result);
     slice.append("slice", &mut result);
     let mut raw_order = (0..names.len() as u32).collect::<Vec<_>>();
@@ -292,19 +347,20 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     ));
     let mut line_names = Vec::new();
     for row in 0..count {
-        let identity =
-            if line_starts[row] != line_starts[row + 1] && j.string(j.line[1][row]).is_empty() {
-                format!(
-                    "unresolved:{}",
-                    names[raw_index[representatives[line_starts[row] as usize] as usize] as usize]
-                )
-            } else {
-                crate::wtf8::Wtf8Buf::from_utf8(&crate::wtf8::view_json(&serde_json::json!([
-                    j.string(j.line[0][row]),
-                    j.string(j.line[1][row])
-                ]))?)
-                .to_view()
-            };
+        let identity = if line_starts[row] != line_starts[row + 1]
+            && j.string(j.line[crate::join::L_KEY][row]).is_empty()
+        {
+            format!(
+                "unresolved:{}",
+                names[raw_index[representatives[line_starts[row] as usize] as usize] as usize]
+            )
+        } else {
+            crate::wtf8::Wtf8Buf::from_utf8(&crate::wtf8::view_json(&serde_json::json!([
+                j.string(j.line[crate::join::L_NS][row]),
+                j.string(j.line[crate::join::L_KEY][row])
+            ]))?)
+            .to_view()
+        };
         line_names.push(format!(
             "{}:{identity}",
             crate::wtf8::Wtf8Buf::from_utf8(target).to_view()
@@ -336,17 +392,15 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
         .iter()
         .chain(c[O_SOURCE].iter())
         .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let folded = source_ids
-        .iter()
-        .map(|id| j.string(*id).to_lowercase())
-        .collect::<Vec<_>>();
-    let (bytes, starts) = packed(&folded)?;
-    result.push(("query.source.ids".into(), "source".into(), source_ids));
-    result.push(("query.source.starts".into(), String::new(), starts));
-    result.push(("query.source.folded".into(), String::new(), bytes));
+        .collect::<BTreeSet<_>>();
+    arena(&mut result, j, "query.source", "source", source_ids)?;
+    arena(
+        &mut result,
+        j,
+        "query.translation",
+        "translation",
+        translation_ids(j),
+    )?;
     Ok(result)
 }
 

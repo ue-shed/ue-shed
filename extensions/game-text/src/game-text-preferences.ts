@@ -161,7 +161,8 @@ export interface GameTextPreferences {
 	readonly selectedLocalizationId?: Schema.Schema.Type<typeof LocalizationLineId> | undefined;
 	readonly query: string;
 	readonly capability: Schema.Schema.Type<typeof TextCapabilityFilter>;
-	readonly lens: Schema.Schema.Type<typeof TextReviewLens>;
+	/** A lens saved by an earlier Game Text; `migratePreferences` turns it into a pill. */
+	readonly lens?: Schema.Schema.Type<typeof TextReviewLens> | undefined;
 	readonly withoutNotes?: boolean;
 	readonly where?: Schema.Schema.Type<typeof TextWhere> | undefined;
 	readonly mode?: "corpus" | "quality" | "reports";
@@ -180,17 +181,18 @@ export interface GameTextPreferences {
 /**
  * Preferences saved before filter pills keep their toggles, lenses and state chips as fields. They
  * become pills here once; what has no pill (changed files, gathered-only and other line states)
- * stays where it was.
+ * stays where it was. A lens saved beside pills becomes one more pill.
  */
 export function migratePreferences(preferences: GameTextPreferences): GameTextPreferences {
-	if (preferences.filter !== undefined) return preferences;
+	const { lens, ...rest } = preferences;
+	if (rest.filter !== undefined)
+		return { ...rest, filter: [...rest.filter, ...legacyFilter({ lens }).filter] };
 	const { filter, remainingState } = legacyFilter(preferences);
 	const files = preferences.where?.files;
 	return {
-		...preferences,
+		...rest,
 		filter,
 		capability: "all",
-		lens: "all",
 		withoutNotes: false,
 		where: files === undefined ? undefined : { files },
 		localizationState: remainingState,
@@ -251,7 +253,6 @@ function preferencesFrom(value: StoredPreferences): GameTextPreferences {
 		...(qualityEditor ? { qualityEditor } : undefined),
 		query: value.query ?? "",
 		capability: value.capability ?? "all",
-		lens: value.lens ?? "all",
 		withoutNotes: value.withoutNotes ?? false,
 		selectedId: value.selectedId
 	});

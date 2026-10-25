@@ -168,13 +168,14 @@ export async function scaleQuality(result: GameTextIndexRefreshResult, tracer?: 
 			)
 		);
 		const measured = stalls();
-		// Findings by check, from the finding columns; no line is read.
+		// Findings by check, from the first page's counts.
+		const page = await Effect.runPromise(
+			quality.workspace.search({ target: result.localization.target, filter: "all" })
+		);
 		const byCheck: Record<string, number> = {};
-		for (let position = 0; position < quality.findings.length; position++) {
-			const key = `findings.${quality.findings.filter(position)}`;
-			byCheck[key] = (byCheck[key] ?? 0) + 1;
-		}
-		return { quality, findings: quality.findings.length, ...measured, ...byCheck };
+		for (const [filter, count] of Object.entries(page.counts))
+			if (filter !== "all" && count) byCheck[`findings.${filter}`] = count;
+		return { quality, findings: page.counts.all, ...measured, ...byCheck };
 	} catch (cause) {
 		stalls();
 		throw cause;

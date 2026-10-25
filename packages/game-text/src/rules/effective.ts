@@ -1,5 +1,6 @@
 import {
-	customLocalizationChecks,
+	type CompleteRule,
+	customRulesOf,
 	isBuiltInCheckEntry,
 	localizationRulesOf,
 	resolveLocalizationChecks,
@@ -10,7 +11,7 @@ import { prepareTextQualityRules } from "../quality.js";
 import type { TextTerminologyEntry } from "../quality-schema.js";
 import { type Arg, expr as x } from "./builder.js";
 import { exampleRules, scopeAdmits } from "./catalogue.js";
-import type { Rule, RuleDocumentV4 } from "./schema.js";
+import type { Expr, Rule, RuleDocumentV4 } from "./schema.js";
 
 const f = x.field,
 	p = x.param,
@@ -40,7 +41,8 @@ const terms = (entries: readonly TextTerminologyEntry[]) =>
 
 /**
  * The program the engine runs for a rules file: the built-in checks it lists, with its settings,
- * then its source and localization rules by ID, then its custom checks in file order. Parameters
+ * then its source and localization rules by ID, then its custom checks and complete rules in file
+ * order. Parameters
  * one rule takes from others are derived here, from the rules that run. Without a file, nothing
  * runs. `checks` and `disabledChecks` narrow the built-in checks further.
  */
@@ -136,7 +138,7 @@ export function effectiveRuleDocument(
 	for (const { rule, role, terms: preparedTerms } of sourceRules) {
 		const base = {
 			...authored(rule),
-			label: rule.id,
+			label: rule.label ?? rule.id,
 			subject: "unit_source",
 			family: "source",
 			severity: "normal",
@@ -199,7 +201,7 @@ export function effectiveRuleDocument(
 		const base = {
 			...authored(rule),
 			kind: rule.kind,
-			label: rule.id,
+			label: rule.label ?? rule.id,
 			subject: "line_culture",
 			family: "policy",
 			severity: rule.severity ?? "normal",
@@ -264,7 +266,56 @@ export function effectiveRuleDocument(
 				expectation: g(item, "expectation")
 			});
 	}
-	for (const check of customLocalizationChecks(document)) {
+	for (const check of customRulesOf(document)) {
+		if (check.kind === "rule") {
+			// SAFETY: a complete rule's expressions are the engine's language as the file holds
+			// them; the engine checks them when it loads the program and names the rule at fault.
+			// Verified by: localization-complete-rules.test.ts runs and rejects complete rules natively.
+			const expression = (value: CompleteRule["when"]) => value as Expr;
+			rules.push({
+				...custom(check),
+				label: check.label,
+				kind: "custom",
+				subject: check.subject,
+				family: "custom",
+				severity: check.severity ?? "normal",
+				...(check.params ? { params: check.params } : undefined),
+				...(check.let
+					? {
+							let: Object.fromEntries(
+								Object.entries(check.let).map(([name, value]) => [
+									name,
+									expression(value)
+								])
+							)
+						}
+					: undefined),
+				...(check.each === undefined ? undefined : { each: expression(check.each) }),
+				...(check.eachAs ? { eachAs: check.eachAs } : undefined),
+				// Findings name their line by key, so a complete rule sees keyed lines only, as the
+				// custom checks below do.
+				when: x.and(
+					check.subject === "line"
+						? x.and(x.not(x.isNull(f("identity"))), x.not(x.isNull(f("sourceCulture"))))
+						: x.not(x.isNull(f("line.identity"))),
+					expression(check.when)
+				),
+				actual: expression(check.actual),
+				expectation: expression(check.expectation),
+				...(check.shadowed === undefined
+					? undefined
+					: { shadowed: expression(check.shadowed) }),
+				...(check.counts === undefined ? undefined : { counts: check.counts }),
+				recovery: x.lit(check.recovery),
+				extra: o({
+					check: "rule",
+					label: check.label,
+					subject: check.subject === "line" ? "source" : "translation"
+				}),
+				...(check.subject === "line" ? { translationOrigin: x.lit("absent") } : undefined)
+			});
+			continue;
+		}
 		const text = check.subject === "source" ? f("comparisonSource") : f("latest");
 		const eligible =
 			check.subject === "source"

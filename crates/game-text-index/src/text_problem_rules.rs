@@ -60,27 +60,17 @@ pub const PROBLEM_REASONS: [&[&str]; 8] = [
     &[],
 ];
 
-/// Review signals that raise each problem, by `SIGNALS` name.
+/// Facts that raise each problem, by `FACTS` name.
 pub const PROBLEM_SIGNALS: [&[&str]; 8] = [
     &[],
     &["conflicting"],
     &[],
     &[],
     &[],
-    &["shared", "duplicate_source", "unresolved"],
+    &[],
     &[],
     &[],
 ];
 
 /// Whether a line with this worst problem has work before it ships.
 pub const PROBLEM_WORK: [bool; 8] = [true, true, true, true, true, false, false, false];
-
-/// Review signals a request can count as findings by naming them, by `SIGNALS` name.
-pub const FINDING_SIGNALS: [&str; 6] = [
-    "shared",
-    "duplicate_source",
-    "long",
-    "unresolved",
-    "evidence_only",
-    "compiled_copy_differs",
-];

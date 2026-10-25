@@ -17,7 +17,8 @@ import {
 	hasValue,
 	isTranslationKey,
 	toggleValue,
-	type ChoiceField
+	type ChoiceField,
+	type RuleLabels
 } from "./game-text-filter-model.js";
 
 /** Counts the menu shows beside each value, when the page has them. */
@@ -26,6 +27,10 @@ export interface FilterCounts {
 	readonly folders: TextGroupList | undefined;
 	readonly assets: TextGroupList | undefined;
 	readonly assetTypes: TextGroupList | undefined;
+	/** The project's rules with their rows; the Finding field lists them. */
+	readonly findings: TextGroupList | undefined;
+	/** Whether the rules' findings are read: no Finding field without a rule, none while checking. */
+	readonly findingsStatus: "none" | "pending" | "ready" | undefined;
 }
 
 /** A field that is not a clause yet, such as review state: one choice at a time. */
@@ -57,7 +62,7 @@ interface Field {
 	readonly options: (typed: string) => readonly Option[];
 }
 
-const CHOICE_ORDER: readonly ChoiceField[] = ["problem", "translation", "finding"];
+const CHOICE_ORDER: readonly ChoiceField[] = ["problem", "translation"];
 const AFTER_PLACES: readonly ChoiceField[] = ["origin"];
 const ATTRIBUTES: readonly ChoiceField[] = ["audience", "editing", "notes"];
 
@@ -165,6 +170,31 @@ export function FilterMenu(props: {
 				: found;
 		}
 	});
+	// The project's rules, in program order; a rule without rows stays out unless chosen.
+	const findingField = (): Field => ({
+		key: "finding",
+		label:
+			props.counts.findingsStatus === "pending"
+				? `${FIELD_LABELS.finding} (checking rules…)`
+				: FIELD_LABELS.finding,
+		options: (text) => {
+			const narrowed = props.filter.some((clause) => clause.field === "finding");
+			return (props.counts.findings?.entries ?? []).flatMap((entry): Option[] => {
+				if (!matches(text, entry.label)) return [];
+				if (entry.count === 0 && !chosen("finding", entry.key)) return [];
+				return [
+					{
+						key: `finding:${entry.key}`,
+						label: entry.label,
+						count: narrowed ? undefined : entry.count,
+						selected: chosen("finding", entry.key),
+						excluded: excluded("finding", entry.key),
+						select: () => toggle("finding", entry.key)
+					}
+				];
+			});
+		}
+	});
 	const extraField = (field: ExtraField): Field => ({
 		key: field.key,
 		label: field.label,
@@ -182,7 +212,15 @@ export function FilterMenu(props: {
 	});
 	// Sections in menu order: problems, places, attributes, and fields that are not clauses yet.
 	const sections = createMemo((): readonly (readonly Field[])[] => [
-		CHOICE_ORDER.filter((field) => props.hasTarget || field !== "translation").map(choiceField),
+		[
+			...CHOICE_ORDER.filter((field) => props.hasTarget || field !== "translation").map(
+				choiceField
+			),
+			...(props.counts.findingsStatus === undefined || props.counts.findingsStatus === "none"
+				? []
+				: [findingField()]),
+			choiceField("fact")
+		],
 		[
 			placeField("folder"),
 			placeField("asset"),
@@ -450,6 +488,7 @@ function makeClause(field: TextFilterField, value: string): TextFilterClause | u
 		case "asset_type":
 		case "namespace":
 		case "source":
+		case "finding":
 			return { field, op: "is", values: [value] };
 		case "translation_key":
 			return isTranslationKey(value) ? { field, op: "is", values: [value] } : undefined;
@@ -469,8 +508,8 @@ function fromChoice(field: ChoiceField, value: string): TextFilterClause {
 			return { field, op, values: CHOICE_FIELDS.problem.values.filter(same) };
 		case "translation":
 			return { field, op, values: CHOICE_FIELDS.translation.values.filter(same) };
-		case "finding":
-			return { field, op, values: CHOICE_FIELDS.finding.values.filter(same) };
+		case "fact":
+			return { field, op, values: CHOICE_FIELDS.fact.values.filter(same) };
 		case "origin":
 			return { field, op, values: CHOICE_FIELDS.origin.values.filter(same) };
 		case "editing":
@@ -489,6 +528,8 @@ function fromChoice(field: ChoiceField, value: string): TextFilterClause {
 export function FilterPills(props: {
 	readonly filter: TextFilter;
 	readonly onChange: (filter: TextFilter) => void;
+	/** Rule labels for finding pills; a pill shows a rule's ID until the page lists it. */
+	readonly rules?: RuleLabels;
 }) {
 	const flip = (index: number) => props.onChange(flipClause(props.filter, index));
 	return (
@@ -496,7 +537,7 @@ export function FilterPills(props: {
 			<div role="list" aria-label="Filters" {...stylex.attrs(styles.pills)}>
 				<For each={props.filter}>
 					{(clause, index) => {
-						const parts = () => clauseParts(clause);
+						const parts = () => clauseParts(clause, props.rules);
 						return (
 							<span role="listitem" {...stylex.attrs(styles.pill)}>
 								<span {...stylex.attrs(styles.pillPart)}>{parts().field}</span>

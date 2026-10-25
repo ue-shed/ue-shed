@@ -8,9 +8,14 @@ import {
 	applyRuleOverlay,
 	decodeGameTextRuleDocument,
 	decodeGameTextRuleDocumentJson,
-	resolveLocalizationChecks
+	resolveLocalizationChecks,
+	ruleLabelsOf
 } from "./game-text-rules.js";
-import { localizationCheckDefaults } from "./localization-check-catalogue.js";
+import {
+	localizationCheckCatalogue,
+	localizationCheckDefaults
+} from "./localization-check-catalogue.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 import { BuiltInCheckId } from "./localization-check-ids.js";
 import { STARTER_CHECKS, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
@@ -312,6 +317,51 @@ describe("the rules file", () => {
 			yield* decodeGameTextRuleDocument(
 				file([{ kind: "segment_separator", enabled: false }])
 			);
+		})
+	);
+	it.effect("names a project rule by its label, or its ID without one", () =>
+		Effect.gen(function* () {
+			const document = yield* decodeGameTextRuleDocument({
+				schemaVersion: 1,
+				roles: [menu],
+				rules: [
+					{ kind: "long", params: {} },
+					{
+						kind: "character_budget",
+						id: "menu.budget",
+						label: "  Menu text over budget ",
+						role: "menu",
+						maximumCharacters: 12,
+						recovery: "Shorten the menu text."
+					},
+					{
+						kind: "character_budget",
+						id: "menu.plain",
+						role: "menu",
+						maximumCharacters: 20,
+						recovery: "Shorten the menu text."
+					}
+				]
+			});
+			expect([...ruleLabelsOf(document)]).toEqual([
+				["localization.long", localizationCheckCatalogue.long.label],
+				["menu.budget", "Menu text over budget"],
+				["menu.plain", "menu.plain"]
+			]);
+			expect(
+				effectiveRuleDocument(document)
+					.rules.filter((rule) => rule.id.startsWith("menu."))
+					.map((rule) => [rule.id, rule.label])
+			).toEqual([
+				["menu.budget", "Menu text over budget"],
+				["menu.plain", "menu.plain"]
+			]);
+			expect(
+				yield* decodeFailure({
+					...document,
+					rules: [{ ...document.rules[1], label: " " }]
+				})
+			).toBe("invalid_structure");
 		})
 	);
 });

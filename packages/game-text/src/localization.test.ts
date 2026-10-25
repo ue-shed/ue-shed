@@ -202,9 +202,7 @@ describe("localization identity join and precedence", () => {
 				query: "",
 				pageSize: 50
 			});
-			expect(page.counts.shared).toBe(0);
 			expect(page.counts.conflicting).toBe(0);
-			expect(page.counts.duplicate_source).toBe(secondSource === "Source" ? 2 : 0);
 		}
 	);
 
@@ -284,11 +282,7 @@ describe("localization identity join and precedence", () => {
 			}
 			const query = textCorpusQuery(text, undefined, joined);
 			const request = { capability: "all" as const, query: "", pageSize: 50 };
-			expect(query.search(request).counts).toMatchObject({
-				shared: 0,
-				conflicting: 0,
-				duplicate_source: 2
-			});
+			expect(query.search(request).counts).toMatchObject({ conflicting: 0 });
 			for (const line of joined.lines) {
 				const page = query.search({
 					...request,
@@ -300,11 +294,7 @@ describe("localization identity join and precedence", () => {
 				expect(page.units[0]?.locationKinds).toEqual([
 					line.identity?.namespace === "UI" ? kind : "string_table_entry"
 				]);
-				expect(page.counts).toMatchObject({
-					shared: 0,
-					conflicting: 0,
-					duplicate_source: 1
-				});
+				expect(page.counts).toMatchObject({ conflicting: 0 });
 			}
 			const { csv } = localizationLinesCsv({
 				join: joined,
@@ -326,7 +316,7 @@ describe("localization identity join and precedence", () => {
 	it("keeps sources on different gathered identities from conflicting within a mixed unit", () => {
 		const text = mixedCorpus(false, "asset_property", "Other");
 		const page = textCorpusQuery(text).search({ capability: "all", query: "", pageSize: 50 });
-		expect(page.counts).toMatchObject({ shared: 0, conflicting: 0, duplicate_source: 0 });
+		expect(page.counts).toMatchObject({ conflicting: 0 });
 		const joined = joinLocalizationTarget(
 			text,
 			evidence([
@@ -375,7 +365,7 @@ describe("localization identity join and precedence", () => {
 		}
 	);
 
-	it("finds shared and conflicting FText across a mixed unit and a package variant", () => {
+	it("finds conflicting FText across a mixed unit and a package variant", () => {
 		const text = mixedCorpus(false, "data_table_cell");
 		const other = TextUnit.make({
 			...ftextUnit("K", "Other", "Content/Text/Other.uasset", "UI [Other]"),
@@ -391,21 +381,13 @@ describe("localization identity join and precedence", () => {
 			joined
 		);
 		const request = { capability: "all" as const, query: "", pageSize: 50 };
-		expect(query.search(request).counts).toMatchObject({
-			shared: 2,
-			conflicting: 2,
-			duplicate_source: 2
-		});
-		expect(query.focus({ id: other.id, pageSize: 50 })?.unit.reviewSignals).not.toContain(
-			"duplicate_source"
-		);
+		expect(query.search(request).counts).toMatchObject({ conflicting: 2 });
 		for (const line of joined.lines.filter((line) => line.origin.kind === "corpus")) {
 			const page = query.search({
 				...request,
 				localization: { target: target.name },
 				lines: [line.id]
 			});
-			expect(page.counts.shared).toBe(line.identity?.namespace === "UI" ? 1 : 0);
 			expect(page.counts.conflicting).toBe(line.identity?.namespace === "UI" ? 1 : 0);
 		}
 	});

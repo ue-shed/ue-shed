@@ -4,16 +4,11 @@ import { runJoinedQuery } from "./joined-query-node.js";
 import { QueryPlaces } from "./query-places.test-support.js";
 import { encodeWtf8, decodeWtf8 } from "./wtf8.js";
 import type { TextCorpusQuery } from "./query.test-support.js";
-import {
-	JoinedQueryData,
-	querySignals,
-	type JoinedQueryProjection
-} from "./joined-query-data.test-support.js";
+import { JoinedQueryData, type JoinedQueryProjection } from "./joined-query-data.test-support.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
 import {
 	MAX_TEXT_GROUPS,
 	TextProblem,
-	TextReviewSignal,
 	type TextGroupBy,
 	type TextGroupList,
 	TextCorpusSearchRequest,
@@ -24,12 +19,12 @@ import {
 	TextUnitId
 } from "./schema.js";
 import { TEXT_PROBLEM_LABELS } from "./text-problems.js";
-import { TEXT_FINDING_SIGNALS } from "./text-problem-rules.js";
 import {
 	KEY_CHANGED_BIT,
 	WORK_PROBLEM_BITS,
-	countedFindingBits,
 	cultureProblemBits,
+	factBit,
+	signalFacts,
 	settleProblemBits,
 	signalProblemBits
 } from "./text-problem-bits.test-support.js";
@@ -56,16 +51,10 @@ import {
 	LocalizationLineId
 } from "./localization-schema.js";
 
-/** `counted`: on a facet or count base, the finding bits of the request it relaxes. */
-type Request = Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> & {
-	readonly counted?: number;
-};
+type Request = Omit<TextCorpusSearchRequest, "cursor" | "pageSize">;
 const emptyCounts = () =>
 	({
 		all: 0,
-		shared: 0,
-		duplicate_source: 0,
-		long: 0,
 		unresolved: 0,
 		conflicting: 0,
 		editable: 0,
@@ -74,7 +63,8 @@ const emptyCounts = () =>
 		origins: emptyTextOriginCounts()
 	}) satisfies TextCorpusSearchCounts;
 const terms = (value: string) => value.toLocaleLowerCase().trim().split(/\s+/u).filter(Boolean);
-const countedSignals = ["shared", "duplicate_source", "long", "unresolved", "conflicting"] as const;
+/** The facts the search counts. */
+const countedFacts = ["unresolved", "conflicting"] as const;
 const origins = (mask: number) => TEXT_ORIGIN_KINDS.filter((_, bit) => mask & (1 << bit));
 /** A row's audience (its index in TextAudience) from its audience mask. */
 const audienceIndex = (mask: number) => TextAudience.literals.indexOf(textAudienceOfMask(mask & 7));
@@ -256,12 +246,10 @@ export function columnarTextCorpusQuery(
 			(current.includes("machine_translated") ? 16 : 0)
 		);
 	};
-	const problemColumns = new WeakMap<readonly number[], Map<number, Uint8Array>>();
-	/** Each line's problems in the cultures of `scope`, with `counted` the finding signals. */
-	const problemsFor = (scope: readonly number[], counted: number) => {
-		let byCounted = problemColumns.get(scope);
-		if (!byCounted) problemColumns.set(scope, (byCounted = new Map()));
-		let masks = byCounted.get(counted);
+	const problemColumns = new WeakMap<readonly number[], Uint8Array>();
+	/** Each line's problems in the cultures of `scope`. Without a findings layer none is `finding`. */
+	const problemsFor = (scope: readonly number[]) => {
+		let masks = problemColumns.get(scope);
 		if (!masks) {
 			masks = new Uint8Array(joined.meta.count);
 			const keys = c("line.key_change");
@@ -269,7 +257,7 @@ export function columnarTextCorpusQuery(
 				const key = keys[row]!;
 				masks[row] =
 					(key > 0 && !(key & 1) ? KEY_CHANGED_BIT : 0) |
-					signalProblemBits(lineFlagColumns[row]!, counted);
+					signalProblemBits(lineFlagColumns[row]!);
 			}
 			for (const ci of scope) {
 				const columns = cultureColumns[ci]!;
@@ -284,12 +272,11 @@ export function columnarTextCorpusQuery(
 			}
 			for (let row = 0; row < masks.length; row++)
 				masks[row] = settleProblemBits(masks[row]!);
-			byCounted.set(counted, masks);
+			problemColumns.set(scope, masks);
 		}
 		return masks;
 	};
-	const rawProblems = (flags: number, counted: number) =>
-		settleProblemBits(signalProblemBits(flags, counted));
+	const rawProblems = (flags: number) => settleProblemBits(signalProblemBits(flags));
 	let sourceQuery = "",
 		sourceCache: Uint8Array = new Uint8Array();
 	let asciiTerms: Buffer[] | undefined;
@@ -351,19 +338,22 @@ export function columnarTextCorpusQuery(
 	) => {
 		const fields = kind === "raw" ? raw : slice;
 		const flags = kind === "line" ? lineFlags(row) : fields.signals![row]!;
-		const counted = prepared.counted;
 		for (const clause of prepared.clauses) {
 			let has: boolean;
 			switch (clause.field) {
 				case "problem": {
 					const mask =
 						kind === "line"
-							? (lineProblems ?? problemsFor(scope, counted))[row]!
-							: rawProblems(flags, counted);
+							? (lineProblems ?? problemsFor(scope))[row]!
+							: rawProblems(flags);
 					has = Boolean(mask & clause.mask);
 					break;
 				}
+				// Without a findings layer no row has a finding.
 				case "finding":
+					has = false;
+					break;
+				case "fact":
 					has = Boolean(flags & clause.mask);
 					break;
 				case "origin": {
@@ -465,20 +455,13 @@ export function columnarTextCorpusQuery(
 		const fields = kind === "raw" ? raw : slice;
 		if (!fields.visible![row]) return false;
 		if (search && wanted.length && !sourceMatches(fields, row, wanted)) return false;
-		const flags = fields.signals![row]!,
-			editing = fields.editing![row]!;
+		const editing = fields.editing![row]!;
 		if (
 			(request.capability === "source_editable" && !(editing & 1)) ||
 			(request.capability === "read_only" && !(editing & 2))
 		)
 			return false;
 		if (request.withoutNotes && fields.notes![row]) return false;
-		if (
-			request.lens !== undefined &&
-			request.lens !== "all" &&
-			!(flags & (1 << querySignals.indexOf(request.lens)))
-		)
-			return false;
 		if (
 			request.where?.kinds !== undefined &&
 			!matchesTextKinds(origins(fields.origins![row]!), request.where.kinds)
@@ -541,10 +524,7 @@ export function columnarTextCorpusQuery(
 		prepareTextSearch(wanted);
 		const { filter: _filter, ...unfiltered } = request;
 		const unrestrictedSaved =
-			request.capability === "all" &&
-			!request.withoutNotes &&
-			(!request.lens || request.lens === "all") &&
-			!request.where;
+			request.capability === "all" && !request.withoutNotes && !request.where;
 		// The usual list/filter/source-search request needs no per-slice eligibility
 		// or review/state checks. Compile its numeric filter once for the whole scan.
 		if (
@@ -559,7 +539,7 @@ export function columnarTextCorpusQuery(
 		) {
 			const prepared = predicatesOf(request),
 				lineProblems = request.filter?.some((clause) => clause.field === "problem")
-					? problemsFor(scope, countedFindingBits(request))
+					? problemsFor(scope)
 					: undefined;
 			for (const row of order) {
 				checkpoint();
@@ -603,7 +583,6 @@ export function columnarTextCorpusQuery(
 			} else {
 				if (
 					request.capability === "source_editable" ||
-					(request.lens !== undefined && request.lens !== "all") ||
 					(request.withoutNotes && lineNotes[row])
 				)
 					continue;
@@ -663,8 +642,6 @@ export function columnarTextCorpusQuery(
 		JSON.stringify({
 			query: request.query,
 			capability: request.capability,
-			lens: request.lens ?? "all",
-			counted: request.counted,
 			withoutNotes: request.withoutNotes ?? false,
 			where: request.where,
 			filter: request.filter,
@@ -692,19 +669,12 @@ export function columnarTextCorpusQuery(
 		runJoinedQuery(Cache.get(matchedRows, matchingKey(request)));
 	const rawCounts = (request: Request) => {
 		const counts = emptyCounts();
-		const {
-			capability: _capability,
-			lens: _lens,
-			withoutNotes: _notes,
-			where,
-			...rest
-		} = request;
+		const { capability: _capability, withoutNotes: _notes, where, ...rest } = request;
 		const { kinds: _kinds, ...withoutKinds } = where ?? {};
 		const baseRequest: Request = {
 			...rest,
 			capability: "all",
-			where: withoutKinds,
-			counted: countedFindingBits(request)
+			where: withoutKinds
 		};
 		const wanted = terms(request.query);
 		prepareTextSearch(wanted);
@@ -714,10 +684,6 @@ export function columnarTextCorpusQuery(
 			const flags = raw.signals![row]!,
 				editing = raw.editing![row]!,
 				noNotes = !raw.notes![row];
-			const hasLens =
-				request.lens === undefined ||
-				request.lens === "all" ||
-				Boolean(flags & (1 << querySignals.indexOf(request.lens)));
 			const inKinds =
 				request.where?.kinds === undefined ||
 				matchesTextKinds(origins(raw.origins![row]!), request.where.kinds);
@@ -725,16 +691,15 @@ export function columnarTextCorpusQuery(
 				request.capability === "all" ||
 				Boolean(editing & (request.capability === "source_editable" ? 1 : 2));
 			const notes = !request.withoutNotes || noNotes;
-			if (hasLens && notes && inKinds && editing & 1) counts.editable++;
-			if (hasLens && notes && inKinds && editing & 2) counts.readOnly++;
-			if (hasLens && capability && inKinds && noNotes) counts.withoutNotes++;
-			if (hasLens && capability && notes)
+			if (notes && inKinds && editing & 1) counts.editable++;
+			if (notes && inKinds && editing & 2) counts.readOnly++;
+			if (capability && inKinds && noNotes) counts.withoutNotes++;
+			if (capability && notes)
 				for (let bit = 0; bit < TEXT_ORIGIN_KINDS.length; bit++)
 					if (raw.origins![row]! & (1 << bit)) counts.origins[TEXT_ORIGIN_KINDS[bit]!]++;
-			if (!hasLens || !capability || !notes || !inKinds) continue;
+			if (!capability || !notes || !inKinds) continue;
 			counts.all++;
-			for (let bit = 0; bit < 5; bit++)
-				if (flags & (1 << bit)) counts[countedSignals[bit]!]++;
+			for (const fact of countedFacts) if (flags & factBit(fact)) counts[fact]++;
 		}
 		return counts;
 	};
@@ -755,9 +720,6 @@ export function columnarTextCorpusQuery(
 		},
 		review: {
 			all: baseline.all,
-			shared: baseline.shared,
-			duplicateSource: baseline.duplicate_source,
-			long: baseline.long,
 			unresolved: baseline.unresolved,
 			conflicting: baseline.conflicting
 		},
@@ -774,8 +736,7 @@ export function columnarTextCorpusQuery(
 	const withoutField = (request: Request, field: TextFilterField): Request => {
 		const { filter, ...rest } = request;
 		const kept = filter?.filter((clause) => clause.field !== field);
-		const counted = countedFindingBits(request);
-		return kept?.length ? { ...rest, filter: kept, counted } : { ...rest, counted };
+		return kept?.length ? { ...rest, filter: kept } : rest;
 	};
 	const visitFiles = (
 		kind: "raw" | "slice" | "line",
@@ -825,8 +786,6 @@ export function columnarTextCorpusQuery(
 			assetTypes?: ReadonlySet<string>;
 		}[];
 		path?: PathPredicate;
-		/** The finding signals the request counts. */
-		counted: number;
 		files?: ReadonlySet<number>;
 	};
 	// Lines carry their gathered identity; a saved unit has the keys of its slices' lines.
@@ -866,8 +825,8 @@ export function columnarTextCorpusQuery(
 					mask:
 						clause.field === "problem"
 							? bits(clause.values, TextProblem.literals)
-							: clause.field === "finding"
-								? bits(clause.values, querySignals)
+							: clause.field === "fact"
+								? clause.values.reduce((mask, value) => mask | factBit(value), 0)
 								: clause.field === "origin"
 									? bits(clause.values, TEXT_ORIGIN_KINDS)
 									: clause.field === "editing"
@@ -904,7 +863,6 @@ export function columnarTextCorpusQuery(
 						? { assetTypes: new Set<string>(clause.values) }
 						: undefined)
 				})),
-				counted: countedFindingBits(request),
 				...(request.where?.pathPrefix === undefined
 					? undefined
 					: { path: places.prefix(request.where.pathPrefix) }),
@@ -1089,15 +1047,14 @@ export function columnarTextCorpusQuery(
 		localized ? c("line.source")[row]! : raw.sources![raw.source_start![row]!]!;
 	// Source groups are keyed by dictionary ID and read and tie-break by the text itself.
 	const sourceGroups = (rows: Uint32Array, request: Request, minSize: number): TextGroupList => {
-		const counted = countedFindingBits(request);
 		const masks = request.localization
-			? problemsFor(cultureScope(request.localization), counted)
+			? problemsFor(cultureScope(request.localization))
 			: undefined;
 		const tallies = new Map<number, { count: number; work: number; worst: number }>();
 		for (const row of rows) {
 			checkpoint();
 			const flags = raw.signals![row]!;
-			const mask = masks ? masks[row]! : rawProblems(flags, counted);
+			const mask = masks ? masks[row]! : rawProblems(flags);
 			const worst = 31 - Math.clz32(mask & -mask);
 			const key = sourceKey(request.localization !== undefined, row);
 			const tally = tallies.get(key) ?? { count: 0, work: 0, worst };
@@ -1137,9 +1094,8 @@ export function columnarTextCorpusQuery(
 		const minSize = facet ? 1 : (request.minGroupSize ?? 1);
 		if (by === "source") return sourceGroups(rows, request, minSize);
 		const { visit, keys, fileLabels, finish } = aggregation(by, facet, under);
-		const counted = countedFindingBits(request);
 		const masks = request.localization
-			? problemsFor(cultureScope(request.localization), counted)
+			? problemsFor(cultureScope(request.localization))
 			: undefined;
 		const originColumns = request.localization ? c("line.origins") : raw.origins!;
 		const audienceColumn = request.localization ? c("line.audience") : raw.audience!;
@@ -1151,7 +1107,7 @@ export function columnarTextCorpusQuery(
 			checkpoint();
 			stamp++;
 			const flags = raw.signals![row]!;
-			const mask = request.localization ? masks![row]! : rawProblems(flags, counted);
+			const mask = request.localization ? masks![row]! : rawProblems(flags);
 			const worst = 31 - Math.clz32(mask & -mask);
 			if (by === "problem") visit(worst, worst, stamp, mask, worst);
 			else if (by === "origin") {
@@ -1185,15 +1141,14 @@ export function columnarTextCorpusQuery(
 	};
 	/** Lines by asset type; a line of several types counts in each, ordered as other facets. */
 	const assetTypeFacet = (rows: Uint32Array, request: Request): TextGroupList => {
-		const counted = countedFindingBits(request);
 		const masks = request.localization
-			? problemsFor(cultureScope(request.localization), counted)
+			? problemsFor(cultureScope(request.localization))
 			: undefined;
 		const tallies = new Map<string, { count: number; work: number; worst: number }>();
 		for (const row of rows) {
 			checkpoint();
 			const flags = raw.signals![row]!,
-				mask = request.localization ? masks![row]! : rawProblems(flags, counted);
+				mask = request.localization ? masks![row]! : rawProblems(flags);
 			const worst = 31 - Math.clz32(mask & -mask);
 			for (const type of assetTypesOf(request.localization ? "line" : "raw", row)) {
 				const tally = tallies.get(type) ?? { count: 0, work: 0, worst };
@@ -1227,9 +1182,8 @@ export function columnarTextCorpusQuery(
 		const folder = aggregation("folder", true, under),
 			asset = aggregation("asset", true),
 			origin = aggregation("origin", true);
-		const counted = countedFindingBits(request);
 		const masks = request.localization
-			? problemsFor(cultureScope(request.localization), counted)
+			? problemsFor(cultureScope(request.localization))
 			: undefined;
 		const originColumns = request.localization ? c("line.origins") : raw.origins!;
 		const files = request.localization ? lineFiles.files : raw.files!;
@@ -1240,7 +1194,7 @@ export function columnarTextCorpusQuery(
 			checkpoint();
 			stamp++;
 			const flags = raw.signals![row]!,
-				mask = request.localization ? masks![row]! : rawProblems(flags, counted);
+				mask = request.localization ? masks![row]! : rawProblems(flags);
 			const worst = 31 - Math.clz32(mask & -mask);
 			for (let position = starts[row]!; position < ends[row]!; position++) {
 				const index = places.file[files[position]!]! - 1;
@@ -1271,17 +1225,12 @@ export function columnarTextCorpusQuery(
 		cached?: ReturnType<TextCorpusQuery["search"]>
 	) => {
 		const matched = matching(request),
-			selection = request.localization,
-			counted = countedFindingBits(request);
-		// What put each row in its problems under this request, as the engine reports it.
-		const explain = (problems: number, signals: number) => ({
-			problems: TextProblem.literals.filter((_, bit) => problems & (1 << bit)),
-			countedFindings: TEXT_FINDING_SIGNALS.filter(
-				(signal) => signals & counted & (1 << TextReviewSignal.literals.indexOf(signal))
-			)
+			selection = request.localization;
+		// Each row's problems under this request, as the engine reports them.
+		const explain = (problems: number) => ({
+			problems: TextProblem.literals.filter((_, bit) => problems & (1 << bit))
 		});
-		const explainLine = (row: number) =>
-			explain(problemsFor(cultureScope(selection), counted)[row]!, lineFlags(row));
+		const explainLine = (row: number) => explain(problemsFor(cultureScope(selection))[row]!);
 		const base = (field: TextFilterField) =>
 			request.filter?.some((clause) => clause.field === field)
 				? matching(withoutField(request, field))
@@ -1303,8 +1252,8 @@ export function columnarTextCorpusQuery(
 			if (group === "problem") {
 				const flags = raw.signals![row]!,
 					mask = selection
-						? problemsFor(cultureScope(selection), counted)[row]!
-						: rawProblems(flags, counted);
+						? problemsFor(cultureScope(selection))[row]!
+						: rawProblems(flags);
 				return 31 - Math.clz32(mask & -mask);
 			}
 			if (group === "origin") {
@@ -1353,8 +1302,7 @@ export function columnarTextCorpusQuery(
 				if (editing & 1) counts.editable++;
 				if (editing & 2) counts.readOnly++;
 				if (!notesColumn[row]) counts.withoutNotes++;
-				for (let bit = 0; bit < 5; bit++)
-					if (flags & (1 << bit)) counts[countedSignals[bit]!]++;
+				for (const fact of countedFacts) if (flags & factBit(fact)) counts[fact]++;
 			}
 			const { kinds: _kinds, ...where } = request.where ?? {};
 			const originBase =
@@ -1538,11 +1486,11 @@ export function columnarTextCorpusQuery(
 		const problemScope = cultureScope(selection);
 		if (cached) Object.assign(problems, cached.problems);
 		else {
-			const masks = selection ? problemsFor(problemScope, counted) : undefined;
+			const masks = selection ? problemsFor(problemScope) : undefined;
 			const totals = new Uint32Array(1 << TextProblem.literals.length);
 			for (const row of base("problem")) {
 				const flags = selection ? 0 : raw.signals![row]!;
-				const mask = selection ? masks![row]! : rawProblems(flags, counted);
+				const mask = selection ? masks![row]! : rawProblems(flags);
 				totals[mask] = totals[mask]! + 1;
 			}
 			for (let mask = 1; mask < totals.length; mask++)
@@ -1602,6 +1550,24 @@ export function columnarTextCorpusQuery(
 								: undefined),
 							...(facets.assetTypes
 								? { assetTypes: assetTypeFacet(base("asset_type"), request) }
+								: undefined),
+							...(facets.facts
+								? {
+										facts: (() => {
+											const counts = {
+												unresolved: 0,
+												conflicting: 0,
+												evidence_only: 0,
+												compiled_copy_differs: 0
+											};
+											for (const row of base("fact"))
+												for (const fact of signalFacts(
+													selection ? lineFlags(row) : raw.signals![row]!
+												))
+													counts[fact]++;
+											return counts;
+										})()
+									}
 								: undefined),
 							...(facets.cultures && selection
 								? {
@@ -1676,14 +1642,13 @@ export function columnarTextCorpusQuery(
 					})
 				: Array.from(page, (row) => ({
 						...data.presentation("raw", row),
-						...explain(rawProblems(raw.signals![row]!, counted), raw.signals![row]!)
+						...explain(rawProblems(raw.signals![row]!))
 					})),
 			...(!selection && final !== undefined && after + page.length < listed.length
 				? { nextCursor: TextUnitId.make(final) }
 				: undefined)
 		};
 	};
-	const DEFAULT_FINDING_BITS = countedFindingBits({});
 	type CommonCounts = { rows: Uint32Array; page: ReturnType<TextCorpusQuery["search"]> };
 	const commonCounts = runJoinedQuery(
 		Cache.make({
@@ -1698,12 +1663,10 @@ export function columnarTextCorpusQuery(
 				request.localization?.culture,
 				request.localization?.cultures
 			]);
-		// The common counts count the default findings; a request naming others counts its own.
 		const reusable =
 			request.localization &&
 			request.where?.files === undefined &&
-			request.where?.kinds === undefined &&
-			countedFindingBits(request) === DEFAULT_FINDING_BITS;
+			request.where?.kinds === undefined;
 		const common = runJoinedQuery(Cache.get(commonCounts, scope));
 		if (
 			reusable &&
@@ -1723,7 +1686,6 @@ export function columnarTextCorpusQuery(
 			!request.filter &&
 			!request.where &&
 			!request.lines &&
-			(!request.lens || request.lens === "all") &&
 			!request.withoutNotes &&
 			request.query === "" &&
 			request.capability === "all" &&
@@ -1831,17 +1793,27 @@ export function columnarTextCorpusQuery(
 					: candidate === 0xffffffff
 						? undefined
 						: candidate;
-			return line === undefined
-				? undefined
-				: localizationFocusPage(
-						{
-							target: target.name,
-							nativeCulture: target.nativeCulture,
-							cultures: target.cultures
-						},
-						data.line(line),
-						request
-					);
+			if (line === undefined) return undefined;
+			// The line's problems in the list's culture scope, as the list's row has them.
+			const mask = problemsFor(
+				cultureScope({
+					target: request.target,
+					...(request.culture === undefined ? undefined : { culture: request.culture }),
+					...(request.cultures === undefined ? undefined : { cultures: request.cultures })
+				})
+			)[line]!;
+			return {
+				...localizationFocusPage(
+					{
+						target: target.name,
+						nativeCulture: target.nativeCulture,
+						cultures: target.cultures
+					},
+					data.line(line),
+					request
+				),
+				problems: TextProblem.literals.filter((_, bit) => mask & (1 << bit))
+			};
 		},
 		localizationRows,
 		localizationLines: (request) => data.lines(localizationRows(request)),
@@ -1895,11 +1867,20 @@ export function columnarTextCorpusQuery(
 				members.subarray(after, after + request.pageSize),
 				(member) => data.occurrence(member)
 			);
+			// The unit lists its line's problems in every culture when a line is focused, else its
+			// own, as a search row has them.
+			const mask =
+				kind === "slice"
+					? problemsFor(cultureScope(undefined))[lineRow!]!
+					: rawProblems(raw.signals![row]!);
 			return {
 				diagnostics: data.diagnostics(members).slice(0, request.pageSize),
 				occurrences,
 				totalOccurrences: members.length,
-				unit: data.presentation(kind, row),
+				unit: {
+					...data.presentation(kind, row),
+					problems: TextProblem.literals.filter((_, bit) => mask & (1 << bit))
+				},
 				...(lineRow === undefined ? undefined : { localization: data.preview(lineRow) }),
 				...(occurrences.length && after + occurrences.length < members.length
 					? { nextOccurrenceCursor: occurrences[occurrences.length - 1]!.id }

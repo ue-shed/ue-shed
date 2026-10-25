@@ -39,6 +39,7 @@ export {
 	type GameTextIndexRefreshResult,
 	GameTextIndexSource,
 	type GameTextIndexSourceRequest,
+	type IndexedLocalizationQualityOptions,
 	type IndexFailure
 } from "./index-contract.js";
 
@@ -82,16 +83,9 @@ export {
 	prepareLocalizationFile
 } from "./localization-import.js";
 
-export {
-	type IndexedLocalizationQualityOptions,
-	indexedLocalizationQuality
-} from "./localization-quality-index.js";
-
 export { type GameTextProjectView } from "./project-index-view.js";
 
 export { TextRulesFileError, createStarterTextRules } from "./rules-file.js";
-
-export { indexedSourceQuality } from "./source-quality-index.js";
 
 export { SnapshotFormatError } from "./snapshot-format.js";
 

@@ -12,7 +12,8 @@ import {
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
-import { openJoinedTarget, hydrateJoinedTarget } from "./joined-target-reader.js";
+import { openJoinedTarget } from "./joined-target-reader.js";
+import { hydrateJoinedTarget } from "./joined-target-hydrate.test-support.js";
 import { sharedIndexNodeLayer } from "./shared-index.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";

@@ -82,3 +82,30 @@ it("keeps contexts and selection on the gathered line when two lines share a uni
 		expect(onSelect).toHaveBeenLastCalledWith(mixed.id, line?.id);
 	}
 });
+
+it("lists a row's facts and the labels of its rules' findings", () => {
+	const query = textCorpusQuery(corpus([unit("K", "Wow!", "Content/Text/Table.uasset")]));
+	const initial = query.search({ query: "", capability: "all", pageSize: 50 });
+	const page = {
+		...initial,
+		units: initial.units.map((item) => ({
+			...item,
+			reviewSignals: ["unresolved" as const],
+			findings: ["custom.exclaim", "long"],
+			findingsOmitted: 2
+		}))
+	};
+	const { container } = render(() => (
+		<GameTextResultRows
+			page={page}
+			culture={undefined}
+			selectedId={undefined}
+			selectedLocalizationId={undefined}
+			onSelect={() => undefined}
+			rules={new Map([["custom.exclaim", "Exclamation mark"]])}
+		/>
+	));
+	expect(container.querySelector("button[data-row]")?.textContent).toContain(
+		" · not localizable · Exclamation mark · long · +2 more findings"
+	);
+});

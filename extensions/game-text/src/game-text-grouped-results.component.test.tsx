@@ -1,4 +1,7 @@
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
+import {
+	referenceSearchRows,
+	textCorpusQuery
+} from "../../../packages/game-text/src/query.test-support.js";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 
@@ -37,14 +40,17 @@ it.each([false, true])(
 		let reloading = false;
 		const onLoaded = vi.fn();
 		const client = {
-			search: (input: TextCorpusSearchRequest) =>
+			searchRows: (input: TextCorpusSearchRequest) =>
 				Effect.gen(function* () {
 					if (reloading && input.cursor) {
 						yield* Deferred.succeed(secondRequested, undefined);
 						yield* Deferred.await(second);
 						if (fail) return { status: "not_ready" as const };
 					}
-					return { status: "ready" as const, page: query.search(input) };
+					return {
+						status: "ready" as const,
+						page: referenceSearchRows(query.search, input)
+					};
 				})
 		};
 		const { container, getByRole } = render(() => (
@@ -92,3 +98,50 @@ it.each([false, true])(
 		expect(document.activeElement).toBe(last);
 	}
 );
+
+it("reads the groups that open together in one rows request", async () => {
+	const text = corpus(
+		["Menus", "Items", "Quests"].flatMap((folder) =>
+			Array.from({ length: 3 }, (_, index) =>
+				unit(`${folder}${index}`, `${folder} ${index}`, `Content/${folder}/Table.uasset`)
+			)
+		)
+	);
+	const query = textCorpusQuery(text);
+	const request = {
+		query: "",
+		capability: "all" as const,
+		pageSize: 50,
+		group: "asset" as const
+	};
+	const groups = query.search(request).groups!.entries;
+	expect(groups).toHaveLength(3);
+	const reads: TextCorpusSearchRequest[] = [];
+	const client = {
+		searchRows: (input: TextCorpusSearchRequest) =>
+			Effect.sync(() => {
+				reads.push(input);
+				return { status: "ready" as const, page: referenceSearchRows(query.search, input) };
+			})
+	};
+	const { container } = render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<GroupedResults
+				groups={groups}
+				more={0}
+				by="asset"
+				request={request}
+				client={client}
+				culture={undefined}
+				selectedId={undefined}
+				selectedLocalizationId={undefined}
+				onSelect={() => {}}
+			/>
+		</EffectRuntimeProvider>
+	));
+	// Every group fits on one page, so all three open, and share one request.
+	await waitFor(() => expect(container.querySelectorAll("button[data-row]")).toHaveLength(9));
+	expect(reads).toHaveLength(1);
+	expect(reads[0]!.openGroups).toEqual(groups.map((group) => group.key));
+	expect(reads[0]!.firstRows).toBe(50);
+});

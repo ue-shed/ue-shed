@@ -1,6 +1,6 @@
 //! Key-change and review marks, over gathered lines rather than raw saved units.
 use crate::Result;
-use crate::join::{JoinInput, Joined, L_KEY, L_NS, L_PROBLEMS, L_SOURCE, intern};
+use crate::join::{JoinInput, Joined, L_KEY, L_KEY_CHANGE, L_NS, L_SOURCE, intern};
 use crate::join_columns::*;
 use crate::join_policy::*;
 use crate::store::{Store, digest};
@@ -218,8 +218,8 @@ pub(crate) fn finish(
                     })
                     .collect::<Vec<_>>();
                 pairs.push(json!({"from":{"namespace":j.string(j.line[L_NS][old]),"key":j.string(j.line[L_KEY][old])},"to":{"namespace":j.string(j.line[L_NS][row]),"key":j.string(j.line[L_KEY][row])},"match":(["same_place","same_text_in_package","same_text"][tier]),"sourceChanged":j.manifest_source(old)!=j.line[L_SOURCE][row],"previousSource":j.string(j.manifest_source(old)),"translations":translations}));
-                j.line[15][row] = pairs.len() as u32 * 2;
-                j.line[15][old] = pairs.len() as u32 * 2 + 1;
+                j.line[L_KEY_CHANGE][row] = pairs.len() as u32 * 2;
+                j.line[L_KEY_CHANGE][old] = pairs.len() as u32 * 2 + 1;
                 paired[row] = true;
                 paired[old] = true;
             }
@@ -285,7 +285,7 @@ pub(crate) fn finish(
             );
         }
         for (row, _) in paired.iter().enumerate().take(count) {
-            j.line[15][row] = if j.resolved(row) {
+            j.line[L_KEY_CHANGE][row] = if j.resolved(row) {
                 changes
                     .get(&(j.line[L_NS][row], j.line[L_KEY][row]))
                     .copied()
@@ -358,18 +358,6 @@ pub(crate) fn finish(
                 }
             }
         }
-    }
-    for (row, _) in paired.iter().enumerate().take(count) {
-        // The saved-signal finding from the join, the key change, and every culture's mark, as
-        // the engine classifies a line under a request that names no finding.
-        let mut problems = j.line[L_PROBLEMS][row];
-        if j.line[15][row] != 0 && j.line[15][row] & 1 == 0 {
-            problems |= crate::text_problem::KEY_CHANGED;
-        }
-        for c in &j.cultures {
-            problems |= crate::text_problem::culture(c[0][row], c[1][row], c[2][row]);
-        }
-        j.line[L_PROBLEMS][row] = crate::text_problem::settle(problems);
     }
     Ok(json!({"pairs":pairs,"ambiguous":ambiguous,"oldCandidates":old.len()}))
 }

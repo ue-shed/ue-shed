@@ -7,10 +7,16 @@ import { describe, expect, it } from "vitest";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { GameTextIndexRefresh } from "./index-contract.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
-import { textCorpusQuery } from "./query.test-support.js";
+import { referenceSearchRows, textCorpusQuery } from "./query.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import type { LocalizationCultureMark, LocalizationLinePreview } from "./localization-schema.js";
-import type { TextCorpusFocus, TextCorpusSearchPage, TextUnitSearchResult } from "./schema.js";
+import type {
+	TextCorpusFocus,
+	TextCorpusRows,
+	TextCorpusRowsPage,
+	TextCorpusSearchPage,
+	TextUnitSearchResult
+} from "./schema.js";
 import { TextCorpusFocusRequest } from "./schema.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -58,9 +64,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							expect(queryPids.length).toBeGreaterThanOrEqual(2);
 							return { query: model.query, page };
 						})
-					).pipe(
-						Effect.provide(fixture.layer(false, fixture.source, false, implementation))
-					);
+					).pipe(Effect.provide(fixture.layer(fixture.source, implementation)));
 					const closed = yield* prepare;
 					const failed = yield* closed.query
 						.search({ query: "", capability: "all", pageSize: 1 })
@@ -185,6 +189,8 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 									}
 								).toEqual({
 									...expected,
+									// The engine adds the line's problems, in every culture.
+									problems: ["translation", "unchecked"],
 									translations: expected.translations.map(normalizeMark)
 								});
 								expect(JSON.stringify(actual).length).toBeLessThan(100000);
@@ -196,9 +202,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								fixture.source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30000,
@@ -282,6 +286,19 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							expect(normalizePage(yield* model.query.search(request))).toEqual(
 								normalizePage(oracle.search(request))
 							);
+							// Open groups list each group's first rows, as an `openGroup` read does.
+							const grouped = { ...request, group: "source" as const };
+							const keys = (oracle.search(grouped).groups?.entries ?? []).map(
+								(group) => group.key
+							);
+							const rows = {
+								...grouped,
+								openGroups: [...keys, "Nowhere"],
+								firstRows: 1
+							};
+							expect(normalizeRowsPage(yield* model.query.searchRows(rows))).toEqual(
+								normalizeRowsPage(referenceSearchRows(oracle.search, rows))
+							);
 							expect(yield* model.corpus).toEqual(raw);
 							for (const unit of oracle.search(request).units) {
 								const focus = { id: unit.id, pageSize: 50 };
@@ -324,9 +341,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								fixture.source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30000,
@@ -505,9 +520,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
-								false,
 								fixture.source,
-								false,
 								nativeIndexBuilderLayer({
 									executable,
 									timeoutMs: 30_000,
@@ -557,6 +570,35 @@ function normalizeFocus(focus: TextCorpusFocus | undefined): TextCorpusFocus | u
 					: undefined)
 			}
 		: undefined;
+}
+function normalizeRows(page: TextCorpusRows): TextCorpusRows {
+	return {
+		...page,
+		units: page.units.map(normalizeUnit),
+		...(page.localization
+			? {
+					localization: {
+						...page.localization,
+						lines: page.localization.lines.map((line) => ({
+							...line,
+							cultures: line.cultures.map(normalizeMark)
+						}))
+					}
+				}
+			: undefined)
+	};
+}
+function normalizeRowsPage(page: TextCorpusRowsPage) {
+	return {
+		...normalizeRows(page),
+		...(page.openGroups
+			? {
+					openGroups: page.openGroups.map((group) =>
+						group.page ? { ...group, page: normalizeRows(group.page) } : group
+					)
+				}
+			: undefined)
+	};
 }
 function normalizePage(page: TextCorpusSearchPage): TextCorpusSearchPage {
 	return {

@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { CultureCode } from "@ue-shed/localization/browser";
 import { BuiltInCheckId, CheckSeverity } from "./localization-check-ids.js";
 import { LocalizationCheckScope } from "./localization-check-scope.js";
@@ -6,6 +7,7 @@ import { engineRunsPattern } from "./rule-regex.js";
 import {
 	localizationCheckCatalogue,
 	localizationCheckDefaults,
+	localizationRuleId,
 	type LocalizationCheckParams
 } from "./localization-check-catalogue.js";
 import {
@@ -17,6 +19,7 @@ import {
 } from "./quality-schema.js";
 
 const Recovery = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(2048));
+const Label = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(128));
 const MaximumCharacters = Schema.Int.check(Schema.isGreaterThan(0));
 const Terms = Schema.Array(TextTerminologyEntry).check(
 	Schema.isMinLength(1),
@@ -33,6 +36,8 @@ const RuleFields = {
 	...EntryFields,
 	/** The rule ID its findings and review marks record; unique among the file's rules. */
 	id: TextQualityRuleId,
+	/** A short name for lists, filters and findings; absent, the rule ID. */
+	label: Schema.optionalKey(Label),
 	/** What to do about a finding, shown with it. */
 	recovery: Recovery
 };
@@ -113,7 +118,7 @@ const CustomCheckFields = {
 	...RuleFields,
 	...Severity,
 	/** A short name for lists and filters. */
-	label: Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(128)),
+	label: Label,
 	/**
 	 * `source` checks a keyed line's source once, under its source culture; `translation` checks
 	 * each culture's shipped translation, the native culture aside.
@@ -156,12 +161,40 @@ export const CustomLocalizationCheck = Schema.Union([
 ]);
 export type CustomLocalizationCheck = typeof CustomLocalizationCheck.Type;
 
+/** An expression of the engine's rule language; the engine checks it when it loads the rules. */
+const RuleExpression = Schema.Json;
+/**
+ * A whole rule in the engine's language. `subject` is `line`, each keyed line's source once, or
+ * `line_culture`, each culture's translation. `when` holds where the rule has a finding, and
+ * `actual` and `expectation` are objects of expressions, its evidence. Constants are
+ * `{ "lit": … }`, and `{ "finding": "<rule ID>" }` reads another rule's findings. `let` names
+ * expressions; `each` makes a finding per item, read through `eachAs` (`item`). `counts: false`
+ * keeps its findings out of Browse's `finding` problem; `shadowed` hides a finding where source
+ * findings list the same text. Its findings are custom findings with check `rule`.
+ */
+export const CompleteRule = Schema.Struct({
+	kind: Schema.Literal("rule"),
+	...CustomCheckFields,
+	subject: Schema.Literals(["line", "line_culture"]),
+	params: Schema.optionalKey(Schema.Record(Schema.String, Schema.Json)),
+	let: Schema.optionalKey(Schema.Record(Schema.String, RuleExpression)),
+	each: Schema.optionalKey(RuleExpression),
+	eachAs: Schema.optionalKey(Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(64))),
+	when: RuleExpression,
+	actual: RuleExpression,
+	expectation: RuleExpression,
+	counts: Schema.optionalKey(Schema.Boolean),
+	shadowed: Schema.optionalKey(RuleExpression)
+});
+export type CompleteRule = typeof CompleteRule.Type;
+
 /** One rule the file runs: a built-in check by its ID, or a project rule with its own. */
 export const GameTextRuleEntry = Schema.Union([
 	BuiltInCheckEntry,
 	TextQualityRule,
 	LocalizationProjectRule,
-	CustomLocalizationCheck
+	CustomLocalizationCheck,
+	CompleteRule
 ]);
 export type GameTextRuleEntry = typeof GameTextRuleEntry.Type;
 
@@ -186,6 +219,22 @@ export function isBuiltInCheckEntry(entry: GameTextRuleEntry): entry is BuiltInC
 /** An entry's rule ID in the file: a built-in check's ID, or a project rule's own. */
 export function ruleEntryId(entry: GameTextRuleEntry): string {
 	return isBuiltInCheckEntry(entry) ? entry.kind : entry.id;
+}
+/**
+ * The name of every rule a file lists, by the rule ID its findings record: a built-in check's
+ * catalogue label under `localization.<check>`, and a project rule's, custom check's or complete
+ * rule's label, or its ID without one.
+ */
+export function ruleLabelsOf(
+	document: Pick<GameTextRuleDocument, "rules"> | undefined
+): ReadonlyMap<string, string> {
+	return new Map(
+		(document?.rules ?? []).map((entry) =>
+			isBuiltInCheckEntry(entry)
+				? [localizationRuleId(entry.kind), localizationCheckCatalogue[entry.kind].label]
+				: [entry.id, entry.label ?? entry.id]
+		)
+	);
 }
 /** Whether a listed entry runs: unless the file turns it off. */
 function runs(entry: GameTextRuleEntry): boolean {
@@ -212,6 +261,30 @@ export function localizationRulesOf(
 			runs(entry)
 	);
 }
+/** The file's complete rules that run, in file order. */
+export function completeRulesOf(
+	document: Pick<GameTextRuleDocument, "rules"> | undefined
+): CompleteRule[] {
+	return (document?.rules ?? []).filter(
+		(entry): entry is CompleteRule => entry.kind === "rule" && runs(entry)
+	);
+}
+/**
+ * The file's custom checks and complete rules that run, in file order: the rules whose findings
+ * are custom findings, listed by their own labels.
+ */
+export function customRulesOf(
+	document: Pick<GameTextRuleDocument, "rules"> | undefined
+): Array<CustomLocalizationCheck | CompleteRule> {
+	return (document?.rules ?? []).filter(
+		(entry): entry is CustomLocalizationCheck | CompleteRule =>
+			(entry.kind === "pattern" ||
+				entry.kind === "length" ||
+				entry.kind === "forbidden_term" ||
+				entry.kind === "rule") &&
+			runs(entry)
+	);
+}
 /** The file's custom checks that run, in file order. */
 export function customLocalizationChecks(
 	document: Pick<GameTextRuleDocument, "rules"> | undefined
@@ -227,7 +300,8 @@ export function customLocalizationChecks(
 
 /**
  * Invalid rule JSON, structure or referenced policy identities. The stable code guides
- * correction; the original JSON/schema cause remains available when parsing failed.
+ * correction; the original JSON/schema cause remains available when parsing failed. The engine
+ * finds `invalid_expression` and `rule_cycle` in a complete rule, named by `ruleId`.
  */
 export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDocumentError>()(
 	"GameTextRuleDocumentError",
@@ -242,8 +316,11 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 			"duplicate_role_id",
 			"duplicate_rule_id",
 			"unknown_role_id",
-			"invalid_overlay"
+			"invalid_overlay",
+			"invalid_expression",
+			"rule_cycle"
 		]),
+		ruleId: Schema.optionalKey(Schema.String),
 		message: Schema.String,
 		recovery: Schema.String
 	}
@@ -435,6 +512,30 @@ export const GameTextRuleOverlay = Schema.Struct({
 });
 export type GameTextRuleOverlay = typeof GameTextRuleOverlay.Type;
 
+/**
+ * The engine's problem with a rules file's program as a rules file error: what is wrong with which
+ * complete rule. A problem outside one is the program's structure, which decoding checked.
+ */
+export function ruleProblemError(problem: GameTextContract.RuleProblem): GameTextRuleDocumentError {
+	const ruleId = problem.ruleId;
+	if (problem.code === "invalid_structure" || ruleId === undefined)
+		return invalid("invalid_structure", problem.message);
+	return new GameTextRuleDocumentError({
+		retrySafe: false,
+		nextStep: "fix_input",
+		code: problem.code,
+		ruleId,
+		message:
+			problem.code === "rule_cycle"
+				? `The Game Text rule “${ruleId}” reads its own findings through finding.`
+				: `The Game Text rule “${ruleId}” has an expression the engine can't run: ${problem.message}`,
+		recovery:
+			problem.code === "rule_cycle"
+				? "Make the rules read each other's findings in one direction only."
+				: "Correct the rule's expressions in the rules file: known operations, fields, parameters and variables, the types each takes, and finding references to rules of the same subject."
+	});
+}
+
 /** A rule's identity and the settings a patch sets in their own fields, never in `params`. */
 const reservedPatchParams = new Set(["id", "kind", "enabled", "severity", "scope"]);
 
@@ -447,7 +548,11 @@ const mergePatches = (earlier: GameTextRulePatch, later: GameTextRulePatch): Gam
 		: undefined)
 });
 
-/** A rule with a patch's settings, to decode again: a patch's values are unchecked. */
+/**
+ * A rule with a patch's settings, to decode again: a patch's values are unchecked. A built-in
+ * check's or complete rule's `params` take the patch's key by key; a project rule's parameters
+ * are its own fields.
+ */
 const patchedEntry = (entry: GameTextRuleEntry, patch: GameTextRulePatch) => {
 	const { scope, ...rest } = entry;
 	const replaced =
@@ -458,7 +563,7 @@ const patchedEntry = (entry: GameTextRuleEntry, patch: GameTextRulePatch) => {
 				: undefined;
 	return {
 		...rest,
-		...(isBuiltInCheckEntry(entry)
+		...(isBuiltInCheckEntry(entry) || entry.kind === "rule"
 			? patch.params
 				? { params: { ...entry.params, ...patch.params } }
 				: undefined

@@ -137,7 +137,10 @@ describe("Game Text preferences", () => {
 			decodeGameTextPreferences(
 				JSON.stringify({ query: "Kept", lens: "not-a-lens", group: "folder" })
 			)
-		).toMatchObject({ query: "Kept", lens: "all", group: "folder" });
+		).toMatchObject({ query: "Kept", group: "folder" });
+		expect(
+			decodeGameTextPreferences(JSON.stringify({ query: "Kept", lens: "not-a-lens" })).lens
+		).toBeUndefined();
 	});
 
 	it("reads work saved by versions that stored the view and its drafts together", () => {

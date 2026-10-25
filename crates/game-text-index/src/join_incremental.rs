@@ -101,8 +101,8 @@ struct Joined {
 }
 impl Joined {
     fn open(store: &Store, key: &str) -> Result<Self> {
-        let (mut raw, record) = layer(store, key)?.ok_or("missing joined input")?;
-        let meta = parse(&section(&mut raw, "join.meta")?)?;
+        let (raw, record) = layer(store, key)?.ok_or("missing joined input")?;
+        let meta = parse(&section(&raw, "join.meta")?)?;
         let base_key = meta["base"].as_str().unwrap_or(key);
         let (base, base_record) = layer(store, base_key)?.ok_or("missing joined base")?;
         Ok(Self {
@@ -261,8 +261,8 @@ pub(crate) fn refresh(
     if !previous_key.starts_with(crate::join::JOINED_KEY_PREFIX) {
         return fallback("native-format");
     }
-    let (mut header, _) = layer(store, &previous_key)?.ok_or("missing joined header")?;
-    let candidate = parse(&section(&mut header, "join.meta")?)?;
+    let (header, _) = layer(store, &previous_key)?.ok_or("missing joined header")?;
+    let candidate = parse(&section(&header, "join.meta")?)?;
     if candidate["generation"] != store.root["generation"]
         || candidate["base"].as_str().is_some_and(|base| {
             store.root["layers"].get(base).is_none() || store.root["active"]["joined-base"] != base
@@ -579,9 +579,6 @@ pub(crate) fn refresh(
             set(&mut hot, "line.facts", row, structural);
             set(&mut hot, "line.reasons", row, row_reasons);
         }
-        // The key change and saved-signal finding carry over; the cultures are classified again.
-        let mut problems = joined.get("line.problems", row)?
-            & (crate::text_problem::KEY_CHANGED | crate::text_problem::FINDING);
         for (ci, culture) in cultures.iter().enumerate() {
             let prefix = format!("c{ci}.");
             let mut facts = (joined.get(&(prefix.clone() + "facts"), row)?
@@ -676,7 +673,6 @@ pub(crate) fn refresh(
             set(&mut hot, &(prefix.clone() + "facts"), row, facts);
             set(&mut hot, &(prefix.clone() + "state"), row, state);
             set(&mut hot, &(prefix.clone() + "reasons"), row, unknown);
-            problems |= crate::text_problem::culture(state, facts, unknown);
             if let Some(review) = &input.review
                 && review["target"] == input.target["name"]
                 && reasons[row] & ((1 << 9) | (1 << 10) | (1 << 17)) == 0
@@ -702,12 +698,6 @@ pub(crate) fn refresh(
                 }
             }
         }
-        set(
-            &mut hot,
-            "line.problems",
-            row,
-            crate::text_problem::settle(problems),
-        );
     }
     if !reviews.is_empty() {
         let ids = reviews
@@ -752,8 +742,7 @@ pub(crate) fn refresh(
             graph: &graph,
             raw_ids: None,
         };
-        let Some(edits) = sources.queries(&package_lines, &edits, &previous_sources, &mut hot)?
-        else {
+        let Some(edits) = sources.queries(&package_lines, &mut hot)? else {
             return fallback("query-source-overlay-bound");
         };
         edits

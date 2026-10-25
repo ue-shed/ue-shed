@@ -49,6 +49,11 @@ impl HostCollator {
     }
 
     pub fn compare(&self, a: &str, b: &str) -> Ordering {
+        // A view without the escape lead byte is plain UTF-8, which collates exactly as its UTF-16
+        // does, without converting either.
+        if !a.as_bytes().contains(&0xf3) && !b.as_bytes().contains(&0xf3) {
+            return self.inner.compare(a, b);
+        }
         self.inner.compare_utf16(
             &Wtf8Buf::from_view(a).to_utf16(),
             &Wtf8Buf::from_view(b).to_utf16(),

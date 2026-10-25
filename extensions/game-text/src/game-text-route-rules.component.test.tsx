@@ -3,6 +3,7 @@ import { screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
 import { STARTER_GAME_TEXT_RULES, type GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import { TextQualityRuleId } from "@ue-shed/game-text/schema";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 import {
@@ -61,7 +62,14 @@ it("retains every editable rule field, term actions, preview and save", async ()
 	});
 	await user.clear(maximum);
 	await user.type(maximum, "12");
+	await user.type(
+		screen.getByRole("textbox", { name: "Label for example-limit" }),
+		"Menu text limit"
+	);
 	const rules = screen.getByRole("complementary", { name: "Quality rule list" });
+	expect(within(rules).getByRole("button", { name: /Menu text limit/u }).textContent).toContain(
+		"example-limit"
+	);
 	await user.click(within(rules).getByRole("button", { name: /example-terms/u }));
 	await user.click(screen.getByRole("checkbox", { name: "Case-sensitive matching" }));
 	const preferred = screen.getByRole("textbox", { name: "Preferred term 1" });
@@ -89,7 +97,7 @@ it("retains every editable rule field, term actions, preview and save", async ()
 	await user.click(screen.getByRole("button", { name: "Preview" }));
 	await screen.findByText("Preview updated.", { exact: false });
 	expect(previews.at(-1)?.rules).toEqual([
-		{ ...rulesDocument.rules[0], maximumCharacters: 12 },
+		{ ...rulesDocument.rules[0], maximumCharacters: 12, label: "Menu text limit" },
 		{
 			...rulesDocument.rules[1],
 			caseSensitive: true,
@@ -104,11 +112,17 @@ it("retains every editable rule field, term actions, preview and save", async ()
 	expect(
 		screen.getByRole("complementary", { name: "Quality role scopes" }).textContent
 	).toContain("/Game/");
+	// A blank label takes the key out again, so the rule goes back to its ID.
+	await user.click(within(rules).getByRole("button", { name: /Menu text limit/u }));
+	await user.clear(screen.getByRole("textbox", { name: "Label for example-limit" }));
+	expect(within(rules).queryByRole("button", { name: /Menu text limit/u })).toBeNull();
+	await user.click(within(rules).getByRole("button", { name: /example-terms/u }));
 	await user.click(screen.getByRole("button", { name: "Remove term 2" }));
 	expect(screen.queryByRole("textbox", { name: "Forbidden term 2" })).toBeNull();
 	await user.click(screen.getByRole("button", { name: "Save" }));
 	await screen.findByText("Rule file saved.", { exact: false });
 	expect(saves).toHaveLength(1);
+	expect(saves[0]?.rules[0]).toEqual({ ...rulesDocument.rules[0], maximumCharacters: 12 });
 	expect(saves[0]?.rules[1]).toMatchObject({
 		caseSensitive: true,
 		terms: [
@@ -175,4 +189,79 @@ it("offers to load an existing starter rules file and labels invalid rules", asy
 	await user.click(await screen.findByRole("button", { name: "Load existing rules" }));
 	await screen.findByRole("table", { name: "Rules overview" });
 	expect(requested).toEqual([false, false, true]);
+});
+it("lists the file's complete rules, says to edit them there, and saves them as they are", async () => {
+	const user = userEvent.setup({ delay: null });
+	const complete = {
+		kind: "rule",
+		id: TextQualityRuleId.make("ui.exclamation"),
+		label: "Exclamation mark in UI text",
+		subject: "line_culture",
+		severity: "low",
+		when: { contains: [{ field: "latest" }, { lit: "!" }] },
+		actual: { object: {} },
+		expectation: { object: {} },
+		recovery: "Drop the exclamation mark."
+	} as const;
+	const document: GameTextRuleDocument = {
+		...rulesDocument,
+		rules: [...rulesDocument.rules, complete]
+	};
+	const client = makeClient();
+	const saves: GameTextRuleDocument[] = [];
+	mount({
+		...client,
+		chooseQualityRules: () =>
+			client
+				.chooseQualityRules()
+				.pipe(
+					Effect.map((result) =>
+						result.status === "completed" ? { ...result, document } : result
+					)
+				),
+		saveQualityRules: (draft) => {
+			saves.push(draft);
+			return client.saveQualityRules(draft);
+		}
+	});
+	await openQuality(user);
+	await user.click(screen.getByRole("button", { name: "Edit rules" }));
+	const rules = await screen.findByRole("complementary", { name: "Quality rule list" });
+	await user.click(within(rules).getByRole("button", { name: /Exclamation mark in UI text/u }));
+	const form = screen.getByRole("region", { name: "Selected quality rule" });
+	expect(
+		within(form).getByRole("heading", { name: "Exclamation mark in UI text" })
+	).toBeDefined();
+	expect(form.textContent).toContain("Each culture's translation");
+	expect(form.textContent).toContain("Low");
+	expect(within(form).getByText(/Edit it in the rules/u)).toBeDefined();
+	expect(within(form).queryByRole("textbox")).toBeNull();
+	await user.click(within(rules).getByRole("button", { name: /example-limit/u }));
+	const maximum = await screen.findByRole("spinbutton", {
+		name: "Maximum characters for example-limit"
+	});
+	await user.clear(maximum);
+	await user.type(maximum, "12");
+	await user.click(screen.getByRole("button", { name: "Save" }));
+	await waitFor(() => expect(saves).toHaveLength(1));
+	expect(saves[0]?.rules.at(-1)).toEqual(complete);
+});
+it("searches again when rules load, so Browse reads their findings", async () => {
+	const user = userEvent.setup({ delay: null });
+	const client = makeClient();
+	const searches: string[] = [];
+	mount({
+		...client,
+		search: (request) => {
+			searches.push(JSON.stringify(request));
+			return client.search(request);
+		}
+	});
+	await screen.findByRole("region", { name: "Results" });
+	await waitFor(() => expect(searches.length).toBeGreaterThan(0));
+	const before = searches.length;
+	const last = searches.at(-1);
+	await openQuality(user);
+	await waitFor(() => expect(searches.length).toBeGreaterThan(before));
+	expect(searches.at(-1)).toBe(last);
 });

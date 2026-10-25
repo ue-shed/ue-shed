@@ -59,6 +59,9 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:localization:focus"], (request) =>
 		gameText.localizationFocus(request)
 	);
+	yield* ipc.register(invokeContracts["game-text:related"], (request) =>
+		gameText.related(request)
+	);
 	yield* ipc.register(invokeContracts["game-text:quality:reload-rules"], () =>
 		gameText.reloadQualityRules()
 	);
@@ -85,6 +88,10 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:search"], (...args) => {
 		const [request] = args;
 		return gameText.search(request);
+	});
+	yield* ipc.register(invokeContracts["game-text:search-rows"], (...args) => {
+		const [request] = args;
+		return gameText.searchRows(request);
 	});
 	yield* ipc.register(invokeContracts["game-text:focus"], (...args) => {
 		const [request] = args;

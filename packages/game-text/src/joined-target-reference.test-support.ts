@@ -1,5 +1,4 @@
 import { decodeWtf8 } from "./wtf8.js";
-import { FINDING_BIT } from "./text-problem-bits.test-support.js";
 import { createHash } from "node:crypto";
 import { Effect, Schema, Option } from "effect";
 import { stripPackageNamespace } from "@ue-shed/localization";
@@ -34,10 +33,7 @@ import {
 import { finishJoinedTarget } from "./joined-target-marks.test-support.js";
 import { incrementJoinedTarget } from "./joined-target-incremental.test-support.js";
 import { comparePackageTextPathBytes } from "./package-text-order.js";
-import {
-	joinedQueryColumns,
-	joinedDuplicateSourcesSteps
-} from "./joined-query-columns.test-support.js";
+import { joinedQueryColumns } from "./joined-query-columns.test-support.js";
 import { joinedQueryPlaces } from "./joined-query-places.test-support.js";
 import { prepareJoinedSourceCache } from "./joined-source-cache.test-support.js";
 import { joinedPhysicalChunkName } from "./joined-column-chunks.js";
@@ -117,7 +113,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 	);
 	const key =
-		"joined-v20:" +
+		"joined-v21:" +
 		createHash("sha256")
 			.update(
 				JSON.stringify([
@@ -148,7 +144,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	if (
 		!input.force &&
 		input.target.collapseMode !== "IdenticalNamespaceAndSource" &&
-		(root.active.joined ?? "").startsWith("joined-v20:")
+		(root.active.joined ?? "").startsWith("joined-v21:")
 	) {
 		const incremental = yield* incrementJoinedTarget(
 			input,
@@ -382,7 +378,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	stages.mark("order");
 	const unit = new Uint32Array(occurrenceCount),
 		next = new Uint32Array(occurrenceCount).fill(absent);
-	const visibleOccurrence = new Uint8Array(occurrenceCount);
 	for (let start = 0; start < rawOrder.length; ) {
 		let end = start + 1;
 		const first = rawOrder[start]!;
@@ -449,7 +444,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			"manifest_end",
 			"reasons",
 			"facts",
-			"problems",
 			"origins",
 			"editing",
 			"notes",
@@ -471,7 +465,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			)
 		)
 	);
-	const visibleLine = new Uint8Array(count);
 	const cursors = culture.map(() => ({ archive: 0, po: 0 }));
 	const columns: JoinedColumns = {
 		line,
@@ -619,6 +612,24 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	}
 	// Unreal skips editor-only text when the target does not gather editor-only data.
 	const skipsEditorOnlyData = localizationGathersEditorOnlyData(input.target) === false;
+	/** Lines with a manifest entry carrying notes or an `Info.Comment`, as localizationManifestNotes reads. */
+	const manifestNotes = new Uint8Array(count);
+	const hasManifestNotes = (ms: number, me: number) => {
+		for (let i = ms; i < me; i++) {
+			const manifestIndex = mo[i]!;
+			if (
+				m.options![manifestIndex]! & 4 &&
+				strings.string(m.notes![manifestIndex]!).trim() !== ""
+			)
+				return true;
+			if (m.options![manifestIndex]! & 8) {
+				const info = noteMetadata(strings.string(m.metadata![manifestIndex]!) || "{}");
+				if (Option.isSome(info) && (info.value.Info?.Comment ?? "").trim() !== "")
+					return true;
+			}
+		}
+		return false;
+	};
 	let row = 0;
 	for (const group of groups()) {
 		const { os, oe, ms, me, ns, key: keyId } = group;
@@ -650,9 +661,12 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			audience = 0,
 			origins = 0,
 			editing = 0,
-			notes = 0,
-			visible = false,
-			emptyProblems = 0;
+			// A line's notes are its places' dev notes and its manifest entries' notes, wherever it is.
+			notes = 0;
+		if (hasManifestNotes(ms, me)) {
+			manifestNotes[row] = 1;
+			notes = 1;
+		}
 		for (let i = os; i < oe; i++) {
 			const occurrence = order[i]!,
 				pkg = packages.packageRow[occurrence]!;
@@ -661,8 +675,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 				rowUnits.add(representative);
 				const members: number[] = [],
 					values = new Set<number>();
-				let length = 0,
-					searchable = false;
+				let searchable = false;
 				for (let member = representative; member !== absent; member = next[member]!) {
 					// Mirrors localizationLineUnits: unresolved identities and references retain
 					// their contexts; resolved text contributes only to its gathered identity.
@@ -675,23 +688,12 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 					members.push(member);
 					const source = c.source[member]!;
 					if (!values.has(source)) {
-						const value = strings.string(source);
-						length = Math.max(length, value.length);
-						searchable ||= value.trim() !== "";
+						searchable ||= strings.string(source).trim() !== "";
 						values.add(source);
 					}
 				}
-				// Unresolved text is a finding by default; long text only when a request names it.
-				const problems =
-					c.identity[representative]! >= 2 || c.key[representative] === empty
-						? FINDING_BIT
-						: 0;
-				emptyProblems |= problems;
 				if (searchable) {
-					visible = true;
-					line.problems![row]! |= problems;
 					for (const member of members) {
-						visibleOccurrence[member] = 1;
 						origins |=
 							1 << (c.location[member] === 2 ? 0 : c.location[member] === 1 ? 1 : 2);
 						audience |= textAudienceBit(c.audience[member]!);
@@ -725,9 +727,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 					)[coverage - 2]!
 				);
 		}
-		if (!visible) line.problems![row]! |= emptyProblems;
-		visibleLine[row] = Number(visible);
-		if (oe - os > 1) line.problems![row]! |= FINDING_BIT;
 		if (ns === absent)
 			reasons |= reasonBit(
 				hasReference
@@ -826,16 +825,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			for (let i = ms; i < me; i++) {
 				const manifestIndex = mo[i]!,
 					value = path(manifestIndex);
-				if (
-					m.options![manifestIndex]! & 4 &&
-					strings.string(m.notes![manifestIndex]!).trim() !== ""
-				)
-					notes = 1;
-				if (m.options![manifestIndex]! & 8) {
-					const info = noteMetadata(strings.string(m.metadata![manifestIndex]!) || "{}");
-					if (Option.isSome(info) && (info.value.Info?.Comment ?? "").trim() !== "")
-						notes = 1;
-				}
 				if (
 					manifestPackageFile(value) ||
 					value.replaceAll("\\", "/").replace(/^\.\//u, "").startsWith("/")
@@ -979,11 +968,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	}
 	yield* flushSources();
 	stages.mark("lines");
-	const duplicates = yield* runHostSteps(
-		joinedDuplicateSourcesSteps(packages, line, order, empty)
-	);
-	stages.mark("duplicates");
-	const { duplicate } = duplicates;
 	const unitFirstLine = new Uint32Array(occurrenceCount).fill(absent);
 	for (let row = 0; row < count; row++) {
 		if (clock.step()) yield* Effect.yieldNow;
@@ -994,9 +978,6 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 				line.split_unit![row] = 1;
 				line.split_unit![unitFirstLine[representative]!] = 1;
 			} else unitFirstLine[representative] = row;
-			if (c.identity[occurrence] !== 0 || c.key[occurrence] === empty) continue;
-			if (duplicate[occurrence] && (visibleOccurrence[occurrence] || !visibleLine[row]))
-				line.problems![row]! |= FINDING_BIT;
 		}
 	}
 	const folderIds = new Uint32Array(folderValues.length);
@@ -1017,9 +998,9 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	yield* strings.need([c.namespace, c.key]);
 	const queryColumns = yield* runHostSteps(
 		joinedQueryColumns({
-			duplicates,
 			packages,
 			line,
+			manifestNotes,
 			order,
 			rawOrder,
 			representative: unit,

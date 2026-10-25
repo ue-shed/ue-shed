@@ -1,16 +1,14 @@
 //! Read-only pinned native query view. No writer lease or JavaScript column reconstruction.
-use crate::snapshot::{Reader, integers, strings_bytes};
-use crate::store::{Configuration, decode_a64_bytes, decode_ids, open_root, section};
+use crate::dictionary_image::{self, SegmentImage, SegmentKey};
+use crate::snapshot::{Reader, integers};
+use crate::store::{Configuration, decode_ids, open_root, section};
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result, require};
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
-const FRAME_CACHE_BYTES: usize = 32 * 1024 * 1024;
-/// A dictionary block: its segment and its index within the segment.
-type DictionaryBlock = (usize, usize);
 const MAX_PATCH_ROWS: usize = 8192;
 
 struct Layer {
@@ -19,13 +17,43 @@ struct Layer {
 }
 
 struct Segment {
+    key: SegmentKey,
     start: u32,
     count: u32,
     reader: Reader,
     offsets: Vec<u32>,
     frames: Vec<u32>,
-    /// First string of each 64-string block, read on the first exact lookup.
-    fences: Option<Vec<Vec<u8>>>,
+    /// The segment's strings for random access, built on the reader's first string lookup.
+    image: Option<Arc<SegmentImage>>,
+}
+
+impl Segment {
+    fn image(&self) -> Result<&SegmentImage> {
+        Ok(self.image.as_ref().ok_or("Dictionary image is absent.")?)
+    }
+}
+
+/// A string ID's segment and its index within the segment.
+fn string_position(segments: &[Segment], id: u32) -> Result<(usize, usize)> {
+    let segment_index = segments
+        .partition_point(|segment| segment.start <= id)
+        .checked_sub(1)
+        .ok_or("String ID precedes dictionary.")?;
+    let segment = &segments[segment_index];
+    let local = id
+        .checked_sub(segment.start)
+        .ok_or("Invalid local string ID.")? as usize;
+    require(
+        local < segment.count as usize,
+        "String ID exceeds dictionary.",
+    )?;
+    Ok((segment_index, local))
+}
+
+/// A string through its segment's image, once every segment is imaged.
+fn imaged_string(segments: &[Segment], id: u32) -> Result<String> {
+    let (segment_index, local) = string_position(segments, id)?;
+    Wtf8Buf::from_bytes(segments[segment_index].image()?.get(local)?).map(Wtf8Buf::into_view)
 }
 
 /// Raw columns a rule evaluation reads. They belong to the evaluation, not to the reader's
@@ -47,9 +75,7 @@ pub struct EngineReader {
     segments: Vec<Segment>,
     columns: HashMap<(String, String), Arc<[u32]>>,
     byte_columns: HashMap<String, Arc<[u8]>>,
-    frames: HashMap<(usize, u32), Arc<[u8]>>,
-    frame_order: VecDeque<(usize, u32)>,
-    frame_bytes: usize,
+    imaged: bool,
     empty_ids: Option<Arc<BTreeSet<u32>>>,
 }
 
@@ -134,7 +160,7 @@ impl EngineReader {
         )?;
         let generation = text(&root, "generation")?;
         let directory = configuration.directory()?;
-        let mut joined = open_layer(&directory, &root, &joined_key)?;
+        let joined = open_layer(&directory, &root, &joined_key)?;
         require(
             joined
                 .reader
@@ -144,7 +170,7 @@ impl EngineReader {
                 .is_some_and(|entry| entry.raw <= 16 * 1024 * 1024),
             "Joined metadata exceeds its bound.",
         )?;
-        let meta = parse(&section(&mut joined.reader, "join.meta")?)?;
+        let meta = parse(&section(&joined.reader, "join.meta")?)?;
         require(
             meta["generation"] == generation,
             Error::new(
@@ -207,9 +233,10 @@ impl EngineReader {
             .as_array()
             .ok_or("Invalid dictionary segments.")?
         {
-            let mut reader = Reader::open(&directory.join(text(record, "file")?))?;
-            let offsets = integers(&section(&mut reader, "front.offsets")?)?;
-            let frames = integers(&section(&mut reader, "front.frames")?)?;
+            let path = directory.join(text(record, "file")?);
+            let reader = Reader::open(&path)?;
+            let offsets = integers(&section(&reader, "front.offsets")?)?;
+            let frames = integers(&section(&reader, "front.frames")?)?;
             let start = u32::try_from(record["start"].as_u64().ok_or("Invalid segment start.")?)?;
             let count = u32::try_from(record["count"].as_u64().ok_or("Invalid segment count.")?)?;
             require(
@@ -217,12 +244,13 @@ impl EngineReader {
                 "Invalid dictionary fence lengths.",
             )?;
             segments.push(Segment {
+                key: (path, start, count),
                 start,
                 count,
                 reader,
                 offsets,
                 frames,
-                fences: None,
+                image: None,
             });
         }
         Ok(Self {
@@ -235,14 +263,12 @@ impl EngineReader {
             segments,
             columns: HashMap::new(),
             byte_columns: HashMap::new(),
-            frames: HashMap::new(),
+            imaged: false,
             empty_ids: None,
-            frame_order: VecDeque::new(),
-            frame_bytes: 0,
         })
     }
 
-    /// Heap bytes of the cached columns and dictionary frames, query cache and evaluation scope.
+    /// Heap bytes of the cached columns, dictionary images and evaluation scope.
     pub(crate) fn cache_bytes(&self) -> usize {
         let columns = |columns: &HashMap<(String, String), Arc<[u32]>>| {
             columns
@@ -255,7 +281,12 @@ impl EngineReader {
         };
         columns(&self.columns)
             + bytes(&self.byte_columns)
-            + self.frame_bytes
+            + self
+                .segments
+                .iter()
+                .filter_map(|segment| segment.image.as_ref())
+                .map(|image| image.heap_bytes())
+                .sum::<usize>()
             + self
                 .evaluation
                 .as_ref()
@@ -295,7 +326,7 @@ impl EngineReader {
             .layers
             .get_mut(key)
             .ok_or("Query input was not pinned.")?;
-        let bytes = section(&mut layer.reader, name)?;
+        let bytes = section(&layer.reader, name)?;
         let values: Arc<[u32]> = if layer.record["stringColumns"].get(name).is_some() {
             decode_ids(&bytes, layer.record["idEncoding"] == "delta32")?
         } else {
@@ -322,7 +353,9 @@ impl EngineReader {
             .layers
             .get_mut(key)
             .ok_or("Query input was not pinned.")?;
-        parse(&section(&mut layer.reader, section_name)?)
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("inputMetadata");
+        parse(&section(&layer.reader, section_name)?)
     }
 
     /// Packed byte arenas use numeric physical sections. Read them directly so native query
@@ -363,7 +396,7 @@ impl EngineReader {
                 layer.record["stringColumns"].get(&field).is_none(),
                 "A string-ID column is not a byte arena.",
             )?;
-            bytes.extend_from_slice(&section(&mut layer.reader, &field)?);
+            bytes.extend_from_slice(&section(&layer.reader, &field)?);
         }
         let bytes: Arc<[u8]> = bytes.into();
         self.raw_bytes().insert(name.into(), Arc::clone(&bytes));
@@ -497,179 +530,68 @@ impl EngineReader {
         })
     }
 
-    /// A string ID's segment and its index within the segment.
-    fn string_position(&self, id: u32) -> Result<(usize, usize)> {
-        let segment_index = self
-            .segments
-            .partition_point(|segment| segment.start <= id)
-            .checked_sub(1)
-            .ok_or("String ID precedes dictionary.")?;
-        let segment = &self.segments[segment_index];
-        let local = id
-            .checked_sub(segment.start)
-            .ok_or("Invalid local string ID.")? as usize;
-        require(
-            local < segment.count as usize,
-            "String ID exceeds dictionary.",
-        )?;
-        Ok((segment_index, local))
+    /// Images every segment for random access, building the missing images in parallel. A
+    /// segment file never changes, so an image another reader built for it is reused.
+    fn image_segments(&mut self) -> Result<()> {
+        if self.imaged {
+            return Ok(());
+        }
+        use rayon::prelude::*;
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("dictionaryImages");
+        for segment in &mut self.segments {
+            segment.image = dictionary_image::shared(&segment.key);
+        }
+        self.segments
+            .par_iter_mut()
+            .filter(|segment| segment.image.is_none())
+            .try_for_each(|segment| -> Result<()> {
+                let image = Arc::new(SegmentImage::build(
+                    &segment.reader,
+                    &segment.offsets,
+                    &segment.frames,
+                    segment.count,
+                )?);
+                dictionary_image::publish(segment.key.clone(), &image);
+                segment.image = Some(image);
+                Ok(())
+            })?;
+        self.imaged = true;
+        Ok(())
     }
 
-    /// Decode one A64 block from a bounded cache of compressed-frame expansions. All dictionary
-    /// IO uses pinned file descriptors, even after compaction unlinks old generation filenames.
+    /// One string, decoded alone from its segment's image. All dictionary IO uses pinned file
+    /// descriptors, even after compaction unlinks old generation filenames.
     pub fn string(&mut self, id: u32) -> Result<String> {
-        let (segment_index, local) = self.string_position(id)?;
-        let values = self.block(segment_index, local / 64)?;
-        Wtf8Buf::from_bytes(
-            values
-                .get(local % 64)
-                .ok_or("String outside dictionary block.")?
-                .clone(),
-        )
-        .map(Wtf8Buf::into_view)
+        self.image_segments()?;
+        imaged_string(&self.segments, id)
     }
 
     /// The global ID of a string equal to `value`, comparing its exact WTF-8 bytes. Each
-    /// segment is sorted, so this reads one fence index per segment once and one block per probe.
+    /// segment is sorted, so this is a binary search of each segment's image.
     pub fn find_string(&mut self, value: &str) -> Result<Option<u32>> {
+        self.image_segments()?;
         let wanted = Wtf8Buf::from_view(value).into_bytes();
-        for index in 0..self.segments.len() {
-            if self.segments[index].count == 0 {
-                continue;
-            }
-            if self.segments[index].fences.is_none() {
-                let segment = &mut self.segments[index];
-                let fences = strings_bytes(&section(&mut segment.reader, "front.fences")?)?;
-                require(
-                    fences.len() == segment.offsets.len()
-                        && fences.windows(2).all(|pair| pair[0] < pair[1]),
-                    "Invalid dictionary fences.",
-                )?;
-                segment.fences = Some(fences);
-            }
-            let position = self.segments[index]
-                .fences
-                .as_ref()
-                .ok_or("Dictionary fences are absent.")?
-                .partition_point(|fence| fence.as_slice() <= wanted.as_slice());
-            let Some(block) = position.checked_sub(1) else {
-                continue;
-            };
-            if let Ok(rank) = self.block(index, block)?.binary_search(&wanted) {
-                return Ok(Some(
-                    self.segments[index].start + u32::try_from(block * 64 + rank)?,
-                ));
+        for segment in &self.segments {
+            if let Some(local) = segment.image()?.find(&wanted)? {
+                return Ok(Some(segment.start + u32::try_from(local)?));
             }
         }
         Ok(None)
-    }
-
-    fn block(&mut self, segment_index: usize, block: usize) -> Result<Vec<Vec<u8>>> {
-        let (bytes, range) = self.block_bytes(segment_index, block)?;
-        decode_a64_bytes(bytes.get(range).ok_or("Dictionary block range.")?)
-    }
-    /// A dictionary block's encoded bytes: its frame, through the frame cache, and its range.
-    fn block_bytes(
-        &mut self,
-        segment_index: usize,
-        block: usize,
-    ) -> Result<(Arc<[u8]>, std::ops::Range<usize>)> {
-        let segment = &mut self.segments[segment_index];
-        let frame = *segment
-            .frames
-            .get(block)
-            .ok_or("Dictionary block outside segment.")?;
-        let cache_key = (segment_index, frame);
-        let bytes = if let Some(bytes) = self.frames.get(&cache_key) {
-            Arc::clone(bytes)
-        } else {
-            let bytes: Arc<[u8]> = section(&mut segment.reader, &format!("front.b{frame}"))?.into();
-            while self.frame_bytes + bytes.len() > FRAME_CACHE_BYTES {
-                let Some(old) = self.frame_order.pop_front() else {
-                    break;
-                };
-                if let Some(bytes) = self.frames.remove(&old) {
-                    self.frame_bytes -= bytes.len();
-                }
-            }
-            if bytes.len() <= FRAME_CACHE_BYTES {
-                self.frame_bytes += bytes.len();
-                self.frames.insert(cache_key, Arc::clone(&bytes));
-                self.frame_order.push_back(cache_key);
-            }
-            bytes
-        };
-        let start = segment.offsets[block] as usize;
-        let end = if segment.frames.get(block + 1) == Some(&frame) {
-            segment.offsets[block + 1] as usize
-        } else {
-            bytes.len()
-        };
-        Ok((bytes, start..end))
     }
 
     pub fn strings(&mut self, ids: &[u32]) -> Result<Vec<String>> {
         ids.iter().map(|id| self.string(*id)).collect()
     }
 
-    /// The strings of many IDs, in their order. It visits them in ID order, so it decodes each
-    /// dictionary block once, where a lookup per ID decodes a block per ID.
+    /// The strings of many IDs, in their order, decoded in parallel.
     pub fn strings_batch(&mut self, ids: &[u32]) -> Result<Vec<String>> {
         use rayon::prelude::*;
-        let mut visit = (0..ids.len()).collect::<Vec<_>>();
-        visit.sort_unstable_by_key(|index| ids[*index]);
-        // Frames are read serially through the cache; blocks then decode in parallel.
-        struct Block {
-            bytes: Arc<[u8]>,
-            range: std::ops::Range<usize>,
-            /// (result index, position in the block)
-            members: Vec<(usize, usize)>,
-        }
-        let mut blocks = Vec::<Block>::new();
-        let mut current: Option<DictionaryBlock> = None;
-        for index in visit {
-            let (segment_index, local) = self.string_position(ids[index])?;
-            let key = (segment_index, local / 64);
-            if current != Some(key) {
-                let (bytes, range) = self.block_bytes(segment_index, local / 64)?;
-                blocks.push(Block {
-                    bytes,
-                    range,
-                    members: Vec::new(),
-                });
-                current = Some(key);
-            }
-            if let Some(block) = blocks.last_mut() {
-                block.members.push((index, local % 64));
-            }
-        }
-        let decoded = blocks
-            .par_iter()
-            .map(|block| -> Result<Vec<(usize, String)>> {
-                let values = decode_a64_bytes(
-                    block
-                        .bytes
-                        .get(block.range.clone())
-                        .ok_or("Dictionary block range.")?,
-                )?;
-                block
-                    .members
-                    .iter()
-                    .map(|(index, position)| {
-                        let bytes = values
-                            .get(*position)
-                            .ok_or("String outside dictionary block.")?
-                            .clone();
-                        Ok((*index, Wtf8Buf::from_bytes(bytes)?.into_view()))
-                    })
-                    .collect()
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let mut result = vec![String::new(); ids.len()];
-        for (index, text) in decoded.into_iter().flatten() {
-            result[index] = text;
-        }
-        Ok(result)
+        self.image_segments()?;
+        let segments = &self.segments;
+        ids.par_iter()
+            .map(|id| imaged_string(segments, *id))
+            .collect()
     }
 
     pub(crate) fn empty_string_ids(&mut self) -> Result<Arc<BTreeSet<u32>>> {
@@ -761,7 +683,12 @@ mod tests {
         drop(store);
         let mut reader = EngineReader::open(&config, Some("joined-native-v1:base"))?;
         assert!(reader.columns.is_empty());
-        assert!(reader.frames.is_empty());
+        assert!(
+            reader
+                .segments
+                .iter()
+                .all(|segment| segment.image.is_none())
+        );
         assert_eq!(&*reader.column("line.source")?, &ids);
         assert_eq!(reader.string(ids[0])?, "First source");
         assert_eq!(

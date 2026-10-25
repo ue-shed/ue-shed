@@ -19,9 +19,15 @@ import {
 	target,
 	unit
 } from "../../../packages/game-text/src/localization.test-support.js";
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
+import {
+	referenceSearchRows,
+	textCorpusQuery
+} from "../../../packages/game-text/src/query.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute } from "./game-text-query-route.js";
+import { groupRows, withSearchRows } from "./game-text-route.test-support.js";
+
+export { groupRows };
 export const runtime = ManagedRuntime.make(Layer.empty);
 export const text = corpus([unit("K", "Welcome"), unit("Fresh", "Fresh line")]);
 export const base = joinLocalizationTarget(
@@ -139,6 +145,18 @@ export function client(
 					: plain
 				).search(request)
 			}),
+		searchRows: (request) => {
+			const query = request.localization
+				? textCorpusQuery(text, undefined, {
+						...joined,
+						target: request.localization.target
+					})
+				: plain;
+			return Effect.succeed({
+				status: "ready",
+				page: referenceSearchRows(query.search, request)
+			});
+		},
 		focus: (request) => {
 			const focus = (
 				request.localization
@@ -171,7 +189,7 @@ export function client(
 export function mount(api = client()) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
-			<GameTextRoute client={api} />
+			<GameTextRoute client={withSearchRows(api)} />
 		</EffectRuntimeProvider>
 	));
 }

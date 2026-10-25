@@ -1,10 +1,4 @@
 import type { JoinedTargetInput } from "./joined-target.js";
-import {
-	FINDING_BIT,
-	KEY_CHANGED_BIT,
-	cultureProblemBits,
-	settleProblemBits
-} from "./text-problem-bits.test-support.js";
 import { Effect, Schema } from "effect";
 import { isDeepStrictEqual } from "node:util";
 import { localizationReviewFingerprint } from "@ue-shed/localization";
@@ -17,7 +11,6 @@ import { precedence, reasonBit, stateBit } from "./joined-target-reference.test-
 import { decodeWtf8 } from "./wtf8.js";
 import type { JoinedSourcePatches } from "./joined-source-patches.js";
 import { longestSource } from "./source-metrics.js";
-import { DuplicateSources } from "./duplicate-sources.js";
 
 const same = (a: Uint32Array, b: Uint32Array) =>
 	a.length === b.length &&
@@ -137,7 +130,6 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 		"manifest_end",
 		"reasons",
 		"facts",
-		"problems",
 		"split_unit"
 	])
 		line[field] = yield* u32(layer, `line.${field}`);
@@ -219,10 +211,6 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 		}
 		return value;
 	});
-	// Short-source edits can alter duplicate/long-text findings on unrelated units.
-	for (const source of new Set([...oldSources, ...newSources]))
-		if (sourceText.get(source)!.length < 40 && packageChanges.size)
-			return fallback("short-source");
 	const hot = new Map<string, Map<number, number>>();
 	const set = (field: string, row: number, value: number) => {
 		let values = hot.get(field);
@@ -345,7 +333,6 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 			set("line.facts", row, structural);
 			set("line.reasons", row, reasons);
 		}
-		let problems = line.problems![row]! & (KEY_CHANGED_BIT | FINDING_BIT);
 		for (let ci = 0; ci < input.target.cultures.length; ci++) {
 			const culture = input.target.cultures[ci]!,
 				prefix = `c${ci}.`;
@@ -421,7 +408,6 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 			set(prefix + "facts", row, facts);
 			set(prefix + "state", row, state);
 			set(prefix + "reasons", row, unknown);
-			problems |= cultureProblemBits(state, facts, unknown);
 			if (
 				input.review?.target === input.target.name &&
 				!(reasons & ((1 << 9) | (1 << 10) | (1 << 17)))
@@ -458,7 +444,6 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 				}
 			}
 		}
-		set("line.problems", row, settleProblemBits(problems));
 	}
 	const sourceEdits = {
 		raw: new Map<number, readonly number[]>(),
@@ -506,80 +491,11 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 					const conflict =
 						(hot.get("line.reasons")?.get(lineRow) ?? line.reasons![lineRow]!) &
 						reasonBit("conflicting_source");
-					set(
-						prefix + "signals",
-						queryRow,
-						(flags & ~(4 | 16)) | (characters >= 40 ? 4 : 0) | (conflict ? 16 : 0)
-					);
+					set(prefix + "signals", queryRow, (flags & ~16) | (conflict ? 16 : 0));
 				}
 			}
-		// Duplicate-source lenses need exact frequencies even when a long-text finding stays set.
-		// Recompute with typed columns: no decoded source, unit or line objects are retained.
-		const places = yield* u32(layer, "query.occurrence.places");
-		const occurrenceLines = new Uint32Array(places.length);
-		const occurrenceSources = new Uint32Array(yield* u32(layer, "query.occurrence.sources"));
-		for (const [member, source] of packageChanges) {
-			occurrenceSources[member] = source;
+		for (const [member, source] of packageChanges)
 			set("query.occurrence.sources", member, source);
-		}
-		// Only old/new source groups can change, including unchanged rows at other places.
-		// A dirty row may also contain clean sources: count those too before recomputing its bit.
-		const dirtySources = new Set([...oldSources, ...newSources]);
-		const neededSources = new Set<number>();
-		const queries = [];
-		for (const kind of ["raw", "slice"] as const) {
-			const prefix = `query.${kind}.`;
-			const identities = yield* u32(layer, prefix + "identity");
-			const starts = yield* u32(layer, prefix + "member_start");
-			const ends = yield* u32(layer, prefix + "member_end");
-			const members = yield* u32(layer, prefix + "members");
-			const flags = yield* u32(layer, prefix + "signals");
-			const rows: number[] = [];
-			for (let row = 0; row < flags.length; row++) {
-				if (identities[row] !== 0 || flags[row]! & 8) continue;
-				let dirty = false;
-				for (let offset = starts[row]!; offset < ends[row]! && !dirty; offset++)
-					dirty = dirtySources.has(occurrenceSources[members[offset]!]!);
-				if (!dirty) continue;
-				rows.push(row);
-				for (let offset = starts[row]!; offset < ends[row]!; offset++)
-					neededSources.add(occurrenceSources[members[offset]!]!);
-			}
-			queries.push({ prefix, starts, ends, members, flags, rows });
-		}
-		const counterparts = new DuplicateSources<number, number, number>();
-		const sliceLines = yield* u32(layer, "query.slice.line");
-		const sliceIdentities = yield* u32(layer, "query.slice.identity");
-		const sliceFlags = yield* u32(layer, "query.slice.signals");
-		const sliceStart = yield* u32(layer, "query.slice.member_start");
-		const sliceEnd = yield* u32(layer, "query.slice.member_end");
-		const sliceMembers = yield* u32(layer, "query.slice.members");
-		for (let row = 0; row < sliceLines.length; row++) {
-			if (sliceIdentities[row] !== 0 || sliceFlags[row]! & 8) continue;
-			const line = sliceLines[row]!;
-			for (let offset = sliceStart[row]!; offset < sliceEnd[row]!; offset++) {
-				const member = sliceMembers[offset]!;
-				const source = occurrenceSources[member]!;
-				occurrenceLines[member] = line;
-				if (neededSources.has(source)) counterparts.add(source, line, places[member]!);
-			}
-		}
-		for (const { prefix, starts, ends, members, flags, rows } of queries) {
-			for (const row of rows) {
-				let duplicate = false;
-				for (let offset = starts[row]!; offset < ends[row]!; offset++) {
-					const member = members[offset]!;
-					duplicate ||= counterparts.hasOther(
-						occurrenceSources[member]!,
-						occurrenceLines[member]!,
-						places[member]!
-					);
-				}
-				const currentFlags = hot.get(prefix + "signals")?.get(row) ?? flags[row]!;
-				const updated = (currentFlags & ~2) | (duplicate ? 2 : 0);
-				if (updated !== currentFlags) set(prefix + "signals", row, updated);
-			}
-		}
 		for (const edits of hot.values())
 			if (edits.size > 8192) return fallback("query-overlay-bound");
 	}

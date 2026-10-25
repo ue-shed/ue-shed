@@ -178,13 +178,17 @@ From 1.19, `protocol-session` also answers `project_index_status`, so a host tha
 session reads status without starting a process. Older workers fail it in a session with
 `unsupported_session_operation` before doing any work; ask them through `protocol` instead.
 
-Minor version 1.20 adds `findings_evaluate`, `findings_lines`, and `findings_units` to the native
-Game Text engine. Evaluation takes the canonical internal v4 rule document inline as JSON text in
-`rules`, read with lone UTF-16 units preserved, and the host's resolved `collationLocale`. Bounded reads name the findings `key` and at most 5,000 line
-or raw-unit rows. Results carry interned places and the existing finding evidence and identities.
-Responses over 16 MiB use a scoped `{file}` result; the host reads and deletes it. Evaluation
-and reads retain the pinned joined identity, and stale findings fail explicitly. Existing engine
-operations retain their minor-15 requirement.
+Minor version 1.20 adds `findings_evaluate`, `findings_accept` and `findings_query` to the
+native Game Text engine. Evaluation takes the canonical internal v4 rule document inline as JSON
+text in `rules`, read with lone UTF-16 units preserved, and the host's resolved
+`collationLocale`. `findings_accept` registers a review's accepted findings for a findings
+`key` and returns an acceptance key. `findings_query` takes a JSON payload naming the findings
+`key`, a view, filters, an order and a page of at most 5,000 findings, and returns them with
+interned places, the existing finding evidence and identities, and optional counts. Responses over
+16 MiB use a scoped `{file}` result; the host reads and deletes it. Evaluation and reads retain
+the pinned joined identity, and stale findings fail explicitly. Existing engine operations retain
+their minor-15 requirement. The earlier `rows`, `findings_lines` and `findings_units` reads are
+gone: a host and an engine of different builds refuse each other's contract hash, below.
 
 From 1.20 the engine's `capabilities` outcome also carries `contract`: the engine's `buildId` and
 the `contractHash` of its Rust-owned contract. A host compares them once, on a session's first

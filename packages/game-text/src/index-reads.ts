@@ -20,7 +20,8 @@ const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
  * follow it and read that culture's mark: `review` lenses, `review_status` (`not_reviewed`,
  * `current`, `changed`) and the flags of a current review (`review_flag`). A row counts once under each of a multi-valued
  * dimension's values (`fact`, `unknown_reason`, `review`, `review_flag`, `origin`, `problem`,
- * `finding`, `asset`) and not at all when it has none. `translation_key` is
+ * `finding`, `review_signal`, `asset`) and not at all when it has none. `finding` is the rules of
+ * the search's findings layer with a finding on the row, and `review_signal` its facts. `translation_key` is
  * `JSON.stringify([namespace, key])`, or `""` for a line with no key; `gathered` is `"true"` when
  * Unreal's manifest lists the line. Culture, culture-mark, translation key and gathered
  * dimensions need a localization target.
@@ -40,6 +41,7 @@ export const TextAggregateDimension = Schema.Literals([
 	"origin",
 	"problem",
 	"finding",
+	"review_signal",
 	"asset",
 	"gathered"
 ]);

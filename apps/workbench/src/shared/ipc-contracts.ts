@@ -121,6 +121,8 @@ import {
 	LocalizationTargetResult,
 	LocalizationFocusRequest,
 	LocalizationFocusResult,
+	RelatedLinesRequest,
+	RelatedLinesResult,
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
@@ -134,6 +136,7 @@ import {
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
+	TextCorpusRowsResult,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
@@ -833,10 +836,20 @@ export const invokeContracts = {
 		args: Schema.Tuple([LocalizationFocusRequest]),
 		result: LocalizationFocusResult
 	}),
+	"game-text:related": invoke({
+		channel: "game-text:related",
+		args: Schema.Tuple([RelatedLinesRequest]),
+		result: RelatedLinesResult
+	}),
 	"game-text:search": invoke({
 		channel: "game-text:search",
 		args: Schema.Tuple([TextCorpusSearchRequest]),
 		result: TextCorpusSearchResult
+	}),
+	"game-text:search-rows": invoke({
+		channel: "game-text:search-rows",
+		args: Schema.Tuple([TextCorpusSearchRequest]),
+		result: TextCorpusRowsResult
 	}),
 	"game-text:focus": invoke({
 		channel: "game-text:focus",

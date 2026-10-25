@@ -14,6 +14,7 @@ import { openJoinedTarget } from "./joined-target-reader.js";
 import { sharedIndexNodeLayer } from "./shared-index.js";
 import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { GameTextIndexError } from "./index-contract.js";
+import { referenceSearchRows } from "./query.test-support.js";
 import {
 	derivedAggregate,
 	derivedCorpusFingerprint,
@@ -74,8 +75,9 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 				};
 				const reader: Effect.Success<ReturnType<typeof openNativeTextQuery>> = {
 					findingsEvaluate: findings.findingsEvaluate,
-					findingsLines: findings.findingsLines,
-					findingsUnits: findings.findingsUnits,
+					findingsAccept: findings.findingsAccept,
+					findingsQuery: findings.findingsQuery,
+					rulesCheck: findings.rulesCheck,
 					readLocalizationLines: () =>
 						Effect.sync(() => reference.readLocalizationLines()),
 					readCorpus: () => Effect.sync(readCorpus),
@@ -95,14 +97,15 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 						Effect.sync(() => derivedCorpusFingerprint(readCorpus())),
 					summary: () => Effect.sync(reference.summary),
 					search: (request) => Effect.sync(() => reference.search(request)),
+					searchRows: (request) =>
+						Effect.sync(() => referenceSearchRows(reference.search, request)),
 					focus: (request) => Effect.sync(() => reference.focus(request)),
 					localizationFocus: (id) => Effect.sync(() => reference.localizationFocus(id)),
+					related: () => Effect.die("This reference query has no related lines."),
 					localizationDetail: (request) =>
 						Effect.sync(() => reference.localizationDetail(request)),
 					localizationLines: (request) =>
 						Effect.sync(() => reference.localizationLines(request)),
-					localizationRows: (request) =>
-						Effect.sync(() => reference.localizationRows(request)),
 					exportWithSignals: (request) =>
 						Effect.sync(() => {
 							const corpus = reference.export(request);

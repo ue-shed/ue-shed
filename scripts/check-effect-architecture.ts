@@ -28,14 +28,11 @@ const catalogOwned = new Set([
 ]);
 
 const approvedRuntimeExits = new Set([
-	// Indexed quality-policy inputs use scoped synchronous cache reads on the policy worker.
-	// Corpus search and focus use the asynchronous native engine.
+	// Retained localization evidence getters use scoped synchronous cache reads. Corpus search,
+	// focus and quality use the asynchronous native engine.
 	"packages/game-text/src/joined-query-node.ts",
 	// Node worker messages are foreign callbacks; the target scope owns and terminates the pool.
 	"packages/game-text/src/localization-import-worker.ts",
-	// Quality scan messages are a Node boundary; the model scope terminates the worker and its
-	// pinned reader, and each scan runs as a fiber the host can cancel.
-	"packages/game-text/src/quality-worker.ts",
 	// The browser worker is a foreign entrypoint; each read's scope terminates its runtime.
 	"apps/site/src/blueprints/blueprint.worker.ts",
 	"apps/cli/src/index.ts",
@@ -67,8 +64,6 @@ const approvedPromiseAdapters = new Set([
 	// Native build staging adapts Node filesystem/snapshot Promise ports below the scoped
 	// Effect builder; leases, temporary files and the protocol process share its scope.
 	"packages/game-text/src/native-index-builder.ts",
-	// The quality adapter bridges worker messages once; callers receive Effects in the model scope.
-	"packages/game-text/src/quality-worker-node.ts",
 	// The cold importer adapts worker messages and staged snapshot handles below SharedIndex.
 	"packages/game-text/src/localization-cold-import.ts",
 	// Package cold import owns the same worker-message Promise bridge under Effect.acquireRelease;
@@ -181,9 +176,6 @@ const approvedResourceAdapters = new Set([
 	// Ctrl+K, page-hide and the preference save timer belong to the Solid owner; onSettled cleanup
 	// removes them and flushes the pending save.
 	"extensions/game-text/src/game-text-query-route.tsx",
-	// Quality listeners and the finalization registry belong to the model's worker scope.
-	"packages/game-text/src/quality-worker-node.ts",
-	"packages/game-text/src/quality-worker.ts",
 	// Parser workers and their listeners are closed on success, failure and scope cancellation.
 	"packages/game-text/src/localization-cold-import.ts",
 	// Package workers, reply/abort listeners, readers and staging belong to the cold-import scope.

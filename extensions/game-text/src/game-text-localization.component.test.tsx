@@ -29,6 +29,7 @@ import {
 	client,
 	filterValues,
 	joined,
+	groupRows,
 	localized,
 	mount,
 	second
@@ -39,9 +40,11 @@ describe("Game Text localization", () => {
 		const user = userEvent.setup({ delay: null });
 		mount();
 		await screen.findByText("3 matches");
+		await groupRows();
 		await choose(user, "Culture", "fr");
 		await user.click(screen.getByRole("button", { name: /^Culture:/u }));
 		await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+		await groupRows();
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByText("Key")).toBeDefined();
 		expect(within(results).getByText("Translation · fr")).toBeDefined();
@@ -50,6 +53,7 @@ describe("Game Text localization", () => {
 		expect(row.textContent).toContain("Needs update");
 		await chooseFilter(user, "Translation", /^Needs update/u);
 		await screen.findByText("1 match");
+		await groupRows();
 		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
 		await within(screen.getByRole("complementary", { name: "Text focus" })).findByRole(
 			"heading",
@@ -68,6 +72,7 @@ describe("Game Text localization", () => {
 			screen.getByRole("button", { name: /Remove Translation is Needs update/u })
 		);
 		await screen.findByText("3 matches");
+		await groupRows();
 	});
 
 	it("loads another target through the host and remembers the choice", async () => {
@@ -77,9 +82,11 @@ describe("Game Text localization", () => {
 		const select = vi.fn(api.localizationTarget);
 		const first = mount({ ...api, localizationTarget: select });
 		await screen.findByText("3 matches");
+		await groupRows();
 		await choose(user, "Localization target", "Second");
 		await screen.findByRole("button", { name: "Localization target: Second" });
 		await screen.findByText("3 matches");
+		await groupRows();
 		await waitFor(() => expect(select.mock.calls).toEqual([[target.name], [second]]));
 		await waitFor(() =>
 			expect(storedGameTextPreferences("localization-project").localizationTarget).toBe(
@@ -90,6 +97,7 @@ describe("Game Text localization", () => {
 		select.mockClear();
 		mount({ ...api, localizationTarget: select });
 		await screen.findByText("3 matches");
+		await groupRows();
 		expect(screen.getByRole("button", { name: "Localization target: Second" })).toBeDefined();
 		expect(select.mock.calls).toEqual([[second]]);
 	});
@@ -107,6 +115,7 @@ describe("Game Text localization", () => {
 		const search = vi.fn(api.search);
 		mount({ ...api, search });
 		await screen.findByText("3 matches");
+		await groupRows();
 		await waitFor(() => {
 			const stored = storedGameTextPreferences("localization-project");
 			expect(stored.localizationTarget).toBe(target.name);
@@ -130,6 +139,7 @@ describe("Game Text localization", () => {
 		);
 		mount();
 		await screen.findByText("3 matches");
+		await groupRows();
 		await waitFor(() =>
 			expect(
 				storedGameTextPreferences("localization-project").selectedLocalizationId
@@ -190,6 +200,7 @@ describe("Game Text localization", () => {
 	async function openWelcome() {
 		const user = userEvent.setup({ delay: null });
 		await screen.findByText("3 matches");
+		await groupRows();
 		await user.click(
 			within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
 				name: /^Welcome/u
@@ -231,6 +242,7 @@ describe("Game Text localization", () => {
 		const user = userEvent.setup({ delay: null });
 		mount(client({ twoTargets: true }));
 		await screen.findByText("3 matches");
+		await groupRows();
 		expect(screen.getByRole("button", { name: /^Localization target:/u })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "Culture: All cultures" }));
 		const choices = screen.getByRole("dialog", { name: "Culture choices" });
@@ -257,9 +269,11 @@ describe("Game Text localization", () => {
 		await choose(user, "Culture", "de");
 		await chooseFilter(user, "Translation", /^Not synced/u);
 		await screen.findByText("1 match");
+		await groupRows();
 		expect(screen.getByText("1 not synced", { exact: true })).toBeDefined();
 		await user.type(screen.getByRole("searchbox"), "absent");
 		await screen.findByText("0 matches");
+		await groupRows();
 		// The pill stays while nothing matches.
 		expect(
 			within(screen.getByRole("list", { name: "Filters" })).getByText("Not synced")
@@ -269,6 +283,7 @@ describe("Game Text localization", () => {
 		const user = userEvent.setup({ delay: null });
 		mount();
 		await screen.findByText("3 matches");
+		await groupRows();
 		expect(screen.queryByRole("button", { name: /^Localization target:/u })).toBeNull();
 		const results = screen.getByRole("region", { name: "Results" });
 		// Without a picked culture, each line shows every culture's state as a strip.
@@ -306,14 +321,17 @@ describe("Game Text localization", () => {
 		expect(within(french).queryByText("In PO, not synced")).toBeNull();
 		await user.type(screen.getByRole("searchbox"), "Neue");
 		await screen.findByText("0 matches");
+		await groupRows();
 		await user.click(screen.getByRole("button", { name: "Search translations" }));
 		await screen.findByText("1 match");
+		await groupRows();
 		expect(screen.getByPlaceholderText("Search text and translations")).toBeDefined();
 	});
 	it("supports keyboard culture choices and restores focus without native selects", async () => {
 		const user = userEvent.setup({ delay: null });
 		mount();
 		await screen.findByText("3 matches");
+		await groupRows();
 		expect(screen.queryByRole("combobox")).toBeNull();
 		const trigger = screen.getByRole("button", { name: "Culture: All cultures" });
 		trigger.focus();
@@ -349,6 +367,7 @@ describe("Game Text localization", () => {
 		const user = userEvent.setup({ delay: null });
 		mount();
 		await screen.findByText("3 matches");
+		await groupRows();
 		await user.click(screen.getByRole("button", { name: "Culture: All cultures" }));
 		const choices = screen.getByRole("dialog", { name: "Culture choices" });
 		// Each culture shows its work over the current filters.
@@ -424,6 +443,7 @@ describe("Game Text localization", () => {
 				})
 		});
 		await screen.findByText("3 matches");
+		await groupRows();
 		await user.click(
 			within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
 				name: /^Welcome/u
@@ -460,6 +480,7 @@ describe("Game Text localization", () => {
 				})
 		});
 		await screen.findByText("3 matches");
+		await groupRows();
 		await user.click(
 			within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
 				name: /^Welcome/u
@@ -523,6 +544,7 @@ describe("Game Text localization", () => {
 		);
 		mount({ ...api, localizationFocus: focus });
 		await screen.findByText("3 matches");
+		await groupRows();
 		await user.click(
 			within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
 				name: /^Welcome/u
@@ -546,8 +568,10 @@ describe("Game Text localization", () => {
 		const user = userEvent.setup({ delay: null });
 		mount();
 		await screen.findByText("3 matches");
+		await groupRows();
 		await chooseFilter(user, "Line state", "Gathered only 1");
 		await screen.findByText("1 match");
+		await groupRows();
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByText("Source/Example.cpp(12) · C++")).toBeDefined();
 		await user.click(within(results).getByRole("button", { name: /^Code greeting/u }));
@@ -563,10 +587,12 @@ describe("Game Text localization", () => {
 		const load = vi.fn(api.loadConfiguredProject);
 		const first = mount({ ...api, loadConfiguredProject: load });
 		await screen.findByText("3 matches");
+		await groupRows();
 		await choose(user, "Culture", "de");
 		await user.click(screen.getByRole("button", { name: "Search translations" }));
 		await chooseFilter(user, "Translation", /^Not synced/u);
 		await screen.findByText("1 match");
+		await groupRows();
 		await user.click(
 			within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
 				name: /^Welcome/u
@@ -581,6 +607,7 @@ describe("Game Text localization", () => {
 		first.unmount();
 		mount({ ...api, loadConfiguredProject: load });
 		await screen.findByText("1 match");
+		await groupRows();
 		expect(screen.getByRole("button", { name: "Culture: de" })).toBeDefined();
 		expect(
 			screen.getByRole("button", { name: "Search translations" }).getAttribute("aria-pressed")
@@ -618,6 +645,7 @@ describe("Game Text localization", () => {
 			})
 		);
 		await screen.findByText("3 matches");
+		await groupRows();
 		await choose(user, "Culture", "de");
 		expect(screen.queryByText("Loading translations…")).toBeNull();
 	});
@@ -648,6 +676,7 @@ describe("Game Text localization", () => {
 			);
 			await screen.findByRole("alert");
 			await screen.findByText("2 matches");
+			await groupRows();
 			expect(screen.getByRole("button", { name: "Retry translations" })).toBeDefined();
 			expect(screen.queryByText("Loading translations…")).toBeNull();
 			expect(screen.queryByText("0 matches")).toBeNull();

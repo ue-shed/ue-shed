@@ -1,4 +1,6 @@
-import { Effect, Result, Schema } from "effect";
+import { Effect, Result } from "effect";
+import type { TextCorpusReportHeader } from "./corpus-summary.js";
+import type { GameTextIndexError } from "./index-error.js";
 import {
 	ArchiveEntry,
 	ManifestEntry,
@@ -13,9 +15,9 @@ import {
 	type LocalizationTargetEvidence
 } from "@ue-shed/localization";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
-import { IndexedPolicyData } from "./indexed-policy-data.js";
 import { decodeLocalizationSnapshot } from "./localization-columns.js";
 import { runJoinedQuery } from "./joined-query-node.js";
+import { synchronousJoinedTarget } from "./joined-query-reader.js";
 import { registerEvidenceRead } from "./evidence-reads.js";
 import {
 	localizationEvidenceFileStatuses,
@@ -23,23 +25,37 @@ import {
 } from "./localization-status.js";
 import type { TextCorpusSearchPage } from "./schema.js";
 
-/** Counts scan numeric columns; report strings are limited to the existing 200-item contract. */
-export function indexedLocalizationStatusReport(
-	joined: JoinedTargetReader,
+/**
+ * The status report of a search page: coverage and package diagnostics from the index's report
+ * header, which keeps the 200-item report limit, and the evidence's file statuses.
+ */
+export const indexedLocalizationStatusReport = Effect.fn("GameTextIndex.statusReport")(function* (
+	query: {
+		readonly readCorpusReportHeader: () => Effect.Effect<
+			TextCorpusReportHeader,
+			GameTextIndexError
+		>;
+	},
 	evidence: LocalizationTargetEvidence,
 	page: TextCorpusSearchPage
-): LocalizationStatusReport {
-	const data = new IndexedPolicyData(joined);
-	return {
+) {
+	const header = yield* query.readCorpusReportHeader();
+	// The members in the order the report has always listed them.
+	const report: LocalizationStatusReport = {
 		schemaVersion: 1,
 		target: evidence.target.name,
 		counts: page.localization?.counts ?? [],
-		coverage: data.metadata().coverage,
-		...data.metadataReport(),
+		coverage: header.coverage,
+		diagnostics: header.diagnostics,
+		diagnosticCounts: header.diagnosticCounts,
+		diagnosticCount: header.diagnosticCount,
+		diagnosticsOmitted: header.diagnosticsOmitted,
+		...(header.packageCoverage ? { packageCoverage: header.packageCoverage } : undefined),
 		files: localizationEvidenceFileStatuses(evidence),
 		page
 	};
-}
+	return report;
+});
 
 type Entry = ManifestEntry | ArchiveEntry | POEntry;
 const isManifestEntry = (entry: Entry): entry is ManifestEntry => "path" in entry;
@@ -63,8 +79,8 @@ export function indexedLocalizationLinesRequest(joined: JoinedTargetReader) {
 export const readIndexedLocalizationEvidence = Effect.fn("GameTextIndex.evidence")(function* (
 	joined: JoinedTargetReader
 ) {
-	const data = new IndexedPolicyData(joined),
-		reader = data.joined.reader;
+	// The evidence getters read synchronously, through the pinned reader's synchronous view.
+	const reader = synchronousJoinedTarget(joined).reader;
 	const target = joined.meta.input.target,
 		root = joined.meta.input.projectRoot;
 	const files = yield* LocalizationFileAccess;

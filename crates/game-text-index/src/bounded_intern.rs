@@ -17,14 +17,14 @@ pub(crate) fn intern(store: &mut Store, domain: &str, values: &[Vec<u8>]) -> Res
         if pending.is_empty() {
             break;
         }
-        let mut reader = Reader::open(
+        let reader = Reader::open(
             &store
                 .directory
                 .join(segment["file"].as_str().ok_or("segment file")?),
         )?;
-        let fences = strings_bytes(&section(&mut reader, "front.fences")?)?;
-        let offsets = integers(&section(&mut reader, "front.offsets")?)?;
-        let frames = integers(&section(&mut reader, "front.frames")?)?;
+        let fences = strings_bytes(&section(&reader, "front.fences")?)?;
+        let offsets = integers(&section(&reader, "front.offsets")?)?;
+        let frames = integers(&section(&reader, "front.frames")?)?;
         let count = segment["count"].as_u64().ok_or("segment count")? as usize;
         require(
             fences.len() == offsets.len()
@@ -48,7 +48,7 @@ pub(crate) fn intern(store: &mut Store, domain: &str, values: &[Vec<u8>]) -> Res
             }
             let index = position - 1;
             if frame_id != frames[index] {
-                frame = section(&mut reader, &format!("front.b{}", frames[index]))?;
+                frame = section(&reader, &format!("front.b{}", frames[index]))?;
                 frame_id = frames[index];
             }
             if block_id != index {

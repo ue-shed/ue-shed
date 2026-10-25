@@ -11,7 +11,7 @@ import {
 } from "@ue-shed/localization";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";
-import { hydrateJoinedTarget } from "./joined-target-reader.js";
+import { hydrateJoinedTarget } from "./joined-target-hydrate.test-support.js";
 import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";

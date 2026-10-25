@@ -315,16 +315,11 @@ it.live("object path, class path and row roles match through the index and in me
 				});
 			}).pipe(Effect.provide(fixture.evidence));
 			const memoryJoin = joinLocalizationTarget(memory, evidence);
-			const legacy = localizationQualityWorkspace(
-				source,
-				yield* result.localizationCheck(document, {}),
-				memoryJoin
-			);
+			const checked = yield* result.localizationCheck(document, {});
+			const legacy = localizationQualityWorkspace(source, checked, memoryJoin);
 			const quality = yield* result.localizationQuality(document);
-			const translated = (yield* quality.findings.items(
-				Array.from({ length: quality.findings.length }, (_, position) => position)
-			))
-				.flatMap(({ finding }) =>
+			const translated = checked.findings
+				.flatMap((finding) =>
 					finding.kind === "localization_character_budget"
 						? [[finding.ruleId, finding.identity.key, finding.culture]]
 						: []

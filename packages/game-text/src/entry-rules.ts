@@ -9,6 +9,11 @@ export { LocalizationWordCount, localizationWordCount } from "./localization-wor
 
 export {
 	CustomLocalizationCheck,
+	CompleteRule,
+	completeRulesOf,
+	customRulesOf,
+	ruleProblemError,
+	ruleLabelsOf,
 	GameTextRuleDocument,
 	GameTextRuleDocumentError,
 	BuiltInCheckEntry,

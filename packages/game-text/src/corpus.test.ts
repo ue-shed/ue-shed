@@ -207,19 +207,10 @@ describe("game text corpus", () => {
 			]);
 			const query = textCorpusQuery(corpus);
 			const page = query.search({ capability: "all", query: "", pageSize: 50 });
-			expect(page.counts.duplicate_source).toBe(0);
-			expect(page.counts.shared).toBe(1);
 			expect(page.counts.conflicting).toBe(secondSource === "Hello" ? 0 : 1);
 			expect(query.focus({ id: unit.id, pageSize: 50 })?.unit.identity).toEqual(
 				unit.identity
 			);
-			expect(
-				textCorpusQuery(buildTextCorpus(outcomes("OtherKey"))).search({
-					capability: "all",
-					query: "",
-					pageSize: 50
-				}).counts.duplicate_source
-			).toBe(secondSource === "Hello" ? 2 : 0);
 		}
 	);
 

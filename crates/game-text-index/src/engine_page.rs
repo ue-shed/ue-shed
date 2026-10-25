@@ -37,63 +37,77 @@ impl EngineQuery {
         let (Some(by), Some(opened)) = (request.group, request.open_group.as_ref()) else {
             return Ok(matched);
         };
-        let key = serde_json::to_string(&("group", request.matching_key()?, by, opened))?;
-        if let Some(rows) = self.matched.get(&key) {
-            return Ok(Arc::clone(rows));
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("searchListedRows");
+        let findings = self.request_findings(request, cancelled)?;
+        // A finding group's rows are its rule's; without the rule no row is in it.
+        if by == GroupBy::Finding {
+            let set = findings
+                .as_deref()
+                .and_then(|findings| findings.rule(opened).map(|rule| &findings.sets[rule]));
+            return Ok(matched
+                .iter()
+                .copied()
+                .filter(|row| set.is_some_and(|set| set.contains(*row as usize)))
+                .collect::<Vec<_>>()
+                .into());
         }
         let p = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
         let localized = request.localization.is_some();
         let scope = self.culture_scope(request.localization.as_ref())?;
-        let opened = match by {
-            GroupBy::Problem => PROBLEMS
-                .iter()
-                .position(|value| value == opened)
-                .map(|id| id as u32),
-            GroupBy::Origin => {
-                if opened.is_empty() {
-                    Some(0)
-                } else {
-                    ORIGINS
-                        .iter()
-                        .position(|value| value == opened)
-                        .map(|id| id as u32 + 1)
-                }
-            }
-            GroupBy::Audience => AUDIENCES
-                .iter()
-                .position(|value| value == opened)
-                .map(|id| id as u32),
-            GroupBy::Source => self.reader.find_string(opened)?,
-            _ => places
-                .labels(std::slice::from_ref(opened), false)
-                .iter()
-                .next()
-                .copied(),
-        };
+        let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
+        let opened = self.group_id(by, opened, &places)?;
         let mut rows = Vec::new();
         if let Some(opened) = opened {
             for (index, row) in matched.iter().enumerate() {
                 if index & 255 == 0 {
                     checkpoint(cancelled)?;
                 }
-                let key = p.group_key(
-                    &places,
-                    localized,
-                    *row as usize,
-                    &scope,
-                    by,
-                    request.counted_findings(),
-                )?;
+                let key = p.group_key(&places, localized, *row as usize, &problems, by)?;
                 if key == opened {
                     rows.push(*row);
                 }
             }
         }
         checkpoint(cancelled)?;
-        let rows: Arc<[u32]> = rows.into();
-        self.remember_matches(key, Arc::clone(&rows));
-        Ok(rows)
+        Ok(rows.into())
+    }
+
+    /// A group key's ID under `by`, as `group_key` computes it; `None` when no row can have it.
+    pub(crate) fn group_id(
+        &mut self,
+        by: GroupBy,
+        key: &str,
+        places: &Places,
+    ) -> Result<Option<u32>> {
+        Ok(match by {
+            GroupBy::Problem => PROBLEMS
+                .iter()
+                .position(|value| *value == key)
+                .map(|id| id as u32),
+            GroupBy::Origin => {
+                if key.is_empty() {
+                    Some(0)
+                } else {
+                    ORIGINS
+                        .iter()
+                        .position(|value| *value == key)
+                        .map(|id| id as u32 + 1)
+                }
+            }
+            GroupBy::Audience => AUDIENCES
+                .iter()
+                .position(|value| *value == key)
+                .map(|id| id as u32),
+            GroupBy::Source => self.reader.find_string(key)?,
+            GroupBy::Finding => return Err("Finding groups are keyed by their rule.".into()),
+            _ => places
+                .labels(&[key.to_owned()], false)
+                .iter()
+                .next()
+                .copied(),
+        })
     }
 
     pub(crate) fn after_cursor(

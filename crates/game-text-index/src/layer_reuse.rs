@@ -14,7 +14,7 @@ pub(crate) fn mappings(
     if !reader.entries.iter().any(|entry| entry.name == "file.meta") {
         return Ok(None);
     }
-    let mut previous = Reader::open(
+    let previous = Reader::open(
         &store
             .directory
             .join(old["file"].as_str().ok_or("previous layer file")?),
@@ -30,7 +30,7 @@ pub(crate) fn mappings(
         old["storeGeneration"] == store.root["generation"],
         "stale reuse generation",
     )?;
-    let metadata: Value = serde_json::from_slice(&section(&mut previous, "reuse.meta")?)?;
+    let metadata: Value = serde_json::from_slice(&section(&previous, "reuse.meta")?)?;
     let mut retained = HashMap::<String, Vec<u32>>::new();
     let mut output = BTreeMap::<String, Vec<u32>>::new();
     for index in 0..reader.entries.len() {
@@ -50,7 +50,7 @@ pub(crate) fn mappings(
         let ids = if let Some(block) = reusable {
             if !retained.contains_key(&entry.domain) {
                 let ids = decode_ids(
-                    &section(&mut previous, &format!("reuse.{}", entry.domain))?,
+                    &section(&previous, &format!("reuse.{}", entry.domain))?,
                     old["idEncoding"] == "delta32",
                 )?;
                 retained.insert(entry.domain.clone(), ids);

@@ -13,10 +13,10 @@ import { textCorpusFromExtractionEvents } from "../packages/game-text/src/corpus
 import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
 import {
-	hydrateJoinedTarget,
 	inspectJoinedTarget,
 	openJoinedTarget
 } from "../packages/game-text/src/joined-target-reader.ts";
+import { hydrateJoinedTarget } from "../packages/game-text/src/joined-target-hydrate.test-support.ts";
 import {
 	refreshPackageTextLayer,
 	packageTextShard,
@@ -78,95 +78,27 @@ import {
 import { columnarTextCorpusQuery } from "../packages/game-text/src/columnar-query.test-support.ts";
 import type { SnapshotSourceColumn } from "../packages/game-text/src/snapshot-file.ts";
 
-const expectProblemOracle = (
+/** Each problem's lines, as the columnar mirror of the engine classifies them from the
+ * published columns, are the object oracle's. */
+const expectProblemOracle = Effect.fn("JoinOracle.problems")(function* (
 	corpus: TextCorpus,
-	expected: LocalizationJoin,
-	actual: LocalizationJoin,
-	bits: Uint32Array
-) => {
-	const query = textCorpusQuery(corpus, undefined, expected);
-	for (let index = 0; index < TextProblem.literals.length; index++) {
-		const problem = TextProblem.literals[index]!;
-		const ids = new Set(
-			query
-				.localizationLines({
-					query: "",
-					capability: "all",
-					localization: { target: expected.target },
-					filter: [{ field: "problem", op: "is", values: [problem] }]
-				})
-				.map((line) => line.id)
-		);
-		for (let row = 0; row < actual.lines.length; row++)
-			if (actual.lines[row]!.source.trim() !== "")
-				expect(
-					Boolean(bits[row]! & (1 << index)),
-					`STOP: problem oracle ${problem} ${actual.lines[row]!.id}`
-				).toBe(ids.has(actual.lines[row]!.id));
+	expected: LocalizationJoin
+) {
+	const oracle = textCorpusQuery(corpus, undefined, expected),
+		columnar = columnarTextCorpusQuery(yield* openJoinedTarget());
+	for (const problem of TextProblem.literals) {
+		const request = {
+			query: "",
+			capability: "all" as const,
+			localization: { target: expected.target },
+			filter: [{ field: "problem" as const, op: "is" as const, values: [problem] }]
+		};
+		expect(
+			columnar.localizationLines(request).map((line) => line.id),
+			`STOP: problem oracle ${problem}`
+		).toEqual(oracle.localizationLines(request).map((line) => line.id));
 	}
-	for (let row = 0; row < actual.lines.length; row++)
-		if (actual.lines[row]!.source.trim() === "") {
-			// Query visibility omits empty text. Derive its signals from the same raw units
-			// and gathered groups, including empty keyless text in committed legacy saves.
-			const line = actual.lines[row]!;
-			const ids = new Set(line.origin.kind === "corpus" ? line.origin.unitIds : []);
-			const signals: TextReviewSignal[] = [];
-			const groups = [...gatheredTextGroups(corpus)].map(([key, group]) => ({
-				key,
-				units: group.units,
-				count: group.units.reduce((sum, unit) => sum + unit.occurrences.length, 0),
-				sources: new Set(
-					group.units.flatMap((unit) =>
-						unit.occurrences
-							.filter((item) => item.identity.status !== "string_table")
-							.map((item) => item.source)
-					)
-				)
-			}));
-			const duplicate = new Set(
-				[...new Set(groups.flatMap((group) => [...group.sources]))].filter(
-					(source) => groups.filter((group) => group.sources.has(source)).length > 1
-				)
-			);
-			for (const unit of localizationLineUnits(
-				line,
-				new Map(corpus.units.map((unit) => [unit.id, unit]))
-			).filter((unit) => ids.has(unit.id))) {
-				const grouped = groups.filter(
-					(group) =>
-						group.units.some((slice) => slice.id === unit.id) &&
-						group.key ===
-							(line.identity
-								? JSON.stringify([line.identity.namespace, line.identity.key])
-								: `unresolved:${unit.id}`)
-				);
-				if (unit.identity.status === "unresolved") signals.push("unresolved");
-				if (
-					(unit.source.status === "consistent"
-						? unit.source.value
-						: unit.source.values.join(" ")
-					).length >= 40
-				)
-					signals.push("long");
-				if (grouped.some((group) => group.count > 1)) signals.push("shared");
-				if (grouped.some((group) => group.sources.size > 1)) signals.push("conflicting");
-				if (
-					unit.occurrences.some(
-						(item) =>
-							item.identity.status !== "string_table" && duplicate.has(item.source)
-					)
-				)
-					signals.push("duplicate_source");
-			}
-			expect(TextProblem.literals.filter((_, index) => bits[row]! & (1 << index))).toEqual(
-				textProblems({
-					signals,
-					keyChanged: line.keyChange?.direction === "to",
-					marks: line.cultures
-				})
-			);
-		}
-};
+});
 
 const expectFacetOracle = Effect.fn("JoinOracle.facets")(function* (
 	corpus: TextCorpus,
@@ -238,7 +170,8 @@ const expectFacetOracle = Effect.fn("JoinOracle.facets")(function* (
 			expect(columns.origins![row]).toBe(origins);
 			expect(columns.editing![row]).toBe(editing);
 			expect(Boolean(columns.notes![row])).toBe(
-				occurrences.some((item) => item.devNotes.trim() !== "")
+				occurrences.some((item) => item.devNotes.trim() !== "") ||
+					oracle.manifest.some((item) => localizationManifestNotes(item).length > 0)
 			);
 		} else {
 			const origins = oracle.manifest.reduce(
@@ -370,8 +303,8 @@ describe("conflicting source order regression", () => {
 	});
 });
 
-describe("split saved identity findings regression", () => {
-	let findings: readonly { id: string; oracle: boolean; columnar: boolean }[];
+describe("split saved identity regression", () => {
+	let lines: readonly string[];
 	beforeAll(async () => {
 		await withJoinCache(async (cache) => {
 			const { projectRoot, evidence } = await semanticJoinInput(cache);
@@ -453,44 +386,17 @@ describe("split saved identity findings regression", () => {
 				"Cases",
 				Effect.gen(function* () {
 					const joined = yield* openJoinedTarget();
-					return {
-						join: yield* hydrateJoinedTarget(joined, 0, 10000),
-						problems: yield* u32(joined.layer, "line.problems")
-					};
+					return { join: yield* hydrateJoinedTarget(joined, 0, 10000) };
 				})
 			);
 			expect(compareLocalizationJoins(expected, actual.join).equal).toBe(true);
-			const oracle = new Set(
-				textCorpusQuery(corpus, undefined, expected)
-					.localizationLines({
-						query: "",
-						capability: "all",
-						localization: { target: expected.target },
-						filter: [{ field: "problem", op: "is", values: ["finding"] }]
-					})
-					.map((line) => line.id)
+			lines = actual.join.lines.flatMap((line) =>
+				line.origin.kind === "corpus" ? [line.id] : []
 			);
-			const findingBit = 1 << TextProblem.literals.indexOf("finding");
-			findings = actual.join.lines.flatMap((line, row) =>
-				line.origin.kind === "corpus"
-					? [
-							{
-								id: line.id,
-								oracle: oracle.has(line.id),
-								columnar: Boolean(actual.problems[row]! & findingBit)
-							}
-						]
-					: []
-			);
-			expect(findings).toHaveLength(2);
-			expect(findings.map((line) => line.oracle)).toEqual([false, false]);
-			expect(findings.map((line) => line.columnar)).toEqual([false, false]);
 		});
 	});
-	it("findings match each gathered slice rather than the whole saved unit", () => {
-		expect(findings.map(({ id, columnar }) => ({ id, finding: columnar }))).toEqual(
-			findings.map(({ id, oracle }) => ({ id, finding: oracle }))
-		);
+	it("joins each gathered slice of the saved unit as its own line", () => {
+		expect(lines).toHaveLength(2);
 	});
 });
 
@@ -708,12 +614,7 @@ describe("columnar join", () => {
 					equal: true,
 					differenceCount: 0
 				});
-				expectProblemOracle(
-					corpus,
-					expected,
-					incremental.join,
-					incremental.values["line.problems"]!
-				);
+				await run(expectProblemOracle(corpus, expected));
 				await run(expectFacetOracle(corpus, expected));
 				await run(refreshJoinedTarget({ ...input, force: true }));
 				const full = await run(collect());
@@ -1011,16 +912,7 @@ describe("columnar join", () => {
 				"same_text_in_package"
 			]);
 			expect(changes.ambiguous).toBe(1);
-			expectProblemOracle(
-				corpus,
-				expected,
-				actual,
-				await run(
-					Effect.gen(function* () {
-						return yield* u32((yield* openJoinedTarget()).layer, "line.problems");
-					})
-				)
-			);
+			await run(expectProblemOracle(corpus, expected));
 			await run(expectFacetOracle(corpus, expected));
 		});
 	}, 60000);
@@ -1106,19 +998,7 @@ describe("columnar join", () => {
 						equal: true,
 						differenceCount: 0
 					});
-					expectProblemOracle(
-						corpus,
-						expected,
-						actual,
-						await run(
-							Effect.gen(function* () {
-								return yield* u32(
-									(yield* openJoinedTarget()).layer,
-									"line.problems"
-								);
-							})
-						)
-					);
+					await run(expectProblemOracle(corpus, expected));
 					await run(expectFacetOracle(corpus, expected));
 				}
 				expect(
@@ -1203,19 +1083,7 @@ describe("columnar join", () => {
 						equal: true,
 						differenceCount: 0
 					});
-					expectProblemOracle(
-						corpus,
-						expected,
-						actual,
-						await run(
-							Effect.gen(function* () {
-								return yield* u32(
-									(yield* openJoinedTarget()).layer,
-									"line.problems"
-								);
-							})
-						)
-					);
+					await run(expectProblemOracle(corpus, expected));
 					await run(expectFacetOracle(corpus, expected));
 				}
 			});

@@ -3,15 +3,17 @@ import type {
 	TextCorpusFocus,
 	TextCorpusFocusRequest,
 	TextCorpusQuerySummary,
+	TextCorpusRows,
+	TextCorpusRowsPage,
 	TextCorpusSearchPage,
 	TextCorpusSearchCounts,
 	TextCorpusSearchRequest,
 	TextCultureFacet,
 	TextEditing,
 	TextFacetRequest,
+	TextFactCounts,
 	TextFilter,
 	TextFilterField,
-	TextReviewLens,
 	TextReviewSignal,
 	TextUnit,
 	TextUnitSearchResult,
@@ -28,10 +30,7 @@ import {
 	textOriginFacet
 } from "./text-groups.js";
 import {
-	countedFindings,
 	matchesTextFilter,
-	textCountedFindings,
-	textFindings,
 	textProblemCounts,
 	textProblems,
 	translationStates,
@@ -71,7 +70,6 @@ import { localizationManifestNotes } from "./localization.js";
 import { gatheredIdentityKey, gatheredTextGroups, localizationLineUnits } from "./gathered-text.js";
 import { hasDifferingCopy } from "./text-copies.js";
 import { longestSource } from "./source-metrics.js";
-import { DuplicateSources, duplicateOccurrencePlace } from "./duplicate-sources.js";
 import {
 	localizationQueryPage,
 	localizationLinePreview,
@@ -84,15 +82,9 @@ function normalizedTerms(query: string): readonly string[] {
 	return query.toLocaleLowerCase().trim().split(/\s+/u).filter(Boolean);
 }
 
-const LONG_SOURCE_THRESHOLD = 40;
+type OracleRequest = Omit<TextCorpusSearchRequest, "cursor" | "pageSize">;
 
-/** `counted`: on a facet base, the findings of the request it relaxes. */
-type OracleRequest = Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> & {
-	readonly counted?: readonly TextReviewSignal[];
-};
-const countedOf = (request: OracleRequest) => request.counted ?? countedFindings(request);
-
-/** Signals with a review count; read-only and compiled-copy evidence are shown, not counted. */
+/** Facts with a count; read-only and compiled-copy evidence are shown, not counted. */
 function isCountedSignal(
 	signal: TextReviewSignal
 ): signal is Exclude<TextReviewSignal, "evidence_only" | "compiled_copy_differs"> {
@@ -111,8 +103,7 @@ function wordCount(value: string): number {
 
 function searchResult(
 	unit: TextUnit,
-	duplicateSources: ReadonlySet<TextUnit["occurrences"][number]>,
-	groups: readonly { readonly occurrences: number; readonly sources: ReadonlySet<string> }[]
+	groups: readonly { readonly sources: ReadonlySet<string> }[]
 ): TextUnitSearchResult {
 	const contexts = unit.occurrences.slice(0, 3).map((occurrence) => ({
 		editCapability: occurrence.editCapability,
@@ -120,15 +111,6 @@ function searchResult(
 	}));
 	const value = sourceValue(unit);
 	const reviewSignals: TextReviewSignal[] = [];
-	if (groups.some((group) => group.occurrences > 1)) reviewSignals.push("shared");
-	if (
-		unit.occurrences.some(
-			(occurrence) =>
-				occurrence.identity.status === "resolved" && duplicateSources.has(occurrence)
-		)
-	)
-		reviewSignals.push("duplicate_source");
-	if (value.length >= LONG_SOURCE_THRESHOLD) reviewSignals.push("long");
 	if (unit.identity.status === "unresolved") reviewSignals.push("unresolved");
 	if (groups.some((group) => group.sources.size > 1)) reviewSignals.push("conflicting");
 	if (unit.occurrences.every((occurrence) => occurrence.editCapability === "read_only"))
@@ -153,18 +135,58 @@ function searchResult(
 	};
 }
 
-function matchesLens(
-	signals: readonly TextReviewSignal[],
-	lens: TextReviewLens | undefined
-): boolean {
-	if (lens === undefined || lens === "all") return true;
-	return signals.includes(lens);
-}
-
 /**
  * In-memory, query-scoped view of a compact text corpus. It normalizes every unit once at refresh
  * time and emits only bounded pages to callers.
  */
+/** A page's rows without its aggregates. */
+const pageRows = (page: TextCorpusSearchPage): TextCorpusRows => ({
+	units: page.units,
+	...(page.nextCursor === undefined ? undefined : { nextCursor: page.nextCursor }),
+	...(page.localization
+		? {
+				localization: {
+					target: page.localization.target,
+					lines: page.localization.lines,
+					...(page.localization.nextCursor === undefined
+						? undefined
+						: { nextCursor: page.localization.nextCursor })
+				}
+			}
+		: undefined)
+});
+
+/**
+ * The rows the engine returns for `parts: ["rows"]`, from `openGroup` reads: each open group's
+ * first page in the order named, and past 500 rows `rowsOmitted` for it and every later group.
+ */
+export function referenceSearchRows(
+	search: (request: TextCorpusSearchRequest) => TextCorpusSearchPage,
+	request: TextCorpusSearchRequest
+): TextCorpusRowsPage {
+	const { openGroups, firstRows, ...base } = request;
+	if (openGroups === undefined) return pageRows(search(base));
+	let budget = 500;
+	const groups = openGroups.map((key) => {
+		const page = pageRows(search({ ...base, openGroup: key, pageSize: firstRows ?? 50 }));
+		const rows = page.localization?.lines.length ?? page.units.length;
+		if (rows > budget) {
+			budget = 0;
+			return { key, rowsOmitted: true as const };
+		}
+		budget -= rows;
+		return { key, page };
+	});
+	const empty = pageRows(search({ ...base, pageSize: 1 }));
+	return {
+		units: [],
+		...(empty.localization
+			? { localization: { target: empty.localization.target, lines: [] } }
+			: undefined),
+		openGroups: groups
+	};
+}
+
 export interface TextCorpusQuery {
 	readonly localizationFocus: (id: LocalizationLineId) => LocalizationLine | undefined;
 	readonly readLocalizationLines: () => readonly LocalizationLine[];
@@ -198,46 +220,20 @@ export function textCorpusQuery(
 	const units = [...corpus.units].sort((left, right) => left.id.localeCompare(right.id));
 	// Units retain saved identities; findings count the localization identities Unreal gathers.
 	const identities = new Map<TextUnit["id"], string[]>();
-	const groups = new Map<string, { occurrences: number; sources: Set<string> }>();
-	const sourcePlaces = new DuplicateSources<string, string, string>();
-	const candidates: Array<{ occurrence: TextUnit["occurrences"][number]; identity: string }> = [];
+	const groups = new Map<string, { sources: Set<string> }>();
 	for (const [identity, row] of gatheredTextGroups(corpus)) {
-		const group = { occurrences: 0, sources: new Set<string>() };
+		const group = { sources: new Set<string>() };
 		for (const unit of row.units) {
 			identities.set(unit.id, [...(identities.get(unit.id) ?? []), identity]);
-			group.occurrences += unit.occurrences.length;
 			for (const occurrence of unit.occurrences)
 				if (occurrence.identity.status !== "string_table")
 					group.sources.add(occurrence.source);
 		}
 		groups.set(identity, group);
-		if (row.identity === null) continue;
-		for (const unit of row.units)
-			for (const occurrence of unit.occurrences)
-				if (occurrence.identity.status === "resolved") {
-					sourcePlaces.add(
-						occurrence.source,
-						identity,
-						duplicateOccurrencePlace(occurrence)
-					);
-					candidates.push({ occurrence, identity });
-				}
 	}
-	const duplicateSources = new Set(
-		candidates
-			.filter(({ occurrence, identity }) =>
-				sourcePlaces.hasOther(
-					occurrence.source,
-					identity,
-					duplicateOccurrencePlace(occurrence)
-				)
-			)
-			.map(({ occurrence }) => occurrence)
-	);
 	const indexUnit = (unit: TextUnit, keys = identities.get(unit.id) ?? []) => {
 		const presentation = searchResult(
 			unit,
-			duplicateSources,
 			keys.flatMap((key) => {
 				const group = groups.get(key);
 				return group ? [group] : [];
@@ -258,10 +254,11 @@ export function textCorpusQuery(
 			...(hasEditable ? ["editable" as const] : []),
 			...(hasReadOnly ? ["read_only" as const] : [])
 		];
-		// Without a localization target a unit's problems come from its own review signals.
+		// Without a localization target a unit's problems come from its own facts; without a
+		// findings layer it has no finding.
 		const facts: TextFacts = {
 			problems: textProblems({ signals: presentation.reviewSignals, keyChanged: false }),
-			findings: textFindings(presentation.reviewSignals),
+			findings: [],
 			translation: [],
 			origins,
 			paths,
@@ -343,34 +340,14 @@ export function textCorpusQuery(
 			diagnostic
 		]);
 	}
-	const defaultFindings = countedFindings({});
-	const sameFindings = (counted: readonly TextReviewSignal[]) =>
-		counted.length === defaultFindings.length;
-	// A unit's facts under a request: its problems count the request's findings.
-	const unitFacts = (entry: (typeof indexed)[number], counted: readonly TextReviewSignal[]) =>
-		sameFindings(counted)
-			? entry.facts
-			: {
-					...entry.facts,
-					problems: textProblems({
-						signals: entry.presentation.reviewSignals,
-						keyChanged: false,
-						countedFindings: counted
-					})
-				};
-	const unitRow = (entry: (typeof indexed)[number], counted: readonly TextReviewSignal[]) => ({
+	const unitRow = (entry: (typeof indexed)[number]) => ({
 		...entry.presentation,
-		problems: unitFacts(entry, counted).problems,
-		countedFindings: textCountedFindings(entry.presentation.reviewSignals, counted)
+		problems: entry.facts.problems
 	});
 	const matching = (request: OracleRequest, entries = indexed) => {
-		const counted = countedOf(request);
 		const terms = normalizedTerms(request.query);
 		const counts = {
 			all: 0,
-			shared: 0,
-			duplicate_source: 0,
-			long: 0,
 			unresolved: 0,
 			conflicting: 0,
 			editable: 0,
@@ -383,7 +360,7 @@ export function textCorpusQuery(
 		for (const entry of entries) {
 			const { presentation, searchable, unit, hasEditable, hasReadOnly } = entry;
 			if (!terms.every((term) => searchable.includes(term))) continue;
-			if (!matchesTextFilter(unitFacts(entry, counted), request.filter)) continue;
+			if (!matchesTextFilter(entry.facts, request.filter)) continue;
 			if (!matchesTextPathPrefix(entry.paths, request.where?.pathPrefix)) continue;
 			if (!matchesTextFiles(entry.fileKeys, files)) continue;
 			const inKinds = matchesTextKinds(entry.origins, request.where?.kinds);
@@ -395,13 +372,12 @@ export function textCorpusQuery(
 						: hasReadOnly;
 			const noNotes = entry.withoutNotes;
 			const hasNotesFilter = !request.withoutNotes || noNotes;
-			const hasLens = matchesLens(presentation.reviewSignals, request.lens);
-			if (hasLens && hasNotesFilter && inKinds && hasEditable) counts.editable++;
-			if (hasLens && hasNotesFilter && inKinds && hasReadOnly) counts.readOnly++;
-			if (hasLens && hasCapability && inKinds && noNotes) counts.withoutNotes++;
-			if (hasLens && hasCapability && hasNotesFilter)
+			if (hasNotesFilter && inKinds && hasEditable) counts.editable++;
+			if (hasNotesFilter && inKinds && hasReadOnly) counts.readOnly++;
+			if (hasCapability && inKinds && noNotes) counts.withoutNotes++;
+			if (hasCapability && hasNotesFilter)
 				for (const origin of entry.origins) counts.origins[origin]++;
-			if (!hasCapability || !hasNotesFilter || !hasLens || !inKinds) continue;
+			if (!hasCapability || !hasNotesFilter || !inKinds) continue;
 			matched.push(entry);
 			counts.all++;
 			for (const signal of presentation.reviewSignals) {
@@ -411,7 +387,8 @@ export function textCorpusQuery(
 		return { matched, counts };
 	};
 
-	const baseline = matching({ query: "", capability: "all" }).counts;
+	const everyUnit = matching({ query: "", capability: "all" });
+	const baseline = everyUnit.counts;
 	const localizedMatching = (request: OracleRequest) => {
 		if (!localization || !request.localization)
 			throw new GameTextLocalizationError({
@@ -431,15 +408,13 @@ export function textCorpusQuery(
 		);
 		const files = textFileScope(request.where?.files);
 		const picked = request.lines === undefined ? undefined : new Set(request.lines);
-		const counted = countedOf(request);
 		return localization.lines.filter((line) => {
 			if (picked !== undefined && !picked.has(line.id)) return false;
-			if (
-				filter !== undefined &&
-				!matchesTextFilter(lineFacts(line, selection, counted), filter)
-			)
+			if (filter !== undefined && !matchesTextFilter(lineFacts(line, selection), filter))
 				return false;
 			if (line.source.trim() === "") return false;
+			// Manifest notes belong to every saved slice of the line.
+			if (request.withoutNotes && manifestNotes(line)) return false;
 			if (
 				line.origin.kind === "corpus" &&
 				!lineEntries(line).some((entry) => eligible.has(entry))
@@ -448,11 +423,6 @@ export function textCorpusQuery(
 			if (
 				line.origin.kind === "evidence" &&
 				(request.capability === "source_editable" ||
-					(request.lens !== undefined && request.lens !== "all") ||
-					(request.withoutNotes &&
-						line.manifest.some(
-							(entry) => localizationManifestNotes(entry).length > 0
-						)) ||
 					!evidenceMatchesWhere(line, request.where, files))
 			)
 				return false;
@@ -489,26 +459,23 @@ export function textCorpusQuery(
 			? manifestOrigins(line.manifest.map((entry) => entry.path))
 			: [...new Set(lineEntries(line).flatMap((entry) => entry.origins))];
 	const lineEntries = (line: Pick<LocalizationLine, "id">) => entriesByLine.get(line.id) ?? [];
+	const manifestNotes = (line: LocalizationLine) =>
+		line.manifest.some((entry) => localizationManifestNotes(entry).length > 0);
+	// A line's notes are its saved occurrences' developer notes and its gathered manifest notes.
+	const lineWithoutNotes = (line: LocalizationLine) =>
+		!manifestNotes(line) &&
+		(line.origin.kind === "evidence" || lineEntries(line).every((entry) => entry.withoutNotes));
 	const lineSignals = (entries: ReturnType<typeof lineEntries>) => [
 		...new Set(entries.flatMap((entry) => entry.presentation.reviewSignals))
 	];
 	// Counting needs only the problems, so it skips the paths, origins and notes a filter reads.
-	const lineProblems = (
-		line: LocalizationLine,
-		selection: LocalizationSelection,
-		counted: readonly TextReviewSignal[]
-	) =>
+	const lineProblems = (line: LocalizationLine, selection: LocalizationSelection) =>
 		textProblems({
 			signals: lineSignals(lineEntries(line)),
 			keyChanged: line.keyChange?.direction === "to",
-			marks: scopedLocalizationMarks(line, selection),
-			countedFindings: counted
+			marks: scopedLocalizationMarks(line, selection)
 		});
-	function lineFacts(
-		line: LocalizationLine,
-		selection: LocalizationSelection,
-		counted: readonly TextReviewSignal[]
-	): TextFacts {
+	function lineFacts(line: LocalizationLine, selection: LocalizationSelection): TextFacts {
 		const entries = lineEntries(line);
 		const signals = lineSignals(entries);
 		const marks = scopedLocalizationMarks(line, selection);
@@ -518,10 +485,9 @@ export function textCorpusQuery(
 			problems: textProblems({
 				signals,
 				keyChanged: line.keyChange?.direction === "to",
-				marks,
-				countedFindings: counted
+				marks
 			}),
-			findings: textFindings(signals),
+			findings: [],
 			translation: translationStates(marks),
 			origins: lineOrigins(line),
 			paths: [...entries.flatMap((entry) => entry.paths), ...manifestPaths],
@@ -532,13 +498,7 @@ export function textCorpusQuery(
 			editing: evidence
 				? ["read_only"]
 				: [...new Set(entries.flatMap((entry) => entry.editing))],
-			notes: (
-				evidence
-					? line.manifest.every((entry) => localizationManifestNotes(entry).length === 0)
-					: entries.every((entry) => entry.withoutNotes)
-			)
-				? "missing"
-				: "present",
+			notes: lineWithoutNotes(line) ? "missing" : "present",
 			audience: lineTextAudience(entries.map((entry) => entry.facts.audience)),
 			translationKeys: line.identity ? [gatheredIdentityKey(line.identity)] : [],
 			reviewSignals: signals,
@@ -552,10 +512,9 @@ export function textCorpusQuery(
 	const without = (request: OracleRequest, field: TextFilterField): OracleRequest => {
 		const { filter, ...unfiltered } = request;
 		const rest = filter?.filter((clause) => clause.field !== field);
-		const counted = countedOf(request);
 		return rest === undefined || rest.length === 0
-			? { ...unfiltered, counted }
-			: { ...unfiltered, filter: rest, counted };
+			? unfiltered
+			: { ...unfiltered, filter: rest };
 	};
 	type Facts = readonly TextFacts[];
 	const facetsField = (
@@ -584,9 +543,20 @@ export function textCorpusQuery(
 					: undefined),
 				...(wanted.cultures && cultures !== undefined
 					? { cultures: cultures() }
-					: undefined)
+					: undefined),
+				...(wanted.facts ? { facts: factCounts(base("fact")) } : undefined)
 			}
 		};
+	};
+	const factCounts = (rows: Facts): TextFactCounts => {
+		const counts = {
+			unresolved: 0,
+			conflicting: 0,
+			evidence_only: 0,
+			compiled_copy_differs: 0
+		};
+		for (const row of rows) for (const fact of row.reviewSignals ?? []) counts[fact]++;
+		return counts;
 	};
 	// Translation work only exists against a localization target.
 	const requireTarget = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
@@ -615,9 +585,6 @@ export function textCorpusQuery(
 		diagnosticCount: corpus.diagnostics.length,
 		review: {
 			all: baseline.all,
-			shared: baseline.shared,
-			duplicateSource: baseline.duplicate_source,
-			long: baseline.long,
 			unresolved: baseline.unresolved,
 			conflicting: baseline.conflicting
 		},
@@ -651,7 +618,14 @@ export function textCorpusQuery(
 				request.selection.kind === "line"
 					? localizationById.get(request.selection.id)
 					: localizationByUnit.get(request.selection.id);
-			return line ? localizationFocusPage(localization, line, request) : undefined;
+			if (!line) return undefined;
+			// The line's problems in the list's culture scope, as the list's row has them.
+			const problems = lineProblems(line, {
+				target: request.target,
+				...(request.culture === undefined ? undefined : { culture: request.culture }),
+				...(request.cultures === undefined ? undefined : { cultures: request.cultures })
+			});
+			return { ...localizationFocusPage(localization, line, request), problems };
 		},
 		localizationLines: (request) => localizedMatching(request),
 		export: (request) => {
@@ -682,20 +656,19 @@ export function textCorpusQuery(
 							"Load and join the selected target before querying its localization state."
 					});
 				const matched = localizedMatching(request);
-				const counted = countedFindings(request);
 				// Without a clause on a field, that field's counts cover exactly the matched lines.
 				const baseFor = (field: TextFilterField) =>
 					hasClause(request.filter, field)
 						? localizedMatching(without(request, field))
 						: matched;
 				const problems = textProblemCounts(
-					baseFor("problem").map((line) => lineProblems(line, selection, counted))
+					baseFor("problem").map((line) => lineProblems(line, selection))
 				);
 				const known = new Map<LocalizationLine, TextFacts>();
 				const factsOf = (line: LocalizationLine) => {
 					const cached = known.get(line);
 					if (cached !== undefined) return cached;
-					const facts = lineFacts(line, selection, counted);
+					const facts = lineFacts(line, selection);
 					known.set(line, facts);
 					return facts;
 				};
@@ -732,17 +705,10 @@ export function textCorpusQuery(
 						)
 				);
 				const shown = localizationQueryPage(localization, matched, request, listed);
-				// What put each line in its problems under this request, as the engine reports it.
-				const explain = (id: LocalizationLine["id"]) => {
-					const line = localizationById.get(id)!;
-					return {
-						problems: lineProblems(line, selection, counted),
-						countedFindings: textCountedFindings(
-							lineSignals(lineEntries(line)),
-							counted
-						)
-					};
-				};
+				// Each line's problems under this request, as the engine reports them.
+				const explain = (id: LocalizationLine["id"]) => ({
+					problems: lineProblems(localizationById.get(id)!, selection)
+				});
 				const page = {
 					...shown,
 					lines: shown.lines.map((line) => ({ ...line, ...explain(line.id) }))
@@ -750,9 +716,6 @@ export function textCorpusQuery(
 				const counts = {
 					...matching({ ...request, query: "" }).counts,
 					all: matched.length,
-					shared: 0,
-					duplicate_source: 0,
-					long: 0,
 					unresolved: 0,
 					conflicting: 0,
 					editable: 0,
@@ -770,18 +733,13 @@ export function textCorpusQuery(
 				for (const line of matched) {
 					if (line.origin.kind === "evidence") {
 						counts.readOnly++;
-						if (
-							line.manifest.every(
-								(entry) => localizationManifestNotes(entry).length === 0
-							)
-						)
-							counts.withoutNotes++;
+						if (lineWithoutNotes(line)) counts.withoutNotes++;
 						continue;
 					}
 					const entries = lineEntries(line);
 					if (entries.some((entry) => entry.hasEditable)) counts.editable++;
 					if (entries.some((entry) => entry.hasReadOnly)) counts.readOnly++;
-					if (entries.every((entry) => entry.withoutNotes)) counts.withoutNotes++;
+					if (lineWithoutNotes(line)) counts.withoutNotes++;
 					for (const signal of new Set(
 						entries.flatMap((entry) => entry.presentation.reviewSignals)
 					))
@@ -811,8 +769,7 @@ export function textCorpusQuery(
 				};
 			}
 			const { matched, counts } = matching(request);
-			const counted = countedFindings(request);
-			const facts = (entry: (typeof indexed)[number]) => unitFacts(entry, counted);
+			const facts = (entry: (typeof indexed)[number]) => entry.facts;
 			const baseFor = (field: TextFilterField) =>
 				hasClause(request.filter, field)
 					? matching(without(request, field)).matched
@@ -843,7 +800,7 @@ export function textCorpusQuery(
 						}),
 				...facetsField(request.facets, (field) => baseFor(field).map(facts)),
 				total: matched.length,
-				units: page.map((entry) => unitRow(entry, counted)),
+				units: page.map(unitRow),
 				...fileScopeField(request.where, () => matched.flatMap(({ fileKeys }) => fileKeys)),
 				...(final !== undefined && afterCursor + page.length < listed.length
 					? { nextCursor: final }
@@ -885,11 +842,17 @@ export function textCorpusQuery(
 						])
 				).values()
 			].slice(0, request.pageSize);
+			// The unit lists its line's problems in every culture when a line is focused, else its
+			// own, as a search row has them.
+			const problems =
+				request.localization && localized !== undefined
+					? lineProblems(localized, { target: request.localization.target })
+					: entry.facts.problems;
 			return {
 				diagnostics,
 				occurrences,
 				totalOccurrences: unit.occurrences.length,
-				unit: presentation,
+				unit: { ...presentation, problems },
 				...(localized === undefined
 					? undefined
 					: { localization: localizationLinePreview(localized) }),

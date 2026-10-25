@@ -146,6 +146,11 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 							(request: Parameters<GameTextIndexRefreshResult["search"]>[0]) =>
 								borrow.pipe(Effect.andThen(result.search(request))),
 							Effect.scoped
+						),
+						searchRows: Effect.fn("GameTextIndex.retainedSearchRows")(
+							(request: Parameters<GameTextIndexRefreshResult["searchRows"]>[0]) =>
+								borrow.pipe(Effect.andThen(result.searchRows(request))),
+							Effect.scoped
 						)
 					} satisfies RetainedGameTextIndexResult;
 				})

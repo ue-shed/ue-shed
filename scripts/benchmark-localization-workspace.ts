@@ -93,22 +93,17 @@ await Effect.runPromise(
 						cultures: target.cultures.length
 					})
 				);
-				const source = yield* (yield* result.sourceQuality(rules)).export("all");
 				const quality = yield* result.localizationQuality(rules);
-				console.log(
-					JSON.stringify({
-						stage: "scanned",
-						source: source.findings.length,
-						localization: quality.findings.length
-					})
-				);
-				for (const withRules of [true, false]) {
-					const workspace = measure(`build:${withRules}`, () =>
-						build(withRules ? source : undefined, quality)
-					);
+				const first = yield* quality.workspace.search({
+					target: target.name,
+					filter: "all"
+				});
+				console.log(JSON.stringify({ stage: "scanned", findings: first.total }));
+				for (const pass of ["cold", "warm"]) {
+					const workspace = measure(`build:${pass}`, () => build(undefined, quality));
 					yield* Effect.yieldNow;
-					for (const offset of [0, Math.floor(quality.findings.length / 2)]) {
-						const page = yield* measureRead(`page:${withRules}:${offset}`, () =>
+					for (const offset of [0, Math.floor(first.total / 2)]) {
+						const page = yield* measureRead(`page:${pass}:${offset}`, () =>
 							workspace.search({ target: target.name, filter: "all", offset })
 						);
 						yield* Effect.yieldNow;
@@ -126,7 +121,7 @@ await Effect.runPromise(
 					for (const filter of ["terminology", "placeholder_text"] as const)
 						for (const offset of [0, 1000]) {
 							const page = yield* measureRead(
-								`page:${withRules}:${filter}:${offset}`,
+								`page:${pass}:${filter}:${offset}`,
 								() => workspace.search({ target: target.name, filter, offset })
 							);
 							console.log(
@@ -141,7 +136,7 @@ await Effect.runPromise(
 							yield* Effect.yieldNow;
 						}
 					for (const culture of target.cultures.slice(0, 2)) {
-						yield* measureRead(`page:${withRules}:${culture}`, () =>
+						yield* measureRead(`page:${pass}:${culture}`, () =>
 							workspace.search({ target: target.name, filter: "all", culture })
 						);
 						yield* Effect.yieldNow;

@@ -8,7 +8,6 @@ import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	TEXT_FINDING_SIGNALS,
 	TEXT_PROBLEMS,
 	TEXT_PROBLEM_LABELS,
 	TEXT_PROBLEM_RULES
@@ -43,14 +42,12 @@ export function renderTextProblemRules(): string {
 			lists("PROBLEM_FACTS", "facts"),
 		"/// Unknown reasons that raise each problem, by `REASONS` name.\n" +
 			lists("PROBLEM_REASONS", "reasons"),
-		"/// Review signals that raise each problem, by `SIGNALS` name.\n" +
+		"/// Facts that raise each problem, by `FACTS` name.\n" +
 			lists("PROBLEM_SIGNALS", "signals"),
 		"/// Whether a line with this worst problem has work before it ships.\n" +
 			`pub const PROBLEM_WORK: [bool; ${TEXT_PROBLEMS.length}] = [${TEXT_PROBLEMS.map(
 				(problem) => String(TEXT_PROBLEM_RULES[problem].work)
-			).join(", ")}];\n`,
-		"/// Review signals a request can count as findings by naming them, by `SIGNALS` name.\n" +
-			strings("FINDING_SIGNALS", TEXT_FINDING_SIGNALS)
+			).join(", ")}];\n`
 	].join("\n");
 }
 

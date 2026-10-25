@@ -18,7 +18,14 @@ import {
 import { textCorpusWithExcludedPackages } from "./package-text-candidates.js";
 import { comparePackageTextPathBytes } from "./package-text-order.js";
 import { TextUnitId } from "./identifiers.js";
-import { hydrateJoinedTarget, type JoinedTargetReader } from "./joined-target-reader.js";
+import type { JoinedTargetReader } from "./joined-target-reader.js";
+import { hydrateJoinedTarget } from "./joined-target-hydrate.test-support.js";
+import type { LocalizationTargetEvidence } from "@ue-shed/localization";
+import {
+	localizationEvidenceFileStatuses,
+	type LocalizationStatusReport
+} from "./localization-status.js";
+import type { TextCorpusSearchPage } from "./schema.js";
 import { synchronousJoinedTarget } from "./joined-query-reader.js";
 import { sourcePatchKind } from "./joined-source-patches.js";
 import { runJoinedQuery } from "./joined-query-node.js";
@@ -29,7 +36,7 @@ import {
 	type TextCorpusDiagnosticSummary,
 	type TextPackageCoverageSummary
 } from "./corpus-summary.js";
-import type { TextUnit, TextOccurrence, TextReviewSignal } from "./schema.js";
+import type { TextUnit, TextOccurrence } from "./schema.js";
 import type { SavedTextRepresentationCopy } from "./representation-copies.js";
 
 import { decodeTextAudience, textAudienceFields } from "./text-audience.js";
@@ -41,16 +48,6 @@ type MutableDiagnosticCounts = {
 type MutablePackageCounts = {
 	-readonly [K in keyof TextPackageCoverageSummary["counts"]]: TextPackageCoverageSummary["counts"][K];
 };
-
-export const querySignals = [
-	"shared",
-	"duplicate_source",
-	"long",
-	"unresolved",
-	"conflicting",
-	"evidence_only",
-	"compiled_copy_differs"
-] as const satisfies readonly TextReviewSignal[];
 
 /** The largest page hydrateJoinedTarget accepts. */
 const MAX_HYDRATED_PAGE_LINES = 10000;
@@ -750,4 +747,25 @@ export class IndexedPolicyData {
 		}
 		return [...result.values()];
 	}
+}
+
+/**
+ * The status report the second reader computes from the package columns, for the join fuzz
+ * harness's oracle; production reads the engine's report header.
+ */
+export function joinedStatusReport(
+	joined: JoinedTargetReader,
+	evidence: LocalizationTargetEvidence,
+	page: TextCorpusSearchPage
+): LocalizationStatusReport {
+	const data = new IndexedPolicyData(joined);
+	return {
+		schemaVersion: 1,
+		target: evidence.target.name,
+		counts: page.localization?.counts ?? [],
+		coverage: data.metadata().coverage,
+		...data.metadataReport(),
+		files: localizationEvidenceFileStatuses(evidence),
+		page
+	};
 }

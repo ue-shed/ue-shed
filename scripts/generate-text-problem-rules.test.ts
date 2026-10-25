@@ -30,14 +30,14 @@ describe("the shared text-problem table", () => {
 		).toBe(renderTextProblemRules());
 	});
 
-	it("names states, reasons and signals in the engine's bit order", async () => {
+	it("names states, reasons and facts in the engine's bit order", async () => {
 		const types = await readFile(
 			join(root, "crates/game-text-index/src/engine_types.rs"),
 			"utf8"
 		);
 		expect(rustStrings(types, "STATES")).toEqual(LocalizationState.literals);
 		expect(rustStrings(types, "REASONS")).toEqual(LocalizationUnknownReason.literals);
-		expect(rustStrings(types, "SIGNALS")).toEqual(TextReviewSignal.literals);
+		expect(rustStrings(types, "FACTS")).toEqual(TextReviewSignal.literals);
 		expect(rustStrings(renderTextProblemRules(), "PROBLEMS")).toEqual(TEXT_PROBLEMS);
 	});
 });

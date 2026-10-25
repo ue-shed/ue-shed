@@ -7,7 +7,7 @@ import {
 	diffCorpus,
 	subjectKey
 } from "./game-text-corpus-contract.ts";
-import { decodeCorpusPlan, planCorpus } from "./game-text-corpus-plan.ts";
+import { decodeCorpusPlan, planCorpus, probeSubject } from "./game-text-corpus-plan.ts";
 import { corpusLocalization } from "./game-text-corpus-localization.ts";
 import {
 	corpusDefectsFor,
@@ -495,17 +495,10 @@ test("manifest contexts follow Unreal key metadata identity, retaining only the 
 	}
 });
 
-test("every native signal, localization state, text problem and source kind appears", () => {
+// Browse's `finding` problem needs a findings layer, which the comparison reads separately.
+test("every fact, localization state, problem without a layer and source kind appears", () => {
 	const subjects = plan.expectations.subjects;
-	for (const signal of [
-		"shared",
-		"duplicate_source",
-		"long",
-		"unresolved",
-		"conflicting",
-		"evidence_only",
-		"compiled_copy_differs"
-	])
+	for (const signal of ["unresolved", "conflicting", "evidence_only", "compiled_copy_differs"])
 		assert.ok(
 			subjects.some((subject) => subject.signals.includes(signal)),
 			signal
@@ -532,7 +525,6 @@ test("every native signal, localization state, text problem and source kind appe
 		"not_gathered",
 		"changed_since_gather",
 		"translation",
-		"finding",
 		"unchecked",
 		"up_to_date"
 	])
@@ -689,25 +681,21 @@ test("each Blueprint variable contributes its own editor category scaffold", () 
 	}
 });
 
-test("line-page defect assertions retain culture scope independently of compiled pin copies", () => {
+test("the line page's problems keep the list's culture scope", () => {
 	const variety = planCorpus({ ...options, seed: 73131, density: 5, lines: 1000 });
-	const probes = variety.probes.map((probe) => ({
-		case: probe.case,
-		subject: `probe:${probe.kind}:${probe.culture}`,
-		expected: probe.expected,
-		actual: null
-	}));
-	const defects = corpusDefectsFor(variety.expectations.subjects, probes);
-	for (const subject of variety.expectations.subjects.filter(
-		(subject) => subject.case.startsWith("archive-missing-entry@") && subject.culture === "en"
-	)) {
-		const defect = defects.find(
-			(defect) => defect.kind === "probe" && defect.case === subject.case
-		);
-		assert.ok(defect);
-		assert.deepEqual(defect.rightAnswer, ["up_to_date"]);
-		assert.deepEqual(defect.actual, ["translation"]);
-	}
+	const probes = variety.probes.filter(
+		(probe) =>
+			probe.kind === "line-page-problems" &&
+			probe.case.split("@")[0] === "archive-missing-entry"
+	);
+	assert.deepEqual(
+		[...new Set(probes.map((probe) => JSON.stringify([probeSubject(probe), probe.expected])))],
+		[
+			JSON.stringify(["probe:line-page-problems:en", ["up_to_date"]]),
+			JSON.stringify(["probe:line-page-problems:*", ["translation"]])
+		]
+	);
+	assert.deepEqual(corpusDefectsFor(variety.expectations.subjects, []), []);
 });
 
 test("known-defect assertions use set semantics for signals while retaining exact evidence", () => {
@@ -811,7 +799,7 @@ test("canonical compare output reports the number and classes of pinned disagree
 	const subjects = [...plan.expectations.subjects, ...collapse.expectations.subjects];
 	const probes = plan.probes.map((probe) => ({
 		case: probe.case,
-		subject: `probe:${probe.kind}:${probe.culture}`,
+		subject: probeSubject(probe),
 		expected: probe.expected,
 		actual: probe.expected
 	}));

@@ -47,15 +47,24 @@ import {
 } from "./index-contract.js";
 import { isSnapshotStoreError } from "./snapshot-store.js";
 import { isSnapshotFormatError } from "./snapshot-format.js";
-import { makeGameTextQualityWorkerResource } from "./quality-worker-node.js";
-import { IndexReaderDescriptor } from "./index-reader-descriptor.js";
 import {
 	indexedLocalizationLinesRequest,
 	readIndexedLocalizationEvidence
 } from "./index-context.js";
-import { indexedLocalizationQuality } from "./localization-quality-index.js";
-import { indexedSourceQuality } from "./source-quality-index.js";
 import { indexedLocalizationCheckReport } from "./localization-check-report.js";
+import { acceptReview } from "./native-findings.js";
+import {
+	queriedLocalizationQualityWorkspace,
+	type QueriedLocalizationQuality
+} from "./localization-workspace.js";
+import { queriedTextQualityQuery } from "./quality-query.js";
+import { enabledLocalizationChecks } from "./localization-checks.js";
+import { localizationRuleId } from "./localization-check-catalogue.js";
+import { localizationPolicyRules } from "./localization-policy.js";
+import { customRulesOf, localizationRulesOf, sourceRulesOf } from "./game-text-rules.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
+import type { RuleDocumentV4 } from "./rules/schema.js";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { openJoinedTarget, readJoinedTarget } from "./joined-target-reader.js";
 import type { importLocalizationTarget } from "./localization-import.js";
 import type { refreshPackageTextLayer } from "./package-text-layer.js";
@@ -278,34 +287,11 @@ const savedTarget = Schema.decodeUnknownSync(LocalizationTarget)({
 	collapseMode: "IdenticalTextIdAndSource"
 });
 
-/** Starts a quality worker in `scope` on first use, and again after one fails. */
-const qualityWorkerSlot = (input: IndexReaderDescriptor, scope: Scope.Scope) =>
-	Effect.gen(function* () {
-		const lock = yield* Semaphore.make(1);
-		let current:
-			| Effect.Success<ReturnType<typeof makeGameTextQualityWorkerResource>>
-			| undefined;
-		return lock.withPermits(1)(
-			Effect.suspend(() =>
-				current?.healthy()
-					? Effect.succeed(current)
-					: makeGameTextQualityWorkerResource(input).pipe(
-							Effect.provideService(Scope.Scope, scope),
-							Effect.tap((worker) =>
-								Effect.sync(() => {
-									current = worker;
-								})
-							)
-						)
-			)
-		);
-	});
-
 /** How the index steps place their work. */
 export interface GameTextIndexStepsOptions {
 	/**
-	 * Run localization quality scans in a worker per opened model. The host keeps the findings'
-	 * facts and reads policy findings from the worker; failures remain typed index failures.
+	 * Has no effect: the engine checks quality, so no host thread scans.
+	 * @deprecated Quality needs no worker; leave it out.
 	 */
 	readonly qualityWorker?: boolean;
 }
@@ -317,7 +303,7 @@ export interface GameTextIndexStepsOptions {
  */
 export const makeGameTextIndexSteps = (
 	cacheRoot: string,
-	options: GameTextIndexStepsOptions = {}
+	_options: GameTextIndexStepsOptions = {}
 ) =>
 	Effect.gen(function* () {
 		const source = yield* GameTextIndexSource;
@@ -792,23 +778,15 @@ export const makeGameTextIndexSteps = (
 					)
 				)
 			);
-			const workerInput = {
-				configuration,
-				generation: joined.reader.manifest.generation,
-				joinedKey: joined.reader.manifest.active.joined!
-			};
 			const native = yield* queries.open({
 				configuration,
 				generation: target.generation,
 				joinedKey: target.join.key
 			});
-			const { localizationRows, ...query } = native;
+			const query = native;
 			const summary = yield* query.summary();
 			const search = query.search;
-			// One quality worker per model, started by its first scan and replaced if it fails.
-			const qualityWorker = options.qualityWorker
-				? yield* qualityWorkerSlot(workerInput, yield* Effect.scope)
-				: undefined;
+			const searchRows = query.searchRows;
 			reportProgress({ phase: "ready", completed: 0, total: 0 });
 			const corpus = query.readCorpus();
 			const localization = {
@@ -820,6 +798,34 @@ export const makeGameTextIndexSteps = (
 			const localizationJoin = query
 				.localizationLines(indexedLocalizationLinesRequest(joined))
 				.pipe(Effect.map((lines) => ({ ...localization, lines })));
+			// The lines a localization check reads: the localization view's, once per model.
+			const joinLineCount = yield* Effect.cached(
+				search({ ...indexedLocalizationLinesRequest(joined), pageSize: 1 }).pipe(
+					Effect.map((page) => page.total)
+				)
+			);
+			/**
+			 * Evaluates a document's findings with a check's progress: one event before the engine
+			 * runs, with nothing checked, and one after, with everything checked and the findings
+			 * of the rules `counted` selects.
+			 */
+			const evaluateWithProgress = (
+				phase: "localization_quality" | "source_quality",
+				total: Effect.Effect<number, IndexFailure>,
+				document: RuleDocumentV4,
+				counted: (rule: GameTextContract.RuleMetadata) => boolean
+			) =>
+				Effect.gen(function* () {
+					const reportProgress = yield* GameTextIndexProgressReporter;
+					const checked = yield* total;
+					reportProgress({ phase, completed: 0, total: checked, findings: 0 });
+					const evaluation = yield* query.findingsEvaluate(document);
+					let findings = 0;
+					for (const { rule, count } of evaluation.counts)
+						if (counted(evaluation.rules[rule]!)) findings += count;
+					reportProgress({ phase, completed: checked, total: checked, findings });
+					return evaluation;
+				});
 			return {
 				...result,
 				project: target.project,
@@ -834,46 +840,109 @@ export const makeGameTextIndexSteps = (
 				summary,
 				localization,
 				search,
+				searchRows,
 				evidence: indexedEvidence,
 				corpus,
 				localizationJoin,
-				// The scan checks exactly the join's lines, read as rows in the join's order.
+				// Quality is the engine's: every page, focus and proposal is a findings query.
 				localizationQuality: (ruleDocument, scanOptions) =>
 					Effect.gen(function* () {
-						const rows = yield* localizationRows(
-							indexedLocalizationLinesRequest(joined)
+						const options = scanOptions ?? {};
+						const target = joined.meta.input.target;
+						const join = {
+							target: target.name,
+							nativeCulture: target.nativeCulture,
+							cultures: target.cultures
+						};
+						const evaluated = yield* evaluateWithProgress(
+							"localization_quality",
+							joinLineCount,
+							effectiveRuleDocument(ruleDocument, options),
+							(rule) => rule.subject !== "unit_source"
 						);
-						if (qualityWorker) {
-							const worker = yield* qualityWorker;
-							return yield* worker.scan({
-								corpus: summary,
-								rows,
-								options: scanOptions,
-								ruleDocument
-							});
-						}
-						return yield* indexedLocalizationQuality(
-							joined,
-							summary,
+						const acceptance = yield* acceptReview(
+							query,
+							evaluated.key,
+							options.review
+						);
+						const enabled = enabledLocalizationChecks(
+							join,
 							indexedEvidence,
-							rows,
-							ruleDocument,
-							scanOptions ?? {},
-							query
+							options,
+							ruleDocument
 						);
+						const customChecks = customRulesOf(ruleDocument);
+						return {
+							findings: {
+								key: evaluated.key,
+								...(acceptance ? { acceptance } : undefined)
+							},
+							workspace: queriedLocalizationQualityWorkspace({
+								findings: query,
+								key: evaluated.key,
+								rules: evaluated.rules,
+								acceptance,
+								metadata: {
+									join,
+									rules: [
+										...sourceRulesOf(ruleDocument)
+											.map((rule) => rule.id)
+											.sort((left, right) => left.localeCompare(right)),
+										...localizationRulesOf(ruleDocument).map((rule) => rule.id),
+										...enabled.map(localizationRuleId),
+										...customChecks.map((custom) => custom.id)
+									],
+									...(customChecks.length
+										? {
+												customChecks: customChecks.map(({ id, label }) => ({
+													ruleId: id,
+													label
+												}))
+											}
+										: undefined),
+									unsupportedRuleCultures: ruleDocument
+										? localizationPolicyRules(target.cultures, ruleDocument)
+												.diagnostics.length
+										: 0,
+									status: summary.status,
+									coverage: summary.coverage
+								},
+								detail: query.localizationDetail
+							})
+						} satisfies QueriedLocalizationQuality;
 					}),
 				sourceQuality: (ruleDocument) =>
-					Effect.suspend(() =>
-						indexedSourceQuality(joined, summary, ruleDocument, query)
-					),
-				// The report reads findings and lines in pages, never the whole corpus or join.
+					Effect.gen(function* () {
+						const evaluation = yield* evaluateWithProgress(
+							"source_quality",
+							Effect.succeed(summary.searchable.textUnits),
+							effectiveRuleDocument(ruleDocument),
+							(rule) => rule.subject === "unit_source"
+						);
+						const header = yield* query.readCorpusReportHeader();
+						return yield* queriedTextQualityQuery({
+							findings: query,
+							evaluation,
+							report: {
+								coverage: summary.coverage,
+								diagnostics: header.diagnostics,
+								diagnosticCount: header.diagnosticCount,
+								diagnosticCounts: header.diagnosticCounts,
+								diagnosticsOmitted: header.diagnosticsOmitted,
+								ruleDocumentVersion: ruleDocument.schemaVersion,
+								schemaVersion: 1,
+								status: summary.status
+							}
+						});
+					}),
+				// The report reads its findings in pages, never the whole corpus or join.
 				localizationCheck: (document, options) =>
 					Effect.gen(function* () {
 						const header = yield* query.readCorpusReportHeader();
+						const target = joined.meta.input.target;
 						return yield* indexedLocalizationCheckReport(
-							joined,
+							{ target: target.name, cultures: target.cultures },
 							{ status: summary.status, ...header },
-							yield* localizationRows(indexedLocalizationLinesRequest(joined)),
 							indexedEvidence,
 							query,
 							options,
@@ -1069,8 +1138,7 @@ export class GameTextIndexSteps extends Context.Service<
 
 /**
  * Layer for the headless step service. Provide a builder, project-index source and localization
- * evidence; worker options move query/quality preparation off the host thread while retaining
- * scope ownership.
+ * evidence.
  */
 export const gameTextIndexStepsLayer = (
 	cacheRoot: string,

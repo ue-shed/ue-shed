@@ -15,8 +15,9 @@
 
 - **State**: In progress. Phase 0 is complete: the fixture merged in #162, and the baseline and
   transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
-  owner's review are recorded. Phase 2 is implemented, and its measurements are recorded for the
-  owner's review.
+  owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
+  review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
+  recorded. Phase 4 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -456,11 +457,14 @@ Phase 2 against Phase 1, measured at `769f7503`:
   prints byte-identical output on both canonical corpora.
 - **Not re-measured:** the probe rows and the released cold build's RSS (3.94 → 4.59 GiB) are one
   run each.
+- **Owner review, 2026-10-24:** accepted for Phase 2.
 
 The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-2-results)
 has every table.
 
 ### Phase 3: the query engine
+
+The specification is [Game Text rule engine, Phase 3](../docs/engineering/game-text-rule-engine-phase-3.md).
 
 - Bitset predicates over the IR.
 - Findings as filter, group and facet fields, including Browse chips. The native `shared`, `long`
@@ -472,6 +476,34 @@ has every table.
 - The fixture's two open defects are in query paths:
     - the "no translator notes" filter must count manifest notes (`manifest-notes-only`);
     - the line page must keep the selected culture scope (`archive-missing-entry`).
+
+Phase 3 against Phase 2, both measured on 2026-10-25 (`357c650e` and `19ac7882`):
+
+| Path                                            |       Generated 1× | Released 10-culture project |
+| ----------------------------------------------- | -----------------: | --------------------------: |
+| Cold build to visible page                      |  68.105 → 66.515 s |         111.077 → 108.639 s |
+| Open to visible page                            |    1.935 → 1.958 s |             1.836 → 1.896 s |
+| Cached reopen                                   |    2.993 → 3.073 s |             6.126 → 6.189 s |
+| Quality, loading the rules to the first page    | 184.021 → 30.059 s |          375.701 → 34.634 s |
+| Workbench matching 1–2-character keystroke, p95 | 595.46 → 354.39 ms |          402.38 → 203.35 ms |
+| Saturated related-line probe, 444 requests      | 787.84 → 636.30 ms |          604.74 → 546.19 ms |
+| One `related` request for the same review       |          198.05 ms |                   129.11 ms |
+| Store size                                      |     43.5 → 44.2 MB |            129.7 → 187.5 MB |
+
+- **Findings are unchanged:** Quality's answer has the same hash at both commits on both projects,
+  and `loc check` is byte-identical on both canonical corpora.
+- **The fixture is exact** on both canonical corpora, with no pinned disagreement left, and one
+  10,000-line fuzz run is clean.
+- **Quality** reads one engine query per page; what remains is the rule evaluation. Its largest
+  event-loop gap is 22–24 ms, and the worker is deleted.
+- **The released store grew 45%**, the trigram index over every culture's translations.
+- **Open and cached reopen** are 1–3% slower, unprofiled.
+- **Owner review, 2026-10-25:** accepted for Phase 3, after a screen-by-screen review in the
+  Workbench. That review caught Browse not searching again when rules load. It also moved a line's
+  findings into the banner at the top of its page, and added an optional `label` to project rules.
+
+The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-3-results)
+has every table.
 
 ### Phase 4: streaming API
 

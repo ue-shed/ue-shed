@@ -119,9 +119,14 @@ export interface CorpusPlan {
 	cultures: readonly string[];
 	packages: PlannedPackage[];
 	rules: object;
-	probes: { case: string; kind: string; culture: string; expected: typeof Schema.Json.Type }[];
+	/** Without a culture, a probe reads every culture. */
+	probes: { case: string; kind: string; culture?: string; expected: typeof Schema.Json.Type }[];
 	expectations: CorpusExpectations;
 }
+
+/** A probe's subject in comparisons: its kind and culture, `*` for every culture. */
+export const probeSubject = (probe: CorpusPlan["probes"][number]) =>
+	`probe:${probe.kind}:${probe.culture ?? "*"}`;
 const PlannedCultureSchema = Schema.Struct({
 	translation: Schema.String,
 	expectedSource: Schema.String,
@@ -165,7 +170,7 @@ export const CorpusPlanSchema = Schema.Struct({
 		Schema.Struct({
 			case: Schema.String,
 			kind: Schema.String,
-			culture: Schema.String,
+			culture: Schema.optionalKey(Schema.String),
 			expected: Schema.Json
 		})
 	),
@@ -1408,11 +1413,17 @@ function recipeBatch({
 	translation(staleResource, "Neue Übersetzung");
 	staleResource.cultures.de!.resourceTranslation = "Alte Übersetzung";
 	staleResource.cultures.de!.compilePending = true;
+	// The line page keeps the list's culture scope: only German has translation work.
 	probes.push({
 		case: "archive-missing-entry",
 		kind: "line-page-problems",
 		culture: "en",
 		expected: ["up_to_date"]
+	});
+	probes.push({
+		case: "archive-missing-entry",
+		kind: "line-page-problems",
+		expected: ["translation"]
 	});
 	for (const value of ["45678", "!!!"]) {
 		const a = add(`duplicate-native-only-${value}-a`, value);
@@ -1610,6 +1621,23 @@ function recipeBatch({
 	return finish();
 }
 
+/** Browse's review signals: the facts. `shared`, `duplicate_source` and `long` are checks. */
+const browseSignals = new Set([
+	"unresolved",
+	"conflicting",
+	"evidence_only",
+	"compiled_copy_differs"
+]);
+/**
+ * A line's problems as Browse shows them without a findings layer, as the comparison reads them:
+ * the `finding` problem comes only from a layer's rules, so a line with no other work is up to
+ * date.
+ */
+const browseProblems = (problems: readonly string[]) => {
+	const shown = problems.filter((problem) => problem !== "finding");
+	return shown.length ? shown : ["up_to_date"];
+};
+
 /** A projection of planted records, not an evaluator of text or rules. */
 export function deriveCorpusExpectations({
 	packages,
@@ -1656,9 +1684,9 @@ export function deriveCorpusExpectations({
 					state,
 					facts,
 					unknownReasons,
-					problems,
+					problems: browseProblems(problems),
 					findings,
-					signals: text.signals,
+					signals: text.signals.filter((signal) => browseSignals.has(signal)),
 					absent: text.absent,
 					stages: {
 						po: written?.poEntry ? written.po : null,

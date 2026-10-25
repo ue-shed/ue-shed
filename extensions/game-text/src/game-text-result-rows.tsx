@@ -4,7 +4,7 @@ import { manifestPathOrigin } from "@ue-shed/game-text/rules";
 import {
 	type LocalizationLineId,
 	type LocalizationLinePreview,
-	type TextCorpusSearchPage,
+	type TextCorpusRows,
 	type TextUnitId,
 	type TextUnitSearchResult
 } from "@ue-shed/game-text/schema";
@@ -21,6 +21,16 @@ type ResultRow = {
 	readonly line: LocalizationLinePreview | undefined;
 	readonly unit: TextUnitSearchResult | undefined;
 };
+
+/** The labels of a row's findings, with how many more it has. */
+export function rowFindings(
+	row: { readonly findings?: readonly string[]; readonly findingsOmitted?: number },
+	rules: ReadonlyMap<string, string> | undefined
+): readonly string[] {
+	const labels = (row.findings ?? []).map((rule) => rules?.get(rule) ?? rule);
+	const omitted = row.findingsOmitted ?? 0;
+	return omitted > 0 ? [...labels, `+${omitted} more findings`] : labels;
+}
 
 /** The translation column only shows with one culture picked; with more, the state strip covers them. */
 export function GameTextColumns(props: { readonly culture: string | undefined }) {
@@ -39,13 +49,15 @@ export function GameTextColumns(props: { readonly culture: string | undefined })
 }
 
 export function GameTextResultRows(props: {
-	readonly page: TextCorpusSearchPage | undefined;
+	readonly page: TextCorpusRows | undefined;
 	readonly culture: string | undefined;
 	/** The picked cultures; every culture when empty or absent. */
 	readonly cultures?: readonly string[];
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
+	/** Rule labels by ID, for the findings a row lists; a rule reads as its ID without one. */
+	readonly rules?: ReadonlyMap<string, string> | undefined;
 	/** Lines ticked for bulk actions; rows have no tick box without it. */
 	readonly checked?: ((line: LocalizationLineId) => boolean) | undefined;
 	/** Ticks or unticks a line; `range` extends from the last line ticked (shift-click). */
@@ -182,14 +194,15 @@ export function GameTextResultRows(props: {
 											? " · +" + (unit().occurrenceCount - 1) + " more"
 											: ""}
 										<span>
-											{unit()
-												.reviewSignals.filter(
-													(signal) => signal !== "evidence_only"
-												)
-												.map(
-													(signal) =>
-														" · " + textReviewSignalLabel(signal)
-												)
+											{[
+												...unit()
+													.reviewSignals.filter(
+														(signal) => signal !== "evidence_only"
+													)
+													.map(textReviewSignalLabel),
+												...rowFindings(unit(), props.rules)
+											]
+												.map((label) => " · " + label)
 												.join("")}
 										</span>
 									</span>

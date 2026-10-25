@@ -914,19 +914,20 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     "search",
                     "focus",
                     "export",
-                    "rows",
                     "corpus",
                     "corpus_header",
                     "corpus_report_header",
                     "corpus_fingerprint",
                     "aggregate",
                     "localization_detail",
+                    "related",
                     "localization_export",
                     "localization_focus_export",
                     "localization_corpus",
                     "findings_evaluate",
-                    "findings_lines",
-                    "findings_units",
+                    "findings_accept",
+                    "findings_query",
+                    "rules_check",
                 ]
                 .contains(&outcome.action.as_str())
                 || outcome

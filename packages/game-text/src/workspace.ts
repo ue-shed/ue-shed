@@ -1,3 +1,4 @@
+import type { RelatedLinesRequest, RelatedLinesResult } from "./related-lines.js";
 import { indexPublicFailure } from "./index-public-error.js";
 import { type IndexFailure } from "./index-contract.js";
 import {
@@ -67,12 +68,15 @@ import {
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
 	type TextCorpusQueryRunResult,
+	type TextCorpusRowsResult,
 	type TextCorpusRunResult,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "./entry-schema.js";
-import { readFindingUnits } from "./investigation.js";
-import { makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
+import { investigationRequest, readFindingUnits } from "./investigation.js";
+import { hasBrowseRules, makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
+import { checkCompleteRules } from "./native-findings.js";
+import type { TextFindingsSelection } from "./text-problem-schema.js";
 import type { LocalizationTarget } from "@ue-shed/localization";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
 import {
@@ -150,6 +154,8 @@ export interface GameTextWorkspaceApi {
 	readonly localizationFocus: (
 		request: LocalizationFocusRequest
 	) => Effect.Effect<LocalizationFocusResult>;
+	/** A selection's related units and lines, with their places and translations. */
+	readonly related: (request: RelatedLinesRequest) => Effect.Effect<RelatedLinesResult>;
 	readonly investigationExport: (
 		query: GameTextInvestigationQuery,
 		format: InvestigationFormat
@@ -163,6 +169,8 @@ export interface GameTextWorkspaceApi {
 	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
 	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
 	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
+	/** The request's rows, or its open groups' first rows, without the aggregates `search` adds. */
+	readonly searchRows: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusRowsResult>;
 	readonly chooseQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
 	readonly reloadQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
 	readonly createStarterRules: (
@@ -282,6 +290,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		index.sourceQuality(rules);
 	const queryModel = (index: RetainedGameTextIndexResult) => index.query;
 	const querySearch = (index: RetainedGameTextIndexResult) => index.search;
+	const querySearchRows = (index: RetainedGameTextIndexResult) => index.searchRows;
 	const completedQuery = (index: RetainedGameTextIndexResult, cached?: true) =>
 		cached
 			? { status: "completed" as const, summary: index.summary, cached }
@@ -683,25 +692,84 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						}
 			)
 		);
+	/**
+	 * Browse's findings layer: with a target, its Quality scan's, with the review acceptance it
+	 * applies; without one, the published rules' source findings. `pending` while the rules
+	 * evaluate, `none` without a rule that runs there.
+	 */
+	const browseFindings = Effect.fn("GameText.workspace.browseFindings")(function* (
+		target: LocalizationTarget["name"] | undefined
+	): Effect.fn.Return<
+		| { readonly status: "none" | "pending" }
+		| { readonly status: "ready"; readonly selection: TextFindingsSelection },
+		never,
+		Scope.Scope
+	> {
+		if (target !== undefined) return yield* localization.browseFindings(target);
+		if (!hasBrowseRules(yield* currentValue(qualityDocument), false)) return { status: "none" };
+		const key = (yield* currentValue(qualityModel))?.findingsKey;
+		return key === undefined
+			? { status: "pending" }
+			: { status: "ready", selection: { key, sourceOnly: true } };
+	});
+	/** A read with Browse's findings layer in place of any the host named. */
+	const withBrowseFindings = <A extends { readonly findings?: TextFindingsSelection }>(
+		read: A,
+		findings: Effect.Success<ReturnType<typeof browseFindings>>
+	): Omit<A, "findings"> & { readonly findings?: TextFindingsSelection } => {
+		const { findings: _host, ...rest } = read;
+		return findings.status === "ready" ? { ...rest, findings: findings.selection } : rest;
+	};
+
 	const search = Effect.fn("GameText.workspace.search")(function* (
 		input: TextCorpusSearchRequest
 	): Effect.fn.Return<TextCorpusSearchResult, never, Scope.Scope> {
-		const request = yield* projectRelativeRequest(input);
-		if (request.localization) return yield* localization.search(request);
+		const relative = yield* projectRelativeRequest(input);
+		const findings = yield* browseFindings(relative.localization?.target);
+		const request = withBrowseFindings(relative, findings);
+		const status = { status: findings.status };
+		if (request.localization) {
+			const result = yield* localization.search(request);
+			return result.status === "ready"
+				? { ...result, page: { ...result.page, findings: status } }
+				: result;
+		}
 		const search = yield* currentModel(querySearch);
 		if (!search) return { status: "not_ready" };
 		const outcome = yield* search(request).pipe(Effect.result);
 		if (Result.isFailure(outcome))
 			return { status: "failed", error: indexPublicFailure(outcome.failure) };
-		const page = outcome.success;
+		const page = { ...outcome.success, findings: status };
 		return (yield* currentModel(querySearch)) === search
 			? { status: "ready", page }
 			: { status: "not_ready" };
 	});
 
-	const focus = Effect.fn("GameText.workspace.focus")(function* (
-		request: TextCorpusFocusRequest
-	) {
+	const searchRows = Effect.fn("GameText.workspace.searchRows")(function* (
+		input: TextCorpusSearchRequest
+	): Effect.fn.Return<TextCorpusRowsResult, never, Scope.Scope> {
+		const relative = yield* projectRelativeRequest(input);
+		const request = withBrowseFindings(
+			relative,
+			yield* browseFindings(relative.localization?.target)
+		);
+		if (request.localization) return yield* localization.searchRows(request);
+		const read = yield* currentModel(querySearchRows);
+		if (!read) return { status: "not_ready" };
+		const outcome = yield* read(request).pipe(Effect.result);
+		if (Result.isFailure(outcome))
+			return { status: "failed", error: indexPublicFailure(outcome.failure) };
+		const page = outcome.success;
+		return (yield* currentModel(querySearchRows)) === read
+			? { status: "ready", page }
+			: { status: "not_ready" };
+	});
+
+	const focus = Effect.fn("GameText.workspace.focus")(function* (input: TextCorpusFocusRequest) {
+		const request = withBrowseFindings(
+			input,
+			yield* browseFindings(input.localization?.target)
+		);
 		const model = yield* request.localization
 			? localization.targetQuery(request.localization.target)
 			: currentModel(queryModel);
@@ -712,6 +780,21 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		return result.success === undefined
 			? { status: "not_found" as const }
 			: { status: "found" as const, focus: result.success };
+	});
+
+	const related = Effect.fn("GameText.workspace.related")(function* (
+		request: RelatedLinesRequest
+	) {
+		const model = yield* request.target
+			? localization.targetQuery(request.target)
+			: currentModel(queryModel);
+		if (!model) return { status: "not_ready" as const };
+		const result = yield* model.related(request).pipe(Effect.result);
+		if (Result.isFailure(result))
+			return { status: "failed" as const, error: indexPublicFailure(result.failure) };
+		return result.success === undefined
+			? { status: "not_found" as const }
+			: { status: "found" as const, related: result.success };
 	});
 
 	const prepareQualityRules = Effect.fn("GameText.workspace.prepareQualityRules")(function* (
@@ -737,6 +820,20 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				status: "failed" as const
 			};
 		}
+		const checked = yield* checkCompleteRules(index.query, document.value).pipe(Effect.result);
+		if (Result.isFailure(checked))
+			return {
+				status: "failed" as const,
+				error: {
+					code:
+						checked.failure._tag === "GameTextRuleDocumentError"
+							? ("invalid_rules" as const)
+							: ("contract_failure" as const),
+					message: checked.failure.message,
+					recovery: checked.failure.recovery,
+					retrySafe: true
+				}
+			};
 		const prepared = yield* sourceQualityModel(index, document.value).pipe(Effect.result);
 		if (Result.isFailure(prepared))
 			return {
@@ -1119,9 +1216,18 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				nextStep: cause.nextStep,
 				cause
 			});
+		// The corpus CSV lists Browse's findings: the same layer the list showed.
+		const findings = yield* browseFindings(query.localization?.target);
+		const request = investigationRequest(query);
 		const selected =
 			query.mode === "corpus" && localized
-				? yield* localized.exportWithSignals(query).pipe(Effect.mapError(failure))
+				? yield* localized
+						.exportWithSignals(
+							findings.status === "ready"
+								? { ...request, findings: findings.selection }
+								: request
+						)
+						.pipe(Effect.mapError(failure))
 				: undefined;
 		const index = yield* currentIndex();
 		// Source rules come from the index, page by page; the published model when it has them.
@@ -1152,13 +1258,14 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		return {
 			document,
 			corpus: selected?.corpus ?? { units },
-			reviewSignals: selected?.reviewSignals ?? new Map()
+			reviewSignals: selected?.reviewSignals ?? new Map(),
+			findings: selected?.findings
 		};
 	});
 	const investigationExport = Effect.fn("GameText.workspace.investigationExport")(
 		(query: GameTextInvestigationQuery, format: InvestigationFormat) =>
 			captureInvestigation(query).pipe(
-				Effect.flatMap(({ document, corpus, reviewSignals }) =>
+				Effect.flatMap(({ document, corpus, reviewSignals, findings }) =>
 					saveInvestigation(dialog, {
 						contents:
 							format === "json"
@@ -1166,7 +1273,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 								: document.result.mode === "corpus"
 									? gameTextCsv(
 											{ units: document.result.corpus.units },
-											reviewSignals
+											reviewSignals,
+											findings
 										)
 									: document.result.mode === "localization_quality"
 										? workspaceQualityCsv(document.result.report)
@@ -1342,7 +1450,16 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		),
 		localizationTargets: scoped(localization.targets),
 		localizationTarget: scoped(localization.select),
-		localizationFocus: scoped(localization.focus),
+		localizationFocus: scoped((request: LocalizationFocusRequest) =>
+			localization
+				.browseFindings(request.target)
+				.pipe(
+					Effect.flatMap((findings) =>
+						localization.focus(withBrowseFindings(request, findings))
+					)
+				)
+		),
+		related: scoped(related),
 		investigationExport: scoped(investigationExport),
 		investigationSave: scoped(investigationSave),
 		investigationOpen: scoped(investigationOpen),
@@ -1352,6 +1469,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		focus: scoped(focus),
 		progress: scoped(progress),
 		search: scoped(search),
+		searchRows: scoped(searchRows),
 		chooseQualityRules: scoped(chooseQualityRules),
 		reloadQualityRules: scoped(reloadQualityRules),
 		createStarterRules: scoped(createStarterRules),

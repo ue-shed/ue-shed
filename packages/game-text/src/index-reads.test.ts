@@ -327,9 +327,7 @@ describe("index reads", () => {
 							expect(yield* model.query.readCorpusReportHeader()).toEqual(
 								textCorpusReportHeader(header)
 							);
-						}).pipe(
-							Effect.provide(fixture.layer(false, fixture.source, false, builder))
-						);
+						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})
 				)
 			);
@@ -508,9 +506,7 @@ describe("index reads", () => {
 								})
 							);
 							expect(model.revision).toEqual(expect.any(String));
-						}).pipe(
-							Effect.provide(fixture.layer(false, fixture.source, false, builder))
-						);
+						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})
 				)
 			);

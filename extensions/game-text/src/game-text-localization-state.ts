@@ -182,7 +182,14 @@ export function createGameTextLocalizationState(props: {
 		};
 	};
 
-	const requestFocus = (request: LocalizationFocusRequest) => {
+	const requestFocus = (unscoped: LocalizationFocusRequest) => {
+		// The line's problems follow the list's culture scope, as its row's do.
+		const chosen = untrack(cultures);
+		const request: LocalizationFocusRequest = {
+			...unscoped,
+			...(chosen.length === 1 ? { culture: chosen[0] } : undefined),
+			...(chosen.length > 1 ? { cultures: chosen } : undefined)
+		};
 		const operation = props.client.localizationFocus?.(request);
 		if (!operation) return;
 		const version = ++focusGeneration;
@@ -289,7 +296,9 @@ export function createGameTextLocalizationState(props: {
 			summary: props.summary(),
 			target: active()?.target.name,
 			id: selectedId(),
-			unit: props.selectedUnit()
+			unit: props.selectedUnit(),
+			// A new culture scope reads the line again for its problems, keeping what is shown.
+			scope: cultures()
 		}),
 		({ ready: loaded, summary, target: name, id, unit }) => {
 			focusGeneration++;

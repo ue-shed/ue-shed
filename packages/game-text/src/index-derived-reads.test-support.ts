@@ -58,7 +58,7 @@ const withClause = (request: Matching, clause: TextFilterClause): Matching => ({
 const membership = (
 	base: DerivedReadsBase,
 	request: Matching,
-	field: "problem" | "finding" | "origin",
+	field: "problem" | "finding" | "fact" | "origin",
 	values: readonly string[]
 ) =>
 	new Map(
@@ -269,7 +269,7 @@ export function derivedLineViews<F extends LocalizationLineField>(
 		? membership(base, request, "problem", TextProblem.literals)
 		: undefined;
 	const signals = has("signals")
-		? membership(base, request, "finding", TextReviewSignal.literals)
+		? membership(base, request, "fact", TextReviewSignal.literals)
 		: undefined;
 	const units = has("places")
 		? new Map(base.corpus().units.map((unit) => [unit.id, unit]))

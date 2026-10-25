@@ -105,18 +105,21 @@ it.live.skipIf(!enabled)(
 								review: result.review.file
 							})
 							.pipe(
-								Effect.tap((quality) =>
-									Effect.sync(() => quality.findings.items([0, 1, 2]))
+								Effect.flatMap((quality) =>
+									quality.workspace.search({
+										target: result.localization.target,
+										filter: "all"
+									})
 								)
 							)
 					);
 					yield* Effect.logInfo("Quality scan event-loop gap").pipe(
 						Effect.annotateLogs({
 							scanMaxGapMs: scanned.maxGapMs,
-							findings: scanned.value.findings.length
+							findings: scanned.value.total
 						})
 					);
-					expect(scanned.value.findings.length).toBeGreaterThan(0);
+					expect(scanned.value.total).toBeGreaterThan(0);
 					expect(scanned.maxGapMs).toBeLessThan(MAXIMUM_GAP_MS);
 				})
 			);

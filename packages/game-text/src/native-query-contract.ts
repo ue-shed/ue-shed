@@ -6,6 +6,7 @@ import type {
 	TextCorpusQuerySummary,
 	TextCorpusSearchRequest,
 	TextCorpusSearchPage,
+	TextCorpusRowsPage,
 	TextCorpusFocusRequest,
 	TextCorpusFocus,
 	TextUnit,
@@ -14,6 +15,7 @@ import type {
 import type { LocalizationLine, LocalizationLineId } from "./localization-schema.js";
 import type { GameTextIndexError } from "./index-error.js";
 import type { LocalizationFocus, LocalizationFocusRequest } from "./localization-view.js";
+import type { RelatedLines, RelatedLinesRequest } from "./related-lines.js";
 import type {
 	LocalizationLineField,
 	LocalizationLineView,
@@ -35,6 +37,10 @@ export interface NativeTextQuery extends NativeFindings {
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchPage, GameTextIndexError>;
+	/** The request's rows, or its open groups' first rows, without computing any aggregate. */
+	readonly searchRows: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<TextCorpusRowsPage, GameTextIndexError>;
 	readonly focus: (
 		request: TextCorpusFocusRequest
 	) => Effect.Effect<TextCorpusFocus | undefined, GameTextIndexError>;
@@ -45,6 +51,10 @@ export interface NativeTextQuery extends NativeFindings {
 	readonly localizationDetail: (
 		request: LocalizationFocusRequest
 	) => Effect.Effect<LocalizationFocus | undefined, GameTextIndexError>;
+	/** A selection's related units and lines, each with its evidence, in one request. */
+	readonly related: (
+		request: RelatedLinesRequest
+	) => Effect.Effect<RelatedLines | undefined, GameTextIndexError>;
 	/** Explicit bulk read; interactive consumers use search and focus pages. */
 	readonly localizationLines: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
@@ -97,4 +107,12 @@ export interface NativeTextQuery extends NativeFindings {
 export interface NativeTextExport {
 	readonly corpus: TextCorpus;
 	readonly reviewSignals: ReadonlyMap<TextUnit["id"], readonly TextReviewSignal[]>;
+	/** With a findings layer: each rule's label, and each unit's rules in program order. */
+	readonly findings?: NativeExportFindings;
+}
+
+/** The findings an export's units have, by rule ID. */
+export interface NativeExportFindings {
+	readonly labels: ReadonlyMap<string, string>;
+	readonly units: ReadonlyMap<TextUnit["id"], readonly string[]>;
 }

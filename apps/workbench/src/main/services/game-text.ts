@@ -94,6 +94,7 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),
+			related: () => Effect.succeed({ status: "not_ready" }),
 			investigationExport: () => Effect.succeed({ status: "cancelled" }),
 			investigationSave: () => Effect.succeed({ status: "cancelled" }),
 			investigationOpen: () => Effect.succeed({ status: "cancelled" }),
@@ -110,6 +111,7 @@ export function makeWorkbenchGameTextTestLayer(
 					total: 0
 				}),
 			search: () => Effect.succeed({ status: "not_ready" }),
+			searchRows: () => Effect.succeed({ status: "not_ready" }),
 			qualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			qualitySearch: () => Effect.succeed({ status: "not_ready" }),
 			previewQualityRules: () => Effect.succeed({ status: "not_ready" }),

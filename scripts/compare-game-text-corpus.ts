@@ -15,7 +15,7 @@ import {
 	type CorpusFinding
 } from "./game-text-corpus-contract.ts";
 import { gatheredNamespace } from "./game-text-corpus-localization.ts";
-import { decodeCorpusPlan } from "./game-text-corpus-plan.ts";
+import { decodeCorpusPlan, probeSubject } from "./game-text-corpus-plan.ts";
 import { ensureUassetExecutable } from "./native-tools.ts";
 import { withCorpusUnrealLock } from "./game-text-corpus-lock.ts";
 import {
@@ -23,7 +23,7 @@ import {
 	formatCorpusComparisonSummary
 } from "./game-text-corpus-defects.ts";
 
-/** Browse's review signals that are also opt-in checks under the same IDs. */
+/** Opt-in checks the comparison also reads through Browse, as a findings layer. */
 const signalCheckIds = ["shared", "long"] as const;
 
 /** A corpus folder, not a repository fixture. Never launches Unreal or changes its inputs. */
@@ -80,10 +80,10 @@ async function compareGameTextCorpusLocked(
 						lines: yield* model.query.readLocalizationLines()
 					};
 					const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify(plan.rules));
-					const quality = yield* model.localizationQuality(rules);
+					const quality = yield* model.localizationCheck(rules);
 					const sourceQuality = yield* (yield* model.sourceQuality(rules)).export("all");
-					// Browse's shared and long signals are also opt-in checks. A file listing only
-					// them must report the lines Browse marks, and no others.
+					// Browse's findings are the rules': with a layer of only the shared and long
+					// checks, each line's findings are the rules the report lists for it, and no others.
 					const signalRules = yield* decodeGameTextRuleDocumentJson(
 						JSON.stringify({
 							schemaVersion: 1,
@@ -91,25 +91,41 @@ async function compareGameTextCorpusLocked(
 							rules: signalCheckIds.map((kind) => ({ kind }))
 						})
 					);
-					const signalQuality = yield* model.localizationQuality(signalRules);
-					const signalChecksByLine = new Map<string, string[]>();
-					for (const { finding } of yield* signalQuality.findings.items(
-						Array.from({ length: signalQuality.findings.length }, (_, i) => i)
-					))
+					const signalReport = yield* model.localizationCheck(signalRules);
+					const signalChecksByLine = new Map<string, Set<string>>();
+					for (const finding of signalReport.findings)
 						if ("culture" in finding)
-							signalChecksByLine.set(finding.lineId, [
-								...(signalChecksByLine.get(finding.lineId) ?? []),
-								finding.kind
-							]);
+							signalChecksByLine.set(
+								finding.lineId,
+								(signalChecksByLine.get(finding.lineId) ?? new Set()).add(
+									finding.ruleId
+								)
+							);
+					const signalLayer = (yield* model.localizationQuality(signalRules)).findings;
+					if (!signalLayer)
+						throw new Error("The shared and long checks made no findings layer.");
+					const browseFindings = new Map<string, readonly string[]>();
+					let findingsCursor: LocalizationLineId | undefined;
+					do {
+						const page = yield* model.search({
+							query: "",
+							capability: "all",
+							pageSize: 50,
+							findings: signalLayer,
+							localization: { target: model.localization.target },
+							...(findingsCursor ? { localizationCursor: findingsCursor } : undefined)
+						});
+						for (const line of page.localization?.lines ?? [])
+							browseFindings.set(line.id, line.findings ?? []);
+						findingsCursor = page.localization?.nextCursor;
+					} while (findingsCursor !== undefined);
 					const signalChecks: {
 						case: string;
 						subject: string;
 						expected: unknown;
 						actual: unknown;
 					}[] = [];
-					const findings = yield* quality.findings.items(
-						Array.from({ length: quality.findings.length }, (_, i) => i)
-					);
+					const findings = quality.findings.map((finding) => ({ finding }));
 					const findingsByLine = new Map<string, CorpusFinding[]>();
 					for (const { finding } of findings)
 						if ("culture" in finding) {
@@ -347,16 +363,7 @@ async function compareGameTextCorpusLocked(
 									),
 									absent: []
 								});
-						const signalled = [
-							...new Set(
-								line.cultures.flatMap(
-									(mark) =>
-										queryFacts.get(`${line.id}\0${mark.culture}`)?.signals ?? []
-								)
-							)
-						]
-							.filter((signal) => signalCheckIds.some((id) => id === signal))
-							.sort();
+						const signalled = [...(browseFindings.get(line.id) ?? [])].sort();
 						const checked = [...(signalChecksByLine.get(line.id) ?? [])].sort();
 						if (!isDeepStrictEqual(signalled, checked))
 							signalChecks.push({
@@ -392,33 +399,19 @@ async function compareGameTextCorpusLocked(
 								else if (probe.kind === "localization-word-count")
 									observed = localizationWordCount(source);
 								else {
+									// The line page reads the line with the list's culture scope.
 									const detail = yield* model.query.localizationDetail({
 										target: model.localization.target,
-										selection: { kind: "line", id: line.id }
+										selection: { kind: "line", id: line.id },
+										...(probe.culture === undefined
+											? undefined
+											: { culture: CultureCode.make(probe.culture) })
 									});
-									const id =
-										line.origin.kind === "corpus"
-											? line.origin.unitIds[0]
-											: undefined;
-									const focus = id
-										? yield* model.query.focus({
-												id,
-												localization: {
-													target: model.localization.target,
-													id: line.id
-												},
-												pageSize: 50
-											})
-										: undefined;
-									observed = textProblems({
-										signals: focus?.unit.reviewSignals ?? [],
-										keyChanged: detail?.keyChange?.direction === "to",
-										marks: detail?.translations ?? []
-									});
+									observed = detail?.problems ?? null;
 								}
 								observations.push({
 									case: probe.case,
-									subject: `probe:${probe.kind}:${probe.culture}`,
+									subject: probeSubject(probe),
 									expected: probe.expected,
 									actual: observed ?? null
 								});
@@ -496,14 +489,12 @@ async function compareGameTextCorpusLocked(
 		for (const probe of plan.probes)
 			if (
 				!scanned.observations.some(
-					(item) =>
-						item.case === probe.case &&
-						item.subject === `probe:${probe.kind}:${probe.culture}`
+					(item) => item.case === probe.case && item.subject === probeSubject(probe)
 				)
 			)
 				scanned.observations.push({
 					case: probe.case,
-					subject: `probe:${probe.kind}:${probe.culture}`,
+					subject: probeSubject(probe),
 					expected: probe.expected,
 					actual: null
 				});

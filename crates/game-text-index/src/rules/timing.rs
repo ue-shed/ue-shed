@@ -160,12 +160,12 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     Ok(())
 }
 
-/// Workspace Quality reads every line's findings back, 5,000 lines a call. Each call's time on
-/// the retained cache: the first also opens the read state, the rest are the steady cost.
-/// The findings layer is written to the cache, so point it at a disposable copy.
+/// An export reads every finding back, 5,000 a page. Each page's time on the retained cache:
+/// the first also opens the read state, the rest are the steady cost. The findings layer is
+/// written to the cache, so point it at a disposable copy.
 #[test]
 #[ignore = "Requires a disposable retained cache, Node 26, a heavy-run lease, and --release"]
-fn persisted_findings_lines_timing() -> Result<()> {
+fn persisted_findings_query_timing() -> Result<()> {
     let (mut query, catalogue) = timing_inputs()?;
     let cancelled = AtomicBool::new(false);
     let rules = catalogue["rules"]
@@ -184,21 +184,24 @@ fn persisted_findings_lines_timing() -> Result<()> {
         .ok()
         .and_then(|calls| calls.parse::<u32>().ok())
         .unwrap_or(4);
-    // Workspace Quality reads one scan page a call, 64 to 256 lines.
+    // A workspace page reads 51 findings; an export reads 5,000.
     let size = std::env::var("UE_SHED_GAME_TEXT_TIMING_ROWS")
         .ok()
         .and_then(|rows| rows.parse::<u32>().ok())
         .unwrap_or(5000);
-    // Source Quality reads units the same way.
-    let units = std::env::var("UE_SHED_GAME_TEXT_TIMING_UNITS").is_ok();
+    // Source Quality reads its findings in source order.
+    let order = if std::env::var("UE_SHED_GAME_TEXT_TIMING_UNITS").is_ok() {
+        "source"
+    } else {
+        "severity"
+    };
     for call in 0..calls {
-        let rows = (call * size..(call + 1) * size).collect::<Vec<_>>();
         let started = std::time::Instant::now();
-        let reply = if units {
-            query.findings_units(key, &rows, &cancelled)?
-        } else {
-            query.findings_lines(key, &rows, &cancelled)?
-        };
+        let reply = query.findings_query(
+            &json!({"key":key,"view":"workspace","order":order,"offset":call * size,"limit":size})
+                .to_string(),
+            &cancelled,
+        )?;
         println!(
             "{}",
             json!({"call": call, "ms": started.elapsed().as_secs_f64() * 1000.0, "bytes": reply.len()})

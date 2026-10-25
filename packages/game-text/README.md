@@ -109,11 +109,9 @@ retired and the call uses a local query over the model's pinned generation. Late
 calls reuse that local query. This also covers worker loss before its exit callback can run;
 a busy worker can take the same fallback. Asynchronous searches retain their 30-second deadline.
 
-`qualityWorker: true` runs `localizationQuality` scans in a worker per opened model, started by
-the first scan. The caller keeps the findings' facts and groups; `items`, `find`, `lineOfUnit`
-and `sourceKeyOfUnit` block the caller while the worker reads them, and the worker keeps a scan
-until both its `findings` and `metadata` objects are collected. Interrupting a scan cancels it in
-the worker. If the worker cannot start or fails, the scan runs on the caller's thread instead.
+`localizationQuality` and `sourceQuality` run in the engine: it checks a rule document once,
+and the workspace reads each page, focus, export and proposal as a findings query. The host thread
+does no scanning, so `qualityWorker` has no effect; it is removed in Phase 6.
 
 For host-owned composition, use `GameTextIndexSteps` from `gameTextIndexStepsLayer(cacheRoot)`:
 
@@ -162,11 +160,27 @@ in search, checks and human CSV use JavaScript string length (UTF-16 code units)
 
 `gameTextCsv(corpus)` produces one human-readable row per saved location of each searchable line.
 Pass the full scan as its optional second argument when exporting a filtered corpus to retain the
-same review signals shown in search.
-`gameTextQualityCsv(report, corpus)` produces one row per finding and affected location. Both are
-browser-safe, quote every cell, protect spreadsheet formulas, and include a UTF-8 BOM and final CRLF.
-`gameTextInvestigationCsv` keeps its provenance-oriented layout, and `exportGameTextInvestigation`
-remains the JSON provenance document.
+same review signals shown in search, and Browse's findings as its third to add a Findings column.
+
+### Findings in Browse
+
+Browse's findings are the project's rules. A workspace evaluates the published rules document (the
+rules file with the host's overlay) and sets `findings: { key, acceptance?, sourceOnly? }` on every
+search, rows read, focus and line detail; a host's own value is replaced. With a target selected,
+every rule runs and the target review's accepted findings are hidden; without one, only source
+rules do. The page's `findings.status` is `none` without a rule that runs there, `pending` while
+the rules evaluate, and `ready` once the page reads their findings.
+
+- `finding` clauses name rule IDs; `fact` clauses take the four facts. `facets.findings` lists
+  every rule in program order with its rows (0 when it has none); `facets.facts` counts each fact.
+- `group: "finding"` makes one group per rule; a row is in each of its rules' groups.
+- A row has the `finding` problem when a rule whose `counts` is not `false` has a finding on it.
+- Rows, focus and detail list `findings`, the first 32 rule IDs in program order, and
+  `findingsOmitted`.
+  `gameTextQualityCsv(report, corpus)` produces one row per finding and affected location. Both are
+  browser-safe, quote every cell, protect spreadsheet formulas, and include a UTF-8 BOM and final CRLF.
+  `gameTextInvestigationCsv` keeps its provenance-oriented layout, and `exportGameTextInvestigation`
+  remains the JSON provenance document.
 
 Localization quality investigation presets and exports use schema version 2 and retain
 `workspaceFilter`, target and culture. Older readers reject these documents instead of dropping
@@ -318,6 +332,13 @@ for subsequent pages. `localizationFocus(lineId)` returns every culture and full
 kind of line; ordinary corpus `focus` also includes localization details. Evidence-only IDs have a
 distinct `LocalizationEvidenceLineId` brand and never masquerade as `TextUnitId`.
 
+`workspace.related({ target?, selection, pageSize })` reads a unit's or a target line's related
+members in one engine request: `sameKey` (the unit's other units under its key), `sameText` (other
+resolved units, or lines, with exactly its source) and, with a target, `conflict` (the line's units
+with another source) and `keyChange` (the line its key change pairs with). Each section lists at
+most 50 members and says whether that is all of them; each unit member carries its first `pageSize`
+places and, with a target, its line and translations.
+
 Precedence: `outside_target`, `not_gathered`, `not_found`, `gathered_only`, `changed_since_gather`,
 `unknown`, `not_synced`, `needs_update`, `not_translated`, `translated`. Structural facts come first;
 uncertainty blocks unsupported translation claims. A non-empty PO translation differing from the
@@ -380,7 +401,7 @@ start with `localization.`.
 ```
 
 `STARTER_CHECKS` is every check but `segment_separator`, which needs a separator, and the opt-in
-`shared` and `long`, Browse's review signals. `resolveLocalizationChecks(document)` returns each
+`shared` and `long`. `resolveLocalizationChecks(document)` returns each
 check's resolved `enabled`, `severity`, `scope` and `params`, and `effectiveRuleDocument(document,
 options?)` the rule program the engine runs. The host's `checks` and `disabledChecks` options still
 narrow what runs.
@@ -439,6 +460,43 @@ Their findings are `LocalizationCustomFinding`s (`kind: "custom"`, with `check`,
 `counts["custom.<id>"]`, and `workspaceQualityLabel(filter, labels)` names one. Indexed scans keep
 each finding's rule in its own column, so the number of rules and custom checks is no longer
 limited by the packed facts.
+
+### Complete rules
+
+An entry with `kind: "rule"` is a whole rule in the engine's rule language, for what the checks
+above don't express. It has an `id`, a `label`, a `subject` (`line`, each keyed line's source
+once; `line_culture`, each culture's translation of a keyed line), `when`, `actual`, `expectation` and a
+`recovery` text. `when` holds where the rule has a finding; `actual` and `expectation` are
+objects of expressions, the finding's evidence. Constants are `{ "lit": … }`, `{ "param": … }`
+reads `params`, and `{ "finding": "<rule ID>" }` reads another rule's finding on the same line,
+built-in checks included. Optional: `severity` (`normal`), `scope`, `params`, `let` (named
+expressions), `each` and `eachAs` (a finding per item, read as `item` by default), `counts`
+(`false` keeps its findings out of Browse's `finding` problem), `shadowed` and `enabled`. Any
+other key is `invalid_structure`.
+
+```json
+{
+	"kind": "rule",
+	"id": "ui.exclamation",
+	"label": "Exclamation mark in UI text",
+	"subject": "line_culture",
+	"severity": "low",
+	"params": { "mark": "!" },
+	"when": { "contains": [{ "field": "latest" }, { "param": "mark" }] },
+	"actual": { "object": { "translation": { "field": "latest" } } },
+	"expectation": { "object": { "withoutMark": { "lit": true } } },
+	"recovery": "Drop the exclamation mark."
+}
+```
+
+Its findings are custom findings with `check: "rule"`, `actual` and `expectation` as its
+expressions build them; Quality lists them under `custom.<id>` with the rule's label, which is
+also their problem text, and reports list them in `customChecks`. `customRulesOf(document)`
+gives the custom checks and complete rules that run, in file order. The decoder checks an entry's
+keys; the engine checks its expressions when a workspace loads the rules or `loc check` runs
+them, and fails with a `GameTextRuleDocumentError` naming the rule (`ruleId`):
+`invalid_expression`, or `rule_cycle` when rules read each other's findings in a cycle. An
+overlay patches a complete rule's `params` key by key, as a built-in check's.
 
 `localizationCheckCatalogue` describes every built-in check: its `basis` (`unreal` when the
 finding states what Unreal does with the text, so only its severity and whether it runs are the
@@ -597,6 +655,11 @@ Source rules (`character_budget` and `terminology`) check each text unit with a 
 translation. `evaluateGameTextSourceQuality` and `text review` evaluate the source rules; `loc check`
 combines localization rules and built-ins in the same report. The starter's source rules are
 examples: choosing budgets and glossaries for a culture requires project knowledge.
+
+Any source or localization rule can take an optional `label`, a short name (up to 128 characters)
+that lists, filters and findings show instead of its ID. `ruleLabelsOf(document)` maps every rule ID
+a file's findings record to its name: a built-in check's catalogue label under `localization.<check>`,
+and a project rule's, custom check's or complete rule's label, or its ID without one.
 
 A `localization_character_budget` rule has a `role`, `cultures: { "de": 32, "fr": 36 }` and optional
 `defaultMaximumCharacters`. Without a default, unlisted cultures have no budget. There are no

@@ -335,7 +335,17 @@ const validArgsByChannel = {
 	"game-text:localization:focus": [
 		{ target: "FixtureGame", selection: { kind: "line", id: "line-1" } }
 	],
+	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 50 }],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
+	"game-text:search-rows": [
+		{
+			capability: "all",
+			pageSize: 50,
+			query: "",
+			group: "asset",
+			openGroups: ["Content/A.uasset"]
+		}
+	],
 	"game-text:focus": [
 		{
 			id: "unreal:UI:Example",
@@ -677,6 +687,7 @@ const validResultByChannel = {
 	"game-text:investigation-save": { status: "cancelled" },
 	"game-text:investigation-open": { status: "cancelled" },
 	"game-text:search": { status: "not_ready" },
+	"game-text:search-rows": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
 	"game-text:id-repair:prepare": {
 		status: "unavailable",
@@ -715,6 +726,7 @@ const validResultByChannel = {
 	"game-text:localization:targets": { status: "ready", targets: [] },
 	"game-text:localization:target": { status: "not_ready" },
 	"game-text:localization:focus": { status: "not_found" },
+	"game-text:related": { status: "not_found" },
 	"game-text:quality:create-starter-rules": { status: "not_ready" },
 	"game-text:quality:reload-rules": { status: "not_ready" },
 	"game-text:quality:preview-rules": { status: "not_ready" },
@@ -932,7 +944,9 @@ const malformedArgsByChannel = {
 	"game-text:localization:focus": [
 		{ target: "FixtureGame", selection: { kind: "file", id: "C:/Untrusted" } }
 	],
+	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 51 }],
 	"game-text:search": [{ query: "", capability: "all", pageSize: 50, withoutNotes: "yes" }],
+	"game-text:search-rows": [{ query: "", capability: "all", pageSize: 50, openGroups: ["a"] }],
 	"editor-session:set-port": [65_536],
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],

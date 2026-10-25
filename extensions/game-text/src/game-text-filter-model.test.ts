@@ -34,26 +34,37 @@ describe("filter pills", () => {
 		);
 	});
 
-	it("reads source texts as written and every review signal a finding pill holds", () => {
+	it("reads source texts as written, findings by their rules and facts by their labels", () => {
 		expect(clauseParts({ field: "source", op: "is", values: ["Mushroom", " cap "] })).toEqual({
 			field: "Source text",
 			op: "is any of",
 			values: "Mushroom,  cap "
 		});
+		// A finding reads as its rule's label, or its ID when the page has none.
 		expect(
-			clauseParts({ field: "finding", op: "is_not", values: ["conflicting", "long"] })
+			clauseParts(
+				{ field: "finding", op: "is_not", values: ["custom.exclaim", "length_outlier"] },
+				new Map([["custom.exclaim", "Exclamation mark"]])
+			)
 		).toEqual({
 			field: "Finding",
 			op: "is none of",
-			values: "Same key, different text, Long text"
+			values: "Exclamation mark, length_outlier"
 		});
-		// A host-set signal stays in the pill when another value joins it.
-		const held = toggleValue([{ field: "finding", op: "is", values: ["evidence_only"] }], {
-			field: "finding",
+		expect(clauseParts({ field: "fact", op: "is", values: ["conflicting"] })).toEqual({
+			field: "Fact",
 			op: "is",
-			values: ["shared"]
+			values: "Same key, different text"
 		});
-		expect(held).toEqual([{ field: "finding", op: "is", values: ["evidence_only", "shared"] }]);
+		// A host-set fact stays in the pill when another value joins it.
+		const held = toggleValue([{ field: "fact", op: "is", values: ["evidence_only"] }], {
+			field: "fact",
+			op: "is",
+			values: ["unresolved"]
+		});
+		expect(held).toEqual([
+			{ field: "fact", op: "is", values: ["evidence_only", "unresolved"] }
+		]);
 	});
 
 	it("keeps one pill per field: values leave or join it under its operator", () => {
@@ -127,7 +138,7 @@ describe("filter pills", () => {
 			filter: [
 				{ field: "problem", op: "is", values: ["key_changed"] },
 				{ field: "translation", op: "is", values: ["to_update"] },
-				{ field: "finding", op: "is", values: ["duplicate_source"] },
+				{ field: "finding", op: "is", values: ["localization.duplicate_source"] },
 				{ field: "editing", op: "is", values: ["read_only"] },
 				{ field: "notes", op: "is", values: ["missing"] },
 				{ field: "origin", op: "is", values: ["cpp"] },
@@ -149,13 +160,13 @@ describe("filter pills", () => {
 		});
 		expect(migrated).toMatchObject({
 			capability: "all",
-			lens: "all",
 			withoutNotes: false,
 			where: { files: ["Content/UI/WBP_Menu.uasset"] }
 		});
 		expect(migrated.filter).toHaveLength(3);
+		expect(migrated.lens).toBeUndefined();
 		// Preferences that already have pills are left alone.
-		expect(migratePreferences(migrated)).toBe(migrated);
+		expect(migratePreferences(migrated)).toEqual(migrated);
 	});
 });
 

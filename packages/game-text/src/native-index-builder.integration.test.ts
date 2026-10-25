@@ -296,7 +296,11 @@ describe.skipIf(!executable)("native index build capability", () => {
 											capability: "all",
 											pageSize: 50,
 											filter: [
-												{ field: "finding", op: "is", values: ["long"] }
+												{
+													field: "finding",
+													op: "is",
+													values: ["localization.long"]
+												}
 											],
 											group: "audience"
 										});

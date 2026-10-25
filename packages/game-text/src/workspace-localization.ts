@@ -3,6 +3,7 @@ import type { IndexFailure } from "./index-contract.js";
 import { Schema } from "effect";
 import {
 	localizationQualityWorkspaceOf,
+	type QueriedLocalizationQuality,
 	indexedLocalizationProgressReport,
 	indexedLocalizationBaseline,
 	localizationReportPage,
@@ -51,6 +52,7 @@ import { type GameTextRuleDocument } from "./entry-rules.js";
 import {
 	MAX_LOCALIZATION_CULTURES,
 	type LocalizationJoin,
+	type TextCorpusRowsResult,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "./entry-schema.js";
@@ -71,6 +73,7 @@ import type { Layer } from "effect";
 import type { LocalizationFileAccess } from "@ue-shed/localization";
 import type { GameTextWorkspaceFileHooks } from "./workspace-host.js";
 import type { LocalizationLineView } from "./index-reads.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
 
 /** Every line of a target's join: the lines reports and key pairing read. */
 const indexedLines = (target: LocalizationJoin["target"]) => ({
@@ -84,6 +87,26 @@ const reportIndex = (retained: {
 	readonly join: GameTextIndexRefreshResult["localization"];
 	readonly evidence: GameTextIndexRefreshResult["evidence"];
 }) => ({ query: retained.model, localization: retained.join, evidence: retained.evidence });
+
+/** A quality scan's workspace, and the findings layer and acceptance it read. */
+interface QualityScan {
+	readonly workspace: ReturnType<typeof localizationQualityWorkspaceOf>;
+	readonly findings?: QueriedLocalizationQuality["findings"];
+}
+
+/**
+ * Whether Browse has findings to show for a rules document: an enabled rule, and without a
+ * target a source rule, since only those run there.
+ */
+export function hasBrowseRules(
+	document: GameTextRuleDocument | undefined,
+	target: boolean
+): boolean {
+	if (!document) return false;
+	return effectiveRuleDocument(document).rules.some(
+		(rule) => target || rule.subject === "unit_source"
+	);
+}
 
 function failure(code: string) {
 	return {
@@ -153,10 +176,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			| {
 					join: GameTextIndexRefreshResult["localization"];
 					document: GameTextRuleDocument | undefined;
-					scan: Fiber.Fiber<
-						ReturnType<typeof localizationQualityWorkspaceOf>,
-						IndexFailure
-					>;
+					scan: Fiber.Fiber<QualityScan, IndexFailure>;
 			  }
 			| undefined
 		>(undefined);
@@ -189,6 +209,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					readonly review: LocalizationReviewSnapshot | undefined;
 					readonly model: GameTextIndexRefreshResult["query"];
 					readonly search: GameTextIndexRefreshResult["search"];
+					readonly searchRows: GameTextIndexRefreshResult["searchRows"];
 					readonly borrow: RetainedGameTextIndexResult["borrow"];
 					readonly result: LocalizationTargetResult;
 			  }
@@ -397,7 +418,6 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				.search({
 					query: "",
 					capability: "all",
-					lens: "all",
 					withoutNotes: false,
 					pageSize: 1,
 					localization: { target: name }
@@ -440,6 +460,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						sourceQuality: indexed.success.sourceQuality,
 						model,
 						search: indexed.success.search,
+						searchRows: indexed.success.searchRows,
 						borrow: indexed.success.borrow,
 						result,
 						evidence,
@@ -491,6 +512,25 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				return { status: "not_ready" };
 			return { status: "ready", page };
 		});
+		const searchRows = Effect.fn("GameText.workspace.localization.searchRows")(function* (
+			request: TextCorpusSearchRequest
+		): Effect.fn.Return<TextCorpusRowsResult, never, Scope.Scope> {
+			if (!request.localization) return { status: "not_ready" };
+			const cached = yield* current(request.localization.target);
+			if (
+				!cached ||
+				(request.localization.culture &&
+					!cached.join.cultures.includes(request.localization.culture))
+			)
+				return { status: "not_ready" };
+			const outcome = yield* cached.searchRows(request).pipe(Effect.result);
+			if (Result.isFailure(outcome))
+				return { status: "failed", error: indexPublicFailure(outcome.failure) };
+			const page = outcome.success;
+			if ((yield* current(request.localization.target)) !== cached)
+				return { status: "not_ready" };
+			return { status: "ready", page };
+		});
 		const focus = Effect.fn("GameText.workspace.localization.focus")(function* (
 			request: LocalizationFocusRequest
 		): Effect.fn.Return<LocalizationFocusResult, never, Scope.Scope> {
@@ -510,15 +550,13 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				: { status: "not_found" };
 		});
 
-		const quality = Effect.fn("GameText.workspace.localization.quality")(function* (
-			request: WorkspaceQualityRequest
+		/** The selection's quality scan for a rules document, started when none runs. */
+		const qualityScan = Effect.fn("GameText.workspace.localization.qualityScan")(function* (
+			retained: NonNullable<Effect.Success<ReturnType<typeof current>>>,
+			document: GameTextRuleDocument | undefined
 		) {
-			const retained = yield* current(request.target);
-			if (!retained || (request.culture && !retained.join.cultures.includes(request.culture)))
-				return undefined;
-			const document = yield* rules();
 			// One scan per selection and rules document, shared by every request that needs it.
-			const scan = yield* qualityLock.withPermits(1)(
+			return yield* qualityLock.withPermits(1)(
 				Effect.gen(function* () {
 					// A selection published since this request began has already cleared the cache.
 					if ((yield* Ref.get(selected)) !== retained) return undefined;
@@ -531,27 +569,56 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						Effect.gen(function* () {
 							// The scan pins the index itself while it reads.
 							yield* retained.borrow;
-							// Indexed source rules read only the units their findings name.
-							const source = !document
-								? undefined
-								: yield* (yield* retained.sourceQuality(document)).export("all");
-							// Indexed targets check page by page, yielding between pages.
-							return localizationQualityWorkspaceOf(
-								source,
-								yield* retained.quality(document, options)
-							);
+							const quality = yield* retained.quality(document, options);
+							// Queried quality lists source and target findings in one query; only
+							// in-memory quality reads the source report beside it.
+							const source =
+								document && quality.withSource
+									? yield* (yield* retained.sourceQuality(document)).export("all")
+									: undefined;
+							return {
+								workspace: localizationQualityWorkspaceOf(source, quality),
+								...(quality.findings ? { findings: quality.findings } : undefined)
+							} satisfies QualityScan;
 						})
 					).pipe(Effect.forkIn(serviceScope));
 					yield* Ref.set(qualityCache, { join: retained.join, document, scan });
 					return scan;
 				})
 			);
+		});
+		const quality = Effect.fn("GameText.workspace.localization.quality")(function* (
+			request: WorkspaceQualityRequest
+		) {
+			const retained = yield* current(request.target);
+			if (!retained || (request.culture && !retained.join.cultures.includes(request.culture)))
+				return undefined;
+			const scan = yield* qualityScan(retained, yield* rules());
 			if (!scan) return undefined;
 			const exit = yield* Fiber.await(scan);
 			// A newer selection, rescan or rules change interrupted it; the caller asks again.
 			if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) return undefined;
-			return yield* exit;
+			return (yield* exit).workspace;
 		});
+		/**
+		 * Browse's findings over a target: the quality scan's layer, with its review acceptance,
+		 * once the scan is done. Browse starts the scan when none runs and shows `pending` until
+		 * then; a failed scan shows its error in Quality, and Browse none.
+		 */
+		const browseFindings = Effect.fn("GameText.workspace.localization.browseFindings")(
+			function* (target: LocalizationJoin["target"]) {
+				const document = yield* rules();
+				if (!hasBrowseRules(document, true)) return { status: "none" as const };
+				const retained = yield* current(target);
+				if (!retained) return { status: "pending" as const };
+				const scan = yield* qualityScan(retained, document);
+				const exit = scan?.pollUnsafe();
+				if (!exit) return { status: "pending" as const };
+				return Exit.isSuccess(exit) && exit.value.findings
+					? { status: "ready" as const, selection: exit.value.findings }
+					: { status: "none" as const };
+			}
+		);
 		const qualitySearch = Effect.fn("GameText.workspace.localization.qualitySearch")(function* (
 			request: WorkspaceQualityRequest
 		): Effect.fn.Return<WorkspaceQualityResult, never, Scope.Scope> {
@@ -1013,6 +1080,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			targets,
 			select,
 			search,
+			searchRows,
 			/** The selected target's query; absent when not loaded. */
 			targetQuery: (target: LocalizationJoin["target"]) =>
 				current(target).pipe(Effect.map((cached) => cached?.model)),
@@ -1024,6 +1092,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					)
 				),
 			qualitySearch,
+			browseFindings,
 			qualityFocus,
 			changes,
 			report,

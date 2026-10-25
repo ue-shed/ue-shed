@@ -1,6 +1,6 @@
 /**
- * The one definition of which localization states, facts, unknown reasons and review signals put
- * a line under which problem. `textProblems` reads it, and
+ * The one definition of which localization states, facts and unknown reasons put a line under
+ * which problem. `textProblems` reads it, and
  * `scripts/generate-text-problem-rules.ts` writes it into the native engine as
  * `crates/game-text-index/src/text_problem_rules.rs`; a test fails when that file is stale. Keep
  * this module free of runtime imports so the generator can load it directly.
@@ -36,7 +36,7 @@ export const TEXT_PROBLEM_LABELS = {
 	up_to_date: "Up to date"
 } as const satisfies Record<TextProblemCode, string>;
 
-/** What raises one problem; a line has it when any listed state, fact, reason or signal applies. */
+/** What raises one problem; a line has it when any listed state, fact or reason applies. */
 export interface TextProblemRule {
 	/** A culture in scope has one of these primary states. */
 	readonly states: readonly LocalizationState[];
@@ -44,7 +44,7 @@ export interface TextProblemRule {
 	readonly facts: readonly LocalizationState[];
 	/** A culture in scope has one of these unknown reasons. */
 	readonly reasons: readonly LocalizationUnknownReason[];
-	/** The line or unit has one of these review signals. */
+	/** The line or unit has one of these review facts. */
 	readonly signals: readonly TextReviewSignal[];
 	/** Whether a line has work before it ships when this is its worst problem. */
 	readonly work: boolean;
@@ -60,9 +60,9 @@ const rule = (fields: Partial<TextProblemRule> & Pick<TextProblemRule, "work">) 
 
 /**
  * The rule for each problem. `key_changed` comes from the line's key change (the new key), not
- * the table. `finding.signals` are the findings that count by default; a request counts more by
- * naming them (`TEXT_FINDING_SIGNALS`). `up_to_date` is what a line has when nothing else
- * applies; `gathered_only`, `outside_target` and `translated` are facts, not problems.
+ * the table, and `finding` from the findings of the project's rules that count, not the table.
+ * `up_to_date` is what a line has when nothing else applies; `gathered_only`, `outside_target`
+ * and `translated` are facts, not problems.
  */
 export const TEXT_PROBLEM_RULES = {
 	key_changed: rule({ work: true }),
@@ -79,22 +79,8 @@ export const TEXT_PROBLEM_RULES = {
 		facts: ["not_synced"],
 		work: true
 	}),
-	finding: rule({ signals: ["shared", "duplicate_source", "unresolved"], work: false }),
+	finding: rule({ work: false }),
 	// The evidence could not prove a state, such as text in a package the reader read only partly.
 	unchecked: rule({ states: ["unknown"], work: false }),
 	up_to_date: rule({ work: false })
 } as const satisfies Record<TextProblemCode, TextProblemRule>;
-
-/**
- * The review signals a request can count as findings by naming them in a `finding is` clause or
- * its lens. Counted findings hold for every problem in that request: the problem filter, groups,
- * aggregates and counts. `conflicting` is not among them: it is always `conflicting_source`.
- */
-export const TEXT_FINDING_SIGNALS = [
-	"shared",
-	"duplicate_source",
-	"long",
-	"unresolved",
-	"evidence_only",
-	"compiled_copy_differs"
-] as const satisfies readonly TextReviewSignal[];

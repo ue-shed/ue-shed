@@ -638,8 +638,7 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 			yield* Deferred.succeed(release, undefined);
 			expect((yield* Fiber.join(first)).status).toBe("failed");
 			expect(
-				(yield* service.search({ query: "", pageSize: 50, capability: "all", lens: "all" }))
-					.status
+				(yield* service.search({ query: "", pageSize: 50, capability: "all" })).status
 			).toBe("ready");
 		}).pipe(Effect.provide(gameTextLive.pipe(Layer.provide(project), Layer.provide(corpus))));
 	})
@@ -696,8 +695,7 @@ for (const phase of ["candidates", "scan"] as const) {
 						(yield* service.search({
 							query: "",
 							pageSize: 50,
-							capability: "all",
-							lens: "all"
+							capability: "all"
 						})).status
 					).not.toBe("ready");
 					expect(
@@ -717,8 +715,7 @@ for (const phase of ["candidates", "scan"] as const) {
 						(yield* service.search({
 							query: "",
 							pageSize: 50,
-							capability: "all",
-							lens: "all"
+							capability: "all"
 						})).status
 					).toBe("ready");
 				}).pipe(
@@ -838,9 +835,6 @@ it.effect(
 					review: {
 						all: 0,
 						conflicting: 0,
-						duplicateSource: 0,
-						long: 0,
-						shared: 0,
 						unresolved: 0
 					},
 					schemaVersion: 1,
@@ -870,9 +864,6 @@ it.effect(
 					units: [],
 					counts: {
 						all: 0,
-						shared: 0,
-						duplicate_source: 0,
-						long: 0,
 						unresolved: 0,
 						conflicting: 0,
 						editable: 0,
@@ -886,7 +877,8 @@ it.effect(
 							other_source: 0
 						}
 					},
-					problems: noProblems
+					problems: noProblems,
+					findings: { status: "none" }
 				},
 				status: "ready"
 			});

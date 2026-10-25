@@ -14,17 +14,16 @@ pub(crate) const RAW_FIELDS: [&str; 7] = [
     "member_start",
     "member_end",
 ];
-const LABELS: [&str; 9] = [
+const LABELS: [&str; 6] = [
     "all",
-    "shared",
-    "duplicate_source",
-    "long",
     "unresolved",
     "conflicting",
     "editable",
     "readOnly",
     "withoutNotes",
 ];
+/// v2 drops the shared, duplicate source and long counters.
+const VERSION: u32 = 2;
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Coverage {
@@ -47,7 +46,7 @@ mod tests {
         let before = [1, 1 | 2, 1 | 4, 3, 0, 0, 2];
         let after = [1, 4 | 8 | 16, 2, 1, 1, 0, 2];
         let mut state = SummaryState {
-            version: 1,
+            version: VERSION,
             coverage: Coverage::default(),
             units: 1,
             occurrences: 2,
@@ -56,7 +55,7 @@ mod tests {
         let original = state.response()?;
         state.replace(before, after)?;
         let changed = state.response()?;
-        assert_eq!(changed["review"]["duplicateSource"], 0);
+        assert_eq!(changed["review"]["unresolved"], 1);
         assert_eq!(changed["review"]["conflicting"], 1);
         assert_eq!(changed["sources"]["dataTable"], 1);
         assert_eq!(changed["counts"]["readOnly"], 0);
@@ -76,28 +75,29 @@ pub(crate) struct SummaryState {
     coverage: Coverage,
     units: u64,
     occurrences: u64,
-    totals: [u64; 14],
+    totals: [u64; 11],
 }
 
-pub(crate) fn contribution(values: [u32; 7]) -> Result<[u64; 14]> {
+/// A raw row's counters: all, unresolved, conflicting, editable, read-only, without notes, its
+/// three origins, mixed origins, then its occurrences.
+pub(crate) fn contribution(values: [u32; 7]) -> Result<[u64; 11]> {
     let [visible, flags, origins, editing, notes, start, end] = values;
     require(visible <= 1 && end >= start, "summary raw row bounds")?;
-    let mut totals = [0; 14];
+    let mut totals = [0; 11];
     if visible == 0 {
         return Ok(totals);
     }
     totals[0] = 1;
-    for bit in 0..5 {
-        totals[bit + 1] = u64::from(flags & (1 << bit) != 0);
-    }
-    totals[6] = u64::from(editing & 1 != 0);
-    totals[7] = u64::from(editing & 2 != 0);
-    totals[8] = u64::from(notes == 0);
+    totals[1] = u64::from(flags & 8 != 0);
+    totals[2] = u64::from(flags & 16 != 0);
+    totals[3] = u64::from(editing & 1 != 0);
+    totals[4] = u64::from(editing & 2 != 0);
+    totals[5] = u64::from(notes == 0);
     for bit in 0..3 {
-        totals[9 + bit] = u64::from(origins & (1 << bit) != 0);
+        totals[6 + bit] = u64::from(origins & (1 << bit) != 0);
     }
-    totals[12] = u64::from(origins.count_ones() > 1);
-    totals[13] = u64::from(end - start);
+    totals[9] = u64::from(origins.count_ones() > 1);
+    totals[10] = u64::from(end - start);
     Ok(totals)
 }
 
@@ -188,11 +188,11 @@ impl SummaryState {
                 .count() as u64;
         }
         let mut state = Self {
-            version: 1,
+            version: VERSION,
             coverage,
             units: units as u64,
             occurrences: occurrences as u64,
-            totals: [0; 14],
+            totals: [0; 11],
         };
         for index in 0..units {
             let values = contribution(row(index)?)?;
@@ -210,11 +210,11 @@ impl SummaryState {
     }
     fn validate(&self) -> Result<()> {
         require(
-            self.version == 1
+            self.version == VERSION
                 && self.coverage.resolved <= self.occurrences
                 && self.totals[0] <= self.units
-                && self.totals[13] <= self.occurrences
-                && self.totals[1..13]
+                && self.totals[10] <= self.occurrences
+                && self.totals[1..10]
                     .iter()
                     .all(|count| *count <= self.totals[0]),
             "invalid persisted summary counters",
@@ -247,13 +247,13 @@ impl SummaryState {
         for (index, label) in LABELS.iter().enumerate() {
             counts.insert((*label).into(), json!(self.totals[index]));
         }
-        counts.insert("origins".into(), json!({"string_table":self.totals[9],"data_table":self.totals[10],"asset":self.totals[11],"cpp":0,"other_source":0}));
+        counts.insert("origins".into(), json!({"string_table":self.totals[6],"data_table":self.totals[7],"asset":self.totals[8],"cpp":0,"other_source":0}));
         Ok(
             json!({"schemaVersion":1,"status":if c.partial>0 || c.failed>0 {"partial"} else {"complete"},
             "diagnosticCount":c.diagnostics,"notGatherablePackages":c.excluded,"coverage":coverage,
-            "searchable":{"textUnits":self.totals[0],"textOccurrences":self.totals[13]},
-            "review":{"all":self.totals[0],"shared":self.totals[1],"duplicateSource":self.totals[2],"long":self.totals[3],"unresolved":self.totals[4],"conflicting":self.totals[5]},
-            "sources":{"assetProperty":self.totals[11],"dataTable":self.totals[10],"stringTable":self.totals[9],"mixed":self.totals[12]},"counts":counts}),
+            "searchable":{"textUnits":self.totals[0],"textOccurrences":self.totals[10]},
+            "review":{"all":self.totals[0],"unresolved":self.totals[1],"conflicting":self.totals[2]},
+            "sources":{"assetProperty":self.totals[8],"dataTable":self.totals[7],"stringTable":self.totals[6],"mixed":self.totals[9]},"counts":counts}),
         )
     }
 }

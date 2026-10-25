@@ -321,7 +321,6 @@ describe("translated inconsistently", () => {
 describe("built-in source checks", () => {
 	it("lists a placeholder once where the workspace also shows the rule file's source findings", () => {
 		const document = starter();
-		const hydrated: number[] = [];
 		const unreported: unknown[] = [];
 		const workspace = (source: string, document: GameTextRuleDocument) => {
 			const text = corpus([unit("K", source)]);
@@ -334,25 +333,11 @@ describe("built-in source checks", () => {
 			unreported.push(
 				kind(value, "placeholder_text").map((finding) => finding.unreportedMatches)
 			);
-			// The checks recorded which placeholders the source terminology reports: building
-			// the workspace reads findings' facts, never the findings themselves.
-			const quality = localizationQuality(value, joined);
-			let items = 0;
-			const built = localizationQualityWorkspaceOf(
+			// The checks recorded which placeholders the source terminology reports.
+			return localizationQualityWorkspaceOf(
 				indexedTestReports(text, files).source(document),
-				{
-					...quality,
-					findings: {
-						...quality.findings,
-						items: (positions) => {
-							items += positions.length;
-							return quality.findings.items(positions);
-						}
-					}
-				}
+				localizationQuality(value, joined)
 			);
-			hydrated.push(items);
-			return built;
 		};
 		const problems = (value: ReturnType<typeof workspace>) =>
 			Effect.runSync(value.export({ target: target.name, filter: "all" }))
@@ -403,7 +388,6 @@ describe("built-in source checks", () => {
 		expect(problems(workspace("TODO: name", elsewhere))).toEqual([
 			["placeholder_text", "en · Placeholder “TODO”"]
 		]);
-		expect(hydrated).toEqual([0, 0, 0]);
 		// The report keeps every placeholder, and notes which the source terminology leaves.
 		expect(unreported).toEqual([[[]], [["TODO"]], [undefined]]);
 	});

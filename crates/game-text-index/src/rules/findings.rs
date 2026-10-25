@@ -1,4 +1,5 @@
 //! Persisted finding evidence, identities, and diagnostics for a pinned joined view.
+use super::findings_order::{CHANGE, FIXABLE, Facts, KEYLESS, NONE, OrderInput, SHADOWED};
 use super::identity::{
     localization_identity_encoded, source_identity_encoded, write_atom, write_string,
 };
@@ -18,7 +19,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, atomic::AtomicBool};
 
-const VERSION: u32 = 3;
+const VERSION: u32 = 5;
 type Column = (String, String, Vec<u32>);
 pub(crate) struct FindingsLayer {
     reader: Reader,
@@ -61,9 +62,9 @@ impl FindingsLayer {
             std::path::Path::new(file).components().count() == 1,
             "Invalid findings snapshot filename.",
         )?;
-        let mut reader = Reader::open(&configuration.directory()?.join(file))?;
+        let reader = Reader::open(&configuration.directory()?.join(file))?;
         let metadata: LayerMetadata =
-            crate::json_value::parse_as(std::str::from_utf8(&section(&mut reader, "join.meta")?)?)?;
+            crate::json_value::parse_as(std::str::from_utf8(&section(&reader, "join.meta")?)?)?;
         require(
             metadata.joined_key == joined && metadata.version == VERSION,
             Error::new(
@@ -83,7 +84,7 @@ impl FindingsLayer {
         if let Some(value) = self.columns.get(name) {
             return Ok(Arc::clone(value));
         }
-        let bytes = section(&mut self.reader, name)?;
+        let bytes = section(&self.reader, name)?;
         let value: Arc<[u32]> = if self.record["stringColumns"].get(name).is_some() {
             decode_ids(&bytes, self.record["idEncoding"] == "delta32")?
         } else {
@@ -118,6 +119,7 @@ impl FindingsLayer {
             rules: self.metadata.rules.clone(),
             counts: self.metadata.counts.clone(),
             diagnostic_count: self.metadata.diagnostic_count,
+            roles: self.metadata.roles.clone(),
             collation: self.metadata.collation.clone(),
             profile,
         };
@@ -134,6 +136,8 @@ pub(super) struct RuleColumns {
     places: Vec<Arc<super::Affected>>,
     id0: Vec<u32>,
     id1: Vec<u32>,
+    /// What the layer's orders and flags read of each finding.
+    facts: Vec<Facts>,
 }
 struct Encoded {
     row: u32,
@@ -141,6 +145,11 @@ struct Encoded {
     evidence: String,
     places: Arc<super::Affected>,
     hash: [u32; 2],
+    /// The line row, or the unit row of a source finding, with `NONE` for the other.
+    line: u32,
+    unit: u32,
+    actual: String,
+    flags: u32,
 }
 
 /// Product evaluation before publication. The read-only retained-index test consumes this exact
@@ -148,6 +157,7 @@ struct Encoded {
 pub(super) struct EvaluatedFindings {
     /// Indexed by rule ordinal.
     rules: Vec<RuleColumns>,
+    roles: Vec<super::replies::RoleTotal>,
     findings: usize,
     base_diagnostics: Vec<(u32, u32, u8)>,
     regex_diagnostics: Vec<(u32, u32, u8)>,
@@ -215,6 +225,7 @@ impl EngineQuery {
             occurrences.len(),
         );
         recorder.memory("relation.occurrences", arena.memory());
+        let roles = role_totals(self, program, &occurrences, &mut arena, cancelled)?;
         #[cfg(test)]
         let mut output_digest = <sha2::Sha256 as sha2::Digest>::new();
         for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
@@ -268,7 +279,73 @@ impl EngineQuery {
                 .iter()
                 .map(|encoded| encoded.evidence.capacity() + 16)
                 .sum::<usize>();
+            let mut keyless = HashMap::<usize, bool>::new();
             for (finding, encoded) in evaluated.findings.iter().zip(encoded) {
+                checkpoint(cancelled)?;
+                let mut facts = Facts {
+                    rule: 0,
+                    line: encoded.line,
+                    unit: encoded.unit,
+                    culture: if subject == Subject::UnitSource {
+                        NONE
+                    } else {
+                        encoded.culture
+                    },
+                    flags: encoded.flags,
+                    actual: encoded.actual,
+                    source: String::new(),
+                    first_rank: NONE,
+                };
+                if subject == Subject::UnitSource {
+                    let unit = &subjects.units[finding.row as usize];
+                    facts.source = subjects.query.reader.string(unit.source)?;
+                    if let Some(Some(first)) = finding.affected.ids.first() {
+                        facts.first_rank = subjects
+                            .projection
+                            .raw
+                            .members(unit.unit)
+                            .iter()
+                            .position(|member| {
+                                occurrences.id(*member as usize, &arena) == first.as_ref()
+                            })
+                            .map_or(NONE, |rank| rank as u32);
+                    }
+                } else {
+                    let line = encoded.line as usize;
+                    let without = match keyless.get(&line) {
+                        Some(without) => *without,
+                        None => {
+                            let without = subjects.line_field(line, "identity")?.is_null();
+                            keyless.insert(line, without);
+                            without
+                        }
+                    };
+                    if without {
+                        facts.flags |= KEYLESS;
+                    } else if facts.flags & CHANGE != 0
+                        && let super::columns::Atom::Str(fix) = finding.evidence.fix
+                    {
+                        // A host accepts a change whose texts are each at most 16,384 UTF-16
+                        // units (`BoundedChange`).
+                        let bounded = |text: &str| {
+                            crate::wtf8::Wtf8Buf::from_view(text).to_utf16().len() <= 16384
+                        };
+                        let ci = encoded.culture as usize;
+                        let source = subjects.line_field(line, "comparisonSource")?;
+                        let po = subjects.culture_field(line, ci, "po")?;
+                        let previous = if po.is_null() {
+                            subjects.culture_field(line, ci, "archive")?
+                        } else {
+                            po
+                        };
+                        if bounded(arena.text(fix))
+                            && source.as_str().is_some_and(bounded)
+                            && previous.as_str().is_none_or(bounded)
+                        {
+                            facts.flags |= FIXABLE;
+                        }
+                    }
+                }
                 let columns = &mut rules[finding.rule];
                 columns.rows.push(encoded.row);
                 if subject != Subject::UnitSource {
@@ -278,6 +355,7 @@ impl EngineQuery {
                 columns.places.push(encoded.places);
                 columns.id0.push(encoded.hash[0]);
                 columns.id1.push(encoded.hash[1]);
+                columns.facts.push(facts);
             }
             let memory = arena.memory();
             let line_fields = arena
@@ -343,6 +421,7 @@ impl EngineQuery {
         profile.wall_ms = elapsed.wall().as_secs_f64() * 1000.0;
         Ok(EvaluatedFindings {
             rules,
+            roles,
             findings,
             base_diagnostics,
             regex_diagnostics,
@@ -357,6 +436,64 @@ impl EngineQuery {
                 "{:x}",
                 <sha2::Sha256 as sha2::Digest>::finalize(output_digest)
             ),
+        })
+    }
+
+    /// The layer's orders over its findings' facts, with the join's positions, each unit's rank
+    /// in ID order and each line's packed ID.
+    fn finding_orders(
+        &mut self,
+        facts: &[Facts],
+        rules: &[RuleMetadata],
+        diagnostic_lines: &[u32],
+        collator: &HostCollator,
+        cancelled: &AtomicBool,
+    ) -> Result<super::findings_order::Orders> {
+        let target = self.target["name"]
+            .as_str()
+            .ok_or("Missing target name.")?
+            .to_owned();
+        let request = crate::engine_types::parse_search_request(
+            &json!({"query":"","capability":"all","pageSize":50,"localization":{"target":target}})
+                .to_string(),
+        )?;
+        let rows = self.matching(&request, cancelled)?;
+        let mut join = vec![NONE; self.reader.column("line.source")?.len()];
+        for (position, row) in rows.iter().enumerate() {
+            *join
+                .get_mut(*row as usize)
+                .ok_or("Join row outside the lines.")? = u32::try_from(position)?;
+        }
+        let order = self.column("raw", "order")?;
+        let mut unit_ranks = vec![NONE; order.len()];
+        for (rank, unit) in order.iter().enumerate() {
+            *unit_ranks
+                .get_mut(*unit as usize)
+                .ok_or("Unit order outside the units.")? = u32::try_from(rank)?;
+        }
+        let starts = self.identity_starts("line")?;
+        let bytes = self.reader.bytes("query.line.id_utf8")?;
+        let line_id = |row: u32| -> Result<String> {
+            let row = row as usize;
+            let begin = *starts.get(row).ok_or("Identity row outside index.")? as usize;
+            let end = *starts.get(row + 1).ok_or("Identity end outside index.")? as usize;
+            Wtf8Buf::from_bytes(
+                bytes
+                    .get(begin..end)
+                    .ok_or("Invalid identity byte range.")?
+                    .to_vec(),
+            )
+            .map(Wtf8Buf::into_view)
+        };
+        super::findings_order::orders(&OrderInput {
+            facts,
+            rules,
+            cultures: &self.cultures,
+            join: &join,
+            unit_ranks: &unit_ranks,
+            line_id: &line_id,
+            diagnostic_lines,
+            collator,
         })
     }
 
@@ -403,6 +540,7 @@ impl EngineQuery {
         if store.root["layers"].get(&key).is_none() {
             let EvaluatedFindings {
                 rules: mut encoded,
+                roles,
                 findings,
                 base_diagnostics,
                 regex_diagnostics,
@@ -431,6 +569,7 @@ impl EngineQuery {
                         family: rule.family,
                         severity: rule.severity,
                         role: rule.role.clone(),
+                        counts: rule.counts.unwrap_or(true),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -504,6 +643,7 @@ impl EngineQuery {
                 Ok(set)
             };
             let mut counts = BTreeMap::<(usize, u32), u32>::new();
+            let mut facts = Vec::with_capacity(findings);
             for (index, compiled) in ordered.iter().enumerate() {
                 checkpoint(cancelled)?;
                 let RuleColumns {
@@ -513,7 +653,13 @@ impl EngineQuery {
                     places,
                     id0,
                     id1,
+                    facts: rule_facts,
                 } = std::mem::take(&mut encoded[compiled.ordinal]);
+                let rule = u32::try_from(index)?;
+                facts.extend(rule_facts.into_iter().map(|mut fact| {
+                    fact.rule = rule;
+                    fact
+                }));
                 // A rule has one severity, so rule and culture key its count.
                 if compiled.rule.subject == Subject::UnitSource {
                     if !rows.is_empty() {
@@ -582,6 +728,32 @@ impl EngineQuery {
                 diagnostics.iter().map(|(_, ci, _)| *ci).collect(),
             ));
             columns.push(("diag.codes".into(), "findings".into(), codes));
+            let order_started = Measure::start();
+            let orders = self.finding_orders(
+                &facts,
+                &rules,
+                &diagnostics
+                    .iter()
+                    .map(|(line, _, _)| *line)
+                    .collect::<Vec<_>>(),
+                &collator,
+                cancelled,
+            )?;
+            for (name, values) in [
+                ("f.rule", facts.iter().map(|fact| fact.rule).collect()),
+                ("f.line", facts.iter().map(|fact| fact.line).collect()),
+                ("f.unit", facts.iter().map(|fact| fact.unit).collect()),
+                ("f.culture", facts.iter().map(|fact| fact.culture).collect()),
+                ("f.flags", facts.iter().map(|fact| fact.flags).collect()),
+                ("order.report", orders.report),
+                ("order.line", orders.line),
+                ("order.source", orders.source),
+                ("diag.order", orders.diagnostics),
+            ] {
+                columns.push((name.into(), String::new(), values));
+            }
+            drop(facts);
+            recorder.stage("layer.order", &order_started, findings);
             let counts = counts
                 .into_iter()
                 .map(|((rule, culture), count)| {
@@ -601,6 +773,7 @@ impl EngineQuery {
                 rules,
                 counts,
                 diagnostic_count: diagnostics.len().try_into()?,
+                roles,
             };
             store.publish_global(
                 "findings",
@@ -627,6 +800,110 @@ impl EngineQuery {
     }
 }
 
+/// Whether a role's scopes match a place: `role_matches` over the occurrence relation's fields.
+fn role_matches(
+    occurrences: &super::occurrences::OccurrenceData,
+    arena: &super::columns::Arena,
+    row: usize,
+    role: &super::ir::Role,
+) -> bool {
+    use super::columns::StrId;
+    use super::ir::{MatchOperator, MatcherKind};
+    let text = |field| arena.text(StrId(occurrences.value(row, field)));
+    let kind = match occurrences.value(row, "location") {
+        0 => "asset_property",
+        1 => "data_table_cell",
+        _ => "string_table_entry",
+    };
+    role.scopes.iter().any(|scope| {
+        scope.matchers.iter().all(|matcher| {
+            let actual = match matcher.kind {
+                MatcherKind::LocationKind => Some(kind),
+                MatcherKind::ObjectPath => Some(text("object")),
+                MatcherKind::Row if kind == "data_table_cell" => Some(text("row")),
+                MatcherKind::PropertyPath if kind != "string_table_entry" => Some(text("property")),
+                MatcherKind::StringTableEntry if kind == "string_table_entry" => Some(text("row")),
+                MatcherKind::ClassPath if kind == "asset_property" => Some(text("class")),
+                _ => None,
+            };
+            actual.is_some_and(|actual| {
+                if matcher.kind == MatcherKind::LocationKind
+                    || matcher.operator == Some(MatchOperator::Exact)
+                {
+                    actual == matcher.value
+                } else {
+                    actual.starts_with(&matcher.value)
+                }
+            })
+        })
+    })
+}
+
+/// Each document role's places and units over the visible units, in the document's order.
+fn role_totals(
+    query: &mut EngineQuery,
+    program: &super::Program,
+    occurrences: &super::occurrences::OccurrenceData,
+    arena: &mut super::columns::Arena,
+    cancelled: &AtomicBool,
+) -> Result<Vec<super::replies::RoleTotal>> {
+    use super::ir::MatcherKind;
+    use rayon::prelude::*;
+    if program.document_roles.is_empty() {
+        return Ok(Vec::new());
+    }
+    // The arena resolves only loaded strings: load each field a role's matchers read.
+    let mut fields = std::collections::BTreeSet::new();
+    for id in &program.document_roles {
+        let role = program.roles.get(id).ok_or("A document role is missing.")?;
+        for matcher in role.scopes.iter().flat_map(|scope| &scope.matchers) {
+            fields.insert(match matcher.kind {
+                MatcherKind::LocationKind => continue,
+                MatcherKind::ObjectPath => "object",
+                MatcherKind::Row | MatcherKind::StringTableEntry => "row",
+                MatcherKind::PropertyPath => "property",
+                MatcherKind::ClassPath => "class",
+            });
+        }
+    }
+    for field in fields {
+        let mut ids = occurrences.columns[field].to_vec();
+        ids.sort_unstable();
+        ids.dedup();
+        arena.load_strings(&mut query.reader, &ids)?;
+    }
+    let arena = &*arena;
+    let projection = crate::engine_match::Projection::open(query, cancelled)?;
+    let units = (0..projection.raw.visible.len())
+        .filter(|unit| projection.raw.visible[*unit] != 0)
+        .collect::<Vec<_>>();
+    program
+        .document_roles
+        .iter()
+        .map(|id| {
+            checkpoint(cancelled)?;
+            let role = program.roles.get(id).ok_or("A document role is missing.")?;
+            let (places, matched) = units
+                .par_iter()
+                .map(|unit| {
+                    let places = projection
+                        .raw
+                        .members(*unit)
+                        .iter()
+                        .filter(|member| role_matches(occurrences, arena, **member as usize, role))
+                        .count();
+                    (places, usize::from(places > 0))
+                })
+                .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+            Ok(super::replies::RoleTotal {
+                role: id.clone(),
+                matched_occurrences: u32::try_from(places)?,
+                matched_text_units: u32::try_from(matched)?,
+            })
+        })
+        .collect()
+}
+
 /// Each finding's published columns, in parallel. Evidence is written straight from the arena.
 fn encode_findings(
     subjects: &mut NativeSubjects<'_>,
@@ -650,6 +927,13 @@ fn encode_findings(
                 Subject::UnitSource => (subjects.units[finding.row as usize].unit, 0),
             };
             let evidence = finding.evidence;
+            let mut flags = 0;
+            if matches!(evidence.fix, super::columns::Atom::Str(_)) {
+                flags |= CHANGE;
+            }
+            if evidence.shadowed.boolean() {
+                flags |= SHADOWED;
+            }
             let encode = |atom, sorted| {
                 let mut out = String::new();
                 write_atom(arena, atom, sorted, &mut out);
@@ -692,12 +976,21 @@ fn encode_findings(
                 }
             }
             json.push('}');
+            let (line, unit) = if subject == Subject::UnitSource {
+                (NONE, line as u32)
+            } else {
+                (line as u32, NONE)
+            };
             Ok(Encoded {
                 row: finding.row,
                 culture: culture as u32,
                 evidence: Wtf8Buf::from_utf8(&json).into_view(),
                 places: Arc::clone(&finding.affected),
                 hash,
+                line,
+                unit,
+                actual,
+                flags,
             })
         })
         .into_iter()

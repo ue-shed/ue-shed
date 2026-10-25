@@ -8,7 +8,6 @@ import {
 import {
 	TextAudience,
 	TextEditing,
-	TextFinding,
 	TextNotes,
 	TextOriginKind,
 	TextProblem,
@@ -24,14 +23,8 @@ import {
 	type TextWhere
 } from "@ue-shed/game-text/schema";
 
-/**
- * Every review signal a `finding` pill can hold. The menu offers the four findings; the others
- * read in pills a host or a saved view sets.
- */
-export const FINDING_LABELS = {
-	shared: "Used in several places",
-	duplicate_source: "Same text, different keys",
-	long: "Long text",
+/** How each fact reads in the Fact menu and its pills. */
+export const FACT_LABELS = {
 	unresolved: "Not localizable",
 	conflicting: "Same key, different text",
 	evidence_only: "Only in gathered text",
@@ -58,6 +51,7 @@ export const FIELD_LABELS = {
 	problem: "Problem",
 	translation: "Translation",
 	finding: "Finding",
+	fact: "Fact",
 	origin: "Origin",
 	folder: "Folder",
 	asset: "Asset",
@@ -74,7 +68,7 @@ export const FIELD_LABELS = {
 export const CHOICE_FIELDS = {
 	problem: { values: TextProblem.literals, labels: TEXT_PROBLEM_LABELS },
 	translation: { values: TextTranslationState.literals, labels: TRANSLATION_LABELS },
-	finding: { values: TextFinding.literals, labels: FINDING_LABELS },
+	fact: { values: TextReviewSignal.literals, labels: FACT_LABELS },
 	origin: { values: TextOriginKind.literals, labels: TEXT_ORIGIN_LABELS },
 	editing: { values: TextEditing.literals, labels: EDITING_LABELS },
 	notes: { values: TextNotes.literals, labels: NOTES_LABELS },
@@ -86,12 +80,16 @@ export function isChoiceField(field: TextFilterField): field is ChoiceField {
 	return Object.hasOwn(CHOICE_FIELDS, field);
 }
 
+/** Rule labels by rule ID, from the findings layer's facet. */
+export type RuleLabels = ReadonlyMap<string, string>;
+
 /**
  * How one value reads in a pill or a menu. Folders, assets, namespaces and source texts read as
  * written; a translation key reads `Namespace, Key`, or the key alone in the empty namespace; an
- * asset type reads as its label.
+ * asset type reads as its label; a finding as its rule's label, or its ID when the page has none.
  */
-export function valueLabel(field: TextFilterField, value: string): string {
+export function valueLabel(field: TextFilterField, value: string, rules?: RuleLabels): string {
+	if (field === "finding") return rules?.get(value) ?? value;
 	if (field === "translation_key") return translationKeyLabel(value);
 	if (field === "asset_type") return textAssetTypeLabel(value);
 	if (!isChoiceField(field)) return value;
@@ -114,7 +112,7 @@ function translationKeyLabel(value: string): string {
 }
 
 /** "Problem is any of Key changed, Not gathered yet" as its three parts. */
-export function clauseParts(clause: TextFilterClause) {
+export function clauseParts(clause: TextFilterClause, rules?: RuleLabels) {
 	const values: readonly string[] = clause.values;
 	return {
 		field: FIELD_LABELS[clause.field],
@@ -126,7 +124,7 @@ export function clauseParts(clause: TextFilterClause) {
 				: values.length > 1
 					? "is any of"
 					: "is",
-		values: values.map((value) => valueLabel(clause.field, value)).join(", ")
+		values: values.map((value) => valueLabel(clause.field, value, rules)).join(", ")
 	};
 }
 
@@ -214,8 +212,10 @@ function withValues(
 			const kept = values.filter(isTranslation);
 			return kept.length === 0 ? undefined : { ...clause, values: kept };
 		}
-		case "finding": {
-			const kept = values.filter(isFinding);
+		case "finding":
+			return values.length === 0 ? undefined : { ...clause, values };
+		case "fact": {
+			const kept = values.filter(isFact);
 			return kept.length === 0 ? undefined : { ...clause, values: kept };
 		}
 		case "origin": {
@@ -251,7 +251,7 @@ const isProblem = (value: string): value is TextProblem =>
 	TextProblem.literals.some((item) => item === value);
 const isTranslation = (value: string): value is TextTranslationState =>
 	TextTranslationState.literals.some((item) => item === value);
-const isFinding = (value: string): value is TextReviewSignal =>
+const isFact = (value: string): value is TextReviewSignal =>
 	TextReviewSignal.literals.some((item) => item === value);
 const isOrigin = (value: string): value is TextOriginKind =>
 	TextOriginKind.literals.some((item) => item === value);
@@ -299,12 +299,15 @@ export function legacyFilter(saved: LegacyFilters) {
 		default:
 			remainingState = saved.localizationState;
 	}
+	// The lenses became the findings of the checks of the same names, and `unresolved` a fact.
 	switch (saved.lens) {
 		case "shared":
 		case "duplicate_source":
 		case "long":
+			filter.push({ field: "finding", op: "is", values: [`localization.${saved.lens}`] });
+			break;
 		case "unresolved":
-			filter.push({ field: "finding", op: "is", values: [saved.lens] });
+			filter.push({ field: "fact", op: "is", values: [saved.lens] });
 			break;
 		case "conflicting":
 			filter.push({ field: "problem", op: "is", values: ["conflicting_source"] });

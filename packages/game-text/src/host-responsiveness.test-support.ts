@@ -250,9 +250,7 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 		})
 	).pipe(Layer.provide(LocalizationEvidenceNodeLive));
 	const cacheRoot = join(projectRoot, "cache");
-	const layer = gameTextIndexRefreshLayer(cacheRoot, {
-		qualityWorker: true
-	}).pipe(
+	const layer = gameTextIndexRefreshLayer(cacheRoot).pipe(
 		Layer.provide(
 			gameTextIndexSourceNodeLayer(cacheRoot, { refreshProjectIndex: false }).pipe(
 				Layer.provide(Layer.merge(projectIndex, reader))

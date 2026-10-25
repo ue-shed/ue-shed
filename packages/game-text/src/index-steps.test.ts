@@ -56,7 +56,7 @@ it.live(
 				);
 				expect(recovered.view).toEqual({ kind: "source" });
 				expect(sessions).toHaveLength(2);
-			}).pipe(Effect.provide(fixture.layer(false, fixture.source, false, implementation)));
+			}).pipe(Effect.provide(fixture.layer(fixture.source, implementation)));
 		}).pipe(Effect.scoped)
 );
 
@@ -120,7 +120,7 @@ it.live(
 					yield* changed.query.search({ ...request, query: "Updated" })
 				);
 				yield* Scope.close(secondScope, Exit.void);
-			}).pipe(Effect.provide(fixture.layer(true)));
+			}).pipe(Effect.provide(fixture.layer()));
 		}).pipe(Effect.scoped),
 	// Worker threads start slowly when the whole suite runs in parallel.
 	30_000
@@ -243,7 +243,7 @@ it.live(
 				expect(yield* compatibility.localizationJoin).toEqual(
 					yield* opened[0]!.localizationJoin
 				);
-			}).pipe(Effect.provide(fixture.layer(true)));
+			}).pipe(Effect.provide(fixture.layer()));
 		}).pipe(Effect.scoped),
 	15000
 );
@@ -459,7 +459,7 @@ it.live(
 				expect(yield* old.search(search)).toEqual(before);
 			}).pipe(
 				Effect.provideService(GameTextIndexProgressReporter, report),
-				Effect.provide(fixture.layer(true))
+				Effect.provide(fixture.layer())
 			);
 		}).pipe(Effect.scoped),
 	// Worker threads start slowly when the whole suite runs in parallel.

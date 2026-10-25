@@ -287,9 +287,7 @@ const builder = Layer.effect(
 		})
 	)
 ).pipe(Layer.provide(typeScriptIndexBuilderLayer));
-const layer = gameTextIndexRefreshLayer(join(input.directory, "cache"), {
-	qualityWorker: false
-}).pipe(
+const layer = gameTextIndexRefreshLayer(join(input.directory, "cache")).pipe(
 	Layer.provide(source),
 	Layer.provide(builder),
 	Layer.provide(typeScriptIndexBuilderLayer),

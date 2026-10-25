@@ -1,84 +1,14 @@
-import { absent, unitId, packagePath, type JoinPackages } from "./joined-target-input.js";
+import { absent, unitId, type JoinPackages } from "./joined-target-input.js";
 import {
 	StringArena,
 	packedStringReader,
 	sortPackedStringsByLocaleSteps
 } from "./shared-string-codec.js";
 import { snapshotCheck } from "./snapshot-format.js";
-import { HostSliceClock, runHostStepsSync, type HostSteps } from "./host-slices.js";
+import { HostSliceClock, type HostSteps } from "./host-slices.js";
 import { textAudienceBit } from "./text-audience.js";
 import { OCCURRENCE_COPY_DIFFERS } from "./package-text-columns.js";
 import { longestSource } from "./source-metrics.js";
-import { DuplicateSources } from "./duplicate-sources.js";
-import { joinedDuplicatePlacesSteps } from "./joined-duplicate-places.test-support.js";
-
-/** Canonical place IDs keep source overlays numeric without retaining decoded occurrences. */
-export function joinedDuplicateSources(
-	packages: JoinPackages,
-	line: Record<string, Uint32Array>,
-	order: Uint32Array,
-	empty: number
-) {
-	return runHostStepsSync(
-		joinedDuplicateSourcesSteps(packages, line, order, empty, new HostSliceClock(Infinity))
-	);
-}
-
-/** Host steps for `joinedDuplicateSources`, yielding whenever `clock` ends a slice. */
-export function* joinedDuplicateSourcesSteps(
-	packages: JoinPackages,
-	line: Record<string, Uint32Array>,
-	order: Uint32Array,
-	empty: number,
-	clock = new HostSliceClock()
-): HostSteps<{ readonly duplicate: Uint8Array; readonly places: Uint32Array }> {
-	const c = packages.occurrence;
-	const places = yield* joinedDuplicatePlacesSteps(
-		{
-			occurrence: c,
-			packageRow: packages.packageRow,
-			packageFile: (row) => packagePath(packages, row),
-			string: (id) => packages.strings.string(id),
-			bytes: (id) => packages.strings.bytes(id)
-		},
-		order,
-		clock
-	);
-	const identities = new Uint32Array(order.length);
-	// A source confined to one gathered identity can never have an outside-identity counterpart.
-	let maximumSource = 0;
-	for (const source of c.source) maximumSource = Math.max(maximumSource, source);
-	const sourceIdentities = new Uint32Array(maximumSource + 1).fill(absent);
-	const sharedSources = new Uint8Array(maximumSource + 1);
-	const sources = new DuplicateSources<number, number, number>();
-	for (let row = 0; row < line.source!.length; row++) {
-		if (clock.step()) yield;
-		for (let position = line.occ_start![row]!; position < line.occ_end![row]!; position++) {
-			const member = order[position]!;
-			identities[member] = row;
-			if (c.identity[member] === 0 && c.key[member] !== empty) {
-				const source = c.source[member]!;
-				const first = sourceIdentities[source];
-				if (first === absent) sourceIdentities[source] = row;
-				else if (first !== row) sharedSources[source] = 1;
-			}
-		}
-	}
-	for (const member of order) {
-		if (c.identity[member] === 0 && c.key[member] !== empty && sharedSources[c.source[member]!])
-			sources.add(c.source[member]!, identities[member]!, places[member]!);
-		if (clock.step()) yield;
-	}
-	const duplicate = new Uint8Array(order.length);
-	for (const member of order) {
-		if (c.identity[member] === 0 && c.key[member] !== empty && sharedSources[c.source[member]!])
-			duplicate[member] = Number(
-				sources.hasOther(c.source[member]!, identities[member]!, places[member]!)
-			);
-		if (clock.step()) yield;
-	}
-	return { duplicate, places };
-}
 
 /** Numeric query entries retain raw-unit predicates and each gathered occurrence slice.
  * Host steps yield between bounded slices; `runHostSteps` drives them from an Effect.
@@ -86,21 +16,22 @@ export function* joinedDuplicateSourcesSteps(
 export function* joinedQueryColumns(input: {
 	readonly packages: JoinPackages;
 	readonly line: Record<string, Uint32Array>;
+	/** Lines whose manifest entries carry notes; their slices have those notes too. */
+	readonly manifestNotes: Uint8Array;
 	readonly order: Uint32Array;
 	readonly rawOrder: Uint32Array;
 	readonly representative: Uint32Array;
 	readonly next: Uint32Array;
 	readonly packageFiles: Uint32Array;
 	readonly empty: number;
-	readonly duplicates: ReturnType<typeof joinedDuplicateSources>;
 }): HostSteps<Record<string, Uint32Array>> {
 	const { packages, line, order, rawOrder, representative, next, packageFiles, empty } = input;
 	const clock = new HostSliceClock();
 	const c = packages.occurrence,
 		strings = packages.strings;
 	const occurrenceLine = new Uint32Array(order.length);
-	const groupFlags = new Uint8Array(line.source!.length);
-	const { duplicate, places } = input.duplicates;
+	// A line holding several resolved texts conflicts; every unit on it carries the fact.
+	const conflicting = new Uint8Array(line.source!.length);
 	for (let row = 0; row < line.source!.length; row++) {
 		const sources = new Set<number>();
 		for (let position = line.occ_start![row]!; position < line.occ_end![row]!; position++) {
@@ -110,8 +41,7 @@ export function* joinedQueryColumns(input: {
 			const source = c.source[member]!;
 			sources.add(source);
 		}
-		groupFlags[row] =
-			(line.occ_end![row]! - line.occ_start![row]! > 1 ? 1 : 0) | (sources.size > 1 ? 16 : 0);
+		conflicting[row] = Number(sources.size > 1);
 		if (clock.step()) yield;
 	}
 	let rawCount = 0;
@@ -221,7 +151,8 @@ export function* joinedQueryColumns(input: {
 			origins = 0,
 			audience = 0,
 			editing = 0,
-			notes = 0,
+			// A slice also has its line's manifest notes; a raw unit has no line to take them from.
+			notes = gathered !== absent && input.manifestNotes[gathered] ? 1 : 0,
 			characters = 0,
 			words = 0,
 			visible = false;
@@ -237,8 +168,7 @@ export function* joinedQueryColumns(input: {
 			members.add(member);
 			values.add(c.source[member]!);
 			paths.add(packageFiles[packages.packageRow[member]!]!);
-			flags |= groupFlags[gathered === absent ? occurrenceLine[member]! : gathered]!;
-			if (duplicate[member]) flags |= 2;
+			if (conflicting[gathered === absent ? occurrenceLine[member]! : gathered]) flags |= 16;
 			origins |= 1 << (c.location[member] === 2 ? 0 : c.location[member] === 1 ? 1 : 2);
 			editing |= c.editable[member] ? 1 : 2;
 			audience |= textAudienceBit(c.audience[member]!);
@@ -257,7 +187,6 @@ export function* joinedQueryColumns(input: {
 		const longest = longestSource(decoded.map(({ value }) => value));
 		characters = longest.length;
 		words = longest.trim() === "" ? 0 : longest.trim().split(/\s+/u).length;
-		if (characters >= 40) flags |= 4;
 		if (c.identity[first]! >= 2 || c.key[first] === empty) flags |= 8;
 		if (editing === 2) flags |= 32;
 		for (const file of paths) files.add(file);
@@ -326,7 +255,6 @@ export function* joinedQueryColumns(input: {
 	result["query.raw.id_utf8"] = idBytes;
 	result["query.raw.id_starts"] = Uint32Array.from(packedIds.offsets);
 	result["query.line.starts"] = lineStarts;
-	result["query.occurrence.places"] = places;
 	result["query.occurrence.sources"] = c.source;
 	return result;
 }

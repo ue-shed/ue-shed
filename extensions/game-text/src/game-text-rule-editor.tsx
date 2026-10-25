@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type { TextQualityQuerySummary } from "@ue-shed/game-text/corpus";
 import type {
+	CompleteRule,
 	GameTextRuleDocument,
 	GameTextRuleEntry,
 	LocalizationProjectRule
@@ -41,6 +42,13 @@ function documentRules(document: GameTextRuleDocument): readonly EditableRule[] 
 		(entry): entry is EditableRule => sourceRule(entry) || localizationRule(entry)
 	);
 }
+
+/** The file's complete rules, in its order: listed, but edited in the file. */
+function completeRules(document: GameTextRuleDocument): readonly CompleteRule[] {
+	return document.rules.filter((entry): entry is CompleteRule => entry.kind === "rule");
+}
+
+const SEVERITY_LABELS = { blocking: "Blocking", normal: "Normal", low: "Low" } as const;
 
 function characterBudgetRule(rule: EditableRule | undefined) {
 	return rule?.kind === "character_budget" ? rule : undefined;
@@ -116,6 +124,22 @@ function replaceLocalizationRule(
 	};
 }
 
+/** A project rule with its label, or without one when the label is blank. */
+function replaceLabel(
+	document: GameTextRuleDocument,
+	id: TextQualityRule["id"],
+	label: string
+): GameTextRuleDocument {
+	return {
+		...document,
+		rules: document.rules.map((entry) => {
+			if (!(sourceRule(entry) || localizationRule(entry)) || entry.id !== id) return entry;
+			const { label: _previous, ...rest } = entry;
+			return label.trim() ? { ...rest, label } : rest;
+		})
+	};
+}
+
 function replaceRecovery(
 	document: GameTextRuleDocument,
 	id: TextQualityRule["id"],
@@ -139,6 +163,7 @@ export function GameTextRuleEditor(props: {
 }) {
 	const draft = () => props.state.draft;
 	const rules = () => documentRules(draft());
+	const fileRules = () => completeRules(draft());
 	const dirty = () => props.editor.dirty();
 	const feedback = () => props.editor.feedback();
 	const changeDraft = (document: GameTextRuleDocument) => props.editor.changeDraft(document);
@@ -153,14 +178,17 @@ export function GameTextRuleEditor(props: {
 		return current.status === "failed" ? current : undefined;
 	});
 	createEffect(
-		() => rules(),
+		() => [...rules(), ...fileRules()],
 		(rules) => {
 			setSelectedRuleId((current) =>
 				rules.some((rule) => rule.id === current) ? current : rules[0]?.id
 			);
 		}
 	);
-	const selectedRule = () => rules().find((rule) => rule.id === selectedRuleId()) ?? rules()[0];
+	const selectedFileRule = () => fileRules().find((rule) => rule.id === selectedRuleId());
+	const selectedRule = () =>
+		rules().find((rule) => rule.id === selectedRuleId()) ??
+		(selectedFileRule() ? undefined : rules()[0]);
 	const addLocalizationRule = (kind: LocalizationProjectRule["kind"]) => {
 		const document = draft();
 		const role = document.roles[0]?.id;
@@ -200,7 +228,9 @@ export function GameTextRuleEditor(props: {
 			<aside aria-label="Quality rule list" {...stylex.attrs(styles.ruleList)}>
 				<header {...stylex.attrs(styles.panelHeader)}>
 					<span>Rules</span>
-					<b {...stylex.attrs(styles.panelCount)}>{rules().length}</b>
+					<b {...stylex.attrs(styles.panelCount)}>
+						{rules().length + fileRules().length}
+					</b>
 				</header>
 				<div {...stylex.attrs(styles.addTerms)}>
 					<button
@@ -240,14 +270,67 @@ export function GameTextRuleEditor(props: {
 									{findingCount(rule.id)}
 								</em>
 							</span>
-							<strong>{rule.id}</strong>
-							<small>Role · {rule.role}</small>
+							<strong>{rule.label ?? rule.id}</strong>
+							<small>
+								{rule.label ? `${rule.id} · ` : ""}Role · {rule.role}
+							</small>
+						</button>
+					)}
+				</For>
+				<For each={fileRules()}>
+					{(rule) => (
+						<button
+							type="button"
+							aria-current={selectedRuleId() === rule.id ? "true" : undefined}
+							onClick={() => setSelectedRuleId(rule.id)}
+							{...stylex.attrs(
+								styles.ruleChoice,
+								selectedRuleId() === rule.id && styles.ruleChoiceActive
+							)}
+						>
+							<span {...stylex.attrs(styles.ruleChoiceMeta)}>
+								<b>Rule in the file</b>
+							</span>
+							<strong>{rule.label}</strong>
+							<small>{rule.id}</small>
 						</button>
 					)}
 				</For>
 			</aside>
 
 			<section aria-label="Selected quality rule" {...stylex.attrs(styles.ruleForm)}>
+				<Show when={selectedFileRule()}>
+					{(rule) => (
+						<>
+							<header {...stylex.attrs(styles.formHeader)}>
+								<h3 {...stylex.attrs(styles.formTitle)}>{rule().label}</h3>
+								<span {...stylex.attrs(styles.dirtyState)}>
+									{rule().enabled === false ? "Off" : "On"}
+								</span>
+							</header>
+							<dl {...stylex.attrs(styles.ruleFacts)}>
+								<dt>Rule ID</dt>
+								<dd {...stylex.attrs(styles.ruleFact)}>{rule().id}</dd>
+								<dt>Checks</dt>
+								<dd {...stylex.attrs(styles.ruleFact)}>
+									{rule().subject === "line"
+										? "Each keyed line's source"
+										: "Each culture's translation"}
+								</dd>
+								<dt>Severity</dt>
+								<dd {...stylex.attrs(styles.ruleFact)}>
+									{SEVERITY_LABELS[rule().severity ?? "normal"]}
+								</dd>
+								<dt>Recovery guidance</dt>
+								<dd {...stylex.attrs(styles.ruleFact)}>{rule().recovery}</dd>
+							</dl>
+							<p role="note" {...stylex.attrs(styles.field)}>
+								This rule is written in the rule language. Edit it in the rules
+								file, then reload the rules.
+							</p>
+						</>
+					)}
+				</Show>
 				<Show when={selectedRule()}>
 					{(rule) => (
 						<>
@@ -267,7 +350,9 @@ export function GameTextRuleEditor(props: {
 								</ul>
 							</Show>
 							<header {...stylex.attrs(styles.formHeader)}>
-								<h3 {...stylex.attrs(styles.formTitle)}>{rule().id}</h3>
+								<h3 {...stylex.attrs(styles.formTitle)}>
+									{rule().label ?? rule().id}
+								</h3>
 								<span
 									{...stylex.attrs(
 										styles.dirtyState,
@@ -281,6 +366,34 @@ export function GameTextRuleEditor(props: {
 											: "No rule file"}
 								</span>
 							</header>
+							<label {...stylex.attrs(styles.field)}>
+								<span>Label</span>
+								<input
+									type="text"
+									aria-label={`Label for ${rule().id}`}
+									aria-invalid={invalidField(
+										props.editor.problems(),
+										rule().id,
+										"label"
+									)}
+									aria-describedby={"rule-errors-" + rule().id}
+									placeholder={rule().id}
+									{...stylex.attrs(styles.input)}
+									value={rule().label ?? ""}
+									onInput={(event) =>
+										changeDraft(
+											replaceLabel(
+												draft(),
+												rule().id,
+												event.currentTarget.value
+											)
+										)
+									}
+								/>
+								<span {...stylex.attrs(styles.fieldHint)}>
+									Shown in lists, filters and findings instead of the rule ID.
+								</span>
+							</label>
 							<Show when={selectedBudgetRule()}>
 								<label {...stylex.attrs(styles.field)}>
 									<span>Maximum characters</span>
@@ -802,6 +915,17 @@ const styles = stylex.create({
 		":focus-visible": { borderColor: tokens.colorAccent }
 	},
 	fieldHint: { color: tokens.colorTextFaint, fontSize: 11 },
+	ruleFacts: {
+		display: "grid",
+		gridTemplateColumns: "max-content minmax(0, 1fr)",
+		columnGap: tokens.space3,
+		rowGap: tokens.space2,
+		margin: 0,
+		padding: `${tokens.space3} ${tokens.space4} 0`,
+		color: tokens.colorTextMuted,
+		fontSize: 12
+	},
+	ruleFact: { margin: 0, minWidth: 0, color: tokens.colorTextStrong, overflowWrap: "anywhere" },
 	termsHeader: { padding: `${tokens.space3} ${tokens.space4} 0` },
 	checkbox: {
 		display: "flex",

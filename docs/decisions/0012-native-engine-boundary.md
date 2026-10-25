@@ -165,12 +165,15 @@ operation, and the engine still bounds each request's allocations (reader handle
 the frames are small, and the rule IR and finding replies inside them are no longer walked.
 The gate is peak private bytes ≤2 GiB and ≤15 s on the 1× index.
 
-**Phase 3 (query engine):** binary frames, columnar batches and the typed-array consumption model.
-Every query request moves to generated types. Delete `payload: String`, `output` paths and the
-JSON response caches.
+**Phase 3 (query engine):** row sets, findings as query fields and response parts, still over
+NDJSON. Its specification moved the transport work to Phase 4, so the query paths change shape
+once rather than twice.
 
-**Phase 4 (streaming):** request IDs, cancellation, concurrency, progress frames and
-engine-written export sinks.
+**Phase 4 (streaming API):** the engine's own binary session with request IDs, columnar batches
+and the typed-array consumption model, concurrency, cancellation, progress frames and
+engine-written export sinks. Every engine request moves to generated types. Delete
+`payload: String`, `output` paths and the JSON response caches. The
+[Phase 4 specification](../engineering/game-text-rule-engine-phase-4.md) has the design.
 
 ## Measure to confirm
 

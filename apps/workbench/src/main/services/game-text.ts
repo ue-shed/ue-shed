@@ -1,7 +1,7 @@
 import { userInfo } from "node:os";
 import { makeGameTextWorkspace, type GameTextWorkspaceApi } from "@ue-shed/game-text/workspace";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { LocalFiles } from "../adapters/local-files.js";
@@ -11,9 +11,24 @@ import { WorkbenchProject } from "./project-workspace.js";
  * The Game Text workspace from `@ue-shed/game-text/workspace`, with Workbench's selected project,
  * dialogs and local files as its host hooks.
  */
-export interface WorkbenchGameTextApi extends Omit<GameTextWorkspaceApi, "progress"> {
+export interface WorkbenchGameTextApi extends Omit<
+	GameTextWorkspaceApi,
+	"progress" | "progressChanges"
+> {
 	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
+	readonly progressChanges: () => Stream.Stream<WorkbenchTaskProgress>;
 }
+
+/** The workspace reports Game Text's own stage; Workbench's progress contract names it. */
+const workbenchProgress = (
+	value: Effect.Success<ReturnType<GameTextWorkspaceApi["progress"]>>
+): WorkbenchTaskProgress => ({
+	...value,
+	stage:
+		value.stage === "project_index" || value.stage === "texture_audit"
+			? value.stage
+			: "game_text"
+});
 
 export class WorkbenchGameText extends Context.Service<WorkbenchGameText, WorkbenchGameTextApi>()(
 	"@ue-shed/workbench/WorkbenchGameText"
@@ -39,7 +54,8 @@ export const WorkbenchGameTextLive = Layer.effect(
 				current: project.current,
 				refresh: () => project.refresh(),
 				candidates: () => project.candidates("game_text"),
-				progress: project.progress
+				progress: project.progress,
+				progressChanges: project.progressChanges
 			},
 			files: {
 				chooseFile: dialog.chooseFile,
@@ -54,18 +70,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 		});
 		return WorkbenchGameText.of({
 			...workspace,
-			// The workspace reports Game Text's own stage; Workbench's progress contract names it.
 			progress: Effect.fn("Workbench.WorkbenchGameText.progress")(function* () {
-				const value = yield* workspace.progress();
-				const progress: WorkbenchTaskProgress = {
-					...value,
-					stage:
-						value.stage === "project_index" || value.stage === "texture_audit"
-							? value.stage
-							: "game_text"
-				};
-				return progress;
-			})
+				return workbenchProgress(yield* workspace.progress());
+			}),
+			progressChanges: () => workspace.progressChanges().pipe(Stream.map(workbenchProgress))
 		});
 	})
 );
@@ -110,6 +118,7 @@ export function makeWorkbenchGameTextTestLayer(
 					stage: "game_text",
 					total: 0
 				}),
+			progressChanges: () => Stream.empty,
 			search: () => Effect.succeed({ status: "not_ready" }),
 			searchRows: () => Effect.succeed({ status: "not_ready" }),
 			qualityFocus: () => Effect.succeed({ status: "not_ready" }),

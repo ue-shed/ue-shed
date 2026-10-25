@@ -28,18 +28,21 @@ fn cursor_position(rows: &[u32], ranks: &[u32], row: usize) -> usize {
 }
 
 impl EngineQuery {
+    /// The rows a rows part lists from: the matching rows, or one group's.
     pub(crate) fn listed_rows(
-        &mut self,
-        request: &SearchRequest,
+        &self,
+        selection: &Selection,
+        part: &RowsPart,
         matched: Arc<[u32]>,
         cancelled: &AtomicBool,
     ) -> Result<Arc<[u32]>> {
-        let (Some(by), Some(opened)) = (request.group, request.open_group.as_ref()) else {
+        let Some(GroupKey { by, key: opened }) = &part.group else {
             return Ok(matched);
         };
+        let by = *by;
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchListedRows");
-        let findings = self.request_findings(request, cancelled)?;
+        let findings = self.request_findings(selection, cancelled)?;
         // A finding group's rows are its rule's; without the rule no row is in it.
         if by == GroupBy::Finding {
             let set = findings
@@ -54,8 +57,12 @@ impl EngineQuery {
         }
         let p = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
-        let localized = request.localization.is_some();
-        let scope = self.culture_scope(request.localization.as_ref())?;
+        let localized = selection.localized();
+        let scope = if localized {
+            self.culture_scope(selection)?
+        } else {
+            Vec::new()
+        };
         let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
         let opened = self.group_id(by, opened, &places)?;
         let mut rows = Vec::new();
@@ -75,12 +82,7 @@ impl EngineQuery {
     }
 
     /// A group key's ID under `by`, as `group_key` computes it; `None` when no row can have it.
-    pub(crate) fn group_id(
-        &mut self,
-        by: GroupBy,
-        key: &str,
-        places: &Places,
-    ) -> Result<Option<u32>> {
+    pub(crate) fn group_id(&self, by: GroupBy, key: &str, places: &Places) -> Result<Option<u32>> {
         Ok(match by {
             GroupBy::Problem => PROBLEMS
                 .iter()
@@ -111,7 +113,7 @@ impl EngineQuery {
     }
 
     pub(crate) fn after_cursor(
-        &mut self,
+        &self,
         kind: &str,
         rows: &[u32],
         cursor: Option<&String>,
@@ -123,13 +125,11 @@ impl EngineQuery {
         let Some(row) = self.find_id(kind, cursor)? else {
             return Ok(0);
         };
-        if !self.row_ranks.contains_key(kind) {
-            let order = self.column(kind, "order")?;
-            self.row_ranks
-                .insert(kind.into(), ranks(&order, cancelled)?);
-        }
+        let ranks = self.row_ranks.get_or_try(kind.into(), || {
+            ranks(&self.column(kind, "order")?, cancelled)
+        })?;
         checkpoint(cancelled)?;
-        Ok(cursor_position(rows, &self.row_ranks[kind], row))
+        Ok(cursor_position(rows, &ranks, row))
     }
 }
 

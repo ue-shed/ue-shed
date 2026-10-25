@@ -47,8 +47,8 @@ const builder = GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive));
 The host supplies its ordinary source and localization evidence layers to the index/workspace.
 `AssetReaderLive` uses the installed compatible reader; explicit `assetReaderLayer(configuration)`
 is supported too. No source-checkout auto-build or executable download is introduced by the library.
-The native engine requires uasset-io protocol 1.15 or newer with the `game_text_engine_v1`
-capability; native package replacement requires protocol 1.16.
+The native engine runs as `uasset game-text-engine` from the same UE Shed build; native package
+replacement requires uasset-io protocol 1.16.
 
 The native builder is the only public builder; the TypeScript builder is a test-only oracle and is
 not exported. An unavailable or incompatible native reader is a typed failure with no JavaScript

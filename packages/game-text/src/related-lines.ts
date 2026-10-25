@@ -7,7 +7,12 @@ import {
 	LocalizationLinePreview
 } from "./localization-schema.js";
 import { LocalizationTranslation } from "./localization-view.js";
-import { TextCorpusPublicError, TextOccurrence, TextUnitSearchResult } from "./schema.js";
+import {
+	TextCorpusPublicError,
+	TextOccurrence,
+	TextSectionRows,
+	TextUnitSearchResult
+} from "./schema.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
@@ -21,7 +26,7 @@ export const RelatedLinesRequest = Schema.Struct({
 		Schema.Struct({ kind: Schema.Literal("unit"), id: TextUnitId }),
 		Schema.Struct({ kind: Schema.Literal("line"), id: LocalizationLineId })
 	]),
-	pageSize: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))
+	pageSize: TextSectionRows
 });
 export type RelatedLinesRequest = typeof RelatedLinesRequest.Type;
 

@@ -45,6 +45,8 @@ export {
 
 export { GameTextIndexProgress, GameTextIndexProgressReporter } from "./index-progress.js";
 
+export type { PreparedLocalizationCheck } from "./localization-check-report.js";
+
 export { gameTextIndexRefreshLayer } from "./index-refresh.js";
 
 export {

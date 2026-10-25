@@ -74,9 +74,9 @@ pub(crate) struct AssetTypes {
 }
 
 impl AssetTypes {
-    pub fn open(query: &mut EngineQuery, cancelled: &AtomicBool) -> Result<Arc<Self>> {
-        if let Some(types) = &query.asset_types {
-            return Ok(Arc::clone(types));
+    pub fn open(query: &EngineQuery, cancelled: &AtomicBool) -> Result<Arc<Self>> {
+        if let Some(types) = query.asset_types.get() {
+            return Ok(types);
         }
         let mut names = vec![String::new()];
         let mut by_name = HashMap::from([(String::new(), 0u32)]);
@@ -125,14 +125,12 @@ impl AssetTypes {
         for (rank, kind) in order.into_iter().enumerate() {
             ranks[kind] = rank as u32;
         }
-        let types = Arc::new(Self {
+        Ok(query.asset_types.store(Arc::new(Self {
             occurrence,
             names,
             labels,
             ranks,
-        });
-        query.asset_types = Some(Arc::clone(&types));
-        Ok(types)
+        })))
     }
 
     /// The types of the given type names, each a flag by type index.

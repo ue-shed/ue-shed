@@ -1,7 +1,7 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Layer, Predicate, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { assetReaderLayer } from "../packages/unreal-assets/dist/index.js";
 import {
@@ -12,15 +12,20 @@ import { refreshCliGameTextIndex } from "../apps/cli/src/workflows/game-text-ind
 import { gameTextIndexRefreshLayer } from "../packages/game-text/src/index-refresh.ts";
 import { gameTextIndexSourceNodeLayer } from "../packages/game-text/src/index-source-node.ts";
 import { GameTextIndexBuilderLive } from "../packages/game-text/src/native-index-builder.ts";
-import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
-import { joinLocalizationTarget } from "../packages/game-text/src/localization.ts";
-import {
-	TextCorpusSearchRequest,
-	type TextCorpusSearchPage,
-	type TextCorpusFocus
-} from "../packages/game-text/src/schema.ts";
+import { LocalizationState } from "../packages/game-text/src/localization-schema.ts";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
+const ExpectedStates = Schema.Struct({
+	target: Schema.String,
+	entries: Schema.Array(
+		Schema.Struct({
+			culture: Schema.String,
+			namespace: Schema.String,
+			key: Schema.String,
+			state: LocalizationState
+		})
+	)
+});
 
 /** These are disposable fixtures generated and verified by each actual engine, never studio data. */
 describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtures", () => {
@@ -31,6 +36,15 @@ describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtu
 			async () => {
 				if (!fixture || !executable)
 					throw new Error("Explicit fixture and native executable required");
+				const expected = Schema.decodeUnknownSync(Schema.fromJsonString(ExpectedStates))(
+					await readFile(
+						new URL(
+							"../fixtures/unreal-project/FixtureSource/Localization/expected-states.json",
+							import.meta.url
+						),
+						"utf8"
+					)
+				);
 				const cache = await mkdtemp(join(tmpdir(), "ue-shed-native-saved-"));
 				try {
 					const projectRoot = await realpath(fixture);
@@ -53,56 +67,21 @@ describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtu
 								const corpus = yield* model.corpus;
 								expect(corpus.coverage.textUnits).toBeGreaterThan(100);
 								expect(model.summary.coverage).toEqual(corpus.coverage);
-								const oracle = textCorpusQuery(
-									corpus,
-									undefined,
-									joinLocalizationTarget(corpus, model.evidence)
+								// Every committed intent entry is a stored line's culture state.
+								const states = (yield* model.query.readLocalizationLines()).flatMap(
+									({ identity, cultures }) =>
+										identity === null
+											? []
+											: cultures.map((culture) => ({
+													culture: culture.culture,
+													namespace: identity.namespace,
+													key: identity.key,
+													state: culture.state
+												}))
 								);
-								for (const value of [
-									{},
-									{ query: "Confirm" },
-									{ localization: { target: target.name } },
-									{
-										localization: {
-											target: target.name,
-											culture: target.cultures[0]
-										},
-										group: "problem",
-										facets: {
-											assets: true,
-											origins: true,
-											audiences: true,
-											cultures: true,
-											folder: ""
-										}
-									}
-								]) {
-									const request = Schema.decodeUnknownSync(
-										TextCorpusSearchRequest
-									)({ query: "", capability: "all", pageSize: 50, ...value });
-									const actual = yield* model.query.search(request);
-									expect(comparable(actual)).toEqual(
-										comparable(oracle.search(request))
-									);
-									for (const [index, unit] of actual.units.entries()) {
-										const line = actual.localization?.lines[index];
-										const focus = {
-											id: unit.id,
-											pageSize: 2,
-											...(line
-												? {
-														localization: {
-															target: target.name,
-															id: line.id
-														}
-													}
-												: undefined)
-										};
-										expect(
-											comparable((yield* model.query.focus(focus)) ?? null)
-										).toEqual(comparable(oracle.focus(focus) ?? null));
-									}
-								}
+								expect(expected.target).toBe(target.name);
+								for (const entry of expected.entries)
+									expect(states).toContainEqual(entry);
 								const reopened = yield* refreshCliGameTextIndex(
 									{ projectRoot, targetName: target.name },
 									executable
@@ -139,15 +118,3 @@ describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtu
 		);
 	}
 });
-
-function comparable(value: TextCorpusSearchPage | TextCorpusFocus | null): string {
-	return JSON.stringify(value, (key, field: typeof Schema.Json.Type | undefined) => {
-		if (Array.isArray(field))
-			return ["facts", "unknownReasons", "flags"].includes(key) ? [...field].sort() : field;
-		if (Predicate.isObject(field))
-			return Object.fromEntries(
-				Object.entries(field).sort(([left], [right]) => left.localeCompare(right))
-			);
-		return field;
-	});
-}

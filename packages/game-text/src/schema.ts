@@ -263,11 +263,22 @@ export const parseTextCorpusRunResult = gameTextResponseParser(
 	"corpus scan result"
 );
 
-/** Upper bound applied at the public query boundary, including Workbench IPC. */
-export const MAX_TEXT_QUERY_PAGE_SIZE = 50;
+/**
+ * Upper bound on one search page at the public query boundary, including Workbench IPC. The
+ * engine answers a page of more than 500 rows as a bulk read, streaming its rows.
+ */
+export const MAX_TEXT_QUERY_PAGE_SIZE = 100_000;
 
 const TextQueryPageSize = Schema.Int.pipe(
 	Schema.check(Schema.isBetween({ minimum: 1, maximum: MAX_TEXT_QUERY_PAGE_SIZE }))
+);
+
+/** The most rows a section lists at once: a unit's places, an open group's first rows. */
+export const MAX_TEXT_SECTION_ROWS = 500;
+
+/** Rows in one section, 1 to 500. */
+export const TextSectionRows = Schema.Int.pipe(
+	Schema.check(Schema.isBetween({ minimum: 1, maximum: MAX_TEXT_SECTION_ROWS }))
 );
 
 /** A changed-file list is bounded: larger changes should be split or filtered first. */
@@ -792,7 +803,7 @@ export const TextCorpusSearchRequest = Schema.Struct({
 		)
 	),
 	/** How many rows each open group lists; 50 when absent. Needs `openGroups`. */
-	firstRows: Schema.optionalKey(TextQueryPageSize),
+	firstRows: Schema.optionalKey(TextSectionRows),
 	facets: Schema.optionalKey(TextFacetRequest),
 	/**
 	 * The findings layer the `finding` field, problem, facet and group read. A workspace sets it
@@ -925,7 +936,7 @@ export const TextCorpusFocusRequest = Schema.Struct({
 		Schema.Struct({ target: LocalizationSelection.fields.target, id: LocalizationLineId })
 	),
 	occurrenceCursor: Schema.optional(TextOccurrenceId),
-	pageSize: TextQueryPageSize,
+	pageSize: TextSectionRows,
 	/** The findings layer the unit lists; a workspace sets it as for search. */
 	findings: Schema.optionalKey(TextFindingsSelection)
 });

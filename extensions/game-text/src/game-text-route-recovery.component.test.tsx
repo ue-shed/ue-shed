@@ -1,16 +1,18 @@
 import { screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { type GameTextRuleDocument } from "@ue-shed/game-text/rules";
-import { makeTextOccurrenceId, makeTextUnitId, type TextCorpus } from "@ue-shed/game-text/schema";
+import { makeTextUnitId } from "@ue-shed/game-text/schema";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { GameTextClientError, type GameTextClientApi } from "./game-text-client.js";
 import { storedGameTextPreferences } from "./game-text-preferences.js";
 import {
-	corpus,
+	answer,
+	continueRow,
 	makeClient,
 	mount,
 	openQuality,
+	planted,
 	rulesDocument
 } from "./game-text-route.test-support.js";
 describe("Game Text audit recovery", () => {
@@ -79,24 +81,13 @@ describe("Game Text audit recovery", () => {
 		"retains %s grouping, loaded pages and scroll across a rescan",
 		async (group) => {
 			const user = userEvent.setup({ delay: null });
-			const first = corpus.units[0];
-			if (!first) throw new Error("Missing source fixture");
-			const many: TextCorpus = {
-				...corpus,
-				units: Array.from({ length: 120 }, (_, index) => ({
-					...first,
-					id: makeTextUnitId(`line:${index}`),
-					identity: { status: "resolved", namespace: "UI", key: `Line${index}` },
-					source: { status: "consistent", value: `Line ${index}` },
-					occurrences: first.occurrences.map((occurrence) => ({
-						...occurrence,
-						id: makeTextOccurrenceId(`occurrence:${index}`),
-						identity: { status: "resolved", namespace: "UI", key: `Line${index}` },
-						source: `Line ${index}`
-					}))
-				}))
-			};
-			mount(makeClient(many), {
+			const many = Array.from({ length: 120 }, (_, index) => ({
+				...continueRow,
+				id: makeTextUnitId(`line:${index}`),
+				identity: { status: "resolved" as const, namespace: "UI", key: `Line${index}` },
+				source: { status: "consistent" as const, value: `Line ${index}` }
+			}));
+			mount(makeClient({ ...planted, answers: [answer({}, many)] }), {
 				query: "",
 				capability: "all",
 				lens: "all",

@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
-import { LocalizationEvidence } from "@ue-shed/localization";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import {
 	TextFilterClause,
 	type TextCorpus,
@@ -119,14 +116,20 @@ const keysOf = (corpus: TextCorpus, page: TextCorpusSearchPage) => ({
 	lines: (page.localization?.lines ?? []).map((line) => line.identity?.key ?? line.id).sort()
 });
 
-/** What a filter decides on a page: rows, totals, counts and the asset type facet. */
+/** What a filter decides on a page: rows, totals, problems and the asset type and origin facets. */
 const decided = (corpus: TextCorpus, page: TextCorpusSearchPage) => ({
 	total: page.total,
 	...keysOf(corpus, page),
-	problems: page.problems,
-	counts: page.counts,
-	assetTypes: page.facets?.assetTypes,
-	origins: page.facets?.origins
+	problems: Object.fromEntries(
+		Object.entries(page.problems ?? {}).filter(([, count]) => count > 0)
+	),
+	editable: [page.counts.editable, page.counts.readOnly],
+	assetTypes: page.facets?.assetTypes?.entries.map((entry) => [
+		entry.key,
+		entry.label,
+		entry.count
+	]),
+	origins: page.facets?.origins?.entries.map((entry) => [entry.key, entry.count, entry.worst])
 });
 
 const builders = [
@@ -176,25 +179,6 @@ describe("asset_type filter", () => {
 								fixture.request
 							);
 							const memory = fixture.raw();
-							const evidence = yield* Effect.gen(function* () {
-								return yield* (yield* LocalizationEvidence).read({
-									projectRoot: fixture.projectRoot,
-									target: fixture.target
-								});
-							}).pipe(Effect.provide(fixture.evidence));
-							const inMemory = textCorpusQuery(
-								memory,
-								undefined,
-								joinLocalizationTarget(memory, evidence),
-								new Map([
-									["Content/Text/Table.uasset", types.table],
-									...packages.flatMap((item) =>
-										item.assetClass === undefined
-											? []
-											: [[item.path, item.assetClass] as const]
-									)
-								])
-							);
 							const localization = { target: fixture.target.name };
 							const request = (
 								filter: TextFilter,
@@ -208,18 +192,10 @@ describe("asset_type filter", () => {
 								facets: { assetTypes: true, origins: true },
 								...(scoped ? { localization } : undefined)
 							});
-							const search = (filter: TextFilter, scoped: boolean) => {
-								const wanted = request(filter, scoped);
-								return result.search(wanted).pipe(
-									Effect.map((page) => {
-										const indexed = decided(memory, page);
-										expect(indexed, JSON.stringify(wanted)).toEqual(
-											decided(memory, inMemory.search(wanted))
-										);
-										return indexed;
-									})
-								);
-							};
+							const search = (filter: TextFilter, scoped: boolean) =>
+								result
+									.search(request(filter, scoped))
+									.pipe(Effect.map((page) => decided(memory, page)));
 
 							for (const scoped of [false, true]) {
 								const view = scoped ? "lines" : "units";
@@ -233,22 +209,48 @@ describe("asset_type filter", () => {
 									"Start",
 									"Welcome"
 								]);
-								// Each type counts its lines; the Widget Blueprint and Blueprint each
-								// count UI/Shared. The legacy package's text has no type.
-								expect(
-									Object.fromEntries(
-										all.assetTypes!.entries.map((entry) => [
-											entry.key,
-											[entry.label, entry.count]
-										])
-									)
-								).toEqual({
-									[types.table]: ["Data table", 1],
-									[types.strings]: ["String table", 1],
-									[types.widget]: ["Widget blueprint", 2],
-									[types.blueprint]: ["Blueprint", 2],
-									[types.world]: ["Level", 1]
-								});
+								expect(all.total).toBe(7);
+								expect(all.editable).toEqual([1, 6]);
+								// The target's manifest gathers only UI/K.
+								expect(all.problems).toEqual(
+									scoped ? { not_gathered: 6, translation: 1 } : { up_to_date: 7 }
+								);
+								// Each type counts its lines; the Widget Blueprint and Blueprint
+								// each count UI/Shared. The legacy package's text has no type.
+								// Larger counts come first, then labels; with a target, worse lines
+								// come first.
+								const assetTypes = [
+									[types.blueprint, "Blueprint", 2],
+									[types.widget, "Widget blueprint", 2],
+									...(scoped
+										? [
+												[types.world, "Level", 1],
+												[types.strings, "String table", 1],
+												[types.table, "Data table", 1]
+											]
+										: [
+												[types.table, "Data table", 1],
+												[types.world, "Level", 1],
+												[types.strings, "String table", 1]
+											])
+								];
+								expect(all.assetTypes).toEqual(assetTypes);
+								expect(all.origins).toEqual(
+									scoped
+										? [
+												["asset", 5, "not_gathered"],
+												["string_table", 1, "not_gathered"],
+												["data_table", 1, "translation"]
+											]
+										: [
+												["asset", 5, "up_to_date"],
+												["data_table", 1, "up_to_date"],
+												["string_table", 1, "up_to_date"]
+											]
+								);
+								const asset = (count: number) => [
+									["asset", count, scoped ? "not_gathered" : "up_to_date"]
+								];
 
 								// `is` matches when any place has a selected type.
 								const blueprints = yield* search(
@@ -257,25 +259,41 @@ describe("asset_type filter", () => {
 								);
 								expect(blueprints[view]).toEqual(["Door", "Shared"]);
 								expect(blueprints.total).toBe(2);
+								expect(blueprints.problems).toEqual(
+									scoped ? { not_gathered: 2 } : { up_to_date: 2 }
+								);
+								expect(blueprints.origins).toEqual(asset(2));
 								// The facet leaves out its own clause, so it still offers every type.
-								expect(blueprints.assetTypes).toEqual(all.assetTypes);
-								expect(
-									(yield* search(
-										[typeClause("is", [types.widget, types.blueprint])],
-										scoped
-									))[view]
-								).toEqual(["Door", "Hud", "Shared"]);
-								expect(
-									(yield* search([typeClause("is", [types.world])], scoped))[view]
-								).toEqual(["Welcome"]);
+								expect(blueprints.assetTypes).toEqual(assetTypes);
+								const either = yield* search(
+									[typeClause("is", [types.widget, types.blueprint])],
+									scoped
+								);
+								expect([either[view], either.total]).toEqual([
+									["Door", "Hud", "Shared"],
+									3
+								]);
+								expect(either.origins).toEqual(asset(3));
+								const world = yield* search(
+									[typeClause("is", [types.world])],
+									scoped
+								);
+								expect([world[view], world.total]).toEqual([["Welcome"], 1]);
 
 								// `is_not` matches when no place has one, so untyped text stays.
-								expect(
-									(yield* search(
-										[typeClause("is_not", [types.blueprint])],
-										scoped
-									))[view]
-								).toEqual(["Hud", "K", "Legacy", "Start", "Welcome"]);
+								const notBlueprints = yield* search(
+									[typeClause("is_not", [types.blueprint])],
+									scoped
+								);
+								expect([notBlueprints[view], notBlueprints.total]).toEqual([
+									["Hud", "K", "Legacy", "Start", "Welcome"],
+									5
+								]);
+								expect(notBlueprints.editable).toEqual([1, 4]);
+								expect(notBlueprints.problems).toEqual(
+									scoped ? { not_gathered: 4, translation: 1 } : { up_to_date: 5 }
+								);
+								expect(notBlueprints.assetTypes).toEqual(assetTypes);
 
 								// Every clause must match; other clauses narrow the facet's counts.
 								const combined = yield* search(
@@ -285,14 +303,18 @@ describe("asset_type filter", () => {
 									],
 									scoped
 								);
-								expect(combined[view]).toEqual(["Hud"]);
+								expect([combined[view], combined.total]).toEqual([["Hud"], 1]);
+								expect(combined.origins).toEqual(asset(1));
 								const origins = yield* search(
 									[{ field: "origin", op: "is", values: ["data_table"] }],
 									scoped
 								);
-								expect(
-									origins.assetTypes!.entries.map((entry) => entry.key)
-								).toEqual([types.table]);
+								expect([origins[view], origins.total]).toEqual([["K"], 1]);
+								expect(origins.editable).toEqual([1, 0]);
+								expect(origins.assetTypes).toEqual([
+									[types.table, "Data table", 1]
+								]);
+								expect(origins.origins).toEqual(all.origins);
 
 								// Filtering happens before paging: totals cover every match.
 								const paged = request(

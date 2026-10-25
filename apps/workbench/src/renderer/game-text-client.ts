@@ -323,11 +323,44 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 			parseTextCorpusQueryRunResult
 		)
 	),
-	progress: Effect.fn("GameTextClient.progress")(() =>
-		invokeRequest(
-			"gameText.progress",
-			() => window.ueShed.gameText.progress(),
-			Schema.decodeUnknownEffect(WorkbenchTaskProgress)
+	// Listening starts before the snapshot is read; a change that arrives first supersedes it.
+	progress: Stream.callback<unknown, GameTextClientError>(
+		(queue) =>
+			Effect.gen(function* () {
+				let changed = false;
+				yield* Effect.acquireRelease(
+					Effect.sync(() =>
+						window.ueShed.gameText.onProgress((progress) => {
+							changed = true;
+							Queue.offerUnsafe(queue, progress);
+						})
+					),
+					(unsubscribe) => Effect.sync(unsubscribe)
+				);
+				const snapshot = yield* invokeRequest(
+					"gameText.progress",
+					() => window.ueShed.gameText.progress(),
+					Effect.succeed
+				);
+				if (!changed) Queue.offerUnsafe(queue, snapshot);
+			}),
+		{ bufferSize: 1, strategy: "sliding" }
+	).pipe(
+		Stream.mapEffect((progress) =>
+			Schema.decodeUnknownEffect(WorkbenchTaskProgress)(progress).pipe(
+				Effect.mapError(
+					(cause) =>
+						new GameTextClientError({
+							message: "Game Text could not read its progress.",
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "game_text_client_failed",
+							cause,
+							operation: "gameText.progress",
+							recovery
+						})
+				)
+			)
 		)
 	),
 	locateAsset: Effect.fn("GameTextClient.locateAsset")((objectPath: string) =>

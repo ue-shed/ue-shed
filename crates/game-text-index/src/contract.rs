@@ -12,8 +12,10 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 8] = [
+const SOURCES: [&str; 13] = [
     include_str!("contract.rs"),
+    include_str!("session.rs"),
+    include_str!("batch.rs"),
     include_str!("rules/ir.rs"),
     include_str!("rules/replies.rs"),
     include_str!("engine.rs"),
@@ -21,10 +23,14 @@ const SOURCES: [&str; 8] = [
     include_str!("rules/findings_query.rs"),
     include_str!("rules/identity.rs"),
     include_str!("wtf8.rs"),
+    include_str!("engine_types.rs"),
+    include_str!("engine_where.rs"),
+    include_str!("sink.rs"),
 ];
 
 /// The engine's build and contract identity, reported by `capabilities`.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContractIdentity {
     /// The UE Shed suite version the engine was built for.
@@ -54,6 +60,14 @@ pub fn identity() -> ContractIdentity {
 
 #[cfg(test)]
 mod tests {
+    use crate::batch::{BatchHeader, ColumnHeader, ColumnType, Missing, StringsHeader};
+    use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile, Progress};
+    use crate::engine_types::{
+        DetailSection, Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, LineAnswer,
+        LineRequest, OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer,
+        QueryParts, RelatedSection, RowKind, RowSelection, RowsPart, Selection, TextSearch,
+    };
+    use crate::engine_where::Facet;
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
         Order, Page, QueryRequest, RuleTotal, View,
@@ -65,8 +79,12 @@ mod tests {
     use crate::rules::replies::{
         EvaluationProfile, FindingsEvaluation, LineDiagnostic, Memory, Place, PlaceSet,
         ProfileSample, ReadProfile, RoleTotal, RuleCount, RuleMetadata, RuleProblem,
-        RuleProblemCode, RulesCheck, RunProfile, SpilledReply, StageSample, SubStageSample,
+        RuleProblemCode, RulesCheck, RunProfile, StageSample, SubStageSample,
     };
+    use crate::session::{EngineEnd, EngineError, EngineFailure};
+    use crate::sink::{Envelope, Format, Sink, SinkSummary};
+    use crate::snapshot::IoMetrics;
+    use crate::store::Configuration;
     use ts_rs::{Config, TS};
 
     const GENERATED: &str = "packages/protocol/src/game-text-contract.generated.ts";
@@ -97,6 +115,22 @@ mod tests {
              readonly [key: string]: JsonValue;\n};\n",
         );
         for declaration in [
+            EngineRequest::decl(&config),
+            super::ContractIdentity::decl(&config),
+            Configuration::decl(&config),
+            EnginePolicy::decl(&config),
+            OpenReply::decl(&config),
+            EngineEnd::decl(&config),
+            EngineFailure::decl(&config),
+            EngineError::decl(&config),
+            Profile::decl(&config),
+            Progress::decl(&config),
+            IoMetrics::decl(&config),
+            BatchHeader::decl(&config),
+            ColumnHeader::decl(&config),
+            ColumnType::decl(&config),
+            Missing::decl(&config),
+            StringsHeader::decl(&config),
             Document::decl(&config),
             Rule::decl(&config),
             Expr::decl(&config),
@@ -125,6 +159,31 @@ mod tests {
             FindingsAcceptRequest::decl(&config),
             AcceptedFinding::decl(&config),
             QueryRequest::decl(&config),
+            Query::decl(&config),
+            Selection::decl(&config),
+            TextSearch::decl(&config),
+            FindingsSelection::decl(&config),
+            Facet::decl(&config),
+            QueryParts::decl(&config),
+            RowsPart::decl(&config),
+            GroupKey::decl(&config),
+            OpenGroupsPart::decl(&config),
+            GroupsPart::decl(&config),
+            GroupBy::decl(&config),
+            Facets::decl(&config),
+            QueryAnswer::decl(&config),
+            OpenGroupAnswer::decl(&config),
+            LineRequest::decl(&config),
+            RowSelection::decl(&config),
+            RowKind::decl(&config),
+            PlacesSection::decl(&config),
+            DetailSection::decl(&config),
+            RelatedSection::decl(&config),
+            LineAnswer::decl(&config),
+            Sink::decl(&config),
+            Envelope::decl(&config),
+            Format::decl(&config),
+            SinkSummary::decl(&config),
             View::decl(&config),
             Order::decl(&config),
             Page::decl(&config),
@@ -137,7 +196,6 @@ mod tests {
             PlaceSet::decl(&config),
             Place::decl(&config),
             ReadProfile::decl(&config),
-            SpilledReply::decl(&config),
         ] {
             text.push_str("\nexport ");
             text.push_str(
@@ -147,6 +205,10 @@ mod tests {
             );
             text.push('\n');
         }
+        text.push('\n');
+        text.push_str(
+            &crate::batch::relations_typescript().unwrap_or_else(|error| error.to_string()),
+        );
         text.push_str("}\n");
         text
     }

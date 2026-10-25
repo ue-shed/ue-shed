@@ -141,9 +141,19 @@ export interface GameTextIndexRefreshResult {
 		options?: IndexedLocalizationQualityOptions
 	) => Effect.Effect<QueriedLocalizationQuality, IndexFailure>;
 	/**
-	 * The complete CLI quality report, including proposals collected before acceptance filtering.
-	 * A complete rule the engine can't run fails it with the rules file's error.
+	 * The CLI quality report, ready to write: its proposals, collected before acceptance
+	 * filtering, and its findings' count are read, and the engine writes the findings as the
+	 * report is written. A complete rule the engine can't run fails it with the rules file's
+	 * error.
 	 */
+	readonly prepareLocalizationCheck: (
+		document?: GameTextRuleDocument,
+		options?: IndexedLocalizationQualityOptions
+	) => Effect.Effect<
+		import("./localization-check-report.js").PreparedLocalizationCheck,
+		IndexFailure | import("./game-text-rules.js").GameTextRuleDocumentError
+	>;
+	/** `prepareLocalizationCheck`'s report as a value, for hosts that keep it. */
 	readonly localizationCheck: (
 		document?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions

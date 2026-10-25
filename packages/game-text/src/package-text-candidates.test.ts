@@ -1,7 +1,8 @@
-import { expect, it } from "vitest";
-import { Schema } from "effect";
+import { it } from "@effect/vitest";
+import { expect } from "vitest";
+import { Effect, Schema } from "effect";
 import { TextCorpus, TextCorpusQuerySummary } from "./schema.js";
-import { textCorpusQuery } from "./query.test-support.js";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { textPackageCoverageSummary } from "./corpus-summary.js";
 import {
 	isPackageTextCandidate,
@@ -26,7 +27,7 @@ it("uses the saved gather flag and summary without a class whitelist", () => {
 	expect(isPackageTextCandidate({ ...header, gatherableTextDataCount: 1 })).toBe(false);
 	expect(isPackageTextCandidate({ ...header, hasTextProperty: true })).toBe(false);
 });
-it("keeps old corpus decoding and makes exclusions visible in loc status coverage", () => {
+it.live("keeps old corpus decoding and makes exclusions visible in loc status coverage", () => {
 	const corpus = Schema.decodeUnknownSync(TextCorpus)({
 		schemaVersion: 1,
 		status: "complete",
@@ -52,8 +53,15 @@ it("keeps old corpus decoding and makes exclusions visible in loc status coverag
 		omitted: 0
 	});
 	expect(mapped.diagnostics[0]?.message).toContain("Excluded because Unreal does not gather");
-	expect(
-		Schema.decodeUnknownSync(TextCorpusQuerySummary)(textCorpusQuery(mapped).summary())
-			.notGatherablePackages
-	).toBe(1);
+	// The index excludes the same package from its header and counts it in the summary.
+	return withIndexedCorpus(
+		{ units: [] },
+		{ notGatherable: ["Content/Native.uasset"] },
+		({ query }) =>
+			Effect.map(query.summary(), (summary) =>
+				expect(
+					Schema.decodeUnknownSync(TextCorpusQuerySummary)(summary).notGatherablePackages
+				).toBe(1)
+			)
+	);
 });

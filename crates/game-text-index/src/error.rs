@@ -11,7 +11,11 @@ pub enum ErrorCode {
     StaleGeneration,
     Unavailable,
     NotFound,
+    /// A file the request may not overwrite is already there.
+    Exists,
     Io,
+    /// A defect in the engine, such as a panic, contained to the request it failed.
+    Internal,
 }
 
 impl ErrorCode {
@@ -25,7 +29,9 @@ impl ErrorCode {
             Self::StaleGeneration => "stale_generation",
             Self::Unavailable => "unavailable",
             Self::NotFound => "not_found",
+            Self::Exists => "exists",
             Self::Io => "io_error",
+            Self::Internal => "internal",
         }
     }
 }

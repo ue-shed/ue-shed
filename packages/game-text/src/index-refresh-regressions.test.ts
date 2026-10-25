@@ -7,7 +7,6 @@ import { LocalizationEvidence } from "@ue-shed/localization";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import { SharedIndex, sharedIndexDirectory, sharedIndexNodeLayer } from "./shared-index.js";
 
 // Facts are unordered flags; all evidence, primary states and unknown reasons compare exactly.
@@ -150,16 +149,49 @@ it.live.each(["manifest", "archive", "po"] as const)(
 							culture: fixture.target.cultures[1]!
 						}
 					};
-					expect((yield* failed.query.search(search)).localization?.counts).toEqual(
-						textCorpusQuery(fixture.raw(), undefined, expected).search(search)
-							.localization?.counts
+					// Each culture's line states and unknown reasons that count a line.
+					const counted = (yield* failed.query.search(search)).localization?.counts.map(
+						(count) => ({
+							culture: count.culture,
+							states: Object.fromEntries(
+								Object.entries(count.states).filter(([, state]) => state.lines > 0)
+							),
+							reasons: Object.fromEntries(
+								Object.entries(count.unknownReasons).filter(
+									([, lines]) => lines > 0
+								)
+							)
+						})
 					);
+					const line = { lines: 1, sourceWords: 1 };
+					const de = {
+						manifest: { states: { unknown: line }, reasons: { missing_manifest: 1 } },
+						archive: {
+							states: broken === "missing" ? { not_synced: line } : { unknown: line },
+							reasons: { missing_archive: 1 }
+						},
+						po: {
+							states:
+								broken === "missing" ? { needs_update: line } : { unknown: line },
+							reasons: { missing_po: 1 }
+						}
+					}[kind];
+					expect(counted).toEqual([
+						{
+							culture: "en",
+							...(kind === "manifest"
+								? de
+								: { states: { translated: line }, reasons: {} })
+						},
+						{ culture: "de", ...de }
+					]);
 					const reopened = yield* Effect.gen(function* () {
-						return yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
+						const reopened = yield* (yield* GameTextIndexRefresh).refresh(
+							fixture.request
+						);
+						return yield* reopened.localizationJoin;
 					}).pipe(Effect.provide(fixture.layer(), { local: true }));
-					expect(yield* reopened.localizationJoin).toEqual(
-						yield* failed.localizationJoin
-					);
+					expect(reopened).toEqual(yield* failed.localizationJoin);
 					expect((yield* first.localizationJoin).lines).toEqual(pinned);
 					expect(yield* first.corpus).toEqual(fixture.raw());
 					yield* Effect.promise(() => writeFile(join(fixture.projectRoot, file), saved));
@@ -199,17 +231,21 @@ it.live("raw corpus retains invisible units and empty-source String Table eviden
 				}
 			}
 		]);
-		const indexed = yield* Effect.gen(function* () {
-			return yield* (yield* GameTextIndexRefresh).refresh({
+		yield* Effect.gen(function* () {
+			const indexed = yield* (yield* GameTextIndexRefresh).refresh({
 				projectRoot: fixture.projectRoot
 			});
+			expect(yield* indexed.corpus).toEqual(fixture.raw());
+			expect((yield* indexed.corpus).units).toHaveLength(4);
+			expect((yield* indexed.corpus).coverage.textOccurrences).toBe(4);
+			const search = { query: "", capability: "all" as const, pageSize: 10 };
+			// Search and export list only the unit with visible text; the coverage counts all four.
+			expect((yield* indexed.query.search(search)).total).toBe(1);
+			const exported = yield* indexed.query.export(search);
+			expect(exported.units.map((unit) => [unit.id, unit.source])).toEqual([
+				["unreal:UI:K0", { status: "consistent", value: "Visible" }]
+			]);
+			expect(exported.coverage).toEqual(fixture.raw().coverage);
 		}).pipe(Effect.provide(fixture.layer()));
-		expect(yield* indexed.corpus).toEqual(fixture.raw());
-		expect((yield* indexed.corpus).units).toHaveLength(4);
-		expect((yield* indexed.corpus).coverage.textOccurrences).toBe(4);
-		const search = { query: "", capability: "all" as const, pageSize: 10 };
-		const oracle = textCorpusQuery(fixture.raw());
-		expect((yield* indexed.query.search(search)).total).toBe(oracle.search(search).total);
-		expect(yield* indexed.query.export(search)).toEqual(oracle.export(search));
 	})
 );

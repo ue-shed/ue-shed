@@ -164,7 +164,8 @@ export interface GameTextClientApi {
 	readonly locateAsset: (
 		objectPath: string
 	) => Effect.Effect<EditorAssetLocateResult, GameTextClientError>;
-	readonly progress: () => Effect.Effect<TaskProgress, GameTextClientError>;
+	/** Game Text's progress, then each change to it, pushed by the host. */
+	readonly progress: Stream.Stream<TaskProgress, GameTextClientError>;
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;

@@ -8,7 +8,7 @@ import { GameTextIndexBuilder } from "./index-builder.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { SharedIndex, sharedIndexDirectory, sharedIndexNodeLayer } from "./shared-index.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
-import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
+import { GameTextIndexQuery } from "./index-query-native.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target, cultureCode } from "./localization.test-support.js";
 
@@ -162,15 +162,16 @@ describe.skipIf(!executable)("native index build capability", () => {
 									const joined = yield* openJoinedTarget().pipe(
 										Effect.provide(sharedIndexNodeLayer(options))
 									);
-									const query = columnarTextCorpusQuery(
-										joined,
-										"2026-10-17T00:00:00.000Z"
-									);
+									const query = yield* (yield* GameTextIndexQuery).open({
+										configuration: options,
+										generation: joined.reader.manifest.generation,
+										joinedKey: joined.reader.manifest.active.joined!
+									});
 									expect(joined.meta.input.fileProvenances?.["de.po"]).toEqual(
 										provenance
 									);
 									snapshots.push(
-										query.search({
+										yield* query.search({
 											query: "",
 											capability: "all",
 											pageSize: 50,
@@ -194,6 +195,35 @@ describe.skipIf(!executable)("native index build capability", () => {
 					)
 				);
 			}
+			// The native culture's translation differs from the source, so German needs an update
+			// until its PO edit, which the archive has not synced.
+			expect(
+				outputs[0]!.map((page) =>
+					page.localization?.lines.map((line) => [
+						line.id,
+						line.cultures.map((mark) => [mark.culture, mark.state, mark.translation])
+					])
+				)
+			).toEqual([
+				[
+					[
+						'Test:["UI","K"]',
+						[
+							["en", "translated", "Shipped"],
+							["de", "needs_update", "Shipped"]
+						]
+					]
+				],
+				[
+					[
+						'Test:["UI","K"]',
+						[
+							["en", "translated", "Shipped"],
+							["de", "not_synced", "Updated translation"]
+						]
+					]
+				]
+			]);
 			expect(outputs[1]).toEqual(outputs[0]);
 		} finally {
 			await rm(root, { recursive: true, force: true });
@@ -273,25 +303,28 @@ describe.skipIf(!executable)("native index build capability", () => {
 										const joined = yield* openJoinedTarget().pipe(
 											Effect.provide(sharedIndexNodeLayer(options))
 										);
-										const query = columnarTextCorpusQuery(
-											joined,
-											"2026-10-17T00:00:00.000Z"
+										const query = yield* (yield* GameTextIndexQuery).open({
+											configuration: options,
+											generation: joined.reader.manifest.generation,
+											joinedKey: joined.reader.manifest.active.joined!
+										});
+										const pages = yield* Effect.forEach(
+											[
+												"",
+												"unique",
+												"missing-query",
+												"😀",
+												"\ud800",
+												"\udfff"
+											],
+											(queryText) =>
+												query.search({
+													query: queryText,
+													capability: "all",
+													pageSize: 50
+												})
 										);
-										const pages = [
-											"",
-											"unique",
-											"missing-query",
-											"😀",
-											"\ud800",
-											"\udfff"
-										].map((queryText) =>
-											query.search({
-												query: queryText,
-												capability: "all",
-												pageSize: 50
-											})
-										);
-										const filtered = query.search({
+										const filtered = yield* query.search({
 											query: "",
 											capability: "all",
 											pageSize: 50,
@@ -307,10 +340,10 @@ describe.skipIf(!executable)("native index build capability", () => {
 										return {
 											query,
 											value: {
-												summary: query.summary(),
+												summary: yield* query.summary(),
 												pages,
 												filtered,
-												focus: query.focus({
+												focus: yield* query.focus({
 													id: pages[0]!.units[0]!.id,
 													pageSize: 50
 												})
@@ -324,13 +357,41 @@ describe.skipIf(!executable)("native index build capability", () => {
 								const changed = yield* refresh(secondSource, "Example", "second");
 								expect(changed.strategy).toBe("incremental");
 								expect(
-									pinned.query.search({
+									(yield* pinned.query.search({
 										query: "first",
 										capability: "all",
 										pageSize: 50
-									}).total
+									})).total
 								).toBe(1);
 								const after = (yield* snapshot()).value;
+								// Each source's lone surrogate finds it; the other one does not.
+								const hits = (value: typeof before) =>
+									value.pages.map((page) => page.units.map((unit) => unit.id));
+								const example = ["unreal:UI:Example"];
+								expect(hits(before)).toEqual([
+									example,
+									example,
+									[],
+									example,
+									example,
+									[]
+								]);
+								expect(hits(after)).toEqual([
+									example,
+									example,
+									[],
+									example,
+									[],
+									example
+								]);
+								expect([
+									before.focus?.unit.source,
+									after.focus?.unit.source
+								]).toEqual([
+									{ status: "consistent", value: firstSource },
+									{ status: "consistent", value: secondSource }
+								]);
+								expect(before.filtered.total).toBe(0);
 								const restored = yield* refresh(firstSource, "Example", "first");
 								expect(restored.key).toBe(initial.key);
 								if (backend === "native")
@@ -342,6 +403,14 @@ describe.skipIf(!executable)("native index build capability", () => {
 								expect((yield* snapshot()).value).toEqual(after);
 								yield* refresh("Short structural replacement", "NewIdentity");
 								const structural = (yield* snapshot()).value;
+								expect(hits(structural)).toEqual([
+									["unreal:UI:NewIdentity"],
+									[],
+									[],
+									[],
+									[],
+									[]
+								]);
 								yield* builder.withSession(
 									{ configuration: options },
 									Effect.gen(function* () {
@@ -353,11 +422,11 @@ describe.skipIf(!executable)("native index build capability", () => {
 									})
 								);
 								expect(
-									pinned.query.search({
+									(yield* pinned.query.search({
 										query: "first",
 										capability: "all",
 										pageSize: 50
-									}).total
+									})).total
 								).toBe(1);
 								const compacted = (yield* snapshot()).value;
 								expect(compacted).toEqual(structural);

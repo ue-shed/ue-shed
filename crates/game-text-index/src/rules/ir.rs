@@ -48,6 +48,19 @@ macro_rules! expressions {
             FindingField((String, String)),
             #[serde(rename = "occurrences")]
             Occurrences(#[cfg_attr(test, ts(type = "[]"))] NoArguments),
+            /// A query's test that holds for some culture of the line's culture scope. Rules
+            /// cannot use the query forms yet (Phase 4 §6).
+            #[serde(rename = "anyCulture")]
+            AnyCulture(Box<Expr>),
+            /// A query's test that holds for every culture of the line's culture scope.
+            #[serde(rename = "everyCulture")]
+            EveryCulture(Box<Expr>),
+            /// A query's test that holds for some visible place of the row.
+            #[serde(rename = "anyPlace")]
+            AnyPlace(Box<Expr>),
+            /// A query conjunct that counting its facet drops.
+            #[serde(rename = "facet")]
+            Facet((crate::engine_where::Facet, Box<Expr>)),
             $(#[serde(rename = $unary_name)] $unary(Box<Expr>),)*
             $(#[serde(rename = $binary_name)] $binary(Box<[Expr; 2]>),)*
             $(#[serde(rename = $ternary_name)] $ternary(Box<[Expr; 3]>),)*
@@ -79,6 +92,10 @@ macro_rules! expressions {
                     Self::Finding(rule) => Form::Finding(rule),
                     Self::FindingField((rule, path)) => Form::FindingField(rule, path),
                     Self::Occurrences(_) => Form::Occurrences,
+                    Self::AnyCulture(_) => Form::Query("anyCulture"),
+                    Self::EveryCulture(_) => Form::Query("everyCulture"),
+                    Self::AnyPlace(_) => Form::Query("anyPlace"),
+                    Self::Facet(_) => Form::Query("facet"),
                     Self::Object(fields) => Form::Object(fields),
                     Self::List(values) => Form::Apply(Op::List, values),
                     $(Self::$unary(value) => Form::Apply(Op::$unary, std::slice::from_ref(value)),)*
@@ -215,6 +232,8 @@ pub(super) enum Form<'a> {
     Finding(&'a str),
     FindingField(&'a str, &'a str),
     Occurrences,
+    /// A query form, which rules cannot use.
+    Query(&'static str),
     Object(&'a IndexMap<String, Expr>),
     Apply(Op, &'a [Expr]),
     /// A list operator: its second argument sees the element as the named variable.

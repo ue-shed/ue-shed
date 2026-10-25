@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
-import { LocalizationEvidence } from "@ue-shed/localization";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import {
 	TextFilterClause,
 	type TextCorpus,
 	type TextCorpusSearchPage,
-	type TextCorpusSearchRequest,
 	type TextFilter
 } from "./schema.js";
 import { gatheredIdentity, gatheredIdentityKey } from "./gathered-text.js";
@@ -87,14 +83,20 @@ const lineKeys = (page: TextCorpusSearchPage) =>
 		)
 		.sort();
 
-/** What a filter decides on a page: rows, totals and per-problem counts. */
+/** What a filter decides on a page: rows, totals, problem counts and the origin facet. */
 const decided = (corpus: TextCorpus, page: TextCorpusSearchPage) => ({
 	total: page.total,
 	units: unitKeys(corpus, page),
 	lines: lineKeys(page),
-	problems: page.problems,
-	counts: page.counts,
-	origins: page.facets?.origins
+	problems: Object.fromEntries(
+		Object.entries(page.problems ?? {}).filter(([, count]) => count > 0)
+	),
+	origins: page.facets?.origins?.entries.map((entry) => [
+		entry.key,
+		entry.count,
+		entry.needWork,
+		entry.worst
+	])
 });
 
 const builders = [
@@ -134,86 +136,113 @@ describe("translation_key filter", () => {
 								fixture.request
 							);
 							const memory = fixture.raw();
-							const evidence = yield* Effect.gen(function* () {
-								return yield* (yield* LocalizationEvidence).read({
-									projectRoot: fixture.projectRoot,
-									target: fixture.target
-								});
-							}).pipe(Effect.provide(fixture.evidence));
-							const inMemory = textCorpusQuery(
-								memory,
-								undefined,
-								joinLocalizationTarget(memory, evidence)
-							);
 							const localization = { target: fixture.target.name };
-							const search = (filter: TextFilter, scoped: boolean) => {
-								const request: TextCorpusSearchRequest = {
-									query: "",
-									capability: "all",
-									pageSize: 50,
-									filter,
-									facets: { origins: true },
-									...(scoped ? { localization } : undefined)
-								};
-								return result.search(request).pipe(
-									Effect.map((page) => {
-										const indexed = decided(memory, page);
-										expect(indexed, JSON.stringify(request)).toEqual(
-											decided(memory, inMemory.search(request))
-										);
-										return indexed;
+							const search = (filter: TextFilter, scoped: boolean) =>
+								result
+									.search({
+										query: "",
+										capability: "all",
+										pageSize: 50,
+										filter,
+										facets: { origins: true },
+										...(scoped ? { localization } : undefined)
 									})
-								);
-							};
+									.pipe(Effect.map((page) => decided(memory, page)));
 							const copies = [`${markers[0]}/Title`];
+							const subtitles = [`${markers[0]}/Subtitle`];
 
-							// Without a target, the one unit holding every saved copy of the key.
-							const units = yield* search([keyClause("is", [title])], false);
-							expect(units.units).toEqual(copies);
-							expect(units.total).toBe(1);
-							// With one, the single line Unreal translates them by, which conflicts.
+							// Without a target, the one unit holding every saved copy of the key,
+							// whose copies conflict.
+							expect(yield* search([keyClause("is", [title])], false)).toEqual({
+								total: 1,
+								units: copies,
+								lines: [],
+								problems: { conflicting_source: 1 },
+								origins: [["asset", 1, 1, "conflicting_source"]]
+							});
+							// With one, the single line Unreal translates them by, which conflicts
+							// and was never gathered.
 							const lines = yield* search([keyClause("is", [title])], true);
-							expect(lines.lines).toEqual(["/Title"]);
-							expect(lines.problems?.conflicting_source).toBe(1);
+							expect(lines).toEqual({
+								total: 1,
+								units: copies,
+								lines: ["/Title"],
+								problems: { conflicting_source: 1, not_gathered: 1 },
+								origins: [["asset", 1, 1, "conflicting_source"]]
+							});
 
 							// Another key and the String Table entry stay out, and is_not keeps them.
+							expect(yield* search([keyClause("is_not", [title])], false)).toEqual({
+								total: 2,
+								units: ["Mycology/Title", ...subtitles],
+								lines: [],
+								problems: { up_to_date: 2 },
+								origins: [
+									["asset", 1, 0, "up_to_date"],
+									["string_table", 1, 0, "up_to_date"]
+								]
+							});
+							// The target's manifest still lists UI/K, which is no longer saved.
+							expect(yield* search([keyClause("is_not", [title])], true)).toEqual({
+								total: 3,
+								units: ["Mycology/Title", ...subtitles],
+								lines: ["/Subtitle", "Mycology/Title", "UI/K"],
+								problems: { not_gathered: 2, changed_since_gather: 1 },
+								origins: [
+									["asset", 2, 2, "not_gathered"],
+									["string_table", 1, 1, "not_gathered"]
+								]
+							});
 							expect(
-								(yield* search([keyClause("is_not", [title])], false)).units
-							).toEqual(["Mycology/Title", `${markers[0]}/Subtitle`]);
-							expect(
-								(yield* search([keyClause("is_not", [title])], true)).lines
-							).toEqual(["/Subtitle", "Mycology/Title", "UI/K"]);
-							expect(
-								(yield* search([keyClause("is", [subtitle, tableTitle])], true))
-									.lines
-							).toEqual(["/Subtitle", "Mycology/Title"]);
+								yield* search([keyClause("is", [subtitle, tableTitle])], true)
+							).toEqual({
+								total: 2,
+								units: ["Mycology/Title", ...subtitles],
+								lines: ["/Subtitle", "Mycology/Title"],
+								problems: { not_gathered: 2 },
+								origins: [
+									["asset", 1, 1, "not_gathered"],
+									["string_table", 1, 1, "not_gathered"]
+								]
+							});
 
-							// Combined with other clauses, every clause must match.
+							// Combined with other clauses, every clause must match; the problem
+							// counts leave out the problem clause.
 							const conflicting = {
 								field: "problem",
 								op: "is",
 								values: ["conflicting_source"]
 							} as const;
 							expect(
-								(yield* search([keyClause("is", [title]), conflicting], false))
-									.units
-							).toEqual(copies);
+								yield* search([keyClause("is", [title]), conflicting], false)
+							).toEqual(yield* search([keyClause("is", [title])], false));
 							expect(
-								(yield* search([keyClause("is", [title]), conflicting], true)).lines
-							).toEqual(["/Title"]);
+								yield* search([keyClause("is", [title]), conflicting], true)
+							).toEqual(lines);
 							expect(
-								(yield* search([keyClause("is", [subtitle]), conflicting], true))
-									.total
-							).toBe(0);
+								yield* search([keyClause("is", [subtitle]), conflicting], true)
+							).toEqual({
+								total: 0,
+								units: [],
+								lines: [],
+								problems: { not_gathered: 1 },
+								origins: []
+							});
 							expect(
-								(yield* search(
+								yield* search(
 									[
 										keyClause("is", [title, subtitle]),
 										{ field: "namespace", op: "is", values: [""] }
 									],
 									true
-								)).lines
-							).toEqual(["/Subtitle", "/Title"]);
+								)
+							).toEqual({
+								total: 2,
+								units: [...subtitles, ...copies],
+								lines: ["/Subtitle", "/Title"],
+								problems: { conflicting_source: 1, not_gathered: 2 },
+								origins: [["asset", 2, 2, "conflicting_source"]]
+							});
 						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})
 				)

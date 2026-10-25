@@ -13,7 +13,7 @@ import type { TextCorpus } from "@ue-shed/game-text/schema";
 import { Deferred, Effect, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
-import { oracleGameTextIndexLayer } from "./game-text-index.test-support.js";
+import { cannedGameTextIndexLayer } from "./game-text-index.test-support.js";
 
 const emptyCorpus: TextCorpus = {
 	coverage: {
@@ -81,7 +81,7 @@ function memoryFiles() {
 const provideWorkspace = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	effect.pipe(
 		Effect.scoped,
-		Effect.provide(oracleGameTextIndexLayer(() => Effect.succeed(emptyCorpus))),
+		Effect.provide(cannedGameTextIndexLayer(() => Effect.succeed(emptyCorpus))),
 		Effect.provide(noLocalization)
 	);
 
@@ -156,7 +156,7 @@ for (const full of [false, true]) {
 						expect(yield* Ref.get(scans)).toBe(1);
 					}).pipe(
 						Effect.scoped,
-						Effect.provide(oracleGameTextIndexLayer(() => scan)),
+						Effect.provide(cannedGameTextIndexLayer(() => scan)),
 						Effect.provide(noLocalization)
 					);
 				})

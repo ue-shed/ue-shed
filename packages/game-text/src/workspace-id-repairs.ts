@@ -19,6 +19,7 @@ import {
 } from "./text-actions.js";
 import { prepareTextIdTableRepair, applyTextIdTableRepair } from "./id-repair-tables.js";
 import { stripPackageNamespace } from "@ue-shed/localization";
+import { MAX_TEXT_SECTION_ROWS } from "./schema.js";
 import type { GameTextWorkspaceApi } from "./workspace.js";
 import type {
 	GameTextWorkspaceFileHooks,
@@ -127,21 +128,11 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 					nextStep: "fix_input"
 				});
 			seen.add(key);
-			let found = yield* host.workspace.focus({ id: change.unitId, pageSize: 50 });
-			let pages = 1;
-			while (
-				found.status === "found" &&
-				!found.focus.occurrences.some((item) => sameRepairOccurrence(item, expected)) &&
-				found.focus.nextOccurrenceCursor &&
-				pages < 6
-			) {
-				found = yield* host.workspace.focus({
-					id: change.unitId,
-					pageSize: 50,
-					occurrenceCursor: found.focus.nextOccurrenceCursor
-				});
-				pages++;
-			}
+			// The unit's first 500 places, in one read.
+			const found = yield* host.workspace.focus({
+				id: change.unitId,
+				pageSize: MAX_TEXT_SECTION_ROWS
+			});
 			if (
 				found.status !== "found" ||
 				!found.focus.occurrences.some((item) => sameRepairOccurrence(item, expected))

@@ -70,7 +70,8 @@ view. Source queries use `importTarget(project)` without a target name. Importin
 never starts package inventory. The convenience refresh layer supplies the same steps.
 
 `GameTextIndexBuilderLive` derives configuration from the existing reader. It requires
-`game_text_index`, `game_text_engine_v1` and uasset-io protocol 1.15. Library, CLI and Workbench
+`game_text_index`, uasset-io protocol 1.15 and the `uasset game-text-engine` session from the same
+UE Shed build. Library, CLI and Workbench
 hosts use this same native engine. `nativeIndexBuilderLayer(readerConfiguration)` supports
 explicit configuration. Storage, joins, incremental publication and all corpus queries run in
 Rust. TypeScript test oracles are excluded from package builds and public entry points.

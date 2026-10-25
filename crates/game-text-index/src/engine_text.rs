@@ -22,7 +22,7 @@ impl TextArena {
     /// The arena persisted under `prefix`, and the strings `references` names that it lacks: a
     /// retained arena may predate an incremental edit, so text added since is scanned.
     pub fn open(
-        query: &mut EngineQuery,
+        query: &EngineQuery,
         prefix: &str,
         references: impl Iterator<Item = u32>,
         cancelled: &AtomicBool,

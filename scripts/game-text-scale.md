@@ -36,8 +36,8 @@ namespace, table namespaces and small namespaces. The ten-culture recipe becomes
 Each heap setting runs the entire current pipeline in a fresh child, with `--expose-gc`, isolated
 from inherited `NODE_OPTIONS`. `--heaps` takes `default` or comma-separated MiB limits. Stages are
 evidence (including target discovery), corpus (schema-validated event replay through the real
-`TextCorpusService` and an `AssetReader` test layer), join (including persisted review and key
-changes), and status (query construction, one 50-line search page and `localizationStatusReport`).
+`TextCorpusService` and an `AssetReader` test layer), and join (including persisted review and key
+changes).
 Inputs remain retained across stages, just as in today's CLI.
 
 Memory samples run every 25 ms, with IPC updates every 250 ms and explicit checkpoints. Synchronous

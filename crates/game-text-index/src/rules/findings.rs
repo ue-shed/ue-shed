@@ -26,7 +26,7 @@ pub(crate) struct FindingsLayer {
     pub(super) dictionary: EngineReader,
     record: Value,
     pub(super) metadata: LayerMetadata,
-    columns: HashMap<String, Arc<[u32]>>,
+    columns: crate::cache::Memo<String, Arc<[u32]>>,
 }
 impl FindingsLayer {
     pub(super) fn open(configuration: &Configuration, key: &str, joined: &str) -> Result<Self> {
@@ -77,28 +77,25 @@ impl FindingsLayer {
             dictionary,
             record,
             metadata,
-            columns: HashMap::new(),
+            columns: Default::default(),
         })
     }
-    pub(super) fn column(&mut self, name: &str) -> Result<Arc<[u32]>> {
-        if let Some(value) = self.columns.get(name) {
-            return Ok(Arc::clone(value));
-        }
-        let bytes = section(&self.reader, name)?;
-        let value: Arc<[u32]> = if self.record["stringColumns"].get(name).is_some() {
-            decode_ids(&bytes, self.record["idEncoding"] == "delta32")?
-        } else {
-            integers(&bytes)?
-        }
-        .into();
-        self.columns.insert(name.into(), Arc::clone(&value));
-        Ok(value)
+    pub(super) fn column(&self, name: &str) -> Result<Arc<[u32]>> {
+        self.columns.get_or_try(name.into(), || {
+            let bytes = section(&self.reader, name)?;
+            Ok(if self.record["stringColumns"].get(name).is_some() {
+                decode_ids(&bytes, self.record["idEncoding"] == "delta32")?
+            } else {
+                integers(&bytes)?
+            }
+            .into())
+        })
     }
-    pub(super) fn json(&mut self, id: u32) -> Result<Value> {
+    pub(super) fn json(&self, id: u32) -> Result<Value> {
         crate::json_value::parse_stored(&self.dictionary.string(id)?)
     }
     /// A place set's occurrence IDs, in the order the finding names them.
-    pub(super) fn place_set(&mut self, set: u32) -> Result<Vec<String>> {
+    pub(super) fn place_set(&self, set: u32) -> Result<Vec<String>> {
         let offsets = self.column("places.offsets")?;
         let members = self.column("places.members")?;
         let (start, end) = (
@@ -173,29 +170,34 @@ pub(super) struct EvaluatedFindings {
 impl EngineQuery {
     /// Evaluation reads raw index columns into its own scope, never the query cache.
     pub(super) fn evaluate_findings(
-        &mut self,
+        &self,
         program: &super::Program,
         collator: &HostCollator,
         cancelled: &AtomicBool,
         request: Option<&Measure>,
+        reporter: Option<Arc<dyn crate::engine::Reporter>>,
     ) -> Result<EvaluatedFindings> {
         self.reader.begin_evaluation()?;
-        let evaluated = self.evaluate_scoped(program, collator, cancelled, request);
+        let evaluated = self.evaluate_scoped(program, collator, cancelled, request, reporter);
         self.reader.end_evaluation();
         evaluated
     }
     fn evaluate_scoped(
-        &mut self,
+        &self,
         program: &super::Program,
         collator: &HostCollator,
         cancelled: &AtomicBool,
         request: Option<&Measure>,
+        reporter: Option<Arc<dyn crate::engine::Reporter>>,
     ) -> Result<EvaluatedFindings> {
         let elapsed = Measure::start();
         #[cfg(test)]
         let mut elapsed = elapsed;
         let mut arena = super::columns::Arena::new(self.reader.dictionary_count()?)?;
         arena.recorder = super::stages::Recorder::at(request.unwrap_or(&elapsed));
+        if let Some(reporter) = reporter {
+            arena.recorder.report_to(reporter, program.rules.len());
+        }
         let mut rules = (0..program
             .rules
             .iter()
@@ -442,7 +444,7 @@ impl EngineQuery {
     /// The layer's orders over its findings' facts, with the join's positions, each unit's rank
     /// in ID order and each line's packed ID.
     fn finding_orders(
-        &mut self,
+        &self,
         facts: &[Facts],
         rules: &[RuleMetadata],
         diagnostic_lines: &[u32],
@@ -453,10 +455,7 @@ impl EngineQuery {
             .as_str()
             .ok_or("Missing target name.")?
             .to_owned();
-        let request = crate::engine_types::parse_search_request(
-            &json!({"query":"","capability":"all","pageSize":50,"localization":{"target":target}})
-                .to_string(),
-        )?;
+        let request = crate::engine_types::Selection::lines(&target);
         let rows = self.matching(&request, cancelled)?;
         let mut join = vec![NONE; self.reader.column("line.source")?.len()];
         for (position, row) in rows.iter().enumerate() {
@@ -498,10 +497,25 @@ impl EngineQuery {
     }
 
     pub fn findings_evaluate(
-        &mut self,
+        &self,
         text: &str,
         locale: &str,
         cancelled: &AtomicBool,
+    ) -> Result<String> {
+        self.findings_evaluate_reporting(
+            text,
+            locale,
+            cancelled,
+            Arc::new(crate::engine::Unwatched),
+        )
+    }
+    /// Evaluates a rule document, reporting each rule it evaluates to `reporter`.
+    pub fn findings_evaluate_reporting(
+        &self,
+        text: &str,
+        locale: &str,
+        cancelled: &AtomicBool,
+        reporter: Arc<dyn crate::engine::Reporter>,
     ) -> Result<String> {
         let elapsed = Measure::start();
         checkpoint(cancelled)?;
@@ -525,6 +539,12 @@ impl EngineQuery {
                 .as_bytes()
             )
         );
+        if let Some(layer) = self.findings.get(&key) {
+            return layer.result(&key, EvaluationProfile::Cached);
+        }
+        // One evaluation of this reader at a time: it scopes the reader's column loads, and an
+        // evaluation that waited here finds the layer another one published.
+        let _evaluating = self.evaluation.lock();
         if let Some(layer) = self.findings.get(&key) {
             return layer.result(&key, EvaluationProfile::Cached);
         }
@@ -552,7 +572,13 @@ impl EngineQuery {
                 profile: evaluation_profile,
                 #[cfg(test)]
                     digest: _,
-            } = self.evaluate_findings(&program, &collator, cancelled, Some(&elapsed))?;
+            } = self.evaluate_findings(
+                &program,
+                &collator,
+                cancelled,
+                Some(&elapsed),
+                Some(reporter),
+            )?;
             let publish = Measure::start();
             let mut ordered = program.rules.iter().collect::<Vec<_>>();
             ordered.sort_by_key(|rule| rule.ordinal);
@@ -795,7 +821,7 @@ impl EngineQuery {
         drop(store);
         let layer = FindingsLayer::open(&self.configuration, &key, &self.reader.joined_key)?;
         let result = layer.result(&key, profile)?;
-        self.findings.insert(key, layer);
+        self.findings.store(key, Arc::new(layer));
         Ok(result)
     }
 }
@@ -841,7 +867,7 @@ fn role_matches(
 
 /// Each document role's places and units over the visible units, in the document's order.
 fn role_totals(
-    query: &mut EngineQuery,
+    query: &EngineQuery,
     program: &super::Program,
     occurrences: &super::occurrences::OccurrenceData,
     arena: &mut super::columns::Arena,
@@ -870,7 +896,7 @@ fn role_totals(
         let mut ids = occurrences.columns[field].to_vec();
         ids.sort_unstable();
         ids.dedup();
-        arena.load_strings(&mut query.reader, &ids)?;
+        arena.load_strings(&query.reader, &ids)?;
     }
     let arena = &*arena;
     let projection = crate::engine_match::Projection::open(query, cancelled)?;

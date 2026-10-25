@@ -10,7 +10,7 @@ import {
 } from "./columnar-join-fuzz.test-support.ts";
 
 // Runs through `pnpm test:game-text:fuzz`, not the ordinary suite; see docs/engineering/testing.md.
-it("seeded differential joins and query fields match the original event oracle", async () => {
+it("seeded differential joins match the join planted from the original events", async () => {
 	const count = Number(process.env.UE_SHED_JOIN_FUZZ_SEEDS ?? 100);
 	const first = Number(process.env.UE_SHED_JOIN_FUZZ_START ?? 0);
 	if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(first) || first < 0)

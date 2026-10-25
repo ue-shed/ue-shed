@@ -1,4 +1,5 @@
 //! Native Game Text query execution over one pinned snapshot. JavaScript receives bounded values.
+use crate::cache::{Lock, Memo, Once};
 use crate::engine_reader::EngineReader;
 use crate::engine_text::TextArena;
 use crate::engine_types::*;
@@ -25,64 +26,54 @@ pub(crate) type IdentityLines = Arc<HashMap<(u32, u32), Vec<u32>>>;
 
 pub struct EngineQuery {
     pub(crate) configuration: Configuration,
-    pub(crate) findings: HashMap<String, crate::rules::FindingsLayer>,
+    /// Findings layers by key. Evaluations of this reader take `evaluation` in turn.
+    pub(crate) findings: Memo<String, Arc<crate::rules::FindingsLayer>>,
+    pub(crate) evaluation: Lock<()>,
     /// Review acceptance sets by key, each for one findings layer.
-    pub(crate) acceptances: HashMap<String, Arc<crate::rules::Acceptance>>,
+    pub(crate) acceptances: Memo<String, Arc<crate::rules::Acceptance>>,
     /// Line rows by their (namespace, key) string IDs, built on the first acceptance.
-    pub(crate) identity_lines: Option<IdentityLines>,
-    pub(crate) finding_files: FindingFiles,
+    pub(crate) identity_lines: Once<IdentityLines>,
     pub(crate) audience_rules: Vec<String>,
-    pub(crate) summary_cache: Option<Value>,
+    pub(crate) summary_cache: Once<Value>,
     /// Every row's problems by relation, culture scope and counted findings.
-    pub(crate) problem_columns: HashMap<String, Arc<[u32]>>,
-    pub(crate) row_ranks: HashMap<String, Arc<[u32]>>,
-    pub(crate) copy_starts: HashMap<usize, Arc<[usize]>>,
+    pub(crate) problem_columns: Memo<String, Arc<[u32]>>,
+    pub(crate) row_ranks: Memo<String, Arc<[u32]>>,
+    pub(crate) copy_starts: Memo<usize, Arc<[usize]>>,
     pub reader: EngineReader,
     pub target: Value,
     pub cultures: Vec<String>,
-    sources: Option<TextArena>,
-    source_matches: HashMap<String, Arc<[u8]>>,
-    translations: Option<TextArena>,
-    translation_matches: HashMap<String, Arc<[u8]>>,
-    culture_translations: HashMap<usize, CultureTexts>,
+    sources: Once<Arc<TextArena>>,
+    source_matches: Lock<HashMap<String, Arc<[u8]>>>,
+    translations: Once<Arc<TextArena>>,
+    translation_matches: Lock<HashMap<String, Arc<[u8]>>>,
+    culture_translations: Lock<HashMap<usize, CultureTexts>>,
     /// Each search predicate's rows, by its normalized form.
-    pub(crate) atoms: crate::engine_rows::AtomCache,
-    pub(crate) places: Option<Arc<crate::engine_places::Places>>,
-    pub(crate) projection: Option<Arc<crate::engine_match::Projection>>,
+    pub(crate) atoms: Lock<crate::engine_rows::AtomCache>,
+    pub(crate) places: Once<Arc<crate::engine_places::Places>>,
+    pub(crate) projection: Once<Arc<crate::engine_match::Projection>>,
     /// The occurrence relation finding reads share, built once per reader.
-    pub(crate) occurrence_data: Option<Arc<crate::rules::OccurrenceData>>,
+    pub(crate) occurrence_data: Once<Arc<crate::rules::OccurrenceData>>,
     /// Each line's occurrences in a collation's order, built once per reader and locale.
-    pub(crate) line_children: Option<(String, Arc<crate::rules::Children>)>,
+    pub(crate) line_children: Lock<Option<(String, Arc<crate::rules::Children>)>>,
     /// Each visible unit's occurrences grouped by source, and their occurrence CSR, per reader.
-    pub(crate) unit_sources: Option<Arc<[crate::rules::UnitSource]>>,
-    pub(crate) unit_children: Option<Arc<crate::rules::Children>>,
-    pub(crate) asset_types: Option<Arc<crate::engine_asset_types::AssetTypes>>,
+    pub(crate) unit_sources: Once<Arc<[crate::rules::UnitSource]>>,
+    pub(crate) unit_children: Once<Arc<crate::rules::Children>>,
+    pub(crate) asset_types: Once<Arc<crate::engine_asset_types::AssetTypes>>,
     package_names: Vec<String>,
     package_starts: Vec<u32>,
-    validated_ids: HashSet<String>,
-    id_indexes: HashMap<String, Arc<IdIndex>>,
-    unit_lines: Option<Arc<[u32]>>,
+    validated_ids: Lock<HashSet<String>>,
+    id_indexes: Memo<String, Arc<IdIndex>>,
+    unit_lines: Once<Arc<[u32]>>,
     /// Units and lines by exact source, for related lines, built on the first request.
-    pub(crate) related_index: Option<Arc<crate::engine_related::RelatedIndex>>,
+    pub(crate) related_index: Once<Arc<crate::engine_related::RelatedIndex>>,
     /// Unreal word counts by source text ID, filled by aggregates.
-    pub(crate) line_break_words: HashMap<u32, u32>,
+    pub(crate) line_break_words: Lock<HashMap<u32, u32>>,
     /// The corpus fingerprint, computed once per reader.
-    pub(crate) fingerprint: Option<String>,
+    pub(crate) fingerprint: Once<String>,
     /// Package coverage and diagnostics, read once per reader.
-    pub(crate) package_lists: Option<Arc<(Vec<Value>, Vec<Value>)>>,
+    pub(crate) package_lists: Once<Arc<(Vec<Value>, Vec<Value>)>>,
     /// Each evidence input's file metadata, read once per reader.
-    pub(crate) evidence_meta: HashMap<String, Arc<Value>>,
-}
-
-/// Large response files belong to the reader even when its caller is interrupted.
-#[derive(Default)]
-pub(crate) struct FindingFiles(pub Vec<std::path::PathBuf>);
-impl Drop for FindingFiles {
-    fn drop(&mut self) {
-        for path in &self.0 {
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    pub(crate) evidence_meta: Memo<String, Arc<Value>>,
 }
 
 /// An open-addressed hash of one packed-ID arena: each slot holds a row plus one, zero when
@@ -183,18 +174,6 @@ impl EngineQuery {
         query.audience_rules = policy.audience_rules.clone();
         Ok(query)
     }
-    pub fn search_json(
-        &mut self,
-        payload: &str,
-        cancelled: &std::sync::atomic::AtomicBool,
-    ) -> Result<String> {
-        let request = parse_search_request(payload)?;
-        let answer = self.search(&request, cancelled)?;
-        #[cfg(feature = "benchmark-timings")]
-        let _span = crate::benchmark_timings::Span::new("payloadEncode");
-        crate::wtf8::view_json(&answer)
-    }
-
     pub fn open(configuration: &Configuration, expected_joined: Option<&str>) -> Result<Self> {
         let reader = EngineReader::open(configuration, expected_joined)?;
         let target = reader.meta["input"]["target"].clone();
@@ -238,52 +217,52 @@ impl EngineQuery {
         )?;
         Ok(Self {
             configuration: configuration.clone(),
-            findings: HashMap::new(),
-            acceptances: HashMap::new(),
-            identity_lines: None,
-            finding_files: FindingFiles::default(),
+            findings: Memo::default(),
+            evaluation: Lock::default(),
+            acceptances: Memo::default(),
+            identity_lines: Once::default(),
             audience_rules: Vec::new(),
-            summary_cache: None,
-            occurrence_data: None,
-            line_children: None,
-            unit_sources: None,
-            unit_children: None,
-            problem_columns: HashMap::new(),
-            row_ranks: HashMap::new(),
-            copy_starts: HashMap::new(),
+            summary_cache: Once::default(),
+            occurrence_data: Once::default(),
+            line_children: Lock::default(),
+            unit_sources: Once::default(),
+            unit_children: Once::default(),
+            problem_columns: Memo::default(),
+            row_ranks: Memo::default(),
+            copy_starts: Memo::default(),
             reader,
             target,
             cultures,
-            sources: None,
-            source_matches: HashMap::new(),
-            translations: None,
-            translation_matches: HashMap::new(),
-            culture_translations: HashMap::new(),
-            atoms: Default::default(),
-            places: None,
-            projection: None,
-            asset_types: None,
+            sources: Once::default(),
+            source_matches: Lock::default(),
+            translations: Once::default(),
+            translation_matches: Lock::default(),
+            culture_translations: Lock::default(),
+            atoms: Lock::default(),
+            places: Once::default(),
+            projection: Once::default(),
+            asset_types: Once::default(),
             package_names,
             package_starts,
-            validated_ids: HashSet::new(),
-            id_indexes: HashMap::new(),
-            unit_lines: None,
-            related_index: None,
-            line_break_words: HashMap::new(),
-            fingerprint: None,
-            package_lists: None,
-            evidence_meta: HashMap::new(),
+            validated_ids: Lock::default(),
+            id_indexes: Memo::default(),
+            unit_lines: Once::default(),
+            related_index: Once::default(),
+            line_break_words: Lock::default(),
+            fingerprint: Once::default(),
+            package_lists: Once::default(),
+            evidence_meta: Memo::default(),
         })
     }
 
-    pub fn column(&mut self, kind: &str, field: &str) -> Result<Arc<[u32]>> {
+    pub fn column(&self, kind: &str, field: &str) -> Result<Arc<[u32]>> {
         self.reader.column(&format!("query.{kind}.{field}"))
     }
-    pub fn value(&mut self, kind: &str, field: &str, row: usize) -> Result<u32> {
+    pub fn value(&self, kind: &str, field: &str, row: usize) -> Result<u32> {
         self.reader.value(&format!("query.{kind}.{field}"), row)
     }
 
-    pub fn packed(&mut self, kind: &str, row: usize) -> Result<String> {
+    pub fn packed(&self, kind: &str, row: usize) -> Result<String> {
         let starts = self.identity_starts(kind)?;
         let bytes = self.reader.bytes(&format!("query.{kind}.id_utf8"))?;
         let begin = *starts.get(row).ok_or("Identity row outside index.")? as usize;
@@ -298,23 +277,23 @@ impl EngineQuery {
     }
 
     /// The first row whose packed ID equals `id`, through the reader's ID index.
-    pub fn find_id(&mut self, kind: &str, id: &str) -> Result<Option<usize>> {
+    pub fn find_id(&self, kind: &str, id: &str) -> Result<Option<usize>> {
         let index = self.id_index(kind)?;
         Ok(index.find(Wtf8Buf::from_view(id).as_bytes()))
     }
 
     /// Hash each packed ID once per pinned reader, so every lookup costs one probe rather than a
     /// scan of the whole identity arena.
-    pub(crate) fn id_index(&mut self, kind: &str) -> Result<Arc<IdIndex>> {
+    pub(crate) fn id_index(&self, kind: &str) -> Result<Arc<IdIndex>> {
         self.id_index_with_timings(kind).map(|(index, _)| index)
     }
 
     pub(crate) fn id_index_with_timings(
-        &mut self,
+        &self,
         kind: &str,
     ) -> Result<(Arc<IdIndex>, PreparationTimings)> {
         if let Some(index) = self.id_indexes.get(kind) {
-            return Ok((Arc::clone(index), PreparationTimings::default()));
+            return Ok((index, PreparationTimings::default()));
         }
         let load_started = Instant::now();
         // During Open, identity_starts reuses raw.visible from query_projection_prepare and
@@ -329,8 +308,9 @@ impl EngineQuery {
         )?;
         let load = load_started.elapsed();
         let build_started = Instant::now();
-        let index = Arc::new(IdIndex::new(starts, bytes));
-        self.id_indexes.insert(kind.to_owned(), Arc::clone(&index));
+        let index = self
+            .id_indexes
+            .store(kind.to_owned(), Arc::new(IdIndex::new(starts, bytes)));
         Ok((
             index,
             PreparationTimings {
@@ -342,7 +322,7 @@ impl EngineQuery {
 
     /// The dictionary IDs of exact source texts. A text no row holds has no ID, or an ID no source
     /// column references, so it matches nothing.
-    pub(crate) fn source_ids(&mut self, values: &[String]) -> Result<HashSet<u32>> {
+    pub(crate) fn source_ids(&self, values: &[String]) -> Result<HashSet<u32>> {
         let mut ids = HashSet::new();
         for value in values {
             if let Some(id) = self.reader.find_string(value)? {
@@ -355,7 +335,7 @@ impl EngineQuery {
     /// For each saved unit, the last line in display order holding one of its slices. Focus
     /// without a localization selection reports that line.
     pub(crate) fn unit_lines(
-        &mut self,
+        &self,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<Arc<[u32]>> {
         self.unit_lines_with_timings(cancelled)
@@ -363,11 +343,11 @@ impl EngineQuery {
     }
 
     pub(crate) fn unit_lines_with_timings(
-        &mut self,
+        &self,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<(Arc<[u32]>, PreparationTimings)> {
-        if let Some(lines) = &self.unit_lines {
-            return Ok((Arc::clone(lines), PreparationTimings::default()));
+        if let Some(lines) = self.unit_lines.get() {
+            return Ok((lines, PreparationTimings::default()));
         }
         let load_started = Instant::now();
         // Open already cached the projection (including line order/ranges) and slice.raw in
@@ -392,8 +372,7 @@ impl EngineQuery {
                     .ok_or("Slice points outside raw units.")? = line as u32;
             }
         }
-        let lines: Arc<[u32]> = lines.into();
-        self.unit_lines = Some(Arc::clone(&lines));
+        let lines = self.unit_lines.store(lines.into());
         Ok((
             lines,
             PreparationTimings {
@@ -403,9 +382,9 @@ impl EngineQuery {
         ))
     }
 
-    pub(crate) fn identity_starts(&mut self, kind: &str) -> Result<Arc<[u32]>> {
+    pub(crate) fn identity_starts(&self, kind: &str) -> Result<Arc<[u32]>> {
         let starts = self.column(kind, "id_starts")?;
-        if !self.validated_ids.contains(kind) {
+        if !self.validated_ids.lock().contains(kind) {
             let count = if kind == "line" {
                 self.reader.column("line.source")?.len()
             } else {
@@ -418,7 +397,7 @@ impl EngineQuery {
                     && starts.windows(2).all(|range| range[0] <= range[1]),
                 "Invalid query identity offsets.",
             )?;
-            self.validated_ids.insert(kind.to_owned());
+            self.validated_ids.lock().insert(kind.to_owned());
         }
         Ok(starts)
     }
@@ -436,7 +415,7 @@ impl EngineQuery {
         Ok((shard, occurrence - self.package_starts[shard] as usize))
     }
 
-    pub fn package_column(&mut self, shard: usize, field: &str) -> Result<Arc<[u32]>> {
+    pub fn package_column(&self, shard: usize, field: &str) -> Result<Arc<[u32]>> {
         let name = self
             .package_names
             .get(shard)
@@ -453,7 +432,7 @@ impl EngineQuery {
         self.package_names.len()
     }
 
-    pub fn occurrence_value(&mut self, occurrence: usize, field: &str) -> Result<u32> {
+    pub fn occurrence_value(&self, occurrence: usize, field: &str) -> Result<u32> {
         let (shard, row) = self.package_coordinate(occurrence)?;
         self.package_column(shard, &format!("occurrence.{field}"))?
             .get(row)
@@ -461,7 +440,7 @@ impl EngineQuery {
             .ok_or_else(|| "Occurrence row exceeds shard.".into())
     }
 
-    pub fn occurrence_identity(&mut self, occurrence: usize) -> Result<Value> {
+    pub fn occurrence_identity(&self, occurrence: usize) -> Result<Value> {
         let identity = self.occurrence_value(occurrence, "identity")?;
         let ns = self.occurrence_value(occurrence, "namespace")?;
         let key = self.occurrence_value(occurrence, "key")?;
@@ -482,7 +461,7 @@ impl EngineQuery {
         })
     }
 
-    pub fn occurrence_location(&mut self, occurrence: usize) -> Result<Value> {
+    pub fn occurrence_location(&self, occurrence: usize) -> Result<Value> {
         let code = self.occurrence_value(occurrence, "location")?;
         let object_id = self.occurrence_value(occurrence, "object")?;
         let object = self.reader.string(object_id)?;
@@ -512,7 +491,7 @@ impl EngineQuery {
         Ok(result)
     }
 
-    pub fn presentation(&mut self, kind: &str, row: usize) -> Result<Value> {
+    pub fn presentation(&self, kind: &str, row: usize) -> Result<Value> {
         let all_members = self.column(kind, "members")?;
         let begin = self.value(kind, "member_start", row)? as usize;
         let end = self.value(kind, "member_end", row)? as usize;
@@ -557,54 +536,57 @@ impl EngineQuery {
         }))
     }
 
-    pub fn culture_scope(&self, selected: Option<&LocalizationScope>) -> Result<Vec<usize>> {
-        if let Some(selected) = selected {
+    /// A selection's culture scope: its culture, or its cultures, or every culture of its
+    /// target; none without a target.
+    pub fn culture_scope(&self, selection: &Selection) -> Result<Vec<usize>> {
+        let Some(target) = &selection.target else {
+            return Ok((0..self.cultures.len()).collect());
+        };
+        require(
+            self.target["name"] == *target,
+            invalid("The selected localization target is not open."),
+        )?;
+        require(
+            selection
+                .culture
+                .as_ref()
+                .is_none_or(|culture| self.cultures.contains(culture))
+                && selection.cultures.as_ref().is_none_or(|cultures| {
+                    cultures
+                        .iter()
+                        .all(|culture| self.cultures.contains(culture))
+                }),
+            invalid("The selected localization culture is not available."),
+        )?;
+        if let (Some(culture), Some(cultures)) = (&selection.culture, &selection.cultures) {
             require(
-                self.target["name"] == selected.target,
-                invalid("The selected localization target is not open."),
+                cultures.contains(culture),
+                invalid("The selected culture is outside the culture scope."),
             )?;
-            require(
-                selected
-                    .culture
-                    .as_ref()
-                    .is_none_or(|culture| self.cultures.contains(culture))
-                    && selected.cultures.as_ref().is_none_or(|cultures| {
-                        cultures
-                            .iter()
-                            .all(|culture| self.cultures.contains(culture))
-                    }),
-                invalid("The selected localization culture is not available."),
-            )?;
-            if let (Some(culture), Some(cultures)) = (&selected.culture, &selected.cultures) {
-                require(
-                    cultures.contains(culture),
-                    invalid("The selected culture is outside the culture scope."),
-                )?;
-            }
         }
         Ok(self
             .cultures
             .iter()
             .enumerate()
             .filter_map(|(index, culture)| {
-                selected
-                    .is_none_or(|selected| {
-                        selected.culture.as_ref().map_or_else(
-                            || {
-                                selected
-                                    .cultures
-                                    .as_ref()
-                                    .is_none_or(|cultures| cultures.contains(culture))
-                            },
-                            |wanted| culture == wanted,
-                        )
-                    })
+                selection
+                    .culture
+                    .as_ref()
+                    .map_or_else(
+                        || {
+                            selection
+                                .cultures
+                                .as_ref()
+                                .is_none_or(|cultures| cultures.contains(culture))
+                        },
+                        |wanted| culture == wanted,
+                    )
                     .then_some(index)
             })
             .collect())
     }
 
-    pub fn translation(&mut self, name: &str, row: usize, po: bool) -> Result<Option<String>> {
+    pub fn translation(&self, name: &str, row: usize, po: bool) -> Result<Option<String>> {
         let options = self.reader.input_column(name, "entry.options")?;
         let options = *options.get(row).ok_or("Translation row outside file.")?;
         if po && options & 64 == 0 {
@@ -623,7 +605,7 @@ impl EngineQuery {
         )?))
     }
 
-    pub fn culture_mark(&mut self, ci: usize, row: usize) -> Result<Value> {
+    pub fn culture_mark(&self, ci: usize, row: usize) -> Result<Value> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("previewCulture");
         let prefix = format!("c{ci}.");
@@ -673,7 +655,7 @@ impl EngineQuery {
         Ok(result)
     }
 
-    pub fn preview(&mut self, row: usize) -> Result<Value> {
+    pub fn preview(&self, row: usize) -> Result<Value> {
         let id = self.packed("line", row)?;
         let source_id = self.reader.value("line.source", row)?;
         let source = self.reader.string(source_id)?;
@@ -750,56 +732,56 @@ impl EngineQuery {
     }
 
     pub(crate) fn prepare_source_search(
-        &mut self,
+        &self,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<()> {
         crate::engine_match::checkpoint(cancelled)?;
-        if self.sources.is_none() {
+        self.source_arena(cancelled).map(drop)
+    }
+
+    fn source_arena(&self, cancelled: &std::sync::atomic::AtomicBool) -> Result<Arc<TextArena>> {
+        self.sources.get_or_try(|| {
             let lines = self.reader.column("line.source")?;
             let raw = self.column("raw", "sources")?;
             let references = lines.iter().chain(raw.iter()).copied();
-            self.sources = Some(TextArena::open(
+            Ok(Arc::new(TextArena::open(
                 self,
                 "query.source",
                 references,
                 cancelled,
-            )?);
-        }
-        Ok(())
+            )?))
+        })
     }
 
     pub fn source_matches(
-        &mut self,
+        &self,
         query: &str,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<Arc<[u8]>> {
         crate::engine_match::checkpoint(cancelled)?;
         let lowered = query.to_lowercase();
-        if let Some(value) = self.source_matches.get(&lowered) {
+        if let Some(value) = self.source_matches.lock().get(&lowered) {
             return Ok(Arc::clone(value));
         }
-        self.prepare_source_search(cancelled)?;
         let matches = self
-            .sources
-            .as_ref()
-            .ok_or("Source search was not opened.")?
+            .source_arena(cancelled)?
             .matching(&lowered, cancelled)?;
-        remember(&mut self.source_matches, lowered, &matches);
+        remember(&mut self.source_matches.lock(), lowered, &matches);
         Ok(matches)
     }
 
     /// Each translation string's match for `query`, over every culture's archive and PO text.
     pub(crate) fn translation_matches(
-        &mut self,
+        &self,
         query: &str,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<Arc<[u8]>> {
         crate::engine_match::checkpoint(cancelled)?;
         let lowered = query.to_lowercase();
-        if let Some(value) = self.translation_matches.get(&lowered) {
+        if let Some(value) = self.translation_matches.lock().get(&lowered) {
             return Ok(Arc::clone(value));
         }
-        if self.translations.is_none() {
+        let arena = self.translations.get_or_try(|| {
             let mut references = Vec::new();
             for ci in 0..self.cultures.len() {
                 let texts = self.culture_translations(ci, cancelled)?;
@@ -812,27 +794,26 @@ impl EngineQuery {
                         .map(|id| id - 1),
                 );
             }
-            let arena =
-                TextArena::open(self, "query.translation", references.into_iter(), cancelled)?;
-            self.translations = Some(arena);
-        }
-        let matches = self
-            .translations
-            .as_ref()
-            .ok_or("Translation search was not opened.")?
-            .matching(&lowered, cancelled)?;
-        remember(&mut self.translation_matches, lowered, &matches);
+            Ok(Arc::new(TextArena::open(
+                self,
+                "query.translation",
+                references.into_iter(),
+                cancelled,
+            )?))
+        })?;
+        let matches = arena.matching(&lowered, cancelled)?;
+        remember(&mut self.translation_matches.lock(), lowered, &matches);
         Ok(matches)
     }
 
     /// Each line's archive translation and PO text in culture `ci`, as search reads them: the
     /// entry's source when its options say so, and PO text only where the entry has it.
     pub(crate) fn culture_translations(
-        &mut self,
+        &self,
         ci: usize,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<CultureTexts> {
-        if let Some(value) = self.culture_translations.get(&ci) {
+        if let Some(value) = self.culture_translations.lock().get(&ci) {
             return Ok(Arc::clone(value));
         }
         let culture = self.cultures.get(ci).ok_or("Unknown culture.")?.clone();
@@ -874,11 +855,11 @@ impl EngineQuery {
         let po = texts.pop().ok_or("Missing PO translations.")?;
         let archive = texts.pop().ok_or("Missing archive translations.")?;
         let value = Arc::new((archive, po));
-        if self.culture_translations.len() >= 8 {
-            self.culture_translations.clear();
+        let mut cache = self.culture_translations.lock();
+        if cache.len() >= 8 {
+            cache.clear();
         }
-        self.culture_translations.insert(ci, Arc::clone(&value));
-        Ok(value)
+        Ok(Arc::clone(cache.entry(ci).or_insert(value)))
     }
 
     pub fn normalized_path(value: &str) -> String {

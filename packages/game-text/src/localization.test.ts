@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { Schema } from "effect";
+import { it } from "@effect/vitest";
+import { describe, expect } from "vitest";
+import { Effect, Schema } from "effect";
 import {
 	LocalizationError,
 	localizationEvidenceFingerprint,
@@ -21,7 +22,7 @@ import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
 import { localizationLinesCsv } from "./localization-export.js";
 import { localizationLineUnits } from "./gathered-text.js";
 import { localizationLineFingerprint } from "./localization-review.js";
-import { textCorpusQuery } from "./query.test-support.js";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import {
 	archiveEntry,
 	corpus,
@@ -163,7 +164,7 @@ describe("localization identity join and precedence", () => {
 		expect(joined.lines[0]?.cultures[0]?.unknownReasons).toContain("conflicting_source");
 	});
 
-	it.each(["Source", "Other"])(
+	it.live.each(["Source", "Other"])(
 		"keeps distinct authored String Table namespaces separate in lines and findings (%s)",
 		(secondSource) => {
 			const first = unit("K", "Source", "Content/Text/Table.uasset", "UI [A]");
@@ -197,23 +198,22 @@ describe("localization identity join and precedence", () => {
 				{ namespace: "UI [A]", key: "K" },
 				{ namespace: "UI [B]", key: "K" }
 			]);
-			const page = textCorpusQuery(text).search({
-				capability: "all",
-				query: "",
-				pageSize: 50
-			});
-			expect(page.counts.conflicting).toBe(0);
+			return withIndexedCorpus(text, {}, ({ query }) =>
+				Effect.map(query.search({ capability: "all", query: "", pageSize: 50 }), (page) =>
+					expect(page.counts.conflicting).toBe(0)
+				)
+			);
 		}
 	);
 
-	it.each([
+	it.live.each([
 		[false, "asset_property"],
 		[true, "asset_property"],
 		[false, "data_table_cell"],
 		[true, "data_table_cell"]
 	] as const)(
 		"keeps one unit per gathered identity of one saved key (%s, %s)",
-		(reverse, kind) => {
+		([reverse, kind]) => {
 			// A String Table entry keeps its namespace; asset text gathers without the package marker.
 			// The saved key is two keys to Unreal, so it is two units, one per line.
 			const text = mixedCorpus(reverse, kind);
@@ -280,22 +280,6 @@ describe("localization identity join and precedence", () => {
 					);
 				}
 			}
-			const query = textCorpusQuery(text, undefined, joined);
-			const request = { capability: "all" as const, query: "", pageSize: 50 };
-			expect(query.search(request).counts).toMatchObject({ conflicting: 0 });
-			for (const line of joined.lines) {
-				const page = query.search({
-					...request,
-					localization: { target: target.name },
-					lines: [line.id]
-				});
-				expect(page.units[0]?.id).toBe(unitOf(line.identity?.namespace).id);
-				expect(page.units[0]?.occurrenceCount).toBe(1);
-				expect(page.units[0]?.locationKinds).toEqual([
-					line.identity?.namespace === "UI" ? kind : "string_table_entry"
-				]);
-				expect(page.counts).toMatchObject({ conflicting: 0 });
-			}
 			const { csv } = localizationLinesCsv({
 				join: joined,
 				lines: joined.lines,
@@ -307,29 +291,67 @@ describe("localization identity join and precedence", () => {
 			expect(csv).toContain(
 				`"UI","K","Source","/Game/Text/Base.Base","${kind === "asset_property" ? "Asset" : "Data table"}"`
 			);
-			expect(
-				query.export({ ...request, localization: { target: target.name } }).units
-			).toEqual(text.units);
+			const request = { capability: "all" as const, query: "", pageSize: 50 };
+			return withIndexedCorpus(text, { files }, ({ query }) =>
+				Effect.gen(function* () {
+					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 0 });
+					const lines = yield* query.readLocalizationLines();
+					expect(lines.map((line) => line.identity)).toEqual(
+						joined.lines.map((line) => line.identity)
+					);
+					for (const line of lines) {
+						const page = yield* query.search({
+							...request,
+							localization: { target: target.name },
+							lines: [line.id]
+						});
+						expect(page.units[0]?.id).toBe(unitOf(line.identity?.namespace).id);
+						expect(page.units[0]?.occurrenceCount).toBe(1);
+						expect(page.units[0]?.locationKinds).toEqual([
+							line.identity?.namespace === "UI" ? kind : "string_table_entry"
+						]);
+						expect(page.counts).toMatchObject({ conflicting: 0 });
+					}
+					// Every unit is exported whole; package files keep the platform's separators.
+					const exported = yield* query.export({
+						...request,
+						localization: { target: target.name }
+					});
+					const places = (units: typeof text.units) =>
+						units.map((unit) => ({
+							id: unit.id,
+							source: unit.source,
+							locations: unit.occurrences.map((occurrence) => occurrence.location)
+						}));
+					expect(places(exported.units)).toEqual(places(text.units));
+				})
+			);
 		}
 	);
 
-	it("keeps sources on different gathered identities from conflicting within a mixed unit", () => {
-		const text = mixedCorpus(false, "asset_property", "Other");
-		const page = textCorpusQuery(text).search({ capability: "all", query: "", pageSize: 50 });
-		expect(page.counts).toMatchObject({ conflicting: 0 });
-		const joined = joinLocalizationTarget(
-			text,
-			evidence([
-				manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [Beta]"),
-				manifestEntry("K", "Other", "/Game/Text/Base.Base", "UI")
-			])
-		);
-		for (const line of joined.lines) {
-			expect(line.source).toBe(line.identity?.namespace === "UI" ? "Other" : "Source");
-			expect(line.cultures[0]?.unknownReasons).not.toContain("conflicting_source");
-			expect(line.cultures[0]?.facts).not.toContain("changed_since_gather");
+	it.live(
+		"keeps sources on different gathered identities from conflicting within a mixed unit",
+		() => {
+			const text = mixedCorpus(false, "asset_property", "Other");
+			const joined = joinLocalizationTarget(
+				text,
+				evidence([
+					manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [Beta]"),
+					manifestEntry("K", "Other", "/Game/Text/Base.Base", "UI")
+				])
+			);
+			for (const line of joined.lines) {
+				expect(line.source).toBe(line.identity?.namespace === "UI" ? "Other" : "Source");
+				expect(line.cultures[0]?.unknownReasons).not.toContain("conflicting_source");
+				expect(line.cultures[0]?.facts).not.toContain("changed_since_gather");
+			}
+			return withIndexedCorpus(text, {}, ({ query }) =>
+				Effect.map(query.search({ capability: "all", query: "", pageSize: 50 }), (page) =>
+					expect(page.counts).toMatchObject({ conflicting: 0 })
+				)
+			);
 		}
-	});
+	);
 
 	it.each([false, true])(
 		"resolves a mixed unit's table reference by authored identity (%s)",
@@ -365,31 +387,41 @@ describe("localization identity join and precedence", () => {
 		}
 	);
 
-	it("finds conflicting FText across a mixed unit and a package variant", () => {
+	it.live("finds conflicting FText across a mixed unit and a package variant", () => {
 		const text = mixedCorpus(false, "data_table_cell");
 		const other = TextUnit.make({
 			...ftextUnit("K", "Other", "Content/Text/Other.uasset", "UI [Other]"),
 			id: TextUnit.fields.id.make("unit:other")
 		});
-		const joined = joinLocalizationTarget(
-			{ ...text, units: [...text.units, other] },
-			evidence()
-		);
-		const query = textCorpusQuery(
-			{ ...text, units: [...text.units, other] },
-			undefined,
-			joined
-		);
 		const request = { capability: "all" as const, query: "", pageSize: 50 };
-		expect(query.search(request).counts).toMatchObject({ conflicting: 2 });
-		for (const line of joined.lines.filter((line) => line.origin.kind === "corpus")) {
-			const page = query.search({
-				...request,
-				localization: { target: target.name },
-				lines: [line.id]
-			});
-			expect(page.counts.conflicting).toBe(line.identity?.namespace === "UI" ? 1 : 0);
-		}
+		return withIndexedCorpus(
+			{ ...text, units: [...text.units, other] },
+			{ files: evidence() },
+			({ query }) =>
+				Effect.gen(function* () {
+					// Saved, the package variant gathers as UI/K beside the asset text: one unit
+					// with both sources.
+					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 1 });
+					const lines = (yield* query.readLocalizationLines()).filter(
+						(line) => line.origin.kind === "corpus"
+					);
+					// The String Table line and the asset line both have saved text.
+					expect(lines.map((line) => line.identity?.namespace).sort()).toEqual([
+						"UI",
+						"UI [Beta]"
+					]);
+					for (const line of lines) {
+						const page = yield* query.search({
+							...request,
+							localization: { target: target.name },
+							lines: [line.id]
+						});
+						expect(page.counts.conflicting).toBe(
+							line.identity?.namespace === "UI" ? 1 : 0
+						);
+					}
+				})
+		);
 	});
 
 	it("evaluates translated and native cultures from the archive", () => {

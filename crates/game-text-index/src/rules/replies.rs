@@ -228,8 +228,6 @@ impl Serialize for EvaluationProfile {
 pub struct ReadProfile {
     pub rows_requested: usize,
     pub findings_returned: usize,
-    pub response_bytes: usize,
-    pub file_fallback: bool,
 }
 /// One saved occurrence a finding affects.
 #[derive(Clone, Debug, Serialize)]
@@ -256,16 +254,4 @@ pub struct LineDiagnostic {
     pub line_id: String,
     pub culture: String,
     pub code: String,
-}
-/// A read too large for one frame, written to a file the host reads and deletes.
-#[derive(Clone, Debug, Serialize)]
-#[cfg_attr(test, derive(TS))]
-pub struct SpilledReply {
-    pub file: String,
-}
-
-/// A bounded read's reply: its findings count and profile.
-pub(super) trait Read: Serialize {
-    fn findings(&self) -> usize;
-    fn profile(&mut self) -> &mut ReadProfile;
 }

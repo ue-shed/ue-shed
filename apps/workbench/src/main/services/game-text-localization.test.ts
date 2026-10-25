@@ -8,13 +8,19 @@ import {
 	TextNamespace
 } from "@ue-shed/localization";
 import { Deferred, Effect, Fiber, Ref } from "effect";
+import type { LocalizationKeyChangePair } from "@ue-shed/game-text/corpus";
+import { LocalizationLineId, type LocalizationLineMark } from "@ue-shed/game-text/schema";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect } from "vitest";
 import {
-	makeGameTextLocalizationOracle as makeGameTextLocalization,
-	oracleProjectIndex
+	linesPage,
+	makeCannedGameTextLocalization,
+	poTranslations,
+	searchPage,
+	testProjectIndex,
+	type CannedQuery
 } from "./game-text-index.test-support.js";
 import {
 	corpus,
@@ -28,9 +34,10 @@ import {
 it.effect("returns a recoverable reader failure without exposing file authority", () =>
 	Effect.gen(function* () {
 		const saved = corpus();
-		const localization = yield* makeGameTextLocalization(
+		const localization = yield* makeCannedGameTextLocalization(
+			() => ({}),
 			() => Effect.succeed(saved),
-			() => Effect.succeed(oracleProjectIndex("C:/Project"))
+			() => Effect.succeed(testProjectIndex("C:/Project"))
 		).pipe(
 			Effect.provide(
 				makeLocalizationEvidenceTestLayer({
@@ -56,6 +63,63 @@ it.effect("returns a recoverable reader failure without exposing file authority"
 	})
 );
 
+/**
+ * The target's one line: not synced in either culture while the PO files hold Pending, and found
+ * by that German translation.
+ */
+const pendingAnswers: CannedQuery = ({ evidence: files }) => {
+	const pending = poTranslations(files).includes("Pending");
+	return {
+		search: (request) =>
+			Effect.succeed(
+				request.query === "Pending"
+					? searchPage({
+							total: pending ? 1 : 0,
+							counts: { ...searchPage().counts, all: pending ? 1 : 0 }
+						})
+					: searchPage({
+							total: 1,
+							localization: linesPage(target.name, { notSynced: pending ? 2 : 0 })
+						})
+			),
+		localizationDetail: (request) =>
+			Effect.succeed(
+				request.selection.kind === "unit" && request.selection.id === unit().id
+					? {
+							id: LocalizationLineId.make('Test:["NS","K"]'),
+							origin: { kind: "corpus", unitIds: [unit().id] },
+							identity: {
+								namespace: TextNamespace.make("NS"),
+								key: TextKey.make("K")
+							},
+							source: "Source",
+							locations: ["/Game/Text/Table.Table"],
+							translatorNotes: [],
+							totalLocations: 1,
+							translations: target.cultures.map((culture) => ({
+								culture,
+								state: "unknown",
+								facts: ["not_synced", "unknown"],
+								unknownReasons: ["gather_settings_unavailable"],
+								reducedSourceChecking: false,
+								gameTranslation: null,
+								gameTextKind: "unavailable",
+								archiveTranslation: "Translation",
+								cultureState: "unknown",
+								translationSource: "Source",
+								poTranslation: pending ? "Pending" : "Translation",
+								translatorComments: [],
+								flags: [],
+								remainingComments: 0,
+								remainingFlags: 0
+							})),
+							totalCultures: 2
+						}
+					: undefined
+			)
+	};
+};
+
 it.effect(
 	"retains evidence across remounts, reloads it after rescan and returns bounded joined pages",
 	() =>
@@ -72,9 +136,10 @@ it.effect(
 					}),
 				targets: () => Effect.die("Not used")
 			});
-			const localization = yield* makeGameTextLocalization(
+			const localization = yield* makeCannedGameTextLocalization(
+				pendingAnswers,
 				() => Ref.get(text),
-				() => Effect.succeed(oracleProjectIndex("C:/Project"))
+				() => Effect.succeed(testProjectIndex("C:/Project"))
 			).pipe(Effect.provide(api));
 			expect(yield* localization.targets()).toMatchObject({
 				status: "ready",
@@ -121,9 +186,10 @@ it.effect("discards evidence loaded for a corpus that changed during the read", 
 		const text = yield* Ref.make(corpus());
 		const started = yield* Deferred.make<void>();
 		const result = yield* Deferred.make<ReturnType<typeof evidence>>();
-		const localization = yield* makeGameTextLocalization(
+		const localization = yield* makeCannedGameTextLocalization(
+			() => ({}),
 			() => Ref.get(text),
-			() => Effect.succeed(oracleProjectIndex("C:/Project"))
+			() => Effect.succeed(testProjectIndex("C:/Project"))
 		).pipe(
 			Effect.provide(
 				makeLocalizationEvidenceTestLayer({
@@ -152,6 +218,40 @@ it.effect("discards evidence loaded for a corpus that changed during the read", 
 	})
 );
 
+const fixtureTarget = LocalizationTargetName.make("FixtureGame");
+const editedTranslation = "Gespräch mit {PlayerName}";
+/**
+ * The fixture target's 24 lines, one of them not synced. Once the PO files hold the tests' edit,
+ * its line is not synced too; with the review file's flag on that line, it counts as reviewed
+ * until the edit lands and as changed since review after.
+ */
+const fixtureAnswers: CannedQuery = ({ evidence: files, review }) => {
+	const edited = poTranslations(files).includes(editedTranslation);
+	const flagged = (review?.records.length ?? 0) > 0;
+	return {
+		search: () =>
+			Effect.succeed(
+				searchPage({
+					total: 24,
+					localization: linesPage(fixtureTarget, {
+						notSynced: edited ? 2 : 1,
+						...(flagged
+							? {
+									reviewCounts: {
+										reviewed: edited ? 0 : 1,
+										not_reviewed: 0,
+										not_proofread: 0,
+										changed_since_review: edited ? 1 : 0,
+										machine_translated: 0
+									}
+								}
+							: undefined)
+					})
+				})
+			)
+	};
+};
+
 it.live("reviews and writes staged edits into the PO file, then reports them as not synced", () =>
 	Effect.gen(function* () {
 		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-edits-")));
@@ -169,11 +269,12 @@ it.live("reviews and writes staged edits into the PO file, then reports them as 
 				})
 			);
 		const saved = corpus([]);
-		const localization = yield* makeGameTextLocalization(
+		const localization = yield* makeCannedGameTextLocalization(
+			fixtureAnswers,
 			() => Effect.succeed(saved),
-			() => Effect.succeed(oracleProjectIndex(root))
+			() => Effect.succeed(testProjectIndex(root))
 		);
-		const name = LocalizationTargetName.make("FixtureGame");
+		const name = fixtureTarget;
 		const selected = yield* localization.select(name);
 		if (selected.status !== "ready") throw new Error("Fixture target did not load.");
 		const edit = {
@@ -181,7 +282,7 @@ it.live("reviews and writes staged edits into the PO file, then reports them as 
 			namespace: TextNamespace.make("Fixture.Localization.Table"),
 			key: TextKey.make("NamedArgument"),
 			seenTranslation: "Gespräch mit {Name}",
-			translation: "Gespräch mit {PlayerName}"
+			translation: editedTranslation
 		};
 		const review = yield* localization.edits({ target: name, mode: "review", edits: [edit] });
 		expect(review).toMatchObject({
@@ -225,11 +326,12 @@ it.live("writes review flags and shows a later edit as changed since review", ()
 				})
 			);
 		const saved = corpus([]);
-		const localization = yield* makeGameTextLocalization(
+		const localization = yield* makeCannedGameTextLocalization(
+			fixtureAnswers,
 			() => Effect.succeed(saved),
-			() => Effect.succeed(oracleProjectIndex(root))
+			() => Effect.succeed(testProjectIndex(root))
 		);
-		const name = LocalizationTargetName.make("FixtureGame");
+		const name = fixtureTarget;
 		yield* localization.select(name);
 		const line = {
 			culture: cultureCode("de"),
@@ -262,7 +364,7 @@ it.live("writes review flags and shows a later edit as changed since review", ()
 				{
 					...line,
 					seenTranslation: "Gespräch mit {Name}",
-					translation: "Gespräch mit {PlayerName}"
+					translation: editedTranslation
 				}
 			]
 		});
@@ -291,6 +393,34 @@ async function renameGatheredKey(path: string, from: string, to: string, transla
 	await writeFile(path, Buffer.from("\uFEFF" + renamed, "utf16le"));
 }
 
+/** A gathered fixture line in the Source namespace, as a key-change read lists it. */
+function sourceLine(key: string, source: string, line: number) {
+	const identity = {
+		namespace: TextNamespace.make("Fixture.Localization.Source"),
+		key: TextKey.make(key)
+	};
+	return {
+		id: LocalizationLineId.make(`FixtureGame:${JSON.stringify([identity.namespace, key])}`),
+		identity,
+		source,
+		manifest: [
+			{
+				...identity,
+				source: { Text: source },
+				path: `Source/UEShedFixture/Private/UEShedLocalizationText.cpp(${line})`
+			}
+		]
+	};
+}
+const translated = (culture: string, translation: string): LocalizationLineMark => ({
+	culture: cultureCode(culture),
+	state: "translated",
+	facts: ["translated"],
+	unknownReasons: [],
+	reducedSourceChecking: false,
+	translation
+});
+
 it.live("pairs a key that changed across a gather it ran, keeping the trimmed translations", () =>
 	Effect.gen(function* () {
 		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-keys-")));
@@ -308,11 +438,44 @@ it.live("pairs a key that changed across a gather it ran, keeping the trimmed tr
 				})
 			);
 		const saved = corpus([]);
-		const localization = yield* makeGameTextLocalization(
+		// Before the gather the fixture's Source lines hold RuntimeReady; after it, RuntimeStart in
+		// the same place. Each refresh's carried pairs are what the host hands the index.
+		const ordered = sourceLine("RuntimeOrdered", "Stage {0} of {1}", 10);
+		const before = [
+			{
+				...ordered,
+				marks: [translated("en", "Stage {0} of {1}"), translated("de", "Stufe {0} von {1}")]
+			},
+			{
+				...sourceLine("RuntimeReady", "Ready to begin", 9),
+				marks: [
+					translated("en", "Ready to begin"),
+					translated("de", "Bereit zum Start"),
+					translated("fr", "Prêt à commencer")
+				]
+			}
+		];
+		const after = [ordered, sourceLine("RuntimeStart", "Ready to begin", 9)];
+		const carried: (readonly LocalizationKeyChangePair[])[] = [];
+		const localization = yield* makeCannedGameTextLocalization(
+			(inputs) => {
+				carried.push(inputs.request.keyChangePairs ?? []);
+				const manifest = inputs.evidence?.manifest;
+				const gathered =
+					manifest?.status === "read" &&
+					manifest.value.entries.some((entry) => entry.key === "RuntimeStart");
+				return {
+					...fixtureAnswers(inputs),
+					selectLocalizationLines: () =>
+						// SAFETY: the host's key-change reads name only `identity`, `source`,
+						// `manifest` and `marks`, and the lines before the gather carry all four.
+						Effect.succeed(gathered ? after : before) as never
+				};
+			},
 			() => Effect.succeed(saved),
-			() => Effect.succeed(oracleProjectIndex(root))
+			() => Effect.succeed(testProjectIndex(root))
 		);
-		const name = LocalizationTargetName.make("FixtureGame");
+		const name = fixtureTarget;
 		yield* localization.select(name);
 		yield* localization.beforeGather(name);
 		// What Unreal's gather writes after a LOCTEXT key is renamed: the earlier key leaves the
@@ -338,23 +501,17 @@ it.live("pairs a key that changed across a gather it ran, keeping the trimmed tr
 				);
 		});
 		yield* localization.reset();
-		yield* localization.select(name);
-		const result = yield* localization.search({
-			query: "",
-			capability: "all",
-			pageSize: 50,
-			localization: { target: name, keyChanged: true }
-		});
-		if (result.status !== "ready") throw new Error("Expected the target to load.");
-		const lines = result.page.localization?.lines ?? [];
-		expect(lines.map((line) => line.identity?.key)).toEqual(["RuntimeStart"]);
-		expect(lines[0]?.keyChange).toMatchObject({
-			direction: "to",
-			other: { key: "RuntimeReady" },
+		expect(carried.flat()).toEqual([]);
+		expect(yield* localization.select(name)).toMatchObject({ status: "ready" });
+		const pairs = carried.at(-1) ?? [];
+		expect(pairs).toHaveLength(1);
+		expect(pairs[0]).toMatchObject({
+			from: { key: "RuntimeReady" },
+			to: { key: "RuntimeStart" },
 			match: "same_place",
 			sourceChanged: false
 		});
-		expect(lines[0]?.keyChange?.translations).toContainEqual({
+		expect(pairs[0]?.translations).toContainEqual({
 			culture: "de",
 			translation: "Bereit zum Start"
 		});

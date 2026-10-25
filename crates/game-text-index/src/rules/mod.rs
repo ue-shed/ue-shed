@@ -38,6 +38,7 @@ mod findings_order;
 pub(crate) mod findings_query;
 mod findings_read;
 mod findings_rows;
+mod findings_sink;
 pub(crate) use columns::Children;
 pub(crate) use findings::FindingsLayer;
 pub(crate) use findings_query::Acceptance;

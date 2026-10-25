@@ -5,7 +5,9 @@ import {
 	GameTextInvestigationExport,
 	gameTextInvestigationCsv
 } from "./investigation.js";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { describe, expect } from "vitest";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { qualityFixture } from "./localization-workspace.test-support.js";
 import {
 	archiveEntry,
@@ -17,8 +19,7 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { applyLocalizationKeyChanges, localizationKeyChanges } from "./localization-key-changes.js";
-import { textCorpusQuery } from "./query.test-support.js";
+import { localizationKeyChanges } from "./localization-key-changes.js";
 import {
 	WorkspaceQualityPage,
 	WorkspaceQualityRequest,
@@ -117,19 +118,14 @@ describe("bounded localization workspace", () => {
 		});
 	});
 
-	it("exports the lines a target's problem and translation pills select", async () => {
+	it.live("exports the lines a target's problem and translation pills select", () => {
 		const text = corpus([unit("Renamed", "Welcome back"), unit("Other", "Other line")]);
-		const joined = joinLocalizationTarget(
-			text,
-			evidence(
-				[manifestEntry("Welcome", "Welcome back"), manifestEntry("Other", "Other line")],
-				[archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]
-			)
+		const files = evidence(
+			[manifestEntry("Welcome", "Welcome back"), manifestEntry("Other", "Other line")],
+			[archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]
 		);
-		const join = applyLocalizationKeyChanges(
-			joined,
-			localizationKeyChanges(joined, text).pairs
-		);
+		const joined = joinLocalizationTarget(text, files);
+		const keyChangePairs = localizationKeyChanges(joined, text).pairs;
 		const source = {
 			projectRoot: "C:/Project",
 			generation: null,
@@ -153,27 +149,36 @@ describe("bounded localization workspace", () => {
 		const keyChanged = preset([{ field: "problem", op: "is", values: ["key_changed"] }], {
 			target: target.name
 		});
-		const exported = await Effect.runPromise(
-			exportGameTextInvestigation(
-				text,
-				keyChanged,
-				source,
-				textCorpusQuery(text, undefined, join)
-			)
-		);
-		expect(
-			exported.result.mode === "corpus" && exported.result.corpus.units.map((item) => item.id)
-		).toEqual(["unit:Renamed"]);
-		// Without the target's files the export fails with guidance rather than guessing.
-		const unloaded = await Effect.runPromise(
-			Effect.flip(exportGameTextInvestigation(text, keyChanged, source))
-		);
-		expect(unloaded.message).toContain("not loaded");
 		const translation = preset([{ field: "translation", op: "is", values: ["missing"] }]);
-		const failed = await Effect.runPromise(
-			Effect.flip(exportGameTextInvestigation(text, translation, source))
-		);
-		expect(failed.recovery).toContain("localization target");
+		return Effect.gen(function* () {
+			yield* withIndexedCorpus(text, { files, keyChangePairs }, ({ query }) =>
+				Effect.gen(function* () {
+					const exported = yield* exportGameTextInvestigation(
+						text,
+						keyChanged,
+						source,
+						query
+					);
+					expect(
+						exported.result.mode === "corpus" &&
+							exported.result.corpus.units.map((item) => item.id)
+					).toEqual(["unreal:NS:Renamed"]);
+				})
+			);
+			// Without the target's files the export fails with guidance rather than guessing.
+			const unloaded = yield* Effect.flip(
+				exportGameTextInvestigation(text, keyChanged, source)
+			);
+			expect(unloaded.message).toContain("not loaded");
+			// A translation pill needs a target, so the engine refuses the selection without one.
+			const failed = yield* withIndexedCorpus(text, {}, ({ query }) =>
+				Effect.flip(exportGameTextInvestigation(text, translation, source, query))
+			);
+			expect(failed.cause).toMatchObject({
+				_tag: "GameTextIndexError",
+				cause: { code: "invalid_input" }
+			});
+		});
 	});
 
 	it("projects native-first report rows, zero baseline deltas and spreadsheet-safe CSV", () => {

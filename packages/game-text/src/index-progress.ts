@@ -19,14 +19,15 @@ export const GameTextIndexProgress = Schema.Struct({
 		"package_publish",
 		/** Joining source text with translations; no count. */
 		"joining",
+		/** Opening the joined index: the engine's preparation stages done, of three. */
 		"opening",
 		"ready",
 		"failed",
 		/** A corpus scan reading packages: assets read of assets selected. */
 		"corpus",
-		/** A localization quality scan: the join's lines checked of the lines it checks. */
+		/** A localization quality scan: the rule document's rules evaluated, of its rules. */
 		"localization_quality",
-		/** A source quality scan: text units checked of the units it checks. */
+		/** A source quality scan: the rule document's rules evaluated, of its rules. */
 		"source_quality"
 	]),
 	completed: Count,

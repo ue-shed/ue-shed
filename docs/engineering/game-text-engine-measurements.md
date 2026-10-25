@@ -61,6 +61,9 @@ conversion. A preconverted directory can instead be supplied with `--records`.
   2%. Interactive repetitions past the last build reuse that build's cache.
 - `quality-default` (the host's implicit checks) and `overhead` (the per-request breakdown, with
   `--instrument`) run only when `--stages` names them.
+- So do `engine-load` (a keystroke while rules evaluate, cancel latency, a 5,000-row findings page
+  and the engine's working set), `loc-check` and `lines-export` (the all-languages CSV). They run
+  `--long-runs` times.
 - Pass `--long-runs 3` when a long-stage result is close.
 - A stage that answers with a failure stops the run.
 
@@ -474,6 +477,115 @@ recompute's postings. The layer hasn't been split by section.
 The owner reviewed these results and the Workbench screens on 2026-10-25 and accepted them for
 Phase 3. The review moved a line's findings into the banner at the top of its page and gave
 project rules an optional `label`. Phase 3 merged in #169.
+
+## Phase 4 results
+
+Plan 059 Phase 4, measured on 2026-10-25 at `c973e531` against Phase 3's merge (`9a11b066`), both
+on that day with the same harness, machine and caps. Build, Quality, `loc check`, the all-languages
+export and the engine-load stage ran once on each commit; open, cached reopen, selection and typing
+three times. The engine-load stage repeats its own measures: 28 idle keystroke headers, a keystroke
+header after another for as long as two rule previews run, five cancels of each kind and ten
+findings pages.
+
+| Path, Phase 3 → Phase 4                    |        Generated 1× | Released 10-culture project |
+| ------------------------------------------ | ------------------: | --------------------------: |
+| Cold build to visible page                 |   68.307 → 67.424 s |         129.387 → 107.500 s |
+| Open to visible page                       |     1.961 → 1.924 s |             1.876 → 1.859 s |
+| Cached reopen to visible page              |     3.017 → 3.043 s |             6.206 → 6.163 s |
+| First Quality page after the preview       |    429.8 → 335.9 ms |            414.7 → 397.8 ms |
+| Workbench selection, two requests          |      51.2 → 52.6 ms |              77.9 → 76.6 ms |
+| Electroswag selection, two requests        |      50.7 → 53.1 ms |              79.1 → 76.4 ms |
+| Saturated related-line probe, 444 requests |    631.3 → 287.1 ms |            558.5 → 269.7 ms |
+| One `related` request for the same review  |    191.5 → 190.4 ms |            128.1 → 126.7 ms |
+| `loc check` with the starter rules         | 123.661 → 110.830 s |           41.831 → 31.977 s |
+| … its process tree's peak                  |     4.88 → 3.43 GiB |             3.44 → 2.29 GiB |
+| All-languages CSV export                   |    fails → 87.640 s |            fails → 56.777 s |
+| … its process tree's peak                  |        — → 1.14 GiB |                — → 1.42 GiB |
+
+| Keystroke p50 / p95, Phase 3 → Phase 4                            |                   Generated 1× |      Released 10-culture project |
+| ----------------------------------------------------------------- | -----------------------------: | -------------------------------: |
+| Workbench default, matching 1–2 characters                        |       293 / 346 → 280 / 340 ms |         114 / 200 → 106 / 189 ms |
+| Workbench default, matching 3+ characters                         |       314 / 394 → 314 / 357 ms |              10 / 75 → 9 / 68 ms |
+| Workbench all-open, matching 1–2 characters                       |       374 / 439 → 334 / 418 ms |         202 / 345 → 168 / 292 ms |
+| Workbench all-open, matching 3+ characters                        |       389 / 443 → 372 / 415 ms |           11 / 162 → 11 / 128 ms |
+| Electroswag default, matching 1–2 characters                      |       287 / 353 → 285 / 350 ms |          102 / 162 → 95 / 160 ms |
+| Electroswag default, matching 3+ characters                       |       327 / 367 → 310 / 366 ms |              10 / 71 → 8 / 66 ms |
+| No-match query and its prefixes, p95 (WB default / all-open / ES) | 21 / 26 / 21 → 19 / 19 / 19 ms | 50 / 165 / 46 → 43 / 113 / 41 ms |
+
+Here the matching keystrokes are the prefixes of `the` and `Taluma`; on the released project their
+3+ character prefixes match few lines. CJK keystrokes are 9–14 ms in both phases.
+
+| The engine under load, p50 / p95, Phase 3 → Phase 4 |                 Generated 1× |    Released 10-culture project |
+| --------------------------------------------------- | ---------------------------: | -----------------------------: |
+| Matching keystroke header, idle                     |     270 / 314 → 277 / 312 ms |         64 / 171 → 59 / 166 ms |
+| Matching keystroke header, rules evaluating         |     359 / 443 → 388 / 448 ms |         68 / 203 → 80 / 213 ms |
+| Other keystroke headers, rules evaluating           |         15 / 21 → 12 / 25 ms |           14 / 51 → 11 / 51 ms |
+| Cancel latency, rule evaluation                     | 26,171 / 26,202 → 40 / 82 ms | 27,781 / 29,168 → 224 / 290 ms |
+| Cancel latency, export of every unit                |  60,064 / 60,244 → 2 / 43 ms |   48,850 / 49,134 → −11 / 4 ms |
+| A bulk read with nothing to cancel                  | 1,756 / 1,769 → 847 / 895 ms |   1,677 / 1,716 → 864 / 901 ms |
+| 5,000-row findings page                             |     688 / 959 → 691 / 899 ms |       359 / 725 → 386 / 621 ms |
+
+| Memory, Phase 3 → Phase 4                   |    Generated 1× | Released 10-culture project |
+| ------------------------------------------- | --------------: | --------------------------: |
+| The engine's working set, one snapshot open | 2.48 → 1.73 GiB |             2.66 → 2.07 GiB |
+| … after a 5,000-line bulk read              | 2.51 → 1.73 GiB |             2.68 → 2.07 GiB |
+| Quality, process tree's peak                | 1.98 → 1.34 GiB |             2.15 → 1.49 GiB |
+| Engine-load stage, process tree's peak      | 6.22 → 4.13 GiB |             6.24 → 4.19 GiB |
+
+**Cancel.** A cancel's latency is how much longer the next bulk read takes than the same read
+with nothing to cancel: an export of every capability that matches no unit, issued as soon as the
+interrupt returns, a second into the cancelled work. The interrupt returns in 1–3 ms in both phases.
+Phase 3's engine then finished the cancelled evaluation or export before it answered, 26–60 s
+later. Phase 4's engine stops at its next check: within 82 ms of an evaluation on 1× and 290 ms on
+the released project, and at once for an export (the negative p50 is the idle read's noise). The
+idle read itself halved, 1.76 → 0.85 s on 1×.
+
+**Keystrokes while rules evaluate.** The p95 of a matching keystroke's header is unchanged on both
+projects (443 → 448 ms, 203 → 213 ms); its p50 is 8% and 18% slower. The rule preview ran about as
+long in both phases, judging by the keystrokes it fitted (187 → 186, 548 → 542). The slower p50 has
+not been profiled.
+
+**`loc check`** is 10% and 24% faster end to end, and its process tree's peak is 30% and 33%
+lower. The report is written as it's composed: the CLI no longer holds the findings as a value or
+the report as a string. Both phases report the same number of findings (222,592 and 274,829). The
+peak is the whole tree's; the host and the engine haven't been separated.
+
+**The all-languages CSV export** fails in Phase 3 on both projects with `RangeError: Invalid string
+length`: the file is one string, and it's longer than a string can be. Phase 4's
+`cultureLinesCsv` sink writes 583,507 rows in 87.6 s on 1× and 264,585 rows in 56.8 s on the
+released project. Its first version held every line's fields while sorting and reached a 13 GB
+tree on 1×; it now holds only the sort keys and reads each line's fields again as it writes them.
+
+**The 5,000-row findings page** is unchanged: a page of batches takes as long as Phase 3's page of
+JSON did. On 1×, of its 690–750 ms the engine's `compose` stage takes 450–490 ms: it builds each
+finding with its places, one at a time, about 95 µs a finding. Selecting, ordering and counting
+take under 3 ms, and the host's thread spends 46–94 ms. The rest is the 12 MB page crossing the
+session and being parsed. The page's findings carry their affected occurrences, about 2.4 KB a
+finding.
+
+**Memory.** With one snapshot open, the engine's working set is 30% and 22% smaller. It doesn't
+grow with a 5,000-line bulk read in either phase.
+
+**The rest** is within run-to-run noise. The released project's cold build is a single run, and
+Phase 3's own record measured 108.6 s for the same commit. The saturated related-line probe
+halved on both projects; the single `related` request it is compared with is unchanged.
+
+**Parity**, at `46a857cb`, after the TypeScript reference queries were deleted:
+
+- Every exported file is byte-identical to Phase 3's on both canonical corpora, through the same
+  workspace calls at both commits: the Browse, Quality and source quality investigations as CSV
+  and JSON, the saved preset, the report CSV, the all-languages CSV, and `loc check` with the
+  starter rules file.
+- The corpus fixture compares 1,120 subjects on each canonical corpus with no disagreement, pinned
+  or unexpected, and its integration test passes on both.
+- One 10,000-line fuzz run on UE 5.8 (seed 73131: 11,042 lines, 44,168 subjects) has no unexpected
+  disagreement and no stale defect, before and after a package edit, and its incremental and full
+  scans agree.
+- The join fuzz compares the stored join and the engine's line facts, line export and per-culture
+  counts with the planted join; it no longer runs a second query.
+
+The owner reviewed these results on 2026-10-26 and accepted them for Phase 4. Phase 4 merged in
+#170.
 
 ## Instrumentation details
 

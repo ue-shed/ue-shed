@@ -8,8 +8,12 @@ localization input producers, configurable quality policy, typed process calls a
 CLI, Workbench and library hosts compose `GameTextIndexBuilderLive` from
 `@ue-shed/game-text/index` with their existing `AssetReader`, source and localization evidence
 layers. `nativeIndexBuilderLayer(configuration)` supplies the same builder and query capability
-with explicit reader configuration. Package delta publication needs uasset-io protocol 1.16; the reader needs 1.15, `game_text_index`
-and `game_text_engine_v1`. Native failures remain typed failures with recovery guidance.
+with explicit reader configuration. Package delta publication needs uasset-io protocol 1.16 and
+`game_text_index`. Queries run in the engine's own binary session, `uasset game-text-engine`, whose
+handshake checks the engine's contract once per process. One engine process per host holds every
+open snapshot's reader. Its requests run concurrently: keystroke reads on two threads of their own,
+bulk work (opens, evaluations, exports) two at a time on the shared pool, and an interrupted read is
+cancelled in the engine. Native failures remain typed failures with recovery guidance.
 
 ## Reads and writes
 
@@ -78,8 +82,9 @@ type through the ordinary package delta.
 
 ## Library reads
 
-The index answers the questions hosts used to export the corpus or the join for. Each takes the
-search request's matching fields, runs on the bulk lane and writes its answer to a scoped file.
+The index answers the questions hosts used to export the corpus or the join for. Each takes a
+query `selection` beside its own fields, runs as a bulk request and streams its rows as column
+batches.
 
 - `aggregate` groups every matching row by one to four stored dimensions and returns every group,
   in each dimension's own order: `culture`, the culture-mark dimensions `state`, `fact`,
@@ -111,6 +116,28 @@ search request's matching fields, runs on the bulk lane and writes its answer to
 A model's `revision` names the opened model and its pinned snapshot, unique within the process.
 Hosts compare it to tell whether the model changed; the lazy `corpus` read is no identity token.
 `queryRevision` remains the content identity of a validated target.
+
+## Queries
+
+A `query` request names a `selection` and the `parts` of the answer it wants. The selection is a
+target (its lines are the rows; corpus units without one), a culture and culture scope, a findings
+layer, text, and a `where` in the rule IR's grammar. `game-text/src/native-query-ir.ts` builds it
+from a search request: each filter pill, the localization lens and the location scope becomes a
+conjunct, and the capability, translator-notes and location filters one `anyPlace` test, since
+they must hold on one saved place together. Facet marks (`{ "facet": [name, expr] }`) name what a
+conjunct constrains, and counting a facet, or a counts tab, drops its marks. The engine
+(`engine_where.rs`) compiles the shapes Browse writes to the kernels its clauses ran, caches each
+top-level conjunct's row set, and refuses any other expression by name.
+
+The parts are `rows` (after a cursor, optionally one group's), `openGroups` (each group's first
+rows), `counts`, `facets`, `groups` and `fileScope`. The answer's part is a `QueryAnswer`; rows
+travel as `browseUnit` and `browseLine` batches, open groups' rows with their group's position as
+`parent`. A query listing more than 500 rows runs as a bulk request.
+
+A `line` request reads one selected row, a line or a unit, with the sections a host shows:
+`places` (the unit's places after a cursor), `detail` (translations, locations and problems),
+`related` (same key, same text, conflict and key change) and `line` (the whole line as a `lines`
+batch). Selecting a row is one request whatever it shows.
 
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
@@ -210,9 +237,11 @@ does not scrub every unused payload.
 Requests and responses use validated domain schemas. UTF-16 code units, including lone
 surrogates, survive the wire and dictionary boundaries. Search returns at most 50 rows and
 200 group entries; `minGroupSize` drops smaller groups before that bound and before `more`.
-Group keys, `openGroup` and `source` values hold at most 32,767 UTF-16 code units. Native response JSON is bounded to 16 MiB; bulk corpus exports use scoped
-files rather than a giant protocol frame. Native operations expose stage durations and actual
-section, index and write-byte counters.
+Group keys, `openGroup` and `source` values hold at most 32,767 UTF-16 code units. A frame
+carries at most 8 MiB; bulk reads (the corpus, localization lines, aggregates and findings
+pages) stream as column batches with flow control, never as files
+([Phase 4 §5](game-text-rule-engine-phase-4.md#5-column-batches)). Native operations expose stage
+durations, batch counts and bytes, and actual section, index and write-byte counters.
 
 Full cold construction still allocates in proportion to input size. Measure production host
 preparation, first query, repeated query, mixed edits, warm reopen, focus, callback gaps and

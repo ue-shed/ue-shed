@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { describe, expect } from "vitest";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
 import { mountPackageTextEvent } from "./package-object-path.js";
@@ -9,7 +11,8 @@ import {
 	representationSite,
 	staleRuntimeCopy
 } from "./representation-copies.js";
-import { textCorpusQuery } from "./query.test-support.js";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
+import type { NativeTextQuery } from "./native-query-contract.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
 
@@ -46,6 +49,17 @@ const menu = (
 	occurrences,
 	...(blueprintClasses === null ? undefined : { blueprintClasses })
 });
+
+/** Reads a package record through the index, saved at its project-relative path. */
+const indexed = <A, E>(
+	record: SavedAssetPackageTextRecord,
+	use: (query: NativeTextQuery) => Effect.Effect<A, E>
+) =>
+	withIndexedCorpus(
+		{ units: [] },
+		{ records: [{ ...record, path: "Content/UI/WBP_Menu.uasset" }] },
+		(model) => use(model.query)
+	);
 
 const title = property("/Game/UI/WBP_Menu.WBP_Menu.WidgetTree.Title", "Text", "Play", "Title");
 const compiledTitle = property(
@@ -362,40 +376,55 @@ describe("folded corpus", () => {
 		]);
 		expect(foldRepresentationCopies(foreign)).toEqual(foreign);
 	});
-	it("lists one place per authored site and flags text the compiled class has not caught up with", () => {
-		const corpus = textCorpusFromExtractionEvents({
-			projectRoot: "/project",
-			events: [menu([{ ...title, source: "Play now" }, compiledTitle])]
-		});
-		expect(corpus.coverage).toMatchObject({ textUnits: 1, textOccurrences: 1 });
-		const [unit] = corpus.units;
-		// The line's source is the authored site's text, so the key has one text.
-		expect(unit!.source).toEqual({ status: "consistent", value: "Play now" });
-		expect(unit!.occurrences[0]!.copies).toEqual([
-			{
-				objectPath: "/Game/UI/WBP_Menu.WBP_Menu_C.WidgetTree.Title",
-				kind: "generated_class",
-				source: "Play"
-			}
-		]);
-		const query = textCorpusQuery(corpus);
-		const signals = query.focus({ id: unit!.id, pageSize: 1 })!.unit.reviewSignals;
-		expect(signals).toContain("compiled_copy_differs");
-		expect(signals).not.toContain("conflicting");
-		const page = query.search({ query: "", capability: "all", pageSize: 50 });
-		expect(page.counts.conflicting).toBe(0);
-		// Without the reader's Blueprint evidence, the same record reads as one key, two texts.
-		const unfolded = textCorpusFromExtractionEvents({
-			projectRoot: "/project",
-			events: [menu([{ ...title, source: "Play now" }, compiledTitle], null)]
-		});
-		expect(unfolded.units[0]!.source).toEqual({
-			status: "conflicting",
-			values: ["Play", "Play now"]
-		});
-		// Search finds the line by its authored text only.
-		expect(query.search({ query: "now", capability: "all", pageSize: 50 }).total).toBe(1);
-	});
+	it.live(
+		"lists one place per authored site and flags text the compiled class has not caught up with",
+		() => {
+			const record = menu([{ ...title, source: "Play now" }, compiledTitle]);
+			const corpus = textCorpusFromExtractionEvents({
+				projectRoot: "/project",
+				events: [record]
+			});
+			expect(corpus.coverage).toMatchObject({ textUnits: 1, textOccurrences: 1 });
+			const [unit] = corpus.units;
+			// The line's source is the authored site's text, so the key has one text.
+			expect(unit!.source).toEqual({ status: "consistent", value: "Play now" });
+			expect(unit!.occurrences[0]!.copies).toEqual([
+				{
+					objectPath: "/Game/UI/WBP_Menu.WBP_Menu_C.WidgetTree.Title",
+					kind: "generated_class",
+					source: "Play"
+				}
+			]);
+			// Without the reader's Blueprint evidence, the same record reads as one key, two texts.
+			const unfolded = textCorpusFromExtractionEvents({
+				projectRoot: "/project",
+				events: [menu([{ ...title, source: "Play now" }, compiledTitle], null)]
+			});
+			expect(unfolded.units[0]!.source).toEqual({
+				status: "conflicting",
+				values: ["Play", "Play now"]
+			});
+			return indexed(record, (query) =>
+				Effect.gen(function* () {
+					const signals = (yield* query.focus({ id: unit!.id, pageSize: 1 }))!.unit
+						.reviewSignals;
+					expect(signals).toContain("compiled_copy_differs");
+					expect(signals).not.toContain("conflicting");
+					const page = yield* query.search({
+						query: "",
+						capability: "all",
+						pageSize: 50
+					});
+					expect(page.counts.conflicting).toBe(0);
+					// Search finds the line by its authored text only.
+					expect(
+						(yield* query.search({ query: "now", capability: "all", pageSize: 50 }))
+							.total
+					).toBe(1);
+				})
+			);
+		}
+	);
 
 	it("classifies a folded place as the place alone when its copies agree", () => {
 		// Copies differ from their place only in the class object, which no policy row reads.
@@ -482,7 +511,7 @@ describe("folded corpus", () => {
 		).toBe("editor");
 	});
 
-	it("only claims what the game shows from the generated class or class defaults", () => {
+	it.live("only claims what the game shows from the generated class or class defaults", () => {
 		const skeletonClasses = [
 			{ ...classes, skeletonClass: "/Game/UI/WBP_Menu.SKEL_WBP_Menu_C" }
 		];
@@ -493,30 +522,39 @@ describe("folded corpus", () => {
 			"Title"
 		);
 		const signals = (occurrences: Occurrence[]) => {
+			const record = menu(occurrences, skeletonClasses);
 			const corpus = textCorpusFromExtractionEvents({
 				projectRoot: "/project",
-				events: [menu(occurrences, skeletonClasses)]
+				events: [record]
 			});
 			const unit = corpus.units[0]!;
-			return {
-				signals: textCorpusQuery(corpus).focus({ id: unit.id, pageSize: 1 })!.unit
-					.reviewSignals,
-				stale: staleRuntimeCopy(unit.occurrences[0]!)?.objectPath
-			};
+			return indexed(record, (query) =>
+				Effect.map(query.focus({ id: unit.id, pageSize: 1 }), (focus) => ({
+					signals: focus!.unit.reviewSignals,
+					stale: staleRuntimeCopy(unit.occurrences[0]!)?.objectPath
+				}))
+			);
 		};
 		const now = { ...title, source: "Play now" };
-		// Compiled and up to date; only a saved skeleton still holds the old text.
-		const skeletonOnly = signals([
-			now,
-			{ ...compiledTitle, source: "Play now" },
-			skeletonTitle
-		]);
-		expect(skeletonOnly.signals).not.toContain("compiled_copy_differs");
-		expect(skeletonOnly.signals).not.toContain("conflicting");
-		expect(skeletonOnly.stale).toBeUndefined();
-		// Not compiled: the generated class's text is what the game shows, even after a skeleton.
-		const runtime = signals([now, skeletonTitle, { ...compiledTitle, source: "Play again" }]);
-		expect(runtime.signals).toContain("compiled_copy_differs");
-		expect(runtime.stale).toBe(compiledTitle.location.object_path);
+		return Effect.gen(function* () {
+			// Compiled and up to date; only a saved skeleton still holds the old text.
+			const skeletonOnly = yield* signals([
+				now,
+				{ ...compiledTitle, source: "Play now" },
+				skeletonTitle
+			]);
+			expect(skeletonOnly.signals).not.toContain("compiled_copy_differs");
+			expect(skeletonOnly.signals).not.toContain("conflicting");
+			expect(skeletonOnly.stale).toBeUndefined();
+			// Not compiled: the generated class's text is what the game shows, even after a
+			// skeleton.
+			const runtime = yield* signals([
+				now,
+				skeletonTitle,
+				{ ...compiledTitle, source: "Play again" }
+			]);
+			expect(runtime.signals).toContain("compiled_copy_differs");
+			expect(runtime.stale).toBe(compiledTitle.location.object_path);
+		});
 	});
 });

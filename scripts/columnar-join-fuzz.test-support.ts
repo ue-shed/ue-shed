@@ -1,8 +1,6 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { JoinedQueryData } from "../packages/game-text/src/joined-query-data.test-support.ts";
-import { columnarTextCorpusQuery } from "../packages/game-text/src/columnar-query.test-support.ts";
 import { Effect, Option, Schema, Stream } from "effect";
 import {
 	LocalizationTarget,
@@ -16,32 +14,31 @@ import {
 } from "../packages/localization/dist/index.js";
 import { SavedAssetPackageTextRecord } from "../packages/unreal-assets/dist/index.js";
 import { emptyPackageTextRecord } from "../packages/game-text/src/package-text-record.ts";
-import {
-	refreshPackageTextLayer,
-	textCorpusFromPackageTextLayer
-} from "../packages/game-text/src/package-text-layer.ts";
+import { refreshPackageTextLayer } from "../packages/game-text/src/package-text-layer.ts";
 import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import {
 	openJoinedTarget,
 	inspectJoinedTarget
 } from "../packages/game-text/src/joined-target-reader.ts";
 import { hydrateJoinedTarget } from "../packages/game-text/src/joined-target-hydrate.test-support.ts";
-import { u32 } from "../packages/game-text/src/joined-target-input.ts";
 import {
 	joinLocalizationTarget,
 	applyLocalizationKeyChanges,
 	localizationKeyChanges,
 	applyLocalizationReview
 } from "../packages/game-text/src/index.ts";
-import { joinedStatusReport } from "../packages/game-text/src/indexed-policy-data.test-support.ts";
-import { localizationStatusReport } from "../packages/game-text/src/localization-status.ts";
-import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
-import {
-	TextProblem,
+import type {
 	TextCorpusSearchRequest,
-	TextReviewSignal
+	TextCorpusSearchPage
 } from "../packages/game-text/src/schema.ts";
-import { localizationStates } from "../packages/game-text/src/localization-schema.ts";
+import {
+	localizationStates,
+	LocalizationUnknownReason,
+	type LocalizationCultureState,
+	type LocalizationLine
+} from "../packages/game-text/src/localization-schema.ts";
+import type { LocalizationLineView } from "../packages/game-text/src/index-reads.ts";
+import { localizationShippedTranslation } from "../packages/game-text/src/localization-shipped-translation.ts";
 import {
 	target,
 	evidence as emptyEvidence,
@@ -371,7 +368,17 @@ export async function shrinkJoinFuzzInput(
 	return { input: current, attempts, bounded: attempts >= maximumAttempts };
 }
 
-/** Actual persisted layers, original event oracle, all join fields and query result fields. */
+/** What the engine reads back: every stored line, and one request's lines with marks and its page. */
+export interface NativeLineFacts {
+	readonly lines: readonly LocalizationLine[];
+	readonly exported: readonly LocalizationLineView<"identity" | "source" | "marks">[];
+	readonly page: TextCorpusSearchPage;
+}
+
+/**
+ * Actual persisted layers against the join planted from the original events: every join field,
+ * and with `nativeLines` the engine's line facts and the culture counts that tally them.
+ */
 export async function compareJoinFuzzInput(
 	input: JoinFuzzInput,
 	cache: string,
@@ -382,33 +389,12 @@ export async function compareJoinFuzzInput(
 		>,
 		input: import("../packages/game-text/src/joined-target.ts").JoinedTargetInput
 	) => Promise<void>,
-	nativeSearch?: (
+	nativeLines?: (
 		configuration: ReturnType<
 			typeof import("./columnar-join.test-support.ts").joinStoreOptions
 		>,
-		requests: readonly TextCorpusSearchRequest[],
-		lines: readonly string[],
-		focus: readonly import("../packages/game-text/src/schema.ts").TextCorpusFocusRequest[],
-		exports: readonly TextCorpusSearchRequest[],
-		details: readonly import("../packages/game-text/src/localization-view.ts").LocalizationFocusRequest[]
-	) => Promise<{
-		readonly searches: readonly import("../packages/game-text/src/schema.ts").TextCorpusSearchPage[];
-		readonly lines: readonly (
-			| import("../packages/game-text/src/localization-schema.ts").LocalizationLine
-			| undefined
-		)[];
-		readonly summary: import("../packages/game-text/src/schema.ts").TextCorpusQuerySummary;
-		readonly corpusLines: readonly import("../packages/game-text/src/localization-schema.ts").LocalizationLine[];
-		readonly exports: readonly import("../packages/game-text/src/schema.ts").TextCorpus[];
-		readonly focus: readonly (
-			| import("../packages/game-text/src/schema.ts").TextCorpusFocus
-			| null
-		)[];
-		readonly details: readonly (
-			| import("../packages/game-text/src/localization-view.ts").LocalizationFocus
-			| undefined
-		)[];
-	}>,
+		request: TextCorpusSearchRequest
+	) => Promise<NativeLineFacts>,
 	seedDictionary = false
 ): Promise<FuzzDifference[]> {
 	const projectRoot = join(cache, "project");
@@ -595,262 +581,6 @@ export async function compareJoinFuzzInput(
 		input.review
 	);
 	const expected = applyLocalizationKeyChanges(raw, localizationKeyChanges(raw, corpus).pairs);
-	// The corpus keeps no asset classes; the references take them from the records.
-	const assetClasses = new Map(
-		input.records.flatMap((record) =>
-			record.assetClass === undefined ? [] : [[record.path, record.assetClass] as const]
-		)
-	);
-	const oracle = textCorpusQuery(corpus, undefined, expected, assetClasses);
-	const base: TextCorpusSearchRequest = {
-		query: "",
-		capability: "all",
-		pageSize: 50,
-		localization: { target: expected.target },
-		facets: { folder: "", assets: true, origins: true, cultures: true, assetTypes: true }
-	};
-	const { localization: _selection, ...unlocalized } = base;
-	const { facets: _facets, ...withoutFacets } = base;
-	const translationQuery = ["translated", "po", "Alpha", "\ud800", "\udfff", "\u0000"][
-		input.seed % 6
-	]!;
-	const requests: TextCorpusSearchRequest[] = [
-		...(
-			[
-				"é",
-				"i\u0307",
-				"ı",
-				"\ud800",
-				"\udfff",
-				"😀",
-				"Alpha first",
-				"Alpha Alpha",
-				"not-a-source",
-				" \u2028 "
-			] as const
-		).flatMap((query) => [
-			{ ...withoutFacets, query },
-			{ ...unlocalized, query }
-		]),
-		withoutFacets,
-		base,
-		unlocalized,
-		{
-			...unlocalized,
-			filter: [{ field: "namespace", op: "is", values: ["UI"] }]
-		},
-		{ ...base, pageSize: 2 },
-		{ ...base, capability: "read_only" },
-		{ ...base, capability: "source_editable" },
-		{ ...base, withoutNotes: true },
-		{
-			...base,
-			query: translationQuery,
-			localization: {
-				target: expected.target,
-				culture: authored.cultures[0]!,
-				searchTranslations: true
-			}
-		},
-		{
-			...base,
-			query: translationQuery,
-			localization: {
-				target: expected.target,
-				cultures: authored.cultures,
-				searchTranslations: true
-			}
-		},
-		{
-			...base,
-			localization: {
-				target: expected.target,
-				state: localizationStates[input.seed % localizationStates.length]!
-			}
-		},
-		{ ...base, where: { pathPrefix: "Content/Text" } },
-		{ ...base, where: { files: [input.records[0]!.path] } },
-		...(["shared", "duplicate_source", "long", "unresolved", "conflicting"] as const).map(
-			(lens) => ({ ...base, lens })
-		),
-		...input.cultures.map((culture) => ({
-			...base,
-			localization: {
-				target: expected.target,
-				cultures: [authored.cultures.find((value) => value === culture)!]
-			}
-		})),
-		...["Alpha", "first", "\u2028", "translated", "\ud800", "\udfff", "\u0000"].map(
-			(query) => ({ ...base, query })
-		),
-		...(["folder", "asset", "origin", "problem", "namespace"] as const).map((group) => ({
-			...base,
-			group
-		}))
-	];
-	const filters = [
-		{
-			field: "problem",
-			op: "is",
-			values: [TextProblem.literals[input.seed % TextProblem.literals.length]!]
-		},
-		{ field: "finding", op: "is", values: ["shared"] },
-		{ field: "translation", op: "is", values: ["missing", "not_synced"] },
-		{ field: "origin", op: "is", values: ["asset"] },
-		{ field: "folder", op: "is", values: ["Content/Text"] },
-		{ field: "asset", op: "is", values: [input.records[0]!.path] },
-		{ field: "namespace", op: "is", values: ["UI"] },
-		{ field: "editing", op: "is", values: ["editable"] },
-		{ field: "notes", op: "is_not", values: ["present"] },
-		{ field: "asset_type", op: "is", values: [FUZZ_ASSET_CLASSES[input.seed % 5]!] }
-	];
-	for (let offset = 0; offset < 3; offset++)
-		requests.push(
-			Schema.decodeUnknownSync(TextCorpusSearchRequest)({
-				...base,
-				filter: [filters[(input.seed + offset) % filters.length]]
-			})
-		);
-	// Saved "UI [package]" text gathers as "UI"; String Table entries keep "UI [package]".
-	const translationKeys = [
-		JSON.stringify(["UI", `K${input.seed % 6}`]),
-		JSON.stringify(["UI [package]", "K1"]),
-		JSON.stringify(["Other", "K2"])
-	];
-	for (const selection of [base, unlocalized])
-		for (const op of ["is", "is_not"] as const)
-			requests.push({
-				...selection,
-				filter: [{ field: "translation_key", op, values: translationKeys }]
-			});
-	requests.push({
-		...base,
-		filter: [
-			{ field: "translation_key", op: "is", values: translationKeys },
-			{ field: "problem", op: "is", values: ["conflicting_source"] }
-		]
-	});
-	// A unit or line has every type its places' packages have; untyped packages have none.
-	const assetTypes = [FUZZ_ASSET_CLASSES[1]!, FUZZ_ASSET_CLASSES[3]!];
-	for (const selection of [base, unlocalized])
-		for (const op of ["is", "is_not"] as const)
-			requests.push({
-				...selection,
-				filter: [{ field: "asset_type", op, values: assetTypes }]
-			});
-	requests.push({
-		...base,
-		filter: [
-			{ field: "asset_type", op: "is", values: assetTypes },
-			{ field: "origin", op: "is_not", values: ["string_table"] }
-		]
-	});
-	// Exact sources: present texts (including lone surrogates and conflicting copies), a case
-	// variant and an absent text. Every stored signal filters, and source groups honour a minimum.
-	const present = [
-		...new Set(
-			corpus.units.flatMap((unit) =>
-				unit.source.status === "consistent" ? [unit.source.value] : unit.source.values
-			)
-		)
-	].filter((value) => value !== "");
-	const exact = [
-		present[input.seed % Math.max(1, present.length)],
-		present[(input.seed + 3) % Math.max(1, present.length)],
-		"alpha source twenty four",
-		"lead\ud800",
-		"not-a-source"
-	].filter((value): value is string => value !== undefined);
-	for (const selection of [base, unlocalized]) {
-		for (const op of ["is", "is_not"] as const)
-			requests.push({ ...selection, filter: [{ field: "source", op, values: exact }] });
-		requests.push({
-			...selection,
-			filter: [
-				{ field: "finding", op: "is", values: [...TextReviewSignal.literals] },
-				{ field: "source", op: "is_not", values: exact.slice(0, 1) }
-			]
-		});
-		for (const signal of ["conflicting", "evidence_only", "compiled_copy_differs"] as const)
-			requests.push({
-				...selection,
-				filter: [{ field: "finding", op: "is", values: [signal] }]
-			});
-		for (const minGroupSize of [1, 2, 3]) {
-			const sourceGroups = {
-				...selection,
-				filter: [
-					{
-						field: "finding" as const,
-						op: "is" as const,
-						values: ["duplicate_source" as const]
-					}
-				],
-				group: "source" as const,
-				minGroupSize
-			};
-			requests.push(sourceGroups, { ...selection, group: "source", minGroupSize });
-			const opened = oracle.search(sourceGroups).groups?.entries[0]?.key;
-			if (opened !== undefined)
-				requests.push({ ...sourceGroups, pageSize: 1, openGroup: opened });
-		}
-		requests.push({ ...selection, group: "asset", minGroupSize: 2 });
-	}
-	const firstPage = oracle.search({ ...base, pageSize: 2 });
-	if (firstPage.localization?.nextCursor)
-		requests.push({
-			...base,
-			pageSize: 2,
-			localizationCursor: firstPage.localization.nextCursor
-		});
-	const group = (["asset", "folder", "namespace", "origin", "problem"] as const)[input.seed % 5]!;
-	const grouped = oracle.search({ ...base, group });
-	if (grouped.groups?.entries[0])
-		requests.push({
-			...base,
-			group: grouped.groups.by,
-			openGroup: grouped.groups.entries[0].key
-		});
-	// Page both projections and revisit warmed requests after other scopes. The event oracle
-	// supplies cursors, so these comparisons also cover display order and cache-key isolation.
-	for (const selection of [base, unlocalized]) {
-		const grouping = (
-			["asset", "folder", "namespace", "origin", "problem", "audience"] as const
-		)[input.seed % 6]!;
-		const groups = oracle.search({ ...selection, group: grouping }).groups;
-		for (const openGroup of [undefined, groups?.entries[0]?.key, "missing-test-group"]) {
-			const pageRequest = {
-				...selection,
-				pageSize: 1,
-				group: grouping
-			};
-			const firstRequest =
-				openGroup === undefined ? pageRequest : { ...pageRequest, openGroup };
-			const page = oracle.search(firstRequest);
-			requests.push(firstRequest);
-			if (page.localization?.nextCursor)
-				requests.push({
-					...firstRequest,
-					pageSize: 2,
-					localizationCursor: page.localization.nextCursor
-				});
-			else if (page.nextCursor)
-				requests.push({
-					...firstRequest,
-					pageSize: 2,
-					cursor: page.nextCursor
-				});
-			requests.push(firstRequest);
-		}
-	}
-	requests.push({
-		...base,
-		localization: {
-			target: expected.target,
-			review: "not_reviewed",
-			keyChanged: input.seed % 2 === 0
-		}
-	});
 	if (persisted) await importJoinEvidence(projectRoot, cache, evidence);
 	await run(
 		refreshPackageTextLayer({
@@ -880,67 +610,15 @@ export async function compareJoinFuzzInput(
 		Effect.gen(function* () {
 			const joined = yield* openJoinedTarget();
 			yield* inspectJoinedTarget(joined);
-			const query = new JoinedQueryData(joined);
-			const candidate = columnarTextCorpusQuery(joined);
-			const rawPresentations = Array.from(query.column("query.raw.order"))
-				.filter((row) => query.column("query.raw.visible")[row])
-				.map((row) => query.presentation("raw", row));
-			const slicePresentations = Array.from(
-				{ length: query.column("query.slice.raw").length },
-				(_, row) => ({
-					line: query.column("query.slice.line")[row]!,
-					visible: query.column("query.slice.visible")[row]!,
-					unit: query.presentation("slice", row)
-				})
-			);
-			return {
-				query: {
-					summary: candidate.summary(),
-					statusReport: joinedStatusReport(joined, evidence, candidate.search(base)),
-					exports: [candidate.export(base), candidate.export(unlocalized)],
-					lines: candidate.localizationLines(base),
-					searches: requests.map((request) => candidate.search(request)),
-					rawFocus: rawPresentations.map((unit) =>
-						candidate.focus({ id: unit.id, pageSize: 2 })
-					),
-					focus: expected.lines.map((line) => ({
-						line: candidate.localizationFocus(line.id),
-						units:
-							line.origin.kind === "corpus"
-								? line.origin.unitIds.map((id) =>
-										candidate.focus({
-											id,
-											pageSize: 2,
-											localization: { target: expected.target, id: line.id }
-										})
-									)
-								: []
-					}))
-				},
-				rawPresentations,
-				slicePresentations,
-				join: yield* hydrateJoinedTarget(joined, 0, 10000),
-				corpus: yield* textCorpusFromPackageTextLayer(projectRoot),
-				origins: yield* u32(joined.layer, "line.origins"),
-				editing: yield* u32(joined.layer, "line.editing"),
-				notes: yield* u32(joined.layer, "line.notes")
-			};
+			return yield* hydrateJoinedTarget(joined, 0, 10000);
 		})
 	);
 	const differences: FuzzDifference[] = [];
-	const comparison = compareLocalizationJoins(expected, actual.join, 100);
+	const comparison = compareLocalizationJoins(expected, actual, 100);
 	for (const difference of comparison.differences)
 		differences.push({ field: `join.${difference.field}`, detail: JSON.stringify(difference) });
-	const hydrated = textCorpusQuery(
-		actual.corpus,
-		undefined,
-		{
-			...actual.join,
-			lines: [...actual.join.lines].sort((a, b) => a.id.localeCompare(b.id))
-		},
-		assetClasses
-	);
-	const compare = (field: string, left: OracleValue, right: OracleValue) => {
+	if (!nativeLines) return differences;
+	const compare = (field: string, left: OracleValue, right: OracleValue, line: string) => {
 		if (
 			/\.(facts|unknownReasons|flags)$/u.test(field) &&
 			Array.isArray(left) &&
@@ -952,182 +630,110 @@ export async function compareJoinFuzzInput(
 		if (isDeepStrictEqual(left, right)) return;
 		if (Array.isArray(left) && Array.isArray(right)) {
 			for (let row = 0; row < Math.max(left.length, right.length); row++)
-				compare(`${field}.${row}`, left[row], right[row]);
+				compare(`${field}.${row}`, left[row], right[row], line);
 			return;
 		}
 		if (isOracleRecord(left) && isOracleRecord(right)) {
 			const a = Object.fromEntries(Object.entries(left)),
 				b = Object.fromEntries(Object.entries(right));
 			for (const key of new Set([...Object.keys(a), ...Object.keys(b)]))
-				compare(`${field}.${key}`, a[key], b[key]);
+				compare(`${field}.${key}`, a[key], b[key], line);
 			return;
 		}
-		differences.push({ field, detail: JSON.stringify({ expected: left, actual: right }) });
+		differences.push({
+			field,
+			detail: JSON.stringify({ line, expected: left, actual: right })
+		});
 	};
-	compare("query.summary", oracle.summary(), hydrated.summary());
-	compare("column-query.summary", oracle.summary(), actual.query.summary);
-	compare(
-		"column-query.statusReport",
-		Schema.decodeUnknownSync(Schema.Json)(
-			JSON.parse(
-				JSON.stringify(localizationStatusReport(corpus, evidence, oracle.search(base)))
-			)
-		),
-		Schema.decodeUnknownSync(Schema.Json)(JSON.parse(JSON.stringify(actual.query.statusReport)))
+	// Cultures by name, so a difference names its culture rather than its position.
+	const byCulture = <C extends { readonly culture: string }>(cultures: readonly C[]) =>
+		Object.fromEntries(cultures.map((culture) => [culture.culture, culture]));
+	const request: TextCorpusSearchRequest = {
+		query: "",
+		capability: "all",
+		pageSize: 1,
+		localization: { target: expected.target }
+	};
+	const facts = await nativeLines(
+		{ projectKey: projectRoot, cacheRoot: cache, targetKey: "Fuzz" },
+		request
 	);
-	compare("column-query.export.localized", oracle.export(base), actual.query.exports[0]);
-	compare("column-query.export.raw", oracle.export(unlocalized), actual.query.exports[1]);
-	compare("column-query.localizationLines", oracle.localizationLines(base), actual.query.lines);
-	for (const [row, unit] of actual.rawPresentations.entries())
-		compare(
-			"column-query.rawFocus",
-			oracle.focus({ id: unit.id, pageSize: 2 }),
-			actual.query.rawFocus[row]
-		);
-	// Search rows and focus add the problems to the unit presentation.
-	const withoutProblems = <T extends { readonly problems?: unknown }>({
-		problems: _problems,
-		...unit
-	}: T) => unit;
-	compare(
-		"query.columns.raw",
-		oracle.search({ query: "", capability: "all", pageSize: 1000 }).units.map(withoutProblems),
-		actual.rawPresentations
-	);
-	for (const slice of actual.slicePresentations) {
-		if (!slice.visible) continue;
-		const line = actual.join.lines[slice.line]!;
-		const focused = oracle.focus({
-			id: slice.unit.id,
-			pageSize: 2,
-			localization: { target: expected.target, id: line.id }
-		})?.unit;
-		const presentation = focused && withoutProblems(focused);
-		compare("query.columns.slice", presentation, slice.unit);
-	}
-	const nativeFocus: import("../packages/game-text/src/schema.ts").TextCorpusFocusRequest[] = [
-		...actual.rawPresentations.map((unit) => ({ id: unit.id, pageSize: 2 })),
-		...expected.lines.flatMap((line) =>
-			line.origin.kind === "corpus"
-				? line.origin.unitIds.map((id) => ({
-						id,
-						pageSize: 2,
-						localization: { target: expected.target, id: line.id }
-					}))
-				: []
-		)
-	];
-	for (const request of nativeFocus.slice()) {
-		const cursor = oracle.focus(request)?.nextOccurrenceCursor;
-		if (cursor) nativeFocus.push({ ...request, occurrenceCursor: cursor });
-	}
-	const nativeDetails = expected.lines.map((line) => ({
-		target: expected.target,
-		selection: { kind: "line" as const, id: line.id }
-	}));
-	const nativeResults = nativeSearch
-		? await nativeSearch(
-				{ projectKey: projectRoot, cacheRoot: cache, targetKey: "Fuzz" },
-				requests,
-				expected.lines.map((line) => line.id),
-				nativeFocus,
-				[base, unlocalized],
-				nativeDetails
-			)
-		: undefined;
-	if (nativeResults) {
-		compare(
-			"native-engine.corpus_lines",
-			[...expected.lines].sort((a, b) => a.id.localeCompare(b.id)),
-			[...nativeResults.corpusLines].sort((a, b) => a.id.localeCompare(b.id))
-		);
-		for (const [index, request] of nativeDetails.entries())
-			compare(
-				"native-engine.detail",
-				oracle.localizationDetail(request),
-				nativeResults.details[index]
-			);
-		compare("native-engine.summary", oracle.summary(), nativeResults.summary);
-		compare("native-engine.export.localized", oracle.export(base), nativeResults.exports[0]);
-		compare("native-engine.export.raw", oracle.export(unlocalized), nativeResults.exports[1]);
-		for (const [index, request] of nativeFocus.entries())
-			compare(
-				"native-engine.focus",
-				oracle.focus(request) ?? null,
-				nativeResults.focus[index]
-			);
-		for (const [index, line] of expected.lines.entries())
+	const planted = new Map(expected.lines.map((line) => [line.id, line]));
+	const stored = new Map(facts.lines.map((line) => [line.id, line]));
+	for (const id of planted.keys())
+		if (!stored.has(id)) differences.push({ field: "native-engine.lines.missing", detail: id });
+	for (const id of stored.keys())
+		if (!planted.has(id)) differences.push({ field: "native-engine.lines.extra", detail: id });
+	for (const [id, line] of planted) {
+		const read = stored.get(id);
+		if (read)
 			compare(
 				"native-engine.line",
-				oracle.localizationFocus(line.id),
-				nativeResults.lines[index]
+				{ ...line, cultures: byCulture(line.cultures) },
+				{ ...read, cultures: byCulture(read.cultures) },
+				id
 			);
 	}
-	for (const [index, request] of requests.entries()) {
-		if (nativeResults)
-			compare(
-				`native-engine.search.${index}`,
-				oracle.search(request),
-				nativeResults.searches[index]
-			);
-		compare(`query.search.${index}`, oracle.search(request), hydrated.search(request));
-		compare(
-			`column-query.search.${index}`,
-			oracle.search(request),
-			actual.query.searches[index]
-		);
-	}
-	for (const [lineIndex, line] of expected.lines.entries()) {
-		compare(
-			"query.localizationFocus",
-			oracle.localizationFocus(line.id),
-			hydrated.localizationFocus(line.id)
-		);
-		compare(
-			"column-query.localizationFocus",
-			oracle.localizationFocus(line.id),
-			actual.query.focus[lineIndex]!.line
-		);
-		if (line.origin.kind === "corpus")
-			for (const [unitIndex, id] of line.origin.unitIds.entries()) {
-				const request = {
-					id,
-					pageSize: 2,
-					localization: { target: expected.target, id: line.id }
-				};
-				compare("query.focus", oracle.focus(request), hydrated.focus(request));
-				compare(
-					"column-query.focus",
-					oracle.focus(request),
-					actual.query.focus[lineIndex]!.units[unitIndex]
-				);
+	// The export's marks carry the translation that ships instead of the archive and PO entries.
+	const mark = (culture: LocalizationCultureState) => {
+		const { archive: _archive, po: _po, poTranslation: _poTranslation, ...shown } = culture;
+		return { ...shown, translation: localizationShippedTranslation(culture).value };
+	};
+	const tallies = new Map(
+		expected.cultures.map((culture) => [
+			culture,
+			{
+				states: Object.fromEntries(localizationStates.map((state) => [state, 0])),
+				unknownReasons: Object.fromEntries(
+					LocalizationUnknownReason.literals.map((reason) => [reason, 0])
+				),
+				reducedSourceChecking: 0
 			}
-	}
-	// Facet membership is line scoped, including saved units split into several gathered lines.
-	for (const [field, values] of [
-		["origin", ["string_table", "data_table", "asset", "cpp", "other_source"]],
-		["editing", ["editable", "read_only"]],
-		["notes", ["present", "missing"]]
-	] as const)
-		for (let bit = 0; bit < values.length; bit++) {
-			const value = values[bit]!;
-			const request = Schema.decodeUnknownSync(TextCorpusSearchRequest)({
-				...base,
-				filter: [{ field, op: "is", values: [value] }]
-			});
-			const ids = new Set(oracle.localizationLines(request).map((line) => line.id));
-			for (let row = 0; row < actual.join.lines.length; row++) {
-				const line = actual.join.lines[row]!;
-				if (line.source.trim() === "") continue;
-				const matches =
-					field === "notes"
-						? Boolean(actual.notes[row]) === (value === "present")
-						: Boolean(
-								(field === "origin" ? actual.origins : actual.editing)[row]! &
-								(1 << bit)
-							);
-				compare(`column.facet.${field}.${value}`, ids.has(line.id), matches);
-			}
+		])
+	);
+	let notSynced = 0;
+	for (const view of facts.exported) {
+		const line = planted.get(view.id);
+		if (!line) {
+			differences.push({ field: "native-engine.export.extra", detail: view.id });
+			continue;
 		}
+		compare("native-engine.export.identity", line.identity, view.identity, view.id);
+		compare("native-engine.export.source", line.source, view.source, view.id);
+		compare(
+			"native-engine.export.marks",
+			byCulture(line.cultures.map(mark)),
+			byCulture(view.marks),
+			view.id
+		);
+		for (const culture of line.cultures) {
+			const tally = tallies.get(culture.culture);
+			if (!tally) continue;
+			tally.states[culture.state]!++;
+			for (const reason of culture.unknownReasons) tally.unknownReasons[reason]!++;
+			if (culture.reducedSourceChecking) tally.reducedSourceChecking++;
+			if (culture.facts.includes("not_synced")) notSynced++;
+		}
+	}
+	// The request's culture counts are tallies of its lines' marks.
+	const page = facts.page.localization;
+	compare(
+		"native-engine.counts",
+		Object.fromEntries(tallies),
+		Object.fromEntries(
+			(page?.counts ?? []).map((counts) => [
+				counts.culture,
+				{
+					states: Object.fromEntries(
+						Object.entries(counts.states).map(([state, value]) => [state, value.lines])
+					),
+					unknownReasons: counts.unknownReasons,
+					reducedSourceChecking: counts.reducedSourceChecking
+				}
+			])
+		),
+		"*"
+	);
+	compare("native-engine.counts.notSynced", notSynced, page?.notSynced, "*");
 	return differences;
 }

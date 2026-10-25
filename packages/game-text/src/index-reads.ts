@@ -196,3 +196,17 @@ export const localizationLineViews = <F extends LocalizationLineField>(
 /** The corpus without its units: status, coverage, package coverage and diagnostics. */
 export const TextCorpusHeader = TextCorpus.mapFields(({ units: _units, ...fields }) => fields);
 export type TextCorpusHeader = typeof TextCorpusHeader.Type;
+
+/** A corpus with its header's facts and no units, its members in a decoded corpus's order. */
+export function corpusWithoutUnits({
+	packageCoverage,
+	diagnostics,
+	...head
+}: TextCorpusHeader): TextCorpus {
+	return {
+		...head,
+		units: [],
+		...(packageCoverage === undefined ? undefined : { packageCoverage }),
+		diagnostics
+	};
+}

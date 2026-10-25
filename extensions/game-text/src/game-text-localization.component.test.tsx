@@ -30,7 +30,7 @@ import {
 	filterValues,
 	joined,
 	groupRows,
-	localized,
+	lines,
 	mount,
 	second
 } from "./game-text-localization.test-support.js";
@@ -390,13 +390,7 @@ describe("Game Text localization", () => {
 		await waitFor(() => expect(results.getByText(/Welcome/u)).toBeDefined());
 	});
 	it("omits informational or fully translated row marks, while keeping translations visible", () => {
-		const preview = localized.search({
-			query: "Welcome",
-			capability: "all",
-			pageSize: 50,
-			localization: { target: target.name }
-		}).localization?.lines[0];
-		if (!preview) throw new Error("Missing preview");
+		const preview = lines.welcome;
 		for (const state of ["outside_target", "gathered_only"] as const) {
 			const line = {
 				...preview,

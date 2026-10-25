@@ -551,5 +551,4 @@ export {
 	contractParserSync
 } from "./contract-parser.js";
 
-export { GameTextEngineRequest, GameTextEngineOutcome } from "./game-text-engine.js";
 export { gameTextEngineContract, type GameTextContract } from "./game-text-contract.generated.js";

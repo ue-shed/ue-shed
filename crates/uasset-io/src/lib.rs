@@ -22,7 +22,20 @@ pub fn run(arguments: impl Iterator<Item = std::ffi::OsString>) -> u8 {
     match arguments.first().and_then(|value| value.to_str()) {
         Some("protocol") => protocol_adapter::run(),
         Some("protocol-session") => protocol_adapter::run_session(),
+        Some("game-text-engine") => game_text_engine(),
         _ => legacy::run(arguments),
+    }
+}
+/// The Game Text engine session: binary frames on stdin and stdout until stdin closes.
+fn game_text_engine() -> u8 {
+    game_text_index::session::size_shared_pool();
+    let output = std::io::BufWriter::with_capacity(1 << 20, std::io::stdout());
+    match game_text_index::session::serve(std::io::stdin().lock(), output) {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("game-text-engine: {error}");
+            1
+        }
     }
 }
 pub use protocol_result::{ResultFrame, SavedAssetInspection};

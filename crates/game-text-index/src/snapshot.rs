@@ -353,14 +353,22 @@ static VERIFIES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 static INDEX_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static WRITTEN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IoMetrics {
+    #[cfg_attr(test, ts(type = "number"))]
     pub opens: u64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub section_loads: u64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub stored_bytes: u64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub raw_bytes: u64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub full_verifies: u64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub index_bytes: u64,
+    #[cfg_attr(test, ts(type = "number"))]
     pub written_bytes: u64,
 }
 pub fn io_metrics() -> IoMetrics {

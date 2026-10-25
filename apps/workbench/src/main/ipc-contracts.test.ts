@@ -18,6 +18,7 @@ import {
 	decodeMapCaptureProgressEvent,
 	GameObjectPath,
 	gameTextOperationProgressEvent,
+	gameTextProgressEvent,
 	invokeChannelNames,
 	invokeContracts,
 	mapCaptureProgressEvent,
@@ -944,7 +945,7 @@ const malformedArgsByChannel = {
 	"game-text:localization:focus": [
 		{ target: "FixtureGame", selection: { kind: "file", id: "C:/Untrusted" } }
 	],
-	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 51 }],
+	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 501 }],
 	"game-text:search": [{ query: "", capability: "all", pageSize: 50, withoutNotes: "yes" }],
 	"game-text:search-rows": [{ query: "", capability: "all", pageSize: 50, openGroups: ["a"] }],
 	"editor-session:set-port": [65_536],
@@ -1003,6 +1004,7 @@ it("keeps contract channels in exact preload parity", () => {
 	expect(gameTextOperationProgressEvent.channel).toBe(
 		"game-text:localization:operation-progress"
 	);
+	expect(gameTextProgressEvent.channel).toBe("game-text:progress-changed");
 
 	expect([...preloadInvokeChannels].sort()).toEqual([...invokeChannelNames].sort());
 	expect(preloadEventChannels.toSorted()).toEqual(
@@ -1011,7 +1013,8 @@ it("keeps contract channels in exact preload parity", () => {
 			"editor-window:handoff",
 			"map-capture:progress",
 			"map-review:world-observation",
-			"game-text:localization:operation-progress"
+			"game-text:localization:operation-progress",
+			"game-text:progress-changed"
 		].toSorted()
 	);
 });

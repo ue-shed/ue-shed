@@ -12,6 +12,7 @@ import {
 	BuiltInCheckId,
 	LocalizationReviewLens,
 	LocalizationState,
+	MAX_TEXT_QUERY_PAGE_SIZE,
 	TextGroupBy,
 	TextOriginKind
 } from "@ue-shed/game-text/schema";
@@ -140,7 +141,7 @@ export const CliCommand = Schema.TaggedUnion({
 		review: Schema.optionalKey(LocalizationReviewLens),
 		keyChanged: Schema.optionalKey(Schema.Boolean),
 		...TextWhereFields,
-		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(50))
+		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_TEXT_QUERY_PAGE_SIZE))
 	},
 	InvestigationRun: {
 		...Project,
@@ -284,7 +285,9 @@ export const CliCommand = Schema.TaggedUnion({
 		state: Schema.optionalKey(LocalizationState),
 		searchTranslations: Schema.optionalKey(Schema.Boolean),
 		...TextWhereFields,
-		limit: Schema.optionalKey(PositiveInt.check(Schema.isLessThanOrEqualTo(50)))
+		limit: Schema.optionalKey(
+			PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_TEXT_QUERY_PAGE_SIZE))
+		)
 	},
 	TextReview: { ...Project, ruleFile: Schema.String, ...Reader },
 	TextRulesInit: { ...Project, output: Schema.optionalKey(Schema.String) },

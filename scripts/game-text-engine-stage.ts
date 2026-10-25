@@ -1,9 +1,10 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { readFile, writeFile, mkdir, rm, stat } from "node:fs/promises";
 import { channel } from "node:diagnostics_channel";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
-import { Context, Effect, Exit, Layer, Option, Result, Schema, Scope } from "effect";
+import { Context, Effect, Exit, Fiber, Layer, Option, Result, Schema, Scope } from "effect";
 import * as currentIndex from "../packages/game-text/dist/entry-index.js";
 import * as currentWorkspace from "../packages/game-text/dist/entry-workspace.js";
 import type { GameTextWorkspaceFileHooks } from "../packages/game-text/dist/entry-workspace.js";
@@ -70,14 +71,12 @@ export async function runEngineStage(options: EngineStageOptions) {
 	const { AssetReaderLive } = await load("unreal-assets/dist/index.js", currentAssets);
 	const { LocalizationEvidence, LocalizationEvidenceNodeLive, LocalizationTargetName } =
 		await load("localization/dist/index.js", currentLocalization);
-	const { LOCALIZATION_LINES_CSV_FIELDS } = await load(
+	const { LOCALIZATION_LINES_CSV_FIELDS, localizationLinesCsv } = await load(
 		"game-text/dist/entry-corpus.js",
 		currentCorpus
 	);
-	const { decodeGameTextRuleDocumentJson, STARTER_CHECK_RULES } = await load(
-		"game-text/dist/entry-rules.js",
-		currentRules
-	);
+	const { decodeGameTextRuleDocumentJson, effectiveRuleDocument, STARTER_CHECK_RULES } =
+		await load("game-text/dist/entry-rules.js", currentRules);
 	const { gatheredIdentityKey, gatheredTextIdentity } = await load(
 		"game-text/dist/index.js",
 		currentPublic
@@ -365,6 +364,235 @@ export async function runEngineStage(options: EngineStageOptions) {
 				await measure(stage, async () =>
 					ready(await run(workspace.localizationQualitySearch({ target, filter: "all" })))
 				);
+			} else if (stage === "loc-check" || stage === "lines-export") {
+				// `loc check` and `loc export` as each commit's CLI runs them: the starter's checks
+				// over the open snapshot printed to a file, and the all-languages CSV.
+				const model = await run(
+					steps
+						.openCommitted({ projectRoot: options.project, targetName })
+						.pipe(Effect.provideService(Scope.Scope, scope))
+				);
+				if (Option.isNone(model)) throw new Error("Built index not available.");
+				const opened = model.value;
+				const path = join(
+					options.output,
+					stage === "loc-check" ? "report.json" : "lines.csv"
+				);
+				await rm(path, { force: true });
+				if (stage === "loc-check")
+					await measure(stage, async () => {
+						const file = createWriteStream(path);
+						const write = (text: string) =>
+							new Promise<void>((resolve, reject) =>
+								file.write(text, (error) => (error ? reject(error) : resolve()))
+							);
+						let findings: number;
+						// A build without the engine's writers runs the CLI it shipped.
+						if (Reflect.has(opened, "prepareLocalizationCheck")) {
+							const prepared = await run(
+								opened.prepareLocalizationCheck(STARTER_CHECK_RULES, {})
+							);
+							await run(prepared.write((text) => Effect.promise(() => write(text))));
+							findings = prepared.findings;
+						} else {
+							// That CLI built the whole report, then printed its members and each finding in turn.
+							const report = await run(
+								opened.localizationCheck(STARTER_CHECK_RULES, {})
+							);
+							let chunk = "";
+							const piece = async (text: string) => {
+								chunk += text;
+								if (chunk.length >= 1 << 20) {
+									await write(chunk);
+									chunk = "";
+								}
+							};
+							let separator = "{";
+							for (const [key, value] of Object.entries(report)) {
+								// The arrays are printed an element at a time: as one string they are
+								// longer than a string can be.
+								if (
+									(key === "findings" || key === "checkDiagnostics") &&
+									Array.isArray(value) &&
+									value.length > 0
+								) {
+									await piece(`${separator}\n\t${JSON.stringify(key)}: [`);
+									for (const [at, item] of value.entries())
+										await piece(
+											`${at ? "," : ""}\n\t\t${JSON.stringify(item, null, "\t").replaceAll("\n", "\n\t\t")}`
+										);
+									await piece("\n\t]");
+								} else {
+									const text = JSON.stringify(value, null, "\t");
+									if (text === undefined) continue;
+									await piece(
+										`${separator}\n\t${JSON.stringify(key)}: ${text.replaceAll("\n", "\n\t")}`
+									);
+								}
+								separator = ",";
+							}
+							await write(`${chunk}\n}\n`);
+							findings = report.findings.length;
+						}
+						await new Promise<void>((resolve) => file.end(resolve));
+						return { rowCount: findings, bytes: (await stat(path)).size };
+					});
+				else
+					await measure(stage, async () => {
+						const request = {
+							query: "",
+							capability: "all" as const,
+							localization: { target }
+						};
+						if (Reflect.has(opened.query, "writeLocalizationLinesCsv")) {
+							const written = await run(
+								opened.query.writeLocalizationLinesCsv(request, { path })
+							);
+							return { rowCount: "rows" in written ? written.rows : -1 };
+						}
+						const lines = await run(
+							opened.query.selectLocalizationLines(
+								request,
+								LOCALIZATION_LINES_CSV_FIELDS
+							)
+						);
+						const { csv, rows } = localizationLinesCsv({
+							join: opened.localization,
+							lines
+						});
+						await writeFile(path, csv, { flag: "wx" });
+						return { rowCount: rows };
+					});
+			} else if (stage === "engine-load") {
+				// The engine under load: a keystroke while rules evaluate, cancel latency, a 5,000-row
+				// findings page, and its resident memory with one snapshot open.
+				const { childWorkingSet } = await import("./game-text-scale-safety.ts");
+				const captured = await run(
+					decodeGameTextRuleDocumentJson(
+						await readFile(
+							new URL("./game-text-engine-rules.json", import.meta.url),
+							"utf8"
+						)
+					)
+				);
+				// The same work under a new document key: one optional argument nothing names.
+				let fresh = 0;
+				const freshRules = () => ({
+					...captured,
+					rules: captured.rules.map((rule) =>
+						rule.kind === "format_arguments"
+							? {
+									...rule,
+									params: {
+										...rule.params,
+										optionalArguments: [`BenchmarkUnused${++fresh}`]
+									}
+								}
+							: rule
+					)
+				});
+				const prefixes = mix.queries.flatMap((query) =>
+					Array.from({ length: query.length }, (_, length) => query.slice(0, length + 1))
+				);
+				const header = (prefix: string) =>
+					search(
+						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+							...base,
+							query: prefix
+						})
+					);
+				for (const [index, prefix] of prefixes.entries())
+					await measure(`idle:${index}`, () => header(prefix));
+				// Keystrokes while the workspace previews rules, the prefixes again and again.
+				for (let repeat = 0; repeat < 2; repeat++) {
+					const preview = Effect.runFork(workspace.previewQualityRules(freshRules()));
+					let index = 0;
+					while (preview.pollUnsafe() === undefined) {
+						const prefix = prefixes[index % prefixes.length]!;
+						await measure(`contended:${repeat}:${index++}`, () => header(prefix));
+					}
+					ready(await run(Fiber.join(preview)), "completed");
+				}
+				const model = await run(
+					steps
+						.openCommitted({ projectRoot: options.project, targetName })
+						.pipe(Effect.provideService(Scope.Scope, scope))
+				);
+				if (Option.isNone(model)) throw new Error("Built index not available.");
+				const query = model.value.query;
+				// The same bulk read with nothing to cancel, which a cancel's latency is measured over.
+				const nothing = () =>
+					run(
+						query.exportWithSignals({
+							query: "\u{10ffff}no match\u{10ffff}",
+							capability: "all"
+						})
+					).then(({ corpus }) => ({ rowCount: corpus.units.length }));
+				for (let repeat = 0; repeat < 5; repeat++)
+					await measure(`idle-free:${repeat}`, nothing);
+				// Interrupting an evaluation, and an export of every unit, a second into each.
+				const cancel = async (id: string, start: () => Effect.Effect<unknown, unknown>) => {
+					const fiber = Effect.runFork(start());
+					await new Promise((resolve) => setTimeout(resolve, 1000));
+					if (fiber.pollUnsafe() !== undefined) throw new Error(`${id} finished first.`);
+					// Until the interrupt returns, and until the engine answers the next bulk read:
+					// an export that matches nothing.
+					await measure(id, async () => {
+						await run(Fiber.interrupt(fiber));
+						await measure(`${id}:free`, nothing);
+						return { status: "ok" };
+					});
+				};
+				for (let repeat = 0; repeat < 5; repeat++) {
+					await cancel(`cancel:evaluation:${repeat}`, () =>
+						query.findingsEvaluate(effectiveRuleDocument(freshRules()))
+					);
+					await cancel(`cancel:export:${repeat}`, () =>
+						query.exportWithSignals({ query: "", capability: "all" })
+					);
+				}
+				// A 5,000-row findings page over the captured rules' layer.
+				const { key } = await run(query.findingsEvaluate(effectiveRuleDocument(captured)));
+				for (let repeat = 0; repeat < 10; repeat++)
+					await measure(`findings-page:${repeat}`, () =>
+						run(
+							query.findingsQuery({
+								key,
+								view: "workspace",
+								order: "severity",
+								offset: 0,
+								limit: 5000
+							})
+						)
+					);
+				// The engine's resident memory: the worker's descendants with one snapshot open.
+				const engineBytes = async () =>
+					(await childWorkingSet(process.pid, true)) -
+					(await childWorkingSet(process.pid, false));
+				await measure("resident:open", async () => ({ rowCount: await engineBytes() }));
+				// After a bulk read every build can answer: 5,000 lines' projected fields. A build
+				// whose export returns text can't hold every unit of the larger projects in one string.
+				const { group: _group, facets: _facets, ...plain } = base;
+				const lines: string[] = [];
+				let page = await run(query.search(plain));
+				for (;;) {
+					lines.push(...(page.localization?.lines ?? []).map((line) => line.id));
+					const cursor = page.localization?.nextCursor;
+					if (!cursor || lines.length >= 5000) break;
+					page = await run(query.search({ ...plain, localizationCursor: cursor }));
+				}
+				await run(
+					query.selectLocalizationLines(
+						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+							...plain,
+							lines: lines.slice(0, 5000)
+						}),
+						LOCALIZATION_LINES_CSV_FIELDS
+					)
+				);
+				await measure("resident:after-bulk-read", async () => ({
+					rowCount: await engineBytes()
+				}));
 			} else if (stage === "overhead") {
 				const model = await run(
 					steps

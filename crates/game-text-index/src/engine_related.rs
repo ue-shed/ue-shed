@@ -3,8 +3,7 @@
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
 use crate::engine_types::{DetailSelection, FocusRequest, LocalizationDetailRequest};
-use crate::{Error, ErrorCode, Result, require};
-use serde::Deserialize;
+use crate::{Result, require};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,44 +12,16 @@ use std::sync::atomic::AtomicBool;
 /// Members one section lists.
 const MAX_MEMBERS: usize = 50;
 /// Places one unit member lists, and unit IDs one line member lists.
-const MAX_PAGE: usize = 50;
+/// Units a related line member lists.
+const MEMBER_UNITS: usize = 50;
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// A related read: the selection's same-key, same-text, conflict and key-change rows.
 pub struct RelatedRequest {
     /// The localization target whose lines and translations the sections read.
-    target: Option<String>,
-    selection: DetailSelection,
+    pub target: Option<String>,
+    pub selection: DetailSelection,
     /// Places each unit member lists.
-    page_size: usize,
-}
-
-pub fn parse_related_request(payload: &str) -> Result<RelatedRequest> {
-    let value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(
-            ErrorCode::InvalidInput,
-            "Invalid related lines JSON.",
-            source,
-        )
-    })?;
-    let request: RelatedRequest = serde_json::from_value(value).map_err(|source| {
-        Error::with_source(
-            ErrorCode::InvalidInput,
-            "Invalid related lines request.",
-            source,
-        )
-    })?;
-    require(
-        matches!(request.selection.kind.as_str(), "line" | "unit")
-            && !request.selection.id.is_empty()
-            && (1..=MAX_PAGE).contains(&request.page_size)
-            && (request.selection.kind == "unit" || request.target.is_some()),
-        Error::new(
-            ErrorCode::InvalidInput,
-            "Related lines select a unit, or a line of a target, with 1 to 50 places.",
-        ),
-    )?;
-    Ok(request)
+    pub page_size: usize,
 }
 
 /// Units and lines by exact source, built once per reader.
@@ -62,15 +33,9 @@ pub(crate) struct RelatedIndex {
 }
 
 impl EngineQuery {
-    pub fn related_json(&mut self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
-        let request = parse_related_request(payload)?;
-        let result = self.related(&request, cancelled)?;
-        crate::wtf8::view_json(&result)
-    }
-
-    fn related_index(&mut self, p: &Projection) -> Result<Arc<RelatedIndex>> {
-        if let Some(index) = &self.related_index {
-            return Ok(Arc::clone(index));
+    fn related_index(&self, p: &Projection) -> Result<Arc<RelatedIndex>> {
+        if let Some(index) = self.related_index.get() {
+            return Ok(index);
         }
         let mut units = HashMap::<u32, Vec<u32>>::new();
         // In ID order, so each section lists its members as a search by ID does.
@@ -88,12 +53,12 @@ impl EngineQuery {
                 .or_default()
                 .push(*line);
         }
-        let index = Arc::new(RelatedIndex { units, lines });
-        self.related_index = Some(Arc::clone(&index));
-        Ok(index)
+        Ok(self
+            .related_index
+            .store(Arc::new(RelatedIndex { units, lines })))
     }
 
-    pub fn related(&mut self, request: &RelatedRequest, cancelled: &AtomicBool) -> Result<Value> {
+    pub fn related(&self, request: &RelatedRequest, cancelled: &AtomicBool) -> Result<Value> {
         checkpoint(cancelled)?;
         let target = match &request.target {
             Some(target) if self.target["name"] != *target => return Ok(Value::Null),
@@ -242,7 +207,7 @@ impl EngineQuery {
     /// A unit's search result and first places, as focus gives them, and with a target its line's
     /// translations, as localization detail gives them.
     fn unit_member(
-        &mut self,
+        &self,
         raw: usize,
         page_size: usize,
         target: Option<&str>,
@@ -268,7 +233,7 @@ impl EngineQuery {
     }
 
     /// A line's preview, its unit IDs and its translations.
-    fn line_member(&mut self, line: usize, cancelled: &AtomicBool) -> Result<Value> {
+    fn line_member(&self, line: usize, cancelled: &AtomicBool) -> Result<Value> {
         let preview = self.preview(line)?;
         let begin = self.value("line", "starts", line)? as usize;
         let end = *self
@@ -280,11 +245,11 @@ impl EngineQuery {
         units.sort_unstable();
         units.dedup();
         let mut ids = Vec::new();
-        for raw in units.iter().take(MAX_PAGE) {
+        for raw in units.iter().take(MEMBER_UNITS) {
             ids.push(self.packed("raw", *raw as usize)?);
         }
         ids.sort_by(|left, right| crate::join::ordinal(left, right));
-        let mut member = json!({"kind":"line","line":preview,"unitIds":ids,"unitsComplete":units.len() <= MAX_PAGE});
+        let mut member = json!({"kind":"line","line":preview,"unitIds":ids,"unitsComplete":units.len() <= MEMBER_UNITS});
         let target = self.target["name"]
             .as_str()
             .ok_or("Missing target name.")?
@@ -295,7 +260,7 @@ impl EngineQuery {
     }
 
     fn add_translations(
-        &mut self,
+        &self,
         member: &mut Value,
         target: &str,
         kind: &str,
@@ -329,7 +294,7 @@ impl EngineQuery {
     }
 
     /// The line a key change pairs with this one, if the pairing names a line of this join.
-    fn key_change_line(&mut self, line: usize) -> Result<Option<u32>> {
+    fn key_change_line(&self, line: usize) -> Result<Option<u32>> {
         let change = self.reader.value("line.key_change", line)?;
         let Some(pair) = self.reader.meta["pairs"]
             .get(((change >> 1) as usize).wrapping_sub(1))
@@ -344,29 +309,5 @@ impl EngineQuery {
             crate::wtf8::view_json(&json!([other["namespace"], other["key"]]))?
         );
         Ok(self.find_id("line", &id)?.map(|row| row as u32))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn requests_select_a_unit_or_a_target_line_with_bounded_places() -> Result<()> {
-        parse_related_request(r#"{"selection":{"kind":"unit","id":"u"},"pageSize":50}"#)?;
-        parse_related_request(
-            r#"{"target":"Game","selection":{"kind":"line","id":"l"},"pageSize":1}"#,
-        )?;
-        for invalid in [
-            r#"{"selection":{"kind":"line","id":"l"},"pageSize":1}"#,
-            r#"{"selection":{"kind":"unit","id":"u"},"pageSize":0}"#,
-            r#"{"selection":{"kind":"unit","id":"u"},"pageSize":51}"#,
-            r#"{"selection":{"kind":"place","id":"u"},"pageSize":1}"#,
-            r#"{"selection":{"kind":"unit","id":""},"pageSize":1}"#,
-            r#"{"selection":{"kind":"unit","id":"u"},"pageSize":1,"extra":1}"#,
-        ] {
-            assert!(parse_related_request(invalid).is_err(), "{invalid}");
-        }
-        Ok(())
     }
 }

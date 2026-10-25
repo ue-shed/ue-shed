@@ -1,7 +1,3 @@
-import {
-	referenceSearchRows,
-	textCorpusQuery
-} from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
@@ -19,6 +15,7 @@ import { Deferred, Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { createSignal } from "solid-js";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { qualityFixture } from "../../../packages/game-text/src/localization-workspace.test-support.js";
+import { qualityFixtureText } from "./game-text-canned-search.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute } from "./game-text-query-route.js";
 import {
@@ -30,6 +27,7 @@ import {
 
 const runtime = ManagedRuntime.make(Layer.empty);
 const fixture = qualityFixture();
+const text = qualityFixtureText(fixture);
 const plan: WorkbenchOperationPlan = {
 	id: "sync-1",
 	target: fixture.join.target,
@@ -56,25 +54,19 @@ const completed: WorkbenchOperationResult = {
 	}
 };
 function client(operations: NonNullable<GameTextClientApi["operations"]>): GameTextClientApi {
-	const text = textCorpusQuery(fixture.text, undefined, fixture.join);
 	let pending = 1;
 	return {
 		operations,
 		loadConfiguredProject: vi.fn(() =>
 			Effect.sync(() => {
 				pending = 0;
-				return { status: "completed" as const, summary: text.summary() };
+				return { status: "completed" as const, summary: text.summary };
 			})
 		),
-		search: (request) => Effect.succeed({ status: "ready", page: text.search(request) }),
-		searchRows: (request) =>
-			Effect.succeed({ status: "ready", page: referenceSearchRows(text.search, request) }),
-		focus: (request) => {
-			const focus = text.focus(request);
-			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
-		},
-		progress: () =>
-			Effect.succeed({ phase: "idle", completed: 0, total: 0, stage: "game_text" }),
+		search: text.search,
+		searchRows: text.searchRows,
+		focus: text.focus,
+		progress: Stream.make({ phase: "idle", completed: 0, total: 0, stage: "game_text" }),
 		locateAsset: () => Effect.die("unused"),
 		chooseQualityRules: () => Effect.die("unused"),
 		qualityFocus: () => Effect.die("unused"),
@@ -161,7 +153,7 @@ function mount(operations = api(), scanning = false, pending = 1) {
 		const model = createGameTextOperations({
 			client: client(operations),
 			target: () => fixture.join.target,
-			revision: () => textCorpusQuery(fixture.text).summary(),
+			revision: () => text.summary,
 			scanning: scan,
 			onCompleted
 		});
@@ -391,8 +383,7 @@ it("refreshes the retained workspace after success, clearing the pending indicat
 	const apiClient = client(operations);
 	const load = vi.fn((refresh?: boolean) => {
 		expect(refresh).toBe(false);
-		const summary = textCorpusQuery(fixture.text, undefined, fixture.join).summary();
-		return Effect.succeed({ status: "completed" as const, summary });
+		return Effect.succeed({ status: "completed" as const, summary: text.summary });
 	});
 	const selected = vi.fn(() =>
 		Effect.succeed({

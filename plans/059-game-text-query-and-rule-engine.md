@@ -17,7 +17,7 @@
   transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
   owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
   review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
-  recorded. Phase 4 is next.
+  recorded. Phase 4 is in progress.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -506,6 +506,8 @@ The [measurement record](../docs/engineering/game-text-engine-measurements.md#ph
 has every table.
 
 ### Phase 4: streaming API
+
+The specification is [Game Text rule engine, Phase 4](../docs/engineering/game-text-rule-engine-phase-4.md).
 
 - Frames, column batches, cancellation, concurrency and progress.
 - Engine-side export sinks.

@@ -7,17 +7,8 @@ import { describe, expect, it } from "vitest";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { GameTextIndexRefresh } from "./index-contract.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
-import { referenceSearchRows, textCorpusQuery } from "./query.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
-import type { LocalizationCultureMark, LocalizationLinePreview } from "./localization-schema.js";
-import type {
-	TextCorpusFocus,
-	TextCorpusRows,
-	TextCorpusRowsPage,
-	TextCorpusSearchPage,
-	TextUnitSearchResult
-} from "./schema.js";
-import { TextCorpusFocusRequest } from "./schema.js";
+import type { LocalizationCultureMark } from "./localization-schema.js";
+import { TextCorpusFocusRequest, makeTextUnitId } from "./schema.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
@@ -263,6 +254,25 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							...(includeLate ? [definition(late, "Late")] : []),
 							reference(table)
 						]);
+					const edited =
+						"An edited definition keeps the reference target and saved reference text.";
+					// A definition's unit, and the unit the widget's reference to a table forms.
+					const defined = (namespace: string) => `unreal:${namespace}:K`;
+					const referenced = (table: string) =>
+						`string-table:${encodeURIComponent(table)}:K`;
+					const line = (namespace: string) =>
+						`Review:${JSON.stringify([namespace, "K"])}`;
+					const unresolved = `Review:unresolved:${referenced(late)}`;
+					const gathered = ["not_gathered"];
+					/** Each line's units and problems, and each source group's lines. */
+					interface Expected {
+						readonly lines: readonly (readonly [
+							string,
+							readonly string[],
+							readonly string[]
+						])[];
+						readonly groups: readonly (readonly [string, readonly string[]])[];
+					}
 					yield* Effect.gen(function* () {
 						const index = yield* GameTextIndexRefresh;
 						const request = {
@@ -274,70 +284,143 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						update(a, false);
 						const pinned = yield* index.refresh(fixture.request);
 						const original = yield* pinned.query.search(request);
-						const verify = Effect.fn("Test.GameText.referenceParity")(function* (
-							model: Effect.Success<ReturnType<typeof index.refresh>>
+						const verify = Effect.fn("Test.GameText.referenceTargets")(function* (
+							model: Effect.Success<ReturnType<typeof index.refresh>>,
+							expected: Expected
 						) {
-							const raw = fixture.raw();
-							const oracle = textCorpusQuery(
-								raw,
-								undefined,
-								joinLocalizationTarget(raw, model.evidence)
-							);
-							expect(normalizePage(yield* model.query.search(request))).toEqual(
-								normalizePage(oracle.search(request))
-							);
+							const page = yield* model.query.search(request);
+							expect(page.total).toBe(expected.lines.length);
+							expect(
+								page.localization?.lines.map((item) => [
+									item.id,
+									item.origin.kind === "corpus" ? item.origin.unitIds : [],
+									item.problems
+								])
+							).toEqual(expected.lines);
+							// A line's row shows its first unit.
+							const units = expected.lines.map(([, ids]) => ids[0]!);
+							expect(page.units.map((unit) => unit.id)).toEqual(units);
 							// Open groups list each group's first rows, as an `openGroup` read does.
 							const grouped = { ...request, group: "source" as const };
-							const keys = (oracle.search(grouped).groups?.entries ?? []).map(
-								(group) => group.key
-							);
-							const rows = {
+							expect(
+								(yield* model.query.search(grouped)).groups?.entries.map(
+									(entry) => [entry.key, entry.count]
+								)
+							).toEqual(expected.groups.map(([key, lines]) => [key, lines.length]));
+							const rows = yield* model.query.searchRows({
 								...grouped,
-								openGroups: [...keys, "Nowhere"],
+								openGroups: [...expected.groups.map(([key]) => key), "Nowhere"],
 								firstRows: 1
-							};
-							expect(normalizeRowsPage(yield* model.query.searchRows(rows))).toEqual(
-								normalizeRowsPage(referenceSearchRows(oracle.search, rows))
-							);
-							expect(yield* model.corpus).toEqual(raw);
-							for (const unit of oracle.search(request).units) {
-								const focus = { id: unit.id, pageSize: 50 };
-								expect(normalizeFocus(yield* model.query.focus(focus))).toEqual(
-									normalizeFocus(oracle.focus(focus))
-								);
+							});
+							expect(
+								rows.openGroups?.map((group) => [
+									group.key,
+									group.page?.localization?.lines.map((item) => item.id)
+								])
+							).toEqual([
+								...expected.groups.map(([key, lines]) => [key, lines.slice(0, 1)]),
+								["Nowhere", []]
+							]);
+							expect(yield* model.corpus).toEqual(fixture.raw());
+							for (const [position, id] of units.entries()) {
+								const focus = yield* model.query.focus({
+									id: makeTextUnitId(id),
+									pageSize: 50
+								});
+								expect([focus?.unit.id, focus?.localization?.id]).toEqual([
+									id,
+									expected.lines[position]![0]
+								]);
 							}
 							expect(yield* pinned.query.search(request)).toEqual(original);
 						});
-						yield* verify(pinned);
+						// The reference joins its target's line; a reference to a table without the
+						// entry is a line of its own whose state is unknown.
+						yield* verify(pinned, {
+							lines: [
+								[line("First"), [referenced(a), defined("First")], gathered],
+								[line("Second"), [defined("Second")], gathered]
+							],
+							groups: [[shared, [line("First"), line("Second")]]]
+						});
 						for (const stage of [
-							{ table: b, late: false },
-							{ table: late, late: false },
-							{ table: late, late: true },
-							{ table: a, late: true }
-						]) {
+							{
+								table: b,
+								late: false,
+								lines: [
+									[line("First"), [defined("First")], gathered],
+									[line("Second"), [referenced(b), defined("Second")], gathered]
+								],
+								groups: [[shared, [line("First"), line("Second")]]]
+							},
+							{
+								table: late,
+								late: false,
+								lines: [
+									[line("First"), [defined("First")], gathered],
+									[line("Second"), [defined("Second")], gathered],
+									[unresolved, [referenced(late)], ["unchecked"]]
+								],
+								groups: [[shared, [line("First"), line("Second"), unresolved]]]
+							},
+							{
+								table: late,
+								late: true,
+								lines: [
+									[line("First"), [defined("First")], gathered],
+									[line("Late"), [referenced(late), defined("Late")], gathered],
+									[line("Second"), [defined("Second")], gathered]
+								],
+								groups: [[shared, [line("First"), line("Late"), line("Second")]]]
+							},
+							{
+								table: a,
+								late: true,
+								lines: [
+									[line("First"), [referenced(a), defined("First")], gathered],
+									[line("Late"), [defined("Late")], gathered],
+									[line("Second"), [defined("Second")], gathered]
+								],
+								groups: [[shared, [line("First"), line("Late"), line("Second")]]]
+							}
+						] satisfies (Expected & { table: string; late: boolean })[]) {
 							update(stage.table, stage.late);
 							const model = yield* index.refresh(fixture.request);
 							expect(model.join.strategy).toBe("full");
-							yield* verify(model);
+							yield* verify(model, stage);
 						}
-						update(
-							a,
-							true,
-							"An edited definition keeps the reference target and saved reference text."
-						);
+						// The line takes the definition's edited text; the reference keeps its own.
+						const afterEdit: Expected = {
+							lines: [
+								[line("First"), [referenced(a), defined("First")], gathered],
+								[line("Late"), [defined("Late")], gathered],
+								[line("Second"), [defined("Second")], gathered]
+							],
+							groups: [
+								[shared, [line("Late"), line("Second")]],
+								[edited, [line("First")]]
+							]
+						};
+						update(a, true, edited);
 						fixture.patchRecord({ fileBytes: 1234 });
-						const edited = yield* index.refresh(fixture.request);
-						expect(edited.join.strategy, JSON.stringify(edited.join)).toBe(
+						const incremental = yield* index.refresh(fixture.request);
+						expect(incremental.join.strategy, JSON.stringify(incremental.join)).toBe(
 							"incremental"
 						);
-						yield* verify(edited);
+						yield* verify(incremental, afterEdit);
+						expect(
+							(yield* incremental.query.focus({
+								id: makeTextUnitId(referenced(a)),
+								pageSize: 1
+							}))?.unit.source
+						).toEqual({ status: "consistent", value: shared });
 						fixture.patchRecord({ fileBytes: 2 ** 32 + 2048 });
 						const provenance = yield* index.refresh(fixture.request);
 						expect(provenance.join).toMatchObject({
 							strategy: "incremental",
 							affectedLines: 0
 						});
-						yield* verify(provenance);
+						yield* verify(provenance, afterEdit);
 					}).pipe(
 						Effect.provide(
 							fixture.layer(
@@ -424,15 +507,32 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							first.joined.meta.input.fileProvenances?.["de.po"]?.modifiedTime
 						);
 						expect(yield* provenanceOnly.query.search(request)).toEqual(original);
-						for (const [a, b] of [
-							[changed, source],
-							[third, changed],
-							[third, third],
-							["Short", "Short"],
-							["Yes", "No"],
-							[source, changed]
-						]) {
-							update(a!, b!);
+						const consistent = (value: string) => ({
+							status: "consistent" as const,
+							value
+						});
+						const conflicting = (...values: string[]) => ({
+							status: "conflicting" as const,
+							values
+						});
+						const keyLine = 'Review:["UI","K"]';
+						const otherLine = 'Review:["UI","Other"]';
+						const reference = "string-table:%2FGame%2FText%2FTable.Table:K";
+						// Each edit, and the sources UI/K's unit holds after it.
+						const edits: readonly (readonly [
+							string,
+							string,
+							ReturnType<typeof consistent> | ReturnType<typeof conflicting>
+						])[] = [
+							[changed, source, conflicting(changed, source)],
+							[third, changed, conflicting(changed, third)],
+							[third, third, consistent(third)],
+							["Short", "Short", consistent("Short")],
+							["Yes", "No", conflicting("No", "Yes")],
+							[source, changed, conflicting(changed, source)]
+						];
+						for (const [a, b, held] of edits) {
+							update(a, b);
 							yield* Effect.promise(() =>
 								writeFile(
 									join(fixture.projectRoot, "de.po"),
@@ -443,34 +543,61 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							// Restoring the original content key intentionally republishes the full immutable base.
 							if (a !== source || b !== source)
 								expect(model.join.strategy).toBe("incremental");
-							const raw = fixture.raw();
-							const oracle = textCorpusQuery(
-								raw,
-								undefined,
-								joinLocalizationTarget(raw, model.evidence)
-							);
+							const conflicts = held.status === "conflicting";
 							const fullLines = yield* model.query.readLocalizationLines();
-							expect(fullLines.some((line) => line.source.trim() === "")).toBe(true);
-							expect(fullLines.map((line) => line.id).sort()).toEqual(
-								oracle
-									.readLocalizationLines()
-									.map((line) => line.id)
-									.sort()
-							);
-							for (const localization of [
-								undefined,
-								{ target: fixture.target.name }
-							]) {
-								const selected = {
-									...request,
-									...(localization ? { localization } : undefined)
-								};
-								const page = yield* model.query.search(selected);
-								expect(normalizePage(page)).toEqual(
-									normalizePage(oracle.search(selected))
-								);
-								for (const [position, unit] of page.units.entries()) {
-									const line = page.localization?.lines[position];
+							expect(fullLines.map((line) => [line.id, line.source])).toEqual([
+								['Review:["UI","Blank"]', "  "],
+								[keyLine, conflicts ? `${a} ${b}` : a],
+								[otherLine, source]
+							]);
+							// Blank text is no row; the reference and UI/K share UI/K's problems.
+							const keyProblems = conflicts ? ["conflicting_source"] : ["up_to_date"];
+							const page = yield* model.query.search(request);
+							expect(
+								page.units.map((unit) => [unit.id, unit.source, unit.problems])
+							).toEqual([
+								[reference, consistent(source), keyProblems],
+								["unreal:UI:K", held, keyProblems],
+								["unreal:UI:Other", consistent(source), ["up_to_date"]]
+							]);
+							// UI/K's line is unchecked while its texts conflict, else its one text
+							// changed since Unreal gathered "Source"; UI/Other was never gathered.
+							const scoped = yield* model.query.search({
+								...request,
+								localization: { target: fixture.target.name }
+							});
+							expect(
+								scoped.localization?.lines.map((line) => [
+									line.id,
+									line.origin.kind === "corpus" ? line.origin.unitIds : [],
+									line.cultures.map((mark) => mark.state),
+									line.problems
+								])
+							).toEqual([
+								[
+									keyLine,
+									[reference, "unreal:UI:K"],
+									conflicts
+										? ["unknown", "unknown"]
+										: ["changed_since_gather", "changed_since_gather"],
+									conflicts
+										? ["conflicting_source", "translation", "unchecked"]
+										: ["changed_since_gather", "translation"]
+								],
+								[
+									otherLine,
+									["unreal:UI:Other"],
+									["not_gathered", "not_gathered"],
+									["not_gathered"]
+								]
+							]);
+							expect(scoped.units.map((unit) => unit.id)).toEqual([
+								reference,
+								"unreal:UI:Other"
+							]);
+							for (const selected of [page, scoped])
+								for (const [position, unit] of selected.units.entries()) {
+									const line = selected.localization?.lines[position];
 									const focus = Schema.decodeUnknownSync(TextCorpusFocusRequest)({
 										id: unit.id,
 										pageSize: 1,
@@ -483,11 +610,22 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 												}
 											: undefined)
 									});
-									expect(normalizeFocus(yield* model.query.focus(focus))).toEqual(
-										normalizeFocus(oracle.focus(focus))
-									);
+									const focused = yield* model.query.focus(focus);
+									expect([
+										focused?.unit.id,
+										focused?.unit.source,
+										focused?.occurrences.length,
+										focused?.totalOccurrences,
+										focused?.localization?.id
+									]).toEqual([
+										unit.id,
+										unit.source,
+										1,
+										unit.id === "unreal:UI:K" ? 2 : 1,
+										// Without a selected line, the focus shows the unit's line.
+										unit.id === "unreal:UI:Other" ? otherLine : keyLine
+									]);
 								}
-							}
 							// Native handles retain unopened frames even after later publications.
 							expect(yield* first.query.search(request)).toEqual(original);
 							if (a === source && b === changed) {
@@ -500,13 +638,14 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 									strategy: "incremental",
 									affectedLines: 0
 								});
-								for (const selected of [
-									request,
-									{ ...request, localization: { target: fixture.target.name } }
-								])
-									expect(
-										normalizePage(yield* reobserved.query.search(selected))
-									).toEqual(normalizePage(oracle.search(selected)));
+								// A new modification time alone changes no answer.
+								expect(yield* reobserved.query.search(request)).toEqual(page);
+								expect(
+									yield* reobserved.query.search({
+										...request,
+										localization: { target: fixture.target.name }
+									})
+								).toEqual(scoped);
 							}
 						}
 						const beforeRebuild = yield* (yield* index.refresh(
@@ -548,72 +687,6 @@ function normalizeMark<A extends LocalizationCultureMark>(mark: A): A {
 		unknownReasons: [...mark.unknownReasons].sort(),
 		...(mark.review && mark.review.status !== "not_reviewed"
 			? { review: { ...mark.review, flags: [...mark.review.flags].sort() } }
-			: undefined)
-	};
-}
-function normalizeUnit(unit: TextUnitSearchResult): TextUnitSearchResult {
-	return {
-		...unit,
-		...(unit.localization ? { localization: unit.localization.map(normalizeMark) } : undefined)
-	};
-}
-function normalizeLine(line: LocalizationLinePreview): LocalizationLinePreview {
-	return { ...line, cultures: line.cultures.map(normalizeMark) };
-}
-function normalizeFocus(focus: TextCorpusFocus | undefined): TextCorpusFocus | undefined {
-	return focus
-		? {
-				...focus,
-				unit: normalizeUnit(focus.unit),
-				...(focus.localization
-					? { localization: normalizeLine(focus.localization) }
-					: undefined)
-			}
-		: undefined;
-}
-function normalizeRows(page: TextCorpusRows): TextCorpusRows {
-	return {
-		...page,
-		units: page.units.map(normalizeUnit),
-		...(page.localization
-			? {
-					localization: {
-						...page.localization,
-						lines: page.localization.lines.map((line) => ({
-							...line,
-							cultures: line.cultures.map(normalizeMark)
-						}))
-					}
-				}
-			: undefined)
-	};
-}
-function normalizeRowsPage(page: TextCorpusRowsPage) {
-	return {
-		...normalizeRows(page),
-		...(page.openGroups
-			? {
-					openGroups: page.openGroups.map((group) =>
-						group.page ? { ...group, page: normalizeRows(group.page) } : group
-					)
-				}
-			: undefined)
-	};
-}
-function normalizePage(page: TextCorpusSearchPage): TextCorpusSearchPage {
-	return {
-		...page,
-		units: page.units.map(normalizeUnit),
-		...(page.localization
-			? {
-					localization: {
-						...page.localization,
-						lines: page.localization.lines.map((line) => ({
-							...line,
-							cultures: line.cultures.map(normalizeMark)
-						}))
-					}
-				}
 			: undefined)
 	};
 }

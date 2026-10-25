@@ -1,15 +1,21 @@
 //! Scoped native engine handles. Queries own pinned read-only views, independent of writer leases.
+use crate::cache::Lock;
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
-use crate::engine_types::{invalid, parse_search_request};
+use crate::engine_types::{Selection, invalid};
 use crate::store::{Configuration, token};
 use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
+#[cfg(test)]
+use ts_rs::TS;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnginePolicy {
     /// The identities belonging to persisted occurrence audience codes, in producer order.
@@ -33,10 +39,18 @@ impl EnginePolicy {
     }
 }
 
+/// Readers one session holds open. A host pins each snapshot it reads, and an incremental update
+/// keeps the previous generation pinned while callers still read it.
+const MAX_READERS: usize = 32;
+
 /// Diagnostics and incomplete packages a report header previews: `MAX_CORPUS_REPORT_ITEMS`.
 const REPORT_PREVIEW_ITEMS: usize = 200;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+/// One request, the JSON body of a `request` frame. The session reads the body WTF-8-aware, so
+/// nested strings arrive as reversible views and lone UTF-16 units survive. Requests typed
+/// `unknown` keep the host's domain schema until `query` and `line` replace them.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(TS))]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EngineRequest {
     Capabilities,
@@ -54,22 +68,18 @@ pub enum EngineRequest {
     Summary {
         reader: String,
     },
-    Search {
+    /// A selection's rows and the parts of the answer about them (Phase 4 §6).
+    Query {
         reader: String,
-        payload: String,
-    },
-    Focus {
-        reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "Query"))]
+        request: Value,
     },
     Corpus {
         reader: String,
-        output: std::path::PathBuf,
     },
     /// The corpus without its units.
     CorpusHeader {
         reader: String,
-        output: std::path::PathBuf,
     },
     /// The corpus content fingerprint.
     CorpusFingerprint {
@@ -79,74 +89,59 @@ pub enum EngineRequest {
     CorpusReportHeader {
         reader: String,
     },
-    /// Grouped counts of the matching rows, written to `output`.
+    /// Grouped counts of the matching rows.
     Aggregate {
         reader: String,
-        payload: String,
-        output: std::path::PathBuf,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
     },
     LocalizationCorpus {
         reader: String,
-        output: std::path::PathBuf,
     },
     Export {
         reader: String,
-        payload: String,
-        output: std::path::PathBuf,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
     },
-    LocalizationDetail {
+    /// A selected row and the sections of it a host shows (Phase 4 §6).
+    Line {
         reader: String,
-        payload: String,
-    },
-    /// A selection's related units and lines: same key, same text, conflict and key change.
-    Related {
-        reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "LineRequest"))]
+        request: Value,
     },
     LocalizationExport {
         reader: String,
-        payload: String,
-        output: std::path::PathBuf,
-    },
-    LocalizationFocusExport {
-        reader: String,
-        payload: String,
-        output: std::path::PathBuf,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
     },
     FindingsEvaluate {
         reader: String,
-        /// The v4 rule document's JSON text, read by the WTF-8-aware reader.
-        rules: String,
+        /// The v4 rule document.
+        #[cfg_attr(test, ts(type = "RuleDocumentV4"))]
+        rules: Value,
         #[serde(rename = "collationLocale")]
         collation_locale: String,
     },
     /// A review's accepted findings for a findings layer; returns an acceptance key.
     FindingsAccept {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "FindingsAcceptRequest"))]
+        request: Value,
     },
     /// Filters, orders, pages and counts a findings layer's findings.
     FindingsQuery {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "FindingsQueryRequest"))]
+        request: Value,
     },
     /// Compiles a v4 rule document and returns its first problem; needs no reader.
     RulesCheck {
-        /// The v4 rule document's JSON text, read by the WTF-8-aware reader.
-        rules: String,
+        /// The v4 rule document.
+        #[cfg_attr(test, ts(type = "RuleDocumentV4"))]
+        rules: Value,
     },
 }
 impl EngineRequest {
-    pub fn requires_findings(&self) -> bool {
-        matches!(
-            self,
-            Self::FindingsEvaluate { .. }
-                | Self::FindingsAccept { .. }
-                | Self::FindingsQuery { .. }
-                | Self::Related { .. }
-                | Self::RulesCheck { .. }
-        )
-    }
     pub fn validate(&self) -> Result<()> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("requestValidate");
@@ -169,19 +164,16 @@ impl EngineRequest {
             }
             Self::Close { reader }
             | Self::Summary { reader }
-            | Self::Search { reader, .. }
-            | Self::Focus { reader, .. }
-            | Self::Corpus { reader, .. }
-            | Self::CorpusHeader { reader, .. }
+            | Self::Query { reader, .. }
+            | Self::Corpus { reader }
+            | Self::CorpusHeader { reader }
             | Self::CorpusFingerprint { reader }
             | Self::CorpusReportHeader { reader }
             | Self::Aggregate { reader, .. }
-            | Self::LocalizationCorpus { reader, .. }
+            | Self::LocalizationCorpus { reader }
             | Self::Export { reader, .. }
-            | Self::LocalizationDetail { reader, .. }
-            | Self::Related { reader, .. }
+            | Self::Line { reader, .. }
             | Self::LocalizationExport { reader, .. }
-            | Self::LocalizationFocusExport { reader, .. }
             | Self::FindingsEvaluate { reader, .. }
             | Self::FindingsAccept { reader, .. }
             | Self::FindingsQuery { reader, .. } => {
@@ -191,161 +183,177 @@ impl EngineRequest {
                 )?;
             }
         }
-        match self {
-            Self::FindingsEvaluate {
-                collation_locale, ..
-            } => {
-                require(
-                    !collation_locale.is_empty() && collation_locale.len() <= 128,
-                    invalid("Invalid findings collation locale."),
-                )?;
-            }
-            Self::FindingsAccept { payload, .. } => {
-                // 5,000 accepted findings, each with its key, namespace and fingerprint.
-                require(
-                    payload.len() <= 8 * 1024 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-            }
-            Self::FindingsQuery { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-            }
-            Self::Export { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_rollup::parse_corpus_export(payload)?;
-            }
-            Self::Search { payload, .. }
-            | Self::Focus { payload, .. }
-            | Self::LocalizationFocusExport { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                if matches!(self, Self::LocalizationFocusExport { .. }) {
-                    let id = crate::json_value::parse(payload).map_err(|source| {
-                        Error::with_source(
-                            ErrorCode::InvalidInput,
-                            "Invalid localization focus JSON.",
-                            source,
-                        )
-                    })?;
-                    require(
-                        id.as_str().is_some_and(|id| {
-                            !id.is_empty() && crate::join_policy::characters(id) <= 32767
-                        }),
-                        invalid("Invalid localization line identity."),
-                    )?;
-                } else if matches!(self, Self::Focus { .. }) {
-                    crate::engine_types::parse_focus_request(payload)?;
-                } else {
-                    parse_search_request(payload)?;
-                }
-            }
-            Self::LocalizationDetail { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_types::parse_detail_request(payload)?;
-            }
-            Self::Related { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_related::parse_related_request(payload)?;
-            }
-            Self::LocalizationExport { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_rollup::parse_line_export(payload)?;
-            }
-            Self::Aggregate { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_rollup::parse_aggregate_request(payload)?;
-            }
-            _ => {}
-        }
-        if let Self::Corpus { output, .. }
-        | Self::CorpusHeader { output, .. }
-        | Self::Aggregate { output, .. }
-        | Self::LocalizationCorpus { output, .. }
-        | Self::Export { output, .. }
-        | Self::LocalizationExport { output, .. }
-        | Self::LocalizationFocusExport { output, .. } = self
+        if let Self::FindingsEvaluate {
+            collation_locale, ..
+        } = self
         {
             require(
-                output
-                    .to_str()
-                    .is_some_and(|path| !path.is_empty() && path.len() <= 32767),
-                invalid("Invalid native export output path."),
+                !collation_locale.is_empty() && collation_locale.len() <= 128,
+                invalid("Invalid findings collation locale."),
             )?;
         }
         Ok(())
     }
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EngineOutcome {
-    pub action: String,
-    pub capabilities: Vec<String>,
-    pub reader: Option<String>,
-    pub generation: Option<String>,
-    pub joined_key: Option<String>,
-    /// Bounded domain JSON text, preserving lone JavaScript UTF-16 code units exactly.
-    pub payload: Option<String>,
+
+/// `open`'s reply: the reader's handle and the snapshot it pinned.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OpenReply {
+    pub reader: String,
+    pub generation: String,
+    pub joined_key: String,
+}
+
+/// What a request cost, sent with its terminal frame.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "EngineProfile"))]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
     pub io: crate::snapshot::IoMetrics,
     pub stage_seconds: BTreeMap<String, f64>,
-    /// `capabilities` reports the engine's build and contract, for the host's one handshake.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub contract: Option<crate::contract::ContractIdentity>,
+    /// Batches the request sent, and their bytes.
+    pub batches: u32,
+    #[cfg_attr(test, ts(type = "number"))]
+    pub batch_bytes: u64,
+    /// How long the request waited for the host to consume its batches.
+    pub credit_stall_ms: f64,
 }
+impl Profile {
+    /// A profile with no stages, for a request that failed.
+    pub fn now() -> Self {
+        Self {
+            io: crate::snapshot::io_metrics(),
+            stage_seconds: BTreeMap::new(),
+            batches: 0,
+            batch_bytes: 0,
+            credit_stall_ms: 0.0,
+        }
+    }
+}
+
+/// How far a request is: the stage it is in, and its count in that stage's unit.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "EngineProgress"))]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub stage: &'static str,
+    pub completed: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub total: Option<u32>,
+    /// What `completed` and `total` count: `stages` or `rules`.
+    pub unit: &'static str,
+}
+
+/// Where a request reports its progress. Threads of one request share it; the session sends at
+/// most one report each 100 ms, and every stage boundary.
+pub trait Reporter: Send + Sync {
+    fn report(&self, progress: &Progress, boundary: bool);
+}
+/// A reporter for answers no host watches.
+pub struct Unwatched;
+impl Reporter for Unwatched {
+    fn report(&self, _: &Progress, _: bool) {}
+}
+
+/// Where a request's answer goes while the engine produces it.
+pub trait Reply {
+    /// Where the request reports its progress.
+    fn reporter(&self) -> Arc<dyn Reporter> {
+        Arc::new(Unwatched)
+    }
+    /// One JSON part of the answer.
+    fn part(&mut self, body: Vec<u8>) -> Result<()>;
+    /// One column batch. It waits while the host holds as many unconsumed batches as flow
+    /// control allows, and fails when the request is cancelled meanwhile.
+    fn batch(&mut self, body: Vec<u8>) -> Result<()>;
+    /// Sends rows a sink encoded for the stream.
+    fn text(&mut self, body: Vec<u8>) -> Result<()>;
+}
+
+/// A request's whole answer: its first part, as JSON text, its batches and its profile.
+#[derive(Debug)]
+pub struct EngineAnswer {
+    pub part: Option<String>,
+    pub batches: Vec<Vec<u8>>,
+    pub profile: Profile,
+}
+
+/// An answer gathered in memory.
+#[derive(Default)]
+pub(crate) struct Gathered {
+    pub(crate) parts: Vec<Vec<u8>>,
+    pub(crate) batches: Vec<Vec<u8>>,
+    pub(crate) texts: Vec<Vec<u8>>,
+}
+impl Reply for Gathered {
+    fn part(&mut self, body: Vec<u8>) -> Result<()> {
+        self.parts.push(body);
+        Ok(())
+    }
+    fn batch(&mut self, body: Vec<u8>) -> Result<()> {
+        self.batches.push(body);
+        Ok(())
+    }
+    fn text(&mut self, body: Vec<u8>) -> Result<()> {
+        self.texts.push(body);
+        Ok(())
+    }
+}
+
+/// The JSON text of a request value, for the readers that still parse text.
+fn text(value: &Value) -> Result<String> {
+    crate::wtf8::view_json(value)
+}
+
 #[derive(Default)]
 pub struct EngineSession {
-    readers: HashMap<String, EngineQuery>,
+    /// Open readers by handle. Requests share a reader; closing one drops the handle, and the
+    /// reader is released when the requests still reading it end.
+    readers: Lock<HashMap<String, Arc<EngineQuery>>>,
 }
 impl EngineSession {
-    pub fn execute(
-        &mut self,
+    /// Answers a request in memory.
+    pub fn execute(&self, request: &EngineRequest, cancelled: &AtomicBool) -> Result<EngineAnswer> {
+        let mut gathered = Gathered::default();
+        let profile = self.answer(request, cancelled, &mut gathered)?;
+        let part = match gathered.parts.into_iter().next() {
+            Some(part) => Some(String::from_utf8(part).map_err(|_| "A part is not UTF-8.")?),
+            None => None,
+        };
+        Ok(EngineAnswer {
+            part,
+            batches: gathered.batches,
+            profile,
+        })
+    }
+
+    /// Answers a request into `reply` as it runs, and returns what it cost.
+    pub fn answer(
+        &self,
         request: &EngineRequest,
         cancelled: &AtomicBool,
-    ) -> Result<EngineOutcome> {
+        reply: &mut dyn Reply,
+    ) -> Result<Profile> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("engineTotal");
         request.validate()?;
         checkpoint(cancelled)?;
         let started = Instant::now();
-        let mut outcome = EngineOutcome {
-            action: String::new(),
-            capabilities: vec!["game_text_engine_v1".into()],
-            reader: None,
-            generation: None,
-            joined_key: None,
-            payload: None,
-            io: crate::snapshot::io_metrics(),
-            stage_seconds: BTreeMap::new(),
-            contract: None,
-        };
-        match request {
-            EngineRequest::Capabilities => {
-                outcome.action = "capabilities".into();
-                outcome.contract = Some(crate::contract::identity());
-            }
-            EngineRequest::RulesCheck { rules } => {
-                outcome.action = "rules_check".into();
-                outcome.payload = Some(serde_json::to_string(&crate::rules::check(rules))?);
-            }
+        let mut stage_seconds = BTreeMap::new();
+        let (action, part) = match request {
+            EngineRequest::Capabilities => (
+                "capabilities",
+                Some(serde_json::to_string(&crate::contract::identity())?),
+            ),
+            EngineRequest::RulesCheck { rules } => (
+                "rules_check",
+                Some(serde_json::to_string(&crate::rules::check(&text(rules)?))?),
+            ),
             EngineRequest::Open {
                 configuration,
                 expected_generation,
@@ -353,13 +361,13 @@ impl EngineSession {
                 policy,
             } => {
                 require(
-                    self.readers.len() < 8,
+                    self.readers.lock().len() < MAX_READERS,
                     Error::new(
                         ErrorCode::LimitExceeded,
                         "Close a pinned reader before opening another native Game Text snapshot.",
                     ),
                 )?;
-                let mut query =
+                let query =
                     EngineQuery::open_with_policy(configuration, Some(expected_joined), policy)?;
                 require(
                     query.reader.generation == *expected_generation,
@@ -368,29 +376,44 @@ impl EngineSession {
                         "Game Text dictionary changed before the reader opened.",
                     ),
                 )?;
+                let reporter = reply.reporter();
+                let stage = |stage, completed| {
+                    reporter.report(
+                        &Progress {
+                            stage,
+                            completed,
+                            total: Some(3),
+                            unit: "stages",
+                        },
+                        true,
+                    );
+                };
                 // Load the persisted text-search arena before exposing a ready reader. This
                 // is measured as preparation, so the first typed term pays only matching work.
+                stage("sourceSearch", 0);
                 let source_started = Instant::now();
                 query.prepare_source_search(cancelled)?;
-                outcome.stage_seconds.insert(
+                stage_seconds.insert(
                     "source_search_prepare".into(),
                     source_started.elapsed().as_secs_f64(),
                 );
                 // Summary counters no longer load the numeric query projection as a side effect.
                 // Keep that required preparation in opening instead of deferring it to page one.
+                stage("projection", 1);
                 let projection_started = Instant::now();
-                crate::engine_match::Projection::open(&mut query, cancelled)?;
-                outcome.stage_seconds.insert(
+                crate::engine_match::Projection::open(&query, cancelled)?;
+                stage_seconds.insert(
                     "query_projection_prepare".into(),
                     projection_started.elapsed().as_secs_f64(),
                 );
                 // Focus, cursors, picked lines and line details look rows up by ID; index the
                 // packed IDs and each unit's line once so none of them scans every row.
+                stage("ids", 2);
                 let index_started = Instant::now();
                 let (_, raw) = query.id_index_with_timings("raw")?;
                 let (_, line) = query.id_index_with_timings("line")?;
                 let (_, unit_lines) = query.unit_lines_with_timings(cancelled)?;
-                outcome.stage_seconds.insert(
+                stage_seconds.insert(
                     "id_index_prepare".into(),
                     index_started.elapsed().as_secs_f64(),
                 );
@@ -402,185 +425,194 @@ impl EngineSession {
                     ("id_index_unit_lines_load", unit_lines.load),
                     ("id_index_unit_lines_build", unit_lines.build),
                 ] {
-                    outcome
-                        .stage_seconds
-                        .insert(key.into(), duration.as_secs_f64());
+                    stage_seconds.insert(key.into(), duration.as_secs_f64());
                 }
                 let reader = token();
-                outcome.action = "open".into();
-                outcome.reader = Some(reader.clone());
-                outcome.generation = Some(query.reader.generation.clone());
-                outcome.joined_key = Some(query.reader.joined_key.clone());
+                let reply = OpenReply {
+                    reader: reader.clone(),
+                    generation: query.reader.generation.clone(),
+                    joined_key: query.reader.joined_key.clone(),
+                };
                 checkpoint(cancelled)?;
-                self.readers.insert(reader, query);
+                let mut readers = self.readers.lock();
+                require(
+                    readers.len() < MAX_READERS,
+                    Error::new(
+                        ErrorCode::LimitExceeded,
+                        "Close a pinned reader before opening another native Game Text snapshot.",
+                    ),
+                )?;
+                readers.insert(reader, Arc::new(query));
+                drop(readers);
+                ("open", Some(serde_json::to_string(&reply)?))
             }
             EngineRequest::Close { reader } => {
-                self.readers.remove(reader);
-                outcome.action = "close".into();
+                self.readers.lock().remove(reader);
+                ("close", None)
             }
             EngineRequest::Summary { reader }
-            | EngineRequest::Search { reader, .. }
-            | EngineRequest::Focus { reader, .. }
-            | EngineRequest::Corpus { reader, .. }
-            | EngineRequest::CorpusHeader { reader, .. }
+            | EngineRequest::Query { reader, .. }
+            | EngineRequest::Corpus { reader }
+            | EngineRequest::CorpusHeader { reader }
             | EngineRequest::CorpusFingerprint { reader }
             | EngineRequest::CorpusReportHeader { reader }
             | EngineRequest::Aggregate { reader, .. }
-            | EngineRequest::LocalizationCorpus { reader, .. }
+            | EngineRequest::LocalizationCorpus { reader }
             | EngineRequest::Export { reader, .. }
-            | EngineRequest::LocalizationDetail { reader, .. }
-            | EngineRequest::Related { reader, .. }
+            | EngineRequest::Line { reader, .. }
             | EngineRequest::LocalizationExport { reader, .. }
-            | EngineRequest::LocalizationFocusExport { reader, .. }
             | EngineRequest::FindingsEvaluate { reader, .. }
             | EngineRequest::FindingsAccept { reader, .. }
             | EngineRequest::FindingsQuery { reader, .. } => {
-                let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
-                let (action, payload) = match request {
+                let query=self.readers.lock().get(reader).cloned().ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
+                // Every corpus line, whether or not it is visible.
+                let everything = || Ok::<_, Error>(Selection::default());
+                let (action, part) = match request {
                     EngineRequest::FindingsEvaluate {
                         rules,
                         collation_locale,
                         ..
                     } => (
                         "findings_evaluate",
-                        query.findings_evaluate(rules, collation_locale, cancelled)?,
+                        Some(query.findings_evaluate_reporting(
+                            &text(rules)?,
+                            collation_locale,
+                            cancelled,
+                            reply.reporter(),
+                        )?),
                     ),
-                    EngineRequest::FindingsAccept { payload, .. } => (
+                    EngineRequest::FindingsAccept { request, .. } => (
                         "findings_accept",
-                        query.findings_accept(payload, cancelled)?,
+                        Some(query.findings_accept(request.clone(), cancelled)?),
                     ),
-                    EngineRequest::FindingsQuery { payload, .. } => {
-                        ("findings_query", query.findings_query(payload, cancelled)?)
+                    EngineRequest::FindingsQuery { request, .. } => {
+                        query.findings_query(request.clone(), cancelled, reply)?;
+                        ("findings_query", None)
                     }
                     EngineRequest::Summary { .. } => (
                         "summary",
-                        crate::wtf8::view_json(&query.summary(cancelled)?)?,
+                        Some(crate::wtf8::view_json(&query.summary(cancelled)?)?),
                     ),
-                    EngineRequest::Search { payload, .. } => {
-                        ("search", query.search_json(payload, cancelled)?)
+                    EngineRequest::Query { request, .. } => {
+                        let request = crate::engine_types::parse_query(&text(request)?)?;
+                        query.query(&request, cancelled, reply)?;
+                        ("query", None)
                     }
-                    EngineRequest::Related { payload, .. } => {
-                        ("related", query.related_json(payload, cancelled)?)
+                    EngineRequest::Corpus { .. } => {
+                        query.send_corpus(&everything()?, true, None, cancelled, reply)?;
+                        ("corpus", None)
                     }
-                    EngineRequest::Corpus { output, .. } => {
-                        let request = parse_search_request(
-                            r#"{"query":"","capability":"all","pageSize":50}"#,
-                        )?;
-                        let bytes =
-                            query.export_to_path(&request, output, true, None, cancelled)?;
-                        (
-                            "corpus",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
-                    }
-                    EngineRequest::CorpusHeader { output, .. } => {
-                        let bytes = query.export_corpus_header_to_path(output, cancelled)?;
-                        (
-                            "corpus_header",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
+                    EngineRequest::CorpusHeader { .. } => {
+                        query.send_corpus_header(cancelled, reply)?;
+                        ("corpus_header", None)
                     }
                     EngineRequest::CorpusReportHeader { .. } => (
                         "corpus_report_header",
-                        crate::wtf8::view_json(
+                        Some(crate::wtf8::view_json(
                             &query.corpus_report_header(REPORT_PREVIEW_ITEMS, cancelled)?,
-                        )?,
+                        )?),
                     ),
                     EngineRequest::CorpusFingerprint { .. } => (
                         "corpus_fingerprint",
-                        serde_json::to_string(
+                        Some(serde_json::to_string(
                             &serde_json::json!({"sha256":query.corpus_fingerprint(cancelled)?}),
-                        )?,
+                        )?),
                     ),
-                    EngineRequest::Aggregate {
-                        payload, output, ..
-                    } => {
-                        let request = crate::engine_rollup::parse_aggregate_request(payload)?;
-                        let bytes = query.aggregate_to_path(&request, output, cancelled)?;
-                        (
-                            "aggregate",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
+                    EngineRequest::Aggregate { request, .. } => {
+                        let request =
+                            crate::engine_rollup::parse_aggregate_request(&text(request)?)?;
+                        query.send_aggregate(&request, cancelled, reply)?;
+                        ("aggregate", None)
                     }
-                    EngineRequest::Export {
-                        payload, output, ..
-                    } => {
-                        let (request, units) = crate::engine_rollup::parse_corpus_export(payload)?;
-                        let bytes = query.export_to_path(
-                            &request,
-                            output,
-                            false,
-                            units.as_deref(),
+                    EngineRequest::Export { request, .. } => {
+                        let (request, units, sink) =
+                            crate::engine_rollup::parse_corpus_export(&text(request)?)?;
+                        match sink {
+                            Some(sink) => {
+                                let mut writer = crate::sink::SinkWriter::open(&sink, reply)?;
+                                match &sink.envelope {
+                                    Some(envelope) => query.write_corpus_json(
+                                        &request,
+                                        envelope,
+                                        &mut writer,
+                                        cancelled,
+                                    )?,
+                                    None => {
+                                        query.write_corpus_csv(&request, &mut writer, cancelled)?
+                                    }
+                                }
+                                let summary = writer.finish()?;
+                                reply.part(serde_json::to_vec(&summary)?)?;
+                            }
+                            None => query.send_corpus(
+                                &request,
+                                false,
+                                units.as_deref(),
+                                cancelled,
+                                reply,
+                            )?,
+                        }
+                        ("export", None)
+                    }
+                    EngineRequest::Line { request, .. } => {
+                        let request: crate::engine_types::LineRequest =
+                            crate::engine_types::parse_request(&text(request)?, "line")?;
+                        query.line(&request, cancelled, reply)?;
+                        ("line", None)
+                    }
+                    EngineRequest::LocalizationExport { request, .. } => {
+                        let (request, fields, sink) =
+                            crate::engine_rollup::parse_line_export(&text(request)?)?;
+                        match sink {
+                            Some(sink) => {
+                                let mut writer = crate::sink::SinkWriter::open(&sink, reply)?;
+                                query.write_culture_lines(&request, &mut writer, cancelled)?;
+                                let summary = writer.finish()?;
+                                reply.part(serde_json::to_vec(&summary)?)?;
+                            }
+                            None => query.send_localization_lines(
+                                &request,
+                                false,
+                                fields.as_deref(),
+                                cancelled,
+                                reply,
+                            )?,
+                        }
+                        ("localization_export", None)
+                    }
+                    EngineRequest::LocalizationCorpus { .. } => {
+                        query.send_localization_lines(
+                            &everything()?,
+                            true,
+                            None,
                             cancelled,
+                            reply,
                         )?;
-                        (
-                            "export",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
-                    }
-                    EngineRequest::Focus { payload, .. } => {
-                        ("focus", query.focus_json(payload, cancelled)?)
-                    }
-                    EngineRequest::LocalizationDetail { payload, .. } => (
-                        "localization_detail",
-                        query.localization_detail_json(payload, cancelled)?,
-                    ),
-                    EngineRequest::LocalizationExport {
-                        payload, output, ..
-                    } => {
-                        let (request, fields) = crate::engine_rollup::parse_line_export(payload)?;
-                        let bytes = query.export_localization_to_path(
-                            &request,
-                            output,
-                            false,
-                            fields.as_deref(),
-                            cancelled,
-                        )?;
-                        (
-                            "localization_export",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
-                    }
-                    EngineRequest::LocalizationFocusExport {
-                        payload, output, ..
-                    } => {
-                        let bytes =
-                            query.export_localization_focus_to_path(payload, output, cancelled)?;
-                        (
-                            "localization_focus_export",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
-                    }
-                    EngineRequest::LocalizationCorpus { output, .. } => {
-                        let request = parse_search_request(
-                            r#"{"query":"","capability":"all","pageSize":50}"#,
-                        )?;
-                        let bytes = query
-                            .export_localization_to_path(&request, output, true, None, cancelled)?;
-                        (
-                            "localization_corpus",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
+                        ("localization_corpus", None)
                     }
                     _ => return Err("Invalid engine dispatch.".into()),
                 };
-                require(
-                    payload.len() <= 16 * 1024 * 1024,
-                    Error::new(
-                        ErrorCode::LimitExceeded,
-                        "Native Game Text response exceeds its byte bound; request a smaller evidence page.",
-                    ),
-                )?;
-                outcome.action = action.into();
-                outcome.payload = Some(payload);
+                if let Some(part) = &part {
+                    require(
+                        part.len() <= crate::session::MAX_BODY,
+                        Error::new(
+                            ErrorCode::LimitExceeded,
+                            "Native Game Text response exceeds its byte bound; request a smaller evidence page.",
+                        ),
+                    )?;
+                }
+                (action, part)
             }
+        };
+        if let Some(part) = part {
+            reply.part(part.into_bytes())?;
         }
         checkpoint(cancelled)?;
-        outcome.io = crate::snapshot::io_metrics();
-        outcome
-            .stage_seconds
-            .insert(outcome.action.clone(), started.elapsed().as_secs_f64());
-        Ok(outcome)
+        stage_seconds.insert(action.into(), started.elapsed().as_secs_f64());
+        Ok(Profile {
+            stage_seconds,
+            ..Profile::now()
+        })
     }
 }
 
@@ -592,15 +624,19 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     #[test]
-    fn findings_requests_are_bounded_and_require_the_new_contract() -> Result<()> {
-        for (action, bound) in [("findings_query", 512 * 1024), ("findings_accept", 8 << 20)] {
-            let mut value = json!({"action":action,"reader":"reader","payload":"{}"});
-            let request: EngineRequest = serde_json::from_value(value.clone())?;
-            assert!(request.requires_findings());
+    fn requests_carry_their_values_inline_not_as_text() -> Result<()> {
+        for action in ["findings_query", "findings_accept", "query"] {
+            let request: EngineRequest = serde_json::from_value(
+                json!({"action":action,"reader":"reader","request":{"key":"findings-v1:test"}}),
+            )?;
             request.validate()?;
-            value["payload"] = json!(" ".repeat(bound + 1));
-            let request: EngineRequest = serde_json::from_value(value)?;
-            assert!(request.validate().is_err());
+            // The JSON text payloads are gone.
+            assert!(
+                serde_json::from_value::<EngineRequest>(
+                    json!({"action":action,"reader":"reader","payload":"{}"})
+                )
+                .is_err()
+            );
         }
         // The page reads the scans used are gone with them.
         for action in ["findings_lines", "findings_units", "rows"] {
@@ -612,28 +648,36 @@ mod tests {
             );
         }
         let request: EngineRequest = serde_json::from_value(
-            json!({"action":"findings_evaluate","reader":"reader","rules":"{}","collationLocale":"sv"}),
+            json!({"action":"findings_evaluate","reader":"reader","rules":{"schemaVersion":4},"collationLocale":"sv"}),
         )?;
-        assert!(request.requires_findings());
         request.validate()?;
         Ok(())
     }
 
     #[test]
-    fn retired_inline_localization_actions_are_rejected() -> Result<()> {
-        for action in ["localization_focus", "localization_page"] {
+    fn retired_row_reads_are_rejected_and_one_line_request_reads_a_row() -> Result<()> {
+        for action in [
+            "localization_focus",
+            "localization_page",
+            "localization_focus_export",
+            "localization_detail",
+            "focus",
+            "related",
+            "search",
+        ] {
             assert!(
                 serde_json::from_value::<EngineRequest>(json!({
-                    "action": action, "reader": "reader", "payload": "\"line\""
+                    "action": action, "reader": "reader", "line": "line", "request": {}
                 }))
-                .is_err()
+                .is_err(),
+                "{action}"
             );
         }
-        let export: EngineRequest = serde_json::from_value(json!({
-            "action": "localization_focus_export", "reader": "reader",
-            "payload": "\"line\"", "output": crate::test_directory("focus-export").join("line.json")
+        let line: EngineRequest = serde_json::from_value(json!({
+            "action": "line", "reader": "reader",
+            "request": {"selection": {"kind": "line", "id": "line"}, "line": true}
         }))?;
-        export.validate()?;
+        line.validate()?;
         Ok(())
     }
 
@@ -718,7 +762,7 @@ mod tests {
     #[test]
     fn handles_are_session_owned_and_closed_reads_never_take_a_writer_lease() -> Result<()> {
         let (configuration, generation) = snapshot()?;
-        let mut session = EngineSession::default();
+        let session = EngineSession::default();
         let cancelled = AtomicBool::new(false);
         let request = EngineRequest::Open {
             configuration: configuration.clone(),
@@ -727,6 +771,7 @@ mod tests {
             policy: EnginePolicy::default(),
         };
         let opened = session.execute(&request, &cancelled)?;
+        let stage_seconds = &opened.profile.stage_seconds;
         let mut detailed_seconds = 0.0;
         for key in [
             "id_index_raw_load",
@@ -736,19 +781,19 @@ mod tests {
             "id_index_unit_lines_load",
             "id_index_unit_lines_build",
         ] {
-            let seconds = *opened.stage_seconds.get(key).ok_or("Missing ID stage")?;
+            let seconds = *stage_seconds.get(key).ok_or("Missing ID stage")?;
             assert!(seconds.is_finite() && seconds >= 0.0, "{key}: {seconds}");
             detailed_seconds += seconds;
         }
-        let total = *opened
-            .stage_seconds
+        let total = *stage_seconds
             .get("id_index_prepare")
             .ok_or("Missing ID preparation total")?;
         assert!(total.is_finite() && total >= 0.0);
         assert!(detailed_seconds <= total + 1e-6);
-        let reader = opened.reader.ok_or("reader")?;
+        let reply: serde_json::Value = serde_json::from_str(&opened.part.ok_or("reply")?)?;
+        let reader = reply["reader"].as_str().ok_or("reader")?.to_owned();
         let writer = Store::writer(configuration.clone())?;
-        let mut other = EngineSession::default();
+        let other = EngineSession::default();
         assert_eq!(
             other
                 .execute(
@@ -782,7 +827,7 @@ mod tests {
                 .code,
             ErrorCode::NotFound
         );
-        assert!(session.readers.is_empty());
+        assert!(session.readers.lock().is_empty());
         drop(writer);
         drop(session);
         std::fs::remove_dir_all(configuration.cache_root)?;
@@ -790,7 +835,8 @@ mod tests {
     }
     #[test]
     fn cancellation_and_bad_queries_are_typed_without_poisoning_the_session() -> Result<()> {
-        let mut session = EngineSession::default();
+        let (configuration, generation) = snapshot()?;
+        let session = EngineSession::default();
         let cancelled = AtomicBool::new(true);
         assert_eq!(
             session
@@ -801,17 +847,29 @@ mod tests {
             ErrorCode::Cancelled
         );
         cancelled.store(false, Ordering::Relaxed);
-        for payload in [
-            r#"{"query":"","capability":"all","pageSize":51}"#,
-            r#"{"query":"","capability":"all","pageSize":1,"where":null}"#,
-            r#"{"query":"","capability":"all","pageSize":1,"unknown":true}"#,
+        let opened = session.execute(
+            &EngineRequest::Open {
+                configuration: configuration.clone(),
+                expected_generation: generation,
+                expected_joined: "joined-native-v2:fixture".into(),
+                policy: EnginePolicy::default(),
+            },
+            &cancelled,
+        )?;
+        let reply: serde_json::Value = serde_json::from_str(&opened.part.ok_or("reply")?)?;
+        let reader = reply["reader"].as_str().ok_or("reader")?;
+        for request in [
+            r#"{"selection":{},"parts":{"rows":{"limit":0}}}"#,
+            r#"{"selection":{"where":null},"parts":{}}"#,
+            r#"{"selection":{},"parts":{},"unknown":true}"#,
+            r#"{"selection":{"where":{"utf16Length":[{"field":"source"}]}},"parts":{}}"#,
         ] {
             assert_eq!(
                 session
                     .execute(
-                        &EngineRequest::Search {
-                            reader: "not-opened".into(),
-                            payload: payload.into()
+                        &EngineRequest::Query {
+                            reader: reader.into(),
+                            request: serde_json::from_str(request)?
                         },
                         &cancelled
                     )
@@ -821,19 +879,27 @@ mod tests {
                 ErrorCode::InvalidInput
             );
         }
-        assert_eq!(
+        assert!(
             session
                 .execute(&EngineRequest::Capabilities, &cancelled)?
-                .capabilities,
-            ["game_text_engine_v1"]
+                .part
+                .is_some()
         );
-        assert!(session.readers.is_empty());
+        session.execute(
+            &EngineRequest::Close {
+                reader: reader.into(),
+            },
+            &cancelled,
+        )?;
+        assert!(session.readers.lock().is_empty());
+        drop(session);
+        std::fs::remove_dir_all(configuration.cache_root)?;
         Ok(())
     }
     #[test]
     fn stale_snapshot_open_does_not_consume_a_reader_slot() -> Result<()> {
         let (configuration, _) = snapshot()?;
-        let mut session = EngineSession::default();
+        let session = EngineSession::default();
         let cancelled = AtomicBool::new(false);
         let request = EngineRequest::Open {
             configuration: configuration.clone(),
@@ -849,7 +915,7 @@ mod tests {
                 .code,
             ErrorCode::StaleGeneration
         );
-        assert!(session.readers.is_empty());
+        assert!(session.readers.lock().is_empty());
         std::fs::remove_dir_all(configuration.cache_root)?;
         Ok(())
     }

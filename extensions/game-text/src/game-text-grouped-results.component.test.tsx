@@ -1,38 +1,71 @@
-import {
-	referenceSearchRows,
-	textCorpusQuery
-} from "../../../packages/game-text/src/query.test-support.js";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 
-import { type TextCorpusSearchRequest } from "@ue-shed/game-text/schema";
+import {
+	type TextCorpusSearchCounts,
+	type TextCorpusSearchRequest,
+	type TextGroup,
+	type TextUnitSearchResult
+} from "@ue-shed/game-text/schema";
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { createSignal, flush } from "solid-js";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
-import { corpus, unit } from "../../../packages/game-text/src/localization.test-support.js";
+import { cannedSearch, tableRow } from "./game-text-canned-search.test-support.js";
 import { GroupedResults } from "./game-text-grouped-results.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 afterEach(cleanup);
 
+/** Rows reads over planted rows in fixed groups, paged by cursor. */
+function groupedRows(
+	by: "folder" | "asset",
+	groups: readonly (TextGroup & { units: readonly TextUnitSearchResult[] })[]
+) {
+	const counts: TextCorpusSearchCounts = {
+		all: groups.reduce((total, group) => total + group.units.length, 0),
+		unresolved: 0,
+		conflicting: 0,
+		editable: 0,
+		readOnly: 0,
+		withoutNotes: 0,
+		origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
+	};
+	return cannedSearch([
+		{
+			rows: groups.flatMap(({ key, units }) =>
+				units.map((unit) => ({ unit, groups: { [by]: key } }))
+			),
+			counts,
+			groups: { [by]: groups.map(({ units: _units, ...group }) => group) }
+		}
+	]).searchRows;
+}
+
 it.each([false, true])(
 	"keeps all loaded rows during a reload whose second page fails: %s",
 	async (fail) => {
-		const text = corpus(
-			Array.from({ length: 100 }, (_, index) =>
-				unit(`K${index}`, `Source ${index}`, "Content/Text/Table.uasset")
-			)
-		);
-		const query = textCorpusQuery(text);
+		const group = {
+			key: "content/text",
+			label: "Content/Text",
+			count: 100,
+			needWork: 0,
+			worst: "up_to_date" as const
+		};
+		const rows = groupedRows("folder", [
+			{
+				...group,
+				units: Array.from({ length: 100 }, (_, index) =>
+					tableRow(`K${index}`, `Source ${index}`)
+				)
+			}
+		]);
 		const request = {
 			query: "",
 			capability: "all" as const,
 			pageSize: 50,
 			group: "folder" as const
 		};
-		const initial = query.search(request);
-		const group = initial.groups!.entries[0]!;
 		const [groups, setGroups] = createSignal([group]);
 		const [revision, setRevision] = createSignal(0);
 		const second = await Effect.runPromise(Deferred.make<void>());
@@ -47,10 +80,7 @@ it.each([false, true])(
 						yield* Deferred.await(second);
 						if (fail) return { status: "not_ready" as const };
 					}
-					return {
-						status: "ready" as const,
-						page: referenceSearchRows(query.search, input)
-					};
+					return yield* rows(input);
 				})
 		};
 		const { container, getByRole } = render(() => (
@@ -100,28 +130,31 @@ it.each([false, true])(
 );
 
 it("reads the groups that open together in one rows request", async () => {
-	const text = corpus(
-		["Menus", "Items", "Quests"].flatMap((folder) =>
-			Array.from({ length: 3 }, (_, index) =>
-				unit(`${folder}${index}`, `${folder} ${index}`, `Content/${folder}/Table.uasset`)
-			)
+	const planted = ["Menus", "Items", "Quests"].map((folder) => ({
+		key: `content/${folder.toLowerCase()}/table`,
+		label: `Content/${folder}/Table`,
+		count: 3,
+		needWork: 0,
+		worst: "up_to_date" as const,
+		units: Array.from({ length: 3 }, (_, index) =>
+			tableRow(`${folder}${index}`, `${folder} ${index}`)
 		)
-	);
-	const query = textCorpusQuery(text);
+	}));
+	const rows = groupedRows("asset", planted);
 	const request = {
 		query: "",
 		capability: "all" as const,
 		pageSize: 50,
 		group: "asset" as const
 	};
-	const groups = query.search(request).groups!.entries;
+	const groups = planted.map(({ units: _units, ...group }) => group);
 	expect(groups).toHaveLength(3);
 	const reads: TextCorpusSearchRequest[] = [];
 	const client = {
 		searchRows: (input: TextCorpusSearchRequest) =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
 				reads.push(input);
-				return { status: "ready" as const, page: referenceSearchRows(query.search, input) };
+				return rows(input);
 			})
 	};
 	const { container } = render(() => (

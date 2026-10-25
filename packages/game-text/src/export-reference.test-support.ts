@@ -3,30 +3,34 @@ import { Effect } from "effect";
 import { textQualityQuery } from "./quality-query.js";
 import { gameTextCsv as formatCsv } from "./csv.js";
 import { exportGameTextInvestigation as exportInvestigation } from "./investigation.js";
-import { textCorpusQuery, type TextCorpusQuery } from "./query.test-support.js";
-import type { TextCorpus } from "./schema.js";
-import { GameTextIndexError } from "./index-contract.js";
-/** Supplies independent in-memory results to export-format tests; never a production backend. */
-export function gameTextCsv(corpus: TextCorpus, reviewCorpus = corpus) {
-	const query = textCorpusQuery(reviewCorpus);
+import type { NativeTextQuery } from "./native-query-contract.js";
+import type { TextCorpus, TextReviewSignal, TextUnit } from "./schema.js";
+/**
+ * Supplies planted results to export-format tests; never a production backend. Units without
+ * planted review signals have none.
+ */
+export function gameTextCsv(
+	corpus: TextCorpus,
+	signals: ReadonlyMap<TextUnit["id"], readonly TextReviewSignal[]> = new Map()
+) {
 	return formatCsv(
 		corpus,
-		new Map(
-			corpus.units.map((unit) => [
-				unit.id,
-				query.focus({ id: unit.id, pageSize: 1 })!.unit.reviewSignals
-			])
-		)
+		new Map(corpus.units.map((unit) => [unit.id, signals.get(unit.id) ?? []]))
 	);
 }
+/**
+ * Without a query, a corpus export without a localization target selects every unit of
+ * `corpus`; tests whose selection matters pass a native query.
+ */
 export function exportGameTextInvestigation(
 	corpus: TextCorpus,
 	preset: Parameters<typeof exportInvestigation>[1],
 	source: Parameters<typeof exportInvestigation>[2],
-	query?: TextCorpusQuery,
+	query?: Pick<NativeTextQuery, "export">,
 	workspace?: Parameters<typeof exportInvestigation>[4]
 ) {
-	const reference = query ?? (preset.query.localization ? undefined : textCorpusQuery(corpus));
+	const selected =
+		query ?? (preset.query.localization ? undefined : { export: () => Effect.succeed(corpus) });
 	return exportInvestigation(
 		{
 			sourceQuality: (document) => {
@@ -41,25 +45,7 @@ export function exportGameTextInvestigation(
 		},
 		preset,
 		source,
-		reference
-			? {
-					export: (request) =>
-						Effect.try({
-							try: () => reference.export(request),
-							catch: (cause) =>
-								new GameTextIndexError({
-									code: "index_failed",
-									operation: "test_export",
-									message: "The test selection is invalid.",
-									recovery:
-										"Select a localization target or repair the test selection.",
-									retrySafe: false,
-									nextStep: "fix_input",
-									cause
-								})
-						})
-				}
-			: undefined,
+		selected,
 		workspace
 	);
 }

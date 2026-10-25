@@ -17,20 +17,99 @@ import {
 	splitUnit,
 	target
 } from "../../../packages/game-text/src/localization.test-support.js";
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
+import {
+	cannedFocus,
+	cannedPage,
+	cannedSearch,
+	linePreview,
+	tableRow,
+	type CannedAnswer
+} from "./game-text-canned-search.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { client, groupRows, mount } from "./game-text-localization.test-support.js";
+
+/** An answer over the target listing these lines, all in one group. */
+const linesAnswer = (
+	rows: CannedAnswer["rows"],
+	group: { key: string; label: string; worst: "not_gathered" | "up_to_date" }
+): CannedAnswer => ({
+	when: { localization: {} },
+	rows,
+	counts: {
+		all: rows.length,
+		unresolved: 0,
+		conflicting: 0,
+		editable: 0,
+		readOnly: 0,
+		withoutNotes: rows.length,
+		origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
+	},
+	groups: {
+		problem: [
+			{
+				...group,
+				count: rows.length,
+				needWork: group.worst === "up_to_date" ? 0 : rows.length
+			}
+		]
+	},
+	localization: {
+		counts: [],
+		stateCounts: {
+			translated: 0,
+			not_translated: 0,
+			needs_update: 0,
+			not_synced: 0,
+			not_gathered: 0,
+			changed_since_gather: 0,
+			not_found: 0,
+			gathered_only: 0,
+			outside_target: 0,
+			unknown: 0
+		},
+		notSynced: 0
+	}
+});
 describe("Game Text line page", () => {
 	it("switches between split lines sharing a unit without mixing their saved details", async () => {
 		const mixed = splitUnit();
 		const saved = corpus([mixed]);
 		const join = joinLocalizationTarget(saved, evidence([], [], poDocument("")));
-		const query = textCorpusQuery(saved, undefined, join);
+		// The table entry and the saved FText are two lines of one unit, each with its own place.
+		const [table, base] = mixed.occurrences;
+		const tableLine = join.lines.find((line) => line.identity?.namespace === "UI [Beta]");
+		const baseLine = join.lines.find((line) => line.identity?.namespace === "UI");
+		if (!table || !base || !tableLine || !baseLine) throw new Error("Missing split lines.");
+		const notGathered = { problems: ["not_gathered" as const] };
+		const split = [
+			{ place: table, source: "Table label", line: tableLine },
+			{ place: base, source: "Base label", line: baseLine }
+		].map(({ place, source, line }) => {
+			const unit = {
+				...tableRow("K", source, "UI [Beta]"),
+				contexts: [{ editCapability: place.editCapability, location: place.location }],
+				locationKinds: [place.location.kind],
+				...notGathered
+			};
+			return {
+				row: {
+					unit,
+					line: linePreview(line, notGathered),
+					groups: { problem: "not_gathered" }
+				},
+				focus: {
+					diagnostics: [],
+					occurrences: [place],
+					totalOccurrences: 1,
+					unit,
+					localization: linePreview(line, notGathered),
+					line: line.id
+				}
+			};
+		});
 		const user = userEvent.setup({ delay: null });
 		mount({
 			...client(),
-			loadConfiguredProject: () =>
-				Effect.succeed({ status: "completed", summary: query.summary() }),
 			localizationTarget: () =>
 				Effect.succeed({
 					status: "ready",
@@ -42,16 +121,17 @@ describe("Game Text line page", () => {
 					lines: 2,
 					notSynced: 0
 				}),
-			search: (request) => Effect.succeed({ status: "ready", page: query.search(request) }),
-			focus: (request) => {
-				const focus = query.focus(request);
-				return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
-			},
+			...cannedSearch([
+				linesAnswer(
+					split.map(({ row }) => row),
+					{ key: "not_gathered", label: "Not gathered yet", worst: "not_gathered" }
+				)
+			]),
+			focus: cannedFocus(split.map(({ focus }) => focus)),
 			localizationFocus: (request) => {
-				const line =
-					request.selection.kind === "line"
-						? query.localizationFocus(request.selection.id)
-						: undefined;
+				const line = join.lines.find(
+					(item) => request.selection.kind === "line" && item.id === request.selection.id
+				);
 				return Effect.succeed(
 					line
 						? { status: "found", focus: localizationFocusPage(join, line, request) }
@@ -112,18 +192,24 @@ describe("Game Text line page", () => {
 					[]
 				)
 			);
-			const query = textCorpusQuery(empty, undefined, gathered);
+			const listed = [
+				linesAnswer(
+					gathered.lines.map((line) => ({
+						line: linePreview(line, { problems: ["up_to_date"] }),
+						groups: { problem: "up_to_date" }
+					})),
+					{ key: "up_to_date", label: "Up to date", worst: "up_to_date" }
+				)
+			];
 			const later = Effect.runSync(Deferred.make<void>());
 			const user = userEvent.setup({ delay: null });
 			mount({
 				...client(),
-				loadConfiguredProject: () =>
-					Effect.succeed({ status: "completed", summary: query.summary() }),
 				localizationFocus: (request) => {
-					const line =
-						request.selection.kind === "line"
-							? query.localizationFocus(request.selection.id)
-							: undefined;
+					const line = gathered.lines.find(
+						(item) =>
+							request.selection.kind === "line" && item.id === request.selection.id
+					);
 					return Effect.succeed(
 						line
 							? {
@@ -137,7 +223,9 @@ describe("Game Text line page", () => {
 					(request.cursor || request.localizationCursor
 						? Deferred.await(later)
 						: Effect.void
-					).pipe(Effect.as({ status: "ready" as const, page: query.search(request) }))
+					).pipe(
+						Effect.as({ status: "ready" as const, page: cannedPage(listed, request) })
+					)
 			});
 			await screen.findByText("62 matches");
 			await groupRows();

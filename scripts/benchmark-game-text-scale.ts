@@ -21,15 +21,7 @@ const Memory = Schema.Struct({
 	rss: Schema.Number,
 	arrayBuffers: Schema.Number
 });
-const Stage = Schema.Literals([
-	"evidence",
-	"corpus",
-	"join",
-	"status",
-	"open",
-	"quality",
-	"source_quality"
-]);
+const Stage = Schema.Literals(["evidence", "corpus", "join", "open", "quality", "source_quality"]);
 const Message = Schema.Struct({
 	kind: Schema.Literals(["start", "sample", "complete", "failure", "done"]),
 	stage: Stage,
@@ -115,13 +107,11 @@ if (values.worker) {
 		return value;
 	}
 	async function pipelineStages() {
-		const { readScaleEvidence, readScaleCorpus, joinScaleTarget, scaleStatus } =
+		const { readScaleEvidence, readScaleCorpus, joinScaleTarget } =
 			await import("./game-text-scale-pipeline.ts");
 		const evidence = await measure("evidence", () => readScaleEvidence(project));
 		const corpus = await measure("corpus", () => readScaleCorpus(project));
 		const joined = await measure("join", () => joinScaleTarget(project, corpus, evidence));
-		const status = await measure("status", () => scaleStatus(corpus, evidence, joined.join));
-		const german = status.report.counts.find((culture) => culture.culture === "de");
 		send("done", {
 			counts: {
 				heapLimitBytes: getHeapStatistics().heap_size_limit,
@@ -130,14 +120,7 @@ if (values.worker) {
 				occurrences: corpus.coverage.textOccurrences,
 				packages: corpus.coverage.discoveredPackages,
 				gaps: corpus.coverage.unsupportedTextProperties,
-				keyChanges: joined.keyChanges.pairs.length,
-				pageLines: status.page.units.length,
-				...Object.fromEntries(
-					Object.entries(german?.states ?? {}).map(([state, counts]) => [
-						`de_${state}`,
-						counts.lines
-					])
-				)
+				keyChanges: joined.keyChanges.pairs.length
 			}
 		});
 	}

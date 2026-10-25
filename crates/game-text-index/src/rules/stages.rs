@@ -18,6 +18,23 @@ struct Recording {
     heap_peak: u64,
     /// Named memory holders, sampled at a point: bytes per holder.
     holders: BTreeMap<&'static str, BTreeMap<&'static str, u64>>,
+    /// Where the evaluation reports its stages and the rules it has run, of how many.
+    progress: Option<(Arc<dyn crate::engine::Reporter>, u32, u32)>,
+}
+impl Recording {
+    fn report(&self, boundary: bool) {
+        if let Some((reporter, done, total)) = &self.progress {
+            reporter.report(
+                &crate::engine::Progress {
+                    stage: self.active,
+                    completed: *done,
+                    total: Some(*total),
+                    unit: "rules",
+                },
+                boundary,
+            );
+        }
+    }
 }
 impl Default for Recording {
     fn default() -> Self {
@@ -30,6 +47,7 @@ impl Default for Recording {
             kernels: BTreeMap::new(),
             heap_peak: 0,
             holders: BTreeMap::new(),
+            progress: None,
         }
     }
 }
@@ -198,10 +216,30 @@ impl Recorder {
         })))
     }
     pub fn enter(&self, name: &'static str) {
+        let mut recording = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        recording.active = name;
+        recording.report(true);
+    }
+    /// Reports the evaluation's stages and rules to `reporter`, of `rules` in all.
+    pub fn report_to(&self, reporter: Arc<dyn crate::engine::Reporter>, rules: usize) {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .active = name;
+            .progress = Some((reporter, 0, u32::try_from(rules).unwrap_or(u32::MAX)));
+    }
+    /// Counts one more rule run.
+    pub fn rule_done(&self) {
+        let mut recording = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, done, _)) = &mut recording.progress {
+            *done += 1;
+        }
+        recording.report(false);
     }
     pub fn memory(&self, name: &'static str, mut memory: Memory) {
         if let Ok(process) = process_metrics::memory() {

@@ -1265,6 +1265,12 @@ export const mapCaptureProgressEvent = {
 	payload: MapCaptureProgressEvent
 } as const;
 
+/** Each change to Game Text's progress, after the snapshot `game-text:progress` reads. */
+export const gameTextProgressEvent = {
+	channel: "game-text:progress-changed",
+	payload: WorkbenchTaskProgress
+} as const;
+
 export const gameTextOperationProgressEvent = {
 	channel: "game-text:localization:operation-progress",
 	payload: GameTextOperationProgress

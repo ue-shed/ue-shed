@@ -196,18 +196,22 @@ impl Projection {
 }
 impl EngineQuery {
     /// One entry per rule of the layer in program order, with the rows it has a finding on. A
-    /// row counts in every rule it has a finding of. A facet lists every rule; groups list those
-    /// with at least the request's minimum size.
+    /// row counts in every rule it has a finding of. A facet (`minimum` absent) lists every
+    /// rule; groups list those with at least `minimum` rows.
     pub(crate) fn finding_groups(
-        &mut self,
+        &self,
         rows: &[u32],
-        request: &SearchRequest,
+        selection: &Selection,
         findings: &FindingRows,
-        facet: bool,
+        minimum: Option<usize>,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
-        let localized = request.localization.is_some();
-        let scope = self.culture_scope(request.localization.as_ref())?;
+        let localized = selection.localized();
+        let scope = if localized {
+            self.culture_scope(selection)?
+        } else {
+            Vec::new()
+        };
         let problems = self.problem_column(localized, &scope, Some(findings), cancelled)?;
         let worst_none = (PROBLEMS.len() - 1) as u32;
         let mut tallies = vec![(0usize, 0usize, worst_none); findings.rules.len()];
@@ -224,11 +228,7 @@ impl EngineQuery {
                 tally.2 = tally.2.min(bits.trailing_zeros());
             }
         }
-        let minimum = if facet {
-            0
-        } else {
-            request.min_group_size.unwrap_or(1)
-        };
+        let minimum = minimum.unwrap_or(0);
         let entries = findings
             .rules
             .iter()
@@ -242,21 +242,28 @@ impl EngineQuery {
         Ok(json!({"entries":entries.into_iter().take(MAX_GROUPS).collect::<Vec<_>>(),"more":more}))
     }
 
+    /// The rows counted by `by`: a facet when `minimum` is absent, which lists every value, or
+    /// groups holding at least `minimum` rows.
     pub(crate) fn aggregate(
-        &mut self,
+        &self,
         rows: &[u32],
-        request: &SearchRequest,
+        selection: &Selection,
         by: GroupBy,
-        facet: bool,
+        minimum: Option<usize>,
         under: &str,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
+        let facet = minimum.is_none();
         let projection = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
-        let localized = request.localization.is_some();
+        let localized = selection.localized();
         let kind = if localized { Kind::Line } else { Kind::Raw };
-        let scope = self.culture_scope(request.localization.as_ref())?;
-        let findings = self.request_findings(request, cancelled)?;
+        let scope = if localized {
+            self.culture_scope(selection)?
+        } else {
+            Vec::new()
+        };
+        let findings = self.request_findings(selection, cancelled)?;
         let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
         let parent = Self::normalized_path(under)
             .trim_end_matches('/')
@@ -356,11 +363,7 @@ impl EngineQuery {
         }
         // Groups below the requested size are left out before ranking, and so are not counted
         // in `more`. Facets list every value.
-        let minimum = if facet {
-            1
-        } else {
-            request.min_group_size.unwrap_or(1)
-        };
+        let minimum = minimum.unwrap_or(1);
         let tallies = tallies
             .into_iter()
             .filter(|(_, tally)| tally.count >= minimum)
@@ -415,19 +418,14 @@ impl EngineQuery {
         }).collect::<Result<Vec<_>>>()?;
         Ok(json!({"entries":entries,"more":more}))
     }
+    /// How many of `files` hold matching text, lie outside the project or were not scanned.
     pub(crate) fn file_scope(
-        &mut self,
+        &self,
         rows: &[u32],
-        request: &SearchRequest,
+        selection: &Selection,
+        files: &[String],
         cancelled: &AtomicBool,
-    ) -> Result<Option<Value>> {
-        let Some(files) = request
-            .location
-            .as_ref()
-            .and_then(|scope| scope.files.as_ref())
-        else {
-            return Ok(None);
-        };
+    ) -> Result<Value> {
         let mut outside = 0;
         let mut keys = HashSet::new();
         for file in files {
@@ -456,7 +454,7 @@ impl EngineQuery {
                 checkpoint(cancelled)?;
             }
             projection.each_file(
-                if request.localization.is_some() {
+                if selection.localized() {
                     Kind::Line
                 } else {
                     Kind::Raw
@@ -487,8 +485,8 @@ impl EngineQuery {
                 missing += 1;
             }
         }
-        Ok(Some(
+        Ok(
             json!({"files":keys.len()+outside,"textFiles":seen.len(),"outside":outside,"notScanned":missing}),
-        ))
+        )
     }
 }

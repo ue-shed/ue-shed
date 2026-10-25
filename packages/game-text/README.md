@@ -39,12 +39,12 @@ producer. The reader library never downloads an executable or falls back to a so
 For persistent indexing, compose `GameTextIndexBuilderLive` from `@ue-shed/game-text/index` with
 the host's existing `AssetReader` layer. This is the native production builder used by CLI and
 Workbench. It uses a scoped process/lease and reports missing capability or worker failures with
-typed recovery. `typeScriptIndexBuilderLayer` remains an explicit reference choice. See the
+typed recovery. See the
 [native preparation guide](../../docs/engineering/native-game-text-index.md).
 
 Compose `TextCorpusServiceLive` with one scoped `AssetReader` layer in the trusted Node host. Keep
-the resulting corpus and `textCorpusQuery(corpus)` model in that host, and send only bounded summary,
-search, and focus results over the host's validated transport.
+the resulting corpus and its index in that host, and send only bounded summary, search, and focus
+results over the host's validated transport.
 
 Use `scanFromProjectIndex` when the host already maintains a saved-project header index. Otherwise,
 `scan` performs its own bounded project scan. Both paths preserve coverage and typed recovery

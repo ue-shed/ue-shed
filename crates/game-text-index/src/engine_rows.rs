@@ -65,20 +65,6 @@ impl RowSet {
         }
     }
 
-    /// The rows of the relation the set leaves out.
-    pub fn complement(&self) -> Self {
-        let mut words = self.words.iter().map(|word| !word).collect::<Vec<_>>();
-        if !self.len.is_multiple_of(64)
-            && let Some(last) = words.last_mut()
-        {
-            *last &= (1u64 << (self.len % 64)) - 1;
-        }
-        Self {
-            words: words.into(),
-            len: self.len,
-        }
-    }
-
     pub fn contains(&self, row: usize) -> bool {
         row < self.len && self.words[row / 64] & (1 << (row % 64)) != 0
     }

@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { describe, expect } from "vitest";
 import { buildTextCorpus, textOccurrencesFromInspection } from "./corpus.js";
-import { textCorpusQuery } from "./query.test-support.js";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { searchTextCorpus } from "./search.test-support.js";
 import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
+import { makeTextOccurrenceId, makeTextUnitId, type TextCorpus, type TextUnit } from "./schema.js";
 
 const inspection: SavedAssetInspection = {
 	schema_version: 8,
@@ -159,7 +162,7 @@ describe("game text corpus", () => {
 		expect(corpus.coverage.resolvedOccurrences).toBe(2);
 	});
 
-	it.each(["Hello", "Other"])(
+	it.live.each(["Hello", "Other"])(
 		"keeps one unit per gathered key with each saved package namespace (%s)",
 		(secondSource) => {
 			const outcomes = (secondKey: string) =>
@@ -205,11 +208,18 @@ describe("game text corpus", () => {
 				{ status: "resolved", namespace: "UI [A]", key: "Greeting" },
 				{ status: "resolved", namespace: "UI [B]", key: "Greeting" }
 			]);
-			const query = textCorpusQuery(corpus);
-			const page = query.search({ capability: "all", query: "", pageSize: 50 });
-			expect(page.counts.conflicting).toBe(secondSource === "Hello" ? 0 : 1);
-			expect(query.focus({ id: unit.id, pageSize: 50 })?.unit.identity).toEqual(
-				unit.identity
+			return withIndexedCorpus(corpus, {}, ({ query }) =>
+				Effect.gen(function* () {
+					const page = yield* query.search({
+						capability: "all",
+						query: "",
+						pageSize: 50
+					});
+					expect(page.counts.conflicting).toBe(secondSource === "Hello" ? 0 : 1);
+					expect(
+						(yield* query.focus({ id: unit.id, pageSize: 50 }))?.unit.identity
+					).toEqual({ status: "resolved", namespace: "UI [A]", key: "Greeting" });
+				})
 			);
 		}
 	);
@@ -246,22 +256,28 @@ describe("game text corpus", () => {
 		expect(corpus.coverage.unresolvedOccurrences).toBe(2);
 	});
 
-	it("searches visible source text without mixing in identity or occurrence metadata", () => {
-		const corpus = buildTextCorpus([
-			{ status: "inspected", packageFile: "Content/Text.uasset", inspection }
-		]);
+	it.live(
+		"searches visible source text without mixing in identity or occurrence metadata",
+		() => {
+			const corpus = buildTextCorpus([
+				{ status: "inspected", packageFile: "Content/Text.uasset", inspection }
+			]);
 
-		expect(searchTextCorpus(corpus, "hello")).toHaveLength(1);
-		expect(searchTextCorpus(corpus, "UI")).toHaveLength(0);
-		expect(searchTextCorpus(corpus, "Greeting")).toHaveLength(0);
-		expect(searchTextCorpus(corpus, "GreetingAgain Label")).toHaveLength(0);
-		expect(searchTextCorpus(corpus, "missing")).toHaveLength(0);
-		expect(
-			textCorpusQuery(corpus).search({ capability: "all", pageSize: 50, query: "Greeting" })
-		).toMatchObject({ total: 0 });
-	});
+			expect(searchTextCorpus(corpus, "hello")).toHaveLength(1);
+			expect(searchTextCorpus(corpus, "UI")).toHaveLength(0);
+			expect(searchTextCorpus(corpus, "Greeting")).toHaveLength(0);
+			expect(searchTextCorpus(corpus, "GreetingAgain Label")).toHaveLength(0);
+			expect(searchTextCorpus(corpus, "missing")).toHaveLength(0);
+			return withIndexedCorpus(corpus, {}, ({ query }) =>
+				Effect.map(
+					query.search({ capability: "all", pageSize: 50, query: "Greeting" }),
+					(page) => expect(page.total).toBe(0)
+				)
+			);
+		}
+	);
 
-	it("excludes empty FText values and does not search their asset metadata", () => {
+	it.live("excludes empty FText values and does not search their asset metadata", () => {
 		const noisyInspection: SavedAssetInspection = {
 			...inspection,
 			assets: [
@@ -291,35 +307,125 @@ describe("game text corpus", () => {
 		const corpus = buildTextCorpus([
 			{ status: "inspected", packageFile: "Content/Text.uasset", inspection: noisyInspection }
 		]);
-		const query = textCorpusQuery(corpus);
 
 		expect(searchTextCorpus(corpus, "hel")).toHaveLength(1);
-		expect(query.search({ capability: "all", pageSize: 50, query: "hel" }).total).toBe(1);
-		expect(query.search({ capability: "all", pageSize: 50, query: "" }).total).toBe(1);
+		return withIndexedCorpus(corpus, {}, ({ query }) =>
+			Effect.gen(function* () {
+				expect(
+					(yield* query.search({ capability: "all", pageSize: 50, query: "hel" })).total
+				).toBe(1);
+				expect(
+					(yield* query.search({ capability: "all", pageSize: 50, query: "" })).total
+				).toBe(1);
+			})
+		);
 	});
 
-	it("indexes search fields once and returns bounded cursor pages with focused occurrences", () => {
-		const corpus = buildTextCorpus([
-			{ status: "inspected", packageFile: "Content/Text.uasset", inspection }
-		]);
-		const query = textCorpusQuery(corpus);
+	it.live(
+		"indexes search fields once and returns bounded cursor pages with focused occurrences",
+		() => {
+			const corpus = buildTextCorpus([
+				{ status: "inspected", packageFile: "Content/Text.uasset", inspection }
+			]);
+			return withIndexedCorpus(corpus, {}, ({ query }) =>
+				Effect.gen(function* () {
+					const page = yield* query.search({
+						capability: "source_editable",
+						pageSize: 1,
+						query: "Hello"
+					});
+					expect(page.total).toBe(1);
+					expect(page.units).toHaveLength(1);
+					expect(page.units[0]?.occurrenceCount).toBe(2);
 
-		const page = query.search({
-			capability: "source_editable",
-			pageSize: 1,
-			query: "Hello"
-		});
-		expect(page.total).toBe(1);
-		expect(page.units).toHaveLength(1);
-		expect(page.units[0]?.occurrenceCount).toBe(2);
+					const unit = page.units[0];
+					if (!unit) throw new Error("Missing search result.");
+					const focus = yield* query.focus({ id: unit.id, pageSize: 1 });
+					expect(focus?.occurrences).toHaveLength(1);
+					expect(focus?.totalOccurrences).toBe(2);
+					expect(focus?.nextOccurrenceCursor).toBeDefined();
+				})
+			);
+		}
+	);
+});
 
-		const unit = page.units[0];
-		expect(unit).toBeDefined();
-		if (!unit) return;
-		const focus = query.focus({ id: unit.id, pageSize: 1 });
-		expect(focus?.occurrences).toHaveLength(1);
-		expect(focus?.totalOccurrences).toBe(2);
-		expect(focus?.nextOccurrenceCursor).toBeDefined();
+describe("corpus query pages and exports", () => {
+	const continueUnit = (key: string, source: string): TextUnit => {
+		const identity = { key, namespace: "UI", status: "resolved" as const };
+		return {
+			id: makeTextUnitId(`unreal:UI:${key}`),
+			identity,
+			source: { status: "consistent", value: source },
+			occurrences: [1, 2, 3, 4].map((index) => ({
+				devNotes: "",
+				editCapability: "source_editable",
+				id: makeTextOccurrenceId(`occurrence:${key}:${index}`),
+				identity,
+				location: {
+					kind: "data_table_cell",
+					objectPath: "/Game/Text/DT_Menu.DT_Menu",
+					propertyPath: "Prompt",
+					row: `${key}${index}`
+				},
+				packageFile: "Content/Text/DT_Menu.uasset",
+				source
+			}))
+		};
+	};
+
+	it.live("carries a bounded location preview and the remaining context count", () =>
+		withIndexedCorpus({ units: [continueUnit("Continue", "Continue")] }, {}, ({ query }) =>
+			Effect.gen(function* () {
+				const page = yield* query.search({ capability: "all", pageSize: 50, query: "" });
+				expect(page.units[0]?.contexts).toHaveLength(3);
+				expect(page.units[0]?.contexts[0]?.location).toEqual({
+					kind: "data_table_cell",
+					objectPath: "/Game/Text/DT_Menu.DT_Menu",
+					propertyPath: "Prompt",
+					row: "Continue1"
+				});
+				expect(page.units[0]?.remainingContextCount).toBe(1);
+			})
+		)
+	);
+
+	it.live("exports every filtered unit with full occurrences and whole-scan coverage", () => {
+		const units = Array.from({ length: 123 }, (_, index) =>
+			continueUnit(
+				"Line" + String(index).padStart(3, "0"),
+				'A very long source, with "quotes"\nand every character preserved ' + index
+			)
+		);
+		const text: Pick<TextCorpus, "units"> = { units };
+		return withIndexedCorpus(text, {}, ({ query }) =>
+			Effect.gen(function* () {
+				const request = { capability: "source_editable" as const, query: "source" };
+				expect((yield* query.search({ ...request, pageSize: 50 })).units).toHaveLength(50);
+				const exported = yield* query.export(request);
+				expect(exported.units).toHaveLength(123);
+				expect(exported.units[122]?.occurrences).toHaveLength(4);
+				expect(exported.units[122]?.source).toEqual(units[122]?.source);
+				const coverage = {
+					discoveredPackages: 1,
+					inspectedPackages: 1,
+					partialPackages: 0,
+					failedPackages: 0,
+					textUnits: 123,
+					textOccurrences: 492,
+					resolvedOccurrences: 492,
+					unresolvedOccurrences: 0,
+					unsupportedTextProperties: 0
+				};
+				expect(exported.coverage).toEqual(coverage);
+				const none = yield* query.export({ ...request, query: "no such text" });
+				expect(none.units).toEqual([]);
+				expect(none.coverage).toEqual(coverage);
+				expect(
+					(yield* query.export({ ...request, capability: "read_only" })).units
+				).toEqual([]);
+			})
+		);
 	});
 });
 

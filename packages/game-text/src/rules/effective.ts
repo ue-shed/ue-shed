@@ -405,10 +405,12 @@ export function effectiveRuleDocument(
 	return { schemaVersion: 4, roles: document?.roles ?? [], rules };
 }
 
+/** The document the engine evaluates: its enabled rules. */
+export function enabledRuleDocument(document: RuleDocumentV4): RuleDocumentV4 {
+	return { ...document, rules: document.rules.filter((rule) => rule.enabled !== false) };
+}
+
 /** Canonical v4 JSON retains rule and evidence-key order, and omits disabled rules. */
 export function canonicalRuleDocument(document: RuleDocumentV4): string {
-	return JSON.stringify({
-		...document,
-		rules: document.rules.filter((rule) => rule.enabled !== false)
-	});
+	return JSON.stringify(enabledRuleDocument(document));
 }

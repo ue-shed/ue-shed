@@ -1,5 +1,6 @@
 import {
 	LocalizationState,
+	MAX_TEXT_QUERY_PAGE_SIZE,
 	TextGroupBy,
 	TextOriginKind,
 	type TextWhere
@@ -13,8 +14,8 @@ export function localizationFlags() {
 		state: Flag.Literals("state", LocalizationState.literals).pipe(Flag.optional),
 		limit: Flag.Int("limit").pipe(
 			Flag.filter(
-				(value) => value >= 1 && value <= 50,
-				() => "--limit must be between 1 and 50"
+				(value) => value >= 1 && value <= MAX_TEXT_QUERY_PAGE_SIZE,
+				() => `--limit must be between 1 and ${MAX_TEXT_QUERY_PAGE_SIZE}`
 			),
 			Flag.withDefault(50)
 		),

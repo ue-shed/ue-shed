@@ -1,7 +1,7 @@
 import { packageTextFixtureEvidence } from "./package-text-fixture.test-support.ts";
 import { resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
 	applyLocalizationReview,
@@ -49,21 +49,11 @@ import {
 	emptyPackageTextRecord,
 	packageTextRecordsFromEvents
 } from "../packages/game-text/src/package-text-record.ts";
-import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
-import {
-	TextProblem,
-	TextCorpusSearchRequest,
-	type TextCorpus,
-	type TextReviewSignal
-} from "../packages/game-text/src/schema.ts";
+import type { TextCorpus } from "../packages/game-text/src/schema.ts";
 import type { LocalizationJoin } from "../packages/game-text/src/localization-schema.ts";
 import { u32 } from "../packages/game-text/src/joined-target-input.ts";
-import { textProblems } from "../packages/game-text/src/text-problems.ts";
 import { expectLocalizationImportMatchesParser } from "./localization-import-oracle.test-support.ts";
-import {
-	gatheredTextGroups,
-	localizationLineUnits
-} from "../packages/game-text/src/gathered-text.ts";
+import { localizationLineUnits } from "../packages/game-text/src/gathered-text.ts";
 import { hasSearchableSource } from "../packages/game-text/src/search.ts";
 import {
 	textFileLabel,
@@ -71,34 +61,7 @@ import {
 	manifestPathOrigin
 } from "../packages/game-text/src/text-origin.ts";
 import { localizationManifestNotes } from "../packages/game-text/src/localization.ts";
-import {
-	JoinedQueryData,
-	reuseJoinedQueryProjection
-} from "../packages/game-text/src/joined-query-data.test-support.ts";
-import { columnarTextCorpusQuery } from "../packages/game-text/src/columnar-query.test-support.ts";
 import type { SnapshotSourceColumn } from "../packages/game-text/src/snapshot-file.ts";
-
-/** Each problem's lines, as the columnar mirror of the engine classifies them from the
- * published columns, are the object oracle's. */
-const expectProblemOracle = Effect.fn("JoinOracle.problems")(function* (
-	corpus: TextCorpus,
-	expected: LocalizationJoin
-) {
-	const oracle = textCorpusQuery(corpus, undefined, expected),
-		columnar = columnarTextCorpusQuery(yield* openJoinedTarget());
-	for (const problem of TextProblem.literals) {
-		const request = {
-			query: "",
-			capability: "all" as const,
-			localization: { target: expected.target },
-			filter: [{ field: "problem" as const, op: "is" as const, values: [problem] }]
-		};
-		expect(
-			columnar.localizationLines(request).map((line) => line.id),
-			`STOP: problem oracle ${problem}`
-		).toEqual(oracle.localizationLines(request).map((line) => line.id));
-	}
-});
 
 const expectFacetOracle = Effect.fn("JoinOracle.facets")(function* (
 	corpus: TextCorpus,
@@ -466,75 +429,40 @@ describe("columnar join", () => {
 					return (yield* openJoinedTarget()).reader.manifest.active.joined!;
 				})
 			);
-			let projection = await run(
-				Effect.gen(function* () {
-					const joined = yield* openJoinedTarget();
-					const projection = reuseJoinedQueryProjection(joined);
-					columnarTextCorpusQuery(joined, undefined, projection);
-					return projection;
-				})
-			);
-			const collect = (reuse = false) =>
-				Effect.gen(function* () {
-					const joined = yield* openJoinedTarget();
-					const next = reuseJoinedQueryProjection(joined, reuse ? projection : undefined);
-					const previousSource = projection.columns.get("patch:line.source");
-					const heldSource = previousSource?.slice();
-					const query = columnarTextCorpusQuery(joined, undefined, next);
-					const cold = columnarTextCorpusQuery(joined);
-					expect(query.summary()).toEqual(cold.summary());
-					for (const text of ["", "Zebra", "alpha", "béta", "wirava", "xirava"])
-						for (const localization of [
-							undefined,
-							{ target: "Generated", culture: "en" }
-						]) {
-							const request = Schema.decodeUnknownSync(TextCorpusSearchRequest)({
-								query: text,
-								capability: "all" as const,
-								pageSize: 5,
-								...(localization ? { localization } : undefined),
-								facets: { origins: true, assets: true, cultures: true }
-							});
-							expect(query.search(request), `reused ${text}`).toEqual(
-								cold.search(request)
-							);
-						}
-					if (heldSource) expect(previousSource).toEqual(heldSource);
-					if (reuse) projection = next;
-					const data = new JoinedQueryData(joined, next);
-					const values: Record<string, Uint32Array> = {};
-					for (const name of new Set([
-						...joined.layer.directory.entries.keys(),
-						...Object.keys(joined.meta.aliases),
-						...Object.keys(joined.meta.patches ?? {})
-					])) {
-						if (name === "join.meta" || name === "shared.meta") continue;
-						values[name] = yield* u32(joined.layer, name);
-						expect(data.column(name), `synchronous ${name}`).toEqual(values[name]);
-					}
-					const key = joined.reader.manifest.active.joined!;
-					const stringColumns = joined.reader.manifest.layers[key]!.stringColumns;
-					const columns: SnapshotSourceColumn[] = [];
-					for (const [name, entry] of joined.rawLayer.directory.entries) {
-						if (name === "shared.meta") continue;
-						const value = yield* joined.rawLayer.section(name);
-						const domain = stringColumns[name];
-						columns.push({
-							name,
-							kind: domain ? "stringIds" : entry.kind,
-							...(domain ? { domain } : undefined),
-							load: async () => value
-						});
-					}
-					return {
-						values,
-						columns,
-						key,
-						base: joined.meta.base,
-						join: yield* hydrateJoinedTarget(joined, 0, 10000),
-						census: yield* inspectJoinedTarget(joined)
-					};
-				});
+			const collect = Effect.gen(function* () {
+				const joined = yield* openJoinedTarget();
+				const values: Record<string, Uint32Array> = {};
+				for (const name of new Set([
+					...joined.layer.directory.entries.keys(),
+					...Object.keys(joined.meta.aliases),
+					...Object.keys(joined.meta.patches ?? {})
+				])) {
+					if (name === "join.meta" || name === "shared.meta") continue;
+					values[name] = yield* u32(joined.layer, name);
+				}
+				const key = joined.reader.manifest.active.joined!;
+				const stringColumns = joined.reader.manifest.layers[key]!.stringColumns;
+				const columns: SnapshotSourceColumn[] = [];
+				for (const [name, entry] of joined.rawLayer.directory.entries) {
+					if (name === "shared.meta") continue;
+					const value = yield* joined.rawLayer.section(name);
+					const domain = stringColumns[name];
+					columns.push({
+						name,
+						kind: domain ? "stringIds" : entry.kind,
+						...(domain ? { domain } : undefined),
+						load: async () => value
+					});
+				}
+				return {
+					values,
+					columns,
+					key,
+					base: joined.meta.base,
+					join: yield* hydrateJoinedTarget(joined, 0, 10000),
+					census: yield* inspectJoinedTarget(joined)
+				};
+			});
 			const variants = ["Zebra", "Alpha", "Béta \ud800"].map(
 				(prefix) => `${prefix} ${occurrence.source}`
 			);
@@ -602,7 +530,7 @@ describe("columnar join", () => {
 				expect(await run(refreshJoinedTarget(input))).toMatchObject({
 					strategy: "incremental"
 				});
-				const incremental = await run(collect(true));
+				const incremental = await run(collect);
 				expect(incremental.base).toBe(base);
 				const corpus = await run(textCorpusFromPackageTextLayer(projectRoot));
 				const objectJoin = joinLocalizationTarget(corpus, currentEvidence);
@@ -614,10 +542,9 @@ describe("columnar join", () => {
 					equal: true,
 					differenceCount: 0
 				});
-				await run(expectProblemOracle(corpus, expected));
 				await run(expectFacetOracle(corpus, expected));
 				await run(refreshJoinedTarget({ ...input, force: true }));
-				const full = await run(collect());
+				const full = await run(collect);
 				expect(incremental.values).toEqual(full.values);
 				expect(incremental.census).toEqual(full.census);
 				// Restore the captured overlay after the proof so the next edit tests flattening.
@@ -912,7 +839,6 @@ describe("columnar join", () => {
 				"same_text_in_package"
 			]);
 			expect(changes.ambiguous).toBe(1);
-			await run(expectProblemOracle(corpus, expected));
 			await run(expectFacetOracle(corpus, expected));
 		});
 	}, 60000);
@@ -998,7 +924,6 @@ describe("columnar join", () => {
 						equal: true,
 						differenceCount: 0
 					});
-					await run(expectProblemOracle(corpus, expected));
 					await run(expectFacetOracle(corpus, expected));
 				}
 				expect(
@@ -1083,7 +1008,6 @@ describe("columnar join", () => {
 						equal: true,
 						differenceCount: 0
 					});
-					await run(expectProblemOracle(corpus, expected));
 					await run(expectFacetOracle(corpus, expected));
 				}
 			});

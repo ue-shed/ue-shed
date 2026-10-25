@@ -7,9 +7,11 @@ mod bounded_intern;
 pub mod contract;
 mod error;
 pub use error::{Error, ErrorCode};
+pub mod batch;
 #[cfg(feature = "benchmark-timings")]
 pub mod benchmark_timings;
 pub mod builder;
+mod cache;
 mod dependency_graph;
 pub mod dictionary;
 mod dictionary_image;
@@ -20,6 +22,7 @@ mod engine_detail;
 mod engine_evidence;
 mod engine_export;
 mod engine_focus;
+mod engine_line;
 mod engine_match;
 mod engine_page;
 mod engine_places;
@@ -32,6 +35,7 @@ mod engine_search;
 mod engine_summary;
 mod engine_text;
 mod engine_types;
+mod engine_where;
 pub mod join;
 mod join_columns;
 #[cfg(test)]
@@ -45,6 +49,10 @@ mod json_value;
 mod layer_reuse;
 mod line_break;
 pub mod rules;
+pub mod session;
+mod sink;
+mod sink_corpus;
+mod sink_lines;
 #[rustfmt::skip]
 mod line_break_tables;
 mod package_delta;

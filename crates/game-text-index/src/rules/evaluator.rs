@@ -3014,6 +3014,7 @@ impl Program {
             );
             output.masks.insert(rule.ordinal, mask.words.clone());
             evaluator.masks.insert(rule.ordinal, mask);
+            recorder.rule_done();
             for (node, last) in evaluator.node_last.iter().enumerate() {
                 if *last == execution {
                     evaluator.cheap_columns[node] = None;

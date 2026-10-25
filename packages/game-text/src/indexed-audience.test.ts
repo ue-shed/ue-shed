@@ -13,7 +13,6 @@ import {
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
 import type { LocalizationJoin } from "./localization-schema.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus, TextCorpusSearchPage, TextCorpusSearchRequest } from "./schema.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -166,13 +165,40 @@ const audienceByLine = (join: LocalizationJoin) =>
 		])
 	);
 /** What a page says about audience: its rows in order, totals, facet and groups. */
-const pageAudience = (page: TextCorpusSearchPage) => ({
+const pageAudience = (corpus: TextCorpus, page: TextCorpusSearchPage) => ({
 	total: page.total,
-	units: page.units.map((unit) => [unit.id, unit.audience]),
-	lines: page.localization?.lines.map((line) => [line.id, line.audience, line.outOfScope]),
-	audiences: page.facets?.audiences,
-	groups: page.groups
+	units: page.units.map((unit) => [keyOfUnit(corpus, unit.id), unit.audience]),
+	lines: page.localization?.lines.map((line) => [
+		line.identity?.key,
+		line.audience,
+		line.outOfScope
+	]),
+	audiences: page.facets?.audiences?.entries.map((entry) => [
+		entry.key,
+		entry.count,
+		entry.needWork,
+		entry.worst
+	]),
+	groups: page.groups?.entries.map((entry) => [
+		entry.key,
+		entry.count,
+		entry.needWork,
+		entry.worst
+	])
 });
+// Each unit's audience: Mixed has an unknown place, and unknown wins.
+const unitAudiences = {
+	Anim: "editor",
+	Cell: "player",
+	Dev: "editor",
+	EditorOnly: "editor",
+	Enum: "player",
+	Mixed: "unknown",
+	Node: "editor",
+	Palette: "editor",
+	Plain: "unknown",
+	Runtime: "player"
+} as const;
 it.live("audience is stored, filtered, faceted and grouped the same through the index", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
@@ -210,8 +236,7 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				});
 			}).pipe(Effect.provide(fixture.evidence));
 			const memoryJoin = joinLocalizationTarget(memory, evidence);
-			const lines = audienceByLine(memoryJoin);
-			expect(lines).toEqual({
+			const lines = {
 				EditorOnly: ["editor", "editor_only_data_not_gathered", "outside_target"],
 				Runtime: ["player", undefined, "not_gathered"],
 				Node: ["editor", "editor_only_data_not_gathered", "outside_target"],
@@ -225,23 +250,63 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				Mixed: ["unknown", undefined, "not_gathered"],
 				// Blank text has no visible place, so nothing says who it is for.
 				Blank: ["unknown", "editor_only_data_not_gathered", "outside_target"]
-			});
-			// The index lists lines with visible text, as the in-memory query does.
+			} as const;
+			expect(audienceByLine(memoryJoin)).toEqual(lines);
+			// The index lists lines with visible text.
 			const { Blank: _blank, ...visible } = lines;
 			expect(audienceByLine(yield* result.localizationJoin)).toEqual(visible);
-			// Search, filters, facets and groups agree without a target and with one.
-			const inMemory = textCorpusQuery(memory, undefined, memoryJoin);
+			// Search, filters, facets and groups, without a target and with one. The facet leaves
+			// out its own clause. With a target it puts the worst audiences first: the editor text
+			// the target skips needs no work.
 			const localization = { target: fixture.target.name };
-			const requests: TextCorpusSearchRequest[] = [];
+			const facets = {
+				units: [
+					["editor", 5, 0, "up_to_date"],
+					["player", 3, 0, "up_to_date"],
+					["unknown", 2, 0, "up_to_date"]
+				],
+				lines: [
+					["player", 3, 3, "not_gathered"],
+					["unknown", 2, 2, "not_gathered"],
+					["editor", 5, 1, "not_gathered"]
+				]
+			};
 			for (const scoped of [false, true])
-				for (const filter of [
-					undefined,
-					[{ field: "audience", op: "is", values: ["player"] }] as const,
-					[{ field: "audience", op: "is_not", values: ["editor"] }] as const,
-					[{ field: "audience", op: "is", values: ["editor", "unknown"] }] as const
-				])
-					for (const group of [undefined, "audience"] as const)
-						requests.push({
+				for (const [filter, keys, present] of [
+					[
+						undefined,
+						[
+							"Anim",
+							"Cell",
+							"Dev",
+							"EditorOnly",
+							"Enum",
+							"Mixed",
+							"Node",
+							"Palette",
+							"Plain",
+							"Runtime"
+						],
+						["editor", "player", "unknown"]
+					],
+					[
+						[{ field: "audience", op: "is", values: ["player"] }] as const,
+						["Cell", "Enum", "Runtime"],
+						["player"]
+					],
+					[
+						[{ field: "audience", op: "is_not", values: ["editor"] }] as const,
+						["Cell", "Enum", "Mixed", "Plain", "Runtime"],
+						["player", "unknown"]
+					],
+					[
+						[{ field: "audience", op: "is", values: ["editor", "unknown"] }] as const,
+						["Anim", "Dev", "EditorOnly", "Mixed", "Node", "Palette", "Plain"],
+						["editor", "unknown"]
+					]
+				] as const)
+					for (const group of [undefined, "audience"] as const) {
+						const request: TextCorpusSearchRequest = {
 							query: "",
 							capability: "all",
 							pageSize: 50,
@@ -249,13 +314,26 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 							...(scoped ? { localization } : undefined),
 							...(filter === undefined ? undefined : { filter }),
 							...(group === undefined ? undefined : { group })
+						};
+						const facet = scoped ? facets.lines : facets.units;
+						expect(
+							pageAudience(memory, yield* result.search(request)),
+							JSON.stringify(request)
+						).toEqual({
+							total: keys.length,
+							units: keys.map((key) => [key, unitAudiences[key]]),
+							lines: scoped
+								? keys.map((key) => [key, lines[key][0], lines[key][1]])
+								: undefined,
+							audiences: facet,
+							// Groups are the facet's entries for the audiences present.
+							groups: group
+								? facet.filter(([audience]) =>
+										present.some((item) => item === audience)
+									)
+								: undefined
 						});
-			for (const request of requests) {
-				const indexed = yield* result.search(request);
-				expect(pageAudience(indexed), JSON.stringify(request)).toEqual(
-					pageAudience(inMemory.search(request))
-				);
-			}
+					}
 			// Localization checks skip out-of-scope lines through the index as in memory.
 			const legacy = localizationQualityWorkspace(
 				undefined,
@@ -280,14 +358,13 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				"Welcome back"
 			]);
 			// Exported lines carry the same audience and scope.
-			const exported = {
+			const exported = yield* result.query.localizationLines({
 				query: "",
 				capability: "all",
 				localization,
 				filter: [{ field: "audience", op: "is_not", values: ["player"] }]
-			} as const;
-			const memoryLines = inMemory.localizationLines(exported);
-			expect(memoryLines.map((line) => line.identity?.key).sort()).toEqual([
+			});
+			const exportedKeys = [
 				"Anim",
 				"Dev",
 				"EditorOnly",
@@ -295,13 +372,11 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				"Node",
 				"Palette",
 				"Plain"
-			]);
-			expect(
-				audienceByLine({
-					...memoryJoin,
-					lines: yield* result.query.localizationLines(exported)
-				})
-			).toEqual(audienceByLine({ ...memoryJoin, lines: memoryLines }));
+			] as const;
+			expect(exported.map((line) => line.identity?.key).sort()).toEqual(exportedKeys);
+			expect(audienceByLine({ ...memoryJoin, lines: exported })).toEqual(
+				Object.fromEntries(exportedKeys.map((key) => [key, lines[key]]))
+			);
 			// The audience facet leaves out its own clause, and counts each line once.
 			const player = yield* result.search({
 				query: "",

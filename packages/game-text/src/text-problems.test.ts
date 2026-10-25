@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { joinLocalizationTarget } from "./localization.js";
-import { GameTextLocalizationError } from "./localization-schema.js";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { describe, expect } from "vitest";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
+import type { NativeTextQuery } from "./native-query-contract.js";
 import {
 	archiveEntry,
 	corpus,
@@ -10,7 +12,6 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import { TextProblem, type TextFilter } from "./schema.js";
 import { matchesTextFilter, textProblems, type TextFacts } from "./text-problems.js";
 import { textGroupOf, textGroups } from "./text-groups.js";
@@ -112,7 +113,6 @@ describe("problems in the query", () => {
 		unit("Untranslated", "Untranslated"),
 		unit("Long", "A line long enough to count as long text in review")
 	];
-	const text = corpus(units);
 	const archives = [
 		archiveEntry("Done"),
 		archiveEntry("Changed", "Earlier text"),
@@ -120,7 +120,8 @@ describe("problems in the query", () => {
 		archiveEntry("Long", "A line long enough to count as long text in review"),
 		archiveEntry("Code", "From code")
 	];
-	const gathered = evidence(
+	// Only de lacks the translation; en has every line.
+	const files = evidence(
 		[
 			manifestEntry("Done"),
 			manifestEntry("Changed", "Earlier text"),
@@ -128,36 +129,19 @@ describe("problems in the query", () => {
 			manifestEntry("Long", "A line long enough to count as long text in review"),
 			manifestEntry("Code", "From code", "Source/Game/Private/Menu.cpp(12)")
 		],
-		archives
+		archives,
+		undefined,
+		archives.map((entry) => ({ ...entry, translation: entry.source }))
 	);
-	// Only de lacks the translation; en has every line.
-	const translated = archives.map((entry) => ({ ...entry, translation: entry.source }));
-	const join = joinLocalizationTarget(
-		text,
-		{
-			...gathered,
-			cultures: gathered.cultures.map((item) =>
-				item.culture === "en" && item.archive.status === "read"
-					? {
-							...item,
-							archive: {
-								...item.archive,
-								value: { ...item.archive.value, entries: translated }
-							}
-						}
-					: item
-			)
-		},
-		target
-	);
-	const query = textCorpusQuery(text, undefined, join);
 	const request = {
 		query: "",
 		capability: "all" as const,
 		pageSize: 50,
 		localization: { target: target.name }
 	};
-	const keys = (filter: TextFilter, cultures?: readonly string[]) =>
+	const indexed = <A, E>(use: (query: NativeTextQuery) => Effect.Effect<A, E>) =>
+		withIndexedCorpus(corpus(units), { files }, (model) => use(model.query));
+	const keys = (query: NativeTextQuery, filter: TextFilter, cultures?: readonly string[]) =>
 		query
 			.search({
 				...request,
@@ -169,87 +153,126 @@ describe("problems in the query", () => {
 				},
 				filter
 			})
-			.localization?.lines.map((line) => line.identity?.key);
+			.pipe(Effect.map((page) => page.localization?.lines.map((line) => line.identity?.key)));
 
-	it("counts each problem as the total its filter returns", () => {
-		const all = query.search(request);
-		expect(all.problems).toEqual({
-			key_changed: 0,
-			conflicting_source: 0,
-			not_gathered: 1,
-			changed_since_gather: 1,
-			translation: 1,
-			finding: 0,
-			unchecked: 0,
-			up_to_date: 3
-		});
-		for (const problem of TextProblem.literals) {
-			const filtered = query.search({
-				...request,
-				filter: [{ field: "problem", op: "is", values: [problem] }]
-			});
-			expect(filtered.total).toBe(all.problems?.[problem]);
-			// The problem clause never narrows the problem counts.
-			expect(filtered.problems).toEqual(all.problems);
-		}
-		expect(keys([{ field: "problem", op: "is", values: ["not_gathered"] }])).toEqual(["New"]);
-		expect(keys([{ field: "problem", op: "is", values: ["up_to_date"] }])).toEqual([
-			"Code",
-			"Done",
-			"Long"
-		]);
-		// A finding clause names rules; without a findings layer it selects no line.
-		const rule: TextFilter = [{ field: "finding", op: "is", values: ["length_outlier"] }];
-		const named = query.search({ ...request, filter: rule });
-		expect(named.total).toBe(0);
-		expect(named.problems?.finding).toBe(0);
-		expect(keys([{ field: "problem", op: "is", values: ["finding"] }])).toEqual([]);
-	});
-
-	it("combines clauses and narrows problem counts by the other clauses", () => {
-		const filter: TextFilter = [
-			{ field: "origin", op: "is_not", values: ["cpp"] },
-			{ field: "problem", op: "is", values: ["up_to_date"] }
-		];
-		expect(keys(filter)).toEqual(["Done", "Long"]);
-		const page = query.search({ ...request, filter });
-		expect(page.problems?.up_to_date).toBe(2);
-		expect(page.problems?.not_gathered).toBe(1);
-		expect(keys([{ field: "translation", op: "is", values: ["missing"] }])).toEqual([
-			"Untranslated"
-		]);
-		expect(keys([{ field: "editing", op: "is", values: ["read_only"] }])).toEqual(["Code"]);
-	});
-
-	it("looks only at the cultures in scope", () => {
-		const translation: TextFilter = [{ field: "problem", op: "is", values: ["translation"] }];
-		expect(keys(translation, ["de"])).toEqual(["Untranslated"]);
-		expect(keys(translation, ["en"])).toEqual([]);
-		expect(keys(translation, ["en", "de"])).toEqual(["Untranslated"]);
-		const scoped = query.search({
-			...request,
-			localization: { ...request.localization, cultures: [cultureCode("en")] }
-		});
-		expect(scoped.localization?.counts.map((counts) => counts.culture)).toEqual(["en"]);
-		expect(() =>
-			query.search({
-				...request,
-				localization: { ...request.localization, cultures: [cultureCode("fr")] }
+	it.live("counts each problem as the total its filter returns", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const all = yield* query.search(request);
+				expect(all.problems).toEqual({
+					key_changed: 0,
+					conflicting_source: 0,
+					not_gathered: 1,
+					changed_since_gather: 1,
+					translation: 1,
+					finding: 0,
+					unchecked: 0,
+					up_to_date: 3
+				});
+				for (const problem of TextProblem.literals) {
+					const filtered = yield* query.search({
+						...request,
+						filter: [{ field: "problem", op: "is", values: [problem] }]
+					});
+					expect(filtered.total).toBe(all.problems?.[problem]);
+					// The problem clause never narrows the problem counts.
+					expect(filtered.problems).toEqual(all.problems);
+				}
+				expect(
+					yield* keys(query, [{ field: "problem", op: "is", values: ["not_gathered"] }])
+				).toEqual(["New"]);
+				expect(
+					yield* keys(query, [{ field: "problem", op: "is", values: ["up_to_date"] }])
+				).toEqual(["Code", "Done", "Long"]);
+				// A finding clause names rules; without a findings layer it selects no line.
+				const rule: TextFilter = [
+					{ field: "finding", op: "is", values: ["length_outlier"] }
+				];
+				const named = yield* query.search({ ...request, filter: rule });
+				expect(named.total).toBe(0);
+				expect(named.problems?.finding).toBe(0);
+				expect(
+					yield* keys(query, [{ field: "problem", op: "is", values: ["finding"] }])
+				).toEqual([]);
 			})
-		).toThrow(GameTextLocalizationError);
-	});
+		)
+	);
 
-	it("refuses translation filters without a target", () => {
-		expect(() =>
-			query.search({
-				query: "",
-				capability: "all",
-				pageSize: 50,
-				filter: [{ field: "translation", op: "is", values: ["missing"] }]
+	it.live("combines clauses and narrows problem counts by the other clauses", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const filter: TextFilter = [
+					{ field: "origin", op: "is_not", values: ["cpp"] },
+					{ field: "problem", op: "is", values: ["up_to_date"] }
+				];
+				expect(yield* keys(query, filter)).toEqual(["Done", "Long"]);
+				const page = yield* query.search({ ...request, filter });
+				expect(page.problems?.up_to_date).toBe(2);
+				expect(page.problems?.not_gathered).toBe(1);
+				expect(
+					yield* keys(query, [{ field: "translation", op: "is", values: ["missing"] }])
+				).toEqual(["Untranslated"]);
+				expect(
+					yield* keys(query, [{ field: "editing", op: "is", values: ["read_only"] }])
+				).toEqual(["Code"]);
 			})
-		).toThrow(GameTextLocalizationError);
-		const corpusOnly = query.search({ query: "", capability: "all", pageSize: 50 });
-		expect(corpusOnly.problems?.finding).toBe(0);
-		expect(corpusOnly.problems?.up_to_date).toBe(5);
-	});
+		)
+	);
+
+	it.live("looks only at the cultures in scope", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const translation: TextFilter = [
+					{ field: "problem", op: "is", values: ["translation"] }
+				];
+				expect(yield* keys(query, translation, ["de"])).toEqual(["Untranslated"]);
+				expect(yield* keys(query, translation, ["en"])).toEqual([]);
+				expect(yield* keys(query, translation, ["en", "de"])).toEqual(["Untranslated"]);
+				const scoped = yield* query.search({
+					...request,
+					localization: { ...request.localization, cultures: [cultureCode("en")] }
+				});
+				expect(scoped.localization?.counts.map((counts) => counts.culture)).toEqual(["en"]);
+				const unknown = yield* Effect.flip(
+					query.search({
+						...request,
+						localization: { ...request.localization, cultures: [cultureCode("fr")] }
+					})
+				);
+				expect(unknown).toMatchObject({
+					_tag: "GameTextIndexError",
+					cause: {
+						code: "invalid_input",
+						message: "The selected localization culture is not available."
+					}
+				});
+			})
+		)
+	);
+
+	it.live("refuses translation filters without a target", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const refused = yield* Effect.flip(
+					query.search({
+						query: "",
+						capability: "all",
+						pageSize: 50,
+						filter: [{ field: "translation", op: "is", values: ["missing"] }]
+					})
+				);
+				expect(refused).toMatchObject({
+					_tag: "GameTextIndexError",
+					cause: { code: "invalid_input" }
+				});
+				const corpusOnly = yield* query.search({
+					query: "",
+					capability: "all",
+					pageSize: 50
+				});
+				expect(corpusOnly.problems?.finding).toBe(0);
+				expect(corpusOnly.problems?.up_to_date).toBe(5);
+			})
+		)
+	);
 });

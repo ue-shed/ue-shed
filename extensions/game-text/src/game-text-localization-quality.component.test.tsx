@@ -1,8 +1,4 @@
 import { indexedTestReports } from "../../../packages/game-text/src/indexed-reports.test-support.js";
-import {
-	referenceSearchRows,
-	textCorpusQuery
-} from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
@@ -13,10 +9,11 @@ import {
 } from "@ue-shed/game-text/corpus";
 import type { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { qualityFixture } from "../../../packages/game-text/src/localization-workspace.test-support.js";
 import { cultureCode } from "../../../packages/game-text/src/localization.test-support.js";
+import { qualityFixtureText } from "./game-text-canned-search.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import type { GameTextPreferences } from "./game-text-preferences.js";
 import { GameTextRoute } from "./game-text-query-route.js";
@@ -25,7 +22,7 @@ const fixture = qualityFixture();
 function client(): GameTextClientApi {
 	let document = fixture.document;
 	let quality = fixture.workspace;
-	const text = textCorpusQuery(fixture.text, undefined, fixture.join);
+	const text = qualityFixtureText(fixture);
 	const source = () =>
 		textQualityQuery(indexedTestReports(fixture.text, fixture.files).source(document));
 	const reviewed = (next: GameTextRuleDocument) => {
@@ -43,17 +40,11 @@ function client(): GameTextClientApi {
 	};
 	return {
 		projectKey: () => Effect.succeed("quality-project"),
-		loadConfiguredProject: () =>
-			Effect.succeed({ status: "completed", summary: text.summary() }),
-		search: (request) => Effect.succeed({ status: "ready", page: text.search(request) }),
-		searchRows: (request) =>
-			Effect.succeed({ status: "ready", page: referenceSearchRows(text.search, request) }),
-		focus: (request) => {
-			const focus = text.focus(request);
-			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
-		},
-		progress: () =>
-			Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
+		loadConfiguredProject: () => Effect.succeed({ status: "completed", summary: text.summary }),
+		search: text.search,
+		searchRows: text.searchRows,
+		focus: text.focus,
+		progress: Stream.make({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
 		locateAsset: () => Effect.die("Not used"),
 		chooseQualityRules: () => reviewed(document),
 		previewQualityRules: reviewed,

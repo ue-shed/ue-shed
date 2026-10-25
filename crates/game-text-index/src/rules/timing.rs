@@ -118,7 +118,7 @@ fn timing_inputs() -> Result<(EngineQuery, Value)> {
 #[test]
 #[ignore = "Requires a retained cache, Node 26, a heavy-run lease, and --release"]
 fn persisted_default_catalogue_timing() -> Result<()> {
-    let (mut query, catalogue) = timing_inputs()?;
+    let (query, catalogue) = timing_inputs()?;
     let cancelled = AtomicBool::new(false);
     let rules = catalogue["rules"]
         .as_str()
@@ -145,7 +145,7 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     let program = super::compile(rules)?;
     let collator =
         super::HostCollator::new(catalogue["locale"].as_str().ok_or("Missing host locale.")?)?;
-    let evaluated = query.evaluate_findings(&program, &collator, &cancelled, None)?;
+    let evaluated = query.evaluate_findings(&program, &collator, &cancelled, None, None)?;
     let profile = &evaluated.profile;
     // A fresh test process: its peaks are this evaluation's.
     let memory = process_metrics::memory()?;
@@ -166,7 +166,7 @@ fn persisted_default_catalogue_timing() -> Result<()> {
 #[test]
 #[ignore = "Requires a disposable retained cache, Node 26, a heavy-run lease, and --release"]
 fn persisted_findings_query_timing() -> Result<()> {
-    let (mut query, catalogue) = timing_inputs()?;
+    let (query, catalogue) = timing_inputs()?;
     let cancelled = AtomicBool::new(false);
     let rules = catalogue["rules"]
         .as_str()
@@ -197,14 +197,21 @@ fn persisted_findings_query_timing() -> Result<()> {
     };
     for call in 0..calls {
         let started = std::time::Instant::now();
-        let reply = query.findings_query(
-            &json!({"key":key,"view":"workspace","order":order,"offset":call * size,"limit":size})
-                .to_string(),
+        let mut reply = crate::engine::Gathered::default();
+        query.findings_query(
+            json!({"key":key,"view":"workspace","order":order,"offset":call * size,"limit":size}),
             &cancelled,
+            &mut reply,
         )?;
+        let bytes = reply
+            .parts
+            .iter()
+            .chain(&reply.batches)
+            .map(Vec::len)
+            .sum::<usize>();
         println!(
             "{}",
-            json!({"call": call, "ms": started.elapsed().as_secs_f64() * 1000.0, "bytes": reply.len()})
+            json!({"call": call, "ms": started.elapsed().as_secs_f64() * 1000.0, "bytes": bytes})
         );
     }
     Ok(())

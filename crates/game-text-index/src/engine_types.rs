@@ -1,13 +1,15 @@
 //! Bounded query requests. The native boundary validates requests independently of its TS client.
+use crate::engine_where::{Facet, Node};
 use crate::join_policy::characters;
 use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+#[cfg(test)]
+use ts_rs::TS;
 
-pub const MAX_PAGE: usize = 50;
 pub const MAX_GROUPS: usize = 200;
-/// Values in one `source` clause, and the UTF-16 length of each: the bound on a stored ID, so a
-/// source group's key can always be opened again.
-pub const MAX_SOURCE_VALUES: usize = 50;
+/// The UTF-16 length of a group key: the bound on a stored ID, so a source group's key can always
+/// be opened again.
 pub const MAX_SOURCE_LENGTH: u32 = 32767;
 pub const STATES: [&str; 10] = [
     "translated",
@@ -66,14 +68,8 @@ pub const REVIEWS: [&str; 5] = [
 ];
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum Capability {
-    All,
-    SourceEditable,
-    ReadOnly,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "QueryGroupBy"))]
 #[serde(rename_all = "snake_case")]
 pub enum GroupBy {
     Problem,
@@ -91,103 +87,47 @@ pub enum GroupBy {
     AssetType,
 }
 
-/// A part of a search answer, computed only when asked for.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum Part {
-    /// The page's rows and the open groups' rows.
-    Rows,
-    /// `counts`, `total`, `problems`, `fileScope` and the localization tallies.
-    Counts,
-    Facets,
-    Groups,
-}
-
 /// The most groups one request lists the rows of, and the most rows it lists for them.
 pub const MAX_OPEN_GROUPS: usize = 20;
 pub const MAX_OPEN_GROUP_ROWS: usize = 500;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum FilterField {
-    Problem,
-    /// Rule IDs of the request's findings layer.
-    Finding,
-    /// The four facts.
-    Fact,
-    Translation,
-    Origin,
-    Folder,
-    Asset,
-    Namespace,
-    Editing,
-    Notes,
-    Audience,
-    /// A line's gathered namespace and key, written as the JSON array `[namespace, key]`.
-    TranslationKey,
-    /// Exact source text, compared as stored: case-sensitive, untrimmed, UTF-16 exact.
-    Source,
-    /// The main asset class of the packages holding a line's saved places.
-    AssetType,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum FilterOp {
-    Is,
-    IsNot,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Clause {
-    pub field: FilterField,
-    pub op: FilterOp,
-    pub values: Vec<String>,
-}
-
+/// The facets a query counts, each over the rows its own facet's marks don't narrow.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LocationScope {
-    pub kinds: Option<Vec<String>>,
-    pub path_prefix: Option<String>,
-    pub files: Option<Vec<String>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LocalizationScope {
-    pub target: String,
-    pub culture: Option<String>,
-    pub cultures: Option<Vec<String>>,
-    pub state: Option<String>,
-    pub review: Option<String>,
-    pub key_changed: Option<bool>,
-    pub search_translations: Option<bool>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "QueryFacets"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Facets {
+    /// The folders under this path.
+    #[cfg_attr(test, ts(optional))]
     pub folder: Option<String>,
+    #[cfg_attr(test, ts(optional))]
     pub assets: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
     pub origins: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
     pub audiences: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
     pub cultures: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
     pub asset_types: Option<bool>,
     /// Every rule of the findings layer, in program order, with the rows it has a finding on.
+    #[cfg_attr(test, ts(optional))]
     pub findings: Option<bool>,
     /// The rows with each fact.
+    #[cfg_attr(test, ts(optional))]
     pub facts: Option<bool>,
 }
 
 /// The findings layer a read shows, and the review acceptance whose findings it hides.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FindingsSelection {
     pub key: String,
+    #[cfg_attr(test, ts(optional))]
     pub acceptance: Option<String>,
     /// Only the layer's source rules, as Browse without a target lists them.
+    #[cfg_attr(test, ts(optional))]
     pub source_only: Option<bool>,
 }
 
@@ -203,33 +143,337 @@ impl FindingsSelection {
     }
 }
 
+/// Text a query searches for: each term in the row's source, or with `translations` and a
+/// culture scope, in its source or an in-scope culture's translation.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "QueryText"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SearchRequest {
+pub struct TextSearch {
     pub query: String,
-    pub capability: Capability,
-    pub page_size: usize,
-    pub cursor: Option<String>,
-    pub localization: Option<LocalizationScope>,
-    pub localization_cursor: Option<String>,
-    pub without_notes: Option<bool>,
-    #[serde(rename = "where")]
-    pub location: Option<LocationScope>,
-    pub filter: Option<Vec<Clause>>,
-    pub lines: Option<Vec<String>>,
-    pub group: Option<GroupBy>,
-    /// Only groups holding at least this many matching rows; requires `group`.
-    pub min_group_size: Option<usize>,
-    pub open_group: Option<String>,
-    /// Groups to list the first rows of, in this order; requires `group`, excludes `open_group`.
-    pub open_groups: Option<Vec<String>>,
-    /// How many rows each open group lists, 1–50; 50 when absent. Requires `open_groups`.
-    pub first_rows: Option<usize>,
-    pub facets: Option<Facets>,
-    /// The parts of the answer to compute; every part when absent.
-    pub parts: Option<Vec<Part>>,
-    /// The findings layer whose rules the `finding` field, problem, facet and group read.
+    #[cfg_attr(test, ts(optional))]
+    pub translations: Option<bool>,
+}
+
+/// The rows a query reads (Phase 4 §6): a target's lines, or corpus units without one.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "QuerySelection"))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Selection {
+    /// The localization target whose lines are the rows.
+    #[cfg_attr(test, ts(optional))]
+    pub target: Option<String>,
+    /// The culture the list shows: culture tests and problems read only it.
+    #[cfg_attr(test, ts(optional))]
+    pub culture: Option<String>,
+    /// The list's culture scope and the cultures its tallies list; every culture when absent.
+    #[cfg_attr(test, ts(optional))]
+    pub cultures: Option<Vec<String>>,
+    /// The findings layer the `findings` field, problems, facets and groups read.
+    #[cfg_attr(test, ts(optional))]
     pub findings: Option<FindingsSelection>,
+    /// The rows' test: the Browse shapes of the rule IR, with facet marks.
+    #[serde(rename = "where")]
+    #[cfg_attr(test, ts(optional, type = "Expr"))]
+    pub filter: Option<Value>,
+    #[cfg_attr(test, ts(optional))]
+    pub text: Option<TextSearch>,
+    /// The facets whose marks hold, as counting a facet drops them.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub dropped: Vec<Facet>,
+}
+
+/// A group's rows: the matching rows whose `by` group is `key`.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GroupKey {
+    pub by: GroupBy,
+    pub key: String,
+}
+
+/// Matching rows in display order, after a cursor.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RowsPart {
+    /// At most this many rows; over 500 makes the request bulk.
+    pub limit: u32,
+    /// The ID of the row the previous page ended with.
+    #[cfg_attr(test, ts(optional))]
+    pub after: Option<String>,
+    /// Only one group's rows.
+    #[cfg_attr(test, ts(optional))]
+    pub group: Option<GroupKey>,
+}
+
+/// Groups to list the first rows of, in this order.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenGroupsPart {
+    pub by: GroupBy,
+    pub keys: Vec<String>,
+    /// Rows each group lists. Past 500 rows in all, a group and every one after it list none.
+    pub first_rows: u32,
+}
+
+/// The matching rows counted by group.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GroupsPart {
+    pub by: GroupBy,
+    /// Only groups holding at least this many matching rows.
+    #[cfg_attr(test, ts(optional))]
+    pub min_size: Option<u32>,
+}
+
+/// The parts of a query's answer; each is computed only when asked for.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QueryParts {
+    #[cfg_attr(test, ts(optional))]
+    pub rows: Option<RowsPart>,
+    #[cfg_attr(test, ts(optional))]
+    pub open_groups: Option<OpenGroupsPart>,
+    /// `counts`, `total`, `problems`, `fileScope` and the localization tallies.
+    #[cfg_attr(test, ts(optional))]
+    pub counts: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
+    pub facets: Option<Facets>,
+    #[cfg_attr(test, ts(optional))]
+    pub groups: Option<GroupsPart>,
+    /// Files the counts report on: how many hold matching text, lie outside the project or
+    /// were not scanned.
+    #[cfg_attr(test, ts(optional))]
+    pub file_scope: Option<Vec<String>>,
+}
+
+/// An open group in a query's answer. Its rows are the `groupUnits` and `groupLines` batches
+/// naming its position.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OpenGroupAnswer {
+    pub key: String,
+    /// The ID of its last row listed, when more follow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub next_cursor: Option<String>,
+    /// Past the row budget the group, and every one after it, lists none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub rows_omitted: Option<bool>,
+}
+
+/// A query's part: the aggregates its parts asked for, the rows part's cursor and the open
+/// groups. Rows follow as `units` and `lines` batches.
+#[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct QueryAnswer {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub counts: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub total: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub problems: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub groups: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub facets: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub file_scope: Option<Value>,
+    /// The localization tallies, with a target and counts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "{ readonly [key: string]: JsonValue }"))]
+    pub localization: Option<Value>,
+    /// The ID of the rows part's last row, when more follow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub next_cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub open_groups: Option<Vec<OpenGroupAnswer>>,
+}
+
+/// Which kind of row a `line` request selects.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RowKind {
+    Line,
+    Unit,
+}
+
+/// A selected row: a localization line, or a corpus unit.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(deny_unknown_fields)]
+pub struct RowSelection {
+    pub kind: RowKind,
+    pub id: String,
+}
+
+/// A unit's places, after a cursor. With a line selected, `unit` names the unit of the line
+/// whose places to list.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlacesSection {
+    #[cfg_attr(test, ts(optional))]
+    pub unit: Option<String>,
+    pub limit: u32,
+    /// The ID of the place the previous page ended with.
+    #[cfg_attr(test, ts(optional))]
+    pub after: Option<String>,
+}
+
+/// A line's translations, locations and problems, each listed from its offset.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DetailSection {
+    #[cfg_attr(test, ts(optional))]
+    pub culture_offset: Option<u32>,
+    #[cfg_attr(test, ts(optional))]
+    pub location_offset: Option<u32>,
+    #[cfg_attr(test, ts(optional))]
+    pub po_context_offset: Option<u32>,
+}
+
+/// The rows related to the selection: same key, same text, conflict and key change.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RelatedSection {
+    /// Places each unit member lists.
+    pub limit: u32,
+}
+
+/// A `line` request (Phase 4 §6): a selected row and the sections of it a host shows, in one
+/// request.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LineRequest {
+    pub selection: RowSelection,
+    /// The localization target whose lines and translations the sections read.
+    #[cfg_attr(test, ts(optional))]
+    pub target: Option<String>,
+    /// The list's culture: the detail's problems read only it.
+    #[cfg_attr(test, ts(optional))]
+    pub culture: Option<String>,
+    /// The list's culture scope.
+    #[cfg_attr(test, ts(optional))]
+    pub cultures: Option<Vec<String>>,
+    /// The findings layer whose rules the sections list.
+    #[cfg_attr(test, ts(optional))]
+    pub findings: Option<FindingsSelection>,
+    #[cfg_attr(test, ts(optional))]
+    pub places: Option<PlacesSection>,
+    #[cfg_attr(test, ts(optional))]
+    pub detail: Option<DetailSection>,
+    #[cfg_attr(test, ts(optional))]
+    pub related: Option<RelatedSection>,
+    /// The whole line, as a `lines` batch.
+    #[cfg_attr(test, ts(optional))]
+    pub line: Option<bool>,
+}
+
+/// A `line` request's part: each section it asked for, null when the row is not there.
+#[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct LineAnswer {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub places: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub detail: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub related: Option<Value>,
+}
+
+/// The most places, related places and rows a `line` section lists at once.
+pub const MAX_SECTION_ROWS: u32 = 500;
+
+impl LineRequest {
+    pub fn validate(&self) -> Result<()> {
+        bounded(&self.selection.id, 32767, "Row ID exceeds its bound.")?;
+        require(
+            !self.selection.id.is_empty(),
+            invalid("A line request selects a row."),
+        )?;
+        if let Some(target) = &self.target {
+            require(
+                !target.is_empty() && characters(target) <= 1024,
+                invalid("A localization target is required."),
+            )?;
+        }
+        if let Some(culture) = &self.culture {
+            bounded(culture, 128, "Invalid culture scope.")?;
+        }
+        if let Some(cultures) = &self.cultures {
+            list(cultures, 256, 128, "Invalid culture scope.")?;
+        }
+        if let Some(findings) = &self.findings {
+            findings.validate()?;
+        }
+        let line = self.selection.kind == RowKind::Line;
+        let rows = |limit: u32| (1..=MAX_SECTION_ROWS).contains(&limit);
+        if let Some(places) = &self.places {
+            require(
+                rows(places.limit),
+                invalid("A section lists between 1 and 500 rows."),
+            )?;
+            require(
+                places.unit.is_some() == line && (!line || self.target.is_some()),
+                invalid("A line's places name its unit and need a target; a unit's name none."),
+            )?;
+            for id in places.unit.iter().chain(&places.after) {
+                bounded(id, 32767, "Place ID exceeds its bound.")?;
+            }
+        }
+        if self.detail.is_some() {
+            require(
+                self.target.is_some(),
+                invalid("A line's detail needs a target."),
+            )?;
+        }
+        if let Some(related) = &self.related {
+            require(
+                rows(related.limit) && (!line || self.target.is_some()),
+                invalid("Related rows of a line need a target, with 1 to 500 places."),
+            )?;
+        }
+        require(
+            self.line != Some(true) || line,
+            invalid("Only a line is read whole."),
+        )?;
+        Ok(())
+    }
+}
+
+/// A `query` request: the rows, and the parts of the answer about them.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Query {
+    pub selection: Selection,
+    pub parts: QueryParts,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -272,78 +516,42 @@ pub struct LocalizationDetailRequest {
     pub findings: Option<FindingsSelection>,
 }
 
-pub fn parse_detail_request(payload: &str) -> Result<LocalizationDetailRequest> {
-    let value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(
-            ErrorCode::InvalidInput,
-            "Invalid localization detail JSON.",
-            source,
-        )
-    })?;
-    reject_nulls(&value)?;
-    let request: LocalizationDetailRequest = serde_json::from_value(value).map_err(|source| {
-        Error::with_source(
-            ErrorCode::InvalidInput,
-            "Invalid localization detail request.",
-            source,
-        )
-    })?;
-    require(
-        matches!(request.selection.kind.as_str(), "line" | "unit"),
-        invalid("Invalid localization selection kind."),
-    )?;
-    for value in [&request.target, &request.selection.id] {
-        require(
-            !value.is_empty() && characters(value) <= 32767,
-            invalid("Invalid localization selection identity."),
-        )?;
-    }
-    if let Some(culture) = &request.culture {
-        bounded(culture, 128, "Invalid culture scope.")?;
-    }
-    if let Some(cultures) = &request.cultures {
-        list(cultures, 256, 128, "Invalid culture scope.")?;
-    }
-    if let Some(findings) = &request.findings {
-        findings.validate()?;
-    }
-    Ok(request)
-}
-
 pub fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidInput, message)
 }
 
-/// A `translation_key` clause value: the JSON array `[namespace, key]` of a gathered identity,
-/// with a nonempty key. Unreal translates text by this identity, without a package marker.
-pub fn translation_key(value: &str) -> Result<(String, String)> {
-    let malformed = || invalid("A translation key must be a JSON [namespace, key] with a key.");
-    let parsed = crate::json_value::parse_stored(value).map_err(|_| malformed())?;
-    match parsed.as_array().map(Vec::as_slice) {
-        Some(
-            [
-                serde_json::Value::String(namespace),
-                serde_json::Value::String(key),
-            ],
-        ) if !key.is_empty() => Ok((namespace.clone(), key.clone())),
-        _ => Err(malformed()),
-    }
-}
-
 /// Decode the actual JSON text before Serde, retaining every JavaScript UTF-16 code unit.
 /// Serde's ordinary String decoder intentionally rejects lone surrogates.
-pub fn parse_search_request(payload: &str) -> Result<SearchRequest> {
+pub fn parse_query(payload: &str) -> Result<Query> {
     #[cfg(feature = "benchmark-timings")]
     let _span = crate::benchmark_timings::Span::new("payloadDecodeValidate");
     let value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid search JSON.", source)
+        Error::with_source(ErrorCode::InvalidInput, "Invalid query JSON.", source)
     })?;
     reject_nulls(&value)?;
-    let request: SearchRequest = serde_json::from_value(value).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid search request.", source)
-    })?;
+    let request: Query = serde_json::from_value(value)
+        .map_err(|source| Error::with_source(ErrorCode::InvalidInput, "Invalid query.", source))?;
     request.validate()?;
     Ok(request)
+}
+
+/// A request body read WTF-8-aware, without nulls, into its type; the caller validates it.
+pub fn parse_request<T: serde::de::DeserializeOwned>(payload: &str, what: &str) -> Result<T> {
+    let value = crate::json_value::parse(payload).map_err(|source| {
+        Error::with_source(
+            ErrorCode::InvalidInput,
+            format!("Invalid {what} JSON."),
+            source,
+        )
+    })?;
+    reject_nulls(&value)?;
+    serde_json::from_value(value).map_err(|source| {
+        Error::with_source(
+            ErrorCode::InvalidInput,
+            format!("Invalid {what} request."),
+            source,
+        )
+    })
 }
 
 fn reject_nulls(value: &serde_json::Value) -> Result<()> {
@@ -379,183 +587,131 @@ fn list(values: &[String], max: usize, length: u32, message: &str) -> Result<()>
     Ok(())
 }
 
-impl SearchRequest {
+impl Selection {
+    /// The rows of a localization target.
+    pub fn lines(target: &str) -> Self {
+        Self {
+            target: Some(target.to_owned()),
+            ..Self::default()
+        }
+    }
     pub fn validate(&self) -> Result<()> {
-        require(
-            (1..=MAX_PAGE).contains(&self.page_size),
-            invalid("Query page size must be between 1 and 50."),
-        )?;
-        bounded(&self.query, 512, "Search text exceeds its bound.")?;
-        for cursor in [&self.cursor, &self.localization_cursor]
-            .into_iter()
-            .flatten()
-        {
-            bounded(cursor, 32767, "Search cursor exceeds its bound.")?;
+        if let Some(target) = &self.target {
+            require(
+                !target.is_empty() && characters(target) <= 1024,
+                invalid("A localization target is required."),
+            )?;
+        } else {
+            require(
+                self.culture.is_none() && self.cultures.is_none(),
+                invalid("A culture scope needs a target."),
+            )?;
+        }
+        if let Some(culture) = &self.culture {
+            bounded(culture, 128, "Invalid culture scope.")?;
+        }
+        if let Some(cultures) = &self.cultures {
+            list(cultures, 256, 128, "Invalid culture scope.")?;
+        }
+        if let Some(text) = &self.text {
+            bounded(&text.query, 512, "Search text exceeds its bound.")?;
         }
         if let Some(findings) = &self.findings {
             findings.validate()?;
         }
-        if let Some(location) = &self.location {
-            if let Some(kinds) = &location.kinds {
-                list(kinds, 5, 32, "Invalid origin scope.")?;
-                require(
-                    kinds.iter().all(|v| ORIGINS.contains(&v.as_str())),
-                    invalid("Unknown origin scope."),
-                )?;
-            }
-            if let Some(path) = &location.path_prefix {
-                require(!path.is_empty(), invalid("Path prefix must not be empty."))?;
-                bounded(path, 512, "Path prefix exceeds its bound.")?;
-            }
-            if let Some(files) = &location.files {
-                list(files, 5000, 1024, "Invalid changed-file scope.")?;
-            }
-        }
-        if let Some(filters) = &self.filter {
-            require(filters.len() <= 32, invalid("Too many filter clauses."))?;
-            for clause in filters {
-                let (allowed, max, length): (&[&str], usize, u32) = match clause.field {
-                    FilterField::Problem => (&PROBLEMS, PROBLEMS.len(), 64),
-                    FilterField::Finding => (&[], 256, 256),
-                    FilterField::Fact => (&FACTS, FACTS.len(), 64),
-                    FilterField::Translation => (&["missing", "to_update", "not_synced"], 3, 64),
-                    FilterField::Origin => (&ORIGINS, 5, 64),
-                    FilterField::Editing => (&["editable", "read_only"], 2, 64),
-                    FilterField::Notes => (&["missing", "present"], 2, 64),
-                    FilterField::Audience => (&AUDIENCES, 3, 64),
-                    FilterField::Folder => (&[], 50, 512),
-                    FilterField::Asset => (&[], 200, 1024),
-                    FilterField::Namespace => (&[], 50, 1024),
-                    FilterField::TranslationKey => (&[], 200, 4096),
-                    FilterField::Source => (&[], MAX_SOURCE_VALUES, MAX_SOURCE_LENGTH),
-                    FilterField::AssetType => (&[], 50, 1024),
-                };
-                list(&clause.values, max, length, "Invalid filter clause bounds.")?;
-                require(
-                    allowed.is_empty()
-                        || clause.values.iter().all(|v| allowed.contains(&v.as_str())),
-                    invalid("Unknown filter clause value."),
-                )?;
-                require(
-                    matches!(clause.field, FilterField::Namespace)
-                        || clause.values.iter().all(|v| !v.is_empty()),
-                    invalid("Filter value must not be empty."),
-                )?;
-                if clause.field == FilterField::TranslationKey {
-                    for value in &clause.values {
-                        translation_key(value)?;
-                    }
-                }
-            }
-        }
-        if let Some(lines) = &self.lines {
-            list(lines, 5000, 32767, "Invalid line selection.")?;
-        }
-        if let Some(group) = &self.open_group {
-            bounded(group, MAX_SOURCE_LENGTH, "Group key exceeds its bound.")?;
-        }
-        if let Some(groups) = &self.open_groups {
+        self.plan()?;
+        Ok(())
+    }
+    /// The `where`, parsed, with the dropped facets' marks holding.
+    pub(crate) fn plan(&self) -> Result<Option<Node>> {
+        self.filter
+            .as_ref()
+            .map(|value| Ok(Node::parse(value, self.target.is_some())?.without(&self.dropped)))
+            .transpose()
+    }
+    /// The selection with `facet`'s marks holding.
+    pub fn without(&self, facet: Facet) -> Self {
+        let mut result = self.clone();
+        result.dropped.push(facet);
+        result
+    }
+    pub fn localized(&self) -> bool {
+        self.target.is_some()
+    }
+}
+
+impl Query {
+    pub fn validate(&self) -> Result<()> {
+        self.selection.validate()?;
+        let parts = &self.parts;
+        let bounded_key =
+            |key: &str| bounded(key, MAX_SOURCE_LENGTH, "Group key exceeds its bound.");
+        if let Some(rows) = &parts.rows {
             require(
-                self.group.is_some() && self.open_group.is_none(),
-                invalid("Open groups need a group and exclude openGroup."),
+                rows.limit >= 1,
+                invalid("A rows part lists at least one row."),
             )?;
+            if let Some(after) = &rows.after {
+                bounded(after, 32767, "Search cursor exceeds its bound.")?;
+            }
+            if let Some(group) = &rows.group {
+                bounded_key(&group.key)?;
+            }
+        }
+        if let Some(open) = &parts.open_groups {
             require(
-                !groups.is_empty() && groups.len() <= MAX_OPEN_GROUPS,
+                !open.keys.is_empty() && open.keys.len() <= MAX_OPEN_GROUPS,
                 invalid("Open groups must name between 1 and 20 groups."),
             )?;
-            for group in groups {
-                bounded(group, MAX_SOURCE_LENGTH, "Group key exceeds its bound.")?;
+            for key in &open.keys {
+                bounded_key(key)?;
             }
-        }
-        if let Some(rows) = self.first_rows {
             require(
-                self.open_groups.is_some() && (1..=MAX_PAGE).contains(&rows),
-                invalid("First rows must be between 1 and 50, with open groups."),
+                (1..=MAX_OPEN_GROUP_ROWS as u32).contains(&open.first_rows),
+                invalid("Open groups list between 1 and 500 rows each."),
             )?;
         }
-        if let Some(parts) = &self.parts {
+        if let Some(groups) = &parts.groups {
             require(
-                !parts.is_empty(),
-                invalid("Parts must name at least one part."),
-            )?;
-        }
-        if let Some(size) = self.min_group_size {
-            require(
-                self.group.is_some(),
-                invalid("A minimum group size needs a group."),
-            )?;
-            require(
-                (1..=u32::MAX as usize).contains(&size),
+                groups.min_size.is_none_or(|size| size >= 1),
                 invalid("Minimum group size must be at least 1."),
             )?;
         }
-        if let Some(facets) = &self.facets
+        if let Some(files) = &parts.file_scope {
+            list(files, 5000, 1024, "Invalid changed-file scope.")?;
+        }
+        if let Some(facets) = &parts.facets
             && let Some(folder) = &facets.folder
         {
             bounded(folder, 512, "Facet folder exceeds its bound.")?;
         }
-        if let Some(scope) = &self.localization {
-            require(
-                !scope.target.is_empty(),
-                invalid("A localization target is required."),
-            )?;
-            if let Some(cultures) = &scope.cultures {
-                list(cultures, 256, 128, "Invalid culture scope.")?;
-            }
-            if let Some(state) = &scope.state {
-                require(
-                    STATES.contains(&state.as_str()),
-                    invalid("Unknown localization state."),
-                )?;
-            }
-            if let Some(review) = &scope.review {
-                require(
-                    REVIEWS.contains(&review.as_str()),
-                    invalid("Unknown review lens."),
-                )?;
-            }
-        }
         Ok(())
     }
-
-    /// The request without its `field` clauses.
-    pub fn without_filter(&self, field: FilterField) -> Self {
-        let mut result = self.clone();
-        result.filter = self.filter.as_ref().map(|clauses| {
-            clauses
-                .iter()
-                .filter(|clause| clause.field != field)
-                .cloned()
-                .collect()
-        });
-        result
+    /// The rows a query's body asks to list, as the session classes it before parsing it.
+    pub fn listed_rows(request: &Value) -> u64 {
+        let number = |pointer: &str| {
+            request
+                .pointer(pointer)
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+        };
+        let keys = request
+            .pointer("/parts/openGroups/keys")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len) as u64;
+        number("/parts/rows/limit").saturating_add(
+            number("/parts/openGroups/firstRows")
+                .saturating_mul(keys)
+                .min(MAX_OPEN_GROUP_ROWS as u64),
+        )
     }
-
-    /// Whether the answer computes `part`.
-    pub(crate) fn wants(&self, part: Part) -> bool {
-        self.parts
-            .as_ref()
-            .is_none_or(|parts| parts.contains(&part))
-    }
-}
-
-pub fn parse_focus_request(payload: &str) -> Result<FocusRequest> {
-    let value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid focus JSON.", source)
-    })?;
-    reject_nulls(&value)?;
-    let request: FocusRequest = serde_json::from_value(value).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid focus request.", source)
-    })?;
-    request.validate()?;
-    Ok(request)
 }
 
 impl FocusRequest {
     pub fn validate(&self) -> Result<()> {
         require(
-            (1..=MAX_PAGE).contains(&self.page_size),
-            invalid("Focus page size must be between 1 and 50."),
+            (1..=MAX_SECTION_ROWS as usize).contains(&self.page_size),
+            invalid("A section lists between 1 and 500 rows."),
         )?;
         bounded(&self.id, 32767, "Focus ID exceeds its bound.")?;
         if let Some(cursor) = &self.occurrence_cursor {
@@ -571,167 +727,130 @@ impl FocusRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wtf8::Wtf8Buf;
     use serde_json::json;
 
     #[test]
-    fn findings_selections_name_a_layer_and_retired_request_fields_are_rejected() -> Result<()> {
-        let request = parse_search_request(
-            r#"{"query":"","capability":"all","pageSize":1,"findings":{"key":"layer","acceptance":"review"},"filter":[{"field":"finding","op":"is","values":["custom.rule"]}]}"#,
+    fn queries_bound_their_parts_and_reject_unknown_null_and_retired_fields() -> Result<()> {
+        let request = parse_query(
+            r#"{"selection":{"target":"Game","findings":{"key":"layer","acceptance":"review"}},"parts":{"rows":{"limit":5000}}}"#,
         )?;
         assert_eq!(
-            request.findings,
+            request.selection.findings,
             Some(FindingsSelection {
                 key: "layer".into(),
                 acceptance: Some("review".into()),
                 source_only: None,
             })
         );
-        for retired in [
-            r#"{"query":"","capability":"all","pageSize":1,"lens":"long"}"#,
-            r#"{"query":"","capability":"all","pageSize":1,"counted":4}"#,
-            r#"{"query":"","capability":"all","pageSize":1,"findings":{"key":""}}"#,
-        ] {
-            assert!(parse_search_request(retired).is_err(), "{retired}");
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn detail_requests_reject_unknown_null_negative_and_invalid_selection_fields() -> Result<()> {
-        let valid =
-            r#"{"target":"Game","selection":{"kind":"line","id":"line:K"},"locationOffset":10000}"#;
-        assert_eq!(parse_detail_request(valid)?.location_offset, Some(10000));
-        for payload in [
-            r#"{"target":"Game","selection":{"kind":"sql","id":"K"}}"#,
-            r#"{"target":"Game","selection":{"kind":"unit","id":""}}"#,
-            r#"{"target":"Game","selection":{"kind":"unit","id":"K"},"cultureOffset":-1}"#,
-            r#"{"target":"Game","selection":{"kind":"line","id":"K"},"poContextOffset":null}"#,
-            r#"{"target":"Game","selection":{"kind":"line","id":"K"},"all":true}"#,
-        ] {
-            assert_eq!(
-                parse_detail_request(payload)
-                    .err()
-                    .ok_or("Expected invalid detail")?
-                    .code,
-                ErrorCode::InvalidInput
-            );
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn rejects_unknown_fields_and_unbounded_or_unknown_clauses() -> Result<()> {
-        let request = json!({"query":"", "capability":"all", "pageSize":50});
-        serde_json::from_value::<SearchRequest>(request.clone())?.validate()?;
-        for patch in [
-            json!({"pageSize":51}),
-            json!({"filter":[{"field":"translation","op":"is","values":["invented"]}]}),
-            json!({"where":{"files":[]}}),
-        ] {
-            let mut invalid = request.clone();
-            for (key, value) in patch.as_object().ok_or("object")? {
-                invalid[key] = value.clone();
-            }
-            assert_eq!(
-                serde_json::from_value::<SearchRequest>(invalid)?
-                    .validate()
-                    .err()
-                    .ok_or("expected invalid")?
-                    .code,
-                ErrorCode::InvalidInput
-            );
-        }
-        let mut unknown = request;
-        unknown["sql"] = json!("not an engine operation");
-        assert!(serde_json::from_value::<SearchRequest>(unknown).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn source_clauses_signals_and_minimum_group_sizes_are_bounded() -> Result<()> {
-        let base = json!({"query":"", "capability":"all", "pageSize":50});
-        let with = |patch: serde_json::Value| -> Result<SearchRequest> {
-            let mut request = base.clone();
-            for (key, value) in patch.as_object().ok_or("object")? {
-                request[key] = value.clone();
-            }
-            parse_search_request(&request.to_string())
-        };
         let long = "x".repeat(MAX_SOURCE_LENGTH as usize);
-        for valid in [
-            json!({"filter":[{"field":"source","op":"is","values":["Mushroom", " Mushroom ", long]}]}),
-            json!({"filter":[{"field":"fact","op":"is","values":FACTS}]}),
-            json!({"filter":[{"field":"finding","op":"is","values":["whitespace","custom.rule"]}]}),
-            json!({"group":"finding","openGroups":["whitespace"]}),
-            json!({"group":"source","minGroupSize":2,"openGroup":long}),
-            json!({"group":"asset","minGroupSize":1}),
-            json!({"group":"source","openGroups":["a","b"],"firstRows":1,"parts":["rows"]}),
-            json!({"parts":["counts","facets","groups"]}),
-        ] {
-            with(valid)?;
-        }
-        let many = (0..=MAX_SOURCE_VALUES)
-            .map(|n| n.to_string())
-            .collect::<Vec<_>>();
         let crowded = (0..=MAX_OPEN_GROUPS)
             .map(|n| n.to_string())
             .collect::<Vec<_>>();
-        for invalid in [
-            json!({"openGroups":["a"]}),
-            json!({"group":"source","openGroup":"a","openGroups":["a"]}),
-            json!({"group":"source","openGroups":[]}),
-            json!({"group":"source","openGroups":crowded}),
-            json!({"group":"source","openGroups":[long.clone() + "x"]}),
-            json!({"group":"source","openGroups":["a"],"firstRows":0}),
-            json!({"group":"source","openGroups":["a"],"firstRows":51}),
-            json!({"group":"source","firstRows":1}),
-            json!({"parts":[]}),
-            json!({"parts":["everything"]}),
-            json!({"filter":[{"field":"source","op":"is","values":[""]}]}),
-            json!({"filter":[{"field":"source","op":"is","values":[]}]}),
-            json!({"filter":[{"field":"source","op":"is","values":many}]}),
-            json!({"filter":[{"field":"source","op":"is","values":[long.clone() + "x"]}]}),
-            json!({"filter":[{"field":"fact","op":"is","values":["shared"]}]}),
-            json!({"filter":[{"field":"finding","op":"is","values":[""]}]}),
-            json!({"minGroupSize":2}),
-            json!({"group":"source","minGroupSize":0}),
-            json!({"group":"source","minGroupSize":-1}),
-            json!({"group":"source","openGroup":long.clone() + "x"}),
+        let query = |selection: serde_json::Value, parts: serde_json::Value| {
+            parse_query(&json!({"selection":selection,"parts":parts}).to_string())
+        };
+        for (selection, parts) in [
+            (json!({}), json!({"groups":{"by":"source","minSize":2}})),
+            (
+                json!({}),
+                json!({"rows":{"limit":1,"group":{"by":"source","key":long}}}),
+            ),
+            (
+                json!({}),
+                json!({"openGroups":{"by":"finding","keys":["whitespace"],"firstRows":500}}),
+            ),
+            (
+                json!({"target":"Game","culture":"de","cultures":["de","fr"]}),
+                json!({"counts":true,"fileScope":["Content/A.uasset"]}),
+            ),
+            (
+                json!({"text":{"query":"quit","translations":true}}),
+                json!({"facets":{"folder":"/Game"}}),
+            ),
+        ] {
+            query(selection, parts)?;
+        }
+        for (selection, parts) in [
+            (json!({}), json!({"rows":{"limit":0}})),
+            (
+                json!({}),
+                json!({"openGroups":{"by":"source","keys":[],"firstRows":1}}),
+            ),
+            (
+                json!({}),
+                json!({"openGroups":{"by":"source","keys":crowded,"firstRows":1}}),
+            ),
+            (
+                json!({}),
+                json!({"openGroups":{"by":"source","keys":["a"],"firstRows":501}}),
+            ),
+            (
+                json!({}),
+                json!({"openGroups":{"by":"source","keys":[long.clone() + "x"],"firstRows":1}}),
+            ),
+            (json!({}), json!({"groups":{"by":"source","minSize":0}})),
+            (json!({}), json!({"groups":{"by":"asset_type"}})),
+            (json!({}), json!({"fileScope":[]})),
+            (json!({"culture":"de"}), json!({})),
+            (json!({"findings":{"key":""}}), json!({})),
+            (json!({"text":{"query":"x".repeat(513)}}), json!({})),
+            (json!({"where":null}), json!({})),
+            (json!({"lens":"long"}), json!({})),
+            (json!({}), json!({"pageSize":50})),
         ] {
             assert_eq!(
-                with(invalid.clone())
+                query(selection.clone(), parts.clone())
+                    .err()
+                    .ok_or(format!("{selection} {parts}"))?
+                    .code,
+                ErrorCode::InvalidInput,
+                "{selection} {parts}"
+            );
+        }
+        assert_eq!(
+            Query::listed_rows(
+                &json!({"parts":{"rows":{"limit":400},"openGroups":{"keys":["a","b","c"],"firstRows":200}}})
+            ),
+            900
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn line_requests_name_the_sections_their_row_has() -> Result<()> {
+        let line = |value: serde_json::Value| -> Result<LineRequest> {
+            let request: LineRequest = parse_request(&value.to_string(), "line")?;
+            request.validate()?;
+            Ok(request)
+        };
+        for valid in [
+            json!({"selection":{"kind":"unit","id":"u"},"places":{"limit":500},"related":{"limit":1}}),
+            json!({"selection":{"kind":"line","id":"l"},"target":"Game","culture":"de",
+                "places":{"unit":"u","limit":5,"after":"p"},"detail":{"locationOffset":10000},"line":true}),
+            json!({"selection":{"kind":"unit","id":"u"},"target":"Game","detail":{}}),
+        ] {
+            line(valid)?;
+        }
+        for invalid in [
+            json!({"selection":{"kind":"sql","id":"K"}}),
+            json!({"selection":{"kind":"unit","id":""}}),
+            json!({"selection":{"kind":"unit","id":"u"},"places":{"limit":0}}),
+            json!({"selection":{"kind":"unit","id":"u"},"places":{"unit":"u","limit":1}}),
+            json!({"selection":{"kind":"line","id":"l"},"target":"Game","places":{"limit":1}}),
+            json!({"selection":{"kind":"line","id":"l"},"related":{"limit":1}}),
+            json!({"selection":{"kind":"unit","id":"u"},"detail":{}}),
+            json!({"selection":{"kind":"unit","id":"u"},"target":"Game","detail":{"cultureOffset":-1}}),
+            json!({"selection":{"kind":"unit","id":"u"},"line":true}),
+            json!({"selection":{"kind":"unit","id":"u"},"places":null}),
+            json!({"selection":{"kind":"unit","id":"u"},"all":true}),
+        ] {
+            assert_eq!(
+                line(invalid.clone())
                     .err()
                     .ok_or(format!("{invalid}"))?
                     .code,
                 ErrorCode::InvalidInput,
                 "{invalid}"
-            );
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn translation_keys_are_namespace_key_pairs_with_a_key() -> Result<()> {
-        assert_eq!(
-            translation_key(r#"["","Title"]"#)?,
-            ("".into(), "Title".into())
-        );
-        assert_eq!(
-            translation_key(r#"[ "UI" , "\ud800" ]"#)?,
-            ("UI".into(), Wtf8Buf::from_utf16(&[0xd800]).into_view())
-        );
-        for value in [
-            r#"["UI",""]"#,
-            r#"["UI"]"#,
-            r#"["UI","K",""]"#,
-            r#"{"namespace":"UI","key":"K"}"#,
-            r#"["UI",7]"#,
-            "UI,K",
-        ] {
-            assert_eq!(
-                translation_key(value).err().ok_or(value)?.code,
-                ErrorCode::InvalidInput
             );
         }
         Ok(())

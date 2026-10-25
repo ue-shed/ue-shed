@@ -1,12 +1,8 @@
-import type { TextCorpusSearchPage } from "./schema.js";
-import type { GameTextIndexError } from "./index-contract.js";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
-import { textCorpusQuery } from "./query.test-support.js";
 
 const occurrence = (key: string, source: string, property = key) => ({
 	source,
@@ -21,56 +17,58 @@ const occurrence = (key: string, source: string, property = key) => ({
 	edit_capability: "read_only" as const
 });
 
-it.live("measures the longest conflicting source across memory, index and refreshed index", () =>
+it.live("measures the longest conflicting source through the index and each refresh", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();
-		const variants = ["Halt!", "Just a traveler.", "Hit the dummy", "Come back soon."];
 		yield* Effect.gen(function* () {
 			const index = yield* GameTextIndexRefresh;
-			for (const texts of [
-				variants,
-				["A".repeat(40), "B ".repeat(20)],
-				["C".repeat(40), "D ".repeat(20)]
-			]) {
+			// The texts, the unit's sources in order, the longest text with ties broken by the
+			// earlier text, and its words.
+			for (const [texts, sources, longest, words] of [
+				[
+					["Halt!", "Just a traveler.", "Hit the dummy", "Come back soon."],
+					["Come back soon.", "Halt!", "Hit the dummy", "Just a traveler."],
+					"Just a traveler.",
+					3
+				],
+				[
+					["A".repeat(40), "B ".repeat(20)],
+					["A".repeat(40), "B ".repeat(20)],
+					"A".repeat(40),
+					1
+				],
+				[
+					["C".repeat(40), "D ".repeat(20)],
+					["C".repeat(40), "D ".repeat(20)],
+					"C".repeat(40),
+					1
+				]
+			] as const) {
 				fixture.update(texts.map((text, i) => occurrence("K", text, `Label${i}`)));
 				const indexed = yield* index.refresh(fixture.request);
-				const corpus = fixture.raw();
-				const oracle = textCorpusQuery(
-					corpus,
-					undefined,
-					joinLocalizationTarget(corpus, indexed.evidence)
-				);
-				const longest = [...texts].sort(
-					(a, b) => b.length - a.length || (a < b ? -1 : 1)
-				)[0]!;
 				for (const localization of [undefined, { target: fixture.target.name }]) {
-					const request = {
+					const page = yield* indexed.query.search({
 						query: "",
-						capability: "all" as const,
+						capability: "all",
 						pageSize: 50,
 						...(localization ? { localization } : undefined)
-					};
-					const expected = oracle.search(request);
-					for (const query of [oracle, indexed.query]) {
-						const page = yield* readPage(query.search(request));
-						expect(page.units[0]?.characterCount).toBe(longest.length);
-						expect(page.units[0]?.wordCount).toBe(longest.trim().split(/\s+/u).length);
-						expect(page.units[0]?.reviewSignals).toEqual([
-							"conflicting",
-							"evidence_only"
-						]);
-						expect(page.units).toEqual(expected.units);
-						expect(page.counts).toEqual(expected.counts);
-					}
+					});
+					expect(page.total).toBe(1);
+					expect(page.units).toHaveLength(1);
+					const unit = page.units[0]!;
+					expect(unit.id).toBe("unreal:UI:K");
+					expect(unit.characterCount).toBe(longest.length);
+					expect(unit.wordCount).toBe(words);
+					expect(unit.reviewSignals).toEqual(["conflicting", "evidence_only"]);
+					expect(unit.source).toEqual({ status: "conflicting", values: sources });
+					expect(unit.occurrenceCount).toBe(texts.length);
+					// With a target, a key with two texts cannot be checked against the gather.
+					expect(unit.problems).toEqual(
+						localization ? ["conflicting_source", "unchecked"] : ["conflicting_source"]
+					);
+					expect(page.counts).toMatchObject({ all: 1, conflicting: 1, readOnly: 1 });
 				}
 			}
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
-
-/** Accept the independent memory oracle and the asynchronous native-shaped test port. */
-function readPage(
-	page: TextCorpusSearchPage | Effect.Effect<TextCorpusSearchPage, GameTextIndexError>
-) {
-	return Effect.isEffect(page) ? page : Effect.succeed(page);
-}

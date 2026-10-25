@@ -2,14 +2,11 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { LocalizationEvidence } from "@ue-shed/localization";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import type { TextCorpusSearchPage, TextCorpusSearchRequest } from "./schema.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -137,39 +134,31 @@ describe("saved text in several packages", () => {
 							const result = yield* (yield* GameTextIndexRefresh).refresh(
 								fixture.request
 							);
-							const memory = fixture.raw();
-							const evidence = yield* Effect.gen(function* () {
-								return yield* (yield* LocalizationEvidence).read({
-									projectRoot: fixture.projectRoot,
-									target: fixture.target
-								});
-							}).pipe(Effect.provide(fixture.evidence));
-							const inMemory = textCorpusQuery(
-								memory,
-								undefined,
-								joinLocalizationTarget(memory, evidence)
-							);
 							const request: TextCorpusSearchRequest = {
 								query: "Welcome",
 								capability: "all",
 								pageSize: 50
 							};
 							const units = places(yield* result.search(request));
-							expect(units).toEqual(places(inMemory.search(request)));
-							// The three package namespaces are one key; the String Table entry
-							// keeps its own namespace.
-							expect(units.map((unit) => [unit.id, unit.places])).toEqual(
-								[
-									[`unreal:${encodeURIComponent("[Table]")}:${KEY}`, 1],
-									[`unreal::${KEY}`, 3]
-								].sort((left, right) =>
-									String(left[0]).localeCompare(String(right[0]))
-								)
-							);
-							expect(units.find((unit) => unit.places === 3)!.files).toEqual([
-								"/Game/Text/BP_Sign.Default__BP_Sign_C",
-								"/Game/Text/DT_Labels.DT_Labels",
-								"/Game/Text/WBP_Menu.WBP_Menu"
+							// The three package namespaces are one key, named by the first package
+							// read, BP_Sign; the String Table entry keeps its own namespace.
+							expect(units).toEqual([
+								{
+									id: `unreal::${KEY}`,
+									namespace: "[9999999900000000AAAAAAAABBBBBBBB]",
+									places: 3,
+									files: [
+										"/Game/Text/BP_Sign.Default__BP_Sign_C",
+										"/Game/Text/DT_Labels.DT_Labels",
+										"/Game/Text/WBP_Menu.WBP_Menu"
+									]
+								},
+								{
+									id: `unreal:${encodeURIComponent("[Table]")}:${KEY}`,
+									namespace: "[Table]",
+									places: 1,
+									files: ["/Game/Text/ST_Menu.ST_Menu"]
+								}
 							]);
 							// The line lists every saved place, though the manifest names one path.
 							const lines = yield* result.query.selectLocalizationLines(

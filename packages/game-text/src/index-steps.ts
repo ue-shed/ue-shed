@@ -51,7 +51,11 @@ import {
 	indexedLocalizationLinesRequest,
 	readIndexedLocalizationEvidence
 } from "./index-context.js";
-import { indexedLocalizationCheckReport } from "./localization-check-report.js";
+import {
+	indexedLocalizationCheckReport,
+	prepareLocalizationCheck
+} from "./localization-check-report.js";
+import type { TextCorpusReportHeader } from "./corpus-summary.js";
 import { acceptReview } from "./native-findings.js";
 import {
 	queriedLocalizationQualityWorkspace,
@@ -62,7 +66,7 @@ import { enabledLocalizationChecks } from "./localization-checks.js";
 import { localizationRuleId } from "./localization-check-catalogue.js";
 import { localizationPolicyRules } from "./localization-policy.js";
 import { customRulesOf, localizationRulesOf, sourceRulesOf } from "./game-text-rules.js";
-import { effectiveRuleDocument } from "./rules/effective.js";
+import { effectiveRuleDocument, enabledRuleDocument } from "./rules/effective.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { openJoinedTarget, readJoinedTarget } from "./joined-target-reader.js";
@@ -798,32 +802,39 @@ export const makeGameTextIndexSteps = (
 			const localizationJoin = query
 				.localizationLines(indexedLocalizationLinesRequest(joined))
 				.pipe(Effect.map((lines) => ({ ...localization, lines })));
-			// The lines a localization check reads: the localization view's, once per model.
-			const joinLineCount = yield* Effect.cached(
-				search({ ...indexedLocalizationLinesRequest(joined), pageSize: 1 }).pipe(
-					Effect.map((page) => page.total)
-				)
-			);
+			// The check report's target, corpus facts, evidence and findings.
+			const checkInput = (header: TextCorpusReportHeader) =>
+				[
+					{
+						target: joined.meta.input.target.name,
+						cultures: joined.meta.input.target.cultures
+					},
+					{ status: summary.status, ...header },
+					indexedEvidence,
+					query
+				] as const;
 			/**
-			 * Evaluates a document's findings with a check's progress: one event before the engine
-			 * runs, with nothing checked, and one after, with everything checked and the findings
-			 * of the rules `counted` selects.
+			 * Evaluates a document's findings with a check's progress, in rules: one event before
+			 * the engine runs, one as each rule finishes, and one after, with the findings of the
+			 * rules `counted` selects.
 			 */
 			const evaluateWithProgress = (
 				phase: "localization_quality" | "source_quality",
-				total: Effect.Effect<number, IndexFailure>,
 				document: RuleDocumentV4,
 				counted: (rule: GameTextContract.RuleMetadata) => boolean
 			) =>
 				Effect.gen(function* () {
 					const reportProgress = yield* GameTextIndexProgressReporter;
-					const checked = yield* total;
-					reportProgress({ phase, completed: 0, total: checked, findings: 0 });
-					const evaluation = yield* query.findingsEvaluate(document);
+					const rules = enabledRuleDocument(document).rules.length;
+					reportProgress({ phase, completed: 0, total: rules, findings: 0 });
+					const evaluation = yield* query.findingsEvaluate(document, (progress) => {
+						if (progress.unit === "rules" && progress.completed > 0)
+							reportProgress({ phase, completed: progress.completed, total: rules });
+					});
 					let findings = 0;
 					for (const { rule, count } of evaluation.counts)
 						if (counted(evaluation.rules[rule]!)) findings += count;
-					reportProgress({ phase, completed: checked, total: checked, findings });
+					reportProgress({ phase, completed: rules, total: rules, findings });
 					return evaluation;
 				});
 			return {
@@ -856,7 +867,6 @@ export const makeGameTextIndexSteps = (
 						};
 						const evaluated = yield* evaluateWithProgress(
 							"localization_quality",
-							joinLineCount,
 							effectiveRuleDocument(ruleDocument, options),
 							(rule) => rule.subject !== "unit_source"
 						);
@@ -915,7 +925,6 @@ export const makeGameTextIndexSteps = (
 					Effect.gen(function* () {
 						const evaluation = yield* evaluateWithProgress(
 							"source_quality",
-							Effect.succeed(summary.searchable.textUnits),
 							effectiveRuleDocument(ruleDocument),
 							(rule) => rule.subject === "unit_source"
 						);
@@ -935,20 +944,15 @@ export const makeGameTextIndexSteps = (
 							}
 						});
 					}),
-				// The report reads its findings in pages, never the whole corpus or join.
+				// The engine writes the report's findings; the host never reads the corpus or join.
+				prepareLocalizationCheck: (document, options) =>
+					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+						prepareLocalizationCheck(...checkInput(header), options, document)
+					),
 				localizationCheck: (document, options) =>
-					Effect.gen(function* () {
-						const header = yield* query.readCorpusReportHeader();
-						const target = joined.meta.input.target;
-						return yield* indexedLocalizationCheckReport(
-							{ target: target.name, cultures: target.cultures },
-							{ status: summary.status, ...header },
-							indexedEvidence,
-							query,
-							options,
-							document
-						);
-					})
+					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+						indexedLocalizationCheckReport(...checkInput(header), options, document)
+					)
 			};
 		}, normalizeFailure);
 		/**

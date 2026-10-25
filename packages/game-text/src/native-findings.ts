@@ -7,7 +7,6 @@ import type {
 	LocalizationCustomFinding
 } from "./localization-quality-schema.js";
 import type { TextQualityFinding } from "./quality-schema.js";
-import { snapshotCheck } from "./snapshot-format.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import type { GameTextIndexError } from "./index-error.js";
 import { completeRulesOf, ruleProblemError, type GameTextRuleDocument } from "./game-text-rules.js";
@@ -23,9 +22,7 @@ export const annotateFindingsProfile = (
 		if (!("cached" in profile)) {
 			yield* Effect.annotateCurrentSpan({
 				[`${prefix}rows_requested`]: profile.rowsRequested,
-				[`${prefix}findings`]: profile.findingsReturned,
-				[`${prefix}response_bytes`]: profile.responseBytes,
-				[`${prefix}file_fallback`]: profile.fileFallback
+				[`${prefix}findings`]: profile.findingsReturned
 			});
 			return;
 		}
@@ -93,34 +90,36 @@ export type QueriedSourceFinding = TextQualityFinding & {
 };
 export type QueriedFinding = QueriedLineFinding | QueriedSourceFinding;
 /** A `findings_query` page with its findings' places resolved. */
-export interface FindingsQueryPage extends Omit<
-	GameTextContract.FindingsPage,
-	"findings" | "places" | "profile"
-> {
+export interface FindingsQueryPage extends Omit<GameTextContract.FindingsPage, "profile"> {
 	readonly findings: readonly QueriedFinding[];
 }
-export const inflateFindingsPage = (result: GameTextContract.FindingsPage) =>
+/** A `findings_query` answer: its part, its findings, and the place sets they name by ID. */
+export interface FindingsRead {
+	readonly page: GameTextContract.FindingsPage;
+	readonly findings: ReadonlyArray<GameTextContract.JsonValue | undefined>;
+	readonly sets: ReadonlyMap<number, ReadonlyArray<GameTextContract.JsonValue>>;
+}
+export const inflateFindingsPage = ({ page, findings, sets }: FindingsRead) =>
 	Effect.sync((): FindingsQueryPage => {
-		const { findings, places, profile: _profile, ...rest } = result;
-		const byId = new Map(places.map((place) => [place.id, place.occurrences]));
+		const { profile: _profile, ...rest } = page;
 		return {
 			...rest,
-			findings: findings.map(({ places: id, ...evidence }) => {
-				const occurrences = byId.get(id);
-				snapshotCheck(
-					occurrences !== undefined,
-					"quality.findings",
-					"A finding's saved places are missing"
-				);
-				const finding = {
-					...evidence,
-					affectedOccurrences: occurrences
-				};
+			findings: findings.map((finding) => {
 				// SAFETY: the engine writes each finding in its family's host shape, with the
-				// fields its query adds; the handshake checked the shared contract.
+				// fields its query adds and `places` naming its place set; the handshake checked
+				// the shared contract.
 				// Verified by: findings-query.test.ts compares queried pages with the in-memory
 				// workspace's.
-				return finding as QueriedFinding;
+				const { places: id, ...evidence } = finding as GameTextContract.Finding;
+				const inflated = {
+					...evidence,
+					// A set with no places, such as a gathered-only line's, sends no rows.
+					affectedOccurrences: sets.get(id) ?? []
+				};
+				// SAFETY: as above; the place sets hold the affected occurrences in host shape.
+				// Verified by: findings-query.test.ts compares queried pages with the in-memory
+				// workspace's.
+				return inflated as QueriedFinding;
 			})
 		};
 	});
@@ -149,8 +148,10 @@ export const acceptReview = (
 
 /** A reader's native findings; coordinates belong to its pinned joined snapshot. */
 export interface NativeFindings {
+	/** Evaluates a document; `progress` watches the engine's stages and the rules it runs. */
 	readonly findingsEvaluate: (
-		document: RuleDocumentV4
+		document: RuleDocumentV4,
+		progress?: (progress: GameTextContract.EngineProgress) => void
 	) => Effect.Effect<GameTextContract.FindingsEvaluation, GameTextIndexError>;
 	/** Registers a review's accepted findings for a layer; reads pass the returned key. */
 	readonly findingsAccept: (
@@ -161,6 +162,14 @@ export interface NativeFindings {
 	readonly findingsQuery: (
 		request: GameTextContract.FindingsQueryRequest
 	) => Effect.Effect<FindingsQueryPage, GameTextIndexError>;
+	/**
+	 * Writes the report view's selected findings to `text` as `findingJson`, the elements of the
+	 * CLI report's `findings` array, and answers with the page's counts and what it wrote.
+	 */
+	readonly findingsWrite: (
+		request: Omit<GameTextContract.FindingsQueryRequest, "sink" | "limit">,
+		text: (chunk: Uint8Array) => Effect.Effect<void>
+	) => Effect.Effect<GameTextContract.FindingsPage, GameTextIndexError>;
 	/** The program's first problem as the engine compiles it, with the rule at fault. */
 	readonly rulesCheck: (
 		document: RuleDocumentV4

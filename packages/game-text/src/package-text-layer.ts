@@ -1,5 +1,6 @@
 import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { relative, resolve } from "node:path";
@@ -379,6 +380,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		const append = (record: PackageTextStored) =>
 			Effect.tryPromise({
 				try: async () => {
+					const startedAt = performance.now();
 					const name = shardName(packageTextShard(record.path)),
 						buffer = buffers.get(name) ?? { lines: [], bytes: 0 },
 						line = `${JSON.stringify(record)}\n`;
@@ -386,6 +388,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 					buffer.lines.push(line);
 					buffer.bytes += Buffer.byteLength(line);
 					if (buffer.bytes >= 64 * 1024) await flush(name);
+					stages.add("read_stage", performance.now() - startedAt);
 				},
 				catch: (cause) =>
 					snapshotFailure(
@@ -435,8 +438,15 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 					)
 					.pipe(
 						Stream.runForEach((event) => {
+							const startedAt = performance.now();
 							groupFiles[packageTextShard(event.path)]!.add(event.file);
-							return receive(event.path);
+							return receive(event.path).pipe(
+								Effect.ensuring(
+									Effect.sync(() =>
+										stages.add("read_receive", performance.now() - startedAt)
+									)
+								)
+							);
 						})
 					);
 		} else {

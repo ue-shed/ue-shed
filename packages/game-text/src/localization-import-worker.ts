@@ -1,5 +1,6 @@
 import { parentPort } from "node:worker_threads";
 import { mkdir } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 import { prepareColdStringRuns, type PreparedColdStrings } from "./shared-string-sort.js";
 import { Effect, Schema } from "effect";
 import { LocalizationError } from "@ue-shed/localization";
@@ -16,6 +17,7 @@ parentPort.on(
 	async (task: { request: LocalizationFileImportRequest; stagedFile: string }) => {
 		try {
 			let preparedStrings: PreparedColdStrings | undefined;
+			const started = performance.now();
 			const file = await Effect.runPromise(
 				prepareLocalizationFile(task.request, task.stagedFile, async (source) => {
 					const directory = `${task.stagedFile}.strings`;
@@ -25,7 +27,7 @@ parentPort.on(
 			);
 			parentPort!.postMessage({
 				ok: true,
-				file,
+				file: { ...file, totalMs: performance.now() - started },
 				preparedStrings
 			});
 		} catch (error) {

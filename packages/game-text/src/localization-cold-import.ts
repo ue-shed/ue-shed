@@ -19,6 +19,16 @@ import type {
 	LocalizationFileSnapshotKey
 } from "./localization-import.js";
 
+const FileStages = Schema.Struct({
+	readMs: Schema.Number,
+	hashMs: Schema.Number,
+	decodeMs: Schema.Number,
+	parseMs: Schema.Number,
+	finishMs: Schema.Number,
+	prepareMs: Schema.Number,
+	writeMs: Schema.Number,
+	cachedLookupMs: Schema.Number
+});
 const Reply = Schema.Union([
 	Schema.Struct({
 		ok: Schema.Literal(true),
@@ -28,7 +38,9 @@ const Reply = Schema.Union([
 			provenance: FileProvenance,
 			relativePath: Schema.String,
 			format: Schema.Literals(["manifest", "archive", "po"]),
-			inputBytes: Schema.Number
+			inputBytes: Schema.Number,
+			stages: Schema.optionalKey(FileStages),
+			totalMs: Schema.optionalKey(Schema.Number)
 		}),
 		preparedStrings: PreparedColdStrings
 	}),
@@ -135,6 +147,7 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 						await Promise.all(workers.map((worker) => worker.terminate()));
 						workers.length = 0;
 						const parseMs = performance.now() - started;
+						const readersStarted = performance.now();
 						for (let row = 0; row < requests.length; row++)
 							readers.push(
 								await openSnapshotFile(join(staging, `file-${row}.snapshot`))
@@ -145,7 +158,8 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 							replies,
 							workerCount,
 							memoryBudgetBytes,
-							parseMs
+							parseMs,
+							readersMs: performance.now() - readersStarted
 						};
 					} catch (cause) {
 						await Promise.all(workers.map((worker) => worker.terminate()));
@@ -194,11 +208,54 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 		const publishStarted = performance.now();
 		reportProgress({ phase: "localization_publish", completed: 0, total: 0 });
 		const records = yield* writer.publishCold(entries);
+		const publishMs = performance.now() - publishStarted;
 		const metrics = writer.metrics();
+		const workerSums: Record<string, number> = {};
+		const byFormat: Record<string, { files: number; bytes: number }> = {};
+		const slowest: { format: string; bytes: number; ms: number }[] = [];
+		for (const reply of result.replies) {
+			const format = reply.file.format;
+			const entry = (byFormat[format] ??= { files: 0, bytes: 0 });
+			entry.files++;
+			entry.bytes += reply.file.inputBytes;
+			if (reply.file.stages)
+				for (const [stage, ms] of Object.entries(reply.file.stages))
+					workerSums[stage] = (workerSums[stage] ?? 0) + ms;
+			slowest.push({
+				format,
+				bytes: reply.file.inputBytes,
+				ms: reply.file.totalMs ?? 0
+			});
+		}
+		slowest.sort((a, b) => b.ms - a.ms);
 		yield* Effect.annotateCurrentSpan({
 			"localization.import.workerCount": result.workerCount,
 			"localization.import.memoryBudgetBytes": result.memoryBudgetBytes,
 			"localization.import.parseMs": result.parseMs,
+			"localization.import.stage_ms.parse": Math.round(result.parseMs * 1000) / 1000,
+			"localization.import.stage_ms.readers": Math.round(result.readersMs * 1000) / 1000,
+			"localization.import.stage_ms.publish": Math.round(publishMs * 1000) / 1000,
+			...Object.fromEntries(
+				Object.entries(workerSums).map(([stage, ms]) => [
+					`localization.import.stage_ms.worker_${stage}`,
+					Math.round(ms * 1000) / 1000
+				])
+			),
+			...Object.fromEntries(
+				Object.entries(byFormat).flatMap(([format, entry]) => [
+					[`localization.import.files.${format}`, entry.files],
+					[`localization.import.bytes.${format}`, entry.bytes]
+				])
+			),
+			...Object.fromEntries(
+				slowest.slice(0, 3).flatMap((file, index) => [
+					[`localization.import.slowest${index + 1}.${file.format}.bytes`, file.bytes],
+					[
+						`localization.import.slowest${index + 1}.${file.format}.ms`,
+						Math.round(file.ms * 1000) / 1000
+					]
+				])
+			),
 			"localization.import.probePasses": metrics.probePasses,
 			"localization.import.segments": metrics.segments
 		});
@@ -232,7 +289,7 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 				workerCount: result.workerCount,
 				memoryBudgetBytes: result.memoryBudgetBytes,
 				parseMs: result.parseMs,
-				publishMs: performance.now() - publishStarted,
+				publishMs,
 				...metrics
 			}
 		};

@@ -213,7 +213,11 @@ export function LineProperties(props: {
 	readonly focus: TextCorpusFocus | undefined;
 	readonly detail: LocalizationFocus | undefined;
 }) {
-	const problems = () => lineProblems(props.focus, props.detail).slice(1);
+	// The banner says the worst problem and names the findings, so neither repeats here.
+	const problems = () =>
+		lineProblems(props.focus, props.detail)
+			.slice(1)
+			.filter((problem) => problem !== "finding");
 	const key = () => {
 		const identity = props.detail?.identity ?? undefined;
 		if (identity) return { namespace: identity.namespace, key: identity.key };

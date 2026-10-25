@@ -17,7 +17,8 @@
   transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
   owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
   review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
-  recorded. Phase 4 is in progress.
+  recorded. Phase 4 is complete (#170); its measurements and the owner's review are recorded.
+  Phase 4.5 (the cold scan) is in progress.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -513,6 +514,16 @@ The specification is [Game Text rule engine, Phase 4](../docs/engineering/game-t
 - Engine-side export sinks.
 - The Workbench and CLI adopt the API.
 - The CLI streams `loc check` instead of building a full report.
+
+### Phase 4.5: the cold scan
+
+The specification is [Game Text cold scan, Phase 4.5](../docs/engineering/game-text-scan-phase-4-5.md),
+from [the attribution](../docs/engineering/game-text-scan-attribution.md).
+
+- The localization import runs beside package extraction.
+- The reader's workers stage their own records; the join, package interning and localization
+  encoding run their independent work in parallel.
+- Every snapshot and exported file stays byte-identical.
 
 ### Phase 5: incremental findings
 

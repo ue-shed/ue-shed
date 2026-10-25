@@ -1,0 +1,245 @@
+{
+	"baselineCommit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+	"implementationCommit": "c58fe204",
+	"baselineBinarySha256": "65841e228d02d07eac4011eaf38d6522fcba5ed1b75da946e8f102797fb414cd",
+	"implementationBinarySha256": "cb2829bc4777bf41ccc203ddf837cbab3380ccaea79e48bb011e28746e826364",
+	"runs": [
+		{
+			"label": "base-c57",
+			"buildSeconds": 8.592775600000001,
+			"treeGiB": 0.76971435546875,
+			"extraction": {
+				"wall": 0.08606400000000003,
+				"cpu": 0.15625,
+				"cores": 1.8155093883621485,
+				"waitWall": 0.0070493,
+				"waitCpu": 0.0625,
+				"stagingWall": 0,
+				"stagingCpu": 0,
+				"serializeWall": 0,
+				"serializeCpu": 0,
+				"serializationThreads": 0
+			},
+			"readerGiB": 0.007831573486328125,
+			"sampledTreeGiB": 0.8368148803710938,
+			"stageSeconds": {
+				"packageInventory": 0.0554517,
+				"localizationParse": 1.0487,
+				"localizationPublish": 0.19427799999999998,
+				"packageRead": 5.8430765000000005,
+				"bundleVerification": 0.0617391,
+				"packagePrepare": 0,
+				"packagePublish": 0,
+				"join": 0.3857018,
+				"openAndFirstPage": 0.1008646
+			}
+		},
+		{
+			"label": "base-c58",
+			"buildSeconds": 8.3378966,
+			"treeGiB": 0.75555419921875,
+			"extraction": {
+				"wall": 0.0863727,
+				"cpu": 0.109375,
+				"cores": 1.2663144720496176,
+				"waitWall": 0.0070279,
+				"waitCpu": 0.015625,
+				"stagingWall": 0,
+				"stagingCpu": 0,
+				"serializeWall": 0,
+				"serializeCpu": 0,
+				"serializationThreads": 0
+			},
+			"readerGiB": 0.007537841796875,
+			"sampledTreeGiB": 0.8513832092285156,
+			"stageSeconds": {
+				"packageInventory": 0.052154400000000004,
+				"localizationParse": 1.043862,
+				"localizationPublish": 0.176236,
+				"packageRead": 5.740798,
+				"bundleVerification": 0.0616624,
+				"packagePrepare": 0,
+				"packagePublish": 0,
+				"join": 0.2870842,
+				"openAndFirstPage": 0.1073578
+			}
+		},
+		{
+			"label": "base-released",
+			"buildSeconds": 119.3167718,
+			"treeGiB": 4.038158416748047,
+			"extraction": {
+				"wall": 39.1910195,
+				"cpu": 214.125,
+				"cores": 5.463624134605633,
+				"waitWall": 88.06141499999984,
+				"waitCpu": 7.0625,
+				"stagingWall": 22.356613699999933,
+				"stagingCpu": 21.15625,
+				"serializeWall": 0,
+				"serializeCpu": 0,
+				"serializationThreads": 0
+			},
+			"readerGiB": 3.3896942138671875,
+			"sampledTreeGiB": 4.348320007324219,
+			"stageSeconds": {
+				"packageInventory": 9.4425952,
+				"localizationParse": 15.080298,
+				"localizationPublish": 14.160487999999999,
+				"packageRead": 39.3823104,
+				"bundleVerification": 6.0755011,
+				"packagePrepare": 5.1503000000000005,
+				"packagePublish": 9.039888999999999,
+				"join": 17.930077700000002,
+				"openAndFirstPage": 1.9363750999999998
+			}
+		},
+		{
+			"label": "base-1x",
+			"buildSeconds": 72.3547959,
+			"treeGiB": 2.564594268798828,
+			"extraction": {
+				"wall": 0,
+				"cpu": 0,
+				"cores": null,
+				"waitWall": 0,
+				"waitCpu": 0,
+				"stagingWall": 0,
+				"stagingCpu": 0,
+				"serializeWall": 0,
+				"serializeCpu": 0,
+				"serializationThreads": 0
+			},
+			"readerGiB": 0,
+			"sampledTreeGiB": 2.691326141357422,
+			"stageSeconds": {
+				"packageInventory": 0,
+				"localizationParse": 12.671711,
+				"localizationPublish": 10.169165000000001,
+				"packageRead": 10.369364,
+				"bundleVerification": 0,
+				"packagePrepare": 4.007246,
+				"packagePublish": 13.867605,
+				"join": 17.5102987,
+				"openAndFirstPage": 2.0627522000000003
+			}
+		},
+		{
+			"label": "sweep-8",
+			"buildSeconds": 112.4051929,
+			"treeGiB": 4.627445220947266,
+			"extraction": {
+				"wall": 31.7180082,
+				"cpu": 218.46875,
+				"cores": 6.887845813722944,
+				"waitWall": 0.9107795999999998,
+				"waitCpu": 0.046875,
+				"stagingWall": 0.4799504000000088,
+				"stagingCpu": 0,
+				"serializeWall": 24.696595100000014,
+				"serializeCpu": 22.84375,
+				"serializationThreads": 8
+			},
+			"readerGiB": 3.6834983825683594,
+			"sampledTreeGiB": 4.888607025146484,
+			"stageSeconds": {
+				"packageInventory": 9.454613799999999,
+				"localizationParse": 15.030952,
+				"localizationPublish": 14.064357,
+				"packageRead": 31.9247786,
+				"bundleVerification": 5.963568100000001,
+				"packagePrepare": 5.366726,
+				"packagePublish": 9.988102000000001,
+				"join": 17.5343648,
+				"openAndFirstPage": 1.950171
+			}
+		},
+		{
+			"label": "sweep-12",
+			"buildSeconds": 104.1635509,
+			"treeGiB": 5.804512023925781,
+			"extraction": {
+				"wall": 26.0873306,
+				"cpu": 231.6875,
+				"cores": 8.88122681283458,
+				"waitWall": 1.2425205000000006,
+				"waitCpu": 0.03125,
+				"stagingWall": 0.4979584000000058,
+				"stagingCpu": 0.03125,
+				"serializeWall": 26.508673200000004,
+				"serializeCpu": 22.515625,
+				"serializationThreads": 12
+			},
+			"readerGiB": 4.875,
+			"sampledTreeGiB": 5.984405517578125,
+			"stageSeconds": {
+				"packageInventory": 9.2415383,
+				"localizationParse": 15.056503000000001,
+				"localizationPublish": 13.880183,
+				"packageRead": 26.280926400000002,
+				"bundleVerification": 5.9546881,
+				"packagePrepare": 5.173386000000001,
+				"packagePublish": 8.623806,
+				"join": 16.9031566,
+				"openAndFirstPage": 1.9535645000000001
+			}
+		}
+	],
+	"stoppedRun": {
+		"label": "sweep-16",
+		"status": "stopped_at_memory_limit",
+		"peakReaderBytes": 5470322688,
+		"peakTreeBytes": 6672240640,
+		"peakReaderGiB": 5.094635009765625,
+		"peakTreeGiB": 6.214008331298828,
+		"completedExtraction": false
+	},
+	"parity": {
+		"baselineCanonical57": {
+			"packageLayersWithIdenticalStoredData": 44,
+			"identicalDictionarySegments": 15,
+			"generatedMetadataFields": ["shared.meta.file", "shared.meta.storeGeneration"]
+		},
+		"released8": {
+			"packageLayersWithIdenticalStoredData": 256,
+			"identicalDictionarySegments": 22,
+			"stagingGroups": 256,
+			"stagedRecords": 15612
+		},
+		"released12": {
+			"packageLayersWithIdenticalStoredData": 256,
+			"identicalDictionarySegments": 22,
+			"stagingGroups": 256,
+			"stagedRecords": 15612
+		},
+		"canonicalStagedRecords": {
+			"ue57": {
+				"groups": 1,
+				"records": 47,
+				"equal": true
+			},
+			"ue58": {
+				"groups": 1,
+				"records": 47,
+				"equal": true
+			}
+		}
+	},
+	"defaultWorkers": 8,
+	"defaultSelection": "pending_after_stop",
+	"verification": {
+		"rustTestsPassed": 129,
+		"rustTestsIgnored": 1,
+		"clippy": "passed --all-targets -- -D warnings",
+		"targetedVitestPassed": 30,
+		"typecheck": "passed",
+		"static": "failed at pre-existing Cargo.toml formatting; report formatting corrected",
+		"unfinished": [
+			"worker default selection",
+			"changed-reader canonical cache snapshot comparisons",
+			"changed 1x build and snapshot comparison",
+			"joined/localization/export parity",
+			"cancellation performance"
+		]
+	}
+}

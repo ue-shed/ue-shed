@@ -11,7 +11,7 @@ pub(crate) struct Arena {
     bytes: Arc<[u8]>,
 }
 impl Arena {
-    fn open(query: &mut EngineQuery, name: &str) -> Result<Self> {
+    fn open(query: &EngineQuery, name: &str) -> Result<Self> {
         let starts = query
             .reader
             .column(&format!("query.place.{name}_offsets"))?;
@@ -69,9 +69,9 @@ pub(crate) struct Prefix {
 }
 
 impl Places {
-    pub fn open(query: &mut EngineQuery) -> Result<Arc<Self>> {
-        if let Some(places) = &query.places {
-            return Ok(Arc::clone(places));
+    pub fn open(query: &EngineQuery) -> Result<Arc<Self>> {
+        if let Some(places) = query.places.get() {
+            return Ok(places);
         }
         let labels = Arena::open(query, "label")?;
         let mut label_ids = HashMap::new();
@@ -127,8 +127,7 @@ impl Places {
             folder_labels: query.reader.column("query.place.folder_labels")?,
             scanned_keys: query.reader.column("query.place.scanned_keys")?,
         });
-        query.places = Some(Arc::clone(&places));
-        Ok(places)
+        Ok(query.places.store(places))
     }
     pub fn labels(&self, values: &[String], files: bool) -> HashSet<u32> {
         values

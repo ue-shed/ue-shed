@@ -28,7 +28,7 @@ fn separator(output: &mut impl Write, first: &mut bool) -> Result<()> {
 }
 impl EngineQuery {
     pub fn export_localization_focus_to_path(
-        &mut self,
+        &self,
         payload: &str,
         path: &Path,
         cancelled: &AtomicBool,
@@ -53,7 +53,7 @@ impl EngineQuery {
         result
     }
     pub fn export_localization_to_path(
-        &mut self,
+        &self,
         request: &SearchRequest,
         path: &Path,
         include_invisible: bool,
@@ -107,7 +107,7 @@ impl EngineQuery {
         result
     }
     pub fn export_to_path(
-        &mut self,
+        &self,
         request: &SearchRequest,
         path: &Path,
         include_invisible: bool,
@@ -133,7 +133,7 @@ impl EngineQuery {
         }
         result
     }
-    fn package_coordinates(&mut self) -> Result<Vec<usize>> {
+    fn package_coordinates(&self) -> Result<Vec<usize>> {
         let mut starts = vec![0usize];
         for shard in 0..self.package_count() {
             let length = self.package_column(shard, "package.status")?.len();
@@ -148,7 +148,7 @@ impl EngineQuery {
         }
         Ok(starts)
     }
-    pub(crate) fn package_file(&mut self, shard: usize, row: usize) -> Result<String> {
+    pub(crate) fn package_file(&self, shard: usize, row: usize) -> Result<String> {
         let paths = self.package_column(shard, "package.path")?;
         let id = *paths.get(row).ok_or("Package row outside paths.")?;
         let path = self.reader.string(id)?;
@@ -158,7 +158,7 @@ impl EngineQuery {
         Ok(crate::join_policy::relative_package(project, &path))
     }
     fn write_corpus(
-        &mut self,
+        &self,
         request: &SearchRequest,
         output: &mut impl Write,
         include_invisible: bool,
@@ -285,15 +285,11 @@ impl EngineQuery {
 
     /// Package coverage, excluded packages last, and diagnostics, failures first: the corpus's
     /// package lists in export order. A reader's generation never changes, so they are read once.
-    fn package_lists(&mut self, cancelled: &AtomicBool) -> Result<Arc<(Vec<Value>, Vec<Value>)>> {
-        if let Some(lists) = &self.package_lists {
-            return Ok(Arc::clone(lists));
-        }
-        let lists = Arc::new(self.read_package_lists(cancelled)?);
-        self.package_lists = Some(Arc::clone(&lists));
-        Ok(lists)
+    fn package_lists(&self, cancelled: &AtomicBool) -> Result<Arc<(Vec<Value>, Vec<Value>)>> {
+        self.package_lists
+            .get_or_try(|| Ok(Arc::new(self.read_package_lists(cancelled)?)))
     }
-    fn read_package_lists(&mut self, cancelled: &AtomicBool) -> Result<(Vec<Value>, Vec<Value>)> {
+    fn read_package_lists(&self, cancelled: &AtomicBool) -> Result<(Vec<Value>, Vec<Value>)> {
         let order = self.reader.column("query.package.order")?;
         let starts = self.package_coordinates()?;
         let locate = |global: u32| -> Result<(usize, usize)> {
@@ -383,11 +379,7 @@ impl EngineQuery {
         Ok((coverage, diagnostics))
     }
     /// The corpus without its units: status, coverage, package coverage and diagnostics.
-    pub fn export_corpus_header_to_path(
-        &mut self,
-        path: &Path,
-        cancelled: &AtomicBool,
-    ) -> Result<u64> {
+    pub fn export_corpus_header_to_path(&self, path: &Path, cancelled: &AtomicBool) -> Result<u64> {
         let summary = self.summary(cancelled)?;
         let lists = self.package_lists(cancelled)?;
         let (coverage, diagnostics) = (&lists.0, &lists.1);
@@ -411,11 +403,7 @@ impl EngineQuery {
     /// The corpus header as a report shows it: coverage, the count of every diagnostic code and
     /// package state, and the first `preview` diagnostics and incomplete packages. The whole
     /// header lists every package: 67 MB for a project of 166,699 packages.
-    pub fn corpus_report_header(
-        &mut self,
-        preview: usize,
-        cancelled: &AtomicBool,
-    ) -> Result<Value> {
+    pub fn corpus_report_header(&self, preview: usize, cancelled: &AtomicBool) -> Result<Value> {
         let summary = self.summary(cancelled)?;
         let lists = self.package_lists(cancelled)?;
         let (coverage, diagnostics) = (&lists.0, &lists.1);
@@ -470,10 +458,10 @@ impl EngineQuery {
     /// `readCorpus` returns, encoded with its schema's fields, object keys in code unit order
     /// and strings escaped as JSON.stringify escapes them. Equal corpora have equal fingerprints
     /// on every machine; it is a baseline's corpus generation.
-    pub fn corpus_fingerprint(&mut self, cancelled: &AtomicBool) -> Result<String> {
+    pub fn corpus_fingerprint(&self, cancelled: &AtomicBool) -> Result<String> {
         use sha2::Digest;
-        if let Some(fingerprint) = &self.fingerprint {
-            return Ok(fingerprint.clone());
+        if let Some(fingerprint) = self.fingerprint.get() {
+            return Ok(fingerprint);
         }
         let summary = self.summary(cancelled)?;
         let lists = self.package_lists(cancelled)?;
@@ -553,8 +541,7 @@ impl EngineQuery {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-        self.fingerprint = Some(fingerprint.clone());
-        Ok(fingerprint)
+        Ok(self.fingerprint.store(fingerprint))
     }
 }
 

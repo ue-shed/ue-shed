@@ -233,9 +233,9 @@ fn id_lanes(id: &str) -> Option<(bool, u32, u32)> {
 
 impl EngineQuery {
     /// Each line's rows by (namespace, key) string IDs, built once per reader.
-    fn identity_lines(&mut self) -> Result<crate::engine_query::IdentityLines> {
-        if let Some(lines) = &self.identity_lines {
-            return Ok(Arc::clone(lines));
+    fn identity_lines(&self) -> Result<crate::engine_query::IdentityLines> {
+        if let Some(lines) = self.identity_lines.get() {
+            return Ok(lines);
         }
         let namespaces = self.reader.column("line.namespace")?;
         let keys = self.reader.column("line.key")?;
@@ -246,13 +246,11 @@ impl EngineQuery {
                 .or_default()
                 .push(u32::try_from(row)?);
         }
-        let lines = Arc::new(lines);
-        self.identity_lines = Some(Arc::clone(&lines));
-        Ok(lines)
+        Ok(self.identity_lines.store(Arc::new(lines)))
     }
 
     pub fn findings_accept(
-        &mut self,
+        &self,
         request: serde_json::Value,
         cancelled: &AtomicBool,
     ) -> Result<String> {
@@ -263,14 +261,7 @@ impl EngineQuery {
             request.accepted.len() <= MAX_ACCEPTED,
             invalid("At most 5000 accepted findings may be sent at once."),
         )?;
-        let layer = match self.findings.remove(&request.key) {
-            Some(layer) => layer,
-            None => {
-                FindingsLayer::open(&self.configuration, &request.key, &self.reader.joined_key)?
-            }
-        };
-        let collation = layer.metadata.collation.clone();
-        self.findings.insert(request.key.clone(), layer);
+        let collation = self.layer(&request.key)?.metadata.collation.clone();
         let mut entries = match &request.previous {
             Some(previous) => {
                 let previous = self
@@ -349,7 +340,7 @@ impl EngineQuery {
                 .as_bytes()
             )
         );
-        self.acceptances.insert(
+        self.acceptances.store(
             key.clone(),
             Arc::new(Acceptance {
                 layer: request.key,
@@ -360,7 +351,7 @@ impl EngineQuery {
     }
 
     pub fn findings_query(
-        &mut self,
+        &self,
         request: serde_json::Value,
         cancelled: &AtomicBool,
     ) -> Result<String> {
@@ -378,11 +369,10 @@ impl EngineQuery {
         let key = request.key.clone();
         let acceptance = match &request.acceptance {
             Some(name) => {
-                let acceptance = Arc::clone(
-                    self.acceptances
-                        .get(name)
-                        .ok_or_else(|| invalid("The acceptance is not open."))?,
-                );
+                let acceptance = self
+                    .acceptances
+                    .get(name)
+                    .ok_or_else(|| invalid("The acceptance is not open."))?;
                 require(
                     acceptance.layer == key,
                     invalid("The acceptance belongs to other findings."),
@@ -424,7 +414,7 @@ struct Columns {
     id1: Vec<Arc<[u32]>>,
 }
 
-fn columns(layer: &mut FindingsLayer) -> Result<Columns> {
+fn columns(layer: &FindingsLayer) -> Result<Columns> {
     let mut bases = vec![0u32];
     let mut id0 = Vec::new();
     let mut id1 = Vec::new();
@@ -474,8 +464,8 @@ impl Columns {
 }
 
 fn run_query(
-    query: &mut EngineQuery,
-    layer: &mut FindingsLayer,
+    query: &EngineQuery,
+    layer: &FindingsLayer,
     request: &QueryRequest,
     acceptance: Option<&Acceptance>,
     cancelled: &AtomicBool,

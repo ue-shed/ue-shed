@@ -1,4 +1,5 @@
 //! Read-only pinned native query view. No writer lease or JavaScript column reconstruction.
+use crate::cache::{Lock, Once};
 use crate::dictionary_image::{self, SegmentImage, SegmentKey};
 use crate::snapshot::{Reader, integers};
 use crate::store::{Configuration, decode_ids, open_root, section};
@@ -7,7 +8,7 @@ use crate::{Error, ErrorCode, Result, require};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 const MAX_PATCH_ROWS: usize = 8192;
 
@@ -24,12 +25,12 @@ struct Segment {
     offsets: Vec<u32>,
     frames: Vec<u32>,
     /// The segment's strings for random access, built on the reader's first string lookup.
-    image: Option<Arc<SegmentImage>>,
+    image: OnceLock<Arc<SegmentImage>>,
 }
 
 impl Segment {
     fn image(&self) -> Result<&SegmentImage> {
-        Ok(self.image.as_ref().ok_or("Dictionary image is absent.")?)
+        Ok(self.image.get().ok_or("Dictionary image is absent.")?)
     }
 }
 
@@ -65,18 +66,22 @@ struct ScopedColumns {
 }
 /// Every input is selected from the same immutable joined metadata and held open until drop.
 /// Writers may publish or compact concurrently without changing this reader's results.
+/// Decoded columns by input layer key and name; the joined view's own columns use an empty key.
+type Columns = HashMap<(String, String), Arc<[u32]>>;
+
+/// Concurrent requests share one reader: its inputs are immutable and its caches are locked.
 pub struct EngineReader {
-    evaluation: Option<ScopedColumns>,
+    evaluation: Lock<Option<ScopedColumns>>,
     pub generation: String,
     pub joined_key: String,
     pub meta: Value,
     base: String,
     layers: HashMap<String, Layer>,
     segments: Vec<Segment>,
-    columns: HashMap<(String, String), Arc<[u32]>>,
-    byte_columns: HashMap<String, Arc<[u8]>>,
-    imaged: bool,
-    empty_ids: Option<Arc<BTreeSet<u32>>>,
+    columns: Lock<Columns>,
+    byte_columns: Lock<HashMap<String, Arc<[u8]>>>,
+    imaged: OnceLock<()>,
+    empty_ids: Once<Arc<BTreeSet<u32>>>,
 }
 
 fn text(value: &Value, name: &str) -> Result<String> {
@@ -250,21 +255,21 @@ impl EngineReader {
                 reader,
                 offsets,
                 frames,
-                image: None,
+                image: OnceLock::new(),
             });
         }
         Ok(Self {
-            evaluation: None,
+            evaluation: Lock::default(),
             generation,
             joined_key,
             meta,
             base,
             layers,
             segments,
-            columns: HashMap::new(),
-            byte_columns: HashMap::new(),
-            imaged: false,
-            empty_ids: None,
+            columns: Lock::default(),
+            byte_columns: Lock::default(),
+            imaged: OnceLock::new(),
+            empty_ids: Once::default(),
         })
     }
 
@@ -279,53 +284,74 @@ impl EngineReader {
         let bytes = |bytes: &HashMap<String, Arc<[u8]>>| {
             bytes.values().map(|value| value.len()).sum::<usize>()
         };
-        columns(&self.columns)
-            + bytes(&self.byte_columns)
+        columns(&self.columns.lock())
+            + bytes(&self.byte_columns.lock())
             + self
                 .segments
                 .iter()
-                .filter_map(|segment| segment.image.as_ref())
+                .filter_map(|segment| segment.image.get())
                 .map(|image| image.heap_bytes())
                 .sum::<usize>()
             + self
                 .evaluation
+                .lock()
                 .as_ref()
                 .map_or(0, |scope| columns(&scope.columns) + bytes(&scope.bytes))
     }
-    pub(crate) fn begin_evaluation(&mut self) -> Result<()> {
-        require(self.evaluation.is_none(), "Nested rule column scope.")?;
-        self.evaluation = Some(ScopedColumns::default());
+    /// Columns loaded until `end_evaluation` belong to the evaluation and are dropped with it.
+    /// The caller holds the reader's evaluation lock, so one evaluation scopes columns at a time.
+    /// Other requests' loads meanwhile go to the scope too; dropping them only costs a reload.
+    pub(crate) fn begin_evaluation(&self) -> Result<()> {
+        let mut scope = self.evaluation.lock();
+        require(scope.is_none(), "Nested rule column scope.")?;
+        *scope = Some(ScopedColumns::default());
         Ok(())
     }
-    pub(crate) fn release_evaluation_columns(&mut self) {
-        if let Some(scope) = &mut self.evaluation {
+    pub(crate) fn release_evaluation_columns(&self) {
+        if let Some(scope) = &mut *self.evaluation.lock() {
             *scope = ScopedColumns::default();
         }
     }
-    pub(crate) fn end_evaluation(&mut self) {
-        self.evaluation = None;
+    pub(crate) fn end_evaluation(&self) {
+        *self.evaluation.lock() = None;
     }
-    fn raw_columns(&mut self) -> &mut HashMap<(String, String), Arc<[u32]>> {
-        match &mut self.evaluation {
-            Some(scope) => &mut scope.columns,
-            None => &mut self.columns,
+    fn cached_column(&self, key: &(String, String)) -> Option<Arc<[u32]>> {
+        if let Some(values) = self.columns.lock().get(key) {
+            return Some(Arc::clone(values));
         }
+        let scope = self.evaluation.lock();
+        scope.as_ref()?.columns.get(key).cloned()
     }
-    fn raw_bytes(&mut self) -> &mut HashMap<String, Arc<[u8]>> {
-        match &mut self.evaluation {
-            Some(scope) => &mut scope.bytes,
-            None => &mut self.byte_columns,
+    /// Keeps a loaded column in the evaluation's scope while one runs, else in the reader's cache.
+    fn store_column(&self, key: (String, String), values: &Arc<[u32]>) {
+        if let Some(scope) = &mut *self.evaluation.lock() {
+            scope.columns.insert(key, Arc::clone(values));
+            return;
         }
+        self.columns.lock().insert(key, Arc::clone(values));
     }
-    pub fn layer_column(&mut self, key: &str, name: &str) -> Result<Arc<[u32]>> {
+    fn cached_bytes(&self, key: &str) -> Option<Arc<[u8]>> {
+        if let Some(values) = self.byte_columns.lock().get(key) {
+            return Some(Arc::clone(values));
+        }
+        let scope = self.evaluation.lock();
+        scope.as_ref()?.bytes.get(key).cloned()
+    }
+    fn store_bytes(&self, key: &str, values: &Arc<[u8]>) {
+        if let Some(scope) = &mut *self.evaluation.lock() {
+            scope.bytes.insert(key.to_owned(), Arc::clone(values));
+            return;
+        }
+        self.byte_columns
+            .lock()
+            .insert(key.to_owned(), Arc::clone(values));
+    }
+    pub fn layer_column(&self, key: &str, name: &str) -> Result<Arc<[u32]>> {
         let cache_key = (key.to_owned(), name.to_owned());
-        if let Some(values) = self.raw_columns().get(&cache_key) {
-            return Ok(Arc::clone(values));
+        if let Some(values) = self.cached_column(&cache_key) {
+            return Ok(values);
         }
-        let layer = self
-            .layers
-            .get_mut(key)
-            .ok_or("Query input was not pinned.")?;
+        let layer = self.layers.get(key).ok_or("Query input was not pinned.")?;
         let bytes = section(&layer.reader, name)?;
         let values: Arc<[u32]> = if layer.record["stringColumns"].get(name).is_some() {
             decode_ids(&bytes, layer.record["idEncoding"] == "delta32")?
@@ -333,11 +359,11 @@ impl EngineReader {
             integers(&bytes)?
         }
         .into();
-        self.raw_columns().insert(cache_key, Arc::clone(&values));
+        self.store_column(cache_key, &values);
         Ok(values)
     }
 
-    pub fn input_column(&mut self, name: &str, field: &str) -> Result<Arc<[u32]>> {
+    pub fn input_column(&self, name: &str, field: &str) -> Result<Arc<[u32]>> {
         let key = self.meta["dependencies"][name]
             .as_str()
             .ok_or("Joined input dependency is absent.")?
@@ -345,14 +371,11 @@ impl EngineReader {
         self.layer_column(&key, field)
     }
 
-    pub fn input_metadata(&mut self, name: &str, section_name: &str) -> Result<Value> {
+    pub fn input_metadata(&self, name: &str, section_name: &str) -> Result<Value> {
         let key = self.meta["dependencies"][name]
             .as_str()
             .ok_or("Joined input dependency is absent.")?;
-        let layer = self
-            .layers
-            .get_mut(key)
-            .ok_or("Query input was not pinned.")?;
+        let layer = self.layers.get(key).ok_or("Query input was not pinned.")?;
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("inputMetadata");
         parse(&section(&layer.reader, section_name)?)
@@ -360,9 +383,9 @@ impl EngineReader {
 
     /// Packed byte arenas use numeric physical sections. Read them directly so native query
     /// opens do not retain both a decoded u32 copy and a byte copy of every identity/source arena.
-    pub fn bytes(&mut self, name: &str) -> Result<Arc<[u8]>> {
-        if let Some(value) = self.raw_bytes().get(name) {
-            return Ok(Arc::clone(value));
+    pub fn bytes(&self, name: &str) -> Result<Arc<[u8]>> {
+        if let Some(value) = self.cached_bytes(name) {
+            return Ok(value);
         }
         require(
             self.meta["patches"].get(name).is_none(),
@@ -388,7 +411,7 @@ impl EngineReader {
         };
         let layer = self
             .layers
-            .get_mut(&self.base)
+            .get(&self.base)
             .ok_or("Query base was not pinned.")?;
         let mut bytes = Vec::new();
         for field in fields {
@@ -399,22 +422,22 @@ impl EngineReader {
             bytes.extend_from_slice(&section(&layer.reader, &field)?);
         }
         let bytes: Arc<[u8]> = bytes.into();
-        self.raw_bytes().insert(name.into(), Arc::clone(&bytes));
+        self.store_bytes(name, &bytes);
         Ok(bytes)
     }
 
     /// Read logical columns: immutable full-build columns plus one flat bounded overlay.
-    pub fn column(&mut self, name: &str) -> Result<Arc<[u32]>> {
+    pub fn column(&self, name: &str) -> Result<Arc<[u32]>> {
         let cache_key = (String::new(), name.to_owned());
-        if let Some(values) = self.raw_columns().get(&cache_key) {
-            return Ok(Arc::clone(values));
+        if let Some(values) = self.cached_column(&cache_key) {
+            return Ok(values);
         }
         if let Some(kind) = self.source_patch_kind(name) {
             return self.source_patch(&kind, name);
         }
         let original = self.original_column(name)?;
         if self.meta["patches"][name].is_null() {
-            self.raw_columns().insert(cache_key, Arc::clone(&original));
+            self.store_column(cache_key, &original);
             return Ok(original);
         }
         let mut values = original.to_vec();
@@ -441,11 +464,11 @@ impl EngineReader {
             }
         }
         let values: Arc<[u32]> = values.into();
-        self.raw_columns().insert(cache_key, Arc::clone(&values));
+        self.store_column(cache_key, &values);
         Ok(values)
     }
 
-    fn original_column(&mut self, name: &str) -> Result<Arc<[u32]>> {
+    fn original_column(&self, name: &str) -> Result<Arc<[u32]>> {
         let base = self.base.clone();
         if let Some(chunks) = self.meta["chunks"][name].as_array() {
             let chunks = chunks
@@ -478,7 +501,7 @@ impl EngineReader {
             .map(str::to_owned)
     }
 
-    fn source_patch(&mut self, kind: &str, name: &str) -> Result<Arc<[u32]>> {
+    fn source_patch(&self, kind: &str, name: &str) -> Result<Arc<[u32]>> {
         let key = self.joined_key.clone();
         let patch = self.meta["sourcePatches"][kind].clone();
         let rows = self.layer_column(&key, &text(&patch, "rows")?)?;
@@ -500,16 +523,14 @@ impl EngineReader {
             ("source_end", out_ends),
             ("sources", out_values),
         ] {
-            self.columns
-                .insert((String::new(), format!("{prefix}{field}")), values.into());
+            let values: Arc<[u32]> = values.into();
+            self.store_column((String::new(), format!("{prefix}{field}")), &values);
         }
-        self.columns
-            .get(&(String::new(), name.to_owned()))
-            .cloned()
+        self.cached_column(&(String::new(), name.to_owned()))
             .ok_or_else(|| "Source patch field is absent.".into())
     }
 
-    pub fn value(&mut self, name: &str, row: usize) -> Result<u32> {
+    pub fn value(&self, name: &str, row: usize) -> Result<u32> {
         self.column(name)?
             .get(row)
             .copied()
@@ -532,19 +553,21 @@ impl EngineReader {
 
     /// Images every segment for random access, building the missing images in parallel. A
     /// segment file never changes, so an image another reader built for it is reused.
-    fn image_segments(&mut self) -> Result<()> {
-        if self.imaged {
+    fn image_segments(&self) -> Result<()> {
+        if self.imaged.get().is_some() {
             return Ok(());
         }
         use rayon::prelude::*;
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("dictionaryImages");
-        for segment in &mut self.segments {
-            segment.image = dictionary_image::shared(&segment.key);
+        for segment in &self.segments {
+            if let Some(image) = dictionary_image::shared(&segment.key) {
+                let _ = segment.image.set(image);
+            }
         }
         self.segments
-            .par_iter_mut()
-            .filter(|segment| segment.image.is_none())
+            .par_iter()
+            .filter(|segment| segment.image.get().is_none())
             .try_for_each(|segment| -> Result<()> {
                 let image = Arc::new(SegmentImage::build(
                     &segment.reader,
@@ -553,23 +576,23 @@ impl EngineReader {
                     segment.count,
                 )?);
                 dictionary_image::publish(segment.key.clone(), &image);
-                segment.image = Some(image);
+                let _ = segment.image.set(image);
                 Ok(())
             })?;
-        self.imaged = true;
+        let _ = self.imaged.set(());
         Ok(())
     }
 
     /// One string, decoded alone from its segment's image. All dictionary IO uses pinned file
     /// descriptors, even after compaction unlinks old generation filenames.
-    pub fn string(&mut self, id: u32) -> Result<String> {
+    pub fn string(&self, id: u32) -> Result<String> {
         self.image_segments()?;
         imaged_string(&self.segments, id)
     }
 
     /// The global ID of a string equal to `value`, comparing its exact WTF-8 bytes. Each
     /// segment is sorted, so this is a binary search of each segment's image.
-    pub fn find_string(&mut self, value: &str) -> Result<Option<u32>> {
+    pub fn find_string(&self, value: &str) -> Result<Option<u32>> {
         self.image_segments()?;
         let wanted = Wtf8Buf::from_view(value).into_bytes();
         for segment in &self.segments {
@@ -580,12 +603,12 @@ impl EngineReader {
         Ok(None)
     }
 
-    pub fn strings(&mut self, ids: &[u32]) -> Result<Vec<String>> {
+    pub fn strings(&self, ids: &[u32]) -> Result<Vec<String>> {
         ids.iter().map(|id| self.string(*id)).collect()
     }
 
     /// The strings of many IDs, in their order, decoded in parallel.
-    pub fn strings_batch(&mut self, ids: &[u32]) -> Result<Vec<String>> {
+    pub fn strings_batch(&self, ids: &[u32]) -> Result<Vec<String>> {
         use rayon::prelude::*;
         self.image_segments()?;
         let segments = &self.segments;
@@ -594,9 +617,9 @@ impl EngineReader {
             .collect()
     }
 
-    pub(crate) fn empty_string_ids(&mut self) -> Result<Arc<BTreeSet<u32>>> {
-        if let Some(ids) = &self.empty_ids {
-            return Ok(Arc::clone(ids));
+    pub(crate) fn empty_string_ids(&self) -> Result<Arc<BTreeSet<u32>>> {
+        if let Some(ids) = self.empty_ids.get() {
+            return Ok(ids);
         }
         // Each immutable segment is sorted by WTF-8 bytes. If it contains an empty string,
         // that string is first in the segment, at its own append-history-dependent global ID.
@@ -612,9 +635,7 @@ impl EngineReader {
                 ids.insert(start);
             }
         }
-        let ids = Arc::new(ids);
-        self.empty_ids = Some(Arc::clone(&ids));
-        Ok(ids)
+        Ok(self.empty_ids.store(Arc::new(ids)))
     }
 
     pub fn dictionary_count(&self) -> Result<usize> {
@@ -681,13 +702,13 @@ mod tests {
         let config = configuration();
         let (store, ids) = fixture(&config)?;
         drop(store);
-        let mut reader = EngineReader::open(&config, Some("joined-native-v1:base"))?;
-        assert!(reader.columns.is_empty());
+        let reader = EngineReader::open(&config, Some("joined-native-v1:base"))?;
+        assert!(reader.columns.lock().is_empty());
         assert!(
             reader
                 .segments
                 .iter()
-                .all(|segment| segment.image.is_none())
+                .all(|segment| segment.image.get().is_none())
         );
         assert_eq!(&*reader.column("line.source")?, &ids);
         assert_eq!(reader.string(ids[0])?, "First source");
@@ -711,7 +732,7 @@ mod tests {
         let empty = store.intern("identity", &[String::new()])?[0];
         assert_ne!(empty, 0);
         store.publish_root()?;
-        let mut reader = EngineReader::open(&config, None)?;
+        let reader = EngineReader::open(&config, None)?;
         assert!(!reader.string(0)?.is_empty());
         assert_eq!(&*reader.empty_string_ids()?, &BTreeSet::from([empty]));
         assert_eq!(reader.string(empty)?, "");
@@ -743,7 +764,7 @@ mod tests {
         let ids = store.intern_bytes("source", &bytes)?;
         store.publish_root()?;
         drop(store);
-        let mut reader = EngineReader::open(&config, None)?;
+        let reader = EngineReader::open(&config, None)?;
         for (value, id) in values.iter().zip(&ids) {
             assert_eq!(reader.find_string(value)?, Some(*id), "{value:?}");
         }
@@ -765,7 +786,7 @@ mod tests {
     {
         let config = configuration();
         let (mut store, ids) = fixture(&config)?;
-        let mut reader = EngineReader::open(&config, None)?;
+        let reader = EngineReader::open(&config, None)?;
         let metadata = json!({"version":3,"generation":store.root["generation"],"dependencies":{},"aliases":{"line.source":"sources"},"count":1});
         store.publish_global(
             "joined",
@@ -813,7 +834,7 @@ mod tests {
             &BTreeMap::from([("joined-base".into(), "joined-native-v1:base".into())]),
             &[],
         )?;
-        let mut reader = EngineReader::open(&config, None)?;
+        let reader = EngineReader::open(&config, None)?;
         assert_eq!(&*reader.column("line.source")?, &[ids[0], ids[0]]);
         assert_eq!(
             &*reader.column("query.raw.sources")?,

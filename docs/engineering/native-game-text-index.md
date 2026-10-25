@@ -10,8 +10,10 @@ CLI, Workbench and library hosts compose `GameTextIndexBuilderLive` from
 layers. `nativeIndexBuilderLayer(configuration)` supplies the same builder and query capability
 with explicit reader configuration. Package delta publication needs uasset-io protocol 1.16 and
 `game_text_index`. Queries run in the engine's own binary session, `uasset game-text-engine`, whose
-handshake checks the engine's contract once per process. Native failures remain typed failures
-with recovery guidance.
+handshake checks the engine's contract once per process. One engine process per host holds every
+open snapshot's reader. Its requests run concurrently: keystroke reads on two threads of their own,
+bulk work (opens, evaluations, exports) two at a time on the shared pool, and an interrupted read is
+cancelled in the engine. Native failures remain typed failures with recovery guidance.
 
 ## Reads and writes
 

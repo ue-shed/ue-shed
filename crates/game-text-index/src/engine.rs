@@ -1,4 +1,5 @@
 //! Scoped native engine handles. Queries own pinned read-only views, independent of writer leases.
+use crate::cache::Lock;
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
 use crate::engine_types::{invalid, parse_search_request};
@@ -7,6 +8,7 @@ use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 #[cfg(test)]
@@ -36,6 +38,10 @@ impl EnginePolicy {
         Ok(())
     }
 }
+
+/// Readers one session holds open. A host pins each snapshot it reads, and an incremental update
+/// keeps the previous generation pinned while callers still read it.
+const MAX_READERS: usize = 32;
 
 /// Diagnostics and incomplete packages a report header previews: `MAX_CORPUS_REPORT_ITEMS`.
 const REPORT_PREVIEW_ITEMS: usize = 200;
@@ -287,14 +293,12 @@ fn text(value: &Value) -> Result<String> {
 
 #[derive(Default)]
 pub struct EngineSession {
-    readers: HashMap<String, EngineQuery>,
+    /// Open readers by handle. Requests share a reader; closing one drops the handle, and the
+    /// reader is released when the requests still reading it end.
+    readers: Lock<HashMap<String, Arc<EngineQuery>>>,
 }
 impl EngineSession {
-    pub fn execute(
-        &mut self,
-        request: &EngineRequest,
-        cancelled: &AtomicBool,
-    ) -> Result<EngineAnswer> {
+    pub fn execute(&self, request: &EngineRequest, cancelled: &AtomicBool) -> Result<EngineAnswer> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("engineTotal");
         request.validate()?;
@@ -317,13 +321,13 @@ impl EngineSession {
                 policy,
             } => {
                 require(
-                    self.readers.len() < 8,
+                    self.readers.lock().len() < MAX_READERS,
                     Error::new(
                         ErrorCode::LimitExceeded,
                         "Close a pinned reader before opening another native Game Text snapshot.",
                     ),
                 )?;
-                let mut query =
+                let query =
                     EngineQuery::open_with_policy(configuration, Some(expected_joined), policy)?;
                 require(
                     query.reader.generation == *expected_generation,
@@ -343,7 +347,7 @@ impl EngineSession {
                 // Summary counters no longer load the numeric query projection as a side effect.
                 // Keep that required preparation in opening instead of deferring it to page one.
                 let projection_started = Instant::now();
-                crate::engine_match::Projection::open(&mut query, cancelled)?;
+                crate::engine_match::Projection::open(&query, cancelled)?;
                 stage_seconds.insert(
                     "query_projection_prepare".into(),
                     projection_started.elapsed().as_secs_f64(),
@@ -375,11 +379,20 @@ impl EngineSession {
                     joined_key: query.reader.joined_key.clone(),
                 };
                 checkpoint(cancelled)?;
-                self.readers.insert(reader, query);
+                let mut readers = self.readers.lock();
+                require(
+                    readers.len() < MAX_READERS,
+                    Error::new(
+                        ErrorCode::LimitExceeded,
+                        "Close a pinned reader before opening another native Game Text snapshot.",
+                    ),
+                )?;
+                readers.insert(reader, Arc::new(query));
+                drop(readers);
                 ("open", Some(serde_json::to_string(&reply)?))
             }
             EngineRequest::Close { reader } => {
-                self.readers.remove(reader);
+                self.readers.lock().remove(reader);
                 ("close", None)
             }
             EngineRequest::Summary { reader }
@@ -399,7 +412,7 @@ impl EngineSession {
             | EngineRequest::FindingsEvaluate { reader, .. }
             | EngineRequest::FindingsAccept { reader, .. }
             | EngineRequest::FindingsQuery { reader, .. } => {
-                let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
+                let query=self.readers.lock().get(reader).cloned().ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 // A file read replies with the bytes it wrote.
                 let bytes =
                     |bytes: u64| serde_json::to_string(&serde_json::json!({ "bytes": bytes }));
@@ -676,7 +689,7 @@ mod tests {
     #[test]
     fn handles_are_session_owned_and_closed_reads_never_take_a_writer_lease() -> Result<()> {
         let (configuration, generation) = snapshot()?;
-        let mut session = EngineSession::default();
+        let session = EngineSession::default();
         let cancelled = AtomicBool::new(false);
         let request = EngineRequest::Open {
             configuration: configuration.clone(),
@@ -707,7 +720,7 @@ mod tests {
         let reply: serde_json::Value = serde_json::from_str(&opened.part.ok_or("reply")?)?;
         let reader = reply["reader"].as_str().ok_or("reader")?.to_owned();
         let writer = Store::writer(configuration.clone())?;
-        let mut other = EngineSession::default();
+        let other = EngineSession::default();
         assert_eq!(
             other
                 .execute(
@@ -741,7 +754,7 @@ mod tests {
                 .code,
             ErrorCode::NotFound
         );
-        assert!(session.readers.is_empty());
+        assert!(session.readers.lock().is_empty());
         drop(writer);
         drop(session);
         std::fs::remove_dir_all(configuration.cache_root)?;
@@ -750,7 +763,7 @@ mod tests {
     #[test]
     fn cancellation_and_bad_queries_are_typed_without_poisoning_the_session() -> Result<()> {
         let (configuration, generation) = snapshot()?;
-        let mut session = EngineSession::default();
+        let session = EngineSession::default();
         let cancelled = AtomicBool::new(true);
         assert_eq!(
             session
@@ -804,7 +817,7 @@ mod tests {
             },
             &cancelled,
         )?;
-        assert!(session.readers.is_empty());
+        assert!(session.readers.lock().is_empty());
         drop(session);
         std::fs::remove_dir_all(configuration.cache_root)?;
         Ok(())
@@ -812,7 +825,7 @@ mod tests {
     #[test]
     fn stale_snapshot_open_does_not_consume_a_reader_slot() -> Result<()> {
         let (configuration, _) = snapshot()?;
-        let mut session = EngineSession::default();
+        let session = EngineSession::default();
         let cancelled = AtomicBool::new(false);
         let request = EngineRequest::Open {
             configuration: configuration.clone(),
@@ -828,7 +841,7 @@ mod tests {
                 .code,
             ErrorCode::StaleGeneration
         );
-        assert!(session.readers.is_empty());
+        assert!(session.readers.lock().is_empty());
         std::fs::remove_dir_all(configuration.cache_root)?;
         Ok(())
     }

@@ -44,11 +44,14 @@ impl FindingRows {
 
 impl EngineQuery {
     /// The layer, opened once and kept among the query's findings.
-    fn take_layer(&mut self, key: &str) -> Result<FindingsLayer> {
-        let layer = match self.findings.remove(key) {
-            Some(layer) => layer,
-            None => FindingsLayer::open(&self.configuration, key, &self.reader.joined_key)?,
-        };
+    pub(super) fn layer(&self, key: &str) -> Result<Arc<FindingsLayer>> {
+        let layer = self.findings.get_or_try(key.to_owned(), || {
+            Ok(Arc::new(FindingsLayer::open(
+                &self.configuration,
+                key,
+                &self.reader.joined_key,
+            )?))
+        })?;
         require(
             layer.metadata.joined_key == self.reader.joined_key,
             Error::new(
@@ -62,7 +65,7 @@ impl EngineQuery {
     /// A layer's rows by rule: lines with `localized`, else raw units, with line findings in
     /// the cultures of `scope`. Each rule's set is kept in the atom cache.
     pub(crate) fn finding_rows(
-        &mut self,
+        &self,
         selection: &FindingsSelection,
         localized: bool,
         scope: &[usize],
@@ -70,9 +73,9 @@ impl EngineQuery {
     ) -> Result<Arc<FindingRows>> {
         let acceptance = match &selection.acceptance {
             Some(name) => {
-                let acceptance = Arc::clone(self.acceptances.get(name).ok_or_else(|| {
+                let acceptance = self.acceptances.get(name).ok_or_else(|| {
                     Error::new(ErrorCode::InvalidInput, "The acceptance is not open.")
-                })?);
+                })?;
                 require(
                     acceptance.layer == selection.key,
                     Error::new(
@@ -84,22 +87,20 @@ impl EngineQuery {
             }
             None => None,
         };
-        let mut layer = self.take_layer(&selection.key)?;
-        let built = self.build_finding_rows(
-            &mut layer,
+        let layer = self.layer(&selection.key)?;
+        self.build_finding_rows(
+            &layer,
             selection,
             acceptance.as_deref(),
             localized,
             scope,
             cancelled,
-        );
-        self.findings.insert(selection.key.clone(), layer);
-        built
+        )
     }
 
     fn build_finding_rows(
-        &mut self,
-        layer: &mut FindingsLayer,
+        &self,
+        layer: &FindingsLayer,
         selection: &FindingsSelection,
         acceptance: Option<&super::Acceptance>,
         localized: bool,
@@ -138,9 +139,10 @@ impl EngineQuery {
             }
         }
         let cached = (0..rules.len())
-            .map(|rule| self.atoms.get(&format!("{key}|{rule}")))
+            .map(|rule| self.atoms.lock().get(&format!("{key}|{rule}")))
             .collect::<Option<Vec<_>>>();
-        if let (Some(sets), Some(counted)) = (cached, self.atoms.get(&format!("{key}|counted"))) {
+        let counted = self.atoms.lock().get(&format!("{key}|counted"));
+        if let (Some(sets), Some(counted)) = (cached, counted) {
             return Ok(Arc::new(FindingRows {
                 key,
                 rules,
@@ -293,10 +295,12 @@ impl EngineQuery {
                 .filter(|(_, rule)| rule.counts)
                 .map(|(set, _)| set),
         );
+        let mut atoms = self.atoms.lock();
         for (rule, set) in sets.iter().enumerate() {
-            self.atoms.insert(format!("{key}|{rule}"), set.clone());
+            atoms.insert(format!("{key}|{rule}"), set.clone());
         }
-        self.atoms.insert(format!("{key}|counted"), counted.clone());
+        atoms.insert(format!("{key}|counted"), counted.clone());
+        drop(atoms);
         Ok(Arc::new(FindingRows {
             key,
             rules,

@@ -124,7 +124,7 @@ pub(crate) struct Rows {
     pub order: Column,
 }
 impl Rows {
-    fn open(query: &mut EngineQuery, kind: &str, cancelled: &AtomicBool) -> Result<Self> {
+    fn open(query: &EngineQuery, kind: &str, cancelled: &AtomicBool) -> Result<Self> {
         let mut rows = Self {
             visible: query.column(kind, "visible")?,
             signals: query.column(kind, "signals")?,
@@ -319,9 +319,9 @@ impl Projection {
                 })
                 .sum::<usize>()
     }
-    pub fn open(query: &mut EngineQuery, cancelled: &AtomicBool) -> Result<Arc<Self>> {
-        if let Some(value) = &query.projection {
-            return Ok(Arc::clone(value));
+    pub fn open(query: &EngineQuery, cancelled: &AtomicBool) -> Result<Arc<Self>> {
+        if let Some(value) = query.projection.get() {
+            return Ok(value);
         }
         checkpoint(cancelled)?;
         let raw = Rows::open(query, "raw", cancelled)?;
@@ -446,8 +446,7 @@ impl Projection {
                 "Unknown stored localization state.",
             )?;
         }
-        query.projection = Some(Arc::clone(&result));
-        Ok(result)
+        Ok(query.projection.store(result))
     }
     pub fn review(&self, query: &EngineQuery, row: usize, ci: usize) -> Result<u32> {
         let c = &self.cultures[ci];
@@ -518,7 +517,7 @@ struct PreparedClause {
 }
 impl PreparedClause {
     fn new(
-        query: &mut EngineQuery,
+        query: &EngineQuery,
         projection: &Projection,
         clause: &Clause,
         places: &Places,
@@ -692,7 +691,7 @@ impl Projection {
     /// key. A saved unit has a key when one of its slices belongs to such a line.
     fn translation_rows(
         &self,
-        query: &mut EngineQuery,
+        query: &EngineQuery,
         places: &Places,
         values: &[String],
         cancelled: &AtomicBool,
@@ -931,11 +930,7 @@ impl Projection {
 
 impl EngineQuery {
     /// The request's rows, in display order.
-    pub fn matching(
-        &mut self,
-        request: &SearchRequest,
-        cancelled: &AtomicBool,
-    ) -> Result<Arc<[u32]>> {
+    pub fn matching(&self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Arc<[u32]>> {
         request.validate()?;
         checkpoint(cancelled)?;
         Ok(self.match_rows(request, cancelled)?.into())
@@ -946,7 +941,7 @@ impl EngineQuery {
     /// one. Built once and read by the `problem` clause, problem counts and every group and
     /// facet tally.
     pub(crate) fn problem_column(
-        &mut self,
+        &self,
         localized: bool,
         scope: &[usize],
         findings: Option<&FindingRows>,
@@ -957,7 +952,7 @@ impl EngineQuery {
             findings.map_or("", |findings| findings.key.as_str())
         );
         if let Some(column) = self.problem_columns.get(&key) {
-            return Ok(Arc::clone(column));
+            return Ok(column);
         }
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchProblemColumn");
@@ -977,32 +972,29 @@ impl EngineQuery {
         }
         let column: Arc<[u32]> = column.into();
         // A few scopes are live at once; past that, columns are rebuilt as they are asked for.
-        if self.problem_columns.len() >= 8 {
-            self.problem_columns.clear();
-        }
-        self.problem_columns.insert(key, Arc::clone(&column));
-        Ok(column)
+        Ok(self.problem_columns.with(|columns| {
+            if columns.len() >= 8 {
+                columns.clear();
+            }
+            Arc::clone(columns.entry(key).or_insert(column))
+        }))
     }
 
     /// An atom's set, from the cache or evaluated over every row.
-    fn atom(
-        &mut self,
-        key: String,
-        evaluate: impl FnOnce(&mut Self) -> Result<RowSet>,
-    ) -> Result<RowSet> {
-        if let Some(set) = self.atoms.get(&key) {
+    fn atom(&self, key: String, evaluate: impl FnOnce(&Self) -> Result<RowSet>) -> Result<RowSet> {
+        if let Some(set) = self.atoms.lock().get(&key) {
             return Ok(set);
         }
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchAtom");
         let set = evaluate(self)?;
-        self.atoms.insert(key, set.clone());
+        self.atoms.lock().insert(key, set.clone());
         Ok(set)
     }
 
     /// A request's findings layer rows, in its relation and culture scope.
     pub(crate) fn request_findings(
-        &mut self,
+        &self,
         request: &SearchRequest,
         cancelled: &AtomicBool,
     ) -> Result<Option<Arc<FindingRows>>> {
@@ -1020,7 +1012,7 @@ impl EngineQuery {
 
     /// The intersection of the request's atoms. Each atom is keyed by what it reads: the
     /// relation, the culture scope where it depends on it, and the findings layer it reads.
-    fn match_rows(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Vec<u32>> {
+    fn match_rows(&self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Vec<u32>> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchMatch");
         request.validate()?;

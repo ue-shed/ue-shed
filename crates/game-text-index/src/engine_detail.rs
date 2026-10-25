@@ -11,7 +11,7 @@ use std::sync::atomic::AtomicBool;
 
 impl EngineQuery {
     pub fn localization_detail_json(
-        &mut self,
+        &self,
         payload: &str,
         cancelled: &AtomicBool,
     ) -> Result<String> {
@@ -21,7 +21,7 @@ impl EngineQuery {
     }
 
     pub fn localization_detail(
-        &mut self,
+        &self,
         request: &LocalizationDetailRequest,
         cancelled: &AtomicBool,
     ) -> Result<Value> {

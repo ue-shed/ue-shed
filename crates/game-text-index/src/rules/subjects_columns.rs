@@ -108,8 +108,7 @@ impl<'a, 'q> Projector<'a, 'q> {
         })
     }
     fn strings(&mut self, ids: &[u32]) -> Result<()> {
-        self.arena
-            .load_strings(&mut self.subjects.query.reader, ids)
+        self.arena.load_strings(&self.subjects.query.reader, ids)
     }
     fn string(&mut self, value: &str) -> Result<Atom> {
         self.arena.string(value).map(Atom::Str)
@@ -220,7 +219,7 @@ impl<'a, 'q> Projector<'a, 'q> {
             .as_str()
             .ok_or("Missing manifest input.")?
             .to_owned();
-        let reader = &mut self.subjects.query.reader;
+        let reader = &self.subjects.query.reader;
         let metadata = reader.input_metadata(&name, "file.meta")?;
         let manifest = Manifest {
             source: reader.input_column(&name, "entry.source")?,
@@ -999,11 +998,12 @@ impl<'a, 'q> Projector<'a, 'q> {
             self.subjects
                 .query
                 .line_children
+                .lock()
                 .as_ref()
                 .filter(|(locale, _)| *locale == self.subjects.collator.locale)
                 .map(|(_, children)| Arc::clone(children))
         } else {
-            self.subjects.query.unit_children.clone()
+            self.subjects.query.unit_children.get()
         };
         if let Some(shared) = cached {
             let mut children = (*shared).clone();
@@ -1069,11 +1069,14 @@ impl<'a, 'q> Projector<'a, 'q> {
             let mut shared = children.clone();
             shared.rows = None;
             let shared = Arc::new(shared);
-            self.subjects.query.line_children =
+            *self.subjects.query.line_children.lock() =
                 Some((self.subjects.collator.locale.clone(), Arc::clone(&shared)));
             self.arena.line_children = Some(shared);
         } else {
-            self.subjects.query.unit_children = Some(Arc::new(children.clone()));
+            self.subjects
+                .query
+                .unit_children
+                .store(Arc::new(children.clone()));
         }
         self.arena.recorder.sub_stage(
             "occurrences.groups".into(),

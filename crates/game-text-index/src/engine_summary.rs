@@ -7,15 +7,14 @@ use serde_json::json;
 use std::sync::atomic::AtomicBool;
 
 impl EngineQuery {
-    pub fn summary(&mut self, cancelled: &AtomicBool) -> Result<serde_json::Value> {
+    pub fn summary(&self, cancelled: &AtomicBool) -> Result<serde_json::Value> {
         checkpoint(cancelled)?;
-        if let Some(summary) = &self.summary_cache {
-            return Ok(summary.clone());
+        if let Some(summary) = self.summary_cache.get() {
+            return Ok(summary);
         }
         if let Some(state) = self.reader.meta.get("engineSummary") {
             let summary = crate::summary_state::SummaryState::parse(state)?.response()?;
-            self.summary_cache = Some(summary.clone());
-            return Ok(summary);
+            return Ok(self.summary_cache.store(summary));
         }
         let mut discovered = 0usize;
         let mut inspected = 0usize;

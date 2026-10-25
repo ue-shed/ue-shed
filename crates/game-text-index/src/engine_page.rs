@@ -29,7 +29,7 @@ fn cursor_position(rows: &[u32], ranks: &[u32], row: usize) -> usize {
 
 impl EngineQuery {
     pub(crate) fn listed_rows(
-        &mut self,
+        &self,
         request: &SearchRequest,
         matched: Arc<[u32]>,
         cancelled: &AtomicBool,
@@ -75,12 +75,7 @@ impl EngineQuery {
     }
 
     /// A group key's ID under `by`, as `group_key` computes it; `None` when no row can have it.
-    pub(crate) fn group_id(
-        &mut self,
-        by: GroupBy,
-        key: &str,
-        places: &Places,
-    ) -> Result<Option<u32>> {
+    pub(crate) fn group_id(&self, by: GroupBy, key: &str, places: &Places) -> Result<Option<u32>> {
         Ok(match by {
             GroupBy::Problem => PROBLEMS
                 .iter()
@@ -111,7 +106,7 @@ impl EngineQuery {
     }
 
     pub(crate) fn after_cursor(
-        &mut self,
+        &self,
         kind: &str,
         rows: &[u32],
         cursor: Option<&String>,
@@ -123,13 +118,11 @@ impl EngineQuery {
         let Some(row) = self.find_id(kind, cursor)? else {
             return Ok(0);
         };
-        if !self.row_ranks.contains_key(kind) {
-            let order = self.column(kind, "order")?;
-            self.row_ranks
-                .insert(kind.into(), ranks(&order, cancelled)?);
-        }
+        let ranks = self.row_ranks.get_or_try(kind.into(), || {
+            ranks(&self.column(kind, "order")?, cancelled)
+        })?;
         checkpoint(cancelled)?;
-        Ok(cursor_position(rows, &self.row_ranks[kind], row))
+        Ok(cursor_position(rows, &ranks, row))
     }
 }
 

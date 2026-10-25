@@ -10,6 +10,7 @@ pub use error::{Error, ErrorCode};
 #[cfg(feature = "benchmark-timings")]
 pub mod benchmark_timings;
 pub mod builder;
+mod cache;
 mod dependency_graph;
 pub mod dictionary;
 mod dictionary_image;

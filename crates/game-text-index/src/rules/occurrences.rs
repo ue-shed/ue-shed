@@ -33,7 +33,7 @@ pub(crate) struct OccurrenceData {
     pub statuses: Vec<UnitStatus>,
 }
 impl OccurrenceData {
-    pub fn build(query: &mut EngineQuery, measure: &mut Measure) -> Result<Arc<Self>> {
+    pub fn build(query: &EngineQuery, measure: &mut Measure) -> Result<Arc<Self>> {
         let mut shards = Vec::new();
         let mut path_ids = Vec::new();
         for shard in 0..query.package_count() {
@@ -232,7 +232,7 @@ impl Arena {
     /// claimed once; singleton groups need no ID until they appear in evidence.
     pub(super) fn occurrence_ids(
         &mut self,
-        query: &mut EngineQuery,
+        query: &EngineQuery,
         rows: &[u32],
         measure: &mut Measure,
     ) -> Result<()> {
@@ -258,7 +258,7 @@ impl Arena {
                 ["object", "property", "row"].map(|field| data.value(*row as usize, field))
             })
             .collect::<Vec<_>>();
-        self.load_strings(&mut query.reader, &strings)?;
+        self.load_strings(&query.reader, &strings)?;
         let ids = measure.parallel(&rows, |row| data.id(*row as usize, self));
         for (row, id) in rows.into_iter().zip(ids) {
             self.occurrences.ids[row as usize] = Some(self.string(&id)?);

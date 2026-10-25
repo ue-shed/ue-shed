@@ -43,7 +43,7 @@ impl CultureRows {
     }
 }
 pub struct NativeSubjects<'a> {
-    pub query: &'a mut EngineQuery,
+    pub query: &'a EngineQuery,
     pub(crate) projection: Arc<Projection>,
     pub subject: Subject,
     pub cultures: CultureRows,
@@ -58,26 +58,18 @@ pub struct NativeSubjects<'a> {
 }
 impl<'a> NativeSubjects<'a> {
     pub fn new(
-        query: &'a mut EngineQuery,
+        query: &'a EngineQuery,
         subject: Subject,
         collator: &'a HostCollator,
         cancelled: &'a AtomicBool,
     ) -> Result<Self> {
-        let occurrences = match &query.occurrence_data {
-            Some(occurrences) => Arc::clone(occurrences),
-            None => {
-                let occurrences = super::occurrences::OccurrenceData::build(
-                    query,
-                    &mut super::stages::Measure::start(),
-                )?;
-                query.occurrence_data = Some(Arc::clone(&occurrences));
-                occurrences
-            }
-        };
+        let occurrences = query.occurrence_data.get_or_try(|| {
+            super::occurrences::OccurrenceData::build(query, &mut super::stages::Measure::start())
+        })?;
         Self::new_shared(query, subject, collator, cancelled, occurrences)
     }
     pub(super) fn new_shared(
-        query: &'a mut EngineQuery,
+        query: &'a EngineQuery,
         subject: Subject,
         collator: &'a HostCollator,
         cancelled: &'a AtomicBool,
@@ -116,9 +108,9 @@ impl<'a> NativeSubjects<'a> {
         }
         // A reader's unit sources never change; finding reads, a page of units each, share them.
         if subject == Subject::UnitSource
-            && let Some(cached) = &query.unit_sources
+            && let Some(cached) = query.unit_sources.get()
         {
-            units = Arc::clone(cached);
+            units = cached;
         } else if subject == Subject::UnitSource {
             let mut built: Vec<UnitSource> = Vec::new();
             for unit in 0..projection.raw.visible.len() {
@@ -140,8 +132,7 @@ impl<'a> NativeSubjects<'a> {
                     }
                 }
             }
-            units = built.into();
-            query.unit_sources = Some(Arc::clone(&units));
+            units = query.unit_sources.store(built.into());
         }
         Ok(Self {
             query,
@@ -558,7 +549,7 @@ impl<'a> NativeSubjects<'a> {
                         Some(arena) => arena,
                         None => super::columns::Arena::new(self.query.reader.dictionary_count()?)?,
                     };
-                    let loaded = arena.load_strings(&mut self.query.reader, &strings);
+                    let loaded = arena.load_strings(&self.query.reader, &strings);
                     if loaded.is_ok() {
                         sites.extend(
                             members
@@ -629,7 +620,7 @@ impl NativeSubjects<'_> {
             Some(arena) => arena,
             None => super::columns::Arena::new(self.query.reader.dictionary_count()?)?,
         };
-        let loaded = arena.load_strings(&mut self.query.reader, &strings);
+        let loaded = arena.load_strings(&self.query.reader, &strings);
         self.place_arena = Some(arena);
         loaded
     }
@@ -646,7 +637,7 @@ impl NativeSubjects<'_> {
             Some(arena) => arena,
             None => Arena::new(self.query.reader.dictionary_count()?)?,
         };
-        arena.load_strings(&mut self.query.reader, &string_ids)?;
+        arena.load_strings(&self.query.reader, &string_ids)?;
         let places = rows
             .iter()
             .zip(ids)

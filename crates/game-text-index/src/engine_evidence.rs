@@ -7,11 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 impl EngineQuery {
-    pub fn localization_focus_json(
-        &mut self,
-        payload: &str,
-        cancelled: &AtomicBool,
-    ) -> Result<String> {
+    pub fn localization_focus_json(&self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
         let id = crate::json_value::parse(payload)?;
         let id = id
             .as_str()
@@ -22,12 +18,12 @@ impl EngineQuery {
         };
         crate::wtf8::view_json(&result)
     }
-    pub(crate) fn entry_text(&mut self, name: &str, field: &str, row: usize) -> Result<String> {
+    pub(crate) fn entry_text(&self, name: &str, field: &str, row: usize) -> Result<String> {
         let ids = self.reader.input_column(name, &format!("entry.{field}"))?;
         self.reader
             .string(*ids.get(row).ok_or("Evidence row outside input.")?)
     }
-    pub(crate) fn entry_json(&mut self, name: &str, field: &str, row: usize) -> Result<Value> {
+    pub(crate) fn entry_json(&self, name: &str, field: &str, row: usize) -> Result<Value> {
         let text = self.entry_text(name, field, row)?;
         if text.is_empty() {
             return Ok(json!({}));
@@ -39,16 +35,10 @@ impl EngineQuery {
         )?;
         Ok(value)
     }
-    pub fn evidence_entry(&mut self, name: &str, row: usize) -> Result<Value> {
-        let meta = match self.evidence_meta.get(name) {
-            Some(meta) => Arc::clone(meta),
-            None => {
-                let meta = Arc::new(self.reader.input_metadata(name, "file.meta")?);
-                self.evidence_meta
-                    .insert(name.to_owned(), Arc::clone(&meta));
-                meta
-            }
-        };
+    pub fn evidence_entry(&self, name: &str, row: usize) -> Result<Value> {
+        let meta = self.evidence_meta.get_or_try(name.to_owned(), || {
+            Ok(Arc::new(self.reader.input_metadata(name, "file.meta")?))
+        })?;
         let format = meta["format"].as_str().ok_or("Missing evidence format.")?;
         let options = self.reader.input_column(name, "entry.options")?;
         let flags = *options.get(row).ok_or("Evidence row outside options.")?;
@@ -139,7 +129,7 @@ impl EngineQuery {
         require(result.is_object(), "Invalid evidence object.")?;
         Ok(std::mem::take(&mut result))
     }
-    pub fn localization_line(&mut self, row: usize, cancelled: &AtomicBool) -> Result<Value> {
+    pub fn localization_line(&self, row: usize, cancelled: &AtomicBool) -> Result<Value> {
         checkpoint(cancelled)?;
         let p = Projection::open(self, cancelled)?;
         require(row < p.source.len(), "Localization row outside index.")?;
@@ -159,7 +149,7 @@ impl EngineQuery {
 
     /// The line's manifest entries, in manifest order.
     pub(crate) fn line_manifest(
-        &mut self,
+        &self,
         p: &Projection,
         row: usize,
         cancelled: &AtomicBool,
@@ -184,7 +174,7 @@ impl EngineQuery {
 
     /// Each culture's mark with its archive and PO entries and the PO translation.
     pub(crate) fn line_cultures(
-        &mut self,
+        &self,
         p: &Projection,
         row: usize,
         cancelled: &AtomicBool,

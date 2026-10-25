@@ -118,7 +118,7 @@ fn timing_inputs() -> Result<(EngineQuery, Value)> {
 #[test]
 #[ignore = "Requires a retained cache, Node 26, a heavy-run lease, and --release"]
 fn persisted_default_catalogue_timing() -> Result<()> {
-    let (mut query, catalogue) = timing_inputs()?;
+    let (query, catalogue) = timing_inputs()?;
     let cancelled = AtomicBool::new(false);
     let rules = catalogue["rules"]
         .as_str()
@@ -166,7 +166,7 @@ fn persisted_default_catalogue_timing() -> Result<()> {
 #[test]
 #[ignore = "Requires a disposable retained cache, Node 26, a heavy-run lease, and --release"]
 fn persisted_findings_query_timing() -> Result<()> {
-    let (mut query, catalogue) = timing_inputs()?;
+    let (query, catalogue) = timing_inputs()?;
     let cancelled = AtomicBool::new(false);
     let rules = catalogue["rules"]
         .as_str()

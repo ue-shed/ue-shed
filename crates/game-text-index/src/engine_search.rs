@@ -47,7 +47,7 @@ pub(crate) fn list_findings(value: &mut Value, findings: &FindingRows, row: usiz
 
 impl EngineQuery {
     pub(crate) fn search_counts(
-        &mut self,
+        &self,
         request: &SearchRequest,
         matched: &[u32],
         cancelled: &AtomicBool,
@@ -154,7 +154,7 @@ impl EngineQuery {
         Ok(result)
     }
     fn localization_counts(
-        &mut self,
+        &self,
         request: &SearchRequest,
         matched: &[u32],
         cancelled: &AtomicBool,
@@ -257,7 +257,7 @@ impl EngineQuery {
         Ok(result)
     }
     fn culture_facets(
-        &mut self,
+        &self,
         request: &SearchRequest,
         matched: &[u32],
         cancelled: &AtomicBool,
@@ -303,7 +303,7 @@ impl EngineQuery {
         ))
     }
     /// The rows with each fact, over every atom but the `fact` clauses.
-    fn fact_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+    fn fact_counts(&self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
         let rows = self.matching(&request.without_filter(FilterField::Fact), cancelled)?;
         let p = Projection::open(self, cancelled)?;
         let localized = request.localization.is_some();
@@ -327,7 +327,7 @@ impl EngineQuery {
         Ok(record(&FACTS, &counts))
     }
     /// Problem counts over every atom but the `problem` clauses, with the request's findings.
-    fn problem_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+    fn problem_counts(&self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchProblemCounts");
         let request = request.without_filter(FilterField::Problem);
@@ -352,7 +352,7 @@ impl EngineQuery {
     }
     /// The answer's aggregates, as its parts ask for them.
     fn search_metadata(
-        &mut self,
+        &self,
         request: &SearchRequest,
         matched: &[u32],
         cancelled: &AtomicBool,
@@ -460,7 +460,7 @@ impl EngineQuery {
     /// unit of it; without one, each unit's. Each lists its problems and, with a findings layer,
     /// the rules with a finding on it.
     fn present_rows(
-        &mut self,
+        &self,
         request: &SearchRequest,
         rows: &[u32],
         cancelled: &AtomicBool,
@@ -552,7 +552,7 @@ impl EngineQuery {
     /// Each open group's first rows in display order, in the order the request names them.
     /// Past the row budget a group, and every one after it, lists none.
     fn open_group_pages(
-        &mut self,
+        &self,
         request: &SearchRequest,
         matched: &[u32],
         cancelled: &AtomicBool,
@@ -643,7 +643,7 @@ impl EngineQuery {
         Ok(Value::Array(groups))
     }
 
-    pub fn search(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+    pub fn search(&self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
         let matched = self.matching(request, cancelled)?;
         let mut result = self.search_metadata(request, &matched, cancelled)?;
         if !request.wants(Part::Rows) {

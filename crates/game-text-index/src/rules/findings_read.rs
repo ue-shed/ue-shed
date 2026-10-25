@@ -2,7 +2,7 @@ use super::ir::Family;
 use super::replies::{Place, PlaceSet, Read, ReadProfile, SpilledReply};
 use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, SubjectRows, javascript_json};
 use crate::engine_query::EngineQuery;
-use crate::{Error, ErrorCode, Result, require};
+use crate::{Result, require};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
@@ -45,26 +45,13 @@ fn ordered_places(ids: &[String], occurrences: &[Value]) -> Result<Vec<Value>> {
 
 impl EngineQuery {
     pub(super) fn with_findings<T: Read>(
-        &mut self,
+        &self,
         key: &str,
         requested: usize,
-        read: impl FnOnce(&mut Self, &mut FindingsLayer) -> Result<T>,
+        read: impl FnOnce(&Self, &FindingsLayer) -> Result<T>,
     ) -> Result<String> {
-        let mut layer = if let Some(layer) = self.findings.remove(key) {
-            layer
-        } else {
-            FindingsLayer::open(&self.configuration, key, &self.reader.joined_key)?
-        };
-        require(
-            layer.metadata.joined_key == self.reader.joined_key,
-            Error::new(
-                ErrorCode::StaleGeneration,
-                "The findings belong to a different joined view.",
-            ),
-        )?;
-        let result = read(self, &mut layer);
-        self.findings.insert(key.into(), layer);
-        let mut reply = result?;
+        let layer = self.layer(key)?;
+        let mut reply = read(self, &layer)?;
         *reply.profile() = ReadProfile {
             rows_requested: requested,
             findings_returned: reply.findings(),
@@ -123,8 +110,10 @@ impl EngineQuery {
             let _ = std::fs::remove_file(&path);
             return Err(cause.into());
         }
-        self.finding_files.0.retain(|file| file.exists());
-        self.finding_files.0.push(path.clone());
+        let mut files = self.finding_files.lock();
+        files.0.retain(|file| file.exists());
+        files.0.push(path.clone());
+        drop(files);
         let file = path
             .to_str()
             .ok_or("The findings file path is not Unicode.")?
@@ -144,7 +133,7 @@ impl EngineQuery {
 )]
 pub(super) fn compose_line_finding(
     subjects: &mut NativeSubjects<'_>,
-    layer: &mut FindingsLayer,
+    layer: &FindingsLayer,
     rule_index: usize,
     rule: &super::replies::RuleMetadata,
     position: usize,
@@ -228,7 +217,7 @@ pub(super) fn compose_line_finding(
 )]
 pub(super) fn compose_unit_finding(
     subjects: &mut NativeSubjects<'_>,
-    layer: &mut FindingsLayer,
+    layer: &FindingsLayer,
     collator: &HostCollator,
     rule: &super::replies::RuleMetadata,
     rule_index: usize,

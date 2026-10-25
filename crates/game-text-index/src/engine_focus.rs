@@ -31,7 +31,7 @@ const GAP_DESCRIPTIONS: [&str; 4] = [
 ];
 const COPY_KINDS: [&str; 4] = ["generated_class", "class_default", "skeleton", "instance"];
 impl EngineQuery {
-    pub(crate) fn package_row(&mut self, occurrence: usize) -> Result<(usize, usize)> {
+    pub(crate) fn package_row(&self, occurrence: usize) -> Result<(usize, usize)> {
         let (shard, row) = self.package_coordinate(occurrence)?;
         let starts = self.package_column(shard, "package.occurrence_start")?;
         let package = starts
@@ -40,11 +40,11 @@ impl EngineQuery {
             .ok_or("Occurrence precedes package.")?;
         Ok((shard, package))
     }
-    fn package_position(&mut self, occurrence: usize) -> Result<(usize, usize, String)> {
+    fn package_position(&self, occurrence: usize) -> Result<(usize, usize, String)> {
         let (shard, package) = self.package_row(occurrence)?;
         Ok((shard, package, self.package_file(shard, package)?))
     }
-    pub(crate) fn occurrence_id(&mut self, occurrence: usize) -> Result<String> {
+    pub(crate) fn occurrence_id(&self, occurrence: usize) -> Result<String> {
         let (_, _, package) = self.package_position(occurrence)?;
         let location = self.occurrence_location(occurrence)?;
         let object = location["objectPath"]
@@ -72,7 +72,7 @@ impl EngineQuery {
         };
         Ok(format!("occurrence:{object}:{suffix}:{package}"))
     }
-    pub fn occurrence(&mut self, occurrence: usize, cancelled: &AtomicBool) -> Result<Value> {
+    pub fn occurrence(&self, occurrence: usize, cancelled: &AtomicBool) -> Result<Value> {
         checkpoint(cancelled)?;
         let (shard, row) = self.package_coordinate(occurrence)?;
         let (_, _, package) = self.package_position(occurrence)?;
@@ -106,8 +106,7 @@ impl EngineQuery {
                     "Occurrence copies exceed a bounded focus response.",
                 ),
             )?;
-            if let std::collections::hash_map::Entry::Vacant(entry) = self.copy_starts.entry(shard)
-            {
+            let starts = self.copy_starts.get_or_try(shard, || {
                 let mut starts = Vec::with_capacity(flags.len() + 1);
                 let mut offset = 0usize;
                 starts.push(offset);
@@ -120,13 +119,9 @@ impl EngineQuery {
                         .ok_or("Copy offset overflow.")?;
                     starts.push(offset);
                 }
-                entry.insert(starts.into());
-            }
-            let begin = *self
-                .copy_starts
-                .get(&shard)
-                .and_then(|starts| starts.get(row))
-                .ok_or("Missing copy offset.")?;
+                Ok(starts.into())
+            })?;
+            let begin = *starts.get(row).ok_or("Missing copy offset.")?;
             let kinds = self.package_column(shard, "copy.kind")?;
             let objects = self.package_column(shard, "copy.object")?;
             let sources = self.package_column(shard, "copy.source")?;
@@ -151,14 +146,14 @@ impl EngineQuery {
         }
         Ok(result)
     }
-    pub(crate) fn package_value(&mut self, shard: usize, field: &str, row: usize) -> Result<u32> {
+    pub(crate) fn package_value(&self, shard: usize, field: &str, row: usize) -> Result<u32> {
         self.package_column(shard, field)?
             .get(row)
             .copied()
             .ok_or_else(|| "Package row outside column.".into())
     }
     pub(crate) fn package_diagnostics(
-        &mut self,
+        &self,
         shard: usize,
         row: usize,
         file: &str,
@@ -260,7 +255,7 @@ impl EngineQuery {
         }
         Ok(result)
     }
-    pub fn focus(&mut self, request: &FocusRequest, cancelled: &AtomicBool) -> Result<Value> {
+    pub fn focus(&self, request: &FocusRequest, cancelled: &AtomicBool) -> Result<Value> {
         request.validate()?;
         checkpoint(cancelled)?;
         let p = Projection::open(self, cancelled)?;
@@ -393,7 +388,7 @@ impl EngineQuery {
         }
         Ok(result)
     }
-    pub fn focus_json(&mut self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
+    pub fn focus_json(&self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
         let request = crate::engine_types::parse_focus_request(payload)?;
         crate::wtf8::view_json(&self.focus(&request, cancelled)?)
     }

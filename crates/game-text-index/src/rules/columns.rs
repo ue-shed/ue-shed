@@ -899,7 +899,7 @@ impl Arena {
             paths_mask: Arc::default(),
         })
     }
-    pub fn load_strings(&mut self, reader: &mut EngineReader, ids: &[u32]) -> Result<()> {
+    pub fn load_strings(&mut self, reader: &EngineReader, ids: &[u32]) -> Result<()> {
         let dedup = super::stages::Measure::start();
         // Each wanted id once, in id order. Most calls ask for a few strings, often loaded
         // already, so the work follows the request; only a request for a sizable share of the

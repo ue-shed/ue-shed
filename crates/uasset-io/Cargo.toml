@@ -22,6 +22,7 @@ zstd = "0.13"
 
 [features]
 benchmark-timings = ["game-text-index/benchmark-timings"]
+engine-probes = ["game-text-index/engine-probes"]
 catalog-oracle = ["dep:rusqlite"]
 
 [lib]

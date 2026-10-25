@@ -163,7 +163,7 @@ const NO_KEY: u32 = u32::MAX;
 impl EngineQuery {
     /// Unreal's word count of the text it gathers for a line: its first required manifest
     /// entry's source, else the line's saved source. Counted once per text and cached.
-    fn line_break_words_of(&mut self, cache: &mut HashMap<u32, u32>, text: u32) -> Result<u32> {
+    fn line_break_words_of(&self, cache: &mut HashMap<u32, u32>, text: u32) -> Result<u32> {
         if let Some(words) = cache.get(&text) {
             return Ok(*words);
         }
@@ -173,7 +173,7 @@ impl EngineQuery {
         cache.insert(text, words);
         Ok(words)
     }
-    fn gathered_text(&mut self, projection: &Projection, row: usize) -> Result<u32> {
+    fn gathered_text(&self, projection: &Projection, row: usize) -> Result<u32> {
         let begin = projection.manifest_start[row] as usize;
         let end = projection.manifest_end[row] as usize;
         if begin != end {
@@ -215,7 +215,7 @@ impl EngineQuery {
     }
 
     pub fn aggregate_to_path(
-        &mut self,
+        &self,
         request: &AggregateRequest,
         path: &Path,
         cancelled: &AtomicBool,
@@ -239,7 +239,7 @@ impl EngineQuery {
     }
 
     pub fn aggregate_value(
-        &mut self,
+        &self,
         request: &AggregateRequest,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
@@ -277,7 +277,7 @@ impl EngineQuery {
         };
         let wants_line_break = request.measures.contains(&Measure::LineBreakWords);
         // Word counts persist on the reader: its texts never change.
-        let mut word_cache = std::mem::take(&mut self.line_break_words);
+        let mut word_cache = std::mem::take(&mut *self.line_break_words.lock());
         let mut flag_names: Vec<String> = Vec::new();
         let mut identities: Vec<(u32, u32)> = Vec::new();
         let mut identity_codes: HashMap<(u32, u32), u32> = HashMap::new();
@@ -456,7 +456,7 @@ impl EngineQuery {
                 }
             }
         }
-        self.line_break_words = word_cache;
+        self.line_break_words.lock().extend(word_cache);
         // Each key component reads as a string (a translation key as `[namespace, key]`), and
         // the groups list in each dimension's own order, components left to right.
         let mut texts: HashMap<(usize, u32), (String, Value)> = HashMap::new();
@@ -638,7 +638,7 @@ pub fn line_fields(fields: &[String]) -> Result<Vec<&'static str>> {
 impl EngineQuery {
     /// One line with only the chosen fields, plus its ID.
     pub(crate) fn localization_line_fields(
-        &mut self,
+        &self,
         row: usize,
         fields: &[&str],
         scope: &[usize],
@@ -690,7 +690,7 @@ impl EngineQuery {
     /// Every saved place of a line's units gathered under its key, in unit ID order and each
     /// unit's occurrence order:
     /// the package file, the object path and the origin of its location.
-    fn line_places(&mut self, row: usize, cancelled: &AtomicBool) -> Result<Vec<Value>> {
+    fn line_places(&self, row: usize, cancelled: &AtomicBool) -> Result<Vec<Value>> {
         let projection = Projection::open(self, cancelled)?;
         let raws = self.column("slice", "raw")?;
         // A line's slice of a unit holds only the occurrences gathered under the line's key.

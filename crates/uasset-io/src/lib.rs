@@ -28,7 +28,8 @@ pub fn run(arguments: impl Iterator<Item = std::ffi::OsString>) -> u8 {
 }
 /// The Game Text engine session: binary frames on stdin and stdout until stdin closes.
 fn game_text_engine() -> u8 {
-    let output = std::io::BufWriter::with_capacity(1 << 20, std::io::stdout().lock());
+    game_text_index::session::size_shared_pool();
+    let output = std::io::BufWriter::with_capacity(1 << 20, std::io::stdout());
     match game_text_index::session::serve(std::io::stdin().lock(), output) {
         Ok(()) => 0,
         Err(error) => {

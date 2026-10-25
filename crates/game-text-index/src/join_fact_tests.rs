@@ -214,7 +214,7 @@ impl Fixture {
         let input: JoinInput =
             serde_json::from_value(json!({"projectRoot":"/project","target":self.target}))?;
         let outcome = refresh(&mut self.store, &input)?;
-        let mut query = EngineQuery::open(&self.configuration, Some(&outcome.key))?;
+        let query = EngineQuery::open(&self.configuration, Some(&outcome.key))?;
         let count = query.reader.meta["count"].as_u64().ok_or("line count")? as usize;
         (0..count)
             .map(|row| query.localization_line(row, &AtomicBool::new(false)))
@@ -251,11 +251,11 @@ fn partial_packages_keep_empty_archive_entries_checkable_with_absent_or_blank_sa
                     .is_some_and(|reasons| reasons.contains(&json!("package_partial")))
             );
         }
-        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let query = EngineQuery::open(&fixture.configuration, None)?;
         let collator = HostCollator::new("en")?;
         let cancelled = AtomicBool::new(false);
         let mut subjects =
-            NativeSubjects::new(&mut query, Subject::LineCulture, &collator, &cancelled)?;
+            NativeSubjects::new(&query, Subject::LineCulture, &collator, &cancelled)?;
         let de = subjects
             .cultures
             .iter()
@@ -300,10 +300,10 @@ fn rule_subjects_read_saved_manifest_and_translation_stages_independently() -> R
     fixture.file("de.po","po", &[json!({"namespace":"UI","key":"K","source":"Native","translation":"Pending","options":64})])?;
     fixture.packages(&[json!({"namespace":"UI","key":"K","source":"Saved","object":"/Game/Text/Example.Example","property":"Label","notes":"Occurrence context"})])?;
     fixture.lines()?;
-    let mut query = EngineQuery::open(&fixture.configuration, None)?;
+    let query = EngineQuery::open(&fixture.configuration, None)?;
     let collator = HostCollator::new("en")?;
     let cancelled = AtomicBool::new(false);
-    let mut rows = NativeSubjects::new(&mut query, Subject::LineCulture, &collator, &cancelled)?;
+    let mut rows = NativeSubjects::new(&query, Subject::LineCulture, &collator, &cancelled)?;
     let row = (0..rows.len())
         .find(|row| rows.field(*row, "culture").ok().as_ref() == Some(&json!("de")))
         .ok_or("Missing foreign subject.")?;
@@ -326,7 +326,7 @@ fn rule_subjects_read_saved_manifest_and_translation_stages_independently() -> R
     assert_eq!(occurrences[0]["devNotes"], "Occurrence context");
     assert_eq!(occurrences[0]["unitStatus"], "resolved");
     drop(rows);
-    let mut units = NativeSubjects::new(&mut query, Subject::UnitSource, &collator, &cancelled)?;
+    let mut units = NativeSubjects::new(&query, Subject::UnitSource, &collator, &cancelled)?;
     assert_eq!(units.len(), 1);
     assert_eq!(units.field(0, "source")?, "Saved");
     Ok(())
@@ -369,7 +369,7 @@ fn manifest_notes_count_for_saved_lines_and_the_detail_keeps_the_list_culture_sc
         .and_then(|line| line["id"].as_str())
         .ok_or("Missing the plain line.")?
         .to_owned();
-    let mut query = EngineQuery::open(&fixture.configuration, None)?;
+    let query = EngineQuery::open(&fixture.configuration, None)?;
     let cancelled = AtomicBool::new(false);
     let without_notes = parse_search_request(
         &json!({"query":"","capability":"all","pageSize":50,"withoutNotes":true,
@@ -430,7 +430,7 @@ fn search_atoms_are_reused_by_their_normal_form_and_never_change_an_answer() -> 
     ])?;
     fixture.lines()?;
     let cancelled = AtomicBool::new(false);
-    let mut warm = EngineQuery::open(&fixture.configuration, None)?;
+    let warm = EngineQuery::open(&fixture.configuration, None)?;
     let missing = json!([{"field":"notes","op":"is","values":["missing"]}]);
     let target = json!({"target":"Game"});
     let german = json!({"target":"Game","culture":"de","searchTranslations":true});
@@ -449,7 +449,7 @@ fn search_atoms_are_reused_by_their_normal_form_and_never_change_an_answer() -> 
         let answer = warm.search(&request, &cancelled)?;
         let cold = EngineQuery::open(&fixture.configuration, None)?.search(&request, &cancelled)?;
         assert_eq!(answer, cold, "{value}");
-        atoms.push(warm.atoms.len());
+        atoms.push(warm.atoms.lock().len());
         listed.push(
             answer["localization"]["lines"]
                 .as_array()
@@ -487,8 +487,8 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
     ])?;
     fixture.lines()?;
     let cancelled = AtomicBool::new(false);
-    let mut query = EngineQuery::open(&fixture.configuration, None)?;
-    let mut search = |value: Value| -> Result<Value> {
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let search = |value: Value| -> Result<Value> {
         query.search(&parse_search_request(&value.to_string())?, &cancelled)
     };
     let base = json!({"query":"","capability":"all","pageSize":50,"group":"source",
@@ -763,12 +763,12 @@ fn example_row_checks_emit_the_existing_evidence() -> Result<()> {
             None
         };
         let program = example_program(&[check], document)?;
-        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let query = EngineQuery::open(&fixture.configuration, None)?;
         let collator = HostCollator::new("en")?;
         let cancelled = AtomicBool::new(false);
         let mut findings = Vec::new();
         for subject in [Subject::Line, Subject::LineCulture] {
-            let mut rows = NativeSubjects::new(&mut query, subject, &collator, &cancelled)?;
+            let mut rows = NativeSubjects::new(&query, subject, &collator, &cancelled)?;
             let evaluation = program.evaluate(&mut rows, &collator)?;
             findings.extend(evaluation.findings);
         }
@@ -829,12 +829,12 @@ fn remaining_source_and_archive_checks_keep_their_evidence() -> Result<()> {
         fixture.packages(&if check == "string_table_key_collision" { vec![json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/A.A","location":2,"row":"K"}),json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/B.B","location":2,"row":"K"})] } else { vec![json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/Example.Example","property":"Label"})] })?;
         fixture.lines()?;
         let program = example_program(&[check], None)?;
-        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let query = EngineQuery::open(&fixture.configuration, None)?;
         let collator = HostCollator::new("en")?;
         let cancelled = AtomicBool::new(false);
         let mut findings = Vec::new();
         for subject in [Subject::Line, Subject::LineCulture] {
-            let mut rows = NativeSubjects::new(&mut query, subject, &collator, &cancelled)?;
+            let mut rows = NativeSubjects::new(&query, subject, &collator, &cancelled)?;
             findings.extend(program.evaluate(&mut rows, &collator)?.findings);
         }
         assert_eq!(findings.len(), 1, "{check}: {findings:?}");
@@ -917,12 +917,12 @@ fn every_authored_kind_uses_the_same_evaluator_and_existing_evidence() -> Result
         fixture.packages(&[json!({"namespace":"UI","key":"K","source":source,"object":"/Game/Text/Example.Example","property":"Label"})])?;
         fixture.lines()?;
         let program = example_program(&[], Some(document))?;
-        let mut query = EngineQuery::open(&fixture.configuration, None)?;
+        let query = EngineQuery::open(&fixture.configuration, None)?;
         let collator = HostCollator::new("en")?;
         let cancelled = AtomicBool::new(false);
         let mut findings = Vec::new();
         for subject in [Subject::Line, Subject::LineCulture, Subject::UnitSource] {
-            let mut rows = NativeSubjects::new(&mut query, subject, &collator, &cancelled)?;
+            let mut rows = NativeSubjects::new(&query, subject, &collator, &cancelled)?;
             findings.extend(program.evaluate(&mut rows, &collator)?.findings);
         }
         assert_eq!(
@@ -954,7 +954,7 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     let configuration = fixture.configuration.clone();
     drop(fixture);
     let cancelled = AtomicBool::new(false);
-    let mut query = EngineQuery::open(&configuration, None)?;
+    let query = EngineQuery::open(&configuration, None)?;
     let joined = query.reader.joined_key.clone();
     let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let key = result["key"].as_str().ok_or("Missing findings key.")?;
@@ -1001,7 +1001,7 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
         page["profile"]["responseBytes"] = json!(0);
         page
     };
-    let mut reopened = EngineQuery::open(&configuration, None)?;
+    let reopened = EngineQuery::open(&configuration, None)?;
     assert_eq!(
         unstaged(crate::json_value::parse(&reopened.findings_query(
             crate::json_value::parse(&page(key, 50))?,
@@ -1058,7 +1058,7 @@ fn persisted_place_sets_may_exceed_one_dictionary_string() -> Result<()> {
     let configuration = fixture.configuration.clone();
     drop(fixture);
     let cancelled = AtomicBool::new(false);
-    let mut query = EngineQuery::open(&configuration, None)?;
+    let query = EngineQuery::open(&configuration, None)?;
     let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let key = result["key"].as_str().ok_or("Missing findings key.")?;
     let lines = crate::json_value::parse(&query.findings_query(
@@ -1328,9 +1328,9 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
         .as_str()
         .ok_or("Missing line ID.")?
         .to_owned();
-    let mut query = EngineQuery::open(&fixture.configuration, None)?;
+    let query = EngineQuery::open(&fixture.configuration, None)?;
     let cancelled = AtomicBool::new(false);
-    let related = |query: &mut EngineQuery, request: Value| {
+    let related = |query: &EngineQuery, request: Value| {
         query.related(
             &crate::engine_related::parse_related_request(&request.to_string())?,
             &cancelled,
@@ -1345,7 +1345,7 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
             .collect()
     };
     let found = related(
-        &mut query,
+        &query,
         json!({"target":"Game","selection":{"kind":"unit","id":a},"pageSize":50}),
     )?;
     assert_eq!(found["self"]["unit"]["id"], json!(a));
@@ -1368,7 +1368,7 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
     assert_eq!(found["keyChange"]["members"], json!([]));
     // A unit with two saved sources conflicts with its key's gathered source.
     let conflicting = related(
-        &mut query,
+        &query,
         json!({"target":"Game","selection":{"kind":"unit","id":c},"pageSize":1}),
     )?;
     assert_eq!(ids(&conflicting["conflict"]), [json!(c)]);
@@ -1380,7 +1380,7 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
     assert_eq!(conflicting["self"]["complete"], false);
     // A line's own units are its self member's; its sections list lines and units.
     let by_line = related(
-        &mut query,
+        &query,
         json!({"target":"Game","selection":{"kind":"line","id":line_c},"pageSize":50}),
     )?;
     assert_eq!(by_line["self"]["kind"], "line");
@@ -1388,7 +1388,7 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
     assert_eq!(ids(&by_line["conflict"]), [json!(c)]);
     // Without a target there are only unit sections, and no translations.
     let untargeted = related(
-        &mut query,
+        &query,
         json!({"selection":{"kind":"unit","id":b},"pageSize":50}),
     )?;
     assert_eq!(ids(&untargeted["sameText"]), [json!(a)]);
@@ -1396,7 +1396,7 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
     assert!(untargeted["self"].get("translations").is_none());
     assert_eq!(
         related(
-            &mut query,
+            &query,
             json!({"target":"Other","selection":{"kind":"unit","id":a},"pageSize":50}),
         )?,
         Value::Null
@@ -1447,11 +1447,11 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     // Evaluating writes the findings layer, so the fixture releases its writer first.
     let configuration = fixture.configuration.clone();
     drop(fixture);
-    let mut query = EngineQuery::open(&configuration, None)?;
+    let query = EngineQuery::open(&configuration, None)?;
     let cancelled = AtomicBool::new(false);
     let evaluated = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let key = evaluated["key"].as_str().ok_or("Missing findings key.")?;
-    let search = |query: &mut EngineQuery, patch: Value| -> Result<Value> {
+    let search = |query: &EngineQuery, patch: Value| -> Result<Value> {
         let mut request = json!({"query":"","capability":"all","pageSize":50,"localization":{"target":"Game"},"findings":{"key":key}});
         for (field, value) in patch.as_object().ok_or("object")? {
             request[field] = value.clone();
@@ -1479,7 +1479,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     };
 
     // Each line lists the rules with a finding on it, and those that count raise `finding`.
-    let page = search(&mut query, json!({"facets":{"findings":true,"facts":true}}))?;
+    let page = search(&query, json!({"facets":{"findings":true,"facts":true}}))?;
     let line = |key: &str| -> Result<Value> {
         page["localization"]["lines"]
             .as_array()
@@ -1528,26 +1528,26 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
 
     // Finding clauses name rules; a rule outside the layer has no rows.
     let only = search(
-        &mut query,
+        &query,
         json!({"filter":[{"field":"finding","op":"is","values":["localization.format_arguments"]}],"facets":{"findings":true}}),
     )?;
     assert_eq!(keys(&only), vec![json!("Args")]);
     // The facet leaves out its own clause.
     assert_eq!(facet(&only), facet(&page));
     let others = search(
-        &mut query,
+        &query,
         json!({"filter":[{"field":"finding","op":"is_not","values":["localization.format_arguments"]}]}),
     )?;
     assert_eq!(others["total"], json!(2));
     let dropped = search(
-        &mut query,
+        &query,
         json!({"filter":[{"field":"finding","op":"is","values":["invented"]}]}),
     )?;
     assert_eq!(dropped["total"], json!(0));
 
     // One group per rule, in program order; a line is in each rule's group it has a finding of.
     let grouped = search(
-        &mut query,
+        &query,
         json!({"group":"finding","openGroups":["localization.source_whitespace"]}),
     )?;
     let groups = grouped["groups"]["entries"]
@@ -1565,7 +1565,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     // A culture scope without the finding's culture leaves its line findings out; a source
     // finding has no culture.
     let english = search(
-        &mut query,
+        &query,
         json!({"localization":{"target":"Game","cultures":["en"]},"facets":{"findings":true}}),
     )?;
     assert_eq!(
@@ -1594,7 +1594,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
 
     // Without a layer no row has a finding, and no line has the `finding` problem.
     let plain = search(
-        &mut query,
+        &query,
         json!({"findings":null,"filter":[{"field":"finding","op":"is","values":["localization.format_arguments"]}]}),
     );
     assert!(plain.is_err(), "null fields are rejected");
@@ -1652,7 +1652,7 @@ fn browse_places_source_findings_on_their_own_units_when_some_units_have_no_sour
     )?;
     let configuration = fixture.configuration.clone();
     drop(fixture);
-    let mut query = EngineQuery::open(&configuration, None)?;
+    let query = EngineQuery::open(&configuration, None)?;
     let cancelled = AtomicBool::new(false);
     let evaluated = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let key = evaluated["key"].as_str().ok_or("Missing findings key.")?;

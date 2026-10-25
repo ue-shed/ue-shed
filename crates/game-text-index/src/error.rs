@@ -12,6 +12,8 @@ pub enum ErrorCode {
     Unavailable,
     NotFound,
     Io,
+    /// A defect in the engine, such as a panic, contained to the request it failed.
+    Internal,
 }
 
 impl ErrorCode {
@@ -26,6 +28,7 @@ impl ErrorCode {
             Self::Unavailable => "unavailable",
             Self::NotFound => "not_found",
             Self::Io => "io_error",
+            Self::Internal => "internal",
         }
     }
 }

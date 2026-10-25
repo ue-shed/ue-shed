@@ -199,7 +199,7 @@ impl EngineQuery {
     /// row counts in every rule it has a finding of. A facet lists every rule; groups list those
     /// with at least the request's minimum size.
     pub(crate) fn finding_groups(
-        &mut self,
+        &self,
         rows: &[u32],
         request: &SearchRequest,
         findings: &FindingRows,
@@ -243,7 +243,7 @@ impl EngineQuery {
     }
 
     pub(crate) fn aggregate(
-        &mut self,
+        &self,
         rows: &[u32],
         request: &SearchRequest,
         by: GroupBy,
@@ -416,7 +416,7 @@ impl EngineQuery {
         Ok(json!({"entries":entries,"more":more}))
     }
     pub(crate) fn file_scope(
-        &mut self,
+        &self,
         rows: &[u32],
         request: &SearchRequest,
         cancelled: &AtomicBool,

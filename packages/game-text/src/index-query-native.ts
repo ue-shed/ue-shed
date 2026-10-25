@@ -2,7 +2,6 @@ import { Context, Effect, Layer, RcMap, Schema, type Scope } from "effect";
 import { GameTextIndexConfiguration } from "@ue-shed/protocol";
 import { TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 import {
-	NativeGameTextEngineClient,
 	nativeGameTextEngineClientLayer,
 	type AssetReaderConfiguration
 } from "@ue-shed/unreal-assets";
@@ -28,13 +27,14 @@ export class GameTextIndexQuery extends Context.Service<
 >()("@ue-shed/game-text/GameTextIndexQuery") {}
 
 /**
- * Each snapshot owns its native processes in the caller's scope, including cancellation: one for
- * interactive reads, and one for bulk reads opened on the first of them.
+ * The host's engine: one process, started by the first read, holds every open snapshot's reader.
+ * Each snapshot's reader lives in its callers' scope.
  */
 export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =>
 	Layer.effect(
 		GameTextIndexQuery,
 		Effect.gen(function* () {
+			const engine = yield* Layer.build(nativeGameTextEngineClientLayer(configuration));
 			const Request = Schema.Struct({
 				configuration: GameTextIndexConfiguration,
 				generation: Schema.String,
@@ -53,26 +53,14 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 						const input = yield* Schema.decodeUnknownEffect(
 							Schema.fromJsonString(Request)
 						)(key).pipe(Effect.orDie);
-						const services = yield* Layer.build(
-							nativeGameTextEngineClientLayer(configuration)
-						);
 						return yield* openNativeTextQuery({
 							...input,
-							// Dumps and exports run in their own process, so a corpus read never
-							// delays a search or focus of the same snapshot.
-							bulkEngine: Layer.build(
-								nativeGameTextEngineClientLayer(configuration)
-							).pipe(
-								Effect.map((built) =>
-									Context.get(built, NativeGameTextEngineClient)
-								)
-							),
 							onFailure: Effect.suspend(() => {
 								if (invalidated) return Effect.void;
 								invalidated = true;
 								return RcMap.invalidate(readers, key);
 							})
-						}).pipe(Effect.provide(services));
+						}).pipe(Effect.provide(engine));
 					})
 			});
 			return GameTextIndexQuery.of({

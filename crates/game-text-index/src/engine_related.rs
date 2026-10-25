@@ -62,15 +62,15 @@ pub(crate) struct RelatedIndex {
 }
 
 impl EngineQuery {
-    pub fn related_json(&mut self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
+    pub fn related_json(&self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
         let request = parse_related_request(payload)?;
         let result = self.related(&request, cancelled)?;
         crate::wtf8::view_json(&result)
     }
 
-    fn related_index(&mut self, p: &Projection) -> Result<Arc<RelatedIndex>> {
-        if let Some(index) = &self.related_index {
-            return Ok(Arc::clone(index));
+    fn related_index(&self, p: &Projection) -> Result<Arc<RelatedIndex>> {
+        if let Some(index) = self.related_index.get() {
+            return Ok(index);
         }
         let mut units = HashMap::<u32, Vec<u32>>::new();
         // In ID order, so each section lists its members as a search by ID does.
@@ -88,12 +88,12 @@ impl EngineQuery {
                 .or_default()
                 .push(*line);
         }
-        let index = Arc::new(RelatedIndex { units, lines });
-        self.related_index = Some(Arc::clone(&index));
-        Ok(index)
+        Ok(self
+            .related_index
+            .store(Arc::new(RelatedIndex { units, lines })))
     }
 
-    pub fn related(&mut self, request: &RelatedRequest, cancelled: &AtomicBool) -> Result<Value> {
+    pub fn related(&self, request: &RelatedRequest, cancelled: &AtomicBool) -> Result<Value> {
         checkpoint(cancelled)?;
         let target = match &request.target {
             Some(target) if self.target["name"] != *target => return Ok(Value::Null),
@@ -242,7 +242,7 @@ impl EngineQuery {
     /// A unit's search result and first places, as focus gives them, and with a target its line's
     /// translations, as localization detail gives them.
     fn unit_member(
-        &mut self,
+        &self,
         raw: usize,
         page_size: usize,
         target: Option<&str>,
@@ -268,7 +268,7 @@ impl EngineQuery {
     }
 
     /// A line's preview, its unit IDs and its translations.
-    fn line_member(&mut self, line: usize, cancelled: &AtomicBool) -> Result<Value> {
+    fn line_member(&self, line: usize, cancelled: &AtomicBool) -> Result<Value> {
         let preview = self.preview(line)?;
         let begin = self.value("line", "starts", line)? as usize;
         let end = *self
@@ -295,7 +295,7 @@ impl EngineQuery {
     }
 
     fn add_translations(
-        &mut self,
+        &self,
         member: &mut Value,
         target: &str,
         kind: &str,
@@ -329,7 +329,7 @@ impl EngineQuery {
     }
 
     /// The line a key change pairs with this one, if the pairing names a line of this join.
-    fn key_change_line(&mut self, line: usize) -> Result<Option<u32>> {
+    fn key_change_line(&self, line: usize) -> Result<Option<u32>> {
         let change = self.reader.value("line.key_change", line)?;
         let Some(pair) = self.reader.meta["pairs"]
             .get(((change >> 1) as usize).wrapping_sub(1))

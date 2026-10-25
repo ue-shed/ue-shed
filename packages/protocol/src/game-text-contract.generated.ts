@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "1871170db90102c2acc17ec0836059366bfca6ca8962829490c2ccc6b582e663"
+	contractHash: "8743f134213b86a9d0860239f7ab8d7b2308f4080d29d51a433e74b9283623f7"
 } as const;
 
 /**
@@ -67,7 +67,7 @@ export type EngineEnd = { profile: EngineProfile, };
 
 export type EngineFailure = { error: EngineError, profile: EngineProfile, };
 
-export type EngineError = { code: "busy" | "cancelled" | "invalid_input" | "invalid_cache" | "limit_exceeded" | "stale_generation" | "unavailable" | "not_found" | "io_error", message: string, };
+export type EngineError = { code: "busy" | "cancelled" | "invalid_input" | "invalid_cache" | "limit_exceeded" | "stale_generation" | "unavailable" | "not_found" | "io_error" | "internal", message: string, };
 
 export type EngineProfile = { io: IoMetrics, stageSeconds: { [key in string]: number }, };
 

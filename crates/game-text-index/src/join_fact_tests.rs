@@ -1698,3 +1698,72 @@ fn browse_places_source_findings_on_their_own_units_when_some_units_have_no_sour
     }
     Ok(())
 }
+
+#[test]
+fn a_truncated_snapshot_fails_its_reads_with_a_typed_error_and_the_session_goes_on() -> Result<()> {
+    use crate::engine::{EnginePolicy, EngineRequest, EngineSession};
+    let mut fixture = Fixture::new()?;
+    let texts = [("Start", "Start game"), ("Quit", "Quit game")];
+    fixture.file(
+        "Game.manifest",
+        "manifest",
+        &texts
+            .iter()
+            .map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"path":format!("/Game/Text/Example.Example.{key}")}))
+            .collect::<Vec<_>>(),
+    )?;
+    fixture.file("en.archive", "archive", &[])?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.packages(
+        &texts
+            .iter()
+            .map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"object":format!("/Game/Text/{key}.{key}"),"property":"Label"}))
+            .collect::<Vec<_>>(),
+    )?;
+    fixture.lines()?;
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    let (_, root) = crate::store::open_root(&configuration)?;
+    let joined = root["active"]["joined"].as_str().ok_or("No joined view.")?;
+    let session = EngineSession::default();
+    let cancelled = AtomicBool::new(false);
+    let opened = session.execute(
+        &EngineRequest::Open {
+            configuration: configuration.clone(),
+            expected_generation: root["generation"].as_str().ok_or("generation")?.into(),
+            expected_joined: joined.into(),
+            policy: EnginePolicy::default(),
+        },
+        &cancelled,
+    )?;
+    let reply: Value = serde_json::from_str(&opened.part.ok_or("reply")?)?;
+    let reader = reply["reader"].as_str().ok_or("reader")?.to_owned();
+    // The pinned files lose their sections after the reader opened, as a damaged disk would.
+    for layer in root["layers"].as_object().ok_or("No layers.")?.values() {
+        let file = layer["file"].as_str().ok_or("No layer file.")?;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(configuration.directory()?.join(file))?
+            .set_len(64)?;
+    }
+    // The fingerprint reads the package inputs, which opening didn't load.
+    let failed = session
+        .execute(
+            &EngineRequest::CorpusFingerprint {
+                reader: reader.clone(),
+            },
+            &cancelled,
+        )
+        .err()
+        .ok_or("A read of the truncated snapshot succeeded.")?;
+    assert!(
+        matches!(
+            failed.code,
+            crate::ErrorCode::Io | crate::ErrorCode::InvalidCache
+        ),
+        "{failed}"
+    );
+    session.execute(&EngineRequest::Capabilities, &cancelled)?;
+    session.execute(&EngineRequest::Close { reader }, &cancelled)?;
+    Ok(())
+}

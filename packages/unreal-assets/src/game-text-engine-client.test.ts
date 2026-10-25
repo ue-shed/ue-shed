@@ -133,7 +133,8 @@ const close = { action: "close", reader: "reader" } as const;
 /** Run calls through one client whose engines come from `engines` in order. */
 const withClient = <A, E>(
 	engines: ScriptedEngine[],
-	use: (client: NativeGameTextEngineClient["Service"]) => Effect.Effect<A, E>
+	use: (client: NativeGameTextEngineClient["Service"]) => Effect.Effect<A, E>,
+	cancelWaitMs?: number
 ) =>
 	Effect.runPromise(
 		Effect.scoped(
@@ -141,11 +142,15 @@ const withClient = <A, E>(
 				return yield* use(yield* NativeGameTextEngineClient);
 			}).pipe(
 				Effect.provide(
-					nativeGameTextEngineClientLayer(configuration, () => {
-						const engine = engines.shift();
-						if (engine === undefined) throw new Error("unexpected engine start");
-						return engine;
-					})
+					nativeGameTextEngineClientLayer(
+						configuration,
+						() => {
+							const engine = engines.shift();
+							if (engine === undefined) throw new Error("unexpected engine start");
+							return engine;
+						},
+						cancelWaitMs
+					)
 				)
 			)
 		)
@@ -274,6 +279,32 @@ it("sends cancel for an interrupted request and ignores its late frames", async 
 		})
 	);
 	expect(engine.actions).toEqual(["capabilities", "close", "close", "close"]);
+});
+
+it("restarts an engine that doesn't stop a cancelled request, failing what was in flight", async () => {
+	const stuck = new ScriptedEngine();
+	const replacement = new ScriptedEngine();
+	await withClient(
+		[stuck, replacement],
+		(client) =>
+			Effect.gen(function* () {
+				yield* client.execute(close);
+				stuck.hold = true;
+				const cancelled = yield* Effect.forkChild(client.execute(close));
+				const waiting = yield* Effect.forkChild(client.execute(close));
+				yield* Effect.yieldNow;
+				yield* Fiber.interrupt(cancelled);
+				// The engine never answers the cancel, so the request still waiting fails with it.
+				expect(yield* Effect.flip(Fiber.join(waiting))).toMatchObject({
+					kind: "process",
+					code: "engine_unavailable"
+				});
+				yield* client.execute(close);
+			}),
+		20
+	);
+	expect(stuck.actions).toEqual(["capabilities", "close", "close", "close"]);
+	expect(replacement.actions).toEqual(["capabilities", "close"]);
 });
 
 it("ends the session on a malformed frame and fails what was in flight", async () => {

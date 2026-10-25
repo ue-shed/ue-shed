@@ -39,7 +39,9 @@ const contractError = (message: string) =>
 export const nativeGameTextEngineClientLayer = (
 	configuration: Pick<AssetReaderConfiguration, "executable" | "protocolObserver">,
 	/** Starts each engine process; tests supply scripted ones. */
-	processFactory?: GameTextEngineProcessFactory
+	processFactory?: GameTextEngineProcessFactory,
+	/** How long a cancelled request may run before the engine is restarted; tests shorten it. */
+	cancelWaitMs?: number
 ) =>
 	Layer.effect(
 		NativeGameTextEngineClient,
@@ -50,7 +52,8 @@ export const nativeGameTextEngineClientLayer = (
 						new GameTextEngineSession(
 							configuration.executable,
 							processFactory,
-							configuration.protocolObserver
+							configuration.protocolObserver,
+							cancelWaitMs
 						)
 				),
 				(session) => Effect.promise(() => session.close())

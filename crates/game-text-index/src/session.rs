@@ -325,12 +325,12 @@ enum Work {
     Request(Result<EngineRequest>),
     /// A body too large to parse on the reader thread.
     Body(Vec<u8>),
-    #[cfg(any(test, feature = "engine-probes"))]
+    #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
     Probe(probe::Probe),
 }
 impl Work {
     fn read(body: Vec<u8>) -> Self {
-        #[cfg(any(test, feature = "engine-probes"))]
+        #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
         if let Some(probe) = probe::read(&body) {
             return Self::Probe(probe);
         }
@@ -343,7 +343,7 @@ impl Work {
     fn class(&self) -> Class {
         match self {
             Self::Request(Ok(request)) => Class::of(request),
-            #[cfg(any(test, feature = "engine-probes"))]
+            #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
             Self::Probe(probe) => probe.class(),
             _ => Class::Bulk,
         }
@@ -352,7 +352,7 @@ impl Work {
         let parsed = match self {
             Self::Request(parsed) => parsed?,
             Self::Body(body) => request(&body)?,
-            #[cfg(any(test, feature = "engine-probes"))]
+            #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
             Self::Probe(probe) => return probe.run(cancelled),
         };
         session.execute(&parsed, cancelled)
@@ -529,9 +529,9 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
     })
 }
 
-/// Requests that drive the session's failure paths, built only for tests and probe builds:
+/// Requests that drive the session's failure paths, in tests, debug builds and probe builds:
 /// `{"action":"probe","probe":"hold"|"panic"|"abort","bulk":true}`.
-#[cfg(any(test, feature = "engine-probes"))]
+#[cfg(any(test, debug_assertions, feature = "engine-probes"))]
 mod probe {
     use super::Class;
     use crate::Result;

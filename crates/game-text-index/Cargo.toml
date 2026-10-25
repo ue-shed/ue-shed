@@ -33,7 +33,8 @@ ts-rs = "12.0"
 # cost every allocation.
 heap-counting = []
 benchmark-timings = []
-# A `probe` request that holds, panics or aborts, for the session's failure tests.
+# A `probe` request that holds, panics or aborts, for the session's failure tests. Debug builds
+# have it too; release builds have it only with this feature.
 engine-probes = []
 
 [target.'cfg(windows)'.dependencies]

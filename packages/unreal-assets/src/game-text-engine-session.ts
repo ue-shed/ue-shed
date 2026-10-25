@@ -19,6 +19,8 @@ const benchmark = channel("ue-shed.game-text-benchmark");
 const MAX_STDERR_BYTES = 64 * 1024;
 /** How long closing waits for the worker to exit after its input ends. */
 const CLOSE_WAIT_MS = 1_000;
+/** How long a cancelled request may run before the session counts the engine stuck. */
+const CANCEL_WAIT_MS = 2_000;
 
 /** One engine process, as the session drives it; tests supply scripted ones. */
 export interface GameTextEngineProcess {
@@ -70,6 +72,17 @@ function spawnEngine(executable: string): GameTextEngineProcess {
 			child.once("close", listener);
 		}
 	};
+}
+
+/**
+ * A failure probe: it holds until cancelled, panics, or aborts the process. Only debug and probe
+ * builds of the engine answer it, for the session's failure tests.
+ */
+export interface EngineProbe {
+	readonly action: "probe";
+	readonly probe: "hold" | "panic" | "abort";
+	/** Run it as bulk work rather than interactive. */
+	readonly bulk?: boolean;
 }
 
 /** A request's answer: its parts, each one frame's body, and what the request cost. */
@@ -125,6 +138,11 @@ const failure = (
 /** One running engine process and its requests in flight. */
 class Worker {
 	readonly pending = new Map<number, Pending>();
+	/** Cancelled requests awaiting their terminal frame: when each was cancelled, and its timer. */
+	private readonly cancelling = new Map<
+		number,
+		{ readonly at: number; readonly timer: ReturnType<typeof setTimeout> }
+	>();
 	private readonly decoder = new FrameDecoder();
 	private next = 0;
 	private stderr = "";
@@ -164,7 +182,9 @@ class Worker {
 						"process",
 						detail ||
 							`The Game Text engine exited ${code ?? signal ?? "unexpectedly"} with requests in flight.`,
-						code === null ? {} : { exitCode: code }
+						code === null
+							? { code: "engine_unavailable" }
+							: { code: "engine_unavailable", exitCode: code }
 					)
 				);
 				onExit(this);
@@ -180,10 +200,43 @@ class Worker {
 		return this.next;
 	}
 
+	/**
+	 * Sends `cancel` for a request the host stopped waiting for. An engine that hasn't ended it
+	 * within `wait` is stuck: the session kills it and fails what is in flight.
+	 */
+	cancel(id: number, wait: number): void {
+		if (!this.pending.delete(id) || this.exited) return;
+		this.process.write(encodeFrame(FrameKind.cancel, id));
+		const timer = setTimeout(() => {
+			this.fail(
+				failure(
+					"process",
+					"The Game Text engine did not stop a cancelled request, so it was restarted.",
+					{ code: "engine_unavailable" }
+				)
+			);
+			this.process.kill();
+		}, wait);
+		timer.unref();
+		this.cancelling.set(id, { at: performance.now(), timer });
+	}
+
 	private receive(frame: EngineFrame): void {
 		const pending = this.pending.get(frame.request);
-		// A late frame for a request the host stopped waiting for.
-		if (pending === undefined) return;
+		if (pending === undefined) {
+			// A late frame for a request the host cancelled; its last one ends the wait.
+			const cancelled = this.cancelling.get(frame.request);
+			if (cancelled !== undefined && frame.flags & LAST_FRAME) {
+				clearTimeout(cancelled.timer);
+				this.cancelling.delete(frame.request);
+				if (benchmark.hasSubscribers)
+					benchmark.publish({
+						stage: "engineCancel",
+						ms: performance.now() - cancelled.at
+					});
+			}
+			return;
+		}
 		const bytes = FRAME_HEADER_BYTES + frame.body.byteLength;
 		pending.outputBytes += bytes;
 		pending.largestFrameBytes = Math.max(pending.largestFrameBytes, bytes);
@@ -243,6 +296,8 @@ class Worker {
 	/** Fails every request in flight. */
 	fail(error: AssetReaderError): void {
 		this.exited = true;
+		for (const { timer } of this.cancelling.values()) clearTimeout(timer);
+		this.cancelling.clear();
 		const pending = [...this.pending.values()];
 		this.pending.clear();
 		for (const request of pending) request.resume(Effect.fail(error));
@@ -264,7 +319,9 @@ export class GameTextEngineSession {
 		private readonly processFactory: GameTextEngineProcessFactory = () =>
 			spawnEngine(executable),
 		/** The reader's protocol observer: a start and a completion for each request. */
-		private readonly observer?: (event: AssetReaderProtocolObservation) => void
+		private readonly observer?: (event: AssetReaderProtocolObservation) => void,
+		/** How long a cancelled request may run before the engine counts as stuck. */
+		private readonly cancelWait = CANCEL_WAIT_MS
 	) {}
 
 	private observe = (event: AssetReaderProtocolObservation): void => {
@@ -298,9 +355,11 @@ export class GameTextEngineSession {
 
 	/**
 	 * Sends one request and gathers its frames until the terminal one. Interrupting the call stops
-	 * waiting and sends `cancel`.
+	 * waiting and sends `cancel`; an engine that doesn't end the request in time is restarted.
 	 */
-	call(request: GameTextContract.EngineRequest): Effect.Effect<EngineAnswer, AssetReaderError> {
+	call(
+		request: GameTextContract.EngineRequest | EngineProbe
+	): Effect.Effect<EngineAnswer, AssetReaderError> {
 		return Effect.callback<EngineAnswer, AssetReaderError>((resume) => {
 			let worker: Worker;
 			try {
@@ -339,10 +398,7 @@ export class GameTextEngineSession {
 			if (worker.process.pid !== undefined)
 				this.observe({ kind: "worker_started", pid: worker.process.pid });
 			worker.process.write(encodeFrame(FrameKind.request, id, body));
-			return Effect.sync(() => {
-				if (worker.pending.delete(id) && !worker.exited)
-					worker.process.write(encodeFrame(FrameKind.cancel, id));
-			});
+			return Effect.sync(() => worker.cancel(id, this.cancelWait));
 		});
 	}
 

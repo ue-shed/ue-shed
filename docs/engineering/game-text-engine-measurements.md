@@ -557,7 +557,11 @@ released project. Its first version held every line's fields while sorting and r
 tree on 1×; it now holds only the sort keys and reads each line's fields again as it writes them.
 
 **The 5,000-row findings page** is unchanged: a page of batches takes as long as Phase 3's page of
-JSON did. Where its time goes hasn't been attributed.
+JSON did. On 1×, of its 690–750 ms the engine's `compose` stage takes 450–490 ms: it builds each
+finding with its places, one at a time, about 95 µs a finding. Selecting, ordering and counting
+take under 3 ms, and the host's thread spends 46–94 ms. The rest is the 12 MB page crossing the
+session and being parsed. The page's findings carry their affected occurrences, about 2.4 KB a
+finding.
 
 **Memory.** With one snapshot open, the engine's working set is 30% and 22% smaller. It doesn't
 grow with a 5,000-line bulk read in either phase.

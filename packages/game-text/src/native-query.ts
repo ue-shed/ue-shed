@@ -2,13 +2,8 @@ import { channel } from "node:diagnostics_channel";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Clock, Effect, Exit, Fiber, Ref, Schema, Scope, Semaphore } from "effect";
-import { MAX_PROTOCOL_PATH_BYTES, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
-import type {
-	GameTextContract,
-	GameTextEngineOutcome,
-	GameTextEngineRequest,
-	GameTextIndexConfiguration
-} from "@ue-shed/protocol";
+import { answerJson, type EngineAnswer, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
+import type { GameTextContract, GameTextIndexConfiguration } from "@ue-shed/protocol";
 import { GameTextIndexError } from "./index-contract.js";
 import { TextCorpusReportHeader } from "./corpus-summary.js";
 import {
@@ -36,7 +31,7 @@ import {
 
 import type { NativeTextQuery } from "./native-query-contract.js";
 import { RelatedLines, RelatedLinesRequest } from "./related-lines.js";
-import { canonicalRuleDocument } from "./rules/effective.js";
+import { enabledRuleDocument } from "./rules/effective.js";
 import { annotateFindingsProfile, inflateFindingsPage } from "./native-findings.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
 
@@ -72,8 +67,8 @@ const failed = (operation: string, cause: unknown) =>
 interface Lane {
 	readonly reader: string;
 	readonly execute: (
-		request: GameTextEngineRequest
-	) => Effect.Effect<GameTextEngineOutcome, GameTextIndexError>;
+		request: GameTextContract.EngineRequest
+	) => Effect.Effect<EngineAnswer, GameTextIndexError>;
 }
 
 /** Pin one native snapshot for the caller's scope, with no JavaScript query-engine fallback. */
@@ -133,7 +128,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			})
 		);
 	const executeOn = (client: NativeGameTextEngineClient["Service"], invalidates = true) =>
-		Effect.fn("GameTextIndex.nativeCall")((request: GameTextEngineRequest) =>
+		Effect.fn("GameTextIndex.nativeCall")((request: GameTextContract.EngineRequest) =>
 			client.execute(request).pipe(
 				Effect.mapError((cause) => failed(request.action, cause)),
 				Effect.tapError(() =>
@@ -155,9 +150,9 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 					audienceRules:
 						input.audienceRules ?? TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
 				}
-			}),
+			}).pipe(Effect.map(answerJson<GameTextContract.OpenReply>)),
 			(opened) =>
-				opened.reader === null
+				opened === undefined
 					? Effect.void
 					: execute({ action: "close", reader: opened.reader }).pipe(
 							Effect.catch((cause) =>
@@ -166,10 +161,10 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 						),
 			{ interruptible: true }
 		);
-		const reader = opened.reader;
+		const reader = opened?.reader;
 		if (
-			reader === null ||
-			opened.generation !== input.generation ||
+			reader === undefined ||
+			opened?.generation !== input.generation ||
 			opened.joinedKey !== input.joinedKey
 		)
 			return yield* Effect.fail(
@@ -212,16 +207,13 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				);
 	function response<S extends Schema.Codec<unknown, unknown>>(
 		lane: Lane,
-		request: GameTextEngineRequest,
+		request: GameTextContract.EngineRequest,
 		schema: S
 	): Effect.Effect<S["Type"], GameTextIndexError> {
 		return Effect.gen(function* () {
-			const outcome = yield* lane.execute(request);
+			const answer = yield* lane.execute(request);
 			const decodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
-			const parsed = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
-				outcome.payload
-			);
-			const value = yield* Schema.decodeUnknownEffect(schema)(parsed);
+			const value = yield* Schema.decodeUnknownEffect(schema)(answerJson<unknown>(answer));
 			if (decodeStarted !== undefined)
 				benchmark.publish({
 					stage: "tsPayloadDecode",
@@ -268,7 +260,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 					yield* lane.execute({
 						action: "localization_export",
 						reader: lane.reader,
-						payload: JSON.stringify(decoded),
+						request: decoded,
 						output
 					});
 					const text = yield* Effect.tryPromise({
@@ -302,7 +294,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 						: {
 								action: "export",
 								reader: lane.reader,
-								payload: JSON.stringify(decoded),
+								request: decoded,
 								output
 							}
 				);
@@ -346,7 +338,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const fileRead = <A>(
 		lane: Lane,
 		operation: string,
-		request: (output: string) => GameTextEngineRequest,
+		request: (output: string) => GameTextContract.EngineRequest,
 		schema: Schema.Codec<A, unknown>
 	) =>
 		withStage((directory) =>
@@ -427,7 +419,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			(output) => ({
 				action: "aggregate",
 				reader: lane.reader,
-				payload: JSON.stringify(decoded),
+				request: decoded,
 				output
 			}),
 			NativeAggregate
@@ -460,7 +452,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				...request,
 				pageSize: 50
 			}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
-			const payload = JSON.stringify({ ...decoded, fields: [...new Set(fields)] });
+			const selection = { ...decoded, fields: [...new Set(fields)] };
 			if (encodeStarted !== undefined)
 				benchmark.publish({
 					stage: "tsDomainEncode",
@@ -473,7 +465,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				(output) => ({
 					action: "localization_export",
 					reader: lane.reader,
-					payload,
+					request: selection,
 					output
 				}),
 				localizationLineViews(fields)
@@ -486,12 +478,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				yield* lane.execute({
 					action: "export",
 					reader: lane.reader,
-					payload: JSON.stringify({
-						query: "",
-						capability: "all",
-						pageSize: 50,
-						units: ids
-					}),
+					request: { query: "", capability: "all", pageSize: 50, units: ids },
 					output
 				});
 				const text = yield* Effect.tryPromise({
@@ -544,12 +531,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	 * A findings reply as the contract's type. The session's handshake checked the engine's
 	 * contract, so the reply is parsed, not decoded.
 	 */
-	const engineReply = <T>(lane: Lane, request: GameTextEngineRequest) =>
+	const engineReply = <T>(lane: Lane, request: GameTextContract.EngineRequest) =>
 		Effect.gen(function* () {
-			const { payload } = yield* lane.execute(request);
-			if (payload === null)
+			const reply = answerJson<T>(yield* lane.execute(request));
+			if (reply === undefined)
 				return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
-			return yield* parseReply<T>(request.action, payload);
+			return reply;
 		});
 	const parseReply = <T>(operation: string, text: string) =>
 		Effect.try({
@@ -560,7 +547,10 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			catch: (cause) => failed(operation, cause)
 		});
 	/** A bounded findings read, which the engine spills to a file past one frame. */
-	const findingResponse = <T extends object>(lane: Lane, request: GameTextEngineRequest) =>
+	const findingResponse = <T extends object>(
+		lane: Lane,
+		request: GameTextContract.EngineRequest
+	) =>
 		Effect.gen(function* () {
 			const reply = yield* engineReply<T | GameTextContract.SpilledReply>(lane, request);
 			if (!("file" in reply)) return reply;
@@ -592,7 +582,6 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
 			Effect.mapError((cause) => failed("search", cause))
 		);
-		const payload = JSON.stringify(decoded);
 		if (encodeStarted !== undefined)
 			benchmark.publish({
 				stage: "tsDomainEncode",
@@ -601,7 +590,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			});
 		return yield* response(
 			interactive,
-			{ action: "search", reader, payload },
+			{ action: "search", reader, request: decoded },
 			TextCorpusSearchPage
 		);
 	});
@@ -613,7 +602,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		);
 		return yield* response(
 			interactive,
-			{ action: "search", reader, payload: JSON.stringify({ ...decoded, parts: ["rows"] }) },
+			{ action: "search", reader, request: { ...decoded, parts: ["rows"] } },
 			TextCorpusRowsPage
 		);
 	});
@@ -625,7 +614,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		);
 		const result = yield* response(
 			interactive,
-			{ action: "focus", reader, payload: JSON.stringify(decoded) },
+			{ action: "focus", reader, request: decoded },
 			Schema.NullOr(TextCorpusFocus)
 		);
 		return result ?? undefined;
@@ -639,7 +628,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				yield* execute({
 					action: "localization_focus_export",
 					reader,
-					payload: JSON.stringify(id),
+					line: id,
 					output
 				});
 				const text = yield* Effect.tryPromise({
@@ -663,7 +652,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		);
 		const result = yield* response(
 			interactive,
-			{ action: "localization_detail", reader, payload: JSON.stringify(decoded) },
+			{ action: "localization_detail", reader, request: decoded },
 			Schema.NullOr(LocalizationFocus)
 		);
 		return result ?? undefined;
@@ -676,7 +665,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		);
 		const result = yield* response(
 			interactive,
-			{ action: "related", reader, payload: JSON.stringify(decoded) },
+			{ action: "related", reader, request: decoded },
 			Schema.NullOr(RelatedLines)
 		);
 		if (result)
@@ -697,21 +686,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")((document) =>
 			bulk((lane) =>
 				Effect.gen(function* () {
-					// The rule program travels inline, as JSON text the engine reads WTF-8-aware.
-					const rules = canonicalRuleDocument(document);
-					const bytes = Buffer.byteLength(JSON.stringify(rules), "utf8");
-					if (bytes > MAX_PROTOCOL_PATH_BYTES)
-						return yield* Effect.fail(
-							failed(
-								"findings_rules",
-								`The rule policy encodes to ${bytes} bytes; one evaluation request carries at most ${MAX_PROTOCOL_PATH_BYTES}.`
-							)
-						);
 					const requestStart = yield* Clock.currentTimeNanos;
 					return yield* engineReply<GameTextContract.FindingsEvaluation>(lane, {
 						action: "findings_evaluate",
 						reader: lane.reader,
-						rules,
+						// The rule program travels inline; the engine reads it WTF-8-aware.
+						rules: enabledRuleDocument(document),
 						collationLocale: new Intl.Collator().resolvedOptions().locale
 					}).pipe(
 						Effect.tap((result) =>
@@ -730,11 +710,11 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 						const reply = yield* engineReply<{ readonly acceptance: string }>(lane, {
 							action: "findings_accept",
 							reader: lane.reader,
-							payload: JSON.stringify({
+							request: {
 								key,
 								...(previous === undefined ? undefined : { previous }),
 								accepted: accepted.slice(start, start + 5000)
-							})
+							}
 						});
 						previous = reply.acceptance;
 					}
@@ -756,7 +736,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				reads,
 				engineReply<GameTextContract.RulesCheck>(interactive, {
 					action: "rules_check",
-					rules: canonicalRuleDocument(document)
+					rules: enabledRuleDocument(document)
 				}).pipe(Effect.mapError((cause) => failed("rules_check", cause)))
 			)
 		),
@@ -765,7 +745,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				findingResponse<GameTextContract.FindingsPage>(lane, {
 					action: "findings_query",
 					reader: lane.reader,
-					payload: JSON.stringify(request)
+					request
 				}).pipe(
 					Effect.tap((result) =>
 						Effect.annotateCurrentSpan(

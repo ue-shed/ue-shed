@@ -188,6 +188,8 @@ export { encodeGameTextJoinInput } from "@ue-shed/protocol";
 export type { GameTextIndexBuildRequest, GameTextIndexBuildOutcome } from "@ue-shed/protocol";
 
 export {
+	answerJson,
+	type EngineAnswer,
 	NativeGameTextEngineClient,
 	nativeGameTextEngineClientLayer
 } from "./game-text-engine-client.js";

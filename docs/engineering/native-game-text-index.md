@@ -8,8 +8,10 @@ localization input producers, configurable quality policy, typed process calls a
 CLI, Workbench and library hosts compose `GameTextIndexBuilderLive` from
 `@ue-shed/game-text/index` with their existing `AssetReader`, source and localization evidence
 layers. `nativeIndexBuilderLayer(configuration)` supplies the same builder and query capability
-with explicit reader configuration. Package delta publication needs uasset-io protocol 1.16; the reader needs 1.15, `game_text_index`
-and `game_text_engine_v1`. Native failures remain typed failures with recovery guidance.
+with explicit reader configuration. Package delta publication needs uasset-io protocol 1.16 and
+`game_text_index`. Queries run in the engine's own binary session, `uasset game-text-engine`, whose
+handshake checks the engine's contract once per process. Native failures remain typed failures
+with recovery guidance.
 
 ## Reads and writes
 

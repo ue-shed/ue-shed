@@ -2,11 +2,12 @@ import { Deferred, Effect, Fiber, Ref, Scope, Exit } from "effect";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
-import type { GameTextEngineOutcome, GameTextEngineRequest } from "@ue-shed/protocol";
+import { type EngineAnswer, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { openNativeTextQuery } from "./native-query.js";
 import { corpus } from "./localization.test-support.js";
 import { textCorpusQuery } from "./query.test-support.js";
+import type { TextCorpusSearchPage } from "./schema.js";
 
 const request = { query: "", capability: "all" as const, pageSize: 1 };
 
@@ -32,10 +33,7 @@ it("cancels callers promptly, skips canceled queued reads and preserves an admit
 									Effect.onInterrupt(() => Ref.set(canceled, true))
 								);
 							}
-							return outcome(
-								operation,
-								operation.action === "search" ? JSON.stringify(page) : null
-							);
+							return outcome(operation, operation.action === "search" ? page : null);
 						})
 				});
 				const query = yield* openNativeTextQuery({
@@ -108,23 +106,29 @@ it("closing the model interrupts an active read before releasing its native read
 	);
 });
 
-function outcome(request: GameTextEngineRequest, payload: string | null): GameTextEngineOutcome {
+/** An engine answer: `open`'s reply, or `reply` as the answer's one part. */
+function outcome(
+	request: GameTextContract.EngineRequest,
+	reply: TextCorpusSearchPage | { readonly acceptance: string } | null,
+	opened: Partial<GameTextContract.OpenReply> = {}
+): EngineAnswer {
+	const part =
+		request.action === "open"
+			? { reader: "reader", generation: "generation", joinedKey: "joined", ...opened }
+			: reply;
 	return {
-		action: request.action,
-		capabilities: ["game_text_engine_v1"],
-		reader: request.action === "open" ? "reader" : null,
-		generation: request.action === "open" ? "generation" : null,
-		joinedKey: request.action === "open" ? "joined" : null,
-		payload,
-		stageSeconds: {},
-		io: {
-			opens: 0,
-			sectionLoads: 0,
-			storedBytes: 0,
-			rawBytes: 0,
-			fullVerifies: 0,
-			indexBytes: 0,
-			writtenBytes: 0
+		parts: part === null ? [] : [new TextEncoder().encode(JSON.stringify(part)).buffer],
+		profile: {
+			stageSeconds: {},
+			io: {
+				opens: 0,
+				sectionLoads: 0,
+				storedBytes: 0,
+				rawBytes: 0,
+				fullVerifies: 0,
+				indexBytes: 0,
+				writtenBytes: 0
+			}
 		}
 	};
 }
@@ -140,7 +144,8 @@ describe("bulk reads", () => {
 	const client = (
 		name: string,
 		calls: string[],
-		onDump: (operation: GameTextEngineRequest) => Effect.Effect<void> = () => Effect.void
+		onDump: (operation: GameTextContract.EngineRequest) => Effect.Effect<void> = () =>
+			Effect.void
 	) =>
 		NativeGameTextEngineClient.of({
 			execute: (operation) =>
@@ -152,17 +157,15 @@ describe("bulk reads", () => {
 						yield* onDump(operation);
 						yield* Effect.promise(() => writeFile(operation.output, "[]"));
 					}
-					const opened = outcome(
+					return outcome(
 						operation,
 						operation.action === "search"
-							? JSON.stringify(page)
+							? page
 							: operation.action === "findings_accept"
-								? JSON.stringify({ acceptance: "acceptance-v1:digest" })
-								: null
+								? { acceptance: "acceptance-v1:digest" }
+								: null,
+						{ reader: `${name}-reader` }
 					);
-					return operation.action === "open"
-						? { ...opened, reader: `${name}-reader` }
-						: opened;
 				})
 		});
 
@@ -256,10 +259,11 @@ describe("bulk reads", () => {
 								NativeGameTextEngineClient.of({
 									execute: (operation) =>
 										operation.action === "open"
-											? Effect.succeed({
-													...outcome(operation, null),
-													generation: "stale"
-												})
+											? Effect.succeed(
+													outcome(operation, null, {
+														generation: "stale"
+													})
+												)
 											: bulk.execute(operation)
 								})
 							),

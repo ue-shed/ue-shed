@@ -27,13 +27,17 @@ pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(rename = "IndexConfiguration"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Configuration {
+    #[cfg_attr(test, ts(type = "string"))]
     pub cache_root: PathBuf,
     pub project_key: String,
     pub target_key: String,
     pub shared_project: bool,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
     pub view_prefix: Option<String>,
 }
 impl Configuration {

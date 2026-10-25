@@ -52,14 +52,6 @@ export function nativeEngineResponses(executable: string) {
 						corpusLines
 					};
 				})
-			).pipe(
-				Effect.provide(
-					nativeGameTextEngineClientLayer({
-						executable,
-						timeoutMs: 30_000,
-						catalogTimeoutMs: 120_000
-					})
-				)
-			)
+			).pipe(Effect.provide(nativeGameTextEngineClientLayer({ executable })))
 		);
 }

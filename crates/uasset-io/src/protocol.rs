@@ -70,10 +70,6 @@ pub struct ScanFilters {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum Operation {
-    #[serde(rename = "game_text_engine")]
-    GameTextEngine {
-        request: game_text_index::engine::EngineRequest,
-    },
     #[serde(rename = "game_text_index")]
     GameTextIndex {
         request: game_text_index::builder::BuildRequest,
@@ -276,8 +272,6 @@ pub struct Request {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum OperationKind {
-    #[serde(rename = "game_text_engine")]
-    GameTextEngine,
     #[serde(rename = "game_text_index")]
     GameTextIndex,
     #[serde(rename = "project_index_count")]
@@ -624,21 +618,6 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
         ));
     }
     match &request.operation {
-        Operation::GameTextEngine { request: engine } => {
-            if engine.requires_findings() && request.contract.version.minor < 20 {
-                return Err(ProtocolError(
-                    "Game Text findings require uasset-io v1.20".into(),
-                ));
-            }
-            if request.contract.version.minor < 15 {
-                return Err(ProtocolError(
-                    "game_text_engine requires uasset-io v1.15".into(),
-                ));
-            }
-            engine
-                .validate()
-                .map_err(|error| ProtocolError(error.to_string()))
-        }
         Operation::GameTextIndex { request: build } => {
             if matches!(
                 build,
@@ -897,48 +876,6 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
-        ResultFrame::GameTextEngine { outcome } => {
-            if outcome
-                .stage_seconds
-                .values()
-                .any(|value| !value.is_finite() || *value < 0.0)
-                || outcome
-                    .capabilities
-                    .iter()
-                    .any(|value| value != "game_text_engine_v1")
-                || ![
-                    "capabilities",
-                    "open",
-                    "close",
-                    "summary",
-                    "search",
-                    "focus",
-                    "export",
-                    "corpus",
-                    "corpus_header",
-                    "corpus_report_header",
-                    "corpus_fingerprint",
-                    "aggregate",
-                    "localization_detail",
-                    "related",
-                    "localization_export",
-                    "localization_focus_export",
-                    "localization_corpus",
-                    "findings_evaluate",
-                    "findings_accept",
-                    "findings_query",
-                    "rules_check",
-                ]
-                .contains(&outcome.action.as_str())
-                || outcome
-                    .payload
-                    .as_ref()
-                    .is_some_and(|payload| payload.len() > 16 * 1024 * 1024)
-            {
-                return Err(ProtocolError("invalid native engine outcome".into()));
-            }
-            Ok(())
-        }
         ResultFrame::GameTextIndex { outcome } => {
             if outcome
                 .stage_seconds

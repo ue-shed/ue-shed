@@ -251,11 +251,14 @@ impl EngineQuery {
         Ok(lines)
     }
 
-    pub fn findings_accept(&mut self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
-        let request: FindingsAcceptRequest =
-            crate::json_value::parse_as(payload).map_err(|source| {
-                Error::with_source(ErrorCode::InvalidInput, "Invalid acceptance.", source)
-            })?;
+    pub fn findings_accept(
+        &mut self,
+        request: serde_json::Value,
+        cancelled: &AtomicBool,
+    ) -> Result<String> {
+        let request: FindingsAcceptRequest = serde_json::from_value(request).map_err(|source| {
+            Error::with_source(ErrorCode::InvalidInput, "Invalid acceptance.", source)
+        })?;
         require(
             request.accepted.len() <= MAX_ACCEPTED,
             invalid("At most 5000 accepted findings may be sent at once."),
@@ -356,8 +359,12 @@ impl EngineQuery {
         Ok(javascript_json(&json!({ "acceptance": key }), false))
     }
 
-    pub fn findings_query(&mut self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
-        let request: QueryRequest = crate::json_value::parse_as(payload).map_err(|source| {
+    pub fn findings_query(
+        &mut self,
+        request: serde_json::Value,
+        cancelled: &AtomicBool,
+    ) -> Result<String> {
+        let request: QueryRequest = serde_json::from_value(request).map_err(|source| {
             Error::with_source(ErrorCode::InvalidInput, "Invalid findings query.", source)
         })?;
         require(

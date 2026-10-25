@@ -102,7 +102,8 @@ impl EngineQuery {
         while value["profile"]["responseBytes"] != json!(result.len()) {
             rounds += 1;
             value["profile"]["responseBytes"] = json!(result.len());
-            value["profile"]["fileFallback"] = json!(result.len() > 16 * 1024 * 1024 || rounds > 4);
+            value["profile"]["fileFallback"] =
+                json!(result.len() > crate::session::MAX_BODY || rounds > 4);
             result = javascript_json(&value, false);
         }
         if value["profile"]["fileFallback"] == json!(false) {

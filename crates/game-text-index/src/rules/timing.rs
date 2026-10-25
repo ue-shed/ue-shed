@@ -198,8 +198,7 @@ fn persisted_findings_query_timing() -> Result<()> {
     for call in 0..calls {
         let started = std::time::Instant::now();
         let reply = query.findings_query(
-            &json!({"key":key,"view":"workspace","order":order,"offset":call * size,"limit":size})
-                .to_string(),
+            json!({"key":key,"view":"workspace","order":order,"offset":call * size,"limit":size}),
             &cancelled,
         )?;
         println!(

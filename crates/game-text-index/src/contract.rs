@@ -12,8 +12,9 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 8] = [
+const SOURCES: [&str; 9] = [
     include_str!("contract.rs"),
+    include_str!("session.rs"),
     include_str!("rules/ir.rs"),
     include_str!("rules/replies.rs"),
     include_str!("engine.rs"),
@@ -25,6 +26,7 @@ const SOURCES: [&str; 8] = [
 
 /// The engine's build and contract identity, reported by `capabilities`.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContractIdentity {
     /// The UE Shed suite version the engine was built for.
@@ -54,6 +56,7 @@ pub fn identity() -> ContractIdentity {
 
 #[cfg(test)]
 mod tests {
+    use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile};
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
         Order, Page, QueryRequest, RuleTotal, View,
@@ -67,6 +70,9 @@ mod tests {
         ProfileSample, ReadProfile, RoleTotal, RuleCount, RuleMetadata, RuleProblem,
         RuleProblemCode, RulesCheck, RunProfile, SpilledReply, StageSample, SubStageSample,
     };
+    use crate::session::{EngineEnd, EngineError, EngineFailure};
+    use crate::snapshot::IoMetrics;
+    use crate::store::Configuration;
     use ts_rs::{Config, TS};
 
     const GENERATED: &str = "packages/protocol/src/game-text-contract.generated.ts";
@@ -97,6 +103,16 @@ mod tests {
              readonly [key: string]: JsonValue;\n};\n",
         );
         for declaration in [
+            EngineRequest::decl(&config),
+            super::ContractIdentity::decl(&config),
+            Configuration::decl(&config),
+            EnginePolicy::decl(&config),
+            OpenReply::decl(&config),
+            EngineEnd::decl(&config),
+            EngineFailure::decl(&config),
+            EngineError::decl(&config),
+            Profile::decl(&config),
+            IoMetrics::decl(&config),
             Document::decl(&config),
             Rule::decl(&config),
             Expr::decl(&config),

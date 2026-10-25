@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "8332bc58c9ca89f2607a9b200cad8458a5d83a74b0de9116a7eac52634815c4e"
+	contractHash: "1871170db90102c2acc17ec0836059366bfca6ca8962829490c2ccc6b582e663"
 } as const;
 
 /**
@@ -27,6 +27,51 @@ export type Finding = {
 	readonly id: string;
 	readonly [key: string]: JsonValue;
 };
+
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "search", reader: string, request: unknown, } | { "action": "focus", reader: string, request: unknown, } | { "action": "corpus", reader: string, output: string, } | { "action": "corpus_header", reader: string, output: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, output: string, } | { "action": "localization_corpus", reader: string, output: string, } | { "action": "export", reader: string, request: unknown, output: string, } | { "action": "localization_detail", reader: string, request: unknown, } | { "action": "related", reader: string, request: unknown, } | { "action": "localization_export", reader: string, request: unknown, output: string, } | { "action": "localization_focus_export", reader: string, 
+/**
+ * The line's identity.
+ */
+line: string, output: string, } | { "action": "findings_evaluate", reader: string, 
+/**
+ * The v4 rule document.
+ */
+rules: RuleDocumentV4, collationLocale: string, } | { "action": "findings_accept", reader: string, request: FindingsAcceptRequest, } | { "action": "findings_query", reader: string, request: FindingsQueryRequest, } | { "action": "rules_check", 
+/**
+ * The v4 rule document.
+ */
+rules: RuleDocumentV4, };
+
+export type ContractIdentity = { 
+/**
+ * The UE Shed suite version the engine was built for.
+ */
+buildId: string, 
+/**
+ * SHA-256 of the contract sources.
+ */
+contractHash: string, };
+
+export type IndexConfiguration = { cacheRoot: string, projectKey: string, targetKey: string, sharedProject: boolean, viewPrefix?: string, };
+
+export type EnginePolicy = { 
+/**
+ * The identities belonging to persisted occurrence audience codes, in producer order.
+ * These are caller policy data, never native hard-coded classification constraints.
+ */
+audienceRules: ReadonlyArray<string>, };
+
+export type OpenReply = { reader: string, generation: string, joinedKey: string, };
+
+export type EngineEnd = { profile: EngineProfile, };
+
+export type EngineFailure = { error: EngineError, profile: EngineProfile, };
+
+export type EngineError = { code: "busy" | "cancelled" | "invalid_input" | "invalid_cache" | "limit_exceeded" | "stale_generation" | "unavailable" | "not_found" | "io_error", message: string, };
+
+export type EngineProfile = { io: IoMetrics, stageSeconds: { [key in string]: number }, };
+
+export type IoMetrics = { opens: number, sectionLoads: number, storedBytes: number, rawBytes: number, fullVerifies: number, indexBytes: number, writtenBytes: number, };
 
 export type RuleDocumentV4 = { schemaVersion: 4, roles: ReadonlyArray<Role>, rules: ReadonlyArray<Rule>, };
 

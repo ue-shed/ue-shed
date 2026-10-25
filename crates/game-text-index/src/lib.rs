@@ -45,6 +45,7 @@ mod json_value;
 mod layer_reuse;
 mod line_break;
 pub mod rules;
+pub mod session;
 #[rustfmt::skip]
 mod line_break_tables;
 mod package_delta;

@@ -35,7 +35,6 @@ pub(crate) struct ProjectIndexRefreshOutput {
 #[derive(Default)]
 pub(crate) struct ProjectIndexQuerySession {
     pub(crate) game_text: game_text_index::builder::BuildSession,
-    pub(crate) game_text_engine: game_text_index::engine::EngineSession,
     active: Option<ActiveQueryCatalog>,
 }
 

@@ -48,21 +48,21 @@ Every message in both directions is one frame. All integers are little-endian.
 
 **Host to engine:**
 
-- `request`: JSON with the generated request type.
-- `cancel`: no body.
-- `credit`: JSON `{ "frames": n }` (§4).
+- `request` (1): JSON with the generated request type.
+- `cancel` (2): no body.
+- `credit` (3): JSON `{ "frames": n }` (§4).
 
 **Engine to host:**
 
-- `part`: JSON. One answer part that isn't rows: counts, facets, groups, a line's detail, a reply to a small request.
-- `batch`: binary, a column batch (§5).
-- `text`: UTF-8 rows a sink encoded for the stream (§8).
-- `progress`: JSON (§7).
-- `end`: JSON `{ profile, summary? }`. The request finished; `summary` holds totals such as rows written.
-- `error`: JSON `{ error, profile }`, the generated tagged error.
-- `cancelled`: JSON `{ profile }`.
+- `part` (16): JSON. One answer part that isn't rows: counts, facets, groups, a line's detail, a reply to a small request.
+- `batch` (17): binary, a column batch (§5).
+- `text` (18): UTF-8 rows a sink encoded for the stream (§8).
+- `progress` (19): JSON (§7).
+- `end` (20): JSON `{ profile, summary? }`. The request finished; `summary` holds totals such as rows written.
+- `error` (21): JSON `{ error, profile }`, the generated tagged error.
+- `cancelled` (22): JSON `{ profile }`.
 
-`end`, `error` and `cancelled` are terminal and carry flag bit 0. JSON bodies are read with `JSON.parse` straight into the generated types, and in Rust through the WTF-8-aware reader, so lone surrogates and the rule IR travel inline with no string-in-string (ADR 0012, "The rule program").
+The numbers are the `kind` byte. `end`, `error` and `cancelled` are terminal and carry flag bit 0. JSON bodies are read with `JSON.parse` straight into the generated types, and in Rust through the WTF-8-aware reader, so lone surrogates and the rule IR travel inline with no string-in-string (ADR 0012, "The rule program").
 
 - **TypeScript reads frames** from the pipe into one growable buffer and hands each body out as its own `ArrayBuffer`. That is one copy, and it is what makes `Float64Array` views over a batch aligned.
 - **Rust writes frames** from one writer thread that owns stdout (§4).

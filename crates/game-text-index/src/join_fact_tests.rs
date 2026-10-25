@@ -963,7 +963,7 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     let page = |key: &str, limit: usize| {
         json!({"key":key,"view":"report","order":"report","limit":limit}).to_string()
     };
-    let reply = query.findings_query(&page(key, 50), &cancelled)?;
+    let reply = query.findings_query(crate::json_value::parse(&page(key, 50))?, &cancelled)?;
     let lines = crate::json_value::parse(&reply)?;
     // The profile is set in the encoded reply; the text must be the reply's own encoding.
     assert_eq!(reply, crate::rules::javascript_json(&lines, false));
@@ -1003,28 +1003,30 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     };
     let mut reopened = EngineQuery::open(&configuration, None)?;
     assert_eq!(
-        unstaged(crate::json_value::parse(
-            &reopened.findings_query(&page(key, 50), &cancelled)?
-        )?),
+        unstaged(crate::json_value::parse(&reopened.findings_query(
+            crate::json_value::parse(&page(key, 50))?,
+            &cancelled
+        )?)?),
         unstaged(lines.clone())
     );
     assert!(
         reopened
-            .findings_query(&page("missing", 50), &cancelled)
+            .findings_query(crate::json_value::parse(&page("missing", 50))?, &cancelled)
             .is_err()
     );
     assert!(
         reopened
-            .findings_query(&page(key, 5001), &cancelled)
+            .findings_query(crate::json_value::parse(&page(key, 5001))?, &cancelled)
             .is_err()
     );
     let mut store = Store::writer(configuration)?;
     store.compact(true)?;
     drop(store);
     assert_eq!(
-        unstaged(crate::json_value::parse(
-            &query.findings_query(&page(key, 50), &cancelled)?
-        )?),
+        unstaged(crate::json_value::parse(&query.findings_query(
+            crate::json_value::parse(&page(key, 50))?,
+            &cancelled
+        )?)?),
         unstaged(lines)
     );
     Ok(())
@@ -1060,7 +1062,7 @@ fn persisted_place_sets_may_exceed_one_dictionary_string() -> Result<()> {
     let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let key = result["key"].as_str().ok_or("Missing findings key.")?;
     let lines = crate::json_value::parse(&query.findings_query(
-        &json!({"key":key,"view":"report","order":"report","limit":50}).to_string(),
+        json!({"key":key,"view":"report","order":"report","limit":50}),
         &cancelled,
     )?)?;
     let places = lines["places"].as_array().ok_or("Missing places.")?;

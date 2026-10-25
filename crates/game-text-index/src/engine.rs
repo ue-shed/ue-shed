@@ -5,11 +5,15 @@ use crate::engine_types::{invalid, parse_search_request};
 use crate::store::{Configuration, token};
 use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
+#[cfg(test)]
+use ts_rs::TS;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnginePolicy {
     /// The identities belonging to persisted occurrence audience codes, in producer order.
@@ -36,7 +40,11 @@ impl EnginePolicy {
 /// Diagnostics and incomplete packages a report header previews: `MAX_CORPUS_REPORT_ITEMS`.
 const REPORT_PREVIEW_ITEMS: usize = 200;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+/// One request, the JSON body of a `request` frame. The session reads the body WTF-8-aware, so
+/// nested strings arrive as reversible views and lone UTF-16 units survive. Requests typed
+/// `unknown` keep the host's domain schema until `query` and `line` replace them.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(TS))]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EngineRequest {
     Capabilities,
@@ -56,19 +64,23 @@ pub enum EngineRequest {
     },
     Search {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
     },
     Focus {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
     },
     Corpus {
         reader: String,
+        #[cfg_attr(test, ts(type = "string"))]
         output: std::path::PathBuf,
     },
     /// The corpus without its units.
     CorpusHeader {
         reader: String,
+        #[cfg_attr(test, ts(type = "string"))]
         output: std::path::PathBuf,
     },
     /// The corpus content fingerprint.
@@ -82,71 +94,76 @@ pub enum EngineRequest {
     /// Grouped counts of the matching rows, written to `output`.
     Aggregate {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
+        #[cfg_attr(test, ts(type = "string"))]
         output: std::path::PathBuf,
     },
     LocalizationCorpus {
         reader: String,
+        #[cfg_attr(test, ts(type = "string"))]
         output: std::path::PathBuf,
     },
     Export {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
+        #[cfg_attr(test, ts(type = "string"))]
         output: std::path::PathBuf,
     },
     LocalizationDetail {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
     },
     /// A selection's related units and lines: same key, same text, conflict and key change.
     Related {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
     },
     LocalizationExport {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "unknown"))]
+        request: Value,
+        #[cfg_attr(test, ts(type = "string"))]
         output: std::path::PathBuf,
     },
     LocalizationFocusExport {
         reader: String,
-        payload: String,
+        /// The line's identity.
+        line: String,
+        #[cfg_attr(test, ts(type = "string"))]
         output: std::path::PathBuf,
     },
     FindingsEvaluate {
         reader: String,
-        /// The v4 rule document's JSON text, read by the WTF-8-aware reader.
-        rules: String,
+        /// The v4 rule document.
+        #[cfg_attr(test, ts(type = "RuleDocumentV4"))]
+        rules: Value,
         #[serde(rename = "collationLocale")]
         collation_locale: String,
     },
     /// A review's accepted findings for a findings layer; returns an acceptance key.
     FindingsAccept {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "FindingsAcceptRequest"))]
+        request: Value,
     },
     /// Filters, orders, pages and counts a findings layer's findings.
     FindingsQuery {
         reader: String,
-        payload: String,
+        #[cfg_attr(test, ts(type = "FindingsQueryRequest"))]
+        request: Value,
     },
     /// Compiles a v4 rule document and returns its first problem; needs no reader.
     RulesCheck {
-        /// The v4 rule document's JSON text, read by the WTF-8-aware reader.
-        rules: String,
+        /// The v4 rule document.
+        #[cfg_attr(test, ts(type = "RuleDocumentV4"))]
+        rules: Value,
     },
 }
 impl EngineRequest {
-    pub fn requires_findings(&self) -> bool {
-        matches!(
-            self,
-            Self::FindingsEvaluate { .. }
-                | Self::FindingsAccept { .. }
-                | Self::FindingsQuery { .. }
-                | Self::Related { .. }
-                | Self::RulesCheck { .. }
-        )
-    }
     pub fn validate(&self) -> Result<()> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("requestValidate");
@@ -200,80 +217,11 @@ impl EngineRequest {
                     invalid("Invalid findings collation locale."),
                 )?;
             }
-            Self::FindingsAccept { payload, .. } => {
-                // 5,000 accepted findings, each with its key, namespace and fingerprint.
+            Self::LocalizationFocusExport { line, .. } => {
                 require(
-                    payload.len() <= 8 * 1024 * 1024,
-                    invalid("Native query payload exceeds its bound."),
+                    !line.is_empty() && crate::join_policy::characters(line) <= 32767,
+                    invalid("Invalid localization line identity."),
                 )?;
-            }
-            Self::FindingsQuery { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-            }
-            Self::Export { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_rollup::parse_corpus_export(payload)?;
-            }
-            Self::Search { payload, .. }
-            | Self::Focus { payload, .. }
-            | Self::LocalizationFocusExport { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                if matches!(self, Self::LocalizationFocusExport { .. }) {
-                    let id = crate::json_value::parse(payload).map_err(|source| {
-                        Error::with_source(
-                            ErrorCode::InvalidInput,
-                            "Invalid localization focus JSON.",
-                            source,
-                        )
-                    })?;
-                    require(
-                        id.as_str().is_some_and(|id| {
-                            !id.is_empty() && crate::join_policy::characters(id) <= 32767
-                        }),
-                        invalid("Invalid localization line identity."),
-                    )?;
-                } else if matches!(self, Self::Focus { .. }) {
-                    crate::engine_types::parse_focus_request(payload)?;
-                } else {
-                    parse_search_request(payload)?;
-                }
-            }
-            Self::LocalizationDetail { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_types::parse_detail_request(payload)?;
-            }
-            Self::Related { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_related::parse_related_request(payload)?;
-            }
-            Self::LocalizationExport { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_rollup::parse_line_export(payload)?;
-            }
-            Self::Aggregate { payload, .. } => {
-                require(
-                    payload.len() <= 512 * 1024,
-                    invalid("Native query payload exceeds its bound."),
-                )?;
-                crate::engine_rollup::parse_aggregate_request(payload)?;
             }
             _ => {}
         }
@@ -295,22 +243,48 @@ impl EngineRequest {
         Ok(())
     }
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EngineOutcome {
-    pub action: String,
-    pub capabilities: Vec<String>,
-    pub reader: Option<String>,
-    pub generation: Option<String>,
-    pub joined_key: Option<String>,
-    /// Bounded domain JSON text, preserving lone JavaScript UTF-16 code units exactly.
-    pub payload: Option<String>,
+
+/// `open`'s reply: the reader's handle and the snapshot it pinned.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OpenReply {
+    pub reader: String,
+    pub generation: String,
+    pub joined_key: String,
+}
+
+/// What a request cost, sent with its terminal frame.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "EngineProfile"))]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
     pub io: crate::snapshot::IoMetrics,
     pub stage_seconds: BTreeMap<String, f64>,
-    /// `capabilities` reports the engine's build and contract, for the host's one handshake.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub contract: Option<crate::contract::ContractIdentity>,
 }
+impl Profile {
+    /// A profile with no stages, for a request that failed.
+    pub fn now() -> Self {
+        Self {
+            io: crate::snapshot::io_metrics(),
+            stage_seconds: BTreeMap::new(),
+        }
+    }
+}
+
+/// A request's answer: its reply part, as JSON text, and its profile.
+#[derive(Debug)]
+pub struct EngineAnswer {
+    pub part: Option<String>,
+    pub profile: Profile,
+}
+
+/// The JSON text of a request value, for the readers that still parse text.
+fn text(value: &Value) -> Result<String> {
+    crate::wtf8::view_json(value)
+}
+
 #[derive(Default)]
 pub struct EngineSession {
     readers: HashMap<String, EngineQuery>,
@@ -320,32 +294,22 @@ impl EngineSession {
         &mut self,
         request: &EngineRequest,
         cancelled: &AtomicBool,
-    ) -> Result<EngineOutcome> {
+    ) -> Result<EngineAnswer> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("engineTotal");
         request.validate()?;
         checkpoint(cancelled)?;
         let started = Instant::now();
-        let mut outcome = EngineOutcome {
-            action: String::new(),
-            capabilities: vec!["game_text_engine_v1".into()],
-            reader: None,
-            generation: None,
-            joined_key: None,
-            payload: None,
-            io: crate::snapshot::io_metrics(),
-            stage_seconds: BTreeMap::new(),
-            contract: None,
-        };
-        match request {
-            EngineRequest::Capabilities => {
-                outcome.action = "capabilities".into();
-                outcome.contract = Some(crate::contract::identity());
-            }
-            EngineRequest::RulesCheck { rules } => {
-                outcome.action = "rules_check".into();
-                outcome.payload = Some(serde_json::to_string(&crate::rules::check(rules))?);
-            }
+        let mut stage_seconds = BTreeMap::new();
+        let (action, part) = match request {
+            EngineRequest::Capabilities => (
+                "capabilities",
+                Some(serde_json::to_string(&crate::contract::identity())?),
+            ),
+            EngineRequest::RulesCheck { rules } => (
+                "rules_check",
+                Some(serde_json::to_string(&crate::rules::check(&text(rules)?))?),
+            ),
             EngineRequest::Open {
                 configuration,
                 expected_generation,
@@ -372,7 +336,7 @@ impl EngineSession {
                 // is measured as preparation, so the first typed term pays only matching work.
                 let source_started = Instant::now();
                 query.prepare_source_search(cancelled)?;
-                outcome.stage_seconds.insert(
+                stage_seconds.insert(
                     "source_search_prepare".into(),
                     source_started.elapsed().as_secs_f64(),
                 );
@@ -380,7 +344,7 @@ impl EngineSession {
                 // Keep that required preparation in opening instead of deferring it to page one.
                 let projection_started = Instant::now();
                 crate::engine_match::Projection::open(&mut query, cancelled)?;
-                outcome.stage_seconds.insert(
+                stage_seconds.insert(
                     "query_projection_prepare".into(),
                     projection_started.elapsed().as_secs_f64(),
                 );
@@ -390,7 +354,7 @@ impl EngineSession {
                 let (_, raw) = query.id_index_with_timings("raw")?;
                 let (_, line) = query.id_index_with_timings("line")?;
                 let (_, unit_lines) = query.unit_lines_with_timings(cancelled)?;
-                outcome.stage_seconds.insert(
+                stage_seconds.insert(
                     "id_index_prepare".into(),
                     index_started.elapsed().as_secs_f64(),
                 );
@@ -402,21 +366,21 @@ impl EngineSession {
                     ("id_index_unit_lines_load", unit_lines.load),
                     ("id_index_unit_lines_build", unit_lines.build),
                 ] {
-                    outcome
-                        .stage_seconds
-                        .insert(key.into(), duration.as_secs_f64());
+                    stage_seconds.insert(key.into(), duration.as_secs_f64());
                 }
                 let reader = token();
-                outcome.action = "open".into();
-                outcome.reader = Some(reader.clone());
-                outcome.generation = Some(query.reader.generation.clone());
-                outcome.joined_key = Some(query.reader.joined_key.clone());
+                let reply = OpenReply {
+                    reader: reader.clone(),
+                    generation: query.reader.generation.clone(),
+                    joined_key: query.reader.joined_key.clone(),
+                };
                 checkpoint(cancelled)?;
                 self.readers.insert(reader, query);
+                ("open", Some(serde_json::to_string(&reply)?))
             }
             EngineRequest::Close { reader } => {
                 self.readers.remove(reader);
-                outcome.action = "close".into();
+                ("close", None)
             }
             EngineRequest::Summary { reader }
             | EngineRequest::Search { reader, .. }
@@ -436,50 +400,48 @@ impl EngineSession {
             | EngineRequest::FindingsAccept { reader, .. }
             | EngineRequest::FindingsQuery { reader, .. } => {
                 let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
-                let (action, payload) = match request {
+                // A file read replies with the bytes it wrote.
+                let bytes =
+                    |bytes: u64| serde_json::to_string(&serde_json::json!({ "bytes": bytes }));
+                let (action, part) = match request {
                     EngineRequest::FindingsEvaluate {
                         rules,
                         collation_locale,
                         ..
                     } => (
                         "findings_evaluate",
-                        query.findings_evaluate(rules, collation_locale, cancelled)?,
+                        query.findings_evaluate(&text(rules)?, collation_locale, cancelled)?,
                     ),
-                    EngineRequest::FindingsAccept { payload, .. } => (
+                    EngineRequest::FindingsAccept { request, .. } => (
                         "findings_accept",
-                        query.findings_accept(payload, cancelled)?,
+                        query.findings_accept(request.clone(), cancelled)?,
                     ),
-                    EngineRequest::FindingsQuery { payload, .. } => {
-                        ("findings_query", query.findings_query(payload, cancelled)?)
-                    }
+                    EngineRequest::FindingsQuery { request, .. } => (
+                        "findings_query",
+                        query.findings_query(request.clone(), cancelled)?,
+                    ),
                     EngineRequest::Summary { .. } => (
                         "summary",
                         crate::wtf8::view_json(&query.summary(cancelled)?)?,
                     ),
-                    EngineRequest::Search { payload, .. } => {
-                        ("search", query.search_json(payload, cancelled)?)
+                    EngineRequest::Search { request, .. } => {
+                        ("search", query.search_json(&text(request)?, cancelled)?)
                     }
-                    EngineRequest::Related { payload, .. } => {
-                        ("related", query.related_json(payload, cancelled)?)
+                    EngineRequest::Related { request, .. } => {
+                        ("related", query.related_json(&text(request)?, cancelled)?)
                     }
                     EngineRequest::Corpus { output, .. } => {
                         let request = parse_search_request(
                             r#"{"query":"","capability":"all","pageSize":50}"#,
                         )?;
-                        let bytes =
+                        let written =
                             query.export_to_path(&request, output, true, None, cancelled)?;
-                        (
-                            "corpus",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
+                        ("corpus", bytes(written)?)
                     }
-                    EngineRequest::CorpusHeader { output, .. } => {
-                        let bytes = query.export_corpus_header_to_path(output, cancelled)?;
-                        (
-                            "corpus_header",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
-                    }
+                    EngineRequest::CorpusHeader { output, .. } => (
+                        "corpus_header",
+                        bytes(query.export_corpus_header_to_path(output, cancelled)?)?,
+                    ),
                     EngineRequest::CorpusReportHeader { .. } => (
                         "corpus_report_header",
                         crate::wtf8::view_json(
@@ -493,94 +455,87 @@ impl EngineSession {
                         )?,
                     ),
                     EngineRequest::Aggregate {
-                        payload, output, ..
+                        request, output, ..
                     } => {
-                        let request = crate::engine_rollup::parse_aggregate_request(payload)?;
-                        let bytes = query.aggregate_to_path(&request, output, cancelled)?;
+                        let request =
+                            crate::engine_rollup::parse_aggregate_request(&text(request)?)?;
                         (
                             "aggregate",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                            bytes(query.aggregate_to_path(&request, output, cancelled)?)?,
                         )
                     }
                     EngineRequest::Export {
-                        payload, output, ..
+                        request, output, ..
                     } => {
-                        let (request, units) = crate::engine_rollup::parse_corpus_export(payload)?;
-                        let bytes = query.export_to_path(
+                        let (request, units) =
+                            crate::engine_rollup::parse_corpus_export(&text(request)?)?;
+                        let written = query.export_to_path(
                             &request,
                             output,
                             false,
                             units.as_deref(),
                             cancelled,
                         )?;
-                        (
-                            "export",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
+                        ("export", bytes(written)?)
                     }
-                    EngineRequest::Focus { payload, .. } => {
-                        ("focus", query.focus_json(payload, cancelled)?)
+                    EngineRequest::Focus { request, .. } => {
+                        ("focus", query.focus_json(&text(request)?, cancelled)?)
                     }
-                    EngineRequest::LocalizationDetail { payload, .. } => (
+                    EngineRequest::LocalizationDetail { request, .. } => (
                         "localization_detail",
-                        query.localization_detail_json(payload, cancelled)?,
+                        query.localization_detail_json(&text(request)?, cancelled)?,
                     ),
                     EngineRequest::LocalizationExport {
-                        payload, output, ..
+                        request, output, ..
                     } => {
-                        let (request, fields) = crate::engine_rollup::parse_line_export(payload)?;
-                        let bytes = query.export_localization_to_path(
+                        let (request, fields) =
+                            crate::engine_rollup::parse_line_export(&text(request)?)?;
+                        let written = query.export_localization_to_path(
                             &request,
                             output,
                             false,
                             fields.as_deref(),
                             cancelled,
                         )?;
-                        (
-                            "localization_export",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
+                        ("localization_export", bytes(written)?)
                     }
-                    EngineRequest::LocalizationFocusExport {
-                        payload, output, ..
-                    } => {
-                        let bytes =
-                            query.export_localization_focus_to_path(payload, output, cancelled)?;
-                        (
-                            "localization_focus_export",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
-                    }
+                    EngineRequest::LocalizationFocusExport { line, output, .. } => (
+                        "localization_focus_export",
+                        bytes(query.export_localization_focus_to_path(
+                            &text(&Value::String(line.clone()))?,
+                            output,
+                            cancelled,
+                        )?)?,
+                    ),
                     EngineRequest::LocalizationCorpus { output, .. } => {
                         let request = parse_search_request(
                             r#"{"query":"","capability":"all","pageSize":50}"#,
                         )?;
-                        let bytes = query
+                        let written = query
                             .export_localization_to_path(&request, output, true, None, cancelled)?;
-                        (
-                            "localization_corpus",
-                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
-                        )
+                        ("localization_corpus", bytes(written)?)
                     }
                     _ => return Err("Invalid engine dispatch.".into()),
                 };
                 require(
-                    payload.len() <= 16 * 1024 * 1024,
+                    part.len() <= crate::session::MAX_BODY,
                     Error::new(
                         ErrorCode::LimitExceeded,
                         "Native Game Text response exceeds its byte bound; request a smaller evidence page.",
                     ),
                 )?;
-                outcome.action = action.into();
-                outcome.payload = Some(payload);
+                (action, Some(part))
             }
-        }
+        };
         checkpoint(cancelled)?;
-        outcome.io = crate::snapshot::io_metrics();
-        outcome
-            .stage_seconds
-            .insert(outcome.action.clone(), started.elapsed().as_secs_f64());
-        Ok(outcome)
+        stage_seconds.insert(action.into(), started.elapsed().as_secs_f64());
+        Ok(EngineAnswer {
+            part,
+            profile: Profile {
+                io: crate::snapshot::io_metrics(),
+                stage_seconds,
+            },
+        })
     }
 }
 
@@ -592,15 +547,19 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     #[test]
-    fn findings_requests_are_bounded_and_require_the_new_contract() -> Result<()> {
-        for (action, bound) in [("findings_query", 512 * 1024), ("findings_accept", 8 << 20)] {
-            let mut value = json!({"action":action,"reader":"reader","payload":"{}"});
-            let request: EngineRequest = serde_json::from_value(value.clone())?;
-            assert!(request.requires_findings());
+    fn requests_carry_their_values_inline_not_as_text() -> Result<()> {
+        for action in ["findings_query", "findings_accept", "search"] {
+            let request: EngineRequest = serde_json::from_value(
+                json!({"action":action,"reader":"reader","request":{"key":"findings-v1:test"}}),
+            )?;
             request.validate()?;
-            value["payload"] = json!(" ".repeat(bound + 1));
-            let request: EngineRequest = serde_json::from_value(value)?;
-            assert!(request.validate().is_err());
+            // The JSON text payloads are gone.
+            assert!(
+                serde_json::from_value::<EngineRequest>(
+                    json!({"action":action,"reader":"reader","payload":"{}"})
+                )
+                .is_err()
+            );
         }
         // The page reads the scans used are gone with them.
         for action in ["findings_lines", "findings_units", "rows"] {
@@ -612,9 +571,8 @@ mod tests {
             );
         }
         let request: EngineRequest = serde_json::from_value(
-            json!({"action":"findings_evaluate","reader":"reader","rules":"{}","collationLocale":"sv"}),
+            json!({"action":"findings_evaluate","reader":"reader","rules":{"schemaVersion":4},"collationLocale":"sv"}),
         )?;
-        assert!(request.requires_findings());
         request.validate()?;
         Ok(())
     }
@@ -624,14 +582,14 @@ mod tests {
         for action in ["localization_focus", "localization_page"] {
             assert!(
                 serde_json::from_value::<EngineRequest>(json!({
-                    "action": action, "reader": "reader", "payload": "\"line\""
+                    "action": action, "reader": "reader", "line": "line"
                 }))
                 .is_err()
             );
         }
         let export: EngineRequest = serde_json::from_value(json!({
             "action": "localization_focus_export", "reader": "reader",
-            "payload": "\"line\"", "output": crate::test_directory("focus-export").join("line.json")
+            "line": "line", "output": crate::test_directory("focus-export").join("line.json")
         }))?;
         export.validate()?;
         Ok(())
@@ -727,6 +685,7 @@ mod tests {
             policy: EnginePolicy::default(),
         };
         let opened = session.execute(&request, &cancelled)?;
+        let stage_seconds = &opened.profile.stage_seconds;
         let mut detailed_seconds = 0.0;
         for key in [
             "id_index_raw_load",
@@ -736,17 +695,17 @@ mod tests {
             "id_index_unit_lines_load",
             "id_index_unit_lines_build",
         ] {
-            let seconds = *opened.stage_seconds.get(key).ok_or("Missing ID stage")?;
+            let seconds = *stage_seconds.get(key).ok_or("Missing ID stage")?;
             assert!(seconds.is_finite() && seconds >= 0.0, "{key}: {seconds}");
             detailed_seconds += seconds;
         }
-        let total = *opened
-            .stage_seconds
+        let total = *stage_seconds
             .get("id_index_prepare")
             .ok_or("Missing ID preparation total")?;
         assert!(total.is_finite() && total >= 0.0);
         assert!(detailed_seconds <= total + 1e-6);
-        let reader = opened.reader.ok_or("reader")?;
+        let reply: serde_json::Value = serde_json::from_str(&opened.part.ok_or("reply")?)?;
+        let reader = reply["reader"].as_str().ok_or("reader")?.to_owned();
         let writer = Store::writer(configuration.clone())?;
         let mut other = EngineSession::default();
         assert_eq!(
@@ -790,6 +749,7 @@ mod tests {
     }
     #[test]
     fn cancellation_and_bad_queries_are_typed_without_poisoning_the_session() -> Result<()> {
+        let (configuration, generation) = snapshot()?;
         let mut session = EngineSession::default();
         let cancelled = AtomicBool::new(true);
         assert_eq!(
@@ -801,7 +761,18 @@ mod tests {
             ErrorCode::Cancelled
         );
         cancelled.store(false, Ordering::Relaxed);
-        for payload in [
+        let opened = session.execute(
+            &EngineRequest::Open {
+                configuration: configuration.clone(),
+                expected_generation: generation,
+                expected_joined: "joined-native-v2:fixture".into(),
+                policy: EnginePolicy::default(),
+            },
+            &cancelled,
+        )?;
+        let reply: serde_json::Value = serde_json::from_str(&opened.part.ok_or("reply")?)?;
+        let reader = reply["reader"].as_str().ok_or("reader")?;
+        for request in [
             r#"{"query":"","capability":"all","pageSize":51}"#,
             r#"{"query":"","capability":"all","pageSize":1,"where":null}"#,
             r#"{"query":"","capability":"all","pageSize":1,"unknown":true}"#,
@@ -810,8 +781,8 @@ mod tests {
                 session
                     .execute(
                         &EngineRequest::Search {
-                            reader: "not-opened".into(),
-                            payload: payload.into()
+                            reader: reader.into(),
+                            request: serde_json::from_str(request)?
                         },
                         &cancelled
                     )
@@ -821,13 +792,21 @@ mod tests {
                 ErrorCode::InvalidInput
             );
         }
-        assert_eq!(
+        assert!(
             session
                 .execute(&EngineRequest::Capabilities, &cancelled)?
-                .capabilities,
-            ["game_text_engine_v1"]
+                .part
+                .is_some()
         );
+        session.execute(
+            &EngineRequest::Close {
+                reader: reader.into(),
+            },
+            &cancelled,
+        )?;
         assert!(session.readers.is_empty());
+        drop(session);
+        std::fs::remove_dir_all(configuration.cache_root)?;
         Ok(())
     }
     #[test]

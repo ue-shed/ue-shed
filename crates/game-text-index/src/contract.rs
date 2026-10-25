@@ -82,7 +82,7 @@ mod tests {
         RuleProblemCode, RulesCheck, RunProfile, StageSample, SubStageSample,
     };
     use crate::session::{EngineEnd, EngineError, EngineFailure};
-    use crate::sink::{Format, Sink, SinkSummary};
+    use crate::sink::{Envelope, Format, Sink, SinkSummary};
     use crate::snapshot::IoMetrics;
     use crate::store::Configuration;
     use ts_rs::{Config, TS};
@@ -181,6 +181,7 @@ mod tests {
             RelatedSection::decl(&config),
             LineAnswer::decl(&config),
             Sink::decl(&config),
+            Envelope::decl(&config),
             Format::decl(&config),
             SinkSummary::decl(&config),
             View::decl(&config),

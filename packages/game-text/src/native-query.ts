@@ -331,7 +331,8 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		action: "export" | "localization_export",
 		format: GameTextContract.SinkFormat,
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
-		file: { readonly path: string; readonly exclusive?: boolean }
+		file: { readonly path: string; readonly exclusive?: boolean },
+		envelope?: GameTextContract.Envelope
 	) {
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
 			...request,
@@ -346,7 +347,8 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 					sink: {
 						format,
 						file: file.path,
-						...(file.exclusive === true && { exclusive: true })
+						...(file.exclusive === true && { exclusive: true }),
+						...(envelope && { envelope })
 					}
 				}
 			})
@@ -693,6 +695,8 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			writeSinkFile(pinned, "localization_export", "cultureLinesCsv", request, file),
 		writeCorpusCsv: (request, file) =>
 			writeSinkFile(pinned, "export", "corpusCsv", request, file),
+		writeCorpusJson: (request, file, envelope) =>
+			writeSinkFile(pinned, "export", "corpusJson", request, file, envelope),
 		readCorpusHeader: () => readCorpusHeader(pinned),
 		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),

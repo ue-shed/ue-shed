@@ -64,4 +64,7 @@ the report starts printing, `loc check` writes the failure to stderr and exits w
 
 `NativeTextQuery.writeCorpusCsv` writes Browse's CSV through a `corpusCsv` sink on the corpus
 export, so an investigation's corpus CSV asks for its file first and no unit reaches the host.
-Both file writers answer with a `SinkFileWritten`.
+Both file writers answer with a `SinkFileWritten`. `NativeTextQuery.writeCorpusJson` writes a
+corpus investigation's units into the document around them, a sink `envelope` that
+`corpusInvestigationEnvelope` makes; the corpus investigation JSON is written that way, and
+`corpusWithoutUnits` makes its document from the corpus header.

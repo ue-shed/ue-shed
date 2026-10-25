@@ -1,3 +1,4 @@
+import type { GameTextContract } from "@ue-shed/protocol";
 import type { NativeTextQuery } from "./native-query-contract.js";
 import { GameTextRuleDocument, decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import { Effect, Schema } from "effect";
@@ -319,6 +320,27 @@ export function exportGameTextInvestigation(
 						: { mode: "corpus", corpus: textCorpusReport(yield* corpusExport) }
 		} satisfies GameTextInvestigationExport;
 	});
+}
+
+/**
+ * A corpus investigation's text around its units, for the engine to write them in: the document
+ * as `JSON.stringify(document, null, "\t")` and a line break write it, with no units. The units
+ * are three objects deep, and a key there follows a line break and three tabs, which no JSON
+ * string holds.
+ */
+export function corpusInvestigationEnvelope(
+	document: GameTextInvestigationExport
+): GameTextContract.Envelope {
+	const text = `${JSON.stringify(document, null, "\t")}\n`;
+	const units = '\n\t\t\t"units": ';
+	const at = text.indexOf(`${units}[]`);
+	if (document.result.mode !== "corpus" || document.result.corpus.units.length > 0 || at < 0)
+		throw new Error("The envelope is a corpus investigation's, without its units.");
+	return {
+		before: text.slice(0, at + units.length),
+		after: text.slice(at + units.length + 2),
+		depth: 3
+	};
 }
 
 /**

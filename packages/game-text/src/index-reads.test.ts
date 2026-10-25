@@ -41,6 +41,12 @@ import {
 } from "./localization-export.js";
 import { localizationWordCount } from "./localization-words.js";
 import { gameTextCsv } from "./csv.js";
+import {
+	corpusInvestigationEnvelope,
+	exportGameTextInvestigation,
+	type GameTextInvestigationPreset
+} from "./investigation.js";
+import { corpusWithoutUnits } from "./index-reads.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
 import { hasSearchableSource } from "./search.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
@@ -590,6 +596,68 @@ describe("index reads", () => {
 									expect(
 										new Uint8Array(yield* Effect.promise(() => readFile(path)))
 									).toEqual(bytes);
+								}
+								// A corpus investigation's JSON: the engine writes the units into the document the
+								// host made without them, the bytes the host wrote from the whole export.
+								const source = {
+									projectRoot: "/project",
+									generation: 1,
+									authority: "project_files"
+								} as const;
+								const rules = {
+									sourceQuality: () =>
+										Effect.die(
+											new Error("A corpus export reads no source rules.")
+										)
+								};
+								for (const [index, request] of [
+									{ query: "", capability: "all" as const },
+									lines
+								].entries()) {
+									const preset: GameTextInvestigationPreset = {
+										schemaVersion: 1,
+										kind: "game_text",
+										sort: "domain_order",
+										query: { ...request, mode: "corpus", qualityFilter: "all" }
+									};
+									const whole = yield* exportGameTextInvestigation(
+										rules,
+										preset,
+										source,
+										model.query
+									);
+									const bytes = new TextEncoder().encode(
+										`${JSON.stringify(whole, null, "\t")}\n`
+									);
+									const envelope = corpusInvestigationEnvelope(
+										yield* exportGameTextInvestigation(rules, preset, source, {
+											export: () =>
+												Effect.map(
+													model.query.readCorpusHeader(),
+													corpusWithoutUnits
+												).pipe(Effect.orDie)
+										})
+									);
+									const path = resolve(directory, `investigation-${index}.json`);
+									expect(
+										yield* model.query.writeCorpusJson(
+											request,
+											{ path },
+											envelope
+										)
+									).toEqual({
+										status: "written",
+										rows:
+											whole.result.mode === "corpus"
+												? whole.result.corpus.units.length
+												: -1,
+										bytes: bytes.byteLength
+									});
+									expect(
+										new TextDecoder().decode(
+											yield* Effect.promise(() => readFile(path))
+										)
+									).toBe(new TextDecoder().decode(bytes));
 								}
 							}
 							expect(model.revision).toEqual(expect.any(String));

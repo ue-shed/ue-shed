@@ -89,6 +89,8 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 						Effect.die("The reference reader encodes no files; the engine's sinks do."),
 					writeCorpusCsv: () =>
 						Effect.die("The reference reader encodes no files; the engine's sinks do."),
+					writeCorpusJson: () =>
+						Effect.die("The reference reader encodes no files; the engine's sinks do."),
 					readCorpusHeader: () => Effect.sync(() => derivedCorpusHeader(readCorpus())),
 					readCorpusReportHeader: () =>
 						Effect.sync(() =>

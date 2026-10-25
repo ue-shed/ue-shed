@@ -103,6 +103,15 @@ export interface NativeTextQuery extends NativeFindings {
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
 		file: { readonly path: string; readonly exclusive?: boolean }
 	) => Effect.Effect<SinkFileWritten, GameTextIndexError>;
+	/**
+	 * Writes the units a request matches to `file.path` as a JSON array inside `envelope`, the
+	 * document around it, each unit as the corpus export decodes it; no unit reaches the host.
+	 */
+	readonly writeCorpusJson: (
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		file: { readonly path: string; readonly exclusive?: boolean },
+		envelope: GameTextContract.Envelope
+	) => Effect.Effect<SinkFileWritten, GameTextIndexError>;
 	/** The named units with every occurrence (at most 5,000 IDs); IDs no unit has are left out. */
 	readonly readUnits: (
 		ids: readonly TextUnit["id"][]

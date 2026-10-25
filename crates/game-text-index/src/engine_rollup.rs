@@ -778,9 +778,17 @@ pub fn parse_corpus_export(payload: &str) -> Result<ParsedCorpusExport> {
     } = parse_request(payload, "export")?;
     selection.validate()?;
     require(
-        sink.as_ref()
-            .is_none_or(|sink| sink.format == Format::CorpusCsv && units.is_none()),
-        invalid("A corpus sink writes a selection's units as corpusCsv."),
+        sink.as_ref().is_none_or(|sink| {
+            units.is_none()
+                && match sink.format {
+                    Format::CorpusCsv => sink.envelope.is_none(),
+                    Format::CorpusJson => sink.envelope.is_some(),
+                    _ => false,
+                }
+        }),
+        invalid(
+            "A corpus sink writes a selection's units as corpusCsv, or as corpusJson in an envelope.",
+        ),
     )?;
     if let Some(units) = &units {
         require(

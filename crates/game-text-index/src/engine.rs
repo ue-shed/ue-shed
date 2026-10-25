@@ -530,7 +530,17 @@ impl EngineSession {
                         match sink {
                             Some(sink) => {
                                 let mut writer = crate::sink::SinkWriter::open(&sink, reply)?;
-                                query.write_corpus_csv(&request, &mut writer, cancelled)?;
+                                match &sink.envelope {
+                                    Some(envelope) => query.write_corpus_json(
+                                        &request,
+                                        envelope,
+                                        &mut writer,
+                                        cancelled,
+                                    )?,
+                                    None => {
+                                        query.write_corpus_csv(&request, &mut writer, cancelled)?
+                                    }
+                                }
                                 let summary = writer.finish()?;
                                 reply.part(serde_json::to_vec(&summary)?)?;
                             }

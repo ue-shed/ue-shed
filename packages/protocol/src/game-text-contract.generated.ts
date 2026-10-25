@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "d7228f550de4fad99db50406ca182dfe2be78e0bc4d7c059f4898d22dc0e7463"
+	contractHash: "b74d46a76711e9ed9d3e56dd61a8ce1ef58fbae5f8d3bb120135fb83a4ebb793"
 } as const;
 
 /**
@@ -381,9 +381,15 @@ file?: string,
 /**
  * Fail with `exists` rather than replace a file already at `file`.
  */
-exclusive?: boolean, };
+exclusive?: boolean, 
+/**
+ * For a JSON array format, the document around the array.
+ */
+envelope?: Envelope, };
 
-export type SinkFormat = "corpusCsv" | "cultureLinesCsv" | "findingJson";
+export type Envelope = { before: string, after: string, depth: number, };
+
+export type SinkFormat = "corpusCsv" | "corpusJson" | "cultureLinesCsv" | "findingJson";
 
 export type SinkSummary = { 
 /**

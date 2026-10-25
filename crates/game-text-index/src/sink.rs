@@ -18,6 +18,9 @@ use ts_rs::TS;
 pub enum Format {
     /// Browse's CSV: a row per saved place of each selected unit with searchable source.
     CorpusCsv,
+    /// A corpus report's units, as `JSON.stringify(document, null, "\t")` writes them inside
+    /// the sink's envelope.
+    CorpusJson,
     /// The all-languages CSV: a row per line, and per culture its shipped translation and state.
     CultureLinesCsv,
     /// `loc check`'s findings: the elements of the report's `findings` array, as the CLI prints
@@ -38,6 +41,65 @@ pub struct Sink {
     /// Fail with `exists` rather than replace a file already at `file`.
     #[cfg_attr(test, ts(optional))]
     pub exclusive: Option<bool>,
+    /// For a JSON array format, the document around the array.
+    #[cfg_attr(test, ts(optional))]
+    pub envelope: Option<Envelope>,
+}
+
+/// A JSON document around a sink's array: the text before it, the text after it, and the
+/// array's depth, the tabs before its closing bracket.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Envelope {
+    pub before: String,
+    pub after: String,
+    #[cfg_attr(test, ts(type = "number"))]
+    pub depth: usize,
+}
+
+/// Writes a JSON array's elements inside an envelope, as `JSON.stringify(document, null, "\t")`
+/// writes them: `[]` when empty, else each element on its own line one tab deeper.
+pub(crate) struct JsonArray<'s, 'a> {
+    sink: &'s mut SinkWriter<'a>,
+    depth: usize,
+    after: &'s str,
+    out: Vec<u8>,
+}
+
+impl<'s, 'a> JsonArray<'s, 'a> {
+    pub fn open(sink: &'s mut SinkWriter<'a>, envelope: &'s Envelope) -> Result<Self> {
+        sink.write(envelope.before.as_bytes())?;
+        sink.write(b"[")?;
+        Ok(Self {
+            sink,
+            depth: envelope.depth,
+            after: &envelope.after,
+            out: Vec::new(),
+        })
+    }
+
+    pub fn push(&mut self, element: &serde_json::Value) -> Result<()> {
+        self.out.clear();
+        if self.sink.rows() > 0 {
+            self.out.push(b',');
+        }
+        self.out.push(b'\n');
+        self.out.resize(self.out.len() + self.depth + 1, b'\t');
+        pretty_json(element, self.depth + 1, &mut self.out);
+        self.sink.write(&self.out)?;
+        self.sink.row();
+        Ok(())
+    }
+
+    pub fn close(self) -> Result<()> {
+        if self.sink.rows() > 0 {
+            self.sink.write(b"\n")?;
+            self.sink.write(&vec![b'\t'; self.depth])?;
+        }
+        self.sink.write(b"]")?;
+        self.sink.write(self.after.as_bytes())
+    }
 }
 
 /// What a sink wrote: the request's part.

@@ -247,27 +247,30 @@ The engine encodes every exported row, so the host never builds a document to pr
 - **A sink without `file`** sends the encoded rows as `text` frames of about 1 MiB, which the host writes straight to its destination. Each waits for a credit, which the host returns once its write finishes, so a slow destination holds the request back instead of filling memory.
 - **Formats:**
 
-    | Format              | Today                                                | Output                      |
-    | ------------------- | ---------------------------------------------------- | --------------------------- |
-    | `corpusCsv`         | `gt/csv.ts:95` (`gameTextCsv`)                       | Browse's CSV                |
-    | `qualityCsv`        | `gt/csv.ts:180`, `gt/localization-workspace.ts:1505` | Quality's CSV               |
-    | `cultureLinesCsv`   | `gt/localization-export.ts:62`                       | the all-languages CSV       |
-    | `reportCsv`         | `gt/workspace-localization.ts:797-837`               | the status report CSV       |
-    | `findingJson`       | `gt/localization-check-report.ts:170-210`            | `loc check`'s finding array |
-    | `investigationJson` | `gt/investigation.ts:183-196,272-320`                | the investigation's rows    |
+    | Format            | Today                                                | Output                         |
+    | ----------------- | ---------------------------------------------------- | ------------------------------ |
+    | `corpusCsv`       | `gt/csv.ts:95` (`gameTextCsv`)                       | Browse's CSV                   |
+    | `qualityCsv`      | `gt/csv.ts:180`, `gt/localization-workspace.ts:1505` | Quality's CSV                  |
+    | `cultureLinesCsv` | `gt/localization-export.ts:62`                       | the all-languages CSV          |
+    | `reportCsv`       | `gt/workspace-localization.ts:797-837`               | the status report CSV          |
+    | `findingJson`     | `gt/localization-check-report.ts:170-210`            | `loc check`'s finding array    |
+    | `corpusJson`      | `gt/investigation.ts:183-196,272-320`                | a corpus investigation's units |
 
 - **JSON envelopes.** The two JSON formats emit array elements. The host writes the document around them:
-    - the report header and diagnostics for `loc check`;
-    - the metadata for an investigation.
+    - the report header and diagnostics for `loc check`, around a stream sink;
+    - the rest of a corpus investigation, which a file sink's `envelope` carries: the text before the array, the text after it, and its depth.
 
     Every output stays byte-identical to today's (decision 37).
+
+- **Presentation stays with the host (amends decision 37).** Quality's two CSVs, the status report CSV and a quality investigation's JSON print the text the Workbench shows: the Quality list's problem and context summaries (`gt/localization-workspace.ts:332-650`), counts in the host's locale (`textCountLabel`) and the status report's percentages. An engine encoder would be a second copy of that text, or the Quality list's presentation would move into the engine. These outputs are bounded by findings and cultures, not by the corpus, so `qualityCsv` and `reportCsv` stay host writers. The corpus-sized outputs, every line or unit, are the engine's.
 
 - **`loc check` streams.** It writes the report's head, then streams `findingJson` from `findings_query` with a stream sink, then its diagnostics and tail. Phase 3 built the whole report (`gt/localization-check-report.ts:148-253`) and then printed it in parts (`apps/cli/src/cli-runtime.ts:137-153`). Its peak memory no longer grows with the number of findings.
     - **The finding's shape.** The report's schema rebuilds every struct in its fields' order and keeps only the members it names, so Phase 3's member order was the schema's, not the order `reportedFinding` built. The engine picks and orders a finding's top-level members by family, and its policy findings' `actual`, whose authored order differs from the schema's. The authored order stays: the report's order compares `JSON.stringify(actual)`.
     - **Counts first.** `prepareLocalizationCheck` reads the counts with the first diagnostics page, so the report is complete but for its findings before anything prints, and `--changes` is written first, as before. `findings_query` with a sink takes no `limit`, writes every selected finding, composing 5,000 at a time, and answers with its counts and `sink`.
     - **Failure.** A failure after the report starts printing leaves it cut short; the CLI writes the failure to stderr and exits with 2.
 - **Browse's CSV** is a `corpusCsv` sink on the corpus `export`, over the units the export would send. An investigation's corpus CSV asks for its file before anything is read, as the all-languages export does. The Findings column keeps a listed row's cap of 32 rules per unit, as the host's CSV did.
-- **Workbench exports** write through `sink.file` and report progress. The 64 MiB and 16 MiB caps (`gt/workspace-localization.ts:861-904`) go.
+- **A corpus investigation's JSON** is a `corpusJson` sink on the corpus `export`. The host makes the document as before, from the corpus header with no units, and splits its text at the units array (`corpusInvestigationEnvelope`). A key three objects deep follows a line break and three tabs, which no JSON string holds, so the split is unambiguous. Each unit and occurrence is written in its schema's order, as the export decoded it.
+- **Workbench exports** write through `sink.file` and report progress. The 64 MiB cap on the all-languages CSV goes, and corpus investigations no longer pass through the 512 MiB export cap. The 16 MiB caps on the status report and its baseline stay: those files hold a row per culture.
 
 ## 9. Host adoption
 

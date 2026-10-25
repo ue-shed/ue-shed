@@ -1,4 +1,7 @@
+import { writeFileSync } from "node:fs";
 import { Effect } from "effect";
+import { gameTextCsv } from "./csv.js";
+import { hasSearchableSource } from "./search.js";
 import { textCorpusReportHeader } from "./corpus-summary.js";
 import type { NativeTextQuery } from "./native-query.js";
 import { referenceSearchRows, type TextCorpusQuery } from "./query.test-support.js";
@@ -11,6 +14,13 @@ import {
 	derivedLineViews,
 	type DerivedReadsBase
 } from "./index-derived-reads.test-support.js";
+
+/** Writes a reference export's text as an engine sink would, and answers as it does. */
+const written = (path: string, text: string, rows: number) => {
+	const bytes = new TextEncoder().encode(text);
+	writeFileSync(path, bytes);
+	return { status: "written" as const, rows, bytes: bytes.byteLength };
+};
 
 /** Adapts an independent object oracle to the asynchronous host contract, only in tests. */
 export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus): NativeTextQuery {
@@ -48,8 +58,46 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 			read("localization_lines", () => derivedLineViews(base, request, fields)),
 		writeLocalizationLinesCsv: () =>
 			Effect.die("This reference query encodes no files; the engine's sinks do."),
-		writeCorpusCsv: () =>
-			Effect.die("This reference query encodes no files; the engine's sinks do."),
+		// Hosts' export flows run over this query too; it writes the files the engine's sinks do.
+		writeCorpusCsv: (request, file) =>
+			read("export", () => {
+				const selected = query.export(request);
+				const reviewSignals = new Map(
+					selected.units.map((unit) => [
+						unit.id,
+						query.focus({ id: unit.id, pageSize: 1 })!.unit.reviewSignals
+					])
+				);
+				return written(
+					file.path,
+					gameTextCsv(selected, reviewSignals),
+					selected.units
+						.filter(hasSearchableSource)
+						.reduce((rows, unit) => rows + unit.occurrences.length, 0)
+				);
+			}),
+		writeCorpusJson: (request, file, envelope) =>
+			read("export", () => {
+				const { units } = query.export(request);
+				const indent = (depth: number) => `\n${"\t".repeat(depth)}`;
+				const array = units.length
+					? `[${units
+							.map(
+								(unit, index) =>
+									`${index ? "," : ""}${indent(envelope.depth + 1)}${JSON.stringify(
+										unit,
+										null,
+										"\t"
+									).replaceAll("\n", indent(envelope.depth + 1))}`
+							)
+							.join("")}${indent(envelope.depth)}]`
+					: "[]";
+				return written(
+					file.path,
+					`${envelope.before}${array}${envelope.after}`,
+					units.length
+				);
+			}),
 		readCorpusHeader: () => Effect.succeed(derivedCorpusHeader(corpus)),
 		readCorpusReportHeader: () =>
 			Effect.succeed(textCorpusReportHeader(derivedCorpusHeader(corpus))),

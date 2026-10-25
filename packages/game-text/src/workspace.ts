@@ -73,10 +73,15 @@ import {
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "./entry-schema.js";
-import { investigationRequest, readFindingUnits } from "./investigation.js";
+import {
+	corpusInvestigationEnvelope,
+	investigationRequest,
+	readFindingUnits
+} from "./investigation.js";
 import { hasBrowseRules, makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
 import { checkCompleteRules } from "./native-findings.js";
 import type { TextFindingsSelection } from "./text-problem-schema.js";
+import { corpusWithoutUnits } from "./index-reads.js";
 import type { LocalizationTarget } from "@ue-shed/localization";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
 import {
@@ -98,6 +103,30 @@ import type {
 	GameTextWorkspaceProgress,
 	GameTextWorkspaceProjectState
 } from "./workspace-host.js";
+
+/** A preset of the workspace's query, with the rules its scan used. */
+const investigationPreset = (
+	query: GameTextInvestigationQuery,
+	rules: GameTextInvestigationPreset["rules"]
+): GameTextInvestigationPreset => ({
+	schemaVersion: query.workspaceFilter === undefined ? 1 : 2,
+	kind: "game_text",
+	sort: "domain_order",
+	query,
+	...(rules ? { rules } : undefined)
+});
+
+/** The failure of a corpus export whose query isn't open. */
+const targetNotLoaded = (query: GameTextInvestigationQuery) =>
+	new InvestigationError({
+		message: query.localization
+			? `The localization target ${query.localization.target} is not loaded.`
+			: "This export requires an open native Game Text snapshot.",
+		recovery:
+			"Refresh the Game Text workspace and select its localization target when filtering translations.",
+		retrySafe: true,
+		nextStep: "fix_input"
+	});
 
 /** An index read's failure as an investigation's, keeping its guidance. */
 const investigationIndexFailure = (cause: IndexFailure) =>
@@ -1239,7 +1268,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		const request = investigationRequest(query);
 		return {
 			localized,
-			request:
+			request,
+			withFindings:
 				findings.status === "ready" ? { ...request, findings: findings.selection } : request
 		};
 	});
@@ -1247,14 +1277,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		query: GameTextInvestigationQuery
 	) {
 		const snapshot = yield* currentInvestigationSnapshot();
-		const preset: GameTextInvestigationPreset = {
-			schemaVersion: query.workspaceFilter === undefined ? 1 : 2,
-			kind: "game_text",
-			sort: "domain_order",
-			query,
-			...(snapshot.rules ? { rules: snapshot.rules } : undefined)
-		};
-		const { localized, request } = yield* investigationCorpus(query);
+		const preset = investigationPreset(query, snapshot.rules);
+		const { localized, withFindings } = yield* investigationCorpus(query);
 		const workspace =
 			query.mode === "quality" && query.localization && query.workspaceFilter !== undefined
 				? yield* localization.qualityExport({
@@ -1268,7 +1292,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		const selected =
 			query.mode === "corpus" && localized
 				? yield* localized
-						.exportWithSignals(request)
+						.exportWithSignals(withFindings)
 						.pipe(Effect.mapError(investigationIndexFailure))
 				: undefined;
 		const index = yield* currentIndex();
@@ -1308,23 +1332,45 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const corpusInvestigationCsv = Effect.fn("GameText.workspace.corpusInvestigationCsv")(
 		function* (query: GameTextInvestigationQuery) {
 			yield* currentInvestigationSnapshot();
-			const { localized, request } = yield* investigationCorpus(query);
-			if (localized === undefined)
-				return yield* Effect.fail(
-					new InvestigationError({
-						message: query.localization
-							? `The localization target ${query.localization.target} is not loaded.`
-							: "This export requires an open native Game Text snapshot.",
-						recovery:
-							"Refresh the Game Text workspace and select its localization target when filtering translations.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+			const { localized, withFindings } = yield* investigationCorpus(query);
+			if (localized === undefined) return yield* Effect.fail(targetNotLoaded(query));
 			return yield* saveInvestigation(dialog, {
 				extension: "csv",
 				write: (path) =>
-					localized.writeCorpusCsv(request, { path }).pipe(
+					localized.writeCorpusCsv(withFindings, { path }).pipe(
+						Effect.map((written) => ("rows" in written ? written.rows : 0)),
+						Effect.mapError(investigationIndexFailure)
+					)
+			});
+		},
+		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+	);
+	/**
+	 * A corpus query's investigation JSON. The host writes the document around its units, made
+	 * as before from the corpus header, and the engine writes the units into the chosen file.
+	 */
+	const corpusInvestigationJson = Effect.fn("GameText.workspace.corpusInvestigationJson")(
+		function* (query: GameTextInvestigationQuery) {
+			const snapshot = yield* currentInvestigationSnapshot();
+			const { localized, request } = yield* investigationCorpus(query);
+			if (localized === undefined) return yield* Effect.fail(targetNotLoaded(query));
+			const header = yield* localized
+				.readCorpusHeader()
+				.pipe(Effect.mapError(investigationIndexFailure));
+			const document = yield* exportGameTextInvestigation(
+				{
+					sourceQuality: () =>
+						Effect.die(new Error("A corpus export reads no source rules."))
+				},
+				investigationPreset(query, snapshot.rules),
+				snapshot.source,
+				{ export: () => Effect.succeed(corpusWithoutUnits(header)) }
+			);
+			const envelope = corpusInvestigationEnvelope(document);
+			return yield* saveInvestigation(dialog, {
+				extension: "json",
+				write: (path) =>
+					localized.writeCorpusJson(request, { path }, envelope).pipe(
 						Effect.map((written) => ("rows" in written ? written.rows : 0)),
 						Effect.mapError(investigationIndexFailure)
 					)
@@ -1334,8 +1380,10 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	);
 	const investigationExport = Effect.fn("GameText.workspace.investigationExport")(
 		(query: GameTextInvestigationQuery, format: InvestigationFormat) =>
-			format === "csv" && query.mode === "corpus"
-				? corpusInvestigationCsv(query)
+			query.mode === "corpus"
+				? format === "csv"
+					? corpusInvestigationCsv(query)
+					: corpusInvestigationJson(query)
 				: captureInvestigation(query).pipe(
 						Effect.flatMap(({ document, corpus, reviewSignals, findings }) =>
 							saveInvestigation(dialog, {

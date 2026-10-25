@@ -1260,9 +1260,8 @@ it("restores embedded rules without retaining another rule file's write destinat
 				)
 			)
 		);
-		expect(
-			JSON.parse(new TextDecoder().decode(files.get(outputPath))).preset.rules
-		).toBeUndefined();
+		// The engine writes a corpus export to the chosen file itself, not through the file hooks.
+		expect(JSON.parse(await readFile(outputPath, "utf8")).preset.rules).toBeUndefined();
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

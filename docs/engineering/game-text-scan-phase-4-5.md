@@ -66,6 +66,18 @@ the join.
    Then the worker count is measured at 8, 12 and 16 on the released project. Choose the
    smallest count within 5% of the best wall time, and record the reader's peak working set for
    each; a count that raises the reader's peak above 5 GiB isn't eligible.
+
+    _Amended after measurement._ Twelve workers was the eligible count, but with the localization
+    branch beside extraction the process tree peaked at 6.01 GiB even at eight workers. The reader's
+    memory is its decoded export models: a 39 MB Blueprint holds about 600 MB while it decodes, and
+    the peak is the early cluster of large packages in flight at once, not buffered output or
+    allocator retention ([attribution](game-text-scan-attribution.md)). So the reader bounds what
+    it decodes at once by **input bytes**, not by worker count: a job starts only while the
+    in-flight packages' file sizes stay within a budget, and a package larger than the budget runs
+    alone. Twelve workers stay the default. The budget is chosen by measurement, the largest of
+    256 and 192 MiB that keeps the whole tree under 6 GiB with the localization branch running
+    beside extraction on the released project; requests can set it as they set the worker count.
+
 4. **The join runs its independent steps in parallel.** Steps that read the same finished inputs
    and write disjoint outputs run together (`rayon::join`/`scope`): for example query places,
    the dependency graph, summary state and the translation search cache, each after what it

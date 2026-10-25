@@ -541,3 +541,68 @@ parse interrupt nothing is published and the second refresh is a full cold build
 threads are terminated by the pools' own abort handlers (section 4, item 6); the probe
 observes them only through the Node process, which stayed responsive throughout — it fielded
 the interrupt and the tree polls itself.
+
+## Reader implementation: staged byte identity STOP
+
+Investigated 2026-10-26 on `perf/p45-reader`, unchanged base
+`ea6b5cb024efe7960c6393d1959100826e066a9e`. No product code was changed. Decision 3's
+requirement to preserve the base reader's exact order within every staging file cannot be
+satisfied by retaining the current completion-order scheduler: the base itself does not
+produce repeatable staging bytes for an identical request.
+
+### Reproduction and evidence
+
+Built the unchanged base with `cargo build --locked --release -p uasset-io`, holding the
+shared heavy-job lock, with `CARGO_BUILD_JOBS=8` and `RAYON_NUM_THREADS=16`. Copied the result
+to `E:\ue-shed-engine-scratch\uasset-p45-base-native.exe`; its SHA-256 is
+`65841e228d02d07eac4011eaf38d6522fcba5ed1b75da946e8f102797fb414cd`.
+
+Ran this binary's `protocol` command twice sequentially under the same lock, with the exact
+same JSON request bytes: protocol v1.19, operation `extract_text_packages`, concurrency 8,
+all 47 sorted explicit package paths from
+`E:/ue-shed-fixture-scratch/p1-canonical-ue57-facts/Content`, and staging group 0 for every
+path. After each request, renamed the staging directory so the next request could recreate
+it at the identical path. The request SHA-256 is
+`7eeb4901eaee2026368e1092a07e67c6f0e51af56cba0306c90639c3ab61130a`.
+
+Both requests exited successfully and produced 158,577 bytes / 47 NDJSON lines:
+
+- First file SHA-256: `c8eefc510b7128cb9b02ca44199e6f17aec07a2ca79e47e19fb7f602b985bbcd`.
+- Second file SHA-256: `ae0b5096ac7fc726cb12c04e8689e4dd8ad8ba389b1c097ebb72409d3f09f2c0`.
+- `cmp target/p45-reader/staging-1/0.ndjson target/p45-reader/staging-2/0.ndjson`
+  returned 1: `differ: byte 44, line 1`.
+- Sorting the complete record lines in memory yielded exactly equal arrays; no record
+  contents differed. This diagnoses the ordering issue; it does not pass the byte gate.
+- No timestamps, random filenames, or other bytes were excluded from this comparison.
+
+The request, reproduction scripts, and both original staging files remain in the ignored
+`target/p45-reader/` directory of this worktree. Neither benchmark project was accessed.
+
+### Code cause and required decision
+
+In `crates/uasset-io/src/direct_executor/project_io.rs:637`, staging sets `ordered` to false.
+The unordered branch receives the next completed worker result at line 948, consumes and
+stages it at line 949 (through line 647), and only then refills the window at line 951.
+Consequently, group-file line order follows worker completion order. The existing staging
+test explicitly acknowledges completion order at line 2662 and sorts both line collections
+at lines 2679-2680 before asserting equality.
+
+Moving serialization to workers and refilling before writing changes completion timing;
+there is no stable base order for the implementation to reproduce. Introducing an ordered
+staging contract, or allowing order-insensitive staging comparison while retaining strict
+snapshot byte comparison, needs a specification decision. Neither alternative was implemented.
+
+Stopped before optimization, worker-count selection, or performance measurements. No
+before/after speed or snapshot-parity claim is made. Benchmark-project and UE 5.8 corpus
+comparisons, snapshot comparisons, the worker sweep, and cancellation measurements were not
+run because the exact-staging-order requirement already fails on the unchanged base.
+
+### Verification of this report
+
+- The unchanged release build and both canonical extraction requests succeeded.
+- `pnpm -s run typecheck` passed using Node 26.12.0.
+- `pnpm -s run check:static` failed at `format:check` on the pre-existing formatting of
+  `crates/process-metrics/Cargo.toml`; that file has no diff on this branch. Later checks in
+  that command did not run. The edited report passes its targeted formatter check.
+- No crates were edited, so no Rust unit-test or clippy run was needed for this report.
+  No vitest run, full suite, Unreal Editor, Perforce write, push, PR, or merge was performed.

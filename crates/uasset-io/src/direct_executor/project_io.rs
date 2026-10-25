@@ -111,6 +111,16 @@ struct ProjectionWorkResult {
     skipped: bool,
 }
 
+struct ProjectionDelivery {
+    result: ProjectionWorkResult,
+    staged: Vec<StagedPackageTextRecord>,
+}
+
+struct StagedPackageTextRecord {
+    group: u32,
+    line: Vec<u8>,
+}
+
 pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
     scan_with_cancellation(request, &CancellationToken::new())
 }
@@ -612,9 +622,13 @@ fn projection(
     } else {
         resolve_roots(selection, cancellation)?
     };
-    let mut stager = staging
-        .map(|staging| PackageTextStager::new(staging, &roots))
+    let staging_groups = staging
+        .map(|staging| PackageTextGroups::new(staging, &roots))
         .transpose()?;
+    let mut stager = staging.map(|staging| PackageTextStager {
+        directory: PathBuf::from(&staging.directory),
+        files: BTreeMap::new(),
+    });
     let (paths, _) = scanner::discover_paths(&roots, false, cancellation)?;
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
@@ -635,17 +649,23 @@ fn projection(
     let streaming = emit.is_some();
     // Staged records name their own group, so their results need no path order.
     let ordered = stager.is_none();
-    let mut consume = |index: usize, result: Result<ProjectionWorkResult, Failure>| {
+    let work = |index: usize| {
+        let result = project_one_path(&paths[index], kind, &filters, cancellation)?;
+        match &staging_groups {
+            Some(groups) => groups.prepare(&paths[index], result),
+            None => Ok(ProjectionDelivery {
+                result,
+                staged: Vec::new(),
+            }),
+        }
+    };
+    let mut consume = |_: usize, delivery: Result<ProjectionDelivery, Failure>| {
         let _span = game_text_index::scan_timings::Span::new("extract.consume");
-        let mut result = result?;
+        let ProjectionDelivery { result, staged } = delivery?;
         checkpoint(cancellation, "inspection")?;
-        if let (Some(stager), Some(path)) = (&mut stager, paths.get(index)) {
-            for frame in &mut result.results {
-                if let ResultFrame::ExtractTextPackages { event } = frame
-                    && !matches!(event, SavedAssetPackageTextEvent::Summary { .. })
-                {
-                    *frame = stager.write(path, event)?;
-                }
+        if let Some(stager) = &mut stager {
+            for record in staged {
+                stager.write(&record)?;
             }
         }
         if result.diagnostic.is_some() {
@@ -681,26 +701,25 @@ fn projection(
     };
     if streaming {
         project_paths_bounded(
-            &paths,
+            paths.len(),
             worker_count,
-            kind,
-            &filters,
             cancellation,
             ordered,
+            &work,
             &mut consume,
         )?;
     } else {
         let next_path = AtomicUsize::new(0);
         let slots = Mutex::new(
             (0..paths.len())
-                .map(|_| None::<Result<ProjectionWorkResult, Failure>>)
+                .map(|_| None::<Result<ProjectionDelivery, Failure>>)
                 .collect::<Vec<_>>(),
         );
         std::thread::scope(|scope| {
             for _ in 0..worker_count.min(paths.len().max(1)) {
                 let next_path = &next_path;
                 let slots = &slots;
-                let filters = &filters;
+                let work = &work;
                 let paths = &paths;
                 scope.spawn(move || {
                     loop {
@@ -708,10 +727,10 @@ fn projection(
                             break;
                         }
                         let index = next_path.fetch_add(1, Ordering::Relaxed);
-                        let Some(path) = paths.get(index) else {
+                        if index >= paths.len() {
                             break;
-                        };
-                        let result = project_one_path(path, kind, filters, cancellation);
+                        }
+                        let result = work(index);
                         slots.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
                     }
                 });
@@ -781,15 +800,11 @@ fn projection(
     })
 }
 
-/// v1.19 package-text staging: each record becomes one JSON line in its group's file, and the
-/// stream carries a `staged_text_package` result naming the group and line size instead.
-struct PackageTextStager {
-    directory: PathBuf,
+struct PackageTextGroups {
     groups: Vec<(PathBuf, u32)>,
-    files: BTreeMap<u32, io::BufWriter<fs::File>>,
 }
 
-impl PackageTextStager {
+impl PackageTextGroups {
     fn new(
         staging: &crate::protocol::PackageTextStaging,
         roots: &[PathBuf],
@@ -800,13 +815,11 @@ impl PackageTextStager {
             ));
         }
         Ok(Self {
-            directory: PathBuf::from(&staging.directory),
             groups: roots
                 .iter()
                 .cloned()
                 .zip(staging.groups.iter().copied())
                 .collect(),
-            files: BTreeMap::new(),
         })
     }
 
@@ -821,52 +834,73 @@ impl PackageTextStager {
             .ok_or_else(|| staging_failure(format!("{} has no staging group", path.display())))
     }
 
-    fn write(
-        &mut self,
+    fn prepare(
+        &self,
         path: &Path,
-        event: &SavedAssetPackageTextEvent,
-    ) -> Result<ResultFrame, Failure> {
-        let _span = game_text_index::scan_timings::Span::new("extract.staging");
-        let group = self.group(path)?;
-        let record_path = match event {
-            SavedAssetPackageTextEvent::Package { record } => record.path.clone(),
-            SavedAssetPackageTextEvent::Error { path, .. } => path.clone(),
-            SavedAssetPackageTextEvent::Summary { .. } => {
-                return Err(staging_failure("a summary is not a package record".into()));
+        mut result: ProjectionWorkResult,
+    ) -> Result<ProjectionDelivery, Failure> {
+        let _span = game_text_index::scan_timings::Span::new("extract.serialize");
+        let mut staged = Vec::new();
+        for frame in &mut result.results {
+            if let ResultFrame::ExtractTextPackages { event } = frame {
+                let record_path = match event {
+                    SavedAssetPackageTextEvent::Package { record } => record.path.clone(),
+                    SavedAssetPackageTextEvent::Error { path, .. } => path.clone(),
+                    SavedAssetPackageTextEvent::Summary { .. } => continue,
+                };
+                let group = self.group(path)?;
+                let mut line = serde_json::to_vec(event).map_err(|error| {
+                    staging_failure(format!("could not serialize a record: {error}"))
+                })?;
+                if line.len() > MAX_STAGED_PACKAGE_TEXT_BYTES {
+                    return Err(Failure {
+                        code: "resource_limit".to_owned(),
+                        message: format!(
+                            "{record_path} has more package text than one record can hold"
+                        ),
+                        retry_safe: false,
+                        ..Default::default()
+                    });
+                }
+                line.push(b'\n');
+                game_text_index::scan_timings::count("extract.staging_bytes", line.len() as u64);
+                *frame = ResultFrame::StagedTextPackage {
+                    path: record_path,
+                    group,
+                    bytes: line.len() as u64,
+                };
+                staged.push(StagedPackageTextRecord { group, line });
             }
-        };
-        let mut line = serde_json::to_vec(event)
-            .map_err(|error| staging_failure(format!("could not serialize a record: {error}")))?;
-        if line.len() > MAX_STAGED_PACKAGE_TEXT_BYTES {
-            return Err(Failure {
-                code: "resource_limit".to_owned(),
-                message: format!("{record_path} has more package text than one record can hold"),
-                retry_safe: false,
-                ..Default::default()
-            });
         }
-        line.push(b'\n');
-        game_text_index::scan_timings::count("extract.staging_bytes", line.len() as u64);
-        let file = match self.files.entry(group) {
+        Ok(ProjectionDelivery { result, staged })
+    }
+}
+
+/// Workers prepare each v1.19 JSON line and its result; only this coordinator appends files.
+struct PackageTextStager {
+    directory: PathBuf,
+    files: BTreeMap<u32, io::BufWriter<fs::File>>,
+}
+
+impl PackageTextStager {
+    fn write(&mut self, record: &StagedPackageTextRecord) -> Result<(), Failure> {
+        let _span = game_text_index::scan_timings::Span::new("extract.staging");
+        let file = match self.files.entry(record.group) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let file = fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
-                    .open(self.directory.join(format!("{group}.ndjson")))
+                    .open(self.directory.join(format!("{}.ndjson", record.group)))
                     .map_err(|error| {
                         staging_failure(format!("could not create a staging file: {error}"))
                     })?;
                 entry.insert(io::BufWriter::with_capacity(16 * 1024, file))
             }
         };
-        file.write_all(&line)
+        file.write_all(&record.line)
             .map_err(|error| staging_failure(format!("could not write a staging file: {error}")))?;
-        Ok(ResultFrame::StagedTextPackage {
-            path: record_path,
-            group,
-            bytes: line.len() as u64,
-        })
+        Ok(())
     }
 
     fn finish(self) -> Result<(), Failure> {
@@ -892,19 +926,18 @@ fn staging_failure(message: String) -> Failure {
     }
 }
 
-/// At most two jobs per worker in flight. Ordered delivery schedules a job only after the next
-/// ordered result is consumed, so one slow package cannot grow the reorder buffer; unordered
-/// delivery consumes each result as it finishes, so a slow package delays only its own result.
-fn project_paths_bounded(
-    paths: &[PathBuf],
+/// At most two jobs per worker in flight, refilled before consumption. Ordered delivery refills
+/// only when the next result leaves the reorder buffer, so one slow package cannot grow it;
+/// unordered delivery consumes each completion, so a slow package delays only its own result.
+fn project_paths_bounded<T: Send>(
+    path_count: usize,
     worker_count: usize,
-    kind: ProjectionKind,
-    filters: &ScanFilters,
     cancellation: &CancellationToken,
     ordered: bool,
-    consume: &mut dyn FnMut(usize, Result<ProjectionWorkResult, Failure>) -> Result<(), Failure>,
+    work: &(impl Fn(usize) -> Result<T, Failure> + Sync),
+    consume: &mut dyn FnMut(usize, Result<T, Failure>) -> Result<(), Failure>,
 ) -> Result<(), Failure> {
-    let worker_count = worker_count.min(paths.len().max(1));
+    let worker_count = worker_count.min(path_count.max(1));
     let window = worker_count * 2;
     let (jobs, receive_job) = mpsc::sync_channel::<usize>(window);
     let receive_job = Mutex::new(receive_job);
@@ -925,9 +958,7 @@ fn project_paths_bounded(
                         break;
                     };
                     drop(wait);
-                    let result = checkpoint(cancellation, "inspection").and_then(|()| {
-                        project_one_path(&paths[index], kind, filters, cancellation)
-                    });
+                    let result = checkpoint(cancellation, "inspection").and_then(|()| work(index));
                     let _send = game_text_index::scan_timings::Span::new("extract.send_wait");
                     if finished.send((index, result)).is_err() {
                         break;
@@ -938,35 +969,35 @@ fn project_paths_bounded(
         drop(finished);
         let result = (|| {
             let mut scheduled = 0;
-            for index in 0..window.min(paths.len()) {
+            for index in 0..window.min(path_count) {
                 jobs.send(index).map_err(|_| workers_stopped())?;
                 scheduled += 1;
             }
             if !ordered {
-                for _ in 0..paths.len() {
+                for _ in 0..path_count {
                     checkpoint(cancellation, "inspection")?;
                     let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
-                    consume(index, result)?;
-                    if scheduled < paths.len() {
+                    if scheduled < path_count {
                         jobs.send(scheduled).map_err(|_| workers_stopped())?;
                         scheduled += 1;
                     }
+                    consume(index, result)?;
                 }
                 return Ok(());
             }
             let mut pending = BTreeMap::new();
             let mut next = 0;
-            while next < paths.len() {
+            while next < path_count {
                 checkpoint(cancellation, "inspection")?;
                 let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
                 pending.insert(index, result);
                 while let Some(result) = pending.remove(&next) {
-                    consume(next, result)?;
-                    next += 1;
-                    if scheduled < paths.len() {
+                    if scheduled < path_count {
                         jobs.send(scheduled).map_err(|_| workers_stopped())?;
                         scheduled += 1;
                     }
+                    consume(next, result)?;
+                    next += 1;
                 }
             }
             Ok(())
@@ -2595,6 +2626,75 @@ mod tests {
             );
             assert_eq!(progress, [(0, 3), (3, 3)]);
         }
+    }
+
+    #[test]
+    fn projection_refills_before_a_consumer_waits_for_more_work() {
+        for ordered in [false, true] {
+            let (started, receive) = std::sync::mpsc::channel();
+            let cancellation = CancellationToken::new();
+            let mut consumed = Vec::new();
+            super::project_paths_bounded(
+                3,
+                1,
+                &cancellation,
+                ordered,
+                &|index| {
+                    if index == 2 {
+                        started.send(()).unwrap();
+                    }
+                    Ok(index)
+                },
+                &mut |index, result| {
+                    let output = result?;
+                    if index != output {
+                        return Err(super::staging_failure("wrong result index".into()));
+                    }
+                    if consumed.is_empty() {
+                        receive
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .map_err(|_| {
+                                super::staging_failure(
+                                    "replacement job did not start before consumption".into(),
+                                )
+                            })?;
+                    }
+                    consumed.push(index);
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(consumed, [0, 1, 2]);
+        }
+    }
+
+    #[test]
+    fn staging_preparation_uses_the_exact_root_before_a_containing_directory() {
+        let path = std::path::PathBuf::from("Content/Fixture/Text/ST_Game.uasset");
+        let groups = super::PackageTextGroups::new(
+            &crate::protocol::PackageTextStaging {
+                directory: "unused".into(),
+                groups: vec![2, 7],
+            },
+            &[std::path::PathBuf::from("Content/Fixture"), path.clone()],
+        )
+        .unwrap();
+        assert_eq!(groups.group(&path).unwrap(), 7);
+        assert_eq!(
+            groups
+                .group(std::path::Path::new(
+                    "Content/Fixture/Authoring/DT_Text.uasset"
+                ))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            groups
+                .group(std::path::Path::new("Other.uasset"))
+                .unwrap_err()
+                .code,
+            "staging"
+        );
     }
 
     #[test]

@@ -251,6 +251,7 @@ impl Entries {
     }
 }
 pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
+    let mut measure = crate::scan_timings::Cursor::new();
     let count = j.groups.len();
     let mut occurrence_line = vec![0; j.order.len()];
     // A line holding several resolved texts conflicts; every unit on it carries the fact.
@@ -334,6 +335,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     )];
     raw.append("raw", &mut result);
     slice.append("slice", &mut result);
+    measure.mark("query.entries");
     let mut raw_order = (0..names.len() as u32).collect::<Vec<_>>();
     crate::join::sort_by_locale(&mut raw_order, &names);
     result.push(("query.raw.order".into(), String::new(), raw_order));
@@ -345,6 +347,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
         String::new(),
         line_starts.clone(),
     ));
+    measure.mark("query.raw_ids");
     let mut line_names = Vec::new();
     for row in 0..count {
         let identity = if line_starts[row] != line_starts[row + 1]
@@ -372,6 +375,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     let mut line_order = (0..count as u32).collect::<Vec<_>>();
     crate::join::sort_by_locale(&mut line_order, &line_names);
     result.push(("query.line.order".into(), String::new(), line_order));
+    measure.mark("query.line_ids");
     let paths = j
         .packages
         .paths
@@ -388,12 +392,14 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     result.push(("query.package.order".into(), String::new(), package_order));
     // Query opens consume persisted folded bytes rather than rebuilding a source arena in JS.
     // Keep IDs as real shared string columns so coordinated compaction remaps them atomically.
+    measure.mark("query.package_order");
     let source_ids = j.line[crate::join::L_SOURCE]
         .iter()
         .chain(c[O_SOURCE].iter())
         .copied()
         .collect::<BTreeSet<_>>();
     arena(&mut result, j, "query.source", "source", source_ids)?;
+    measure.mark("query.source_cache");
     arena(
         &mut result,
         j,
@@ -401,6 +407,7 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
         "translation",
         translation_ids(j),
     )?;
+    measure.mark("query.translation_cache");
     Ok(result)
 }
 

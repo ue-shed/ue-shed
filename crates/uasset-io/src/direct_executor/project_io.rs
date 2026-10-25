@@ -585,6 +585,8 @@ fn projection(
     cancellation: &CancellationToken,
     mut emit: Option<&mut ProjectionSink<'_>>,
 ) -> Result<ProjectionOutput, Failure> {
+    let _measure = game_text_index::scan_timings::Request::new("extract_text_packages");
+    let _span = game_text_index::scan_timings::Span::new("extract.coordinator");
     let (selection, staging) = match (&request.operation, kind) {
         (Operation::ExtractText { selection }, ProjectionKind::Text)
         | (Operation::ExtractTexture { selection }, ProjectionKind::Texture) => (selection, None),
@@ -634,6 +636,7 @@ fn projection(
     // Staged records name their own group, so their results need no path order.
     let ordered = stager.is_none();
     let mut consume = |index: usize, result: Result<ProjectionWorkResult, Failure>| {
+        let _span = game_text_index::scan_timings::Span::new("extract.consume");
         let mut result = result?;
         checkpoint(cancellation, "inspection")?;
         if let (Some(stager), Some(path)) = (&mut stager, paths.get(index)) {
@@ -661,6 +664,7 @@ fn projection(
         }
         if let Some(emit) = &mut emit {
             for result in &result.results {
+                let _span = game_text_index::scan_timings::Span::new("extract.emit");
                 emit(ProjectionStreamEvent::Result(result))?;
             }
             completed_assets += 1;
@@ -822,6 +826,7 @@ impl PackageTextStager {
         path: &Path,
         event: &SavedAssetPackageTextEvent,
     ) -> Result<ResultFrame, Failure> {
+        let _span = game_text_index::scan_timings::Span::new("extract.staging");
         let group = self.group(path)?;
         let record_path = match event {
             SavedAssetPackageTextEvent::Package { record } => record.path.clone(),
@@ -841,6 +846,7 @@ impl PackageTextStager {
             });
         }
         line.push(b'\n');
+        game_text_index::scan_timings::count("extract.staging_bytes", line.len() as u64);
         let file = match self.files.entry(group) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -864,6 +870,7 @@ impl PackageTextStager {
     }
 
     fn finish(self) -> Result<(), Failure> {
+        let _span = game_text_index::scan_timings::Span::new("extract.staging_flush");
         for (_, mut file) in self.files {
             file.flush().map_err(|error| {
                 staging_failure(format!("could not write a staging file: {error}"))
@@ -907,7 +914,9 @@ fn project_paths_bounded(
             let receive_job = &receive_job;
             let finished = finished.clone();
             scope.spawn(move || {
+                let _span = game_text_index::scan_timings::Span::new("extract.worker");
                 loop {
+                    let wait = game_text_index::scan_timings::Span::new("extract.job_wait");
                     let Ok(index) = receive_job
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
@@ -915,9 +924,11 @@ fn project_paths_bounded(
                     else {
                         break;
                     };
+                    drop(wait);
                     let result = checkpoint(cancellation, "inspection").and_then(|()| {
                         project_one_path(&paths[index], kind, filters, cancellation)
                     });
+                    let _send = game_text_index::scan_timings::Span::new("extract.send_wait");
                     if finished.send((index, result)).is_err() {
                         break;
                     }
@@ -974,6 +985,8 @@ fn project_one_path(
     filters: &ScanFilters,
     cancellation: &CancellationToken,
 ) -> Result<ProjectionWorkResult, Failure> {
+    let mut measured_package = game_text_index::scan_timings::PackageTimer::new();
+    let _span = game_text_index::scan_timings::Span::new("extract.package");
     let path_string = path.to_string_lossy().into_owned();
     checkpoint(cancellation, "read")?;
     if !filters_empty(filters) {
@@ -1021,6 +1034,7 @@ fn project_one_path(
         }
     }
     checkpoint(cancellation, "read")?;
+    let read_span = game_text_index::scan_timings::Span::new("extract.read");
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1037,8 +1051,13 @@ fn project_one_path(
             });
         }
     };
+    drop(read_span);
+    measured_package.bytes = bytes.len() as u64;
+    game_text_index::scan_timings::count("extract.packages", 1);
+    game_text_index::scan_timings::count("extract.read_bytes", bytes.len() as u64);
     checkpoint(cancellation, "read")?;
     checkpoint(cancellation, "parsing")?;
+    let parse_span = game_text_index::scan_timings::Span::new("extract.parse");
     let package = match Package::parse(&bytes) {
         Ok(package) => package,
         Err(error) => {
@@ -1056,6 +1075,18 @@ fn project_one_path(
             });
         }
     };
+    drop(parse_span);
+    if game_text_index::scan_timings::enabled() {
+        let class = owning_asset_class(&package, &path_string);
+        measured_package.kind = match class.as_deref().and_then(|s| s.rsplit('.').next()) {
+            Some("DataTable") => "DataTable",
+            Some("StringTable") => "StringTable",
+            Some("Blueprint") => "Blueprint",
+            Some("WidgetBlueprint") => "WidgetBlueprint",
+            Some("World") => "World",
+            _ => "Other",
+        };
+    }
     project_parsed_package(kind, path_string, &bytes, &package, cancellation)
 }
 
@@ -1066,6 +1097,7 @@ fn project_parsed_package(
     package: &Package,
     cancellation: &CancellationToken,
 ) -> Result<ProjectionWorkResult, Failure> {
+    let _span = game_text_index::scan_timings::Span::new("extract.text");
     checkpoint(cancellation, "parsing")?;
     checkpoint(cancellation, "inspection")?;
     let context = AssetDecodeContext {
@@ -1110,7 +1142,11 @@ fn project_parsed_package(
             continue;
         }
         checkpoint(cancellation, "inspection")?;
-        match decode_export(export, &context) {
+        let decoded = {
+            let _span = game_text_index::scan_timings::Span::new("extract.decode");
+            decode_export(export, &context)
+        };
+        match decoded {
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text | ProjectionKind::TextPackages => {
                     if matches!(kind, ProjectionKind::TextPackages)

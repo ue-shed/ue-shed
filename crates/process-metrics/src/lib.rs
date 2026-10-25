@@ -131,3 +131,173 @@ pub fn heap() -> Option<(u64, u64)> {
     let peak = PEAK.swap(live, Ordering::Relaxed).max(live);
     Some((live as u64, peak as u64))
 }
+
+/// Kernel plus user CPU time of the calling thread, in nanoseconds.
+#[cfg(windows)]
+pub fn thread_cpu_ns() -> std::io::Result<u64> {
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadTimes};
+    let mut creation = Default::default();
+    let mut exit = Default::default();
+    let mut kernel = Default::default();
+    let mut user = Default::default();
+    // SAFETY: the pseudo-handle is valid and all four FILETIME outputs are writable.
+    if unsafe {
+        GetThreadTimes(
+            GetCurrentThread(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok((filetime_ns(kernel)).saturating_add(filetime_ns(user)))
+}
+#[cfg(windows)]
+fn filetime_ns(time: windows_sys::Win32::Foundation::FILETIME) -> u64 {
+    ((u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime)) * 100
+}
+
+/// Kernel plus user CPU time summed across the process's threads, in nanoseconds.
+#[cfg(windows)]
+pub fn process_cpu_ns() -> std::io::Result<u64> {
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+    let mut creation = Default::default();
+    let mut exit = Default::default();
+    let mut kernel = Default::default();
+    let mut user = Default::default();
+    // SAFETY: the pseudo-handle is valid and all FILETIME outputs are writable.
+    if unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(filetime_ns(kernel).saturating_add(filetime_ns(user)))
+}
+#[cfg(not(windows))]
+pub fn process_cpu_ns() -> std::io::Result<u64> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Process CPU counters unavailable.",
+    ))
+}
+
+/// Process CPU and individual live-thread counters, sampled in the measured process.
+#[derive(Clone, Debug, Default)]
+pub struct CpuSnapshot {
+    pub total_ns: u64,
+    pub threads: std::collections::BTreeMap<u32, u64>,
+}
+#[cfg(windows)]
+pub fn cpu_snapshot() -> std::io::Result<CpuSnapshot> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, GetCurrentProcessId, GetProcessTimes, GetThreadTimes, OpenThread,
+        THREAD_QUERY_LIMITED_INFORMATION,
+    };
+    let mut creation = Default::default();
+    let mut exit = Default::default();
+    let mut kernel = Default::default();
+    let mut user = Default::default();
+    // SAFETY: the pseudo-handle is valid and all four FILETIME outputs are writable.
+    if unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    let mut result = CpuSnapshot {
+        total_ns: filetime_ns(kernel).saturating_add(filetime_ns(user)),
+        ..Default::default()
+    };
+    // SAFETY: the snapshot API takes no pointers and returns an owned handle.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error());
+    }
+    let mut entry = THREADENTRY32 {
+        dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: the snapshot handle is valid and entry has the required size.
+    let mut more = unsafe { Thread32First(snapshot, &mut entry) } != 0;
+    // SAFETY: this call has no preconditions.
+    let pid = unsafe { GetCurrentProcessId() };
+    while more {
+        if entry.th32OwnerProcessID == pid {
+            // SAFETY: query access is read-only; a thread exiting concurrently returns null.
+            let handle =
+                unsafe { OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, entry.th32ThreadID) };
+            if !handle.is_null() {
+                // SAFETY: handle has query access and all FILETIME outputs are writable.
+                if unsafe {
+                    GetThreadTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user)
+                } != 0
+                {
+                    result.threads.insert(
+                        entry.th32ThreadID,
+                        filetime_ns(kernel).saturating_add(filetime_ns(user)),
+                    );
+                }
+                // SAFETY: OpenThread returned this owned handle; it is closed once.
+                unsafe { CloseHandle(handle) };
+            }
+        }
+        // SAFETY: the snapshot remains open and entry remains writable and correctly sized.
+        more = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
+    }
+    // SAFETY: this owned snapshot handle is closed once after enumeration.
+    unsafe { CloseHandle(snapshot) };
+    Ok(result)
+}
+#[cfg(not(windows))]
+pub fn thread_cpu_ns() -> std::io::Result<u64> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Thread CPU counters unavailable.",
+    ))
+}
+#[cfg(not(windows))]
+pub fn cpu_snapshot() -> std::io::Result<CpuSnapshot> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "CPU snapshots unavailable.",
+    ))
+}
+
+#[cfg(all(test, windows))]
+mod cpu_tests {
+    #[test]
+    fn cpu_counters_are_monotonic_and_include_current_process_threads() {
+        let before = super::cpu_snapshot().unwrap();
+        let thread_before = super::thread_cpu_ns().unwrap();
+        let process_before = super::process_cpu_ns().unwrap();
+        let start = std::time::Instant::now();
+        while start.elapsed().as_millis() < 40 {
+            std::hint::black_box((0..1000u64).sum::<u64>());
+        }
+        let after = super::cpu_snapshot().unwrap();
+        assert!(super::thread_cpu_ns().unwrap() >= thread_before);
+        assert!(after.total_ns >= before.total_ns);
+        assert!(super::process_cpu_ns().unwrap() >= process_before);
+        assert!(!after.threads.is_empty());
+    }
+}

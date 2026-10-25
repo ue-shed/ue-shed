@@ -49,6 +49,7 @@ mod json_value;
 mod layer_reuse;
 mod line_break;
 pub mod rules;
+pub mod scan_timings;
 pub mod session;
 mod sink;
 mod sink_corpus;

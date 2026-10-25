@@ -307,6 +307,17 @@ fn response_root(store: &Store) -> Result<Value> {
 }
 
 fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
+    let _measure = crate::scan_timings::Request::new(match request {
+        BuildRequest::Publish { inputs, .. }
+            if inputs.iter().all(|i| i.name.starts_with("package-text.")) =>
+        {
+            "publish_packages"
+        }
+        BuildRequest::Publish { .. } => "publish_localization",
+        BuildRequest::Join { .. } => "join",
+        _ => "builder_other",
+    });
+    let _span = crate::scan_timings::Span::new("builder.execute");
     let started = Instant::now();
     let mut outcome = BuildOutcome::new("status");
     match request {

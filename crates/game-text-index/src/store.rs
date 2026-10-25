@@ -199,6 +199,7 @@ fn sync_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 pub fn atomic_json(path: &Path, value: &Value) -> Result<()> {
+    let _span = crate::scan_timings::Span::new("store.atomic_json");
     let temporary = path.with_extension(format!("{}.tmp", token()));
     let mut file = OpenOptions::new()
         .create_new(true)
@@ -206,7 +207,10 @@ pub fn atomic_json(path: &Path, value: &Value) -> Result<()> {
         .open(&temporary)?;
     let result = (|| {
         file.write_all(&serde_json::to_vec(value)?)?;
-        file.sync_all()?;
+        {
+            let _span = crate::scan_timings::Span::new("store.manifest_fsync");
+            file.sync_all()?;
+        }
         drop(file);
         fs::rename(&temporary, path)?;
         sync_directory(path.parent().ok_or("no parent")?)
@@ -550,6 +554,7 @@ struct LocalStrings {
     reusable: bool,
 }
 fn local_strings(file: &Path) -> Result<LocalStrings> {
+    let _span = crate::scan_timings::Span::new("store.local_strings");
     let reader = Reader::open(file)?;
     let mut domains: Vec<(String, Vec<Vec<u8>>)> = Vec::new();
     for index in 0..reader.entries.len() {
@@ -592,6 +597,7 @@ fn encode_local_layer(
         }
         let mut data = reader.load(i)?;
         if e.kind == 3 {
+            let _span = crate::scan_timings::Span::new("store.remap_columns");
             let map = mapping.get(&e.domain).ok_or("local domain absent")?;
             let mut previous = 0;
             let mut remapped = Vec::new();
@@ -794,6 +800,7 @@ impl Store {
         )
     }
     pub fn intern_bytes(&mut self, domain: &str, values: &[Vec<u8>]) -> Result<Vec<u32>> {
+        let _span = crate::scan_timings::Span::new("store.intern");
         require(
             !self.uncertain && domain.len() <= 23,
             "writer closed or invalid domain",
@@ -944,7 +951,18 @@ impl Store {
         Ok(())
     }
     pub fn prepare_batch_cold(&mut self, inputs: &[crate::builder::InputLayer]) -> Result<()> {
+        let _span = crate::scan_timings::Span::new("store.prepare_batch_cold");
         use rayon::prelude::*;
+        let mut measure = crate::scan_timings::Cursor::new();
+        for input in inputs {
+            if crate::scan_timings::enabled() {
+                crate::scan_timings::count(
+                    "publication.staged_bytes",
+                    fs::metadata(&input.file)?.len(),
+                );
+            }
+        }
+        crate::scan_timings::count("publication.inputs", inputs.len() as u64);
         let pending = inputs
             .iter()
             .filter(|input| self.root["layers"].get(&input.key).is_none())
@@ -955,6 +973,7 @@ impl Store {
             .par_iter()
             .map(|input| local_strings(&input.file))
             .collect::<Result<Vec<_>>>()?;
+        measure.mark("publication.read_strings");
         let mut domains = BTreeMap::<String, HashSet<Vec<u8>>>::new();
         let mut domain_order = Vec::new();
         for (input, local) in pending.iter().zip(&locals) {
@@ -976,6 +995,7 @@ impl Store {
             let values = domains.remove(&domain).ok_or("cold domain absent")?;
             self.intern_bytes(&domain, &values.into_iter().collect::<Vec<_>>())?;
         }
+        measure.mark("publication.intern_strings");
         let segments = self.root["segments"].as_array().ok_or("segments")?.len();
         // New layers that replace nothing and reuse nothing are independent files: encode them
         // concurrently and record them in input order. Anything else keeps the serial path.
@@ -995,6 +1015,7 @@ impl Store {
             for input in inputs {
                 self.prepare_local_with_mode(&input.name, &input.key, &input.file, false)?;
             }
+            measure.mark("publication.encode_serial");
             return Ok(());
         }
         let mut jobs = Vec::with_capacity(pending.len());
@@ -1007,6 +1028,7 @@ impl Store {
             }
             jobs.push((*input, mapping));
         }
+        measure.mark("publication.map_strings");
         let generation = self.root["generation"].clone();
         let segment_count = self.root["segments"].as_array().ok_or("segments")?.len();
         let directory = self.directory.clone();
@@ -1023,6 +1045,7 @@ impl Store {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+        measure.mark("publication.encode_parallel");
         for ((input, _), record) in jobs.iter().zip(records) {
             self.root["layers"][&input.key] = record;
             self.root["active"][&input.name] = json!(input.key);
@@ -1062,6 +1085,7 @@ impl Store {
             self.root["active"][name] = json!(key);
             return Ok(record);
         }
+        let _span = crate::scan_timings::Span::new("store.prepare_local");
         let mut reader = Reader::open(input)?;
         let allow_reuse =
             if old.is_some() && reader.entries.iter().any(|entry| entry.name == "file.meta") {
@@ -1120,6 +1144,7 @@ impl Store {
             }
             let mut data = reader.load(i)?;
             if e.kind == 3 {
+                let _span = crate::scan_timings::Span::new("store.remap_columns");
                 let map = mapping.get(&e.domain).ok_or("local domain absent")?;
                 let mut previous = 0;
                 let mut remapped = Vec::new();
@@ -1485,6 +1510,7 @@ impl Store {
         })
     }
     pub fn publish_root(&mut self) -> Result<()> {
+        let _span = crate::scan_timings::Span::new("store.publish_root");
         require(!self.uncertain, "publication uncertain: reopen writer")?;
         let mut disk = self.root.clone();
         if let Some(prefix) = &self.configuration.view_prefix {

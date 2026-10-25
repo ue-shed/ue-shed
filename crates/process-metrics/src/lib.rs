@@ -160,6 +160,37 @@ fn filetime_ns(time: windows_sys::Win32::Foundation::FILETIME) -> u64 {
     ((u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime)) * 100
 }
 
+/// Kernel plus user CPU time summed across the process's threads, in nanoseconds.
+#[cfg(windows)]
+pub fn process_cpu_ns() -> std::io::Result<u64> {
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+    let mut creation = Default::default();
+    let mut exit = Default::default();
+    let mut kernel = Default::default();
+    let mut user = Default::default();
+    // SAFETY: the pseudo-handle is valid and all FILETIME outputs are writable.
+    if unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(filetime_ns(kernel).saturating_add(filetime_ns(user)))
+}
+#[cfg(not(windows))]
+pub fn process_cpu_ns() -> std::io::Result<u64> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Process CPU counters unavailable.",
+    ))
+}
+
 /// Process CPU and individual live-thread counters, sampled in the measured process.
 #[derive(Clone, Debug, Default)]
 pub struct CpuSnapshot {
@@ -258,6 +289,7 @@ mod cpu_tests {
     fn cpu_counters_are_monotonic_and_include_current_process_threads() {
         let before = super::cpu_snapshot().unwrap();
         let thread_before = super::thread_cpu_ns().unwrap();
+        let process_before = super::process_cpu_ns().unwrap();
         let start = std::time::Instant::now();
         while start.elapsed().as_millis() < 40 {
             std::hint::black_box((0..1000u64).sum::<u64>());
@@ -265,6 +297,7 @@ mod cpu_tests {
         let after = super::cpu_snapshot().unwrap();
         assert!(super::thread_cpu_ns().unwrap() >= thread_before);
         assert!(after.total_ns >= before.total_ns);
+        assert!(super::process_cpu_ns().unwrap() >= process_before);
         assert!(!after.threads.is_empty());
     }
 }

@@ -182,7 +182,7 @@ fn cpu_delta(
         .collect::<BTreeMap<_, _>>();
     serde_json::json!({"cpuMs": after.total_ns.saturating_sub(before.total_ns) as f64 / 1e6, "threadCpuMs": threads})
 }
-/// Coarse boundaries sample the process and all live threads, including Rayon workers.
+/// Coarse boundaries sample process CPU, including Rayon workers, without enumerating threads.
 pub struct Cursor {
     start: Option<(Instant, process_metrics::CpuSnapshot)>,
 }
@@ -191,15 +191,16 @@ impl Default for Cursor {
         Self::new()
     }
 }
+fn fast_cpu_snapshot() -> process_metrics::CpuSnapshot {
+    process_metrics::CpuSnapshot {
+        total_ns: process_metrics::process_cpu_ns().unwrap_or_default(),
+        ..Default::default()
+    }
+}
 impl Cursor {
     pub fn new() -> Self {
         Self {
-            start: enabled().then(|| {
-                (
-                    Instant::now(),
-                    process_metrics::cpu_snapshot().unwrap_or_default(),
-                )
-            }),
+            start: enabled().then(|| (Instant::now(), fast_cpu_snapshot())),
         }
     }
     pub fn mark(&mut self, label: &'static str) {
@@ -207,11 +208,18 @@ impl Cursor {
             return;
         };
         let wall = start.elapsed().as_secs_f64() * 1000.0;
-        let after = process_metrics::cpu_snapshot().unwrap_or_default();
+        let after = fast_cpu_snapshot();
         let mut value = cpu_delta(&before, &after);
         value["label"] = label.into();
         value["wallMs"] = wall.into();
-        lock().checkpoints.push(value);
+        let mut d = lock();
+        if d.checkpoints.len() < 256 {
+            d.checkpoints.push(value);
+        } else {
+            *d.counters
+                .entry("measurement.dropped_checkpoints")
+                .or_default() += 1;
+        }
         self.start = Some((Instant::now(), after));
     }
 }
@@ -230,11 +238,11 @@ impl Request {
             timestamp_ms();
         }
         let start = enabled().then(|| {
-            (
-                Instant::now(),
-                process_metrics::cpu_snapshot().unwrap_or_default(),
-                crate::snapshot::io_metrics(),
-            )
+            let mut before = process_metrics::cpu_snapshot().unwrap_or_default();
+            *lock() = Data::default();
+            let io = crate::snapshot::io_metrics();
+            before.total_ns = process_metrics::process_cpu_ns().unwrap_or_default();
+            (Instant::now(), before, io)
         });
         Self { label, start }
     }
@@ -250,7 +258,9 @@ impl Drop for Request {
             return;
         };
         let wall = start.elapsed().as_secs_f64() * 1000.0;
-        let after = process_metrics::cpu_snapshot().unwrap_or_default();
+        let cpu = process_metrics::process_cpu_ns().unwrap_or_default();
+        let mut after = process_metrics::cpu_snapshot().unwrap_or_default();
+        after.total_ns = cpu;
         let mut value = cpu_delta(before, &after);
         let samples = std::mem::take(&mut *lock());
         value["label"] = self.label.into();

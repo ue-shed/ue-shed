@@ -51,6 +51,7 @@ interface RepetitionResult {
 	interruptMs: number;
 	idleMs: number;
 	childrenRemaining: number;
+	inventoryChildrenRemaining: number;
 	childObservations: readonly ChildObservation[];
 	secondRefreshOk: boolean;
 	secondRefreshMs: number;
@@ -65,6 +66,7 @@ interface ChildObservation {
 
 const { GameTextIndexBuilderLive, gameTextIndexRefreshLayer, gameTextIndexSourceNodeLayer } =
 	currentIndex;
+const { GameTextIndexSource } = currentIndex;
 const { AssetReaderLive } = currentAssets;
 const { LocalizationEvidence, LocalizationEvidenceNodeLive } = currentLocalization;
 const { GameTextIndexRefresh } = await import("../packages/game-text/dist/index-refresh.js");
@@ -89,8 +91,36 @@ async function nativeChildren(): Promise<ChildObservation["children"]> {
 	return JSON.parse(stdout) as ChildObservation["children"];
 }
 
-async function buildContext(cache: string, scope: Scope.Scope) {
-	const source = gameTextIndexSourceNodeLayer(cache).pipe(Layer.provide(AssetReaderLive));
+async function prepareInventory(cache: string) {
+	return Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const source = yield* GameTextIndexSource;
+				return yield* source.inventory({ projectRoot: project });
+			}).pipe(
+				Effect.provide(
+					gameTextIndexSourceNodeLayer(cache).pipe(Layer.provide(AssetReaderLive))
+				)
+			)
+		)
+	);
+}
+
+async function buildContext(
+	cache: string,
+	scope: Scope.Scope,
+	inventory: Awaited<ReturnType<typeof prepareInventory>>
+) {
+	const source = Layer.effect(
+		GameTextIndexSource,
+		Effect.gen(function* () {
+			const live = yield* GameTextIndexSource;
+			return GameTextIndexSource.of({
+				...live,
+				inventory: () => Effect.succeed(inventory)
+			});
+		})
+	).pipe(Layer.provide(gameTextIndexSourceNodeLayer(cache).pipe(Layer.provide(AssetReaderLive))));
 	const layer = gameTextIndexRefreshLayer(cache).pipe(
 		Layer.provide(source),
 		Layer.provide(GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))),
@@ -102,9 +132,14 @@ async function buildContext(cache: string, scope: Scope.Scope) {
 async function repetition(rep: number, targetName: string) {
 	const cache = join(values["cache-root"]!, `rep-${rep}`);
 	await mkdir(cache, { recursive: true });
+	// Inventory belongs to the host; close its native query session before the timed refresh.
+	const inventory = await prepareInventory(cache);
+	const inventoryChildrenRemaining = (await nativeChildren()).length;
+	if (inventoryChildrenRemaining)
+		throw new Error("Inventory preparation left descendants alive.");
 	const scope = await Effect.runPromise(Scope.make());
 	try {
-		const context = await buildContext(cache, scope);
+		const context = await buildContext(cache, scope, inventory);
 		const refresh = Context.get(context, GameTextIndexRefresh);
 		let triggered = false;
 		let interruptMs = -1;
@@ -182,6 +217,7 @@ async function repetition(rep: number, targetName: string) {
 			interruptMs: Math.round(interruptMs),
 			idleMs: Math.round(idleMs),
 			childrenRemaining,
+			inventoryChildrenRemaining,
 			childObservations,
 			secondRefreshOk: secondOk,
 			secondRefreshMs: Math.round(performance.now() - secondStarted)

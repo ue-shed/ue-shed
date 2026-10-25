@@ -55,6 +55,7 @@ it.live(
 				expect(events).toContain("read-finalized");
 				expect(events).toContain("import-finalized");
 				expect(events.at(-1)).toBe("session-released");
+				expect(events.filter((event) => event === "session-released")).toHaveLength(1);
 				expect(Exit.isFailure(yield* Fiber.await(running))).toBe(true);
 			}).pipe(Effect.provide(fixture.layer(fixture.source, implementation)));
 		}).pipe(Effect.scoped),

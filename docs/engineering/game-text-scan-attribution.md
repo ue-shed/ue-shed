@@ -541,3 +541,146 @@ parse interrupt nothing is published and the second refresh is a full cold build
 threads are terminated by the pools' own abort handlers (section 4, item 6); the probe
 observes them only through the Node process, which stayed responsive throughout — it fielded
 the interrupt and the tree polls itself.
+
+## Writer parallelization
+
+Measured 2026-10-26 on `perf/p45-writer`, base `ea6b5cb0`. The unchanged base was
+built first in the assigned worktree with `cargo build --locked --release -p uasset-io`
+and preserved as `uasset-p45-base-writer.exe`. The three implementations are
+`4b6f03a1` (join), `f96158fb` (package strings), and `b62df9f8` (localization layers).
+[Numeric measurements](game-text-scan-writer-measurements.json) retain every native bounded
+checkpoint, host stage totals, measured commit, memory peak and parity count.
+
+### Measurement method
+
+One fresh-cache cold build per project at the base and after each implementation; Node 26.12.0,
+`RAYON_NUM_THREADS=16`, `CARGO_BUILD_JOBS=8`, `UE_SHED_GAME_TEXT_STAGES=1`, and
+`UE_SHED_COLD_SCAN_MEASURE_DIR=<output>/native`. Builds and heavy runs were sequential under
+`E:/es-id-repairs-scratch/unreal.lock`; the input projects were read-only. No OS cache flush,
+Unreal Editor, Perforce writes or network services.
+
+The benchmark command was `node .tmp/p45-benchmark.ts --project "$project" --stages build
+--runs 1 --output "$out"`, adding `--generated --records <retained-records>` for the 1× project.
+The ignored harness copy uses the checked-in harness, with measurement-only adjustments: warm
+the project index outside the timer and construct the measured source with
+`refreshProjectIndex: false`. The final released run also uses the specified 6 GiB RSS stop instead
+of the default 20 GB cap. Product TypeScript is unchanged. Reader executables and
+outputs are under `E:/ue-shed-engine-scratch`, named `uasset-p45-writer-{join,package,localization}.exe`
+and `p45-writer-{base,join,package,localization}-{1x,released}`.
+
+### Each implementation, against its preceding measurement
+
+Cells are **native wall seconds / process CPU seconds / average occupied cores**.
+
+| Implementation           | Project  |                 Before |                  After |
+| ------------------------ | -------- | ---------------------: | ---------------------: |
+| Join                     | 1×       | 18.661 / 27.359 / 1.47 | 16.376 / 29.156 / 1.78 |
+| Join                     | released | 19.668 / 29.875 / 1.52 | 15.198 / 30.063 / 1.98 |
+| Package publication      | 1×       | 13.913 / 17.094 / 1.23 |  8.574 / 16.922 / 1.97 |
+| Package publication      | released |  8.528 / 11.719 / 1.37 |  6.559 / 12.547 / 1.91 |
+| Localization publication | 1×       |  9.947 / 13.281 / 1.34 |  7.156 / 14.813 / 2.07 |
+| Localization publication | released | 13.681 / 16.594 / 1.21 |  9.343 / 17.281 / 1.85 |
+
+Join dependencies: finished marks feed query columns; translation search reads those same finished
+inputs independently of the other query columns. Finished query columns then feed independent
+places, summary and graph builders. Columns are appended in the original order and graph commit
+waits for all branches. The dependency graph is documented beside the code.
+
+Package collection deduplicates per layer, then sorts the domain unions in parallel. Only the
+original first-seen domain traversal assigns shared IDs, using the same byte ordering. Mapping
+reads the completed lookup per layer in parallel, including releasing each layer's local strings.
+Localization leaves collection, sorted-run merge and dictionary ID assignment unchanged; each
+encoder owns its reader, payload and output file, and records are folded in input order.
+
+The original stage labels remain. New measured work includes
+`publication.collect_strings_parallel`, per-thread `publication.collect_layer`,
+`publication.sort_domain`, `publication.map_layer`, `join.query_parallel`, and
+`dictionary.encode_layer_parallel`. Process CPU within overlapping branch intervals includes
+the other branches: those intervals must not be added. Whole-request CPU remains additive.
+
+| New or combined work                | Project  | Wall / CPU / cores, s |
+| ----------------------------------- | -------- | --------------------: |
+| Parallel query columns              | 1×       | 5.148 / 15.469 / 3.01 |
+| Places + summary + graph            | 1×       |  2.171 / 3.422 / 1.58 |
+| Collect and sort strings            | 1×       |  0.427 / 3.313 / 7.76 |
+| Assign dictionary IDs               | 1×       |  5.902 / 5.875 / 1.00 |
+| Map layer strings                   | 1×       |  0.235 / 2.063 / 8.78 |
+| Encode localization layers and root | 1×       |  0.449 / 4.469 / 9.96 |
+| Parallel query columns              | released | 4.105 / 16.266 / 3.96 |
+| Places + summary + graph            | released |  2.332 / 3.703 / 1.59 |
+| Collect and sort strings            | released |  0.238 / 2.094 / 8.81 |
+| Assign dictionary IDs               | released |  3.483 / 3.469 / 1.00 |
+| Map layer strings                   | released |  0.274 / 1.141 / 4.17 |
+| Encode localization layers and root | released |  0.638 / 6.000 / 9.41 |
+
+### Complete cold build
+
+Stage walls in seconds, matching the specification's pipeline table. 1× package read is retained
+record replay; its verification and inventory are not native package operations. Open/first page
+is the sum of target-open and the first-page search/search-rows wrappers. Host setup, selection,
+metadata publication, transport and cleanup account for the remaining wall; the rows are not a
+replacement for the complete build timer.
+
+| Stage                              | 1× base | 1× final | Released base | Released final |
+| ---------------------------------- | ------: | -------: | ------------: | -------------: |
+| Package inventory                  |       — |        — |         3.786 |          3.131 |
+| Localization parse                 |  13.031 |   12.762 |        15.712 |         15.600 |
+| Localization publish               |  10.093 |    7.156 |        14.691 |          9.343 |
+| Package extraction / replay        |  10.650 |    9.961 |        41.008 |         36.685 |
+| Bundle verification                |       — |        — |         5.890 |          6.129 |
+| Package prepare                    |   4.529 |    4.006 |         5.625 |          5.104 |
+| Package publish                    |  17.322 |    8.582 |         9.998 |          6.273 |
+| Join                               |  18.661 |   15.455 |        19.668 |         15.008 |
+| Open and first page                |   1.802 |    1.444 |         1.481 |          1.490 |
+| Whole build                        |  79.164 |   61.812 |       120.301 |        100.896 |
+| Peak process-tree working set, GiB |   2.694 |    3.132 |         4.277 |          4.037 |
+
+One run per revision/project is descriptive. Filesystem cache, scheduling and allocation noise
+remain; this is not the final three-run campaign. Native checkpoints show the intended overlap
+and reduced serial publication work independently of whole-build variation.
+
+### Byte identity
+
+The base and each implementation's benchmark caches were paired by logical layer and dictionary
+position, then compared with Git Bash `cmp -s`. The final implementation was also cold-built
+and compared on both unchanged canonical UE 5.7 and UE 5.8 corpora.
+
+| Revision     | Corpus   | Raw identical files | Files with only volatile metadata | Non-metadata stored sections compared | Unexplained differences |
+| ------------ | -------- | ------------------: | --------------------------------: | ------------------------------------: | ----------------------: |
+| join         | 1x       |                  22 |                               305 |                                 13017 |                       0 |
+| join         | released |                  22 |                               305 |                                 13272 |                       0 |
+| package      | 1x       |                  22 |                               305 |                                 13017 |                       0 |
+| package      | released |                  22 |                               305 |                                 13272 |                       0 |
+| localization | 1x       |                  22 |                               305 |                                 13017 |                       0 |
+| localization | released |                  22 |                               305 |                                 13272 |                       0 |
+| localization | ue57     |                  15 |                                69 |                                  2295 |                       0 |
+| localization | ue58     |                  15 |                                69 |                                  2295 |                       0 |
+
+Every differing physical filename is listed in each output's `parity.json`. Dictionaries match
+byte for byte. Every other non-metadata stored section matches byte for byte, including compressed
+payloads, codecs, counts and checksums. The comparison checks joined, package-text, localization,
+dependency graph, current/previous root snapshots, root records and the publication manifest.
+
+Allowed exclusions are the generation token and generated physical filenames embedded in
+`shared.meta`, `join.meta`, `index.meta`, `graph.meta`, manifest references and graph state;
+joined keys derived from that generation; and layer byte lengths affected by compressed metadata.
+Dependency-state checksums are verified before normalizing their token-bearing state. Input
+layer keys must match exactly. Metadata is compared after substituting only those known references;
+no authored value, ID, row, policy, dictionary ordering or data column is excluded. Directory names
+are paired by stable store identity. Other cache directories contain empty staging directories or
+host/project-index bookkeeping rather than snapshots changed by the writer.
+
+### Validation and limits
+
+- `cargo test --locked -p game-text-index -- --test-threads=1`: 147 passed, 3 opt-in tests ignored (generated line-break vectors and two retained-cache timing probes).
+- `cargo clippy --locked -p game-text-index --all-targets -- -D warnings`.
+- Five targeted Vitest files, 18 tests: native/TS join parity, persisted differential fuzz seeds, native index builder integration and regressions, and native package delta integration. Every Vitest invocation set `UE_SHED_UASSET_EXECUTABLE` to the freshly built reader; final checks use `uasset-p45-writer-localization.exe`. An earlier join-only run also passed its 10 tests.
+- `pnpm -s run typecheck`, `pnpm -s run check:static`, `cargo fmt -p game-text-index -- --check`, and `git diff --check`.
+
+Checks used one Rust test thread and one Vitest worker, with their process tree restricted to sixteen logical processors, separately from the timed builds.
+
+The one/four-worker dictionary regression compares every layer, dictionary, root snapshot and
+index manifest byte for byte with fixed filenames and generation, across two sort-run budgets.
+The default native join test retains its eight seeds and zero-key case. No full suite, Unreal
+engine launch, export remeasurement, cancellation remeasurement or final three-run campaign was
+performed; those are outside this writer implementation's assigned verification. No STOP condition was observed in the assigned measurements and checks.

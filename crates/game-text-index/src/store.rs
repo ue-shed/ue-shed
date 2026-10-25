@@ -800,6 +800,14 @@ impl Store {
         )
     }
     pub fn intern_bytes(&mut self, domain: &str, values: &[Vec<u8>]) -> Result<Vec<u32>> {
+        self.intern_bytes_with_order(domain, values, false)
+    }
+    fn intern_bytes_with_order(
+        &mut self,
+        domain: &str,
+        values: &[Vec<u8>],
+        sorted_unique: bool,
+    ) -> Result<Vec<u32>> {
         let _span = crate::scan_timings::Span::new("store.intern");
         require(
             !self.uncertain && domain.len() <= 23,
@@ -825,8 +833,10 @@ impl Store {
             .filter(|s| !lookup.contains_key(*s))
             .cloned()
             .collect();
-        missing.sort();
-        missing.dedup();
+        if !sorted_unique {
+            missing.sort();
+            missing.dedup();
+        }
         if !missing.is_empty() {
             require(
                 self.root["segments"].as_array().ok_or("segments")?.len() < 256,
@@ -974,26 +984,48 @@ impl Store {
             .map(|input| local_strings(&input.file))
             .collect::<Result<Vec<_>>>()?;
         measure.mark("publication.read_strings");
-        let mut domains = BTreeMap::<String, HashSet<Vec<u8>>>::new();
+        // Per-layer collection and domain sorting share no mutable dictionary state. Only the
+        // first-seen domain traversal below assigns IDs; layer mappings then read that lookup.
+        let collected = pending
+            .par_iter()
+            .zip(&locals)
+            .map(|(input, local)| {
+                let _span = crate::scan_timings::Span::new("publication.collect_layer");
+                local
+                    .domains
+                    .iter()
+                    .map(|(domain, values)| {
+                        let mut values = values.clone();
+                        values.sort_unstable();
+                        values.dedup();
+                        (dictionary::storage_domain(&input.name, domain), values)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let mut domains = BTreeMap::<String, Vec<Vec<u8>>>::new();
         let mut domain_order = Vec::new();
-        for (input, local) in pending.iter().zip(&locals) {
-            for (domain, values) in &local.domains {
-                let domain = dictionary::storage_domain(&input.name, domain);
+        for local in collected {
+            for (domain, values) in local {
                 if !domains.contains_key(&domain) {
                     domain_order.push(domain.clone());
                 }
-                domains
-                    .entry(domain)
-                    .or_default()
-                    .extend(values.iter().cloned());
+                domains.entry(domain).or_default().extend(values);
             }
         }
+        domains.par_iter_mut().for_each(|(_, values)| {
+            let _span = crate::scan_timings::Span::new("publication.sort_domain");
+            values.par_sort_unstable();
+            values.dedup();
+        });
+        measure.mark("publication.collect_strings_parallel");
         if self.root["segments"].as_array().ok_or("segments")?.len() + domains.len() > 256 {
             self.compact(true)?;
         }
         for domain in domain_order {
             let values = domains.remove(&domain).ok_or("cold domain absent")?;
-            self.intern_bytes(&domain, &values.into_iter().collect::<Vec<_>>())?;
+            // Domain order and byte order assign the same IDs as ordinary bulk interning.
+            self.intern_bytes_with_order(&domain, &values, true)?;
         }
         measure.mark("publication.intern_strings");
         let segments = self.root["segments"].as_array().ok_or("segments")?.len();
@@ -1018,16 +1050,41 @@ impl Store {
             measure.mark("publication.encode_serial");
             return Ok(());
         }
-        let mut jobs = Vec::with_capacity(pending.len());
-        for (input, local) in pending.iter().zip(locals) {
-            let mut mapping = BTreeMap::new();
-            for (domain, values) in local.domains {
-                let ids =
-                    self.intern_bytes(&dictionary::storage_domain(&input.name, &domain), &values)?;
-                mapping.insert(domain, ids);
-            }
-            jobs.push((*input, mapping));
-        }
+        let loaded;
+        let lookup = if let Some(dictionary) = &self.dictionary {
+            dictionary
+        } else {
+            loaded = dictionary_bytes(&self.directory, &self.root)?
+                .into_iter()
+                .enumerate()
+                .map(|(id, value)| (value, id as u32))
+                .collect::<HashMap<_, _>>();
+            &loaded
+        };
+        let jobs = pending
+            .par_iter()
+            .zip(locals)
+            .map(|(input, local)| {
+                let _span = crate::scan_timings::Span::new("publication.map_layer");
+                let mapping = local
+                    .domains
+                    .into_iter()
+                    .map(|(domain, values)| {
+                        let ids = values
+                            .iter()
+                            .map(|value| {
+                                lookup
+                                    .get(value)
+                                    .copied()
+                                    .ok_or_else(|| crate::Error::from("missing interned key"))
+                            })
+                            .collect::<Result<Vec<_>>>()?;
+                        Ok((domain, ids))
+                    })
+                    .collect::<Result<BTreeMap<_, _>>>()?;
+                Ok((*input, mapping))
+            })
+            .collect::<Result<Vec<_>>>()?;
         measure.mark("publication.map_strings");
         let generation = self.root["generation"].clone();
         let segment_count = self.root["segments"].as_array().ok_or("segments")?.len();

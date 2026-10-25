@@ -1275,45 +1275,41 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let mut query_columns =
         crate::join_query::columns(&joined, target["name"].as_str().ok_or("target name")?)?;
     measure.mark("join.query_columns");
-    query_columns.extend(crate::join_places::columns(
-        &joined,
-        &query_columns,
-        &file_rows,
-    )?);
-    measure.mark("join.query_places");
-    let raw_columns = crate::summary_state::RAW_FIELDS
-        .iter()
-        .map(|field| {
-            query_columns
-                .iter()
-                .find(|(name, _, _)| name == &format!("query.raw.{field}"))
-                .map(|(_, _, values)| values.as_slice())
-                .ok_or_else(|| crate::Error::from("summary raw column"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let raw_members = query_columns
-        .iter()
-        .find(|(name, _, _)| name == "query.raw.members")
-        .map(|(_, _, values)| values.len())
-        .ok_or("summary raw members")?;
-    let summary = crate::summary_state::SummaryState::build(
-        store,
-        &joined.packages.names,
-        raw_columns[0].len(),
-        raw_members,
-        |row| {
-            let mut values = [0; 7];
-            for (index, column) in raw_columns.iter().enumerate() {
-                values[index] = *column.get(row).ok_or("summary raw row")?;
-            }
-            Ok(values)
+    // Dependency graph: finished marks -> query columns (including independent translation arena).
+    // Query columns + joined values -> places, summary and graph, each writing disjoint outputs.
+    // All three finish before columns are moved and the graph and joined snapshot are committed.
+    let (places, (summary, (graph, graph_seconds))) = rayon::join(
+        || {
+            let mut measure = crate::scan_timings::Cursor::new();
+            let result = crate::join_places::columns(&joined, &query_columns, &file_rows);
+            measure.mark("join.query_places");
+            result
         },
-    )?;
+        || {
+            rayon::join(
+                || {
+                    let mut measure = crate::scan_timings::Cursor::new();
+                    let result = build_summary(store, &joined, &query_columns);
+                    measure.mark("join.query");
+                    result
+                },
+                || {
+                    let started = std::time::Instant::now();
+                    let mut measure = crate::scan_timings::Cursor::new();
+                    let result =
+                        crate::dependency_graph::Graph::rebuild(store, &joined, &query_columns);
+                    measure.mark("join.graph");
+                    (result, started.elapsed().as_secs_f64())
+                },
+            )
+        },
+    );
+    query_columns.extend(places?);
+    let summary = summary?;
+    let graph = graph?;
+    crate::join_incremental::note("dependencyGraphBuildSeconds", json!(graph_seconds));
     crate::join_incremental::note_stage("query", &mut stage);
-    measure.mark("join.query");
-    let graph = crate::dependency_graph::Graph::rebuild(store, &joined, &query_columns)?;
-    crate::join_incremental::note_stage("graph", &mut stage);
-    measure.mark("join.graph");
+    measure.mark("join.query_parallel");
     let first_folders = joined.line[L_FOLDER_START]
         .iter()
         .enumerate()
@@ -1434,6 +1430,41 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         key_changes: Some(marks["pairs"].as_array().ok_or("pairs")?.len() as u32),
         affected_lines: None,
     })
+}
+
+fn build_summary(
+    store: &Store,
+    joined: &Joined,
+    query_columns: &[(String, String, Vec<u32>)],
+) -> Result<crate::summary_state::SummaryState> {
+    let raw_columns = crate::summary_state::RAW_FIELDS
+        .iter()
+        .map(|field| {
+            query_columns
+                .iter()
+                .find(|(name, _, _)| name == &format!("query.raw.{field}"))
+                .map(|(_, _, values)| values.as_slice())
+                .ok_or_else(|| crate::Error::from("summary raw column"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let raw_members = query_columns
+        .iter()
+        .find(|(name, _, _)| name == "query.raw.members")
+        .map(|(_, _, values)| values.len())
+        .ok_or("summary raw members")?;
+    crate::summary_state::SummaryState::build(
+        store,
+        &joined.packages.names,
+        raw_columns[0].len(),
+        raw_members,
+        |row| {
+            let mut values = [0; 7];
+            for (index, column) in raw_columns.iter().enumerate() {
+                values[index] = *column.get(row).ok_or("summary raw row")?;
+            }
+            Ok(values)
+        },
+    )
 }
 
 #[cfg(test)]

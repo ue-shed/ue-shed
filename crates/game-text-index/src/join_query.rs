@@ -251,6 +251,28 @@ impl Entries {
     }
 }
 pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
+    // Both branches read the completed join; translation arenas append after the other columns.
+    let (columns, translations) = rayon::join(
+        || columns_without_translations(j, target),
+        || {
+            let mut measure = crate::scan_timings::Cursor::new();
+            let mut result = Vec::new();
+            arena(
+                &mut result,
+                j,
+                "query.translation",
+                "translation",
+                translation_ids(j),
+            )?;
+            measure.mark("query.translation_cache");
+            Ok::<_, crate::Error>(result)
+        },
+    );
+    let mut result = columns?;
+    result.extend(translations?);
+    Ok(result)
+}
+fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>> {
     let mut measure = crate::scan_timings::Cursor::new();
     let count = j.groups.len();
     let mut occurrence_line = vec![0; j.order.len()];
@@ -400,14 +422,6 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
         .collect::<BTreeSet<_>>();
     arena(&mut result, j, "query.source", "source", source_ids)?;
     measure.mark("query.source_cache");
-    arena(
-        &mut result,
-        j,
-        "query.translation",
-        "translation",
-        translation_ids(j),
-    )?;
-    measure.mark("query.translation_cache");
     Ok(result)
 }
 

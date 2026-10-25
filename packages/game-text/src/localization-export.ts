@@ -58,6 +58,8 @@ export type LocalizationCsvLine = LocalizationLineView<
  * native culture and those. The CSV is for reading and sharing; edits go through PO change sets.
  * Pass lines read with `LOCALIZATION_LINES_CSV_FIELDS`, or whole lines and the corpus their
  * units come from.
+ * @deprecated The engine writes this CSV: `NativeTextQuery.writeLocalizationLinesCsv`. Kept until
+ * hosts adopt it.
  */
 export function localizationLinesCsv(input: {
 	readonly join: Pick<LocalizationJoin, "nativeCulture" | "cultures">;

@@ -7,7 +7,6 @@ import {
 	type GameTextInvestigationPresetResult,
 	exportGameTextInvestigation,
 	workspaceQualityCsv,
-	gameTextCsv,
 	gameTextQualityCsv,
 	type LocalizationLinesFileResult
 } from "./entry-corpus.js";
@@ -94,6 +93,7 @@ import {
 	Effect,
 	PubSub,
 	Ref,
+	Schema,
 	Semaphore,
 	Stream,
 	type Scope
@@ -1273,61 +1273,49 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				findings.status === "ready" ? { ...request, findings: findings.selection } : request
 		};
 	});
-	const captureInvestigation = Effect.fn("GameText.workspace.captureInvestigation")(function* (
-		query: GameTextInvestigationQuery
-	) {
-		const snapshot = yield* currentInvestigationSnapshot();
-		const preset = investigationPreset(query, snapshot.rules);
-		const { localized, withFindings } = yield* investigationCorpus(query);
-		const workspace =
-			query.mode === "quality" && query.localization && query.workspaceFilter !== undefined
-				? yield* localization.qualityExport({
-						target: query.localization.target,
-						filter: query.workspaceFilter,
-						...(query.localization.culture
-							? { culture: query.localization.culture }
-							: undefined)
-					})
-				: undefined;
-		const selected =
-			query.mode === "corpus" && localized
-				? yield* localized
-						.exportWithSignals(withFindings)
-						.pipe(Effect.mapError(investigationIndexFailure))
-				: undefined;
-		const index = yield* currentIndex();
-		// Source rules come from the index, page by page; the published model when it has them.
-		const published = yield* currentValue(qualityModel);
-		const publishedRules = yield* currentValue(qualityDocument);
-		const document = yield* exportGameTextInvestigation(
-			{
-				sourceQuality: (rules) =>
-					published && rules === publishedRules
-						? Effect.succeed(published)
-						: index
-							? index.sourceQuality(rules)
-							: Effect.die(new Error("No current scan is available."))
-			},
-			preset,
-			snapshot.source,
-			selected ? { export: () => Effect.succeed(selected.corpus) } : localized,
-			workspace
-		);
-		// A quality CSV names each finding's key: read only the units findings name.
-		const units =
-			document.result.mode === "quality" && index
-				? yield* readFindingUnits(
-						index.query,
-						document.result.report.findings.map((finding) => finding.textUnitId)
-					).pipe(Effect.mapError(investigationIndexFailure))
-				: [];
-		return {
-			document,
-			corpus: selected?.corpus ?? { units },
-			reviewSignals: selected?.reviewSignals ?? new Map(),
-			findings: selected?.findings
-		};
-	});
+	/** A quality query's investigation document, and the units its source findings name. */
+	const captureQualityInvestigation = Effect.fn("GameText.workspace.captureQualityInvestigation")(
+		function* (query: GameTextInvestigationQuery) {
+			const snapshot = yield* currentInvestigationSnapshot();
+			const workspace =
+				query.localization && query.workspaceFilter !== undefined
+					? yield* localization.qualityExport({
+							target: query.localization.target,
+							filter: query.workspaceFilter,
+							...(query.localization.culture
+								? { culture: query.localization.culture }
+								: undefined)
+						})
+					: undefined;
+			const index = yield* currentIndex();
+			// Source rules come from the index, page by page; the published model when it has them.
+			const published = yield* currentValue(qualityModel);
+			const publishedRules = yield* currentValue(qualityDocument);
+			const document = yield* exportGameTextInvestigation(
+				{
+					sourceQuality: (rules) =>
+						published && rules === publishedRules
+							? Effect.succeed(published)
+							: index
+								? index.sourceQuality(rules)
+								: Effect.die(new Error("No current scan is available."))
+				},
+				investigationPreset(query, snapshot.rules),
+				snapshot.source,
+				undefined,
+				workspace
+			);
+			// A quality CSV names each finding's key: read only the units findings name.
+			const units =
+				document.result.mode === "quality" && index
+					? yield* readFindingUnits(
+							index.query,
+							document.result.report.findings.map((finding) => finding.textUnitId)
+						).pipe(Effect.mapError(investigationIndexFailure))
+					: [];
+			return { document, units };
+		}
+	);
 	/** Browse's CSV of a corpus query, written by the engine to the file the user chooses. */
 	const corpusInvestigationCsv = Effect.fn("GameText.workspace.corpusInvestigationCsv")(
 		function* (query: GameTextInvestigationQuery) {
@@ -1384,62 +1372,59 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				? format === "csv"
 					? corpusInvestigationCsv(query)
 					: corpusInvestigationJson(query)
-				: captureInvestigation(query).pipe(
-						Effect.flatMap(({ document, corpus, reviewSignals, findings }) =>
-							saveInvestigation(dialog, {
+				: captureQualityInvestigation(query).pipe(
+						Effect.flatMap(({ document, units }) => {
+							const { result } = document;
+							if (result.mode === "corpus")
+								return Effect.die(new Error("A quality query exported a corpus."));
+							return saveInvestigation(dialog, {
 								contents:
 									format === "json"
 										? JSON.stringify(document, null, "\t") + "\n"
-										: document.result.mode === "corpus"
-											? gameTextCsv(
-													{ units: document.result.corpus.units },
-													reviewSignals,
-													findings
-												)
-											: document.result.mode === "localization_quality"
-												? workspaceQualityCsv(document.result.report)
-												: gameTextQualityCsv(
-														document.result.report,
-														corpus
-													),
+										: result.mode === "localization_quality"
+											? workspaceQualityCsv(result.report)
+											: gameTextQualityCsv(result.report, { units }),
 								extension: format,
+								// A source quality CSV has a row per finding and place.
 								rowCount:
-									format === "json"
-										? document.result.mode === "corpus"
-											? document.result.corpus.units.length
-											: document.result.report.findings.length
-										: document.result.mode === "corpus"
-											? document.result.corpus.units.reduce(
-													(count, unit) =>
-														count + unit.occurrences.length,
-													0
-												)
-											: document.result.mode === "localization_quality"
-												? document.result.report.findings.length
-												: document.result.report.findings.reduce(
-														(count, finding) =>
-															count +
-															finding.affectedOccurrences.length,
-														0
-													)
-							})
-						),
+									format === "csv" && result.mode === "quality"
+										? result.report.findings.reduce(
+												(count, finding) =>
+													count + finding.affectedOccurrences.length,
+												0
+											)
+										: result.report.findings.length
+							});
+						}),
 						Effect.catch((error) => Effect.succeed(investigationFailure(error)))
 					)
 	);
+	/** Saves a query and the scan's rules as a preset; checking it reads nothing of the scan. */
 	const investigationSave = Effect.fn("GameText.workspace.investigationSave")(
-		(query: GameTextInvestigationQuery) =>
-			captureInvestigation(query).pipe(
-				Effect.flatMap(({ document }) =>
-					saveInvestigation(dialog, {
-						contents: JSON.stringify(document.preset, null, "\t") + "\n",
-						extension: "json",
-						rowCount: 0,
-						projectRoot: document.source.projectRoot
-					})
-				),
-				Effect.catch((error) => Effect.succeed(investigationFailure(error)))
-			)
+		function* (query: GameTextInvestigationQuery) {
+			const snapshot = yield* currentInvestigationSnapshot();
+			const preset = investigationPreset(query, snapshot.rules);
+			yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)(preset).pipe(
+				Effect.mapError(
+					(cause) =>
+						new InvestigationError({
+							cause,
+							retrySafe: true,
+							nextStep: "fix_input",
+							message: "This query cannot be saved as a preset.",
+							recovery:
+								"Load quality rules for a source quality query, or choose a localization target for a localization quality filter."
+						})
+				)
+			);
+			return yield* saveInvestigation(dialog, {
+				contents: JSON.stringify(preset, null, "\t") + "\n",
+				extension: "json",
+				rowCount: 0,
+				projectRoot: snapshot.source.projectRoot
+			});
+		},
+		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
 	);
 	const investigationOpen = Effect.fn("GameText.workspace.investigationOpen")(() =>
 		Effect.gen(function* () {

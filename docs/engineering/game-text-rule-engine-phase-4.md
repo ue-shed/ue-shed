@@ -271,6 +271,8 @@ The engine encodes every exported row, so the host never builds a document to pr
 - **Browse's CSV** is a `corpusCsv` sink on the corpus `export`, over the units the export would send. An investigation's corpus CSV asks for its file before anything is read, as the all-languages export does. The Findings column keeps a listed row's cap of 32 rules per unit, as the host's CSV did.
 - **A corpus investigation's JSON** is a `corpusJson` sink on the corpus `export`. The host makes the document as before, from the corpus header with no units, and splits its text at the units array (`corpusInvestigationEnvelope`). A key three objects deep follows a line break and three tabs, which no JSON string holds, so the split is unambiguous. Each unit and occurrence is written in its schema's order, as the export decoded it.
 - **Workbench exports** write through `sink.file` and report progress. The 64 MiB cap on the all-languages CSV goes, and corpus investigations no longer pass through the 512 MiB export cap. The 16 MiB caps on the status report and its baseline stay: those files hold a row per culture.
+- **The replaced writers.** `gameTextCsv` and `localizationLinesCsv` have no production caller and are deprecated rather than deleted: Electroswag's showcase workspace imports both, and adopts the sinks in Phase 6. The tests keep them as the byte-identity oracles. `reportedFinding` and the CLI's `printJsonInParts` are deleted.
+- **Saving a preset** decodes it against its schema and reads nothing of the scan. It used to build the whole investigation export, every unit or the whole quality report, to save the query and rules.
 
 ## 9. Host adoption
 

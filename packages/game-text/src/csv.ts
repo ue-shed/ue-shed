@@ -91,6 +91,7 @@ export function spreadsheetCsv(rows: Iterable<readonly (string | number)[]>): st
 /**
  * One row per searchable line's saved location. Optional context keeps scan-wide review signals.
  * With `findings`, a Findings column lists the labels of each unit's rules.
+ * @deprecated The engine writes this CSV: `NativeTextQuery.writeCorpusCsv`. Kept until hosts adopt it.
  */
 export function gameTextCsv(
 	corpus: Pick<TextCorpus, "units">,

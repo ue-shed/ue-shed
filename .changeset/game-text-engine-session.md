@@ -67,4 +67,6 @@ export, so an investigation's corpus CSV asks for its file first and no unit rea
 Both file writers answer with a `SinkFileWritten`. `NativeTextQuery.writeCorpusJson` writes a
 corpus investigation's units into the document around them, a sink `envelope` that
 `corpusInvestigationEnvelope` makes; the corpus investigation JSON is written that way, and
-`corpusWithoutUnits` makes its document from the corpus header.
+`corpusWithoutUnits` makes its document from the corpus header. `gameTextCsv` and
+`localizationLinesCsv` are deprecated in favour of those writers. Saving an investigation preset
+no longer reads the investigation's results; a query that can't be a preset fails with its reason.

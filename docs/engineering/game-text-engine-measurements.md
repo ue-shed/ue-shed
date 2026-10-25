@@ -584,6 +584,9 @@ halved on both projects; the single `related` request it is compared with is unc
 - The join fuzz compares the stored join and the engine's line facts, line export and per-culture
   counts with the planted join; it no longer runs a second query.
 
+The owner reviewed these results on 2026-10-26 and accepted them for Phase 4. Phase 4 merged in
+#170.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

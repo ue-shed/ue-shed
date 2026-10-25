@@ -141,7 +141,7 @@ export class EngineBatch<R extends RelationName = RelationName> {
 						start + strings.loneSurrogates,
 						Math.ceil(strings.entries / 8)
 					);
-		this.decoded = new Array(strings.entries);
+		this.decoded = Array.from<string | undefined>({ length: strings.entries });
 		const rows = header.rows;
 		for (const column of header.columns) {
 			const at = start + column.offset;
@@ -233,9 +233,7 @@ export class EngineBatch<R extends RelationName = RelationName> {
 
 	/** Every row as an object. */
 	objects(): BatchRow[] {
-		const rows = new Array<BatchRow>(this.rows);
-		for (let row = 0; row < this.rows; row += 1) rows[row] = this.row(row);
-		return rows;
+		return Array.from({ length: this.rows }, (_, row) => this.row(row));
 	}
 
 	private column(name: string): Column {

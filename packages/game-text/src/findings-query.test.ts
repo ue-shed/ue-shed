@@ -624,9 +624,8 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 				.pipe(
 					Effect.provideService(GameTextIndexProgressReporter, (step) => (last = step))
 				);
-			const rules = enabledRuleDocument(
-				effectiveRuleDocument(STARTER_CHECK_RULES, { review })
-			).rules.length;
+			const rules = enabledRuleDocument(effectiveRuleDocument(STARTER_CHECK_RULES)).rules
+				.length;
 			expect(last).toEqual({
 				phase: "localization_quality",
 				completed: rules,

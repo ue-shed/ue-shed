@@ -227,6 +227,13 @@ Staged input sizes were **263,302,528 / 276,961,800 bytes**; emitted snapshot si
 reads were 303,143,633 / 282,568,006 bytes and decoded raw reads were 464,750,001 / 392,280,047 bytes.
 There were 260 snapshot finishes/verifications per request, including dictionary and root snapshots.
 
+Separating verification from reads: non-verification snapshot loads took 1.757 / 0.844 thread-seconds
+wall / CPU on the released project and 1.604 / 0.953 on the 1× project. This includes staged inputs
+and existing dictionary segments. Output verification itself took 5.900 / 1.062 and 5.179 / 0.734
+thread-seconds, overlapping across workers. Non-verification load time is total `snapshot.load`
+minus the child-span time of `snapshot.verify`; it therefore includes decode and validation, not
+only the read system calls.
+
 ### Localization layer publication
 
 Both requests supplied 21 layers and used the empty-store external-merge dictionary builder.
@@ -259,8 +266,32 @@ Staged input sizes were **278,817,332 / 81,202,784 bytes**; emitted snapshots we
 **60,591,660 / 8,336,740 bytes**. Cumulative stored-section reads were 584,379,222 / 138,541,964 bytes,
 and decoded raw reads were 2,039,395,664 / 1,909,780,238 bytes. There were 37 / 38 snapshot
 finishes/verifications. Reading in the broad sense includes decompression, CRC and string validation;
-pure section read calls account for only 0.154 / 0.061 s. The measured difference is CPU work in
+pure section read calls account for only 0.154 / 0.061 s. Staged-input loads, excluding output
+verification, took 4.440 s wall / 4.172 s CPU and 2.464 s / 2.438 s, respectively. Output verification
+was separately 0.299 s / 0.250 s and 0.118 s / 0.062 s. These are subdivisions of the tables above. The measured difference is CPU work in
 collection/merge and staged decoding, not fsync waiting.
+
+### Instrumentation-off control
+
+One later fresh-cache build of the released project used the same `d12f4da7` release binary, host
+stage recorder, flags and caps, with `UE_SHED_COLD_SCAN_MEASURE_DIR` unset. Output was
+`E:\ue-shed-engine-scratch\p45-native-released-control-r2`. Reproduce with the command above in a new
+output directory after `unset UE_SHED_COLD_SCAN_MEASURE_DIR` (omit creating that native directory).
+The native side channel is disabled, so this control supplies host wall times, not native CPU
+attribution.
+
+| Host measurement         | Instrumented, s | Control, s | Observed difference |
+| ------------------------ | --------------: | ---------: | ------------------: |
+| Whole build              |         112.674 |    110.647 |              +1.83% |
+| Extraction               |          37.576 |     35.689 |              +5.29% |
+| Package publication      |           7.929 |      7.891 |              +0.48% |
+| Localization publication |          13.619 |     12.726 |              +7.01% |
+| Join                     |          15.774 |     15.411 |              +2.35% |
+
+Peak process-tree RSS was 4,935,884,800 bytes instrumented versus 3,958,091,776 bytes in this control.
+The measured numbers above describe the **instrumented** workload. One sequential pair cannot isolate
+probe overhead from cache, scheduling and allocation/RSS variability, or establish a memory cause.
+No causal overhead estimate or CPU correction is applied. There is no instrumentation-off 1× control.
 
 ### Limits and verification
 

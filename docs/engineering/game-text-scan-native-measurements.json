@@ -467,6 +467,11 @@
 							"exclusiveWallMs": 1.1489999999999996,
 							"exclusiveCpuMs": 0.0
 						}
+					},
+					"nonVerificationSnapshotLoads": {
+						"wallMs": 4440.441000000017,
+						"cpuMs": 4171.875,
+						"meaning": "Snapshot loads outside Writer verification. Localization publication reads staged inputs; package publication also reads existing dictionary segments."
 					}
 				},
 				{
@@ -663,6 +668,11 @@
 							"exclusiveWallMs": 1244.3278,
 							"exclusiveCpuMs": 125.0
 						}
+					},
+					"nonVerificationSnapshotLoads": {
+						"wallMs": 1756.643500000001,
+						"cpuMs": 843.75,
+						"meaning": "Snapshot loads outside Writer verification. Localization publication reads staged inputs; package publication also reads existing dictionary segments."
 					}
 				},
 				{
@@ -1122,6 +1132,11 @@
 							"exclusiveWallMs": 1.3207999999999998,
 							"exclusiveCpuMs": 0.0
 						}
+					},
+					"nonVerificationSnapshotLoads": {
+						"wallMs": 2464.1806000000065,
+						"cpuMs": 2437.5,
+						"meaning": "Snapshot loads outside Writer verification. Localization publication reads staged inputs; package publication also reads existing dictionary segments."
 					}
 				},
 				{
@@ -1318,6 +1333,11 @@
 							"exclusiveWallMs": 750.5870000000001,
 							"exclusiveCpuMs": 31.25
 						}
+					},
+					"nonVerificationSnapshotLoads": {
+						"wallMs": 1603.5984999999955,
+						"cpuMs": 953.125,
+						"meaning": "Snapshot loads outside Writer verification. Localization publication reads staged inputs; package publication also reads existing dictionary segments."
 					}
 				},
 				{
@@ -1589,5 +1609,18 @@
 			]
 		}
 	},
-	"units": "All timing fields ending Ms are milliseconds. CPU is kernel plus user time summed over threads. Thread wall sums overlap in parallel operations. Snapshot bytes are logical byte counters, including repeated reads and verification, not physical device IO."
+	"units": "All timing fields ending Ms are milliseconds. CPU is kernel plus user time summed over threads. Thread wall sums overlap in parallel operations. Snapshot bytes are logical byte counters, including repeated reads and verification, not physical device IO.",
+	"releasedControl": {
+		"runs": 1,
+		"measurementCommit": "d12f4da7",
+		"instrumentationEnabled": false,
+		"buildMs": 110647.0683,
+		"processTreePeakRssBytes": 3958091776,
+		"hostSpansMs": {
+			"stage.unreal_assets.protocol_extract_text_packages.wallMs": 35688.8543,
+			"stage.NativeIndexBuilder.publishColdFiles.wallMs": 7890.6835,
+			"stage.NativeIndexBuilder.publishCold.wallMs": 12726.3507,
+			"stage.NativeIndexBuilder.join.wallMs": 15411.4692
+		}
+	}
 }

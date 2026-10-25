@@ -41,6 +41,9 @@ it.effect("summarizes span wall time and in-step stage attributes by name", () =
 		expect(counts["stage.Step.step.stage_ms.read"]).toBe(7);
 		expect(counts["stage.Step.step.lines"]).toBeUndefined();
 		expect(counts["stage.Run.wallMs"]).toBeGreaterThanOrEqual(counts["stage.Step.wallMs"]!);
+		expect(counts["stage.Run.startMs"]).toBe(0);
+		expect(counts["stage.Step.startMs"]).toBeGreaterThanOrEqual(0);
+		expect(counts["stage.Step.endMs"]).toBeLessThanOrEqual(counts["stage.Run.endMs"]!);
 	})
 );
 

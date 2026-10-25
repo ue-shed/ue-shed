@@ -71,6 +71,10 @@ export function makeStageRecorder() {
 		tracer,
 		/** Flat numeric counts `<prefix>.<span>.<measure>`, ready for a benchmark result. */
 		counts(prefix = "stage") {
+			const origin = ended.reduce(
+				(first, span) => (span.startNs < first ? span.startNs : first),
+				ended[0]?.startNs ?? 0n
+			);
 			const byName = new Map<string, EndedSpan[]>();
 			for (const span of ended) {
 				const spans = byName.get(span.name) ?? [];
@@ -81,6 +85,14 @@ export function makeStageRecorder() {
 			for (const [name, spans] of [...byName].sort(([a], [b]) => (a < b ? -1 : 1))) {
 				const key = `${prefix}.${name}`;
 				counts.set(`${key}.count`, spans.length);
+				counts.set(
+					`${key}.startMs`,
+					Math.min(...spans.map((span) => Number(span.startNs - origin) / 1e6))
+				);
+				counts.set(
+					`${key}.endMs`,
+					Math.max(...spans.map((span) => Number(span.endNs - origin) / 1e6))
+				);
 				counts.set(
 					`${key}.wallMs`,
 					coveredMs(spans.map((span) => [span.startNs, span.endNs]))

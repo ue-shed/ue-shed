@@ -541,3 +541,205 @@ parse interrupt nothing is published and the second refresh is a full cold build
 threads are terminated by the pools' own abort handlers (section 4, item 6); the probe
 observes them only through the Node process, which stayed responsive throughout — it fielded
 the interrupt and the tree polls itself.
+
+## Phase 4.5: host changes
+
+### Method and retained baselines
+
+Verified decisions 1 and 2 on `perf/p45-host-impl`, starting from `66e4b7e2`
+(`c9082b05`, `c770bb40`, `66e4b7e2`). Verification corrected the new test's invalid
+`buildTarget` argument and chained-Effect lint error, and formatting in four implementation
+files. The accepted product design was unchanged. The stage recorder now retains span start/end
+offsets; the cancellation probe requires child exit rather than idle CPU, excludes its sampler
+shells, and propagates sampling failures. The memory probe closes its scope and omits the target
+name from its report.
+
+Baseline product sources were exactly `ea6b5cb0:packages/game-text/src`, restored in a temporary
+detached worktree of `66e4b7e2`; the benchmark harness was this branch's decision-1 harness.
+`git diff ea6b5cb0 -- packages/game-text/src` was empty there. Both worktrees rebuilt their
+TypeScript packages before measurement. Both used Node 26.12.0, `RAYON_NUM_THREADS=16`,
+`CARGO_BUILD_JOBS=8`, and the fixed `uasset-p45-base-native.exe` reader/writer, SHA-256
+`65841e228d02d07eac4011eaf38d6522fcba5ed1b75da946e8f102797fb414cd`.
+No Rust build or alternate reader/writer was used.
+
+Each build ran once, with a new Game Text cache, through
+`node scripts/benchmark-game-text-engine.ts --project "$project" --stages build --runs 1
+--output "$out" --project-index-cache "$persistentIndex"`, with
+`UE_SHED_GAME_TEXT_STAGES=1`. The 1× project additionally used
+`--generated --records E:\ue-shed-engine-scratch\phase4\records-1x`.
+The harness warmed the persistent project index outside the measured build; neither released
+build recorded a native project-index refresh. Inventory's `refresh` mark was only 0.024 ms
+of branch overhead in each. The generated source replays retained records instead of reading
+packages. Fresh Game Text caches do not imply flushed OS filesystem caches.
+
+All artifacts below are retained under
+`E:\ue-shed-engine-scratch\p45-host-verify-20261026` (call this directory `$results`).
+Baseline caches are exactly:
+
+- `$results\baseline-released\caches\run-1`
+- `$results\baseline-1x\caches\run-1`
+- `$results\baseline-ue57\caches\run-1`
+- `$results\baseline-ue58\caches\run-1`
+
+Changed caches use the same suffixes with `changed-` instead of `baseline-`.
+Persistent inventories are `$results\project-index-{released,1x,ue57,ue58}`.
+Per-build spans are `<output>\run-1\build\stages.json`; numeric summaries are
+`$results\summary.json`. Input paths and names are not included in this report.
+The projects remained read-only. All heavy work ran sequentially under the shared
+`E:\es-id-repairs-scratch\unreal.lock`; harnesses/probes acquired it themselves, and package
+builds and targeted verification acquired it externally. No Unreal Editor, Perforce writes,
+network service, push, PR or merge was involved.
+
+### Cold-build stage tables
+
+All values are seconds, one run per condition. Stages on different branches overlap, so columns
+must not be summed to estimate total elapsed time. Localization parse/publication are the
+coordinator's wall marks; package preparation is its worker-pool wall mark; native operations
+are their host spans. Selection and the small read residual are shown to avoid hiding host work.
+
+| Stage, the released project             | Baseline | Changed |
+| --------------------------------------- | -------: | ------: |
+| Package inventory (warm status + pages) |    3.184 |   3.683 |
+| Localization parse                      |   14.679 |  22.712 |
+| Localization publish                    |   12.943 |  17.524 |
+| Package selection                       |    0.361 |   0.521 |
+| Package extraction                      |   36.211 |  39.145 |
+| Bundle verification (two calls)         |    6.070 |   6.007 |
+| Other package read/staging              |    0.077 |   0.081 |
+| Package prepare                         |    5.068 |   4.743 |
+| Package publish                         |    7.778 |   7.832 |
+| Join                                    |   15.391 |  15.157 |
+| Open + first page / workspace residual  |    1.870 |   1.891 |
+| Whole measured build                    |  104.160 |  79.350 |
+
+| Stage, the 1× project                      | Baseline | Changed |
+| ------------------------------------------ | -------: | ------: |
+| Records inventory / refresh setup residual |    0.900 |   0.811 |
+| Localization parse                         |   12.647 |  20.987 |
+| Localization publish                       |    9.156 |   9.362 |
+| Package selection                          |    0.270 |   0.250 |
+| Package replay, including host staging     |    9.877 |  12.886 |
+| Bundle verification                        |        0 |       0 |
+| Package prepare                            |    4.045 |   4.125 |
+| Package publish                            |   12.513 |  12.419 |
+| Join                                       |   15.911 |  15.777 |
+| Open + first page / workspace residual     |    1.946 |   1.939 |
+| Whole measured build                       |   67.476 |  65.169 |
+
+The open/page row is measured build time minus `GameTextIndex.prepareTarget` wall, so includes
+workspace orchestration outside preparation. The generated inventory row is `refreshProject`
+wall minus `PackageText.refresh` wall: retained-record inventory has no dedicated span, so its
+small refresh bookkeeping is included. Remaining small setup/metadata publication costs are
+inside the total, rather than assigned to a misleading inferred engine stage.
+
+The changed released run's localization branch covered trace offsets 0.149–40.414 s; package
+selection began at 3.892 s, and package read covered 4.413–49.647 s, including verification.
+Thus 36.000 s of localization import overlapped package read. Its extraction span and localization
+parse/publication retained independent spans. On the 1× project, localization covered
+0.255–30.680 s and package replay 1.002–13.888 s: all 12.886 s of replay overlapped it.
+The package publication gate then waited approximately 16.909 s (refresh span minus its charged
+selection/read/import marks); released-project gate/bookkeeping residual was 0.001 s.
+Package import/publication followed both reads in each trace.
+
+Observed total reductions were 24.809 s (23.8%) and 2.307 s (3.4%). Localization parse was slower
+under concurrency in both runs, and publication was slower on the released project. Overlap
+still shortened total wall time; the generated project's localization branch remained critical.
+These single pairs do not estimate a distribution, isolate contention causes, or establish a
+repeatable speedup. No native reader/writer optimization is being measured here.
+
+### Memory STOP and cancellation status
+
+**STOP: the released project's process-tree peak exceeded the 6 GiB acceptance ceiling.**
+The requested `scripts/game-text-cold-memory-probe.ts` measured **6,457,823,232 bytes
+(6.014317 GiB)** at 19.141 s, last reported progress phase `packages`, while localization and
+package extraction were both active. This exceeds 6,442,450,944 bytes by 15,372,288 bytes.
+The probe included sampler-shell working sets, as the existing attribution does; subtracting
+that overhead to turn a failing process-tree measurement into a pass would change the gate.
+
+| Role at the peak              | Working set, bytes | Processes |
+| ----------------------------- | -----------------: | --------: |
+| Node coordinator + TS workers |      2,664,501,248 |         1 |
+| Native one-shot reader        |      3,559,571,456 |         1 |
+| Native sessions               |        186,200,064 |         3 |
+| Sampler shells / other        |         47,550,464 |         5 |
+| Total                         |      6,457,823,232 |        10 |
+
+One refresh used a fresh external cache, `$results\memory-cache`; its artifact is
+`$results\memory.json`. The probe used its existing default source, including a cold
+project-index refresh, rather than the benchmark's separately warmed project index.
+It requested 250 ms sampling and retained 134 samples at a mean interval of 647 ms; the sampled
+peak is a lower bound. Progress labels interleave under concurrency, so `packages` is the last
+reported phase, not a claim that localization was inactive. No claim is made about memory
+distribution or repeatability from this single run.
+
+The runner stopped immediately after reading this completed probe's result. No cancellation
+probe was run, so interrupt return ≤0.5 s, child exit ≤3 s, and immediate successful refresh are
+**unverified for this implementation**. No changed canonical-corpus build was started. The
+completed measurement caches were inspected read-only afterward; no further cold measurement
+or product optimization was attempted. The accepted design was not altered to work around
+the STOP.
+
+### Byte comparison of completed builds
+
+`scripts/p45-host-layers.ts` replaces the unfinished identity-printing helper with an actual
+comparison. It runs `cmp -s` on each corresponding shared-store file; for snapshots whose
+embedded identity metadata differs, it compares every other section's descriptor and stored
+compressed bytes directly. It also compares normalized current and previous roots, active
+layer names/keys, complete layer records, dictionary descriptors, the store manifest, and
+dependency-graph state, validates the graph checksum, and rejects unaccounted store files.
+It does not print input identities. Reproduce against the retained completed caches with
+`CMP_EXECUTABLE` pointing to `cmp`, then
+`node --import tsx scripts/p45-host-layers.ts "$baselineCache" "$changedCache"`.
+
+| Completed pair          |    Package layers | Localization + observation layers | Joined layers | Dictionaries | Stored data sections compared after whole-file differences | Result                         |
+| ----------------------- | ----------------: | --------------------------------: | ------------: | -----------: | ---------------------------------------------------------: | ------------------------------ |
+| Released project        |               256 | 43 (21 authored + 22 observation) |             1 |           22 |                                                     13,272 | Equal with exclusions below    |
+| 1× project              |               256 | 43 (21 authored + 22 observation) |             1 |           22 |                                                     13,017 | Equal with exclusions below    |
+| UE 5.7 canonical corpus | Baseline retained |                 Changed not built |             — |            — |                                                          — | Not verified after memory STOP |
+| UE 5.8 canonical corpus | Baseline retained |                 Changed not built |             — |            — |                                                          — | Not verified after memory STOP |
+
+Each completed pair accounted for all 327 shared-store files: 22 dictionary snapshots were
+whole-file byte-identical; 305 files differed only in the explicitly normalized identity
+metadata/framing. Every package, localization and joined data column, and every dependency-graph
+data page, had identical stored bytes. Full paired physical filenames for all 305 metadata-only
+differences are retained in `$results\identity-released.json` and `identity-1x.json`.
+There were **no unexplained data differences** in the completed pairs.
+
+Exact exclusions, all arising from fresh-store identity rather than authored content:
+
+- Store/root `generation`, layer `storeGeneration`, `join.meta.generation` and
+  `graph.meta.generation`. These are native timestamp/PID/sequence tokens (`store.rs:token`).
+- Physical root/layer/dictionary/base filenames and references: manifest `physicalSnapshot` /
+  `previousSnapshot`, layer `file`, dictionary segment `file`, graph-state `base`.
+  Both referenced roots and every referenced payload were still compared.
+- The generation-derived `joined-native-v8:*` key, consistently in active pointers, the layer-map
+  key, its record, and graph-state `revision`. Native `join.rs` includes generation in this hash;
+  all actual join inputs/dependencies/metadata were retained in comparison.
+- Layer-record `bytes` (physical file size), metadata-section compressed payloads and their
+  length/checksum/framing, whole-snapshot header/directory checksums/lengths, and section offsets.
+  These reflect token/file-name lengths and their compression. All non-metadata section fields
+  except relocated offsets, and all their stored payload bytes, were compared exactly.
+- The dependency-state envelope checksum was validated separately in each cache; it hashes
+  generation, revision and base filename, so was not compared across caches.
+
+No authored file timestamps, source strings, string IDs, column values, layer input keys other
+than the generation-derived joined key, dictionary boundaries, or graph moves were excluded.
+The shared-store comparison does not cover external stat-cache/staging bookkeeping, project-index
+caches, benchmark timing logs or memory samples: those are disposable host/measurement artifacts,
+not the requested published package/localization/joined snapshots and dictionaries.
+
+The four-input byte-identity gate is therefore **incomplete**, and the memory gate **failed**.
+This branch is not accepted by this verification run.
+
+### Verification and disposition
+
+Passed with the fixed base reader set for every Vitest invocation:
+`index-*.test.ts`, `localization-*import*.test.ts`, `package-text-*.test.ts`, including
+`index-concurrent.test.ts`, plus `scripts/game-text-stage-timings.test.ts`: **17 files,
+86 tests**. `pnpm -s run typecheck` passed after rebuilding the TypeScript packages.
+`pnpm -s run check:static` passed, including its 336 architecture tests; existing lint
+warnings remain. `git diff --check` passed. The full suite, Rust builds/tests, Unreal Editor,
+fixture/fuzz/export acceptance runs, and Phase 4.5's final three-run measurement matrix were
+not run: this task changes only TypeScript host code and verification tooling, and the memory
+STOP prevents claiming complete acceptance. The temporary detached baseline worktree was removed;
+all baseline measurement caches remain available at the paths above.

@@ -1,7 +1,7 @@
 /**
  * Interrupts a cold Game Text refresh during one named progress phase and measures:
  * how long the interrupt takes to return, how long until every native child has
- * exited or gone idle, and whether an immediate second refresh on the same cache
+ * exited, and whether an immediate second refresh on the same cache
  * succeeds. Each repetition uses a fresh cache so the interrupted stage is cold.
  *
  * node --import tsx scripts/game-text-cold-cancel-probe.ts --project <dir> \
@@ -50,6 +50,7 @@ interface RepetitionResult {
 	interrupted: boolean;
 	interruptMs: number;
 	idleMs: number;
+	childrenRemaining: number;
 	secondRefreshOk: boolean;
 	secondRefreshMs: number;
 	interruptError?: string;
@@ -63,21 +64,21 @@ const { LocalizationEvidence, LocalizationEvidenceNodeLive } = currentLocalizati
 const { GameTextIndexRefresh } = await import("../packages/game-text/dist/index-refresh.js");
 const { GameTextIndexProgressReporter } = currentIndex;
 
-async function nativeChildren(): Promise<{ count: number; cpuMs: number }> {
+async function nativeChildren(): Promise<number> {
 	const script =
 		"$ErrorActionPreference='Stop'; $all = @(Get-CimInstance Win32_Process); " +
 		`$owned = [System.Collections.Generic.HashSet[uint32]]::new(); [void]$owned.Add(${process.pid}); ` +
 		"do { $added = $false; foreach ($item in $all) { if ($owned.Contains($item.ParentProcessId) -and $owned.Add($item.ProcessId)) { $added = $true } } } while ($added); " +
-		"$count = 0; $cpu = 0.0; foreach ($item in $all) { if ($owned.Contains($item.ProcessId) -and $item.ProcessId -ne " +
-		`${process.pid}) { $count++; $cpu += ([double]$item.KernelModeTime + [double]$item.UserModeTime) / 10000 } }; ` +
-		"[pscustomobject]@{ count = $count; cpuMs = $cpu } | ConvertTo-Json -Compress";
+		"$count = 0; foreach ($item in $all) { if ($owned.Contains($item.ProcessId) -and $item.ProcessId -ne " +
+		`${process.pid} -and $item.Name -notin @('powershell.exe', 'pwsh.exe', 'conhost.exe', 'cmd.exe')) { $count++ } }; ` +
+		"$count | ConvertTo-Json -Compress";
 	const { stdout } = await run(
 		"powershell.exe",
 		["-NoProfile", "-NonInteractive", "-Command", script],
 		{ windowsHide: true, timeout: 10000 }
 	);
 	// SAFETY: the sampler above builds this exact shape with ConvertTo-Json.
-	return JSON.parse(stdout) as { count: number; cpuMs: number };
+	return JSON.parse(stdout) as number;
 }
 
 async function buildContext(cache: string, scope: Scope.Scope) {
@@ -124,23 +125,15 @@ async function repetition(rep: number, targetName: string) {
 		const exit = await Effect.runPromise(Fiber.await(fiber));
 		if (!triggered) throw new Error(`Phase ${targetPhase} was never reported.`);
 		while (interruptMs < 0) await new Promise((resolve) => setTimeout(resolve, 25));
-		// Idle: no native children left, or their CPU stops advancing.
+		// Sampler shells are excluded; an idle engine still counts as a live child.
 		const idleStarted = performance.now();
-		let previous: { count: number; cpuMs: number } | undefined;
-		let stillSince = performance.now();
+		let childrenRemaining = -1;
 		for (;;) {
-			const current = await nativeChildren().catch(() => ({ count: 0, cpuMs: 0 }));
-			if (current.count === 0) {
+			childrenRemaining = await nativeChildren();
+			if (childrenRemaining === 0) {
 				idleMs = performance.now() - idleStarted;
 				break;
 			}
-			if (previous && Math.abs(current.cpuMs - previous.cpuMs) < 50) {
-				if (performance.now() - stillSince >= 500) {
-					idleMs = performance.now() - idleStarted;
-					break;
-				}
-			} else stillSince = performance.now();
-			previous = current;
 			if (performance.now() - idleStarted > 120000) {
 				idleMs = performance.now() - idleStarted;
 				break;
@@ -168,6 +161,7 @@ async function repetition(rep: number, targetName: string) {
 			interrupted: Exit.isFailure(exit),
 			interruptMs: Math.round(interruptMs),
 			idleMs: Math.round(idleMs),
+			childrenRemaining,
 			secondRefreshOk: secondOk,
 			secondRefreshMs: Math.round(performance.now() - secondStarted)
 		};

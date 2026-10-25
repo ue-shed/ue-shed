@@ -817,20 +817,25 @@ export function GameTextRoute(props: {
 	};
 
 	// Requests consume committed state, including preferences restored during the first load.
-	// Only a request edit against the same loaded scan is typing and waits out the debounce; the
-	// first page after a load, rescan or localization change is requested at once.
-	let searchedScan: { summary: unknown; revision: number } | undefined;
+	// Only a request edit against the same loaded scan and rules is typing and waits out the
+	// debounce; the first page after a load, rescan, localization or rules change is requested at
+	// once. New rules change Browse's findings, so the same request runs again.
+	let searchedScan: { summary: unknown; revision: number; rules: unknown } | undefined;
 	createEffect(
 		() => ({
 			summary: summary(),
 			revision: scanRevision(),
+			rules: qualityDocument(),
 			request: searchRequest(),
 			ready: localization.ready()
 		}),
-		({ summary: current, revision, request, ready }) => {
+		({ summary: current, revision, rules, request, ready }) => {
 			if (!current || !ready) return;
-			const typing = searchedScan?.summary === current && searchedScan.revision === revision;
-			searchedScan = { summary: current, revision };
+			const typing =
+				searchedScan?.summary === current &&
+				searchedScan.revision === revision &&
+				searchedScan.rules === rules;
+			searchedScan = { summary: current, revision, rules };
 			requestPage(request, typing);
 		}
 	);

@@ -233,3 +233,22 @@ it("lists the file's complete rules, says to edit them there, and saves them as 
 	await waitFor(() => expect(saves).toHaveLength(1));
 	expect(saves[0]?.rules.at(-1)).toEqual(complete);
 });
+it("searches again when rules load, so Browse reads their findings", async () => {
+	const user = userEvent.setup({ delay: null });
+	const client = makeClient();
+	const searches: string[] = [];
+	mount({
+		...client,
+		search: (request) => {
+			searches.push(JSON.stringify(request));
+			return client.search(request);
+		}
+	});
+	await screen.findByRole("region", { name: "Results" });
+	await waitFor(() => expect(searches.length).toBeGreaterThan(0));
+	const before = searches.length;
+	const last = searches.at(-1);
+	await openQuality(user);
+	await waitFor(() => expect(searches.length).toBeGreaterThan(before));
+	expect(searches.at(-1)).toBe(last);
+});

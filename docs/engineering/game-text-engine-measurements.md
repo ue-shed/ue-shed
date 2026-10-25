@@ -570,6 +570,20 @@ grow with a 5,000-line bulk read in either phase.
 Phase 3's own record measured 108.6 s for the same commit. The saturated related-line probe
 halved on both projects; the single `related` request it is compared with is unchanged.
 
+**Parity**, at `46a857cb`, after the TypeScript reference queries were deleted:
+
+- Every exported file is byte-identical to Phase 3's on both canonical corpora, through the same
+  workspace calls at both commits: the Browse, Quality and source quality investigations as CSV
+  and JSON, the saved preset, the report CSV, the all-languages CSV, and `loc check` with the
+  starter rules file.
+- The corpus fixture compares 1,120 subjects on each canonical corpus with no disagreement, pinned
+  or unexpected, and its integration test passes on both.
+- One 10,000-line fuzz run on UE 5.8 (seed 73131: 11,042 lines, 44,168 subjects) has no unexpected
+  disagreement and no stale defect, before and after a package edit, and its incremental and full
+  scans agree.
+- The join fuzz compares the stored join and the engine's line facts, line export and per-culture
+  counts with the planted join; it no longer runs a second query.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

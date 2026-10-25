@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "5ef8710955ee54782c72a310f475f767e9a5d06de6270abdeeae499e601b466d"
+	contractHash: "1c4e2e459f7db06660f6c87a6f0b9942ec4a1c1190a97be231932dad8f1d8b4b"
 } as const;
 
 /**
@@ -63,7 +63,7 @@ export type EngineEnd = { profile: EngineProfile, };
 
 export type EngineFailure = { error: EngineError, profile: EngineProfile, };
 
-export type EngineError = { code: "busy" | "cancelled" | "invalid_input" | "invalid_cache" | "limit_exceeded" | "stale_generation" | "unavailable" | "not_found" | "io_error" | "internal", message: string, };
+export type EngineError = { code: "busy" | "cancelled" | "invalid_input" | "invalid_cache" | "limit_exceeded" | "stale_generation" | "unavailable" | "not_found" | "exists" | "io_error" | "internal", message: string, };
 
 export type EngineProfile = { io: IoMetrics, stageSeconds: { [key in string]: number }, 
 /**
@@ -364,6 +364,24 @@ export type RelatedSection = {
 limit: number, };
 
 export type LineAnswer = { places?: JsonValue, detail?: JsonValue, related?: JsonValue, };
+
+export type Sink = { format: SinkFormat, 
+/**
+ * An absolute path. The file is written beside it and moved into place when complete.
+ */
+file?: string, 
+/**
+ * Fail with `exists` rather than replace a file already at `file`.
+ */
+exclusive?: boolean, };
+
+export type SinkFormat = "cultureLinesCsv";
+
+export type SinkSummary = { 
+/**
+ * Rows written, not counting a header.
+ */
+rows: number, bytes: number, };
 
 export type FindingsView = "workspace" | "report";
 

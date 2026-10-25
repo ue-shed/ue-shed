@@ -3,12 +3,9 @@ import { cultureList, parseTextFilter } from "./text-filter.js";
 import { readChangedFiles } from "./changed-files.js";
 import { textWhere } from "../commands/localization-flags.js";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
-import { Effect, FileSystem, Metric, Result, Schema } from "effect";
-import {
-	LOCALIZATION_LINES_CSV_FIELDS,
-	localizationLinesCsv,
-	pickedLocalizationCultures
-} from "@ue-shed/game-text/corpus";
+import { resolve } from "node:path";
+import { Effect, Metric, Result, Schema } from "effect";
+import { AssetReaderError } from "@ue-shed/unreal-assets";
 import { indexedLocalizationStatusReport } from "@ue-shed/game-text/index";
 import {
 	GameTextLocalizationError,
@@ -253,54 +250,48 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 								recovery: "Choose a new .csv file."
 							})
 						);
-					const { localization, query, selection } =
-						yield* loadLocalizationContext(command);
+					const { query, selection } = yield* loadLocalizationContext(command);
 					const files =
 						command.changedFiles === undefined
 							? undefined
 							: yield* readChangedFiles(command.changedFiles, command.projectRoot);
 					const filter = yield* filterField(command);
-					// Only the columns the spreadsheet shows, read in Rust; the corpus is not read.
-					const lines = yield* query.selectLocalizationLines(
-						{
-							capability: "all",
-							query: "",
-							localization: selection,
-							...whereField(command, files),
-							...filter
-						},
-						LOCALIZATION_LINES_CSV_FIELDS
-					);
-					const { csv, rows } = localizationLinesCsv({
-						join: localization,
-						lines,
-						cultures: pickedLocalizationCultures(selection)
+					// The engine encodes the spreadsheet and writes the file; no line reaches the CLI.
+					const unwritable = new LocalizationExportError({
+						retrySafe: false,
+						nextStep: "fix_input",
+						code: "unwritable",
+						message: "The export file could not be created.",
+						recovery: "Choose a writable directory and a new file name."
 					});
-					const fs = yield* FileSystem.FileSystem;
-					yield* fs.writeFileString(command.output, csv, { flag: "wx" }).pipe(
-						Effect.mapError(
-							(error) =>
-								new LocalizationExportError(
-									error.reason._tag === "AlreadyExists"
-										? {
-												retrySafe: false,
-												nextStep: "fix_input",
-												code: "destination_exists",
-												message: "The export destination already exists.",
-												recovery:
-													"Choose a new file; existing files are never overwritten."
-											}
-										: {
-												retrySafe: false,
-												nextStep: "fix_input",
-												code: "unwritable",
-												message: "The export file could not be created.",
-												recovery:
-													"Choose a writable directory and a new file name."
-											}
-								)
+					const written = yield* query
+						.writeLocalizationLinesCsv(
+							{
+								capability: "all",
+								query: "",
+								localization: selection,
+								...whereField(command, files),
+								...filter
+							},
+							{ path: resolve(command.output), exclusive: true }
 						)
-					);
+						.pipe(
+							Effect.mapError((error) =>
+								Schema.is(AssetReaderError)(error.cause) &&
+								error.cause.code === "io_error"
+									? unwritable
+									: error
+							)
+						);
+					if (written.status === "exists")
+						return yield* new LocalizationExportError({
+							retrySafe: false,
+							nextStep: "fix_input",
+							code: "destination_exists",
+							message: "The export destination already exists.",
+							recovery: "Choose a new file; existing files are never overwritten."
+						});
+					const rows = written.rows;
 					yield* Metric.update(Metric.counter("cli.localization.export.rows"), rows);
 					return { schemaVersion: 1, status: "written", path: command.output, rows };
 				});

@@ -271,6 +271,8 @@ pub trait Reply {
     /// One column batch. It waits while the host holds as many unconsumed batches as flow
     /// control allows, and fails when the request is cancelled meanwhile.
     fn batch(&mut self, body: Vec<u8>) -> Result<()>;
+    /// Sends rows a sink encoded for the stream.
+    fn text(&mut self, body: Vec<u8>) -> Result<()>;
 }
 
 /// A request's whole answer: its first part, as JSON text, its batches and its profile.
@@ -286,6 +288,7 @@ pub struct EngineAnswer {
 pub(crate) struct Gathered {
     pub(crate) parts: Vec<Vec<u8>>,
     pub(crate) batches: Vec<Vec<u8>>,
+    pub(crate) texts: Vec<Vec<u8>>,
 }
 impl Reply for Gathered {
     fn part(&mut self, body: Vec<u8>) -> Result<()> {
@@ -294,6 +297,10 @@ impl Reply for Gathered {
     }
     fn batch(&mut self, body: Vec<u8>) -> Result<()> {
         self.batches.push(body);
+        Ok(())
+    }
+    fn text(&mut self, body: Vec<u8>) -> Result<()> {
+        self.texts.push(body);
         Ok(())
     }
 }
@@ -530,15 +537,23 @@ impl EngineSession {
                         ("line", None)
                     }
                     EngineRequest::LocalizationExport { request, .. } => {
-                        let (request, fields) =
+                        let (request, fields, sink) =
                             crate::engine_rollup::parse_line_export(&text(request)?)?;
-                        query.send_localization_lines(
-                            &request,
-                            false,
-                            fields.as_deref(),
-                            cancelled,
-                            reply,
-                        )?;
+                        match sink {
+                            Some(sink) => {
+                                let mut writer = crate::sink::SinkWriter::open(&sink, reply)?;
+                                query.write_culture_lines(&request, &mut writer, cancelled)?;
+                                let summary = writer.finish()?;
+                                reply.part(serde_json::to_vec(&summary)?)?;
+                            }
+                            None => query.send_localization_lines(
+                                &request,
+                                false,
+                                fields.as_deref(),
+                                cancelled,
+                                reply,
+                            )?,
+                        }
                         ("localization_export", None)
                     }
                     EngineRequest::LocalizationCorpus { .. } => {

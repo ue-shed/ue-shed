@@ -45,6 +45,8 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 		aggregate: (request) => read("aggregate", () => derivedAggregate(base, request)),
 		selectLocalizationLines: (request, fields) =>
 			read("localization_lines", () => derivedLineViews(base, request, fields)),
+		writeLocalizationLinesCsv: () =>
+			Effect.die("This reference query encodes no files; the engine's sinks do."),
 		readCorpusHeader: () => Effect.succeed(derivedCorpusHeader(corpus)),
 		readCorpusReportHeader: () =>
 			Effect.succeed(textCorpusReportHeader(derivedCorpusHeader(corpus))),

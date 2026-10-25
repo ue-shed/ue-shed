@@ -243,8 +243,8 @@ Today's `search` request carries Browse's own filter types: `Clause { field, op,
 
 The engine encodes every exported row, so the host never builds a document to print or write one.
 
-- **`sink: { "file": path, "format": … }`** writes the rows part's rows to a file. The request ends with `{ summary: { rows, bytes } }`.
-- **`sink: { "stream": … }`** sends the encoded rows as `text` frames, which the host writes straight to its destination.
+- **`sink: { "file": path, "format": … }`** writes the rows part's rows to a file, beside it and then moved into place, so a failed export leaves no partial file. With `exclusive` it fails with `exists` rather than replace a file, as the CLI's exports never overwrite. The request answers with a `SinkSummary` part, `{ rows, bytes }`: a part rather than the end frame, so the host reads it as it reads every reply.
+- **A sink without `file`** sends the encoded rows as `text` frames of about 1 MiB, which the host writes straight to its destination. Each waits for a credit, which the host returns once its write finishes, so a slow destination holds the request back instead of filling memory.
 - **Formats:**
 
     | Format              | Today                                                | Output                      |

@@ -95,6 +95,8 @@ export interface EngineProbe {
 export interface EngineAnswer {
 	readonly parts: ReadonlyArray<ArrayBuffer>;
 	readonly batches: ReadonlyArray<EngineBatch>;
+	/** A stream sink's text frames, when the call had no writer for them. */
+	readonly texts: ReadonlyArray<ArrayBuffer>;
 	readonly profile: GameTextContract.EngineProfile;
 }
 
@@ -125,10 +127,25 @@ export const answerRows = (answer: EngineAnswer, part: string): BatchRow[] => {
 /** Watches one request's progress; it runs on the session's thread, so it must be cheap. */
 export type EngineProgressObserver = (progress: GameTextContract.EngineProgress) => void;
 
+/**
+ * Writes the rows a stream sink encoded, in order. The engine sends the next `text` frame once
+ * a write finishes, so a slow destination holds the request back rather than filling memory.
+ */
+export type EngineTextWriter = (chunk: Uint8Array) => Promise<void>;
+
+/** How long a request whose sink failed has to stop once cancelled. */
+const SINK_CANCEL_WAIT_MS = 2000;
+
 interface Pending {
 	readonly parts: ArrayBuffer[];
 	readonly batches: EngineBatch[];
+	/** Text frames gathered when the call has no writer. */
+	readonly texts: ArrayBuffer[];
 	readonly progress: EngineProgressObserver | undefined;
+	readonly text: EngineTextWriter | undefined;
+	/** The writes in flight: the answer waits for them, and a failed one fails it. */
+	written: Promise<void>;
+	writeFailed: unknown;
 	readonly resume: (effect: Effect.Effect<EngineAnswer, AssetReaderError>) => void;
 	/** Output bytes and the largest frame, for the reader's protocol observer. */
 	outputBytes: number;
@@ -305,9 +322,35 @@ class Worker {
 				this.process.write(encodeFrame(FrameKind.credit, frame.request, creditBody));
 				return;
 			}
-			case FrameKind.text:
-				pending.parts.push(frame.body);
+			case FrameKind.text: {
+				const writer = pending.text;
+				if (writer === undefined) {
+					pending.texts.push(frame.body);
+					this.process.write(encodeFrame(FrameKind.credit, frame.request, creditBody));
+					return;
+				}
+				const request = frame.request;
+				const chunk = new Uint8Array(frame.body);
+				pending.written = pending.written.then(async () => {
+					if (pending.writeFailed !== undefined) return;
+					try {
+						await writer(chunk);
+						this.process.write(encodeFrame(FrameKind.credit, request, creditBody));
+					} catch (cause) {
+						// The engine waits for a credit that won't come, so the request is cancelled.
+						pending.writeFailed = cause;
+						pending.resume(
+							Effect.fail(
+								failure("process", "The sink's destination could not be written.", {
+									cause
+								})
+							)
+						);
+						this.cancel(request, SINK_CANCEL_WAIT_MS);
+					}
+				});
 				return;
+			}
 			case FrameKind.progress:
 				try {
 					pending.progress?.(contractJson<GameTextContract.EngineProgress>(frame.body));
@@ -317,9 +360,16 @@ class Worker {
 				return;
 			case FrameKind.end: {
 				const { profile } = contractJson<GameTextContract.EngineEnd>(frame.body);
-				pending.resume(
-					Effect.succeed({ parts: pending.parts, batches: pending.batches, profile })
-				);
+				const answer = {
+					parts: pending.parts,
+					batches: pending.batches,
+					texts: pending.texts,
+					profile
+				};
+				// Every text frame is written before the answer.
+				void pending.written.then(() => {
+					if (pending.writeFailed === undefined) pending.resume(Effect.succeed(answer));
+				});
 				return;
 			}
 			case FrameKind.error: {
@@ -413,7 +463,9 @@ export class GameTextEngineSession {
 	call(
 		request: GameTextContract.EngineRequest | EngineProbe,
 		/** Watches the request's progress frames, for requests that report progress. */
-		progress?: EngineProgressObserver
+		progress?: EngineProgressObserver,
+		/** Writes a stream sink's text frames as they arrive; without it they are gathered. */
+		text?: EngineTextWriter
 	): Effect.Effect<EngineAnswer, AssetReaderError> {
 		return Effect.callback<EngineAnswer, AssetReaderError>((resume) => {
 			let worker: Worker;
@@ -452,6 +504,10 @@ export class GameTextEngineSession {
 			worker.pending.set(id, {
 				parts: [],
 				batches: [],
+				texts: [],
+				text,
+				written: Promise.resolve(),
+				writeFailed: undefined,
 				progress,
 				resume,
 				outputBytes: 0,

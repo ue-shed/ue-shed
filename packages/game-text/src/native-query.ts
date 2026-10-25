@@ -3,6 +3,7 @@ import { Clock, Effect, Schema, type Scope } from "effect";
 import {
 	answerJson,
 	answerRows,
+	AssetReaderError,
 	type EngineAnswer,
 	type EngineProgressObserver,
 	NativeGameTextEngineClient
@@ -315,6 +316,42 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				)
 			);
 		});
+	const writeLocalizationLinesCsv = Effect.fn("GameTextIndex.nativeLinesCsv")(function* (
+		pinned: Pinned,
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		file: { readonly path: string; readonly exclusive?: boolean }
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+			...request,
+			pageSize: 50
+		}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
+		const answer = yield* pinned
+			.execute({
+				action: "localization_export",
+				reader: pinned.reader,
+				request: {
+					selection: querySelection(decoded),
+					sink: {
+						format: "cultureLinesCsv",
+						file: file.path,
+						...(file.exclusive === true && { exclusive: true })
+					}
+				}
+			})
+			.pipe(
+				Effect.map((answer) => ({ answer })),
+				Effect.catchIf(
+					(error) =>
+						Schema.is(AssetReaderError)(error.cause) && error.cause.code === "exists",
+					() => Effect.succeed({ answer: undefined })
+				)
+			);
+		if (answer.answer === undefined) return { status: "exists" as const };
+		const summary = answerJson<GameTextContract.SinkSummary>(answer.answer);
+		if (summary === undefined)
+			return yield* Effect.fail(failed("localization_export", "The engine sent no summary."));
+		return { status: "written" as const, ...summary };
+	});
 	const readUnits = Effect.fn("GameTextIndex.nativeUnits")(function* (
 		pinned: Pinned,
 		ids: readonly string[]
@@ -624,6 +661,8 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		aggregate: (request) => aggregate(pinned, request),
 		selectLocalizationLines: (request, fields) =>
 			selectLocalizationLines(pinned, request, fields),
+		writeLocalizationLinesCsv: (request, file) =>
+			writeLocalizationLinesCsv(pinned, request, file),
 		readCorpusHeader: () => readCorpusHeader(pinned),
 		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),

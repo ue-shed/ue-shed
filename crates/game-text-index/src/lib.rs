@@ -50,6 +50,8 @@ mod layer_reuse;
 mod line_break;
 pub mod rules;
 pub mod session;
+mod sink;
+mod sink_lines;
 #[rustfmt::skip]
 mod line_break_tables;
 mod package_delta;

@@ -1472,7 +1472,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		),
 		localizationLinesFile: scoped((input) =>
 			projectRelativeRequest(input).pipe(
-				Effect.flatMap((request) => localization.linesFile(request, dialog, files))
+				Effect.flatMap((request) => localization.linesFile(request, dialog))
 			)
 		),
 		localizationTargets: scoped(localization.targets),

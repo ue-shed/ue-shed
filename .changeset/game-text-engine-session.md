@@ -47,3 +47,10 @@ line) and replaces `focus`, `localization_detail`, `related` and `localization_f
 `MAX_TEXT_QUERY_PAGE_SIZE` is 100,000, a page over 500 rows streams as a bulk read, and the CLI's
 `--limit` takes up to that. A unit's places, open groups' first rows and related rows list up to
 `MAX_TEXT_SECTION_ROWS` (500) at once, validated by `TextSectionRows`.
+
+The engine encodes exports itself. A request's `sink` names a format and a file, written beside
+it and moved into place, or streams the encoded rows as `text` frames that
+`NativeGameTextEngineClient.execute` hands to an `EngineTextWriter`; it answers with a
+`SinkSummary`. `NativeTextQuery.writeLocalizationLinesCsv` writes the all-languages CSV this way,
+so the Workbench export and `ue-shed loc export` no longer read the lines into the host, and
+the Workbench's 64 MiB cap on that file is gone. Engine errors gain the `exists` code.

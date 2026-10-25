@@ -727,12 +727,33 @@ impl EngineQuery {
 struct LineExport {
     selection: Selection,
     fields: Option<Vec<String>>,
+    /// Encodes the lines in the sink's format instead of sending them as batches.
+    sink: Option<crate::sink::Sink>,
 }
 
-pub fn parse_line_export(payload: &str) -> Result<(Selection, Option<Vec<&'static str>>)> {
-    let LineExport { selection, fields } = parse_request(payload, "export")?;
+/// A line export's selection, its fields and its sink.
+type ParsedLineExport = (
+    Selection,
+    Option<Vec<&'static str>>,
+    Option<crate::sink::Sink>,
+);
+
+pub fn parse_line_export(payload: &str) -> Result<ParsedLineExport> {
+    let LineExport {
+        selection,
+        fields,
+        sink,
+    } = parse_request(payload, "export")?;
     selection.validate()?;
-    Ok((selection, fields.as_deref().map(line_fields).transpose()?))
+    require(
+        sink.is_none() || fields.is_none(),
+        invalid("A sink's format names the fields it writes."),
+    )?;
+    Ok((
+        selection,
+        fields.as_deref().map(line_fields).transpose()?,
+        sink,
+    ))
 }
 
 /// A corpus export: the selection's units, or `units` names them by ID (at most 5,000; IDs no
@@ -808,7 +829,7 @@ mod tests {
     #[test]
     fn exports_name_known_fields_and_bounded_units() -> Result<()> {
         let base = r#""selection":{"target":"Game"}"#;
-        let (_, fields) = parse_line_export(&format!(
+        let (_, fields, _) = parse_line_export(&format!(
             r#"{{{base},"fields":["marks","places","identity"]}}"#
         ))?;
         assert_eq!(fields, Some(vec!["marks", "places", "identity"]));

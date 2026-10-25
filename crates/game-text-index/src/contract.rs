@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 12] = [
+const SOURCES: [&str; 13] = [
     include_str!("contract.rs"),
     include_str!("session.rs"),
     include_str!("batch.rs"),
@@ -25,6 +25,7 @@ const SOURCES: [&str; 12] = [
     include_str!("wtf8.rs"),
     include_str!("engine_types.rs"),
     include_str!("engine_where.rs"),
+    include_str!("sink.rs"),
 ];
 
 /// The engine's build and contract identity, reported by `capabilities`.
@@ -81,6 +82,7 @@ mod tests {
         RuleProblemCode, RulesCheck, RunProfile, StageSample, SubStageSample,
     };
     use crate::session::{EngineEnd, EngineError, EngineFailure};
+    use crate::sink::{Format, Sink, SinkSummary};
     use crate::snapshot::IoMetrics;
     use crate::store::Configuration;
     use ts_rs::{Config, TS};
@@ -178,6 +180,9 @@ mod tests {
             DetailSection::decl(&config),
             RelatedSection::decl(&config),
             LineAnswer::decl(&config),
+            Sink::decl(&config),
+            Format::decl(&config),
+            SinkSummary::decl(&config),
             View::decl(&config),
             Order::decl(&config),
             Page::decl(&config),

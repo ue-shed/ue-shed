@@ -125,20 +125,16 @@ pub(crate) fn manifest_package(value: &str) -> Option<String> {
 }
 pub(crate) fn origin(value: &str) -> u32 {
     let path = normalized(trim(value)).to_lowercase();
-    if ["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "inl"]
-        .iter()
-        .any(|extension| {
-            let marker = format!(".{extension}");
-            path.find(&marker).is_some_and(|start| {
-                let end = start + marker.len();
-                end == path.len()
-                    || path
-                        .as_bytes()
-                        .get(end)
-                        .is_some_and(|b| matches!(b, b':' | b'('))
+    // `\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|inl)(?:[:(]|$)` anywhere in the path, as hosts test it.
+    if path.match_indices('.').any(|(start, _)| {
+        let rest = &path.as_bytes()[start + 1..];
+        ["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "inl"]
+            .iter()
+            .any(|extension| {
+                rest.starts_with(extension.as_bytes())
+                    && matches!(rest.get(extension.len()), None | Some(b':' | b'('))
             })
-        })
-    {
+    }) {
         3
     } else if path.starts_with('/') {
         2

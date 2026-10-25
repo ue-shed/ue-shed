@@ -139,7 +139,7 @@ pub struct EngineError {
     #[cfg_attr(
         test,
         ts(
-            type = "\"busy\" | \"cancelled\" | \"invalid_input\" | \"invalid_cache\" | \"limit_exceeded\" | \"stale_generation\" | \"unavailable\" | \"not_found\" | \"io_error\" | \"internal\""
+            type = "\"busy\" | \"cancelled\" | \"invalid_input\" | \"invalid_cache\" | \"limit_exceeded\" | \"stale_generation\" | \"unavailable\" | \"not_found\" | \"exists\" | \"io_error\" | \"internal\""
         )
     )]
     pub code: &'static str,
@@ -502,6 +502,13 @@ impl Reply for Outgoing<'_> {
         self.shared
             .outbox
             .push(self.class, frame(Kind::Batch, 0, self.id, &body));
+        Ok(())
+    }
+    fn text(&mut self, body: Vec<u8>) -> Result<()> {
+        self.stalled += self.flow.take()?;
+        self.shared
+            .outbox
+            .push(self.class, frame(Kind::Text, 0, self.id, &body));
         Ok(())
     }
 }

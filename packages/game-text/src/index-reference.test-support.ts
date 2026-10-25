@@ -84,6 +84,8 @@ export const typeScriptIndexBuilderLayer = Layer.merge(
 					aggregate: (request) => Effect.sync(() => derivedAggregate(base, request)),
 					selectLocalizationLines: (request, fields) =>
 						Effect.sync(() => derivedLineViews(base, request, fields)),
+					writeLocalizationLinesCsv: () =>
+						Effect.die("The reference reader encodes no files; the engine's sinks do."),
 					readCorpusHeader: () => Effect.sync(() => derivedCorpusHeader(readCorpus())),
 					readCorpusReportHeader: () =>
 						Effect.sync(() =>

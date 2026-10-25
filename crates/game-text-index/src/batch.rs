@@ -819,6 +819,9 @@ mod tests {
             self.0.push(body);
             Ok(())
         }
+        fn text(&mut self, _: Vec<u8>) -> Result<()> {
+            Ok(())
+        }
     }
 
     fn header(body: &[u8]) -> Result<(Value, usize)> {

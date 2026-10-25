@@ -31,6 +31,7 @@ function outcome(
 	return {
 		parts: part === null ? [] : [new TextEncoder().encode(JSON.stringify(part)).buffer],
 		batches: [],
+		texts: [],
 		profile: {
 			stageSeconds: {},
 			batches: 0,

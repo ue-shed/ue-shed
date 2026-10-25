@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { textCorpusReportHeader } from "./corpus-summary.js";
 import { GameTextIndexRefresh } from "./index-refresh.js";
@@ -33,7 +34,11 @@ import {
 	indexedLocalizationGateTarget,
 	localizationGateTarget
 } from "./localization-gate.js";
-import { LOCALIZATION_LINES_CSV_FIELDS, localizationLinesCsv } from "./localization-export.js";
+import {
+	LOCALIZATION_LINES_CSV_FIELDS,
+	localizationLinesCsv,
+	pickedLocalizationCultures
+} from "./localization-export.js";
 import { localizationWordCount } from "./localization-words.js";
 import type { TextCorpusSearchRequest, TextFilterClause } from "./schema.js";
 
@@ -505,6 +510,48 @@ describe("index reads", () => {
 									corpus
 								})
 							);
+							// The engine's sink writes the bytes the host writer did, for every culture and
+							// for picked ones, and an exclusive sink leaves an existing file alone.
+							if (name === "native engine") {
+								const directory = yield* Effect.promise(() =>
+									mkdtemp(resolve(tmpdir(), "culture-lines-"))
+								);
+								const picked = {
+									...lines,
+									localization: {
+										...localization,
+										cultures: [fixture.target.cultures.at(-1)!]
+									}
+								};
+								for (const [index, request] of [lines, picked].entries()) {
+									const path = resolve(directory, `${index}.csv`);
+									const expected = localizationLinesCsv({
+										join: model.localization,
+										lines: yield* model.query.localizationLines(request),
+										corpus,
+										cultures: pickedLocalizationCultures(request.localization)
+									});
+									const bytes = new TextEncoder().encode(expected.csv);
+									expect(
+										yield* model.query.writeLocalizationLinesCsv(request, {
+											path
+										})
+									).toEqual({
+										status: "written",
+										rows: expected.rows,
+										bytes: bytes.byteLength
+									});
+									expect(
+										new Uint8Array(yield* Effect.promise(() => readFile(path)))
+									).toEqual(bytes);
+									expect(
+										yield* model.query.writeLocalizationLinesCsv(request, {
+											path,
+											exclusive: true
+										})
+									).toEqual({ status: "exists" });
+								}
+							}
 							expect(model.revision).toEqual(expect.any(String));
 						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
 					})

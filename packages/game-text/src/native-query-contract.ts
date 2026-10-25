@@ -1,4 +1,5 @@
 import type { Effect } from "effect";
+import type { GameTextContract } from "@ue-shed/protocol";
 import type { TextCorpusReportHeader } from "./corpus-summary.js";
 import type { NativeFindings } from "./native-findings.js";
 import type {
@@ -23,6 +24,11 @@ import type {
 	TextAggregateRequest,
 	TextCorpusHeader
 } from "./index-reads.js";
+
+/** What a sink wrote, or that its exclusive file was already there. */
+export type LinesFileWritten =
+	| ({ readonly status: "written" } & GameTextContract.SinkSummary)
+	| { readonly status: "exists" };
 
 /** Native queries are asynchronous process calls; this interface owns no query or column data. */
 export interface NativeTextQuery extends NativeFindings {
@@ -79,6 +85,15 @@ export interface NativeTextQuery extends NativeFindings {
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
 		fields: readonly F[]
 	) => Effect.Effect<readonly LocalizationLineView<F>[], GameTextIndexError>;
+	/**
+	 * Writes every line a request matches to `file.path` as the all-languages CSV, encoded by the
+	 * engine; no line reaches the host. With `file.exclusive` a file already there is left alone
+	 * and the result is `exists`.
+	 */
+	readonly writeLocalizationLinesCsv: (
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		file: { readonly path: string; readonly exclusive?: boolean }
+	) => Effect.Effect<LinesFileWritten, GameTextIndexError>;
 	/** The named units with every occurrence (at most 5,000 IDs); IDs no unit has are left out. */
 	readonly readUnits: (
 		ids: readonly TextUnit["id"][]

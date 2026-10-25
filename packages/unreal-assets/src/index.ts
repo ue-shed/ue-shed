@@ -192,6 +192,7 @@ export {
 	answerRows,
 	type EngineAnswer,
 	type EngineProgressObserver,
+	type EngineTextWriter,
 	NativeGameTextEngineClient,
 	nativeGameTextEngineClientLayer
 } from "./game-text-engine-client.js";

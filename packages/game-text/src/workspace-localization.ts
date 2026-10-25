@@ -20,9 +20,6 @@ import {
 	type WorkspaceReportResult,
 	type WorkspaceReportFileRequest,
 	type WorkspaceReportFileResult,
-	localizationLinesCsv,
-	LOCALIZATION_LINES_CSV_FIELDS,
-	pickedLocalizationCultures,
 	type LocalizationLinesFileResult,
 	localizationKeyChangesAcross,
 	KEY_CHANGE_FIELDS,
@@ -860,8 +857,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		/** Writes every line the request matches, a column per culture, to a CSV the person chose. */
 		const linesFile = Effect.fn("GameText.workspace.localization.linesFile")(function* (
 			request: TextCorpusSearchRequest,
-			dialog: Pick<GameTextWorkspaceFileHooks, "chooseFile" | "chooseSaveFile">,
-			files: Pick<GameTextWorkspaceFileHooks, "readFile" | "writeFile">
+			dialog: Pick<GameTextWorkspaceFileHooks, "chooseFile" | "chooseSaveFile">
 		): Effect.fn.Return<LocalizationLinesFileResult, never, Scope.Scope> {
 			const name = request.localization?.target;
 			if (name === undefined) return { status: "not_ready" };
@@ -875,21 +871,11 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				});
 				if (choice.status === "cancelled") return choice;
 				if ((yield* current(name)) !== retained) return { status: "not_ready" as const };
-				// Only the fields the spreadsheet shows, on the bulk lane; the corpus is not read.
-				const lines = yield* retained.model.selectLocalizationLines(
-					request,
-					LOCALIZATION_LINES_CSV_FIELDS
-				);
-				const { csv, rows } = yield* Effect.try(() =>
-					localizationLinesCsv({
-						join: retained.join,
-						lines,
-						cultures: pickedLocalizationCultures(request.localization)
-					})
-				);
-				yield* files.writeFile(choice.path, new TextEncoder().encode(csv), {
-					maxBytes: 64 * 1024 * 1024
+				// The engine encodes the spreadsheet and writes the file; no line reaches the host.
+				const written = yield* retained.model.writeLocalizationLinesCsv(request, {
+					path: choice.path
 				});
+				const rows = written.status === "written" ? written.rows : 0;
 				yield* Effect.annotateCurrentSpan({ rowCount: rows });
 				return { status: "saved" as const, path: choice.path, rowCount: rows };
 			}).pipe(

@@ -84,7 +84,9 @@ fn flush(items: &mut Vec<Item>, runs: &mut Vec<PathBuf>, staging: &Path) -> Resu
     if items.is_empty() {
         return Ok(());
     }
+    let mut measure = crate::scan_timings::Cursor::new();
     items.par_sort_unstable();
+    measure.mark("dictionary.sort_run");
     let path = staging.join(format!("run-{}", runs.len()));
     let mut w = BufWriter::with_capacity(
         1024 * 1024,
@@ -299,6 +301,16 @@ fn build_inner(
     run_bytes: usize,
     configuration: Option<(&str, &BTreeMap<String, String>)>,
 ) -> Result<Value> {
+    let mut measure = crate::scan_timings::Cursor::new();
+    for layer in layers {
+        if crate::scan_timings::enabled() {
+            crate::scan_timings::count(
+                "publication.staged_bytes",
+                fs::metadata(&layer.file)?.len(),
+            );
+        }
+    }
+    crate::scan_timings::count("publication.inputs", layers.len() as u64);
     let started = Instant::now();
     require(
         (1024 * 1024..=256 * 1024 * 1024).contains(&run_bytes),
@@ -373,6 +385,7 @@ fn build_inner(
     flush(&mut items, &mut runs, staging)?;
     drop(items);
     let collect_sort_seconds = started.elapsed().as_secs_f64();
+    measure.mark("dictionary.collect_sort");
     let merge_start = Instant::now();
     let mut readers: Vec<_> = runs
         .iter()
@@ -420,6 +433,7 @@ fn build_inner(
         fs::remove_file(path)?;
     }
     let merge_seconds = merge_start.elapsed().as_secs_f64();
+    measure.mark("dictionary.merge");
     let encode_start = Instant::now();
     let mut bases = vec![0u32; domains.len()];
     let mut segments = Vec::new();
@@ -453,6 +467,7 @@ fn build_inner(
     drop(rank_ids);
     drop(rank_owners);
     let dictionary_encode_seconds = encode_start.elapsed().as_secs_f64();
+    measure.mark("dictionary.dictionary");
     let layer_start = Instant::now();
     let generation = configuration.map_or("00000000-0000-0000-0000-000000000001", |c| c.0);
     let mut records = BTreeMap::new();
@@ -475,6 +490,7 @@ fn build_inner(
             }
             let mut data = reader.load(id)?;
             if e.kind == 3 {
+                let _span = crate::scan_timings::Span::new("dictionary.remap_columns");
                 let r = &range[&e.domain];
                 let mut previous = 0u32;
                 let mut remapped = Vec::new();
@@ -537,6 +553,7 @@ fn build_inner(
     w.finish(&output.join("snapshot-00000000.snapshot"), &[id])?;
     fs::write(output.join("index.json"), serde_json::to_vec_pretty(&root)?)?;
     let layer_encode_seconds = layer_start.elapsed().as_secs_f64();
+    measure.mark("dictionary.layers");
     Ok(
         json!({"seconds":started.elapsed().as_secs_f64(),"collectSortSeconds":collect_sort_seconds,"mergeSeconds":merge_seconds,"dictionaryEncodeSeconds":dictionary_encode_seconds,"layerEncodeSeconds":layer_encode_seconds,"strings":base,"occurrences":total,"runs":runs.len(),"dictionaryBytes":segments.iter().map(|s|s.bytes).sum::<u64>(),"layerBytes":layer_bytes,"layers":layers.len()}),
     )

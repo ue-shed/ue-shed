@@ -7,6 +7,7 @@ import { engineRunsPattern } from "./rule-regex.js";
 import {
 	localizationCheckCatalogue,
 	localizationCheckDefaults,
+	localizationRuleId,
 	type LocalizationCheckParams
 } from "./localization-check-catalogue.js";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./quality-schema.js";
 
 const Recovery = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(2048));
+const Label = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(128));
 const MaximumCharacters = Schema.Int.check(Schema.isGreaterThan(0));
 const Terms = Schema.Array(TextTerminologyEntry).check(
 	Schema.isMinLength(1),
@@ -34,6 +36,8 @@ const RuleFields = {
 	...EntryFields,
 	/** The rule ID its findings and review marks record; unique among the file's rules. */
 	id: TextQualityRuleId,
+	/** A short name for lists, filters and findings; absent, the rule ID. */
+	label: Schema.optionalKey(Label),
 	/** What to do about a finding, shown with it. */
 	recovery: Recovery
 };
@@ -114,7 +118,7 @@ const CustomCheckFields = {
 	...RuleFields,
 	...Severity,
 	/** A short name for lists and filters. */
-	label: Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(128)),
+	label: Label,
 	/**
 	 * `source` checks a keyed line's source once, under its source culture; `translation` checks
 	 * each culture's shipped translation, the native culture aside.
@@ -215,6 +219,22 @@ export function isBuiltInCheckEntry(entry: GameTextRuleEntry): entry is BuiltInC
 /** An entry's rule ID in the file: a built-in check's ID, or a project rule's own. */
 export function ruleEntryId(entry: GameTextRuleEntry): string {
 	return isBuiltInCheckEntry(entry) ? entry.kind : entry.id;
+}
+/**
+ * The name of every rule a file lists, by the rule ID its findings record: a built-in check's
+ * catalogue label under `localization.<check>`, and a project rule's, custom check's or complete
+ * rule's label, or its ID without one.
+ */
+export function ruleLabelsOf(
+	document: Pick<GameTextRuleDocument, "rules"> | undefined
+): ReadonlyMap<string, string> {
+	return new Map(
+		(document?.rules ?? []).map((entry) =>
+			isBuiltInCheckEntry(entry)
+				? [localizationRuleId(entry.kind), localizationCheckCatalogue[entry.kind].label]
+				: [entry.id, entry.label ?? entry.id]
+		)
+	);
 }
 /** Whether a listed entry runs: unless the file turns it off. */
 function runs(entry: GameTextRuleEntry): boolean {

@@ -124,6 +124,22 @@ function replaceLocalizationRule(
 	};
 }
 
+/** A project rule with its label, or without one when the label is blank. */
+function replaceLabel(
+	document: GameTextRuleDocument,
+	id: TextQualityRule["id"],
+	label: string
+): GameTextRuleDocument {
+	return {
+		...document,
+		rules: document.rules.map((entry) => {
+			if (!(sourceRule(entry) || localizationRule(entry)) || entry.id !== id) return entry;
+			const { label: _previous, ...rest } = entry;
+			return label.trim() ? { ...rest, label } : rest;
+		})
+	};
+}
+
 function replaceRecovery(
 	document: GameTextRuleDocument,
 	id: TextQualityRule["id"],
@@ -254,8 +270,10 @@ export function GameTextRuleEditor(props: {
 									{findingCount(rule.id)}
 								</em>
 							</span>
-							<strong>{rule.id}</strong>
-							<small>Role · {rule.role}</small>
+							<strong>{rule.label ?? rule.id}</strong>
+							<small>
+								{rule.label ? `${rule.id} · ` : ""}Role · {rule.role}
+							</small>
 						</button>
 					)}
 				</For>
@@ -332,7 +350,9 @@ export function GameTextRuleEditor(props: {
 								</ul>
 							</Show>
 							<header {...stylex.attrs(styles.formHeader)}>
-								<h3 {...stylex.attrs(styles.formTitle)}>{rule().id}</h3>
+								<h3 {...stylex.attrs(styles.formTitle)}>
+									{rule().label ?? rule().id}
+								</h3>
 								<span
 									{...stylex.attrs(
 										styles.dirtyState,
@@ -346,6 +366,34 @@ export function GameTextRuleEditor(props: {
 											: "No rule file"}
 								</span>
 							</header>
+							<label {...stylex.attrs(styles.field)}>
+								<span>Label</span>
+								<input
+									type="text"
+									aria-label={`Label for ${rule().id}`}
+									aria-invalid={invalidField(
+										props.editor.problems(),
+										rule().id,
+										"label"
+									)}
+									aria-describedby={"rule-errors-" + rule().id}
+									placeholder={rule().id}
+									{...stylex.attrs(styles.input)}
+									value={rule().label ?? ""}
+									onInput={(event) =>
+										changeDraft(
+											replaceLabel(
+												draft(),
+												rule().id,
+												event.currentTarget.value
+											)
+										)
+									}
+								/>
+								<span {...stylex.attrs(styles.fieldHint)}>
+									Shown in lists, filters and findings instead of the rule ID.
+								</span>
+							</label>
 							<Show when={selectedBudgetRule()}>
 								<label {...stylex.attrs(styles.field)}>
 									<span>Maximum characters</span>

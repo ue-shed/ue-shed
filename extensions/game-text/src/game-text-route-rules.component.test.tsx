@@ -62,7 +62,14 @@ it("retains every editable rule field, term actions, preview and save", async ()
 	});
 	await user.clear(maximum);
 	await user.type(maximum, "12");
+	await user.type(
+		screen.getByRole("textbox", { name: "Label for example-limit" }),
+		"Menu text limit"
+	);
 	const rules = screen.getByRole("complementary", { name: "Quality rule list" });
+	expect(within(rules).getByRole("button", { name: /Menu text limit/u }).textContent).toContain(
+		"example-limit"
+	);
 	await user.click(within(rules).getByRole("button", { name: /example-terms/u }));
 	await user.click(screen.getByRole("checkbox", { name: "Case-sensitive matching" }));
 	const preferred = screen.getByRole("textbox", { name: "Preferred term 1" });
@@ -90,7 +97,7 @@ it("retains every editable rule field, term actions, preview and save", async ()
 	await user.click(screen.getByRole("button", { name: "Preview" }));
 	await screen.findByText("Preview updated.", { exact: false });
 	expect(previews.at(-1)?.rules).toEqual([
-		{ ...rulesDocument.rules[0], maximumCharacters: 12 },
+		{ ...rulesDocument.rules[0], maximumCharacters: 12, label: "Menu text limit" },
 		{
 			...rulesDocument.rules[1],
 			caseSensitive: true,
@@ -105,11 +112,17 @@ it("retains every editable rule field, term actions, preview and save", async ()
 	expect(
 		screen.getByRole("complementary", { name: "Quality role scopes" }).textContent
 	).toContain("/Game/");
+	// A blank label takes the key out again, so the rule goes back to its ID.
+	await user.click(within(rules).getByRole("button", { name: /Menu text limit/u }));
+	await user.clear(screen.getByRole("textbox", { name: "Label for example-limit" }));
+	expect(within(rules).queryByRole("button", { name: /Menu text limit/u })).toBeNull();
+	await user.click(within(rules).getByRole("button", { name: /example-terms/u }));
 	await user.click(screen.getByRole("button", { name: "Remove term 2" }));
 	expect(screen.queryByRole("textbox", { name: "Forbidden term 2" })).toBeNull();
 	await user.click(screen.getByRole("button", { name: "Save" }));
 	await screen.findByText("Rule file saved.", { exact: false });
 	expect(saves).toHaveLength(1);
+	expect(saves[0]?.rules[0]).toEqual({ ...rulesDocument.rules[0], maximumCharacters: 12 });
 	expect(saves[0]?.rules[1]).toMatchObject({
 		caseSensitive: true,
 		terms: [

@@ -195,6 +195,8 @@ export function draftProblems(
 			problems.push({ ruleId: rule.id, field, message: `${rule.id}: ${message}` });
 		if (!rule.recovery.trim())
 			add("recovery", "Add recovery guidance before previewing or saving.");
+		if ("label" in rule && rule.label !== undefined && rule.label.trim().length > 128)
+			add("label", "Keep the label to 128 characters or fewer.");
 		const budget = (value: number, field: string) => {
 			if (!Number.isSafeInteger(value) || value < 1)
 				add(field, "Use a whole-number character limit of at least 1.");

@@ -7,11 +7,11 @@ import type {
 	TextQualityQuerySummary,
 	TextQualitySearchPage
 } from "@ue-shed/game-text/corpus";
-import type { GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import { type GameTextRuleDocument, ruleLabelsOf } from "@ue-shed/game-text/rules";
 import type { TextUnitId } from "@ue-shed/game-text/schema";
 import { textCountLabel, textLocationLabel } from "@ue-shed/game-text/labels";
 import { Button, Chip, createEffectAction } from "@ue-shed/ui";
-import { For, Show, createEffect, createSignal, untrack } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, untrack } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { failureText } from "./game-text-failure.js";
 import type { GameTextClientApi } from "./game-text-client.js";
@@ -60,6 +60,8 @@ export function GameTextQualityWorkspace(props: {
 	readonly onLoadRules?: () => void;
 	readonly summary: TextQualityQuerySummary;
 }) {
+	// Rule names from the rules file, for the rules overview.
+	const ruleLabels = createMemo(() => ruleLabelsOf(props.document));
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
 	const [filter, setFilter] = createSignal<TextQualityFilter>(
@@ -356,7 +358,10 @@ export function GameTextQualityWorkspace(props: {
 											<For each={props.summary.rules}>
 												{(rule) => (
 													<tr>
-														<td>{rule.ruleId}</td>
+														<td title={rule.ruleId}>
+															{ruleLabels().get(rule.ruleId) ??
+																rule.ruleId}
+														</td>
 														<td>{rule.findingCount}</td>
 													</tr>
 												)}

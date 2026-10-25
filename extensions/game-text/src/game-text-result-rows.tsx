@@ -22,7 +22,6 @@ type ResultRow = {
 	readonly unit: TextUnitSearchResult | undefined;
 };
 
-/** The translation column only shows with one culture picked; with more, the state strip covers them. */
 /** The labels of a row's findings, with how many more it has. */
 export function rowFindings(
 	row: { readonly findings?: readonly string[]; readonly findingsOmitted?: number },
@@ -33,6 +32,7 @@ export function rowFindings(
 	return omitted > 0 ? [...labels, `+${omitted} more findings`] : labels;
 }
 
+/** The translation column only shows with one culture picked; with more, the state strip covers them. */
 export function GameTextColumns(props: { readonly culture: string | undefined }) {
 	return (
 		<div

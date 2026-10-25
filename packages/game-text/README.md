@@ -656,6 +656,11 @@ translation. `evaluateGameTextSourceQuality` and `text review` evaluate the sour
 combines localization rules and built-ins in the same report. The starter's source rules are
 examples: choosing budgets and glossaries for a culture requires project knowledge.
 
+Any source or localization rule can take an optional `label`, a short name (up to 128 characters)
+that lists, filters and findings show instead of its ID. `ruleLabelsOf(document)` maps every rule ID
+a file's findings record to its name: a built-in check's catalogue label under `localization.<check>`,
+and a project rule's, custom check's or complete rule's label, or its ID without one.
+
 A `localization_character_budget` rule has a `role`, `cultures: { "de": 32, "fr": 36 }` and optional
 `defaultMaximumCharacters`. Without a default, unlisted cultures have no budget. There are no
 multipliers. A `localization_terminology` rule has `caseSensitive` and

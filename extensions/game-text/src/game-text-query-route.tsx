@@ -1857,6 +1857,7 @@ export function GameTextRoute(props: {
 														<LineProblem
 															focus={focus()}
 															detail={localization.detail()}
+															rules={ruleLabels()}
 														/>
 													</div>
 												</Show>
@@ -2050,7 +2051,6 @@ export function GameTextRoute(props: {
 												<LineProperties
 													focus={focus()}
 													detail={localization.detail()}
-													rules={ruleLabels()}
 												/>
 											</Show>
 										</div>

@@ -138,7 +138,7 @@ export function effectiveRuleDocument(
 	for (const { rule, role, terms: preparedTerms } of sourceRules) {
 		const base = {
 			...authored(rule),
-			label: rule.id,
+			label: rule.label ?? rule.id,
 			subject: "unit_source",
 			family: "source",
 			severity: "normal",
@@ -201,7 +201,7 @@ export function effectiveRuleDocument(
 		const base = {
 			...authored(rule),
 			kind: rule.kind,
-			label: rule.id,
+			label: rule.label ?? rule.id,
 			subject: "line_culture",
 			family: "policy",
 			severity: rule.severity ?? "normal",

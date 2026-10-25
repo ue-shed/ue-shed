@@ -13,11 +13,11 @@ import {
 	type WorkspaceQualityPage
 } from "@ue-shed/game-text/corpus";
 import { textCountLabel, textLocationLabel } from "@ue-shed/game-text/labels";
-import { type GameTextRuleDocument } from "@ue-shed/game-text/rules";
+import { type GameTextRuleDocument, ruleLabelsOf } from "@ue-shed/game-text/rules";
 import { type LocalizationCheckDiagnostic, type TextUnitId } from "@ue-shed/game-text/schema";
 import { Button, Chip, createEffectAction } from "@ue-shed/ui";
 import { Effect } from "effect";
-import { For, Show, createEffect, createSignal, untrack } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, untrack } from "solid-js";
 import { changeRanges } from "./game-text-change-ranges.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { CopyButton } from "./game-text-copy-button.js";
@@ -30,10 +30,10 @@ import type { GameTextRuleState } from "./game-text-rule-state.js";
 import { styles } from "./game-text-styles.js";
 import { locationDetail } from "./game-text-view.js";
 
-/** A built-in check's catalogue label; a project rule keeps its own ID. */
-function ruleLabel(ruleId: string): string {
+/** A built-in check's catalogue label, or a rule's own label from the rules file. */
+function ruleLabel(ruleId: string, labels: ReadonlyMap<string, string>): string {
 	const check = parseLocalizationRuleId(ruleId);
-	return check ? localizationCheckCatalogue[check].label : ruleId;
+	return check ? localizationCheckCatalogue[check].label : (labels.get(ruleId) ?? ruleId);
 }
 
 const checkLimitLabels = {
@@ -94,6 +94,8 @@ export function GameTextLocalizationQuality(props: {
 	readonly onReloadRules: () => void;
 	readonly onShowText: (id: TextUnitId) => void;
 }) {
+	// Rule names from the rules file, for the rules overview.
+	const ruleLabels = createMemo(() => ruleLabelsOf(props.document));
 	const search = createEffectAction(),
 		focusAction = createEffectAction(),
 		copy = createEffectAction(),
@@ -628,7 +630,10 @@ export function GameTextLocalizationQuality(props: {
 															{(rule) => (
 																<tr>
 																	<td title={rule.ruleId}>
-																		{ruleLabel(rule.ruleId)}
+																		{ruleLabel(
+																			rule.ruleId,
+																			ruleLabels()
+																		)}
 																	</td>
 																	<td>{rule.findingCount}</td>
 																</tr>

@@ -163,6 +163,7 @@ export {
 	completeRulesOf,
 	customRulesOf,
 	ruleProblemError,
+	ruleLabelsOf,
 	GameTextRuleDocument,
 	GameTextRuleDocumentError,
 	BuiltInCheckEntry,

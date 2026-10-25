@@ -59,8 +59,10 @@ the join.
     - Progress keeps its phases; both branches report into the one reporter.
 3. **The reader's coordinator only coordinates.** Workers serialize each package's staged record
    themselves; the coordinator appends the bytes to its group file and emits the result. It
-   refills the job window before it writes, so a worker never waits behind staging. The staged
-   files stay byte-identical: the same records, in the same order within each group file.
+   refills the job window before it writes, so a worker never waits behind staging. Each group
+   file keeps the same records. Their order within a group file is completion order, which
+   already varies from run to run (`crates/uasset-io/src/direct_executor/project_io.rs:637,949`);
+   the package prepare step orders them, so the package-text snapshots stay byte-identical.
    Then the worker count is measured at 8, 12 and 16 on the released project. Choose the
    smallest count within 5% of the best wall time, and record the reader's peak working set for
    each; a count that raises the reader's peak above 5 GiB isn't eligible.

@@ -23,9 +23,10 @@ const f64 = (...values: number[]) => new Uint8Array(new Float64Array(values).buf
 
 describe("EngineBatch", () => {
 	it("reads every column type, missing values and lone surrogates through views", () => {
-		// Entries: "de", "a" + a lone high surrogate (WTF-8 ED A0 80), and JSON text.
+		// Entries: "de" after a U+FEFF that is text, not a byte order mark; "a" and a lone high
+		// surrogate (WTF-8 ED A0 80); and JSON text.
 		const entries = [
-			new TextEncoder().encode("de"),
+			new TextEncoder().encode("﻿de"),
 			new Uint8Array([0x61, 0xed, 0xa0, 0x80]),
 			new TextEncoder().encode('{"kind":"x","n":[1]}')
 		];
@@ -87,10 +88,10 @@ describe("EngineBatch", () => {
 		expect(batch.rows).toBe(2);
 		expect(batch.columns).toEqual(["key", "lines", "sourceWords", "data", "flag"]);
 		expect(Array.from(batch.numbers("lines"))).toEqual([3, 1]);
-		expect(batch.cell(0, "key")).toEqual(["de", "a\ud800"]);
+		expect(batch.cell(0, "key")).toEqual(["﻿de", "a\ud800"]);
 		expect(batch.cell(1, "sourceWords")).toBeUndefined();
 		expect(batch.row(0)).toEqual({
-			key: ["de", "a\ud800"],
+			key: ["﻿de", "a\ud800"],
 			lines: 3,
 			sourceWords: 2.5,
 			data: { kind: "x", n: [1] },

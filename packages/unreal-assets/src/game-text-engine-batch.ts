@@ -42,7 +42,8 @@ export type BatchCell<R extends RelationName, C extends RelationColumn<R>> =
 				: never);
 
 const alignTo8 = (value: number) => Math.ceil(value / 8) * 8;
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+// A leading U+FEFF is text, not a byte order mark: entries are decoded one at a time.
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /** WTF-8 as UTF-16 code units, keeping lone surrogates, which `TextDecoder` would replace. */
 function decodeWtf8(bytes: Uint8Array): string {

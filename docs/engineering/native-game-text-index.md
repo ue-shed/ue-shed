@@ -134,6 +134,11 @@ rows), `counts`, `facets`, `groups` and `fileScope`. The answer's part is a `Que
 travel as `browseUnit` and `browseLine` batches, open groups' rows with their group's position as
 `parent`. A query listing more than 500 rows runs as a bulk request.
 
+A `line` request reads one selected row, a line or a unit, with the sections a host shows:
+`places` (the unit's places after a cursor), `detail` (translations, locations and problems),
+`related` (same key, same text, conflict and key change) and `line` (the whole line as a `lines`
+batch). Selecting a row is one request whatever it shows.
+
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
 only in grouping or requested facets. This reader-owned cache retains at most 64 entries and

@@ -22,6 +22,7 @@ mod engine_detail;
 mod engine_evidence;
 mod engine_export;
 mod engine_focus;
+mod engine_line;
 mod engine_match;
 mod engine_page;
 mod engine_places;

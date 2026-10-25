@@ -388,8 +388,4 @@ impl EngineQuery {
         }
         Ok(result)
     }
-    pub fn focus_json(&self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
-        let request = crate::engine_types::parse_focus_request(payload)?;
-        crate::wtf8::view_json(&self.focus(&request, cancelled)?)
-    }
 }

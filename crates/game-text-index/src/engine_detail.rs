@@ -2,22 +2,15 @@
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
 use crate::engine_query::selected_bits;
-use crate::engine_types::{FocusRequest, LocalizationDetailRequest, MAX_PAGE, PROBLEMS, Selection};
+use crate::engine_types::{FocusRequest, LocalizationDetailRequest, PROBLEMS, Selection};
+
+/// Locations, cultures and PO contexts a detail lists from each offset.
+const DETAIL_PAGE: usize = 50;
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
 
 impl EngineQuery {
-    pub fn localization_detail_json(
-        &self,
-        payload: &str,
-        cancelled: &AtomicBool,
-    ) -> Result<String> {
-        let request = crate::engine_types::parse_detail_request(payload)?;
-        let result = self.localization_detail(&request, cancelled)?;
-        crate::wtf8::view_json(&result)
-    }
-
     pub fn localization_detail(
         &self,
         request: &LocalizationDetailRequest,
@@ -76,7 +69,7 @@ impl EngineQuery {
         let begin = p.manifest_start[row] as usize;
         let end = p.manifest_end[row] as usize;
         let location_offset = request.location_offset.unwrap_or(0).min(end - begin);
-        let location_end = end.min(begin + location_offset + MAX_PAGE);
+        let location_end = end.min(begin + location_offset + DETAIL_PAGE);
         let mut locations = Vec::new();
         let mut notes = Vec::new();
         let mut source = preview["source"].clone();
@@ -94,7 +87,7 @@ impl EngineQuery {
                 let dev = entry["devNotes"].as_str().unwrap_or("");
                 let comment = entry["metadata"]["Info"]["Comment"].as_str().unwrap_or("");
                 for (index, note) in [dev, comment].into_iter().enumerate() {
-                    if notes.len() < MAX_PAGE
+                    if notes.len() < DETAIL_PAGE
                         && !crate::join_policy::trim(note).is_empty()
                         && !(index == 1 && note == dev)
                     {
@@ -113,7 +106,7 @@ impl EngineQuery {
         let mut cultures = (0..self.cultures.len()).collect::<Vec<_>>();
         cultures.sort_by_key(|ci| Some(self.cultures[*ci].as_str()) != native);
         let offset = request.culture_offset.unwrap_or(0).min(cultures.len());
-        let culture_end = cultures.len().min(offset + MAX_PAGE);
+        let culture_end = cultures.len().min(offset + DETAIL_PAGE);
         let context = request.po_context_offset.unwrap_or(0);
         let mut translations = Vec::new();
         for ci in &cultures[offset..culture_end] {
@@ -193,16 +186,16 @@ impl EngineQuery {
                 maximum = maximum.max(values.len());
                 mark[field] = json!(
                     &values[context.min(values.len())
-                        ..values.len().min(context.saturating_add(MAX_PAGE))]
+                        ..values.len().min(context.saturating_add(DETAIL_PAGE))]
                 );
                 mark[remaining] = json!(
                     values
                         .len()
-                        .saturating_sub(context.saturating_add(MAX_PAGE))
+                        .saturating_sub(context.saturating_add(DETAIL_PAGE))
                 );
             }
-            if maximum > context.saturating_add(MAX_PAGE) {
-                mark["nextContextOffset"] = json!(context + MAX_PAGE);
+            if maximum > context.saturating_add(DETAIL_PAGE) {
+                mark["nextContextOffset"] = json!(context + DETAIL_PAGE);
             }
             translations.push(mark);
         }

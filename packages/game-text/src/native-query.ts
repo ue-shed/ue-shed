@@ -450,17 +450,39 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusFocusRequest)(request).pipe(
 			Effect.mapError((cause) => failed("focus", cause))
 		);
-		const result = yield* response(
+		// A unit's places; with a target, the places of the line's unit.
+		const { places } = yield* response(
 			pinned,
-			{ action: "focus", reader, request: decoded },
-			Schema.NullOr(TextCorpusFocus)
+			{
+				action: "line",
+				reader,
+				request: {
+					selection: decoded.localization
+						? { kind: "line", id: decoded.localization.id }
+						: { kind: "unit", id: decoded.id },
+					...(decoded.localization && { target: decoded.localization.target }),
+					...(decoded.findings && { findings: decoded.findings }),
+					places: {
+						...(decoded.localization && { unit: decoded.id }),
+						limit: decoded.pageSize,
+						...(decoded.occurrenceCursor !== undefined && {
+							after: decoded.occurrenceCursor
+						})
+					}
+				}
+			},
+			Schema.Struct({ places: Schema.NullOr(TextCorpusFocus) })
 		);
-		return result ?? undefined;
+		return places ?? undefined;
 	});
 	const localizationFocus = Effect.fn("GameTextIndex.nativeLocalizationFocus")(function* (
 		id: LocalizationLineId
 	) {
-		const answer = yield* execute({ action: "localization_focus_export", reader, line: id });
+		const answer = yield* execute({
+			action: "line",
+			reader,
+			request: { selection: { kind: "line", id }, line: true }
+		});
 		const [line] = yield* decodeRows(
 			"localization_focus",
 			Schema.Array(LocalizationLine),
@@ -474,12 +496,29 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(LocalizationFocusRequest)(request).pipe(
 			Effect.mapError((cause) => failed("localization_detail", cause))
 		);
-		const result = yield* response(
+		const { target, selection, culture, cultures, findings } = decoded;
+		const { cultureOffset, locationOffset, poContextOffset } = decoded;
+		const { detail } = yield* response(
 			pinned,
-			{ action: "localization_detail", reader, request: decoded },
-			Schema.NullOr(LocalizationFocus)
+			{
+				action: "line",
+				reader,
+				request: {
+					selection,
+					target,
+					...(culture !== undefined && { culture }),
+					...(cultures !== undefined && { cultures }),
+					...(findings && { findings }),
+					detail: {
+						...(cultureOffset !== undefined && { cultureOffset }),
+						...(locationOffset !== undefined && { locationOffset }),
+						...(poContextOffset !== undefined && { poContextOffset })
+					}
+				}
+			},
+			Schema.Struct({ detail: Schema.NullOr(LocalizationFocus) })
 		);
-		return result ?? undefined;
+		return detail ?? undefined;
 	});
 	const related = Effect.fn("GameTextIndex.nativeRelated")(function* (
 		request: RelatedLinesRequest
@@ -487,10 +526,18 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(RelatedLinesRequest)(request).pipe(
 			Effect.mapError((cause) => failed("related", cause))
 		);
-		const result = yield* response(
+		const { related: result } = yield* response(
 			pinned,
-			{ action: "related", reader, request: decoded },
-			Schema.NullOr(RelatedLines)
+			{
+				action: "line",
+				reader,
+				request: {
+					selection: decoded.selection,
+					...(decoded.target !== undefined && { target: decoded.target }),
+					related: { limit: decoded.pageSize }
+				}
+			},
+			Schema.Struct({ related: Schema.NullOr(RelatedLines) })
 		);
 		if (result)
 			yield* Effect.annotateCurrentSpan({

@@ -7,7 +7,6 @@ use serde_json::Value;
 #[cfg(test)]
 use ts_rs::TS;
 
-pub const MAX_PAGE: usize = 50;
 pub const MAX_GROUPS: usize = 200;
 /// The UTF-16 length of a group key: the bound on a stored ID, so a source group's key can always
 /// be opened again.
@@ -308,6 +307,166 @@ pub struct QueryAnswer {
     pub open_groups: Option<Vec<OpenGroupAnswer>>,
 }
 
+/// Which kind of row a `line` request selects.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "snake_case")]
+pub enum RowKind {
+    Line,
+    Unit,
+}
+
+/// A selected row: a localization line, or a corpus unit.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(deny_unknown_fields)]
+pub struct RowSelection {
+    pub kind: RowKind,
+    pub id: String,
+}
+
+/// A unit's places, after a cursor. With a line selected, `unit` names the unit of the line
+/// whose places to list.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlacesSection {
+    #[cfg_attr(test, ts(optional))]
+    pub unit: Option<String>,
+    pub limit: u32,
+    /// The ID of the place the previous page ended with.
+    #[cfg_attr(test, ts(optional))]
+    pub after: Option<String>,
+}
+
+/// A line's translations, locations and problems, each listed from its offset.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DetailSection {
+    #[cfg_attr(test, ts(optional))]
+    pub culture_offset: Option<u32>,
+    #[cfg_attr(test, ts(optional))]
+    pub location_offset: Option<u32>,
+    #[cfg_attr(test, ts(optional))]
+    pub po_context_offset: Option<u32>,
+}
+
+/// The rows related to the selection: same key, same text, conflict and key change.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RelatedSection {
+    /// Places each unit member lists.
+    pub limit: u32,
+}
+
+/// A `line` request (Phase 4 §6): a selected row and the sections of it a host shows, in one
+/// request.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LineRequest {
+    pub selection: RowSelection,
+    /// The localization target whose lines and translations the sections read.
+    #[cfg_attr(test, ts(optional))]
+    pub target: Option<String>,
+    /// The list's culture: the detail's problems read only it.
+    #[cfg_attr(test, ts(optional))]
+    pub culture: Option<String>,
+    /// The list's culture scope.
+    #[cfg_attr(test, ts(optional))]
+    pub cultures: Option<Vec<String>>,
+    /// The findings layer whose rules the sections list.
+    #[cfg_attr(test, ts(optional))]
+    pub findings: Option<FindingsSelection>,
+    #[cfg_attr(test, ts(optional))]
+    pub places: Option<PlacesSection>,
+    #[cfg_attr(test, ts(optional))]
+    pub detail: Option<DetailSection>,
+    #[cfg_attr(test, ts(optional))]
+    pub related: Option<RelatedSection>,
+    /// The whole line, as a `lines` batch.
+    #[cfg_attr(test, ts(optional))]
+    pub line: Option<bool>,
+}
+
+/// A `line` request's part: each section it asked for, null when the row is not there.
+#[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct LineAnswer {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub places: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub detail: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    pub related: Option<Value>,
+}
+
+/// The most places, related places and rows a `line` section lists at once.
+pub const MAX_SECTION_ROWS: u32 = 500;
+
+impl LineRequest {
+    pub fn validate(&self) -> Result<()> {
+        bounded(&self.selection.id, 32767, "Row ID exceeds its bound.")?;
+        require(
+            !self.selection.id.is_empty(),
+            invalid("A line request selects a row."),
+        )?;
+        if let Some(target) = &self.target {
+            require(
+                !target.is_empty() && characters(target) <= 1024,
+                invalid("A localization target is required."),
+            )?;
+        }
+        if let Some(culture) = &self.culture {
+            bounded(culture, 128, "Invalid culture scope.")?;
+        }
+        if let Some(cultures) = &self.cultures {
+            list(cultures, 256, 128, "Invalid culture scope.")?;
+        }
+        if let Some(findings) = &self.findings {
+            findings.validate()?;
+        }
+        let line = self.selection.kind == RowKind::Line;
+        let rows = |limit: u32| (1..=MAX_SECTION_ROWS).contains(&limit);
+        if let Some(places) = &self.places {
+            require(
+                rows(places.limit),
+                invalid("A section lists between 1 and 500 rows."),
+            )?;
+            require(
+                places.unit.is_some() == line && (!line || self.target.is_some()),
+                invalid("A line's places name its unit and need a target; a unit's name none."),
+            )?;
+            for id in places.unit.iter().chain(&places.after) {
+                bounded(id, 32767, "Place ID exceeds its bound.")?;
+            }
+        }
+        if self.detail.is_some() {
+            require(
+                self.target.is_some(),
+                invalid("A line's detail needs a target."),
+            )?;
+        }
+        if let Some(related) = &self.related {
+            require(
+                rows(related.limit) && (!line || self.target.is_some()),
+                invalid("Related rows of a line need a target, with 1 to 500 places."),
+            )?;
+        }
+        require(
+            self.line != Some(true) || line,
+            invalid("Only a line is read whole."),
+        )?;
+        Ok(())
+    }
+}
+
 /// A `query` request: the rows, and the parts of the answer about them.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(test, derive(TS))]
@@ -355,44 +514,6 @@ pub struct LocalizationDetailRequest {
     pub po_context_offset: Option<usize>,
     /// The findings layer whose rules the line lists, in its culture scope.
     pub findings: Option<FindingsSelection>,
-}
-
-pub fn parse_detail_request(payload: &str) -> Result<LocalizationDetailRequest> {
-    let value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(
-            ErrorCode::InvalidInput,
-            "Invalid localization detail JSON.",
-            source,
-        )
-    })?;
-    reject_nulls(&value)?;
-    let request: LocalizationDetailRequest = serde_json::from_value(value).map_err(|source| {
-        Error::with_source(
-            ErrorCode::InvalidInput,
-            "Invalid localization detail request.",
-            source,
-        )
-    })?;
-    require(
-        matches!(request.selection.kind.as_str(), "line" | "unit"),
-        invalid("Invalid localization selection kind."),
-    )?;
-    for value in [&request.target, &request.selection.id] {
-        require(
-            !value.is_empty() && characters(value) <= 32767,
-            invalid("Invalid localization selection identity."),
-        )?;
-    }
-    if let Some(culture) = &request.culture {
-        bounded(culture, 128, "Invalid culture scope.")?;
-    }
-    if let Some(cultures) = &request.cultures {
-        list(cultures, 256, 128, "Invalid culture scope.")?;
-    }
-    if let Some(findings) = &request.findings {
-        findings.validate()?;
-    }
-    Ok(request)
 }
 
 pub fn invalid(message: &str) -> Error {
@@ -586,23 +707,11 @@ impl Query {
     }
 }
 
-pub fn parse_focus_request(payload: &str) -> Result<FocusRequest> {
-    let value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid focus JSON.", source)
-    })?;
-    reject_nulls(&value)?;
-    let request: FocusRequest = serde_json::from_value(value).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid focus request.", source)
-    })?;
-    request.validate()?;
-    Ok(request)
-}
-
 impl FocusRequest {
     pub fn validate(&self) -> Result<()> {
         require(
-            (1..=MAX_PAGE).contains(&self.page_size),
-            invalid("Focus page size must be between 1 and 50."),
+            (1..=MAX_SECTION_ROWS as usize).contains(&self.page_size),
+            invalid("A section lists between 1 and 500 rows."),
         )?;
         bounded(&self.id, 32767, "Focus ID exceeds its bound.")?;
         if let Some(cursor) = &self.occurrence_cursor {
@@ -708,23 +817,40 @@ mod tests {
     }
 
     #[test]
-    fn detail_requests_reject_unknown_null_negative_and_invalid_selection_fields() -> Result<()> {
-        let valid =
-            r#"{"target":"Game","selection":{"kind":"line","id":"line:K"},"locationOffset":10000}"#;
-        assert_eq!(parse_detail_request(valid)?.location_offset, Some(10000));
-        for payload in [
-            r#"{"target":"Game","selection":{"kind":"sql","id":"K"}}"#,
-            r#"{"target":"Game","selection":{"kind":"unit","id":""}}"#,
-            r#"{"target":"Game","selection":{"kind":"unit","id":"K"},"cultureOffset":-1}"#,
-            r#"{"target":"Game","selection":{"kind":"line","id":"K"},"poContextOffset":null}"#,
-            r#"{"target":"Game","selection":{"kind":"line","id":"K"},"all":true}"#,
+    fn line_requests_name_the_sections_their_row_has() -> Result<()> {
+        let line = |value: serde_json::Value| -> Result<LineRequest> {
+            let request: LineRequest = parse_request(&value.to_string(), "line")?;
+            request.validate()?;
+            Ok(request)
+        };
+        for valid in [
+            json!({"selection":{"kind":"unit","id":"u"},"places":{"limit":500},"related":{"limit":1}}),
+            json!({"selection":{"kind":"line","id":"l"},"target":"Game","culture":"de",
+                "places":{"unit":"u","limit":5,"after":"p"},"detail":{"locationOffset":10000},"line":true}),
+            json!({"selection":{"kind":"unit","id":"u"},"target":"Game","detail":{}}),
+        ] {
+            line(valid)?;
+        }
+        for invalid in [
+            json!({"selection":{"kind":"sql","id":"K"}}),
+            json!({"selection":{"kind":"unit","id":""}}),
+            json!({"selection":{"kind":"unit","id":"u"},"places":{"limit":0}}),
+            json!({"selection":{"kind":"unit","id":"u"},"places":{"unit":"u","limit":1}}),
+            json!({"selection":{"kind":"line","id":"l"},"target":"Game","places":{"limit":1}}),
+            json!({"selection":{"kind":"line","id":"l"},"related":{"limit":1}}),
+            json!({"selection":{"kind":"unit","id":"u"},"detail":{}}),
+            json!({"selection":{"kind":"unit","id":"u"},"target":"Game","detail":{"cultureOffset":-1}}),
+            json!({"selection":{"kind":"unit","id":"u"},"line":true}),
+            json!({"selection":{"kind":"unit","id":"u"},"places":null}),
+            json!({"selection":{"kind":"unit","id":"u"},"all":true}),
         ] {
             assert_eq!(
-                parse_detail_request(payload)
+                line(invalid.clone())
                     .err()
-                    .ok_or("Expected invalid detail")?
+                    .ok_or(format!("{invalid}"))?
                     .code,
-                ErrorCode::InvalidInput
+                ErrorCode::InvalidInput,
+                "{invalid}"
             );
         }
         Ok(())

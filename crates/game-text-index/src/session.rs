@@ -194,9 +194,7 @@ impl Class {
             EngineRequest::Capabilities
             | EngineRequest::Close { .. }
             | EngineRequest::Summary { .. }
-            | EngineRequest::Focus { .. }
-            | EngineRequest::LocalizationDetail { .. }
-            | EngineRequest::Related { .. }
+            | EngineRequest::Line { .. }
             | EngineRequest::RulesCheck { .. } => Self::Interactive,
             // A query listing more than 500 rows reads like an export.
             EngineRequest::Query { request, .. } => {

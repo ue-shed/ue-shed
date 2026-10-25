@@ -7,17 +7,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 impl EngineQuery {
-    pub fn localization_focus_json(&self, payload: &str, cancelled: &AtomicBool) -> Result<String> {
-        let id = crate::json_value::parse(payload)?;
-        let id = id
-            .as_str()
-            .ok_or_else(|| crate::engine_types::invalid("A localization line ID is required."))?;
-        let result = match self.find_id("line", id)? {
-            Some(row) => self.localization_line(row, cancelled)?,
-            None => Value::Null,
-        };
-        crate::wtf8::view_json(&result)
-    }
     pub(crate) fn entry_text(&self, name: &str, field: &str, row: usize) -> Result<String> {
         let ids = self.reader.input_column(name, &format!("entry.{field}"))?;
         self.reader

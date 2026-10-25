@@ -1352,11 +1352,14 @@ fn related_lines_list_the_same_text_conflicting_sources_and_their_evidence() -> 
         .to_owned();
     let query = EngineQuery::open(&fixture.configuration, None)?;
     let cancelled = AtomicBool::new(false);
-    let related = |query: &EngineQuery, request: Value| {
-        query.related(
-            &crate::engine_related::parse_related_request(&request.to_string())?,
-            &cancelled,
-        )
+    // A related read is the `related` section of a `line` request.
+    let related = |query: &EngineQuery, mut request: Value| -> Result<Value> {
+        let limit = request
+            .as_object_mut()
+            .and_then(|request| request.remove("pageSize"))
+            .ok_or("Missing page size.")?;
+        request["related"] = json!({ "limit": limit });
+        Ok(query.line_answer(request, &cancelled)?["related"].take())
     };
     let ids = |section: &Value| -> Vec<Value> {
         section["members"]

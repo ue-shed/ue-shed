@@ -8,6 +8,7 @@ import { GameTextRuleDocument, decodeGameTextRuleDocument } from "./game-text-ru
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
 	type TextCorpus,
+	MAX_TEXT_QUERY_PAGE_SIZE,
 	TextCorpusSearchPage,
 	makeTextOccurrenceId,
 	makeTextUnitId
@@ -64,7 +65,7 @@ describe("writer counts", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(TextCorpusSearchPage)({
 				...page,
-				units: Array.from({ length: 51 }, () => page.units[0])
+				units: Array.from({ length: MAX_TEXT_QUERY_PAGE_SIZE + 1 }, () => page.units[0])
 			})
 		).toThrow();
 		expect(query.search({ query: "", capability: "all", pageSize: 1 }).counts).toEqual(

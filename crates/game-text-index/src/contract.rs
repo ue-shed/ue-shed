@@ -62,8 +62,9 @@ mod tests {
     use crate::batch::{BatchHeader, ColumnHeader, ColumnType, Missing, StringsHeader};
     use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile, Progress};
     use crate::engine_types::{
-        Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, OpenGroupAnswer, OpenGroupsPart,
-        Query, QueryAnswer, QueryParts, RowsPart, Selection, TextSearch,
+        DetailSection, Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, LineAnswer,
+        LineRequest, OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer,
+        QueryParts, RelatedSection, RowKind, RowSelection, RowsPart, Selection, TextSearch,
     };
     use crate::engine_where::Facet;
     use crate::rules::findings_query::{
@@ -170,6 +171,13 @@ mod tests {
             Facets::decl(&config),
             QueryAnswer::decl(&config),
             OpenGroupAnswer::decl(&config),
+            LineRequest::decl(&config),
+            RowSelection::decl(&config),
+            RowKind::decl(&config),
+            PlacesSection::decl(&config),
+            DetailSection::decl(&config),
+            RelatedSection::decl(&config),
+            LineAnswer::decl(&config),
             View::decl(&config),
             Order::decl(&config),
             Page::decl(&config),

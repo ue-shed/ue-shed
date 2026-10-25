@@ -40,3 +40,10 @@ in the rule IR's grammar, and the parts the answer needs. `GameTextContract.Quer
 `everyCulture`, `anyPlace` and `facet`, which the rule compiler refuses. A query's rows stream as
 `browseUnit` and `browseLine` batches. The `aggregate`, `export` and `localization_export`
 requests take a `selection` beside their own fields instead of the search fields.
+
+A `line` request reads a selected row's sections (its places, detail, related rows and the whole
+line) and replaces `focus`, `localization_detail`, `related` and `localization_focus_export`;
+`GameTextContract.LineRequest` and `LineAnswer` type it. The 50-row page cap is gone:
+`MAX_TEXT_QUERY_PAGE_SIZE` is 100,000, a page over 500 rows streams as a bulk read, and the CLI's
+`--limit` takes up to that. A unit's places, open groups' first rows and related rows list up to
+`MAX_TEXT_SECTION_ROWS` (500) at once, validated by `TextSectionRows`.

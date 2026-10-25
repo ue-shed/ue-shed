@@ -74,11 +74,6 @@ pub enum EngineRequest {
         #[cfg_attr(test, ts(type = "Query"))]
         request: Value,
     },
-    Focus {
-        reader: String,
-        #[cfg_attr(test, ts(type = "unknown"))]
-        request: Value,
-    },
     Corpus {
         reader: String,
     },
@@ -108,26 +103,16 @@ pub enum EngineRequest {
         #[cfg_attr(test, ts(type = "unknown"))]
         request: Value,
     },
-    LocalizationDetail {
+    /// A selected row and the sections of it a host shows (Phase 4 §6).
+    Line {
         reader: String,
-        #[cfg_attr(test, ts(type = "unknown"))]
-        request: Value,
-    },
-    /// A selection's related units and lines: same key, same text, conflict and key change.
-    Related {
-        reader: String,
-        #[cfg_attr(test, ts(type = "unknown"))]
+        #[cfg_attr(test, ts(type = "LineRequest"))]
         request: Value,
     },
     LocalizationExport {
         reader: String,
         #[cfg_attr(test, ts(type = "unknown"))]
         request: Value,
-    },
-    LocalizationFocusExport {
-        reader: String,
-        /// The line's identity.
-        line: String,
     },
     FindingsEvaluate {
         reader: String,
@@ -180,7 +165,6 @@ impl EngineRequest {
             Self::Close { reader }
             | Self::Summary { reader }
             | Self::Query { reader, .. }
-            | Self::Focus { reader, .. }
             | Self::Corpus { reader }
             | Self::CorpusHeader { reader }
             | Self::CorpusFingerprint { reader }
@@ -188,10 +172,8 @@ impl EngineRequest {
             | Self::Aggregate { reader, .. }
             | Self::LocalizationCorpus { reader }
             | Self::Export { reader, .. }
-            | Self::LocalizationDetail { reader, .. }
-            | Self::Related { reader, .. }
+            | Self::Line { reader, .. }
             | Self::LocalizationExport { reader, .. }
-            | Self::LocalizationFocusExport { reader, .. }
             | Self::FindingsEvaluate { reader, .. }
             | Self::FindingsAccept { reader, .. }
             | Self::FindingsQuery { reader, .. } => {
@@ -201,22 +183,14 @@ impl EngineRequest {
                 )?;
             }
         }
-        match self {
-            Self::FindingsEvaluate {
-                collation_locale, ..
-            } => {
-                require(
-                    !collation_locale.is_empty() && collation_locale.len() <= 128,
-                    invalid("Invalid findings collation locale."),
-                )?;
-            }
-            Self::LocalizationFocusExport { line, .. } => {
-                require(
-                    !line.is_empty() && crate::join_policy::characters(line) <= 32767,
-                    invalid("Invalid localization line identity."),
-                )?;
-            }
-            _ => {}
+        if let Self::FindingsEvaluate {
+            collation_locale, ..
+        } = self
+        {
+            require(
+                !collation_locale.is_empty() && collation_locale.len() <= 128,
+                invalid("Invalid findings collation locale."),
+            )?;
         }
         Ok(())
     }
@@ -471,7 +445,6 @@ impl EngineSession {
             }
             EngineRequest::Summary { reader }
             | EngineRequest::Query { reader, .. }
-            | EngineRequest::Focus { reader, .. }
             | EngineRequest::Corpus { reader }
             | EngineRequest::CorpusHeader { reader }
             | EngineRequest::CorpusFingerprint { reader }
@@ -479,10 +452,8 @@ impl EngineSession {
             | EngineRequest::Aggregate { reader, .. }
             | EngineRequest::LocalizationCorpus { reader }
             | EngineRequest::Export { reader, .. }
-            | EngineRequest::LocalizationDetail { reader, .. }
-            | EngineRequest::Related { reader, .. }
+            | EngineRequest::Line { reader, .. }
             | EngineRequest::LocalizationExport { reader, .. }
-            | EngineRequest::LocalizationFocusExport { reader, .. }
             | EngineRequest::FindingsEvaluate { reader, .. }
             | EngineRequest::FindingsAccept { reader, .. }
             | EngineRequest::FindingsQuery { reader, .. } => {
@@ -520,10 +491,6 @@ impl EngineSession {
                         query.query(&request, cancelled, reply)?;
                         ("query", None)
                     }
-                    EngineRequest::Related { request, .. } => (
-                        "related",
-                        Some(query.related_json(&text(request)?, cancelled)?),
-                    ),
                     EngineRequest::Corpus { .. } => {
                         query.send_corpus(&everything()?, true, None, cancelled, reply)?;
                         ("corpus", None)
@@ -556,13 +523,12 @@ impl EngineSession {
                         query.send_corpus(&request, false, units.as_deref(), cancelled, reply)?;
                         ("export", None)
                     }
-                    EngineRequest::Focus { request, .. } => {
-                        ("focus", Some(query.focus_json(&text(request)?, cancelled)?))
+                    EngineRequest::Line { request, .. } => {
+                        let request: crate::engine_types::LineRequest =
+                            crate::engine_types::parse_request(&text(request)?, "line")?;
+                        query.line(&request, cancelled, reply)?;
+                        ("line", None)
                     }
-                    EngineRequest::LocalizationDetail { request, .. } => (
-                        "localization_detail",
-                        Some(query.localization_detail_json(&text(request)?, cancelled)?),
-                    ),
                     EngineRequest::LocalizationExport { request, .. } => {
                         let (request, fields) =
                             crate::engine_rollup::parse_line_export(&text(request)?)?;
@@ -574,10 +540,6 @@ impl EngineSession {
                             reply,
                         )?;
                         ("localization_export", None)
-                    }
-                    EngineRequest::LocalizationFocusExport { line, .. } => {
-                        query.send_localization_line(line, cancelled, reply)?;
-                        ("localization_focus_export", None)
                     }
                     EngineRequest::LocalizationCorpus { .. } => {
                         query.send_localization_lines(
@@ -654,20 +616,29 @@ mod tests {
     }
 
     #[test]
-    fn retired_inline_localization_actions_are_rejected() -> Result<()> {
-        for action in ["localization_focus", "localization_page"] {
+    fn retired_row_reads_are_rejected_and_one_line_request_reads_a_row() -> Result<()> {
+        for action in [
+            "localization_focus",
+            "localization_page",
+            "localization_focus_export",
+            "localization_detail",
+            "focus",
+            "related",
+            "search",
+        ] {
             assert!(
                 serde_json::from_value::<EngineRequest>(json!({
-                    "action": action, "reader": "reader", "line": "line"
+                    "action": action, "reader": "reader", "line": "line", "request": {}
                 }))
-                .is_err()
+                .is_err(),
+                "{action}"
             );
         }
-        let export: EngineRequest = serde_json::from_value(json!({
-            "action": "localization_focus_export", "reader": "reader",
-            "line": "line"
+        let line: EngineRequest = serde_json::from_value(json!({
+            "action": "line", "reader": "reader",
+            "request": {"selection": {"kind": "line", "id": "line"}, "line": true}
         }))?;
-        export.validate()?;
+        line.validate()?;
         Ok(())
     }
 

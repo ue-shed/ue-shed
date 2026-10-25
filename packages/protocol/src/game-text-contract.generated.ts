@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "2f72d2e2b08aa267e796f08a818ee2738dd72c66060d289f1be69454cc9a04f3"
+	contractHash: "5ef8710955ee54782c72a310f475f767e9a5d06de6270abdeeae499e601b466d"
 } as const;
 
 /**
@@ -28,11 +28,7 @@ export type Finding = {
 	readonly [key: string]: JsonValue;
 };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "focus", reader: string, request: unknown, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "localization_detail", reader: string, request: unknown, } | { "action": "related", reader: string, request: unknown, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "localization_focus_export", reader: string, 
-/**
- * The line's identity.
- */
-line: string, } | { "action": "findings_evaluate", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
 /**
  * The v4 rule document.
  */
@@ -326,6 +322,48 @@ nextCursor?: string,
  * Past the row budget the group, and every one after it, lists none.
  */
 rowsOmitted?: boolean, };
+
+export type LineRequest = { selection: RowSelection, 
+/**
+ * The localization target whose lines and translations the sections read.
+ */
+target?: string, 
+/**
+ * The list's culture: the detail's problems read only it.
+ */
+culture?: string, 
+/**
+ * The list's culture scope.
+ */
+cultures?: ReadonlyArray<string>, 
+/**
+ * The findings layer whose rules the sections list.
+ */
+findings?: FindingsSelection, places?: PlacesSection, detail?: DetailSection, related?: RelatedSection, 
+/**
+ * The whole line, as a `lines` batch.
+ */
+line?: boolean, };
+
+export type RowSelection = { kind: RowKind, id: string, };
+
+export type RowKind = "line" | "unit";
+
+export type PlacesSection = { unit?: string, limit: number, 
+/**
+ * The ID of the place the previous page ended with.
+ */
+after?: string, };
+
+export type DetailSection = { cultureOffset?: number, locationOffset?: number, poContextOffset?: number, };
+
+export type RelatedSection = { 
+/**
+ * Places each unit member lists.
+ */
+limit: number, };
+
+export type LineAnswer = { places?: JsonValue, detail?: JsonValue, related?: JsonValue, };
 
 export type FindingsView = "workspace" | "report";
 

@@ -191,10 +191,10 @@ it.effect("loc status enforces bounded pages at the CLI boundary", () =>
 				setExitCode: (code) => Ref.set(exitCode, code)
 			})
 		);
-		yield* runCli(["loc", "status", "project", "--target", "Target", "--limit", "51"]).pipe(
+		yield* runCli(["loc", "status", "project", "--target", "Target", "--limit", "100001"]).pipe(
 			Effect.provide(runtime)
 		);
-		expect(yield* Ref.get(errors)).toContain("--limit must be between 1 and 50");
+		expect(yield* Ref.get(errors)).toContain("--limit must be between 1 and 100000");
 		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
 );

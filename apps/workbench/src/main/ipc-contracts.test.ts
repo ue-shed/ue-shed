@@ -945,7 +945,7 @@ const malformedArgsByChannel = {
 	"game-text:localization:focus": [
 		{ target: "FixtureGame", selection: { kind: "file", id: "C:/Untrusted" } }
 	],
-	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 51 }],
+	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 501 }],
 	"game-text:search": [{ query: "", capability: "all", pageSize: 50, withoutNotes: "yes" }],
 	"game-text:search-rows": [{ query: "", capability: "all", pageSize: 50, openGroups: ["a"] }],
 	"editor-session:set-port": [65_536],

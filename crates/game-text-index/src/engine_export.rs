@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, atomic::AtomicBool};
 
 /// A whole localization line's fields, in `LocalizationLine`'s order.
-const LINE_FIELDS: [&str; 9] = [
+pub(crate) const LINE_FIELDS: [&str; 9] = [
     "id",
     "origin",
     "identity",
@@ -68,19 +68,6 @@ fn push_child(
 
 impl EngineQuery {
     /// One localization line with its full provenance, or no rows when there is no such line.
-    pub fn send_localization_line(
-        &self,
-        id: &str,
-        cancelled: &AtomicBool,
-        reply: &mut dyn Reply,
-    ) -> Result<()> {
-        let mut lines = Batches::new(&LINE, "lines", LINE.select(&LINE_FIELDS)?);
-        if let Some(row) = self.find_id("line", id)? {
-            lines.push(&self.localization_line(row, cancelled)?)?;
-        }
-        lines.finish(reply)?;
-        Ok(())
-    }
     /// Localization lines: every line, or the request's matching lines with `fields`. A line's
     /// `places` field is the `places` part, sent before the lines that own them.
     pub fn send_localization_lines(

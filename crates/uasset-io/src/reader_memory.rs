@@ -3,6 +3,7 @@
 #[derive(Clone, Copy)]
 #[repr(usize)]
 pub(crate) enum Stage {
+    #[cfg_attr(not(feature = "reader-memory-probes"), allow(dead_code))]
     Read,
     Parse,
     Decode,

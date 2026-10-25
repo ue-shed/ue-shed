@@ -165,6 +165,8 @@ export interface LocalizationFileSnapshotKey {
 		readonly segments: number;
 		readonly stages?: Readonly<Record<string, number>>;
 	};
+	/** Per-file worker timings in milliseconds, when the file was parsed by a worker. */
+	readonly stages?: Readonly<Record<string, number>>;
 }
 function contained(root: string, path: string) {
 	const child = relative(root, path);
@@ -341,6 +343,8 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		decodeMs: 0,
 		parseMs: 0,
 		finishMs: 0,
+		prepareMs: 0,
+		writeMs: 0,
 		cachedLookupMs: 0
 	};
 	const hit =
@@ -486,12 +490,18 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 				const source = yield* io(file, () => builder.finish());
 				stages.finishMs += performance.now() - finishStarted;
 				if (stagedFile) {
-					if (prepareSource) yield* io(file, () => prepareSource(source));
+					if (prepareSource) {
+						const prepareStarted = performance.now();
+						yield* io(file, () => prepareSource(source));
+						stages.prepareMs += performance.now() - prepareStarted;
+					}
+					const writeStarted = performance.now();
 					const written = yield* io(file, () =>
 						writeSnapshotFile(stagedFile, source, 1, undefined, undefined, {
 							durable: false
 						})
 					);
+					stages.writeMs += performance.now() - writeStarted;
 					return { hash: content.hash, parsed: true, bytes: written.fileLength };
 				}
 				const bytes = yield* Effect.gen(function* () {
@@ -595,7 +605,8 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		lookupStrings,
 		reusedStrings,
 		probePasses,
-		profile
+		profile,
+		stages: { ...stages }
 	} satisfies LocalizationFileSnapshotKey;
 });
 

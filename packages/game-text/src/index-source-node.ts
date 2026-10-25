@@ -20,6 +20,7 @@ import type { PackageTextInventoryEntry } from "./package-text-layer.js";
 import { encodeWtf8 } from "./wtf8.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
+import { StageClock } from "./stage-clock.js";
 
 const FileStamp = Schema.Struct({ size: Schema.Number, modifiedMs: Schema.Number });
 const Signature = Schema.Array(Schema.NullOr(FileStamp));
@@ -182,6 +183,7 @@ export function gameTextIndexSourceNodeLayer(
 				request: GameTextIndexSourceRequest
 			) {
 				const reportProgress = yield* GameTextIndexProgressReporter;
+				const stages = new StageClock();
 				const project = { projectRoot: request.projectRoot };
 				if (options.refreshProjectIndex !== false)
 					yield* projectIndex.refresh(project).pipe(
@@ -197,7 +199,9 @@ export function gameTextIndexSourceNodeLayer(
 						),
 						Effect.mapError(mapError)
 					);
+				stages.mark("refresh");
 				const status = yield* projectIndex.status(project).pipe(Effect.mapError(mapError));
+				stages.mark("status");
 				if (status.status !== "ready" || status.summary.completeness !== "complete")
 					return yield* Effect.fail(
 						failure(
@@ -214,6 +218,11 @@ export function gameTextIndexSourceNodeLayer(
 						packageCount: status.summary.packageCount
 					})
 				);
+				stages.mark("pages");
+				yield* Effect.annotateCurrentSpan({
+					"inventory.packages": result.length,
+					...stages.attributes("inventory.stage_ms")
+				});
 				reportProgress({
 					phase: "inventory",
 					completed: result.length,

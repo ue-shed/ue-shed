@@ -257,11 +257,13 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 			}),
 		{ interruptible: true }
 	);
+	const prepareMs = performance.now() - prepareStarted;
 	yield* Effect.annotateCurrentSpan({
 		"package-text.cold.packages": total,
 		"package-text.cold.shards": selection.length,
 		"package-text.cold.workers": prepared.workerCount,
-		"package-text.cold.prepare_ms": Math.round(performance.now() - prepareStarted),
+		"package-text.cold.prepare_ms": Math.round(prepareMs),
+		"package-text.cold.stage_ms.prepare": Math.round(prepareMs * 1000) / 1000,
 		"package-text.cold.worker_busy_ms": Math.round(busyMs),
 		"package-text.cold.slowest_shard_ms": Math.round(slowestShardMs)
 	});
@@ -294,10 +296,11 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 					}
 				}))
 			]);
-	yield* Effect.annotateCurrentSpan(
-		"package-text.cold.publish_ms",
-		Math.round(performance.now() - publishStarted)
-	);
+	const publishMs = performance.now() - publishStarted;
+	yield* Effect.annotateCurrentSpan({
+		"package-text.cold.publish_ms": Math.round(publishMs),
+		"package-text.cold.stage_ms.publish": Math.round(publishMs * 1000) / 1000
+	});
 	return {
 		packages: input.inventory.length,
 		shards: records.length,

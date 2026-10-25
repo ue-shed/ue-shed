@@ -115,6 +115,103 @@ fn grow(size: usize) {
     let live = LIVE.fetch_add(size, Ordering::Relaxed) + size;
     PEAK.fetch_max(live, Ordering::Relaxed);
 }
+
+thread_local! {
+    static THREAD_HEAP: std::cell::Cell<(i64, i64)> = const { std::cell::Cell::new((0, 0)) };
+    static THREAD_SLOT: std::cell::Cell<usize> = const { std::cell::Cell::new(usize::MAX) };
+}
+
+#[repr(align(64))]
+struct HeapSlot(std::sync::atomic::AtomicI64);
+const HEAP_SLOTS: usize = 4096;
+static SLOTS: [HeapSlot; HEAP_SLOTS] =
+    [const { HeapSlot(std::sync::atomic::AtomicI64::new(0)) }; HEAP_SLOTS];
+static NEXT_SLOT: AtomicUsize = AtomicUsize::new(0);
+static OVERFLOW_BALANCE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+fn thread_heap_change(change: i64) {
+    let _ = THREAD_HEAP.try_with(|counter| {
+        let (balance, peak) = counter.get();
+        let balance = balance.saturating_add(change);
+        counter.set((balance, peak.max(balance)));
+        let _ = THREAD_SLOT.try_with(|slot| {
+            let mut index = slot.get();
+            if index == usize::MAX {
+                index = NEXT_SLOT.fetch_add(1, Ordering::Relaxed);
+                slot.set(index);
+            }
+            if let Some(slot) = SLOTS.get(index) {
+                slot.0.store(balance, Ordering::Relaxed);
+            } else {
+                OVERFLOW_BALANCE.fetch_add(change, Ordering::Relaxed);
+            }
+        });
+    });
+}
+
+/// Sum of the per-thread requested-byte balances. Threads keep their slots after exit so an
+/// allocation freed on another thread is still counted correctly. Sampling is not a global lock.
+pub fn thread_heap_live() -> Option<u64> {
+    let count = NEXT_SLOT.load(Ordering::Relaxed);
+    (count > 0).then(|| {
+        SLOTS[..count.min(HEAP_SLOTS)]
+            .iter()
+            .map(|slot| slot.0.load(Ordering::Relaxed))
+            .fold(
+                OVERFLOW_BALANCE.load(Ordering::Relaxed),
+                i64::saturating_add,
+            )
+            .max(0) as u64
+    })
+}
+
+/// This thread's allocation balance and peak since the last call. Cross-thread frees can make
+/// the balance negative; subtract an interval's starting balance to measure its net ownership.
+pub fn thread_heap_window() -> (i64, i64) {
+    THREAD_HEAP.with(|counter| {
+        let (balance, peak) = counter.get();
+        counter.set((balance, balance));
+        (balance, peak)
+    })
+}
+
+/// System allocation with counters on separate per-thread cache lines, for opt-in attribution.
+/// Pointers and layouts are unchanged, including when another thread frees an allocation.
+pub struct ThreadCountingAllocator;
+
+// SAFETY: every operation delegates the caller's unchanged pointer/layout to System;
+// the extra counters only read and update a constant-initialized thread-local Cell.
+unsafe impl GlobalAlloc for ThreadCountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the caller supplies a valid allocation layout.
+        let pointer = unsafe { System.alloc(layout) };
+        if !pointer.is_null() {
+            thread_heap_change(layout.size() as i64);
+        }
+        pointer
+    }
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: the caller supplies a valid allocation layout.
+        let pointer = unsafe { System.alloc_zeroed(layout) };
+        if !pointer.is_null() {
+            thread_heap_change(layout.size() as i64);
+        }
+        pointer
+    }
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: the caller owns this allocation with this exact layout.
+        unsafe { System.dealloc(pointer, layout) };
+        thread_heap_change(-(layout.size() as i64));
+    }
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        // SAFETY: the caller owns this allocation and supplies the requested valid size.
+        let moved = unsafe { System.realloc(pointer, layout, size) };
+        if !moved.is_null() {
+            thread_heap_change(size as i64 - layout.size() as i64);
+        }
+        moved
+    }
+}
 /// Live heap bytes, without starting a new peak interval. `None` unless counting is installed.
 pub fn heap_live() -> Option<u64> {
     INSTALLED
@@ -299,5 +396,51 @@ mod cpu_tests {
         assert!(after.total_ns >= before.total_ns);
         assert!(super::process_cpu_ns().unwrap() >= process_before);
         assert!(!after.threads.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod heap_interval_tests {
+    use super::{ThreadCountingAllocator, thread_heap_window};
+    use std::alloc::{GlobalAlloc, Layout};
+
+    #[test]
+    fn thread_intervals_track_reallocation_and_reset_the_peak() {
+        let baseline = thread_heap_window().0;
+        let layout = Layout::from_size_align(64, 8).unwrap();
+        // SAFETY: each successful allocation is used with its original valid layout, then freed.
+        unsafe {
+            let pointer = ThreadCountingAllocator.alloc_zeroed(layout);
+            assert!(!pointer.is_null());
+            assert!((0..64).all(|i| *pointer.add(i) == 0));
+            let pointer = ThreadCountingAllocator.realloc(pointer, layout, 192);
+            assert!(!pointer.is_null());
+            let (balance, peak) = thread_heap_window();
+            assert_eq!(balance - baseline, 192);
+            assert_eq!(peak - baseline, 192);
+            ThreadCountingAllocator.dealloc(pointer, Layout::from_size_align(192, 8).unwrap());
+            let (balance, peak) = thread_heap_window();
+            assert_eq!(balance, baseline);
+            assert_eq!(peak - baseline, 192);
+            assert_eq!(thread_heap_window(), (baseline, baseline));
+        }
+    }
+
+    #[test]
+    fn thread_intervals_allow_ownership_to_be_freed_on_another_thread() {
+        let layout = Layout::from_size_align(80, 8).unwrap();
+        // SAFETY: layout is valid and the successful allocation is transferred exactly once.
+        let pointer = unsafe { ThreadCountingAllocator.alloc(layout) };
+        assert!(!pointer.is_null());
+        let address = pointer as usize;
+        std::thread::spawn(move || {
+            let baseline = thread_heap_window().0;
+            // SAFETY: this thread exclusively owns the allocation and its original layout.
+            unsafe { ThreadCountingAllocator.dealloc(address as *mut u8, layout) };
+            let (balance, _) = thread_heap_window();
+            assert_eq!(balance - baseline, -80);
+        })
+        .join()
+        .unwrap();
     }
 }

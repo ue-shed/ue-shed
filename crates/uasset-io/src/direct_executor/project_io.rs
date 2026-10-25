@@ -46,6 +46,7 @@ use crate::protocol_result::{
     SavedWorldPackageError, SavedWorldSourceKind, SavedWorldSummary, ScanSummaryDepth,
     TextGapCounts,
 };
+use crate::reader_memory::{self, Stage as MemoryStage};
 
 const SCHEMA_VERSION: u8 = 8;
 const SCAN_CACHE_VERSION: u32 = 3;
@@ -615,6 +616,7 @@ fn projection(
         }
     };
     checkpoint(cancellation, "discovery")?;
+    let memory_probe = reader_memory::Probe::new(staging.is_some());
     let worker_count = request
         .limits
         .concurrency
@@ -635,6 +637,25 @@ fn projection(
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
     let filters = projection_filters(kind, selection.paths.is_none());
+    memory_probe.configure(&paths, || {
+        let path_storage = |paths: &[PathBuf]| paths.iter().map(|p| p.capacity()).sum::<usize>();
+        [
+            selection.paths.as_ref().map_or(0, |paths| {
+                (paths.capacity() * std::mem::size_of::<String>()
+                    + paths.iter().map(String::capacity).sum::<usize>()) as u64
+            }),
+            (roots.capacity() * std::mem::size_of::<PathBuf>() + path_storage(&roots)) as u64,
+            (paths.capacity() * std::mem::size_of::<PathBuf>() + path_storage(&paths)) as u64,
+            staging_groups.as_ref().map_or(0, |groups| {
+                (groups.groups.capacity() * std::mem::size_of::<(PathBuf, u32)>()
+                    + groups
+                        .groups
+                        .iter()
+                        .map(|(p, _)| p.capacity())
+                        .sum::<usize>()) as u64
+            }),
+        ]
+    });
     if let Some(emit) = &mut emit {
         emit(ProjectionStreamEvent::Progress {
             completed: 0,
@@ -652,16 +673,33 @@ fn projection(
     // Staged records name their own group, so their results need no path order.
     let ordered = stager.is_none();
     let work = |index: usize| {
+        let memory_job = memory_probe.job(index);
         let result = project_one_path(&paths[index], kind, &filters, cancellation)?;
-        match &staging_groups {
+        reader_memory::checkpoint(MemoryStage::Serialize);
+        let delivery = match &staging_groups {
             Some(groups) => groups.prepare(&paths[index], result),
             None => Ok(ProjectionDelivery {
                 result,
                 staged: Vec::new(),
             }),
+        };
+        if let Ok(delivery) = &delivery {
+            memory_job.ready(|| {
+                delivery
+                    .staged
+                    .iter()
+                    .fold((0, 0), |(bytes, capacity), record| {
+                        (
+                            bytes + record.line.len() as u64,
+                            capacity + record.line.capacity() as u64,
+                        )
+                    })
+            });
         }
+        delivery
     };
-    let mut consume = |_: usize, delivery: Result<ProjectionDelivery, Failure>| {
+    let mut consume = |index: usize, delivery: Result<ProjectionDelivery, Failure>| {
+        let _memory_consume = memory_probe.consume(index);
         let _span = game_text_index::scan_timings::Span::new("extract.consume");
         let ProjectionDelivery { result, staged } = delivery?;
         checkpoint(cancellation, "inspection")?;
@@ -902,6 +940,11 @@ impl PackageTextStager {
         };
         file.write_all(&record.line)
             .map_err(|error| staging_failure(format!("could not write a staging file: {error}")))?;
+        reader_memory::writers(
+            self.files
+                .values()
+                .map(|file| (file.buffer().len(), file.capacity())),
+        );
         Ok(())
     }
 
@@ -912,6 +955,7 @@ impl PackageTextStager {
                 staging_failure(format!("could not write a staging file: {error}"))
             })?;
         }
+        reader_memory::writers(std::iter::empty());
         Ok(())
     }
 }
@@ -972,6 +1016,7 @@ fn project_paths_bounded<T: Send>(
         let result = (|| {
             let mut scheduled = 0;
             for index in 0..window.min(path_count) {
+                reader_memory::scheduled(index);
                 jobs.send(index).map_err(|_| workers_stopped())?;
                 scheduled += 1;
             }
@@ -980,6 +1025,7 @@ fn project_paths_bounded<T: Send>(
                     checkpoint(cancellation, "inspection")?;
                     let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
                     if scheduled < path_count {
+                        reader_memory::scheduled(scheduled);
                         jobs.send(scheduled).map_err(|_| workers_stopped())?;
                         scheduled += 1;
                     }
@@ -995,6 +1041,7 @@ fn project_paths_bounded<T: Send>(
                 pending.insert(index, result);
                 while let Some(result) = pending.remove(&next) {
                     if scheduled < path_count {
+                        reader_memory::scheduled(scheduled);
                         jobs.send(scheduled).map_err(|_| workers_stopped())?;
                         scheduled += 1;
                     }
@@ -1085,6 +1132,8 @@ fn project_one_path(
         }
     };
     drop(read_span);
+    let _memory_read = reader_memory::read_buffer(bytes.capacity());
+    reader_memory::checkpoint(MemoryStage::Parse);
     measured_package.bytes = bytes.len() as u64;
     game_text_index::scan_timings::count("extract.packages", 1);
     game_text_index::scan_timings::count("extract.read_bytes", bytes.len() as u64);
@@ -1109,6 +1158,7 @@ fn project_one_path(
         }
     };
     drop(parse_span);
+    reader_memory::checkpoint(MemoryStage::Decode);
     if game_text_index::scan_timings::enabled() {
         let class = owning_asset_class(&package, &path_string);
         measured_package.kind = match class.as_deref().and_then(|s| s.rsplit('.').next()) {
@@ -1120,7 +1170,9 @@ fn project_one_path(
             _ => "Other",
         };
     }
-    project_parsed_package(kind, path_string, &bytes, &package, cancellation)
+    let result = project_parsed_package(kind, path_string, &bytes, &package, cancellation);
+    reader_memory::checkpoint(MemoryStage::Release);
+    result
 }
 
 fn project_parsed_package(
@@ -1179,6 +1231,7 @@ fn project_parsed_package(
             let _span = game_text_index::scan_timings::Span::new("extract.decode");
             decode_export(export, &context)
         };
+        reader_memory::checkpoint(MemoryStage::Project);
         match decoded {
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text | ProjectionKind::TextPackages => {
@@ -1228,7 +1281,9 @@ fn project_parsed_package(
                 diagnostics.push(projection_diagnostic(export, error.kind(), error.message()))
             }
         }
+        reader_memory::checkpoint(MemoryStage::Decode);
     }
+    reader_memory::checkpoint(MemoryStage::Project);
     checkpoint(cancellation, "inspection")?;
     reconcile_blueprint_text(&mut text_projection.occurrences);
     if matches!(kind, ProjectionKind::TextPackages) {

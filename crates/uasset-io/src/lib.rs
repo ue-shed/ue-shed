@@ -9,6 +9,7 @@ mod legacy;
 pub mod protocol;
 mod protocol_adapter;
 pub mod protocol_result;
+mod reader_memory;
 
 #[cfg(test)]
 use uasset_parser::{archive, package, version};

@@ -9,6 +9,59 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 
 it.live(
+	"interrupting prepare finalizes both branches before releasing the writer session",
+	() =>
+		Effect.gen(function* () {
+			const fixture = yield* makeIndexRegressionFixture();
+			const readEntered = yield* Deferred.make<void>();
+			const importEntered = yield* Deferred.make<void>();
+			const events: string[] = [];
+			fixture.pauseReads(
+				Effect.gen(function* () {
+					yield* Deferred.succeed(readEntered, undefined);
+					yield* Effect.never;
+				}).pipe(Effect.ensuring(Effect.sync(() => events.push("read-finalized"))))
+			);
+			const underlying = yield* GameTextIndexBuilder.pipe(
+				Effect.provide(typeScriptIndexBuilderLayer)
+			);
+			const queries = yield* GameTextIndexQuery.pipe(
+				Effect.provide(typeScriptIndexBuilderLayer)
+			);
+			const implementation = Layer.succeed(
+				GameTextIndexBuilder,
+				GameTextIndexBuilder.of({
+					...underlying,
+					withSession: (request, effect) =>
+						underlying
+							.withSession(request, effect)
+							.pipe(
+								Effect.ensuring(Effect.sync(() => events.push("session-released")))
+							),
+					importLocalizationTarget: (input) =>
+						Effect.gen(function* () {
+							yield* Deferred.succeed(importEntered, undefined);
+							yield* Effect.never;
+							return yield* underlying.importLocalizationTarget(input);
+						}).pipe(Effect.ensuring(Effect.sync(() => events.push("import-finalized"))))
+				})
+			).pipe(Layer.merge(Layer.succeed(GameTextIndexQuery, queries)));
+			yield* Effect.gen(function* () {
+				const steps = yield* GameTextIndexSteps;
+				const running = yield* steps.prepareTarget(fixture.request).pipe(Effect.forkChild);
+				yield* Deferred.await(readEntered);
+				yield* Deferred.await(importEntered);
+				yield* Fiber.interrupt(running).pipe(Effect.timeout("1 second"));
+				expect(events).toContain("read-finalized");
+				expect(events).toContain("import-finalized");
+				expect(events.at(-1)).toBe("session-released");
+				expect(Exit.isFailure(yield* Fiber.await(running))).toBe(true);
+			}).pipe(Effect.provide(fixture.layer(fixture.source, implementation)));
+		}).pipe(Effect.scoped),
+	10_000
+);
+
+it.live(
 	"a localization failure interrupts a concurrent package read with the same error",
 	() =>
 		Effect.gen(function* () {

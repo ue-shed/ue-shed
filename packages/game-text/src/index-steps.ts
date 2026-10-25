@@ -737,14 +737,15 @@ export const makeGameTextIndexSteps = (
 							// layers into the one leased writer; native commands stay
 							// serialized by the writer's own lane. The package branch
 							// publishes only after the gate opens, with both reads done.
+							// Branch finalizers finish in this scope before the writer lease closes.
 							const share = coldHalfBudget(process.availableMemory());
 							const gate = yield* Deferred.make<void>();
-							const importedFiber = yield* Effect.forkChild(
+							const importedFiber = yield* Effect.forkScoped(
 								Effect.result(
 									importTarget(selected, input, { memoryBudgetBytes: share })
 								)
 							);
-							const projectFiber = yield* Effect.forkChild(
+							const projectFiber = yield* Effect.forkScoped(
 								refreshProject(input, {
 									memoryBudgetBytes: share,
 									publishGate: Deferred.await(gate)
@@ -764,7 +765,7 @@ export const makeGameTextIndexSteps = (
 							const project = yield* Fiber.join(projectFiber);
 							const target = yield* buildTarget(project, imported.success, input);
 							return { kind: "prepared" as const, target };
-						}),
+						}).pipe(Effect.scoped),
 						input.changedFiles
 					);
 				});

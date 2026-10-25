@@ -51,10 +51,16 @@ interface RepetitionResult {
 	interruptMs: number;
 	idleMs: number;
 	childrenRemaining: number;
+	childObservations: readonly ChildObservation[];
 	secondRefreshOk: boolean;
 	secondRefreshMs: number;
 	interruptError?: string;
 	secondError?: string;
+}
+
+interface ChildObservation {
+	elapsedMs: number;
+	children: readonly { pid: number; role: string; cpuMs: number }[];
 }
 
 const { GameTextIndexBuilderLive, gameTextIndexRefreshLayer, gameTextIndexSourceNodeLayer } =
@@ -64,21 +70,23 @@ const { LocalizationEvidence, LocalizationEvidenceNodeLive } = currentLocalizati
 const { GameTextIndexRefresh } = await import("../packages/game-text/dist/index-refresh.js");
 const { GameTextIndexProgressReporter } = currentIndex;
 
-async function nativeChildren(): Promise<number> {
+async function nativeChildren(): Promise<ChildObservation["children"]> {
 	const script =
 		"$ErrorActionPreference='Stop'; $all = @(Get-CimInstance Win32_Process); " +
 		`$owned = [System.Collections.Generic.HashSet[uint32]]::new(); [void]$owned.Add(${process.pid}); ` +
 		"do { $added = $false; foreach ($item in $all) { if ($owned.Contains($item.ParentProcessId) -and $owned.Add($item.ProcessId)) { $added = $true } } } while ($added); " +
-		"$count = 0; foreach ($item in $all) { if ($owned.Contains($item.ProcessId) -and $item.ProcessId -ne " +
-		`${process.pid} -and $item.Name -notin @('powershell.exe', 'pwsh.exe', 'conhost.exe', 'cmd.exe')) { $count++ } }; ` +
-		"$count | ConvertTo-Json -Compress";
+		"$children = @(foreach ($item in $all) { if ($owned.Contains($item.ProcessId) -and $item.ProcessId -ne " +
+		`${process.pid} -and $item.Name -notin @('powershell.exe', 'pwsh.exe', 'conhost.exe', 'cmd.exe')) { ` +
+		"$role = if ($item.CommandLine -like '*protocol-session*') { 'native-session' } elseif ($item.CommandLine -like '*protocol*') { 'native-oneshot' } elseif ($item.Name -eq 'esbuild.exe') { 'loader' } else { 'other' }; " +
+		"[pscustomobject]@{ pid=[int]$item.ProcessId; role=$role; cpuMs=([double]$item.KernelModeTime+[double]$item.UserModeTime)/10000 } } }); " +
+		"ConvertTo-Json -InputObject $children -Compress";
 	const { stdout } = await run(
 		"powershell.exe",
 		["-NoProfile", "-NonInteractive", "-Command", script],
 		{ windowsHide: true, timeout: 10000 }
 	);
 	// SAFETY: the sampler above builds this exact shape with ConvertTo-Json.
-	return JSON.parse(stdout) as number;
+	return JSON.parse(stdout) as ChildObservation["children"];
 }
 
 async function buildContext(cache: string, scope: Scope.Scope) {
@@ -128,8 +136,20 @@ async function repetition(rep: number, targetName: string) {
 		// Sampler shells are excluded; an idle engine still counts as a live child.
 		const idleStarted = performance.now();
 		let childrenRemaining = -1;
+		const childObservations: ChildObservation[] = [];
 		for (;;) {
-			childrenRemaining = await nativeChildren();
+			const children = await nativeChildren();
+			childrenRemaining = children.length;
+			const elapsedMs = Math.round(performance.now() - idleStarted);
+			if (
+				!childObservations.length ||
+				(childObservations.length === 1 && elapsedMs >= 3000) ||
+				childrenRemaining === 0
+			) {
+				const observation = { elapsedMs, children };
+				childObservations.push(observation);
+				process.stdout.write(`${JSON.stringify({ phase: targetPhase, ...observation })}\n`);
+			}
 			if (childrenRemaining === 0) {
 				idleMs = performance.now() - idleStarted;
 				break;
@@ -162,6 +182,7 @@ async function repetition(rep: number, targetName: string) {
 			interruptMs: Math.round(interruptMs),
 			idleMs: Math.round(idleMs),
 			childrenRemaining,
+			childObservations,
 			secondRefreshOk: secondOk,
 			secondRefreshMs: Math.round(performance.now() - secondStarted)
 		};

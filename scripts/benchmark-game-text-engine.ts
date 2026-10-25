@@ -71,7 +71,11 @@ const longStages = new Set([
 	"build",
 	"quality",
 	"quality-default",
-	"quality-in-process"
+	"quality-in-process",
+	// Each takes many samples itself, or is one long operation whose spread is small.
+	"engine-load",
+	"loc-check",
+	"lines-export"
 ]);
 const mix = decodeEngineRequestMix(JSON.parse(await readFile(values.mix, "utf8")));
 if (values.worker) {
@@ -116,6 +120,9 @@ if (values.worker) {
 		"quality-in-process",
 		"overhead",
 		"overhead:small",
+		"engine-load",
+		"loc-check",
+		"lines-export",
 		...mix.hosts.map((host) => `typing:${host.name}:${host.openGroups}`),
 		"selection:workbench",
 		"selection:electroswag",

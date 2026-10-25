@@ -1,0 +1,23 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 19
+		}
+	},
+	"limits": {
+		"concurrency": 4,
+		"maximumInFlightPackageBytes": 0
+	},
+	"operation": {
+		"kind": "extract_text_packages",
+		"paths": ["Content/UI/DT_Menu.uasset", "Content/UI/ST_Common.uasset"],
+		"projectRoot": "C:/Fixture",
+		"staging": {
+			"directory": "C:/Fixture/Saved/Staging",
+			"groups": [0, 3]
+		}
+	},
+	"requestId": "package-text-staged"
+}

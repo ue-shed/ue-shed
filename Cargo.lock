@@ -868,6 +868,7 @@ dependencies = [
  "atomic-write-file",
  "crc32fast",
  "game-text-index",
+ "process-metrics",
  "rusqlite",
  "serde",
  "serde_json",

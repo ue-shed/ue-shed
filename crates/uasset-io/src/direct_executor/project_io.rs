@@ -46,6 +46,12 @@ use crate::protocol_result::{
     SavedWorldPackageError, SavedWorldSourceKind, SavedWorldSummary, ScanSummaryDepth,
     TextGapCounts,
 };
+use crate::reader_memory::{self, Stage as MemoryStage};
+
+mod projection_budget;
+use projection_budget::JobQueue;
+
+const DEFAULT_IN_FLIGHT_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
 
 const SCHEMA_VERSION: u8 = 8;
 const SCAN_CACHE_VERSION: u32 = 3;
@@ -576,8 +582,8 @@ pub(crate) fn extract_texture_with_cancellation(
 }
 
 /// Projection reads parse whole packages; one large package can take a worker for most of a
-/// read, so the default uses the machine's cores, bounded so each worker's package and decoded
-/// model stay within a predictable memory budget. Requests can still set `limits.concurrency`.
+/// read, so the default uses the machine's cores, with separate input-byte admission. Requests
+/// can set both the worker count and the active package-byte budget.
 fn default_projection_workers() -> usize {
     // Twelve workers are the fastest count measured whose reader peak stays under 5 GiB on the
     // released project.
@@ -615,6 +621,7 @@ fn projection(
         }
     };
     checkpoint(cancellation, "discovery")?;
+    let memory_probe = reader_memory::Probe::new(staging.is_some());
     let worker_count = request
         .limits
         .concurrency
@@ -635,6 +642,25 @@ fn projection(
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
     let filters = projection_filters(kind, selection.paths.is_none());
+    memory_probe.configure(&paths, || {
+        let path_storage = |paths: &[PathBuf]| paths.iter().map(|p| p.capacity()).sum::<usize>();
+        [
+            selection.paths.as_ref().map_or(0, |paths| {
+                (paths.capacity() * std::mem::size_of::<String>()
+                    + paths.iter().map(String::capacity).sum::<usize>()) as u64
+            }),
+            (roots.capacity() * std::mem::size_of::<PathBuf>() + path_storage(&roots)) as u64,
+            (paths.capacity() * std::mem::size_of::<PathBuf>() + path_storage(&paths)) as u64,
+            staging_groups.as_ref().map_or(0, |groups| {
+                (groups.groups.capacity() * std::mem::size_of::<(PathBuf, u32)>()
+                    + groups
+                        .groups
+                        .iter()
+                        .map(|(p, _)| p.capacity())
+                        .sum::<usize>()) as u64
+            }),
+        ]
+    });
     if let Some(emit) = &mut emit {
         emit(ProjectionStreamEvent::Progress {
             completed: 0,
@@ -648,20 +674,36 @@ fn projection(
     let mut partial_assets = 0_u64;
     let mut skipped_assets = 0_u64;
     let mut completed_assets = 0_u64;
-    let streaming = emit.is_some();
     // Staged records name their own group, so their results need no path order.
     let ordered = stager.is_none();
     let work = |index: usize| {
+        let memory_job = memory_probe.job(index);
         let result = project_one_path(&paths[index], kind, &filters, cancellation)?;
-        match &staging_groups {
+        reader_memory::checkpoint(MemoryStage::Serialize);
+        let delivery = match &staging_groups {
             Some(groups) => groups.prepare(&paths[index], result),
             None => Ok(ProjectionDelivery {
                 result,
                 staged: Vec::new(),
             }),
+        };
+        if let Ok(delivery) = &delivery {
+            memory_job.ready(|| {
+                delivery
+                    .staged
+                    .iter()
+                    .fold((0, 0), |(bytes, capacity), record| {
+                        (
+                            bytes + record.line.len() as u64,
+                            capacity + record.line.capacity() as u64,
+                        )
+                    })
+            });
         }
+        delivery
     };
-    let mut consume = |_: usize, delivery: Result<ProjectionDelivery, Failure>| {
+    let mut consume = |index: usize, delivery: Result<ProjectionDelivery, Failure>| {
+        let _memory_consume = memory_probe.consume(index);
         let _span = game_text_index::scan_timings::Span::new("extract.consume");
         let ProjectionDelivery { result, staged } = delivery?;
         checkpoint(cancellation, "inspection")?;
@@ -701,54 +743,35 @@ fn projection(
         }
         Ok(())
     };
-    if streaming {
-        project_paths_bounded(
-            paths.len(),
-            worker_count,
-            cancellation,
-            ordered,
-            &work,
-            &mut consume,
-        )?;
-    } else {
-        let next_path = AtomicUsize::new(0);
-        let slots = Mutex::new(
-            (0..paths.len())
-                .map(|_| None::<Result<ProjectionDelivery, Failure>>)
-                .collect::<Vec<_>>(),
-        );
-        std::thread::scope(|scope| {
-            for _ in 0..worker_count.min(paths.len().max(1)) {
-                let next_path = &next_path;
-                let slots = &slots;
-                let work = &work;
-                let paths = &paths;
-                scope.spawn(move || {
-                    loop {
-                        if checkpoint(cancellation, "discovery").is_err() {
-                            break;
-                        }
-                        let index = next_path.fetch_add(1, Ordering::Relaxed);
-                        if index >= paths.len() {
-                            break;
-                        }
-                        let result = work(index);
-                        slots.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
-                    }
-                });
-            }
-        });
-        for (index, result) in slots
-            .into_inner()
-            .unwrap_or_else(PoisonError::into_inner)
-            .into_iter()
-            .enumerate()
-        {
-            if let Some(result) = result {
-                consume(index, result)?;
-            }
-        }
-    }
+    let package_sizes = {
+        let _span = game_text_index::scan_timings::Span::new("extract.budget_inventory");
+        paths
+            .iter()
+            .map(|path| {
+                checkpoint(cancellation, "discovery")?;
+                // Unknown sizes reserve the largest size and keep the worker's read diagnostic.
+                Ok(fs::metadata(path).map_or_else(
+                    |_| {
+                        game_text_index::scan_timings::count("extract.budget_unknown_sizes", 1);
+                        u64::MAX
+                    },
+                    |metadata| metadata.len(),
+                ))
+            })
+            .collect::<Result<Vec<_>, Failure>>()?
+    };
+    project_paths_bounded(
+        &package_sizes,
+        worker_count,
+        request
+            .limits
+            .maximum_in_flight_package_bytes
+            .unwrap_or(DEFAULT_IN_FLIGHT_PACKAGE_BYTES),
+        cancellation,
+        ordered,
+        &work,
+        &mut consume,
+    )?;
     if let Some(stager) = stager {
         stager.finish()?;
     }
@@ -902,6 +925,11 @@ impl PackageTextStager {
         };
         file.write_all(&record.line)
             .map_err(|error| staging_failure(format!("could not write a staging file: {error}")))?;
+        reader_memory::writers(
+            self.files
+                .values()
+                .map(|file| (file.buffer().len(), file.capacity())),
+        );
         Ok(())
     }
 
@@ -912,6 +940,7 @@ impl PackageTextStager {
                 staging_failure(format!("could not write a staging file: {error}"))
             })?;
         }
+        reader_memory::writers(std::iter::empty());
         Ok(())
     }
 }
@@ -932,35 +961,33 @@ fn staging_failure(message: String) -> Failure {
 /// only when the next result leaves the reorder buffer, so one slow package cannot grow it;
 /// unordered delivery consumes each completion, so a slow package delays only its own result.
 fn project_paths_bounded<T: Send>(
-    path_count: usize,
+    package_sizes: &[u64],
     worker_count: usize,
+    maximum_bytes: u64,
     cancellation: &CancellationToken,
     ordered: bool,
     work: &(impl Fn(usize) -> Result<T, Failure> + Sync),
     consume: &mut dyn FnMut(usize, Result<T, Failure>) -> Result<(), Failure>,
 ) -> Result<(), Failure> {
+    let path_count = package_sizes.len();
     let worker_count = worker_count.min(path_count.max(1));
     let window = worker_count * 2;
-    let (jobs, receive_job) = mpsc::sync_channel::<usize>(window);
-    let receive_job = Mutex::new(receive_job);
+    let jobs = JobQueue::new(package_sizes, maximum_bytes, window);
     let (finished, receive_result) = mpsc::sync_channel(window);
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
-            let receive_job = &receive_job;
+            let jobs = &jobs;
             let finished = finished.clone();
             scope.spawn(move || {
                 let _span = game_text_index::scan_timings::Span::new("extract.worker");
                 loop {
-                    let wait = game_text_index::scan_timings::Span::new("extract.job_wait");
-                    let Ok(index) = receive_job
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .recv()
-                    else {
-                        break;
+                    let admitted = match jobs.take(cancellation) {
+                        Ok(Some(admitted)) => admitted,
+                        Ok(None) | Err(_) => break,
                     };
-                    drop(wait);
+                    let index = admitted.index;
                     let result = checkpoint(cancellation, "inspection").and_then(|()| work(index));
+                    drop(admitted);
                     let _send = game_text_index::scan_timings::Span::new("extract.send_wait");
                     if finished.send((index, result)).is_err() {
                         break;
@@ -972,15 +999,17 @@ fn project_paths_bounded<T: Send>(
         let result = (|| {
             let mut scheduled = 0;
             for index in 0..window.min(path_count) {
-                jobs.send(index).map_err(|_| workers_stopped())?;
+                reader_memory::scheduled(index);
+                jobs.push(index);
                 scheduled += 1;
             }
             if !ordered {
                 for _ in 0..path_count {
                     checkpoint(cancellation, "inspection")?;
-                    let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
+                    let (index, result) = receive_projection_result(&receive_result, cancellation)?;
                     if scheduled < path_count {
-                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
+                        reader_memory::scheduled(scheduled);
+                        jobs.push(scheduled);
                         scheduled += 1;
                     }
                     consume(index, result)?;
@@ -991,11 +1020,12 @@ fn project_paths_bounded<T: Send>(
             let mut next = 0;
             while next < path_count {
                 checkpoint(cancellation, "inspection")?;
-                let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
+                let (index, result) = receive_projection_result(&receive_result, cancellation)?;
                 pending.insert(index, result);
                 while let Some(result) = pending.remove(&next) {
                     if scheduled < path_count {
-                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
+                        reader_memory::scheduled(scheduled);
+                        jobs.push(scheduled);
                         scheduled += 1;
                     }
                     consume(next, result)?;
@@ -1004,12 +1034,28 @@ fn project_paths_bounded<T: Send>(
             }
             Ok(())
         })();
-        // Dropping both channels releases waiting workers before the scoped joins, including
-        // cancellation, consumer failures and a broken stdout pipe.
-        drop(jobs);
+        // Closing admission and result delivery releases waiting workers before scoped joins.
+        jobs.close();
         drop(receive_result);
         result
     })
+}
+
+fn receive_projection_result<T>(
+    receiver: &mpsc::Receiver<T>,
+    cancellation: &CancellationToken,
+) -> Result<T, Failure> {
+    loop {
+        checkpoint(cancellation, "inspection")?;
+        match receiver.recv_timeout(std::time::Duration::from_millis(20)) {
+            Ok(result) => return Ok(result),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                checkpoint(cancellation, "inspection")?;
+                return Err(workers_stopped());
+            }
+        }
+    }
 }
 
 fn project_one_path(
@@ -1085,6 +1131,8 @@ fn project_one_path(
         }
     };
     drop(read_span);
+    let _memory_read = reader_memory::read_buffer(bytes.capacity());
+    reader_memory::checkpoint(MemoryStage::Parse);
     measured_package.bytes = bytes.len() as u64;
     game_text_index::scan_timings::count("extract.packages", 1);
     game_text_index::scan_timings::count("extract.read_bytes", bytes.len() as u64);
@@ -1109,6 +1157,7 @@ fn project_one_path(
         }
     };
     drop(parse_span);
+    reader_memory::checkpoint(MemoryStage::Decode);
     if game_text_index::scan_timings::enabled() {
         let class = owning_asset_class(&package, &path_string);
         measured_package.kind = match class.as_deref().and_then(|s| s.rsplit('.').next()) {
@@ -1120,7 +1169,9 @@ fn project_one_path(
             _ => "Other",
         };
     }
-    project_parsed_package(kind, path_string, &bytes, &package, cancellation)
+    let result = project_parsed_package(kind, path_string, &bytes, &package, cancellation);
+    reader_memory::checkpoint(MemoryStage::Release);
+    result
 }
 
 fn project_parsed_package(
@@ -1179,6 +1230,7 @@ fn project_parsed_package(
             let _span = game_text_index::scan_timings::Span::new("extract.decode");
             decode_export(export, &context)
         };
+        reader_memory::checkpoint(MemoryStage::Project);
         match decoded {
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text | ProjectionKind::TextPackages => {
@@ -1228,7 +1280,9 @@ fn project_parsed_package(
                 diagnostics.push(projection_diagnostic(export, error.kind(), error.message()))
             }
         }
+        reader_memory::checkpoint(MemoryStage::Decode);
     }
+    reader_memory::checkpoint(MemoryStage::Project);
     checkpoint(cancellation, "inspection")?;
     reconcile_blueprint_text(&mut text_projection.occurrences);
     if matches!(kind, ProjectionKind::TextPackages) {
@@ -2637,8 +2691,9 @@ mod tests {
             let cancellation = CancellationToken::new();
             let mut consumed = Vec::new();
             super::project_paths_bounded(
-                3,
+                &[1, 1, 1],
                 1,
+                256,
                 &cancellation,
                 ordered,
                 &|index| {
@@ -2668,6 +2723,41 @@ mod tests {
             .unwrap();
             assert_eq!(consumed, [0, 1, 2]);
         }
+    }
+
+    #[test]
+    fn projection_cancels_while_workers_wait_for_input_byte_credits() {
+        let cancellation = CancellationToken::new();
+        let (started, receive) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let cancellation = &cancellation;
+            let task = scope.spawn(move || {
+                super::project_paths_bounded(
+                    &[100; 8],
+                    4,
+                    100,
+                    cancellation,
+                    false,
+                    &|index| {
+                        assert_eq!(index, 0, "only the first package fits");
+                        started.send(()).unwrap();
+                        while !cancellation.is_cancelled() {
+                            std::thread::yield_now();
+                        }
+                        super::checkpoint(cancellation, "inspection")?;
+                        Ok(())
+                    },
+                    &mut |_, result| result,
+                )
+            });
+            receive
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            let start = std::time::Instant::now();
+            cancellation.cancel();
+            assert_eq!(task.join().unwrap().unwrap_err().code, "cancelled");
+            assert!(start.elapsed() < std::time::Duration::from_millis(250));
+        });
     }
 
     #[test]

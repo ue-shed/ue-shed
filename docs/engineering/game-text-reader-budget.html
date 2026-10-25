@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+	<meta charset="utf-8" /><meta
+		name="viewport"
+		content="width=device-width,initial-scale=1"
+	/><title>Reader input-byte budget measurements</title
+	><style>
+		body {
+			margin: 0;
+			background: transparent;
+			color: var(--foreground, #222);
+			font: 14px/1.5 var(--font-sans, system-ui);
+		}
+		h2 {
+			font-size: 16px;
+			font-weight: 600;
+			margin: 12px 0 6px;
+		}
+		p {
+			margin: 6px 0 12px;
+			color: var(--muted-foreground, #777);
+		}
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			font-variant-numeric: tabular-nums;
+		}
+		th,
+		td {
+			padding: 7px 0;
+			text-align: right;
+			border-bottom: 1px solid var(--border, #ddd);
+		}
+		th {
+			font-weight: 500;
+			color: var(--muted-foreground, #777);
+		}
+		th:first-child,
+		td:first-child {
+			text-align: left;
+		}
+		small {
+			display: block;
+			color: var(--muted-foreground, #777);
+			margin: 8px 0;
+		}
+		.scroll {
+			overflow-x: auto;
+		}
+		@media (max-width: 520px) {
+			table {
+				font-size: 12px;
+				min-width: 510px;
+			}
+			.wait table {
+				min-width: 340px;
+			}
+		}
+	</style>
+	<h2>Released project: measured reader extraction</h2>
+	<p>12 workers. One run per budget, ordinary allocator, no localization alongside extraction.</p>
+	<div class="scroll">
+		<table>
+			<thead>
+				<tr>
+					<th>Input budget</th>
+					<th>Wall</th>
+					<th>CPU</th>
+					<th>Cores</th>
+					<th>Working set</th>
+					<th>Private</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td>256 MiB</td>
+					<td>22.975 s</td>
+					<td>217.891 s</td>
+					<td>9.484</td>
+					<td>3.103 GiB</td>
+					<td>3.144 GiB</td>
+				</tr>
+				<tr>
+					<td>192 MiB</td>
+					<td>22.858 s</td>
+					<td>215.953 s</td>
+					<td>9.447</td>
+					<td>2.681 GiB</td>
+					<td>2.713 GiB</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+	<small
+		>Native operation wall and process CPU; Windows process-lifetime memory high waters. Fresh
+		staging, OS filesystem cache retained. Input credits stayed within both budgets, and both
+		reached 12 active workers.</small
+	>
+	<h2>Budget overhead and waiting</h2>
+	<div class="scroll wait">
+		<table>
+			<thead>
+				<tr>
+					<th>Budget</th>
+					<th>Size inventory</th>
+					<th>Budget waiting</th>
+					<th>Admission, excl. waits</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td>256 MiB</td>
+					<td>0.433 s</td>
+					<td>7.449 worker-s</td>
+					<td>28.2 ms</td>
+				</tr>
+				<tr>
+					<td>192 MiB</td>
+					<td>0.436 s</td>
+					<td>14.239 worker-s</td>
+					<td>40.9 ms</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+	<small
+		>Waiting and admission are sums across workers; they overlap and are not added to elapsed
+		wall.</small
+	>
+	<p>
+		Default: 256 MiB. The final default remains the lead's decision after the combined
+		localization/extraction measurement against the 6 GiB tree gate.
+	</p>
+</html>

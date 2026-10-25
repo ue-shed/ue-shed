@@ -473,79 +473,96 @@ fn build_inner(
     let mut records = BTreeMap::new();
     let mut active = BTreeMap::new();
     let mut layer_bytes = 0;
-    for (i, (layer, range)) in layers.iter().zip(&ranges).enumerate() {
-        let mut reader = Reader::open(&layer.file)?;
-        let file = if configuration.is_some() {
-            format!("layer-{generation}-{i:08x}.snapshot")
-        } else {
-            format!("layer-{i:08x}.snapshot")
-        };
-        let mut writer = Writer::new(&staging.join(format!("layer-{i}.payload")))?;
-        let mut order = Vec::new();
-        let mut columns = BTreeMap::new();
-        for id in 0..reader.entries.len() {
-            let e = reader.entries[id].clone();
-            if e.kind == 4 || e.name.ends_with(".starts") || e.name == "input.hash" {
-                continue;
-            }
-            let mut data = reader.load(id)?;
-            if e.kind == 3 {
-                let _span = crate::scan_timings::Span::new("dictionary.remap_columns");
-                let r = &range[&e.domain];
-                let mut previous = 0u32;
-                let mut remapped = Vec::new();
-                for local in integers(&data)? {
-                    require((local as usize) < r.count, "local ID outside domain")?;
-                    let global = mapping[r.base + local as usize];
-                    let delta = global.wrapping_sub(previous) as i32;
-                    remapped.push(((delta << 1) ^ (delta >> 31)) as u32);
-                    previous = global;
+    // Dictionary IDs are final. Each layer owns its reader, payload and output filename; root
+    // records are folded in input order after every encoder has finished.
+    let encoded = layers
+        .par_iter()
+        .zip(&ranges)
+        .enumerate()
+        .map(|(i, (layer, range))| {
+            let _span = crate::scan_timings::Span::new("dictionary.encode_layer_parallel");
+            let mut reader = Reader::open(&layer.file)?;
+            let file = if configuration.is_some() {
+                format!("layer-{generation}-{i:08x}.snapshot")
+            } else {
+                format!("layer-{i:08x}.snapshot")
+            };
+            let mut writer = Writer::new(&staging.join(format!("layer-{i}.payload")))?;
+            let mut order = Vec::new();
+            let mut columns = BTreeMap::new();
+            for id in 0..reader.entries.len() {
+                let e = reader.entries[id].clone();
+                if e.kind == 4 || e.name.ends_with(".starts") || e.name == "input.hash" {
+                    continue;
                 }
-                data = u32_bytes(&remapped);
-                columns.insert(e.name.clone(), e.domain.clone());
-            }
-            order.push(writer.add(&e.name, if e.kind == 3 { 2 } else { e.kind }, "", &data, 1)?);
-        }
-        if reader.entries.iter().any(|entry| entry.name == "file.meta") {
-            for (domain, local) in range {
-                let field = format!("reuse.{domain}");
-                columns.insert(field.clone(), domain.clone());
+                let mut data = reader.load(id)?;
+                if e.kind == 3 {
+                    let _span = crate::scan_timings::Span::new("dictionary.remap_columns");
+                    let r = &range[&e.domain];
+                    let mut previous = 0u32;
+                    let mut remapped = Vec::new();
+                    for local in integers(&data)? {
+                        require((local as usize) < r.count, "local ID outside domain")?;
+                        let global = mapping[r.base + local as usize];
+                        let delta = global.wrapping_sub(previous) as i32;
+                        remapped.push(((delta << 1) ^ (delta >> 31)) as u32);
+                        previous = global;
+                    }
+                    data = u32_bytes(&remapped);
+                    columns.insert(e.name.clone(), e.domain.clone());
+                }
                 order.push(writer.add(
-                    &field,
-                    2,
+                    &e.name,
+                    if e.kind == 3 { 2 } else { e.kind },
                     "",
-                    &crate::store::encode_ids(&mapping[local.base..local.base + local.count]),
+                    &data,
                     1,
                 )?);
             }
-            let blocks = reuse_blocks(&mut reader)?;
-            order.push(writer.add("reuse.meta", 0, "", &serde_json::to_vec(&blocks)?, 1)?);
-        }
-        let key = if let Some((_, keys)) = configuration {
-            keys.get(&layer.name).ok_or("missing layer key")?.clone()
-        } else if let Some(id) = reader.entries.iter().position(|e| e.name == "input.hash") {
-            format!(
-                "native-cold-v1:{}:{}",
-                layer.name,
-                String::from_utf8(reader.load(id)?)?
-            )
-        } else {
-            format!("native-cold:{i}")
-        };
-        let mut record = LayerRecord {
-            file: file.clone(),
-            key: key.clone(),
-            store_generation: generation.into(),
-            segment_count: segments.len(),
-            bytes: 0,
-            string_columns: columns,
-            id_encoding: "delta32".into(),
-        };
-        order.push(writer.add("shared.meta", 0, "", &serde_json::to_vec(&record)?, 1)?);
-        record.bytes = writer.finish(&output.join(file), &order)?;
+            if reader.entries.iter().any(|entry| entry.name == "file.meta") {
+                for (domain, local) in range {
+                    let field = format!("reuse.{domain}");
+                    columns.insert(field.clone(), domain.clone());
+                    order.push(writer.add(
+                        &field,
+                        2,
+                        "",
+                        &crate::store::encode_ids(&mapping[local.base..local.base + local.count]),
+                        1,
+                    )?);
+                }
+                let blocks = reuse_blocks(&mut reader)?;
+                order.push(writer.add("reuse.meta", 0, "", &serde_json::to_vec(&blocks)?, 1)?);
+            }
+            let key = if let Some((_, keys)) = configuration {
+                keys.get(&layer.name).ok_or("missing layer key")?.clone()
+            } else if let Some(id) = reader.entries.iter().position(|e| e.name == "input.hash") {
+                format!(
+                    "native-cold-v1:{}:{}",
+                    layer.name,
+                    String::from_utf8(reader.load(id)?)?
+                )
+            } else {
+                format!("native-cold:{i}")
+            };
+            let mut record = LayerRecord {
+                file: file.clone(),
+                key: key.clone(),
+                store_generation: generation.into(),
+                segment_count: segments.len(),
+                bytes: 0,
+                string_columns: columns,
+                id_encoding: "delta32".into(),
+            };
+            order.push(writer.add("shared.meta", 0, "", &serde_json::to_vec(&record)?, 1)?);
+            record.bytes = writer.finish(&output.join(file), &order)?;
+            Ok::<_, crate::Error>((layer.name.clone(), key, record))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for (name, key, record) in encoded {
         layer_bytes += record.bytes;
         records.insert(key.clone(), record);
-        active.insert(layer.name.clone(), key);
+        active.insert(name, key);
     }
     let root = json!({"version":2,"generation":generation,"active":active,"layers":records,"segments":segments,"garbageUpperBytes":0});
     let mut w = Writer::new(&staging.join("root.payload"))?;
@@ -619,19 +636,35 @@ mod tests {
             order.push(column);
         }
         w.finish(&raw, &order).unwrap();
-        let input = vec![LayerInput {
-            name: "probe".into(),
-            file: raw,
-        }];
-        let small = build(&input, &root.join("small"), 1024 * 1024).unwrap();
-        let large = build(&input, &root.join("large"), 64 * 1024 * 1024).unwrap();
+        let input = (0..4)
+            .map(|i| LayerInput {
+                name: format!("probe-{i}"),
+                file: raw.clone(),
+            })
+            .collect::<Vec<_>>();
+        let small = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| build(&input, &root.join("small"), 1024 * 1024))
+            .unwrap();
+        let large = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap()
+            .install(|| build(&input, &root.join("large"), 64 * 1024 * 1024))
+            .unwrap();
         assert!(small["runs"].as_u64().unwrap() > 1);
         assert_eq!(small["strings"], 10000);
         assert_eq!(small["strings"], large["strings"]);
         for file in [
             "strings-00000000.snapshot",
             "layer-00000000.snapshot",
+            "layer-00000001.snapshot",
+            "layer-00000002.snapshot",
+            "layer-00000003.snapshot",
             "snapshot-00000000.snapshot",
+            "index.json",
         ] {
             assert_eq!(
                 fs::read(root.join("small").join(file)).unwrap(),

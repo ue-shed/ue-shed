@@ -684,3 +684,328 @@ index manifest byte for byte with fixed filenames and generation, across two sor
 The default native join test retains its eight seeds and zero-key case. No full suite, Unreal
 engine launch, export remeasurement, cancellation remeasurement or final three-run campaign was
 performed; those are outside this writer implementation's assigned verification. No STOP condition was observed in the assigned measurements and checks.
+
+## Reader implementation: staged byte identity STOP
+
+Resolved by specification commit `ea021798` (cherry-picked here as `f85d59a4`): staging
+compares sorted record lines per group, while package snapshots retain the byte gate with
+explicitly identified publication-metadata exclusions. The evidence below records the original
+ordering conflict.
+
+Investigated 2026-10-26 on `perf/p45-reader`, unchanged base
+`ea6b5cb024efe7960c6393d1959100826e066a9e`. No product code was changed. Decision 3's
+requirement to preserve the base reader's exact order within every staging file cannot be
+satisfied by retaining the current completion-order scheduler: the base itself does not
+produce repeatable staging bytes for an identical request.
+
+### Reproduction and evidence
+
+Built the unchanged base with `cargo build --locked --release -p uasset-io`, holding the
+shared heavy-job lock, with `CARGO_BUILD_JOBS=8` and `RAYON_NUM_THREADS=16`. Copied the result
+to `E:\ue-shed-engine-scratch\uasset-p45-base-native.exe`; its SHA-256 is
+`65841e228d02d07eac4011eaf38d6522fcba5ed1b75da946e8f102797fb414cd`.
+
+Ran this binary's `protocol` command twice sequentially under the same lock, with the exact
+same JSON request bytes: protocol v1.19, operation `extract_text_packages`, concurrency 8,
+all 47 sorted explicit package paths from
+`E:/ue-shed-fixture-scratch/p1-canonical-ue57-facts/Content`, and staging group 0 for every
+path. After each request, renamed the staging directory so the next request could recreate
+it at the identical path. The request SHA-256 is
+`7eeb4901eaee2026368e1092a07e67c6f0e51af56cba0306c90639c3ab61130a`.
+
+Both requests exited successfully and produced 158,577 bytes / 47 NDJSON lines:
+
+- First file SHA-256: `c8eefc510b7128cb9b02ca44199e6f17aec07a2ca79e47e19fb7f602b985bbcd`.
+- Second file SHA-256: `ae0b5096ac7fc726cb12c04e8689e4dd8ad8ba389b1c097ebb72409d3f09f2c0`.
+- `cmp target/p45-reader/staging-1/0.ndjson target/p45-reader/staging-2/0.ndjson`
+  returned 1: `differ: byte 44, line 1`.
+- Sorting the complete record lines in memory yielded exactly equal arrays; no record
+  contents differed. This diagnoses the ordering issue; it does not pass the byte gate.
+- No timestamps, random filenames, or other bytes were excluded from this comparison.
+
+The request, reproduction scripts, and both original staging files remain in the ignored
+`target/p45-reader/` directory of this worktree. Neither benchmark project was accessed.
+
+### Code cause and required decision
+
+In `crates/uasset-io/src/direct_executor/project_io.rs:637`, staging sets `ordered` to false.
+The unordered branch receives the next completed worker result at line 948, consumes and
+stages it at line 949 (through line 647), and only then refills the window at line 951.
+Consequently, group-file line order follows worker completion order. The existing staging
+test explicitly acknowledges completion order at line 2662 and sorts both line collections
+at lines 2679-2680 before asserting equality.
+
+Moving serialization to workers and refilling before writing changes completion timing;
+there is no stable base order for the implementation to reproduce. Introducing an ordered
+staging contract, or allowing order-insensitive staging comparison while retaining strict
+snapshot byte comparison, needs a specification decision. Neither alternative was implemented.
+
+Stopped before optimization, worker-count selection, or performance measurements. No
+before/after speed or snapshot-parity claim is made. Benchmark-project and UE 5.8 corpus
+comparisons, snapshot comparisons, the worker sweep, and cancellation measurements were not
+run because the exact-staging-order requirement already fails on the unchanged base.
+
+### Verification of this report
+
+- The unchanged release build and both canonical extraction requests succeeded.
+- `pnpm -s run typecheck` passed using Node 26.12.0.
+- `pnpm -s run check:static` failed at `format:check` on the pre-existing formatting of
+  `crates/process-metrics/Cargo.toml`; that file has no diff on this branch. Later checks in
+  that command did not run. The edited report passes its targeted formatter check.
+- No crates were edited, so no Rust unit-test or clippy run was needed for this report.
+  No vitest run, full suite, Unreal Editor, Perforce write, push, PR, or merge was performed.
+
+## Reader implementation: coordinator scheduling and initial sweep
+
+Implemented in `c58fe204` on `perf/p45-reader`, following the revised staging gate imported as
+`f85d59a4`. Workers resolve their staging group, serialize the unchanged event plus newline,
+apply the existing record-size bound, and replace the large event with its small staged-result
+frame before delivery. The coordinator appends finished bytes and emits that frame. Both
+ordered and completion-order delivery refill their bounded window before consuming a result.
+The `extract.serialize` probe reports worker preparation separately from coordinator
+`extract.staging`. Regression tests cover refill before consumption and exact-root precedence
+in group lookup; existing staging, cancellation, ordering and consumer-failure tests still pass.
+
+The sweep stopped at 16 workers: the sampled process tree reached **6.214 GiB**, exceeding the
+specification's 6 GiB STOP threshold. The memory guard killed the complete harness process tree,
+verified its ownership of the shared lock before removing it, and left no reader processes.
+The reader itself reached **5.095 GiB**, also exceeding the 5 GiB eligibility limit. Default
+selection was initially paused at eight workers. A subsequent owner decision classified
+sixteen workers as ineligible, approved twelve as the fastest eligible count, and deferred
+the combined-branch whole-tree gate to final measurements. Completion is recorded below.
+
+### Measurements and method
+
+One cold build per completed condition, Node 26.12.0, `CARGO_BUILD_JOBS=8`,
+`RAYON_NUM_THREADS=16`, stage recorder and `UE_SHED_COLD_SCAN_MEASURE_DIR` enabled. Every build
+and heavy check was sequential under the shared lock. The unchanged base was built first from
+`ea6b5cb0`; the executable hashes and anonymous numeric results are in
+[reader measurements](game-text-scan-reader-measurements.json). No OS filesystem cache flush
+was performed. One sample per condition describes these runs rather than a timing distribution.
+
+Runs used `scripts/benchmark-game-text-engine.ts --stages build --runs 1`, fresh external
+outputs under `E:/ue-shed-engine-scratch/p45-reader-*`, and the same source inputs. Benchmark
+project selection stayed in memory from the supplied environment file. The 1× project replayed
+`phase4/records-1x`. A measurement-only Node preload set the existing protocol
+`limits.concurrency` to 8, 12 or 16 for package extraction; other requests were unchanged.
+The preload retained temporary package staging files with hard links at cleanup. It did not
+change product code or snapshot contents. Reproduction, comparison and sampling scripts remain
+in this worktree's ignored `target/p45-reader/` directory.
+
+An external sampler classified process command lines in memory and retained only PID, parent
+PID, role and working set, requesting a sample every 250 ms without overlapping enumerations.
+Enumeration latency makes recorded peaks lower bounds. The whole-tree peak below is the
+sampler's peak, which was higher than the harness's coarser measurement. Reader peak is the
+largest one-shot native process working set; extraction dominates the released-project runs.
+The 16-worker run was terminated at the first sampled whole-tree value over 6 GiB; its full
+extraction wall, CPU and stage totals are unavailable.
+
+The harness on this branch still pays a cold project-index refresh. The separate host benchmark
+change from specification decision 1 was not part of this reader change. Inventory numbers
+therefore include that refresh and should not be read as Workbench inventory cost.
+
+All durations below are seconds. Worker wait and serialization are summed thread time, while
+extraction is elapsed request wall / process CPU. Coordinator staging no longer includes JSON
+serialization. Windows CPU counters are quantized, so the 8-worker append CPU of 0.000 means
+below the measured resolution.
+
+| Reader condition    | Extraction wall |     CPU | Average cores | Worker wait | Coordinator staging wall / CPU | Worker serialization wall / CPU | Reader peak, GiB | Tree peak, GiB |
+| ------------------- | --------------: | ------: | ------------: | ----------: | -----------------------------: | ------------------------------: | ---------------: | -------------: |
+| Base, 8 workers     |          39.191 | 214.125 |         5.464 |      88.061 |                22.357 / 21.156 |             Included in staging |            3.390 |          4.348 |
+| Changed, 8 workers  |          31.718 | 218.469 |         6.888 |       0.911 |                  0.480 / 0.000 |                 24.697 / 22.844 |            3.683 |          4.889 |
+| Changed, 12 workers |          26.087 | 231.688 |         8.881 |       1.243 |                  0.498 / 0.031 |                 26.509 / 22.516 |            4.875 |          5.984 |
+| Changed, 16 workers |         Stopped |       — |             — |           — |                              — |                               — |            5.095 |          6.214 |
+
+The separate serialization probe recorded work on eight and twelve worker threads, respectively.
+At the unchanged count of eight, extraction wall fell 19.1%, worker wait fell from 88.061 to
+0.911 thread-seconds, and coordinator staging fell from 22.357 to 0.480 seconds. Total CPU
+rose from 214.125 to 218.469 seconds; the result is improved scheduling, not reduced decoder work.
+
+Host stages corresponding to specification §1, in seconds:
+
+| Stage                     | Released base | Released changed, 8 | Released changed, 12 |       1× base |
+| ------------------------- | ------------: | ------------------: | -------------------: | ------------: |
+| Package inventory         |         9.443 |               9.455 |                9.242 |             — |
+| Localization parse        |        15.080 |              15.031 |               15.057 |        12.672 |
+| Localization publish      |        14.160 |              14.064 |               13.880 |        10.169 |
+| Package read / extraction |        39.382 |              31.925 |               26.281 | 10.369 replay |
+| Bundle verification       |         6.076 |               5.964 |                5.955 |             — |
+| Package prepare           |         5.150 |               5.367 |                5.173 |         4.007 |
+| Package publish           |         9.040 |               9.988 |                8.624 |        13.868 |
+| Join                      |        17.930 |              17.534 |               16.903 |        17.510 |
+| Open and first page       |         1.936 |               1.950 |                1.954 |         2.063 |
+| Whole measured build      |       119.317 |             112.405 |              104.164 |        72.355 |
+
+Open/first-page time is the sum of the non-overlapping open-target, native-search and
+native-search-rows spans. The stage table omits small selection, metadata publication and
+coordination costs; its rows do not sum exactly to the whole build. Changes outside extraction
+are single-run variation, not optimizations to those stages. No changed 1× build was run after
+the STOP.
+
+### Parity and explicit exclusions
+
+Before changing the reader, two fresh-cache cold builds of the UE 5.7 canonical corpus used the
+unchanged base executable. All 44 package layers had identical stored data-section bytes and
+identical deterministic section metadata; all 15 shared dictionary segments were whole-file
+byte-identical under `cmp` after matching them by segment position.
+
+Physical published layer files contain generated metadata. In the unchanged store,
+`crates/game-text-index/src/store.rs:15-24` builds tokens from time, PID and sequence;
+`store.rs:615-617` writes the generated self-filename and store generation into `shared.meta`.
+Consequently, none of the 44 whole layer containers was byte-identical between those baseline
+builds. The comparison excluded exactly `shared.meta.file` and `shared.meta.storeGeneration`,
+including their encoded metadata bytes/checksums, while comparing every stored package-data
+section, its codec/count/checksum/domain metadata, section order and every other shared metadata
+field. Root snapshots and manifests carry those generated file references and generation tokens
+and were excluded from whole-file equality. This is a data-byte and deterministic-metadata
+parity result with explicit publication-metadata exclusions.
+
+Both completed changed-reader runs on the released project passed the same comparison against
+the base: **256 package layers**, no data-section or deterministic-metadata differences, and
+**22 whole-file-identical dictionary segments**. Their retained staging files matched all
+**15,612 complete record lines in each corresponding group across 256 groups**, after sorting
+lines per file. No records, fields, or bytes within a record line were normalized or omitted.
+The staging order remains completion order, as required by the revised specification.
+
+Detailed `cmp` reports list every differing physical layer filename and its logical package
+layer in `E:/ue-shed-engine-scratch/p45-reader-parity-base-c57.json`,
+`p45-reader-parity-sweep-8.json` and `p45-reader-parity-sweep-12.json`. All listed differences
+were confined to the generated publication metadata above. The original caches, staged files,
+host spans and native probe records remain under their `p45-reader-*` output directories.
+
+Baseline cold builds of both canonical corpora and the 1× project completed. The STOP occurred
+before changed-reader canonical snapshot builds, the changed 1× build, finalized default
+selection or cancellation measurement. No joined/localization snapshot or export parity claim
+is made here. Those outstanding comparisons and the final multi-run measurement remain undone.
+
+### Verification after the memory STOP
+
+Passed: the locked release build; `cargo test --locked -p uasset-io` (129 passed, one ignored
+crash-writer helper); `cargo clippy --locked -p uasset-io --all-targets -- -D warnings`;
+`cargo fmt --all -- --check`; UAsset architecture ownership; `pnpm -s run typecheck`; and
+30 targeted Vitest tests in `scripts/package-text-reader.test.ts` and
+`packages/game-text/src/package-text-cold.test.ts`, with `UE_SHED_UASSET_EXECUTABLE` set to the
+freshly built implementation reader. Four lightweight native fixture requests additionally
+compared base/head sorted staged lines on both canonical corpora: 47 records in one group on
+each, exactly equal. These were record checks, not additional cold-build measurements.
+
+`pnpm -s run check:static` ran once after the specification cherry-pick and failed at
+`format:check`. It listed the unchanged `crates/process-metrics/Cargo.toml` and table alignment
+in this report. The report formatting was corrected and verified afterward. A direct rerun
+of the failing formatting command still reports the pre-existing Cargo manifest issue; later
+commands in `check:static` did not run. The Cargo manifest has no diff on this branch.
+
+The initial memory STOP left default selection and the remaining before/after snapshot builds
+incomplete at this point. The subsequent owner-authorized completion is recorded below. No
+cancellation experiment was run. Nothing was pushed, merged or opened as a PR; no Unreal
+Editor, Perforce write or network service ran.
+
+Exact output of the final direct formatting check:
+
+```text
+$ oxfmt --check .
+Checking formatting...
+
+crates/process-metrics/Cargo.toml (0ms)
+
+Format issues found in above 1 files. Run without `--check` to fix.
+Finished in 2769ms on 2465 files using 32 threads.
+[ELIFECYCLE] Command failed with exit code 1.
+```
+
+## Reader implementation: selected default and completed parity
+
+The owner decision treats sixteen workers as ineligible because its reader exceeded 5 GiB;
+that run's whole-tree limit does not block this reader change. Twelve is the fastest eligible
+count from the 8/12/16 sweep, and eight is outside 5% of its wall time. Commit `2f57f214` raises
+the existing machine-derived default's upper bound to **12** and adds the requested one-sentence
+measurement comment. Explicit `limits.concurrency` remains supported. The combined localization
+and extraction whole-tree gate belongs to the owner's final measurements.
+
+Rebuilt with `cargo build --locked --release -p uasset-io` under the shared lock, then ran one
+fresh-cache cold build of the released project with the rebuilt reader and **no protocol
+concurrency override**. The native probes recorded twelve extraction workers and twelve
+serialization threads. The new executable's SHA-256 is
+`996d5ed0adf1f82c9186e1d959c8b7ffcb1b22cd9597a3825d43094701ee3e56`.
+The previous eight-worker implementation binary is retained as
+`E:/ue-shed-engine-scratch/uasset-p45-reader-8.exe`. The unchanged base executable and caches
+were reused; they were not rebuilt or overwritten.
+
+Same harness, recorder, sampler and caps as above: Node 26.12.0, `CARGO_BUILD_JOBS=8`,
+`RAYON_NUM_THREADS=16`, `UE_SHED_GAME_TEXT_STAGES=1`, native attribution enabled, one heavy job
+at a time under the shared lock. The sampler recorded the whole-tree peak without applying its
+previous 6 GiB stop guard, as directed. The localization branch is still sequential here.
+These are single-run observations, and the memory peaks remain sampled lower bounds.
+
+Released-project host stage table, seconds:
+
+| Stage                                   | Unchanged base, 8 | Rebuilt default, 12 |
+| --------------------------------------- | ----------------: | ------------------: |
+| Package inventory                       |             9.443 |               9.615 |
+| Localization parse                      |            15.080 |              15.098 |
+| Localization publish                    |            14.160 |              15.045 |
+| Package extraction, including transport |            39.382 |              26.215 |
+| Bundle verification                     |             6.076 |               5.916 |
+| Package prepare                         |             5.150 |               5.347 |
+| Package publish                         |             9.040 |               8.756 |
+| Join                                    |            17.930 |              16.875 |
+| Open and first page                     |             1.936 |               1.919 |
+| Whole measured build                    |           119.317 |             105.951 |
+
+Native extraction wall was **26.023 s**, process CPU **230.984 s**, and average occupied cores
+**8.876**, versus **39.191 s / 214.125 s / 5.464** in the base. Worker wait was **1.616 summed
+thread-seconds**, versus **88.061**; coordinator staging was **0.503 s**, versus **22.357**.
+Worker serialization consumed **26.492 summed thread-seconds / 23.469 CPU seconds**, separately
+visible in the recorder. The rebuilt default's reader peak was **4.853 GiB** (5,211,193,344 bytes)
+and its sampled process-tree peak **5.810 GiB** (6,238,941,184 bytes). The harness's coarser peak
+and all anonymous counters are retained in [reader measurements](game-text-scan-reader-measurements.json).
+
+### Completed comparisons
+
+Each canonical corpus was cold-built once with the rebuilt default, in fresh caches, and
+compared to its existing unchanged-base cache. The comparison method and generated-publication
+metadata exclusions are exactly those established in the base-vs-base check above:
+
+- **UE 5.7 canonical corpus:** 44 whole prepared package snapshots passed `cmp`; the 44 published
+  package layers had identical stored data and deterministic metadata; all 15 dictionary
+  segments were whole-file byte-identical.
+- **UE 5.8 canonical corpus:** 44 whole prepared package snapshots passed `cmp`; the 44 published
+  package layers had identical stored data and deterministic metadata; all 15 dictionary
+  segments were whole-file byte-identical.
+- **Released project, rebuilt default:** 256 published package layers had identical stored data
+  and deterministic metadata; all 22 dictionary segments were whole-file byte-identical.
+  Sorting complete record lines per staging group matched all 15,612 records across 256 groups.
+
+No unexpected difference occurred. Published physical layer containers continue to differ only
+in generated `shared.meta.file` and `shared.meta.storeGeneration`, including the dependent
+metadata bytes/checksums. Whole prepared canonical snapshots and dictionaries need no content
+exclusions. Root containers/manifests carry generated references and remain excluded as above.
+The file-by-file reports list every differing physical layer filename:
+`E:/ue-shed-engine-scratch/p45-reader-parity-default12-released.json`,
+`p45-reader-parity-default12-c57.json`, and `p45-reader-parity-default12-c58.json`.
+
+Fresh outputs, raw native probes, host spans, memory samples and retained staging files are in
+`E:/ue-shed-engine-scratch/p45-reader-default12-released`, `p45-reader-default12-c57` and
+`p45-reader-default12-c58`. There was no additional 1× run: it replays records and has no native
+extraction, so it was skipped as directed. Earlier 1× baseline numbers remain historical data.
+
+Final checks against the rebuilt default passed: `cargo test --locked -p uasset-io` (129 tests,
+one ignored crash-writer helper), `cargo clippy --locked -p uasset-io --all-targets -- -D warnings`,
+Rust formatting, 30 targeted Vitest tests with `UE_SHED_UASSET_EXECUTABLE` explicitly set to the
+new executable, and `pnpm -s run typecheck`. Lightweight default-reader staged checks also
+matched all 47 records against the base on each canonical corpus.
+
+`pnpm -s run check:static` ran once at the end and stopped only on the unchanged
+`crates/process-metrics/Cargo.toml` formatting issue. That file was intentionally left alone,
+as directed. The exact remaining diagnostic was:
+
+```text
+crates/process-metrics/Cargo.toml (0ms)
+
+Format issues found in above 1 files. Run without `--check` to fix.
+```
+
+The requested default change, rebuilt-reader released measurement and both canonical package
+snapshot comparisons are complete. Sixteen workers remains ineligible; the combined-branch
+whole-tree gate is deferred to final measurements. No additional 1× build, Unreal Editor,
+Perforce write, push, PR or merge occurred.

@@ -749,8 +749,14 @@ fn projection(
             .iter()
             .map(|path| {
                 checkpoint(cancellation, "discovery")?;
-                // Unreadable files keep their existing per-package read diagnostic.
-                Ok(fs::metadata(path).map_or(0, |metadata| metadata.len()))
+                // Unknown sizes reserve the largest size and keep the worker's read diagnostic.
+                Ok(fs::metadata(path).map_or_else(
+                    |_| {
+                        game_text_index::scan_timings::count("extract.budget_unknown_sizes", 1);
+                        u64::MAX
+                    },
+                    |metadata| metadata.len(),
+                ))
             })
             .collect::<Result<Vec<_>, Failure>>()?
     };

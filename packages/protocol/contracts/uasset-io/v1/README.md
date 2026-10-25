@@ -202,7 +202,8 @@ texture projection. Omission uses 268,435,456 bytes (256 MiB), independently of
 smaller inputs may pass a waiting larger one. An input larger than the whole limit starts only
 when no other package is active and runs alone, including against zero-byte inputs. Credits are
 held through package processing and worker serialization, then released before result delivery.
-The size is filesystem metadata observed before scheduling; unreadable inputs retain their
-existing per-package read diagnostic. This bounds input sizes, not decoded allocations, staged
+The size is filesystem metadata observed before scheduling. Unknown sizes reserve the largest
+representable file size; the worker retains its existing per-package read diagnostic.
+This bounds input sizes, not decoded allocations, staged
 results or working set. Existing requests and result shapes are unchanged; older workers reject
 the new optional limit before accepting it. Hosts may continue omitting it.

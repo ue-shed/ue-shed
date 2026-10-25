@@ -16,7 +16,8 @@
 - **State**: In progress. Phase 0 is complete: the fixture merged in #162, and the baseline and
   transport decision are recorded. Phase 1 is complete (#164–#167); its measurements and the
   owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
-  review are recorded. Phase 3 is built and measured, and awaits the owner's review.
+  review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
+  recorded. Phase 4 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -497,6 +498,9 @@ Phase 3 against Phase 2, both measured on 2026-10-25 (`357c650e` and `19ac7882`)
   event-loop gap is 22–24 ms, and the worker is deleted.
 - **The released store grew 45%**, the trigram index over every culture's translations.
 - **Open and cached reopen** are 1–3% slower, unprofiled.
+- **Owner review, 2026-10-25:** accepted for Phase 3, after a screen-by-screen review in the
+  Workbench. That review caught Browse not searching again when rules load. It also moved a line's
+  findings into the banner at the top of its page, and added an optional `label` to project rules.
 
 The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-3-results)
 has every table.

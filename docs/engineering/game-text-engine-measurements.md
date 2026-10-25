@@ -471,6 +471,10 @@ recompute's postings. The layer hasn't been split by section.
   disagreement and no stale defect, before and after a package edit, and its incremental and full
   scans agree.
 
+The owner reviewed these results and the Workbench screens on 2026-10-25 and accepted them for
+Phase 3. The review moved a line's findings into the banner at the top of its page and gave
+project rules an optional `label`. Phase 3 merged in #169.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

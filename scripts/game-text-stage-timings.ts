@@ -57,7 +57,13 @@ export function makeStageRecorder() {
 				else if (keptMeasure(attribute) && isMilliseconds(value))
 					measures.set(attribute, value);
 			}
-			ended.push({ name: this.name, startNs: this.startTime, endNs: endTime, stages, measures });
+			ended.push({
+				name: this.name,
+				startNs: this.startTime,
+				endNs: endTime,
+				stages,
+				measures
+			});
 		}
 	}
 	const tracer = Tracer.make({ span: (options) => new RecordingSpan(options) });

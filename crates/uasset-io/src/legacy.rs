@@ -702,6 +702,7 @@ fn request(
             version: ContractVersion { major: 1, minor: 0 },
         },
         limits: ResourceLimits {
+            maximum_in_flight_package_bytes: None,
             concurrency: Some(
                 u32::try_from(concurrency)
                     .map_err(|_| "concurrency exceeds protocol range".to_owned())?,

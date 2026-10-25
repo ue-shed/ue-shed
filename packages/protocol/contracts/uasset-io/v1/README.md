@@ -193,3 +193,16 @@ gone: a host and an engine of different builds refuse each other's contract hash
 From 1.20 the engine's `capabilities` outcome also carries `contract`: the engine's `buildId` and
 the `contractHash` of its Rust-owned contract. A host compares them once, on a session's first
 call, refuses a different contract and then trusts the session's messages.
+
+### Active package input budget
+
+`limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and
+texture projection. Omission uses 268,435,456 bytes (256 MiB), independently of
+`limits.concurrency`. Workers admit the first fitting package in the bounded delivery window;
+smaller inputs may pass a waiting larger one. An input larger than the whole limit starts only
+when no other package is active and runs alone, including against zero-byte inputs. Credits are
+held through package processing and worker serialization, then released before result delivery.
+The size is filesystem metadata observed before scheduling; unreadable inputs retain their
+existing per-package read diagnostic. This bounds input sizes, not decoded allocations, staged
+results or working set. Existing requests and result shapes are unchanged; older workers reject
+the new optional limit before accepting it. Hosts may continue omitting it.

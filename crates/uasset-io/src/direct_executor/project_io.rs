@@ -48,6 +48,11 @@ use crate::protocol_result::{
 };
 use crate::reader_memory::{self, Stage as MemoryStage};
 
+mod projection_budget;
+use projection_budget::JobQueue;
+
+const DEFAULT_IN_FLIGHT_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
+
 const SCHEMA_VERSION: u8 = 8;
 const SCAN_CACHE_VERSION: u32 = 3;
 const DEFAULT_SAVED_WORLD_MAXIMUM_ASSETS: u64 = 100_000;
@@ -577,8 +582,8 @@ pub(crate) fn extract_texture_with_cancellation(
 }
 
 /// Projection reads parse whole packages; one large package can take a worker for most of a
-/// read, so the default uses the machine's cores, bounded so each worker's package and decoded
-/// model stay within a predictable memory budget. Requests can still set `limits.concurrency`.
+/// read, so the default uses the machine's cores, with separate input-byte admission. Requests
+/// can set both the worker count and the active package-byte budget.
 fn default_projection_workers() -> usize {
     // Twelve workers are the fastest count measured whose reader peak stays under 5 GiB on the
     // released project.
@@ -669,7 +674,6 @@ fn projection(
     let mut partial_assets = 0_u64;
     let mut skipped_assets = 0_u64;
     let mut completed_assets = 0_u64;
-    let streaming = emit.is_some();
     // Staged records name their own group, so their results need no path order.
     let ordered = stager.is_none();
     let work = |index: usize| {
@@ -739,54 +743,29 @@ fn projection(
         }
         Ok(())
     };
-    if streaming {
-        project_paths_bounded(
-            paths.len(),
-            worker_count,
-            cancellation,
-            ordered,
-            &work,
-            &mut consume,
-        )?;
-    } else {
-        let next_path = AtomicUsize::new(0);
-        let slots = Mutex::new(
-            (0..paths.len())
-                .map(|_| None::<Result<ProjectionDelivery, Failure>>)
-                .collect::<Vec<_>>(),
-        );
-        std::thread::scope(|scope| {
-            for _ in 0..worker_count.min(paths.len().max(1)) {
-                let next_path = &next_path;
-                let slots = &slots;
-                let work = &work;
-                let paths = &paths;
-                scope.spawn(move || {
-                    loop {
-                        if checkpoint(cancellation, "discovery").is_err() {
-                            break;
-                        }
-                        let index = next_path.fetch_add(1, Ordering::Relaxed);
-                        if index >= paths.len() {
-                            break;
-                        }
-                        let result = work(index);
-                        slots.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
-                    }
-                });
-            }
-        });
-        for (index, result) in slots
-            .into_inner()
-            .unwrap_or_else(PoisonError::into_inner)
-            .into_iter()
-            .enumerate()
-        {
-            if let Some(result) = result {
-                consume(index, result)?;
-            }
-        }
-    }
+    let package_sizes = {
+        let _span = game_text_index::scan_timings::Span::new("extract.budget_inventory");
+        paths
+            .iter()
+            .map(|path| {
+                checkpoint(cancellation, "discovery")?;
+                // Unreadable files keep their existing per-package read diagnostic.
+                Ok(fs::metadata(path).map_or(0, |metadata| metadata.len()))
+            })
+            .collect::<Result<Vec<_>, Failure>>()?
+    };
+    project_paths_bounded(
+        &package_sizes,
+        worker_count,
+        request
+            .limits
+            .maximum_in_flight_package_bytes
+            .unwrap_or(DEFAULT_IN_FLIGHT_PACKAGE_BYTES),
+        cancellation,
+        ordered,
+        &work,
+        &mut consume,
+    )?;
     if let Some(stager) = stager {
         stager.finish()?;
     }
@@ -976,35 +955,33 @@ fn staging_failure(message: String) -> Failure {
 /// only when the next result leaves the reorder buffer, so one slow package cannot grow it;
 /// unordered delivery consumes each completion, so a slow package delays only its own result.
 fn project_paths_bounded<T: Send>(
-    path_count: usize,
+    package_sizes: &[u64],
     worker_count: usize,
+    maximum_bytes: u64,
     cancellation: &CancellationToken,
     ordered: bool,
     work: &(impl Fn(usize) -> Result<T, Failure> + Sync),
     consume: &mut dyn FnMut(usize, Result<T, Failure>) -> Result<(), Failure>,
 ) -> Result<(), Failure> {
+    let path_count = package_sizes.len();
     let worker_count = worker_count.min(path_count.max(1));
     let window = worker_count * 2;
-    let (jobs, receive_job) = mpsc::sync_channel::<usize>(window);
-    let receive_job = Mutex::new(receive_job);
+    let jobs = JobQueue::new(package_sizes, maximum_bytes, window);
     let (finished, receive_result) = mpsc::sync_channel(window);
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
-            let receive_job = &receive_job;
+            let jobs = &jobs;
             let finished = finished.clone();
             scope.spawn(move || {
                 let _span = game_text_index::scan_timings::Span::new("extract.worker");
                 loop {
-                    let wait = game_text_index::scan_timings::Span::new("extract.job_wait");
-                    let Ok(index) = receive_job
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .recv()
-                    else {
-                        break;
+                    let admitted = match jobs.take(cancellation) {
+                        Ok(Some(admitted)) => admitted,
+                        Ok(None) | Err(_) => break,
                     };
-                    drop(wait);
+                    let index = admitted.index;
                     let result = checkpoint(cancellation, "inspection").and_then(|()| work(index));
+                    drop(admitted);
                     let _send = game_text_index::scan_timings::Span::new("extract.send_wait");
                     if finished.send((index, result)).is_err() {
                         break;
@@ -1017,16 +994,16 @@ fn project_paths_bounded<T: Send>(
             let mut scheduled = 0;
             for index in 0..window.min(path_count) {
                 reader_memory::scheduled(index);
-                jobs.send(index).map_err(|_| workers_stopped())?;
+                jobs.push(index);
                 scheduled += 1;
             }
             if !ordered {
                 for _ in 0..path_count {
                     checkpoint(cancellation, "inspection")?;
-                    let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
+                    let (index, result) = receive_projection_result(&receive_result, cancellation)?;
                     if scheduled < path_count {
                         reader_memory::scheduled(scheduled);
-                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
+                        jobs.push(scheduled);
                         scheduled += 1;
                     }
                     consume(index, result)?;
@@ -1037,12 +1014,12 @@ fn project_paths_bounded<T: Send>(
             let mut next = 0;
             while next < path_count {
                 checkpoint(cancellation, "inspection")?;
-                let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
+                let (index, result) = receive_projection_result(&receive_result, cancellation)?;
                 pending.insert(index, result);
                 while let Some(result) = pending.remove(&next) {
                     if scheduled < path_count {
                         reader_memory::scheduled(scheduled);
-                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
+                        jobs.push(scheduled);
                         scheduled += 1;
                     }
                     consume(next, result)?;
@@ -1051,12 +1028,28 @@ fn project_paths_bounded<T: Send>(
             }
             Ok(())
         })();
-        // Dropping both channels releases waiting workers before the scoped joins, including
-        // cancellation, consumer failures and a broken stdout pipe.
-        drop(jobs);
+        // Closing admission and result delivery releases waiting workers before scoped joins.
+        jobs.close();
         drop(receive_result);
         result
     })
+}
+
+fn receive_projection_result<T>(
+    receiver: &mpsc::Receiver<T>,
+    cancellation: &CancellationToken,
+) -> Result<T, Failure> {
+    loop {
+        checkpoint(cancellation, "inspection")?;
+        match receiver.recv_timeout(std::time::Duration::from_millis(20)) {
+            Ok(result) => return Ok(result),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                checkpoint(cancellation, "inspection")?;
+                return Err(workers_stopped());
+            }
+        }
+    }
 }
 
 fn project_one_path(
@@ -2692,8 +2685,9 @@ mod tests {
             let cancellation = CancellationToken::new();
             let mut consumed = Vec::new();
             super::project_paths_bounded(
-                3,
+                &[1, 1, 1],
                 1,
+                256,
                 &cancellation,
                 ordered,
                 &|index| {
@@ -2723,6 +2717,41 @@ mod tests {
             .unwrap();
             assert_eq!(consumed, [0, 1, 2]);
         }
+    }
+
+    #[test]
+    fn projection_cancels_while_workers_wait_for_input_byte_credits() {
+        let cancellation = CancellationToken::new();
+        let (started, receive) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let cancellation = &cancellation;
+            let task = scope.spawn(move || {
+                super::project_paths_bounded(
+                    &[100; 8],
+                    4,
+                    100,
+                    cancellation,
+                    false,
+                    &|index| {
+                        assert_eq!(index, 0, "only the first package fits");
+                        started.send(()).unwrap();
+                        while !cancellation.is_cancelled() {
+                            std::thread::yield_now();
+                        }
+                        super::checkpoint(cancellation, "inspection")?;
+                        Ok(())
+                    },
+                    &mut |_, result| result,
+                )
+            });
+            receive
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            let start = std::time::Instant::now();
+            cancellation.cancel();
+            assert_eq!(task.join().unwrap().unwrap_err().code, "cancelled");
+            assert!(start.elapsed() < std::time::Duration::from_millis(250));
+        });
     }
 
     #[test]

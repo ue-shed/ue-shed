@@ -19,6 +19,9 @@
 				"concurrency": {
 					"$ref": "#/$defs/UAssetIoPositiveInt"
 				},
+				"maximumInFlightPackageBytes": {
+					"$ref": "#/$defs/UAssetIoPositiveInt"
+				},
 				"maximumAssets": {
 					"$ref": "#/$defs/UAssetIoNonNegativeInt"
 				},

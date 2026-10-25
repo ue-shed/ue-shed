@@ -51,9 +51,12 @@ export type UAssetIoContract = Schema.Schema.Type<typeof UAssetIoContract>;
  * caps the cumulative bytes of every emitted NDJSON frame including its newline, `maximumAssets`
  * caps discovered packages (exceeding it fails with code `resource_limit`), and `timeoutMs` is in
  * milliseconds. Every limit except `maximumAssets` must be greater than zero.
+ * `maximumInFlightPackageBytes` bounds active projection inputs by file size (default 256 MiB);
+ * an input larger than the limit runs alone. It does not cap decoded heap or buffered output.
  */
 export const UAssetIoResourceLimits = Schema.Struct({
 	concurrency: Schema.optionalKey(PositiveInt),
+	maximumInFlightPackageBytes: Schema.optionalKey(PositiveInt),
 	maximumAssets: Schema.optionalKey(NonNegativeInt),
 	maximumOutputBytes: Schema.optionalKey(PositiveInt),
 	timeoutMs: Schema.optionalKey(PositiveInt)

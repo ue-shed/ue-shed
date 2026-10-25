@@ -35,6 +35,10 @@ export interface EngineStageOptions {
 	readonly records?: string | undefined;
 	readonly target?: string | undefined;
 	readonly stage: string;
+	/** Persistent project-index cache warmed outside the measured stages. */
+	readonly projectIndexCache?: string | undefined;
+	/** Keep the first-ever cold project-index refresh inside the measured build. */
+	readonly coldProjectIndex?: boolean | undefined;
 }
 
 type EngineRequestMetrics = ReturnType<ReturnType<typeof trackBenchmarkEventLoop>["stop"]> & {
@@ -56,6 +60,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 			: current;
 	const {
 		GameTextIndexBuilderLive,
+		GameTextIndexSource,
 		GameTextIndexSteps,
 		gameTextIndexRefreshLayer,
 		gameTextIndexSourceNodeLayer
@@ -68,7 +73,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 		"game-text/dist/entry-schema.js",
 		currentSchema
 	);
-	const { AssetReaderLive } = await load("unreal-assets/dist/index.js", currentAssets);
+	const { AssetReader, AssetReaderLive, projectIndexProcessLayerFromReader } = await load(
+		"unreal-assets/dist/index.js",
+		currentAssets
+	);
 	const { LocalizationEvidence, LocalizationEvidenceNodeLive, LocalizationTargetName } =
 		await load("localization/dist/index.js", currentLocalization);
 	const { LOCALIZATION_LINES_CSV_FIELDS, localizationLinesCsv } = await load(
@@ -223,9 +231,43 @@ export async function runEngineStage(options: EngineStageOptions) {
 		Effect.runPromise(recorder ? Effect.withTracer(effect, recorder.tracer) : effect);
 	const timer = setInterval(sample, 25);
 	try {
+		const projectIndexLayer = (cacheRoot: string) =>
+			Layer.unwrap(
+				Effect.gen(function* () {
+					const reader = yield* AssetReader;
+					const configuration = yield* reader.configuration();
+					return projectIndexProcessLayerFromReader({ ...configuration, cacheRoot });
+				})
+			);
+		if (stage === "warm-project-index") {
+			const warmed = gameTextIndexSourceNodeLayer(options.cache).pipe(
+				Layer.provide(projectIndexLayer(options.cache)),
+				Layer.provide(AssetReaderLive)
+			);
+			const context = await run(Layer.buildWithScope(warmed, scope));
+			const inventorySource = Context.get(context, GameTextIndexSource);
+			await run(inventorySource.inventory({ projectRoot: options.project }));
+			return {
+				schemaVersion: 1 as const,
+				stage: options.stage,
+				node: process.version,
+				peakHeapBytes,
+				peakRssBytes,
+				samples
+			};
+		}
 		const source = options.records
 			? retainedPackageSource(options.records)
-			: gameTextIndexSourceNodeLayer(options.cache).pipe(Layer.provide(AssetReaderLive));
+			: options.projectIndexCache && !options.coldProjectIndex
+				? gameTextIndexSourceNodeLayer(options.cache, {
+						refreshProjectIndex: false
+					}).pipe(
+						Layer.provide(projectIndexLayer(options.projectIndexCache)),
+						Layer.provide(AssetReaderLive)
+					)
+				: gameTextIndexSourceNodeLayer(options.cache).pipe(
+						Layer.provide(AssetReaderLive)
+					);
 		// Quality runs in the engine, so `quality-in-process`, kept for earlier runs' names, is
 		// `quality`.
 		const layer = gameTextIndexRefreshLayer(options.cache).pipe(

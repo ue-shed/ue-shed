@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "8743f134213b86a9d0860239f7ab8d7b2308f4080d29d51a433e74b9283623f7"
+	contractHash: "ae01ec623f170d569a509e865a822757773148651c00435fc81feb8989b009f3"
 } as const;
 
 /**
@@ -28,11 +28,11 @@ export type Finding = {
 	readonly [key: string]: JsonValue;
 };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "search", reader: string, request: unknown, } | { "action": "focus", reader: string, request: unknown, } | { "action": "corpus", reader: string, output: string, } | { "action": "corpus_header", reader: string, output: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, output: string, } | { "action": "localization_corpus", reader: string, output: string, } | { "action": "export", reader: string, request: unknown, output: string, } | { "action": "localization_detail", reader: string, request: unknown, } | { "action": "related", reader: string, request: unknown, } | { "action": "localization_export", reader: string, request: unknown, output: string, } | { "action": "localization_focus_export", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "search", reader: string, request: unknown, } | { "action": "focus", reader: string, request: unknown, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "localization_detail", reader: string, request: unknown, } | { "action": "related", reader: string, request: unknown, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "localization_focus_export", reader: string, 
 /**
  * The line's identity.
  */
-line: string, output: string, } | { "action": "findings_evaluate", reader: string, 
+line: string, } | { "action": "findings_evaluate", reader: string, 
 /**
  * The v4 rule document.
  */
@@ -69,9 +69,59 @@ export type EngineFailure = { error: EngineError, profile: EngineProfile, };
 
 export type EngineError = { code: "busy" | "cancelled" | "invalid_input" | "invalid_cache" | "limit_exceeded" | "stale_generation" | "unavailable" | "not_found" | "io_error" | "internal", message: string, };
 
-export type EngineProfile = { io: IoMetrics, stageSeconds: { [key in string]: number }, };
+export type EngineProfile = { io: IoMetrics, stageSeconds: { [key in string]: number }, 
+/**
+ * Batches the request sent, and their bytes.
+ */
+batches: number, batchBytes: number, 
+/**
+ * How long the request waited for the host to consume its batches.
+ */
+creditStallMs: number, };
 
 export type IoMetrics = { opens: number, sectionLoads: number, storedBytes: number, rawBytes: number, fullVerifies: number, indexBytes: number, writtenBytes: number, };
+
+export type BatchHeader = { 
+/**
+ * The part of the answer the batch belongs to.
+ */
+part: string, 
+/**
+ * The relation its columns describe.
+ */
+relation: string, rows: number, columns: ReadonlyArray<ColumnHeader>, strings: StringsHeader, };
+
+export type ColumnHeader = { name: string, type: ColumnType, 
+/**
+ * The values, or a list column's offsets.
+ */
+offset: number, 
+/**
+ * A list column's values.
+ */
+values?: number, 
+/**
+ * A bitset of the rows that have a value; absent when every row has one.
+ */
+validity?: number, 
+/**
+ * What a row without a value holds.
+ */
+missing: Missing, };
+
+export type ColumnType = "u32" | "i32" | "f64" | "bool" | "str" | "json" | "u32List" | "strList";
+
+export type Missing = "never" | "null" | "omit";
+
+export type StringsHeader = { entries: number, 
+/**
+ * `u32` offsets, one per entry and one more, into `bytes`.
+ */
+offsets: number, bytes: number, 
+/**
+ * A bitset of the entries holding lone surrogates; absent when none does.
+ */
+loneSurrogates?: number, };
 
 export type RuleDocumentV4 = { schemaVersion: 4, roles: ReadonlyArray<Role>, rules: ReadonlyArray<Rule>, };
 
@@ -168,7 +218,7 @@ export type FindingsOrder = "severity" | "report" | "line" | "source";
 
 export type FindingsPageRequest = { offset?: number, limit: number, };
 
-export type FindingsPage = { profile: ReadProfile, places: ReadonlyArray<PlaceSet>, findings: ReadonlyArray<Finding>, 
+export type FindingsPage = { profile: ReadProfile, 
 /**
  * Findings every filter selects.
  */
@@ -208,7 +258,69 @@ export type PlaceSet = { id: number, occurrences: ReadonlyArray<Place>, };
 
 export type Place = { id: string, location: { readonly [key: string]: JsonValue }, packageFile: string, };
 
-export type ReadProfile = { rowsRequested: number, findingsReturned: number, responseBytes: number, fileFallback: boolean, };
+export type ReadProfile = { rowsRequested: number, findingsReturned: number, };
 
-export type SpilledReply = { file: string, };
+/** Each relation's columns: their wire type, and what a row without a value holds. */
+export type Relations = {
+	readonly group: {
+		readonly key: { readonly type: "strList"; readonly missing: "never" };
+		readonly lines: { readonly type: "u32"; readonly missing: "never" };
+		readonly sourceWords: { readonly type: "f64"; readonly missing: "omit" };
+		readonly lineBreakWords: { readonly type: "f64"; readonly missing: "omit" };
+		readonly unknownWords: { readonly type: "f64"; readonly missing: "omit" };
+	};
+	readonly unit: {
+		readonly id: { readonly type: "str"; readonly missing: "never" };
+		readonly identity: { readonly type: "json"; readonly missing: "never" };
+		readonly source: { readonly type: "json"; readonly missing: "never" };
+		readonly reviewSignals: { readonly type: "strList"; readonly missing: "never" };
+		readonly findings: { readonly type: "strList"; readonly missing: "omit" };
+		readonly findingsOmitted: { readonly type: "u32"; readonly missing: "omit" };
+	};
+	readonly place: {
+		readonly parent: { readonly type: "u32"; readonly missing: "never" };
+		readonly devNotes: { readonly type: "str"; readonly missing: "omit" };
+		readonly id: { readonly type: "str"; readonly missing: "never" };
+		readonly packageFile: { readonly type: "str"; readonly missing: "never" };
+		readonly objectPath: { readonly type: "str"; readonly missing: "never" };
+		readonly origin: { readonly type: "str"; readonly missing: "never" };
+		readonly source: { readonly type: "str"; readonly missing: "never" };
+		readonly identity: { readonly type: "json"; readonly missing: "never" };
+		readonly location: { readonly type: "json"; readonly missing: "never" };
+		readonly editCapability: { readonly type: "str"; readonly missing: "never" };
+		readonly audience: { readonly type: "str"; readonly missing: "omit" };
+		readonly audienceReason: { readonly type: "str"; readonly missing: "omit" };
+		readonly audienceRule: { readonly type: "str"; readonly missing: "omit" };
+		readonly copies: { readonly type: "json"; readonly missing: "omit" };
+	};
+	readonly package: {
+		readonly packageFile: { readonly type: "str"; readonly missing: "never" };
+		readonly status: { readonly type: "str"; readonly missing: "never" };
+	};
+	readonly diagnostic: {
+		readonly code: { readonly type: "str"; readonly missing: "never" };
+		readonly message: { readonly type: "str"; readonly missing: "never" };
+		readonly packageFile: { readonly type: "str"; readonly missing: "never" };
+		readonly objectPath: { readonly type: "str"; readonly missing: "omit" };
+		readonly propertyPath: { readonly type: "str"; readonly missing: "omit" };
+		readonly coverageGapCounts: { readonly type: "json"; readonly missing: "omit" };
+	};
+	readonly line: {
+		readonly id: { readonly type: "str"; readonly missing: "never" };
+		readonly origin: { readonly type: "json"; readonly missing: "never" };
+		readonly identity: { readonly type: "json"; readonly missing: "null" };
+		readonly source: { readonly type: "str"; readonly missing: "never" };
+		readonly manifest: { readonly type: "json"; readonly missing: "never" };
+		readonly cultures: { readonly type: "json"; readonly missing: "never" };
+		readonly keyChange: { readonly type: "json"; readonly missing: "omit" };
+		readonly audience: { readonly type: "str"; readonly missing: "omit" };
+		readonly outOfScope: { readonly type: "str"; readonly missing: "omit" };
+		readonly marks: { readonly type: "json"; readonly missing: "never" };
+		readonly problems: { readonly type: "strList"; readonly missing: "never" };
+		readonly signals: { readonly type: "strList"; readonly missing: "never" };
+	};
+	readonly finding: {
+		readonly finding: { readonly type: "json"; readonly missing: "never" };
+	};
+};
 }

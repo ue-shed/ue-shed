@@ -54,6 +54,24 @@ describe.skipIf(!executable)("the Game Text engine's failure paths", () => {
 		);
 	}, 10_000);
 
+	it("credits each batch it gathers, so an answer streams past the engine's window", async () => {
+		await withSession((session) =>
+			Effect.gen(function* () {
+				const answer = yield* session.call({
+					action: "probe",
+					probe: "stream",
+					bulk: true,
+					batches: 20
+				});
+				expect(answer.batches).toHaveLength(20);
+				expect(answer.batches.map((batch) => batch.row(0))).toEqual(
+					Array.from({ length: 20 }, () => ({ packageFile: "Probe", status: "complete" }))
+				);
+				expect(answer.profile.batches).toBe(20);
+			})
+		);
+	});
+
 	it("fails what was in flight when the engine dies, and starts a new one", async () => {
 		await withSession((session) =>
 			Effect.gen(function* () {

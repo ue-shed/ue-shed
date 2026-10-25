@@ -33,7 +33,6 @@ pub struct EngineQuery {
     pub(crate) acceptances: Memo<String, Arc<crate::rules::Acceptance>>,
     /// Line rows by their (namespace, key) string IDs, built on the first acceptance.
     pub(crate) identity_lines: Once<IdentityLines>,
-    pub(crate) finding_files: Lock<FindingFiles>,
     pub(crate) audience_rules: Vec<String>,
     pub(crate) summary_cache: Once<Value>,
     /// Every row's problems by relation, culture scope and counted findings.
@@ -75,17 +74,6 @@ pub struct EngineQuery {
     pub(crate) package_lists: Once<Arc<(Vec<Value>, Vec<Value>)>>,
     /// Each evidence input's file metadata, read once per reader.
     pub(crate) evidence_meta: Memo<String, Arc<Value>>,
-}
-
-/// Large response files belong to the reader even when its caller is interrupted.
-#[derive(Default)]
-pub(crate) struct FindingFiles(pub Vec<std::path::PathBuf>);
-impl Drop for FindingFiles {
-    fn drop(&mut self) {
-        for path in &self.0 {
-            let _ = std::fs::remove_file(path);
-        }
-    }
 }
 
 /// An open-addressed hash of one packed-ID arena: each slot holds a row plus one, zero when
@@ -245,7 +233,6 @@ impl EngineQuery {
             evaluation: Lock::default(),
             acceptances: Memo::default(),
             identity_lines: Once::default(),
-            finding_files: Lock::default(),
             audience_rules: Vec::new(),
             summary_cache: Once::default(),
             occurrence_data: Once::default(),

@@ -214,9 +214,11 @@ does not scrub every unused payload.
 Requests and responses use validated domain schemas. UTF-16 code units, including lone
 surrogates, survive the wire and dictionary boundaries. Search returns at most 50 rows and
 200 group entries; `minGroupSize` drops smaller groups before that bound and before `more`.
-Group keys, `openGroup` and `source` values hold at most 32,767 UTF-16 code units. Native response JSON is bounded to 16 MiB; bulk corpus exports use scoped
-files rather than a giant protocol frame. Native operations expose stage durations and actual
-section, index and write-byte counters.
+Group keys, `openGroup` and `source` values hold at most 32,767 UTF-16 code units. A frame
+carries at most 8 MiB; bulk reads (the corpus, localization lines, aggregates and findings
+pages) stream as column batches with flow control, never as files
+([Phase 4 §5](game-text-rule-engine-phase-4.md#5-column-batches)). Native operations expose stage
+durations, batch counts and bytes, and actual section, index and write-byte counters.
 
 Full cold construction still allocates in proportion to input size. Measure production host
 preparation, first query, repeated query, mixed edits, warm reopen, focus, callback gaps and

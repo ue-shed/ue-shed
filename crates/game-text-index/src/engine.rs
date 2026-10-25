@@ -80,14 +80,10 @@ pub enum EngineRequest {
     },
     Corpus {
         reader: String,
-        #[cfg_attr(test, ts(type = "string"))]
-        output: std::path::PathBuf,
     },
     /// The corpus without its units.
     CorpusHeader {
         reader: String,
-        #[cfg_attr(test, ts(type = "string"))]
-        output: std::path::PathBuf,
     },
     /// The corpus content fingerprint.
     CorpusFingerprint {
@@ -97,25 +93,19 @@ pub enum EngineRequest {
     CorpusReportHeader {
         reader: String,
     },
-    /// Grouped counts of the matching rows, written to `output`.
+    /// Grouped counts of the matching rows.
     Aggregate {
         reader: String,
         #[cfg_attr(test, ts(type = "unknown"))]
         request: Value,
-        #[cfg_attr(test, ts(type = "string"))]
-        output: std::path::PathBuf,
     },
     LocalizationCorpus {
         reader: String,
-        #[cfg_attr(test, ts(type = "string"))]
-        output: std::path::PathBuf,
     },
     Export {
         reader: String,
         #[cfg_attr(test, ts(type = "unknown"))]
         request: Value,
-        #[cfg_attr(test, ts(type = "string"))]
-        output: std::path::PathBuf,
     },
     LocalizationDetail {
         reader: String,
@@ -132,15 +122,11 @@ pub enum EngineRequest {
         reader: String,
         #[cfg_attr(test, ts(type = "unknown"))]
         request: Value,
-        #[cfg_attr(test, ts(type = "string"))]
-        output: std::path::PathBuf,
     },
     LocalizationFocusExport {
         reader: String,
         /// The line's identity.
         line: String,
-        #[cfg_attr(test, ts(type = "string"))]
-        output: std::path::PathBuf,
     },
     FindingsEvaluate {
         reader: String,
@@ -194,12 +180,12 @@ impl EngineRequest {
             | Self::Summary { reader }
             | Self::Search { reader, .. }
             | Self::Focus { reader, .. }
-            | Self::Corpus { reader, .. }
-            | Self::CorpusHeader { reader, .. }
+            | Self::Corpus { reader }
+            | Self::CorpusHeader { reader }
             | Self::CorpusFingerprint { reader }
             | Self::CorpusReportHeader { reader }
             | Self::Aggregate { reader, .. }
-            | Self::LocalizationCorpus { reader, .. }
+            | Self::LocalizationCorpus { reader }
             | Self::Export { reader, .. }
             | Self::LocalizationDetail { reader, .. }
             | Self::Related { reader, .. }
@@ -231,21 +217,6 @@ impl EngineRequest {
             }
             _ => {}
         }
-        if let Self::Corpus { output, .. }
-        | Self::CorpusHeader { output, .. }
-        | Self::Aggregate { output, .. }
-        | Self::LocalizationCorpus { output, .. }
-        | Self::Export { output, .. }
-        | Self::LocalizationExport { output, .. }
-        | Self::LocalizationFocusExport { output, .. } = self
-        {
-            require(
-                output
-                    .to_str()
-                    .is_some_and(|path| !path.is_empty() && path.len() <= 32767),
-                invalid("Invalid native export output path."),
-            )?;
-        }
         Ok(())
     }
 }
@@ -268,6 +239,12 @@ pub struct OpenReply {
 pub struct Profile {
     pub io: crate::snapshot::IoMetrics,
     pub stage_seconds: BTreeMap<String, f64>,
+    /// Batches the request sent, and their bytes.
+    pub batches: u32,
+    #[cfg_attr(test, ts(type = "number"))]
+    pub batch_bytes: u64,
+    /// How long the request waited for the host to consume its batches.
+    pub credit_stall_ms: f64,
 }
 impl Profile {
     /// A profile with no stages, for a request that failed.
@@ -275,15 +252,45 @@ impl Profile {
         Self {
             io: crate::snapshot::io_metrics(),
             stage_seconds: BTreeMap::new(),
+            batches: 0,
+            batch_bytes: 0,
+            credit_stall_ms: 0.0,
         }
     }
 }
 
-/// A request's answer: its reply part, as JSON text, and its profile.
+/// Where a request's answer goes while the engine produces it.
+pub trait Reply {
+    /// One JSON part of the answer.
+    fn part(&mut self, body: Vec<u8>) -> Result<()>;
+    /// One column batch. It waits while the host holds as many unconsumed batches as flow
+    /// control allows, and fails when the request is cancelled meanwhile.
+    fn batch(&mut self, body: Vec<u8>) -> Result<()>;
+}
+
+/// A request's whole answer: its first part, as JSON text, its batches and its profile.
 #[derive(Debug)]
 pub struct EngineAnswer {
     pub part: Option<String>,
+    pub batches: Vec<Vec<u8>>,
     pub profile: Profile,
+}
+
+/// An answer gathered in memory.
+#[derive(Default)]
+pub(crate) struct Gathered {
+    pub(crate) parts: Vec<Vec<u8>>,
+    pub(crate) batches: Vec<Vec<u8>>,
+}
+impl Reply for Gathered {
+    fn part(&mut self, body: Vec<u8>) -> Result<()> {
+        self.parts.push(body);
+        Ok(())
+    }
+    fn batch(&mut self, body: Vec<u8>) -> Result<()> {
+        self.batches.push(body);
+        Ok(())
+    }
 }
 
 /// The JSON text of a request value, for the readers that still parse text.
@@ -298,7 +305,28 @@ pub struct EngineSession {
     readers: Lock<HashMap<String, Arc<EngineQuery>>>,
 }
 impl EngineSession {
+    /// Answers a request in memory.
     pub fn execute(&self, request: &EngineRequest, cancelled: &AtomicBool) -> Result<EngineAnswer> {
+        let mut gathered = Gathered::default();
+        let profile = self.answer(request, cancelled, &mut gathered)?;
+        let part = match gathered.parts.into_iter().next() {
+            Some(part) => Some(String::from_utf8(part).map_err(|_| "A part is not UTF-8.")?),
+            None => None,
+        };
+        Ok(EngineAnswer {
+            part,
+            batches: gathered.batches,
+            profile,
+        })
+    }
+
+    /// Answers a request into `reply` as it runs, and returns what it cost.
+    pub fn answer(
+        &self,
+        request: &EngineRequest,
+        cancelled: &AtomicBool,
+        reply: &mut dyn Reply,
+    ) -> Result<Profile> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("engineTotal");
         request.validate()?;
@@ -398,12 +426,12 @@ impl EngineSession {
             EngineRequest::Summary { reader }
             | EngineRequest::Search { reader, .. }
             | EngineRequest::Focus { reader, .. }
-            | EngineRequest::Corpus { reader, .. }
-            | EngineRequest::CorpusHeader { reader, .. }
+            | EngineRequest::Corpus { reader }
+            | EngineRequest::CorpusHeader { reader }
             | EngineRequest::CorpusFingerprint { reader }
             | EngineRequest::CorpusReportHeader { reader }
             | EngineRequest::Aggregate { reader, .. }
-            | EngineRequest::LocalizationCorpus { reader, .. }
+            | EngineRequest::LocalizationCorpus { reader }
             | EngineRequest::Export { reader, .. }
             | EngineRequest::LocalizationDetail { reader, .. }
             | EngineRequest::Related { reader, .. }
@@ -413,9 +441,9 @@ impl EngineSession {
             | EngineRequest::FindingsAccept { reader, .. }
             | EngineRequest::FindingsQuery { reader, .. } => {
                 let query=self.readers.lock().get(reader).cloned().ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
-                // A file read replies with the bytes it wrote.
-                let bytes =
-                    |bytes: u64| serde_json::to_string(&serde_json::json!({ "bytes": bytes }));
+                // Every corpus line, whether or not it is visible.
+                let everything =
+                    || parse_search_request(r#"{"query":"","capability":"all","pageSize":50}"#);
                 let (action, part) = match request {
                     EngineRequest::FindingsEvaluate {
                         rules,
@@ -423,131 +451,119 @@ impl EngineSession {
                         ..
                     } => (
                         "findings_evaluate",
-                        query.findings_evaluate(&text(rules)?, collation_locale, cancelled)?,
+                        Some(query.findings_evaluate(
+                            &text(rules)?,
+                            collation_locale,
+                            cancelled,
+                        )?),
                     ),
                     EngineRequest::FindingsAccept { request, .. } => (
                         "findings_accept",
-                        query.findings_accept(request.clone(), cancelled)?,
+                        Some(query.findings_accept(request.clone(), cancelled)?),
                     ),
-                    EngineRequest::FindingsQuery { request, .. } => (
-                        "findings_query",
-                        query.findings_query(request.clone(), cancelled)?,
-                    ),
+                    EngineRequest::FindingsQuery { request, .. } => {
+                        query.findings_query(request.clone(), cancelled, reply)?;
+                        ("findings_query", None)
+                    }
                     EngineRequest::Summary { .. } => (
                         "summary",
-                        crate::wtf8::view_json(&query.summary(cancelled)?)?,
+                        Some(crate::wtf8::view_json(&query.summary(cancelled)?)?),
                     ),
-                    EngineRequest::Search { request, .. } => {
-                        ("search", query.search_json(&text(request)?, cancelled)?)
-                    }
-                    EngineRequest::Related { request, .. } => {
-                        ("related", query.related_json(&text(request)?, cancelled)?)
-                    }
-                    EngineRequest::Corpus { output, .. } => {
-                        let request = parse_search_request(
-                            r#"{"query":"","capability":"all","pageSize":50}"#,
-                        )?;
-                        let written =
-                            query.export_to_path(&request, output, true, None, cancelled)?;
-                        ("corpus", bytes(written)?)
-                    }
-                    EngineRequest::CorpusHeader { output, .. } => (
-                        "corpus_header",
-                        bytes(query.export_corpus_header_to_path(output, cancelled)?)?,
+                    EngineRequest::Search { request, .. } => (
+                        "search",
+                        Some(query.search_json(&text(request)?, cancelled)?),
                     ),
+                    EngineRequest::Related { request, .. } => (
+                        "related",
+                        Some(query.related_json(&text(request)?, cancelled)?),
+                    ),
+                    EngineRequest::Corpus { .. } => {
+                        query.send_corpus(&everything()?, true, None, cancelled, reply)?;
+                        ("corpus", None)
+                    }
+                    EngineRequest::CorpusHeader { .. } => {
+                        query.send_corpus_header(cancelled, reply)?;
+                        ("corpus_header", None)
+                    }
                     EngineRequest::CorpusReportHeader { .. } => (
                         "corpus_report_header",
-                        crate::wtf8::view_json(
+                        Some(crate::wtf8::view_json(
                             &query.corpus_report_header(REPORT_PREVIEW_ITEMS, cancelled)?,
-                        )?,
+                        )?),
                     ),
                     EngineRequest::CorpusFingerprint { .. } => (
                         "corpus_fingerprint",
-                        serde_json::to_string(
+                        Some(serde_json::to_string(
                             &serde_json::json!({"sha256":query.corpus_fingerprint(cancelled)?}),
-                        )?,
+                        )?),
                     ),
-                    EngineRequest::Aggregate {
-                        request, output, ..
-                    } => {
+                    EngineRequest::Aggregate { request, .. } => {
                         let request =
                             crate::engine_rollup::parse_aggregate_request(&text(request)?)?;
-                        (
-                            "aggregate",
-                            bytes(query.aggregate_to_path(&request, output, cancelled)?)?,
-                        )
+                        query.send_aggregate(&request, cancelled, reply)?;
+                        ("aggregate", None)
                     }
-                    EngineRequest::Export {
-                        request, output, ..
-                    } => {
+                    EngineRequest::Export { request, .. } => {
                         let (request, units) =
                             crate::engine_rollup::parse_corpus_export(&text(request)?)?;
-                        let written = query.export_to_path(
-                            &request,
-                            output,
-                            false,
-                            units.as_deref(),
-                            cancelled,
-                        )?;
-                        ("export", bytes(written)?)
+                        query.send_corpus(&request, false, units.as_deref(), cancelled, reply)?;
+                        ("export", None)
                     }
                     EngineRequest::Focus { request, .. } => {
-                        ("focus", query.focus_json(&text(request)?, cancelled)?)
+                        ("focus", Some(query.focus_json(&text(request)?, cancelled)?))
                     }
                     EngineRequest::LocalizationDetail { request, .. } => (
                         "localization_detail",
-                        query.localization_detail_json(&text(request)?, cancelled)?,
+                        Some(query.localization_detail_json(&text(request)?, cancelled)?),
                     ),
-                    EngineRequest::LocalizationExport {
-                        request, output, ..
-                    } => {
+                    EngineRequest::LocalizationExport { request, .. } => {
                         let (request, fields) =
                             crate::engine_rollup::parse_line_export(&text(request)?)?;
-                        let written = query.export_localization_to_path(
+                        query.send_localization_lines(
                             &request,
-                            output,
                             false,
                             fields.as_deref(),
                             cancelled,
+                            reply,
                         )?;
-                        ("localization_export", bytes(written)?)
+                        ("localization_export", None)
                     }
-                    EngineRequest::LocalizationFocusExport { line, output, .. } => (
-                        "localization_focus_export",
-                        bytes(query.export_localization_focus_to_path(
-                            &text(&Value::String(line.clone()))?,
-                            output,
+                    EngineRequest::LocalizationFocusExport { line, .. } => {
+                        query.send_localization_line(line, cancelled, reply)?;
+                        ("localization_focus_export", None)
+                    }
+                    EngineRequest::LocalizationCorpus { .. } => {
+                        query.send_localization_lines(
+                            &everything()?,
+                            true,
+                            None,
                             cancelled,
-                        )?)?,
-                    ),
-                    EngineRequest::LocalizationCorpus { output, .. } => {
-                        let request = parse_search_request(
-                            r#"{"query":"","capability":"all","pageSize":50}"#,
+                            reply,
                         )?;
-                        let written = query
-                            .export_localization_to_path(&request, output, true, None, cancelled)?;
-                        ("localization_corpus", bytes(written)?)
+                        ("localization_corpus", None)
                     }
                     _ => return Err("Invalid engine dispatch.".into()),
                 };
-                require(
-                    part.len() <= crate::session::MAX_BODY,
-                    Error::new(
-                        ErrorCode::LimitExceeded,
-                        "Native Game Text response exceeds its byte bound; request a smaller evidence page.",
-                    ),
-                )?;
-                (action, Some(part))
+                if let Some(part) = &part {
+                    require(
+                        part.len() <= crate::session::MAX_BODY,
+                        Error::new(
+                            ErrorCode::LimitExceeded,
+                            "Native Game Text response exceeds its byte bound; request a smaller evidence page.",
+                        ),
+                    )?;
+                }
+                (action, part)
             }
         };
+        if let Some(part) = part {
+            reply.part(part.into_bytes())?;
+        }
         checkpoint(cancelled)?;
         stage_seconds.insert(action.into(), started.elapsed().as_secs_f64());
-        Ok(EngineAnswer {
-            part,
-            profile: Profile {
-                io: crate::snapshot::io_metrics(),
-                stage_seconds,
-            },
+        Ok(Profile {
+            stage_seconds,
+            ..Profile::now()
         })
     }
 }
@@ -602,7 +618,7 @@ mod tests {
         }
         let export: EngineRequest = serde_json::from_value(json!({
             "action": "localization_focus_export", "reader": "reader",
-            "line": "line", "output": crate::test_directory("focus-export").join("line.json")
+            "line": "line"
         }))?;
         export.validate()?;
         Ok(())

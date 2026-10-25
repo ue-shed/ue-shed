@@ -10,8 +10,6 @@ use crate::{Error, ErrorCode, Result, require};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
-use std::io::{BufWriter, Write};
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 /// One grouping dimension. Culture-mark dimensions (`state`, `fact`, `unknown_reason`, `review`,
@@ -214,28 +212,48 @@ impl EngineQuery {
             .collect())
     }
 
-    pub fn aggregate_to_path(
+    /// Grouped counts: the matching lines as a part, then the `groups` part. A key's
+    /// components are text: a translation key is its `[namespace, key]` JSON, a flag `true` or
+    /// `false`, and no value the empty string.
+    pub fn send_aggregate(
         &self,
         request: &AggregateRequest,
-        path: &Path,
         cancelled: &AtomicBool,
-    ) -> Result<u64> {
-        let value = self.aggregate_value(request, cancelled)?;
-        let file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(path)?;
-        let mut output = BufWriter::new(file);
-        let result = (|| -> Result<u64> {
-            output.write_all(crate::wtf8::view_json(&value)?.as_bytes())?;
-            output.flush()?;
-            Ok(output.get_ref().metadata()?.len())
-        })();
-        drop(output);
-        if result.is_err() {
-            let _ = std::fs::remove_file(path);
+        reply: &mut dyn crate::engine::Reply,
+    ) -> Result<()> {
+        let mut value = self.aggregate_value(request, cancelled)?;
+        reply.part(crate::wtf8::view_json(&json!({"lines": value["lines"]}))?.into_bytes())?;
+        let mut groups =
+            crate::batch::Batches::new(&crate::batch::GROUP, "groups", crate::batch::GROUP.all());
+        let Some(Value::Array(rows)) = value.get_mut("groups").map(Value::take) else {
+            return Err("An aggregate has no groups.".into());
+        };
+        for mut group in rows {
+            let key = group["key"]
+                .as_array()
+                .ok_or("An aggregate group has no key.")?
+                .iter()
+                .map(|component| match component {
+                    Value::Null => Ok(Value::String(String::new())),
+                    Value::Bool(flag) => Ok(Value::String(flag.to_string())),
+                    Value::String(_) => Ok(component.clone()),
+                    Value::Array(_) => Ok(Value::String(
+                        crate::wtf8::Wtf8Buf::from_utf8(&crate::rules::javascript_json(
+                            component, false,
+                        ))
+                        .into_view(),
+                    )),
+                    _ => Err("An aggregate key component is not text.".into()),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            group["key"] = Value::Array(key);
+            groups.push(&group)?;
+            if groups.full() {
+                groups.flush(reply)?;
+            }
         }
-        result
+        groups.finish(reply)?;
+        Ok(())
     }
 
     pub fn aggregate_value(

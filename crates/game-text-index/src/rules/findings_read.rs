@@ -1,6 +1,9 @@
+use super::findings_query::FindingsPage;
 use super::ir::Family;
-use super::replies::{Place, PlaceSet, Read, ReadProfile, SpilledReply};
+use super::replies::{Place, PlaceSet, ReadProfile};
 use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, SubjectRows, javascript_json};
+use crate::batch::{Batches, FINDING, PLACE};
+use crate::engine::Reply;
 use crate::engine_query::EngineQuery;
 use crate::{Result, require};
 use serde_json::{Value, json};
@@ -44,84 +47,104 @@ fn ordered_places(ids: &[String], occurrences: &[Value]) -> Result<Vec<Value>> {
 }
 
 impl EngineQuery {
-    pub(super) fn with_findings<T: Read>(
+    /// Sends a findings page: its counts and profile as a part, then its place sets and its
+    /// findings as batches, the sets first because the findings name them.
+    pub(super) fn send_page(
         &self,
         key: &str,
         requested: usize,
-        read: impl FnOnce(&Self, &FindingsLayer) -> Result<T>,
-    ) -> Result<String> {
+        read: impl FnOnce(&Self, &FindingsLayer) -> Result<FindingsPage>,
+        reply: &mut dyn Reply,
+    ) -> Result<()> {
         let layer = self.layer(key)?;
-        let mut reply = read(self, &layer)?;
-        *reply.profile() = ReadProfile {
+        let mut page = read(self, &layer)?;
+        page.profile = ReadProfile {
             rows_requested: requested,
-            findings_returned: reply.findings(),
-            response_bytes: 0,
-            file_fallback: false,
+            findings_returned: page.findings.len(),
         };
-        let mut value = serde_json::to_value(&reply)?;
-        drop(reply);
-        let mut result = javascript_json(&value, false);
-        // The reply states its own length, digits included. Its profile is encoded with a zero
-        // count and no fallback, so the final length follows from this one; a mismatch falls
-        // back to iterating.
-        let base = result.len() - "0".len() - "false".len();
-        let mut bytes = result.len();
-        for _ in 0..4 {
-            let fallback = bytes > 16 * 1024 * 1024;
-            bytes = base + bytes.to_string().len() + if fallback { "true" } else { "false" }.len();
+        let places = std::mem::take(&mut page.places);
+        let findings = std::mem::take(&mut page.findings);
+        reply.part(javascript_json(&serde_json::to_value(&page)?, false).into_bytes())?;
+        let mut sets = Batches::new(
+            &PLACE,
+            "places",
+            PLACE.select(&["parent", "id", "location", "packageFile"])?,
+        );
+        for set in places {
+            for place in set.occurrences {
+                sets.push_child(set.id, &serde_json::to_value(place)?)?;
+                if sets.full() {
+                    sets.flush(reply)?;
+                }
+            }
         }
-        let placeholder = format!("\"profile\":{}", javascript_json(&value["profile"], false));
-        value["profile"]["responseBytes"] = json!(bytes);
-        value["profile"]["fileFallback"] = json!(bytes > 16 * 1024 * 1024);
-        // The profile holds numbers and a flag beside top-level arrays, so its text is the
-        // reply's first member or its last: replace it there rather than encode the reply again.
-        let profile = format!("\"profile\":{}", javascript_json(&value["profile"], false));
-        let at = [1, result.len().saturating_sub(placeholder.len() + 1)]
-            .into_iter()
-            .find(|at| result.get(*at..at + placeholder.len()) == Some(placeholder.as_str()));
-        match at {
-            Some(at) => result.replace_range(at..at + placeholder.len(), &profile),
-            None => result = javascript_json(&value, false),
+        sets.finish(reply)?;
+        let mut rows = Batches::new(&FINDING, "findings", FINDING.all());
+        for finding in findings {
+            rows.push(&json!({ "finding": finding }))?;
+            if rows.full() {
+                rows.flush(reply)?;
+            }
         }
-        // A reply at the threshold can have no consistent count: one byte over it when it says
-        // no fallback, one byte under when it says fallback. It settles as a fallback reply.
-        let mut rounds = 0;
-        while value["profile"]["responseBytes"] != json!(result.len()) {
-            rounds += 1;
-            value["profile"]["responseBytes"] = json!(result.len());
-            value["profile"]["fileFallback"] =
-                json!(result.len() > crate::session::MAX_BODY || rounds > 4);
-            result = javascript_json(&value, false);
+        rows.finish(reply)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl EngineQuery {
+    /// A findings page as one value: its part, with its place sets and findings gathered from
+    /// their batches, in the order the page used to be encoded.
+    pub(crate) fn findings_page(
+        &self,
+        request: Value,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<Value> {
+        let mut gathered = crate::engine::Gathered::default();
+        self.findings_query(request, cancelled, &mut gathered)?;
+        let head = crate::json_value::parse(std::str::from_utf8(
+            gathered
+                .parts
+                .first()
+                .ok_or("A findings page has no part.")?,
+        )?)?;
+        let mut places: Vec<Value> = Vec::new();
+        let mut findings = Vec::new();
+        for body in &gathered.batches {
+            let (part, rows) = crate::batch::read(body)?;
+            for mut row in rows {
+                if part == "findings" {
+                    findings.push(row["finding"].take());
+                    continue;
+                }
+                let set = row
+                    .as_object_mut()
+                    .and_then(|row| row.remove("parent"))
+                    .ok_or("A place has no set.")?;
+                match places.last_mut() {
+                    Some(last) if last["id"] == set => {
+                        last["occurrences"]
+                            .as_array_mut()
+                            .ok_or("A place set has no places.")?
+                            .push(row);
+                    }
+                    _ => places.push(json!({"id": set, "occurrences": [row]})),
+                }
+            }
         }
-        if value["profile"]["fileFallback"] == json!(false) {
-            return Ok(result);
+        let mut page = serde_json::Map::new();
+        page.insert("profile".into(), head["profile"].clone());
+        page.insert("places".into(), Value::Array(places));
+        page.insert("findings".into(), Value::Array(findings));
+        for (key, value) in head
+            .as_object()
+            .ok_or("A findings page is not an object.")?
+        {
+            if key != "profile" {
+                page.insert(key.clone(), value.clone());
+            }
         }
-        let path = self
-            .configuration
-            .cache_root
-            .join(format!("native-findings-{}.json", crate::store::token()));
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&path)?;
-        if let Err(cause) = file.write_all(result.as_bytes()) {
-            drop(file);
-            let _ = std::fs::remove_file(&path);
-            return Err(cause.into());
-        }
-        let mut files = self.finding_files.lock();
-        files.0.retain(|file| file.exists());
-        files.0.push(path.clone());
-        drop(files);
-        let file = path
-            .to_str()
-            .ok_or("The findings file path is not Unicode.")?
-            .to_owned();
-        Ok(javascript_json(
-            &serde_json::to_value(SpilledReply { file })?,
-            false,
-        ))
+        Ok(Value::Object(page))
     }
 }
 

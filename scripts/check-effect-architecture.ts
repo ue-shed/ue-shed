@@ -136,6 +136,9 @@ const approvedPromiseAdapters = new Set([
 	// The synthetic benchmark invokes Playwright as its foreign child-process adapter.
 	"packages/observatory/scripts/benchmark.ts",
 	"packages/observatory/src/actor-feed.ts",
+	// The Game Text engine session is the engine process seam: its close waits for the child to
+	// exit, and the client layer releases it through Effect.promise.
+	"packages/unreal-assets/src/game-text-engine-session.ts",
 	"packages/unreal-assets/src/protocol-transport.ts",
 	// The Project Index adapter bridges the native async-generator protocol stream once at the
 	// process seam; callers consume only Effect and Stream operations.
@@ -250,6 +253,9 @@ const approvedResourceAdapters = new Set([
 	"packages/plugin-distribution/src/store.ts",
 	// The saved-asset protocol transport owns and cancels the bounded native child process.
 	"packages/unreal-assets/src/protocol-transport.ts",
+	// The Game Text engine session owns its child process and the stuck-cancel timers; the client
+	// layer acquires and closes it with its scope.
+	"packages/unreal-assets/src/game-text-engine-session.ts",
 	// The engine launcher owns the detached Unreal Editor spawn boundary; its Effect.callback
 	// cancellation finalizer terminates a child that has not completed startup.
 	"packages/engine/src/project-launcher.ts",

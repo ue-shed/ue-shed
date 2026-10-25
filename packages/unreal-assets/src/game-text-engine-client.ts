@@ -8,7 +8,7 @@ import {
 	type GameTextEngineProcessFactory
 } from "./game-text-engine-session.js";
 
-export { answerJson, type EngineAnswer } from "./game-text-engine-session.js";
+export { answerJson, answerRows, type EngineAnswer } from "./game-text-engine-session.js";
 
 /** Native engine calls share their process scope; reader handles never escape that scope. */
 export class NativeGameTextEngineClient extends Context.Service<
@@ -64,6 +64,9 @@ export const nativeGameTextEngineClientLayer = (
 				const answer = yield* session.call(request);
 				yield* Effect.annotateCurrentSpan({
 					"game_text.engine.action": request.action,
+					"game_text.engine.batches": answer.profile.batches,
+					"game_text.engine.batch_bytes": answer.profile.batchBytes,
+					"game_text.engine.credit_stall_ms": answer.profile.creditStallMs,
 					...Object.fromEntries(
 						Object.entries(answer.profile.stageSeconds).map(([stage, seconds]) => [
 							`game_text.engine.seconds.${stage}`,

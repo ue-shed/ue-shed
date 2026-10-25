@@ -189,7 +189,16 @@ export type { GameTextIndexBuildRequest, GameTextIndexBuildOutcome } from "@ue-s
 
 export {
 	answerJson,
+	answerRows,
 	type EngineAnswer,
 	NativeGameTextEngineClient,
 	nativeGameTextEngineClientLayer
 } from "./game-text-engine-client.js";
+export {
+	type BatchCell,
+	type BatchRow,
+	EngineBatch,
+	isRelation,
+	type RelationColumn,
+	type RelationName
+} from "./game-text-engine-batch.js";

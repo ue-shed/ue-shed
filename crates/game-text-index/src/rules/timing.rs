@@ -197,13 +197,21 @@ fn persisted_findings_query_timing() -> Result<()> {
     };
     for call in 0..calls {
         let started = std::time::Instant::now();
-        let reply = query.findings_query(
+        let mut reply = crate::engine::Gathered::default();
+        query.findings_query(
             json!({"key":key,"view":"workspace","order":order,"offset":call * size,"limit":size}),
             &cancelled,
+            &mut reply,
         )?;
+        let bytes = reply
+            .parts
+            .iter()
+            .chain(&reply.batches)
+            .map(Vec::len)
+            .sum::<usize>();
         println!(
             "{}",
-            json!({"call": call, "ms": started.elapsed().as_secs_f64() * 1000.0, "bytes": reply.len()})
+            json!({"call": call, "ms": started.elapsed().as_secs_f64() * 1000.0, "bytes": bytes})
         );
     }
     Ok(())

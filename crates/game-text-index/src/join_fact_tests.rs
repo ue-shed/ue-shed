@@ -963,10 +963,7 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     let page = |key: &str, limit: usize| {
         json!({"key":key,"view":"report","order":"report","limit":limit}).to_string()
     };
-    let reply = query.findings_query(crate::json_value::parse(&page(key, 50))?, &cancelled)?;
-    let lines = crate::json_value::parse(&reply)?;
-    // The profile is set in the encoded reply; the text must be the reply's own encoding.
-    assert_eq!(reply, crate::rules::javascript_json(&lines, false));
+    let lines = query.findings_page(crate::json_value::parse(&page(key, 50))?, &cancelled)?;
     let finding = &lines["findings"][0];
     assert_eq!(
         finding["actual"],
@@ -987,46 +984,34 @@ fn persisted_findings_reuse_their_layer_and_retain_the_joined_view() -> Result<(
     assert_eq!(cached, expected_cached);
     assert_eq!(lines["profile"]["rowsRequested"], 50);
     assert_eq!(lines["profile"]["findingsReturned"], 1);
-    assert_eq!(lines["profile"]["fileFallback"], false);
-    assert_eq!(
-        lines["profile"]["responseBytes"],
-        crate::rules::javascript_json(&lines, false).len()
-    );
     let (_, root) = crate::store::open_root(&configuration)?;
     assert_eq!(root["active"]["joined"], joined);
     assert_eq!(root["active"]["findings"], key);
-    // The page's stage times, and so its length, differ between reads; the rest is the layer's.
+    // The page's stage times differ between reads; the rest is the layer's.
     let unstaged = |mut page: Value| {
         page["stages"] = json!({});
-        page["profile"]["responseBytes"] = json!(0);
         page
     };
     let reopened = EngineQuery::open(&configuration, None)?;
     assert_eq!(
-        unstaged(crate::json_value::parse(&reopened.findings_query(
-            crate::json_value::parse(&page(key, 50))?,
-            &cancelled
-        )?)?),
+        unstaged(reopened.findings_page(crate::json_value::parse(&page(key, 50))?, &cancelled)?),
         unstaged(lines.clone())
     );
     assert!(
         reopened
-            .findings_query(crate::json_value::parse(&page("missing", 50))?, &cancelled)
+            .findings_page(crate::json_value::parse(&page("missing", 50))?, &cancelled)
             .is_err()
     );
     assert!(
         reopened
-            .findings_query(crate::json_value::parse(&page(key, 5001))?, &cancelled)
+            .findings_page(crate::json_value::parse(&page(key, 5001))?, &cancelled)
             .is_err()
     );
     let mut store = Store::writer(configuration)?;
     store.compact(true)?;
     drop(store);
     assert_eq!(
-        unstaged(crate::json_value::parse(&query.findings_query(
-            crate::json_value::parse(&page(key, 50))?,
-            &cancelled
-        )?)?),
+        unstaged(query.findings_page(crate::json_value::parse(&page(key, 50))?, &cancelled)?),
         unstaged(lines)
     );
     Ok(())
@@ -1061,10 +1046,10 @@ fn persisted_place_sets_may_exceed_one_dictionary_string() -> Result<()> {
     let query = EngineQuery::open(&configuration, None)?;
     let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
     let key = result["key"].as_str().ok_or("Missing findings key.")?;
-    let lines = crate::json_value::parse(&query.findings_query(
+    let lines = query.findings_page(
         json!({"key":key,"view":"report","order":"report","limit":50}),
         &cancelled,
-    )?)?;
+    )?;
     let places = lines["places"].as_array().ok_or("Missing places.")?;
     assert_eq!(places.len(), 1);
     let placed = places[0]["occurrences"]

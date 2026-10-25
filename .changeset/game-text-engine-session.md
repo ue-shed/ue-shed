@@ -18,3 +18,11 @@ open snapshot's reader lives in it, instead of two processes per snapshot. Reque
 concurrently in the engine, keystrokes on threads of their own, so a search answers while an
 evaluation or an export runs. Interrupting a read cancels it in the engine rather than letting it
 finish unseen, and a panic in the engine fails only its request.
+
+Bulk reads stream as column batches instead of files: the corpus, its header, localization lines,
+aggregates and findings pages no longer write temporary files under the cache root, and a large
+findings page no longer spills to one. An `EngineAnswer` carries its `batches`, read through
+`EngineBatch` views over each frame's buffer, and `answerRows` reads one part's rows; the
+relations and their columns are generated as `GameTextContract.Relations`. The engine requests
+lose their `output` paths, `SpilledReply` is removed, and `ReadProfile` drops `responseBytes` and
+`fileFallback`; `EngineProfile` counts `batches`, `batchBytes` and `creditStallMs`.

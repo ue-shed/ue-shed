@@ -4,7 +4,7 @@
 use super::findings_order::{CHANGE, FIXABLE, KEYLESS, NONE, SHADOWED};
 use super::findings_read::{compose_line_finding, compose_unit_finding};
 use super::ir::Severity;
-use super::replies::{LineDiagnostic, PlaceSet, Read, ReadProfile};
+use super::replies::{LineDiagnostic, PlaceSet, ReadProfile};
 use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, javascript_json};
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
@@ -176,16 +176,21 @@ pub(crate) struct Diagnostics {
     rows: Vec<LineDiagnostic>,
 }
 
-/// A `findings_query` reply. Line findings are the host's shape with `manifestSource`,
-/// `lineSource`, `shippedTranslation` and `family`; source findings add `sourceKey`.
+/// A `findings_query` reply's part. Its place sets follow as the `places` part and its findings
+/// as the `findings` part, both batches. Line findings are the host's shape with
+/// `manifestSource`, `lineSource`, `shippedTranslation` and `family`; source findings add
+/// `sourceKey`.
 #[derive(Serialize, Default)]
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FindingsPage {
-    profile: ReadProfile,
-    places: Vec<PlaceSet>,
-    #[cfg_attr(test, ts(type = "Array<Finding>"))]
-    findings: Vec<Value>,
+    pub(super) profile: ReadProfile,
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(super) places: Vec<PlaceSet>,
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(super) findings: Vec<Value>,
     /// Findings every filter selects.
     total: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -198,15 +203,6 @@ pub(crate) struct FindingsPage {
     #[cfg_attr(test, ts(type = "{ [stage: string]: number }"))]
     stages: BTreeMap<&'static str, f64>,
 }
-impl Read for FindingsPage {
-    fn findings(&self) -> usize {
-        self.findings.len()
-    }
-    fn profile(&mut self) -> &mut ReadProfile {
-        &mut self.profile
-    }
-}
-
 const SEVERITIES: [(Severity, &str); 3] = [
     (Severity::Blocking, "blocking"),
     (Severity::Normal, "normal"),
@@ -354,7 +350,8 @@ impl EngineQuery {
         &self,
         request: serde_json::Value,
         cancelled: &AtomicBool,
-    ) -> Result<String> {
+        reply: &mut dyn crate::engine::Reply,
+    ) -> Result<()> {
         let request: QueryRequest = serde_json::from_value(request).map_err(|source| {
             Error::with_source(ErrorCode::InvalidInput, "Invalid findings query.", source)
         })?;
@@ -381,9 +378,12 @@ impl EngineQuery {
             }
             None => None,
         };
-        self.with_findings(&key, request.limit, |query, layer| {
-            run_query(query, layer, &request, acceptance.as_deref(), cancelled)
-        })
+        self.send_page(
+            &key,
+            request.limit,
+            |query, layer| run_query(query, layer, &request, acceptance.as_deref(), cancelled),
+            reply,
+        )
     }
 }
 

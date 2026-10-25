@@ -35,7 +35,10 @@ const profile: GameTextContract.EngineProfile = {
 		indexBytes: 0,
 		writtenBytes: 0
 	},
-	stageSeconds: {}
+	stageSeconds: {},
+	batches: 0,
+	batchBytes: 0,
+	creditStallMs: 0
 };
 
 /** A scripted engine: it decodes request frames and answers each one, or holds it. */

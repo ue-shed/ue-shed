@@ -5,7 +5,7 @@
 //! contract's generated types; the request body is read WTF-8-aware, so lone UTF-16 units and the
 //! rule IR travel inline. After the handshake neither side checks the other's frames: a malformed
 //! one is a defect, and the session ends.
-use crate::engine::{EngineAnswer, EngineRequest, EngineSession, Profile};
+use crate::engine::{EngineRequest, EngineSession, Profile, Reply};
 use crate::{Error, ErrorCode, Result};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -13,6 +13,7 @@ use std::io::{self, Read, Write};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, mpsc};
+use std::time::{Duration, Instant};
 #[cfg(test)]
 use ts_rs::TS;
 
@@ -22,6 +23,8 @@ pub const HEADER: usize = 12;
 pub const MAX_BODY: usize = 8 << 20;
 /// `flags` bit 0: the request's last frame.
 pub const LAST: u8 = 1;
+/// Batches a request may send that the host hasn't consumed.
+pub const WINDOW: u32 = 8;
 
 /// What a frame carries. Hosts send the first three; the engine sends the rest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,6 +142,13 @@ pub struct EngineError {
     )]
     pub code: &'static str,
     pub message: String,
+}
+
+/// The body of a `credit` frame: the request's batches the host consumed since its last one.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Credit {
+    frames: u32,
 }
 
 /// The body of an `end` or `cancelled` frame.
@@ -281,21 +291,79 @@ fn write_frames(outbox: &Outbox, mut output: impl Write) -> io::Result<()> {
     written
 }
 
-/// Requests in flight, each with its cancel token.
+/// A request's cancel token and the batches it sent that the host hasn't consumed.
+#[derive(Default)]
+struct Flow {
+    cancelled: AtomicBool,
+    window: Mutex<Window>,
+    changed: Condvar,
+}
+#[derive(Default)]
+struct Window {
+    unconsumed: u32,
+    /// The host's input ended, so it sends no more credits; it reads what is left.
+    released: bool,
+}
+impl Flow {
+    /// Takes a place in the window for one batch, waiting while it is full, and returns how long
+    /// that took. A request cancelled meanwhile stops there.
+    fn take(&self) -> Result<Duration> {
+        let started = Instant::now();
+        let mut window = relock(self.window.lock());
+        while window.unconsumed >= WINDOW && !window.released {
+            if self.cancelled.load(Ordering::Relaxed) {
+                return Err(Error::new(
+                    ErrorCode::Cancelled,
+                    "The request was cancelled.",
+                ));
+            }
+            window = relock(self.changed.wait_timeout(window, Duration::from_millis(50))).0;
+        }
+        window.unconsumed += 1;
+        Ok(started.elapsed())
+    }
+    fn credit(&self, frames: u32) {
+        let mut window = relock(self.window.lock());
+        window.unconsumed = window.unconsumed.saturating_sub(frames);
+        self.changed.notify_all();
+    }
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+        let _window = relock(self.window.lock());
+        self.changed.notify_all();
+    }
+    fn release(&self) {
+        relock(self.window.lock()).released = true;
+        self.changed.notify_all();
+    }
+}
+
+/// Requests in flight, each with its flow.
 #[derive(Default)]
 struct Live {
-    requests: Mutex<HashMap<u32, Arc<AtomicBool>>>,
+    requests: Mutex<HashMap<u32, Arc<Flow>>>,
     idle: Condvar,
 }
 impl Live {
-    fn start(&self, id: u32) -> Arc<AtomicBool> {
-        let token = Arc::new(AtomicBool::new(false));
-        relock(self.requests.lock()).insert(id, Arc::clone(&token));
-        token
+    fn start(&self, id: u32) -> Arc<Flow> {
+        let flow = Arc::new(Flow::default());
+        relock(self.requests.lock()).insert(id, Arc::clone(&flow));
+        flow
     }
     fn cancel(&self, id: u32) {
-        if let Some(token) = relock(self.requests.lock()).get(&id) {
-            token.store(true, Ordering::Relaxed);
+        if let Some(flow) = relock(self.requests.lock()).get(&id) {
+            flow.cancel();
+        }
+    }
+    fn credit(&self, id: u32, frames: u32) {
+        if let Some(flow) = relock(self.requests.lock()).get(&id) {
+            flow.credit(frames);
+        }
+    }
+    /// Stops pacing every request once the host can send no more credits.
+    fn release(&self) {
+        for flow in relock(self.requests.lock()).values() {
+            flow.release();
         }
     }
     fn finish(&self, id: u32) {
@@ -348,14 +416,19 @@ impl Work {
             _ => Class::Bulk,
         }
     }
-    fn run(self, session: &EngineSession, cancelled: &AtomicBool) -> Result<EngineAnswer> {
+    fn run(
+        self,
+        session: &EngineSession,
+        cancelled: &AtomicBool,
+        reply: &mut dyn Reply,
+    ) -> Result<Profile> {
         let parsed = match self {
             Self::Request(parsed) => parsed?,
             Self::Body(body) => request(&body)?,
             #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
-            Self::Probe(probe) => return probe.run(cancelled),
+            Self::Probe(probe) => return probe.run(cancelled, reply),
         };
-        session.execute(&parsed, cancelled)
+        session.answer(&parsed, cancelled, reply)
     }
 }
 
@@ -363,7 +436,36 @@ struct Job {
     id: u32,
     class: Class,
     work: Work,
-    cancelled: Arc<AtomicBool>,
+    flow: Arc<Flow>,
+}
+
+/// A request's answer as it goes out: each part and batch is queued for the writer as soon as
+/// the engine produces it, and batches wait for the host to consume earlier ones.
+struct Outgoing<'a> {
+    shared: &'a Shared,
+    class: Class,
+    id: u32,
+    flow: &'a Flow,
+    batches: u32,
+    batch_bytes: u64,
+    stalled: Duration,
+}
+impl Reply for Outgoing<'_> {
+    fn part(&mut self, body: Vec<u8>) -> Result<()> {
+        self.shared
+            .outbox
+            .push(self.class, frame(Kind::Part, 0, self.id, &body));
+        Ok(())
+    }
+    fn batch(&mut self, body: Vec<u8>) -> Result<()> {
+        self.stalled += self.flow.take()?;
+        self.batches += 1;
+        self.batch_bytes += body.len() as u64;
+        self.shared
+            .outbox
+            .push(self.class, frame(Kind::Batch, 0, self.id, &body));
+        Ok(())
+    }
 }
 
 fn encoded(kind: Kind, id: u32, body: &impl Serialize) -> Vec<u8> {
@@ -402,47 +504,54 @@ fn run(shared: &Shared, job: Job) {
         id,
         class,
         work,
-        cancelled,
+        flow,
     } = job;
-    let answered =
-        std::panic::catch_unwind(AssertUnwindSafe(|| work.run(&shared.session, &cancelled)));
-    let frames = match answered {
-        Ok(Ok(answer)) => {
-            let mut frames = Vec::with_capacity(2);
-            if let Some(part) = &answer.part {
-                frames.push(frame(Kind::Part, 0, id, part.as_bytes()));
-            }
-            frames.push(encoded(
-                Kind::End,
-                id,
-                &EngineEnd {
-                    profile: answer.profile,
-                },
-            ));
-            frames
-        }
+    let mut outgoing = Outgoing {
+        shared,
+        class,
+        id,
+        flow: &flow,
+        batches: 0,
+        batch_bytes: 0,
+        stalled: Duration::ZERO,
+    };
+    let answered = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        work.run(&shared.session, &flow.cancelled, &mut outgoing)
+    }));
+    let counted = |profile: Profile| Profile {
+        batches: outgoing.batches,
+        batch_bytes: outgoing.batch_bytes,
+        credit_stall_ms: outgoing.stalled.as_secs_f64() * 1000.0,
+        ..profile
+    };
+    let terminal = match answered {
+        Ok(Ok(profile)) => encoded(
+            Kind::End,
+            id,
+            &EngineEnd {
+                profile: counted(profile),
+            },
+        ),
         Ok(Err(error))
-            if error.code == ErrorCode::Cancelled && cancelled.load(Ordering::Relaxed) =>
+            if error.code == ErrorCode::Cancelled && flow.cancelled.load(Ordering::Relaxed) =>
         {
-            vec![encoded(
+            encoded(
                 Kind::Cancelled,
                 id,
                 &EngineEnd {
-                    profile: Profile::now(),
+                    profile: counted(Profile::now()),
                 },
-            )]
+            )
         }
-        Ok(Err(error)) => vec![failure(id, error.code, error.to_string())],
-        Err(_) => vec![failure(
+        Ok(Err(error)) => failure(id, error.code, error.to_string()),
+        Err(_) => failure(
             id,
             ErrorCode::Internal,
             "The engine failed while answering this request; the session continues.".into(),
-        )],
+        ),
     };
-    // Queued before the request leaves the live set, so a session that ends waits for them.
-    for frame in frames {
-        shared.outbox.push(class, frame);
-    }
+    // Queued before the request leaves the live set, so a session that ends waits for it.
+    shared.outbox.push(class, terminal);
     shared.live.finish(id);
 }
 
@@ -487,7 +596,7 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
                             id,
                             class,
                             work,
-                            cancelled: shared.live.start(id),
+                            flow: shared.live.start(id),
                         };
                         match class {
                             Class::Interactive => {
@@ -502,8 +611,17 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
                         }
                     }
                     Kind::Cancel => shared.live.cancel(frame.request),
-                    // Row frames, the only ones credits pace, don't exist yet.
-                    Kind::Credit => {}
+                    Kind::Credit => {
+                        let credit: Credit =
+                            serde_json::from_slice(&frame.body).map_err(|source| {
+                                Error::with_source(
+                                    ErrorCode::InvalidInput,
+                                    "Invalid credit frame.",
+                                    source,
+                                )
+                            })?;
+                        shared.live.credit(frame.request, credit.frames);
+                    }
                     _ => {
                         return Err(Error::new(
                             ErrorCode::InvalidInput,
@@ -515,6 +633,8 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
             Ok(())
         })();
         drop(bulk);
+        // The host sends no more credits; requests still streaming send what is left.
+        shared.live.release();
         shared.live.wait_idle();
         shared.outbox.close();
         let written = writer.join();
@@ -530,12 +650,12 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
 }
 
 /// Requests that drive the session's failure paths, in tests, debug builds and probe builds:
-/// `{"action":"probe","probe":"hold"|"panic"|"abort","bulk":true}`.
+/// `{"action":"probe","probe":"hold"|"panic"|"abort"|"stream","bulk":true,"batches":n}`.
 #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
 mod probe {
     use super::Class;
     use crate::Result;
-    use crate::engine::EngineAnswer;
+    use crate::engine::{Profile, Reply};
     use serde::Deserialize;
     use std::sync::atomic::AtomicBool;
 
@@ -544,6 +664,8 @@ mod probe {
     enum Kind {
         /// Runs until cancelled.
         Hold,
+        /// Sends one-row batches as fast as the host consumes them, until cancelled or done.
+        Stream,
         Panic,
         /// Ends the process, as a crash would.
         Abort,
@@ -556,6 +678,9 @@ mod probe {
         probe: Kind,
         #[serde(default)]
         bulk: bool,
+        /// How many batches `stream` sends before it ends; none sends until cancelled.
+        #[serde(default)]
+        batches: Option<u32>,
     }
 
     pub(super) fn read(body: &[u8]) -> Option<Probe> {
@@ -576,8 +701,23 @@ mod probe {
             clippy::panic,
             reason = "the probe exists to show that a panic stays inside its request"
         )]
-        pub(super) fn run(&self, cancelled: &AtomicBool) -> Result<EngineAnswer> {
+        pub(super) fn run(&self, cancelled: &AtomicBool, reply: &mut dyn Reply) -> Result<Profile> {
             match self.probe {
+                Kind::Stream => {
+                    let mut rows = crate::batch::Batches::new(
+                        &crate::batch::PACKAGE,
+                        "packages",
+                        crate::batch::PACKAGE.all(),
+                    );
+                    for _ in 0..self.batches.unwrap_or(u32::MAX) {
+                        crate::engine_match::checkpoint(cancelled)?;
+                        rows.push(
+                            &serde_json::json!({"packageFile": "Probe", "status": "complete"}),
+                        )?;
+                        rows.flush(reply)?;
+                    }
+                    Ok(Profile::now())
+                }
                 Kind::Hold => loop {
                     crate::engine_match::checkpoint(cancelled)?;
                     std::thread::sleep(std::time::Duration::from_millis(1));
@@ -781,6 +921,48 @@ mod tests {
         host.send(Kind::Cancel, 3, Value::Null);
         host.send(Kind::Cancel, 2, Value::Null);
         assert_eq!(host.terminal(2).kind, Kind::Cancelled);
+        host.close()
+    }
+
+    #[test]
+    fn a_stream_waits_for_credits_and_stops_when_cancelled_while_waiting() -> Result<()> {
+        let host = Host::start();
+        let batches = |host: &Host| {
+            host.answered(5)
+                .iter()
+                .filter(|frame| frame.kind == Kind::Batch)
+                .count()
+        };
+        let settled = |host: &Host, count: usize| {
+            let started = Instant::now();
+            while batches(host) < count {
+                assert!(
+                    started.elapsed() < Duration::from_secs(10),
+                    "{count} batches"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            // The window is full: nothing more comes until the host consumes some.
+            std::thread::sleep(Duration::from_millis(100));
+            assert_eq!(batches(host), count);
+        };
+        host.send(
+            Kind::Request,
+            5,
+            json!({"action":"probe","probe":"stream","bulk":true}),
+        );
+        settled(&host, WINDOW as usize);
+        host.send(Kind::Credit, 5, json!({"frames": 3}));
+        settled(&host, WINDOW as usize + 3);
+        let (header, rows) = crate::batch::read(&host.answered(5)[0].body)?;
+        assert_eq!(header, "packages");
+        assert_eq!(
+            rows,
+            [json!({"packageFile": "Probe", "status": "complete"})]
+        );
+        // A request waiting for credits still answers its cancel.
+        host.send(Kind::Cancel, 5, Value::Null);
+        assert_eq!(host.terminal(5).kind, Kind::Cancelled);
         host.close()
     }
 

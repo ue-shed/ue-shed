@@ -101,11 +101,11 @@ export function engineRequestOverhead(
 			"payloadDecodeValidate"
 		),
 		engineComputeMs: rustSum("engineTotal"),
-		rustEncodeMs: rustSum("payloadEncode", "frameEncode", "bulkEncode"),
-		bulkWriteMs: rustSum("bulkBufferedWrite", "bulkFlush"),
+		rustEncodeMs: rustSum("payloadEncode", "frameEncode", "batchEncode"),
 		tsFrameParseMs: tsSum("tsFrameParse"),
 		tsPayloadDecodeMs: tsSum("tsPayloadDecode"),
-		tsBulkReadMs: tsSum("tsBulkRead")
+		tsBatchViewMs: tsSum("tsBatchView"),
+		tsRowObjectsMs: tsSum("tsRowObjects")
 	};
 	const residual = wallMs - Object.values(parts).reduce((sum, ms) => sum + ms, 0);
 	return {

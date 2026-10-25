@@ -1,8 +1,11 @@
 import { channel } from "node:diagnostics_channel";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { Clock, Effect, Schema, type Scope } from "effect";
-import { answerJson, type EngineAnswer, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
+import {
+	answerJson,
+	answerRows,
+	type EngineAnswer,
+	NativeGameTextEngineClient
+} from "@ue-shed/unreal-assets";
 import type { GameTextContract, GameTextIndexConfiguration } from "@ue-shed/protocol";
 import { GameTextIndexError } from "./index-contract.js";
 import { TextCorpusReportHeader } from "./corpus-summary.js";
@@ -50,6 +53,29 @@ const NativeExportFile = Schema.Struct({
 		})
 	)
 });
+
+type Row = { readonly [key: string]: GameTextContract.JsonValue };
+
+/** Parent rows, each with the child rows that name it under `field`; children lose `parent`. */
+const withChildren = (parents: readonly Row[], children: readonly Row[], field: string): Row[] => {
+	const owned = parents.map((): Row[] => []);
+	for (const { parent, ...child } of children) owned[Number(parent)]?.push(child);
+	return parents.map((row, index) => ({ ...row, [field]: owned[index]! }));
+};
+
+/** A corpus read's document: its head, then its units with their places and its package lists. */
+const corpusDocument = (answer: EngineAnswer) => ({
+	...answerJson<Row>(answer),
+	units: withChildren(answerRows(answer, "units"), answerRows(answer, "places"), "occurrences"),
+	packageCoverage: answerRows(answer, "packages"),
+	diagnostics: answerRows(answer, "diagnostics")
+});
+
+/** A line read's lines, each with its `places` when the read named them. */
+const lineRows = (answer: EngineAnswer, places: boolean) =>
+	places
+		? withChildren(answerRows(answer, "lines"), answerRows(answer, "places"), "places")
+		: answerRows(answer, "lines");
 
 const failed = (operation: string, cause: unknown) =>
 	new GameTextIndexError({
@@ -146,54 +172,44 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			)
 		);
 	}
-	const withStage = <A>(use: (directory: string) => Effect.Effect<A, GameTextIndexError>) =>
-		Effect.scoped(
-			Effect.gen(function* () {
-				const directory = yield* Effect.acquireRelease(
-					Effect.tryPromise({
-						try: () => mkdtemp(join(input.configuration.cacheRoot, "native-read-")),
-						catch: (cause) => failed("staging", cause)
-					}),
-					(directory) =>
-						Effect.tryPromise({
-							try: () => rm(directory, { recursive: true, force: true }),
-							catch: (cause) => failed("staging_cleanup", cause)
-						}).pipe(
-							Effect.catch((cause) =>
-								Effect.logWarning("Native read staging cleanup failed", { cause })
-							)
-						)
-				);
-				return yield* use(directory);
-			})
+	/** Decodes a read's rows into the domain type, timed as building row objects. */
+	const decodeRows = <A>(
+		operation: string,
+		schema: Schema.Codec<A, unknown>,
+		rows: GameTextContract.JsonValue
+	) =>
+		Effect.gen(function* () {
+			const started = benchmark.hasSubscribers ? performance.now() : undefined;
+			const value = yield* Schema.decodeUnknownEffect(schema)(rows).pipe(
+				Effect.mapError((cause) => failed(`${operation}_decode`, cause))
+			);
+			if (started !== undefined)
+				benchmark.publish({
+					stage: "tsRowObjects",
+					action: operation,
+					ms: performance.now() - started
+				});
+			return value;
+		});
+	const localizationLines = Effect.fn("GameTextIndex.nativeLocalizationExport")(function* (
+		pinned: Pinned,
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+			...request,
+			pageSize: 50
+		}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
+		const answer = yield* pinned.execute({
+			action: "localization_export",
+			reader: pinned.reader,
+			request: decoded
+		});
+		return yield* decodeRows(
+			"localization_export",
+			Schema.Array(LocalizationLine),
+			lineRows(answer, false)
 		);
-	const localizationLines = Effect.fn("GameTextIndex.nativeLocalizationExport")(
-		(pinned: Pinned, request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) =>
-			withStage((directory) =>
-				Effect.gen(function* () {
-					const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
-						...request,
-						pageSize: 50
-					}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
-					const output = join(directory, "localization.json");
-					yield* pinned.execute({
-						action: "localization_export",
-						reader: pinned.reader,
-						request: decoded,
-						output
-					});
-					const text = yield* Effect.tryPromise({
-						try: (signal) => readFile(output, { encoding: "utf8", signal }),
-						catch: (cause) => failed("localization_export_read", cause)
-					});
-					return yield* Schema.decodeUnknownEffect(
-						Schema.fromJsonString(Schema.Array(LocalizationLine))
-					)(text).pipe(
-						Effect.mapError((cause) => failed("localization_export_decode", cause))
-					);
-				})
-			)
-	);
+	});
 	const exportWithSignals = Effect.fn("GameTextIndex.nativeExport")(function* (
 		pinned: Pinned,
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined
@@ -204,126 +220,35 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			...request,
 			pageSize: 50
 		}).pipe(Effect.mapError((cause) => failed("export", cause)));
-		return yield* withStage((directory) =>
-			Effect.gen(function* () {
-				const output = join(directory, "corpus.json");
-				yield* pinned.execute(
-					request === undefined
-						? { action: "corpus", reader: pinned.reader, output }
-						: {
-								action: "export",
-								reader: pinned.reader,
-								request: decoded,
-								output
-							}
-				);
-				const text = yield* Effect.tryPromise({
-					try: (signal) => readFile(output, { encoding: "utf8", signal }),
-					catch: (cause) => failed("export_read", cause)
-				});
-				const file = yield* Schema.decodeUnknownEffect(
-					Schema.fromJsonString(NativeExportFile)
-				)(text).pipe(Effect.mapError((cause) => failed("export_decode", cause)));
-				const { findingRules, ...corpus } = file;
-				return {
-					corpus: {
-						...corpus,
-						units: file.units.map(
-							({
-								reviewSignals: _signals,
-								findings: _findings,
-								findingsOmitted: _omitted,
-								...unit
-							}) => unit
-						)
-					},
-					reviewSignals: new Map(file.units.map((unit) => [unit.id, unit.reviewSignals])),
-					...(findingRules
-						? {
-								findings: {
-									labels: new Map(
-										findingRules.map((rule) => [rule.id, rule.label])
-									),
-									units: new Map(
-										file.units.map((unit) => [unit.id, unit.findings ?? []])
-									)
-								}
-							}
-						: undefined)
-				};
-			})
+		const answer = yield* pinned.execute(
+			request === undefined
+				? { action: "corpus", reader: pinned.reader }
+				: { action: "export", reader: pinned.reader, request: decoded }
 		);
-	});
-	const fileRead = <A>(
-		pinned: Pinned,
-		operation: string,
-		request: (output: string) => GameTextContract.EngineRequest,
-		schema: Schema.Codec<A, unknown>
-	) =>
-		withStage((directory) =>
-			Effect.gen(function* () {
-				const output = join(directory, `${operation}.json`);
-				yield* pinned.execute(request(output));
-				const readStarted = benchmark.hasSubscribers ? performance.now() : undefined;
-				const text = yield* Effect.tryPromise({
-					try: (signal) => readFile(output, { encoding: "utf8", signal }),
-					catch: (cause) => {
-						if (readStarted !== undefined)
-							benchmark.publish({
-								stage: "tsBulkRead",
-								action: operation,
-								ms: performance.now() - readStarted
-							});
-						return failed(`${operation}_read`, cause);
+		const file = yield* decodeRows("export", NativeExportFile, corpusDocument(answer));
+		const { findingRules, ...corpus } = file;
+		return {
+			corpus: {
+				...corpus,
+				units: file.units.map(
+					({
+						reviewSignals: _signals,
+						findings: _findings,
+						findingsOmitted: _omitted,
+						...unit
+					}) => unit
+				)
+			},
+			reviewSignals: new Map(file.units.map((unit) => [unit.id, unit.reviewSignals])),
+			...(findingRules
+				? {
+						findings: {
+							labels: new Map(findingRules.map((rule) => [rule.id, rule.label])),
+							units: new Map(file.units.map((unit) => [unit.id, unit.findings ?? []]))
+						}
 					}
-				});
-				if (readStarted !== undefined)
-					benchmark.publish({
-						stage: "tsBulkRead",
-						action: operation,
-						ms: performance.now() - readStarted
-					});
-				const decodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
-				const value = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(
-					text
-				).pipe(
-					Effect.mapError((cause) => {
-						if (decodeStarted !== undefined)
-							benchmark.publish({
-								stage: "tsPayloadDecode",
-								action: operation,
-								ms: performance.now() - decodeStarted
-							});
-						return failed(`${operation}_decode`, cause);
-					})
-				);
-				if (decodeStarted !== undefined)
-					benchmark.publish({
-						stage: "tsPayloadDecode",
-						action: operation,
-						ms: performance.now() - decodeStarted
-					});
-				return value;
-			})
-		);
-	const NativeAggregate = Schema.Struct({
-		lines: Schema.Number,
-		groups: Schema.Array(
-			Schema.Struct({
-				key: Schema.Array(
-					Schema.Union([
-						Schema.String,
-						Schema.Boolean,
-						Schema.Null,
-						Schema.Tuple([Schema.String, Schema.String])
-					])
-				),
-				lines: Schema.Number,
-				sourceWords: Schema.optionalKey(Schema.Number),
-				lineBreakWords: Schema.optionalKey(Schema.Number),
-				unknownWords: Schema.optionalKey(Schema.Number)
-			})
-		)
+				: undefined)
+		};
 	});
 	const aggregate = Effect.fn("GameTextIndex.nativeAggregate")(function* (
 		pinned: Pinned,
@@ -332,33 +257,16 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(TextAggregateRequest)(request).pipe(
 			Effect.mapError((cause) => failed("aggregate", cause))
 		);
-		const native = yield* fileRead(
-			pinned,
-			"aggregate",
-			(output) => ({
-				action: "aggregate",
-				reader: pinned.reader,
-				request: decoded,
-				output
-			}),
-			NativeAggregate
-		);
-		// Key components read as strings: a translation key as JSON.stringify([namespace, key]).
-		return yield* Schema.decodeUnknownEffect(TextAggregate)({
-			lines: native.lines,
-			groups: native.groups.map((group) => ({
-				...group,
-				key: group.key.map((value) =>
-					value === null
-						? ""
-						: value === true || value === false
-							? String(value)
-							: Array.isArray(value)
-								? JSON.stringify(value)
-								: value
-				)
-			}))
-		}).pipe(Effect.mapError((cause) => failed("aggregate_decode", cause)));
+		const answer = yield* pinned.execute({
+			action: "aggregate",
+			reader: pinned.reader,
+			request: decoded
+		});
+		// The engine writes each key component as text: a translation key as its JSON.
+		return yield* decodeRows("aggregate", TextAggregate, {
+			...answerJson<Row>(answer),
+			groups: answerRows(answer, "groups")
+		});
 	});
 	const selectLocalizationLines = <F extends LocalizationLineField>(
 		pinned: Pinned,
@@ -378,45 +286,43 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 					action: "localization_export",
 					ms: performance.now() - encodeStarted
 				});
-			return yield* fileRead(
-				pinned,
+			const answer = yield* pinned.execute({
+				action: "localization_export",
+				reader: pinned.reader,
+				request: selection
+			});
+			return yield* decodeRows(
 				"localization_export",
-				(output) => ({
-					action: "localization_export",
-					reader: pinned.reader,
-					request: selection,
-					output
-				}),
-				localizationLineViews(fields)
+				localizationLineViews(fields),
+				lineRows(
+					answer,
+					fields.some((field) => field === "places")
+				)
 			);
 		});
-	const readUnits = (pinned: Pinned, ids: readonly string[]) =>
-		withStage((directory) =>
-			Effect.gen(function* () {
-				const output = join(directory, "units.json");
-				yield* pinned.execute({
-					action: "export",
-					reader: pinned.reader,
-					request: { query: "", capability: "all", pageSize: 50, units: ids },
-					output
-				});
-				const text = yield* Effect.tryPromise({
-					try: (signal) => readFile(output, { encoding: "utf8", signal }),
-					catch: (cause) => failed("units_read", cause)
-				});
-				const file = yield* Schema.decodeUnknownEffect(
-					Schema.fromJsonString(NativeExportFile)
-				)(text).pipe(Effect.mapError((cause) => failed("units_decode", cause)));
-				return file.units.map(({ reviewSignals: _, ...unit }) => unit);
-			})
-		);
-	const readCorpusHeader = (pinned: Pinned) =>
-		fileRead(
-			pinned,
-			"corpus_header",
-			(output) => ({ action: "corpus_header", reader: pinned.reader, output }),
-			TextCorpusHeader
-		);
+	const readUnits = Effect.fn("GameTextIndex.nativeUnits")(function* (
+		pinned: Pinned,
+		ids: readonly string[]
+	) {
+		const answer = yield* pinned.execute({
+			action: "export",
+			reader: pinned.reader,
+			request: { query: "", capability: "all", pageSize: 50, units: ids }
+		});
+		const file = yield* decodeRows("units", NativeExportFile, corpusDocument(answer));
+		return file.units.map(({ reviewSignals: _, ...unit }) => unit);
+	});
+	const readCorpusHeader = Effect.fn("GameTextIndex.nativeCorpusHeader")(function* (
+		pinned: Pinned
+	) {
+		const answer = yield* pinned.execute({ action: "corpus_header", reader: pinned.reader });
+		return yield* decodeRows("corpus_header", TextCorpusHeader, {
+			...answerJson<Row>(answer),
+			units: [],
+			packageCoverage: answerRows(answer, "packages"),
+			diagnostics: answerRows(answer, "diagnostics")
+		});
+	});
 	const readCorpusReportHeader = (pinned: Pinned) =>
 		response(
 			pinned,
@@ -429,26 +335,19 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			{ action: "corpus_fingerprint", reader: pinned.reader },
 			Schema.Struct({ sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u)) })
 		).pipe(Effect.map((result) => result.sha256));
-	const readLocalizationLines = (pinned: Pinned) =>
-		withStage((directory) =>
-			Effect.gen(function* () {
-				const output = join(directory, "localization.json");
-				yield* pinned.execute({
-					action: "localization_corpus",
-					reader: pinned.reader,
-					output
-				});
-				const text = yield* Effect.tryPromise({
-					try: (signal) => readFile(output, { encoding: "utf8", signal }),
-					catch: (cause) => failed("localization_corpus_read", cause)
-				});
-				return yield* Schema.decodeUnknownEffect(
-					Schema.fromJsonString(Schema.Array(LocalizationLine))
-				)(text).pipe(
-					Effect.mapError((cause) => failed("localization_corpus_decode", cause))
-				);
-			})
+	const readLocalizationLines = Effect.fn("GameTextIndex.nativeLocalizationCorpus")(function* (
+		pinned: Pinned
+	) {
+		const answer = yield* pinned.execute({
+			action: "localization_corpus",
+			reader: pinned.reader
+		});
+		return yield* decodeRows(
+			"localization_corpus",
+			Schema.Array(LocalizationLine),
+			lineRows(answer, false)
 		);
+	});
 	const reader = pinned.reader;
 	/**
 	 * A findings reply as the contract's type. The session's handshake checked the engine's
@@ -461,39 +360,25 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
 			return reply;
 		});
-	const parseReply = <T>(operation: string, text: string) =>
-		Effect.try({
-			// SAFETY: the engine serializes this reply from the contract type T; the handshake
-			// checked that host and engine were built against the same contract.
-			// Verified by: the Rust contract test regenerates these types from the reply structs.
-			try: (): T => JSON.parse(text),
-			catch: (cause) => failed(operation, cause)
-		});
-	/** A bounded findings read, which the engine spills to a file past one frame. */
-	const findingResponse = <T extends object>(
-		pinned: Pinned,
-		request: GameTextContract.EngineRequest
-	) =>
+	/**
+	 * A findings page: its part, its findings, and the place sets they name. The handshake checked
+	 * the engine's contract, so the reply is read, not decoded.
+	 */
+	const findingsPage = (pinned: Pinned, request: GameTextContract.FindingsQueryRequest) =>
 		Effect.gen(function* () {
-			const reply = yield* engineReply<T | GameTextContract.SpilledReply>(pinned, request);
-			if (!("file" in reply)) return reply;
-			return yield* Effect.acquireUseRelease(
-				Effect.succeed(reply.file),
-				(file) =>
-					Effect.tryPromise({
-						try: (signal) => readFile(file, { encoding: "utf8", signal }),
-						catch: (cause) => failed("findings_read", cause)
-					}).pipe(Effect.flatMap((text) => parseReply<T>("findings_decode", text))),
-				(file) =>
-					Effect.tryPromise({
-						try: () => rm(file, { force: true }),
-						catch: (cause) => failed("findings_cleanup", cause)
-					}).pipe(
-						Effect.catch((cause) =>
-							Effect.logWarning("Native finding file cleanup failed", { cause })
-						)
-					)
-			);
+			const answer = yield* pinned.execute({ action: "findings_query", reader, request });
+			const page = answerJson<GameTextContract.FindingsPage>(answer);
+			if (page === undefined)
+				return yield* Effect.fail(failed("findings_query", "The engine sent no reply."));
+			const sets = new Map<number, Row[]>();
+			for (const { parent, ...place } of answerRows(answer, "places")) {
+				const set = Number(parent);
+				const places = sets.get(set);
+				if (places === undefined) sets.set(set, [place]);
+				else places.push(place);
+			}
+			const findings = answerRows(answer, "findings").map(({ finding }) => finding);
+			return { page, sets, findings };
 		});
 	const summary = Effect.fn("GameTextIndex.nativeSummary")(() =>
 		response(pinned, { action: "summary", reader }, TextCorpusQuerySummary)
@@ -545,27 +430,13 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const localizationFocus = Effect.fn("GameTextIndex.nativeLocalizationFocus")(function* (
 		id: LocalizationLineId
 	) {
-		return yield* withStage((directory) =>
-			Effect.gen(function* () {
-				const output = join(directory, "line.json");
-				yield* execute({
-					action: "localization_focus_export",
-					reader,
-					line: id,
-					output
-				});
-				const text = yield* Effect.tryPromise({
-					try: (signal) => readFile(output, { encoding: "utf8", signal }),
-					catch: (cause) => failed("localization_focus_read", cause)
-				});
-				const line = yield* Schema.decodeUnknownEffect(
-					Schema.fromJsonString(Schema.NullOr(LocalizationLine))
-				)(text).pipe(
-					Effect.mapError((cause) => failed("localization_focus_decode", cause))
-				);
-				return line ?? undefined;
-			})
+		const answer = yield* execute({ action: "localization_focus_export", reader, line: id });
+		const [line] = yield* decodeRows(
+			"localization_focus",
+			Schema.Array(LocalizationLine),
+			lineRows(answer, false)
 		);
+		return line;
 	});
 	const localizationDetail = Effect.fn("GameTextIndex.nativeLocalizationDetail")(function* (
 		request: LocalizationFocusRequest
@@ -637,22 +508,18 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			}).pipe(Effect.mapError((cause) => failed("rules_check", cause)))
 		),
 		findingsQuery: Effect.fn("GameText.native.findingsQuery")((request) =>
-			findingResponse<GameTextContract.FindingsPage>(pinned, {
-				action: "findings_query",
-				reader,
-				request
-			}).pipe(
-				Effect.tap((result) =>
+			findingsPage(pinned, request).pipe(
+				Effect.tap(({ page }) =>
 					Effect.annotateCurrentSpan(
 						Object.fromEntries(
-							Object.entries(result.stages).map(([stage, ms]) => [
+							Object.entries(page.stages).map(([stage, ms]) => [
 								`game_text.findings.query.stage_ms.${stage}`,
 								ms
 							])
 						)
 					)
 				),
-				Effect.tap((result) => annotateFindingsProfile(result.profile)),
+				Effect.tap(({ page }) => annotateFindingsProfile(page.profile)),
 				Effect.flatMap(inflateFindingsPage),
 				Effect.mapError((cause) => failed("findings_query", cause))
 			)

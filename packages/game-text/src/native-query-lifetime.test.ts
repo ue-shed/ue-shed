@@ -1,5 +1,4 @@
 import { Deferred, Effect, Exit, Fiber, Ref, Scope } from "effect";
-import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
 import { type EngineAnswer, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
@@ -30,8 +29,12 @@ function outcome(
 			: reply;
 	return {
 		parts: part === null ? [] : [new TextEncoder().encode(JSON.stringify(part)).buffer],
+		batches: [],
 		profile: {
 			stageSeconds: {},
+			batches: 0,
+			batchBytes: 0,
+			creditStallMs: 0,
 			io: {
 				opens: 0,
 				sectionLoads: 0,
@@ -51,10 +54,7 @@ const engine = (calls: string[], hold: Effect.Effect<void> = Effect.void) =>
 		execute: (operation) =>
 			Effect.gen(function* () {
 				calls.push(`${operation.action}:${"reader" in operation ? operation.reader : ""}`);
-				if (operation.action === "localization_corpus") {
-					yield* hold;
-					yield* Effect.promise(() => writeFile(operation.output, "[]"));
-				}
+				if (operation.action === "localization_corpus") yield* hold;
 				return outcome(
 					operation,
 					operation.action === "search"

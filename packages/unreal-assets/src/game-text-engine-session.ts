@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { channel } from "node:diagnostics_channel";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { AssetReaderError, type AssetReaderProtocolObservation } from "./asset-reader.js";
 import {
@@ -12,6 +12,7 @@ import {
 	LAST_FRAME,
 	MAX_FRAME_BODY_BYTES
 } from "./game-text-engine-frames.js";
+import { type BatchRow, EngineBatch } from "./game-text-engine-batch.js";
 
 const benchmark = channel("ue-shed.game-text-benchmark");
 
@@ -75,23 +76,31 @@ function spawnEngine(executable: string): GameTextEngineProcess {
 }
 
 /**
- * A failure probe: it holds until cancelled, panics, or aborts the process. Only debug and probe
- * builds of the engine answer it, for the session's failure tests.
+ * A failure probe: it holds until cancelled, panics, aborts the process, or sends batches until
+ * cancelled. Only debug and probe builds of the engine answer it, for the session's tests.
  */
 export interface EngineProbe {
 	readonly action: "probe";
-	readonly probe: "hold" | "panic" | "abort";
+	readonly probe: "hold" | "panic" | "abort" | "stream";
 	/** Run it as bulk work rather than interactive. */
 	readonly bulk?: boolean;
+	/** How many batches `stream` sends before it ends; none sends until cancelled. */
+	readonly batches?: number;
 }
 
-/** A request's answer: its parts, each one frame's body, and what the request cost. */
+/**
+ * A request's answer: its JSON parts, each one frame's body, its column batches in the order they
+ * came, and what the request cost.
+ */
 export interface EngineAnswer {
 	readonly parts: ReadonlyArray<ArrayBuffer>;
+	readonly batches: ReadonlyArray<EngineBatch>;
 	readonly profile: GameTextContract.EngineProfile;
 }
 
 const decoder = new TextDecoder();
+/** A `credit` body for one consumed frame. */
+const creditBody = new TextEncoder().encode(JSON.stringify({ frames: 1 }));
 
 /** A JSON frame body as the contract type `T` the engine serialized it from. */
 const contractJson = <T>(body: ArrayBuffer): T =>
@@ -106,8 +115,16 @@ export const answerJson = <T>(answer: EngineAnswer): T | undefined => {
 	return part === undefined ? undefined : contractJson<T>(part);
 };
 
+/** The rows of one part of an answer, as objects, in the order the engine sent them. */
+export const answerRows = (answer: EngineAnswer, part: string): BatchRow[] => {
+	const rows: BatchRow[] = [];
+	for (const batch of answer.batches) if (batch.part === part) rows.push(...batch.objects());
+	return rows;
+};
+
 interface Pending {
 	readonly parts: ArrayBuffer[];
+	readonly batches: EngineBatch[];
 	readonly resume: (effect: Effect.Effect<EngineAnswer, AssetReaderError>) => void;
 	/** Output bytes and the largest frame, for the reader's protocol observer. */
 	outputBytes: number;
@@ -258,7 +275,32 @@ class Worker {
 		}
 		switch (frame.kind) {
 			case FrameKind.part:
-			case FrameKind.batch:
+				pending.parts.push(frame.body);
+				return;
+			case FrameKind.batch: {
+				let batch: EngineBatch;
+				const viewStarted = benchmark.hasSubscribers ? performance.now() : undefined;
+				try {
+					batch = new EngineBatch(frame.body);
+					if (viewStarted !== undefined)
+						benchmark.publish({
+							stage: "tsBatchView",
+							ms: performance.now() - viewStarted
+						});
+				} catch (cause) {
+					this.fail(
+						failure("contract", "The Game Text engine sent a malformed batch.", {
+							cause
+						})
+					);
+					this.process.kill();
+					return;
+				}
+				pending.batches.push(batch);
+				// The answer is gathered in memory, so each batch is consumed as it arrives.
+				this.process.write(encodeFrame(FrameKind.credit, frame.request, creditBody));
+				return;
+			}
 			case FrameKind.text:
 				pending.parts.push(frame.body);
 				return;
@@ -266,7 +308,9 @@ class Worker {
 				return;
 			case FrameKind.end: {
 				const { profile } = contractJson<GameTextContract.EngineEnd>(frame.body);
-				pending.resume(Effect.succeed({ parts: pending.parts, profile }));
+				pending.resume(
+					Effect.succeed({ parts: pending.parts, batches: pending.batches, profile })
+				);
 				return;
 			}
 			case FrameKind.error: {
@@ -367,7 +411,7 @@ export class GameTextEngineSession {
 			} catch (cause) {
 				resume(
 					Effect.fail(
-						cause instanceof AssetReaderError
+						Schema.is(AssetReaderError)(cause)
 							? cause
 							: failure("process", "The Game Text engine did not start.", { cause })
 					)
@@ -394,7 +438,13 @@ export class GameTextEngineSession {
 				return;
 			}
 			const id = worker.id();
-			worker.pending.set(id, { parts: [], resume, outputBytes: 0, largestFrameBytes: 0 });
+			worker.pending.set(id, {
+				parts: [],
+				batches: [],
+				resume,
+				outputBytes: 0,
+				largestFrameBytes: 0
+			});
 			if (worker.process.pid !== undefined)
 				this.observe({ kind: "worker_started", pid: worker.process.pid });
 			worker.process.write(encodeFrame(FrameKind.request, id, body));

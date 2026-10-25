@@ -99,15 +99,22 @@ A `batch` body is a `u32` header length, a JSON header, zero padding to 8 bytes,
 
 ```jsonc
 {
-	"part": "rows", // which part of the answer the batch belongs to
-	"relation": "line", // the relation the columns describe
+	"part": "units", // which part of the answer the batch belongs to
+	"relation": "unit", // the relation the columns describe
 	"rows": 4096,
 	"columns": [
-		{ "name": "id", "type": "u32", "offset": 0 },
-		{ "name": "translation", "type": "str", "offset": 16384, "validity": 32768 },
-		{ "name": "findings", "type": "u32List", "offset": 33280, "values": 49664 }
+		{ "name": "id", "type": "str", "offset": 0, "missing": "never" },
+		{ "name": "identity", "type": "json", "offset": 16384, "missing": "never" },
+		{
+			"name": "findings",
+			"type": "strList",
+			"offset": 32768,
+			"values": 49160,
+			"validity": 81920,
+			"missing": "omit"
+		}
 	],
-	"strings": { "offsets": 81920, "bytes": 98308, "length": 120411, "loneSurrogates": 218720 }
+	"strings": { "entries": 9021, "offsets": 82432, "bytes": 118520, "loneSurrogates": 401160 }
 }
 ```
 
@@ -115,27 +122,33 @@ A `batch` body is a `u32` header length, a JSON header, zero padding to 8 bytes,
     - `u32`, `i32` and `f64` are plain arrays.
     - `bool` is a bitset.
     - `str` is a `u32` index into the batch's string table.
+    - `json` is a string-table index whose entry is JSON text: an open-ended or nested value a host reads per row, such as a finding's evidence, a place's location or a line's cultures. It is parsed only when a row is read. Arrow's JSON extension type is the precedent; the rule that JSON never nests in a string (§3) is about the envelope, and a `json` cell is a typed column.
     - `u32List` and `strList` are `u32` offsets (rows + 1) over a values array.
-    - `validity` is an optional bitset; absent means every row has a value.
+    - `validity` is an optional bitset; absent means every row has a value. `missing` says what a row without one holds: `null`, or no key (`omit`).
     - Identity lanes are `u32`; no `u64` crosses.
 - **Strings.** Each batch has its own table: `u32` offsets (entries + 1) over WTF-8 bytes, and a bitset of entries holding lone surrogates. A column's index refers to that table. A string a batch uses twice is stored once (decision 35).
-- **Size.** A batch holds at most 4,096 rows or 4 MiB of buffers, whichever comes first. A rows part of at most 50 rows is one batch, sent as soon as it's filled.
-- **Relations.** Each relation's columns are declared once in Rust with `ts-rs` and generated into TypeScript, with the column names as a literal union. A request names the columns it wants, and only those are built.
+- **Size.** A batch holds at most 4,096 rows or 4 MiB of buffers, whichever comes first. A rows part of at most 50 rows is one batch, sent as soon as it's filled. A row too large for one frame fails its request with `limit_exceeded`.
+- **Columns.** A request's rows carry the columns it names, in the order it names them. That order is the key order of each row object on the host, so an object built from a batch matches the one the engine's own encoders write.
+- **Children.** A list that can grow without bound is its own part, never a column: a unit's places, a line's places, a findings page's place sets. Each child row names its parent in a `parent` column: the parent's row number in its part, or a place set's ID. A parent batch is sent only after every child of its rows, so a host can attach children as each parent batch arrives. Bounded lists (cultures, a line's problems, a unit's review signals) stay columns.
+- **Relations.** Each relation's columns are declared once in Rust (`ix/batch.rs`) and generated into TypeScript as `Relations`, with each column's type and `missing` rule.
 
-    | Relation  | Rows                                     | Replaces                                                                                         |
-    | --------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-    | `line`    | Browse rows, groups' first rows, exports | `search`'s rows, `export`, `corpus`, `corpus_header`                                             |
-    | `place`   | a line's places                          | `focus` occurrence pages                                                                         |
-    | `culture` | a line's or a selection's translations   | `localization_export`, `localization_corpus`, `localization_focus_export`, `localization_detail` |
-    | `finding` | findings and their evidence              | `findings_query` pages and its spill file                                                        |
-    | `group`   | aggregate rows                           | `aggregate`                                                                                      |
-    | `related` | related lines                            | `related`'s rows                                                                                 |
+    | Relation     | Rows                                                       | Replaces                                                                           |
+    | ------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+    | `unit`       | corpus units                                               | `corpus`, `export` and their files                                                 |
+    | `place`      | a unit's occurrences, a line's places, a page's place sets | the occurrences inside those files; `findings_query`'s inline sets                 |
+    | `package`    | package coverage                                           | `corpus_header`'s file and the corpus file's list                                  |
+    | `diagnostic` | corpus diagnostics                                         | the same                                                                           |
+    | `line`       | localization lines and the fields a line read names        | `localization_export`, `localization_corpus` and `localization_focus_export` files |
+    | `finding`    | a findings page's findings, as `json`                      | `findings_query`'s inline array and its spill file                                 |
+    | `group`      | aggregate rows, each key component as text                 | `aggregate`'s file                                                                 |
 
-- **TypeScript reads batches through views.** `Batch<R>` gives:
-    - `column(name)`, a typed-array view;
-    - `string(row, name)`, decoded lazily through `TextDecoder`, or through a small UTF-16 path when the entry's lone-surrogate bit is set;
+    Step 7's `query` and `line` requests read the same relations, with Browse's row columns added to `line`.
+
+- **TypeScript reads batches through views.** `EngineBatch<R>` gives:
+    - `numbers(name)`, a typed-array view of a fixed-width column;
+    - `cell(row, name)`, one value, typed from the generated relation; strings decode lazily through `TextDecoder`, or through a WTF-8 path when the entry's lone-surrogate bit is set, and each entry decodes once;
     - `row(i)`, which builds one object for the visible row or an external output.
-- **Scope.** A batch is scoped like a reader handle, because its views pin the buffer. A stream of batches is an Effect `Stream<Batch<R>>`. A caller that wants an array collects it explicitly.
+- **Scope.** A batch is scoped like a reader handle, because its views pin the buffer. A caller that wants an array collects it explicitly. Step 5's readers collect, and return the domain values they returned before, decoded with the same schemas; the streaming consumers (`loc check`, exports) arrive with sinks in step 8.
 
 ## 6. Queries as IR
 

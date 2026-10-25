@@ -12,9 +12,10 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 9] = [
+const SOURCES: [&str; 10] = [
     include_str!("contract.rs"),
     include_str!("session.rs"),
+    include_str!("batch.rs"),
     include_str!("rules/ir.rs"),
     include_str!("rules/replies.rs"),
     include_str!("engine.rs"),
@@ -56,6 +57,7 @@ pub fn identity() -> ContractIdentity {
 
 #[cfg(test)]
 mod tests {
+    use crate::batch::{BatchHeader, ColumnHeader, ColumnType, Missing, StringsHeader};
     use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile};
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
@@ -68,7 +70,7 @@ mod tests {
     use crate::rules::replies::{
         EvaluationProfile, FindingsEvaluation, LineDiagnostic, Memory, Place, PlaceSet,
         ProfileSample, ReadProfile, RoleTotal, RuleCount, RuleMetadata, RuleProblem,
-        RuleProblemCode, RulesCheck, RunProfile, SpilledReply, StageSample, SubStageSample,
+        RuleProblemCode, RulesCheck, RunProfile, StageSample, SubStageSample,
     };
     use crate::session::{EngineEnd, EngineError, EngineFailure};
     use crate::snapshot::IoMetrics;
@@ -113,6 +115,11 @@ mod tests {
             EngineError::decl(&config),
             Profile::decl(&config),
             IoMetrics::decl(&config),
+            BatchHeader::decl(&config),
+            ColumnHeader::decl(&config),
+            ColumnType::decl(&config),
+            Missing::decl(&config),
+            StringsHeader::decl(&config),
             Document::decl(&config),
             Rule::decl(&config),
             Expr::decl(&config),
@@ -153,7 +160,6 @@ mod tests {
             PlaceSet::decl(&config),
             Place::decl(&config),
             ReadProfile::decl(&config),
-            SpilledReply::decl(&config),
         ] {
             text.push_str("\nexport ");
             text.push_str(
@@ -163,6 +169,10 @@ mod tests {
             );
             text.push('\n');
         }
+        text.push('\n');
+        text.push_str(
+            &crate::batch::relations_typescript().unwrap_or_else(|error| error.to_string()),
+        );
         text.push_str("}\n");
         text
     }

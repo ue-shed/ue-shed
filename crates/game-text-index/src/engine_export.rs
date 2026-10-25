@@ -1,65 +1,96 @@
-//! Explicit bulk exports stream directly from the native snapshot to a caller-owned file.
+//! Bulk reads: the corpus, its header and localization lines, streamed as column batches.
+use crate::batch::{Batches, DIAGNOSTIC, LINE, PACKAGE, PLACE, UNIT};
+use crate::engine::Reply;
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
 use crate::engine_types::SearchRequest;
 use crate::{Result, require};
 use serde_json::{Value, json};
-use std::io::{BufWriter, Write};
-use std::path::Path;
 use std::sync::{Arc, atomic::AtomicBool};
 
-fn value(output: &mut impl Write, value: &Value) -> Result<()> {
-    #[cfg(feature = "benchmark-timings")]
-    let encoding = crate::benchmark_timings::Span::new("bulkEncode");
-    let text = crate::wtf8::view_json(value)?;
-    #[cfg(feature = "benchmark-timings")]
-    drop(encoding);
-    #[cfg(feature = "benchmark-timings")]
-    let _write = crate::benchmark_timings::Span::new("bulkBufferedWrite");
-    output.write_all(text.as_bytes())?;
-    Ok(())
-}
-fn separator(output: &mut impl Write, first: &mut bool) -> Result<()> {
-    if !*first {
-        output.write_all(b",")?;
-    }
-    *first = false;
-    Ok(())
-}
-impl EngineQuery {
-    pub fn export_localization_focus_to_path(
-        &self,
-        payload: &str,
-        path: &Path,
-        cancelled: &AtomicBool,
-    ) -> Result<u64> {
-        // Full provenance is an explicit bulk read, independent of the bounded interactive detail.
-        let text = self.localization_focus_json(payload, cancelled)?;
-        let file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(path)?;
-        let mut output = BufWriter::new(file);
-        let result = (|| -> Result<u64> {
-            checkpoint(cancelled)?;
-            output.write_all(text.as_bytes())?;
-            output.flush()?;
-            Ok(output.get_ref().metadata()?.len())
-        })();
-        drop(output);
-        if result.is_err() {
-            let _ = std::fs::remove_file(path);
+/// A whole localization line's fields, in `LocalizationLine`'s order.
+const LINE_FIELDS: [&str; 9] = [
+    "id",
+    "origin",
+    "identity",
+    "source",
+    "manifest",
+    "cultures",
+    "keyChange",
+    "audience",
+    "outOfScope",
+];
+
+/// A unit's places, in `TextOccurrence`'s order, after the unit they belong to.
+const OCCURRENCE_FIELDS: [&str; 12] = [
+    "parent",
+    "devNotes",
+    "id",
+    "packageFile",
+    "source",
+    "identity",
+    "location",
+    "editCapability",
+    "audience",
+    "audienceReason",
+    "audienceRule",
+    "copies",
+];
+
+/// Adds a row, and sends the batch once it is full: the children's first, which name its rows.
+fn push(
+    rows: &mut Batches,
+    children: Option<&mut Batches>,
+    row: &Value,
+    reply: &mut dyn Reply,
+) -> Result<()> {
+    rows.push(row)?;
+    if rows.full() {
+        if let Some(children) = children {
+            children.flush(reply)?;
         }
-        result
+        rows.flush(reply)?;
     }
-    pub fn export_localization_to_path(
+    Ok(())
+}
+fn push_child(
+    children: &mut Batches,
+    parent: u32,
+    row: &Value,
+    reply: &mut dyn Reply,
+) -> Result<()> {
+    children.push_child(parent, row)?;
+    if children.full() {
+        children.flush(reply)?;
+    }
+    Ok(())
+}
+
+impl EngineQuery {
+    /// One localization line with its full provenance, or no rows when there is no such line.
+    pub fn send_localization_line(
+        &self,
+        id: &str,
+        cancelled: &AtomicBool,
+        reply: &mut dyn Reply,
+    ) -> Result<()> {
+        let mut lines = Batches::new(&LINE, "lines", LINE.select(&LINE_FIELDS)?);
+        if let Some(row) = self.find_id("line", id)? {
+            lines.push(&self.localization_line(row, cancelled)?)?;
+        }
+        lines.finish(reply)?;
+        Ok(())
+    }
+    /// Localization lines: every line, or the request's matching lines with `fields`. A line's
+    /// `places` field is the `places` part, sent before the lines that own them.
+    pub fn send_localization_lines(
         &self,
         request: &SearchRequest,
-        path: &Path,
         include_invisible: bool,
         fields: Option<&[&str]>,
         cancelled: &AtomicBool,
-    ) -> Result<u64> {
+        reply: &mut dyn Reply,
+    ) -> Result<()> {
         require(
             include_invisible || request.localization.is_some(),
             crate::engine_types::invalid("Localization export requires a selected target."),
@@ -69,69 +100,64 @@ impl EngineQuery {
         } else {
             self.matching(request, cancelled)?
         };
-        let file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(path)?;
-        let mut output = BufWriter::new(file);
-        let result = (|| -> Result<u64> {
-            output.write_all(b"[")?;
-            let mut first = true;
-            let scope = self.culture_scope(request.localization.as_ref())?;
-            let findings = self.request_findings(request, cancelled)?;
-            for row in rows.iter() {
-                checkpoint(cancelled)?;
-                separator(&mut output, &mut first)?;
-                let line = match fields {
-                    Some(fields) => self.localization_line_fields(
-                        *row as usize,
-                        fields,
-                        &scope,
-                        findings.as_deref(),
-                        cancelled,
-                    )?,
-                    None => self.localization_line(*row as usize, cancelled)?,
-                };
-                value(&mut output, &line)?;
+        let columns = match fields {
+            Some(fields) => std::iter::once("id")
+                .chain(fields.iter().copied().filter(|field| *field != "places"))
+                .collect(),
+            None => LINE_FIELDS.to_vec(),
+        };
+        let mut lines = Batches::new(&LINE, "lines", LINE.select(&columns)?);
+        let mut places = match fields {
+            Some(fields) if fields.contains(&"places") => Some(Batches::new(
+                &PLACE,
+                "places",
+                PLACE.select(&["parent", "packageFile", "objectPath", "origin"])?,
+            )),
+            _ => None,
+        };
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        let findings = self.request_findings(request, cancelled)?;
+        for row in rows.iter() {
+            checkpoint(cancelled)?;
+            let mut line = match fields {
+                Some(fields) => self.localization_line_fields(
+                    *row as usize,
+                    fields,
+                    &scope,
+                    findings.as_deref(),
+                    cancelled,
+                )?,
+                None => self.localization_line(*row as usize, cancelled)?,
+            };
+            if let Some(places) = &mut places {
+                let parent = lines.next_row();
+                if let Some(Value::Array(owned)) = line.get_mut("places").map(Value::take) {
+                    for place in &owned {
+                        push_child(places, parent, place, reply)?;
+                    }
+                }
             }
-            output.write_all(b"]")?;
-            #[cfg(feature = "benchmark-timings")]
-            let _flush = crate::benchmark_timings::Span::new("bulkFlush");
-            output.flush()?;
-            Ok(output.get_ref().metadata()?.len())
-        })();
-        drop(output);
-        if result.is_err() {
-            let _ = std::fs::remove_file(path);
+            push(&mut lines, places.as_mut(), &line, reply)?;
         }
-        result
+        if let Some(places) = places {
+            places.finish(reply)?;
+        }
+        lines.finish(reply)?;
+        Ok(())
     }
-    pub fn export_to_path(
+    /// The corpus: its head as a part, then its units, their places, its package coverage and
+    /// its diagnostics. A request filters the units; `units` names them instead.
+    pub fn send_corpus(
         &self,
         request: &SearchRequest,
-        path: &Path,
         include_invisible: bool,
         units: Option<&[String]>,
         cancelled: &AtomicBool,
-    ) -> Result<u64> {
+        reply: &mut dyn Reply,
+    ) -> Result<()> {
         request.validate()?;
         checkpoint(cancelled)?;
-        let file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(path)?;
-        let mut output = BufWriter::new(file);
-        let result = self
-            .write_corpus(request, &mut output, include_invisible, units, cancelled)
-            .and_then(|()| {
-                output.flush()?;
-                Ok(output.get_ref().metadata()?.len())
-            });
-        drop(output);
-        if result.is_err() {
-            let _ = std::fs::remove_file(path);
-        }
-        result
+        self.write_corpus(request, include_invisible, units, cancelled, reply)
     }
     fn package_coordinates(&self) -> Result<Vec<usize>> {
         let mut starts = vec![0usize];
@@ -160,10 +186,10 @@ impl EngineQuery {
     fn write_corpus(
         &self,
         request: &SearchRequest,
-        output: &mut impl Write,
         include_invisible: bool,
         units: Option<&[String]>,
         cancelled: &AtomicBool,
+        reply: &mut dyn Reply,
     ) -> Result<()> {
         let matched = if include_invisible || units.is_some() {
             Arc::from([])
@@ -202,7 +228,7 @@ impl EngineQuery {
             }
         }
         let summary = self.summary(cancelled)?;
-        // With a findings layer each unit lists its rules, and the file their labels once.
+        // With a findings layer each unit lists its rules, and the head their labels once.
         let findings = match &request.findings {
             Some(selection) => {
                 let every = self.culture_scope(None)?;
@@ -210,25 +236,24 @@ impl EngineQuery {
             }
             None => None,
         };
-        output.write_all(b"{\"schemaVersion\":1,\"status\":")?;
-        value(output, &summary["status"])?;
-        output.write_all(b",\"coverage\":")?;
-        value(output, &summary["coverage"])?;
+        let mut head =
+            json!({"schemaVersion":1,"status":summary["status"],"coverage":summary["coverage"]});
         if let Some(findings) = &findings {
-            output.write_all(b",\"findingRules\":")?;
-            value(
-                output,
-                &serde_json::json!(
-                    findings
-                        .rules
-                        .iter()
-                        .map(|rule| serde_json::json!({"id":rule.id,"label":rule.label}))
-                        .collect::<Vec<_>>()
-                ),
-            )?;
+            head["findingRules"] = json!(
+                findings
+                    .rules
+                    .iter()
+                    .map(|rule| json!({"id":rule.id,"label":rule.label}))
+                    .collect::<Vec<_>>()
+            );
         }
-        output.write_all(b",\"units\":[")?;
-        let mut first = true;
+        reply.part(crate::wtf8::view_json(&head)?.into_bytes())?;
+        let mut columns = vec!["id", "identity", "source", "reviewSignals"];
+        if findings.is_some() {
+            columns.extend(["findings", "findingsOmitted"]);
+        }
+        let mut rows = Batches::new(&UNIT, "units", UNIT.select(&columns)?);
+        let mut places = Batches::new(&PLACE, "places", PLACE.select(&OCCURRENCE_FIELDS)?);
         for (index, row) in p.raw.order.iter().enumerate() {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
@@ -237,49 +262,43 @@ impl EngineQuery {
             if !chosen[row] {
                 continue;
             }
-            separator(output, &mut first)?;
-            let presentation = self.presentation("raw", row)?;
-            output.write_all(b"{\"id\":")?;
-            value(output, &presentation["id"])?;
-            output.write_all(b",\"identity\":")?;
-            value(output, &presentation["identity"])?;
-            output.write_all(b",\"source\":")?;
-            value(output, &presentation["source"])?;
-            output.write_all(b",\"reviewSignals\":")?;
-            value(output, &presentation["reviewSignals"])?;
-            if let Some(findings) = &findings {
-                let mut listed = serde_json::json!({});
-                crate::engine_search::list_findings(&mut listed, findings, row);
-                output.write_all(b",\"findings\":")?;
-                value(output, &listed["findings"])?;
-                output.write_all(b",\"findingsOmitted\":")?;
-                value(output, &listed["findingsOmitted"])?;
-            }
-            output.write_all(b",\"occurrences\":[")?;
-            let mut first_occurrence = true;
+            let parent = rows.next_row();
             for member in p.raw.members(row) {
                 checkpoint(cancelled)?;
-                separator(output, &mut first_occurrence)?;
-                value(output, &self.occurrence(*member as usize, cancelled)?)?;
+                push_child(
+                    &mut places,
+                    parent,
+                    &self.occurrence(*member as usize, cancelled)?,
+                    reply,
+                )?;
             }
-            output.write_all(b"]}")?;
+            let mut unit = self.presentation("raw", row)?;
+            if let Some(findings) = &findings {
+                crate::engine_search::list_findings(&mut unit, findings, row);
+            }
+            push(&mut rows, Some(&mut places), &unit, reply)?;
         }
-        let lists = self.package_lists(cancelled)?;
-        let (coverage, diagnostics) = (&lists.0, &lists.1);
-        output.write_all(b"],\"packageCoverage\":[")?;
-        let mut first = true;
-        for item in coverage {
-            separator(output, &mut first)?;
-            value(output, item)?;
-        }
-        output.write_all(b"],\"diagnostics\":[")?;
-        let mut first = true;
-        for diagnostic in diagnostics {
-            separator(output, &mut first)?;
-            value(output, diagnostic)?;
-        }
-        output.write_all(b"]}")?;
+        places.finish(reply)?;
+        rows.finish(reply)?;
+        self.send_package_lists(cancelled, reply)?;
         checkpoint(cancelled)?;
+        Ok(())
+    }
+
+    /// The corpus's package coverage and diagnostics, as the `packages` and `diagnostics`
+    /// parts.
+    fn send_package_lists(&self, cancelled: &AtomicBool, reply: &mut dyn Reply) -> Result<()> {
+        let lists = self.package_lists(cancelled)?;
+        let mut packages = Batches::new(&PACKAGE, "packages", PACKAGE.all());
+        for item in &lists.0 {
+            push(&mut packages, None, item, reply)?;
+        }
+        packages.finish(reply)?;
+        let mut diagnostics = Batches::new(&DIAGNOSTIC, "diagnostics", DIAGNOSTIC.all());
+        for item in &lists.1 {
+            push(&mut diagnostics, None, item, reply)?;
+        }
+        diagnostics.finish(reply)?;
         Ok(())
     }
 
@@ -378,27 +397,14 @@ impl EngineQuery {
         }
         Ok((coverage, diagnostics))
     }
-    /// The corpus without its units: status, coverage, package coverage and diagnostics.
-    pub fn export_corpus_header_to_path(&self, path: &Path, cancelled: &AtomicBool) -> Result<u64> {
+    /// The corpus without its units: its status and coverage as a part, then its package coverage
+    /// and diagnostics.
+    pub fn send_corpus_header(&self, cancelled: &AtomicBool, reply: &mut dyn Reply) -> Result<()> {
         let summary = self.summary(cancelled)?;
-        let lists = self.package_lists(cancelled)?;
-        let (coverage, diagnostics) = (&lists.0, &lists.1);
-        let header = json!({"schemaVersion":1,"status":summary["status"],"coverage":summary["coverage"],"units":[],"packageCoverage":coverage,"diagnostics":diagnostics});
-        let file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(path)?;
-        let mut output = BufWriter::new(file);
-        let result = (|| -> Result<u64> {
-            value(&mut output, &header)?;
-            output.flush()?;
-            Ok(output.get_ref().metadata()?.len())
-        })();
-        drop(output);
-        if result.is_err() {
-            let _ = std::fs::remove_file(path);
-        }
-        result
+        let head =
+            json!({"schemaVersion":1,"status":summary["status"],"coverage":summary["coverage"]});
+        reply.part(crate::wtf8::view_json(&head)?.into_bytes())?;
+        self.send_package_lists(cancelled, reply)
     }
     /// The corpus header as a report shows it: coverage, the count of every diagnostic code and
     /// package state, and the first `preview` diagnostics and incomplete packages. The whole

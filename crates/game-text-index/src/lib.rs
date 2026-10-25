@@ -7,6 +7,7 @@ mod bounded_intern;
 pub mod contract;
 mod error;
 pub use error::{Error, ErrorCode};
+pub mod batch;
 #[cfg(feature = "benchmark-timings")]
 pub mod benchmark_timings;
 pub mod builder;

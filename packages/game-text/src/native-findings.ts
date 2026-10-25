@@ -162,6 +162,14 @@ export interface NativeFindings {
 	readonly findingsQuery: (
 		request: GameTextContract.FindingsQueryRequest
 	) => Effect.Effect<FindingsQueryPage, GameTextIndexError>;
+	/**
+	 * Writes the report view's selected findings to `text` as `findingJson`, the elements of the
+	 * CLI report's `findings` array, and answers with the page's counts and what it wrote.
+	 */
+	readonly findingsWrite: (
+		request: Omit<GameTextContract.FindingsQueryRequest, "sink" | "limit">,
+		text: (chunk: Uint8Array) => Effect.Effect<void>
+	) => Effect.Effect<GameTextContract.FindingsPage, GameTextIndexError>;
 	/** The program's first problem as the engine compiles it, with the rule at fault. */
 	readonly rulesCheck: (
 		document: RuleDocumentV4

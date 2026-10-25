@@ -54,3 +54,10 @@ it and moved into place, or streams the encoded rows as `text` frames that
 `SinkSummary`. `NativeTextQuery.writeLocalizationLinesCsv` writes the all-languages CSV this way,
 so the Workbench export and `ue-shed loc export` no longer read the lines into the host, and
 the Workbench's 64 MiB cap on that file is gone. Engine errors gain the `exists` code.
+
+`ue-shed loc check` prints its report as the engine writes the findings, so it never holds them;
+the bytes are unchanged. `GameTextIndexRefreshResult.prepareLocalizationCheck` reads everything
+but the findings and returns a `PreparedLocalizationCheck`, whose `write` writes the report;
+`localizationCheck` still returns the report as a value. `findings_query` takes a `findingJson`
+sink without a `limit`, and `NativeFindings.findingsWrite` sends one. If the engine fails after
+the report starts printing, `loc check` writes the failure to stderr and exits with 2.

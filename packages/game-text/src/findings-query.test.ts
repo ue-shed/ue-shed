@@ -9,7 +9,14 @@ import type { GameTextIndexRefreshResult } from "./index-contract.js";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
-import type { LocalizationCheckOptions } from "./localization-quality-schema.js";
+import {
+	LocalizationQualityReport,
+	type LocalizationCheckOptions,
+	type LocalizationCustomFinding,
+	type LocalizationPolicyFinding,
+	type LocalizationQualityFinding
+} from "./localization-quality-schema.js";
+import { acceptReview } from "./native-findings.js";
 import { localizationLineFingerprint } from "./localization-review.js";
 import { type BuiltInCheckId, SourceCheckId } from "./localization-check-ids.js";
 import {
@@ -427,6 +434,138 @@ it.live(
 		}).pipe(Effect.scoped),
 	120000
 );
+/**
+ * The host's report writer before the engine wrote findings: a finding with the members the
+ * report kept, which the report's schema then put in its order.
+ */
+type ReportedFinding =
+	| LocalizationQualityFinding
+	| LocalizationPolicyFinding
+	| LocalizationCustomFinding;
+function reportedFinding(finding: ReportedFinding): ReportedFinding {
+	const affectedOccurrences = finding.affectedOccurrences.map(
+		({ id, location, packageFile }) => ({
+			id,
+			location:
+				location.kind === "asset_property"
+					? {
+							kind: location.kind,
+							objectPath: location.objectPath,
+							classPath: location.classPath,
+							propertyPath: location.propertyPath
+						}
+					: location.kind === "data_table_cell"
+						? {
+								kind: location.kind,
+								objectPath: location.objectPath,
+								row: location.row,
+								propertyPath: location.propertyPath
+							}
+						: {
+								kind: location.kind,
+								objectPath: location.objectPath,
+								entryKey: location.entryKey
+							},
+			packageFile
+		})
+	);
+	const {
+		lineId,
+		target,
+		culture,
+		identity,
+		ruleId,
+		kind,
+		actual,
+		expectation,
+		recovery,
+		severity,
+		manifestLocations,
+		translationOrigin
+	} = finding;
+	const shared = {
+		lineId,
+		target,
+		culture,
+		identity,
+		ruleId,
+		recovery,
+		affectedOccurrences,
+		manifestLocations,
+		translationOrigin,
+		severity,
+		actual,
+		expectation
+	};
+	if (kind === "custom")
+		// SAFETY: the custom discriminant and its paired evidence come from one finding.
+		// Verified by: the report's schema decodes the report this oracle builds.
+		return {
+			...shared,
+			kind,
+			check: finding.check,
+			label: finding.label,
+			subject: finding.subject
+		} as ReportedFinding;
+	if (kind === "localization_character_budget" || kind === "localization_terminology")
+		// SAFETY: the policy kind and its evidence come from one finding.
+		// Verified by: the report's schema decodes the report this oracle builds.
+		return { ...shared, role: finding.role, kind } as ReportedFinding;
+	// SAFETY: the built-in kind and its evidence come from one finding.
+	// Verified by: the report's schema decodes the report this oracle builds.
+	return {
+		...shared,
+		kind,
+		...(finding.sourceVariants ? { sourceVariants: finding.sourceVariants } : undefined),
+		...(kind === "placeholder_text" && finding.unreportedMatches !== undefined
+			? { unreportedMatches: finding.unreportedMatches }
+			: undefined),
+		...(kind === "format_argument_renamed" && finding.suggestedChange
+			? { suggestedChange: finding.suggestedChange }
+			: undefined)
+	} as ReportedFinding;
+}
+
+/**
+ * `loc check`'s report, written with the engine's findings, has the bytes the host wrote from
+ * the report's findings pages: `JSON.stringify(report, null, "\t")` and a line break.
+ */
+const expectReportBytes = Effect.fn("Test.GameText.reportBytes")(function* (
+	result: GameTextIndexRefreshResult,
+	rules: GameTextRuleDocument | undefined,
+	options: LocalizationCheckOptions
+) {
+	const prepared = yield* result.prepareLocalizationCheck(rules, options);
+	let text = "";
+	yield* prepared.write((piece) => Effect.sync(() => void (text += piece)));
+	const native = result.query;
+	const { key } = yield* native.findingsEvaluate(effectiveRuleDocument(rules, options));
+	const acceptance = yield* acceptReview(native, key, options.review);
+	const findings: ReportedFinding[] = [];
+	for (let offset = 0; ; offset += 5000) {
+		const page = yield* native.findingsQuery({
+			key,
+			view: "report",
+			...(options.culture ? { culture: options.culture } : undefined),
+			order: "report",
+			...(acceptance ? { acceptance } : undefined),
+			offset,
+			limit: 5000
+		});
+		// SAFETY: the report view returns line findings only.
+		// Verified by: the report's schema decodes the report this oracle builds.
+		findings.push(...(page.findings as readonly ReportedFinding[]).map(reportedFinding));
+		if (page.findings.length < 5000) break;
+	}
+	expect(prepared.findings).toBe(findings.length);
+	const written = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationQualityReport))(
+		text
+	);
+	expect(text).toBe(
+		`${JSON.stringify(LocalizationQualityReport.make({ ...written, findings }), null, "\t")}\n`
+	);
+});
+
 /** Every filter, culture, page, export and focus of both workspaces, with and without the rules. */
 const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 	result: GameTextIndexRefreshResult,
@@ -443,6 +582,7 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 				yield* result.localizationCheck(rules, options),
 				join
 			);
+			yield* expectReportBytes(result, rules, options);
 			const indexed = localizationQualityWorkspaceOf(
 				source,
 				yield* result.localizationQuality(rules, options)

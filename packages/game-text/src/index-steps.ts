@@ -51,7 +51,11 @@ import {
 	indexedLocalizationLinesRequest,
 	readIndexedLocalizationEvidence
 } from "./index-context.js";
-import { indexedLocalizationCheckReport } from "./localization-check-report.js";
+import {
+	indexedLocalizationCheckReport,
+	prepareLocalizationCheck
+} from "./localization-check-report.js";
+import type { TextCorpusReportHeader } from "./corpus-summary.js";
 import { acceptReview } from "./native-findings.js";
 import {
 	queriedLocalizationQualityWorkspace,
@@ -798,6 +802,17 @@ export const makeGameTextIndexSteps = (
 			const localizationJoin = query
 				.localizationLines(indexedLocalizationLinesRequest(joined))
 				.pipe(Effect.map((lines) => ({ ...localization, lines })));
+			// The check report's target, corpus facts, evidence and findings.
+			const checkInput = (header: TextCorpusReportHeader) =>
+				[
+					{
+						target: joined.meta.input.target.name,
+						cultures: joined.meta.input.target.cultures
+					},
+					{ status: summary.status, ...header },
+					indexedEvidence,
+					query
+				] as const;
 			/**
 			 * Evaluates a document's findings with a check's progress, in rules: one event before
 			 * the engine runs, one as each rule finishes, and one after, with the findings of the
@@ -929,20 +944,15 @@ export const makeGameTextIndexSteps = (
 							}
 						});
 					}),
-				// The report reads its findings in pages, never the whole corpus or join.
+				// The engine writes the report's findings; the host never reads the corpus or join.
+				prepareLocalizationCheck: (document, options) =>
+					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+						prepareLocalizationCheck(...checkInput(header), options, document)
+					),
 				localizationCheck: (document, options) =>
-					Effect.gen(function* () {
-						const header = yield* query.readCorpusReportHeader();
-						const target = joined.meta.input.target;
-						return yield* indexedLocalizationCheckReport(
-							{ target: target.name, cultures: target.cultures },
-							{ status: summary.status, ...header },
-							indexedEvidence,
-							query,
-							options,
-							document
-						);
-					})
+					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+						indexedLocalizationCheckReport(...checkInput(header), options, document)
+					)
 			};
 		}, normalizeFailure);
 		/**

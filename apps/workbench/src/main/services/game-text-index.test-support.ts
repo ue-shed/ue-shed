@@ -137,6 +137,8 @@ export function oracleGameTextIndexLayer<E>(
 						query,
 						search: query.search,
 						searchRows: query.searchRows,
+						prepareLocalizationCheck: () =>
+							Effect.die("Workbench writes no CLI check reports."),
 						// Explicit test facts are evaluated by the same native rule engine.
 						localizationCheck: (document, options) =>
 							Effect.sync(() => {

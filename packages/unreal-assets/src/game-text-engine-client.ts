@@ -5,7 +5,6 @@ import {
 	answerJson,
 	type EngineAnswer,
 	type EngineProgressObserver,
-	type EngineTextWriter,
 	GameTextEngineSession,
 	type GameTextEngineProcessFactory
 } from "./game-text-engine-session.js";
@@ -14,9 +13,14 @@ export {
 	answerJson,
 	answerRows,
 	type EngineAnswer,
-	type EngineProgressObserver,
-	type EngineTextWriter
+	type EngineProgressObserver
 } from "./game-text-engine-session.js";
+
+/**
+ * Writes one `text` frame of a stream sink's rows. The engine waits for each write before it
+ * sends more, so a slow destination holds the request back rather than filling memory.
+ */
+export type EngineTextSink = (chunk: Uint8Array) => Effect.Effect<void>;
 
 /** Native engine calls share their process scope; reader handles never escape that scope. */
 export class NativeGameTextEngineClient extends Context.Service<
@@ -29,7 +33,7 @@ export class NativeGameTextEngineClient extends Context.Service<
 		readonly execute: (
 			request: GameTextContract.EngineRequest,
 			progress?: EngineProgressObserver,
-			text?: EngineTextWriter
+			text?: EngineTextSink
 		) => Effect.Effect<EngineAnswer, AssetReaderError>;
 	}
 >()("@ue-shed/unreal-assets/NativeGameTextEngineClient") {}
@@ -75,9 +79,15 @@ export const nativeGameTextEngineClientLayer = (
 			const call = Effect.fn("NativeGameTextEngine.call")(function* (
 				request: GameTextContract.EngineRequest,
 				progress?: EngineProgressObserver,
-				text?: EngineTextWriter
+				text?: EngineTextSink
 			) {
-				const answer = yield* session.call(request, progress, text);
+				// The session awaits each write; the caller's writer runs in the call's context.
+				const run = Effect.runPromiseWith(yield* Effect.context<never>());
+				const answer = yield* session.call(
+					request,
+					progress,
+					text && ((chunk) => run(text(chunk)))
+				);
 				yield* Effect.annotateCurrentSpan({
 					"game_text.engine.action": request.action,
 					"game_text.engine.batches": answer.profile.batches,

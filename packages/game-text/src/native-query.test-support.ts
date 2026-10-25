@@ -40,6 +40,7 @@ export function referenceNativeQuery(query: TextCorpusQuery, corpus: TextCorpus)
 		findingsEvaluate: () => Effect.die("This query-only test fixture does not evaluate rules."),
 		findingsAccept: () => Effect.die("This query-only test fixture has no findings layer."),
 		findingsQuery: () => Effect.die("This query-only test fixture has no findings layer."),
+		findingsWrite: () => Effect.die("This query-only test fixture has no findings layer."),
 		rulesCheck: () => Effect.die("This query-only test fixture does not check rules."),
 		readCorpus: () => Effect.succeed(corpus),
 		aggregate: (request) => read("aggregate", () => derivedAggregate(base, request)),

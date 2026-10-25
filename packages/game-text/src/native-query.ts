@@ -6,6 +6,7 @@ import {
 	AssetReaderError,
 	type EngineAnswer,
 	type EngineProgressObserver,
+	type EngineTextSink,
 	NativeGameTextEngineClient
 } from "@ue-shed/unreal-assets";
 import type { GameTextContract, GameTextIndexConfiguration } from "@ue-shed/protocol";
@@ -98,7 +99,8 @@ interface Pinned {
 	readonly reader: string;
 	readonly execute: (
 		request: GameTextContract.EngineRequest,
-		progress?: EngineProgressObserver
+		progress?: EngineProgressObserver,
+		text?: EngineTextSink
 	) => Effect.Effect<EngineAnswer, GameTextIndexError>;
 }
 
@@ -119,8 +121,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 > {
 	const engine = yield* NativeGameTextEngineClient;
 	const execute = Effect.fn("GameTextIndex.nativeCall")(
-		(request: GameTextContract.EngineRequest, progress?: EngineProgressObserver) =>
-			engine.execute(request, progress).pipe(
+		(
+			request: GameTextContract.EngineRequest,
+			progress?: EngineProgressObserver,
+			text?: EngineTextSink
+		) =>
+			engine.execute(request, progress, text).pipe(
 				Effect.mapError((cause) => failed(request.action, cause)),
 				Effect.tapError(() => input.onFailure ?? Effect.void)
 			)
@@ -408,10 +414,11 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const engineReply = <T>(
 		pinned: Pinned,
 		request: GameTextContract.EngineRequest,
-		progress?: EngineProgressObserver
+		progress?: EngineProgressObserver,
+		text?: EngineTextSink
 	) =>
 		Effect.gen(function* () {
-			const reply = answerJson<T>(yield* pinned.execute(request, progress));
+			const reply = answerJson<T>(yield* pinned.execute(request, progress, text));
 			if (reply === undefined)
 				return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
 			return reply;
@@ -643,6 +650,21 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				),
 				Effect.tap(({ page }) => annotateFindingsProfile(page.profile)),
 				Effect.flatMap(inflateFindingsPage),
+				Effect.mapError((cause) => failed("findings_query", cause))
+			)
+		),
+		findingsWrite: Effect.fn("GameText.native.findingsWrite")((request, text) =>
+			engineReply<GameTextContract.FindingsPage>(
+				pinned,
+				{
+					action: "findings_query",
+					reader,
+					request: { ...request, sink: { format: "findingJson" } }
+				},
+				undefined,
+				text
+			).pipe(
+				Effect.tap((page) => annotateFindingsProfile(page.profile)),
 				Effect.mapError((cause) => failed("findings_query", cause))
 			)
 		),

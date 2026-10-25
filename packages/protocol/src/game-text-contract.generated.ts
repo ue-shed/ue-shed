@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "1c4e2e459f7db06660f6c87a6f0b9942ec4a1c1190a97be231932dad8f1d8b4b"
+	contractHash: "16cbfb5e2e3336fb9524ad0c85570ca90d66fbd87c48957d85141a59514c9051"
 } as const;
 
 /**
@@ -212,7 +212,15 @@ export type FindingsAcceptRequest = { key: string, previous?: string, accepted: 
 
 export type AcceptedFinding = { check: string, culture?: string, namespace: string, key: string, fingerprint: string, };
 
-export type FindingsQueryRequest = { key: string, view: FindingsView, culture?: string, rules?: ReadonlyArray<string>, severities?: ReadonlyArray<Severity>, fixable?: boolean, change?: boolean, acceptance?: string, line?: string, id?: string, order: FindingsOrder, after?: string, offset?: number, limit: number, counts?: boolean, diagnostics?: FindingsPageRequest, };
+export type FindingsQueryRequest = { key: string, view: FindingsView, culture?: string, rules?: ReadonlyArray<string>, severities?: ReadonlyArray<Severity>, fixable?: boolean, change?: boolean, acceptance?: string, line?: string, id?: string, order: FindingsOrder, after?: string, offset?: number, 
+/**
+ * The page's size; a sink writes every selected finding unless it is given.
+ */
+limit?: number, counts?: boolean, diagnostics?: FindingsPageRequest, 
+/**
+ * Writes the report view's findings as `findingJson` rather than sending them.
+ */
+sink?: Sink, };
 
 export type Query = { selection: QuerySelection, parts: QueryParts, };
 
@@ -375,7 +383,7 @@ file?: string,
  */
 exclusive?: boolean, };
 
-export type SinkFormat = "cultureLinesCsv";
+export type SinkFormat = "cultureLinesCsv" | "findingJson";
 
 export type SinkSummary = { 
 /**
@@ -390,6 +398,10 @@ export type FindingsOrder = "severity" | "report" | "line" | "source";
 export type FindingsPageRequest = { offset?: number, limit: number, };
 
 export type FindingsPage = { profile: ReadProfile, 
+/**
+ * What the request's sink wrote.
+ */
+sink?: SinkSummary, 
 /**
  * Findings every filter selects.
  */

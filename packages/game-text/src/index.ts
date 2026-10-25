@@ -528,6 +528,7 @@ export {
 	GameTextIndexRefresh,
 	GameTextIndexRefreshRequest,
 	type GameTextIndexRefreshResult,
+	type PreparedLocalizationCheck,
 	GameTextIndexSource,
 	type GameTextIndexSourceRequest,
 	type IndexedLocalizationQualityOptions,

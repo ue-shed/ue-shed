@@ -3,11 +3,13 @@
 //! `loc check` report and the status report.
 use super::findings_order::{CHANGE, FIXABLE, KEYLESS, NONE, SHADOWED};
 use super::findings_read::{compose_line_finding, compose_unit_finding};
+use super::findings_sink::reported_finding;
 use super::ir::Severity;
 use super::replies::{LineDiagnostic, PlaceSet, ReadProfile};
 use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, javascript_json};
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
+use crate::sink::{Format, Sink, SinkSummary, SinkWriter, pretty_json};
 use crate::store::digest;
 use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
@@ -124,13 +126,17 @@ pub(crate) struct QueryRequest {
     #[serde(default)]
     #[cfg_attr(test, ts(optional, type = "number"))]
     offset: usize,
-    #[cfg_attr(test, ts(type = "number"))]
-    limit: usize,
+    /// The page's size; a sink writes every selected finding unless it is given.
+    #[cfg_attr(test, ts(optional, type = "number"))]
+    limit: Option<usize>,
     #[serde(default)]
     #[cfg_attr(test, ts(as = "Option<bool>", optional))]
     counts: bool,
     #[cfg_attr(test, ts(optional))]
     diagnostics: Option<Page>,
+    /// Writes the report view's findings as `findingJson` rather than sending them.
+    #[cfg_attr(test, ts(optional))]
+    sink: Option<Sink>,
 }
 
 #[derive(Serialize, Default)]
@@ -191,6 +197,14 @@ pub(crate) struct FindingsPage {
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
     pub(super) findings: Vec<Value>,
+    /// The selected findings to compose, in their order.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    numbers: Vec<u32>,
+    /// What the request's sink wrote.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    sink: Option<SinkSummary>,
     /// Findings every filter selects.
     total: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -355,8 +369,18 @@ impl EngineQuery {
         let request: QueryRequest = serde_json::from_value(request).map_err(|source| {
             Error::with_source(ErrorCode::InvalidInput, "Invalid findings query.", source)
         })?;
+        match &request.sink {
+            Some(sink) => require(
+                sink.format == Format::FindingJson && request.view == View::Report,
+                invalid("A findings sink writes the report view's findings as findingJson."),
+            )?,
+            None => require(
+                request.limit.is_some(),
+                invalid("A findings page names its limit."),
+            )?,
+        }
         require(
-            request.limit <= MAX_LIMIT
+            request.limit.is_none_or(|limit| limit <= MAX_LIMIT)
                 && request
                     .diagnostics
                     .as_ref()
@@ -378,10 +402,24 @@ impl EngineQuery {
             }
             None => None,
         };
+        if let Some(sink) = &request.sink {
+            return self.write_findings(
+                &key,
+                &request,
+                acceptance.as_deref(),
+                sink,
+                cancelled,
+                reply,
+            );
+        }
         self.send_page(
             &key,
-            request.limit,
-            |query, layer| run_query(query, layer, &request, acceptance.as_deref(), cancelled),
+            request.limit.unwrap_or_default(),
+            |query, layer| {
+                let mut page = run_query(query, layer, &request, acceptance.as_deref(), cancelled)?;
+                compose_page(query, layer, &mut page, cancelled)?;
+                Ok(page)
+            },
             reply,
         )
     }
@@ -658,11 +696,91 @@ fn run_query(
         .iter()
         .skip(start)
         .skip(request.offset)
-        .take(request.limit)
+        .take(request.limit.unwrap_or(usize::MAX))
         .copied()
         .collect::<Vec<_>>();
     mark(&mut stages, "page", &mut since);
 
+    if let Some(counts) = &mut counts {
+        let rows = layer.column("diag.rows")?;
+        let cultures = layer.column("diag.cultures")?;
+        let codes = layer.column("diag.codes")?;
+        let mut seen = Vec::<(u32, u32)>::new();
+        for index in layer.column("diag.order")?.iter() {
+            let index = *index as usize;
+            if culture.is_some_and(|ci| cultures[index] != ci) {
+                continue;
+            }
+            let _ = rows[index];
+            match seen.iter_mut().find(|(code, _)| *code == codes[index]) {
+                Some(entry) => entry.1 += 1,
+                None => seen.push((codes[index], 1)),
+            }
+        }
+        counts.limits = seen
+            .into_iter()
+            .map(|(code, count)| {
+                Ok(CodeCount {
+                    code: layer.dictionary.string(code)?,
+                    count,
+                })
+            })
+            .collect::<Result<_>>()?;
+    }
+    let diagnostics = match &request.diagnostics {
+        Some(page) => {
+            let rows = layer.column("diag.rows")?;
+            let cultures = layer.column("diag.cultures")?;
+            let codes = layer.column("diag.codes")?;
+            let order = layer.column("diag.order")?;
+            let selection = order
+                .iter()
+                .map(|index| *index as usize)
+                .filter(|index| culture.is_none_or(|ci| cultures[*index] == ci))
+                .collect::<Vec<_>>();
+            let mut result = Vec::new();
+            for index in selection.iter().skip(page.offset).take(page.limit) {
+                result.push(LineDiagnostic {
+                    line_id: query.packed("line", rows[*index] as usize)?,
+                    culture: query
+                        .cultures
+                        .get(cultures[*index] as usize)
+                        .ok_or("Diagnostic culture outside target.")?
+                        .clone(),
+                    code: layer.dictionary.string(codes[*index])?,
+                });
+            }
+            Some(Diagnostics {
+                total: u32::try_from(selection.len())?,
+                rows: result,
+            })
+        }
+        None => None,
+    };
+    mark(&mut stages, "counts", &mut since);
+    stages.insert("total", started.elapsed().as_secs_f64() * 1000.0);
+    Ok(FindingsPage {
+        profile: ReadProfile::default(),
+        places: Vec::new(),
+        total: u32::try_from(matched.len())?,
+        findings: Vec::new(),
+        numbers: page,
+        sink: None,
+        counts,
+        diagnostics,
+        stages,
+    })
+}
+
+/// Composes findings in the given order, with the place sets they name.
+fn compose(
+    query: &EngineQuery,
+    layer: &FindingsLayer,
+    page: &[u32],
+    cancelled: &AtomicBool,
+) -> Result<(Vec<PlaceSet>, Vec<Value>)> {
+    let rules = &layer.metadata.rules;
+    let columns = columns(layer)?;
     let collator = HostCollator::new(&layer.metadata.collation)?;
     let mut places = Vec::new();
     let mut findings = Vec::with_capacity(page.len());
@@ -747,82 +865,82 @@ fn run_query(
             composed.insert(*number, finding);
         }
     }
-    for number in &page {
+    for number in page {
         findings.push(
             composed
                 .remove(number)
                 .ok_or("A paged finding was not composed.")?,
         );
     }
-    mark(&mut stages, "compose", &mut since);
+    Ok((places, findings))
+}
 
-    if let Some(counts) = &mut counts {
-        let rows = layer.column("diag.rows")?;
-        let cultures = layer.column("diag.cultures")?;
-        let codes = layer.column("diag.codes")?;
-        let mut seen = Vec::<(u32, u32)>::new();
-        for index in layer.column("diag.order")?.iter() {
-            let index = *index as usize;
-            if culture.is_some_and(|ci| cultures[index] != ci) {
-                continue;
-            }
-            let _ = rows[index];
-            match seen.iter_mut().find(|(code, _)| *code == codes[index]) {
-                Some(entry) => entry.1 += 1,
-                None => seen.push((codes[index], 1)),
-            }
-        }
-        counts.limits = seen
-            .into_iter()
-            .map(|(code, count)| {
-                Ok(CodeCount {
-                    code: layer.dictionary.string(code)?,
-                    count,
-                })
-            })
-            .collect::<Result<_>>()?;
+/// Composes a page's findings, timed as its `compose` stage.
+fn compose_page(
+    query: &EngineQuery,
+    layer: &FindingsLayer,
+    page: &mut FindingsPage,
+    cancelled: &AtomicBool,
+) -> Result<()> {
+    let started = Instant::now();
+    let numbers = std::mem::take(&mut page.numbers);
+    (page.places, page.findings) = compose(query, layer, &numbers, cancelled)?;
+    page.timed("compose", started);
+    Ok(())
+}
+
+impl FindingsPage {
+    fn timed(&mut self, stage: &'static str, started: Instant) {
+        let ms = started.elapsed().as_secs_f64() * 1000.0;
+        self.stages.insert(stage, ms);
+        *self.stages.entry("total").or_default() += ms;
     }
-    let diagnostics = match &request.diagnostics {
-        Some(page) => {
-            let rows = layer.column("diag.rows")?;
-            let cultures = layer.column("diag.cultures")?;
-            let codes = layer.column("diag.codes")?;
-            let order = layer.column("diag.order")?;
-            let selection = order
-                .iter()
-                .map(|index| *index as usize)
-                .filter(|index| culture.is_none_or(|ci| cultures[*index] == ci))
-                .collect::<Vec<_>>();
-            let mut result = Vec::new();
-            for index in selection.iter().skip(page.offset).take(page.limit) {
-                result.push(LineDiagnostic {
-                    line_id: query.packed("line", rows[*index] as usize)?,
-                    culture: query
-                        .cultures
-                        .get(cultures[*index] as usize)
-                        .ok_or("Diagnostic culture outside target.")?
-                        .clone(),
-                    code: layer.dictionary.string(codes[*index])?,
-                });
+}
+
+impl EngineQuery {
+    /// Writes the selected findings through a `findingJson` sink, composing a page of them at a
+    /// time, and answers with the page's counts and what the sink wrote.
+    fn write_findings(
+        &self,
+        key: &str,
+        request: &QueryRequest,
+        acceptance: Option<&Acceptance>,
+        sink: &Sink,
+        cancelled: &AtomicBool,
+        reply: &mut dyn crate::engine::Reply,
+    ) -> Result<()> {
+        let layer = self.layer(key)?;
+        let mut page = run_query(self, &layer, request, acceptance, cancelled)?;
+        let numbers = std::mem::take(&mut page.numbers);
+        let started = Instant::now();
+        let mut writer = SinkWriter::open(sink, reply)?;
+        let mut out = Vec::new();
+        for chunk in numbers.chunks(MAX_LIMIT) {
+            let (places, findings) = compose(self, &layer, chunk, cancelled)?;
+            let sets = places
+                .into_iter()
+                .map(|set| (set.id, set.occurrences))
+                .collect::<HashMap<_, _>>();
+            for finding in findings {
+                out.clear();
+                if writer.rows() > 0 {
+                    out.push(b',');
+                }
+                out.extend_from_slice(b"\n\t\t");
+                pretty_json(&reported_finding(finding, &sets)?, 2, &mut out);
+                writer.write(&out)?;
+                writer.row();
             }
-            Some(Diagnostics {
-                total: u32::try_from(selection.len())?,
-                rows: result,
-            })
         }
-        None => None,
-    };
-    mark(&mut stages, "counts", &mut since);
-    stages.insert("total", started.elapsed().as_secs_f64() * 1000.0);
-    Ok(FindingsPage {
-        profile: ReadProfile::default(),
-        places,
-        total: u32::try_from(matched.len())?,
-        findings,
-        counts,
-        diagnostics,
-        stages,
-    })
+        let summary = writer.finish()?;
+        page.timed("compose", started);
+        page.profile = ReadProfile {
+            rows_requested: numbers.len(),
+            findings_returned: summary.rows as usize,
+        };
+        page.sink = Some(summary);
+        reply.part(javascript_json(&serde_json::to_value(&page)?, false).into_bytes())
+    }
 }
 
 #[cfg(test)]

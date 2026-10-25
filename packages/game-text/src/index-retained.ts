@@ -112,6 +112,7 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 							return result.joined;
 						},
 						localizationQuality: result.localizationQuality,
+						prepareLocalizationCheck: result.prepareLocalizationCheck,
 						localizationCheck: result.localizationCheck,
 						sourceQuality: result.sourceQuality,
 						get imported() {

@@ -7,7 +7,7 @@ import {
 	GAME_TEXT_RULES_RELATIVE_PATH
 } from "@ue-shed/game-text/rules";
 import { observeCliOperation } from "../cli-operation.js";
-import { CliRuntime, printJson, printJsonInParts } from "../cli-runtime.js";
+import { CliRuntime, json, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { loadLocalizationContext } from "./localization.js";
 
@@ -134,7 +134,7 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 						yield* writeLocalizationCheckChanges(command.changes, report.changes);
 					yield* Metric.update(
 						Metric.counter("cli.localization.check.findings"),
-						report.findings.length
+						report.findings
 					);
 					return report;
 				}).pipe(Effect.provide(LocalizationEvidenceNodeLive), Effect.result);
@@ -144,8 +144,16 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 					yield* runtime.setExitCode(2);
 					return;
 				}
-				// A large project's report is longer than one string can be.
-				yield* printJsonInParts(result.success, ["findings", "checkDiagnostics"]);
+				// The engine writes the findings as the report prints, so the CLI never holds them.
+				const runtime = yield* CliRuntime;
+				const written = yield* result.success.write(runtime.print).pipe(Effect.result);
+				if (Result.isFailure(written)) {
+					// The report is cut short: say why on stderr, which stays readable.
+					yield* runtime.printError(
+						json({ schemaVersion: 1, status: "failed", error: written.failure })
+					);
+					yield* runtime.setExitCode(2);
+				}
 			})
 		)
 );

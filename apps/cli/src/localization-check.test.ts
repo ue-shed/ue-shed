@@ -4,7 +4,7 @@ import { it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Ref, Result, Schema } from "effect";
 import { expect } from "vitest";
 import { LocalizationChangeSet } from "@ue-shed/localization/browser";
-import { CliRuntime, json, printJsonInParts } from "./cli-runtime.js";
+import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 import { writeLocalizationCheckChanges } from "./workflows/localization-check.js";
 
@@ -166,47 +166,6 @@ it.effect("loc check runs the file --rules names, and says when no rules file ra
 		expect(failure.error.code).toBe("rules_unreadable");
 		expect(failure.error.message).not.toContain(directory);
 	}).pipe(Effect.provide(NodeServices.layer))
-);
-
-it.effect("prints a report in parts with the same bytes as one string", () =>
-	Effect.gen(function* () {
-		const output = yield* Ref.make("");
-		const runtime = Layer.succeed(
-			CliRuntime,
-			CliRuntime.of({
-				print: (text) => Ref.update(output, (value) => value + text),
-				printError: () => Effect.void,
-				setExitCode: () => Effect.void
-			})
-		);
-		const same = <Value extends object>(
-			value: Value,
-			parts: readonly (keyof Value & string)[]
-		) =>
-			Effect.gen(function* () {
-				yield* Ref.set(output, "");
-				yield* printJsonInParts(value, parts).pipe(Effect.provide(runtime));
-				expect(yield* Ref.get(output)).toBe(json(value));
-			});
-		yield* same({}, []);
-		yield* same({ findings: [] }, ["findings"]);
-		yield* same({ findings: [], skipped: undefined }, ["findings"]);
-		yield* same(
-			{
-				schemaVersion: 1,
-				findings: [
-					{ text: 'line\nbreak "quoted" ü 😀', nested: { list: [1, [], {}] } },
-					null,
-					7
-				],
-				checkDiagnostics: [{ code: "x" }],
-				coverage: { total: 2, cultures: ["de", "fr"] },
-				omitted: undefined,
-				last: []
-			},
-			["findings", "checkDiagnostics"]
-		);
-	})
 );
 
 it.effect("loc check rejects unknown built-in ids at the CLI boundary", () =>

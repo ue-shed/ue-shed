@@ -18,6 +18,9 @@ use ts_rs::TS;
 pub enum Format {
     /// The all-languages CSV: a row per line, and per culture its shipped translation and state.
     CultureLinesCsv,
+    /// `loc check`'s findings: the elements of the report's `findings` array, as the CLI prints
+    /// them. The host writes the report around them.
+    FindingJson,
 }
 
 /// Where a request's exported rows go, and in what format: a file, or `text` frames when `file`
@@ -120,6 +123,11 @@ impl<'a> SinkWriter<'a> {
         self.rows += 1;
     }
 
+    /// Rows written so far.
+    pub fn rows(&self) -> u32 {
+        self.rows
+    }
+
     fn flush(&mut self) -> Result<()> {
         if self.buffer.is_empty() {
             return Ok(());
@@ -208,6 +216,58 @@ pub(crate) fn utf8(view: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// `JSON.stringify(value, null, "\t")`, as nested `depth` tabs deep: members in a JavaScript
+/// object's order, array indices first, and strings and numbers as JavaScript writes them.
+pub(crate) fn pretty_json(value: &serde_json::Value, depth: usize, out: &mut Vec<u8>) {
+    use serde_json::Value;
+    let indent = |out: &mut Vec<u8>, depth: usize| {
+        out.push(b'\n');
+        out.resize(out.len() + depth, b'\t');
+    };
+    match value {
+        Value::Array(items) if !items.is_empty() => {
+            out.push(b'[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(b',');
+                }
+                indent(out, depth + 1);
+                pretty_json(item, depth + 1, out);
+            }
+            indent(out, depth);
+            out.push(b']');
+        }
+        Value::Object(members) if !members.is_empty() => {
+            // An object's integer-like keys come first, ascending; the rest keep their order.
+            let index = |key: &str| {
+                (key == "0" || !key.starts_with('0'))
+                    .then(|| key.parse::<u32>().ok())
+                    .flatten()
+                    .filter(|index| *index != u32::MAX && index.to_string() == key)
+            };
+            let mut keys = members.keys().collect::<Vec<_>>();
+            keys.sort_by_key(|key| index(key).map_or((1, 0), |index| (0, index)));
+            out.push(b'{');
+            for (at, key) in keys.into_iter().enumerate() {
+                if at > 0 {
+                    out.push(b',');
+                }
+                indent(out, depth + 1);
+                out.extend_from_slice(
+                    crate::wtf8::Wtf8Buf::from_view(key)
+                        .json_string()
+                        .as_bytes(),
+                );
+                out.extend_from_slice(b": ");
+                pretty_json(&members[key], depth + 1, out);
+            }
+            indent(out, depth);
+            out.push(b'}');
+        }
+        _ => out.extend_from_slice(crate::rules::javascript_json(value, false).as_bytes()),
+    }
+}
+
 /// One cell of a spreadsheet row.
 pub(crate) enum Cell<'a> {
     Text(&'a str),
@@ -271,5 +331,23 @@ mod tests {
         );
         let lone = crate::wtf8::Wtf8Buf::from_utf16(&[0x61, 0xd800]).into_view();
         assert_eq!(utf8(&lone), "a\u{fffd}");
+    }
+
+    #[test]
+    fn pretty_json_writes_what_javascripts_tab_indented_stringify_does() {
+        let lone = crate::wtf8::Wtf8Buf::from_utf16(&[0x61, 0xd800]).into_view();
+        let value = serde_json::json!({
+            "b": [1, 0.1, 1e21, -0.0, "\u{2028}", lone],
+            "10": {},
+            "a": [],
+            "2": {"x": null, "y": [true]},
+            "01": false
+        });
+        let mut out = Vec::new();
+        pretty_json(&value, 1, &mut out);
+        assert_eq!(
+            String::from_utf8_lossy(&out),
+            "{\n\t\t\"2\": {\n\t\t\t\"x\": null,\n\t\t\t\"y\": [\n\t\t\t\ttrue\n\t\t\t]\n\t\t},\n\t\t\"10\": {},\n\t\t\"b\": [\n\t\t\t1,\n\t\t\t0.1,\n\t\t\t1e+21,\n\t\t\t0,\n\t\t\t\"\u{2028}\",\n\t\t\t\"a\\ud800\"\n\t\t],\n\t\t\"a\": [],\n\t\t\"01\": false\n\t}"
+        );
     }
 }

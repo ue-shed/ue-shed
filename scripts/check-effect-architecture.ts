@@ -58,7 +58,10 @@ const approvedRuntimeExits = new Set([
 	"packages/unreal-assets/src/project-index-process.ts",
 	// The shared protocol transport closes the Project Index async-generator telemetry boundary;
 	// callers still receive only Effect and Stream operations.
-	"packages/unreal-assets/src/protocol-transport.ts"
+	"packages/unreal-assets/src/protocol-transport.ts",
+	// The Game Text engine session awaits each stream sink write as a Promise; the client runs
+	// the caller's Effect writer in the call's own context, so callers write with Effect only.
+	"packages/unreal-assets/src/game-text-engine-client.ts"
 ]);
 const approvedPromiseAdapters = new Set([
 	// Native build staging adapts Node filesystem/snapshot Promise ports below the scoped

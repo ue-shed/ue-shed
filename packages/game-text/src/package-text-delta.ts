@@ -11,7 +11,8 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 	removed: readonly string[],
 	reader: SharedIndexReader,
 	writer: SharedIndexWriter,
-	replace: NonNullable<SharedIndexWriter["replacePackages"]>
+	replace: NonNullable<SharedIndexWriter["replacePackages"]>,
+	publishGate?: Effect.Effect<void, never, never>
 ) {
 	const entries = [];
 	let readPackages = 0;
@@ -102,6 +103,7 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 			source: packageTextColumns(records)
 		});
 	}
+	if (publishGate) yield* publishGate;
 	yield* replace(entries, removed);
 	yield* Effect.annotateCurrentSpan({
 		"package-text.readPackages": readPackages,

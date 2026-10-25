@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { availableParallelism } from "node:os";
@@ -10,6 +10,7 @@ import { openSnapshotFile, type SnapshotFileReader } from "./snapshot-file.js";
 import { snapshotStoreFailure } from "./snapshot-store.js";
 import { packageTextSelection, type PackageTextInventoryEntry } from "./package-text-layer.js";
 import { type PreparedColdStrings, type ColdLayerSource } from "./shared-string-sort.js";
+import { coldMemoryBudget, coldParserReservation, runColdTasks } from "./cold-task-pool.js";
 import { PackageTextWorkerReply as Reply } from "./package-text-worker-protocol.js";
 
 function worker() {
@@ -29,6 +30,8 @@ export interface ColdPackageTextInput {
 	readonly additionalSources?: readonly ColdLayerSource[];
 	/** Workers started earlier (see `startPackageTextWorkers`); the import still terminates them. */
 	readonly workers?: readonly Worker[];
+	/** Explicit prepare-pool budget when another cold pool runs beside this import. */
+	readonly memoryBudgetBytes?: number;
 	/**
 	 * The reader staged the selected packages' records itself (`GameTextIndexSource.stage`):
 	 * the files `files[g]` together hold group `g`'s lines, and `groups[g]` names its shards.
@@ -159,12 +162,31 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 				signal.addEventListener("abort", abort, { once: true });
 				try {
 					if (signal.aborted) throw new Error("Cold package import cancelled");
-					await Promise.all(
-						Array.from({ length: workerCount }, async (_, slot) => {
-							const instance = started[slot] ?? worker();
-							workers.push(instance);
-							for (let task = pending.shift(); task; task = pending.shift()) {
-								const current = task;
+					const reservations = await Promise.all(
+						pending.map(async (task) => {
+							const files =
+								"files" in task.message
+									? task.message.files
+									: [task.message.input];
+							let bytes = 0;
+							for (const file of files)
+								bytes += await stat(file).then(
+									(value) => value.size,
+									() => 0
+								);
+							return coldParserReservation(bytes);
+						})
+					);
+					await runColdTasks(
+						pending.map((task, row) => ({ row, bytes: reservations[row]! })),
+						input.memoryBudgetBytes ?? coldMemoryBudget(process.availableMemory()),
+						workerCount,
+						async (row, slot) => {
+							if (signal.aborted) throw new Error("Cold package import cancelled");
+							const instance =
+								workers[slot] ?? (workers[slot] = started[slot] ?? worker());
+							const current = pending[row]!;
+							{
 								const shardStarted = performance.now();
 								await new Promise<void>((resolve, reject) => {
 									const clean = () => {
@@ -223,7 +245,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 									instance.postMessage(current.message);
 								});
 							}
-						})
+						}
 					);
 					await Promise.all(workers.map((instance) => instance.terminate()));
 					workers.length = 0;

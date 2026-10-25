@@ -3,7 +3,9 @@ import { randomUUID, createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import {
 	Cause,
+	Deferred,
 	Exit,
+	Fiber,
 	Context,
 	Effect,
 	Layer,
@@ -76,6 +78,7 @@ import type { RefreshJoinedTarget, JoinedTargetInput } from "./joined-target.js"
 import type { LocalizationReviewSnapshot } from "@ue-shed/localization";
 import type { GameTextProjectView } from "./project-index-view.js";
 import { encodeWtf8 } from "./wtf8.js";
+import { coldHalfBudget } from "./cold-task-pool.js";
 import { withHostSlices } from "./host-slices.js";
 import { mountPackageTextEvent } from "./package-object-path.js";
 import {
@@ -291,6 +294,14 @@ const savedTarget = Schema.decodeUnknownSync(LocalizationTarget)({
 	collapseMode: "IdenticalTextIdAndSource"
 });
 
+/** Work shared with a concurrent producer inside one coordinated prepare. */
+export interface ConcurrentPrepareOptions {
+	/** This branch's share of one cold memory budget. */
+	readonly memoryBudgetBytes?: number;
+	/** Awaited by the package branch after its read, before it publishes. */
+	readonly publishGate?: Effect.Effect<void, never, never>;
+}
+
 /** How the index steps place their work. */
 export interface GameTextIndexStepsOptions {
 	/**
@@ -389,7 +400,8 @@ export const makeGameTextIndexSteps = (
 		});
 
 		const refreshProject = Effect.fn("GameTextIndex.refreshProject")(function* (
-			input: GameTextProjectRefreshRequest
+			input: GameTextProjectRefreshRequest,
+			concurrent?: ConcurrentPrepareOptions
 		) {
 			const reportProgress = yield* GameTextIndexProgressReporter;
 			const request = yield* Schema.decodeUnknownEffect(GameTextProjectRefreshRequest)(
@@ -435,6 +447,12 @@ export const makeGameTextIndexSteps = (
 					} satisfies Parameters<typeof refreshPackageTextLayer>[0];
 					if (request.changedFiles !== undefined)
 						Object.assign(packageRequest, { changedFiles: request.changedFiles });
+					if (concurrent?.memoryBudgetBytes !== undefined)
+						Object.assign(packageRequest, {
+							memoryBudgetBytes: concurrent.memoryBudgetBytes
+						});
+					if (concurrent?.publishGate !== undefined)
+						Object.assign(packageRequest, { publishGate: concurrent.publishGate });
 					const stage = source.stage;
 					if (stage)
 						Object.assign(packageRequest, {
@@ -513,7 +531,8 @@ export const makeGameTextIndexSteps = (
 
 		const importTarget = Effect.fn("GameTextIndex.importTarget")(function* (
 			project: GameTextProject,
-			input: GameTextTargetImportRequest = {}
+			input: GameTextTargetImportRequest = {},
+			concurrent?: ConcurrentPrepareOptions
 		) {
 			const request = yield* Schema.decodeUnknownEffect(GameTextTargetImportRequest)(
 				input
@@ -563,7 +582,13 @@ export const makeGameTextIndexSteps = (
 										projectRoot: project.projectRoot,
 										cacheRoot,
 										targetName: request.targetName,
-										projectScoped: true
+										projectScoped: true,
+										...(concurrent?.memoryBudgetBytes === undefined
+											? undefined
+											: {
+													memoryBudgetBytes:
+														concurrent.memoryBudgetBytes
+												})
 									})
 								).pipe(Effect.provideService(LocalizationEvidence, evidence));
 					const manifestFailure = imported.diagnostics.find(
@@ -709,10 +734,35 @@ export const makeGameTextIndexSteps = (
 					return yield* withSession(
 						configurationFor(cacheRoot, selected.projectRoot, input.targetName),
 						Effect.gen(function* () {
-							const imported = yield* Effect.result(importTarget(selected, input));
-							if (Result.isFailure(imported))
+							// The two branches read disjoint inputs and publish disjoint
+							// layers into the one leased writer; native commands stay
+							// serialized by the writer's own lane. The package branch
+							// publishes only after the gate opens, with both reads done.
+							const share = coldHalfBudget(process.availableMemory());
+							const gate = yield* Deferred.make<void>();
+							const importedFiber = yield* Effect.forkChild(
+								Effect.result(
+									importTarget(selected, input, { memoryBudgetBytes: share })
+								)
+							);
+							const projectFiber = yield* Effect.forkChild(
+								refreshProject(input, {
+									memoryBudgetBytes: share,
+									publishGate: Deferred.await(gate)
+								})
+							);
+							const importedExit = yield* Fiber.await(importedFiber);
+							if (Exit.isFailure(importedExit)) {
+								yield* Fiber.interrupt(projectFiber);
+								return yield* Effect.failCause(importedExit.cause);
+							}
+							const imported = importedExit.value;
+							if (Result.isFailure(imported)) {
+								yield* Fiber.interrupt(projectFiber);
 								return { kind: "import-failed" as const, cause: imported.failure };
-							const project = yield* refreshProject(input);
+							}
+							yield* Deferred.succeed(gate, undefined);
+							const project = yield* Fiber.join(projectFiber);
 							const target = yield* buildTarget(project, imported.success, input);
 							return { kind: "prepared" as const, target };
 						}),

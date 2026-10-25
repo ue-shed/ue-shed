@@ -266,6 +266,7 @@ The engine encodes every exported row, so the host never builds a document to pr
     - **The finding's shape.** The report's schema rebuilds every struct in its fields' order and keeps only the members it names, so Phase 3's member order was the schema's, not the order `reportedFinding` built. The engine picks and orders a finding's top-level members by family, and its policy findings' `actual`, whose authored order differs from the schema's. The authored order stays: the report's order compares `JSON.stringify(actual)`.
     - **Counts first.** `prepareLocalizationCheck` reads the counts with the first diagnostics page, so the report is complete but for its findings before anything prints, and `--changes` is written first, as before. `findings_query` with a sink takes no `limit`, writes every selected finding, composing 5,000 at a time, and answers with its counts and `sink`.
     - **Failure.** A failure after the report starts printing leaves it cut short; the CLI writes the failure to stderr and exits with 2.
+- **Browse's CSV** is a `corpusCsv` sink on the corpus `export`, over the units the export would send. An investigation's corpus CSV asks for its file before anything is read, as the all-languages export does. The Findings column keeps a listed row's cap of 32 rules per unit, as the host's CSV did.
 - **Workbench exports** write through `sink.file` and report progress. The 64 MiB and 16 MiB caps (`gt/workspace-localization.ts:861-904`) go.
 
 ## 9. Host adoption

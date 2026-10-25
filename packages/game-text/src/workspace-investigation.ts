@@ -22,14 +22,22 @@ export const saveWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 	function* (
 		files: GameTextWorkspaceFileHooks,
 		options: {
-			readonly contents: string;
 			readonly extension: "json" | "csv";
-			readonly rowCount: number;
 			readonly projectRoot?: string;
-		}
+		} & (
+			| { readonly contents: string; readonly rowCount: number }
+			/** Writes the chosen file itself, and answers with the rows it wrote. */
+			| { readonly write: (path: string) => Effect.Effect<number, InvestigationError> }
+		)
 	) {
-		const bytes = new TextEncoder().encode(options.contents);
-		if (options.projectRoot && bytes.byteLength > PRESET_LIMIT)
+		const output =
+			"write" in options
+				? { write: options.write }
+				: {
+						bytes: new TextEncoder().encode(options.contents),
+						rowCount: options.rowCount
+					};
+		if (options.projectRoot && "bytes" in output && output.bytes.byteLength > PRESET_LIMIT)
 			return yield* Effect.fail(
 				new InvestigationError({
 					retrySafe: true,
@@ -46,11 +54,16 @@ export const saveWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 			filters: [{ name: options.extension.toUpperCase(), extensions: [options.extension] }]
 		});
 		if (choice.status === "cancelled") return choice;
-		yield* files.writeFile(choice.path, bytes, { maxBytes: EXPORT_LIMIT });
+		let rowCount: number;
+		if ("write" in output) rowCount = yield* output.write(choice.path);
+		else {
+			yield* files.writeFile(choice.path, output.bytes, { maxBytes: EXPORT_LIMIT });
+			rowCount = output.rowCount;
+		}
 		return {
 			status: "saved" as const,
 			path: choice.path,
-			rowCount: options.rowCount,
+			rowCount,
 			...(options.projectRoot
 				? {
 						replayCommand: investigationReplayCommand(options.projectRoot, choice.path)

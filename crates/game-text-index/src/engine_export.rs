@@ -169,14 +169,14 @@ impl EngineQuery {
             .ok_or("Missing project identity.")?;
         Ok(crate::join_policy::relative_package(project, &path))
     }
-    fn write_corpus(
+    /// The raw units an export writes: the selection's, those `units` names, or every one.
+    pub(crate) fn chosen_units(
         &self,
         request: &Selection,
         include_invisible: bool,
         units: Option<&[String]>,
         cancelled: &AtomicBool,
-        reply: &mut dyn Reply,
-    ) -> Result<()> {
+    ) -> Result<(Arc<Projection>, Vec<bool>)> {
         let matched = if include_invisible || units.is_some() {
             Arc::from([])
         } else {
@@ -213,15 +213,37 @@ impl EngineQuery {
                 chosen[*row as usize] = true;
             }
         }
+        Ok((p, chosen))
+    }
+
+    /// The findings layer an export lists each unit's rules from, in every culture.
+    pub(crate) fn export_findings(
+        &self,
+        request: &Selection,
+        cancelled: &AtomicBool,
+    ) -> Result<Option<Arc<crate::rules::FindingRows>>> {
+        request
+            .findings
+            .as_ref()
+            .map(|selection| {
+                let every = (0..self.cultures.len()).collect::<Vec<_>>();
+                self.finding_rows(selection, false, &every, cancelled)
+            })
+            .transpose()
+    }
+
+    fn write_corpus(
+        &self,
+        request: &Selection,
+        include_invisible: bool,
+        units: Option<&[String]>,
+        cancelled: &AtomicBool,
+        reply: &mut dyn Reply,
+    ) -> Result<()> {
+        let (p, chosen) = self.chosen_units(request, include_invisible, units, cancelled)?;
         let summary = self.summary(cancelled)?;
         // With a findings layer each unit lists its rules, and the head their labels once.
-        let findings = match &request.findings {
-            Some(selection) => {
-                let every = (0..self.cultures.len()).collect::<Vec<_>>();
-                Some(self.finding_rows(selection, false, &every, cancelled)?)
-            }
-            None => None,
-        };
+        let findings = self.export_findings(request, cancelled)?;
         let mut head =
             json!({"schemaVersion":1,"status":summary["status"],"coverage":summary["coverage"]});
         if let Some(findings) = &findings {

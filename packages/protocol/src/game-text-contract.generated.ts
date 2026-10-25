@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "16cbfb5e2e3336fb9524ad0c85570ca90d66fbd87c48957d85141a59514c9051"
+	contractHash: "d7228f550de4fad99db50406ca182dfe2be78e0bc4d7c059f4898d22dc0e7463"
 } as const;
 
 /**
@@ -383,7 +383,7 @@ file?: string,
  */
 exclusive?: boolean, };
 
-export type SinkFormat = "cultureLinesCsv" | "findingJson";
+export type SinkFormat = "corpusCsv" | "cultureLinesCsv" | "findingJson";
 
 export type SinkSummary = { 
 /**

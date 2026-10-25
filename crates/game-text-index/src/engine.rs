@@ -525,9 +525,23 @@ impl EngineSession {
                         ("aggregate", None)
                     }
                     EngineRequest::Export { request, .. } => {
-                        let (request, units) =
+                        let (request, units, sink) =
                             crate::engine_rollup::parse_corpus_export(&text(request)?)?;
-                        query.send_corpus(&request, false, units.as_deref(), cancelled, reply)?;
+                        match sink {
+                            Some(sink) => {
+                                let mut writer = crate::sink::SinkWriter::open(&sink, reply)?;
+                                query.write_corpus_csv(&request, &mut writer, cancelled)?;
+                                let summary = writer.finish()?;
+                                reply.part(serde_json::to_vec(&summary)?)?;
+                            }
+                            None => query.send_corpus(
+                                &request,
+                                false,
+                                units.as_deref(),
+                                cancelled,
+                                reply,
+                            )?,
+                        }
                         ("export", None)
                     }
                     EngineRequest::Line { request, .. } => {

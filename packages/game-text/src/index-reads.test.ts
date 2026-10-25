@@ -40,6 +40,10 @@ import {
 	pickedLocalizationCultures
 } from "./localization-export.js";
 import { localizationWordCount } from "./localization-words.js";
+import { gameTextCsv } from "./csv.js";
+import { effectiveRuleDocument } from "./rules/effective.js";
+import { hasSearchableSource } from "./search.js";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import type { TextCorpusSearchRequest, TextFilterClause } from "./schema.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -550,6 +554,42 @@ describe("index reads", () => {
 											exclusive: true
 										})
 									).toEqual({ status: "exists" });
+								}
+								// Browse's CSV, likewise: the host wrote it from the engine's export, with
+								// the rules' findings as its Findings column.
+								const { key } = yield* model.query.findingsEvaluate(
+									effectiveRuleDocument(STARTER_CHECK_RULES)
+								);
+								const corpusRequests = [
+									{ query: "", capability: "all" },
+									{ query: "", capability: "all", findings: { key } },
+									{ ...lines, findings: { key } }
+								] as const;
+								for (const [index, request] of corpusRequests.entries()) {
+									const exported = yield* model.query.exportWithSignals(request);
+									const bytes = new TextEncoder().encode(
+										gameTextCsv(
+											exported.corpus,
+											exported.reviewSignals,
+											exported.findings
+										)
+									);
+									const path = resolve(directory, `corpus-${index}.csv`);
+									expect(
+										yield* model.query.writeCorpusCsv(request, { path })
+									).toEqual({
+										status: "written",
+										rows: exported.corpus.units
+											.filter(hasSearchableSource)
+											.reduce(
+												(rows, unit) => rows + unit.occurrences.length,
+												0
+											),
+										bytes: bytes.byteLength
+									});
+									expect(
+										new Uint8Array(yield* Effect.promise(() => readFile(path)))
+									).toEqual(bytes);
 								}
 							}
 							expect(model.revision).toEqual(expect.any(String));

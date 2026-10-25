@@ -50,7 +50,7 @@ line) and replaces `focus`, `localization_detail`, `related` and `localization_f
 
 The engine encodes exports itself. A request's `sink` names a format and a file, written beside
 it and moved into place, or streams the encoded rows as `text` frames that
-`NativeGameTextEngineClient.execute` hands to an `EngineTextWriter`; it answers with a
+`NativeGameTextEngineClient.execute` hands to an `EngineTextSink`, an Effect writer; it answers with a
 `SinkSummary`. `NativeTextQuery.writeLocalizationLinesCsv` writes the all-languages CSV this way,
 so the Workbench export and `ue-shed loc export` no longer read the lines into the host, and
 the Workbench's 64 MiB cap on that file is gone. Engine errors gain the `exists` code.
@@ -61,3 +61,7 @@ but the findings and returns a `PreparedLocalizationCheck`, whose `write` writes
 `localizationCheck` still returns the report as a value. `findings_query` takes a `findingJson`
 sink without a `limit`, and `NativeFindings.findingsWrite` sends one. If the engine fails after
 the report starts printing, `loc check` writes the failure to stderr and exits with 2.
+
+`NativeTextQuery.writeCorpusCsv` writes Browse's CSV through a `corpusCsv` sink on the corpus
+export, so an investigation's corpus CSV asks for its file first and no unit reaches the host.
+Both file writers answer with a `SinkFileWritten`.

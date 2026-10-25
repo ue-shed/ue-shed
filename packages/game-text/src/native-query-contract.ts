@@ -26,7 +26,7 @@ import type {
 } from "./index-reads.js";
 
 /** What a sink wrote, or that its exclusive file was already there. */
-export type LinesFileWritten =
+export type SinkFileWritten =
 	| ({ readonly status: "written" } & GameTextContract.SinkSummary)
 	| { readonly status: "exists" };
 
@@ -93,7 +93,16 @@ export interface NativeTextQuery extends NativeFindings {
 	readonly writeLocalizationLinesCsv: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
 		file: { readonly path: string; readonly exclusive?: boolean }
-	) => Effect.Effect<LinesFileWritten, GameTextIndexError>;
+	) => Effect.Effect<SinkFileWritten, GameTextIndexError>;
+	/**
+	 * Writes the units a request matches to `file.path` as Browse's CSV, a row per saved place,
+	 * encoded by the engine; no unit reaches the host. With `request.findings`, a Findings
+	 * column lists each unit's rules. `file.exclusive` is as for `writeLocalizationLinesCsv`.
+	 */
+	readonly writeCorpusCsv: (
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		file: { readonly path: string; readonly exclusive?: boolean }
+	) => Effect.Effect<SinkFileWritten, GameTextIndexError>;
 	/** The named units with every occurrence (at most 5,000 IDs); IDs no unit has are left out. */
 	readonly readUnits: (
 		ids: readonly TextUnit["id"][]

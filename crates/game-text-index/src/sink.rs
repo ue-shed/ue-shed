@@ -16,6 +16,8 @@ use ts_rs::TS;
 #[cfg_attr(test, ts(rename = "SinkFormat"))]
 #[serde(rename_all = "camelCase")]
 pub enum Format {
+    /// Browse's CSV: a row per saved place of each selected unit with searchable source.
+    CorpusCsv,
     /// The all-languages CSV: a row per line, and per culture its shipped translation and state.
     CultureLinesCsv,
     /// `loc check`'s findings: the elements of the report's `findings` array, as the CLI prints

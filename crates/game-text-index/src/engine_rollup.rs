@@ -6,6 +6,7 @@ use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, audience, selected_bits};
 use crate::engine_types::*;
 use crate::rules::FindingRows;
+use crate::sink::{Format, Sink};
 use crate::{Result, require};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -757,17 +758,30 @@ pub fn parse_line_export(payload: &str) -> Result<ParsedLineExport> {
 }
 
 /// A corpus export: the selection's units, or `units` names them by ID (at most 5,000; IDs no
-/// unit has are left out).
+/// unit has are left out). A `corpusCsv` sink writes the selection's units as Browse's CSV.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CorpusExport {
     selection: Selection,
     units: Option<Vec<String>>,
+    sink: Option<Sink>,
 }
 
-pub fn parse_corpus_export(payload: &str) -> Result<(Selection, Option<Vec<String>>)> {
-    let CorpusExport { selection, units } = parse_request(payload, "export")?;
+/// A corpus export's selection, its units by ID, and its sink.
+pub type ParsedCorpusExport = (Selection, Option<Vec<String>>, Option<Sink>);
+
+pub fn parse_corpus_export(payload: &str) -> Result<ParsedCorpusExport> {
+    let CorpusExport {
+        selection,
+        units,
+        sink,
+    } = parse_request(payload, "export")?;
     selection.validate()?;
+    require(
+        sink.as_ref()
+            .is_none_or(|sink| sink.format == Format::CorpusCsv && units.is_none()),
+        invalid("A corpus sink writes a selection's units as corpusCsv."),
+    )?;
     if let Some(units) = &units {
         require(
             !units.is_empty() && units.len() <= 5000,
@@ -780,7 +794,7 @@ pub fn parse_corpus_export(payload: &str) -> Result<(Selection, Option<Vec<Strin
             )?;
         }
     }
-    Ok((selection, units))
+    Ok((selection, units, sink))
 }
 
 #[cfg(test)]

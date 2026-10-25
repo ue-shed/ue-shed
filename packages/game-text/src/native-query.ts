@@ -322,23 +322,29 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				)
 			);
 		});
-	const writeLocalizationLinesCsv = Effect.fn("GameTextIndex.nativeLinesCsv")(function* (
+	/**
+	 * Writes a request's rows to a file through an engine sink: `exists` when the file is
+	 * exclusive and already there, else what the sink wrote.
+	 */
+	const writeSinkFile = Effect.fn("GameTextIndex.nativeSinkFile")(function* (
 		pinned: Pinned,
+		action: "export" | "localization_export",
+		format: GameTextContract.SinkFormat,
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
 		file: { readonly path: string; readonly exclusive?: boolean }
 	) {
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
 			...request,
 			pageSize: 50
-		}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
+		}).pipe(Effect.mapError((cause) => failed(action, cause)));
 		const answer = yield* pinned
 			.execute({
-				action: "localization_export",
+				action,
 				reader: pinned.reader,
 				request: {
 					selection: querySelection(decoded),
 					sink: {
-						format: "cultureLinesCsv",
+						format,
 						file: file.path,
 						...(file.exclusive === true && { exclusive: true })
 					}
@@ -355,7 +361,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		if (answer.answer === undefined) return { status: "exists" as const };
 		const summary = answerJson<GameTextContract.SinkSummary>(answer.answer);
 		if (summary === undefined)
-			return yield* Effect.fail(failed("localization_export", "The engine sent no summary."));
+			return yield* Effect.fail(failed(action, "The engine sent no summary."));
 		return { status: "written" as const, ...summary };
 	});
 	const readUnits = Effect.fn("GameTextIndex.nativeUnits")(function* (
@@ -684,7 +690,9 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		selectLocalizationLines: (request, fields) =>
 			selectLocalizationLines(pinned, request, fields),
 		writeLocalizationLinesCsv: (request, file) =>
-			writeLocalizationLinesCsv(pinned, request, file),
+			writeSinkFile(pinned, "localization_export", "cultureLinesCsv", request, file),
+		writeCorpusCsv: (request, file) =>
+			writeSinkFile(pinned, "export", "corpusCsv", request, file),
 		readCorpusHeader: () => readCorpusHeader(pinned),
 		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),

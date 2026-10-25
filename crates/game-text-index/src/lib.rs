@@ -51,6 +51,7 @@ mod line_break;
 pub mod rules;
 pub mod session;
 mod sink;
+mod sink_corpus;
 mod sink_lines;
 #[rustfmt::skip]
 mod line_break_tables;

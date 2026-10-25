@@ -525,8 +525,10 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 						Effect.gen(function* () {
 							const client = yield* Pool.get(writers);
 							let endedCleanly = false;
-							yield* Effect.addFinalizer(() =>
-								endedCleanly ? Effect.void : Pool.invalidate(writers, client)
+							yield* Effect.addFinalizer((exit) =>
+								endedCleanly && Exit.isSuccess(exit)
+									? Effect.void
+									: Pool.invalidate(writers, client)
 							);
 							const backing = yield* SharedIndex;
 							const stage = yield* Effect.acquireRelease(

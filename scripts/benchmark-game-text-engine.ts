@@ -40,6 +40,10 @@ const { values } = parseArgs({
 		/** Repetitions of the long stages: build and Quality. Their spread is about 2%. */
 		"long-runs": { type: "string", default: "1" },
 		generated: { type: "boolean", default: false },
+		/** Persistent project-index cache for the warmed index; beside the output by default. */
+		"project-index-cache": { type: "string" },
+		/** Measure the first-ever cold project-index refresh inside the build instead. */
+		"cold-project-index": { type: "boolean", default: false },
 		stages: {
 			type: "string",
 			default: "build,open,cached-reopen,quality,typing,selection"
@@ -88,7 +92,11 @@ if (values.worker) {
 			mix: values.mix,
 			stage: values.stage!,
 			records: values.records ? resolve(values.records) : undefined,
-			target: values.target
+			target: values.target,
+			projectIndexCache: values["project-index-cache"]
+				? resolve(values["project-index-cache"])
+				: undefined,
+			coldProjectIndex: values["cold-project-index"]
 		});
 		process.send?.({ kind: "done", result });
 	} catch (cause) {
@@ -131,6 +139,9 @@ if (values.worker) {
 	for (const stage of stages)
 		if (!allowedStages.has(stage)) throw new Error(`Unknown stage ${stage}.`);
 	const cacheRoot = resolve(values.cache ?? join(output, "caches"));
+	const projectIndexCache = values["cold-project-index"]
+		? undefined
+		: resolve(values["project-index-cache"] ?? join(output, "project-index-cache"));
 	if (
 		values["control-executable"] &&
 		(values.instrument ||
@@ -140,7 +151,12 @@ if (values.worker) {
 		throw new Error(
 			"The alternating off control requires --control-api-root, overhead:small only and instrumentation off."
 		);
-	const destinations = [cacheRoot, output, ...(values.records ? [resolve(values.records)] : [])];
+	const destinations = [
+		cacheRoot,
+		output,
+		...(values.records ? [resolve(values.records)] : []),
+		...(projectIndexCache ? [projectIndexCache] : [])
+	];
 	if (destinations.some((destination) => relativeInside(project, destination)))
 		throw new Error(
 			"STOP: cache, output and reader records must be outside the input project."
@@ -223,6 +239,49 @@ if (values.worker) {
 				stages = ["records", ...stages];
 			}
 		}
+		if (projectIndexCache) {
+			await mkdir(projectIndexCache, { recursive: true });
+			const warmOutput = join(output, "warm-project-index");
+			await mkdir(warmOutput, { recursive: true });
+			const warmLog = createWriteStream(join(warmOutput, "worker.log"));
+			const warm = fork(
+				fileURLToPath(import.meta.url),
+				[
+					"--worker",
+					"--project",
+					project,
+					"--output",
+					warmOutput,
+					"--cache",
+					projectIndexCache,
+					"--stage",
+					"warm-project-index",
+					"--mix",
+					values.mix,
+					...(values.target ? ["--target", values.target] : [])
+				],
+				{
+					execArgv: ["--import", "tsx", "--expose-gc"],
+					detached: process.platform !== "win32",
+					stdio: ["ignore", "pipe", "pipe", "ipc"],
+					env: { ...process.env }
+				}
+			);
+			warm.stdout?.pipe(warmLog, { end: false });
+			warm.stderr?.pipe(warmLog, { end: false });
+			process.stdout.write("Warming the project index.\n");
+			try {
+				const code = await new Promise<number | null>((done, reject) => {
+					warm.once("error", reject);
+					warm.once("close", done);
+				});
+				if (code !== 0)
+					throw new Error(`Project index warm-up failed; inspect ${warmOutput}.`);
+			} finally {
+				warmLog.end();
+				await killBenchmarkTree(warm);
+			}
+		}
 		for (let repeat = 0; repeat < Math.max(runs, longRuns); repeat++)
 			for (const stage of stages)
 				for (const isControl of values["control-executable"] ? [true, false] : [false]) {
@@ -273,7 +332,11 @@ if (values.worker) {
 							"--mix",
 							values.mix,
 							...(values.records ? ["--records", resolve(values.records)] : []),
-							...(values.target ? ["--target", values.target] : [])
+							...(values.target ? ["--target", values.target] : []),
+							...(projectIndexCache
+								? ["--project-index-cache", projectIndexCache]
+								: []),
+							...(values["cold-project-index"] ? ["--cold-project-index"] : [])
 						],
 						{
 							execArgv: [

@@ -13,7 +13,7 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { promisify } from "node:util";
 import { performance } from "node:perf_hooks";
-import { Context, Effect, Layer, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import * as currentIndex from "../packages/game-text/dist/entry-index.js";
 import * as currentAssets from "../packages/unreal-assets/dist/index.js";
 import * as currentLocalization from "../packages/localization/dist/index.js";
@@ -172,7 +172,6 @@ await withEngineBenchmarkLock(async () => {
 			JSON.stringify(
 				{
 					projectLabel: values.records ? "generated" : "released",
-					targetName,
 					refreshStatus: result ? "ready" : "missing",
 					phases,
 					peak: {
@@ -195,5 +194,6 @@ await withEngineBenchmarkLock(async () => {
 		);
 	} finally {
 		clearInterval(timer);
+		await Effect.runPromise(Scope.close(scope, Exit.void));
 	}
 });

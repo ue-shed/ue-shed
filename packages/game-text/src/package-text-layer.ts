@@ -75,6 +75,10 @@ const shardName = (shard: number) => `package-text.${shard}`;
 export interface PackageTextRefreshInput<E, R> {
 	/** Override the cold-path inventory threshold for bounded integration fixtures. */
 	readonly coldMinimumPackages?: number;
+	/** Awaited after the read, before any package layer is published. */
+	readonly publishGate?: Effect.Effect<void, never, never>;
+	/** Explicit prepare-pool budget when another cold pool runs beside this refresh. */
+	readonly memoryBudgetBytes?: number;
 	readonly inventory: readonly PackageTextInventoryEntry[];
 	readonly changedFiles?: readonly string[];
 	readonly read: (
@@ -309,9 +313,10 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			source: packageTextColumns([])
 		};
 		const retired = removed.filter((name) => name !== empty.name);
+		if (input.publishGate) yield* input.publishGate;
 		// Retain an empty prepared-inventory marker after deleting the last package, including
 		// when localization layers were imported before this first package preparation.
-		if (!Object.keys(manifest.layers).length) yield* writer.publishCold([empty]);
+		if (!Object.keys(writer.manifest().layers).length) yield* writer.publishCold([empty]);
 		else yield* writer.publishBatch([empty], retired);
 		return {
 			readPackages: 0,
@@ -347,7 +352,8 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			removed,
 			reader,
 			writer,
-			writer.replacePackages
+			writer.replacePackages,
+			input.publishGate
 		);
 	}
 	if (!reader && changed.length > 8 && inventory.length >= (input.coldMinimumPackages ?? 256)) {
@@ -503,12 +509,17 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		});
 		// Reading includes the reader's own work and staging the records it returns.
 		stages.mark("read");
+		if (input.publishGate) yield* input.publishGate;
+		stages.restart();
 		const result = yield* importColdPackageTextShards(
 			{
 				inventory,
 				recordDirectory: directory,
 				stagingRoot: directory,
 				workers,
+				...(input.memoryBudgetBytes === undefined
+					? undefined
+					: { memoryBudgetBytes: input.memoryBudgetBytes }),
 				...(stage && groups
 					? {
 							staged: {
@@ -676,8 +687,10 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	}
 	// Reading includes the reader's own work and each shard's staging.
 	stages.mark("read");
+	if (input.publishGate) yield* input.publishGate;
+	stages.restart();
 	reportProgress({ phase: "package_publish", completed: 0, total: 0 });
-	if (!Object.keys(manifest.layers).length || sources.length > 8)
+	if (!Object.keys(writer.manifest().layers).length || sources.length > 8)
 		yield* writer.publishCold(sources, removed);
 	else yield* writer.publishBatch(sources, removed);
 	stages.mark("publish");

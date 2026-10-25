@@ -1,10 +1,11 @@
 /**
  * Interrupts a cold Game Text refresh during one named progress phase and measures:
  * how long the interrupt takes to return, how long until every native child has
- * exited or gone idle, and whether an immediate second refresh on the same cache
+ * exited, and whether an immediate second refresh on the same cache
  * succeeds. Each repetition uses a fresh cache so the interrupted stage is cold.
+ * Host inventory is prepared and its query session closed before the timed refresh.
  *
- * node --import tsx scripts/game-text-cold-cancel-probe.ts --project <dir> \
+ * node scripts/game-text-cold-cancel-probe.ts --project <dir> \
  *   --cache-root <dir> --phase localization|packages|joining --reps 3 --out <json>
  */
 import { execFile } from "node:child_process";
@@ -50,38 +51,77 @@ interface RepetitionResult {
 	interrupted: boolean;
 	interruptMs: number;
 	idleMs: number;
+	childrenRemaining: number;
+	inventoryChildrenRemaining: number;
+	childObservations: readonly ChildObservation[];
 	secondRefreshOk: boolean;
 	secondRefreshMs: number;
 	interruptError?: string;
 	secondError?: string;
 }
 
+interface ChildObservation {
+	elapsedMs: number;
+	children: readonly { pid: number; role: string; cpuMs: number }[];
+}
+
 const { GameTextIndexBuilderLive, gameTextIndexRefreshLayer, gameTextIndexSourceNodeLayer } =
 	currentIndex;
+const { GameTextIndexSource } = currentIndex;
 const { AssetReaderLive } = currentAssets;
 const { LocalizationEvidence, LocalizationEvidenceNodeLive } = currentLocalization;
 const { GameTextIndexRefresh } = await import("../packages/game-text/dist/index-refresh.js");
 const { GameTextIndexProgressReporter } = currentIndex;
 
-async function nativeChildren(): Promise<{ count: number; cpuMs: number }> {
+async function nativeChildren(): Promise<ChildObservation["children"]> {
 	const script =
 		"$ErrorActionPreference='Stop'; $all = @(Get-CimInstance Win32_Process); " +
 		`$owned = [System.Collections.Generic.HashSet[uint32]]::new(); [void]$owned.Add(${process.pid}); ` +
 		"do { $added = $false; foreach ($item in $all) { if ($owned.Contains($item.ParentProcessId) -and $owned.Add($item.ProcessId)) { $added = $true } } } while ($added); " +
-		"$count = 0; $cpu = 0.0; foreach ($item in $all) { if ($owned.Contains($item.ProcessId) -and $item.ProcessId -ne " +
-		`${process.pid}) { $count++; $cpu += ([double]$item.KernelModeTime + [double]$item.UserModeTime) / 10000 } }; ` +
-		"[pscustomobject]@{ count = $count; cpuMs = $cpu } | ConvertTo-Json -Compress";
+		"$children = @(foreach ($item in $all) { if ($owned.Contains($item.ProcessId) -and $item.ProcessId -ne " +
+		`${process.pid} -and $item.Name -notin @('powershell.exe', 'pwsh.exe', 'conhost.exe', 'cmd.exe')) { ` +
+		"$role = if ($item.CommandLine -like '*protocol-session*') { 'native-session' } elseif ($item.CommandLine -like '*protocol*') { 'native-oneshot' } elseif ($item.Name -eq 'esbuild.exe') { 'loader' } else { 'other' }; " +
+		"[pscustomobject]@{ pid=[int]$item.ProcessId; role=$role; cpuMs=([double]$item.KernelModeTime+[double]$item.UserModeTime)/10000 } } }); " +
+		"ConvertTo-Json -InputObject $children -Compress";
 	const { stdout } = await run(
 		"powershell.exe",
 		["-NoProfile", "-NonInteractive", "-Command", script],
 		{ windowsHide: true, timeout: 10000 }
 	);
 	// SAFETY: the sampler above builds this exact shape with ConvertTo-Json.
-	return JSON.parse(stdout) as { count: number; cpuMs: number };
+	return JSON.parse(stdout) as ChildObservation["children"];
 }
 
-async function buildContext(cache: string, scope: Scope.Scope) {
-	const source = gameTextIndexSourceNodeLayer(cache).pipe(Layer.provide(AssetReaderLive));
+async function prepareInventory(cache: string) {
+	return Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const source = yield* GameTextIndexSource;
+				return yield* source.inventory({ projectRoot: project });
+			}).pipe(
+				Effect.provide(
+					gameTextIndexSourceNodeLayer(cache).pipe(Layer.provide(AssetReaderLive))
+				)
+			)
+		)
+	);
+}
+
+async function buildContext(
+	cache: string,
+	scope: Scope.Scope,
+	inventory: Awaited<ReturnType<typeof prepareInventory>>
+) {
+	const source = Layer.effect(
+		GameTextIndexSource,
+		Effect.gen(function* () {
+			const live = yield* GameTextIndexSource;
+			return GameTextIndexSource.of({
+				...live,
+				inventory: () => Effect.succeed(inventory)
+			});
+		})
+	).pipe(Layer.provide(gameTextIndexSourceNodeLayer(cache).pipe(Layer.provide(AssetReaderLive))));
 	const layer = gameTextIndexRefreshLayer(cache).pipe(
 		Layer.provide(source),
 		Layer.provide(GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))),
@@ -93,9 +133,24 @@ async function buildContext(cache: string, scope: Scope.Scope) {
 async function repetition(rep: number, targetName: string) {
 	const cache = join(values["cache-root"]!, `rep-${rep}`);
 	await mkdir(cache, { recursive: true });
+	// Inventory belongs to the host; close its native query session before the timed refresh.
+	const inventory = await prepareInventory(cache);
+	const inventoryClosedAt = performance.now();
+	let inventoryChildren = await nativeChildren();
+	if (inventoryChildren.length)
+		process.stdout.write(`${JSON.stringify({ inventoryChildren })}\n`);
+	while (inventoryChildren.length && performance.now() - inventoryClosedAt < 3000) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		inventoryChildren = await nativeChildren();
+	}
+	const inventoryChildrenRemaining = inventoryChildren.length;
+	if (inventoryChildrenRemaining) {
+		process.stdout.write(`${JSON.stringify({ inventoryChildren })}\n`);
+		throw new Error("Inventory preparation left descendants alive.");
+	}
 	const scope = await Effect.runPromise(Scope.make());
 	try {
-		const context = await buildContext(cache, scope);
+		const context = await buildContext(cache, scope, inventory);
 		const refresh = Context.get(context, GameTextIndexRefresh);
 		let triggered = false;
 		let interruptMs = -1;
@@ -124,23 +179,27 @@ async function repetition(rep: number, targetName: string) {
 		const exit = await Effect.runPromise(Fiber.await(fiber));
 		if (!triggered) throw new Error(`Phase ${targetPhase} was never reported.`);
 		while (interruptMs < 0) await new Promise((resolve) => setTimeout(resolve, 25));
-		// Idle: no native children left, or their CPU stops advancing.
+		// Sampler shells are excluded; an idle engine still counts as a live child.
 		const idleStarted = performance.now();
-		let previous: { count: number; cpuMs: number } | undefined;
-		let stillSince = performance.now();
+		let childrenRemaining = -1;
+		const childObservations: ChildObservation[] = [];
 		for (;;) {
-			const current = await nativeChildren().catch(() => ({ count: 0, cpuMs: 0 }));
-			if (current.count === 0) {
+			const children = await nativeChildren();
+			childrenRemaining = children.length;
+			const elapsedMs = Math.round(performance.now() - idleStarted);
+			if (
+				!childObservations.length ||
+				(childObservations.length === 1 && elapsedMs >= 3000) ||
+				childrenRemaining === 0
+			) {
+				const observation = { elapsedMs, children };
+				childObservations.push(observation);
+				process.stdout.write(`${JSON.stringify({ phase: targetPhase, ...observation })}\n`);
+			}
+			if (childrenRemaining === 0) {
 				idleMs = performance.now() - idleStarted;
 				break;
 			}
-			if (previous && Math.abs(current.cpuMs - previous.cpuMs) < 50) {
-				if (performance.now() - stillSince >= 500) {
-					idleMs = performance.now() - idleStarted;
-					break;
-				}
-			} else stillSince = performance.now();
-			previous = current;
 			if (performance.now() - idleStarted > 120000) {
 				idleMs = performance.now() - idleStarted;
 				break;
@@ -168,6 +227,9 @@ async function repetition(rep: number, targetName: string) {
 			interrupted: Exit.isFailure(exit),
 			interruptMs: Math.round(interruptMs),
 			idleMs: Math.round(idleMs),
+			childrenRemaining,
+			inventoryChildrenRemaining,
+			childObservations,
 			secondRefreshOk: secondOk,
 			secondRefreshMs: Math.round(performance.now() - secondStarted)
 		};

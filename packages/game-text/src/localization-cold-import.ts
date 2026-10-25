@@ -93,7 +93,7 @@ function prepare(worker: Worker, request: LocalizationFileImportRequest, stagedF
 
 /** The target owns the writer lock and parser pool until all staged layers are published. */
 export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.importColdTarget")(
-	function* (requests: readonly LocalizationFileImportRequest[]) {
+	function* (requests: readonly LocalizationFileImportRequest[], budgetOverride?: number) {
 		const reportProgress = yield* GameTextIndexProgressReporter;
 		let completed = 0;
 		const report = () =>
@@ -123,7 +123,8 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 							row,
 							bytes: coldParserReservation(size.size)
 						}));
-						const memoryBudgetBytes = coldMemoryBudget(process.availableMemory());
+						const memoryBudgetBytes =
+							budgetOverride ?? coldMemoryBudget(process.availableMemory());
 						const started = performance.now();
 						if (signal.aborted) throw new Error("Cold target parsing was cancelled.");
 						const { results: replies, workerCount } = await runColdTasks(

@@ -633,7 +633,9 @@ const TargetRequest = LocalizationProjectRequest.pipe(
 		targetName: Schema.NonEmptyString,
 		sharedTargetKey: Schema.optionalKey(Schema.NonEmptyString),
 		projectScoped: Schema.optionalKey(Schema.Boolean),
-		importLimits: Schema.optionalKey(LocalizationImportLimits)
+		importLimits: Schema.optionalKey(LocalizationImportLimits),
+		/** Explicit parser-pool budget when another cold pool runs beside this import. */
+		memoryBudgetBytes: Schema.optionalKey(Schema.Number)
 	})
 );
 /**
@@ -742,10 +744,9 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 			if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
 			return fileRequest;
 		});
-		const result = yield* Effect.scoped(importColdLocalizationTarget(preparedRequests)).pipe(
-			Effect.provide(indexLayer),
-			Effect.result
-		);
+		const result = yield* Effect.scoped(
+			importColdLocalizationTarget(preparedRequests, request.memoryBudgetBytes)
+		).pipe(Effect.provide(indexLayer), Effect.result);
 		if (Result.isSuccess(result))
 			return {
 				target,

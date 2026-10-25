@@ -1009,3 +1009,418 @@ The requested default change, rebuilt-reader released measurement and both canon
 snapshot comparisons are complete. Sixteen workers remains ineligible; the combined-branch
 whole-tree gate is deferred to final measurements. No additional 1× build, Unreal Editor,
 Perforce write, push, PR or merge occurred.
+
+## Phase 4.5: host changes
+
+### Method and retained baselines
+
+Verified decisions 1 and 2 on `perf/p45-host-impl`, starting from `66e4b7e2`
+(`c9082b05`, `c770bb40`, `66e4b7e2`). Verification corrected the new test's invalid
+`buildTarget` argument and chained-Effect lint error, and formatting in four implementation
+files. The accepted product design was unchanged. The stage recorder now retains span start/end
+offsets; the cancellation probe requires child exit rather than idle CPU, excludes its sampler
+shells, and propagates sampling failures. The memory probe closes its scope and omits the target
+name from its report.
+
+Baseline product sources were exactly `ea6b5cb0:packages/game-text/src`, restored in a temporary
+detached worktree of `66e4b7e2`; the benchmark harness was this branch's decision-1 harness.
+`git diff ea6b5cb0 -- packages/game-text/src` was empty there. Both worktrees rebuilt their
+TypeScript packages before measurement. Both used Node 26.12.0, `RAYON_NUM_THREADS=16`,
+`CARGO_BUILD_JOBS=8`, and the fixed `uasset-p45-base-native.exe` reader/writer, SHA-256
+`65841e228d02d07eac4011eaf38d6522fcba5ed1b75da946e8f102797fb414cd`.
+No Rust build or alternate reader/writer was used.
+
+Each build ran once, with a new Game Text cache, through
+`node scripts/benchmark-game-text-engine.ts --project "$project" --stages build --runs 1
+--output "$out" --project-index-cache "$persistentIndex"`, with
+`UE_SHED_GAME_TEXT_STAGES=1`. The 1× project additionally used
+`--generated --records E:\ue-shed-engine-scratch\phase4\records-1x`.
+The harness warmed the persistent project index outside the measured build; neither released
+build recorded a native project-index refresh. Inventory's `refresh` mark was only 0.024 ms
+of branch overhead in each. The generated source replays retained records instead of reading
+packages. Fresh Game Text caches do not imply flushed OS filesystem caches.
+
+All artifacts below are retained under
+`E:\ue-shed-engine-scratch\p45-host-verify-20261026` (call this directory `$results`).
+Baseline caches are exactly:
+
+- `$results\baseline-released\caches\run-1`
+- `$results\baseline-1x\caches\run-1`
+- `$results\baseline-ue57\caches\run-1`
+- `$results\baseline-ue58\caches\run-1`
+
+Changed caches use the same suffixes with `changed-` instead of `baseline-`.
+Persistent inventories are `$results\project-index-{released,1x,ue57,ue58}`.
+Per-build spans are `<output>\run-1\build\stages.json`; numeric summaries are
+`$results\summary.json`. Input paths and names are not included in this report.
+The projects remained read-only. All heavy work ran sequentially under the shared
+`E:\es-id-repairs-scratch\unreal.lock`; harnesses/probes acquired it themselves, and package
+builds and targeted verification acquired it externally. No Unreal Editor, Perforce writes,
+network service, push, PR or merge was involved.
+
+### Cold-build stage tables
+
+All values are seconds, one run per condition. Stages on different branches overlap, so columns
+must not be summed to estimate total elapsed time. Localization parse/publication are the
+coordinator's wall marks; package preparation is its worker-pool wall mark; native operations
+are their host spans. Selection and the small read residual are shown to avoid hiding host work.
+
+| Stage, the released project             | Baseline | Changed |
+| --------------------------------------- | -------: | ------: |
+| Package inventory (warm status + pages) |    3.184 |   3.683 |
+| Localization parse                      |   14.679 |  22.712 |
+| Localization publish                    |   12.943 |  17.524 |
+| Package selection                       |    0.361 |   0.521 |
+| Package extraction                      |   36.211 |  39.145 |
+| Bundle verification (two calls)         |    6.070 |   6.007 |
+| Other package read/staging              |    0.077 |   0.081 |
+| Package prepare                         |    5.068 |   4.743 |
+| Package publish                         |    7.778 |   7.832 |
+| Join                                    |   15.391 |  15.157 |
+| Open + first page / workspace residual  |    1.870 |   1.891 |
+| Whole measured build                    |  104.160 |  79.350 |
+
+| Stage, the 1× project                      | Baseline | Changed |
+| ------------------------------------------ | -------: | ------: |
+| Records inventory / refresh setup residual |    0.900 |   0.811 |
+| Localization parse                         |   12.647 |  20.987 |
+| Localization publish                       |    9.156 |   9.362 |
+| Package selection                          |    0.270 |   0.250 |
+| Package replay, including host staging     |    9.877 |  12.886 |
+| Bundle verification                        |        0 |       0 |
+| Package prepare                            |    4.045 |   4.125 |
+| Package publish                            |   12.513 |  12.419 |
+| Join                                       |   15.911 |  15.777 |
+| Open + first page / workspace residual     |    1.946 |   1.939 |
+| Whole measured build                       |   67.476 |  65.169 |
+
+The open/page row is measured build time minus `GameTextIndex.prepareTarget` wall, so includes
+workspace orchestration outside preparation. The generated inventory row is `refreshProject`
+wall minus `PackageText.refresh` wall: retained-record inventory has no dedicated span, so its
+small refresh bookkeeping is included. Remaining small setup/metadata publication costs are
+inside the total, rather than assigned to a misleading inferred engine stage.
+
+The changed released run's localization branch covered trace offsets 0.149–40.414 s; package
+selection began at 3.892 s, and package read covered 4.413–49.647 s, including verification.
+Thus 36.000 s of localization import overlapped package read. Its extraction span and localization
+parse/publication retained independent spans. On the 1× project, localization covered
+0.255–30.680 s and package replay 1.002–13.888 s: all 12.886 s of replay overlapped it.
+The package publication gate then waited approximately 16.909 s (refresh span minus its charged
+selection/read/import marks); released-project gate/bookkeeping residual was 0.001 s.
+Package import/publication followed both reads in each trace.
+
+Observed total reductions were 24.809 s (23.8%) and 2.307 s (3.4%). Localization parse was slower
+under concurrency in both runs, and publication was slower on the released project. Overlap
+still shortened total wall time; the generated project's localization branch remained critical.
+These single pairs do not estimate a distribution, isolate contention causes, or establish a
+repeatable speedup. No native reader/writer optimization is being measured here.
+
+### Memory STOP and cancellation status
+
+**STOP: the released project's process-tree peak exceeded the 6 GiB acceptance ceiling.**
+The requested `scripts/game-text-cold-memory-probe.ts` measured **6,457,823,232 bytes
+(6.014317 GiB)** at 19.141 s, last reported progress phase `packages`, while localization and
+package extraction were both active. This exceeds 6,442,450,944 bytes by 15,372,288 bytes.
+The probe included sampler-shell working sets, as the existing attribution does; subtracting
+that overhead to turn a failing process-tree measurement into a pass would change the gate.
+
+| Role at the peak              | Working set, bytes | Processes |
+| ----------------------------- | -----------------: | --------: |
+| Node coordinator + TS workers |      2,664,501,248 |         1 |
+| Native one-shot reader        |      3,559,571,456 |         1 |
+| Native sessions               |        186,200,064 |         3 |
+| Sampler shells / other        |         47,550,464 |         5 |
+| Total                         |      6,457,823,232 |        10 |
+
+One refresh used a fresh external cache, `$results\memory-cache`; its artifact is
+`$results\memory.json`. The probe used its existing default source, including a cold
+project-index refresh, rather than the benchmark's separately warmed project index.
+It requested 250 ms sampling and retained 134 samples at a mean interval of 647 ms; the sampled
+peak is a lower bound. Progress labels interleave under concurrency, so `packages` is the last
+reported phase, not a claim that localization was inactive. No claim is made about memory
+distribution or repeatability from this single run.
+
+The initial runner stopped immediately after reading this completed probe's result. No cancellation
+probe was run, so interrupt return ≤0.5 s, child exit ≤3 s, and immediate successful refresh are
+**unverified for this implementation**. No changed canonical-corpus build was started. The
+completed measurement caches were inspected read-only afterward; no further cold measurement
+or product optimization was attempted. The accepted design was not altered to work around
+the STOP.
+
+### Byte comparison of completed builds
+
+`scripts/p45-host-layers.ts` replaces the unfinished identity-printing helper with an actual
+comparison. It runs `cmp -s` on each corresponding shared-store file; for snapshots whose
+embedded identity metadata differs, it compares every other section's descriptor and stored
+compressed bytes directly. It also compares normalized current and previous roots, active
+layer names/keys, complete layer records, dictionary descriptors, the store manifest, and
+dependency-graph state, validates the graph checksum, and rejects unaccounted store files.
+It does not print input identities. Reproduce against the retained completed caches with
+`CMP_EXECUTABLE` pointing to `cmp`, then
+`node --import tsx scripts/p45-host-layers.ts "$baselineCache" "$changedCache"`.
+
+| Completed pair          |    Package layers | Localization + observation layers | Joined layers | Dictionaries | Stored data sections compared after whole-file differences | Result                         |
+| ----------------------- | ----------------: | --------------------------------: | ------------: | -----------: | ---------------------------------------------------------: | ------------------------------ |
+| Released project        |               256 | 43 (21 authored + 22 observation) |             1 |           22 |                                                     13,272 | Equal with exclusions below    |
+| 1× project              |               256 | 43 (21 authored + 22 observation) |             1 |           22 |                                                     13,017 | Equal with exclusions below    |
+| UE 5.7 canonical corpus | Baseline retained |                 Changed not built |             — |            — |                                                          — | Not verified after memory STOP |
+| UE 5.8 canonical corpus | Baseline retained |                 Changed not built |             — |            — |                                                          — | Not verified after memory STOP |
+
+Each completed pair accounted for all 327 shared-store files: 22 dictionary snapshots were
+whole-file byte-identical; 305 files differed only in the explicitly normalized identity
+metadata/framing. Every package, localization and joined data column, and every dependency-graph
+data page, had identical stored bytes. Full paired physical filenames for all 305 metadata-only
+differences are retained in `$results\identity-released.json` and `identity-1x.json`.
+There were **no unexplained data differences** in the completed pairs.
+
+Exact exclusions, all arising from fresh-store identity rather than authored content:
+
+- Store/root `generation`, layer `storeGeneration`, `join.meta.generation` and
+  `graph.meta.generation`. These are native timestamp/PID/sequence tokens (`store.rs:token`).
+- Physical root/layer/dictionary/base filenames and references: manifest `physicalSnapshot` /
+  `previousSnapshot`, layer `file`, dictionary segment `file`, graph-state `base`.
+  Both referenced roots and every referenced payload were still compared.
+- The generation-derived `joined-native-v8:*` key, consistently in active pointers, the layer-map
+  key, its record, and graph-state `revision`. Native `join.rs` includes generation in this hash;
+  all actual join inputs/dependencies/metadata were retained in comparison.
+- Layer-record `bytes` (physical file size), metadata-section compressed payloads and their
+  length/checksum/framing, whole-snapshot header/directory checksums/lengths, and section offsets.
+  These reflect token/file-name lengths and their compression. All non-metadata section fields
+  except relocated offsets, and all their stored payload bytes, were compared exactly.
+- The dependency-state envelope checksum was validated separately in each cache; it hashes
+  generation, revision and base filename, so was not compared across caches.
+
+No authored file timestamps, source strings, string IDs, column values, layer input keys other
+than the generation-derived joined key, dictionary boundaries, or graph moves were excluded.
+The shared-store comparison does not cover external stat-cache/staging bookkeeping, project-index
+caches, benchmark timing logs or memory samples: those are disposable host/measurement artifacts,
+not the requested published package/localization/joined snapshots and dictionaries.
+
+The four-input byte-identity gate is therefore **incomplete**, and the memory gate **failed**.
+This branch is not accepted by this verification run.
+
+### Verification and disposition
+
+Passed with the fixed base reader set for every Vitest invocation:
+`index-*.test.ts`, `localization-*import*.test.ts`, `package-text-*.test.ts`, including
+`index-concurrent.test.ts`, plus `scripts/game-text-stage-timings.test.ts`: **17 files,
+86 tests**. `pnpm -s run typecheck` passed after rebuilding the TypeScript packages.
+`pnpm -s run check:static` passed, including its 336 architecture tests; existing lint
+warnings remain. `git diff --check` passed. The full suite, Rust builds/tests, Unreal Editor,
+fixture/fuzz/export acceptance runs, and Phase 4.5's final three-run measurement matrix were
+not run: this task changes only TypeScript host code and verification tooling, and the memory
+STOP prevents claiming complete acceptance. The temporary detached baseline worktree was removed;
+all baseline measurement caches remain available at the paths above.
+
+### Follow-up: cancellation and canonical parity
+
+The lead took ownership of the memory STOP and authorized completion of the two outstanding
+gates without another memory probe or a product change. This follow-up tested the exact
+`0b3cf301` implementation, rebuilt its TypeScript packages, and used the same Node 26.12.0,
+fixed base reader/writer (SHA-256 unchanged), thread caps and external temporary directories.
+Every heavy command acquired the shared lock; separate invocations were prepared to release
+it between repetitions so the other agent's memory measurements could take turns.
+
+**STOP: localization cancellation exceeded the 3 s child-exit limit in its first valid
+repetition.** No product or tracked verification code was changed.
+
+| Phase / repetition      |   Interrupt return | Descendants exited | Children remaining at final poll | Immediate second refresh |
+| ----------------------- | -----------------: | -----------------: | -------------------------------: | ------------------------ |
+| Localization parse, 1   |              24 ms |          59,202 ms |                                0 | Succeeded, 84.120 s      |
+| Localization parse, 2–3 | Not run after STOP |                  — |                                — | —                        |
+| Package extraction, 1–3 | Not run after STOP |                  — |                                — | —                        |
+| Join, 1–3               | Not run after STOP |                  — |                                — | —                        |
+
+The interrupt fired 1,000 ms after the first `localization` progress event. `interruptMs`
+measures `Fiber.interrupt`; `idleMs` measures time from its completion until a process-tree
+enumeration finds no remaining non-shell descendants. Despite the historical field name,
+idle CPU does not satisfy this probe. Sampler shells are excluded. The result has
+`interrupted: true`, `secondRefreshOk: true`, and no interrupt or second-refresh error.
+The immediate retry used the same cache and process, after the exit check, with no manual
+cache repair. Interrupt return passed 0.5 s; child exit failed 3 s by a wide margin.
+
+The valid invocation was
+`node scripts/game-text-cold-cancel-probe.ts --project "$project" --cache-root "$freshCache"
+--phase localization --reps 1 --out "$result"`.
+Its artifact is `$results\cancel-localization-native-r1.json`, and the fresh cache is
+`$results\cancel-localization-native-r1\rep-1`. The intended matrix was three independent
+invocations per phase, each with a fresh cache and its own immediate same-process retry;
+the runner checked each result and stopped on this first failure.
+
+One preceding `node --import tsx` invocation is retained separately at
+`$results\cancel-localization-r1.json` and excluded from the acceptance results. It returned
+from interrupt in 21 ms and retried successfully in 83.201 s, but exhausted the probe's
+120 s child-wait bound with one descendant remaining. A read-only process-tree inspection
+identified that descendant as the persistent `esbuild.exe` service started by `tsx`, with
+no native child present at that inspection. Native Node TypeScript execution removes that
+top-level loader service without changing the implementation or the probe. The valid rerun
+still failed the exit gate, so that failure is not dismissed as the original loader artifact.
+
+The native writer pool retains cleanly ended clients with a 30 s TTL
+(`packages/game-text/src/native-index-builder.ts:491–510`), and session finalization decides
+invalidation from whether native `end` completed (`:527–552`). This is an investigation anchor,
+not an established explanation of the 59.202 s sample: the probe retains aggregate descendant
+counts, not per-child lifetime evidence. No new heavy diagnostic run or product fix followed
+the STOP.
+
+Changed builds of both canonical corpora and their byte comparisons were not started after
+this cancellation failure. Their retained baselines and the already passing benchmark-pair
+comparisons remain unchanged; no new exclusions were introduced. The cancellation matrix and
+four-input byte-identity gate remain incomplete. The lead's separate memory work is not
+re-measured or resolved by this follow-up.
+
+### Cancellation lifecycle fix
+
+The reader-running-to-completion hypothesis was not borne out. Before the fix, a controlled
+mid-read regression showed that the package and import finalizers did run before
+`Fiber.interrupt` returned, but **after the writer session had already been released**.
+Effect's `forkChild` supervision interrupts children when their parent fiber terminates;
+that is later than unwinding the writer's nested resource scopes. The branches were not
+detached, and no uninterruptible reader operation explained the long post-interrupt lifetime.
+
+A bounded diagnostic reran localization cancellation against the pre-fix product code and
+retained at most three process-tree observations (PID, role and cumulative CPU only; no command
+lines, input identities or memory samples). At 447 ms and 3,153 ms after interrupt returned,
+the sole surviving descendant was the same `native-session` process, PID 20988, with only
+15.625 ms CPU at both observations. No native one-shot reader remained. That session exited
+at 59.360 s; interrupt had returned in 23 ms and the retry succeeded in 83.309 s. The artifact
+is `$results\cancel-localization-native-r10.json`.
+
+The long-lived descendant was the idle writer. Its session finalizer sent native `end`
+successfully while unwinding an interrupted parse, setting `endedCleanly = true`. The pool
+invalidation finalizer checked only that flag, so it returned the interrupted operation's
+client to the pool instead of closing it. The configured usage TTL is 30 s, and Effect 4.0.4's
+usage strategy checks once per TTL: retirement can take almost 60 s. This explains the
+observed 59 s lifetime without a reader continuing extraction. Finalizers run with Effect's
+normal interruption masking; the problem was scope ordering and successful-end bookkeeping,
+not a long uninterruptible read.
+
+The fix retains one writer session and both concurrent branches inside `prepareTarget`:
+
+- Fork both branches with `Effect.forkScoped` inside a nested `Effect.scoped`. Closing that
+  scope interrupts the branches and awaits their finalizers before closing the writer lease.
+- Reuse a native writer only if native `end` succeeded **and the enclosing session scope
+  completed successfully**. Failed or interrupted sessions invalidate their clients, so a
+  clean native `end` cannot leave a canceled operation's writer waiting for pool expiry.
+
+The localization-error path still explicitly interrupts the package branch and returns the
+same error; the source-view fallback remains outside the failed writer session. Memory
+budgeting, publication ordering, the reader/writer binaries and snapshot algorithms are
+unchanged. No memory probe is part of this fix's verification; the lead retains that STOP.
+
+The product fix is commit `1e95a59e`. Two regression tests were demonstrated red before their
+corresponding changes, then green:
+
+- `index-concurrent.test.ts` holds the import and a fake package source mid-read, interrupts
+  `prepareTarget`, and requires both finalizers before writer-session release and a bounded
+  interrupt completion. The old code released the session before the read finalizer.
+- `native-index-lifecycle.integration.test.ts` interrupts an idle native session while its
+  enclosing builder layer stays open. It records the real writer PID with the protocol
+  observer and requires it to have exited when interruption completes. The previous release
+  logic left the PID alive; closing the whole builder layer cannot mask the failure in this test.
+
+The targeted index/localization-import/package-text tests, stage-recorder tests and native
+builder/lifecycle integration tests passed: **17 files, 88 tests**. The existing concurrent
+localization-error and sequential-publication comparisons remain green. `pnpm -s run typecheck`
+and `pnpm -s run check:static` passed, the latter including 336 architecture tests. Red/green
+evidence is retained as `$results\cancel-fix-before-order.log`, `cancel-fix-before-writer.log`,
+`cancel-fix-tests.log`, `cancel-fix-typecheck.log` and `cancel-fix-check-static.log`.
+
+The first fixed extraction probe returned from interrupt in 289 ms, but the original probe
+context retained one idle session through its 120.092 s exit-poll timeout. The same PID
+recorded 2,250 ms CPU at 458 ms and 3,116 ms, and the retry succeeded in 78.169 s. This is
+retained as `$results\cancel-packages-fixed-r1.json`, not counted as a passing result.
+The remaining lifetime belonged to the host fixture: `ProjectIndexProcess.makeProcessService`
+owns a long-lived query session in the enclosing service layer. Once inventory has completed,
+canceling Game Text does not cancel that separate host service. Parse interruption had
+previously canceled inventory before its session could become idle, hiding this ownership issue.
+
+Probe commit `162e76f5` makes the inventory/scan boundary explicit. Each repetition reads the
+production package inventory in a separately scoped service layer, closes that layer, and
+asserts **zero descendants before starting the timed refresh**. The read-only inventory is
+then supplied to the production source, retaining its real package reads, staging and bundle
+verification. No live Project Index PID is excluded. The timed writer/builder stays open
+across interruption, the complete child-exit check and the immediate same-process/same-cache
+retry. All scan descendants, including idle writers, are still counted; the deadlines are
+unchanged. This matches the Workbench's host-maintained inventory and avoids closing the
+whole builder as a way to mask the native writer regression.
+
+The earlier three passing localization samples (`cancel-localization-fixed-r1..3.json`) and
+the extraction timeout remain diagnostic artifacts. The final matrix uses fresh
+`cancel-{localization,packages,joining}-prepared-r{1,2,3}` cache roots and JSON files consistently
+for all nine runs. The two targeted concurrency/lifecycle files also passed after the probe
+change (9 tests), including an assertion that the interrupted prepare used exactly one writer
+session. Native Node TypeScript execution is used throughout; no loader helper is excluded.
+
+The first join setup stopped before any timed refresh because its immediate inventory-exit
+check saw a descendant. The setup check now waits at most 3 s for its separately closed
+inventory scope/process enumeration to settle, recording any remaining PID/role evidence and
+failing if it does not reach zero. This wait precedes the timed refresh and changes neither
+cancellation deadline. The accepted join repetitions used fresh `prepared2` cache roots;
+the aborted setup cache was not reused and produced no cancellation result.
+
+#### Completed cancellation matrix
+
+All nine accepted repetitions passed. Values are in repetition order, not sorted. Child-exit
+times are conservative process-enumeration bounds measured after interrupt returns, with no
+idle-CPU allowance. Every run recorded `interrupted: true`, `childrenRemaining: 0`,
+`inventoryChildrenRemaining: 0`, and `secondRefreshOk: true`, without interrupt/retry errors.
+
+| Interrupted during | Interrupt return, ms | Child-exit poll, ms |     Immediate retry, s |
+| ------------------ | -------------------: | ------------------: | ---------------------: |
+| Localization parse |           33, 34, 36 |       410, 406, 408 | 73.684, 74.737, 75.038 |
+| Package extraction |        221, 254, 205 |       417, 513, 416 | 74.006, 75.383, 75.968 |
+| Join               |           72, 69, 63 |       425, 432, 424 | 15.882, 16.024, 15.928 |
+
+Worst interrupt return was **254 ms ≤500 ms**; worst exit poll was **513 ms ≤3,000 ms**.
+The interrupt delays remained 1 s after localization starts, 5 s after package reading starts,
+and 0.5 s after joining starts. Each repetition used a fresh Game Text cache and an immediate
+second refresh in the same process, same builder context and same cache, without repairs.
+The shared lock was released between repetitions, with turns yielded to the reader-memory
+agent. The final numeric aggregate is `$results\cancel-prepared-summary.json`.
+Individual artifacts are `cancel-localization-prepared-r1..3.json`,
+`cancel-packages-prepared-r1..3.json`, and `cancel-joining-prepared2-r1..3.json`.
+
+#### Canonical byte comparisons after the fix
+
+Both canonical corpora were cold-built once with the fixed product and the same benchmark
+harness, warmed external project-index caches, stage recorder, Node/thread settings and
+unchanged fixed base executable. Changed outputs are `$results\changed-ue57` and
+`$results\changed-ue58`; their `caches\run-1` stores were compared against the retained
+`baseline-ue57` / `baseline-ue58` stores using the unchanged comparator and **exactly the same
+exclusions** as the benchmark pairs above.
+
+| Corpus | Package layers | Localization + observation layers | Joined layers | Dictionaries | Stored data sections compared | Result                                  |
+| ------ | -------------: | --------------------------------: | ------------: | -----------: | ----------------------------: | --------------------------------------- |
+| UE 5.7 |             44 |                                19 |             1 |           15 |                         2,295 | Equal with existing identity exclusions |
+| UE 5.8 |             44 |                                19 |             1 |           15 |                         2,295 | Equal with existing identity exclusions |
+
+Each comparison accounted for all **84** shared-store files: 15 dictionary snapshots matched
+whole-file bytes, while 69 files differed only in the already documented generation/name/key
+metadata and its framing. Every non-metadata stored payload and descriptor, including
+dependency-graph data, matched. Both roots, manifests and graph state were checked with the
+same normalization/checksum validation; no exclusions were added. Full paired filenames are
+retained in `$results\identity-ue57.json` and `identity-ue58.json`.
+There were **no unexplained differences**. Canonical measured build walls were 1.868 s and
+1.802 s (one run each; no repeated timing claim).
+
+The two benchmark inputs were also cold-built once again with the lifecycle fix and fixed
+base executable, using the same warmed-index harness. These new parity outputs are
+`$results\fixed-released` and `fixed-1x`; all earlier outputs remain retained. Their
+`caches\run-1` stores were compared directly against the original retained baseline stores.
+
+| Fixed benchmark pair | Package layers | Localization + observation layers | Joined layers | Dictionaries | Stored data sections compared | Result                                  |
+| -------------------- | -------------: | --------------------------------: | ------------: | -----------: | ----------------------------: | --------------------------------------- |
+| Released project     |            256 |                                43 |             1 |           22 |                        13,272 | Equal with existing identity exclusions |
+| 1× project           |            256 |                                43 |             1 |           22 |                        13,017 | Equal with existing identity exclusions |
+
+Each fixed benchmark store again accounted for 327 files: 22 whole-file identical dictionary
+snapshots and 305 files differing only in the existing normalized metadata/framing. Exact
+paired filenames are retained in `$results\identity-fixed-released.json` and
+`identity-fixed-1x.json`; stage spans remain under each parity output's `run-1\build` directory.
+There were **no unexplained differences on any of the four inputs**. No additional exclusions
+were needed, and the comparator was unchanged.
+
+The requested cancellation matrix and four-input byte-identity gate are now **complete and
+passing**. The previous memory STOP remains assigned to the lead; it was neither remeasured
+nor claimed resolved here. No Unreal Editor, Perforce write, push, PR or merge was used.

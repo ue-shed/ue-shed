@@ -18,6 +18,10 @@ export class StageClock {
 	add(stage: string, ms: number) {
 		this.totals.set(stage, (this.totals.get(stage) ?? 0) + ms);
 	}
+	/** Moves the mark without charging the elapsed time to any stage. */
+	restart() {
+		this.last = performance.now();
+	}
 	/** Span attributes `<prefix>.<stage>` in milliseconds, in first-mark order. */
 	attributes(prefix: string): Record<string, number> {
 		return Object.fromEntries(

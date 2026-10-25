@@ -52,10 +52,22 @@ recipe and saved-text census and converts the saved reader events once, using th
 scale harness adapter. Conversion has its own reported stage; cold-build time starts after
 conversion. A preconverted directory can instead be supplied with `--records`.
 
+By default the driver first warms the project index once per project, outside every measured
+stage, into `<output>/project-index-cache` (override with `--project-index-cache`), then
+builds the package source with `refreshProjectIndex: false` over that warmed index, as the
+Workbench does. Inventory inside a measured build is therefore the status and inventory
+pages a Workbench user pays (about 3.7 s at the released project's size), not a cold
+project-index refresh. `--cold-project-index` restores the previous behaviour — no warm-up,
+and the build itself pays the cold refresh — which records what a command-line tool's
+first-ever run against a project pays.
+
 **What a default run includes.**
 
 - The stages are `build,open,cached-reopen,quality,typing,selection`, so a later phase can
-  re-measure in about 15 minutes per project.
+  re-measure in about 15 minutes per project. Before them, the project index is warmed once
+  into a cache beside the output; that warm-up is not a measured stage. A measured build's
+  inventory is the warmed index's status and pages, unless `--cold-project-index` asks for
+  the cold refresh inside the build instead.
 - Interactive stages run `--runs` times (default 3).
 - Build and Quality run `--long-runs` times (default 1): their spread across three runs was about
   2%. Interactive repetitions past the last build reuse that build's cache.

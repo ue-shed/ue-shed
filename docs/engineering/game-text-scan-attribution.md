@@ -1009,3 +1009,197 @@ The requested default change, rebuilt-reader released measurement and both canon
 snapshot comparisons are complete. Sixteen workers remains ineligible; the combined-branch
 whole-tree gate is deferred to final measurements. No additional 1× build, Unreal Editor,
 Perforce write, push, PR or merge occurred.
+
+## Reader memory timeline (standalone extraction)
+
+Measured 2026-10-26, base `ab7e832b`, instrumentation `1e7cd07d`. This is measurement only:
+worker scheduling, the 12-worker default, serialization and decoding behavior are unchanged.
+The [numeric observations](game-text-reader-memory-measurements.json) retain every native
+100 ms sample with its window, input, staged-result and writer counters, anonymous slow/large
+package summaries, binary/trace hashes and the budget replay. The
+[interactive timeline](game-text-reader-memory.html) aligns both runs at the first worker read.
+
+### Capture, isolation and calibration
+
+One standalone extraction of the released project's complete inventory at each of 8 and 12
+workers, plus one ordinary-reader control at each count. All 15,612 package records were read
+again (8,431,479,437 input bytes), into fresh staging directories; no localization import,
+Node host, index writer, inventory refresh or package prepare ran alongside extraction. The
+OS filesystem cache was not flushed. These are extraction measurements, not full cold-build
+or combined-branch measurements, and do not replace the earlier eligibility sweep.
+
+The control was rebuilt from unchanged `ab7e832b`. The probe was built from that base plus
+`1e7cd07d`, using `cargo build --locked --release -p uasset-io --features reader-memory-probes`.
+Normal builds compile empty hooks and keep the ordinary system allocator. Probe builds install
+a system-allocator wrapper with per-thread allocation balances on separate cache lines; the
+timeline additionally requires `UE_SHED_READER_MEMORY_DIR`. Pointers, layouts and allocation
+strategy are unchanged. Existing internal `process-metrics` is reused; no registry dependency
+was added. The initially tried shared atomic allocation counter distorted CPU substantially
+(541.5 s versus the control's 208.2 s) and was discarded; none of the results below uses it.
+
+The native sampler records working set, private committed bytes, live requested Rust heap
+bytes, process CPU, scheduled/active/ready/consuming jobs and input bytes, exact read-Vec
+capacities, staged payload lengths/capacities, and buffered writer count/length/capacity.
+Stage states distinguish read, package-header parse, export decode, projection, package
+release and record serialization. Anonymous job IDs retain input size, service/coordinator
+times and bounded allocation checkpoint envelopes; no input identities are recorded. Capture
+is capped at 200,000 jobs, 20,000 periodic samples and 128 coarsened points per job. Neither run
+dropped a job or sample. Maximum native sample gaps were 100.82 ms (8) and 100.87 ms (12), below
+250 ms; the independent Windows process observer's maximum gaps were 111.89 and 111.99 ms.
+Counters are near-contemporaneous relaxed reads, not a stop-the-world heap census.
+
+The probe holds an explicitly marked 2 s idle interval after drain to observe released
+memory, then writes its trace. Worker extraction wall below excludes setup and this interval.
+The inventory-weight metadata pass took about 1.21–1.23 s before workers started.
+
+| Workers / reader     | Process elapsed |      CPU | Working-set high water | Private high water | Worker extraction wall |
+| -------------------- | --------------: | -------: | ---------------------: | -----------------: | ---------------------: |
+| 8, ordinary control  |         28.59 s | 197.34 s |              3.579 GiB |          3.627 GiB |   not internally timed |
+| 8, probe             |         32.32 s | 208.20 s |              3.638 GiB |          3.689 GiB |                28.99 s |
+| 12, ordinary control |         23.80 s | 208.22 s |              5.312 GiB |          5.388 GiB |   not internally timed |
+| 12, probe            |         26.82 s | 217.88 s |              5.251 GiB |          5.320 GiB |                23.42 s |
+
+Probe CPU overhead versus the same-count control was 5.5% and 4.6%; working-set differences
+were +1.6% and -1.1%. One run per configuration cannot distinguish measurement effects from
+run variance. The ordinary 12-worker run also exceeded the earlier 4.85 GiB full-build
+observation; the new standalone high water is reported as observed, with no default change.
+
+Reproduce under the shared heavy-job lock, with `CARGO_BUILD_JOBS=8`,
+`RAYON_NUM_THREADS=16`, and a fresh external output directory:
+
+```bash
+python tools/benchmarks/measure_reader_memory.py --label "$label" \
+  --executable "$reader" --workers "$workers" --output "$out" \
+  --environment-file "$environment_file" --records "$retained_staging"
+# Add --control for the unchanged reader; the project root is read only into memory.
+python tools/benchmarks/simulate_reader_memory.py "$out" --output "$analysis"
+```
+
+Raw artifacts are in `E:/ue-shed-engine-scratch/p45-reader-memory-timeline-8`,
+`p45-reader-memory-timeline-12`, `p45-reader-memory-control-8`, and
+`p45-reader-memory-control-12`. The driver hashes every complete raw line after sorting within
+its group; all four runs match across all 256 groups, 15,612 records and 505,438,831 staged
+bytes. A final direct comparison of the sorted complete line byte arrays also passed for all
+three released comparisons against the 8-worker control, and for all 47 records on each
+UE 5.7 and UE 5.8 canonical corpus. No staged field is excluded. No new index-cache snapshots were built for this
+measurement: the earlier canonical/released package-text snapshot comparisons above remain
+separate evidence, and the other agent's canonical cold builds are separate work.
+
+### Timeline and ownership of the peak
+
+Both runs have an early hump, not a growing tail. Times here start at the first worker job:
+
+| At the sampled working-set peak             |                  8 workers |                 12 workers |
+| ------------------------------------------- | -------------------------: | -------------------------: |
+| Time into extraction                        |                    2.105 s |                    3.597 s |
+| Working set / private / live requested heap |  3.638 / 3.689 / 3.421 GiB |  5.251 / 5.319 / 4.765 GiB |
+| Completed packages                          |                         79 |                         84 |
+| Scheduled window count / input sizes        |             16 / 530.6 MiB |             24 / 496.6 MiB |
+| Actively processing count / input sizes     |              8 / 267.5 MiB |             12 / 395.8 MiB |
+| Waiting count / input sizes                 |              8 / 263.1 MiB |             12 / 100.8 MiB |
+| Decode / projection workers                 |                      1 / 7 |                      4 / 8 |
+| Ready result count / staged bytes           |                      0 / 0 |                      0 / 0 |
+| Consuming result count / staged capacity    |                      0 / 0 |                      0 / 0 |
+| Open buffered writers / filled / capacity   | 66 / 150.3 KiB / 1.031 MiB | 69 / 149.4 KiB / 1.078 MiB |
+
+The exact process high water and highest sampled working set differ by less than 1 MiB.
+The live-heap peaks occur at different samples: 3.453 GiB at 4.517 s (8 workers) and 4.934 GiB
+at 3.496 s (12). At those samples active read buffers are 280.2 and 391.3 MiB, while ready
+results remain empty. The ten slowest jobs finish by 7.01 s and 8.12 s respectively; the
+12-worker slowest inputs are 33.0–38.8 decimal MB. At 10 s the working sets have fallen to
+approximately 0.084 and 0.282 GiB. Small later bumps occur, but there is no cumulative
+multi-GiB growth. Correlation of active input bytes with live heap over sampled timelines is
+0.927 (8) and 0.926 (12). Input size explains the broad hump, not an exact per-byte cost.
+
+**Decoded export models dominate.** At the 12-worker working-set peak, live requested Rust
+heap is 4.765 GiB and exact owned file buffers account for 0.387 GiB. Header allocations for
+the active packages total only 5.82 MiB; capacity estimates for the request paths, roots,
+discovered inventory and staging-group paths total 10.14 MiB, stable after discovery. The
+remaining roughly 4.3 GiB is principally live export decode/projection ownership, supported
+by the stage states and per-job counters. A 38.98 MB input reaches 603.98 MB requested heap
+while decoding/projecting; after projecting its exports it holds 39.55 MB including the
+38.98 MB read buffer, and after releasing the package/read buffer it holds 0.133 MB before
+serialization. Similar large jobs reach about 0.58–0.60 GB. This is allocation ownership
+attribution, not a typed deep-size census; the residual also includes output records and
+small probe/runtime allocations.
+
+**Staging and tables are small.** Event-time staged capacity, including coordinator
+consumption through its end, peaks at 16.04 MiB (8) and 16.50 MiB (12) over the entire run;
+periodic samples see at most one ready result. Writer buffers eventually reach 256 writers,
+4 MiB capacity and at most 2.11/2.17 MiB filled. These quantities do not explain the early
+peak. Scheduled-but-waiting jobs own input paths/IDs, not decoded packages or file buffers.
+
+**Working set is not all live Rust heap.** At the sampled working-set peak, private committed
+bytes exceed requested live heap by 274.5 MiB (8) and 567.2 MiB (12). This residual includes
+allocator slack/retention, OS/runtime allocations and stacks; these counters cannot separate
+those exactly. Requested bytes omit allocator usable-size rounding and temporary internal
+reallocation copies. No memory mapping is used on this extraction path: inputs are owned
+`fs::read` buffers. Filesystem cache outside the process is not measured. After all work and
+buffered writers drain, live heap is 18.97/18.99 MiB, working set 55.00/66.32 MiB, and private
+bytes 56.16/69.74 MiB. Thus multi-GiB allocator retention is not held after the work; the
+remaining private-minus-live residual is 37.2/50.8 MiB. Probe trace metadata is included in
+live heap and remains allocated during these idle samples.
+
+### Hypothetical active-input byte budgets at 12 workers
+
+This is an offline replay, not an implemented scheduling change. It retains the existing
+24-job delivery window, 12 worker limit, FIFO admission and one coordinator. Byte credits
+are acquired immediately before file read and returned when staged output becomes ready;
+waiting jobs do not consume credits. An oversized package may run alone. Each package keeps
+its **measured 12-worker** service time, staged capacity and allocation envelope; coordinator
+service time also stays fixed. This deliberately does not predict faster decoding from less
+CPU/memory contention, different cache effects or new admission overhead.
+
+| Active input budget | Replayed extraction wall | Requested live-heap peak envelope | Max active input sizes |
+| ------------------- | -----------------------: | --------------------------------: | ---------------------: |
+| Unlimited           |                  23.41 s |                         6.206 GiB |             410.64 MiB |
+| 384 MiB             |                  23.73 s |                         5.704 GiB |             383.82 MiB |
+| 256 MiB             |                  27.24 s |                         3.659 GiB |             250.41 MiB |
+| 192 MiB             |                  31.83 s |                         2.717 GiB |             189.89 MiB |
+| 128 MiB             |                  40.79 s |                         1.922 GiB |             127.97 MiB |
+| 96 MiB              |                  53.56 s |                         1.395 GiB |              95.99 MiB |
+| 64 MiB              |                  85.77 s |                         0.885 GiB |              64.00 MiB |
+
+Unlimited replay is 23.407 s against 23.416 s measured worker extraction (0.035% difference).
+Memory is a conservative interval-peak envelope, carrying each observed allocation peak over
+its checkpoint interval, plus a 26.92 MiB fixed live floor and the maximum 4 MiB writer
+capacity. Unlimited replay's 6.206 GiB envelope is 25.8% above the sampled live peak of
+4.934 GiB: large decode checkpoints span material fractions of a second, so envelopes can
+overlap even when their real allocation maxima do not. It is not predicted working set or
+a resident-memory guarantee; allocator slack, native runtime memory, system file cache and
+localization memory are excluded. It is conservative for these fixed measured job curves,
+not a proven upper bound for a future execution. Applying the measured non-Rust residual as
+a universal additive constant would be unsupported.
+
+For example, 192 MiB reduces the replayed live envelope by 56% versus unlimited at 36% more
+wall, while 256 MiB reduces it by 41% at 16% more wall. All budgets still permit 12 simultaneous
+small packages; they throttle the initial large-package cluster. The 8-worker service times
+are often shorter for those large packages (about 2.2–2.7 s versus 3.7–4.5 s for the slowest
+12-worker jobs), supporting contention as a reason these fixed-duration budget walls may be
+pessimistic. No budget was selected or added to the product, and no combined-tree 6 GiB gate
+is claimed by this standalone experiment.
+
+Validation for the memory instrumentation: feature-enabled crate tests passed (134 tests,
+one ignored helper), as did feature-enabled clippy with all targets and warnings denied.
+Default-feature crate tests passed (132 tests, one ignored helper); default-feature clippy
+passed after allowing the intentionally probe-only `Read` variant to be unused in the empty
+hooks (`7c88b44f`; it does not alter the feature-enabled measured executable). Rust formatting, the three replay unit tests, 30 targeted Vitest tests with the fresh
+probe executable, and `pnpm -s run typecheck` passed. The standalone/canonical record comparisons
+above check output neutrality; no parser, extraction policy or protocol field was changed.
+
+`pnpm -s run check:static` was run once; its formatting subcommand caught the report data
+while it was being formatted. After formatting the new files, `pnpm -s run format:check`
+still stops only on the previously reported, unchanged manifest below, left alone as directed.
+All subsequent static subcommands (lint, Effect architecture, license, StyleX, architecture
+regressions) were run individually and passed. The remaining exact diagnostic is:
+
+```text
+crates/process-metrics/Cargo.toml (0ms)
+
+Format issues found in above 1 files. Run without `--check` to fix.
+```
+
+Heavy release builds and runs took turns under the shared lock; tests/checks were also
+serialized under it. No Unreal Editor, Perforce write, localization concurrency, 1× replay,
+network service, push or PR was used. The only branch update was the authorized fast-forward
+to `ab7e832b` before building the ordinary control.

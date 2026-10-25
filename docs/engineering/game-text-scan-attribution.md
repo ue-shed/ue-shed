@@ -1203,3 +1203,147 @@ Heavy release builds and runs took turns under the shared lock; tests/checks wer
 serialized under it. No Unreal Editor, Perforce write, localization concurrency, 1× replay,
 network service, push or PR was used. The only branch update was the authorized fast-forward
 to `ab7e832b` before building the ordinary control.
+
+## Reader input-byte admission
+
+Implemented at `27c2ba4a`, with conservative unknown-size charging at `982e865b`, after merging
+specification amendment `d1495741` (merge `5f24a897`). The provisional default is **256 MiB with
+12 workers**. The lead selects the final budget from the separate combined-branch measurement;
+no localization overlap or combined-tree eligibility is claimed here. The
+[numeric observations](game-text-reader-budget-measurements.json) retain native aggregate spans,
+credit high waters, process memory samples, output hashes and parity results.
+
+### Admission and contract
+
+`limits.maximumInFlightPackageBytes` is an additive optional positive integer byte limit. Existing
+requests omit it and use 268,435,456 bytes. The host does not set it yet. Resource-limit schemas,
+shared JSON Schema and native validation accept the field and reject zero; existing requests and
+result shapes stay valid. Twelve workers and their existing configuration remain unchanged.
+
+Workers share a mutex/condition-variable pending queue inside the existing two-jobs-per-worker
+window (24 at the measured worker count). They take the earliest pending input that fits the
+remaining byte credits, so fitting small packages can pass a waiting larger one. An input larger
+than the entire budget starts only when no input is active, and excludes other inputs until it
+finishes, including zero-byte inputs. Credits cover package read, parse, decode, projection and
+worker serialization; an RAII permit returns them before sending the completed result. The
+coordinator still refills before appending staged bytes. Ordered consumers retain their ordering;
+staged groups retain completion order. Buffered and streamed projection share this scheduler.
+
+The pre-admission file-size inventory has its own `extract.budget_inventory` span. A missing size
+reserves `u64::MAX` rather than zero, preserving the worker's existing read result/diagnostic while
+avoiding undercharging. Measurements had zero unknown sizes. These are observed input file sizes,
+not a live-heap or working-set limit; the host's existing verification still checks input changes.
+
+Budget waits and coordinator receive waits check cancellation at intervals of at most 20 ms.
+Closing the queue wakes waiters and clears pending work before scoped joins; dropping result
+reception releases blocked senders. Probes separate `extract.budget_wait` from ordinary
+`extract.job_wait`; `extract.budget_admission` measures both waits inclusively and admission work
+exclusively. Numeric counters retain the requested limit, peak charged bytes, peak active jobs,
+unknown sizes and budget-wait wake cycles. All native aggregation remains opt-in through
+`UE_SHED_COLD_SCAN_MEASURE_DIR`, with no per-package identities in measurements.
+
+### Released-project measurements
+
+One standalone full extraction at each budget, using the ordinary allocator in a release build,
+with native aggregate timings enabled and the external Windows process observer sampling every
+100 ms. No localization importer, Node host or index writer ran alongside extraction. Fresh
+staging outputs were used; OS filesystem caches were not flushed. Both read the same 15,612
+packages / 8,431,479,437 bytes and staged 505,438,831 bytes. Builds and runs took turns under the
+shared heavy-job lock with `CARGO_BUILD_JOBS=8` and `RAYON_NUM_THREADS=16`.
+
+The measured executable SHA-256 is
+`289f6d78a014aa5e566e89a58531fc61b5c4c840be2017290bd195f0408071be`.
+The table uses native operation wall and whole-process CPU between native operation boundaries;
+CPU divided by wall is average occupied cores. Memory columns are exact process-lifetime Windows
+high waters, observed before exit. They are measured values, not allocation-envelope estimates.
+
+| Input budget | Extraction wall |       CPU | Average cores | Working-set peak | Private peak |
+| ------------ | --------------: | --------: | ------------: | ---------------: | -----------: |
+| 256 MiB      |        22.975 s | 217.891 s |         9.484 |        3.103 GiB |    3.144 GiB |
+| 192 MiB      |        22.858 s | 215.953 s |         9.447 |        2.681 GiB |    2.713 GiB |
+
+Process-lifetime elapsed / CPU were 23.152 / 218.094 s and 23.043 / 216.125 s respectively.
+Maximum external sample gaps were 113.03 and 112.86 ms. Both reached 12 active workers.
+Peak charged input bytes were 268,435,234 (222 bytes below 256 MiB) and 201,324,534
+(2,058 bytes below 192 MiB); neither exceeded its limit.
+
+| Budget-specific work                                |         256 MiB |          192 MiB |
+| --------------------------------------------------- | --------------: | ---------------: |
+| File-size inventory, elapsed wall / CPU             | 0.433 / 0.438 s |  0.436 / 0.438 s |
+| Budget wait, summed worker wall / CPU               | 7.449 / 0.313 s | 14.239 / 1.031 s |
+| Admission excluding waits, summed worker wall / CPU | 0.028 / 0.016 s |  0.041 / 0.016 s |
+| Ordinary empty-queue wait, summed worker wall       |         1.213 s |          1.279 s |
+| Budget-wait wake cycles                             |           2,876 |            6,814 |
+
+Worker wall sums overlap and must not be added to extraction elapsed time. Tiny CPU spans are
+quantized at 15.625 ms; the admission CPU figures are at that resolution. The prior standalone
+unbudgeted 12-worker ordinary-reader control peaked at 5.312 GiB working set and 5.388 GiB private
+bytes (23.796 s process elapsed). Its boundary differs slightly from the native extraction rows.
+The lower budget reduced working set by another 0.422 GiB in these final runs, with extraction
+walls within 0.6% of one another. One run per configuration does not establish a speed difference.
+
+The earlier offline replay used strict FIFO admission and fixed measured package service times;
+this implementation backfills fitting jobs and real service times change with overlap. Its
+27.24 / 31.83 s replay walls therefore are not predictions of this scheduler. The two preliminary
+runs before conservative unknown-size charging remain scratch artifacts; the table above uses
+only the final binary, with no allocation-counting feature enabled.
+
+Reproduce the standalone operation under the shared lock, selecting the private project root
+only in memory through the supplied environment file:
+
+```bash
+python tools/benchmarks/measure_reader_memory.py --label "$label" \
+  --executable "$reader" --workers 12 --budget-bytes "$budget_bytes" \
+  --output "$out" --environment-file "$environment_file" \
+  --records "$retained_staging" --control --timings
+```
+
+`--control` disables the optional heap-timeline capture; this executable was built without
+`reader-memory-probes`. Native spans and ordinary-allocator process counters are still recorded.
+Definitive raw outputs are `E:/ue-shed-engine-scratch/p45-reader-budget-final-256` and
+`p45-reader-budget-final-192`. No full released-project cold index build or 1× replay was needed
+for these reader-only measurements.
+
+### Identity gates and validation
+
+Direct comparison of sorted complete raw line byte arrays passed for both budgets on the
+released project (256 groups / 15,612 records) and on both canonical corpora (47 records each).
+No field or byte was excluded from the staged-record comparison. The unchanged ordinary-reader
+outputs from the preceding round are the baseline; each baseline was built/run by this agent.
+
+Both budgets were also used in fresh canonical cold builds on UE 5.7 and UE 5.8, four builds in
+all. For **each** corpus/budget pair, all 44 whole prepared package snapshots passed `cmp` with
+no exclusions, all 44 published package layers had identical stored data and deterministic
+metadata, and all 15 dictionary segments passed whole-file `cmp`. As established by the earlier
+base-vs-base check, published physical containers differ only in generated `shared.meta.file`
+and `shared.meta.storeGeneration` and dependent metadata checksums; root containers/manifests
+carry generated references and are excluded from whole-file identity. No new exclusion or
+unexplained difference occurred. The numeric observations retain all differing physical layer
+filenames from the four file-by-file reports:
+`E:/ue-shed-engine-scratch/p45-reader-budget-parity-256-c57.json`,
+`p45-reader-budget-parity-256-c58.json`, `p45-reader-budget-parity-192-c57.json`, and
+`p45-reader-budget-parity-192-c58.json`.
+
+The [measurement tables](game-text-reader-budget.html) summarize the final ordinary-allocator
+runs. Targeted verification passed: default-feature Rust tests (134, one ignored helper),
+feature-enabled Rust tests (136, one ignored helper), clippy with all targets and warnings denied
+in both configurations, Rust formatting, 33 targeted Vitest tests using the freshly built reader,
+protocol contract checks and `pnpm -s run typecheck`. Scheduler tests cover oversized-input
+exclusivity, fitting small inputs passing a waiting large input, budget-wait cancellation
+without freeing active credits, full scheduler cancellation within 250 ms, and refill before
+consumption. Protocol tests cover omitted, positive and zero budgets.
+
+`pnpm -s run check:static` ran once at the end and stopped only on the unchanged manifest
+formatting issue, left alone as directed. The exact diagnostic remains:
+
+```text
+crates/process-metrics/Cargo.toml (0ms)
+
+Format issues found in above 1 files. Run without `--check` to fix.
+```
+
+All remaining static subcommands were then run individually and passed: lint, Effect architecture,
+license, StyleX and all 336 architecture regression tests. No unexplained identity difference,
+fixture disagreement or cancellation regression occurred. No Unreal Editor, Perforce write,
+network service, push or PR was used. The only merge was the explicitly authorized specification
+amendment. The working default remains 256 MiB pending the lead's combined-tree measurement.

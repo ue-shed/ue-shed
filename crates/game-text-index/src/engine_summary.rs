@@ -1,7 +1,7 @@
 //! Native summary over persisted coverage, without hydrating corpus objects.
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
-use crate::engine_types::SearchRequest;
+use crate::engine_types::Selection;
 use crate::{Result, require};
 use serde_json::json;
 use std::sync::atomic::AtomicBool;
@@ -101,8 +101,7 @@ impl EngineQuery {
         if missing > 0 {
             coverage["missingGatherableText"] = json!(missing);
         }
-        let request: SearchRequest =
-            serde_json::from_value(json!({"query":"","capability":"all","pageSize":1}))?;
+        let request = Selection::default();
         let matched = self.matching(&request, cancelled)?;
         let counts = self.search_counts(&request, &matched, cancelled)?;
         let mut visible_occurrences = 0usize;

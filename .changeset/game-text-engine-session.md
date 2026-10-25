@@ -33,3 +33,10 @@ progress observer, and a quality scan's `localization_quality` and `source_quali
 counts rules rather than lines. The workspace's `progressChanges()` streams its progress and each
 change to it, and a host's project port may supply `progressChanges` so the workspace follows it
 without polling.
+
+Searches reach the engine as a `query` request instead of `search`: a selection whose `where` is
+in the rule IR's grammar, and the parts the answer needs. `GameTextContract.Query`,
+`QuerySelection`, `QueryParts` and `QueryAnswer` type it; the rule IR gains `anyCulture`,
+`everyCulture`, `anyPlace` and `facet`, which the rule compiler refuses. A query's rows stream as
+`browseUnit` and `browseLine` batches. The `aggregate`, `export` and `localization_export`
+requests take a `selection` beside their own fields instead of the search fields.

@@ -102,6 +102,13 @@ impl Relation {
     pub fn all(&'static self) -> Vec<&'static Column> {
         self.columns.iter().collect()
     }
+    /// Every column but `parent`: rows that belong to no other row.
+    pub fn without_parent(&'static self) -> Vec<&'static Column> {
+        self.columns
+            .iter()
+            .filter(|column| column.name != "parent")
+            .collect()
+    }
 }
 
 use ColumnType::{F64, Json, Str, StrList, U32};
@@ -195,6 +202,50 @@ pub static LINE: Relation = Relation {
     ],
 };
 
+/// A unit as a query lists it. An open group's rows name the group's position as `parent`.
+pub static BROWSE_UNIT: Relation = Relation {
+    name: "browseUnit",
+    columns: &[
+        column("parent", U32, Omit),
+        column("id", Str, Never),
+        column("identity", Json, Never),
+        column("source", Json, Never),
+        column("contexts", Json, Never),
+        column("occurrenceCount", U32, Never),
+        column("remainingContextCount", U32, Never),
+        column("characterCount", U32, Never),
+        column("wordCount", U32, Never),
+        column("reviewSignals", StrList, Never),
+        column("locationKinds", StrList, Never),
+        column("audience", Str, Never),
+        column("localization", Json, Omit),
+        column("problems", StrList, Never),
+        column("findings", StrList, Omit),
+        column("findingsOmitted", U32, Omit),
+    ],
+};
+
+/// A line as a query lists it. An open group's rows name the group's position as `parent`.
+pub static BROWSE_LINE: Relation = Relation {
+    name: "browseLine",
+    columns: &[
+        column("parent", U32, Omit),
+        column("id", Str, Never),
+        column("source", Str, Never),
+        column("identity", Json, Never),
+        column("audience", Str, Never),
+        column("manifestLocations", StrList, Never),
+        column("remainingLocationCount", U32, Never),
+        column("origin", Json, Never),
+        column("cultures", Json, Never),
+        column("outOfScope", Str, Omit),
+        column("keyChange", Json, Omit),
+        column("problems", StrList, Never),
+        column("findings", StrList, Omit),
+        column("findingsOmitted", U32, Omit),
+    ],
+};
+
 /// A finding in its family's host shape; `places` in it names a place set.
 pub static FINDING: Relation = Relation {
     name: "finding",
@@ -202,7 +253,7 @@ pub static FINDING: Relation = Relation {
 };
 
 /// Every relation, in the order the contract lists them.
-pub static RELATIONS: [&Relation; 7] = [
+pub static RELATIONS: [&Relation; 9] = [
     &GROUP,
     &UNIT,
     &PLACE,
@@ -210,6 +261,8 @@ pub static RELATIONS: [&Relation; 7] = [
     &DIAGNOSTIC,
     &LINE,
     &FINDING,
+    &BROWSE_UNIT,
+    &BROWSE_LINE,
 ];
 
 /// A batch's header, the JSON after its length.

@@ -156,40 +156,77 @@ Today's `search` request carries Browse's own filter types: `Clause { field, op,
 
 ```jsonc
 {
-  "query": {
-    "reader": "h1",
-    "findings": "layer-7",
-    "cultures": ["de", "fr"],        // the list's culture scope (Phase 3 §2)
-    "where": { "and": [ … ] },      // an Expr over the `line` subject
-    "text": { "query": "quit", "capability": "source" },
-    "order": "display",
-    "parts": {
-      "rows": { "columns": ["id", "source", "key", "problems", "findings"], "range": [0, 50] },
-      "counts": true,
-      "facets": ["problem", "finding", "folder"],
-      "groups": { "by": "finding", "open": ["localization.long"], "firstRows": 50 }
-    },
-    "sink": null
-  }
+	"action": "query",
+	"reader": "h1",
+	"request": {
+		"selection": {
+			"target": "Game", // the rows are its lines; units without one
+			"culture": "de", // the culture the list shows
+			"cultures": ["de", "fr"], // the list's culture scope (Phase 3 §2)
+			"findings": { "key": "layer-7" },
+			"where": {
+				"and": [
+					// the Browse shapes of the rule IR, with facet marks
+					{
+						"facet": [
+							"problem",
+							{
+								"any": [
+									{ "field": "problems" },
+									{ "in": [{ "var": "item" }, { "lit": ["finding"] }] }
+								]
+							}
+						]
+					},
+					{
+						"anyPlace": {
+							"facet": [
+								"capability",
+								{
+									"any": [
+										{ "field": "editing" },
+										{ "in": [{ "var": "item" }, { "lit": ["editable"] }] }
+									]
+								}
+							]
+						}
+					}
+				]
+			},
+			"text": { "query": "quit", "translations": true }
+		},
+		"parts": {
+			"rows": {
+				"limit": 50,
+				"after": "line:…",
+				"group": { "by": "finding", "key": "localization.long" }
+			},
+			"openGroups": { "by": "finding", "keys": ["localization.long"], "firstRows": 50 },
+			"counts": true,
+			"facets": { "findings": true, "folder": "/Game" },
+			"groups": { "by": "finding", "minSize": 2 },
+			"fileScope": ["Content/UI/Menu.uasset"]
+		}
+	}
 }
 ```
 
-- **`where` is an `Expr` over the query's subject**, evaluated with the rule compiler (`ix/rules/ir.rs`). Mapping today's filters (step 7's survey) showed that "every Browse filter becomes a field of `line`" loses behaviour in five places, so the IR gains the vocabulary those filters need rather than approximating them:
-    - **Two query subjects.** With a target the rows are lines (`line`); without one Browse lists corpus units, which no rule subject describes (`unit_source` is one row per distinct source). Queries add a `unit` subject: the rows Browse shows without a target. `lines` is a `line` filter only, as today.
-    - **Browse fields.** `line` and `unit` gain the fields Browse filters: `problems`, `facts`, `origins`, `editing`, `notes`, `audience`, `namespace`, `translationKey`, `assetTypes`, `sources` and `keyChanged`. `problems` and `findings` are computed as today, with the request's culture scope and findings layer: a line's problems settle to `up_to_date` when it has none, and `findings` lists the layer's rule IDs with a finding on the row after acceptance, shadowing and per-culture folding (`ix/rules/findings_rows.rs`). They are fields, not `finding` references: `finding` keeps naming a rule of the same program.
-    - **`anyCulture` and `everyCulture`** take a body over `line_culture` fields and test it over the request's `cultures`, `outside_target` included (the `line_culture` subject omits it). A culture's `review` lenses and `state` are fields of it. Translation state and the review lens are `anyCulture` tests, as today.
-    - **`anyPlace`** takes a body over a saved place's fields (`editable`, `notes`, `originKind`, `path`, `file`) and tests it over the row's visible places. The capability, translator-notes and location filters must hold on one place at once, so the builder writes them as one `anyPlace`, with today's rule for a line without saved places as its alternative.
-    - **Conjuncts.** `where` is a list of conjuncts, each tagged with the facet it constrains: `[{ "facet": "origin", "expr": … }]`. Counts and facets drop one facet's conjuncts, as `without_filter` does today; an untagged conjunct always applies.
-      The wire grammar is the rule IR's, so a Browse filter is already a rule expression. Rules reading the Browse fields and quantifiers waits for a rule that needs them: their columns are the rule evaluator's work, not a query's.
-- **The row-set compiler** caches each conjunct's row set, keyed by its canonical JSON with the culture scope and findings key. It compiles the shapes Browse writes (`in` or `eq` on a Browse field, `any` over a list field, `not`, `and`, `or`, `anyCulture`, `everyCulture` and `anyPlace` over them, and `lines`) to the Rust kernels today's clauses run, so a query answers exactly as the clause did. Any other expression is refused with `invalid_input` naming it. Running arbitrary expressions on the rule evaluator over the candidate rows is the next step when a host needs one; until then nothing does.
-- **Saved documents keep their clauses.** Preferences and investigation presets persist today's `filter`, `where` and `lens` forms; the TypeScript builder that turns them into conjuncts is how they load, and it stays.
-- **Internal requests.** The export, aggregate and summary paths and the join-position reads that build a `SearchRequest` in Rust (`ix/rules/subjects.rs:161`, `ix/rules/findings.rs:458`) build a query instead.
-- **Text stays its own part of the request:** `text` is ANDed with `where` and searched through the trigram index (Phase 3 §4) with today's capabilities.
-- **Parts** keep Phase 3's meaning and budgets (Phase 3 §3; decision 28), now as fields of `parts`.
-    - `rows` takes `columns` and either `range` or a cursor.
-    - A rows part over 500 rows makes the request bulk (§4) and streams batches, so the 50-row cap goes (`ix/engine_types.rs:6`). TypeScript's paged loops (`gt/native-query.ts:265,294,461,492`) become one request, and the CLI's `--limit` cap of 50 (`apps/cli/src/command-model.ts:143,287`) goes.
+- **`where` is an `Expr` over the query's rows**, in the rule IR's grammar (`ix/rules/ir.rs`). Mapping today's filters (step 7's survey) showed that "every Browse filter becomes a field of `line`" loses behaviour in five places, so the IR gains the vocabulary those filters need rather than approximating them:
+    - **Two kinds of row.** With a target the rows are lines; without one they are the corpus units Browse lists, which no rule subject describes (`unit_source` is one row per distinct source). Line-only fields (`keyChanged`, `id`) and the culture quantifiers need a target.
+    - **Browse fields.** Rows have the fields Browse filters: `problems`, `facts`, `origins`, `editing`, `notes`, `audience`, `namespace`, `translationKey`, `assetTypes`, `sources`, `paths`, `files`, `findings`, and on lines `keyChanged` and `id`. A list field is tested with `any` over `in` (`paths` with `pathHasPrefix`), a scalar with `in` or `eq`. `problems` and `findings` are computed as today, with the selection's culture scope and findings layer: a line's problems settle to `up_to_date` when it has none, and `findings` lists the layer's rule IDs with a finding on the row after acceptance, shadowing and per-culture folding (`ix/rules/findings_rows.rs`). They are fields, not `finding` references: `finding` keeps naming a rule of the same program.
+    - **`anyCulture` and `everyCulture`** take a body over a culture's `state`, `notSynced` and `review` and test it over the selection's culture scope, `outside_target` included (the `line_culture` subject omits it). Translation state and the review lens are `anyCulture` tests, as today.
+    - **`anyPlace`** takes a body over a place's `editing`, `notes`, `origins`, `paths` and `files`, the row fields' names, and tests it over the row's visible saved places. The capability, translator-notes and location filters must hold on one place at once, so the builder writes them as one `anyPlace`. A line without saved places stands as its own place, read-only, as today; a unit is its own place.
+    - **Facet marks.** `{ "facet": [name, expr] }` marks a conjunct of the `where`, or of an `anyPlace` body, with what it constrains. Counting a facet drops its marks, as `without_filter` did, and the counts' tabs drop `capability`, `withoutNotes` and `kinds` inside the place test, which a list of tagged top-level conjuncts could not say. A mark stands only where it is ANDed in, so dropping it is sound.
+    - The rule compiler refuses `anyCulture`, `everyCulture`, `anyPlace` and `facet` with `invalid_input`. Rules reading the Browse fields and quantifiers waits for a rule that needs them: their columns are the rule evaluator's work, not a query's.
+- **The row-set compiler** (`ix/engine_where.rs`) caches each top-level conjunct's row set, keyed by its parsed form with the culture scope and findings key where it reads them. It compiles the shapes Browse writes to the Rust kernels today's clauses ran, so a query answers exactly as the clause did. Any other expression is refused with `invalid_input` naming it. Running arbitrary expressions on the rule evaluator over the candidate rows is the next step when a host needs one; until then nothing does.
+- **Saved documents keep their clauses.** Preferences, investigation presets, the CLI and Browse keep today's search request; one TypeScript builder at the engine boundary (`gt/native-query-ir.ts`) turns it into a selection and parts, and the fixture's Browse cases test it, not a mirror.
+- **Internal requests.** The export, aggregate and summary paths and the join-position reads that built a `SearchRequest` in Rust (`ix/rules/subjects.rs:161`, `ix/rules/findings.rs:458`) build a `Selection`. The aggregate and export requests carry `selection` beside their own fields.
+- **Text stays its own part of the selection:** `text` is ANDed with `where` and searched through the trigram index (Phase 3 §4) with today's capabilities; `translations` searches the culture scope's translations too.
+- **Parts** keep Phase 3's meaning and budgets (Phase 3 §3; decision 28), each computed only when named.
+    - `rows` lists the matching rows, or one group's, after a cursor. The rows travel as `browseUnit` and `browseLine` batches with every column; open groups' rows as `groupUnits` and `groupLines` batches whose `parent` is the group's position. No host projects columns, so `rows` takes no `columns`.
+    - A query listing more than 500 rows is bulk (§4) and streams batches, so the 50-row cap goes (`ix/engine_types.rs:6`). TypeScript's paged loops (`gt/native-query.ts:265,294,461,492`) become one request, and the CLI's `--limit` cap of 50 (`apps/cli/src/command-model.ts:143,287`) goes.
+    - `fileScope` names the files the counts report on; it was the `where.files` the filter also read.
 - **`line` replaces `focus`, `localization_focus`, `localization_detail` and `related`** (decision 33). It takes a line ID and any of `detail`, `places` (range), `translations` (cultures) and `related`. Selecting a row is one request. The related-line probe Phase 3 measured sent 444.
-- **TypeScript builds the IR.** The Browse filter model (`ext/game-text-filter-model.ts`) and the investigation request (`gt/investigation.ts`) translate clauses into `Expr` with small builders. The translation is tested by the fixture's Browse cases, not by a mirror.
 
 ## 7. Progress
 

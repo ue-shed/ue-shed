@@ -174,18 +174,6 @@ impl EngineQuery {
         query.audience_rules = policy.audience_rules.clone();
         Ok(query)
     }
-    pub fn search_json(
-        &self,
-        payload: &str,
-        cancelled: &std::sync::atomic::AtomicBool,
-    ) -> Result<String> {
-        let request = parse_search_request(payload)?;
-        let answer = self.search(&request, cancelled)?;
-        #[cfg(feature = "benchmark-timings")]
-        let _span = crate::benchmark_timings::Span::new("payloadEncode");
-        crate::wtf8::view_json(&answer)
-    }
-
     pub fn open(configuration: &Configuration, expected_joined: Option<&str>) -> Result<Self> {
         let reader = EngineReader::open(configuration, expected_joined)?;
         let target = reader.meta["input"]["target"].clone();
@@ -548,48 +536,51 @@ impl EngineQuery {
         }))
     }
 
-    pub fn culture_scope(&self, selected: Option<&LocalizationScope>) -> Result<Vec<usize>> {
-        if let Some(selected) = selected {
+    /// A selection's culture scope: its culture, or its cultures, or every culture of its
+    /// target; none without a target.
+    pub fn culture_scope(&self, selection: &Selection) -> Result<Vec<usize>> {
+        let Some(target) = &selection.target else {
+            return Ok((0..self.cultures.len()).collect());
+        };
+        require(
+            self.target["name"] == *target,
+            invalid("The selected localization target is not open."),
+        )?;
+        require(
+            selection
+                .culture
+                .as_ref()
+                .is_none_or(|culture| self.cultures.contains(culture))
+                && selection.cultures.as_ref().is_none_or(|cultures| {
+                    cultures
+                        .iter()
+                        .all(|culture| self.cultures.contains(culture))
+                }),
+            invalid("The selected localization culture is not available."),
+        )?;
+        if let (Some(culture), Some(cultures)) = (&selection.culture, &selection.cultures) {
             require(
-                self.target["name"] == selected.target,
-                invalid("The selected localization target is not open."),
+                cultures.contains(culture),
+                invalid("The selected culture is outside the culture scope."),
             )?;
-            require(
-                selected
-                    .culture
-                    .as_ref()
-                    .is_none_or(|culture| self.cultures.contains(culture))
-                    && selected.cultures.as_ref().is_none_or(|cultures| {
-                        cultures
-                            .iter()
-                            .all(|culture| self.cultures.contains(culture))
-                    }),
-                invalid("The selected localization culture is not available."),
-            )?;
-            if let (Some(culture), Some(cultures)) = (&selected.culture, &selected.cultures) {
-                require(
-                    cultures.contains(culture),
-                    invalid("The selected culture is outside the culture scope."),
-                )?;
-            }
         }
         Ok(self
             .cultures
             .iter()
             .enumerate()
             .filter_map(|(index, culture)| {
-                selected
-                    .is_none_or(|selected| {
-                        selected.culture.as_ref().map_or_else(
-                            || {
-                                selected
-                                    .cultures
-                                    .as_ref()
-                                    .is_none_or(|cultures| cultures.contains(culture))
-                            },
-                            |wanted| culture == wanted,
-                        )
-                    })
+                selection
+                    .culture
+                    .as_ref()
+                    .map_or_else(
+                        || {
+                            selection
+                                .cultures
+                                .as_ref()
+                                .is_none_or(|cultures| cultures.contains(culture))
+                        },
+                        |wanted| culture == wanted,
+                    )
                     .then_some(index)
             })
             .collect())

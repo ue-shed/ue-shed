@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 10] = [
+const SOURCES: [&str; 12] = [
     include_str!("contract.rs"),
     include_str!("session.rs"),
     include_str!("batch.rs"),
@@ -23,6 +23,8 @@ const SOURCES: [&str; 10] = [
     include_str!("rules/findings_query.rs"),
     include_str!("rules/identity.rs"),
     include_str!("wtf8.rs"),
+    include_str!("engine_types.rs"),
+    include_str!("engine_where.rs"),
 ];
 
 /// The engine's build and contract identity, reported by `capabilities`.
@@ -59,6 +61,11 @@ pub fn identity() -> ContractIdentity {
 mod tests {
     use crate::batch::{BatchHeader, ColumnHeader, ColumnType, Missing, StringsHeader};
     use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile, Progress};
+    use crate::engine_types::{
+        Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, OpenGroupAnswer, OpenGroupsPart,
+        Query, QueryAnswer, QueryParts, RowsPart, Selection, TextSearch,
+    };
+    use crate::engine_where::Facet;
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
         Order, Page, QueryRequest, RuleTotal, View,
@@ -149,6 +156,20 @@ mod tests {
             FindingsAcceptRequest::decl(&config),
             AcceptedFinding::decl(&config),
             QueryRequest::decl(&config),
+            Query::decl(&config),
+            Selection::decl(&config),
+            TextSearch::decl(&config),
+            FindingsSelection::decl(&config),
+            Facet::decl(&config),
+            QueryParts::decl(&config),
+            RowsPart::decl(&config),
+            GroupKey::decl(&config),
+            OpenGroupsPart::decl(&config),
+            GroupsPart::decl(&config),
+            GroupBy::decl(&config),
+            Facets::decl(&config),
+            QueryAnswer::decl(&config),
+            OpenGroupAnswer::decl(&config),
             View::decl(&config),
             Order::decl(&config),
             Page::decl(&config),

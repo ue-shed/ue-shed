@@ -8,7 +8,8 @@ import { corpus } from "./localization.test-support.js";
 import { textCorpusQuery } from "./query.test-support.js";
 import type { TextCorpusSearchPage } from "./schema.js";
 
-const request = { query: "", capability: "all" as const, pageSize: 1 };
+// A search that matches nothing: its page is all head, with no row batches to fake.
+const request = { query: "no such text", capability: "all" as const, pageSize: 1 };
 const configuration = {
 	cacheRoot: tmpdir(),
 	projectKey: "fixture",
@@ -57,7 +58,7 @@ const engine = (calls: string[], hold: Effect.Effect<void> = Effect.void) =>
 				if (operation.action === "localization_corpus") yield* hold;
 				return outcome(
 					operation,
-					operation.action === "search"
+					operation.action === "query"
 						? page
 						: operation.action === "findings_accept"
 							? { acceptance: "acceptance-v1:digest" }
@@ -103,7 +104,7 @@ it("reads concurrently through one reader, and closes it with the model", async 
 			expect(calls).toEqual([
 				"open:",
 				"localization_corpus:reader",
-				"search:reader",
+				"query:reader",
 				"findings_accept:reader",
 				"close:reader"
 			]);
@@ -121,12 +122,12 @@ it("interrupts a read at once, and keeps serving reads", async () => {
 				const client = NativeGameTextEngineClient.of({
 					execute: (operation) =>
 						Effect.gen(function* () {
-							if (operation.action === "search" && searches++ === 0)
+							if (operation.action === "query" && searches++ === 0)
 								yield* Deferred.succeed(entered, undefined).pipe(
 									Effect.andThen(Effect.never),
 									Effect.onInterrupt(() => Ref.set(interrupted, true))
 								);
-							return outcome(operation, operation.action === "search" ? page : null);
+							return outcome(operation, operation.action === "query" ? page : null);
 						})
 				});
 				const query = yield* openNativeTextQuery({

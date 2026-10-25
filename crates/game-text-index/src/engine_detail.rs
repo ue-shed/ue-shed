@@ -2,9 +2,7 @@
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
 use crate::engine_query::selected_bits;
-use crate::engine_types::{
-    FocusRequest, LocalizationDetailRequest, LocalizationScope, MAX_PAGE, PROBLEMS,
-};
+use crate::engine_types::{FocusRequest, LocalizationDetailRequest, MAX_PAGE, PROBLEMS, Selection};
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
@@ -55,15 +53,12 @@ impl EngineQuery {
         let mut result = json!({"id":preview["id"],"origin":preview["origin"],"identity":preview["identity"],"source":preview["source"]});
         // The line's problems and findings in the list's culture scope, as the list's row
         // computes them.
-        let scope = self.culture_scope(Some(&LocalizationScope {
-            target: request.target.clone(),
+        let scope = self.culture_scope(&Selection {
+            target: Some(request.target.clone()),
             culture: request.culture.clone(),
             cultures: request.cultures.clone(),
-            state: None,
-            review: None,
-            key_changed: None,
-            search_translations: None,
-        }))?;
+            ..Selection::default()
+        })?;
         let findings = match &request.findings {
             Some(selection) => Some(self.finding_rows(selection, true, &scope, cancelled)?),
             None => None,

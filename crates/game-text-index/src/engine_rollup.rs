@@ -6,7 +6,7 @@ use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, audience, selected_bits};
 use crate::engine_types::*;
 use crate::rules::FindingRows;
-use crate::{Error, ErrorCode, Result, require};
+use crate::{Result, require};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
@@ -65,52 +65,24 @@ pub enum Measure {
     LineBreakWords,
 }
 
+/// The selection's rows, counted by `by` and measured by `measures`. An aggregate lists every
+/// group.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AggregateRequest {
-    pub search: SearchRequest,
+    pub selection: Selection,
     pub by: Vec<Dimension>,
+    #[serde(default)]
     pub measures: Vec<Measure>,
 }
 
-fn take<T: for<'de> Deserialize<'de>>(value: &mut Value, field: &str) -> Result<Option<T>> {
-    let Some(taken) = value
-        .as_object_mut()
-        .and_then(|object| object.remove(field))
-    else {
-        return Ok(None);
-    };
-    serde_json::from_value(taken).map(Some).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid request field.", source)
-    })
-}
-
-/// The search fields select the rows; `by` and `measures` say what to count. Paging, grouping and
-/// facet fields are rejected: an aggregate lists every group.
 pub fn parse_aggregate_request(payload: &str) -> Result<AggregateRequest> {
-    let mut value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid aggregate JSON.", source)
-    })?;
-    require(
-        value.is_object(),
-        invalid("An aggregate request is an object."),
-    )?;
-    let by: Vec<Dimension> = take(&mut value, "by")?.ok_or(invalid("An aggregate needs `by`."))?;
-    let measures: Vec<Measure> = take(&mut value, "measures")?.unwrap_or_default();
-    for field in [
-        "cursor",
-        "localizationCursor",
-        "group",
-        "minGroupSize",
-        "openGroup",
-        "facets",
-        "pageSize",
-    ] {
-        require(
-            value.get(field).is_none(),
-            invalid("Aggregates count every row; omit paging, grouping and facets."),
-        )?;
-    }
-    value["pageSize"] = json!(1);
-    let search = parse_search_request(&crate::wtf8::view_json(&value)?)?;
+    let AggregateRequest {
+        selection,
+        by,
+        measures,
+    } = parse_request(payload, "aggregate")?;
+    selection.validate()?;
     require(
         (1..=4).contains(&by.len()),
         invalid("An aggregate groups by one to four dimensions."),
@@ -121,7 +93,7 @@ pub fn parse_aggregate_request(payload: &str) -> Result<AggregateRequest> {
             invalid("Aggregate dimensions must be distinct."),
         )?;
         require(
-            !dimension.needs_target() || search.localization.is_some(),
+            !dimension.needs_target() || selection.localized(),
             invalid("Culture, translation key and gathered dimensions need a localization target."),
         )?;
         require(
@@ -136,7 +108,7 @@ pub fn parse_aggregate_request(payload: &str) -> Result<AggregateRequest> {
         )?;
     }
     Ok(AggregateRequest {
-        search,
+        selection,
         by,
         measures,
     })
@@ -261,24 +233,23 @@ impl EngineQuery {
         request: &AggregateRequest,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
-        let rows = self.matching(&request.search, cancelled)?;
+        let rows = self.matching(&request.selection, cancelled)?;
         let projection = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
-        let localized = request.search.localization.is_some();
+        let localized = request.selection.localized();
         let kind = if localized { Kind::Line } else { Kind::Raw };
-        let scope = self.culture_scope(request.search.localization.as_ref())?;
-        let findings = self.request_findings(&request.search, cancelled)?;
+        let scope = if localized {
+            self.culture_scope(&request.selection)?
+        } else {
+            Vec::new()
+        };
+        let findings = self.request_findings(&request.selection, cancelled)?;
         let problems = if request.by.contains(&Dimension::Problem) {
             self.problem_column(localized, &scope, findings.as_deref(), cancelled)?
         } else {
             std::sync::Arc::from([])
         };
-        let cultures: Vec<usize> = match request
-            .search
-            .localization
-            .as_ref()
-            .and_then(|scope| scope.cultures.as_ref())
-        {
+        let cultures: Vec<usize> = match &request.selection.cultures {
             Some(selected) => self
                 .cultures
                 .iter()
@@ -749,32 +720,33 @@ impl EngineQuery {
     }
 }
 
-/// A localization line export: the search fields select the lines, and optional `fields` name
-/// the line fields to write (every `LocalizationLine` field when absent).
-pub fn parse_line_export(payload: &str) -> Result<(SearchRequest, Option<Vec<&'static str>>)> {
-    let mut value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid export JSON.", source)
-    })?;
-    require(
-        value.is_object(),
-        invalid("An export request is an object."),
-    )?;
-    let fields: Option<Vec<String>> = take(&mut value, "fields")?;
-    let request = parse_search_request(&crate::wtf8::view_json(&value)?)?;
-    Ok((request, fields.as_deref().map(line_fields).transpose()?))
+/// A localization line export: the selection's lines, and optional `fields` naming the line
+/// fields to write (every `LocalizationLine` field when absent).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LineExport {
+    selection: Selection,
+    fields: Option<Vec<String>>,
 }
 
-/// A corpus export: the search fields select the units, or `units` names them by ID (at most
-/// 5,000; IDs no unit has are left out).
-pub fn parse_corpus_export(payload: &str) -> Result<(SearchRequest, Option<Vec<String>>)> {
-    let mut value = crate::json_value::parse(payload).map_err(|source| {
-        Error::with_source(ErrorCode::InvalidInput, "Invalid export JSON.", source)
-    })?;
-    require(
-        value.is_object(),
-        invalid("An export request is an object."),
-    )?;
-    let units: Option<Vec<String>> = take(&mut value, "units")?;
+pub fn parse_line_export(payload: &str) -> Result<(Selection, Option<Vec<&'static str>>)> {
+    let LineExport { selection, fields } = parse_request(payload, "export")?;
+    selection.validate()?;
+    Ok((selection, fields.as_deref().map(line_fields).transpose()?))
+}
+
+/// A corpus export: the selection's units, or `units` names them by ID (at most 5,000; IDs no
+/// unit has are left out).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CorpusExport {
+    selection: Selection,
+    units: Option<Vec<String>>,
+}
+
+pub fn parse_corpus_export(payload: &str) -> Result<(Selection, Option<Vec<String>>)> {
+    let CorpusExport { selection, units } = parse_request(payload, "export")?;
+    selection.validate()?;
     if let Some(units) = &units {
         require(
             !units.is_empty() && units.len() <= 5000,
@@ -787,19 +759,17 @@ pub fn parse_corpus_export(payload: &str) -> Result<(SearchRequest, Option<Vec<S
             )?;
         }
     }
-    Ok((
-        parse_search_request(&crate::wtf8::view_json(&value)?)?,
-        units,
-    ))
+    Ok((selection, units))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ErrorCode;
 
     #[test]
     fn aggregate_requests_need_a_target_for_marks_and_count_every_row() -> Result<()> {
-        let localized = r#""query":"","capability":"all","localization":{"target":"Game"}"#;
+        let localized = r#""selection":{"target":"Game"}"#;
         let request = parse_aggregate_request(&format!(
             r#"{{{localized},"by":["culture","state","fact"],"measures":["lineBreakWords"]}}"#
         ))?;
@@ -808,7 +778,7 @@ mod tests {
             [Dimension::Culture, Dimension::State, Dimension::Fact]
         );
         assert_eq!(request.measures, [Measure::LineBreakWords]);
-        parse_aggregate_request(r#"{"query":"","capability":"all","by":["source","problem"]}"#)?;
+        parse_aggregate_request(r#"{"selection":{},"by":["source","problem"]}"#)?;
         for invalid in [
             format!(r#"{{{localized},"by":[]}}"#),
             format!(r#"{{{localized},"by":["state"]}}"#),
@@ -816,13 +786,12 @@ mod tests {
             format!(r#"{{{localized},"by":["source","source"]}}"#),
             format!(r#"{{{localized},"by":["culture","state","fact","review","source"]}}"#),
             format!(r#"{{{localized},"by":["source"],"measures":["lines","lines"]}}"#),
-            format!(r#"{{{localized},"by":["source"],"pageSize":1}}"#),
-            format!(r#"{{{localized},"by":["source"],"group":"source"}}"#),
-            format!(r#"{{{localized},"by":["source"],"cursor":"unit"}}"#),
+            format!(r#"{{{localized},"by":["source"],"parts":{{}}}}"#),
             format!(r#"{{{localized},"by":["sql"]}}"#),
-            r#"{"query":"","capability":"all","by":["culture"]}"#.into(),
-            r#"{"query":"","capability":"all","by":["translation_key"]}"#.into(),
-            r#"{"query":"","capability":"all","by":["source"],"sql":true}"#.into(),
+            r#"{"selection":{},"by":["culture"]}"#.into(),
+            r#"{"selection":{},"by":["translation_key"]}"#.into(),
+            r#"{"selection":{},"by":["source"],"sql":true}"#.into(),
+            r#"{"by":["source"]}"#.into(),
         ] {
             assert_eq!(
                 parse_aggregate_request(&invalid)
@@ -838,8 +807,7 @@ mod tests {
 
     #[test]
     fn exports_name_known_fields_and_bounded_units() -> Result<()> {
-        let base =
-            r#""query":"","capability":"all","pageSize":50,"localization":{"target":"Game"}"#;
+        let base = r#""selection":{"target":"Game"}"#;
         let (_, fields) = parse_line_export(&format!(
             r#"{{{base},"fields":["marks","places","identity"]}}"#
         ))?;

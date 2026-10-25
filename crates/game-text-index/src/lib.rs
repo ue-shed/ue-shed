@@ -34,6 +34,7 @@ mod engine_search;
 mod engine_summary;
 mod engine_text;
 mod engine_types;
+mod engine_where;
 pub mod join;
 mod join_columns;
 #[cfg(test)]

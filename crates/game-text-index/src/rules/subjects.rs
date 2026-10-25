@@ -158,10 +158,7 @@ impl<'a> NativeSubjects<'a> {
         let target = self.query.target["name"]
             .as_str()
             .ok_or("Missing target name.")?;
-        let request = crate::engine_types::parse_search_request(
-            &json!({"query":"","capability":"all","pageSize":50,"localization":{"target":target}})
-                .to_string(),
-        )?;
+        let request = crate::engine_types::Selection::lines(target);
         let rows = self.query.matching(&request, self.cancelled)?;
         let mut positions = vec![u32::MAX; self.projection.source.len()];
         for (position, row) in rows.iter().enumerate() {

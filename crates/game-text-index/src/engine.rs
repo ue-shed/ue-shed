@@ -2,7 +2,7 @@
 use crate::cache::Lock;
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
-use crate::engine_types::{invalid, parse_search_request};
+use crate::engine_types::{Selection, invalid};
 use crate::store::{Configuration, token};
 use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
@@ -68,9 +68,10 @@ pub enum EngineRequest {
     Summary {
         reader: String,
     },
-    Search {
+    /// A selection's rows and the parts of the answer about them (Phase 4 §6).
+    Query {
         reader: String,
-        #[cfg_attr(test, ts(type = "unknown"))]
+        #[cfg_attr(test, ts(type = "Query"))]
         request: Value,
     },
     Focus {
@@ -178,7 +179,7 @@ impl EngineRequest {
             }
             Self::Close { reader }
             | Self::Summary { reader }
-            | Self::Search { reader, .. }
+            | Self::Query { reader, .. }
             | Self::Focus { reader, .. }
             | Self::Corpus { reader }
             | Self::CorpusHeader { reader }
@@ -469,7 +470,7 @@ impl EngineSession {
                 ("close", None)
             }
             EngineRequest::Summary { reader }
-            | EngineRequest::Search { reader, .. }
+            | EngineRequest::Query { reader, .. }
             | EngineRequest::Focus { reader, .. }
             | EngineRequest::Corpus { reader }
             | EngineRequest::CorpusHeader { reader }
@@ -487,8 +488,7 @@ impl EngineSession {
             | EngineRequest::FindingsQuery { reader, .. } => {
                 let query=self.readers.lock().get(reader).cloned().ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 // Every corpus line, whether or not it is visible.
-                let everything =
-                    || parse_search_request(r#"{"query":"","capability":"all","pageSize":50}"#);
+                let everything = || Ok::<_, Error>(Selection::default());
                 let (action, part) = match request {
                     EngineRequest::FindingsEvaluate {
                         rules,
@@ -515,10 +515,11 @@ impl EngineSession {
                         "summary",
                         Some(crate::wtf8::view_json(&query.summary(cancelled)?)?),
                     ),
-                    EngineRequest::Search { request, .. } => (
-                        "search",
-                        Some(query.search_json(&text(request)?, cancelled)?),
-                    ),
+                    EngineRequest::Query { request, .. } => {
+                        let request = crate::engine_types::parse_query(&text(request)?)?;
+                        query.query(&request, cancelled, reply)?;
+                        ("query", None)
+                    }
                     EngineRequest::Related { request, .. } => (
                         "related",
                         Some(query.related_json(&text(request)?, cancelled)?),
@@ -623,7 +624,7 @@ mod tests {
 
     #[test]
     fn requests_carry_their_values_inline_not_as_text() -> Result<()> {
-        for action in ["findings_query", "findings_accept", "search"] {
+        for action in ["findings_query", "findings_accept", "query"] {
             let request: EngineRequest = serde_json::from_value(
                 json!({"action":action,"reader":"reader","request":{"key":"findings-v1:test"}}),
             )?;
@@ -848,14 +849,15 @@ mod tests {
         let reply: serde_json::Value = serde_json::from_str(&opened.part.ok_or("reply")?)?;
         let reader = reply["reader"].as_str().ok_or("reader")?;
         for request in [
-            r#"{"query":"","capability":"all","pageSize":51}"#,
-            r#"{"query":"","capability":"all","pageSize":1,"where":null}"#,
-            r#"{"query":"","capability":"all","pageSize":1,"unknown":true}"#,
+            r#"{"selection":{},"parts":{"rows":{"limit":0}}}"#,
+            r#"{"selection":{"where":null},"parts":{}}"#,
+            r#"{"selection":{},"parts":{},"unknown":true}"#,
+            r#"{"selection":{"where":{"utf16Length":[{"field":"source"}]}},"parts":{}}"#,
         ] {
             assert_eq!(
                 session
                     .execute(
-                        &EngineRequest::Search {
+                        &EngineRequest::Query {
                             reader: reader.into(),
                             request: serde_json::from_str(request)?
                         },

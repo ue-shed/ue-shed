@@ -455,10 +455,7 @@ impl EngineQuery {
             .as_str()
             .ok_or("Missing target name.")?
             .to_owned();
-        let request = crate::engine_types::parse_search_request(
-            &json!({"query":"","capability":"all","pageSize":50,"localization":{"target":target}})
-                .to_string(),
-        )?;
+        let request = crate::engine_types::Selection::lines(&target);
         let rows = self.matching(&request, cancelled)?;
         let mut join = vec![NONE; self.reader.column("line.source")?.len()];
         for (position, row) in rows.iter().enumerate() {

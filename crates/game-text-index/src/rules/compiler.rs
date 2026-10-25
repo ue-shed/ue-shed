@@ -455,6 +455,11 @@ impl Compiler {
             Form::Apply(op, arguments) => (op, arguments, None),
             Form::Bind(op, arguments, name) => (op, arguments, Some(name)),
             Form::Named(op, fields) => return self.aggregate(op, fields, rule),
+            Form::Query(name) => {
+                return Err(invalid(format!(
+                    "{name} is a query form; rules cannot use it yet."
+                )));
+            }
         };
         let mut args = Vec::with_capacity(arguments.len());
         for (index, expression) in arguments.iter().enumerate() {

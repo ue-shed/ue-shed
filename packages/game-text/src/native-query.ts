@@ -38,6 +38,7 @@ import type { NativeTextQuery } from "./native-query-contract.js";
 import { RelatedLines, RelatedLinesRequest } from "./related-lines.js";
 import { enabledRuleDocument } from "./rules/effective.js";
 import { annotateFindingsProfile, inflateFindingsPage } from "./native-findings.js";
+import { querySelection, searchPage, searchQuery } from "./native-query-ir.js";
 export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
 
 const benchmark = channel("ue-shed.game-text-benchmark");
@@ -211,7 +212,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const answer = yield* pinned.execute({
 			action: "localization_export",
 			reader: pinned.reader,
-			request: decoded
+			request: { selection: querySelection(decoded) }
 		});
 		return yield* decodeRows(
 			"localization_export",
@@ -232,7 +233,11 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const answer = yield* pinned.execute(
 			request === undefined
 				? { action: "corpus", reader: pinned.reader }
-				: { action: "export", reader: pinned.reader, request: decoded }
+				: {
+						action: "export",
+						reader: pinned.reader,
+						request: { selection: querySelection(decoded) }
+					}
 		);
 		const file = yield* decodeRows("export", NativeExportFile, corpusDocument(answer));
 		const { findingRules, ...corpus } = file;
@@ -266,10 +271,11 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(TextAggregateRequest)(request).pipe(
 			Effect.mapError((cause) => failed("aggregate", cause))
 		);
+		const { by, measures } = decoded;
 		const answer = yield* pinned.execute({
 			action: "aggregate",
 			reader: pinned.reader,
-			request: decoded
+			request: { selection: querySelection(decoded), by, ...(measures && { measures }) }
 		});
 		// The engine writes each key component as text: a translation key as its JSON.
 		return yield* decodeRows("aggregate", TextAggregate, {
@@ -288,7 +294,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				...request,
 				pageSize: 50
 			}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
-			const selection = { ...decoded, fields: [...new Set(fields)] };
+			const selection = { selection: querySelection(decoded), fields: [...new Set(fields)] };
 			if (encodeStarted !== undefined)
 				benchmark.publish({
 					stage: "tsDomainEncode",
@@ -316,7 +322,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const answer = yield* pinned.execute({
 			action: "export",
 			reader: pinned.reader,
-			request: { query: "", capability: "all", pageSize: 50, units: ids }
+			request: { selection: {}, units: ids }
 		});
 		const file = yield* decodeRows("units", NativeExportFile, corpusDocument(answer));
 		return file.units.map(({ reviewSignals: _, ...unit }) => unit);
@@ -403,16 +409,20 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
 			Effect.mapError((cause) => failed("search", cause))
 		);
+		const query = searchQuery(decoded, true);
 		if (encodeStarted !== undefined)
 			benchmark.publish({
 				stage: "tsDomainEncode",
-				action: "search",
+				action: "query",
 				ms: performance.now() - encodeStarted
 			});
-		return yield* response(
-			pinned,
-			{ action: "search", reader, request: decoded },
-			TextCorpusSearchPage
+		const answer = yield* execute({ action: "query", reader, request: query });
+		return yield* decodeRows(
+			"search",
+			TextCorpusSearchPage,
+			searchPage(decoded, answerJson<GameTextContract.QueryAnswer>(answer) ?? {}, (part) =>
+				answerRows(answer, part)
+			)
 		);
 	});
 	const searchRows = Effect.fn("GameTextIndex.nativeSearchRows")(function* (
@@ -421,10 +431,17 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
 			Effect.mapError((cause) => failed("search", cause))
 		);
-		return yield* response(
-			pinned,
-			{ action: "search", reader, request: { ...decoded, parts: ["rows"] } },
-			TextCorpusRowsPage
+		const answer = yield* execute({
+			action: "query",
+			reader,
+			request: searchQuery(decoded, false)
+		});
+		return yield* decodeRows(
+			"search",
+			TextCorpusRowsPage,
+			searchPage(decoded, answerJson<GameTextContract.QueryAnswer>(answer) ?? {}, (part) =>
+				answerRows(answer, part)
+			)
 		);
 	});
 	const focus = Effect.fn("GameTextIndex.nativeFocus")(function* (

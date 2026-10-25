@@ -3,7 +3,7 @@ use crate::batch::{Batches, DIAGNOSTIC, LINE, PACKAGE, PLACE, UNIT};
 use crate::engine::Reply;
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
-use crate::engine_types::SearchRequest;
+use crate::engine_types::Selection;
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::{Arc, atomic::AtomicBool};
@@ -85,14 +85,14 @@ impl EngineQuery {
     /// `places` field is the `places` part, sent before the lines that own them.
     pub fn send_localization_lines(
         &self,
-        request: &SearchRequest,
+        request: &Selection,
         include_invisible: bool,
         fields: Option<&[&str]>,
         cancelled: &AtomicBool,
         reply: &mut dyn Reply,
     ) -> Result<()> {
         require(
-            include_invisible || request.localization.is_some(),
+            include_invisible || request.localized(),
             crate::engine_types::invalid("Localization export requires a selected target."),
         )?;
         let rows = if include_invisible {
@@ -115,7 +115,7 @@ impl EngineQuery {
             )),
             _ => None,
         };
-        let scope = self.culture_scope(request.localization.as_ref())?;
+        let scope = self.culture_scope(request)?;
         let findings = self.request_findings(request, cancelled)?;
         for row in rows.iter() {
             checkpoint(cancelled)?;
@@ -149,13 +149,12 @@ impl EngineQuery {
     /// its diagnostics. A request filters the units; `units` names them instead.
     pub fn send_corpus(
         &self,
-        request: &SearchRequest,
+        request: &Selection,
         include_invisible: bool,
         units: Option<&[String]>,
         cancelled: &AtomicBool,
         reply: &mut dyn Reply,
     ) -> Result<()> {
-        request.validate()?;
         checkpoint(cancelled)?;
         self.write_corpus(request, include_invisible, units, cancelled, reply)
     }
@@ -185,7 +184,7 @@ impl EngineQuery {
     }
     fn write_corpus(
         &self,
-        request: &SearchRequest,
+        request: &Selection,
         include_invisible: bool,
         units: Option<&[String]>,
         cancelled: &AtomicBool,
@@ -205,7 +204,7 @@ impl EngineQuery {
                     chosen[row] = true;
                 }
             }
-        } else if request.localization.is_some() {
+        } else if request.localized() {
             let raw = self.column("slice", "raw")?;
             require(
                 raw.len() == p.slice.visible.len(),
@@ -231,7 +230,7 @@ impl EngineQuery {
         // With a findings layer each unit lists its rules, and the head their labels once.
         let findings = match &request.findings {
             Some(selection) => {
-                let every = self.culture_scope(None)?;
+                let every = (0..self.cultures.len()).collect::<Vec<_>>();
                 Some(self.finding_rows(selection, false, &every, cancelled)?)
             }
             None => None,

@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "bcdd431ae6dcd1e3659f8ec6f9b8c9f13f9817f7cdca9435300d6eb241fe281f"
+	contractHash: "2f72d2e2b08aa267e796f08a818ee2738dd72c66060d289f1be69454cc9a04f3"
 } as const;
 
 /**
@@ -28,7 +28,7 @@ export type Finding = {
 	readonly [key: string]: JsonValue;
 };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "search", reader: string, request: unknown, } | { "action": "focus", reader: string, request: unknown, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "localization_detail", reader: string, request: unknown, } | { "action": "related", reader: string, request: unknown, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "localization_focus_export", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "focus", reader: string, request: unknown, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "localization_detail", reader: string, request: unknown, } | { "action": "related", reader: string, request: unknown, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "localization_focus_export", reader: string, 
 /**
  * The line's identity.
  */
@@ -141,7 +141,7 @@ let?: { [key: string]: Expr }, each?: Expr, eachAs?: string, when: Expr, actual:
  */
 shadowed?: Expr, recovery: Expr, counts?: boolean, };
 
-export type Expr = { "lit": JsonValue } | { "list": ReadonlyArray<Expr> } | { "object": { [key: string]: Expr } } | { "field": string } | { "param": string } | { "var": string } | { "finding": string } | { "findingField": readonly [string, string] } | { "occurrences": readonly [] } | { "not": Expr } | { "isNull": Expr } | { "utf16Length": Expr } | { "codePoints": Expr } | { "visibleLength": Expr } | { "visibleWords": Expr } | { "interiorLineBreaks": Expr } | { "trim": Expr } | { "lower": Expr } | { "normalizeLineEndings": Expr } | { "count": Expr } | { "flatten": Expr } | { "distinct": Expr } | { "first": Expr } | { "sortByStart": Expr } | { "formatArgumentNames": Expr } | { "formatArgumentOrder": Expr } | { "formatModifiers": Expr } | { "formatIssues": Expr } | { "formatCompiled": Expr } | { "richTextCounts": Expr } | { "richTextTagBalance": Expr } | { "unrealWhitespace": Expr } | { "unrealUnsafeWhitespace": Expr } | { "formatBraceBalance": Expr } | { "maxOf": Expr } | { "get": readonly [Expr, Expr] } | { "eq": readonly [Expr, Expr] } | { "ne": readonly [Expr, Expr] } | { "lt": readonly [Expr, Expr] } | { "le": readonly [Expr, Expr] } | { "gt": readonly [Expr, Expr] } | { "ge": readonly [Expr, Expr] } | { "in": readonly [Expr, Expr] } | { "sub": readonly [Expr, Expr] } | { "div": readonly [Expr, Expr] } | { "round": readonly [Expr, Expr] } | { "startsWith": readonly [Expr, Expr] } | { "endsWith": readonly [Expr, Expr] } | { "contains": readonly [Expr, Expr] } | { "countOccurrences": readonly [Expr, Expr] } | { "findAll": readonly [Expr, Expr] } | { "anyChar": readonly [Expr, Expr] } | { "allChars": readonly [Expr, Expr] } | { "removeClass": readonly [Expr, Expr] } | { "leadingClass": readonly [Expr, Expr] } | { "trailingClass": readonly [Expr, Expr] } | { "take": readonly [Expr, Expr] } | { "drop": readonly [Expr, Expr] } | { "minus": readonly [Expr, Expr] } | { "zip": readonly [Expr, Expr] } | { "matchesRole": readonly [Expr, Expr] } | { "pathHasPrefix": readonly [Expr, Expr] } | { "formatPattern": readonly [Expr, Expr] } | { "richTextValid": readonly [Expr, Expr] } | { "compareRichTextTags": readonly [Expr, Expr] } | { "withoutOptionalArgumentTags": readonly [Expr, Expr] } | { "if": readonly [Expr, Expr, Expr] } | { "slice": readonly [Expr, Expr, Expr] } | { "trimClass": readonly [Expr, Expr, Expr] } | { "runs": readonly [Expr, Expr, Expr] } | { "regexMatches": readonly [Expr, Expr, Expr] } | { "regexTest": readonly [Expr, Expr, Expr] } | { "termMatches": readonly [Expr, Expr, Expr] } | { "regexReplace": readonly [Expr, Expr, Expr] } | { "termListMatches": readonly [Expr, Expr, Expr, Expr] } | { "formatRenameArgument": readonly [Expr, Expr, Expr, Expr] } | { "and": ReadonlyArray<Expr> } | { "or": ReadonlyArray<Expr> } | { "coalesce": ReadonlyArray<Expr> } | { "add": ReadonlyArray<Expr> } | { "mul": ReadonlyArray<Expr> } | { "min": ReadonlyArray<Expr> } | { "max": ReadonlyArray<Expr> } | { "concat": ReadonlyArray<Expr> } | { "concatLists": ReadonlyArray<Expr> } | { "filter": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "map": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "flatMap": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "any": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "all": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "sortCodeUnit": readonly [Expr] | readonly [Expr, Expr] } | { "sortLocale": readonly [Expr] | readonly [Expr, Expr] } | { "groupCount": { [argument: string]: Expr } } | { "groupRank": { [argument: string]: Expr } } | { "groupTake": { [argument: string]: Expr } } | { "groupTally": { [argument: string]: Expr } } | { "existsOther": { [argument: string]: Expr } } | { "corpusCount": { [argument: string]: Expr } };
+export type Expr = { "lit": JsonValue } | { "list": ReadonlyArray<Expr> } | { "object": { [key: string]: Expr } } | { "field": string } | { "param": string } | { "var": string } | { "finding": string } | { "findingField": readonly [string, string] } | { "occurrences": readonly [] } | { "anyCulture": Expr } | { "everyCulture": Expr } | { "anyPlace": Expr } | { "facet": readonly [QueryFacet, Expr] } | { "not": Expr } | { "isNull": Expr } | { "utf16Length": Expr } | { "codePoints": Expr } | { "visibleLength": Expr } | { "visibleWords": Expr } | { "interiorLineBreaks": Expr } | { "trim": Expr } | { "lower": Expr } | { "normalizeLineEndings": Expr } | { "count": Expr } | { "flatten": Expr } | { "distinct": Expr } | { "first": Expr } | { "sortByStart": Expr } | { "formatArgumentNames": Expr } | { "formatArgumentOrder": Expr } | { "formatModifiers": Expr } | { "formatIssues": Expr } | { "formatCompiled": Expr } | { "richTextCounts": Expr } | { "richTextTagBalance": Expr } | { "unrealWhitespace": Expr } | { "unrealUnsafeWhitespace": Expr } | { "formatBraceBalance": Expr } | { "maxOf": Expr } | { "get": readonly [Expr, Expr] } | { "eq": readonly [Expr, Expr] } | { "ne": readonly [Expr, Expr] } | { "lt": readonly [Expr, Expr] } | { "le": readonly [Expr, Expr] } | { "gt": readonly [Expr, Expr] } | { "ge": readonly [Expr, Expr] } | { "in": readonly [Expr, Expr] } | { "sub": readonly [Expr, Expr] } | { "div": readonly [Expr, Expr] } | { "round": readonly [Expr, Expr] } | { "startsWith": readonly [Expr, Expr] } | { "endsWith": readonly [Expr, Expr] } | { "contains": readonly [Expr, Expr] } | { "countOccurrences": readonly [Expr, Expr] } | { "findAll": readonly [Expr, Expr] } | { "anyChar": readonly [Expr, Expr] } | { "allChars": readonly [Expr, Expr] } | { "removeClass": readonly [Expr, Expr] } | { "leadingClass": readonly [Expr, Expr] } | { "trailingClass": readonly [Expr, Expr] } | { "take": readonly [Expr, Expr] } | { "drop": readonly [Expr, Expr] } | { "minus": readonly [Expr, Expr] } | { "zip": readonly [Expr, Expr] } | { "matchesRole": readonly [Expr, Expr] } | { "pathHasPrefix": readonly [Expr, Expr] } | { "formatPattern": readonly [Expr, Expr] } | { "richTextValid": readonly [Expr, Expr] } | { "compareRichTextTags": readonly [Expr, Expr] } | { "withoutOptionalArgumentTags": readonly [Expr, Expr] } | { "if": readonly [Expr, Expr, Expr] } | { "slice": readonly [Expr, Expr, Expr] } | { "trimClass": readonly [Expr, Expr, Expr] } | { "runs": readonly [Expr, Expr, Expr] } | { "regexMatches": readonly [Expr, Expr, Expr] } | { "regexTest": readonly [Expr, Expr, Expr] } | { "termMatches": readonly [Expr, Expr, Expr] } | { "regexReplace": readonly [Expr, Expr, Expr] } | { "termListMatches": readonly [Expr, Expr, Expr, Expr] } | { "formatRenameArgument": readonly [Expr, Expr, Expr, Expr] } | { "and": ReadonlyArray<Expr> } | { "or": ReadonlyArray<Expr> } | { "coalesce": ReadonlyArray<Expr> } | { "add": ReadonlyArray<Expr> } | { "mul": ReadonlyArray<Expr> } | { "min": ReadonlyArray<Expr> } | { "max": ReadonlyArray<Expr> } | { "concat": ReadonlyArray<Expr> } | { "concatLists": ReadonlyArray<Expr> } | { "filter": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "map": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "flatMap": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "any": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "all": readonly [Expr, Expr] | readonly [Expr, Expr, string] } | { "sortCodeUnit": readonly [Expr] | readonly [Expr, Expr] } | { "sortLocale": readonly [Expr] | readonly [Expr, Expr] } | { "groupCount": { [argument: string]: Expr } } | { "groupRank": { [argument: string]: Expr } } | { "groupTake": { [argument: string]: Expr } } | { "groupTally": { [argument: string]: Expr } } | { "existsOther": { [argument: string]: Expr } } | { "corpusCount": { [argument: string]: Expr } };
 
 export type Scope = { roles?: ReadonlyArray<string>, cultures?: ReadonlyArray<string>, pathPrefixes?: ReadonlyArray<string>, };
 
@@ -217,6 +217,115 @@ export type FindingsAcceptRequest = { key: string, previous?: string, accepted: 
 export type AcceptedFinding = { check: string, culture?: string, namespace: string, key: string, fingerprint: string, };
 
 export type FindingsQueryRequest = { key: string, view: FindingsView, culture?: string, rules?: ReadonlyArray<string>, severities?: ReadonlyArray<Severity>, fixable?: boolean, change?: boolean, acceptance?: string, line?: string, id?: string, order: FindingsOrder, after?: string, offset?: number, limit: number, counts?: boolean, diagnostics?: FindingsPageRequest, };
+
+export type Query = { selection: QuerySelection, parts: QueryParts, };
+
+export type QuerySelection = { 
+/**
+ * The localization target whose lines are the rows.
+ */
+target?: string, 
+/**
+ * The culture the list shows: culture tests and problems read only it.
+ */
+culture?: string, 
+/**
+ * The list's culture scope and the cultures its tallies list; every culture when absent.
+ */
+cultures?: ReadonlyArray<string>, 
+/**
+ * The findings layer the `findings` field, problems, facets and groups read.
+ */
+findings?: FindingsSelection, 
+/**
+ * The rows' test: the Browse shapes of the rule IR, with facet marks.
+ */
+where?: Expr, text?: QueryText, };
+
+export type QueryText = { query: string, translations?: boolean, };
+
+export type FindingsSelection = { key: string, acceptance?: string, 
+/**
+ * Only the layer's source rules, as Browse without a target lists them.
+ */
+sourceOnly?: boolean, };
+
+export type QueryFacet = "problem" | "fact" | "finding" | "folder" | "asset" | "origin" | "audience" | "assetType" | "capability" | "withoutNotes" | "kinds";
+
+export type QueryParts = { rows?: RowsPart, openGroups?: OpenGroupsPart, 
+/**
+ * `counts`, `total`, `problems`, `fileScope` and the localization tallies.
+ */
+counts?: boolean, facets?: QueryFacets, groups?: GroupsPart, 
+/**
+ * Files the counts report on: how many hold matching text, lie outside the project or
+ * were not scanned.
+ */
+fileScope?: ReadonlyArray<string>, };
+
+export type RowsPart = { 
+/**
+ * At most this many rows; over 500 makes the request bulk.
+ */
+limit: number, 
+/**
+ * The ID of the row the previous page ended with.
+ */
+after?: string, 
+/**
+ * Only one group's rows.
+ */
+group?: GroupKey, };
+
+export type GroupKey = { by: QueryGroupBy, key: string, };
+
+export type OpenGroupsPart = { by: QueryGroupBy, keys: ReadonlyArray<string>, 
+/**
+ * Rows each group lists. Past 500 rows in all, a group and every one after it list none.
+ */
+firstRows: number, };
+
+export type GroupsPart = { by: QueryGroupBy, 
+/**
+ * Only groups holding at least this many matching rows.
+ */
+minSize?: number, };
+
+export type QueryGroupBy = "problem" | "folder" | "asset" | "origin" | "namespace" | "audience" | "source" | "finding";
+
+export type QueryFacets = { 
+/**
+ * The folders under this path.
+ */
+folder?: string, assets?: boolean, origins?: boolean, audiences?: boolean, cultures?: boolean, assetTypes?: boolean, 
+/**
+ * Every rule of the findings layer, in program order, with the rows it has a finding on.
+ */
+findings?: boolean, 
+/**
+ * The rows with each fact.
+ */
+facts?: boolean, };
+
+export type QueryAnswer = { counts?: JsonValue, total?: number, problems?: JsonValue, groups?: JsonValue, facets?: JsonValue, fileScope?: JsonValue, 
+/**
+ * The localization tallies, with a target and counts.
+ */
+localization?: { readonly [key: string]: JsonValue }, 
+/**
+ * The ID of the rows part's last row, when more follow.
+ */
+nextCursor?: string, openGroups?: ReadonlyArray<OpenGroupAnswer>, };
+
+export type OpenGroupAnswer = { key: string, 
+/**
+ * The ID of its last row listed, when more follow.
+ */
+nextCursor?: string, 
+/**
+ * Past the row budget the group, and every one after it, lists none.
+ */
+rowsOmitted?: boolean, };
 
 export type FindingsView = "workspace" | "report";
 
@@ -327,6 +436,40 @@ export type Relations = {
 	};
 	readonly finding: {
 		readonly finding: { readonly type: "json"; readonly missing: "never" };
+	};
+	readonly browseUnit: {
+		readonly parent: { readonly type: "u32"; readonly missing: "omit" };
+		readonly id: { readonly type: "str"; readonly missing: "never" };
+		readonly identity: { readonly type: "json"; readonly missing: "never" };
+		readonly source: { readonly type: "json"; readonly missing: "never" };
+		readonly contexts: { readonly type: "json"; readonly missing: "never" };
+		readonly occurrenceCount: { readonly type: "u32"; readonly missing: "never" };
+		readonly remainingContextCount: { readonly type: "u32"; readonly missing: "never" };
+		readonly characterCount: { readonly type: "u32"; readonly missing: "never" };
+		readonly wordCount: { readonly type: "u32"; readonly missing: "never" };
+		readonly reviewSignals: { readonly type: "strList"; readonly missing: "never" };
+		readonly locationKinds: { readonly type: "strList"; readonly missing: "never" };
+		readonly audience: { readonly type: "str"; readonly missing: "never" };
+		readonly localization: { readonly type: "json"; readonly missing: "omit" };
+		readonly problems: { readonly type: "strList"; readonly missing: "never" };
+		readonly findings: { readonly type: "strList"; readonly missing: "omit" };
+		readonly findingsOmitted: { readonly type: "u32"; readonly missing: "omit" };
+	};
+	readonly browseLine: {
+		readonly parent: { readonly type: "u32"; readonly missing: "omit" };
+		readonly id: { readonly type: "str"; readonly missing: "never" };
+		readonly source: { readonly type: "str"; readonly missing: "never" };
+		readonly identity: { readonly type: "json"; readonly missing: "never" };
+		readonly audience: { readonly type: "str"; readonly missing: "never" };
+		readonly manifestLocations: { readonly type: "strList"; readonly missing: "never" };
+		readonly remainingLocationCount: { readonly type: "u32"; readonly missing: "never" };
+		readonly origin: { readonly type: "json"; readonly missing: "never" };
+		readonly cultures: { readonly type: "json"; readonly missing: "never" };
+		readonly outOfScope: { readonly type: "str"; readonly missing: "omit" };
+		readonly keyChange: { readonly type: "json"; readonly missing: "omit" };
+		readonly problems: { readonly type: "strList"; readonly missing: "never" };
+		readonly findings: { readonly type: "strList"; readonly missing: "omit" };
+		readonly findingsOmitted: { readonly type: "u32"; readonly missing: "omit" };
 	};
 };
 }

@@ -358,7 +358,7 @@ impl EngineQuery {
         }
         // The unit lists its line's problems and findings in a localization selection, in every
         // culture, else its own, as a search row has them.
-        let every = self.culture_scope(None)?;
+        let every = (0..self.cultures.len()).collect::<Vec<_>>();
         let (localized, at) = if kind == "slice" {
             (true, line.ok_or("Missing focused line.")?)
         } else {

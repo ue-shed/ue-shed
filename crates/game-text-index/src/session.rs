@@ -194,11 +194,18 @@ impl Class {
             EngineRequest::Capabilities
             | EngineRequest::Close { .. }
             | EngineRequest::Summary { .. }
-            | EngineRequest::Search { .. }
             | EngineRequest::Focus { .. }
             | EngineRequest::LocalizationDetail { .. }
             | EngineRequest::Related { .. }
             | EngineRequest::RulesCheck { .. } => Self::Interactive,
+            // A query listing more than 500 rows reads like an export.
+            EngineRequest::Query { request, .. } => {
+                if crate::engine_types::Query::listed_rows(request) > 500 {
+                    Self::Bulk
+                } else {
+                    Self::Interactive
+                }
+            }
             _ => Self::Bulk,
         }
     }

@@ -28,18 +28,21 @@ fn cursor_position(rows: &[u32], ranks: &[u32], row: usize) -> usize {
 }
 
 impl EngineQuery {
+    /// The rows a rows part lists from: the matching rows, or one group's.
     pub(crate) fn listed_rows(
         &self,
-        request: &SearchRequest,
+        selection: &Selection,
+        part: &RowsPart,
         matched: Arc<[u32]>,
         cancelled: &AtomicBool,
     ) -> Result<Arc<[u32]>> {
-        let (Some(by), Some(opened)) = (request.group, request.open_group.as_ref()) else {
+        let Some(GroupKey { by, key: opened }) = &part.group else {
             return Ok(matched);
         };
+        let by = *by;
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchListedRows");
-        let findings = self.request_findings(request, cancelled)?;
+        let findings = self.request_findings(selection, cancelled)?;
         // A finding group's rows are its rule's; without the rule no row is in it.
         if by == GroupBy::Finding {
             let set = findings
@@ -54,8 +57,12 @@ impl EngineQuery {
         }
         let p = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
-        let localized = request.localization.is_some();
-        let scope = self.culture_scope(request.localization.as_ref())?;
+        let localized = selection.localized();
+        let scope = if localized {
+            self.culture_scope(selection)?
+        } else {
+            Vec::new()
+        };
         let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
         let opened = self.group_id(by, opened, &places)?;
         let mut rows = Vec::new();

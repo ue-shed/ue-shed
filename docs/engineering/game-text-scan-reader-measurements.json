@@ -183,6 +183,102 @@
 				"join": 16.9031566,
 				"openAndFirstPage": 1.9535645000000001
 			}
+		},
+		{
+			"label": "default12-released",
+			"buildSeconds": 105.9514209,
+			"treeGiB": 5.733448028564453,
+			"extraction": {
+				"wall": 26.0234921,
+				"cpu": 230.984375,
+				"cores": 8.875994586445222,
+				"waitWall": 1.6160723,
+				"waitCpu": 0.015625,
+				"stagingWall": 0.503366400000007,
+				"stagingCpu": 0,
+				"serializeWall": 26.4916101,
+				"serializeCpu": 23.46875,
+				"nativeWorkerThreads": 12,
+				"serializationThreads": 12
+			},
+			"readerGiB": 4.853302001953125,
+			"sampledTreeGiB": 5.810466766357422,
+			"requestConcurrencyOverride": null,
+			"stageSeconds": {
+				"packageInventory": 9.6152305,
+				"localizationParse": 15.098093,
+				"localizationPublish": 15.044735000000001,
+				"packageRead": 26.2152045,
+				"bundleVerification": 5.916216500000001,
+				"packagePrepare": 5.346904,
+				"packagePublish": 8.755563,
+				"join": 16.874979200000002,
+				"openAndFirstPage": 1.9188526
+			}
+		},
+		{
+			"label": "default12-c57",
+			"buildSeconds": 8.433252,
+			"treeGiB": 0.7373313903808594,
+			"extraction": {
+				"wall": 0.0861227,
+				"cpu": 0.078125,
+				"cores": 0.9071359815704803,
+				"waitWall": 0.007269699999999999,
+				"waitCpu": 0.015625,
+				"stagingWall": 0,
+				"stagingCpu": 0,
+				"serializeWall": 0,
+				"serializeCpu": 0,
+				"nativeWorkerThreads": 2,
+				"serializationThreads": 0
+			},
+			"readerGiB": 0.007457733154296875,
+			"sampledTreeGiB": 0.857391357421875,
+			"requestConcurrencyOverride": null,
+			"stageSeconds": {
+				"packageInventory": 0.0572237,
+				"localizationParse": 1.032748,
+				"localizationPublish": 0.176873,
+				"packageRead": 5.7867685,
+				"bundleVerification": 0.061808999999999996,
+				"packagePrepare": 0,
+				"packagePublish": 0,
+				"join": 0.32995979999999997,
+				"openAndFirstPage": 0.0947704
+			}
+		},
+		{
+			"label": "default12-c58",
+			"buildSeconds": 8.6565193,
+			"treeGiB": 0.7448234558105469,
+			"extraction": {
+				"wall": 0.08736810000000003,
+				"cpu": 0.125,
+				"cores": 1.4307281490612702,
+				"waitWall": 0.007222300000000002,
+				"waitCpu": 0.0625,
+				"stagingWall": 0,
+				"stagingCpu": 0,
+				"serializeWall": 0,
+				"serializeCpu": 0,
+				"nativeWorkerThreads": 2,
+				"serializationThreads": 0
+			},
+			"readerGiB": 0.007633209228515625,
+			"sampledTreeGiB": 0.9226341247558594,
+			"requestConcurrencyOverride": null,
+			"stageSeconds": {
+				"packageInventory": 0.0519987,
+				"localizationParse": 1.0517159999999999,
+				"localizationPublish": 0.178013,
+				"packageRead": 5.848881,
+				"bundleVerification": 0.06309859999999999,
+				"packagePrepare": 0,
+				"packagePublish": 0,
+				"join": 0.37382709999999997,
+				"openAndFirstPage": 0.1011484
+			}
 		}
 	],
 	"stoppedRun": {
@@ -192,7 +288,8 @@
 		"peakTreeBytes": 6672240640,
 		"peakReaderGiB": 5.094635009765625,
 		"peakTreeGiB": 6.214008331298828,
-		"completedExtraction": false
+		"completedExtraction": false,
+		"resolution": "16 workers is ineligible, not a STOP for the change; owner decision selected 12"
 	},
 	"parity": {
 		"baselineCanonical57": {
@@ -223,23 +320,60 @@
 				"records": 47,
 				"equal": true
 			}
+		},
+		"default12released": {
+			"packageLayersWithIdenticalStoredData": 256,
+			"identicalDictionarySegments": 22,
+			"unexpectedDifferences": 0,
+			"stagingGroups": 256,
+			"stagedRecords": 15612
+		},
+		"default12c57": {
+			"packageLayersWithIdenticalStoredData": 44,
+			"identicalDictionarySegments": 15,
+			"unexpectedDifferences": 0,
+			"wholePreparedSnapshotsByteIdentical": 44
+		},
+		"default12c58": {
+			"packageLayersWithIdenticalStoredData": 44,
+			"identicalDictionarySegments": 15,
+			"unexpectedDifferences": 0,
+			"wholePreparedSnapshotsByteIdentical": 44
 		}
 	},
-	"defaultWorkers": 8,
-	"defaultSelection": "pending_after_stop",
+	"defaultWorkers": 12,
+	"defaultSelection": "fastest eligible measured count: 12; 16 is ineligible above 5 GiB reader working set",
 	"verification": {
 		"rustTestsPassed": 129,
 		"rustTestsIgnored": 1,
 		"clippy": "passed --all-targets -- -D warnings",
 		"targetedVitestPassed": 30,
 		"typecheck": "passed",
-		"static": "failed at pre-existing Cargo.toml formatting; report formatting corrected",
-		"unfinished": [
-			"worker default selection",
-			"changed-reader canonical cache snapshot comparisons",
-			"changed 1x build and snapshot comparison",
-			"joined/localization/export parity",
-			"cancellation performance"
-		]
-	}
+		"static": "failed at unchanged crates/process-metrics/Cargo.toml formatting; intentionally left unchanged as instructed",
+		"unfinished": [],
+		"default12": {
+			"rustTestsPassed": 129,
+			"rustTestsIgnored": 1,
+			"clippy": "passed --all-targets -- -D warnings",
+			"targetedVitestPassed": 30,
+			"freshReaderExplicitlyConfigured": true,
+			"typecheck": "passed",
+			"canonicalStagedRecords": {
+				"ue57": 47,
+				"ue58": 47,
+				"equal": true
+			},
+			"staticFailure": "only unchanged crates/process-metrics/Cargo.toml formatting"
+		}
+	},
+	"defaultCommit": "2f57f214f56a27098f961c53a7049f1c31441cd3",
+	"defaultBinarySha256": "996d5ed0adf1f82c9186e1d959c8b7ffcb1b22cd9597a3825d43094701ee3e56",
+	"wholeTreeMemoryGate": "Deferred to final combined-branch measurements; recorded, not applied here per owner decision",
+	"skipped1x": "No changed-reader 1x run: records replay has no extraction, per owner instruction",
+	"ownerFinalChecks": [
+		"combined localization/extraction whole-tree memory gate",
+		"joined/localization/export parity",
+		"cancellation performance",
+		"multi-run measurements"
+	]
 }

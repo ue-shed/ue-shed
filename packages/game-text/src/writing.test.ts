@@ -1,9 +1,10 @@
 import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { gameTextCsv } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
-import { gameTextQualityCsv } from "./csv.js";
-import { textCorpusQuery } from "./query.test-support.js";
+import { it } from "@effect/vitest";
+import { describe, expect } from "vitest";
+import { gameTextCsv as formatCsv, gameTextQualityCsv } from "./csv.js";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { GameTextRuleDocument, decodeGameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import {
@@ -51,120 +52,161 @@ function corpusOf(sources: readonly string[]): TextCorpus {
 	};
 }
 describe("writer counts", () => {
-	it("uses searchable lines for search, summary and role coverage without changing scan provenance", () => {
-		const corpus = corpusOf(["row one", "row two", "", " \n "]);
-		const query = textCorpusQuery(corpus);
-		const page = query.search({ query: "", capability: "all", pageSize: 50 });
-		expect(Schema.decodeUnknownSync(TextCorpusSearchPage)(page)).toEqual(page);
-		expect(() =>
-			Schema.decodeUnknownSync(TextCorpusSearchPage)({
-				...page,
-				counts: { ...page.counts, all: -1 }
-			})
-		).toThrow();
-		expect(() =>
-			Schema.decodeUnknownSync(TextCorpusSearchPage)({
-				...page,
-				units: Array.from({ length: MAX_TEXT_QUERY_PAGE_SIZE + 1 }, () => page.units[0])
-			})
-		).toThrow();
-		expect(query.search({ query: "", capability: "all", pageSize: 1 }).counts).toEqual(
-			page.counts
-		);
-		expect(page.total).toBe(2);
-		expect(page.counts.all).toBe(page.total);
-		expect(query.summary().counts).toEqual(page.counts);
-		expect(query.summary().review).toEqual({ all: 2, unresolved: 0, conflicting: 0 });
-		expect(query.summary().sources.dataTable).toBe(2);
-		expect(query.summary().searchable).toEqual({ textUnits: 2, textOccurrences: 4 });
-		expect(query.summary().coverage).toEqual(corpus.coverage);
-		const report = indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES);
-		expect(report.roles.every((role) => role.matchedTextUnits === 2)).toBe(true);
-		expect(report.roles.every((role) => role.matchedOccurrences === 4)).toBe(true);
-	});
-	it("counts the current query and filters, and requires every location to have blank notes", () => {
-		const query = textCorpusQuery(corpusOf(["row one", "row two", "other", ""]));
-		const request = { query: "row", capability: "all" as const, pageSize: 50 };
-		expect(query.search(request).counts).toMatchObject({
-			all: 2,
-			editable: 1,
-			readOnly: 1,
-			withoutNotes: 1
-		});
-		expect(query.search({ ...request, withoutNotes: true }).total).toBe(1);
-		expect(query.search({ ...request, withoutNotes: true }).counts.readOnly).toBe(0);
-		const readOnly = query.search({ ...request, capability: "read_only" });
-		expect(readOnly.total).toBe(1);
-		expect(readOnly.counts.all).toBe(readOnly.total);
-		expect(readOnly.counts.readOnly).toBe(readOnly.total);
-		expect(
-			query.search({ ...request, capability: "read_only", withoutNotes: true }).total
-		).toBe(0);
-		expect(query.search({ ...request, query: "key:" }).total).toBe(0);
-	});
+	it.live(
+		"uses searchable lines for search, summary and role coverage without changing scan provenance",
+		() => {
+			const corpus = corpusOf(["row one", "row two", "", " \n "]);
+			return withIndexedCorpus(corpus, {}, ({ query }) =>
+				Effect.gen(function* () {
+					const page = yield* query.search({
+						query: "",
+						capability: "all",
+						pageSize: 50
+					});
+					expect(Schema.decodeUnknownSync(TextCorpusSearchPage)(page)).toEqual(page);
+					expect(() =>
+						Schema.decodeUnknownSync(TextCorpusSearchPage)({
+							...page,
+							counts: { ...page.counts, all: -1 }
+						})
+					).toThrow();
+					expect(() =>
+						Schema.decodeUnknownSync(TextCorpusSearchPage)({
+							...page,
+							units: Array.from(
+								{ length: MAX_TEXT_QUERY_PAGE_SIZE + 1 },
+								() => page.units[0]
+							)
+						})
+					).toThrow();
+					expect(
+						(yield* query.search({ query: "", capability: "all", pageSize: 1 })).counts
+					).toEqual(page.counts);
+					expect(page.total).toBe(2);
+					expect(page.counts.all).toBe(page.total);
+					const summary = yield* query.summary();
+					expect(summary.counts).toEqual(page.counts);
+					expect(summary.review).toEqual({ all: 2, unresolved: 0, conflicting: 0 });
+					expect(summary.sources.dataTable).toBe(2);
+					expect(summary.searchable).toEqual({ textUnits: 2, textOccurrences: 4 });
+					expect(summary.coverage).toEqual(corpus.coverage);
+					const report = indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES);
+					expect(report.roles.every((role) => role.matchedTextUnits === 2)).toBe(true);
+					expect(report.roles.every((role) => role.matchedOccurrences === 4)).toBe(true);
+				})
+			);
+		}
+	);
+	it.live(
+		"counts the current query and filters, and requires every location to have blank notes",
+		() =>
+			withIndexedCorpus(corpusOf(["row one", "row two", "other", ""]), {}, ({ query }) =>
+				Effect.gen(function* () {
+					const request = { query: "row", capability: "all" as const, pageSize: 50 };
+					expect((yield* query.search(request)).counts).toMatchObject({
+						all: 2,
+						editable: 1,
+						readOnly: 1,
+						withoutNotes: 1
+					});
+					const withoutNotes = yield* query.search({ ...request, withoutNotes: true });
+					expect(withoutNotes.total).toBe(1);
+					expect(withoutNotes.counts.readOnly).toBe(0);
+					const readOnly = yield* query.search({ ...request, capability: "read_only" });
+					expect(readOnly.total).toBe(1);
+					expect(readOnly.counts.all).toBe(readOnly.total);
+					expect(readOnly.counts.readOnly).toBe(readOnly.total);
+					expect(
+						(yield* query.search({
+							...request,
+							capability: "read_only",
+							withoutNotes: true
+						})).total
+					).toBe(0);
+					expect((yield* query.search({ ...request, query: "key:" })).total).toBe(0);
+				})
+			)
+	);
 });
 describe("human CSV", () => {
-	it("preserves review signals from the scanned corpus when exporting a filtered selection", () => {
-		// The first key has two texts across its locations; only that line is editable.
-		const input = corpusOf(["same source", "same source"]);
-		const corpus: TextCorpus = {
-			...input,
-			units: input.units.map((unit, index) =>
-				index === 0
-					? {
-							...unit,
-							source: {
-								status: "conflicting",
-								values: ["same source", "Same source"]
-							},
-							occurrences: unit.occurrences.map((occurrence, location) => ({
-								...occurrence,
-								source: location === 0 ? "same source" : "Same source"
-							}))
-						}
-					: unit
-			)
-		};
-		const filtered = textCorpusQuery(corpus).export({
-			query: "",
-			capability: "source_editable"
-		});
-		expect(filtered.units).toHaveLength(1);
-		expect(gameTextCsv(filtered, corpus)).toContain("key has different text");
-	});
-	it("protects metadata cells and uses the same UTF-16 character count as focus and checks", () => {
-		const input = corpusOf(["😀"]);
-		const corpus: TextCorpus = {
-			...input,
-			units: input.units.map((unit) => ({
-				...unit,
-				occurrences: unit.occurrences.map((occurrence) => ({
-					...occurrence,
-					devNotes: " \t@notes",
-					identity: { status: "resolved", namespace: "-namespace", key: "+key" }
+	it.live(
+		"preserves review signals from the scanned corpus when exporting a filtered selection",
+		() => {
+			// The first key has two texts across its locations; only that line is editable.
+			const input = corpusOf(["same source", "same source"]);
+			const corpus: TextCorpus = {
+				...input,
+				units: input.units.map((unit, index) =>
+					index === 0
+						? {
+								...unit,
+								source: {
+									status: "conflicting",
+									values: ["same source", "Same source"]
+								},
+								occurrences: unit.occurrences.map((occurrence, location) => ({
+									...occurrence,
+									source: location === 0 ? "same source" : "Same source"
+								}))
+							}
+						: unit
+				)
+			};
+			return withIndexedCorpus(corpus, {}, ({ query }) =>
+				Effect.gen(function* () {
+					const filtered = yield* query.exportWithSignals({
+						query: "",
+						capability: "source_editable"
+					});
+					expect(filtered.corpus.units).toHaveLength(1);
+					expect(formatCsv(filtered.corpus, filtered.reviewSignals)).toContain(
+						"key has different text"
+					);
+				})
+			);
+		}
+	);
+	it.live(
+		"protects metadata cells and uses the same UTF-16 character count as focus and checks",
+		() => {
+			const input = corpusOf(["😀"]);
+			const corpus: TextCorpus = {
+				...input,
+				units: input.units.map((unit) => ({
+					...unit,
+					occurrences: unit.occurrences.map((occurrence) => ({
+						...occurrence,
+						devNotes: " \t@notes",
+						identity: { status: "resolved", namespace: "-namespace", key: "+key" }
+					}))
 				}))
-			}))
-		};
-		const csv = gameTextCsv(corpus);
-		expect(csv).toContain('"😀","\' \t@notes","\'+key","\'-namespace"');
-		expect(csv).toContain('"Yes","2","1"');
-		const id = corpus.units[0]!.id;
-		expect(textCorpusQuery(corpus).focus({ id, pageSize: 50 })?.unit.characterCount).toBe(2);
-		const rules = {
-			...STARTER_GAME_TEXT_RULES,
-			rules: STARTER_GAME_TEXT_RULES.rules.map((rule) =>
-				rule.kind === "character_budget" ? { ...rule, maximumCharacters: 1 } : rule
-			)
-		};
-		const report = indexedTestReports(corpus).source(rules);
-		expect(report.findings[0]?.actual).toMatchObject({ characterCount: 2 });
-		expect(gameTextQualityCsv(report, indexedTestReports(corpus).corpus())).toContain(
-			'"\'+key","\'-namespace"'
-		);
-		expect(gameTextQualityCsv(report, indexedTestReports(corpus).corpus())).toContain(
-			"Maximum 1 character · 2 characters"
-		);
-	});
+			};
+			const csv = gameTextCsv(corpus);
+			expect(csv).toContain('"😀","\' \t@notes","\'+key","\'-namespace"');
+			expect(csv).toContain('"Yes","2","1"');
+			const rules = {
+				...STARTER_GAME_TEXT_RULES,
+				rules: STARTER_GAME_TEXT_RULES.rules.map((rule) =>
+					rule.kind === "character_budget" ? { ...rule, maximumCharacters: 1 } : rule
+				)
+			};
+			const report = indexedTestReports(corpus).source(rules);
+			expect(report.findings[0]?.actual).toMatchObject({ characterCount: 2 });
+			expect(gameTextQualityCsv(report, indexedTestReports(corpus).corpus())).toContain(
+				'"\'+key","\'-namespace"'
+			);
+			expect(gameTextQualityCsv(report, indexedTestReports(corpus).corpus())).toContain(
+				"Maximum 1 character · 2 characters"
+			);
+			return withIndexedCorpus(corpus, {}, ({ query }) =>
+				Effect.gen(function* () {
+					const id = (yield* query.search({ query: "", capability: "all", pageSize: 1 }))
+						.units[0]!.id;
+					expect((yield* query.focus({ id, pageSize: 50 }))?.unit.characterCount).toBe(2);
+				})
+			);
+		}
+	);
 	it("keeps String Table keys and asset property paths exact in both exports", () => {
 		const input = corpusOf(["row placeholder"]);
 		const corpus: TextCorpus = {

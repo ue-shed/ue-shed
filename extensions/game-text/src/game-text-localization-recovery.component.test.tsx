@@ -4,17 +4,19 @@ import {
 	GameTextInvestigationPreset,
 	type GameTextInvestigationQuery
 } from "@ue-shed/game-text/corpus";
-import {
-	makeTextOccurrenceId,
-	type TextCorpusSearchRequest,
-	type TextFilter
-} from "@ue-shed/game-text/schema";
+import { type TextCorpusSearchRequest, type TextFilter } from "@ue-shed/game-text/schema";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { corpus, target, unit } from "../../../packages/game-text/src/localization.test-support.js";
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
+import { target } from "../../../packages/game-text/src/localization.test-support.js";
+import { cannedPage, tableRow, type CannedAnswer } from "./game-text-canned-search.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
-import { client, groupRows, mount, second } from "./game-text-localization.test-support.js";
+import {
+	client,
+	groupRows,
+	mount,
+	second,
+	sourceAnswers
+} from "./game-text-localization.test-support.js";
 import { storedGameTextPreferences } from "./game-text-preferences.js";
 describe("Game Text all-languages export", () => {
 	it("opens a preset on its saved target, cultures and translation filters", async () => {
@@ -130,28 +132,47 @@ it.each([
 			"ue-shed:game-text:localization-project",
 			JSON.stringify({ filter: savedFilter })
 		);
-		const conflict = unit("Conflict", "First source");
-		const query = textCorpusQuery(
-			corpus([
-				{
-					...conflict,
-					source: { status: "conflicting", values: ["First source", "Second source"] },
-					occurrences: [
-						...conflict.occurrences,
-						...conflict.occurrences.map((occurrence) => ({
-							...occurrence,
-							id: makeTextOccurrenceId(`${occurrence.id}:other`),
-							source: "Second source"
-						}))
+		// Conflict's key holds two texts, so only it has the source problem; Fresh line has none.
+		const conflict = {
+			...tableRow("Conflict", "First source"),
+			source: { status: "conflicting" as const, values: ["First source", "Second source"] },
+			occurrenceCount: 2,
+			reviewSignals: ["conflicting" as const],
+			problems: ["conflicting_source" as const]
+		};
+		const [row, group] =
+			op === "is"
+				? [
+						{ unit: conflict, groups: { problem: "conflicting_source" } },
+						{
+							key: "conflicting_source",
+							label: "Same key, different text",
+							count: 1,
+							needWork: 1,
+							worst: "conflicting_source" as const
+						}
 					]
-				},
-				unit("Fresh", "Fresh line")
-			])
+				: [
+						{
+							unit: tableRow("Fresh", "Fresh line"),
+							groups: { problem: "up_to_date" }
+						},
+						{
+							key: "up_to_date",
+							label: "Up to date",
+							count: 1,
+							needWork: 0,
+							worst: "up_to_date" as const
+						}
+					];
+		const answers = [savedFilter, effectiveFilter].map(
+			(filter): CannedAnswer => ({
+				...sourceAnswers[0]!,
+				when: { filter },
+				rows: [row],
+				groups: { problem: [group] }
+			})
 		);
-		expect(
-			query.search({ query: "", capability: "all", pageSize: 50, filter: effectiveFilter })
-				.total
-		).toBe(1);
 		const base = client();
 		const inventory = base.localizationTargets;
 		if (!inventory) throw new Error("Missing target inventory");
@@ -160,14 +181,15 @@ it.each([
 		const files: GameTextInvestigationQuery[] = [];
 		mount({
 			...base,
-			loadConfiguredProject: () =>
-				Effect.succeed({ status: "completed", summary: query.summary() }),
 			localizationTargets: () =>
 				empty ? Effect.succeed({ status: "ready", targets: [] }) : inventory(),
 			search: (request) => {
 				requests.push(request);
 				const { localization: _localization, ...sourceRequest } = request;
-				return Effect.succeed({ status: "ready", page: query.search(sourceRequest) });
+				return Effect.succeed({
+					status: "ready",
+					page: cannedPage(answers, sourceRequest)
+				});
 			},
 			investigations: {
 				export: (selection) => {

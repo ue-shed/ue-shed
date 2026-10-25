@@ -13,7 +13,6 @@ import { SharedIndex, sharedIndexNodeLayer, type SharedIndexWriter } from "./sha
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { decodePackageTextColumns } from "./package-text-columns.js";
 import { packageTextShard } from "./package-text-layer.js";
-import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
 import { target } from "./localization.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
@@ -319,6 +318,44 @@ describe.skipIf(!executable)("native package record deltas", () => {
 			];
 			const inserted = [record(paths[3]!, "Inserted source", "D"), second, third];
 			const states = [original, textEdit, structure, structure, inserted, original];
+			// Every state has three units of one place each: the second package's compiled copy
+			// folds into its saved place. While the first package is not gatherable it is skipped.
+			const summary = (units: number) => ({
+				schemaVersion: 1,
+				status: "complete",
+				counts: {
+					all: units,
+					unresolved: 0,
+					conflicting: 0,
+					editable: 0,
+					readOnly: units,
+					withoutNotes: units,
+					origins: {
+						string_table: 0,
+						data_table: 0,
+						asset: units,
+						cpp: 0,
+						other_source: 0
+					}
+				},
+				searchable: { textUnits: units, textOccurrences: units },
+				coverage: {
+					discoveredPackages: 3,
+					inspectedPackages: units,
+					partialPackages: 0,
+					failedPackages: 0,
+					textUnits: units,
+					textOccurrences: units,
+					resolvedOccurrences: units,
+					unresolvedOccurrences: 0,
+					unsupportedTextProperties: 0
+				},
+				notGatherablePackages: 3 - units,
+				diagnosticCount: 3 - units,
+				review: { all: units, unresolved: 0, conflicting: 0 },
+				sources: { assetProperty: units, dataTable: 0, mixed: 0, stringTable: 0 }
+			});
+			const summaries = [3, 3, 3, 2, 3, 3].map(summary);
 			const outputs = [];
 			for (const backend of ["reference", "native"] as const) {
 				const configuration = {
@@ -393,11 +430,10 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										expect(borrowed).toBe(native);
 										yield* Scope.close(owner, Exit.void);
 									}
-									const oracle = columnarTextCorpusQuery(joined);
 									expect(
 										yield* native.summary(),
 										`${backend} step ${step}`
-									).toEqual(oracle.summary());
+									).toEqual(summaries[step]);
 									const reader = yield* (yield* SharedIndex).open();
 									const records = yield* decodePackageTextColumns(
 										yield* reader.layer(
@@ -436,9 +472,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										expect(recovered).not.toBe(native);
 										yield* native.search(invalid).pipe(Effect.result);
 										expect(yield* queries.open(request)).toBe(recovered);
-										expect(yield* recovered.summary()).toEqual(
-											oracle.summary()
-										);
+										expect(yield* recovered.summary()).toEqual(summaries[step]);
 									}
 								}
 								return snapshots;

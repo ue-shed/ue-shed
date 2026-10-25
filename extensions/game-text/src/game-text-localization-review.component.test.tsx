@@ -21,11 +21,17 @@ import {
 	target,
 	unit
 } from "../../../packages/game-text/src/localization.test-support.js";
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 import {
 	emptyLocalizationReviewFile,
 	updateLocalizationReviewFile
 } from "@ue-shed/localization/browser";
+import {
+	cannedFocus,
+	cannedSearch,
+	linePreview,
+	tableRow,
+	type CannedRow
+} from "./game-text-canned-search.test-support.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import {
 	chooseFilter,
@@ -34,8 +40,9 @@ import {
 	joined,
 	groupRows,
 	mount,
-	plain,
-	text
+	sourceAnswers,
+	targetAnswer,
+	targetAnswersOf
 } from "./game-text-localization.test-support.js";
 describe("Game Text review state", () => {
 	const lineK = joined.lines.find((line) => line.identity?.key === "K");
@@ -67,24 +74,26 @@ describe("Game Text review state", () => {
 		{ by: "reviewer", at: "2026-10-08T00:00:00.000Z" }
 	);
 	const reviewed = applyLocalizationReview(joined, reviewFile);
-	const reviewedQuery = textCorpusQuery(text, undefined, reviewed);
+	const reviewedAnswers = targetAnswersOf(reviewed, {
+		reviewed: 1,
+		not_reviewed: 3,
+		not_proofread: 3,
+		changed_since_review: 1,
+		machine_translated: 0
+	});
 
 	function reviewClient() {
 		const requests: LocalizationReviewRequest[] = [];
 		const api: GameTextClientApi = {
 			...client(),
-			search: (request) =>
-				Effect.succeed({
-					status: "ready",
-					page: (request.localization ? reviewedQuery : plain).search(request)
-				}),
+			...cannedSearch([...sourceAnswers, ...reviewedAnswers]),
 			localizationFocus: (request) => {
-				const id =
+				const line = reviewed.lines.find((item) =>
 					request.selection.kind === "line"
-						? request.selection.id
-						: reviewedQuery.focus({ id: request.selection.id, pageSize: 1 })
-								?.localization?.id;
-				const line = id ? reviewedQuery.localizationFocus(id) : undefined;
+						? item.id === request.selection.id
+						: item.origin.kind === "corpus" &&
+							item.origin.unitIds.includes(request.selection.id)
+				);
 				return Effect.succeed(
 					line
 						? { status: "found", focus: localizationFocusPage(reviewed, line, request) }
@@ -210,27 +219,84 @@ describe("Game Text key changes", () => {
 		renamedBase,
 		localizationKeyChanges(renamedBase, renamedText).pairs
 	);
-	const renamedQuery = textCorpusQuery(renamedText, undefined, renamed);
+	// Renamed is the new key of the gathered Welcome line, which is no longer in the assets.
+	const renamedLine = renamed.lines.find((line) => line.identity?.key === "Renamed");
+	const earlierLine = renamed.lines.find((line) => line.identity?.key === "Welcome");
+	if (!renamedLine || !earlierLine) throw new Error("Missing key change lines.");
+	const problems = ["key_changed", "not_gathered"] as const;
+	const renamedPreview = linePreview(renamedLine, { problems });
+	const renamedUnit = { ...tableRow("Renamed", "Welcome back"), problems };
+	const renamedRow: CannedRow = {
+		unit: renamedUnit,
+		line: renamedPreview,
+		groups: { problem: "key_changed" }
+	};
+	const earlierRow: CannedRow = {
+		line: linePreview(earlierLine, {
+			translations: { en: "Willkommen zurück", de: "Willkommen zurück" },
+			manifestLocations: ["/Game/Text/Table.Table"],
+			problems: ["changed_since_gather"]
+		}),
+		groups: { problem: "changed_since_gather" }
+	};
+	const keyChange = {
+		groups: {
+			problem: [
+				{
+					key: "key_changed",
+					label: "Key changed",
+					count: 1,
+					needWork: 1,
+					worst: "key_changed" as const
+				},
+				{
+					key: "changed_since_gather",
+					label: "Changed since gather",
+					count: 1,
+					needWork: 1,
+					worst: "changed_since_gather" as const
+				}
+			]
+		},
+		problems: {
+			key_changed: 1,
+			conflicting_source: 0,
+			not_gathered: 1,
+			changed_since_gather: 1,
+			translation: 0,
+			finding: 0,
+			unchecked: 0,
+			up_to_date: 0
+		}
+	};
+	const occurrences = renamedText.units[0]!.occurrences;
 	const keyClient = (): GameTextClientApi => ({
 		...client(),
-		focus: (request) => {
-			const focus = renamedQuery.focus(request);
-			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
-		},
-		search: (request) =>
-			Effect.succeed({
-				status: "ready",
-				page: (request.localization ? renamedQuery : textCorpusQuery(renamedText)).search(
-					request
-				)
-			}),
+		focus: cannedFocus([
+			{
+				diagnostics: [],
+				occurrences,
+				totalOccurrences: occurrences.length,
+				unit: renamedUnit,
+				localization: renamedPreview,
+				line: renamedPreview.id
+			}
+		]),
+		...cannedSearch([
+			targetAnswer(
+				{ filter: [{ field: "problem", op: "is", values: ["key_changed"] }] },
+				[renamedRow],
+				keyChange
+			),
+			targetAnswer({}, [renamedRow, earlierRow], keyChange)
+		]),
 		localizationFocus: (request) => {
-			const id =
+			const line = renamed.lines.find((item) =>
 				request.selection.kind === "line"
-					? request.selection.id
-					: renamedQuery.focus({ id: request.selection.id, pageSize: 1 })?.localization
-							?.id;
-			const line = id ? renamedQuery.localizationFocus(id) : undefined;
+					? item.id === request.selection.id
+					: item.origin.kind === "corpus" &&
+						item.origin.unitIds.includes(request.selection.id)
+			);
 			return Effect.succeed(
 				line
 					? { status: "found", focus: localizationFocusPage(renamed, line, request) }

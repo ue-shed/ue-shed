@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { savedFixtureCorpus } from "./saved-corpus.test-support.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
-import { textCorpusQuery } from "./query.test-support.js";
 
 const ROOT = "/Game/Fixture/GameTextActions/";
 // World Partition external actors are saved in their own packages beside the content root.
@@ -377,11 +376,9 @@ describe("Game Text identity cases in the saved fixture", () => {
 				)
 			);
 			expect(new Set(locked.map((occurrence) => occurrence.id)).size).toBe(2);
-			const matches = textCorpusQuery(corpus).search({
-				capability: "all",
-				pageSize: 50,
-				query: "The door is locked"
-			}).units;
+			const matches = corpus.units.filter((unit) =>
+				unit.occurrences.some((occurrence) => occurrence.source === "The door is locked")
+			);
 			// Each compiled literal folds into its saved pin's package-stamped identity. Unreal
 			// gathers two keys; both authored places and their compiled provenance remain visible.
 			const evidence = await readEvidence(fixtureEngine);
@@ -397,9 +394,8 @@ describe("Game Text identity cases in the saved fixture", () => {
 					.sort()
 			).toEqual([`[${packageNamespace}]`, `[${packageNamespace}]`]);
 			for (const match of matches) {
-				const unit = corpus.units.find((unit) => unit.id === match.id)!;
-				expect(unit.occurrences).toHaveLength(1);
-				expect(unit.occurrences[0]).toMatchObject({
+				expect(match.occurrences).toHaveLength(1);
+				expect(match.occurrences[0]).toMatchObject({
 					location: { propertyPath: "Pins[4].DefaultTextValue" },
 					copies: [
 						{

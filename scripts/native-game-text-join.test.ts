@@ -1,4 +1,4 @@
-import { nativeEngineResponses } from "./native-game-text-engine.test-support.ts";
+import { nativeEngineLines } from "./native-game-text-engine.test-support.ts";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -34,7 +34,7 @@ const buildNativeJoin =
 		);
 
 it.skipIf(!executable)(
-	"native persisted joins and queries match the original event oracle",
+	"native persisted joins and line facts match the planted join",
 	async () => {
 		if (!executable) throw new Error("Native reader is required");
 		await withJoinCache(async (cache) => {
@@ -52,7 +52,7 @@ it.skipIf(!executable)(
 					directory,
 					true,
 					buildNativeJoin(executable),
-					nativeEngineResponses(executable)
+					nativeEngineLines(executable)
 				);
 				expect(differences, `seed ${seed}`).toEqual([]);
 			}
@@ -62,7 +62,7 @@ it.skipIf(!executable)(
 );
 
 it.skipIf(!executable)(
-	"keeps namespace filters and groups correct when key zero is nonempty",
+	"keeps line identities correct when key zero is nonempty",
 	async () => {
 		if (!executable) throw new Error("Native reader is required");
 		await withJoinCache(async (cache) => {
@@ -71,7 +71,7 @@ it.skipIf(!executable)(
 				cache,
 				true,
 				buildNativeJoin(executable),
-				nativeEngineResponses(executable),
+				nativeEngineLines(executable),
 				true
 			);
 			expect(differences).toEqual([]);

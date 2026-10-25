@@ -5,8 +5,6 @@ import { describe, expect, it } from "vitest";
 import { GameTextIndexRefresh, GameTextIndexSource } from "./index-contract.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
-import { textCorpusQuery } from "./query.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
 import { LocalizationFocusRequest, localizationFocusPage } from "./localization-view.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -119,35 +117,72 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 					});
 					yield* Effect.gen(function* () {
 						const model = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-						const oracle = textCorpusQuery(
-							fixture.raw(),
-							undefined,
-							joinLocalizationTarget(fixture.raw(), model.evidence)
-						);
 						const request = {
 							query: "",
 							capability: "all" as const,
 							localization: { target: fixture.target.name }
 						};
-						const expected = oracle.localizationLines(request);
-						expect(expected).toHaveLength(1);
-						expect(expected[0]!.manifest[0]!.source[value]).toEqual(extra[value]);
-						expect(expected[0]!.manifest[0]!.metadata).toEqual({
-							Info: { Comment: value },
-							...extra
+						// Every file's extra JSON, comments and flags come back as written. The native
+						// culture's translation differs from the source, so German needs an update.
+						const mark = (culture: string, state: "translated" | "needs_update") => ({
+							culture,
+							state,
+							facts: [state],
+							unknownReasons: [],
+							reducedSourceChecking: false,
+							archive: {
+								namespace: "UI",
+								key: "K",
+								source: { Text: "Source", ...extra },
+								translation: { Text: "Shipped", ...extra },
+								metadata: extra
+							},
+							poTranslation: null,
+							po: {
+								msgctxt: "UI,K",
+								msgid: "Source",
+								msgstr: { 0: "Shipped" },
+								translatorComments: [scalars],
+								extractedComments: [scalars],
+								referenceComments: [scalars],
+								flags: [`flag-${scalars}`],
+								previousMsgidLines: [],
+								identity: { namespace: "UI", key: "K" }
+							}
 						});
-						expect(yield* model.query.localizationLines(request)).toEqual(expected);
+						const expected = [
+							{
+								id: 'Review:["UI","K"]',
+								origin: { kind: "corpus", unitIds: ["unreal:UI:K"] },
+								identity: { namespace: "UI", key: "K" },
+								source: "Source",
+								manifest: [
+									{
+										namespace: "UI",
+										key: "K",
+										source: { Text: "Source", ...extra },
+										path: "/Game/Text/Table.Table.Label",
+										metadata: { Info: { Comment: value }, ...extra },
+										devNotes: scalars
+									}
+								],
+								cultures: [mark("en", "translated"), mark("de", "needs_update")],
+								audience: "unknown"
+							}
+						];
+						const lines = yield* model.query.localizationLines(request);
+						expect(lines).toEqual(expected);
 						expect(yield* model.query.readLocalizationLines()).toEqual(expected);
-						expect(yield* model.query.localizationFocus(expected[0]!.id)).toEqual(
-							expected[0]
+						expect(yield* model.query.localizationFocus(lines[0]!.id)).toEqual(
+							lines[0]
 						);
 						const detail = Schema.decodeUnknownSync(LocalizationFocusRequest)({
 							target: fixture.target.name,
-							selection: { kind: "line", id: expected[0]!.id }
+							selection: { kind: "line", id: lines[0]!.id }
 						});
 						// The engine adds the line's problems; with no culture scope, every culture's.
 						expect(yield* model.query.localizationDetail(detail)).toEqual({
-							...localizationFocusPage(model.localization, expected[0]!, detail),
+							...localizationFocusPage(model.localization, lines[0]!, detail),
 							problems: ["translation"]
 						});
 					}).pipe(

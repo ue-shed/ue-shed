@@ -1,7 +1,9 @@
 import { TextNamespace } from "@ue-shed/localization/browser";
-import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
-import { joinLocalizationTarget } from "./localization.js";
+import { it } from "@effect/vitest";
+import { Effect, Schema } from "effect";
+import { describe, expect } from "vitest";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
+import type { NativeTextQuery } from "./native-query-contract.js";
 import {
 	archiveEntry,
 	corpus,
@@ -10,7 +12,6 @@ import {
 	manifestEntry,
 	target
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import { TextUnit, type TextCorpusSearchRequest, type TextGroupBy } from "./schema.js";
 import { textFileLabel, textFolderLabel } from "./text-origin.js";
 
@@ -68,50 +69,44 @@ const inNamespace = <Entry extends { readonly namespace: TextNamespace }>(
 	entry: Entry,
 	namespace: string
 ): Entry => ({ ...entry, namespace: decodeNamespace(namespace) });
-const join = joinLocalizationTarget(
-	text,
-	evidence(
-		[
-			...gathered.map(({ key, folder, namespace, source }) =>
-				inNamespace(
-					manifestEntry(
-						key,
-						key === "Quit" ? "Earlier" : source,
-						`/Game/${folder}/ST_${key}.ST_${key}`
-					),
-					namespace
-				)
-			),
+const files = evidence(
+	[
+		...gathered.map(({ key, folder, namespace, source }) =>
 			inNamespace(
-				manifestEntry("Code", "From code", "Source/Game/Private/Menu.cpp(12)"),
-				"Code"
-			)
-		],
-		[
-			...gathered.map(({ key, namespace, source }) =>
-				inNamespace(
-					archiveEntry(key, key === "Quit" ? "Earlier" : source, "Übersetzt"),
-					namespace
-				)
-			),
-			inNamespace(archiveEntry("Code", "From code", "Aus dem Code"), "Code")
-		],
-		undefined,
-		[
-			...gathered.map(({ key, namespace, source }) =>
-				archiveEntry(
+				manifestEntry(
 					key,
 					key === "Quit" ? "Earlier" : source,
-					key === "Quit" ? "Earlier" : source,
-					namespace
-				)
-			),
-			archiveEntry("Code", "From code", "From code", "Code")
-		]
-	),
-	target
+					`/Game/${folder}/ST_${key}.ST_${key}`
+				),
+				namespace
+			)
+		),
+		inNamespace(manifestEntry("Code", "From code", "Source/Game/Private/Menu.cpp(12)"), "Code")
+	],
+	[
+		...gathered.map(({ key, namespace, source }) =>
+			inNamespace(
+				archiveEntry(key, key === "Quit" ? "Earlier" : source, "Übersetzt"),
+				namespace
+			)
+		),
+		inNamespace(archiveEntry("Code", "From code", "Aus dem Code"), "Code")
+	],
+	undefined,
+	[
+		...gathered.map(({ key, namespace, source }) =>
+			archiveEntry(
+				key,
+				key === "Quit" ? "Earlier" : source,
+				key === "Quit" ? "Earlier" : source,
+				namespace
+			)
+		),
+		archiveEntry("Code", "From code", "From code", "Code")
+	]
 );
-const query = textCorpusQuery(text, undefined, join);
+const indexed = <A, E>(use: (query: NativeTextQuery) => Effect.Effect<A, E>) =>
+	withIndexedCorpus(text, { files }, (model) => use(model.query));
 const request: TextCorpusSearchRequest = {
 	query: "",
 	capability: "all",
@@ -132,115 +127,155 @@ describe("text groups and facets", () => {
 		expect(textFolderLabel("README.txt")).toBe("");
 	});
 
-	it("groups every matching line once, and an open group lists only its own lines", () => {
-		for (const by of [
-			"problem",
-			"folder",
-			"asset",
-			"origin",
-			"namespace"
-		] satisfies TextGroupBy[]) {
-			const page = query.search({ ...request, group: by });
-			const groups = page.groups;
-			if (groups === undefined) throw new Error(`No groups by ${by}.`);
-			expect(groups.by).toBe(by);
-			expect(groups.entries.reduce((sum, entry) => sum + entry.count, 0)).toBe(page.total);
-			for (const entry of groups.entries) {
-				const open = query.search({ ...request, group: by, openGroup: entry.key });
-				expect(open.localization?.lines).toHaveLength(entry.count);
-				// Opening a group never changes the counts or the other groups.
-				expect(open.total).toBe(page.total);
-				expect(open.groups).toEqual(groups);
-			}
-		}
-	});
+	it.live("groups every matching line once, and an open group lists only its own lines", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				for (const by of [
+					"problem",
+					"folder",
+					"asset",
+					"origin",
+					"namespace"
+				] satisfies TextGroupBy[]) {
+					const page = yield* query.search({ ...request, group: by });
+					const groups = page.groups;
+					if (groups === undefined) throw new Error(`No groups by ${by}.`);
+					expect(groups.by).toBe(by);
+					expect(groups.entries.reduce((sum, entry) => sum + entry.count, 0)).toBe(
+						page.total
+					);
+					for (const entry of groups.entries) {
+						const open = yield* query.search({
+							...request,
+							group: by,
+							openGroup: entry.key
+						});
+						expect(open.localization?.lines).toHaveLength(entry.count);
+						// Opening a group never changes the counts or the other groups.
+						expect(open.total).toBe(page.total);
+						expect(open.groups).toEqual(groups);
+					}
+				}
+			})
+		)
+	);
 
-	it("orders groups worst first and counts the lines that need work", () => {
-		const byFolder = query.search({ ...request, group: "folder" }).groups?.entries;
-		expect(byFolder?.map((entry) => [entry.label, entry.worst, entry.needWork])).toEqual([
-			["Content/Text/UI/Menus", "not_gathered", 2],
-			["Content/Text/Quests/Act1", "up_to_date", 0],
-			["Content/Text/UI/HUD", "up_to_date", 0],
-			["Source/Game/Private", "up_to_date", 0]
-		]);
-		const byProblem = query.search({ ...request, group: "problem" }).groups?.entries;
-		expect(byProblem?.map((entry) => entry.key)).toEqual([
-			"not_gathered",
-			"changed_since_gather",
-			"up_to_date"
-		]);
-	});
+	it.live("orders groups worst first and counts the lines that need work", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const byFolder = (yield* query.search({ ...request, group: "folder" })).groups
+					?.entries;
+				expect(
+					byFolder?.map((entry) => [entry.label, entry.worst, entry.needWork])
+				).toEqual([
+					["Content/Text/UI/Menus", "not_gathered", 2],
+					["Content/Text/Quests/Act1", "up_to_date", 0],
+					["Content/Text/UI/HUD", "up_to_date", 0],
+					["Source/Game/Private", "up_to_date", 0]
+				]);
+				const byProblem = (yield* query.search({ ...request, group: "problem" })).groups
+					?.entries;
+				expect(byProblem?.map((entry) => entry.key)).toEqual([
+					"not_gathered",
+					"changed_since_gather",
+					"up_to_date"
+				]);
+			})
+		)
+	);
 
-	it("lists folders a level at a time, each count equal to its filter's total", () => {
-		const top = query.search({ ...request, facets: { folder: "" } }).facets?.folders;
-		expect(top?.entries.map((entry) => entry.label)).toEqual(["Content", "Source"]);
-		const ui = query.search({ ...request, facets: { folder: "Content/Text/UI" } }).facets
-			?.folders;
-		expect(ui?.under).toBe("Content/Text/UI");
-		expect(ui?.entries.map((entry) => [entry.label, entry.count])).toEqual([
-			["Content/Text/UI/Menus", 2],
-			["Content/Text/UI/HUD", 1]
-		]);
-		for (const entry of ui?.entries ?? []) {
-			const filter = [
-				{ field: "folder" as const, op: "is" as const, values: [entry.key + "/"] }
-			];
-			const filtered = query.search({
-				...request,
-				filter,
-				facets: { folder: "Content/Text/UI" }
-			});
-			expect(filtered.total).toBe(entry.count);
-			// The folder facet leaves out folder clauses.
-			expect(filtered.facets?.folders).toEqual(ui);
-		}
-	});
+	it.live("lists folders a level at a time, each count equal to its filter's total", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const top = (yield* query.search({ ...request, facets: { folder: "" } })).facets
+					?.folders;
+				expect(top?.entries.map((entry) => entry.label)).toEqual(["Content", "Source"]);
+				const ui = (yield* query.search({
+					...request,
+					facets: { folder: "Content/Text/UI" }
+				})).facets?.folders;
+				expect(ui?.under).toBe("Content/Text/UI");
+				expect(ui?.entries.map((entry) => [entry.label, entry.count])).toEqual([
+					["Content/Text/UI/Menus", 2],
+					["Content/Text/UI/HUD", 1]
+				]);
+				for (const entry of ui?.entries ?? []) {
+					const filter = [
+						{ field: "folder" as const, op: "is" as const, values: [entry.key + "/"] }
+					];
+					const filtered = yield* query.search({
+						...request,
+						filter,
+						facets: { folder: "Content/Text/UI" }
+					});
+					expect(filtered.total).toBe(entry.count);
+					// The folder facet leaves out folder clauses.
+					expect(filtered.facets?.folders).toEqual(ui);
+				}
+			})
+		)
+	);
 
-	it("counts assets, origins and cultures, each leaving out its own clauses", () => {
-		const page = query.search({
-			...request,
-			facets: { assets: true, origins: true, cultures: true }
-		});
-		const assets = page.facets?.assets?.entries ?? [];
-		expect(assets).toHaveLength(6);
-		for (const entry of assets) {
-			const filtered = query.search({
-				...request,
-				filter: [{ field: "asset", op: "is", values: [entry.label] }],
-				facets: { assets: true }
-			});
-			expect(filtered.total).toBe(entry.count);
-			expect(filtered.facets?.assets).toEqual(page.facets?.assets);
-		}
-		expect(page.facets?.origins?.entries.map((entry) => [entry.key, entry.count])).toEqual([
-			["string_table", 5],
-			["cpp", 1]
-		]);
-		const cultures = page.facets?.cultures ?? [];
-		expect(cultures.map((facet) => facet.culture).sort()).toEqual(["de", "en"]);
-		// A culture set narrows the lines' work, but the picker still sees every culture.
-		const scoped = query.search({
-			...request,
-			localization: { target: target.name, cultures: [cultureCode("de")] },
-			facets: { cultures: true }
-		});
-		expect(scoped.facets?.cultures).toEqual(cultures);
-	});
+	it.live("counts assets, origins and cultures, each leaving out its own clauses", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const page = yield* query.search({
+					...request,
+					facets: { assets: true, origins: true, cultures: true }
+				});
+				const assets = page.facets?.assets?.entries ?? [];
+				expect(assets).toHaveLength(6);
+				for (const entry of assets) {
+					const filtered = yield* query.search({
+						...request,
+						filter: [{ field: "asset", op: "is", values: [entry.label] }],
+						facets: { assets: true }
+					});
+					expect(filtered.total).toBe(entry.count);
+					expect(filtered.facets?.assets).toEqual(page.facets?.assets);
+				}
+				expect(
+					page.facets?.origins?.entries.map((entry) => [entry.key, entry.count])
+				).toEqual([
+					["string_table", 5],
+					["cpp", 1]
+				]);
+				const cultures = page.facets?.cultures ?? [];
+				expect(cultures.map((facet) => facet.culture).sort()).toEqual(["de", "en"]);
+				// A culture set narrows the lines' work, but the picker still sees every culture.
+				const scoped = yield* query.search({
+					...request,
+					localization: { target: target.name, cultures: [cultureCode("de")] },
+					facets: { cultures: true }
+				});
+				expect(scoped.facets?.cultures).toEqual(cultures);
+			})
+		)
+	);
 
-	it("groups and filters text without a localization target", () => {
-		const page = query.search({ query: "", capability: "all", pageSize: 50, group: "folder" });
-		// Without a target only findings count: the repeated quest text comes first.
-		expect(page.groups?.entries.map((entry) => entry.label)).toEqual([
-			"Content/Text/Quests/Act1",
-			"Content/Text/UI/Menus",
-			"Content/Text/UI/HUD"
-		]);
-		const quests = query.search({
-			query: "",
-			capability: "all",
-			pageSize: 50,
-			filter: [{ field: "namespace", op: "is", values: ["Quests"] }]
-		});
-		expect(quests.total).toBe(2);
-	});
+	it.live("groups and filters text without a localization target", () =>
+		indexed((query) =>
+			Effect.gen(function* () {
+				const page = yield* query.search({
+					query: "",
+					capability: "all",
+					pageSize: 50,
+					group: "folder"
+				});
+				// Without a target only findings count: the repeated quest text comes first.
+				expect(page.groups?.entries.map((entry) => entry.label)).toEqual([
+					"Content/Text/Quests/Act1",
+					"Content/Text/UI/Menus",
+					"Content/Text/UI/HUD"
+				]);
+				const quests = yield* query.search({
+					query: "",
+					capability: "all",
+					pageSize: 50,
+					filter: [{ field: "namespace", op: "is", values: ["Quests"] }]
+				});
+				expect(quests.total).toBe(2);
+			})
+		)
+	);
 });

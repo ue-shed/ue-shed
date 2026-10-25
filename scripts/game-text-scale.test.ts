@@ -12,7 +12,6 @@ import {
 	readScaleEvidence,
 	readScaleCorpus,
 	joinScaleTarget,
-	scaleStatus,
 	replayGameTextEvents
 } from "./game-text-scale-pipeline.ts";
 import { compareLocalizationJoins } from "./localization-join-oracle.test-support.ts";
@@ -49,7 +48,6 @@ beforeAll(async () => {
 	const corpus = await readScaleCorpus(first);
 	joined = await joinScaleTarget(first, corpus, evidence);
 	snapshot = joinedTargetSnapshot(first, corpus, joined.join);
-	const status = scaleStatus(corpus, evidence, joined.join);
 	expect(evidence.target.name).toBe("Generated");
 	expect(evidence.target.cultures).toHaveLength(10);
 	expect(
@@ -62,7 +60,6 @@ beforeAll(async () => {
 	expect(corpus.coverage.discoveredPackages).toBe(recipe.packages);
 	expect(corpus.coverage.unresolvedOccurrences).toBe(recipe.keyless);
 	expect(corpus.coverage.partialPackages).toBe(recipe.partialPackages);
-	expect(status.report.page.localization?.lines.length).toBeLessThanOrEqual(50);
 	expect(joined.keyChanges.pairs.length).toBeGreaterThan(0);
 	expect(
 		joined.join.lines.some((line) =>

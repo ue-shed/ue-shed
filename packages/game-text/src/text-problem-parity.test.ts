@@ -2,15 +2,12 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
-import { LocalizationEvidence } from "@ue-shed/localization";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-import { joinLocalizationTarget } from "./localization.js";
 import { LocalizationCultureMark } from "./localization-schema.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import type {
 	TextCorpusSearchPage,
 	TextCorpusSearchRequest,
@@ -112,18 +109,116 @@ const problem = (...values: TextProblem[]): TextFilter[number] => ({
 	values
 });
 
-// Requests with fact and problem clauses. Without a findings layer no row has a finding, so a
-// `finding` clause or problem selects none.
-const variants: readonly Pick<TextCorpusSearchRequest, "filter">[] = [
-	{},
-	{ filter: [fact("unresolved")] },
-	{ filter: [fact("unresolved", "conflicting")] },
-	{ filter: [{ field: "fact", op: "is_not", values: ["unresolved"] }] },
-	{ filter: [problem("finding")] },
-	{ filter: [fact("conflicting"), problem("conflicting_source")] },
-	{ filter: [problem("unchecked")] },
-	{ filter: [problem("changed_since_gather")] },
-	{ filter: [problem("up_to_date")] }
+// Text without a key, as a row key.
+const NO_KEY = "(no key)";
+// Each row's problems. Without a target only the key with two texts has one. With it, UI/Changed
+// has other text than Unreal gathered and UI/Gone left the completely read Table; UI/New and
+// UI/Other were never gathered; the partly read package leaves UI/Partial unchecked, as text
+// without a key is; the PO files are empty, so no translation is synced, and UI/Untranslated
+// has none.
+const unitProblems = new Map(
+	Object.entries({
+		Changed: ["up_to_date"],
+		Conflict: ["conflicting_source"],
+		DupA: ["up_to_date"],
+		DupB: ["up_to_date"],
+		K: ["up_to_date"],
+		Long: ["up_to_date"],
+		New: ["up_to_date"],
+		[NO_KEY]: ["up_to_date"],
+		Other: ["up_to_date"],
+		Shared: ["up_to_date"],
+		Untranslated: ["up_to_date"]
+	} satisfies Record<string, readonly TextProblem[]>)
+);
+const lineProblems = new Map(
+	Object.entries({
+		Changed: ["changed_since_gather"],
+		Conflict: ["conflicting_source", "unchecked"],
+		DupA: ["translation"],
+		DupB: ["translation"],
+		Gone: ["changed_since_gather"],
+		K: ["translation"],
+		Long: ["translation"],
+		New: ["not_gathered"],
+		Other: ["not_gathered"],
+		Partial: ["unchecked"],
+		[NO_KEY]: ["unchecked"],
+		Shared: ["translation"],
+		Untranslated: ["translation"]
+	} satisfies Record<string, readonly TextProblem[]>)
+);
+const allUnits = [...unitProblems.keys()];
+const allLines = [...lineProblems.keys()];
+type ProblemCounts = Partial<Record<TextProblem, number>>;
+const unitCounts = { conflicting_source: 1, up_to_date: 10 };
+const lineCounts = {
+	conflicting_source: 1,
+	not_gathered: 2,
+	changed_since_gather: 2,
+	translation: 6,
+	unchecked: 3
+};
+
+// Requests with fact and problem clauses, the rows each selects without a target and with one,
+// and its problem counts, which leave out a problem clause. Without a findings layer no row has
+// a finding, so a `finding` clause or problem selects none.
+const variants: readonly {
+	readonly filter?: TextFilter;
+	readonly units: readonly string[];
+	readonly lines: readonly string[];
+	readonly problems: readonly [ProblemCounts, ProblemCounts];
+}[] = [
+	{ units: allUnits, lines: allLines, problems: [unitCounts, lineCounts] },
+	{
+		filter: [fact("unresolved")],
+		units: [NO_KEY],
+		lines: [NO_KEY],
+		problems: [{ up_to_date: 1 }, { unchecked: 1 }]
+	},
+	{
+		filter: [fact("unresolved", "conflicting")],
+		units: ["Conflict", NO_KEY],
+		lines: ["Conflict", NO_KEY],
+		problems: [
+			{ conflicting_source: 1, up_to_date: 1 },
+			{ conflicting_source: 1, unchecked: 2 }
+		]
+	},
+	{
+		filter: [{ field: "fact", op: "is_not", values: ["unresolved"] }],
+		units: allUnits.filter((key) => key !== NO_KEY),
+		lines: allLines.filter((key) => key !== NO_KEY),
+		problems: [
+			{ conflicting_source: 1, up_to_date: 9 },
+			{ ...lineCounts, unchecked: 2 }
+		]
+	},
+	{ filter: [problem("finding")], units: [], lines: [], problems: [unitCounts, lineCounts] },
+	{
+		filter: [fact("conflicting"), problem("conflicting_source")],
+		units: ["Conflict"],
+		lines: ["Conflict"],
+		problems: [{ conflicting_source: 1 }, { conflicting_source: 1, unchecked: 1 }]
+	},
+	{
+		filter: [problem("unchecked")],
+		units: [],
+		lines: ["Conflict", "Partial", NO_KEY],
+		problems: [unitCounts, lineCounts]
+	},
+	{
+		filter: [problem("changed_since_gather")],
+		units: [],
+		lines: ["Changed", "Gone"],
+		problems: [unitCounts, lineCounts]
+	},
+	{
+		filter: [problem("up_to_date")],
+		units: allUnits.filter((key) => key !== "Conflict"),
+		lines: [],
+		problems: [unitCounts, lineCounts]
+	}
 ];
 
 const builders = [
@@ -142,26 +237,36 @@ const builders = [
 		: [])
 ] as const;
 
-/** A page's rows, totals, counts, facets, problems and groups, keyed by the line or unit key. */
+/** A page's rows and their problems, keyed by the line or unit key, and its totals and groups. */
 function explained(page: TextCorpusSearchPage) {
 	const rows = page.localization
 		? page.localization.lines.map((line) => ({
-				key: line.identity?.key ?? line.id,
+				key: line.identity?.key ?? NO_KEY,
 				problems: line.problems,
 				findings: line.findings
 			}))
 		: page.units.map((unit) => ({
-				key: unit.identity.status === "resolved" ? unit.identity.key : unit.id,
+				key: unit.identity.status === "resolved" ? unit.identity.key : NO_KEY,
 				problems: unit.problems,
 				findings: unit.findings
 			}));
 	return {
-		rows: rows.sort((left, right) => left.key.localeCompare(right.key)),
+		rows,
+		problemsByKey: Object.fromEntries(rows.map((row) => [row.key, row.problems])),
 		total: page.total,
 		counts: page.counts,
-		origins: page.facets?.origins,
-		problems: page.problems,
-		groups: page.groups?.entries.map((entry) => [entry.key, entry.count, entry.needWork])
+		origins: page.facets?.origins?.entries.map((entry) => [
+			entry.key,
+			entry.count,
+			entry.needWork,
+			entry.worst
+		]),
+		problems: Object.fromEntries(
+			Object.entries(page.problems ?? {}).filter(([, count]) => count > 0)
+		),
+		groups: page.groups?.entries.map(
+			(entry) => [entry.key, entry.count, entry.needWork] as const
+		)
 	};
 }
 
@@ -247,18 +352,6 @@ describe("text problems in the engine and textProblems", () => {
 							const result = yield* (yield* GameTextIndexRefresh).refresh(
 								fixture.request
 							);
-							const memory = fixture.raw();
-							const evidence = yield* Effect.gen(function* () {
-								return yield* (yield* LocalizationEvidence).read({
-									projectRoot: fixture.projectRoot,
-									target: fixture.target
-								});
-							}).pipe(Effect.provide(fixture.evidence));
-							const inMemory = textCorpusQuery(
-								memory,
-								undefined,
-								joinLocalizationTarget(memory, evidence)
-							);
 							const seen = new Set<TextProblem>();
 							for (const scoped of [false, true])
 								for (const variant of variants)
@@ -268,7 +361,9 @@ describe("text problems in the engine and textProblems", () => {
 											capability: "all",
 											pageSize: 50,
 											facets: { origins: true },
-											...variant,
+											...(variant.filter === undefined
+												? undefined
+												: { filter: variant.filter }),
 											...(group === undefined ? undefined : { group }),
 											...(scoped
 												? { localization: { target: fixture.target.name } }
@@ -276,11 +371,28 @@ describe("text problems in the engine and textProblems", () => {
 										};
 										const label = JSON.stringify(request);
 										const page = yield* result.search(request);
-										// textProblems over the in-memory join decides every row.
-										expect(explained(page), label).toEqual(
-											explained(inMemory.search(request))
+										const found = explained(page);
+										const keys = scoped ? variant.lines : variant.units;
+										const table = scoped ? lineProblems : unitProblems;
+										expect(found.problemsByKey, label).toEqual(
+											Object.fromEntries(
+												keys.map((key) => [key, table.get(key)])
+											)
 										);
-										const rows = explained(page).rows;
+										expect(found.total, label).toBe(keys.length);
+										expect(found.problems, label).toEqual(
+											variant.problems[scoped ? 1 : 0]
+										);
+										// Each row is in one group.
+										if (group)
+											expect(
+												found.groups!.reduce(
+													(sum, [, count]) => sum + count,
+													0
+												),
+												label
+											).toBe(keys.length);
+										const rows = found.rows;
 										for (const row of rows)
 											for (const item of row.problems!) seen.add(item);
 										// A row has the problem its filter asked for, and without
@@ -302,6 +414,41 @@ describe("text problems in the engine and textProblems", () => {
 												false
 											);
 											expect(row.findings, label).toBeUndefined();
+										}
+										if (variant.filter === undefined) {
+											// Every row is a read-only asset property; one has no
+											// key and one two texts.
+											expect(found.counts, label).toMatchObject({
+												all: keys.length,
+												unresolved: 1,
+												conflicting: 1,
+												readOnly: keys.length
+											});
+											expect(found.origins, label).toEqual([
+												[
+													"asset",
+													keys.length,
+													scoped ? 11 : 1,
+													"conflicting_source"
+												]
+											]);
+											// Rows group by their worst problem; unchecked alone
+											// needs no work.
+											if (group)
+												expect(found.groups, label).toEqual(
+													scoped
+														? [
+																["conflicting_source", 1, 1],
+																["not_gathered", 2, 2],
+																["changed_since_gather", 2, 2],
+																["translation", 6, 6],
+																["unchecked", 2, 0]
+															]
+														: [
+																["conflicting_source", 1, 1],
+																["up_to_date", 10, 0]
+															]
+												);
 										}
 										if (!scoped || asked !== undefined) continue;
 										// Every line, as the engine reads its inputs.

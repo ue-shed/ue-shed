@@ -14,13 +14,18 @@ import {
 	STARTER_GAME_TEXT_RULES
 } from "@ue-shed/game-text/rules";
 import {
+	LocalizationEvidenceLineId,
+	LocalizationLineId,
 	makeTextOccurrenceId,
 	makeTextUnitId,
 	TextQualityRuleId,
 	TextRoleId,
-	TextUnit
+	TextUnit,
+	type LocalizationLinePreview,
+	type TextCorpusFocus,
+	type TextOccurrence
 } from "@ue-shed/game-text/schema";
-import { makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
+import { makeLocalizationEvidenceTestLayer, TextKey, TextNamespace } from "@ue-shed/localization";
 import { AssetReaderError, type SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -31,8 +36,12 @@ import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { LocalFilesLive, makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
-	oracleGameTextIndexLayer,
-	workbenchGameTextIndexOracleLayer
+	cannedGameTextIndexLayer,
+	linesPage,
+	poTranslations,
+	searchPage,
+	workbenchGameTextIndexLayer,
+	type CannedQuery
 } from "./game-text-index.test-support.js";
 import {
 	cultureCode,
@@ -48,9 +57,26 @@ import {
 } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
-const WorkbenchGameTextLive = indexedWorkbenchGameTextLive.pipe(
-	Layer.provide(workbenchGameTextIndexOracleLayer)
-);
+const workbenchGameTextLive = (answers?: CannedQuery) =>
+	indexedWorkbenchGameTextLive.pipe(Layer.provide(workbenchGameTextIndexLayer(answers)));
+const WorkbenchGameTextLive = workbenchGameTextLive();
+/**
+ * The localization corpus's one unit, and its target's line: not synced in either culture while
+ * the PO files hold Pending.
+ */
+const localizationAnswers: CannedQuery = ({ request, evidence }) => ({
+	search: () =>
+		Effect.succeed(
+			request.targetName === undefined
+				? searchPage({ total: 1 })
+				: searchPage({
+						total: 1,
+						localization: linesPage(localizationTarget.name, {
+							notSynced: poTranslations(evidence).includes("Pending") ? 2 : 0
+						})
+					})
+		)
+});
 
 const noLocalization = makeLocalizationEvidenceTestLayer({
 	discover: () => Effect.succeed({ schemaVersion: 1, targets: [], diagnostics: [] }),
@@ -264,6 +290,84 @@ function splitUnit(): TextUnit {
 	});
 }
 
+/** The split unit's focus over some of its places. */
+function splitFocus(
+	occurrences: readonly TextOccurrence[],
+	source: TextUnit["source"],
+	characterCount: number
+): TextCorpusFocus {
+	const saved = splitUnit();
+	return {
+		diagnostics: [],
+		occurrences,
+		totalOccurrences: occurrences.length,
+		unit: {
+			id: saved.id,
+			identity: saved.identity,
+			source,
+			contexts: occurrences.map(({ editCapability, location }) => ({
+				editCapability,
+				location
+			})),
+			locationKinds: occurrences.map(({ location }) => location.kind),
+			characterCount,
+			wordCount: 2,
+			occurrenceCount: occurrences.length,
+			remainingContextCount: 0,
+			reviewSignals: []
+		}
+	};
+}
+
+/**
+ * The target splits the unit into a line per namespace, beside the manifest's own line; each
+ * line's focus lists only its own place.
+ */
+const splitAnswers: CannedQuery = ({ request }) => {
+	if (request.targetName === undefined) return {};
+	const saved = splitUnit();
+	const [table, base] = saved.occurrences;
+	const line = (namespace: string, source: string): LocalizationLinePreview => ({
+		id: LocalizationLineId.make(`Test:${JSON.stringify([namespace, "K"])}`),
+		origin: { kind: "corpus", unitIds: [saved.id] },
+		identity: { namespace: TextNamespace.make(namespace), key: TextKey.make("K") },
+		source,
+		manifestLocations: [],
+		remainingLocationCount: 0,
+		cultures: []
+	});
+	const lines = [line("UI [Beta]", "Table label"), line("UI", "Base label")];
+	const focus = new Map([
+		[lines[0]!.id, splitFocus([table!], { status: "consistent", value: "Table label" }, 11)],
+		[lines[1]!.id, splitFocus([base!], { status: "consistent", value: "Base label" }, 10)]
+	]);
+	const manifest: LocalizationLinePreview = {
+		...line("NS", "Source"),
+		origin: {
+			kind: "evidence",
+			id: LocalizationEvidenceLineId.make('evidence:Test:["NS","K"]')
+		},
+		manifestLocations: ["/Game/Text/Table.Table"]
+	};
+	return {
+		search: () =>
+			Effect.succeed(
+				searchPage({
+					total: 3,
+					localization: linesPage(localizationTarget.name, {
+						lines: [manifest, ...lines]
+					})
+				})
+			),
+		focus: (request) =>
+			Effect.succeed(
+				request.localization
+					? focus.get(request.localization.id)
+					: splitFocus(saved.occurrences, saved.source, 11)
+			)
+	};
+};
+
 it.effect("passes localization corpus focus through the selected target's query", () =>
 	Effect.gen(function* () {
 		const saved = splitUnit();
@@ -309,7 +413,7 @@ it.effect("passes localization corpus focus through the selected target's query"
 		});
 	}).pipe(
 		Effect.provide(
-			WorkbenchGameTextLive.pipe(
+			workbenchGameTextLive(splitAnswers).pipe(
 				Layer.provide(gameTextAdapters),
 				Layer.provide(selectedProject),
 				Layer.provide(
@@ -375,7 +479,7 @@ it.effect("operation refresh reloads evidence and gathers also rescan the retain
 			yield* service.endOperation();
 		}).pipe(
 			Effect.provide(
-				WorkbenchGameTextLive.pipe(
+				workbenchGameTextLive(localizationAnswers).pipe(
 					Layer.provide(gameTextAdapters),
 					Layer.provide(selectedProject),
 					Layer.provide(reader),
@@ -453,7 +557,7 @@ it.effect(
 				expect(reads).toBe(2);
 			}).pipe(
 				Effect.provide(
-					WorkbenchGameTextLive.pipe(
+					workbenchGameTextLive(localizationAnswers).pipe(
 						Layer.provide(gameTextAdapters),
 						Layer.provide(selectedProject),
 						Layer.provide(reader),
@@ -1150,7 +1254,7 @@ it("exports the selected target's localization quality list as a replayable repo
 				expect(csv.split("\r\n")[0]).toContain('"Finding ID","Scan status"');
 			}).pipe(
 				Effect.provide(
-					WorkbenchGameTextLive.pipe(
+					workbenchGameTextLive(localizationAnswers).pipe(
 						Layer.provide(reader),
 						Layer.provide(
 							Layer.mergeAll(
@@ -1274,7 +1378,7 @@ function failedIndexSteps(failure: IndexFailure) {
 			const steps = yield* GameTextIndexSteps;
 			return GameTextIndexSteps.of({ ...steps, prepareTarget: () => Effect.fail(failure) });
 		})
-	).pipe(Layer.provide(oracleGameTextIndexLayer(() => Effect.succeed(emptyCorpus))));
+	).pipe(Layer.provide(cannedGameTextIndexLayer(() => Effect.succeed(emptyCorpus))));
 }
 
 for (const failure of [

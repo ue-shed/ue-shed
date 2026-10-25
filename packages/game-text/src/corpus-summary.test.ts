@@ -3,13 +3,17 @@ import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { textCorpusQuery } from "./query.test-support.js";
 import { LocalizationStatusReport, localizationStatusReport } from "./localization-status.js";
 import { localizationProgressReport, LocalizationProgressReport } from "./localization-reports.js";
 import { textQualityQuery } from "./quality-query.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { corpus, evidence } from "./localization.test-support.js";
-import { TextCorpusDiagnostic, TextPackageCoverage, type TextCorpus } from "./schema.js";
+import {
+	TextCorpusDiagnostic,
+	TextPackageCoverage,
+	type TextCorpus,
+	type TextCorpusSearchPage
+} from "./schema.js";
 import { TextCorpusDiagnosticSummary, textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import { GameTextInvestigationExport, GameTextInvestigationPreset } from "./investigation.js";
 const diagnostics = Array.from({ length: 1000 }, (_, index) =>
@@ -26,6 +30,20 @@ const packageCoverage = Array.from({ length: 1200 }, (_, index) =>
 	})
 );
 const text = { ...corpus(), diagnostics, packageCoverage };
+// A status report carries the page it was given; these reports bound the corpus beside it.
+const page: TextCorpusSearchPage = {
+	counts: {
+		all: 0,
+		unresolved: 0,
+		conflicting: 0,
+		editable: 0,
+		readOnly: 0,
+		withoutNotes: 0,
+		origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
+	},
+	total: 0,
+	units: []
+};
 describe("bounded corpus reports", () => {
 	it("loc status retains not_gatherable status and its optional count", () => {
 		const text: TextCorpus = {
@@ -39,7 +57,6 @@ describe("bounded corpus reports", () => {
 				}
 			]
 		};
-		const page = textCorpusQuery(text).search({ capability: "all", pageSize: 5, query: "" });
 		const report = Schema.decodeUnknownSync(LocalizationStatusReport)(
 			localizationStatusReport(text, evidence(), page)
 		);
@@ -50,11 +67,6 @@ describe("bounded corpus reports", () => {
 	it("keeps total diagnostics by code and bounds status and progress package evidence", () => {
 		const files = evidence();
 		const join = joinLocalizationTarget(text, files);
-		const page = textCorpusQuery(text, undefined, join).search({
-			capability: "all",
-			pageSize: 5,
-			query: ""
-		});
 		const reports = [
 			localizationStatusReport(text, files, page),
 			localizationProgressReport(text, join, files)
@@ -146,11 +158,6 @@ describe("bounded corpus reports", () => {
 		const files = evidence();
 		const { packageCoverage: availablePackages, ...withoutPackages } = corpus();
 		expect(availablePackages).toBeDefined();
-		const page = textCorpusQuery(withoutPackages).search({
-			capability: "all",
-			pageSize: 5,
-			query: ""
-		});
 		expect(
 			localizationStatusReport(withoutPackages, files, page).packageCoverage
 		).toBeUndefined();

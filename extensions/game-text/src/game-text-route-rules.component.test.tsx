@@ -11,6 +11,7 @@ import {
 	makeClient,
 	mount,
 	openQuality,
+	planted,
 	rulesDocument
 } from "./game-text-route.test-support.js";
 it("highlights terminology, shows its asset in Unreal and opens the matching line in Text", async () => {
@@ -137,7 +138,7 @@ it("offers to load an existing starter rules file and labels invalid rules", asy
 	const loaded = textQualityQuery(indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES));
 	const requested: boolean[] = [];
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			createStarterRules: (loadExisting) => {
 				requested.push(loadExisting);
 				return Effect.succeed(

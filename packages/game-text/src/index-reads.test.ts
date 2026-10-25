@@ -10,30 +10,18 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import {
-	derivedAggregate,
-	derivedCorpusFingerprint,
-	derivedCorpusHeader,
-	derivedLineViews,
-	type DerivedReadsBase
-} from "./index-derived-reads.test-support.js";
-import {
 	LocalizationLineField,
 	TextAggregateRequest,
+	type LocalizationLineView,
 	type TextAggregateDimension
 } from "./index-reads.js";
-import type { GameTextIndexRefreshResult } from "./index-contract.js";
 import {
 	createLocalizationBaseline,
 	indexedLocalizationBaseline,
 	indexedLocalizationProgressReport,
 	localizationProgressReport
 } from "./localization-reports.js";
-import {
-	LOCALIZATION_GATE_FIELDS,
-	DEFAULT_GATE_FAILURES,
-	indexedLocalizationGateTarget,
-	localizationGateTarget
-} from "./localization-gate.js";
+import { DEFAULT_GATE_FAILURES, indexedLocalizationGateTarget } from "./localization-gate.js";
 import {
 	LOCALIZATION_LINES_CSV_FIELDS,
 	localizationLinesCsv,
@@ -201,60 +189,430 @@ const builders = [
 		: [])
 ] as const;
 
-/**
- * The derived oracle reads lines through the model's own whole-line exports: one pass records the
- * requests it makes, the exports answer them, and a second pass derives from those answers.
- */
-const derivedReader = (model: GameTextIndexRefreshResult) =>
-	Effect.gen(function* () {
-		const corpus = yield* model.query.readCorpus();
-		const answers = new Map<
-			string,
-			readonly import("./localization-schema.js").LocalizationLine[]
-		>();
-		return <A>(derive: (base: DerivedReadsBase) => A) =>
-			Effect.gen(function* () {
-				const requests = new Map<string, Matching>();
-				const base: DerivedReadsBase = {
-					lines: (request) => {
-						const key = JSON.stringify(request);
-						if (!answers.has(key)) requests.set(key, request);
-						return answers.get(key) ?? [];
-					},
-					search: () => {
-						throw new Error("The derived reads do not search.");
-					},
-					corpus: () => corpus,
-					cultures: model.localization.cultures
-				};
-				derive(base);
-				for (const [key, request] of requests)
-					answers.set(key, yield* model.query.localizationLines(request));
-				return derive(base);
-			});
-	});
+const mushroomOrStem: readonly TextFilterClause[] = [
+	{ field: "source", op: "is", values: ["Mushroom", "Stem"] }
+];
+const withProblems: readonly TextFilterClause[] = [
+	{ field: "problem", op: "is_not", values: ["up_to_date"] }
+];
+const notTranslated: readonly TextFilterClause[] = [
+	{ field: "translation", op: "is", values: ["not_synced", "missing"] }
+];
+const key = (namespace: string, name: string) => JSON.stringify([namespace, name]);
 
-const dimensionSets: readonly (readonly TextAggregateDimension[])[] = [
-	["culture", "state"],
-	["culture", "state", "fact"],
-	["culture", "state", "unknown_reason"],
-	["culture", "review_status"],
-	["culture", "review"],
-	["culture", "gathered", "review_flag"],
-	["translation_key"],
-	["source"],
-	["gathered", "audience"],
-	["problem"],
-	["finding"],
-	["origin"],
-	["culture", "state", "problem"]
+/**
+ * Each aggregate's groups as [key, lines, source words, line-break words, lines without a word
+ * count]. Every language's archive holds `<culture>: <source>` for Title, Cap, Hyphen, Changed,
+ * Synced and Gone: the native culture's translation differs from its source, so English counts
+ * them translated and German's archive, written for the earlier English, needs an update. Lone,
+ * Thai and New are not in the manifest; Gone is only there, and Stem's manifest entry names a
+ * package the project lacks. Source words split on whitespace; line-break words are Unreal's, of
+ * the gathered text: Changed counts "Old wording here", Cap "Red cap", and Thai text has none.
+ */
+const aggregates: readonly {
+	readonly by: readonly TextAggregateDimension[];
+	readonly filter?: readonly TextFilterClause[];
+	readonly cultures?: readonly string[];
+	readonly lines: number;
+	readonly groups: readonly (readonly [readonly string[], number, number, number, number])[];
+}[] = [
+	{
+		by: ["culture", "state"],
+		lines: 13,
+		groups: [
+			[["en", "translated"], 2, 4, 6, 0],
+			[["en", "not_translated"], 3, 4, 4, 0],
+			[["en", "not_synced"], 1, 4, 4, 0],
+			[["en", "not_gathered"], 3, 7, 5, 1],
+			[["en", "changed_since_gather"], 1, 2, 3, 0],
+			[["en", "not_found"], 2, 4, 4, 0],
+			[["en", "unknown"], 1, 4, 2, 0],
+			[["de", "not_translated"], 3, 4, 4, 0],
+			[["de", "needs_update"], 2, 4, 6, 0],
+			[["de", "not_synced"], 1, 4, 4, 0],
+			[["de", "not_gathered"], 3, 7, 5, 1],
+			[["de", "changed_since_gather"], 1, 2, 3, 0],
+			[["de", "not_found"], 2, 4, 4, 0],
+			[["de", "unknown"], 1, 4, 2, 0]
+		]
+	},
+	{
+		by: ["culture", "state"],
+		cultures: ["de"],
+		lines: 13,
+		groups: [
+			[["de", "not_translated"], 3, 4, 4, 0],
+			[["de", "needs_update"], 2, 4, 6, 0],
+			[["de", "not_synced"], 1, 4, 4, 0],
+			[["de", "not_gathered"], 3, 7, 5, 1],
+			[["de", "changed_since_gather"], 1, 2, 3, 0],
+			[["de", "not_found"], 2, 4, 4, 0],
+			[["de", "unknown"], 1, 4, 2, 0]
+		]
+	},
+	{
+		by: ["culture", "state"],
+		filter: mushroomOrStem,
+		lines: 4,
+		groups: [
+			[["en", "translated"], 1, 1, 1, 0],
+			[["en", "not_translated"], 2, 2, 2, 0],
+			[["en", "not_found"], 1, 1, 1, 0],
+			[["de", "not_translated"], 2, 2, 2, 0],
+			[["de", "needs_update"], 1, 1, 1, 0],
+			[["de", "not_found"], 1, 1, 1, 0]
+		]
+	},
+	{
+		by: ["culture", "state"],
+		filter: mushroomOrStem,
+		cultures: ["de"],
+		lines: 4,
+		groups: [
+			[["de", "not_translated"], 2, 2, 2, 0],
+			[["de", "needs_update"], 1, 1, 1, 0],
+			[["de", "not_found"], 1, 1, 1, 0]
+		]
+	},
+	{
+		by: ["culture", "state"],
+		filter: withProblems,
+		lines: 13,
+		groups: [
+			[["en", "translated"], 2, 4, 6, 0],
+			[["en", "not_translated"], 3, 4, 4, 0],
+			[["en", "not_synced"], 1, 4, 4, 0],
+			[["en", "not_gathered"], 3, 7, 5, 1],
+			[["en", "changed_since_gather"], 1, 2, 3, 0],
+			[["en", "not_found"], 2, 4, 4, 0],
+			[["en", "unknown"], 1, 4, 2, 0],
+			[["de", "not_translated"], 3, 4, 4, 0],
+			[["de", "needs_update"], 2, 4, 6, 0],
+			[["de", "not_synced"], 1, 4, 4, 0],
+			[["de", "not_gathered"], 3, 7, 5, 1],
+			[["de", "changed_since_gather"], 1, 2, 3, 0],
+			[["de", "not_found"], 2, 4, 4, 0],
+			[["de", "unknown"], 1, 4, 2, 0]
+		]
+	},
+	{
+		by: ["culture", "state"],
+		filter: notTranslated,
+		lines: 4,
+		groups: [
+			[["en", "not_translated"], 3, 4, 4, 0],
+			[["en", "not_synced"], 1, 4, 4, 0],
+			[["de", "not_translated"], 3, 4, 4, 0],
+			[["de", "not_synced"], 1, 4, 4, 0]
+		]
+	},
+	{
+		by: ["culture", "state", "fact"],
+		lines: 13,
+		groups: [
+			[["en", "translated", "translated"], 2, 4, 6, 0],
+			[["en", "not_translated", "not_translated"], 3, 4, 4, 0],
+			[["en", "not_synced", "translated"], 1, 4, 4, 0],
+			[["en", "not_synced", "not_synced"], 1, 4, 4, 0],
+			[["en", "not_gathered", "not_translated"], 3, 7, 5, 1],
+			[["en", "not_gathered", "not_gathered"], 3, 7, 5, 1],
+			[["en", "changed_since_gather", "translated"], 1, 2, 3, 0],
+			[["en", "changed_since_gather", "changed_since_gather"], 1, 2, 3, 0],
+			[["en", "not_found", "translated"], 2, 4, 4, 0],
+			[["en", "not_found", "not_found"], 2, 4, 4, 0],
+			[["en", "unknown", "translated"], 1, 4, 2, 0],
+			[["en", "unknown", "unknown"], 1, 4, 2, 0],
+			[["de", "not_translated", "not_translated"], 3, 4, 4, 0],
+			[["de", "needs_update", "needs_update"], 2, 4, 6, 0],
+			[["de", "not_synced", "needs_update"], 1, 4, 4, 0],
+			[["de", "not_synced", "not_synced"], 1, 4, 4, 0],
+			[["de", "not_gathered", "not_translated"], 3, 7, 5, 1],
+			[["de", "not_gathered", "not_gathered"], 3, 7, 5, 1],
+			[["de", "changed_since_gather", "needs_update"], 1, 2, 3, 0],
+			[["de", "changed_since_gather", "changed_since_gather"], 1, 2, 3, 0],
+			[["de", "not_found", "needs_update"], 2, 4, 4, 0],
+			[["de", "not_found", "not_found"], 2, 4, 4, 0],
+			[["de", "unknown", "needs_update"], 1, 4, 2, 0],
+			[["de", "unknown", "unknown"], 1, 4, 2, 0]
+		]
+	},
+	{
+		by: ["culture", "state", "unknown_reason"],
+		lines: 13,
+		groups: [
+			[["en", "unknown", "conflicting_source"], 1, 4, 2, 0],
+			[["de", "unknown", "conflicting_source"], 1, 4, 2, 0]
+		]
+	},
+	{ by: ["culture", "review_status"], lines: 13, groups: [] },
+	{ by: ["culture", "review"], lines: 13, groups: [] },
+	{ by: ["culture", "gathered", "review_flag"], lines: 13, groups: [] },
+	{
+		by: ["translation_key"],
+		lines: 13,
+		groups: [
+			[[key("Shop", "Item")], 1, 1, 1, 0],
+			[[key("Shop", "Stem")], 1, 1, 1, 0],
+			[[key("UI", "Cap")], 1, 4, 2, 0],
+			[[key("UI", "Changed")], 1, 2, 3, 0],
+			[[key("UI", "Gone")], 1, 3, 3, 0],
+			[[key("UI", "Header")], 1, 1, 1, 0],
+			[[key("UI", "Hyphen")], 1, 3, 5, 0],
+			[[key("UI", "Lone")], 1, 2, 2, 0],
+			[[key("UI", "New")], 1, 3, 3, 0],
+			[[key("UI", "Optional")], 1, 2, 2, 0],
+			[[key("UI", "Synced")], 1, 4, 4, 0],
+			[[key("UI", "Thai")], 1, 2, 0, 1],
+			[[key("UI", "Title")], 1, 1, 1, 0]
+		]
+	},
+	{
+		by: ["source"],
+		lines: 13,
+		groups: [
+			[["Brand new text"], 1, 3, 3, 0],
+			[["Gone from saves"], 1, 3, 3, 0],
+			[["Mushroom"], 3, 3, 3, 0],
+			[["New wording"], 1, 2, 3, 0],
+			[["Only optional"], 1, 2, 2, 0],
+			[["Press {Key} to jump!"], 1, 4, 4, 0],
+			[["Red cap Blue cap"], 1, 4, 2, 0],
+			[["Stem"], 1, 1, 1, 0],
+			[["a\ud800 b"], 1, 2, 2, 0],
+			[["well-known e-mail (ok)"], 1, 3, 5, 0],
+			[["ภาษาไทย ok"], 1, 2, 0, 1]
+		]
+	},
+	{
+		by: ["gathered", "audience"],
+		lines: 13,
+		groups: [
+			[["false", "unknown"], 3, 7, 5, 1],
+			[["true", "unknown"], 10, 22, 23, 0]
+		]
+	},
+	{
+		by: ["problem"],
+		lines: 13,
+		groups: [
+			[["conflicting_source"], 1, 4, 2, 0],
+			[["not_gathered"], 3, 7, 5, 1],
+			[["changed_since_gather"], 3, 6, 7, 0],
+			[["translation"], 6, 12, 14, 0],
+			[["unchecked"], 1, 4, 2, 0]
+		]
+	},
+	{
+		by: ["problem"],
+		filter: mushroomOrStem,
+		lines: 4,
+		groups: [
+			[["changed_since_gather"], 1, 1, 1, 0],
+			[["translation"], 3, 3, 3, 0]
+		]
+	},
+	{ by: ["problem"], filter: notTranslated, lines: 4, groups: [[["translation"], 4, 8, 8, 0]] },
+	{ by: ["finding"], lines: 13, groups: [] },
+	{ by: ["origin"], lines: 13, groups: [[["asset"], 13, 29, 28, 1]] },
+	{
+		by: ["culture", "state", "problem"],
+		lines: 13,
+		groups: [
+			[["en", "translated", "translation"], 2, 4, 6, 0],
+			[["en", "not_translated", "translation"], 3, 4, 4, 0],
+			[["en", "not_synced", "translation"], 1, 4, 4, 0],
+			[["en", "not_gathered", "not_gathered"], 3, 7, 5, 1],
+			[["en", "changed_since_gather", "changed_since_gather"], 1, 2, 3, 0],
+			[["en", "not_found", "changed_since_gather"], 2, 4, 4, 0],
+			[["en", "unknown", "conflicting_source"], 1, 4, 2, 0],
+			[["en", "unknown", "unchecked"], 1, 4, 2, 0],
+			[["de", "not_translated", "translation"], 3, 4, 4, 0],
+			[["de", "needs_update", "translation"], 2, 4, 6, 0],
+			[["de", "not_synced", "translation"], 1, 4, 4, 0],
+			[["de", "not_gathered", "not_gathered"], 3, 7, 5, 1],
+			[["de", "changed_since_gather", "changed_since_gather"], 1, 2, 3, 0],
+			[["de", "not_found", "changed_since_gather"], 2, 4, 4, 0],
+			[["de", "unknown", "conflicting_source"], 1, 4, 2, 0],
+			[["de", "unknown", "unchecked"], 1, 4, 2, 0]
+		]
+	}
 ];
-const filters: readonly (readonly TextFilterClause[])[] = [
-	[],
-	[{ field: "source", op: "is", values: ["Mushroom", "Stem"] }],
-	[{ field: "problem", op: "is_not", values: ["up_to_date"] }],
-	[{ field: "translation", op: "is", values: ["not_synced", "missing"] }]
+
+const table = {
+	packageFile: "Content/Text/Table.uasset",
+	objectPath: "/Game/Text/Table.Table",
+	origin: "asset"
+};
+const store = { ...table, objectPath: "/Game/Shop/Store.Store" };
+const notTranslatedMarks = [
+	["en", "not_translated", ["not_translated"], null],
+	["de", "not_translated", ["not_translated"], null]
 ];
+const notGatheredMarks = [
+	["en", "not_gathered", ["not_translated", "not_gathered"], null],
+	["de", "not_gathered", ["not_translated", "not_gathered"], null]
+];
+const evidenceOnly = ["evidence_only"];
+/** Every line's facts, each culture's mark as [culture, state, facts, shipped translation]. */
+const lineFacts = [
+	{
+		key: "Shop/Item",
+		source: "Mushroom",
+		problems: ["translation"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: notTranslatedMarks
+	},
+	{
+		key: "Shop/Stem",
+		source: "Stem",
+		problems: ["changed_since_gather"],
+		signals: evidenceOnly,
+		places: [store],
+		marks: [
+			["en", "not_found", ["translated", "not_found"], "en Stiel"],
+			["de", "not_found", ["needs_update", "not_found"], "de Stiel"]
+		]
+	},
+	{
+		key: "UI/Cap",
+		source: "Red cap Blue cap",
+		problems: ["conflicting_source", "unchecked"],
+		signals: ["conflicting", "evidence_only"],
+		places: [table, table],
+		marks: [
+			["en", "unknown", ["translated", "unknown"], "en: Red cap"],
+			["de", "unknown", ["needs_update", "unknown"], "de: Red cap"]
+		]
+	},
+	{
+		key: "UI/Changed",
+		source: "New wording",
+		problems: ["changed_since_gather"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: [
+			[
+				"en",
+				"changed_since_gather",
+				["translated", "changed_since_gather"],
+				"en: Old wording here"
+			],
+			[
+				"de",
+				"changed_since_gather",
+				["needs_update", "changed_since_gather"],
+				"de: Old wording here"
+			]
+		]
+	},
+	{
+		key: "UI/Gone",
+		source: "Gone from saves",
+		problems: ["changed_since_gather"],
+		signals: [],
+		places: [],
+		marks: [
+			["en", "not_found", ["translated", "not_found"], "en: Gone from saves"],
+			["de", "not_found", ["needs_update", "not_found"], "de: Gone from saves"]
+		]
+	},
+	{
+		key: "UI/Header",
+		source: "Mushroom",
+		problems: ["translation"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: notTranslatedMarks
+	},
+	{
+		key: "UI/Hyphen",
+		source: "well-known e-mail (ok)",
+		problems: ["translation"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: [
+			["en", "translated", ["translated"], "en: well-known e-mail (ok)"],
+			["de", "needs_update", ["needs_update"], "de: well-known e-mail (ok)"]
+		]
+	},
+	{
+		key: "UI/Lone",
+		source: "a\ud800 b",
+		problems: ["not_gathered"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: notGatheredMarks
+	},
+	{
+		key: "UI/New",
+		source: "Brand new text",
+		problems: ["not_gathered"],
+		signals: evidenceOnly,
+		places: [store],
+		marks: notGatheredMarks
+	},
+	{
+		key: "UI/Optional",
+		source: "Only optional",
+		problems: ["translation"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: notTranslatedMarks
+	},
+	{
+		// The PO edit not yet synced to the archive is the translation it ships.
+		key: "UI/Synced",
+		source: "Press {Key} to jump!",
+		problems: ["translation"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: [
+			["en", "not_synced", ["translated", "not_synced"], "en pending"],
+			["de", "not_synced", ["needs_update", "not_synced"], "de pending"]
+		]
+	},
+	{
+		key: "UI/Thai",
+		source: "ภาษาไทย ok",
+		problems: ["not_gathered"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: notGatheredMarks
+	},
+	{
+		key: "UI/Title",
+		source: "Mushroom",
+		problems: ["translation"],
+		signals: evidenceOnly,
+		places: [table],
+		marks: [
+			["en", "translated", ["translated"], "en: Mushroom"],
+			["de", "needs_update", ["needs_update"], "de: Mushroom"]
+		]
+	}
+];
+const allLines = lineFacts.map((line) => line.key);
+/** The lines each filter selects. */
+const filteredLines: readonly (readonly [readonly TextFilterClause[], readonly string[]])[] = [
+	[[], allLines],
+	[mushroomOrStem, ["Shop/Item", "Shop/Stem", "UI/Header", "UI/Title"]],
+	[withProblems, allLines],
+	[notTranslated, ["Shop/Item", "UI/Header", "UI/Optional", "UI/Synced"]]
+];
+/** A line view's facts, in the shape `lineFacts` plants. */
+const factsOf = (view: LocalizationLineView<LocalizationLineField>) => ({
+	key: `${view.identity?.namespace}/${view.identity?.key}`,
+	source: view.source,
+	problems: view.problems,
+	signals: view.signals,
+	// The fixture's package paths use the platform's separator.
+	places: view.places?.map((place) => ({
+		...place,
+		packageFile: place.packageFile.replaceAll("\\", "/")
+	})),
+	marks: view.marks?.map((mark) => [mark.culture, mark.state, mark.facts, mark.translation])
+});
 
 describe("index reads", () => {
 	it("validates aggregate requests", () => {
@@ -375,35 +733,51 @@ describe("index reads", () => {
 							const model = yield* (yield* GameTextIndexRefresh).refresh(
 								fixture.request
 							);
-							const deriveFrom = yield* derivedReader(model);
 							const localization = { target: fixture.target.name };
 							const lines = { query: "", capability: "all" as const, localization };
 
-							// Grouped counts equal counts derived from whole lines, every dimension.
-							for (const by of dimensionSets)
-								for (const filter of filters)
-									for (const cultures of [
-										undefined,
-										[fixture.target.cultures[1]!]
-									]) {
-										const request = TextAggregateRequest.make({
+							// Grouped counts and words, every dimension, under filters and picked cultures.
+							for (const { by, filter, cultures, ...expected } of aggregates)
+								expect(
+									yield* model.query.aggregate(
+										TextAggregateRequest.make({
 											...lines,
 											localization: {
 												...localization,
-												...(cultures ? { cultures } : undefined)
+												...(cultures
+													? {
+															cultures:
+																fixture.target.cultures.filter(
+																	(code) =>
+																		cultures.includes(code)
+																)
+														}
+													: undefined)
 											},
-											...(filter.length ? { filter } : undefined),
+											...(filter ? { filter } : undefined),
 											by,
 											measures: ["lines", "sourceWords", "lineBreakWords"]
-										});
-										const expected = yield* deriveFrom((base) =>
-											derivedAggregate(base, request)
-										);
-										expect(
-											yield* model.query.aggregate(request),
-											JSON.stringify({ by, filter, cultures })
-										).toEqual(expected);
-									}
+										})
+									),
+									JSON.stringify({ by, filter, cultures })
+								).toEqual({
+									lines: expected.lines,
+									groups: expected.groups.map(
+										([
+											key,
+											count,
+											sourceWords,
+											lineBreakWords,
+											unknownWords
+										]) => ({
+											key,
+											lines: count,
+											sourceWords,
+											lineBreakWords,
+											unknownWords
+										})
+									)
+								});
 							// The words a line counts are Unreal's: Thai text has none.
 							const words = yield* model.query.aggregate({
 								...lines,
@@ -422,30 +796,52 @@ describe("index reads", () => {
 									?.unknownWords
 							).toBe(1);
 
-							// Line fields equal the whole lines, filters and corpus they come from.
+							// Line fields hold each selected line's facts, and only the fields asked for.
 							const fields = LocalizationLineField.literals;
-							for (const filter of filters) {
-								const request = {
-									...lines,
-									...(filter.length ? { filter } : undefined)
-								};
-								expect(
-									yield* model.query.selectLocalizationLines(request, fields)
-								).toEqual(
-									yield* deriveFrom((base) =>
-										derivedLineViews(base, request, fields)
-									)
+							for (const [filter, keys] of filteredLines) {
+								const views = yield* model.query.selectLocalizationLines(
+									{ ...lines, ...(filter.length ? { filter } : undefined) },
+									fields
 								);
+								expect(views.map(factsOf), JSON.stringify(filter)).toEqual(
+									lineFacts.filter((line) => keys.includes(line.key))
+								);
+								// No line here has a key change or lies out of scope.
+								for (const view of views)
+									expect(Object.keys(view).sort()).toEqual(
+										["id", ...fields]
+											.filter(
+												(field) =>
+													field !== "keyChange" && field !== "outOfScope"
+											)
+											.sort()
+									);
 							}
+							const conflicting = yield* model.query.selectLocalizationLines(
+								{
+									...lines,
+									filter: [{ field: "fact", op: "is", values: ["conflicting"] }]
+								},
+								["identity", "marks"]
+							);
+							expect(
+								conflicting.map((view) => [
+									Object.keys(view).sort(),
+									view.identity?.key,
+									view.marks.map((mark) => mark.unknownReasons)
+								])
+							).toEqual([
+								[
+									["id", "identity", "marks"],
+									"Cap",
+									[["conflicting_source"], ["conflicting_source"]]
+								]
+							]);
 
-							// The header and fingerprint are the corpus's.
+							// The header is the corpus's without its units.
 							const corpus = yield* model.query.readCorpus();
-							expect(yield* model.query.readCorpusHeader()).toEqual(
-								derivedCorpusHeader(corpus)
-							);
-							expect(yield* model.query.corpusFingerprint()).toBe(
-								derivedCorpusFingerprint(corpus)
-							);
+							const { units: _units, ...header } = corpus;
+							expect(yield* model.query.readCorpusHeader()).toEqual(header);
 							const unitIds = corpus.units.slice(0, 3).map((unit) => unit.id);
 							expect(yield* model.query.readUnits([...unitIds, unitIds[0]!])).toEqual(
 								corpus.units.slice(0, 3)
@@ -458,6 +854,10 @@ describe("index reads", () => {
 								corpus,
 								model.evidence,
 								createdAt
+							);
+							// The engine fingerprints the corpus as the baseline does.
+							expect(yield* model.query.corpusFingerprint()).toBe(
+								baseline.provenance.corpusGeneration
 							);
 							expect(yield* indexedLocalizationBaseline(model, createdAt)).toEqual(
 								baseline
@@ -476,32 +876,58 @@ describe("index reads", () => {
 							expect(report.cultures[0]?.states.not_gathered.sourceWords).toBeNull();
 
 							// The gate reads one projected line export; the old one read five and the corpus.
-							for (const files of [
-								["Content/Text/Table.uasset"],
-								["Content/Shop/Store.uasset", "Content/Missing.uasset"]
-							]) {
-								const scoped = { ...lines, where: { files } };
-								const gate = yield* indexedLocalizationGateTarget(model.query, {
-									join: model.localization,
-									files,
-									failOn: DEFAULT_GATE_FAILURES
-								});
-								const fileScope = (yield* model.query.search({
-									...scoped,
-									pageSize: 1
-								})).fileScope;
-								expect(gate).toEqual(
-									localizationGateTarget({
-										lines: yield* deriveFrom((base) =>
-											derivedLineViews(base, scoped, LOCALIZATION_GATE_FIELDS)
-										),
-										...(fileScope === undefined ? undefined : { fileScope }),
-										join: model.localization,
-										files,
-										failOn: DEFAULT_GATE_FAILURES
-									})
-								);
-							}
+							// The table's lines fail on Cap's two texts and Changed's stale translations, and
+							// warn that Gone left the table and three lines were never gathered.
+							const changed = yield* indexedLocalizationGateTarget(model.query, {
+								join: model.localization,
+								files: ["Content/Text/Table.uasset"],
+								failOn: DEFAULT_GATE_FAILURES
+							});
+							const { items, fileScope, ...decided } = changed;
+							expect(decided).toEqual({
+								target: fixture.target.name,
+								status: "failed",
+								lines: 13,
+								checks: {
+									key_changed: 0,
+									conflicting_source: 1,
+									translated_text_changed: 1,
+									text_changed: 0,
+									not_gathered: 3,
+									unresolved_key: 0,
+									removed: 1,
+									gathered_source: 0
+								},
+								omitted: 0
+							});
+							expect(items.map((item) => [item.check, item.key])).toEqual([
+								["conflicting_source", "Cap"],
+								["translated_text_changed", "Changed"],
+								["not_gathered", "Lone"],
+								["not_gathered", "New"],
+								["not_gathered", "Thai"],
+								["removed", "Gone"]
+							]);
+							expect(fileScope).toMatchObject({ files: 1, textFiles: 1, outside: 0 });
+							// Files the project has no saved text in pass.
+							const elsewhere = yield* indexedLocalizationGateTarget(model.query, {
+								join: model.localization,
+								files: ["Content/Shop/Store.uasset", "Content/Missing.uasset"],
+								failOn: DEFAULT_GATE_FAILURES
+							});
+							expect([elsewhere.status, elsewhere.lines, elsewhere.items]).toEqual([
+								"passed",
+								0,
+								[]
+							]);
+							expect(
+								Object.values(elsewhere.checks).every((count) => count === 0)
+							).toBe(true);
+							expect(elsewhere.fileScope).toMatchObject({
+								files: 2,
+								textFiles: 0,
+								outside: 0
+							});
 
 							// The all-languages CSV from projected lines equals the CSV from whole lines.
 							const all = yield* model.query.localizationLines(lines);

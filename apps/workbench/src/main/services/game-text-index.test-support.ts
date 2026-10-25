@@ -1,6 +1,5 @@
+import { writeFileSync } from "node:fs";
 import { indexedTestReports } from "../../../../../packages/game-text/src/indexed-reports.test-support.js";
-import { referenceNativeQuery } from "../../../../../packages/game-text/src/native-query.test-support.js";
-import { textCorpusQuery } from "../../../../../packages/game-text/src/query.test-support.js";
 import { Effect, Layer, Option, Result, type Scope } from "effect";
 import {
 	GameTextIndexRefresh,
@@ -9,6 +8,7 @@ import {
 	type GameTextTargetIndex,
 	type GameTextIndexRefreshRequest,
 	GameTextIndexError,
+	type NativeTextQuery,
 	TextCorpusService,
 	type GameTextIndexRefreshResult
 } from "@ue-shed/game-text/index";
@@ -21,18 +21,158 @@ import {
 	localizationQuality,
 	textQualityQuery
 } from "@ue-shed/game-text/corpus";
-import { type TextCorpus } from "@ue-shed/game-text/schema";
+import {
+	type LocalizationQueryPage,
+	type TextCorpus,
+	type TextCorpusQuerySummary,
+	type TextCorpusSearchPage,
+	type TextProblemCounts
+} from "@ue-shed/game-text/schema";
 import {
 	LocalizationEvidence,
 	LocalizationFileAccessLive,
 	readLocalizationReview,
 	emptyLocalizationReviewFile,
-	defaultLocalizationReviewPath
+	defaultLocalizationReviewPath,
+	type LocalizationReviewFile,
+	type LocalizationTargetEvidence
 } from "@ue-shed/localization";
 import { WorkbenchProject } from "./project-workspace.js";
-/** The event-built implementation stays in host tests as the behavioral oracle. */
-export function oracleGameTextIndexLayer<E>(
-	read: (root: string) => Effect.Effect<TextCorpus, E, Scope.Scope>
+
+/** What a test's planted answers may depend on: the refresh, and the files it read. */
+export interface CannedQueryInputs {
+	readonly request: GameTextIndexRefreshRequest;
+	readonly corpus: TextCorpus;
+	/** The target's files, when the request names a target. */
+	readonly evidence: LocalizationTargetEvidence | undefined;
+	/** The target's review file, when the project has one. */
+	readonly review: LocalizationReviewFile | undefined;
+}
+/** A test's answers to the query members it reads, for each refresh. */
+export type CannedQuery = (inputs: CannedQueryInputs) => Partial<NativeTextQuery>;
+
+/**
+ * The query a host test reads: its planted answers, and every other member dies naming itself.
+ * Hosts read a refresh's summary at once, so an unplanted summary is `emptySummary`.
+ */
+function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>): NativeTextQuery {
+	const unplanted = (member: string) => () =>
+		Effect.die(`This test planted no answer for ${member}.`);
+	return {
+		findingsEvaluate: unplanted("findingsEvaluate"),
+		findingsAccept: unplanted("findingsAccept"),
+		findingsQuery: unplanted("findingsQuery"),
+		findingsWrite: unplanted("findingsWrite"),
+		rulesCheck: unplanted("rulesCheck"),
+		readCorpus: unplanted("readCorpus"),
+		readLocalizationLines: unplanted("readLocalizationLines"),
+		summary: () => Effect.succeed(emptySummary(corpus)),
+		search: unplanted("search"),
+		searchRows: unplanted("searchRows"),
+		focus: unplanted("focus"),
+		localizationFocus: unplanted("localizationFocus"),
+		localizationDetail: unplanted("localizationDetail"),
+		related: unplanted("related"),
+		localizationLines: unplanted("localizationLines"),
+		exportWithSignals: unplanted("exportWithSignals"),
+		aggregate: unplanted("aggregate"),
+		selectLocalizationLines: unplanted("selectLocalizationLines"),
+		writeLocalizationLinesCsv: unplanted("writeLocalizationLinesCsv"),
+		writeCorpusCsv: unplanted("writeCorpusCsv"),
+		writeCorpusJson: unplanted("writeCorpusJson"),
+		readUnits: unplanted("readUnits"),
+		readCorpusHeader: unplanted("readCorpusHeader"),
+		readCorpusReportHeader: unplanted("readCorpusReportHeader"),
+		corpusFingerprint: unplanted("corpusFingerprint"),
+		export: unplanted("export"),
+		...answers
+	};
+}
+
+const noCounts: TextCorpusSearchPage["counts"] = {
+	all: 0,
+	unresolved: 0,
+	conflicting: 0,
+	editable: 0,
+	readOnly: 0,
+	withoutNotes: 0,
+	origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
+};
+const noProblems: TextProblemCounts = {
+	key_changed: 0,
+	conflicting_source: 0,
+	not_gathered: 0,
+	changed_since_gather: 0,
+	translation: 0,
+	finding: 0,
+	unchecked: 0,
+	up_to_date: 0
+};
+/** A search page with nothing counted and no rows, but the fields given. */
+export const searchPage = (page: Partial<TextCorpusSearchPage> = {}): TextCorpusSearchPage => ({
+	counts: noCounts,
+	problems: noProblems,
+	total: 0,
+	units: [],
+	...page
+});
+/** A target's page of lines with nothing counted and no lines, but the fields given. */
+export const linesPage = (
+	target: LocalizationQueryPage["target"],
+	page: Partial<LocalizationQueryPage> = {}
+): LocalizationQueryPage => ({
+	target,
+	counts: [],
+	stateCounts: {
+		translated: 0,
+		not_translated: 0,
+		needs_update: 0,
+		not_synced: 0,
+		not_gathered: 0,
+		changed_since_gather: 0,
+		not_found: 0,
+		gathered_only: 0,
+		outside_target: 0,
+		unknown: 0
+	},
+	notSynced: 0,
+	lines: [],
+	...page
+});
+/** Every translation the target's PO files hold, for answers that follow a test's PO edits. */
+export const poTranslations = (evidence: LocalizationTargetEvidence | undefined) =>
+	(evidence?.cultures ?? []).flatMap(({ po }) =>
+		po.status === "read" ? po.value.entries.flatMap((entry) => Object.values(entry.msgstr)) : []
+	);
+/** A corpus's summary with every count 0: its scan status and coverage only. */
+const emptySummary = (corpus: TextCorpus): TextCorpusQuerySummary => ({
+	counts: noCounts,
+	searchable: { textUnits: 0, textOccurrences: 0 },
+	schemaVersion: 1,
+	status: corpus.status,
+	coverage: corpus.coverage,
+	diagnosticCount: corpus.diagnostics.length,
+	review: { all: 0, unresolved: 0, conflicting: 0 },
+	sources: { assetProperty: 0, dataTable: 0, mixed: 0, stringTable: 0 }
+});
+/** Answers over a corpus with no text: an empty page for every search, and no unit to focus. */
+const emptyCorpusAnswers: CannedQuery = ({ corpus: { units: _units, ...header } }) => ({
+	search: () => Effect.succeed(searchPage()),
+	focus: () => Effect.succeed(undefined),
+	readCorpusHeader: () => Effect.succeed(header),
+	// The corpus export the engine writes when no unit matches.
+	writeCorpusJson: (_request, file, envelope) =>
+		Effect.sync(() => {
+			const bytes = new TextEncoder().encode(`${envelope.before}[]${envelope.after}`);
+			writeFileSync(file.path, bytes);
+			return { status: "written" as const, rows: 0, bytes: bytes.byteLength };
+		})
+});
+
+/** The index's refresh and steps over a test's corpus, its query answering what the test planted. */
+export function cannedGameTextIndexLayer<E>(
+	read: (root: string) => Effect.Effect<TextCorpus, E, Scope.Scope>,
+	answers: CannedQuery = emptyCorpusAnswers
 ) {
 	const legacy = Layer.effect(
 		GameTextIndexRefresh,
@@ -128,12 +268,19 @@ export function oracleGameTextIndexLayer<E>(
 								)
 							)
 						: undefined;
-					const reference = textCorpusQuery(corpus, undefined, join);
-					const query = referenceNativeQuery(reference, corpus);
+					const query = cannedTextQuery(
+						corpus,
+						answers({
+							request,
+							corpus,
+							evidence: files,
+							review: review?.contentHash ? review.file : undefined
+						})
+					);
 					return {
-						project: oracleProjectIndex(request.projectRoot),
+						project: testProjectIndex(request.projectRoot),
 						corpus: Effect.succeed(corpus),
-						summary: reference.summary(),
+						summary: yield* query.summary(),
 						query,
 						search: query.search,
 						searchRows: query.searchRows,
@@ -152,7 +299,7 @@ export function oracleGameTextIndexLayer<E>(
 						localizationQuality: (ruleDocument, options) =>
 							Effect.sync(() => {
 								if (!join || !files)
-									throw new Error("No target in this oracle request");
+									throw new Error("No target in this test request");
 								return localizationQuality(
 									indexedTestReports(corpus, files).localization(
 										ruleDocument,
@@ -166,20 +313,20 @@ export function oracleGameTextIndexLayer<E>(
 								asyncQuery(indexedTestReports(corpus, files).source(ruleDocument))
 							),
 						get localizationJoin(): GameTextIndexRefreshResult["localizationJoin"] {
-							if (!join) throw new Error("No target in this oracle request");
+							if (!join) throw new Error("No target in this test request");
 							return Effect.succeed(join);
 						},
 						get localization(): GameTextIndexRefreshResult["localization"] {
-							if (!join) throw new Error("No target in this oracle request");
+							if (!join) throw new Error("No target in this test request");
 							const { lines: _, ...header } = join;
 							return header;
 						},
 						get evidence(): GameTextIndexRefreshResult["evidence"] {
-							if (!files) throw new Error("No target in this oracle request");
+							if (!files) throw new Error("No target in this test request");
 							return files;
 						},
 						get review(): GameTextIndexRefreshResult["review"] {
-							if (!target) throw new Error("No target in this oracle request");
+							if (!target) throw new Error("No target in this test request");
 							return (
 								review ?? {
 									file: emptyLocalizationReviewFile(target.name),
@@ -192,39 +339,44 @@ export function oracleGameTextIndexLayer<E>(
 							throw new Error("Host must query through the service API");
 						},
 						get imported(): GameTextIndexRefreshResult["imported"] {
-							throw new Error("Unused builder evidence in host oracle");
+							throw new Error("Unused builder evidence in host test");
 						},
 						get packages(): GameTextIndexRefreshResult["packages"] {
-							throw new Error("Unused builder evidence in host oracle");
+							throw new Error("Unused builder evidence in host test");
 						},
 						get join(): GameTextIndexRefreshResult["join"] {
-							throw new Error("Unused builder evidence in host oracle");
+							throw new Error("Unused builder evidence in host test");
 						}
 					};
 				})
 			});
 		})
 	);
-	return oracleIndexStepsLayer.pipe(Layer.provideMerge(legacy));
+	return testIndexStepsLayer.pipe(Layer.provideMerge(legacy));
 }
-export const workbenchGameTextIndexOracleLayer = Layer.unwrap(
-	Effect.gen(function* () {
-		const scanner = yield* TextCorpusService;
-		const project = yield* WorkbenchProject;
-		return oracleGameTextIndexLayer((root) =>
-			project
-				.candidates("game_text")
-				.pipe(
-					Effect.flatMap((index) =>
-						scanner.scanFromProjectIndex(index, { projectRoot: root })
-					)
-				)
-		);
-	})
-);
+/** The canned index over the selected Workbench project's scan. */
+export const workbenchGameTextIndexLayer = (answers?: CannedQuery) =>
+	Layer.unwrap(
+		Effect.gen(function* () {
+			const scanner = yield* TextCorpusService;
+			const project = yield* WorkbenchProject;
+			return cannedGameTextIndexLayer(
+				(root) =>
+					project
+						.candidates("game_text")
+						.pipe(
+							Effect.flatMap((index) =>
+								scanner.scanFromProjectIndex(index, { projectRoot: root })
+							)
+						),
+				answers
+			);
+		})
+	);
 import { makeGameTextLocalization as indexedGameTextLocalization } from "./game-text-localization.js";
 let revisionCount = 0;
-export const makeGameTextLocalizationOracle = (
+export const makeCannedGameTextLocalization = (
+	answers: CannedQuery,
 	currentCorpus: () => Effect.Effect<TextCorpus | undefined>,
 	currentProject: Parameters<typeof indexedGameTextLocalization>[1],
 	currentRules?: Parameters<typeof indexedGameTextLocalization>[2],
@@ -238,7 +390,7 @@ export const makeGameTextLocalizationOracle = (
 				if (!corpus) return undefined;
 				let revision = revisions.get(corpus);
 				if (!revision) {
-					revision = `oracle#${++revisionCount}`;
+					revision = `test#${++revisionCount}`;
 					revisions.set(corpus, revision);
 				}
 				return revision;
@@ -246,31 +398,33 @@ export const makeGameTextLocalizationOracle = (
 		);
 	return indexedGameTextLocalization(marker, currentProject, currentRules, currentIndex).pipe(
 		Effect.provide(
-			oracleGameTextIndexLayer(() =>
-				currentCorpus().pipe(
-					Effect.flatMap((corpus) =>
-						corpus
-							? Effect.succeed(corpus)
-							: Effect.die("No corpus in this oracle request")
-					)
-				)
+			cannedGameTextIndexLayer(
+				() =>
+					currentCorpus().pipe(
+						Effect.flatMap((corpus) =>
+							corpus
+								? Effect.succeed(corpus)
+								: Effect.die("No corpus in this test request")
+						)
+					),
+				answers
 			)
 		)
 	);
 };
-/** Object-oracle handles model host ownership without exercising the compact store. */
-export function oracleProjectIndex(projectRoot: string): GameTextProjectIndex {
+/** Test handles model host ownership without exercising the compact store. */
+export function testProjectIndex(projectRoot: string): GameTextProjectIndex {
 	return {
 		projectRoot,
-		cacheRoot: "oracle",
-		generation: "oracle",
-		packageKey: "oracle",
+		cacheRoot: "test",
+		generation: "test",
+		packageKey: "test",
 		get packages(): GameTextProjectIndex["packages"] {
-			throw new Error("Unused compact-store evidence in object oracle");
+			throw new Error("Unused compact-store evidence in test index");
 		}
 	};
 }
-const oracleIndexStepsLayer = Layer.effect(
+const testIndexStepsLayer = Layer.effect(
 	GameTextIndexSteps,
 	Effect.gen(function* () {
 		const legacy = yield* GameTextIndexRefresh;
@@ -292,9 +446,9 @@ const oracleIndexStepsLayer = Layer.effect(
 					const refreshed = yield* steps.refreshProject(request);
 					return yield* steps.buildTarget(refreshed, input, request);
 				}),
-			openProject: (request) => Effect.succeed(oracleProjectIndex(request.projectRoot)),
+			openProject: (request) => Effect.succeed(testProjectIndex(request.projectRoot)),
 			refreshProject: (request) =>
-				legacy.invalidate(request).pipe(Effect.as(oracleProjectIndex(request.projectRoot))),
+				legacy.invalidate(request).pipe(Effect.as(testProjectIndex(request.projectRoot))),
 			importTarget: (project, request = {}) =>
 				Effect.gen(function* () {
 					const target =
@@ -323,7 +477,7 @@ const oracleIndexStepsLayer = Layer.effect(
 						imported: {
 							get target() {
 								if (!target)
-									throw new Error("Source oracle has no localization target");
+									throw new Error("Source test index has no localization target");
 								return target;
 							},
 							files: [],
@@ -357,13 +511,13 @@ const oracleIndexStepsLayer = Layer.effect(
 						project,
 						view: imported.view,
 						imported: imported.imported,
-						generation: "oracle",
+						generation: "test",
 						fileKeys: {},
 						get join(): GameTextTargetIndex["join"] {
-							throw new Error("Unused compact join in object oracle");
+							throw new Error("Unused compact join in test index");
 						},
 						get review(): GameTextTargetIndex["review"] {
-							throw new Error("Unused compact review in object oracle");
+							throw new Error("Unused compact review in test index");
 						}
 					};
 					const preparation: GameTextIndexRefreshRequest = {
@@ -385,7 +539,7 @@ const oracleIndexStepsLayer = Layer.effect(
 									Object.assign(result, { project: target.project })
 								)
 							)
-					: Effect.die("Missing oracle request");
+					: Effect.die("Missing test request");
 			},
 			invalidate: legacy.invalidate
 		});

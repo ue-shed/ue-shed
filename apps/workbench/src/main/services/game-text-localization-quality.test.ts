@@ -3,12 +3,17 @@ import { Deferred, Effect, Fiber, Layer, Ref, Schema } from "effect";
 import { expect } from "vitest";
 import { LocalizationTarget, makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
 import { corpus, evidence, cultureCode } from "./game-text-localization.test-support.js";
+import { textCorpusReportHeader } from "@ue-shed/game-text/corpus";
+import type { TextAggregate } from "@ue-shed/game-text/schema";
 import { GameTextIndexSteps } from "@ue-shed/game-text/index";
 import { GameTextRuleDocument, STARTER_CHECK_RULES } from "@ue-shed/game-text/rules";
 import {
-	makeGameTextLocalizationOracle as makeGameTextLocalization,
-	oracleGameTextIndexLayer,
-	oracleProjectIndex
+	cannedGameTextIndexLayer,
+	linesPage,
+	makeCannedGameTextLocalization,
+	searchPage,
+	testProjectIndex,
+	type CannedQuery
 } from "./game-text-index.test-support.js";
 import { makeGameTextLocalization as indexedGameTextLocalization } from "./game-text-localization.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
@@ -49,6 +54,60 @@ const fixture = {
 	})
 };
 const other = Schema.decodeUnknownSync(LocalizationTarget)({ ...files.target, name: "Other" });
+/** The fixture's one line in each culture: unknown, as the target has no gather settings. */
+function tally(by: readonly string[]): TextAggregate | undefined {
+	switch (by.join()) {
+		case "culture,state":
+			return {
+				lines: 1,
+				groups: ["en", "de"].map((culture) => ({
+					key: [culture, "unknown"],
+					lines: 1,
+					lineBreakWords: 1,
+					unknownWords: 0
+				}))
+			};
+		case "culture,state,unknown_reason":
+			return {
+				lines: 1,
+				groups: ["en", "de"].map((culture) => ({
+					key: [culture, "unknown", "gather_settings_unavailable"],
+					lines: 1
+				}))
+			};
+		case "culture,state,fact":
+			return {
+				lines: 1,
+				groups: [
+					["en", "unknown", "translated"],
+					["en", "unknown", "unknown"],
+					["de", "unknown", "needs_update"],
+					["de", "unknown", "unknown"]
+				].map((key) => ({ key, lines: 1, lineBreakWords: 1, unknownWords: 0 }))
+			};
+		case "culture,review_status":
+		case "culture,gathered,review_flag":
+			return { lines: 1, groups: [] };
+	}
+	return undefined;
+}
+const answers: CannedQuery = ({ request }) => ({
+	search: () =>
+		Effect.succeed(
+			searchPage({
+				total: 1,
+				localization: linesPage(
+					request.targetName === other.name ? other.name : fixture.files.target.name
+				)
+			})
+		),
+	aggregate: (request) => {
+		const tallied = tally(request.by);
+		return tallied ? Effect.succeed(tallied) : Effect.die(`No tally by ${request.by.join()}.`);
+	},
+	readCorpusReportHeader: () => Effect.succeed(textCorpusReportHeader(fixture.text)),
+	corpusFingerprint: () => Effect.succeed("f".repeat(64))
+});
 const reader = makeLocalizationEvidenceTestLayer({
 	discover: () =>
 		Effect.succeed({ schemaVersion: 1, targets: [fixture.files.target], diagnostics: [] }),
@@ -62,9 +121,10 @@ it.effect(
 		Effect.gen(function* () {
 			const document = yield* Ref.make<GameTextRuleDocument>(fixture.document);
 			const text = yield* Ref.make(fixture.text);
-			const host = yield* makeGameTextLocalization(
+			const host = yield* makeCannedGameTextLocalization(
+				answers,
 				() => Ref.get(text),
-				() => Effect.succeed(oracleProjectIndex("C:/Project")),
+				() => Effect.succeed(testProjectIndex("C:/Project")),
 				() => Ref.get(document)
 			);
 			yield* host.select(fixture.join.target);
@@ -109,9 +169,10 @@ it.effect(
 	() =>
 		Effect.gen(function* () {
 			const files = yield* LocalFiles;
-			const host = yield* makeGameTextLocalization(
+			const host = yield* makeCannedGameTextLocalization(
+				answers,
 				() => Effect.succeed(fixture.text),
-				() => Effect.succeed(oracleProjectIndex("C:/Project"))
+				() => Effect.succeed(testProjectIndex("C:/Project"))
 			);
 			yield* host.select(fixture.join.target);
 			const baselinePath = "C:/Exports/baseline.json",
@@ -176,11 +237,11 @@ it.effect("selecting another target interrupts the previous target's abandoned s
 		const steps = Layer.effect(
 			GameTextIndexSteps,
 			Effect.gen(function* () {
-				const oracle = yield* GameTextIndexSteps;
+				const canned = yield* GameTextIndexSteps;
 				return GameTextIndexSteps.of({
-					...oracle,
+					...canned,
 					openTarget: (target) =>
-						oracle.openTarget(target).pipe(
+						canned.openTarget(target).pipe(
 							Effect.map((result) =>
 								Object.assign(result, {
 									localizationQuality: () =>
@@ -193,10 +254,12 @@ it.effect("selecting another target interrupts the previous target's abandoned s
 						)
 				});
 			})
-		).pipe(Layer.provide(oracleGameTextIndexLayer(() => Effect.succeed(fixture.text))));
+		).pipe(
+			Layer.provide(cannedGameTextIndexLayer(() => Effect.succeed(fixture.text), answers))
+		);
 		const host = yield* indexedGameTextLocalization(
 			() => Effect.succeed("revision"),
-			() => Effect.succeed(oracleProjectIndex("C:/Project"))
+			() => Effect.succeed(testProjectIndex("C:/Project"))
 		).pipe(Effect.provide(steps));
 		expect(yield* host.select(fixture.join.target)).toMatchObject({ status: "ready" });
 		const request = yield* Effect.forkChild(
@@ -228,9 +291,10 @@ it.effect("selecting another target interrupts the previous target's abandoned s
 
 it.effect("keeps no-target projects free of quality and report authority", () =>
 	Effect.gen(function* () {
-		const host = yield* makeGameTextLocalization(
+		const host = yield* makeCannedGameTextLocalization(
+			answers,
 			() => Effect.succeed(fixture.text),
-			() => Effect.succeed(oracleProjectIndex("C:/Project"))
+			() => Effect.succeed(testProjectIndex("C:/Project"))
 		);
 		expect(yield* host.targets()).toEqual({ status: "ready", targets: [] });
 		expect(yield* host.qualitySearch({ target: fixture.join.target, filter: "all" })).toEqual({

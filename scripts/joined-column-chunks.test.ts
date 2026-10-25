@@ -6,10 +6,6 @@ import {
 	type JoinedTargetMeta
 } from "../packages/game-text/src/joined-target-reader.ts";
 import { synchronousJoinedTarget } from "../packages/game-text/src/joined-query-reader.ts";
-import {
-	JoinedQueryData,
-	reuseJoinedQueryProjection
-} from "../packages/game-text/src/joined-query-data.test-support.ts";
 import { incrementJoinedTarget } from "../packages/game-text/src/joined-target-incremental.test-support.ts";
 import { joinedPhysicalChunkName } from "../packages/game-text/src/joined-column-chunks.ts";
 import { withJoinCache, joinStoreOptions } from "./columnar-join.test-support.ts";
@@ -97,10 +93,9 @@ it("variable source patches span chunks and keep unpatched aliases pinned to the
 						generation
 					);
 					const baseline = yield* openJoinedTarget();
-					const projection = reuseJoinedQueryProjection(baseline);
-					const pinned = new JoinedQueryData(baseline, projection);
-					pinned.prepareSources();
-					const pinnedStarts = pinned.column("query.slice.source_start");
+					expect(
+						Array.from(yield* baseline.layer.section("query.slice.source_start"))
+					).toEqual([0, 1, 2]);
 					const sourcePatches = {
 						raw: {
 							rows: "source.rows",
@@ -128,28 +123,6 @@ it("variable source patches span chunks and keep unpatched aliases pinned to the
 						{ "joined-base": "source-base" }
 					);
 					const joined = yield* openJoinedTarget();
-					const decoded: number[] = [];
-					const reader = {
-						...joined.reader,
-						bytesSync: (id: number) => {
-							decoded.push(id);
-							return joined.reader.bytesSync!(id);
-						}
-					};
-					const next = reuseJoinedQueryProjection(joined, projection);
-					const data = new JoinedQueryData({ ...joined, reader }, next);
-					data.prepareSources();
-					expect(decoded).toEqual([ids[3]]);
-					expect(data.column("query.slice.source_start")).toBe(pinnedStarts);
-					expect(projection.sources!.index[ids[3]!]).toBe(0);
-					expect(next.sourceSeed).toBeUndefined();
-					expect(data.searchSourceBytes([Buffer.from("D")])![ids[3]!]).toBe(1);
-					const invalidated = reuseJoinedQueryProjection(joined, {
-						...projection,
-						generation: "retired-generation"
-					});
-					expect(invalidated.columns.size).toBe(0);
-					expect(invalidated.sourceSeed).toBeUndefined();
 					const expected = {
 						"query.raw.sources": [ids[1]!, ids[3]!, ids[1]!, ids[0]!],
 						"query.raw.source_start": [0, 2, 3],
@@ -160,7 +133,10 @@ it("variable source patches span chunks and keep unpatched aliases pinned to the
 					// Read patched aliases first so a cache collision cannot conceal a stale offset.
 					for (const [name, values] of Object.entries(expected)) {
 						expect(Array.from(yield* joined.layer.section(name)), name).toEqual(values);
-						expect(Array.from(data.column(name)), `sync ${name}`).toEqual(values);
+						expect(
+							Array.from(yield* synchronousJoinedTarget(joined).layer.section(name)),
+							`synchronous ${name}`
+						).toEqual(values);
 					}
 				})
 			).pipe(
@@ -301,9 +277,8 @@ it("reads and patches a logical ID arena across bounded physical sections", asyn
 							)
 						)
 					).toEqual([1, 12, 3, 14, 5]);
-					const data = new JoinedQueryData(patched);
-					expect(Array.from(data.column("state"))).toEqual([0, 2]);
-					expect(Array.from(data.column("state.alias"))).toEqual([0, 0]);
+					expect(Array.from(yield* patched.layer.section("state"))).toEqual([0, 2]);
+					expect(Array.from(yield* patched.layer.section("state.alias"))).toEqual([0, 0]);
 					// A compaction changes the generation while the overlay metadata still
 					// describes its old base. Refresh must rebuild before opening that base.
 					yield* writer.compact(true);

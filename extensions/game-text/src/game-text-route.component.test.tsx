@@ -10,27 +10,36 @@ import {
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Stream } from "effect";
 import { expect, it, vi } from "vitest";
-import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
+import { cannedPage } from "./game-text-canned-search.test-support.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
 import {
+	answer,
 	chooseFilter,
+	continueRow,
 	corpus,
+	counts,
+	facets,
+	focusOf,
 	groupRows,
 	makeClient,
 	mount,
 	openQuality,
-	runtime
+	planted,
+	quiet,
+	quitRow,
+	runtime,
+	summary,
+	upToDate
 } from "./game-text-route.test-support.js";
 it("keeps the indexed list searchable during a rescan and focuses search with Ctrl K", async () => {
 	const response = await Effect.runPromise(Deferred.make<TextCorpusQueryRunResult>());
-	const query = textCorpusQuery(corpus);
 	const user = userEvent.setup({ delay: null });
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			loadConfiguredProject: (refresh) =>
 				refresh
 					? Deferred.await(response)
-					: Effect.succeed({ status: "completed", summary: query.summary() })
+					: Effect.succeed({ status: "completed", summary })
 		})
 	);
 	await screen.findByText("2 matches");
@@ -51,9 +60,7 @@ it("keeps the indexed list searchable during a rescan and focuses search with Ct
 	await groupRows();
 	const results = within(screen.getByRole("region", { name: "Results" }));
 	expect(results.getByRole("button", { name: /^Quit game/u })).toBeDefined();
-	await Effect.runPromise(
-		Deferred.succeed(response, { status: "completed", summary: query.summary() })
-	);
+	await Effect.runPromise(Deferred.succeed(response, { status: "completed", summary }));
 	await waitFor(() => expect(screen.queryByText("Rescanning")).toBeNull());
 	expect(screen.getByLabelText("Index status")).toBe(status);
 	await waitFor(() => expect(status.textContent).toContain("assets"));
@@ -61,18 +68,17 @@ it("keeps the indexed list searchable during a rescan and focuses search with Ct
 });
 it("shows a reopened saved index at once and rescans it behind the results", async () => {
 	const response = await Effect.runPromise(Deferred.make<TextCorpusQueryRunResult>());
-	const query = textCorpusQuery(corpus);
 	const loads: boolean[] = [];
 	const user = userEvent.setup({ delay: null });
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			loadConfiguredProject: (refresh) => {
 				loads.push(refresh === true);
 				return refresh
 					? Deferred.await(response)
 					: Effect.succeed({
 							status: "completed",
-							summary: query.summary(),
+							summary,
 							cached: true
 						});
 			}
@@ -88,9 +94,7 @@ it("shows a reopened saved index at once and rescans it behind the results", asy
 	await user.type(search, "Quit");
 	await screen.findByText("1 match");
 	await groupRows();
-	await Effect.runPromise(
-		Deferred.succeed(response, { status: "completed", summary: query.summary() })
-	);
+	await Effect.runPromise(Deferred.succeed(response, { status: "completed", summary }));
 	await waitFor(() => expect(screen.queryByText("Rescanning")).toBeNull());
 	expect(loads).toEqual([false, true]);
 	expect(search).toHaveProperty("value", "Quit");
@@ -128,31 +132,42 @@ it("opens a line as a page, steps to the next line and goes back to the list", a
 	expect(screen.queryByRole("region", { name: "Properties" })).toBeNull();
 });
 it("offers only facts that have lines, and no findings without a findings layer", async () => {
-	const first = corpus.units[0];
-	if (!first) throw new Error("Missing test line");
+	// Continue's key holds other text at a second place: one line has the conflicting fact.
 	const conflicting = {
-		...corpus,
-		units: [
-			{
-				...first,
-				source: {
-					status: "conflicting" as const,
-					values: [first.occurrences[0]!.source, "Other text"]
-				},
-				occurrences: [
-					...first.occurrences,
-					{
-						...first.occurrences[0]!,
-						id: makeTextOccurrenceId("another"),
-						source: "Other text"
-					}
-				]
-			},
-			...corpus.units.slice(1)
-		]
+		...continueRow,
+		source: { status: "conflicting" as const, values: ["Continue", "Other text"] },
+		occurrenceCount: 2,
+		reviewSignals: ["conflicting" as const],
+		problems: ["conflicting_source" as const]
 	};
 	const user = userEvent.setup({ delay: null });
-	mount(makeClient(conflicting));
+	mount(
+		makeClient({
+			...planted,
+			answers: [
+				answer({}, [], {
+					rows: [
+						{ unit: conflicting, groups: { problem: "conflicting_source" } },
+						upToDate(quitRow)
+					],
+					groups: {
+						problem: [
+							{
+								key: "conflicting_source",
+								label: "Same key, different text",
+								count: 1,
+								needWork: 1,
+								worst: "conflicting_source"
+							},
+							quiet("up_to_date", "Up to date", 1)
+						]
+					},
+					counts: { ...counts, conflicting: 1 },
+					facets: { ...facets, facts: { ...facets.facts!, conflicting: 1 } }
+				})
+			]
+		})
+	);
 	await screen.findByText("2 matches");
 	await groupRows();
 	await user.click(screen.getByRole("button", { name: /^Filter(, \d+ active)?$/u }));
@@ -168,15 +183,20 @@ it("offers only facts that have lines, and no findings without a findings layer"
 it("debounces source-only search, shows Searching and never flashes a false empty state", async () => {
 	const release = await runtime.runPromise(Deferred.make<void>());
 	const initial = await runtime.runPromise(Deferred.make<void>());
-	const query = textCorpusQuery(corpus);
-	const client = makeClient(corpus, {
+	const client = makeClient(planted, {
 		search: (request) =>
 			request.query === ""
 				? Deferred.await(initial).pipe(
-						Effect.as({ status: "ready" as const, page: query.search(request) })
+						Effect.as({
+							status: "ready" as const,
+							page: cannedPage(planted.answers, request)
+						})
 					)
 				: Deferred.await(release).pipe(
-						Effect.as({ status: "ready" as const, page: query.search(request) })
+						Effect.as({
+							status: "ready" as const,
+							page: cannedPage(planted.answers, request)
+						})
 					)
 	});
 	const user = userEvent.setup({ delay: null });
@@ -197,21 +217,20 @@ it("debounces source-only search, shows Searching and never flashes a false empt
 	expect(screen.getByText(/No text matches/u)).toBeDefined();
 });
 it("requests a loaded scan's first page at once and debounces only typing", async () => {
-	const query = textCorpusQuery(corpus);
 	let loadedAt = 0;
 	const searches: { query: string; at: number }[] = [];
 	const user = userEvent.setup({ delay: null });
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			loadConfiguredProject: () =>
 				Effect.sync(() => {
 					loadedAt = performance.now();
-					return { status: "completed" as const, summary: query.summary() };
+					return { status: "completed" as const, summary };
 				}),
 			search: (request) =>
 				Effect.sync(() => {
 					searches.push({ query: request.query, at: performance.now() });
-					return { status: "ready" as const, page: query.search(request) };
+					return { status: "ready" as const, page: cannedPage(planted.answers, request) };
 				})
 		})
 	);
@@ -228,15 +247,14 @@ it("requests a loaded scan's first page at once and debounces only typing", asyn
 it("drops a late response when the search request has changed", async () => {
 	const release = await runtime.runPromise(Deferred.make<void>());
 	const requested: string[] = [];
-	const query = textCorpusQuery(corpus);
 	const user = userEvent.setup({ delay: null });
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			search: (request) => {
 				requested.push(request.query);
 				const result: TextCorpusSearchResult = {
 					status: "ready",
-					page: query.search(request)
+					page: cannedPage(planted.answers, request)
 				};
 				return request.query === "Continue"
 					? Deferred.await(release).pipe(Effect.as(result))
@@ -262,18 +280,23 @@ it("drops a late response when the search request has changed", async () => {
 	).toBeDefined();
 });
 it("toggles editable and no-notes counts through the package query", async () => {
-	const input: TextCorpus = {
-		...corpus,
-		units: corpus.units.map((unit, index) => ({
-			...unit,
-			occurrences: unit.occurrences.map((occurrence) => ({
-				...occurrence,
-				devNotes: index === 1 ? "Translator note" : " \t "
-			}))
-		}))
-	};
+	// Quit has a translator note; Continue's is only whitespace, so it has none.
+	const notes = { ...counts, withoutNotes: 1 };
+	const editable = { field: "editing", op: "is", values: ["editable"] } as const;
+	const missing = { field: "notes", op: "is", values: ["missing"] } as const;
 	const user = userEvent.setup({ delay: null });
-	mount(makeClient(input));
+	mount(
+		makeClient({
+			...planted,
+			answers: [
+				answer({}, [continueRow, quitRow], { counts: notes }),
+				answer({ filter: [missing] }, [continueRow], { counts: notes }),
+				answer({ filter: [missing, editable] }, [continueRow], { counts: notes }),
+				answer({ filter: [editable] }, [continueRow], { counts: notes }),
+				answer({ filter: [{ ...editable, op: "is_not" }] }, [quitRow], { counts: notes })
+			]
+		})
+	);
 	await screen.findByText("2 matches");
 	await groupRows();
 	await chooseFilter(user, "Translator notes", "No translator notes 1");
@@ -391,16 +414,13 @@ it.each([undefined, "example-project"])(
 	"scans the host selected project only after the primary action (preference key: %s)",
 	async (key) => {
 		const calls: boolean[] = [];
-		const query = textCorpusQuery(corpus);
 		const user = userEvent.setup({ delay: null });
 		mount(
-			makeClient(corpus, {
+			makeClient(planted, {
 				loadConfiguredProject: (refresh = true) => {
 					calls.push(refresh);
 					return Effect.succeed(
-						refresh
-							? { status: "completed", summary: query.summary() }
-							: { status: "not_scanned" }
+						refresh ? { status: "completed", summary } : { status: "not_scanned" }
 					);
 				}
 			}),
@@ -419,7 +439,7 @@ it.each([undefined, "example-project"])(
 );
 it("sends users to the workspace project picker when no project is selected", async () => {
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			loadConfiguredProject: () => Effect.succeed({ status: "not_configured" })
 		})
 	);
@@ -430,12 +450,12 @@ it("sends users to the workspace project picker when no project is selected", as
 });
 it("restores per-project search, toggles and selection across fresh mounts without rescanning", async () => {
 	const calls: boolean[] = [];
-	const client = makeClient(corpus, {
+	const client = makeClient(planted, {
 		loadConfiguredProject: (refresh = true) => {
 			calls.push(refresh);
 			return Effect.succeed({
 				status: "completed",
-				summary: textCorpusQuery(corpus).summary()
+				summary
 			});
 		}
 	});
@@ -533,18 +553,16 @@ it("shows key, stats, full paths and translator notes in detail and copies the k
 	await waitFor(() => expect(navigator.clipboard.readText()).resolves.toBe("Continue"));
 });
 it("does not warn about packages Unreal does not gather either", async () => {
+	// A complete scan that skipped one package Unreal does not gather.
 	mount(
 		makeClient({
-			...corpus,
-			coverage: { ...corpus.coverage, discoveredPackages: 3 },
-			packageCoverage: [{ packageFile: "Content/Native.uasset", status: "not_gatherable" }],
-			diagnostics: [
-				{
-					code: "package_not_gatherable",
-					packageFile: "Content/Native.uasset",
-					message: "Excluded because Unreal does not gather this package."
-				}
-			]
+			...planted,
+			summary: {
+				...summary,
+				coverage: { ...summary.coverage, discoveredPackages: 3 },
+				notGatherablePackages: 1,
+				diagnosticCount: 1
+			}
 		})
 	);
 	await screen.findByText("2 matches");
@@ -553,30 +571,35 @@ it("does not warn about packages Unreal does not gather either", async () => {
 });
 it("keeps unread gathered lines, excluded packages and related read problems inspectable", async () => {
 	const user = userEvent.setup({ delay: null });
+	// A partial scan: one package partly read, one unread, three gathered lines not read, four
+	// packages Unreal does not gather, and a field of Continue's String Table not decoded.
+	const diagnostic = {
+		code: "unsupported_text_history" as const,
+		message: "This text field could not be decoded.",
+		packageFile: "Content/Text/ST_Game.uasset",
+		objectPath: "/Game/Text/ST_Game.ST_Game",
+		propertyPath: "UnsupportedPrompt"
+	};
 	mount(
 		makeClient({
-			...corpus,
-			status: "partial",
-			coverage: {
-				...corpus.coverage,
-				discoveredPackages: 3,
-				partialPackages: 1,
-				failedPackages: 1,
-				unsupportedTextProperties: 2,
-				missingGatherableText: 3
+			...planted,
+			summary: {
+				...summary,
+				status: "partial",
+				coverage: {
+					...summary.coverage,
+					discoveredPackages: 3,
+					partialPackages: 1,
+					failedPackages: 1,
+					unsupportedTextProperties: 2,
+					missingGatherableText: 3
+				},
+				notGatherablePackages: 4,
+				diagnosticCount: 1
 			},
-			packageCoverage: ["A", "B", "C", "D"].map((name) => ({
-				packageFile: `Content/Native/${name}.uasset`,
-				status: "not_gatherable" as const
-			})),
-			diagnostics: [
-				{
-					code: "unsupported_text_history",
-					message: "This text field could not be decoded.",
-					packageFile: "Content/Text/ST_Game.uasset",
-					objectPath: "/Game/Text/ST_Game.ST_Game",
-					propertyPath: "UnsupportedPrompt"
-				}
+			focus: [
+				{ ...focusOf(corpus, continueRow), diagnostics: [diagnostic] },
+				focusOf(corpus, quitRow)
 			]
 		})
 	);
@@ -605,7 +628,7 @@ it("keeps unread gathered lines, excluded packages and related read problems ins
 it("cancels a scan without offering route-owned project selection", async () => {
 	const user = userEvent.setup({ delay: null });
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			loadConfiguredProject: (refresh) =>
 				Effect.succeed({ status: refresh ? "cancelled" : "not_scanned" })
 		})
@@ -617,10 +640,9 @@ it("cancels a scan without offering route-owned project selection", async () => 
 });
 it("keeps scan progress visible until the scan completes", async () => {
 	const response = await Effect.runPromise(Deferred.make<TextCorpusQueryRunResult>());
-	const query = textCorpusQuery(corpus);
 	let scanning = false;
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			loadConfiguredProject: (refresh) => {
 				if (!refresh) return Effect.succeed({ status: "not_scanned" });
 				scanning = true;
@@ -648,9 +670,7 @@ it("keeps scan progress visible until the scan completes", async () => {
 	expect(progress.getAttribute("aria-valuemax")).toBe("2");
 	expect(progress.querySelector("span")?.style.width).toBe("50%");
 	expect(screen.queryByText(/No text matches/u)).toBeNull();
-	await Effect.runPromise(
-		Deferred.succeed(response, { status: "completed", summary: query.summary() })
-	);
+	await Effect.runPromise(Deferred.succeed(response, { status: "completed", summary }));
 	await screen.findByText("2 matches");
 	await groupRows();
 	expect(screen.queryByRole("progressbar")).toBeNull();
@@ -660,9 +680,8 @@ it("keeps progress through translations and the first results query", async () =
 	const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
 	const translations = await Effect.runPromise(Deferred.make<LocalizationTargetsResult>());
 	const firstPage = await Effect.runPromise(Deferred.make<TextCorpusSearchResult>());
-	const query = textCorpusQuery(corpus);
 	mount(
-		makeClient(corpus, {
+		makeClient(planted, {
 			localizationTargets: () => Deferred.await(translations),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),
@@ -696,7 +715,7 @@ it("keeps progress through translations and the first results query", async () =
 	await Effect.runPromise(
 		Deferred.succeed(firstPage, {
 			status: "ready",
-			page: query.search({ query: "", capability: "all", pageSize: 50 })
+			page: cannedPage(planted.answers, { query: "", capability: "all", pageSize: 50 })
 		})
 	);
 	await screen.findByText("2 matches");
@@ -729,8 +748,23 @@ it.each(["text", "quality"])(
 				}
 			]
 		};
+		const places = input.units[0]!.occurrences;
+		const row = {
+			...continueRow,
+			contexts: places.slice(0, 3).map(({ editCapability, location }) => ({
+				editCapability,
+				location
+			})),
+			occurrenceCount: 51,
+			remainingContextCount: 48
+		};
 		const user = userEvent.setup({ delay: null });
-		const client = makeClient(input);
+		const client = makeClient({
+			...planted,
+			corpus: input,
+			answers: [answer({}, [row])],
+			focus: [focusOf(input, row)]
+		});
 		const sizes: number[] = [];
 		mount({
 			...client,
@@ -818,7 +852,7 @@ it("restores the quality view, filter and finding and clears a vanished finding 
 	);
 	restored.unmount();
 	mount(
-		makeClient(corpus, { qualityFocus: () => Effect.succeed({ status: "not_found" }) }),
+		makeClient(planted, { qualityFocus: () => Effect.succeed({ status: "not_found" }) }),
 		undefined,
 		"quality-project"
 	);

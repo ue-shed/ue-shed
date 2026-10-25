@@ -10,7 +10,6 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.test-support.js";
 
 function rows(csv: string): string[][] {
 	return csv
@@ -36,12 +35,11 @@ describe("all-languages spreadsheet", () => {
 				[archiveEntry("Zeta", "Last line", "Last line")]
 			)
 		);
-		const lines = textCorpusQuery(text, undefined, joined).localizationLines({
-			query: "",
-			capability: "all",
-			localization: { target: target.name }
+		const { csv, rows: count } = localizationLinesCsv({
+			join: joined,
+			lines: joined.lines,
+			corpus: text
 		});
-		const { csv, rows: count } = localizationLinesCsv({ join: joined, lines, corpus: text });
 		const table = rows(csv);
 		expect(count).toBe(3);
 		expect(table[0]).toEqual([
@@ -86,22 +84,9 @@ describe("all-languages spreadsheet", () => {
 				[archiveEntry("Zeta", "Last line", "Last line")]
 			)
 		);
-		const query = textCorpusQuery(text, undefined, joined);
-		const all = query.localizationLines({
-			query: "",
-			capability: "all",
-			localization: { target: target.name }
-		});
-		const zeta = all.find((line) => line.identity?.key === "Zeta");
-		if (zeta === undefined) throw new Error("The fixture has a Zeta line.");
+		const lines = joined.lines.filter((line) => line.identity?.key === "Zeta");
+		expect(lines).toHaveLength(1);
 		const selection = { target: target.name, culture: cultureCode("en") };
-		const lines = query.localizationLines({
-			query: "",
-			capability: "all",
-			localization: selection,
-			lines: [zeta.id]
-		});
-		expect(lines.map((line) => line.identity?.key)).toEqual(["Zeta"]);
 		expect(pickedLocalizationCultures(selection)).toEqual(["en"]);
 		expect(pickedLocalizationCultures({ target: target.name })).toEqual([]);
 		// The native culture always leads; other cultures appear only when picked.

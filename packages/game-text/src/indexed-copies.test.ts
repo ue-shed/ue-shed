@@ -10,7 +10,6 @@ import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import type { LocalizationJoin } from "./localization-schema.js";
-import { textCorpusQuery } from "./query.test-support.js";
 
 import type { TextCorpus, TextCorpusSearchPage, TextCorpusSearchRequest } from "./schema.js";
 
@@ -164,21 +163,113 @@ const lineFacts = (join: LocalizationJoin) =>
 		])
 	);
 
+// Culture-invariant text has no key.
+const NO_KEY = "(no key)";
+
 const pageFacts = (page: TextCorpusSearchPage) => ({
 	total: page.total,
-	counts: page.counts,
-	problems: page.problems,
+	problems: Object.fromEntries(
+		Object.entries(page.problems ?? {}).filter(([, count]) => count > 0)
+	),
 	units: page.units.map((unit) => [
-		unit.id,
-		unit.source,
+		unit.identity.status === "resolved" ? unit.identity.key : NO_KEY,
+		unit.source.status === "consistent" ? unit.source.value : unit.source.values,
 		unit.occurrenceCount,
 		unit.reviewSignals,
 		unit.audience
 	]),
-	lines: page.localization?.lines.map((line) => [line.id, line.source]),
-	assets: page.facets?.assets,
-	groups: page.groups
+	lines: page.localization?.lines.map((line) => [line.identity?.key ?? NO_KEY, line.source]),
+	assets: page.facets?.assets?.entries.map((entry) => [
+		entry.key,
+		entry.label,
+		entry.count,
+		entry.needWork,
+		entry.worst
+	]),
+	groups: page.groups?.entries.map((entry) => [
+		entry.key,
+		entry.label,
+		entry.count,
+		entry.needWork,
+		entry.worst
+	])
 });
+
+// Each unit as a page lists it: its source, places, review signals and audience. The compiled
+// copies of the title, the hint and the culture-invariant version still hold their old text.
+const unitRows = {
+	[NO_KEY]: ["v1.2", 1, ["unresolved", "evidence_only", "compiled_copy_differs"], "player"],
+	Category: ["Default", 1, ["evidence_only"], "editor"],
+	Hint: ["New tooltip", 1, ["evidence_only", "compiled_copy_differs"], "player"],
+	Opacity: ["Render Opacity", 1, ["evidence_only"], "editor"],
+	Options: ["Options", 1, ["evidence_only"], "player"],
+	Quit: ["Quit now", 1, ["evidence_only"], "player"],
+	Tab0: ["01", 2, ["evidence_only"], "unknown"],
+	Title: ["Play now", 1, ["evidence_only", "compiled_copy_differs"], "player"]
+} as const;
+type UnitKey = keyof typeof unitRows;
+// Units list by ID, and the culture-invariant text's ID comes first; lines list by line ID, and its
+// line comes last.
+const keyed: readonly UnitKey[] = [
+	"Category",
+	"Hint",
+	"Opacity",
+	"Options",
+	"Quit",
+	"Tab0",
+	"Title"
+];
+const upToDate = (count: number) => ["up_to_date", "Up to date", count, 0, "up_to_date"];
+const table = (count: number, needWork: number, worst: string) => [
+	"content/text/table",
+	"Content/Text/Table",
+	count,
+	needWork,
+	worst
+];
+// Each search without a target and with one. With it, the manifest's old title changed since the
+// gather; the hint and quit text were never gathered; the culture-invariant text cannot be
+// checked; and the editor text the target skips is up to date.
+const searches = [
+	{
+		query: "",
+		units: [
+			[NO_KEY, ...keyed],
+			[...keyed, NO_KEY]
+		],
+		problems: [
+			{ up_to_date: 8 },
+			{ not_gathered: 2, changed_since_gather: 1, unchecked: 1, up_to_date: 4 }
+		],
+		assets: [table(8, 0, "up_to_date"), table(8, 3, "not_gathered")],
+		byProblem: [
+			[upToDate(8)],
+			[
+				["not_gathered", "Not gathered yet", 2, 2, "not_gathered"],
+				["changed_since_gather", "Changed since gather", 1, 1, "changed_since_gather"],
+				["unchecked", "Couldn't check", 1, 0, "unchecked"],
+				upToDate(4)
+			]
+		]
+	},
+	{
+		query: "play",
+		units: [["Title"], ["Title"]],
+		problems: [{ up_to_date: 1 }, { changed_since_gather: 1 }],
+		assets: [table(1, 0, "up_to_date"), table(1, 1, "changed_since_gather")],
+		byProblem: [
+			[upToDate(1)],
+			[["changed_since_gather", "Changed since gather", 1, 1, "changed_since_gather"]]
+		]
+	},
+	{
+		query: "render",
+		units: [["Opacity"], ["Opacity"]],
+		problems: [{ up_to_date: 1 }, { up_to_date: 1 }],
+		assets: [table(1, 0, "up_to_date"), table(1, 0, "up_to_date")],
+		byProblem: [[upToDate(1)], [upToDate(1)]]
+	}
+] as const;
 
 const places = (corpus: TextCorpus) =>
 	corpus.units.flatMap((unit) =>
@@ -267,7 +358,7 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 			expect((yield* result.corpus).coverage).toEqual(memory.coverage);
 			expect((yield* result.corpus).units).toEqual(memory.units);
 
-			// Focus through the index decodes the same copies.
+			// Focus through the index decodes the title's compiled copy.
 			const title = memory.units.find(
 				(unit) => unit.identity.status === "resolved" && unit.identity.key === "Title"
 			)!;
@@ -275,10 +366,36 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 				id: title.id,
 				pageSize: 50
 			}))!;
-			expect(focused).toEqual(textCorpusQuery(memory).focus({ id: title.id, pageSize: 50 }));
-			expect(focused.unit.source).toEqual({ status: "consistent", value: "Play now" });
-			expect(focused.unit.reviewSignals).toContain("compiled_copy_differs");
-			expect(focused.unit.reviewSignals).not.toContain("conflicting");
+			expect(focused.diagnostics).toEqual([]);
+			expect(focused.totalOccurrences).toBe(1);
+			expect(focused.occurrences).toHaveLength(1);
+			expect(focused.occurrences[0]).toMatchObject({
+				source: "Play now",
+				identity: { status: "resolved", namespace: "UI", key: "Title" },
+				location: {
+					kind: "asset_property",
+					objectPath: `${pkg}.Table.WidgetTree.Title`,
+					classPath: "/Script/UMG.TextBlock",
+					propertyPath: "Text"
+				},
+				audience: "player",
+				copies: [
+					{
+						objectPath: `${pkg}.Table_C.WidgetTree.Title`,
+						kind: "generated_class",
+						source: "Play"
+					}
+				]
+			});
+			expect(focused.unit).toMatchObject({
+				id: "unreal:UI:Title",
+				source: { status: "consistent", value: "Play now" },
+				occurrenceCount: 1,
+				characterCount: 8,
+				wordCount: 2,
+				problems: ["up_to_date"]
+			});
+			expect(focused.unit.reviewSignals).toEqual(["evidence_only", "compiled_copy_differs"]);
 
 			// Lines: the authored text is the line's source; no key has two texts.
 			const evidence = yield* Effect.gen(function* () {
@@ -305,15 +422,14 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 			).not.toContain("compiled_copy_differs");
 			expect(lineFacts(yield* result.localizationJoin)).toEqual(lines);
 
-			// Search, lenses, problems, facets and groups agree, without a target and with one.
-			const inMemory = textCorpusQuery(memory, undefined, memoryJoin);
-			const requests: TextCorpusSearchRequest[] = [];
-			for (const scoped of [false, true])
-				for (const query of ["", "play", "render"])
+			// Search, problems, facets and groups, without a target and with one. Searches have no
+			// lens: a request's lens changes nothing.
+			for (const [index, scoped] of [false, true].entries())
+				for (const search of searches)
 					for (const lens of [undefined, "conflicting", "shared"] as const)
-						for (const group of [undefined, "problem", "asset"] as const)
-							requests.push({
-								query,
+						for (const group of [undefined, "problem", "asset"] as const) {
+							const request: TextCorpusSearchRequest = {
+								query: search.query,
 								capability: "all",
 								pageSize: 50,
 								facets: { assets: true },
@@ -322,13 +438,27 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 									: undefined),
 								...(lens === undefined ? undefined : { lens }),
 								...(group === undefined ? undefined : { group })
+							};
+							const keys = search.units[index]!;
+							expect(
+								pageFacts(yield* result.search(request)),
+								JSON.stringify(request)
+							).toEqual({
+								total: keys.length,
+								problems: search.problems[index],
+								units: keys.map((key) => [key, ...unitRows[key]]),
+								lines: scoped
+									? keys.map((key) => [key, unitRows[key][0]])
+									: undefined,
+								assets: [search.assets[index]],
+								groups:
+									group === "problem"
+										? search.byProblem[index]
+										: group === "asset"
+											? [search.assets[index]]
+											: undefined
 							});
-			for (const request of requests) {
-				const indexed = yield* result.search(request);
-				expect(pageFacts(indexed), JSON.stringify(request)).toEqual(
-					pageFacts(inMemory.search(request))
-				);
-			}
+						}
 			const all = yield* result.search({ query: "", capability: "all", pageSize: 50 });
 			expect(all.counts.conflicting).toBe(0);
 			expect(
@@ -352,8 +482,10 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 				localization: { target: fixture.target.name }
 			} as const;
 			expect(
-				(yield* result.query.localizationLines(exported)).map((line) => line.id)
-			).toEqual(inMemory.localizationLines(exported).map((line) => line.id));
+				(yield* result.query.localizationLines(exported)).map(
+					(line) => line.identity?.key ?? NO_KEY
+				)
+			).toEqual([...keyed, NO_KEY]);
 			expect(gameTextCsv(memory).split("\r\n").filter(Boolean)).toHaveLength(1 + 9);
 
 			// Edit the authored title again, still without compiling: only place text changes, so
@@ -389,9 +521,28 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 				expect((yield* next.corpus).units).toEqual(nextMemory.units);
 				const page = yield* next.search(request);
 				expect(differing(page)).toEqual(expected);
-				expect(pageFacts(page)).toEqual(
-					pageFacts(textCorpusQuery(nextMemory).search(request))
-				);
+				const rows = {
+					...unitRows,
+					Title: [
+						title,
+						1,
+						compiled === title
+							? ["evidence_only"]
+							: ["evidence_only", "compiled_copy_differs"],
+						"player"
+					]
+				};
+				expect(pageFacts(page)).toEqual({
+					total: 8,
+					problems: { up_to_date: 8 },
+					units: ([NO_KEY, ...keyed] satisfies UnitKey[]).map((key) => [
+						key,
+						...rows[key]
+					]),
+					lines: undefined,
+					assets: undefined,
+					groups: undefined
+				});
 			}
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)

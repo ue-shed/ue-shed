@@ -15,8 +15,6 @@ import {
 	gameTextIndexRefreshLayer
 } from "./index-refresh.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
-
-import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import {
 	prepareJoinedSourceCache,
@@ -317,9 +315,12 @@ describe("persisted joined source cache", () => {
 							changedFiles: [path]
 						});
 						expect(changed.join.strategy).toBe("incremental");
-						const fresh = columnarTextCorpusQuery(changed.joined);
-						expect(fresh.search(search("NOVELCACHETERM")).total).toBe(1);
-						expect(fresh.search(search("originalsource")).total).toBe(0);
+						expect((yield* changed.query.search(search("NOVELCACHETERM"))).total).toBe(
+							1
+						);
+						expect((yield* changed.query.search(search("originalsource"))).total).toBe(
+							0
+						);
 						expect((yield* first.query.search(search("originalsource"))).total).toBe(1);
 						expect((yield* first.query.search(search("novelcacheterm"))).total).toBe(0);
 						value =
@@ -329,10 +330,11 @@ describe("persisted joined source cache", () => {
 							projectRoot: root,
 							changedFiles: [path]
 						});
-						const unicodeFresh = columnarTextCorpusQuery(unicode.joined);
-						expect(unicodeFresh.search(search("caf\u00e9")).total).toBe(1);
-						expect(unicodeFresh.search(search("\ud800")).total).toBe(1);
-						expect(fresh.search(search("novelcacheterm")).total).toBe(1);
+						expect((yield* unicode.query.search(search("caf\u00e9"))).total).toBe(1);
+						expect((yield* unicode.query.search(search("\ud800"))).total).toBe(1);
+						expect((yield* changed.query.search(search("novelcacheterm"))).total).toBe(
+							1
+						);
 					})
 				).pipe(
 					Effect.provide(

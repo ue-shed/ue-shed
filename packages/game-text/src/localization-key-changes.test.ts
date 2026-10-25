@@ -1,5 +1,7 @@
-import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Schema } from "effect";
+import { describe, expect } from "vitest";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import {
 	applyLocalizationKeyChanges,
@@ -17,7 +19,6 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
 
 function cell(key: string, source: string, row = "Start"): TextUnit {
@@ -246,25 +247,18 @@ describe("localization key changes", () => {
 		]);
 	});
 
-	it("marks both lines, filters new keys and counts them in the query", () => {
+	it.live("marks both lines, filters new keys and counts them in the query", () => {
 		const text = scanned([cell("NewKey", "Start game"), unit("Other", "Other")]);
-		const joined = joinLocalizationTarget(
-			text,
-			evidence(
-				[
-					manifestEntry("OldKey", "Start game", "/Game/Text/DT_Menu.DT_Menu.Start.Label"),
-					manifestEntry("Other", "Other")
-				],
-				[
-					archiveEntry("OldKey", "Start game", "Spiel starten"),
-					archiveEntry("Other", "Other")
-				]
-			)
+		const files = evidence(
+			[
+				manifestEntry("OldKey", "Start game", "/Game/Text/DT_Menu.DT_Menu.Start.Label"),
+				manifestEntry("Other", "Other")
+			],
+			[archiveEntry("OldKey", "Start game", "Spiel starten"), archiveEntry("Other", "Other")]
 		);
-		const marked = applyLocalizationKeyChanges(
-			joined,
-			localizationKeyChanges(joined, text).pairs
-		);
+		const joined = joinLocalizationTarget(text, files);
+		const { pairs } = localizationKeyChanges(joined, text);
+		const marked = applyLocalizationKeyChanges(joined, pairs);
 		const byKey = (key: string) => marked.lines.find((line) => line.identity?.key === key);
 		expect(byKey("NewKey")?.keyChange).toMatchObject({
 			direction: "to",
@@ -274,19 +268,22 @@ describe("localization key changes", () => {
 			direction: "from",
 			other: { key: "NewKey" }
 		});
-		const query = textCorpusQuery(text, undefined, marked);
 		const request = {
 			query: "",
 			capability: "all" as const,
 			pageSize: 50,
 			localization: { target: target.name }
 		};
-		expect(query.search(request).localization?.keyChanged).toBe(1);
-		const changed = query.search({
-			...request,
-			localization: { ...request.localization, keyChanged: true }
-		});
-		expect(changed.total).toBe(1);
-		expect(changed.localization?.lines[0]?.keyChange?.other.key).toBe("OldKey");
+		return withIndexedCorpus(text, { files, keyChangePairs: pairs }, ({ query }) =>
+			Effect.gen(function* () {
+				expect((yield* query.search(request)).localization?.keyChanged).toBe(1);
+				const changed = yield* query.search({
+					...request,
+					localization: { ...request.localization, keyChanged: true }
+				});
+				expect(changed.total).toBe(1);
+				expect(changed.localization?.lines[0]?.keyChange?.other.key).toBe("OldKey");
+			})
+		);
 	});
 });

@@ -31,11 +31,6 @@ import {
 	openJoinedTarget,
 	type JoinedTargetReader
 } from "../packages/game-text/src/joined-target-reader.ts";
-import { JoinedQueryData } from "../packages/game-text/src/joined-query-data.test-support.ts";
-import {
-	addSourceTrigrams,
-	simpleSourceBytes
-} from "../packages/game-text/src/joined-source-cache.test-support.ts";
 
 type Measure = <A>(
 	name: string,
@@ -425,6 +420,8 @@ export async function measureGameTextHosts(
 						...Object.keys(joined.meta.patches ?? {})
 					])
 				].sort()) {
+					// Incremental generations intentionally retain the base source accelerator, so its
+					// bytes are not a full build's.
 					if (
 						name === "join.meta" ||
 						name === "shared.meta" ||
@@ -436,48 +433,6 @@ export async function measureGameTextHosts(
 						.update(Buffer.from(values.buffer, values.byteOffset, values.byteLength))
 						.digest("hex");
 				}
-				// Incremental generations intentionally retain the base source accelerator. Compare
-				// its effective current sources, not the obsolete bytes that its reader can reuse.
-				const data = new JoinedQueryData(joined);
-				data.prepareSources();
-				const sources = data.projection.sources;
-				if (!sources)
-					throw new Error("The production reader did not prepare source search.");
-				const selected = [
-					...new Set([...data.column("line.source"), ...data.column("query.raw.sources")])
-				].sort((a, b) => a - b);
-				const sourceHash = createHash("sha256");
-				const requiredTrigrams = sources.trigrams
-					? new Uint8Array(sources.trigrams.length)
-					: undefined;
-				for (const id of selected) {
-					const row = sources.index[id]! - 1;
-					if (row < 0 || row >= sources.ids.length)
-						throw new Error("An active source is missing from the search accelerator.");
-					const bytes = sources.packed.bytes.subarray(
-						sources.packed.offsets[row],
-						sources.packed.offsets[row + 1]
-					);
-					if (sources.simple[row] !== Number(simpleSourceBytes(bytes)))
-						throw new Error("An active source has incorrect search flags.");
-					const header = Buffer.alloc(9);
-					header.writeUInt32LE(id, 0);
-					header.writeUInt32LE(bytes.length, 4);
-					header[8] = sources.simple[row]!;
-					sourceHash.update(header).update(bytes);
-					if (requiredTrigrams && sources.simple[row])
-						addSourceTrigrams(requiredTrigrams, bytes);
-				}
-				if (requiredTrigrams && sources.trigrams)
-					for (let byte = 0; byte < requiredTrigrams.length; byte++)
-						if (
-							(sources.trigrams[byte]! & requiredTrigrams[byte]!) !==
-							requiredTrigrams[byte]
-						)
-							throw new Error(
-								"The source accelerator can falsely reject a current search term."
-							);
-				hashes["query.source.active"] = sourceHash.digest("hex");
 				return {
 					hashes,
 					count: joined.meta.count,

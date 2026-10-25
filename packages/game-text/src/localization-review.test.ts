@@ -5,7 +5,10 @@ import {
 	type LocalizationReviewFile,
 	type LocalizationReviewFlag
 } from "@ue-shed/localization/browser";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { describe, expect } from "vitest";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import {
 	applyLocalizationReview,
@@ -14,7 +17,6 @@ import {
 	withoutAcceptedFindings
 } from "./localization-review.js";
 import { localizationProgressReport } from "./localization-reports.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import {
 	archiveEntry,
 	corpus,
@@ -106,34 +108,47 @@ describe("localization review state", () => {
 		expect(stateOf(file, "K", pending)?.status).toBe("changed");
 	});
 
-	it("filters and counts review lenses through the same query as search", () => {
-		const file = reviewOf("K", ["reviewed", "machine_translated"]);
-		const query = textCorpusQuery(text, undefined, applyLocalizationReview(base, file));
-		const request = {
-			query: "",
-			capability: "all" as const,
-			pageSize: 50,
-			localization: { target: target.name, culture: de }
-		};
-		const all = query.search(request);
-		expect(all.localization?.reviewCounts).toMatchObject({
-			reviewed: 1,
-			not_reviewed: 1,
-			not_proofread: 2,
-			changed_since_review: 0,
-			machine_translated: 1
-		});
-		const notReviewed = query.search({
-			...request,
-			localization: { ...request.localization, review: "not_reviewed" }
-		});
-		expect(notReviewed.localization?.lines.map((line) => line.identity?.key)).toEqual(["L"]);
-		expect(notReviewed.total).toBe(1);
-		// Without a review file, pages carry no review counts at all.
-		expect(
-			textCorpusQuery(text, undefined, base).search(request).localization?.reviewCounts
-		).toBeUndefined();
-	});
+	it.live("filters and counts review lenses through the same query as search", () =>
+		Effect.gen(function* () {
+			const review = reviewOf("K", ["reviewed", "machine_translated"]);
+			const request = {
+				query: "",
+				capability: "all" as const,
+				pageSize: 50,
+				localization: { target: target.name, culture: de }
+			};
+			yield* withIndexedCorpus(text, { files, review }, ({ query }) =>
+				Effect.gen(function* () {
+					const all = yield* query.search(request);
+					expect(all.localization?.reviewCounts).toMatchObject({
+						reviewed: 1,
+						not_reviewed: 1,
+						not_proofread: 2,
+						changed_since_review: 0,
+						machine_translated: 1
+					});
+					const notReviewed = yield* query.search({
+						...request,
+						localization: { ...request.localization, review: "not_reviewed" }
+					});
+					expect(
+						notReviewed.localization?.lines.map((line) => line.identity?.key)
+					).toEqual(["L"]);
+					expect(notReviewed.total).toBe(1);
+				})
+			);
+			// Without a review file, pages carry no review counts at all.
+			yield* withIndexedCorpus(text, { files }, ({ query }) =>
+				query
+					.search(request)
+					.pipe(
+						Effect.map((page) =>
+							expect(page.localization?.reviewCounts).toBeUndefined()
+						)
+					)
+			);
+		})
+	);
 
 	it("hides accepted findings only while the accepted text is unchanged", () => {
 		const line = base.lines.find((item) => item.identity?.key === "K");

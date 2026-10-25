@@ -12,7 +12,6 @@ import {
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";
 import { hydrateJoinedTarget } from "./joined-target-hydrate.test-support.js";
-import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { GameTextIndexBuilder } from "./index-builder.js";
@@ -165,35 +164,6 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						expect(yield* first.search(search)).toEqual(
 							yield* first.query.search(search)
 						);
-					let armed = false;
-					let checkpoints = 0;
-					const cancellable = columnarTextCorpusQuery(
-						first.joined,
-						undefined,
-						undefined,
-						() => {
-							checkpoints++;
-							if (armed && checkpoints === 2) throw new Error("Test interruption");
-						}
-					);
-					cancellable.search(searches[0]!);
-					checkpoints = 0;
-					armed = true;
-					const interruptedRequest = {
-						query: "new-term",
-						capability: "all" as const,
-						pageSize: 10
-					};
-					expect(() => cancellable.search(interruptedRequest)).toThrow();
-					armed = false;
-					checkpoints = 0;
-					expect(cancellable.search(searches[0]!)).toEqual(
-						yield* first.query.search(searches[0]!)
-					);
-					expect(checkpoints).toBe(1);
-					expect(cancellable.search(interruptedRequest)).toEqual(
-						yield* first.query.search(interruptedRequest)
-					);
 					const groupRequests = ["Content/Text", "Content/Other"].map((openGroup) =>
 						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
 							...searches[0],

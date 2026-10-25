@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { Schema } from "effect";
+import { it } from "@effect/vitest";
+import { describe, expect } from "vitest";
+import { Effect, Schema } from "effect";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { textCorpusQuery } from "./query.test-support.js";
-import { LocalizationState } from "./localization-schema.js";
+import { LocalizationLineId, LocalizationState } from "./localization-schema.js";
+import { LocalizationStatusReport, localizationStatusReport } from "./localization-status.js";
+import { TextCorpusFocus, TextCorpusSearchPage } from "./schema.js";
 import {
 	LocalizationFocus,
 	LocalizationFocusRequest,
@@ -20,39 +23,55 @@ import {
 } from "./localization.test-support.js";
 
 describe("localization presentation", () => {
-	it("counts and filters pending PO translations even when the source changed since gather", () => {
-		const text = corpus([unit("K", "New source")]);
-		const joined = joinLocalizationTarget(
-			text,
-			evidence([manifestEntry()], [archiveEntry()], poDocument("Pending translation"))
-		);
-		const query = textCorpusQuery(text, undefined, joined);
-		const page = query.search({
-			query: "",
-			capability: "all",
-			pageSize: 50,
-			localization: { target: target.name, state: "not_synced", culture: cultureCode("de") }
-		});
-		expect(page.total).toBe(1);
-		expect(page.counts.all).toBe(1);
-		expect(page.localization?.stateCounts.not_synced).toBe(1);
-		expect(page.localization?.stateCounts.changed_since_gather).toBe(1);
-		expect(page.localization?.notSynced).toBe(1);
-		expect(
-			page.localization?.counts.find((item) => item.culture === "de")?.states.not_synced.lines
-		).toBe(0);
-		expect(
-			page.localization?.lines[0]?.cultures.find((mark) => mark.culture === "de")?.translation
-		).toBe("Pending translation");
-		const noHits = query.search({
-			query: "absent",
-			capability: "all",
-			pageSize: 50,
-			localization: { target: target.name, state: "not_synced" }
-		});
-		expect(noHits.localization?.notSynced).toBe(0);
-		expect(noHits.localization?.stateCounts.not_synced).toBe(0);
-	});
+	it.live(
+		"counts and filters pending PO translations even when the source changed since gather",
+		() =>
+			withIndexedCorpus(
+				corpus([unit("K", "New source")]),
+				{
+					files: evidence(
+						[manifestEntry()],
+						[archiveEntry()],
+						poDocument("Pending translation")
+					)
+				},
+				({ query }) =>
+					Effect.gen(function* () {
+						const page = yield* query.search({
+							query: "",
+							capability: "all",
+							pageSize: 50,
+							localization: {
+								target: target.name,
+								state: "not_synced",
+								culture: cultureCode("de")
+							}
+						});
+						expect(page.total).toBe(1);
+						expect(page.counts.all).toBe(1);
+						expect(page.localization?.stateCounts.not_synced).toBe(1);
+						expect(page.localization?.stateCounts.changed_since_gather).toBe(1);
+						expect(page.localization?.notSynced).toBe(1);
+						expect(
+							page.localization?.counts.find((item) => item.culture === "de")?.states
+								.not_synced.lines
+						).toBe(0);
+						expect(
+							page.localization?.lines[0]?.cultures.find(
+								(mark) => mark.culture === "de"
+							)?.translation
+						).toBe("Pending translation");
+						const noHits = yield* query.search({
+							query: "absent",
+							capability: "all",
+							pageSize: 50,
+							localization: { target: target.name, state: "not_synced" }
+						});
+						expect(noHits.localization?.notSynced).toBe(0);
+						expect(noHits.localization?.stateCounts.not_synced).toBe(0);
+					})
+			)
+	);
 	it("presents the native culture first and omits raw file, metadata and PO blocks", () => {
 		const joined = joinLocalizationTarget(
 			corpus(),
@@ -175,47 +194,51 @@ describe("localization presentation", () => {
 			});
 		}
 	});
-	it("does not call empty PO exports pending edits or invent runtime text for unknown states", () => {
-		const joined = joinLocalizationTarget(
-			corpus(),
-			evidence(
+	it.live(
+		"does not call empty PO exports pending edits or invent runtime text for unknown states",
+		() => {
+			const files = evidence(
 				[manifestEntry()],
 				[archiveEntry("K", "Old source", "Old translation")],
 				poDocument("")
-			)
-		);
-		const line = joined.lines[0];
-		if (!line) throw new Error("Missing line");
-		expect(
-			line.cultures.every(
-				(mark) => mark.poTranslation === null && !mark.facts.includes("not_synced")
-			)
-		).toBe(true);
-		expect(
-			textCorpusQuery(corpus(), undefined, joined).search({
-				query: "",
-				capability: "all",
-				pageSize: 50,
-				localization: { target: target.name, state: "not_synced" }
-			}).total
-		).toBe(0);
-		const uncertain = {
-			...line,
-			cultures: line.cultures.map((mark) => ({
-				...mark,
-				state: LocalizationState.make("unknown")
-			}))
-		};
-		const focus = localizationFocusPage(joined, uncertain, {
-			target: target.name,
-			selection: { kind: "line", id: line.id }
-		});
-		expect(
-			focus.translations.every(
-				(mark) => mark.gameTranslation === null && mark.gameTextKind === "unavailable"
-			)
-		).toBe(true);
-	});
+			);
+			const joined = joinLocalizationTarget(corpus(), files);
+			const line = joined.lines[0];
+			if (!line) throw new Error("Missing line");
+			expect(
+				line.cultures.every(
+					(mark) => mark.poTranslation === null && !mark.facts.includes("not_synced")
+				)
+			).toBe(true);
+			const uncertain = {
+				...line,
+				cultures: line.cultures.map((mark) => ({
+					...mark,
+					state: LocalizationState.make("unknown")
+				}))
+			};
+			const focus = localizationFocusPage(joined, uncertain, {
+				target: target.name,
+				selection: { kind: "line", id: line.id }
+			});
+			expect(
+				focus.translations.every(
+					(mark) => mark.gameTranslation === null && mark.gameTextKind === "unavailable"
+				)
+			).toBe(true);
+			return withIndexedCorpus(corpus(), { files }, ({ query }) =>
+				Effect.map(
+					query.search({
+						query: "",
+						capability: "all",
+						pageSize: 50,
+						localization: { target: target.name, state: "not_synced" }
+					}),
+					(page) => expect(page.total).toBe(0)
+				)
+			);
+		}
+	);
 	it("summarizes culture-independent scope states once while preserving pending evidence", () => {
 		for (const state of [
 			"outside_target",
@@ -325,5 +348,169 @@ describe("localization presentation", () => {
 		const next = localizationFocusPage(joined, expanded, { ...request, cultureOffset: 50 });
 		expect(next.translations).toHaveLength(3);
 		expect(next.nextCultureOffset).toBeUndefined();
+	});
+});
+
+describe("localization in the query", () => {
+	const request = {
+		query: "",
+		capability: "all" as const,
+		pageSize: 50,
+		localization: { target: target.name }
+	};
+
+	it.live("adds compact state marks, culture focus and manifest locations", () =>
+		withIndexedCorpus(
+			corpus(),
+			{
+				files: evidence(
+					[manifestEntry()],
+					[archiveEntry()],
+					poDocument("Changed translation")
+				)
+			},
+			({ query }) =>
+				Effect.gen(function* () {
+					const page = yield* query.search(request);
+					Schema.decodeUnknownSync(TextCorpusSearchPage)(page);
+					expect(page.units[0]?.localization?.[0]?.state).toBe("not_synced");
+					const first = page.localization?.lines[0];
+					if (!first) throw new Error("Missing query line.");
+					const focus = yield* query.localizationFocus(first.id);
+					expect(focus?.cultures[0]?.archive?.translation.Text).toBe("Translation");
+					expect(focus?.cultures[0]?.poTranslation).toBe("Changed translation");
+					expect(focus?.cultures[0]?.po).toMatchObject({
+						translatorComments: ["translator"],
+						extractedComments: ["extracted"],
+						referenceComments: ["reference"],
+						flags: ["fuzzy"]
+					});
+					expect(focus?.manifest[0]?.path).toBe("/Game/Text/Table.Table");
+					const corpusFocus = yield* query.focus({ id: page.units[0]!.id, pageSize: 50 });
+					Schema.decodeUnknownSync(TextCorpusFocus)(corpusFocus);
+					expect(corpusFocus?.localization?.cultures).toHaveLength(2);
+				})
+		)
+	);
+
+	it.live("searches translations only when asked, and only in the selected culture", () =>
+		Effect.gen(function* () {
+			yield* withIndexedCorpus(corpus(), { files: evidence() }, ({ query }) =>
+				Effect.gen(function* () {
+					const translation = { ...request, query: "Translation" };
+					expect((yield* query.search(translation)).total).toBe(0);
+					expect(
+						(yield* query.search({
+							...translation,
+							localization: {
+								target: target.name,
+								culture: cultureCode("de"),
+								searchTranslations: true
+							}
+						})).total
+					).toBe(1);
+					expect(
+						(yield* query.search({
+							...translation,
+							localization: { target: target.name, searchTranslations: true }
+						})).total
+					).toBe(0);
+				})
+			);
+			// Without the target's files a localization selection is refused.
+			const refused = yield* withIndexedCorpus(corpus(), {}, ({ query }) =>
+				Effect.flip(query.search(request))
+			);
+			expect(refused._tag).toBe("GameTextIndexError");
+		})
+	);
+
+	it.live(
+		"counts lines and words of the search and state filters, whatever the page size",
+		() => {
+			const text = corpus([unit("K"), unit("Other", "Other source")]);
+			const files = evidence();
+			return withIndexedCorpus(text, { files }, ({ query }) =>
+				Effect.gen(function* () {
+					const page = yield* query.search({
+						...request,
+						pageSize: 1,
+						localization: {
+							target: target.name,
+							culture: cultureCode("de"),
+							state: "not_gathered"
+						}
+					});
+					expect(page.total).toBe(1);
+					expect(page.localization?.counts[0]?.states.not_gathered).toEqual({
+						lines: 1,
+						sourceWords: 2
+					});
+					expect(page.localization?.counts[0]?.states.translated.lines).toBe(0);
+					const noHits = yield* query.search({ ...request, query: "absent" });
+					expect(noHits.localization?.counts).toHaveLength(2);
+					expect(
+						noHits.localization?.counts.every(
+							(count) => count.states.not_synced.lines === 0
+						)
+					).toBe(true);
+					Schema.decodeUnknownSync(LocalizationStatusReport)(
+						localizationStatusReport(text, files, page)
+					);
+				})
+			);
+		}
+	);
+
+	it.live("pages gathered-only lines with their own cursor", () =>
+		withIndexedCorpus(
+			{ units: [] },
+			{
+				files: evidence(
+					[
+						manifestEntry("A", "A source", "Source/A.cpp(1)"),
+						manifestEntry("B", "B source", "Config/B.ini(2)")
+					],
+					[],
+					poDocument("")
+				)
+			},
+			({ query }) =>
+				Effect.gen(function* () {
+					const page = yield* query.search({ ...request, pageSize: 1 });
+					expect(page.total).toBe(2);
+					expect(page.units).toEqual([]);
+					expect(page.localization?.lines.map((line) => line.identity?.key)).toEqual([
+						"A"
+					]);
+					const cursor = page.localization?.nextCursor;
+					if (!cursor) throw new Error("Expected localization cursor.");
+					const next = yield* query.search({
+						...request,
+						pageSize: 1,
+						localizationCursor: cursor
+					});
+					expect(next.localization?.lines.map((line) => line.identity?.key)).toEqual([
+						"B"
+					]);
+					expect(next.localization?.nextCursor).toBeUndefined();
+					expect(
+						yield* query.localizationFocus(LocalizationLineId.make("missing"))
+					).toBeUndefined();
+				})
+		)
+	);
+
+	it.live("counts 5.7 manifest Comment metadata as translator notes", () => {
+		const entry = {
+			...manifestEntry("K", "Source", "Source/Text.cpp(1)"),
+			metadata: { Info: { Comment: "Translator guidance" } }
+		};
+		return withIndexedCorpus({ units: [] }, { files: evidence([entry]) }, ({ query }) =>
+			Effect.gen(function* () {
+				expect((yield* query.search({ ...request, withoutNotes: true })).total).toBe(0);
+				expect((yield* query.search(request)).total).toBe(1);
+			})
+		);
 	});
 });

@@ -4,8 +4,6 @@ import { expect, it } from "vitest";
 import { type EngineAnswer, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { openNativeTextQuery } from "./native-query.js";
-import { corpus } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import type { TextCorpusSearchPage } from "./schema.js";
 
 // A search that matches nothing: its page is all head, with no row batches to fake.
@@ -16,7 +14,19 @@ const configuration = {
 	targetKey: "Game",
 	sharedProject: false
 };
-const page = textCorpusQuery(corpus()).search(request);
+const page: TextCorpusSearchPage = {
+	counts: {
+		all: 0,
+		unresolved: 0,
+		conflicting: 0,
+		editable: 0,
+		readOnly: 0,
+		withoutNotes: 0,
+		origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
+	},
+	total: 0,
+	units: []
+};
 
 /** An engine answer: `open`'s reply, or `reply` as the answer's one part. */
 function outcome(

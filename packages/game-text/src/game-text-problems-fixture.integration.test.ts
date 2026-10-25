@@ -20,7 +20,6 @@ import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
-import { textCorpusQuery } from "./query.test-support.js";
 import { decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import type { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { staleRuntimeCopy } from "./text-copies.js";
@@ -285,11 +284,24 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 						expect(lineFacts(yield* result.localizationJoin)).toEqual(
 							lineFacts(memoryJoin)
 						);
-						const memoryQuery = textCorpusQuery(corpus, undefined, memoryJoin);
+						// The target's lines by problem: the three conflicting keys and the identity
+						// cases' two collisions outside the gather paths, the renamed key (its old key
+						// changed since gather, its new one not gathered), lines without a provable state
+						// and lines waiting on translators.
 						const page = yield* result.search(search(memoryJoin.target));
-						expect(page.problems).toEqual(
-							memoryQuery.search(search(memoryJoin.target)).problems
-						);
+						expect([page.total, page.problems]).toEqual([
+							146,
+							{
+								key_changed: 1,
+								conflicting_source: 5,
+								not_gathered: 1,
+								changed_since_gather: 1,
+								translation: 14,
+								finding: 0,
+								unchecked: 5,
+								up_to_date: 123
+							}
+						]);
 						for (const expected of cases.signals.compiledCopyDiffers) {
 							const unit = corpus.units.find((item) =>
 								item.occurrences.some(

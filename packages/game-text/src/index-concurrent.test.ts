@@ -84,12 +84,11 @@ it.live(
 			const published = yield* Deferred.make<void>();
 			const events: string[] = [];
 			concurrentFixture.pauseReads(
-				Effect.sync(() => {
+				Effect.gen(function* () {
 					events.push("read");
-				}).pipe(
-					Effect.andThen(Deferred.succeed(readEntered, undefined)),
-					Effect.andThen(Deferred.await(holdRead))
-				)
+					yield* Deferred.succeed(readEntered, undefined);
+					yield* Deferred.await(holdRead);
+				})
 			);
 			const underlying = yield* GameTextIndexBuilder.pipe(
 				Effect.provide(typeScriptIndexBuilderLayer)
@@ -142,11 +141,7 @@ it.live(
 				});
 				const imported = yield* steps.importTarget(selected, sequentialFixture.request);
 				const project = yield* steps.refreshProject(sequentialFixture.request);
-				const target = yield* steps.buildTarget(
-					project,
-					imported,
-					sequentialFixture.request
-				);
+				const target = yield* steps.buildTarget(project, imported);
 				const opened = yield* steps.openTarget(target);
 				const request = { query: "Source", capability: "all" as const, pageSize: 10 };
 				return {

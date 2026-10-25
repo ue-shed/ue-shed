@@ -586,8 +586,7 @@ export const makeGameTextIndexSteps = (
 										...(concurrent?.memoryBudgetBytes === undefined
 											? undefined
 											: {
-													memoryBudgetBytes:
-														concurrent.memoryBudgetBytes
+													memoryBudgetBytes: concurrent.memoryBudgetBytes
 												})
 									})
 								).pipe(Effect.provideService(LocalizationEvidence, evidence));

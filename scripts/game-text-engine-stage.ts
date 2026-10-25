@@ -265,9 +265,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 						Layer.provide(projectIndexLayer(options.projectIndexCache)),
 						Layer.provide(AssetReaderLive)
 					)
-				: gameTextIndexSourceNodeLayer(options.cache).pipe(
-						Layer.provide(AssetReaderLive)
-					);
+				: gameTextIndexSourceNodeLayer(options.cache).pipe(Layer.provide(AssetReaderLive));
 		// Quality runs in the engine, so `quality-in-process`, kept for earlier runs' names, is
 		// `quality`.
 		const layer = gameTextIndexRefreshLayer(options.cache).pipe(

@@ -165,9 +165,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 					const reservations = await Promise.all(
 						pending.map(async (task) => {
 							const files =
-								"files" in task.message
-									? task.message.files
-									: [task.message.input];
+								"files" in task.message ? task.message.files : [task.message.input];
 							let bytes = 0;
 							for (const file of files)
 								bytes += await stat(file).then(

@@ -10,9 +10,9 @@ import {
 	success,
 	unit
 } from "./localization.test-support.js";
-import type {
-	LocalizationCustomFinding,
-	LocalizationQualityReport
+import {
+	LocalizationQualityReport,
+	type LocalizationCustomFinding
 } from "./localization-quality-schema.js";
 import {
 	CompleteRule,
@@ -137,6 +137,39 @@ describe("complete rules", () => {
 		]);
 	});
 
+	it("see keyed lines only, so every finding names its line", () => {
+		const keyed = unit("A", "Open the gate");
+		const unkeyed = unit("U", "Unkeyed");
+		const keyless = { status: "unresolved", reason: "culture_invariant" } as const;
+		const text = corpus([
+			keyed,
+			{
+				...unkeyed,
+				identity: keyless,
+				occurrences: unkeyed.occurrences.map((place) => ({ ...place, identity: keyless }))
+			}
+		]);
+		const files = evidence(
+			[manifestEntry("A", "Open the gate")],
+			[archiveEntry("A", "Open the gate", "Öffne das Tor")],
+			noPO(),
+			[archiveEntry("A", "Open the gate", "Open the gate")]
+		);
+		const report = indexedTestReports(text, files).localization(
+			document([rule("all", { lit: true }, "line"), rule("every", { lit: true })]),
+			{}
+		);
+		expect(() => Schema.decodeUnknownSync(LocalizationQualityReport)(report)).not.toThrow();
+		expect(
+			custom(report)
+				.map(({ ruleId, identity }) => [ruleId, identity.key])
+				.sort()
+		).toEqual([
+			["all", "A"],
+			["every", "A"],
+			["every", "A"]
+		]);
+	});
 	it("report the rule at fault when the engine can't run it", () => {
 		expect(() =>
 			reports().localization(

@@ -465,7 +465,7 @@ limited by the packed facts.
 
 An entry with `kind: "rule"` is a whole rule in the engine's rule language, for what the checks
 above don't express. It has an `id`, a `label`, a `subject` (`line`, each keyed line's source
-once; `line_culture`, each culture's translation), `when`, `actual`, `expectation` and a
+once; `line_culture`, each culture's translation of a keyed line), `when`, `actual`, `expectation` and a
 `recovery` text. `when` holds where the rule has a finding; `actual` and `expectation` are
 objects of expressions, the finding's evidence. Constants are `{ "lit": … }`, `{ "param": … }`
 reads `params`, and `{ "finding": "<rule ID>" }` reads another rule's finding on the same line,

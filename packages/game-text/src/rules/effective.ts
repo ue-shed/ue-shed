@@ -292,7 +292,14 @@ export function effectiveRuleDocument(
 					: undefined),
 				...(check.each === undefined ? undefined : { each: expression(check.each) }),
 				...(check.eachAs ? { eachAs: check.eachAs } : undefined),
-				when: expression(check.when),
+				// Findings name their line by key, so a complete rule sees keyed lines only, as the
+				// custom checks below do.
+				when: x.and(
+					check.subject === "line"
+						? x.and(x.not(x.isNull(f("identity"))), x.not(x.isNull(f("sourceCulture"))))
+						: x.not(x.isNull(f("line.identity"))),
+					expression(check.when)
+				),
 				actual: expression(check.actual),
 				expectation: expression(check.expectation),
 				...(check.shadowed === undefined

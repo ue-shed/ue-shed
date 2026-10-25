@@ -721,10 +721,10 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				})
 			)
 		),
-		findingsAccept: Effect.fn("GameText.native.findingsAccept")((key, accepted) =>
-			bulk((lane) =>
+		findingsAccept: Effect.fn("GameText.native.findingsAccept")((key, accepted) => {
+			// Larger reviews go in chunks, each naming the set it adds to.
+			const accept = (lane: Lane) =>
 				Effect.gen(function* () {
-					// Larger reviews go in chunks, each naming the set it adds to.
 					let previous: string | undefined;
 					for (let start = 0; start === 0 || start < accepted.length; start += 5000) {
 						const reply = yield* engineReply<{ readonly acceptance: string }>(lane, {
@@ -739,9 +739,18 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 						previous = reply.acceptance;
 					}
 					return previous!;
-				}).pipe(Effect.mapError((cause) => failed("findings_accept", cause)))
-			)
-		),
+				}).pipe(Effect.mapError((cause) => failed("findings_accept", cause)));
+			// An acceptance lives in the reader that registered it, and Browse reads it on the
+			// interactive reader while Quality reads it on the bulk one, so both register it. Its key
+			// is a digest of what it accepts, so the two readers return the same key.
+			return bulk((lane) =>
+				accept(lane).pipe(
+					Effect.tap(() =>
+						lane === interactive ? Effect.void : scopedRead(reads, accept(interactive))
+					)
+				)
+			);
+		}),
 		rulesCheck: Effect.fn("GameText.native.rulesCheck")((document) =>
 			scopedRead(
 				reads,

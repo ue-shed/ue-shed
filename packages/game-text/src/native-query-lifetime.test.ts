@@ -154,7 +154,11 @@ describe("bulk reads", () => {
 					}
 					const opened = outcome(
 						operation,
-						operation.action === "search" ? JSON.stringify(page) : null
+						operation.action === "search"
+							? JSON.stringify(page)
+							: operation.action === "findings_accept"
+								? JSON.stringify({ acceptance: "acceptance-v1:digest" })
+								: null
 					);
 					return operation.action === "open"
 						? { ...opened, reader: `${name}-reader` }
@@ -211,6 +215,31 @@ describe("bulk reads", () => {
 		);
 	});
 
+	it("register an acceptance on both readers, since Browse reads it on the interactive one", async () => {
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const calls: string[] = [];
+				const scope = yield* Scope.make();
+				const query = yield* openNativeTextQuery({
+					configuration,
+					generation: "generation",
+					joinedKey: "joined",
+					bulkEngine: Effect.sync(() => client("bulk", calls))
+				}).pipe(
+					Effect.provideService(NativeGameTextEngineClient, client("main", calls)),
+					Effect.provideService(Scope.Scope, scope)
+				);
+				expect(yield* query.findingsAccept("findings-v2:layer", [])).toBe(
+					"acceptance-v1:digest"
+				);
+				yield* Scope.close(scope, Exit.void);
+				expect(calls.filter((call) => call.includes("findings_accept"))).toEqual([
+					"bulk:findings_accept:bulk-reader",
+					"main:findings_accept:main-reader"
+				]);
+			})
+		);
+	});
 	it("releases an acquired bulk process immediately when its reader cannot open", async () => {
 		await Effect.runPromise(
 			Effect.scoped(

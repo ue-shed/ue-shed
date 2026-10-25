@@ -158,10 +158,10 @@ impl EngineQuery {
         };
         let finding_rule = layer.column("f.rule")?;
         let finding_line = layer.column("f.line")?;
+        // A source finding's raw unit row, already mapped from its subject row when stored.
         let finding_unit = layer.column("f.unit")?;
         let finding_culture = layer.column("f.culture")?;
         let finding_flags = layer.column("f.flags")?;
-        let unit_rows = layer.column("subjects.unit_source.units")?;
         // Each rule's first finding number, to find a source finding's saved places.
         let mut bases = vec![0usize];
         let mut places = Vec::with_capacity(metadata.len());
@@ -206,10 +206,7 @@ impl EngineQuery {
         let mut unit_slices = HashMap::<u32, Vec<u32>>::new();
         for number in 0..count {
             if finding_unit[number] != NONE {
-                let unit = *unit_rows
-                    .get(finding_unit[number] as usize)
-                    .ok_or("Source finding row outside relation.")?;
-                unit_slices.entry(unit).or_default();
+                unit_slices.entry(finding_unit[number]).or_default();
             }
         }
         for (slice, unit) in p.slice_raw.iter().enumerate() {
@@ -257,7 +254,7 @@ impl EngineQuery {
                 }
                 continue;
             }
-            let unit = unit_rows[finding_unit[number] as usize];
+            let unit = finding_unit[number];
             if !localized {
                 rows[index].push(unit);
                 continue;

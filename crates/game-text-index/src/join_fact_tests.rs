@@ -1611,3 +1611,88 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     assert_eq!(facts["problems"]["finding"], json!(0));
     Ok(())
 }
+
+#[test]
+fn browse_places_source_findings_on_their_own_units_when_some_units_have_no_source() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    // The empty source is a unit with no source subject, so the long one's subject row is 0 and
+    // its unit row 1.
+    let texts = [("Empty", ""), ("Long", "Long text")];
+    fixture.file(
+        "Game.manifest",
+        "manifest",
+        &texts
+            .iter()
+            .map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"path":format!("/Game/Text/Example.Example.{key}")}))
+            .collect::<Vec<_>>(),
+    )?;
+    fixture.file(
+        "en.archive",
+        "archive",
+        &texts
+            .iter()
+            .map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"translation":source}))
+            .collect::<Vec<_>>(),
+    )?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.packages(
+        &texts
+            .iter()
+            .map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"object":format!("/Game/Text/{key}.{key}"),"property":"Label"}))
+            .collect::<Vec<_>>(),
+    )?;
+    fixture.lines()?;
+    let rules = example_document(
+        &[],
+        Some(
+            json!({"schemaVersion":1,"roles":[{"id":"all","scopes":[{"matchers":[{"kind":"object_path","operator":"prefix","value":"/Game/"}]}]}],"rules":[{"id":"budget","kind":"character_budget","role":"all","maximumCharacters":1,"recovery":"Shorten it."}]}),
+        ),
+    )?;
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    let mut query = EngineQuery::open(&configuration, None)?;
+    let cancelled = AtomicBool::new(false);
+    let evaluated = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
+    let key = evaluated["key"].as_str().ok_or("Missing findings key.")?;
+    // A row's findings, or null for a row the page doesn't list.
+    let findings_of = |page: &Value, list: &str, source: &str| -> Result<Value> {
+        let rows = page[list].as_array().ok_or("Missing rows.")?;
+        Ok(rows
+            .iter()
+            .find(|row| row["source"]["value"] == source || row["source"] == source)
+            .map_or(Value::Null, |row| row["findings"].clone()))
+    };
+    for (request, list) in [
+        (
+            json!({"query":"","capability":"all","pageSize":50,"findings":{"key":key,"sourceOnly":true}}),
+            "units",
+        ),
+        (
+            json!({"query":"","capability":"all","pageSize":50,"localization":{"target":"Game"},"findings":{"key":key}}),
+            "localization",
+        ),
+    ] {
+        let page = query.search(
+            &crate::engine_types::parse_search_request(&request.to_string())?,
+            &cancelled,
+        )?;
+        let page = if list == "localization" {
+            json!({"lines": page["localization"]["lines"].clone()})
+        } else {
+            page
+        };
+        let list = if list == "localization" {
+            "lines"
+        } else {
+            list
+        };
+        assert_eq!(
+            findings_of(&page, list, "Long text")?,
+            json!(["budget"]),
+            "{list}"
+        );
+        let empty = findings_of(&page, list, "")?;
+        assert!(empty.is_null() || empty == json!([]), "{list}: {empty}");
+    }
+    Ok(())
+}

@@ -645,6 +645,8 @@ struct Evaluator<'a> {
     /// In a full evaluation, the groups each cross-row aggregate formed over every row, for the
     /// next evaluation's state.
     recorded: Option<FxHashMap<NodeId, super::incremental::NodeGroups>>,
+    /// The cross-row nodes a rule evaluated.
+    reached: rustc_hash::FxHashSet<NodeId>,
     len: usize,
 }
 impl<'a> Evaluator<'a> {
@@ -739,6 +741,7 @@ impl<'a> Evaluator<'a> {
             corpus_tables: HashMap::new(),
             restrict: None,
             recorded: None,
+            reached: rustc_hash::FxHashSet::default(),
             len,
             cache_ids: Vec::new(),
             prepared,
@@ -1099,6 +1102,7 @@ impl<'a> Evaluator<'a> {
     /// A group aggregate's value for every subject row (Phase 2 specification §3.1). Rows outside
     /// `among`, or whose key is null, are null; a row whose inputs failed fails.
     fn group_aggregate(&mut self, id: NodeId) -> Result<Column> {
+        self.reached.insert(id);
         // An incremental evaluation's rows hold every member of every group they are in, so the
         // aggregate reads only them; the other rows' values are never read.
         let all =
@@ -1290,6 +1294,7 @@ impl<'a> Evaluator<'a> {
                     hashes,
                     table: None,
                     keyed: true,
+                    unreached: false,
                 },
             );
         }
@@ -1622,6 +1627,7 @@ impl<'a> Evaluator<'a> {
                 .and_then(|delta| delta.previous.get(&id))
                 .filter(|previous| {
                     keyed
+                        && !previous.unreached
                         && previous.starts.is_some() == sited
                         && keys
                             .iter()
@@ -1718,6 +1724,14 @@ impl<'a> Evaluator<'a> {
             if let Some(mut groups) = twin {
                 groups.node = id;
                 output.push(groups);
+                continue;
+            }
+            if !self.reached.contains(&id) {
+                output.push(super::incremental::NodeGroups {
+                    node: id,
+                    unreached: true,
+                    ..super::incremental::NodeGroups::default()
+                });
                 continue;
             }
             let measure = Measure::start();
@@ -1967,6 +1981,7 @@ impl<'a> Evaluator<'a> {
     /// `corpusCount` (Phase 2 specification §3.2): the corpus rows whose `by` equals the selected
     /// rows' `key`. The table is built once, from every occurrence in the project.
     fn corpus_count(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        self.reached.insert(id);
         let args = self.program.nodes[id].args.clone();
         let table = match self.corpus_tables.get(&id) {
             Some(table) => Arc::clone(table),
@@ -3422,6 +3437,13 @@ impl Program {
                     .map(|groups| (groups.node, groups))
                     .collect(),
             );
+            // A node no rule reads over every row is read after the rules: its `by` and `among`
+            // stay cached until then, holding the rows the rules computed.
+            for &id in &cross {
+                for &arg in self.nodes[id].args.iter().take(2) {
+                    evaluator.node_last[arg] = usize::MAX;
+                }
+            }
             recorder.sub_stage(format!("{stage}.groups"), &step, first.len());
         } else {
             output.groups = evaluator.cross_row_groups(&cross, delta)?;
@@ -3647,7 +3669,10 @@ impl Program {
                     .ok_or("The recorded nodes' groups can't be read.")?;
                 require(
                     recorded.len() == read.len()
-                        && recorded.iter().zip(&read).all(|(a, b)| a.same_rows(b)),
+                        && recorded
+                            .iter()
+                            .zip(&read)
+                            .all(|(a, b)| a.unreached || a.same_rows(b)),
                     "A recorded aggregate's groups differ from the groups read first.",
                 )?;
             }

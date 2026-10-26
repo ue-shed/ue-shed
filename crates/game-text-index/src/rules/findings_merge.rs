@@ -38,6 +38,9 @@ pub(super) struct StateNode {
     pub corpus: bool,
     /// Whether rows have several groups (`state.*.starts`).
     pub sited: bool,
+    /// No rule evaluated the node: it has no columns.
+    #[serde(default)]
+    pub unreached: bool,
 }
 
 /// The state's column names for one node.
@@ -55,6 +58,9 @@ pub(super) fn state_columns(
     subject: Subject,
     groups: &NodeGroups,
 ) -> Result<Vec<(String, Vec<u32>)>> {
+    if groups.unreached {
+        return Ok(Vec::new());
+    }
     let prefix = node_prefix(subject, u32::try_from(groups.node)?);
     let low = |values: &mut dyn Iterator<Item = u64>| values.map(|v| v as u32).collect();
     let high = |values: &mut dyn Iterator<Item = u64>| values.map(|v| (v >> 32) as u32).collect();
@@ -271,8 +277,16 @@ impl Previous {
             node,
             corpus,
             sited,
+            unreached,
             ..
         } = *state;
+        if unreached {
+            return Ok(NodeGroups {
+                node: node as usize,
+                unreached: true,
+                ..NodeGroups::default()
+            });
+        }
         let prefix = node_prefix(subject, node);
         let wide = |low: &[u32], high: &[u32]| {
             low.iter()
@@ -290,6 +304,7 @@ impl Previous {
             starts,
             groups: self.column(&format!("{prefix}.rows"))?.to_vec(),
             keyed: true,
+            unreached: false,
             hashes: wide(
                 &self.column(&format!("{prefix}.h0"))?,
                 &self.column(&format!("{prefix}.h1"))?,

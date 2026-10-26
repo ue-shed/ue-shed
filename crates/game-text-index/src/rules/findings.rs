@@ -991,6 +991,7 @@ impl EngineQuery {
                         node: u32::try_from(groups.node)?,
                         corpus: groups.table.is_some(),
                         sited: groups.starts.is_some(),
+                        unreached: groups.unreached,
                     });
                 }
             }

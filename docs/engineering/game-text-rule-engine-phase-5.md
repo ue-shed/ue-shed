@@ -150,11 +150,15 @@ otherwise full. `UE_SHED_GAME_TEXT_FULL_EVALUATION` forces a full one.
    occurrence.
 
     A full evaluation reads only `existsOther`'s keys first, from the inputs its rule then
-   reuses: its own pass drops the rows a `differing` value fails on, so it can't record them.
-   `groupCount`, `groupRank`, `groupTake`, `groupTally` and `corpusCount` record the groups they
-   form over every row as the rules run, and a node no rule read over every row takes the groups of a
-   node with the same `by` and `among`, or is read after the
-   rules. In tests, every full evaluation checks the recorded groups against the ones read first.
+    reuses: its own pass drops the rows a `differing` value fails on, so it can't record them.
+    `groupCount`, `groupRank`, `groupTake`, `groupTally` and `corpusCount` record the groups they
+    form over every row as the rules run. A node no rule read over every row takes the groups of
+    a node with the same `by` and `among`, or is read after the rules, from the inputs the rules
+    left cached. A node no rule evaluated at all, as one under an `if` branch no row takes, is
+    recorded as unreached, with no groups and no table: no finding read it, and a row outside a
+    later closure takes the same path and doesn't read it either, so that closure compares only
+    the changed rows' current groups. In tests, every full evaluation checks the recorded groups
+    against the ones read first.
 
 2. **Closure `S`, per subject.** Start from the rows of the lines in `D`. A group is affected when
    one of those rows was or is in it. Every row whose old or new group is affected joins `S`, and
@@ -187,10 +191,15 @@ overlay over the previous layer, as the joined layer has.
 ## 10. Spans and profiles
 
 - `PackageText.plan`: packages, changed and removed shards; `PackageText.planEntries` for a warm
-  refresh's plan file read.
+  refresh's plan file read. The native plan reports `plan.catalog` (paging the Catalog) and
+  `plan.keys` (sharding, keying and the plan file) as `game_text.build.stage_ms.*`.
 - `findings_evaluate` stages: `layer.previous` (opening the previous layer and computing `D`),
-  `<subject>.closure` with `.groups` and `.select`, and `layer.merge` (kept findings). A subject
-  with a `closure` stage was evaluated incrementally; its rows are `S`.
+  `<subject>.closure` and `layer.merge` (kept findings). A subject whose
+  `<subject>.closure.select` sub-stage holds more rows than its `closure` stage was evaluated
+  incrementally; the stage's rows are `S`.
+- Closure sub-stages: `.groups` (keys read before the rules), `.select` (choosing `S`) and, in a
+  full evaluation, `.recorded` (the groups taken after the rules), with `closure.read.<op>` for
+  each node read then. Every sub-stage reaches spans as `game_text.findings.stage_ms.*`.
 - Boundary records and bytes on every stage that crosses into TypeScript (§3).
 
 ## 11. Order of work, one commit per step at least

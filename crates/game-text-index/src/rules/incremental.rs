@@ -32,6 +32,9 @@ pub(crate) struct NodeGroups {
     /// False for a `corpusCount` whose key reads a lambda's element: only its table is known,
     /// so a changed table means evaluating every row.
     pub keyed: bool,
+    /// A full evaluation's node that no rule evaluated: no finding read it, so it has no groups
+    /// and a later evaluation has no old groups to compare.
+    pub unreached: bool,
 }
 impl NodeGroups {
     /// The row's group numbers.
@@ -85,6 +88,7 @@ impl NodeGroups {
             hashes: self.hashes.clone(),
             table: self.table.clone(),
             keyed: self.keyed,
+            unreached: self.unreached,
             ..Self::default()
         };
         match &self.starts {
@@ -180,10 +184,14 @@ pub(crate) fn closure(len: usize, delta: &SubjectDelta, current: &[NodeGroups]) 
         if let Some(keys) = delta.removed.get(&groups.node) {
             affected.extend(keys);
         }
-        for row in 0..len {
-            if !previous.same_keys(groups, row) {
-                affected.extend(previous.keys(row).filter(|key| !groups.has_key(row, *key)));
-                affected.extend(groups.keys(row).filter(|key| !previous.has_key(row, *key)));
+        // A row whose groups changed affects them. Before, an unreached node's groups held no
+        // finding: a row outside the closure doesn't reach it now either.
+        if !previous.unreached {
+            for row in 0..len {
+                if !previous.same_keys(groups, row) {
+                    affected.extend(previous.keys(row).filter(|key| !groups.has_key(row, *key)));
+                    affected.extend(groups.keys(row).filter(|key| !previous.has_key(row, *key)));
+                }
             }
         }
         nodes.push((previous, groups, affected, FxHashSet::default()));
@@ -332,6 +340,18 @@ mod tests {
         assert!(closure(3, &delta(&[], old.clone(), 3), std::slice::from_ref(&new)).is_none());
         new.table.clone_from(&old.table);
         assert_eq!(rows(closure(3, &delta(&[1], old, 3), &[new])), vec![1]);
+    }
+
+    #[test]
+    fn an_unreached_node_brings_only_the_changed_rows_groups() {
+        // No rule read the node before, so `b`'s rows held no finding of it and still don't.
+        let old = NodeGroups {
+            node: 1,
+            unreached: true,
+            ..NodeGroups::default()
+        };
+        let new = groups(1, &[Some("a"), Some("a"), Some("b"), None]);
+        assert_eq!(rows(closure(4, &delta(&[0], old, 4), &[new])), vec![0, 1]);
     }
 
     #[test]

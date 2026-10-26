@@ -937,6 +937,47 @@ fn every_authored_kind_uses_the_same_evaluator_and_existing_evidence() -> Result
 
 /// A findings layer's sections with each cross-row node's state as its rows' key hashes, which
 /// don't depend on how an evaluation numbered the groups.
+/// Both layers without the state of a node either left unreached: a full evaluation keeps no
+/// groups for a node no rule evaluated, where an incremental one read them to choose its rows.
+fn without_unreached(
+    mut incremental: serde_json::Map<String, Value>,
+    mut full: serde_json::Map<String, Value>,
+) -> (
+    serde_json::Map<String, Value>,
+    serde_json::Map<String, Value>,
+) {
+    let nodes = |layer: &serde_json::Map<String, Value>| {
+        layer["join.meta"]["state"]["nodes"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    };
+    let unreached = nodes(&incremental)
+        .iter()
+        .chain(&nodes(&full))
+        .filter(|node| node["unreached"] == json!(true))
+        .map(|node| (node["subject"].clone(), node["node"].clone()))
+        .collect::<Vec<_>>();
+    for layer in [&mut incremental, &mut full] {
+        let names = layer.keys().cloned().collect::<Vec<_>>();
+        for (subject, node) in &unreached {
+            let prefix = format!("state.{}.n{node}.", subject.as_str().unwrap_or_default());
+            for name in names.iter().filter(|name| name.starts_with(&prefix)) {
+                layer.remove(name);
+            }
+        }
+        if let Some(Value::Array(nodes)) = layer
+            .get_mut("join.meta")
+            .and_then(|meta| meta.pointer_mut("/state/nodes"))
+        {
+            nodes.retain(|node| {
+                !unreached.contains(&(node["subject"].clone(), node["node"].clone()))
+            });
+        }
+    }
+    (incremental, full)
+}
+
 fn state_by_row(mut sections: serde_json::Map<String, Value>) -> serde_json::Map<String, Value> {
     let numbers = |value: Option<&Value>| -> Vec<u64> {
         value
@@ -1111,7 +1152,7 @@ fn an_incremental_evaluation_publishes_the_layer_a_full_one_would() -> Result<()
         store.publish_root()?;
         drop(store);
         let sections = |layer: &Value| state_by_row(layer.as_object().cloned().unwrap_or_default());
-        let (incremental, full) = (sections(&incremental), sections(&full));
+        let (incremental, full) = without_unreached(sections(&incremental), sections(&full));
         let differing = full
             .keys()
             .chain(incremental.keys())

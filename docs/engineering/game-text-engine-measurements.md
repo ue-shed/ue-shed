@@ -601,9 +601,13 @@ The owner reviewed these results on 2026-10-26 and accepted them for Phase 4. Ph
 
 ## Phase 4.5 results
 
-Measured on 2026-10-26 at final implementation `e2de0df2` against `ea6b5cb0`.
+Measured again on 2026-10-26 at final implementation `39b1748f` against `ea6b5cb0`,
+including the writer's native localization parsers and the reader's package-text shard encoder.
 The baseline was built in its own detached worktree with the final branch's benchmark harness
-and its imported helpers copied over, and the preserved base reader. Export parity used
+and its imported helpers copied over, and the preserved base reader. The current replay helper's
+native-only staging adapter and import were omitted in that baseline harness: the old product
+cannot use the new snapshot API and instead uses the helper's retained-record read fallback.
+Baseline package/crate product sources have no diff from `ea6b5cb0`. Export parity used
 Phase 4 `7c1a9458`, its separately built TypeScript packages and preserved Phase 4 reader.
 No product code changed during this campaign. The [numeric results](game-text-scan-final-measurements.json)
 retain all runs, per-stage ranges, branch intervals, answer hashes, cancellation observations,
@@ -616,18 +620,18 @@ Node 26.12.0, Ryzen 9 5950X (32 logical processors), `RAYON_NUM_THREADS=16`,
 off. The harness warmed an external persistent project index before each build, outside its
 timer, then used `refreshProjectIndex: false`. Each revision had its own persistent index.
 The 1× project replayed retained package records. Cold caches do not mean flushed OS caches.
-The first released-project native index refresh took 5.859 s for the baseline
-and 5.661 s for the final build, outside the scan timer; all warm-up stage
+The first released-project native index refresh took 13.300 s for the baseline
+and 5.832 s for the final build, outside the scan timer; all warm-up stage
 records are retained. A CLI first-ever scan still pays an index refresh; its complete end-to-end
 wall was not measured here.
 Every heavy run was alone under the shared lock; inputs were read-only, and no Unreal Editor,
 Perforce writes or network service ran. Artifacts remain under
-`E:/ue-shed-engine-scratch/p45-final-20261026` (`$results` below), with anonymous labels.
+`E:/ue-shed-engine-scratch/p45-final-2-20261026` (`$results` below), with anonymous labels.
 
 | Cold build to visible page, seconds |   Baseline median (range) |   Final median (range) | Median reduction |
 | ----------------------------------- | ------------------------: | ---------------------: | ---------------: |
-| Released project                    | 103.520 (103.427–106.896) | 62.247 (61.809–62.775) |            39.9% |
-| 1× project                          |    67.222 (67.211–67.811) | 56.705 (56.194–56.728) |            15.6% |
+| Released project                    | 105.374 (103.215–111.323) | 53.520 (52.532–54.430) |            49.2% |
+| 1× project                          |    73.314 (67.365–82.253) | 48.455 (47.806–48.800) |            33.9% |
 
 Stage values below are medians of the three runs, in seconds except the memory row. Independent
 branches overlap, so the rows must not be added to infer the whole build. The generated inventory
@@ -635,88 +639,101 @@ row is refresh wall minus package-refresh wall; its source has no inventory span
 whole build minus prepare-target wall and includes workspace orchestration. Selection, the small
 read residual and publication-gate wait are shown separately rather than hidden in engine stages.
 
-| Stage, the released project                 | Baseline |  Final |
-| ------------------------------------------- | -------: | -----: |
-| Package inventory (warm status + pages)     |    3.136 |  3.715 |
-| Localization parse                          |   14.717 | 22.796 |
-| Localization publish                        |   12.679 | 12.473 |
-| Package extraction / retained-record replay |   35.895 | 23.154 |
-| Bundle verification                         |    6.110 |  5.574 |
-| Package prepare                             |    4.975 |  4.759 |
-| Package publish                             |    7.978 |  6.023 |
-| Join                                        |   15.423 | 13.748 |
-| Open + first page / workspace residual      |    1.883 |  1.999 |
-| Package selection                           |    0.324 |  0.527 |
-| Other package read / staging                |    0.076 |  0.077 |
-| Package publication gate / bookkeeping      |    0.001 |  2.363 |
-| Whole measured build                        |  103.520 | 62.247 |
-| Peak process-tree working set, GiB          |    4.304 |  4.855 |
+| Stage, the released project                 | Baseline |       Final |
+| ------------------------------------------- | -------: | ----------: |
+| Package inventory (warm status + pages)     |    3.168 |       3.365 |
+| Localization parse                          |   14.953 |      15.039 |
+| Localization publish                        |   12.441 |       9.755 |
+| Package extraction / retained-record replay |   37.274 |      20.586 |
+| Bundle verification                         |    5.797 |       5.237 |
+| Separate package prepare                    |    4.828 | — (removed) |
+| Package publish                             |    7.968 |       7.240 |
+| Join                                        |   16.011 |      14.036 |
+| Open + first page / workspace residual      |    1.963 |       1.966 |
+| Package selection                           |    0.349 |       0.440 |
+| Other package read / staging                |    0.067 |       0.153 |
+| Package publication gate / bookkeeping      |    0.001 |       0.002 |
+| Whole measured build                        |  105.374 |      53.520 |
+| Peak process-tree working set, GiB          |    4.228 |       4.104 |
 
-| Stage, the 1× project                       | Baseline |  Final |
-| ------------------------------------------- | -------: | -----: |
-| Records inventory / refresh setup residual  |    0.912 |  0.840 |
-| Localization parse                          |   12.583 | 20.604 |
-| Localization publish                        |    9.235 |  6.974 |
-| Package extraction / retained-record replay |    9.875 | 13.208 |
-| Bundle verification                         |    0.000 |  0.000 |
-| Package prepare                             |    4.035 |  4.305 |
-| Package publish                             |   12.459 |  7.912 |
-| Join                                        |   15.822 | 14.306 |
-| Open + first page / workspace residual      |    1.936 |  1.942 |
-| Package selection                           |    0.258 |  0.238 |
-| Other package read / staging                |    0.000 |  0.000 |
-| Package publication gate / bookkeeping      |    0.001 | 13.753 |
-| Whole measured build                        |   67.222 | 56.705 |
-| Peak process-tree working set, GiB          |    2.605 |  2.841 |
+| Stage, the 1× project                       | Baseline |       Final |
+| ------------------------------------------- | -------: | ----------: |
+| Records inventory / refresh setup residual  |    1.394 |       0.730 |
+| Localization parse                          |   12.271 |      16.081 |
+| Localization publish                        |   12.083 |       6.372 |
+| Package extraction / retained-record replay |   10.736 |       5.750 |
+| Bundle verification                         |    0.000 |       0.000 |
+| Separate package prepare                    |    4.049 | — (removed) |
+| Package publish                             |   13.168 |       8.575 |
+| Join                                        |   16.918 |      14.516 |
+| Open + first page / workspace residual      |    1.976 |       1.993 |
+| Package selection                           |    0.409 |       0.246 |
+| Other package read / staging                |    0.000 |       0.000 |
+| Package publication gate / bookkeeping      |    0.002 |      16.143 |
+| Whole measured build                        |   73.314 |      48.455 |
+| Peak process-tree working set, GiB          |    2.685 |       2.445 |
 
 **Overlap.** Offsets below are seconds from each recorder's first span. Localization intervals
 are ended spans; package-read intervals are reconstructed from package-refresh start plus the
-selection/read stage marks (sub-millisecond setup is included in the boundary approximation).
-Package read includes bundle verification or generated-record staging; the native extraction
-intervals are also retained independently in the numeric artifact. Package prepare/publication
-begins only after both branches complete. Baseline overlap is zero in all six runs.
+selection/read stage marks (span/clock setup is included in this boundary approximation).
+Package read includes bundle verification or retained-record replay; final extraction/replay
+also includes Rust column conversion, shard ordering and snapshot writing. The native extraction
+intervals are also retained independently in the numeric artifact. Package publication begins
+only after both branches complete; the baseline's separate prepare also follows its package read.
+Baseline overlap is zero in all six runs.
 
 | Project  | Run        | Localization branch |  Package read | Overlap, s |
 | -------- | ---------- | ------------------: | ------------: | ---------: |
-| Released | Baseline 1 |        0.144–27.495 | 31.217–73.270 |      0.000 |
-| Released | Baseline 2 |        0.140–28.795 | 32.380–75.237 |      0.000 |
-| Released | Baseline 3 |        0.148–27.562 | 31.282–73.269 |      0.000 |
-| Released | Final 1    |        0.154–35.455 |  4.463–33.267 |     28.803 |
-| Released | Final 2    |        0.148–35.388 |  4.479–32.970 |     28.492 |
-| Released | Final 3    |        0.147–35.604 |  4.458–33.710 |     29.252 |
-| 1×       | Baseline 1 |        0.084–21.886 | 23.090–32.862 |      0.000 |
-| 1×       | Baseline 2 |        0.084–21.937 | 23.079–32.964 |      0.000 |
-| 1×       | Baseline 3 |        0.079–21.880 | 23.021–32.897 |      0.000 |
-| 1×       | Final 1    |        0.260–27.904 |  1.001–14.283 |     13.282 |
-| 1×       | Final 2    |        0.260–28.269 |  0.992–14.200 |     13.208 |
-| 1×       | Final 3    |        0.261–27.633 |  0.988–14.168 |     13.180 |
+| Released | Baseline 1 |        0.160–31.623 | 36.019–79.688 |      0.000 |
+| Released | Baseline 2 |        0.148–27.037 | 30.781–73.072 |      0.000 |
+| Released | Baseline 3 |        0.153–27.573 | 31.307–74.449 |      0.000 |
+| Released | Final 1    |        0.169–25.312 |  4.005–30.006 |     21.307 |
+| Released | Final 2    |        0.148–24.752 |  3.917–29.497 |     20.835 |
+| Released | Final 3    |        0.150–26.388 |  4.186–30.431 |     22.202 |
+| 1×       | Baseline 1 |        0.083–24.423 | 26.354–37.090 |      0.000 |
+| 1×       | Baseline 2 |        0.078–21.374 | 22.576–32.747 |      0.000 |
+| 1×       | Baseline 3 |        0.076–24.748 | 26.562–37.967 |      0.000 |
+| 1×       | Final 1    |        0.274–22.805 |   1.005–6.721 |      5.715 |
+| 1×       | Final 2    |        0.265–23.779 |   0.994–6.745 |      5.750 |
+| 1×       | Final 3    |        0.259–22.837 |   1.011–6.868 |      5.857 |
 
-Localization parse is slower under concurrency; its cost is partly hidden beside package read.
-The released project benefits most from reader scheduling and overlap. The 1× project has no
-native extraction and remains constrained by its localization branch before package publication.
+Localization parse now measures the writer's file reads, hashing, decoding, parsing and local
+column preparation; publication remains separately measured. Both TypeScript worker pools and
+the index's NDJSON staging are gone. Separate package prepare is zero in all six final builds;
+that work now belongs to the native extraction/replay interval. The 1× project reads retained
+records through the same native converter and does not decode Unreal packages.
 These three-run ranges describe this machine and these inputs, without a repeatability claim
 beyond the observed runs. Build-answer digests also agree across both revisions and all three
 repetitions on each project.
+The 1× baseline has the broadest range: its slowest run's join took
+23.205 s, against 16.918 / 16.321 s in the other two runs;
+localization and package publication also varied. These are observed stage walls. No profiler
+was run to attribute their system or scheduling cause, and no sample was discarded.
 
 **Memory and default.** The decision-3 gate passed at **256 MiB with 12 workers**; that existing
 default remains unchanged, so no 192 MiB fallback was run. The released-project probe sampled
-**6,014,414,848 bytes (5.601 GiB)** at
-50.183 s, last progress label `packages`, below 6 GiB (6,442,450,944 bytes).
+**4,130,533,376 bytes (3.847 GiB)** at
+27.477 s after its first sample, last progress label
+`packages`, below 6 GiB (6,442,450,944 bytes). Raw probe timestamps include its shared-lock wait;
+the numeric artifact retains both clocks.
 Localization and package progress interleave, so that label does not mean localization was idle.
 
-| Role at the tree peak         | Working set, bytes |   GiB | Processes |
-| ----------------------------- | -----------------: | ----: | --------: |
-| Node coordinator + TS workers |      2,660,638,720 | 2.478 |         1 |
-| Native one-shot reader        |      3,107,233,792 | 2.894 |         1 |
-| Native sessions               |        186,232,832 | 0.173 |         3 |
-| Sampler / loader / other      |         60,309,504 | 0.056 |         6 |
-| Total                         |      6,014,414,848 | 5.601 |        11 |
+| Role at the tree peak  | Working set, bytes |   GiB | Processes |
+| ---------------------- | -----------------: | ----: | --------: |
+| Node coordinator       |        308,944,896 | 0.288 |         1 |
+| Native one-shot reader |      2,404,761,600 | 2.240 |         1 |
+| Native sessions        |      1,376,968,704 | 1.282 |         3 |
+| Sampler / other        |         39,858,176 | 0.037 |         5 |
+| Total                  |      4,130,533,376 | 3.847 |        10 |
 
+Node's share at the tree peak was **0.288 GiB
+(7.5%)**. Its independent sampled high over the entire
+refresh was **349,896,704 bytes
+(0.326 GiB)**; the two values are different observations.
 The unchanged memory probe does not expose a warmed-index option; it used a fresh project-index
-cache and the default refresh. The probe ran with `node --import tsx`, as its retained-record
-helper imports source modules requiring the loader; loader/sampler children are included above.
-It requested 250 ms samples, retained 101, and achieved a mean gap of
-673.300 ms (maximum 1003 ms). Peaks are sampled
+cache and the default refresh. It ran on native Node, with no TypeScript loader process.
+It requested 250 ms samples, retained 95, and achieved a mean gap of
+722.404 ms (maximum 1128 ms). Peaks are sampled
 lower bounds. All six final timing builds also remained below 6 GiB in the harness's coarser
 sampling; their individual peaks and ranges are retained in the tables/artifact. Neither probe
 is a continuous high-water guarantee.
@@ -728,9 +745,9 @@ the timed refresh. No live Project Index or idle writer was excluded from the ex
 
 | Interrupted during | Interrupt return, ms | Post-return exit poll, ms | Interrupt + exit poll, ms | Immediate same-cache retry |
 | ------------------ | -------------------: | ------------------------: | ------------------------: | -------------------------- |
-| Localization parse |                   34 |                       430 |                       464 | Yes, 61.436 s              |
-| Package extraction |                  113 |                       433 |                       546 | Yes, 61.267 s              |
-| Join               |                   79 |                       424 |                       503 | Yes, 14.676 s              |
+| Localization parse |                   53 |                       469 |                       522 | Yes, 49.069 s              |
+| Package extraction |                   77 |                       454 |                       531 | Yes, 48.491 s              |
+| Join               |                   89 |                       434 |                       523 | Yes, 14.711 s              |
 
 All probes recorded an interruption, zero inventory descendants before the scan, zero remaining
 scan children afterward, and a successful immediate retry in the same process/cache. Each
@@ -767,20 +784,15 @@ normalizing token-bearing state. No authored value, string ID, data column, dict
 non-derived input key, graph move or authored-file timestamp was excluded. External project-index,
 stat-cache, staging bookkeeping and measurement logs are outside the published-snapshot comparison.
 
-This campaign did not run fuzz or Unreal. The lead owns the required 10,000-line Unreal fuzz
-run; its result is not claimed here. Measurement, memory, cancellation, fixture, export and
-four-input snapshot gates completed without a STOP condition.
+Measurement, memory, cancellation, fixture, export and four-input snapshot gates completed
+without a STOP condition.
 
 **Verification.** The fresh locked release reader build passed. Both corpus integration tests
 passed with the final reader explicitly selected. `pnpm -s run typecheck` passed.
 `pnpm -s run check:static` passed.
 No Rust product source changed, so no additional crate unit-test or clippy run was needed for
 this report-only change. The full suite and `pnpm check` were not run, as required by the brief.
-`git diff --check` passed.
-
-**The fuzz run.** One 10,000-line fuzz run on UE 5.8 with the final reader (seed 73131: 11,042
-lines, 44,168 subjects) has no unexpected disagreement and no stale defect, before and after a
-package edit, and its incremental and full scans agree.
+`git diff --check` passed. Nothing was pushed, merged or opened as a PR.
 
 ## Instrumentation details
 

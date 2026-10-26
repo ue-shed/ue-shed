@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { repositoryRoot } from "./native-tools.ts";
 
-// The sweep needs the native reader: it converts package text to columns (Plan 059 Phase 4.5,
-// decision 8). `--native` adds the native persisted join sweep beside the TypeScript join's.
+// The sweep needs the native reader, which converts package text to columns. `--native` adds the
+// native persisted join sweep beside the TypeScript join's.
 const args = process.argv.slice(2);
 const native = args.includes("--native");
 const result = spawnSync(

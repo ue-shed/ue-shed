@@ -48,58 +48,60 @@ Every stage reports the records and bytes it moves between a native process and 
 span attributes (`boundary.records`, `boundary.bytes`, both directions). Step 1 records the table
 below on both projects; each later step states which rows it removes.
 
-| Stage                  | Today                                                                             | After this phase                       |
-| ---------------------- | --------------------------------------------------------------------------------- | -------------------------------------- |
-| Inventory              | Every package's path, signature and header data (167,401 on the released project) | 256 shard summaries                    |
-| Staging request        | Every expected entry of every changed shard                                       | Shard numbers and a Catalog generation |
-| Bundle verification    | Every selected package's bundle paths, `stat` from TypeScript                     | Nothing                                |
-| `changedFiles` refresh | Every stored package's path, signature and status                                 | Nothing                                |
-| Findings evaluation    | Counts and rule metadata                                                          | Unchanged                              |
+| Stage                  | Before                                                                            | As built                                                     |
+| ---------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Inventory              | Every package's path, signature and header data (167,401 on the released project) | The Catalog generation in, one summary per changed shard out |
+| Staging request        | Every expected entry of every changed shard                                       | A plan file path and the changed shard numbers               |
+| Bundle verification    | Every selected package's bundle paths, `stat` from TypeScript                     | Nothing on a cold build; the changed packages on a warm one  |
+| `changedFiles` refresh | Every stored package's path, signature and status                                 | Nothing                                                      |
+| Findings evaluation    | Counts and rule metadata                                                          | Unchanged                                                    |
+
+A warm refresh (at most 8 changed shards) reads the changed shards' entries from the plan file
+and their packages through `read`, as before: those are the packages that changed.
 
 ## 4. The writer plans the package refresh
 
-A new writer-session operation, `package_text_plan`, replaces `GameTextIndexSource.inventory`,
-`packageTextSelection` and the retained-eligibility path in `refreshPackageTextLayer`.
+A new builder request, `plan_packages`, replaces the inventory paging, `packageTextSelection` and
+the retained-eligibility read in `refreshPackageTextLayer` whenever the source knows its Catalog
+(`GameTextIndexSource.catalog`) and the builder is native (`plansPackages`).
 
-- **Request:** the Catalog path and generation (from `ProjectIndex.status`), the package-text
-  format, the audience-policy prefix (the exact string TypeScript hashes today: the format, then
-  `JSON.stringify([TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY])`), and optional
-  `changedFiles`.
-- **Work, in the writer:** - Read the Catalog generation's inventory and header records directly. The writer session
-  runs in `uasset.exe`, so the operation lives in `uasset-io`, which owns the Catalog format
-  and links the store. - Select each package with `isPackageTextCandidate`, ported rule for rule:
-  `REQUIRES_LOCALIZATION_GATHER` set, or a gatherable text count and offset both above zero. - With `changedFiles`, a package not named keeps its stored signature and eligibility, read
-  from the active package-text layers in the writer's own store, exactly as
-  `package-text-layer.ts:216-282` does today. - Shard each path with `packageTextShard` (FNV-1a over UTF-16 code units, modulo 256) and key
-  each shard as today: SHA-256 over the prefix, then `JSON.stringify([path, signature,
-selected])` per entry in path byte order. The JSON is JavaScript's (`identity.rs`
-  `javascript_json`). - Compare each key with the manifest's active key.
-- **Response:** per shard: number, key, entry count, selected count and whether it changed; plus
-  the removed shard names. No paths.
-- **Then:** TypeScript asks the reader to stage the changed shards by number and Catalog
-  generation. The reader rebuilds each shard's expected entries from the same Catalog generation
-  (the same selection code in `uasset-io`), so the request carries no package lists. The incremental path (at most 8 changed shards, `replacePackageTextRecords`) asks the
-  reader for its shards the same way.
-- **Identity:** every shard key equals today's for the same inventory, so an existing cache stays
-  valid. A differential test compares the native keys and selections with the TypeScript code on
-  the fixture projects, generated edge cases (unicode, reserved scalars, empty and all-excluded
-  shards) and both canonical corpora, before the TypeScript code is deleted.
-- **Records replay** (the 1× benchmark and tests) keeps explicit staged records as its input; it
-  has no Catalog.
-- **Deleted:** `GameTextIndexSource.inventory` and its page cache, `packageTextSelection`,
-  `PackageTextSelectionBuilder`, the retained-eligibility read, and `isPackageTextCandidate` once
-  nothing else calls it.
+- **Request:** the Catalog cache root, project ID and generation (from `ProjectIndex.status`), the
+  package-text format, the audience-policy JSON (the string TypeScript hashes:
+  `JSON.stringify([TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY])`), optional
+  `changedFiles`, and the plan file to write.
+- **Who runs it:** the builder session lives in `uasset.exe`, and its protocol adapter takes the
+  request before it reaches the writer: the reader pages the Catalog generation
+  (`package_text_inventory`) and selects each package with `gathered(header)`, the port of
+  `isPackageTextCandidate` (`REQUIRES_LOCALIZATION_GATHER` set, or a gatherable text count and
+  offset both above zero). The writer's `plan()` (`package_text_plan.rs`) then:
+    - with `changedFiles`, keeps a package that isn't named at its stored signature and
+      eligibility, read from the active package-text layers in its own store;
+    - shards each path (FNV-1a over UTF-16 code units, modulo 256) and keys each shard as
+      TypeScript does: SHA-256 over the format and policy, then the JavaScript JSON of
+      `[path, signature, selected]` per entry in path order;
+    - compares each key with the manifest's active key and writes each changed shard's entries to
+      the plan file, one NDJSON line per shard.
+- **Response:** per changed shard its number, key, entry count and selected count; the removed
+  shard names; the package total and shard 0's key. No paths.
+- **Then:** a cold build asks the reader to stage the changed shards by number from the plan file
+  (`planFile`, `groups`; no paths). A warm refresh reads the changed shards' entries from the file.
+- **Identity:** every shard key equals TypeScript's for the same inventory, so existing caches stay
+  valid. `package-text-plan.integration.test.ts` publishes the fixture project both ways and
+  compares every shard key and record, then a `changedFiles` refresh naming unchanged files and an
+  unchanged refresh.
+- **Kept:** the TypeScript inventory, selection and verification remain for the TypeScript builder
+  and for a source without a Catalog (records replay, tests).
 
 ## 5. The reader verifies bundles
 
-- A worker stats a package's bundle files (the paths `bundlePaths` lists: the package and its
-  `.uexp`, `.ubulk`, `.uptnl` sidecars) and compares them with the package's Catalog signature
-  before it decodes the package, and again after.
-- A difference fails the scan with today's typed failure ("Package or sidecar changed while
-  reading"), naming the package. Cancellation and the byte budget are unchanged.
-- The comparison is today's: a missing file matches only a null entry; otherwise size and
-  modification time (milliseconds, from nanoseconds) must both equal the signature's.
-- **Deleted:** `GameTextIndexSource.verify` and its calls around `read` and `stage`.
+- When it stages from a plan file, the reader computes each package's bundle signature (the
+  package and its `.uexp`, `.ubulk`, `.uptnl` files: size and modification time, or null when
+  missing) and compares it with the plan's signature before it decodes the package and again
+  after.
+- A difference fails the scan ("Package or sidecar changed while reading"), naming the package.
+  Cancellation and the byte budget are unchanged.
+- The TypeScript `verify` remains only around `read` (a warm refresh's changed packages) and the
+  path-list staging the TypeScript builder uses.
 
 ## 6. Which lines changed
 
@@ -114,70 +116,73 @@ rows) rebuilds the join, which gives it a new base and may renumber rows.
   in both views.
 - **A new base** means a full evaluation.
 - **Join membership.** A line's `joinPosition` is its rank among the joined lines, so hiding one
-  line shifts the positions of every later line without patching them. The built-in rules read
-  positions only to order a group and to test membership, which a shift doesn't change; a rule
-  that reads `joinPosition` anywhere else gets a full evaluation whenever a line in `D` changed
-  membership.
+  line shifts the positions of every later line without patching them. When any rule reads
+  `joinPosition`, the state records each line's membership (`state.join`), and a line in `D` whose
+  membership changed gives a full evaluation. This is stricter than the rule's actual use needs;
+  no built-in rule reads it today.
 
 ## 7. The findings state
 
 The findings layer keeps what the next incremental evaluation needs, as `state.*` sections and
-metadata that no findings reader opens:
+metadata (`LayerState`) that no findings reader opens:
 
-- **The joined base key and its patch rows** at evaluation time.
+- **The joined base key, the line count and the patch rows** at evaluation time
+  (`state.patch_rows`).
 - **Cross-row nodes:** each node that reads other rows (`groupCount`, `groupRank`, `groupTake`,
-  `groupTally`, `existsOther`, `corpusCount`) keeps, per subject row, the group it fell in: a
-  dense group number, or none for a row outside `among`, a null key or a failed input, and per
-  group a 64-bit hash of the group's key text (`Evaluator::key`). `corpusCount` also keeps its
-  table: each key's hash and count.
-- **Facts for merging:** each finding's `actual` text (`f.actual`), the one order input the layer
-  didn't store, and each diagnostic's origin (`diag.origin`: the culture projection, a line rule,
-  or a culture rule), so a line's diagnostics can be spliced by origin.
-- The layer format version rises, so existing layers are evaluated again in full once.
+  `groupTally`, `existsOther`, `corpusCount`) keeps, per subject row, its groups
+  (`state.<subject>.n<node>.rows`, with `starts` when a row can fall in several, as a site-keyed
+  `existsOther` does) and per group a 64-bit hash of its key text (`h0`, `h1`). `corpusCount` also
+  keeps its table: each key's hash and count (`t0`, `t1`, `tc`).
+- **Facts for merging:** each finding's `actual` text (`f.actual.ends`, `f.actual.bytes`) and each
+  diagnostic's origin (`diag.origin`: the culture projection, a line rule, or a culture rule), so
+  a line's diagnostics can be spliced by origin.
+- The layer format version is 6, so existing layers are evaluated again in full once.
 
 ## 8. Incremental evaluation
 
 `findings_evaluate` takes the incremental path when the previous findings layer of the same
-document, evaluator version and locale has state for the current joined base, and is otherwise
-full.
+document, evaluator version, locale and collation has state for the current joined base, and is
+otherwise full. `UE_SHED_GAME_TEXT_FULL_EVALUATION` forces a full one.
 
-1. **Keys first.** For each subject, before any rule runs, every cross-row node's key is evaluated
-   over every row, as the aggregates already do, and grouped. `corpusCount`'s table is rebuilt
-   from every occurrence.
+1. **Keys of the changed rows.** For each subject, when the cross-row keys read only their own row
+   (no aggregate inside a key), keys are evaluated for the rows of `D` and the rest are copied from
+   the state; otherwise every row's key is evaluated. `corpusCount`'s table is rebuilt from every
+   occurrence.
 2. **Closure `S`, per subject.** Start from the rows of the lines in `D`. A group is affected when
-   one of those rows was or is in it, or when any row's group changed between the state and now
-   (which covers a row whose `among` changed through another aggregate). Every row whose old or
-   new group is affected joins `S`, and so does every row whose `corpusCount` key has a changed
-   count. For `line_culture`, `S` then grows to every culture row of each line it touches, so a
-   line's culture diagnostics are recomputed together. Repeat until `S` stops growing. A hash
-   collision can only add rows.
-3. **Evaluate `S`.** Every rule's scope is narrowed to `S`; aggregates still see every row. The
+   one of those rows was or is in it. Every row whose old or new group is affected joins `S`, and
+   so does every row whose `corpusCount` key has a changed count. For `line_culture`, `S` then
+   grows to every culture row of each line it touches. Repeat until `S` stops growing. A hash
+   collision can only add rows. An unchanged line whose cultures changed evaluates the subject in
+   full.
+3. **Evaluate `S`.** Every rule's scope is narrowed to `S`, and so are the group aggregates: a
+   group in `S` holds all its members, so its counts, ranks and tallies are exact. The
    culture-diagnostic projection runs over `S` too. `unit_source` rules and role totals are
-   evaluated in full, as today.
+   evaluated in full.
 4. **Merge.** A rule's findings for rows outside `S` are the previous layer's, with a
    `line_culture` row renumbered through its line and culture; findings of rows in `S` are new.
-   Diagnostics are spliced per line and origin. Counts and the layer's orders are recomputed from
-   the merged facts.
-5. **Fallback.** When `S` holds more than a quarter of a subject's rows, that evaluation is full.
+   Diagnostics are sorted by line and origin, kept for lines outside `S`. Counts and the layer's
+   orders are recomputed from the merged facts.
+5. **Fallback.** When `S` holds more than a quarter of a subject's rows, the subject is evaluated in
+   full. `UE_SHED_GAME_TEXT_UNLIMITED_CLOSURE` lifts the limit, so the fuzzer's small corpora
+   exercise the incremental path.
 
 **The gate:** an incremental evaluation answers exactly as a full one. Every finding (row,
 culture, evidence, places, both ID lanes, order), every diagnostic and every count is equal.
 
 ## 9. Publishing
 
-An incremental evaluation publishes a complete findings layer from the merged columns: the old
-findings keep their evidence string IDs and their place sets are re-interned, so only new evidence
-is interned. If publication still dominates an incremental evaluation once measured, the next step
-is an overlay over the previous layer, as the joined layer has.
+An incremental evaluation publishes a complete findings layer from the merged columns: kept
+findings re-intern their evidence and place sets through one shared map, so only new evidence is
+added. If publication still dominates an incremental evaluation once measured, the next step is an
+overlay over the previous layer, as the joined layer has.
 
 ## 10. Spans and profiles
 
-- `package_text_plan`: Catalog read, selection, keys, comparison; packages, shards, changed
-  shards.
-- Reader verification: files checked, wall and busy inside the extraction profile.
-- `findings_evaluate` gains the stages `incremental.changed`, `<subject>.closure` and
-  `incremental.merge`, with the changed lines (`D`), the rows evaluated (`S`) and total per
-  subject, the strategy (`full`, `incremental`) and the reason for a full one.
+- `PackageText.plan`: packages, changed and removed shards; `PackageText.planEntries` for a warm
+  refresh's plan file read.
+- `findings_evaluate` stages: `layer.previous` (opening the previous layer and computing `D`),
+  `<subject>.closure` with `.groups` and `.select`, and `layer.merge` (kept findings). A subject
+  with a `closure` stage was evaluated incrementally; its rows are `S`.
 - Boundary records and bytes on every stage that crosses into TypeScript (§3).
 
 ## 11. Order of work, one commit per step at least

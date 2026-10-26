@@ -14,6 +14,12 @@ import {
 import { withJoinCache } from "./columnar-join.test-support.ts";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
+const seeds =
+	process.env.UE_SHED_JOIN_FUZZ_SWEEP === "1"
+		? Number(process.env.UE_SHED_NATIVE_JOIN_FUZZ_SEEDS ?? 32)
+		: 8;
+if (!Number.isSafeInteger(seeds) || seeds < 1)
+	throw new Error("Native fuzz seed count must be positive.");
 const buildNativeJoin =
 	(
 		executable: string,
@@ -52,13 +58,7 @@ it.skipIf(!executable)(
 	async () => {
 		if (!executable) throw new Error("Native reader is required");
 		await withJoinCache(async (cache) => {
-			const count =
-				process.env.UE_SHED_JOIN_FUZZ_SWEEP === "1"
-					? Number(process.env.UE_SHED_NATIVE_JOIN_FUZZ_SEEDS ?? 32)
-					: 8;
-			if (!Number.isSafeInteger(count) || count < 1)
-				throw new Error("Native fuzz seed count must be positive.");
-			for (let seed = 0; seed < count; seed++) {
+			for (let seed = 0; seed < seeds; seed++) {
 				const directory = join(cache, String(seed));
 				await mkdir(directory);
 				const differences = await compareJoinFuzzInput(
@@ -72,7 +72,8 @@ it.skipIf(!executable)(
 			}
 		});
 	},
-	120_000
+	// The timeout scales with the sweep's seed count.
+	seeds * 15_000
 );
 
 it.skipIf(!executable)(
@@ -100,14 +101,8 @@ it.skipIf(!executable)(
 		if (!executable) throw new Error("Native reader is required");
 		const findings = nativeEngineFindings(executable);
 		await withJoinCache(async (cache) => {
-			const count =
-				process.env.UE_SHED_JOIN_FUZZ_SWEEP === "1"
-					? Number(process.env.UE_SHED_NATIVE_JOIN_FUZZ_SEEDS ?? 32)
-					: 8;
-			if (!Number.isSafeInteger(count) || count < 1)
-				throw new Error("Native fuzz seed count must be positive.");
 			const tally = { joins: {} as Record<string, number>, incremental: 0 };
-			for (let seed = 0; seed < count; seed++) {
+			for (let seed = 0; seed < seeds; seed++) {
 				const directory = join(cache, String(seed));
 				await mkdir(directory);
 				// Half the seeds have nothing to pair, so the join patches the edit.
@@ -154,9 +149,10 @@ it.skipIf(!executable)(
 				if (incremental) tally.incremental++;
 			}
 			console.log(
-				`In-place edits: ${tally.incremental} of ${count} evaluations incremental; joins ${JSON.stringify(tally.joins)}`
+				`In-place edits: ${tally.incremental} of ${seeds} evaluations incremental; joins ${JSON.stringify(tally.joins)}`
 			);
 		});
 	},
-	600_000
+	// The timeout scales with the sweep's seed count.
+	seeds * 75_000
 );

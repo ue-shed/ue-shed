@@ -1583,8 +1583,19 @@ impl<'a> Evaluator<'a> {
         }
         let all = Selection::from_mask(Bits::all(self.len));
         let changed = delta.map(|delta| Selection::from_mask(delta.changed.clone()));
-        let mut output = Vec::with_capacity(nodes.len());
+        let mut output: Vec<NodeGroups> = Vec::with_capacity(nodes.len());
         for &id in nodes {
+            // Nodes grouping by the same `by` among the same rows form the same groups.
+            if let Some(grouping) = self.row_grouping(id)
+                && let Some(twin) = output
+                    .iter()
+                    .find(|groups| self.row_grouping(groups.node) == Some(grouping))
+            {
+                let mut groups = twin.clone();
+                groups.node = id;
+                output.push(groups);
+                continue;
+            }
             let op = self.program.nodes[id].op.clone();
             let args = self.program.nodes[id].args.clone();
             // The arguments a row's keys read, and whether they read the site.
@@ -1688,17 +1699,51 @@ impl<'a> Evaluator<'a> {
         nodes: &[NodeId],
     ) -> Result<Option<Vec<super::incremental::NodeGroups>>> {
         let mut recorded = self.recorded.take().unwrap_or_default();
-        let mut output = Vec::with_capacity(nodes.len());
+        let mut output: Vec<super::incremental::NodeGroups> = Vec::with_capacity(nodes.len());
         for &id in nodes {
-            match recorded.remove(&id) {
-                Some(groups) => output.push(groups),
-                None => match self.cross_row_groups(&[id], None)? {
-                    Some(groups) => output.extend(groups),
-                    None => return Ok(None),
-                },
+            if let Some(groups) = recorded.remove(&id) {
+                output.push(groups);
+                continue;
             }
+            // A rule may not reach a node, as one under an `if` branch no row takes. Another node
+            // grouping by the same `by` among the same rows formed the same groups.
+            let grouping = self.row_grouping(id);
+            let twin = grouping.and_then(|grouping| {
+                output
+                    .iter()
+                    .chain(recorded.values())
+                    .find(|groups| self.row_grouping(groups.node) == Some(grouping))
+                    .cloned()
+            });
+            if let Some(mut groups) = twin {
+                groups.node = id;
+                output.push(groups);
+                continue;
+            }
+            let measure = Measure::start();
+            match self.cross_row_groups(&[id], None)? {
+                Some(groups) => output.extend(groups),
+                None => return Ok(None),
+            }
+            self.arena.recorder.sub_stage(
+                format!("closure.read.{}", self.program.nodes[id].op.name()),
+                &measure,
+                self.len,
+            );
         }
         Ok(Some(output))
+    }
+    /// A node's `by` and `among` when its groups are `by`'s values among `among`'s rows: a group
+    /// aggregate's, or an `existsOther`'s whose `by` doesn't read the site.
+    fn row_grouping(&self, id: NodeId) -> Option<(NodeId, NodeId)> {
+        let node = &self.program.nodes[id];
+        match node.op {
+            Op::GroupCount | Op::GroupRank | Op::GroupTake | Op::GroupTally => {
+                Some((node.args[0], node.args[1]))
+            }
+            Op::ExistsOther if !self.reads_item(node.args[0]) => Some((node.args[0], node.args[1])),
+            _ => None,
+        }
     }
     /// Each selected row's key: its `by`, where `among` holds.
     fn row_keys(&self, by: &Column, among: Option<&Column>) -> Vec<RowKeys> {

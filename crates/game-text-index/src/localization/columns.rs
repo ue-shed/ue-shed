@@ -142,6 +142,7 @@ impl Table {
         self.bytes = 8;
     }
     fn add(&mut self, value: &str, file: &str, limits: &Limits) -> Parsed<u32> {
+        // packages/game-text/src/localization-columns.ts:159-193: dedup resets at block boundaries.
         if !self.identity && value.is_empty() && self.count > 0 {
             return Ok(0);
         }
@@ -271,7 +272,7 @@ impl Builder<'_> {
 }
 
 pub fn parse_columns(
-    text: &str,
+    chunks: &[String],
     file: &str,
     options: &Options,
     limits: &Limits,
@@ -294,7 +295,8 @@ pub fn parse_columns(
     }
     let mut po_format = options.po_format.clone().unwrap_or_else(|| "Unreal".into());
     if options.format == Format::Po {
-        let document = super::parse_po(text, file, options, limits)?;
+        // packages/game-text/src/localization-columns.ts:381-459: compact flags retain PO extras.
+        let document = super::parse_po(&chunks.concat(), file, options, limits)?;
         po_format = document.format;
         let keyed = po_format == "Crowdin"
             && options
@@ -391,7 +393,12 @@ pub fn parse_columns(
             }
         }
     } else {
-        let document = super::parse_json(text, file, options.format, limits)?;
+        let document = super::json::parse_json_chunks(
+            &chunks.iter().map(String::as_str).collect::<Vec<_>>(),
+            file,
+            options.format,
+            limits,
+        )?;
         for (i, entry) in document.rows.iter().enumerate() {
             b.row();
             b.columns[1][i] = b.id(&entry.key)?;
@@ -442,6 +449,7 @@ pub fn parse_columns(
     }
     let mut order = (0..count).collect::<Vec<_>>();
     order.sort_by(|a, z| {
+        // packages/game-text/src/localization-columns.ts:504-530: UTF-16 identity, then ordinal.
         keys[b.columns[0][*a] as usize]
             .cmp(&keys[b.columns[0][*z] as usize])
             .then_with(|| keys[b.columns[1][*a] as usize].cmp(&keys[b.columns[1][*z] as usize]))
@@ -497,12 +505,6 @@ pub fn parse_columns(
             .unwrap_or("IdenticalTextIdAndSource")
             != "IdenticalTextIdAndSource";
     let metadata = json!({"format":format,"count":count,"poFormat":po_format,"pathPrefix":b.path_prefix,"hasSourceText":has_source});
-    output.add(
-        "file.meta",
-        0,
-        "",
-        0,
-        serde_json::to_vec(&metadata).map_err(|_| failure(file, "invalid_schema", ""))?,
-    );
+    output.add("file.meta", 0, "", 0, stringify(&metadata).into_bytes());
     Ok(output)
 }

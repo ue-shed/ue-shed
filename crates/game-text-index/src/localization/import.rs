@@ -1,4 +1,4 @@
-use super::{Diagnostic, Format, Limits, Options, Parsed, failure, parse_bytes};
+use super::{Diagnostic, Format, Limits, Options, Parsed, failure, parse_bytes_with_chunk};
 use crate::dictionary::{LayerSource, SourceLayer};
 use crate::store::{Store, digest};
 use crate::{Result, require};
@@ -16,6 +16,9 @@ use std::time::{Instant, UNIX_EPOCH};
 #[cfg_attr(test, ts(rename = "LocalizationInput"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Input {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub chunk_bytes: Option<usize>,
     #[cfg_attr(test, ts(type = "string"))]
     pub project_root: PathBuf,
     #[cfg_attr(test, ts(type = "string"))]
@@ -74,6 +77,8 @@ pub struct FileResult {
 #[cfg_attr(test, ts(rename = "LocalizationImportOutcome"))]
 #[serde(rename_all = "camelCase")]
 pub struct Outcome {
+    pub lookup_strings: usize,
+    pub reused_strings: usize,
     pub files: Vec<FileResult>,
     pub worker_count: usize,
     pub parse_ms: f64,
@@ -89,6 +94,9 @@ impl Request {
         for input in &self.files {
             require(
                 !input.relative_path.is_empty()
+                    && input
+                        .chunk_bytes
+                        .is_none_or(|n| (1..=1024 * 1024).contains(&n))
                     && input.relative_path.len() <= 1024
                     && input.limits.max_file_bytes > 0
                     && input.limits.max_entries > 0
@@ -184,6 +192,8 @@ fn read(
     }
     let mut handle = File::open(&actual).map_err(io_error)?;
     let before = handle.metadata().map_err(io_error)?;
+    #[cfg(windows)]
+    let before_id = file_id::get_file_id(&actual).map_err(io_error)?;
     if !before.is_file() {
         return Err(failure(file, "file_unreadable", ""));
     }
@@ -217,15 +227,25 @@ fn read(
     );
     let existing = cached.get(&key);
     let layer = if existing.is_none() {
-        Some(Arc::new(parse_bytes(
+        Some(Arc::new(parse_bytes_with_chunk(
             &bytes,
             file,
             &input.options,
             &input.limits,
+            input.chunk_bytes.unwrap_or(256 * 1024),
         )?))
     } else {
         None
     };
+    if changed(&before, &handle.metadata().map_err(io_error)?)
+        || changed(&before, &fs::metadata(&actual).map_err(io_error)?)
+    {
+        return Err(failure(file, "file_changed", ""));
+    }
+    #[cfg(windows)]
+    if before_id != file_id::get_file_id(&actual).map_err(io_error)? {
+        return Err(failure(file, "file_changed", ""));
+    }
     let provenance = Provenance {
         relative_path: file.clone(),
         size: before.len(),
@@ -387,7 +407,47 @@ pub(crate) fn import(
         }
     }
     let publish_started = Instant::now();
+    let lookup_before = store.localization_lookups;
+    let local_strings = layers
+        .iter()
+        .map(|layer| layer.source.open())
+        .collect::<Result<Vec<_>>>()?
+        .iter()
+        .map(|reader| {
+            reader
+                .entries
+                .iter()
+                .filter(|e| e.kind == 4)
+                .map(|e| &e.domain)
+                .collect::<std::collections::BTreeSet<_>>()
+                .iter()
+                .map(|domain| {
+                    reader
+                        .entries
+                        .iter()
+                        .find(|e| &e.domain == *domain && e.kind == 4)
+                        .map_or(0, |e| e.strings as usize)
+                })
+                .sum::<usize>()
+        })
+        .sum::<usize>();
     if !files.iter().any(|file| file.error.is_some()) {
+        for entry in &files {
+            if let Some(file) = &entry.file
+                && !file.parsed
+            {
+                let record = &store.root["layers"][&file.key];
+                let path = store
+                    .directory
+                    .join(record["file"].as_str().ok_or("cached localization file")?);
+                store.prepare_local_reader(
+                    &file.relative_path,
+                    &file.key,
+                    crate::snapshot::Reader::open(&path)?,
+                    true,
+                )?;
+            }
+        }
         if request.cold
             && store.root["active"]
                 .as_object()
@@ -395,8 +455,17 @@ pub(crate) fn import(
         {
             store.publish_cold_sources(&layers)?;
         } else {
-            for layer in layers {
-                store.prepare_local_reader(&layer.name, &layer.key, layer.source.open()?, true)?;
+            if request.cold {
+                store.prepare_batch_cold_sources(&layers)?;
+            } else {
+                for layer in layers {
+                    store.prepare_local_reader(
+                        &layer.name,
+                        &layer.key,
+                        layer.source.open()?,
+                        true,
+                    )?;
+                }
             }
             for file in &files {
                 if let Some(file) = &file.file {
@@ -414,6 +483,13 @@ pub(crate) fn import(
         }
     }
     Ok(Outcome {
+        lookup_strings: store.localization_lookups.saturating_sub(lookup_before) as usize,
+        reused_strings: if request.cold {
+            0
+        } else {
+            local_strings
+                .saturating_sub(store.localization_lookups.saturating_sub(lookup_before) as usize)
+        },
         files,
         worker_count,
         parse_ms,

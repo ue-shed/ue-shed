@@ -1,5 +1,5 @@
 use super::{Diagnostic, Limits, Options, Parsed, PoRow, failure, identity, js_space, trim};
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 
 fn malformed(file: &str, line: usize) -> Diagnostic {
     failure(file, "malformed_po", &format!(" at line {line}"))
@@ -51,7 +51,7 @@ fn block(lines: &[(&str, &str)], offset: usize, file: &str) -> Parsed<Option<(bo
         msgid: String::new(),
         msgctxt: None,
         msgid_plural: None,
-        msgstr: BTreeMap::new(),
+        msgstr: IndexMap::new(),
         translator_comments: Vec::new(),
         extracted_comments: Vec::new(),
         reference_comments: Vec::new(),
@@ -67,7 +67,7 @@ fn block(lines: &[(&str, &str)], offset: usize, file: &str) -> Parsed<Option<(bo
             current = None;
             continue;
         }
-        if text.starts_with('#') {
+        if let Some(comment) = text.strip_prefix('#') {
             current = None;
             if let Some(comment) = text.strip_prefix("#.") {
                 row.extracted_comments
@@ -87,7 +87,7 @@ fn block(lines: &[(&str, &str)], offset: usize, file: &str) -> Parsed<Option<(bo
                 row.previous_msgid_lines.push((*raw).into());
             } else if text == "#" || text.starts_with("# ") {
                 row.translator_comments
-                    .push(text[1..].strip_prefix(' ').unwrap_or(&text[1..]).into());
+                    .push(comment.strip_prefix(' ').unwrap_or(comment).into());
             }
             continue;
         }
@@ -179,11 +179,30 @@ fn translation(text: &str) -> bool {
 }
 fn crowdin(header: &str) -> bool {
     // packages/localization/src/po.ts:378: the header marker is case insensitive and multiline.
-    header.lines().any(|line| {
-        line.get(..20)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("X-Crowdin-SourceKey:"))
-            && trim(&line[20..]).eq_ignore_ascii_case("msgstr")
-    })
+    std::iter::once(0)
+        .chain(header.char_indices().filter_map(|(i, c)| {
+            matches!(c, '\r' | '\n' | '\u{2028}' | '\u{2029}').then_some(i + c.len_utf8())
+        }))
+        .any(|i| {
+            let line = &header[i..];
+            if !line
+                .get(..20)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("X-Crowdin-SourceKey:"))
+            {
+                return false;
+            }
+            let rest = line[20..].trim_start_matches(js_space);
+            if !rest
+                .get(..6)
+                .is_some_and(|word| word.eq_ignore_ascii_case("msgstr"))
+            {
+                return false;
+            }
+            rest[6..]
+                .chars()
+                .take_while(|c| !matches!(c, '\r' | '\n' | '\u{2028}' | '\u{2029}'))
+                .all(js_space)
+        })
 }
 
 pub struct PoDocument {

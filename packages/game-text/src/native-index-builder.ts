@@ -150,13 +150,16 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		Effect.mapError((cause) => unavailable("native-index-root", cause))
 	);
 	const command = Effect.fn("NativeIndexBuilder.execute")(
-		function* (request: GameTextIndexBuildRequest) {
+		function* (
+			request: GameTextIndexBuildRequest,
+			onProgress?: (completed: number, total: number) => void
+		) {
 			if (closed)
 				return yield* Effect.fail(
 					unavailable("native-index-session", "The build session is closed.")
 				);
 			const result = yield* client
-				.execute(request)
+				.execute(request, onProgress)
 				.pipe(
 					Effect.mapError((cause) =>
 						nativeFailure(cause, `native-index-${request.action}`)
@@ -209,6 +212,21 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		}
 	);
 	const writer: SharedIndexWriter = {
+		importLocalization: Effect.fn("NativeIndexBuilder.importLocalization")(
+			function* (request, onProgress) {
+				const result = yield* command(
+					{ action: "import_localization", configuration, request },
+					onProgress
+				);
+				if (!result.localization)
+					return yield* Effect.fail(
+						unavailable("native-localization", "Missing import outcome.")
+					);
+				lookupStrings += result.localization.lookupStrings;
+				reusedStrings += result.localization.reusedStrings;
+				return result.localization;
+			}
+		),
 		sortsColdStrings: true,
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {

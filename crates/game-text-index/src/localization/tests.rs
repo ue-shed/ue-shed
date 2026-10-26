@@ -140,6 +140,64 @@ fn typescript_differential_localization_columns_and_diagnostics() {
         ));
     }
     let directory = crate::test_directory("localization-parser");
+    for text in [
+        "{\"Namespace\":\"\",\"FormatVersion\":1,\"Children\":[{\"Source\":{\"Text\":\"raw\ncontrol\"},\"Keys\":[]}]}",
+        "{\"Namespace\":\"\",\"FormatVersion\":1,\"Children\":[{\"Source\":{\"Text\":\"x\"},\"Keys\":[],}]}",
+    ] {
+        cases.push((
+            text.as_bytes().to_vec(),
+            Options {
+                format: Format::Manifest,
+                po_format: None,
+                collapse_mode: None,
+            },
+        ));
+    }
+    let late_invalid = [
+        format!("{{\"Namespace\":\"{}", "a".repeat(300_000)).into_bytes(),
+        vec![0xff],
+    ]
+    .concat();
+    cases.push((
+        late_invalid,
+        Options {
+            format: Format::Manifest,
+            po_format: None,
+            collapse_mode: None,
+        },
+    ));
+    let large = (0..2500).map(|i| json!({"Source":{"Text":format!("{i}-{}", "source".repeat(40))},"Keys":[{"Key":format!("{i}-{}", "key".repeat(40)),"Path":format!("/A/B/{i}")}]})).collect::<Vec<_>>();
+    cases.push((
+        serde_json::to_vec(&json!({"Namespace":"","Children":large,"FormatVersion":1})).unwrap(),
+        Options {
+            format: Format::Manifest,
+            po_format: None,
+            collapse_mode: None,
+        },
+    ));
+    for format in ["Unreal", "Crowdin"] {
+        for collapse in [
+            "IdenticalTextIdAndSource",
+            "IdenticalNamespaceAndSource",
+            "IdenticalPackageIdTextIdAndSource",
+        ] {
+            for text in [
+                "#. Key: K\n#: /A/B\nmsgctxt \"N,K\"\nmsgid \"N,K\"\nmsgstr[4294967296] \"b\"\nmsgstr[4294967295] \"c\"\nmsgstr[1] \"d\"\nmsgstr[0] \"N,K\"",
+                "msgid \"\"\nmsgstr \"prefix\\nX-Crowdin-SourceKey:\\nmsgstr\\n\"\n\nmsgid \"N,K\"\nmsgstr \"a\"",
+                "msgctxt \"N,K\"\nmsgid \"source\"\nmsgstr \"b\"\n",
+            ] {
+                cases.push((
+                    text.as_bytes().to_vec(),
+                    Options {
+                        format: Format::Po,
+                        po_format: Some(format.into()),
+                        collapse_mode: Some(collapse.into()),
+                    },
+                ));
+            }
+        }
+    }
+    cases.push((serde_json::to_vec(&json!({"Namespace":"N","FormatVersion":1,"Children":[{"Source":{"Text":"a"},"Keys":[{"Key":"k","Path":"/A/\u{f0000}/B"}]}]})).unwrap(), Options { format: Format::Manifest, po_format: None, collapse_mode: None }));
     fs::create_dir_all(&directory).unwrap();
     let requests = cases
         .iter()
@@ -183,11 +241,17 @@ fn typescript_differential_localization_columns_and_diagnostics() {
             }
             Err(error) => json!({"error":error}),
         };
-        assert_eq!(
-            actual, expected,
-            "differential case {i}, {:?}",
-            options.format
-        );
+        if actual != expected {
+            let one = actual.get("columns").and_then(Value::as_array);
+            let two = expected.get("columns").and_then(Value::as_array);
+            if let (Some(one), Some(two)) = (one, two) {
+                assert_eq!(one.len(), two.len(), "column count at case {i}");
+                for (a, b) in one.iter().zip(two) {
+                    assert!(a == b, "differential case {i}, column {}", a["name"]);
+                }
+            }
+            assert_eq!(actual, expected, "diagnostic at case {i}");
+        }
     }
     fs::remove_dir_all(directory).unwrap();
 }

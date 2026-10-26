@@ -4,8 +4,8 @@ pub mod import;
 mod json;
 mod po;
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -133,7 +133,7 @@ pub struct PoRow {
     pub msgctxt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub msgid_plural: Option<String>,
-    pub msgstr: BTreeMap<u64, String>,
+    pub msgstr: IndexMap<u64, String>,
     pub translator_comments: Vec<String>,
     pub extracted_comments: Vec<String>,
     pub reference_comments: Vec<String>,
@@ -180,6 +180,15 @@ pub fn parse_bytes(
     options: &Options,
     limits: &Limits,
 ) -> Parsed<columns::LocalLayer> {
+    parse_bytes_with_chunk(bytes, file, options, limits, 256 * 1024)
+}
+fn parse_bytes_with_chunk(
+    bytes: &[u8],
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+    chunk_bytes: usize,
+) -> Parsed<columns::LocalLayer> {
     if bytes.len() as u64 > limits.max_file_bytes {
         return Err(failure(file, "limit_exceeded", ""));
     }
@@ -192,37 +201,73 @@ pub fn parse_bytes(
     } else {
         0
     };
-    let invalid = || {
-        failure(
-            file,
-            "invalid_encoding",
-            &format!(" at byte offset {}", bytes.len().min(256 * 1024)),
-        )
-    };
-    let text = if utf16 {
-        if (bytes.len() - prefix) % 2 != 0 {
-            return Err(invalid());
-        }
-        String::from_utf16(
-            &bytes[prefix..]
+    let mut pending = Vec::<u8>::new();
+    let mut chunks = Vec::new();
+    let mut decode = |value: &[u8], final_chunk: bool, size: usize| -> Parsed<()> {
+        pending.extend_from_slice(value);
+        let invalid = || failure(file, "invalid_encoding", &format!(" at byte offset {size}"));
+        let (text, consumed) = if utf16 {
+            let mut complete = pending.len() / 2 * 2;
+            if complete >= 2
+                && (0xd800..=0xdbff).contains(&u16::from_le_bytes([
+                    pending[complete - 2],
+                    pending[complete - 1],
+                ]))
+            {
+                complete -= 2;
+            }
+            let units = pending[..complete]
                 .as_chunks::<2>()
                 .0
                 .iter()
                 .map(|b| u16::from_le_bytes(*b))
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|_| invalid())?
-    } else {
-        std::str::from_utf8(&bytes[prefix..])
-            .map_err(|_| invalid())?
-            .into()
+                .collect::<Vec<_>>();
+            (String::from_utf16(&units).map_err(|_| invalid())?, complete)
+        } else {
+            match std::str::from_utf8(&pending) {
+                Ok(text) => (text.to_owned(), pending.len()),
+                Err(error) if error.error_len().is_none() => (
+                    std::str::from_utf8(&pending[..error.valid_up_to()])
+                        .map_err(|_| invalid())?
+                        .to_owned(),
+                    error.valid_up_to(),
+                ),
+                Err(_) => return Err(invalid()),
+            }
+        };
+        pending.drain(..consumed);
+        if final_chunk && !pending.is_empty() {
+            return Err(invalid());
+        }
+        chunks.push(if options.format == Format::Po {
+            crate::wtf8::Wtf8Buf::from_utf8(&text).into_view()
+        } else {
+            text
+        });
+        Ok(())
     };
-    let text = if options.format == Format::Po {
-        crate::wtf8::Wtf8Buf::from_utf8(&text).into_view()
-    } else {
-        text
-    };
-    columns::parse_columns(&text, file, options, limits)
+    let prefix_size = bytes.len().min(3);
+    decode(
+        &bytes[prefix..prefix_size],
+        false,
+        bytes
+            .len()
+            .min(prefix_size.div_ceil(chunk_bytes) * chunk_bytes),
+    )?;
+    for (i, chunk) in bytes.chunks(chunk_bytes).enumerate() {
+        let start = i * chunk_bytes;
+        if start + chunk.len() < prefix_size {
+            continue;
+        }
+        let offset = prefix_size.saturating_sub(start);
+        decode(
+            &chunk[offset..],
+            false,
+            ((i + 1) * chunk_bytes).min(bytes.len()),
+        )?;
+    }
+    decode(&[], true, bytes.len())?;
+    columns::parse_columns(&chunks, file, options, limits)
 }
 
 #[cfg(test)]

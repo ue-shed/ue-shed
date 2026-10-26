@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "ec6e72bcf74e6a0430098935880ca661a2d8538c01b62de7cdd26c8dc1ad2384"
+	contractHash: "5c8a441ddb3b582fe44003bf323e78c5c00668a605f0d2a5c6a5c8a6807a3616"
 } as const;
 
 /**
@@ -36,7 +36,7 @@ export type LocalizationLimits = { maxFileBytes: number, maxEntries: number, max
 
 export type LocalizationDiagnostic = { code: string, message: string, recovery: string, retrySafe: boolean, nextStep: string, };
 
-export type LocalizationInput = { projectRoot: string, file: string, relativePath: string, options: LocalizationOptions, limits: LocalizationLimits, };
+export type LocalizationInput = { chunkBytes?: number, projectRoot: string, file: string, relativePath: string, options: LocalizationOptions, limits: LocalizationLimits, };
 
 export type LocalizationImportRequest = { files: ReadonlyArray<LocalizationInput>, maximumInFlightBytes: number, cold: boolean, };
 
@@ -46,7 +46,7 @@ export type LocalizationPreparedFile = { key: string, contentHash: string, prove
 
 export type LocalizationFileResult = { file: LocalizationPreparedFile | null, error: LocalizationDiagnostic | null, };
 
-export type LocalizationImportOutcome = { files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
+export type LocalizationImportOutcome = { lookupStrings: number, reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
 export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
 /**

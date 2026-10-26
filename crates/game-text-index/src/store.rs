@@ -553,9 +553,8 @@ struct LocalStrings {
     /// The layer carries `file.meta` and may reuse a previous layer's dictionary blocks.
     reusable: bool,
 }
-fn local_strings(file: &Path) -> Result<LocalStrings> {
+fn local_strings(reader: Reader) -> Result<LocalStrings> {
     let _span = crate::scan_timings::Span::new("store.local_strings");
-    let reader = Reader::open(file)?;
     let mut domains: Vec<(String, Vec<Vec<u8>>)> = Vec::new();
     for index in 0..reader.entries.len() {
         let entry = reader.entries[index].clone();
@@ -581,12 +580,11 @@ fn local_strings(file: &Path) -> Result<LocalStrings> {
 fn encode_local_layer(
     directory: &Path,
     key: &str,
-    input: &Path,
+    reader: Reader,
     mapping: &BTreeMap<String, Vec<u32>>,
     generation: &Value,
     segment_count: usize,
 ) -> Result<Value> {
-    let reader = Reader::open(input)?;
     let mut writer = Writer::new(&directory.join(format!("{}.tmp", token())))?;
     let mut order = Vec::new();
     let mut string_columns = BTreeMap::new();
@@ -626,6 +624,7 @@ pub struct Compaction {
     pub total_bytes: u64,
 }
 pub struct Store {
+    pub(crate) localization_lookups: u64,
     pub directory: PathBuf,
     pub root: Value,
     configuration: Configuration,
@@ -693,6 +692,7 @@ impl Store {
             configuration,
             current,
             root,
+            localization_lookups: 0,
             dictionary: None,
             dictionary_lengths: None,
             _lock: lock,
@@ -818,6 +818,7 @@ impl Store {
         values: &[Vec<u8>],
         sorted_unique: bool,
     ) -> Result<Vec<u32>> {
+        self.localization_lookups += values.len() as u64;
         let _span = crate::scan_timings::Span::new("store.intern");
         require(
             !self.uncertain && domain.len() <= 23,
@@ -971,15 +972,28 @@ impl Store {
         Ok(())
     }
     pub fn prepare_batch_cold(&mut self, inputs: &[crate::builder::InputLayer]) -> Result<()> {
+        let sources = inputs
+            .iter()
+            .map(|input| dictionary::SourceLayer {
+                name: input.name.clone(),
+                key: input.key.clone(),
+                source: dictionary::LayerSource::File(input.file.clone()),
+            })
+            .collect::<Vec<_>>();
+        self.prepare_batch_cold_sources(&sources)
+    }
+    pub(crate) fn prepare_batch_cold_sources(
+        &mut self,
+        inputs: &[dictionary::SourceLayer],
+    ) -> Result<()> {
         let _span = crate::scan_timings::Span::new("store.prepare_batch_cold");
         use rayon::prelude::*;
         let mut measure = crate::scan_timings::Cursor::new();
         for input in inputs {
-            if crate::scan_timings::enabled() {
-                crate::scan_timings::count(
-                    "publication.staged_bytes",
-                    fs::metadata(&input.file)?.len(),
-                );
+            if crate::scan_timings::enabled()
+                && let dictionary::LayerSource::File(file) = &input.source
+            {
+                crate::scan_timings::count("publication.staged_bytes", fs::metadata(file)?.len());
             }
         }
         crate::scan_timings::count("publication.inputs", inputs.len() as u64);
@@ -991,7 +1005,7 @@ impl Store {
         // first-open latency some platforms add to new files.
         let locals = pending
             .par_iter()
-            .map(|input| local_strings(&input.file))
+            .map(|input| local_strings(input.source.open()?))
             .collect::<Result<Vec<_>>>()?;
         measure.mark("publication.read_strings");
         // Per-layer collection and domain sorting share no mutable dictionary state. Only the
@@ -1055,7 +1069,7 @@ impl Store {
             });
         if !independent {
             for input in inputs {
-                self.prepare_local_with_mode(&input.name, &input.key, &input.file, false)?;
+                self.prepare_local_reader(&input.name, &input.key, input.source.open()?, false)?;
             }
             measure.mark("publication.encode_serial");
             return Ok(());
@@ -1105,7 +1119,7 @@ impl Store {
                 encode_local_layer(
                     &directory,
                     &input.key,
-                    &input.file,
+                    input.source.open()?,
                     mapping,
                     &generation,
                     segment_count,

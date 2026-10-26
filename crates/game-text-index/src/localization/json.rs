@@ -121,7 +121,14 @@ fn escaped_surrogates(text: &str, format: Format, file: &str, base: usize) -> Pa
     Ok(())
 }
 
+include!("json_lex.rs");
+
 struct Parser<'a> {
+    lex_token: String,
+    lex_units: usize,
+    lex_quoted: bool,
+    lex_escaped: bool,
+    lex_record: Option<Record>,
     file: &'a str,
     format: Format,
     limits: &'a Limits,
@@ -402,6 +409,14 @@ pub struct JsonDocument {
     pub namespaces: Vec<String>,
 }
 pub fn parse_json(text: &str, file: &str, format: Format, limits: &Limits) -> Parsed<JsonDocument> {
+    parse_json_chunks(&[text], file, format, limits)
+}
+pub fn parse_json_chunks(
+    chunks: &[&str],
+    file: &str,
+    format: Format,
+    limits: &Limits,
+) -> Parsed<JsonDocument> {
     let mut p = Parser {
         file,
         format,
@@ -415,131 +430,20 @@ pub fn parse_json(text: &str, file: &str, format: Format, limits: &Limits) -> Pa
         offset: 0,
         invalid_child: None,
         rows: Vec::new(),
+        lex_token: String::new(),
+        lex_units: 0,
+        lex_quoted: false,
+        lex_escaped: false,
+        lex_record: None,
     };
-    let mut chars = text.char_indices().peekable();
-    while let Some((i, c)) = chars.next() {
-        p.offset += c.len_utf16();
-        let raw_child =
-            matches!(c, '{' | '[') && p.frames.last().is_some_and(|f| f.mode == Mode::Children);
-        if raw_child {
-            if p.frames
-                .last()
-                .is_none_or(|f| !matches!(f.state, State::First | State::Value))
-            {
-                return Err(p.error("malformed_json"));
-            }
-            if p.frames.len() > limits.max_depth {
-                return Err(p.error("limit_exceeded"));
-            }
-            let mut depth = 1;
-            let mut quoted = false;
-            let mut escaped = false;
-            let mut end = i + 1;
-            let mut units = 1;
-            for (j, ch) in chars.by_ref() {
-                p.offset += ch.len_utf16();
-                end = j + ch.len_utf8();
-                units += ch.len_utf16();
-                if quoted {
-                    if escaped {
-                        escaped = false;
-                    } else if ch == '\\' {
-                        escaped = true;
-                    } else if ch == '"' {
-                        quoted = false;
-                    } else if ch < ' ' {
-                        return Err(p.error("malformed_json"));
-                    }
-                } else if ch == '"' {
-                    quoted = true;
-                } else if matches!(ch, '{' | '[') {
-                    depth += 1;
-                } else if matches!(ch, '}' | ']') {
-                    depth -= 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                if p.frames.len() + depth - 1 > limits.max_depth {
-                    return Err(p.error("limit_exceeded"));
-                }
-                if units * 2 > limits.max_record_bytes {
-                    return Err(p.error("limit_exceeded"));
-                }
-            }
-            if depth != 0 {
-                return Err(p.error("malformed_json"));
-            }
-            if units * 2 > limits.max_record_bytes {
-                return Err(p.error("limit_exceeded"));
-            }
-            let base = p.offset - units;
-            let value = p.token(&text[i..end], base)?;
-            p.accept(value)?;
-            continue;
-        }
-        for frame in p
-            .frames
-            .iter_mut()
-            .rev()
-            .take_while(|f| f.mode == Mode::Value)
-        {
-            frame.bytes += c.len_utf16() * 2;
-            if frame.bytes > limits.max_record_bytes {
-                return Err(p.error("limit_exceeded"));
-            }
-        }
-        if matches!(c, ' ' | '\t' | '\r' | '\n') {
-            continue;
-        }
-        if "{}[],:".contains(c) {
-            p.emit(Value::Null, c as u8)?;
-            continue;
-        }
-        let mut end = i + c.len_utf8();
-        let base = p.offset - c.len_utf16();
-        if c == '"' {
-            let mut escaped = false;
-            let mut closed = false;
-            for (j, ch) in chars.by_ref() {
-                p.offset += ch.len_utf16();
-                end = j + ch.len_utf8();
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == '"' {
-                    closed = true;
-                    break;
-                } else if ch < ' ' {
-                    return Err(p.error("malformed_json"));
-                }
-            }
-            if !closed {
-                return Err(p.error("malformed_json"));
-            }
-        } else {
-            while let Some(&(j, ch)) = chars.peek() {
-                if "{}[],: \t\r\n".contains(ch) {
-                    break;
-                }
-                p.offset += ch.len_utf16();
-                end = j + ch.len_utf8();
-                chars.next();
-            }
-            // packages/game-text/src/localization-stream.ts:349-352: delimiter is already charged.
-            if chars.peek().is_some() {
-                p.offset += 1;
-            }
-        }
-        if text[i..end].encode_utf16().count() * 2 > limits.max_record_bytes {
-            return Err(p.error("limit_exceeded"));
-        }
-        let value = p.token(&text[i..end], base)?;
-        p.emit(value, 0)?;
-        if c != '"' && chars.peek().is_some() {
-            p.offset -= 1;
-        }
+    for chunk in chunks {
+        p.feed(chunk)?;
+    }
+    if p.lex_quoted || p.lex_record.is_some() {
+        return Err(p.error("malformed_json"));
+    }
+    if !p.lex_token.is_empty() {
+        p.finish_token()?;
     }
     if !p.frames.is_empty() || !p.root_done {
         return Err(p.error("malformed_json"));

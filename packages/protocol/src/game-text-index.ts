@@ -39,6 +39,7 @@ const LocalizationImport: Schema.Codec<GameTextContract.LocalizationImportReques
 	files: Schema.Array(
 		Schema.Struct({
 			projectRoot: Text,
+			chunkBytes: Schema.optionalKey(Positive),
 			file: Text,
 			relativePath: Name,
 			options: LocalizationOptions,
@@ -176,6 +177,8 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 	),
 	localization: Schema.optionalKey(
 		Schema.Struct({
+			lookupStrings: Natural,
+			reusedStrings: Natural,
 			files: Schema.Array(
 				Schema.Struct({
 					file: Schema.NullOr(

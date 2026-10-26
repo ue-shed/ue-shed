@@ -504,10 +504,16 @@ fn execute_direct(
                 },
             ) = (query_session.as_deref_mut(), build)
             {
+                let started = std::time::Instant::now();
                 let inventory = session.package_text_inventory(request)?;
+                let catalog = started.elapsed().as_secs_f64();
                 session
                     .game_text
                     .plan_packages(configuration, request, inventory)
+                    .map(|mut outcome| {
+                        outcome.stage_seconds.insert("plan.catalog".into(), catalog);
+                        outcome
+                    })
             } else if let Some(session) = query_session {
                 session
                     .game_text

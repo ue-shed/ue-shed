@@ -300,6 +300,10 @@ export interface ConcurrentPrepareOptions {
 	readonly memoryBudgetBytes?: number;
 	/** Awaited by the package branch after its read, before it publishes. */
 	readonly publishGate?: Effect.Effect<void, never, never>;
+	/** Run by the package branch once it has planned its refresh. */
+	readonly planned?: Effect.Effect<void, never, never>;
+	/** Awaited by the localization branch before its first native command. */
+	readonly planGate?: Effect.Effect<void, never, never>;
 }
 
 /** How the index steps place their work. */
@@ -464,6 +468,8 @@ export const makeGameTextIndexSteps = (
 						});
 					if (concurrent?.publishGate !== undefined)
 						Object.assign(packageRequest, { publishGate: concurrent.publishGate });
+					if (concurrent?.planned !== undefined)
+						Object.assign(packageRequest, { planned: concurrent.planned });
 					const stage = source.stage;
 					if (stage)
 						Object.assign(packageRequest, {
@@ -560,6 +566,7 @@ export const makeGameTextIndexSteps = (
 			);
 			if (project.cacheRoot !== cacheRoot) return yield* Effect.fail(stale("project"));
 			yield* checkRequiredManifest(project, request);
+			if (concurrent?.planGate) yield* concurrent.planGate;
 			return yield* withSession(
 				configurationFor(cacheRoot, project.projectRoot, request.targetName),
 				Effect.gen(function* () {
@@ -750,18 +757,28 @@ export const makeGameTextIndexSteps = (
 							// serialized by the writer's own lane. The package branch
 							// publishes only after the gate opens, with both reads done.
 							// Branch finalizers finish in this scope before the writer lease closes.
+							// The package plan is a short native command on the longer branch's
+							// path, so the localization import, which holds the writer for most
+							// of its branch, waits for it.
 							const share = coldHalfBudget(process.availableMemory());
 							const gate = yield* Deferred.make<void>();
+							const planned = yield* Deferred.make<void>();
 							const importedFiber = yield* Effect.forkScoped(
 								Effect.result(
-									importTarget(selected, input, { memoryBudgetBytes: share })
+									importTarget(selected, input, {
+										memoryBudgetBytes: share,
+										planGate: Deferred.await(planned)
+									})
 								)
 							);
 							const projectFiber = yield* Effect.forkScoped(
 								refreshProject(input, {
 									memoryBudgetBytes: share,
-									publishGate: Deferred.await(gate)
-								})
+									publishGate: Deferred.await(gate),
+									planned: Deferred.succeed(planned, undefined).pipe(
+										Effect.asVoid
+									)
+								}).pipe(Effect.ensuring(Deferred.succeed(planned, undefined)))
 							);
 							const importedExit = yield* Fiber.await(importedFiber);
 							if (Exit.isFailure(importedExit)) {

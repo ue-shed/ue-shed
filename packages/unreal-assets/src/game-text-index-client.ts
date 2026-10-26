@@ -123,8 +123,8 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 						"game_text.build.action": request.action,
 						...Object.fromEntries(
 							Object.entries(outcome.stageSeconds).map(([stage, seconds]) => [
-								`game_text.build.seconds.${stage}`,
-								seconds
+								`game_text.build.stage_ms.${stage}`,
+								seconds * 1000
 							])
 						)
 					});

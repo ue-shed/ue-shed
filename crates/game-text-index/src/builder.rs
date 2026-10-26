@@ -339,8 +339,12 @@ impl BuildSession {
                 "request belongs to another build lease",
             ),
         )?;
+        let started = std::time::Instant::now();
         let mut outcome = BuildOutcome::new("plan_packages");
         outcome.plan = Some(crate::package_text_plan::plan(store, request, inventory)?);
+        outcome
+            .stage_seconds
+            .insert("plan.keys".into(), started.elapsed().as_secs_f64());
         Ok(outcome)
     }
 }

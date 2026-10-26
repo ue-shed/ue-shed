@@ -81,6 +81,8 @@ export interface PackageTextRefreshInput<E, R> {
 	readonly coldMinimumPackages?: number;
 	/** Awaited after the read, before any package layer is published. */
 	readonly publishGate?: Effect.Effect<void, never, never>;
+	/** Run once the refresh has planned, before it reads any package. */
+	readonly planned?: Effect.Effect<void, never, never>;
 	/** Explicit prepare-pool budget when another cold pool runs beside this refresh. */
 	readonly memoryBudgetBytes?: number;
 	/**
@@ -370,6 +372,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 				)
 			: yield* planHere(input.inventory ?? [], input.changedFiles, manifest);
 	stages.mark("selection");
+	if (input.planned) yield* input.planned;
 	if (!planned.packages && manifest.active[planned.first.name] === planned.first.key)
 		return {
 			readPackages: 0,

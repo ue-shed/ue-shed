@@ -114,10 +114,29 @@ the join.
       a differential test feeds both parsers the fixture's files plus generated edge cases (BOMs,
       PO escapes and line continuations, empty and duplicate entries, invalid input) and compares
       rows and diagnostics.
-8. **Deferred, with reasons:**
-    - _The reader writing package layers directly_, without staged NDJSON and the TS prepare step,
-      removes about 5.5 s of prepare and part of the reader's staging. It changes who owns
-      extraction policy, so it needs its own decision once decisions 2 and 3 have landed.
+8. **The reader writes the package-text shard snapshots.** _Added with decision 7, for the same
+   reason._ Package text still crosses TypeScript in bulk: the reader serializes every record to
+   NDJSON (505 MB on the released project), TypeScript workers decode it, convert it to columns
+   (`package-text-columns.ts`), sort it and write staged shard snapshots, and the writer reads
+   those back. The prepare step is 4.5 s on the critical path, and its workers are most of
+   Node's remaining 2.4 GiB high.
+    - The reader's workers convert each package's record to its column rows themselves, in Rust,
+      with no JSON. The coordinator adds the rows to their shard's builder, and a shard is ordered
+      and written as soon as its last package arrives (the request already names every shard's
+      packages), so the reader holds at most the shards in progress. The snapshots are the bytes
+      the TypeScript prepare step writes today; the writer's cold publication reads them as now.
+    - `package-text-columns.ts`'s encoder is the specification, ported rule for rule (string
+      domains, flags, the copy encoding, gap reasons); the Rust cites it where a rule isn't obvious.
+    - One encoder for the index: the incremental package refresh (`replacePackageTextRecords`)
+      and the retained-record replay the benchmark and tests use go through the same Rust
+      conversion. The reader accepts staged records as an input in place of packages for that
+      replay. The TypeScript prepare worker, its protocol and the NDJSON staging are deleted;
+      `packageTextColumns` stays only if a reader of stored columns still needs it, and then as
+      the decoder's counterpart in tests, not on the index path.
+    - Byte identity is the gate: every package-text snapshot equals the TypeScript path's on both
+      benchmark projects and both canonical corpora, and a differential test converts the corpus
+      fixture's records and generated edge cases through both encoders and compares the columns.
+9. **Deferred, with reasons:**
     - _Export decoding_ is the reader's real compute (118 s CPU). It needs a profile of the
       decoder, not a scheduling change.
     - _Bundle verification_ (6.1 s) checks that no package changed during the scan; it stays as
@@ -143,7 +162,8 @@ their own span, so their overlap is measurable.
 6. **Parallel package interning** (decision 5).
 7. **Parallel localization encoding** (decision 6).
 8. **The writer parses localization files** (decision 7), measured against the results recorded at `08296cfd`.
-9. **Parity and measurements:**
+9. **The reader writes the package-text shard snapshots** (decision 8).
+10. **Parity and measurements:**
     - every joined, package and localization snapshot byte-identical to the baseline's on both
       canonical corpora and both benchmark projects;
     - the corpus fixture exact on both canonical corpora;

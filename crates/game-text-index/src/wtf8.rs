@@ -3,6 +3,10 @@ use crate::{Result, require};
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Wtf8Buf(Vec<u8>);
+/// Decode JSON boundary strings into reversible views, including lone UTF-16 surrogates.
+pub fn parse_json_as<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    crate::json_value::parse_as(text)
+}
 impl Wtf8Buf {
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
         validate(&bytes)?;
@@ -100,7 +104,7 @@ impl Wtf8Buf {
         clippy::expect_used,
         reason = "callers pass only views produced by to_view or json_value; literal reserved scalars are escaped there"
     )]
-    pub(crate) fn from_view(view: &str) -> Self {
+    pub fn from_view(view: &str) -> Self {
         if !view.as_bytes().contains(&0xf3) {
             return Self::from_utf8(view);
         }

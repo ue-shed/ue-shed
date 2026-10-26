@@ -372,7 +372,7 @@ impl TextGapCounts {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SavedAssetPackageTextRecord {
+pub struct SavedAssetPackageTextRecord<O = SavedAssetTextOccurrence> {
     pub file_bytes: u64,
     pub path: String,
     /// The package name the summary serializes. A file moved or copied outside Unreal keeps its
@@ -389,7 +389,7 @@ pub struct SavedAssetPackageTextRecord {
     pub schema_version: u8,
     pub status: ProjectionStatus,
     pub decode_errors: u64,
-    pub occurrences: Vec<SavedAssetTextOccurrence>,
+    pub occurrences: Vec<O>,
     pub gap_counts: TextGapCounts,
     /// v1.18: counts only gaps whose undecoded bytes may contain FText.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1,5 +1,6 @@
 //! Authored localization input. Grammar and retained rows follow the TypeScript importer.
 pub mod columns;
+pub mod import;
 mod json;
 mod po;
 
@@ -8,6 +9,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(rename = "LocalizationFormat"))]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     Manifest,
@@ -15,8 +17,9 @@ pub enum Format {
     Po,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(rename = "LocalizationOptions"))]
 #[serde(rename_all = "camelCase")]
 pub struct Options {
     pub format: Format,
@@ -26,10 +29,12 @@ pub struct Options {
     pub collapse_mode: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(rename = "LocalizationLimits"))]
 #[serde(rename_all = "camelCase")]
 pub struct Limits {
+    #[cfg_attr(test, ts(type = "number"))]
     pub max_file_bytes: u64,
     pub max_entries: usize,
     pub max_depth: usize,
@@ -52,6 +57,7 @@ impl Default for Limits {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(rename = "LocalizationDiagnostic"))]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     pub code: String,

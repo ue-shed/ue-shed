@@ -398,7 +398,8 @@ pub fn io_metrics() -> IoMetrics {
 }
 
 pub struct Reader {
-    file: File,
+    file: Option<File>,
+    memory: Option<std::sync::Arc<crate::localization::columns::LocalLayer>>,
     pub entries: Vec<Entry>,
 }
 
@@ -417,6 +418,13 @@ fn read_exact_at(file: &File, mut buffer: &mut [u8], mut offset: u64) -> Result<
     Ok(())
 }
 impl Reader {
+    pub(crate) fn memory(layer: std::sync::Arc<crate::localization::columns::LocalLayer>) -> Self {
+        Self {
+            file: None,
+            entries: layer.columns.iter().map(|c| c.entry.clone()).collect(),
+            memory: Some(layer),
+        }
+    }
     pub fn open(path: &Path) -> Result<Self> {
         let _span = crate::scan_timings::Span::new("snapshot.open");
         OPENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -539,9 +547,17 @@ impl Reader {
                 }
             }
         }
-        Ok(Self { file, entries })
+        Ok(Self {
+            file: Some(file),
+            entries,
+            memory: None,
+        })
     }
     pub fn load(&self, id: usize) -> Result<Vec<u8>> {
+        if let Some(memory) = &self.memory {
+            return Ok(memory.columns[id].bytes.as_ref().clone());
+        }
+        let file = self.file.as_ref().ok_or("snapshot file absent")?;
         let _span = crate::scan_timings::Span::new("snapshot.load");
         let e = &self.entries[id];
         LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -550,7 +566,7 @@ impl Reader {
         let mut b = vec![0; e.stored as usize];
         {
             let _span = crate::scan_timings::Span::new("snapshot.read");
-            read_exact_at(&self.file, &mut b, e.offset)?;
+            read_exact_at(file, &mut b, e.offset)?;
         }
         let raw = decode_section(e.codec, b, e.raw as usize)?;
         require(
@@ -559,7 +575,7 @@ impl Reader {
         )?;
         let mut pad = [0; 3];
         let n = (4 - e.stored as usize % 4) % 4;
-        read_exact_at(&self.file, &mut pad[..n], e.offset + u64::from(e.stored))?;
+        read_exact_at(file, &mut pad[..n], e.offset + u64::from(e.stored))?;
         require(pad[..n].iter().all(|&x| x == 0), "padding")?;
         if e.kind == 4 {
             strings_bytes(&raw).map_err(|error| {

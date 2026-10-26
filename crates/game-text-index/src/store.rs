@@ -712,11 +712,22 @@ impl Store {
         files: &[&Path],
         reuse: Option<&Value>,
     ) -> Result<bool> {
+        let readers = files
+            .iter()
+            .map(|file| Reader::open(file))
+            .collect::<Result<Vec<_>>>()?;
+        self.reserve_local_readers(&readers.iter().collect::<Vec<_>>(), reuse)
+    }
+    fn reserve_local_readers(
+        &mut self,
+        readers: &[&Reader],
+        reuse: Option<&Value>,
+    ) -> Result<bool> {
         let mut chunks = 0usize;
         let mut domains = 0usize;
         let metadata = if let Some(old) = reuse {
             require(
-                files.len() == 1 && old["storeGeneration"] == self.root["generation"],
+                readers.len() == 1 && old["storeGeneration"] == self.root["generation"],
                 "reuse preflight generation",
             )?;
             let previous = Reader::open(
@@ -736,8 +747,7 @@ impl Store {
         } else {
             Value::Null
         };
-        for file in files {
-            let reader = Reader::open(file)?;
+        for reader in readers {
             let mut file_domains = BTreeSet::new();
             for index in 0..reader.entries.len() {
                 if reader.entries[index].kind != 4 {
@@ -1119,6 +1129,15 @@ impl Store {
         input: &Path,
         track_garbage: bool,
     ) -> Result<Value> {
+        self.prepare_local_reader(name, key, Reader::open(input)?, track_garbage)
+    }
+    pub(crate) fn prepare_local_reader(
+        &mut self,
+        name: &str,
+        key: &str,
+        mut reader: Reader,
+        track_garbage: bool,
+    ) -> Result<Value> {
         require(!self.uncertain, "publication uncertain: reopen writer")?;
         let old = self.root["active"][name]
             .as_str()
@@ -1143,10 +1162,9 @@ impl Store {
             return Ok(record);
         }
         let _span = crate::scan_timings::Span::new("store.prepare_local");
-        let mut reader = Reader::open(input)?;
         let allow_reuse =
             if old.is_some() && reader.entries.iter().any(|entry| entry.name == "file.meta") {
-                self.reserve_local_segments(&[input], old.as_ref())?
+                self.reserve_local_readers(&[&reader], old.as_ref())?
             } else {
                 true
             };
@@ -1320,6 +1338,20 @@ impl Store {
     }
     /// The external merge builds a cold batch without per-file dictionary probes or segment growth.
     pub fn publish_cold(&mut self, inputs: &[crate::builder::InputLayer]) -> Result<Value> {
+        let sources = inputs
+            .iter()
+            .map(|i| dictionary::SourceLayer {
+                name: i.name.clone(),
+                key: i.key.clone(),
+                source: dictionary::LayerSource::File(i.file.clone()),
+            })
+            .collect::<Vec<_>>();
+        self.publish_cold_sources(&sources)
+    }
+    pub(crate) fn publish_cold_sources(
+        &mut self,
+        inputs: &[dictionary::SourceLayer],
+    ) -> Result<Value> {
         require(
             self.root["active"]
                 .as_object()
@@ -1331,20 +1363,13 @@ impl Store {
             .as_str()
             .ok_or("generation")?
             .to_owned();
-        let layers: Vec<_> = inputs
-            .iter()
-            .map(|i| dictionary::LayerInput {
-                name: i.name.clone(),
-                file: i.file.clone(),
-            })
-            .collect();
         let keys: BTreeMap<_, _> = inputs
             .iter()
             .map(|i| (i.name.clone(), i.key.clone()))
             .collect();
         let result = (|| {
-            let measured = dictionary::build_configured(
-                &layers,
+            let measured = dictionary::build_sources(
+                inputs,
                 &stage,
                 64 * 1024 * 1024,
                 Some((&generation, &keys)),

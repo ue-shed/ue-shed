@@ -497,7 +497,10 @@ fn execute_direct(
     match &request.operation {
         Operation::GameTextIndex { request: build } => {
             let outcome = if let Some(session) = query_session {
-                session.game_text.execute(build)
+                session.game_text.execute_with_progress(build, &mut |completed, total| {
+                    emit_progress(emitter, completed as u64, "reading", Some(total as u64))
+                        .map_err(|_| game_text_index::Error::new(game_text_index::ErrorCode::Io, "Localization progress output failed."))
+                })
             } else if matches!(build, game_text_index::builder::BuildRequest::Capabilities) {
                 game_text_index::builder::BuildSession::default().execute(build)
             } else {

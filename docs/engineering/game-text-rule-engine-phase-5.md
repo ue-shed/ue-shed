@@ -149,11 +149,12 @@ otherwise full. `UE_SHED_GAME_TEXT_FULL_EVALUATION` forces a full one.
    the state; otherwise every row's key is evaluated. `corpusCount`'s table is rebuilt from every
    occurrence.
 
-   A full evaluation doesn't read keys first: `groupCount`, `groupRank`, `groupTake`,
-   `groupTally` and `corpusCount` record the groups they form over every row as the rules run, and
-   after the rules the remaining nodes are read as above: `existsOther`, whose own pass drops the
-   rows a `differing` value fails on, and any node no rule read over every row. In tests, every
-   full evaluation checks the recorded groups against the ones read first.
+    A full evaluation reads only `existsOther`'s keys first, from the inputs its rule then
+   reuses: its own pass drops the rows a `differing` value fails on, so it can't record them.
+   `groupCount`, `groupRank`, `groupTake`, `groupTally` and `corpusCount` record the groups they
+   form over every row as the rules run, and a node no rule read over every row is read after the
+   rules. In tests, every full evaluation checks the recorded groups against the ones read first.
+
 2. **Closure `S`, per subject.** Start from the rows of the lines in `D`. A group is affected when
    one of those rows was or is in it. Every row whose old or new group is affected joins `S`, and
    so does every row whose `corpusCount` key has a changed count. For `line_culture`, `S` then

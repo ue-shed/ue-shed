@@ -3362,7 +3362,22 @@ impl Program {
         // reads them first, to choose its rows.
         let recording = delta.is_none() && evaluator.cross_row_readable(&cross);
         if recording {
-            evaluator.recorded = Some(FxHashMap::default());
+            // `existsOther`'s own pass drops the rows a `differing` value fails on, so its groups
+            // are read first, from the inputs its rule then reuses.
+            let first = cross
+                .iter()
+                .copied()
+                .filter(|id| self.nodes[*id].op == Op::ExistsOther)
+                .collect::<Vec<_>>();
+            let read = evaluator
+                .cross_row_groups(&first, None)?
+                .unwrap_or_default();
+            evaluator.recorded = Some(
+                read.into_iter()
+                    .map(|groups| (groups.node, groups))
+                    .collect(),
+            );
+            recorder.sub_stage(format!("{stage}.groups"), &step, first.len());
         } else {
             output.groups = evaluator.cross_row_groups(&cross, delta)?;
             recorder.sub_stage(format!("{stage}.groups"), &step, cross.len());
@@ -3574,7 +3589,7 @@ impl Program {
             let step = Measure::start();
             output.groups = evaluator.recorded_groups(&cross)?;
             recorder.sub_stage(
-                format!("{}.groups", subject_stage(subject, Phase::Closure)),
+                format!("{}.recorded", subject_stage(subject, Phase::Closure)),
                 &step,
                 cross.len(),
             );

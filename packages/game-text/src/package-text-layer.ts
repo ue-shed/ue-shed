@@ -1,11 +1,12 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { createHash } from "node:crypto";
 import { relative, resolve } from "node:path";
 import { Effect, Option, Schema, Stream } from "effect";
 import { ProjectIndexHeader, SavedAssetPackageTextEvent } from "@ue-shed/unreal-assets";
-import { SharedIndex } from "./shared-index.js";
+import { SharedIndex, type SharedIndexReader, type SharedIndexWriter } from "./shared-index.js";
 import { snapshotFailure } from "./snapshot-format.js";
 import {
 	isPackageTextCandidate,
@@ -68,17 +69,37 @@ export function packageTextShard(path: string) {
 }
 const shardName = (shard: number) => `package-text.${shard}`;
 
+/** The Project Index Catalog generation a native writer plans a refresh from. */
+export interface PackageTextCatalog {
+	readonly cacheRoot: string;
+	readonly projectId: string;
+	readonly generation: number;
+}
+
 export interface PackageTextRefreshInput<E, R> {
 	/** Override the cold-path inventory threshold for bounded integration fixtures. */
 	readonly coldMinimumPackages?: number;
 	/** Awaited after the read, before any package layer is published. */
 	readonly publishGate?: Effect.Effect<void, never, never>;
+	/**
+	 * Run once the refresh no longer needs the writer to plan: after the writer's plan, or before
+	 * a plan made here.
+	 */
+	readonly planned?: Effect.Effect<void, never, never>;
 	/** Explicit prepare-pool budget when another cold pool runs beside this refresh. */
 	readonly memoryBudgetBytes?: number;
-	readonly inventory: readonly PackageTextInventoryEntry[];
+	/**
+	 * The Catalog generation the writer plans from (`planPackages`): the reader selects, shards
+	 * and keys every package, and stages the changed shards from its plan file, so no package
+	 * list crosses into the host. Without it, `inventory` is planned here.
+	 */
+	readonly catalog?: PackageTextCatalog;
+	readonly inventory?: readonly PackageTextInventoryEntry[];
 	readonly changedFiles?: readonly string[];
+	/** Reads packages; `signatures` holds each one's inventory signature. */
 	readonly read: (
-		paths: readonly string[]
+		paths: readonly string[],
+		signatures: ReadonlyMap<string, string>
 	) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, E, R>;
 	/**
 	 * Native shard preparation (`GameTextIndexSource.stage`): workers mount and convert the
@@ -150,6 +171,135 @@ class PackageTextSelectionBuilder {
 	}
 }
 
+/** One shard a refresh reads again, with its entries once they are needed. */
+interface PlannedShard {
+	readonly name: string;
+	readonly key: string;
+	readonly packages: number;
+	readonly selected: number;
+	readonly entries?: PackageTextShardEntries["entries"];
+}
+/** A changed shard's entries: each package and whether it is read. */
+export interface PackageTextShardEntries {
+	readonly name: string;
+	readonly key: string;
+	readonly entries: readonly {
+		readonly entry: PackageTextInventoryEntry;
+		readonly selected: boolean;
+	}[];
+}
+interface PackageTextRefreshPlan {
+	readonly packages: number;
+	/** Shard 0, which an empty inventory publishes as its marker. */
+	readonly first: { readonly name: string; readonly key: string };
+	readonly changed: readonly PlannedShard[];
+	readonly removed: readonly string[];
+	/** The writer's plan file, which holds the changed shards' entries, when the writer planned. */
+	readonly file?: string;
+}
+
+const PlanLine = Schema.fromJsonString(
+	Schema.Struct({
+		group: Schema.Number,
+		expected: Schema.Array(
+			Schema.Struct({
+				path: Schema.String,
+				signature: Schema.String,
+				selected: Schema.Boolean
+			})
+		)
+	})
+);
+
+/** The changed shards with their entries: planned here, or read from the writer's plan file. */
+const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: PackageTextRefreshPlan) {
+	const byGroup = new Map<string, PackageTextShardEntries["entries"]>();
+	if (plan.file && plan.changed.some((shard) => !shard.entries)) {
+		const text = yield* Effect.tryPromise({
+			try: () => readFile(plan.file!, "utf8"),
+			catch: (cause) =>
+				snapshotFailure(
+					"package-text.plan",
+					"The package text plan could not be read.",
+					cause
+				)
+		});
+		for (const line of text.split("\n")) {
+			if (!line) continue;
+			const { group, expected } = yield* Schema.decodeUnknownEffect(PlanLine)(line).pipe(
+				Effect.mapError((cause) =>
+					snapshotFailure("package-text.plan", "Invalid package text plan.", cause)
+				)
+			);
+			byGroup.set(
+				shardName(group),
+				expected.map(({ path, signature, selected }) => ({
+					entry: { path, signature },
+					selected
+				}))
+			);
+		}
+	}
+	const shards: PackageTextShardEntries[] = [];
+	for (const shard of plan.changed) {
+		const entries = shard.entries ?? byGroup.get(shard.name);
+		if (!entries)
+			return yield* Effect.fail(
+				snapshotFailure("package-text.plan", "The package text plan lacks a shard.")
+			);
+		shards.push({ name: shard.name, key: shard.key, entries });
+	}
+	return shards;
+});
+
+/** The writer plans from the Catalog generation and writes the changed shards' entries to a file. */
+const planOnWriter = Effect.fn("PackageText.plan")(function* (
+	catalog: PackageTextCatalog,
+	changedFiles: readonly string[] | undefined,
+	plan: NonNullable<SharedIndexWriter["planPackages"]>,
+	stagingRoot: string
+) {
+	const file = yield* Effect.acquireRelease(
+		Effect.tryPromise({
+			try: async () => {
+				await mkdir(stagingRoot, { recursive: true });
+				return join(await mkdtemp(join(stagingRoot, "package-plan-")), "plan.ndjson");
+			},
+			catch: (cause) =>
+				snapshotFailure(
+					"package-text.plan",
+					"The package text plan could not be staged.",
+					cause
+				)
+		}),
+		(file) => Effect.promise(() => rm(dirname(file), { recursive: true, force: true }))
+	);
+	const result = yield* plan({
+		...catalog,
+		format: PACKAGE_TEXT_FORMAT,
+		policyJson: JSON.stringify([TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY]),
+		...(changedFiles ? { changedFiles: [...changedFiles] } : undefined),
+		planFile: file
+	} satisfies GameTextContract.PackageTextPlanRequest);
+	yield* Effect.annotateCurrentSpan({
+		"package-text.plan.packages": result.packages,
+		"package-text.plan.changed": result.changed.length,
+		"package-text.plan.removed": result.removed.length
+	});
+	return {
+		packages: result.packages,
+		first: { name: shardName(0), key: result.firstKey },
+		changed: result.changed.map((shard) => ({
+			name: shardName(shard.group),
+			key: shard.key,
+			packages: shard.packages,
+			selected: shard.selected
+		})),
+		removed: result.removed,
+		file
+	} satisfies PackageTextRefreshPlan;
+});
+
 /** `packageTextSelection` in bounded host slices, with the refresh's inventory failure. */
 export const packageTextSelectionInSlices = Effect.fn("PackageText.selection")(function* (
 	inventory: readonly PackageTextInventoryEntry[],
@@ -211,14 +361,119 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	const reportProgress = yield* GameTextIndexProgressReporter;
 	const stages = new StageClock();
 	const manifest = writer.manifest();
-	let inventory = input.inventory;
+	const session = yield* Effect.serviceOption(LocalizationImportSession);
+	const stagingRoot = Option.isSome(session)
+		? join(session.value.configuration.cacheRoot, "staging")
+		: tmpdir();
+	const onWriter = input.catalog && writer.planPackages;
+	// Planning here sends the writer nothing, so its other commands needn't wait for it.
+	if (!onWriter && input.planned) yield* input.planned;
+	const planned = onWriter
+		? yield* planOnWriter(input.catalog!, input.changedFiles, writer.planPackages!, stagingRoot)
+		: yield* planHere(input.inventory ?? [], input.changedFiles, manifest);
+	stages.mark("selection");
+	if (onWriter && input.planned) yield* input.planned;
+	if (!planned.packages && manifest.active[planned.first.name] === planned.first.key)
+		return {
+			readPackages: 0,
+			reusedPackages: 0,
+			changedShards: 0,
+			removedShards: 0,
+			published: false,
+			profile: writer.metrics()
+		};
+	const changed = planned.changed;
+	const removed = planned.removed;
+	let completed = planned.packages - changed.reduce((count, shard) => count + shard.packages, 0);
+	const report = () => reportProgress({ phase: "packages", completed, total: planned.packages });
+	report();
+	if (!planned.packages) {
+		const empty = {
+			name: planned.first.name,
+			key: planned.first.key,
+			source: yield* nativePackageTextColumns([])
+		};
+		const retired = removed.filter((name) => name !== empty.name);
+		if (input.publishGate) yield* input.publishGate;
+		// Retain an empty prepared-inventory marker after deleting the last package, including
+		// when localization layers were imported before this first package preparation.
+		if (!Object.keys(writer.manifest().layers).length) yield* writer.publishCold([empty]);
+		else yield* writer.publishBatch([empty], retired);
+		return {
+			readPackages: 0,
+			reusedPackages: 0,
+			changedShards: 0,
+			removedShards: retired.length,
+			published: true,
+			profile: writer.metrics()
+		};
+	}
+	if (!changed.length && !removed.length)
+		return {
+			readPackages: 0,
+			reusedPackages: planned.packages,
+			changedShards: 0,
+			removedShards: 0,
+			published: false,
+			profile: writer.metrics()
+		};
+	const reader = Object.keys(manifest.active).some((name) => name.startsWith("package-text."))
+		? yield* store.open()
+		: undefined;
+	if (
+		reader &&
+		writer.replacePackages &&
+		changed.length <= 8 &&
+		changed.every((shard) => manifest.active[shard.name]?.startsWith(`${PACKAGE_TEXT_FORMAT}:`))
+	) {
+		return yield* replacePackageTextRecords(
+			input,
+			planned.packages,
+			yield* shardEntries(planned),
+			removed,
+			reader,
+			writer,
+			writer.replacePackages,
+			input.publishGate
+		);
+	}
+	const result = yield* refreshChangedShards(input, planned, {
+		manifest,
+		reader,
+		writer,
+		stages,
+		stagingRoot,
+		completed,
+		report: (done: number) => {
+			completed = done;
+			report();
+		}
+	});
+	// The refresh span holds the whole refresh's counts and stage times.
+	yield* Effect.annotateCurrentSpan({
+		"package-text.readPackages": result.readPackages,
+		"package-text.changedShards": result.changedShards,
+		"package-text.removedShards": result.removedShards,
+		...stages.attributes("package-text.stage_ms")
+	});
+	return result;
+});
+
+/** Plans an explicit inventory here: selects, shards and keys every package. */
+const planHere = Effect.fn("PackageText.planHere")(function* (
+	input: readonly PackageTextInventoryEntry[],
+	changedFiles: readonly string[] | undefined,
+	manifest: ReturnType<SharedIndexWriter["manifest"]>
+) {
+	const store = yield* SharedIndex;
+	let inventory = input;
 	const retainedEligibility = new Map<string, boolean>();
 	if (
-		input.changedFiles !== undefined &&
+		changedFiles !== undefined &&
 		Object.keys(manifest.active).some((name) => name.startsWith("package-text."))
 	) {
 		const selected = new Set(
-			input.changedFiles.flatMap((path) => {
+			changedFiles.flatMap((path) => {
 				const normalized = path.replaceAll("\\", "/");
 				return /\.(?:uexp|ubulk|uptnl)$/u.test(normalized)
 					? [
@@ -281,85 +536,53 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		inventory = Array.from(rows, (row) => entries[row]!);
 	}
 	const selection = yield* packageTextSelectionInSlices(inventory, retainedEligibility);
-	stages.mark("selection");
-	if (!inventory.length && manifest.active[selection[0]!.name] === selection[0]!.key)
-		return {
-			readPackages: 0,
-			reusedPackages: 0,
-			changedShards: 0,
-			removedShards: 0,
-			published: false,
-			profile: writer.metrics()
-		};
-	const changed = selection.filter(
-		(shard) => shard.entries.length && manifest.active[shard.name] !== shard.key
-	);
-	const removed = selection
-		.filter((shard) => !shard.entries.length && manifest.active[shard.name])
-		.map((shard) => shard.name);
-	let completed =
-		inventory.length - changed.reduce((count, shard) => count + shard.entries.length, 0);
-	const report = () => reportProgress({ phase: "packages", completed, total: inventory.length });
-	report();
-	if (!inventory.length) {
-		const empty = {
-			name: selection[0]!.name,
-			key: selection[0]!.key,
-			source: yield* nativePackageTextColumns([])
-		};
-		const retired = removed.filter((name) => name !== empty.name);
-		if (input.publishGate) yield* input.publishGate;
-		// Retain an empty prepared-inventory marker after deleting the last package, including
-		// when localization layers were imported before this first package preparation.
-		if (!Object.keys(writer.manifest().layers).length) yield* writer.publishCold([empty]);
-		else yield* writer.publishBatch([empty], retired);
-		return {
-			readPackages: 0,
-			reusedPackages: 0,
-			changedShards: 0,
-			removedShards: retired.length,
-			published: true,
-			profile: writer.metrics()
-		};
+	return {
+		packages: inventory.length,
+		first: { name: selection[0]!.name, key: selection[0]!.key },
+		changed: selection
+			.filter((shard) => shard.entries.length && manifest.active[shard.name] !== shard.key)
+			.map((shard) => ({
+				name: shard.name,
+				key: shard.key,
+				packages: shard.entries.length,
+				selected: shard.entries.filter(({ selected }) => selected).length,
+				entries: shard.entries
+			})),
+		removed: selection
+			.filter((shard) => !shard.entries.length && manifest.active[shard.name])
+			.map((shard) => shard.name)
+	} satisfies PackageTextRefreshPlan;
+});
+
+/**
+ * Reads the changed shards' packages and publishes them: on a cold build the reader stages
+ * them, from the writer's plan file when it planned; otherwise they are read here.
+ */
+const refreshChangedShards = Effect.fn("PackageText.refreshShards")(function* <E, R>(
+	input: PackageTextRefreshInput<E, R>,
+	planned: PackageTextRefreshPlan,
+	context: {
+		readonly manifest: ReturnType<SharedIndexWriter["manifest"]>;
+		readonly reader: SharedIndexReader | undefined;
+		readonly writer: SharedIndexWriter;
+		readonly stages: StageClock;
+		readonly stagingRoot: string;
+		readonly completed: number;
+		readonly report: (completed: number) => void;
 	}
-	if (!changed.length && !removed.length)
-		return {
-			readPackages: 0,
-			reusedPackages: inventory.length,
-			changedShards: 0,
-			removedShards: 0,
-			published: false,
-			profile: writer.metrics()
-		};
-	const reader = Object.keys(manifest.active).some((name) => name.startsWith("package-text."))
-		? yield* store.open()
-		: undefined;
-	const session = yield* Effect.serviceOption(LocalizationImportSession);
-	if (
-		reader &&
-		writer.replacePackages &&
-		changed.length <= 8 &&
-		changed.every((shard) => manifest.active[shard.name]?.startsWith(`${PACKAGE_TEXT_FORMAT}:`))
-	) {
-		return yield* replacePackageTextRecords(
-			{ ...input, inventory },
-			changed,
-			removed,
-			reader,
-			writer,
-			writer.replacePackages,
-			input.publishGate
-		);
-	}
-	if (!reader && changed.length > 8 && inventory.length >= (input.coldMinimumPackages ?? 256)) {
+) {
+	const store = yield* SharedIndex;
+	const { manifest, reader, writer, stages, stagingRoot } = context;
+	const changed = planned.changed;
+	const removed = planned.removed;
+	let completed = context.completed;
+	const report = () => context.report(completed);
+	if (!reader && changed.length > 8 && planned.packages >= (input.coldMinimumPackages ?? 256)) {
 		const directory = yield* Effect.acquireRelease(
 			Effect.tryPromise({
 				try: async () => {
-					const root = Option.isSome(session)
-						? join(session.value.configuration.cacheRoot, "staging")
-						: tmpdir();
-					await mkdir(root, { recursive: true });
-					return mkdtemp(join(root, "package-cold-"));
+					await mkdir(stagingRoot, { recursive: true });
+					return mkdtemp(join(stagingRoot, "package-cold-"));
 				},
 				catch: (cause) =>
 					snapshotFailure(
@@ -371,20 +594,57 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			(value) => Effect.promise(() => rm(value, { recursive: true, force: true }))
 		);
 		const requested = new Map<string, PackageTextInventoryEntry>();
-		for (const shard of changed)
-			for (const { entry, selected } of shard.entries)
-				if (selected) requested.set(entry.path, entry);
 		const received = new Set<string>();
 		const snapshots = new Map<string, string>();
 		const stage = input.stage;
-		if (stage) {
-			completed += inventory.length - requested.size;
+		const group = (shard: { readonly name: string }) =>
+			Number(shard.name.slice("package-text.".length));
+		// The reader stages the plan file's shards: no package crosses into the host.
+		const fromPlan = stage !== undefined && planned.file !== undefined;
+		const reads = fromPlan
+			? changed.reduce((count, shard) => count + shard.selected, 0)
+			: undefined;
+		const shards = fromPlan ? [] : yield* shardEntries(planned);
+		for (const shard of shards)
+			for (const { entry, selected } of shard.entries)
+				if (selected) requested.set(entry.path, entry);
+		const expected = reads ?? requested.size;
+		if (stage && planned.file) {
+			completed += planned.packages - expected;
+			report();
+			yield* stage
+				.read([], directory, [], {
+					rules: packageTextAudienceRules(),
+					shards: [],
+					planFile: planned.file,
+					groups: changed.map(group)
+				})
+				.pipe(
+					Stream.runForEach((event) =>
+						Effect.gen(function* () {
+							if (received.has(event.path))
+								return yield* Effect.fail(
+									snapshotFailure(
+										"package-text.read",
+										"Unexpected or duplicate package"
+									)
+								);
+							received.add(event.path);
+							completed++;
+							report();
+						})
+					)
+				);
+			for (const shard of changed)
+				snapshots.set(shard.name, join(directory, `${group(shard)}.snapshot`));
+		} else if (stage) {
+			completed += planned.packages - requested.size;
 			report();
 			const paths = [...requested.keys()];
 			yield* stage
 				.read(paths, directory, paths.map(packageTextShard), {
 					rules: packageTextAudienceRules(),
-					shards: changed.map((shard) => ({
+					shards: shards.map((shard) => ({
 						group: Number(shard.name.slice("package-text.".length)),
 						expected: shard.entries.map(({ entry, selected }) => ({
 							path: entry.path,
@@ -416,7 +676,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 				);
 		} else {
 			const records = new Map<string, PackageTextStored[]>();
-			for (const shard of changed) {
+			for (const shard of shards) {
 				const rows: PackageTextStored[] = [];
 				for (const { entry, selected } of shard.entries)
 					if (!selected) {
@@ -431,29 +691,34 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			}
 			report();
 			if (requested.size)
-				yield* input.read([...requested.keys()]).pipe(
-					Stream.runForEach((event) =>
-						Effect.gen(function* () {
-							if (event.event === "text_summary") return;
-							const entry = requested.get(event.path);
-							if (!entry || received.has(event.path))
-								return yield* Effect.fail(
-									snapshotFailure(
-										"package-text.read",
-										"Unexpected or duplicate package"
-									)
-								);
-							received.add(event.path);
-							records.get(shardName(packageTextShard(event.path)))!.push({
-								path: event.path,
-								signature: entry.signature,
-								evidence: event
-							});
-							completed++;
-							report();
-						})
+				yield* input
+					.read(
+						[...requested.keys()],
+						new Map([...requested].map(([path, entry]) => [path, entry.signature]))
 					)
-				);
+					.pipe(
+						Stream.runForEach((event) =>
+							Effect.gen(function* () {
+								if (event.event === "text_summary") return;
+								const entry = requested.get(event.path);
+								if (!entry || received.has(event.path))
+									return yield* Effect.fail(
+										snapshotFailure(
+											"package-text.read",
+											"Unexpected or duplicate package"
+										)
+									);
+								received.add(event.path);
+								records.get(shardName(packageTextShard(event.path)))!.push({
+									path: event.path,
+									signature: entry.signature,
+									evidence: event
+								});
+								completed++;
+								report();
+							})
+						)
+					);
 			for (const shard of changed) {
 				const path = join(
 					directory,
@@ -480,14 +745,18 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 				snapshots.set(shard.name, path);
 			}
 		}
-		if (received.size !== requested.size)
+		if (received.size !== expected)
 			return yield* Effect.fail(
 				snapshotFailure("package-text.read", "Reader omitted requested packages")
 			);
 		stages.mark("read");
 		if (input.publishGate) yield* input.publishGate;
 		stages.restart();
-		const result = yield* importColdPackageTextShards({ inventory, snapshots }, selection).pipe(
+		const result = yield* importColdPackageTextShards(
+			{ snapshots },
+			changed.map(({ name, key, packages }) => ({ name, key, packages })),
+			planned.packages
+		).pipe(
 			Effect.provideService(
 				SharedIndex,
 				SharedIndex.of({
@@ -498,13 +767,9 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			)
 		);
 		stages.mark("import");
-		yield* Effect.annotateCurrentSpan({
-			"package-text.readPackages": requested.size,
-			...stages.attributes("package-text.stage_ms")
-		});
 		return {
-			readPackages: requested.size,
-			reusedPackages: inventory.length - requested.size,
+			readPackages: expected,
+			reusedPackages: planned.packages - expected,
 			changedShards: changed.length,
 			removedShards: removed.length,
 			published: true,
@@ -519,13 +784,10 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			? yield* Effect.acquireRelease(
 					Effect.tryPromise({
 						try: async () => {
-							const root = Option.isSome(session)
-								? join(session.value.configuration.cacheRoot, "staging")
-								: tmpdir();
-							await mkdir(root, { recursive: true });
+							await mkdir(stagingRoot, { recursive: true });
 							const readers: SnapshotFileReader[] = [];
 							return {
-								directory: await mkdtemp(join(root, "package-refresh-")),
+								directory: await mkdtemp(join(stagingRoot, "package-refresh-")),
 								readers
 							};
 						},
@@ -544,7 +806,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 				)
 			: undefined;
 	let readPackages = 0;
-	for (const shard of changed) {
+	for (const shard of yield* shardEntries(planned)) {
 		// A shard written in an older column format is read again rather than decoded.
 		const old =
 			reader && manifest.active[shard.name]?.startsWith(`${PACKAGE_TEXT_FORMAT}:`)
@@ -579,7 +841,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		completed += shard.entries.length - requests.length;
 		report();
 		if (requests.length)
-			yield* input.read(requests).pipe(
+			yield* input.read(requests, signatures).pipe(
 				Stream.runForEach((event) =>
 					Effect.gen(function* () {
 						if (event.event === "text_summary") return;
@@ -639,20 +901,14 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	stages.mark("read");
 	if (input.publishGate) yield* input.publishGate;
 	stages.restart();
-	reportProgress({ phase: "package_publish", completed: 0, total: 0 });
+	(yield* GameTextIndexProgressReporter)({ phase: "package_publish", completed: 0, total: 0 });
 	if (!Object.keys(writer.manifest().layers).length || sources.length > 8)
 		yield* writer.publishCold(sources, removed);
 	else yield* writer.publishBatch(sources, removed);
 	stages.mark("publish");
-	yield* Effect.annotateCurrentSpan({
-		"package-text.readPackages": readPackages,
-		"package-text.changedShards": changed.length,
-		"package-text.removedShards": removed.length,
-		...stages.attributes("package-text.stage_ms")
-	});
 	return {
 		readPackages,
-		reusedPackages: inventory.length - readPackages,
+		reusedPackages: planned.packages - readPackages,
 		changedShards: changed.length,
 		removedShards: removed.length,
 		published: true,

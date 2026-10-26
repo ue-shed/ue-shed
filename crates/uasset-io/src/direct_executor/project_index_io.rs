@@ -116,6 +116,49 @@ impl ProjectIndexQuerySession {
         })
     }
 
+    /// The Catalog generation's packages for a package-text plan: each path, bundle signature,
+    /// and whether Unreal's gatherer reads it, from its header.
+    pub(crate) fn package_text_inventory(
+        &mut self,
+        request: &game_text_index::package_text_contract::PackageTextPlanRequest,
+    ) -> Result<Vec<game_text_index::package_text_contract::PackageTextExpected>, Failure> {
+        use super::catalog::{Catalog, QueryRequest};
+        let catalog = self.catalog(&request.cache_root, &request.project_id, request.generation)?;
+        let mut inventory = Vec::new();
+        let mut cursor = None;
+        loop {
+            let page = catalog
+                .query(&QueryRequest {
+                    project_id: ProjectId::new(&request.project_id),
+                    expected_generation: Generation::new(request.generation),
+                    kind: QueryKind::Inventory,
+                    limit: super::catalog::PROJECT_INDEX_MAX_PAGE_SIZE,
+                    cursor,
+                })
+                .map_err(catalog_to_failure)?;
+            for item in page.items {
+                if let QueryItem::Inventory {
+                    package_path,
+                    signature,
+                    header_data,
+                } = item
+                {
+                    inventory.push(
+                        game_text_index::package_text_contract::PackageTextExpected {
+                            path: package_path,
+                            signature,
+                            selected: gathered(header_data.as_ref()),
+                        },
+                    );
+                }
+            }
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                return Ok(inventory);
+            }
+        }
+    }
+
     pub(crate) fn query(
         &mut self,
         cache_root: &str,
@@ -128,6 +171,19 @@ impl ProjectIndexQuerySession {
             query,
         )
     }
+}
+
+/// `PKG_RequiresLocalizationGather`.
+const REQUIRES_LOCALIZATION_GATHER: u32 = 0x0004_0000;
+
+/// Whether Unreal's gatherer reads a package (`isPackageTextCandidate`): flagged as needing a
+/// gather, or holding a current gather table. A package without header evidence is read, as one
+/// that failed its header is.
+fn gathered(header: Option<&uasset_inspection::package_header::PackageHeaderData>) -> bool {
+    header.is_none_or(|header| {
+        header.package_flags & REQUIRES_LOCALIZATION_GATHER != 0
+            || (header.gatherable_text_data_count > 0 && header.gatherable_text_data_offset > 0)
+    })
 }
 
 /// Aggregate refresh phase timings for benchmark attribution. These values are intentionally

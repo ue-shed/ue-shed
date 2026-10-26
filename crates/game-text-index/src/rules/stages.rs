@@ -281,6 +281,26 @@ impl Recorder {
         sample.busy += busy;
         sample.rows += rows;
     }
+    /// A stage that ran `wall` from `measure`'s start, on one thread.
+    pub fn stage_elapsed(
+        &self,
+        name: &'static str,
+        measure: &Measure,
+        wall: Duration,
+        rows: usize,
+    ) {
+        let mut recording = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let start = measure.start.saturating_duration_since(recording.origin);
+        let sample = recording.stages.entry(name).or_default();
+        sample.start.get_or_insert(start);
+        sample.end = start + wall;
+        sample.wall += wall;
+        sample.busy += wall;
+        sample.rows += rows;
+    }
     /// Bytes held by named owners at a point, with the live heap when it is counted.
     pub fn holders(&self, point: &'static str, mut holders: BTreeMap<&'static str, u64>) {
         if let Some(live) = process_metrics::heap_live() {
@@ -490,16 +510,19 @@ pub(crate) enum Phase {
     Execute,
     Diagnostics,
     Emission,
+    /// The rows an incremental evaluation chooses, with the groups every evaluation records.
+    Closure,
 }
 pub(crate) fn subject_stage(subject: super::Subject, phase: Phase) -> &'static str {
     use super::Subject::*;
-    const NAMES: [[&str; 5]; 3] = [
+    const NAMES: [[&str; 6]; 3] = [
         [
             "line.children",
             "line.columns",
             "line.execute",
             "line.diagnostics",
             "line.emission",
+            "line.closure",
         ],
         [
             "line_culture.children",
@@ -507,6 +530,7 @@ pub(crate) fn subject_stage(subject: super::Subject, phase: Phase) -> &'static s
             "line_culture.execute",
             "line_culture.diagnostics",
             "line_culture.emission",
+            "line_culture.closure",
         ],
         [
             "unit_source.children",
@@ -514,6 +538,7 @@ pub(crate) fn subject_stage(subject: super::Subject, phase: Phase) -> &'static s
             "unit_source.execute",
             "unit_source.diagnostics",
             "unit_source.emission",
+            "unit_source.closure",
         ],
     ];
     let subject = match subject {

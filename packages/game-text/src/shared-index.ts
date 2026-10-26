@@ -138,6 +138,14 @@ export interface SharedIndexWriter {
 		request: GameTextContract.LocalizationImportRequest,
 		onProgress?: (completed: number, total: number) => void
 	) => Effect.Effect<GameTextContract.LocalizationImportOutcome, Failure>;
+	/**
+	 * Plans a package-text refresh in the native writer from a Catalog generation: the reader
+	 * selects, shards and keys every package and writes the changed shards' entries to the
+	 * request's plan file.
+	 */
+	readonly planPackages?: (
+		request: GameTextContract.PackageTextPlanRequest
+	) => Effect.Effect<GameTextContract.PackageTextPlan, Failure>;
 	/** Native record replacement: nonnegative rows retain old records; -1-row selects a changed record. */
 	readonly replacePackages?: (
 		entries: readonly {

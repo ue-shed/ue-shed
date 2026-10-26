@@ -204,3 +204,60 @@ export async function readGeneratedPackageRecord(directory: string, path: string
 	}
 	throw new Error("Missing converted package");
 }
+
+/** A working copy of retained records: hard links, so an edit replaces files, never their bytes. */
+export async function linkRetainedRecords(source: string, target: string) {
+	const { readdir, link, rm } = await import("node:fs/promises");
+	await rm(target, { recursive: true, force: true });
+	await mkdir(target, { recursive: true });
+	for (const name of await readdir(source)) await link(join(source, name), join(target, name));
+}
+
+/**
+ * Edits one package in a linked working copy, for the benchmark's edit stage. The edit appends to
+ * the first occurrence's source text of the first text package (path order) and changes that
+ * package's signature, as saving it in the editor would. The edited group and the inventory are
+ * rewritten; every other file stays a link to `source`.
+ */
+export async function editRetainedRecords(source: string, target: string) {
+	const { readFile, rm, writeFile } = await import("node:fs/promises");
+	const inventory = await readGeneratedPackageInventory(source);
+	for (const entry of inventory) {
+		const file = `package-text.${packageTextShard(entry.path)}.ndjson`;
+		let edited = false;
+		const lines: string[] = [];
+		for await (const line of packageTextJsonLines(join(source, file))) {
+			const record = JSON.parse(line);
+			if (
+				!edited &&
+				record.path === entry.path &&
+				record.evidence.event === "text_package_record" &&
+				record.evidence.occurrences.length > 0
+			) {
+				record.evidence.occurrences[0].source += " (edited)";
+				record.signature += ":edited";
+				edited = true;
+				lines.push(JSON.stringify(record));
+			} else lines.push(line);
+		}
+		if (!edited) continue;
+		await rm(join(target, file));
+		await writeFile(join(target, file), lines.map((line) => line + "\n").join(""));
+		const inventoryLines = (await readFile(join(source, "inventory.ndjson"), "utf8"))
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => {
+				const row = JSON.parse(line);
+				if (row.path !== entry.path) return line;
+				row.signature += ":edited";
+				return JSON.stringify(row);
+			});
+		await rm(join(target, "inventory.ndjson"));
+		await writeFile(
+			join(target, "inventory.ndjson"),
+			inventoryLines.map((line) => line + "\n").join("")
+		);
+		return entry.path;
+	}
+	throw new Error("The retained records hold no text package to edit.");
+}

@@ -273,12 +273,14 @@ pub(crate) fn refresh(
     drop(header);
     let mut joined = Joined::open(store, &previous_key)?;
     let meta = joined.meta.clone();
-    if meta["generation"] != store.root["generation"]
-        || meta["oldCandidates"] != 0
+    if meta["generation"] != store.root["generation"] {
+        return fallback("generation");
+    }
+    if meta["oldCandidates"] != 0
         || meta["ambiguous"] != 0
         || meta["pairs"].as_array().is_some_and(|v| !v.is_empty())
     {
-        return fallback("generation-or-key-matching");
+        return fallback("key-matching");
     }
     let Some(graph) = crate::dependency_graph::Graph::open(store, &previous_key)? else {
         return fallback("dependency-index-revision");

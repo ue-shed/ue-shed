@@ -18,7 +18,10 @@
   owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
   review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
   recorded. Phase 4 is complete (#170); its measurements and the owner's review are recorded.
-  Phase 4.5 (the cold scan, #171) is implemented and measured; the owner's review is pending.
+  Phase 4.5 (the cold scan) is complete (#171); its measurements and the owner's review are
+  recorded. Phase 5 (incremental findings, #172) is implemented and measured; the owner's
+  review is pending. A rescan after one edit is 30% faster; a full evaluation costs 4–6% more
+  for the state it keeps, recorded against the STOP conditions.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.

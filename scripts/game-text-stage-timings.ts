@@ -69,6 +69,10 @@ export function makeStageRecorder() {
 	const tracer = Tracer.make({ span: (options) => new RecordingSpan(options) });
 	return {
 		tracer,
+		/** Forgets the spans ended so far, so the counts cover only what runs next. */
+		reset() {
+			ended.length = 0;
+		},
 		/** Flat numeric counts `<prefix>.<span>.<measure>`, ready for a benchmark result. */
 		counts(prefix = "stage") {
 			const origin = ended.reduce(

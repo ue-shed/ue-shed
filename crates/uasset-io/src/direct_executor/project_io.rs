@@ -600,6 +600,90 @@ enum ProjectionKind {
     Texture,
 }
 
+/// A package's bundle signature as the Catalog records it (`bundle_signature`), from its files as
+/// they are now: the package, then its `.uexp`, `.ubulk` and `.uptnl` sidecars.
+fn bundle_signature(path: &Path) -> Result<String, Failure> {
+    let mut parts = [None; 4];
+    for (part, extension) in
+        parts
+            .iter_mut()
+            .zip([None, Some("uexp"), Some("ubulk"), Some("uptnl")])
+    {
+        let file = extension.map_or_else(
+            || path.to_path_buf(),
+            |extension| path.with_extension(extension),
+        );
+        *part = match std::fs::metadata(&file) {
+            Ok(metadata) => Some((metadata.len(), scanner::metadata_modified_nanos(&metadata))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(Failure {
+                    code: "io_error".to_owned(),
+                    message: format!("{} could not be read: {error}", file.display()),
+                    retry_safe: true,
+                    ..Default::default()
+                });
+            }
+        };
+    }
+    Ok(super::catalog::bundle_signature(parts))
+}
+
+/// A staging request that names a plan file, as the request listing its shards' entries and
+/// selected paths would: the reader reads them from the file `plan_packages` wrote.
+fn planned_staging(
+    selection: &crate::protocol::ProjectSelection,
+    staging: &crate::protocol::PackageTextStaging,
+    snapshots: &crate::package_text_columns::SnapshotRequest,
+    file: &str,
+) -> Result<
+    (
+        crate::protocol::ProjectSelection,
+        crate::protocol::PackageTextStaging,
+    ),
+    Failure,
+> {
+    let shards =
+        game_text_index::package_text_plan::read_plan_file(Path::new(file), &snapshots.groups)
+            .map_err(|error| Failure {
+                code: "invalid_request".to_owned(),
+                message: format!("The package-text plan could not be read: {error}"),
+                retry_safe: false,
+                ..Default::default()
+            })?;
+    let mut paths = Vec::new();
+    let mut groups = Vec::new();
+    for (group, expected) in &shards {
+        for entry in expected.iter().filter(|entry| entry.selected) {
+            paths.push(entry.path.clone());
+            groups.push(*group);
+        }
+    }
+    let mut request = snapshots.clone();
+    request.plan_file = None;
+    request.groups = Vec::new();
+    request.shards = shards
+        .into_iter()
+        .map(
+            |(group, expected)| game_text_index::package_text_contract::PackageTextShard {
+                group,
+                expected,
+            },
+        )
+        .collect();
+    Ok((
+        crate::protocol::ProjectSelection {
+            paths: Some(paths),
+            project_root: selection.project_root.clone(),
+        },
+        crate::protocol::PackageTextStaging {
+            directory: staging.directory.clone(),
+            groups,
+            snapshots: Some(request),
+        },
+    ))
+}
+
 fn projection(
     request: &Request,
     kind: ProjectionKind,
@@ -622,6 +706,17 @@ fn projection(
                 ..Default::default()
             });
         }
+    };
+    let planned;
+    let (selection, staging) = match staging {
+        Some(staging)
+            if let Some(snapshots) = &staging.snapshots
+                && let Some(file) = &snapshots.plan_file =>
+        {
+            planned = planned_staging(selection, staging, snapshots, file)?;
+            (&planned.0, Some(&planned.1))
+        }
+        _ => (selection, staging),
     };
     if let Some(staging) = staging
         && let Some(snapshots) = &staging.snapshots
@@ -693,7 +788,14 @@ fn projection(
     let ordered = stager.is_none();
     let work = |index: usize| {
         let memory_job = memory_probe.job(index);
+        // A staged package is read as the Catalog recorded it, and is still so once decoded.
+        if let Some(groups) = &staging_groups {
+            groups.verify(&paths[index])?;
+        }
         let result = project_one_path(&paths[index], kind, &filters, cancellation)?;
+        if let Some(groups) = &staging_groups {
+            groups.verify(&paths[index])?;
+        }
         reader_memory::checkpoint(MemoryStage::Serialize);
         let delivery = match &staging_groups {
             Some(groups) => groups.prepare(&paths[index], result),
@@ -1030,6 +1132,8 @@ fn replay_package_snapshots(
 
 struct PackageTextGroups {
     groups: Vec<(PathBuf, u32)>,
+    /// Each requested path's group, for the packages requested by path.
+    exact: std::collections::HashMap<PathBuf, u32>,
     snapshots: Option<SnapshotRequest>,
     expected: BTreeMap<PathBuf, (u32, Expected)>,
 }
@@ -1063,17 +1167,47 @@ impl PackageTextGroups {
                 .cloned()
                 .zip(staging.groups.iter().copied())
                 .collect(),
+            exact: roots
+                .iter()
+                .cloned()
+                .zip(staging.groups.iter().copied())
+                .collect(),
+        })
+    }
+
+    /// Fails when a staged package's bundle differs from its inventory signature: the package
+    /// or a sidecar changed since the Catalog recorded it.
+    fn verify(&self, path: &Path) -> Result<(), Failure> {
+        let Some((_, expected)) = self.expected.get(path) else {
+            return Ok(());
+        };
+        let _span = game_text_index::scan_timings::Span::new("extract.verify");
+        if bundle_signature(path)? == expected.signature {
+            return Ok(());
+        }
+        Err(Failure {
+            code: "package_changed".to_owned(),
+            message: format!(
+                "Package or sidecar changed while reading {}.",
+                expected.path
+            ),
+            retry_safe: true,
+            ..Default::default()
         })
     }
 
     /// The group of the requested path the package was discovered from: the path itself, or
     /// the requested directory containing it.
     fn group(&self, path: &Path) -> Result<u32, Failure> {
-        self.groups
-            .iter()
-            .find(|(root, _)| root == path)
-            .or_else(|| self.groups.iter().find(|(root, _)| path.starts_with(root)))
-            .map(|(_, group)| *group)
+        self.exact
+            .get(path)
+            .copied()
+            .or_else(|| {
+                self.groups
+                    .iter()
+                    .find(|(root, _)| path.starts_with(root))
+                    .map(|(_, group)| *group)
+            })
             .ok_or_else(|| staging_failure(format!("{} has no staging group", path.display())))
     }
 
@@ -3083,6 +3217,73 @@ mod tests {
     }
 
     #[test]
+    fn a_planned_package_whose_bundle_changed_fails_its_staging() {
+        use crate::package_text_columns::{Expected, SnapshotRequest};
+        let mut request = text_projection_request(true);
+        request.contract.version.minor = 20;
+        let (root, paths) = match &request.operation {
+            crate::protocol::Operation::ExtractTextPackages { selection, .. } => (
+                std::path::PathBuf::from(&selection.project_root),
+                selection.paths.clone().unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        let base =
+            std::env::temp_dir().join(format!("ue-shed-package-plan-{}", std::process::id()));
+        // Stages the selected packages from a plan file whose signatures `signature` gives.
+        let mut stage = |name: &str, signature: &dyn Fn(&std::path::Path) -> String| {
+            let directory = base.join(name);
+            std::fs::create_dir_all(&directory).unwrap();
+            let expected = paths
+                .iter()
+                .map(|path| {
+                    let full = root.join(path);
+                    Expected {
+                        path: full
+                            .strip_prefix(&root)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/"),
+                        signature: signature(&full),
+                        selected: true,
+                    }
+                })
+                .collect::<Vec<_>>();
+            let plan = directory.join("plan.ndjson");
+            std::fs::write(
+                &plan,
+                format!(
+                    "{}\n",
+                    serde_json::json!({"group": 7, "expected": expected})
+                ),
+            )
+            .unwrap();
+            if let crate::protocol::Operation::ExtractTextPackages { staging, .. } =
+                &mut request.operation
+            {
+                *staging = Some(crate::protocol::PackageTextStaging {
+                    directory: directory.to_string_lossy().into_owned(),
+                    groups: Vec::new(),
+                    snapshots: Some(SnapshotRequest {
+                        rules: Vec::new(),
+                        record_files: Vec::new(),
+                        records: Vec::new(),
+                        plan_file: Some(plan.to_string_lossy().into_owned()),
+                        groups: vec![7],
+                        shards: Vec::new(),
+                    }),
+                });
+            }
+            super::extract_text_streaming(&request, &CancellationToken::new(), &mut |_| Ok(()))
+                .map(|_| ())
+        };
+        stage("current", &|path| super::bundle_signature(path).unwrap()).unwrap();
+        let failure = stage("changed", &|_| "[null,null,null,null]".to_owned()).unwrap_err();
+        assert_eq!(failure.code, "package_changed");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
     fn native_package_shards_match_streamed_columns_and_retained_replay() {
         use crate::package_text_columns::{self, Columns, Expected, Shard, SnapshotRequest};
         let mut request = text_projection_request(true);
@@ -3119,7 +3320,8 @@ mod tests {
                     .unwrap()
                     .to_string_lossy()
                     .replace('\\', "/");
-                package_text_columns::native_stored(event, &relative, "signature")
+                let signature = super::bundle_signature(std::path::Path::new(path)).unwrap();
+                package_text_columns::native_stored(event, &relative, &signature)
             })
             .collect::<Vec<_>>();
         stored.sort_by(|a, b| a.path.cmp(&b.path));
@@ -3127,6 +3329,8 @@ mod tests {
             rules: Vec::new(),
             record_files: Vec::new(),
             records: Vec::new(),
+            plan_file: None,
+            groups: Vec::new(),
             shards: vec![Shard {
                 group: 7,
                 expected: stored

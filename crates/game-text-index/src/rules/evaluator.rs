@@ -372,6 +372,14 @@ pub(crate) struct Evidence {
     /// `Bool(true)` when the rule's `shadowed` holds for the finding.
     pub shadowed: Atom,
 }
+/// One row's keys for a cross-row node.
+enum RowKeys {
+    None,
+    Failed,
+    One(u64),
+    /// Sorted and distinct.
+    Many(Vec<u64>),
+}
 /// A finding as evaluation produced it: interned evidence in the evaluation's arena.
 pub(crate) struct Finding {
     pub rule: usize,
@@ -406,6 +414,11 @@ pub(crate) struct Evaluated {
     /// Line-culture diagnostics that do not come from a rule.
     pub projection: Vec<Diagnostic>,
     pub recorder: Recorder,
+    /// Each cross-row node's groups over every row, for the next evaluation; `None` when a node
+    /// can't be followed incrementally.
+    pub groups: Option<Vec<super::incremental::NodeGroups>>,
+    /// The rows evaluated, when an incremental evaluation evaluated only some.
+    pub evaluated: Option<Bits>,
 }
 struct Pending {
     rule: usize,
@@ -626,6 +639,14 @@ struct Evaluator<'a> {
     aggregates: Vec<Option<Arc<Column>>>,
     /// Each corpus count's rows by key, built once.
     corpus_tables: HashMap<NodeId, Arc<HashMap<String, i64>>>,
+    /// The rows an incremental evaluation evaluates. A group they are in holds every member, so
+    /// the aggregates read only them.
+    restrict: Option<Bits>,
+    /// In a full evaluation, the groups each cross-row aggregate formed over every row, for the
+    /// next evaluation's state.
+    recorded: Option<FxHashMap<NodeId, super::incremental::NodeGroups>>,
+    /// The cross-row nodes a rule evaluated.
+    reached: rustc_hash::FxHashSet<NodeId>,
     len: usize,
 }
 impl<'a> Evaluator<'a> {
@@ -718,6 +739,9 @@ impl<'a> Evaluator<'a> {
             independent: vec![false; program.nodes.len()],
             aggregates: vec![None; program.nodes.len()],
             corpus_tables: HashMap::new(),
+            restrict: None,
+            recorded: None,
+            reached: rustc_hash::FxHashSet::default(),
             len,
             cache_ids: Vec::new(),
             prepared,
@@ -1078,17 +1102,40 @@ impl<'a> Evaluator<'a> {
     /// A group aggregate's value for every subject row (Phase 2 specification §3.1). Rows outside
     /// `among`, or whose key is null, are null; a row whose inputs failed fails.
     fn group_aggregate(&mut self, id: NodeId) -> Result<Column> {
+        self.reached.insert(id);
+        // An incremental evaluation's rows hold every member of every group they are in, so the
+        // aggregate reads only them; the other rows' values are never read.
+        let all =
+            Selection::from_mask(self.restrict.clone().unwrap_or_else(|| Bits::all(self.len)));
+        let column = self.scoped_group_aggregate(id, &all)?;
+        if all.len() == self.len {
+            return Ok(column);
+        }
+        let mut values = vec![Atom::Null; self.len];
+        let mut failed = Bits::new(self.len);
+        for (index, row) in all.rows.iter().enumerate() {
+            values[row as usize] = column.get(index, &self.arena);
+            if column.failed.get(index) {
+                failed.set(row as usize);
+            }
+        }
+        let mut column = Column::from_atoms(&values, &mut self.arena)?;
+        column.failed = failed;
+        Ok(column)
+    }
+    /// A group aggregate's value for each of `all`'s rows.
+    fn scoped_group_aggregate(&mut self, id: NodeId, all: &Selection) -> Result<Column> {
         let op = self.program.nodes[id].op.clone();
         let args = self.program.nodes[id].args.clone();
-        let all = Selection::from_mask(Bits::all(self.len));
+        let len = all.len();
         if op == Op::ExistsOther {
-            return self.exists_other(&args, &all);
+            return self.exists_other(&args, all);
         }
-        let by = self.evaluate(args[0], &all)?;
-        let among = self.evaluate(args[1], &all)?;
-        let mut failed = Bits::new(self.len);
+        let by = self.evaluate(args[0], all)?;
+        let among = self.evaluate(args[1], all)?;
+        let mut failed = Bits::new(len);
         let mut groups = HashMap::<String, Vec<usize>>::new();
-        for row in 0..self.len {
+        for row in 0..len {
             if by.failed.get(row) || among.failed.get(row) {
                 failed.set(row);
                 continue;
@@ -1098,7 +1145,10 @@ impl<'a> Evaluator<'a> {
                 groups.entry(self.key(value)).or_default().push(row);
             }
         }
-        let mut values = vec![Atom::Null; self.len];
+        if self.recorded.is_some() && len == self.len {
+            self.record_groups(id, &groups, &failed);
+        }
+        let mut values = vec![Atom::Null; len];
         match op {
             Op::GroupCount => {
                 for members in groups.values() {
@@ -1109,13 +1159,13 @@ impl<'a> Evaluator<'a> {
                 }
             }
             Op::GroupRank | Op::GroupTake => {
-                let order = self.evaluate(args[2], &all)?;
+                let order = self.evaluate(args[2], all)?;
                 let taken = if op == Op::GroupTake {
                     let n = match self.literals[args[4]] {
                         Some(Atom::Int(n)) => usize::try_from(n)?,
                         _ => return Err("groupTake needs a whole-number n.".into()),
                     };
-                    Some((self.evaluate(args[3], &all)?, n))
+                    Some((self.evaluate(args[3], all)?, n))
                 } else {
                     None
                 };
@@ -1140,7 +1190,7 @@ impl<'a> Evaluator<'a> {
                         }
                     }
                 }
-                for row in 0..self.len {
+                for row in 0..len {
                     if order.failed.get(row)
                         || taken
                             .as_ref()
@@ -1151,8 +1201,8 @@ impl<'a> Evaluator<'a> {
                 }
             }
             Op::GroupTally => {
-                let value = self.evaluate(args[2], &all)?;
-                let display = self.evaluate(args[3], &all)?;
+                let value = self.evaluate(args[2], all)?;
+                let display = self.evaluate(args[3], all)?;
                 for members in groups.values() {
                     // Each distinct value: its rows, and the code-unit-smallest display.
                     let mut tally = Vec::<(Atom, i64, Atom)>::new();
@@ -1214,6 +1264,41 @@ impl<'a> Evaluator<'a> {
         column.failed = failed;
         Ok(column)
     }
+    /// Records a full evaluation's groups of a group aggregate, numbered by their first row as
+    /// `cross_row_groups` numbers them.
+    fn record_groups(&mut self, id: NodeId, groups: &HashMap<String, Vec<usize>>, failed: &Bits) {
+        use super::incremental::{FAILED_GROUP, NO_GROUP, NodeGroups, key_hash};
+        let mut order = groups
+            .iter()
+            .map(|(key, members)| (members[0], key))
+            .collect::<Vec<_>>();
+        order.sort_unstable();
+        let mut rows = vec![NO_GROUP; self.len];
+        for row in failed.ones() {
+            rows[row as usize] = FAILED_GROUP;
+        }
+        let mut hashes = Vec::with_capacity(order.len());
+        for (number, (_, key)) in order.into_iter().enumerate() {
+            hashes.push(key_hash(key));
+            for row in &groups[key] {
+                rows[*row] = number as u32;
+            }
+        }
+        if let Some(recorded) = &mut self.recorded {
+            recorded.insert(
+                id,
+                NodeGroups {
+                    node: id,
+                    starts: None,
+                    groups: rows,
+                    hashes,
+                    table: None,
+                    keyed: true,
+                    unreached: false,
+                },
+            );
+        }
+    }
     /// A display value's text for code-unit comparison; non-strings compare as their JSON.
     fn text_of(&self, value: Atom) -> String {
         match value {
@@ -1241,10 +1326,14 @@ impl<'a> Evaluator<'a> {
     }
     /// Whether a node reads the `item` variable anywhere below it.
     fn reads_item(&self, id: NodeId) -> bool {
+        self.reads(id, |op| matches!(op, Op::Var(name) if &**name == "item"))
+    }
+    /// Whether the expression at `id` holds an operation `test` accepts.
+    fn reads(&self, id: NodeId, test: impl Fn(&Op) -> bool) -> bool {
         let mut pending = vec![id];
         while let Some(id) = pending.pop() {
             let node = &self.program.nodes[id];
-            if matches!(&node.op, Op::Var(name) if &**name == "item") {
+            if test(&node.op) {
                 return true;
             }
             pending.extend_from_slice(&node.args);
@@ -1260,18 +1349,19 @@ impl<'a> Evaluator<'a> {
     /// cultures share their line's atoms. Tuple values compare by dense IDs of their keys.
     fn exists_other(&mut self, args: &[NodeId], all: &Selection) -> Result<Column> {
         let mut measure = Measure::start();
+        let len = all.len();
         let among = self.evaluate(args[1], all)?;
         let over = self.evaluate(args[2], all)?;
-        let mut failed = Bits::new(self.len);
+        let mut failed = Bits::new(len);
         let mut members = Vec::new();
-        for row in 0..self.len {
+        for row in 0..len {
             if among.failed.get(row) || over.failed.get(row) {
                 failed.set(row);
             } else if among.get(row, &self.arena).boolean() {
                 members.push(row);
             }
         }
-        self.exists_other_stage("inputs", &mut measure, self.len);
+        self.exists_other_stage("inputs", &mut measure, len);
         // `by` and each `differing` value, read per row unless they read the site.
         let differing = &self.program.nodes[args[3]];
         let listed = differing.op == Op::List;
@@ -1463,7 +1553,7 @@ impl<'a> Evaluator<'a> {
                 found[*parent] = true;
             }
         }
-        let mut values = vec![Atom::Null; self.len];
+        let mut values = vec![Atom::Null; len];
         for (index, row) in members.iter().enumerate() {
             let first = representative[index];
             if first == usize::MAX {
@@ -1478,8 +1568,410 @@ impl<'a> Evaluator<'a> {
         }
         let mut column = Column::from_atoms(&values, &mut self.arena)?;
         column.failed = failed;
-        self.exists_other_stage("match", &mut measure, self.len);
+        self.exists_other_stage("match", &mut measure, len);
         Ok(column)
+    }
+    /// Each cross-row node's groups per subject row, as the aggregates evaluate them: `by` and
+    /// `among`, an `existsOther` whose `by` reads the site per site, and a `corpusCount`'s `key`
+    /// with its table. With `delta`, a node whose keys read only their own row takes the
+    /// previous evaluation's groups and reads the changed rows' keys alone. `None` when a node
+    /// reads another rule's findings, which no rule has produced yet, or a variable bound
+    /// outside it.
+    fn cross_row_groups(
+        &mut self,
+        nodes: &[NodeId],
+        delta: Option<&super::incremental::SubjectDelta>,
+    ) -> Result<Option<Vec<super::incremental::NodeGroups>>> {
+        use super::incremental::NodeGroups;
+        if !self.cross_row_readable(nodes) {
+            return Ok(None);
+        }
+        let all = Selection::from_mask(Bits::all(self.len));
+        let changed = delta.map(|delta| Selection::from_mask(delta.changed.clone()));
+        let mut output: Vec<NodeGroups> = Vec::with_capacity(nodes.len());
+        for &id in nodes {
+            // Nodes grouping by the same `by` among the same rows form the same groups.
+            if let Some(grouping) = self.row_grouping(id)
+                && let Some(twin) = output
+                    .iter()
+                    .find(|groups| self.row_grouping(groups.node) == Some(grouping))
+            {
+                let mut groups = twin.clone();
+                groups.node = id;
+                output.push(groups);
+                continue;
+            }
+            let op = self.program.nodes[id].op.clone();
+            let args = self.program.nodes[id].args.clone();
+            // The arguments a row's keys read, and whether they read the site.
+            let (keys, sited) = match op {
+                Op::CorpusCount => (vec![args[0]], false),
+                Op::ExistsOther => {
+                    let sited = self.reads_item(args[0]);
+                    (
+                        if sited {
+                            vec![args[0], args[1], args[2]]
+                        } else {
+                            vec![args[0], args[1]]
+                        },
+                        sited,
+                    )
+                }
+                _ => (vec![args[0], args[1]], false),
+            };
+            // A key read per element of an enclosing lambda can't be read per row: only the
+            // corpus count's table is followed.
+            let keyed = !(op == Op::CorpusCount && self.reads_unbound(args[0], &[]));
+            // Keys that read nothing beyond their own line keep their values on unchanged lines.
+            let previous = delta
+                .and_then(|delta| delta.previous.get(&id))
+                .filter(|previous| {
+                    keyed
+                        && !previous.unreached
+                        && previous.starts.is_some() == sited
+                        && keys
+                            .iter()
+                            .all(|key| !self.reads(*key, |op| op.is_aggregate()))
+                });
+            let scope = match (previous, &changed) {
+                (Some(_), Some(changed)) => changed,
+                _ => &all,
+            };
+            let mut groups = if !keyed {
+                NodeGroups {
+                    node: id,
+                    ..NodeGroups::default()
+                }
+            } else {
+                let row_keys = match op {
+                    Op::CorpusCount => {
+                        let key = self.evaluate(args[0], scope)?;
+                        self.row_keys(&key, None)
+                    }
+                    Op::ExistsOther if sited => self.site_keys(&args, scope)?,
+                    _ => {
+                        let by = self.evaluate(args[0], scope)?;
+                        let among = self.evaluate(args[1], scope)?;
+                        self.row_keys(&by, Some(&among))
+                    }
+                };
+                self.assemble_groups(id, previous, scope, row_keys, sited)?
+            };
+            if op == Op::CorpusCount {
+                let table = match self.corpus_tables.get(&id) {
+                    Some(table) => Arc::clone(table),
+                    None => {
+                        let table = Arc::new(self.corpus_table(&args)?);
+                        self.corpus_tables.insert(id, Arc::clone(&table));
+                        table
+                    }
+                };
+                let mut counts = table
+                    .iter()
+                    .map(|(key, count)| (super::incremental::key_hash(key), *count))
+                    .collect::<Vec<_>>();
+                counts.sort_unstable();
+                groups.table = Some(counts);
+            }
+            output.push(groups);
+        }
+        Ok(Some(output))
+    }
+    /// Whether each node's groups can be read per row: none reads another rule's findings, which
+    /// no rule has produced before the closure, or a variable bound outside it.
+    fn cross_row_readable(&self, nodes: &[NodeId]) -> bool {
+        nodes.iter().all(|&id| {
+            let node = &self.program.nodes[id];
+            let args = &node.args;
+            !args.iter().any(|arg| {
+                self.reads(*arg, |op| {
+                    matches!(op, Op::Finding(_) | Op::FindingField(..))
+                })
+            }) && match node.op {
+                Op::CorpusCount => true,
+                Op::ExistsOther => {
+                    !(self.reads_unbound(args[0], &["item"])
+                        || self.reads_unbound(args[1], &[])
+                        || self.reads_unbound(args[2], &[]))
+                }
+                _ => !(self.reads_unbound(args[0], &[]) || self.reads_unbound(args[1], &[])),
+            }
+        })
+    }
+    /// A full evaluation's groups: those its aggregates recorded as they ran, and the others read
+    /// now, as an incremental evaluation reads them first.
+    fn recorded_groups(
+        &mut self,
+        nodes: &[NodeId],
+    ) -> Result<Option<Vec<super::incremental::NodeGroups>>> {
+        let mut recorded = self.recorded.take().unwrap_or_default();
+        let mut output: Vec<super::incremental::NodeGroups> = Vec::with_capacity(nodes.len());
+        for &id in nodes {
+            if let Some(groups) = recorded.remove(&id) {
+                output.push(groups);
+                continue;
+            }
+            // A rule may not reach a node, as one under an `if` branch no row takes. Another node
+            // grouping by the same `by` among the same rows formed the same groups.
+            let grouping = self.row_grouping(id);
+            let twin = grouping.and_then(|grouping| {
+                output
+                    .iter()
+                    .chain(recorded.values())
+                    .find(|groups| {
+                        !groups.unreached && self.row_grouping(groups.node) == Some(grouping)
+                    })
+                    .cloned()
+            });
+            if let Some(mut groups) = twin {
+                groups.node = id;
+                output.push(groups);
+                continue;
+            }
+            if !self.reached.contains(&id) {
+                output.push(super::incremental::NodeGroups {
+                    node: id,
+                    unreached: true,
+                    ..super::incremental::NodeGroups::default()
+                });
+                continue;
+            }
+            let measure = Measure::start();
+            match self.cross_row_groups(&[id], None)? {
+                Some(groups) => output.extend(groups),
+                None => return Ok(None),
+            }
+            self.arena.recorder.sub_stage(
+                format!("closure.read.{}", self.program.nodes[id].op.name()),
+                &measure,
+                self.len,
+            );
+        }
+        Ok(Some(output))
+    }
+    /// A node's `by` and `among` when its groups are `by`'s values among `among`'s rows: a group
+    /// aggregate's, or an `existsOther`'s whose `by` doesn't read the site.
+    fn row_grouping(&self, id: NodeId) -> Option<(NodeId, NodeId)> {
+        let node = &self.program.nodes[id];
+        match node.op {
+            Op::GroupCount | Op::GroupRank | Op::GroupTake | Op::GroupTally => {
+                Some((node.args[0], node.args[1]))
+            }
+            Op::ExistsOther if !self.reads_item(node.args[0]) => Some((node.args[0], node.args[1])),
+            _ => None,
+        }
+    }
+    /// Each selected row's key: its `by`, where `among` holds.
+    fn row_keys(&self, by: &Column, among: Option<&Column>) -> Vec<RowKeys> {
+        use super::incremental::key_hash;
+        let mut hashes = FxHashMap::<Atom, u64>::default();
+        (0..by.len())
+            .map(|index| {
+                if by.failed.get(index) || among.is_some_and(|among| among.failed.get(index)) {
+                    return RowKeys::Failed;
+                }
+                let value = by.get(index, &self.arena);
+                if value == Atom::Null
+                    || among.is_some_and(|among| !among.get(index, &self.arena).boolean())
+                {
+                    return RowKeys::None;
+                }
+                RowKeys::One(
+                    *hashes
+                        .entry(value)
+                        .or_insert_with(|| key_hash(&self.key(value))),
+                )
+            })
+            .collect()
+    }
+    /// `existsOther` keyed by site: each selected member row's keys are its sites' `by` values.
+    /// Rows with the same sites share them when `by` reads only the site, as in `exists_other`.
+    fn site_keys(&mut self, args: &[NodeId], scope: &Selection) -> Result<Vec<RowKeys>> {
+        use super::incremental::key_hash;
+        let among = self.evaluate(args[1], scope)?;
+        let over = self.evaluate(args[2], scope)?;
+        let shared = self.item_only(args[0]);
+        let len = scope.len();
+        let mut first = FxHashMap::<Atom, usize>::default();
+        let mut representative = vec![usize::MAX; len];
+        let mut failed = Bits::new(len);
+        let mut parents = Vec::new();
+        let mut elements = Vec::new();
+        for (index, representative) in representative.iter_mut().enumerate() {
+            if among.failed.get(index) || over.failed.get(index) {
+                failed.set(index);
+                continue;
+            }
+            if !among.get(index, &self.arena).boolean() {
+                continue;
+            }
+            let sites = over.get(index, &self.arena);
+            if shared {
+                if let Some(first) = first.get(&sites) {
+                    *representative = *first;
+                    continue;
+                }
+                first.insert(sites, index);
+            }
+            *representative = index;
+            if let Some(list) = self.arena.elements(sites)? {
+                for site in list {
+                    parents.push(index);
+                    elements.push(*site);
+                }
+            }
+        }
+        let mut expanded = scope.select(&parents, &mut self.arena)?;
+        expanded.variables.insert(
+            "item".into(),
+            Column::from_atoms(&elements, &mut self.arena)?,
+        );
+        let by = self.evaluate(args[0], &expanded)?;
+        let mut hashes = FxHashMap::<Atom, u64>::default();
+        let mut sites = FxHashMap::<usize, Vec<u64>>::default();
+        for (element, parent) in parents.iter().enumerate() {
+            if by.failed.get(element) {
+                failed.set(*parent);
+                continue;
+            }
+            let value = by.get(element, &self.arena);
+            if value != Atom::Null {
+                let hash = *hashes
+                    .entry(value)
+                    .or_insert_with(|| key_hash(&self.key(value)));
+                sites.entry(*parent).or_default().push(hash);
+            }
+        }
+        Ok(representative
+            .iter()
+            .enumerate()
+            .map(|(index, first)| {
+                if failed.get(index) || *first != usize::MAX && failed.get(*first) {
+                    RowKeys::Failed
+                } else {
+                    sites.get(first).map_or(RowKeys::None, |keys| {
+                        let mut keys = keys.clone();
+                        keys.sort_unstable();
+                        keys.dedup();
+                        RowKeys::Many(keys)
+                    })
+                }
+            })
+            .collect())
+    }
+    /// A node's groups: `scope`'s rows take `keys`, and every other row its `previous` groups.
+    fn assemble_groups(
+        &self,
+        node: NodeId,
+        previous: Option<&super::incremental::NodeGroups>,
+        scope: &Selection,
+        keys: Vec<RowKeys>,
+        sited: bool,
+    ) -> Result<super::incremental::NodeGroups> {
+        use super::incremental::{FAILED_GROUP, NO_GROUP, NodeGroups};
+        let mut groups = NodeGroups {
+            node,
+            keyed: true,
+            hashes: previous
+                .map(|previous| previous.hashes.clone())
+                .unwrap_or_default(),
+            ..NodeGroups::default()
+        };
+        let mut numbers = groups
+            .hashes
+            .iter()
+            .enumerate()
+            .map(|(number, hash)| (*hash, number as u32))
+            .collect::<FxHashMap<_, _>>();
+        let mut number = |groups: &mut NodeGroups, hash: u64| -> Result<u32> {
+            Self::group_number(groups, &mut numbers, hash)
+        };
+        let rows = scope.rows.iter().collect::<Vec<_>>();
+        if !sited {
+            groups.groups = match previous {
+                Some(previous) => {
+                    require(
+                        previous.groups.len() == self.len,
+                        "The previous groups' rows differ.",
+                    )?;
+                    previous.groups.clone()
+                }
+                None => vec![NO_GROUP; self.len],
+            };
+            for (row, key) in rows.iter().zip(keys) {
+                groups.groups[*row as usize] = match key {
+                    RowKeys::None => NO_GROUP,
+                    RowKeys::Failed => FAILED_GROUP,
+                    RowKeys::One(hash) => number(&mut groups, hash)?,
+                    RowKeys::Many(_) => return Err("A row with one key has several.".into()),
+                };
+            }
+            return Ok(groups);
+        }
+        let mut at = vec![u32::MAX; self.len];
+        for (index, row) in rows.iter().enumerate() {
+            at[*row as usize] = index as u32;
+        }
+        let mut starts = Vec::with_capacity(self.len + 1);
+        starts.push(0);
+        let mut row_groups = Vec::new();
+        for (row, index) in at.iter().enumerate() {
+            match keys.get(*index as usize) {
+                Some(RowKeys::Failed) => row_groups.push(FAILED_GROUP),
+                Some(RowKeys::Many(hashes)) => {
+                    for hash in hashes {
+                        let group = number(&mut groups, *hash)?;
+                        row_groups.push(group);
+                    }
+                }
+                Some(RowKeys::One(_)) => return Err("A row keyed by site has one key.".into()),
+                Some(RowKeys::None) => {}
+                None => {
+                    if let Some(previous) = previous {
+                        row_groups.extend_from_slice(previous.row(row));
+                    }
+                }
+            }
+            starts.push(u32::try_from(row_groups.len())?);
+        }
+        groups.groups = row_groups;
+        groups.starts = Some(starts);
+        Ok(groups)
+    }
+    fn group_number(
+        groups: &mut super::incremental::NodeGroups,
+        numbers: &mut FxHashMap<u64, u32>,
+        hash: u64,
+    ) -> Result<u32> {
+        let next = u32::try_from(groups.hashes.len())?;
+        let number = *numbers.entry(hash).or_insert(next);
+        if number == next {
+            groups.hashes.push(hash);
+        }
+        Ok(number)
+    }
+    /// Whether the expression at `id` reads a variable that neither `bound` nor one of its own
+    /// lambdas binds.
+    fn reads_unbound(&self, id: NodeId, bound: &[&str]) -> bool {
+        let node = &self.program.nodes[id];
+        // The arguments each operation evaluates with its element bound.
+        let (variable, bodies): (Option<&str>, &[usize]) = match &node.op {
+            Op::Var(name) => return !bound.contains(&&**name),
+            Op::ExistsOther => (Some("item"), &[0, 3]),
+            Op::CorpusCount => (Some("item"), &[1, 2]),
+            op => (op.binding(), &[1, 2, 3]),
+        };
+        node.args
+            .iter()
+            .enumerate()
+            .any(|(index, arg)| match variable {
+                Some(variable) if bodies.contains(&index) => {
+                    let mut inner = bound.to_vec();
+                    inner.push(variable);
+                    self.reads_unbound(*arg, &inner)
+                }
+                _ => self.reads_unbound(*arg, bound),
+            })
     }
     /// Record one step of `existsOther` and start timing the next.
     fn exists_other_stage(&self, step: &str, measure: &mut Measure, rows: usize) {
@@ -1491,6 +1983,7 @@ impl<'a> Evaluator<'a> {
     /// `corpusCount` (Phase 2 specification §3.2): the corpus rows whose `by` equals the selected
     /// rows' `key`. The table is built once, from every occurrence in the project.
     fn corpus_count(&mut self, id: NodeId, selection: &Selection) -> Result<Column> {
+        self.reached.insert(id);
         let args = self.program.nodes[id].args.clone();
         let table = match self.corpus_tables.get(&id) {
             Some(table) => Arc::clone(table),
@@ -1501,12 +1994,51 @@ impl<'a> Evaluator<'a> {
             }
         };
         let keys = self.evaluate(args[0], selection)?;
-        let values = (0..selection.len())
-            .map(|index| match keys.get(index, &self.arena) {
-                Atom::Null => Atom::Null,
-                key => Atom::Int(table.get(&self.key(key)).copied().unwrap_or(0)),
-            })
-            .collect::<Vec<_>>();
+        use super::incremental::{FAILED_GROUP, NO_GROUP, NodeGroups, key_hash};
+        // Over every row of a full evaluation, the groups are recorded as `row_keys` reads them.
+        let mut recording = (self.recorded.is_some()
+            && selection.variables.is_empty()
+            && selection.mask().is_some()
+            && selection.len() == self.len)
+            .then(|| {
+                (
+                    NodeGroups {
+                        node: id,
+                        keyed: true,
+                        groups: Vec::with_capacity(self.len),
+                        ..NodeGroups::default()
+                    },
+                    FxHashMap::<u64, u32>::default(),
+                )
+            });
+        let mut values = Vec::with_capacity(selection.len());
+        for index in 0..selection.len() {
+            let key = keys.get(index, &self.arena);
+            let text = (key != Atom::Null).then(|| self.key(key));
+            if let Some((groups, numbers)) = &mut recording {
+                let group = match &text {
+                    _ if keys.failed.get(index) => FAILED_GROUP,
+                    None => NO_GROUP,
+                    Some(text) => Self::group_number(groups, numbers, key_hash(text))?,
+                };
+                groups.groups.push(group);
+            }
+            values.push(match text {
+                None => Atom::Null,
+                Some(text) => Atom::Int(table.get(&text).copied().unwrap_or(0)),
+            });
+        }
+        if let Some((mut groups, _)) = recording {
+            let mut counts = table
+                .iter()
+                .map(|(key, count)| (key_hash(key), *count))
+                .collect::<Vec<_>>();
+            counts.sort_unstable();
+            groups.table = Some(counts);
+            if let Some(recorded) = &mut self.recorded {
+                recorded.insert(id, groups);
+            }
+        }
         let mut column = Column::from_atoms(&values, &mut self.arena)?;
         column.failed = keys.failed.clone();
         Ok(column)
@@ -2468,7 +3000,8 @@ impl<'a> Evaluator<'a> {
             words: work.parallel_range(len.div_ceil(64), |word| {
                 (word * 64..((word + 1) * 64).min(len))
                     .filter(|row| {
-                        checkable.get(*row, &self.arena).boolean()
+                        self.restrict.as_ref().is_none_or(|rows| rows.get(*row))
+                            && checkable.get(*row, &self.arena).boolean()
                             && comparable.get(*row, &self.arena).boolean()
                     })
                     .fold(0u64, |bits, row| bits | 1 << (row % 64))
@@ -2535,6 +3068,7 @@ impl<'a> Evaluator<'a> {
             next += CHUNK;
         }
         let arena = &self.arena;
+        let restrict = self.restrict.as_ref();
         let chunks = work.parallel_chunks(
             &(0..starts.len()).collect::<Vec<_>>(),
             1,
@@ -2565,6 +3099,11 @@ impl<'a> Evaluator<'a> {
                     let mut end = first + 1;
                     while end < stop && parent(end) == parent(first) {
                         end += 1;
+                    }
+                    // An incremental evaluation restricts whole lines.
+                    if restrict.is_some_and(|rows| !rows.get(first)) {
+                        first = end;
+                        continue;
                     }
                     for row in first..end {
                         for reason in arena.elements(reasons.get(row, arena))?.unwrap_or_default() {
@@ -2617,7 +3156,7 @@ impl<'a> Evaluator<'a> {
         Ok(output)
     }
     fn scope(&mut self, rule: &CompiledRule, len: usize) -> Result<Selection> {
-        let mut selected = Bits::all(len);
+        let mut selected = self.restrict.clone().unwrap_or_else(|| Bits::all(len));
         // Culture gates precede occurrence masks and every rule expression.
         if rule.rule.subject == Subject::Line {
             let culture = self.prepared.field("sourceCulture")?;
@@ -2694,7 +3233,7 @@ impl Program {
     ) -> Result<(Evaluation, Recorder, Vec<Diagnostic>)> {
         let mut arena = Arena::new(relation.dictionary_len()?)?;
         let evaluated =
-            self.evaluate_columns(relation, collator, include_diagnostics, &mut arena)?;
+            self.evaluate_columns(relation, collator, include_diagnostics, &mut arena, None)?;
         let evaluation = Evaluation {
             findings: evaluated
                 .findings
@@ -2729,8 +3268,9 @@ impl Program {
         relation: &mut dyn SubjectRows,
         collator: &HostCollator,
         arena: &mut Arena,
+        delta: Option<&super::incremental::SubjectDelta>,
     ) -> Result<Evaluated> {
-        self.evaluate_columns(relation, collator, true, arena)
+        self.evaluate_columns(relation, collator, true, arena, delta)
     }
     fn evaluate_columns(
         &self,
@@ -2738,6 +3278,7 @@ impl Program {
         collator: &HostCollator,
         include_diagnostics: bool,
         shared: &mut Arena,
+        delta: Option<&super::incremental::SubjectDelta>,
     ) -> Result<Evaluated> {
         let subject = relation.subject();
         let include_diagnostics = include_diagnostics && subject == Subject::LineCulture;
@@ -2753,6 +3294,8 @@ impl Program {
             masks: HashMap::new(),
             projection: Vec::new(),
             recorder: Recorder::default(),
+            groups: Some(Vec::new()),
+            evaluated: None,
         };
         if rules.is_empty() && !include_diagnostics {
             return Ok(output);
@@ -2856,6 +3399,69 @@ impl Program {
         prepared.validate(len)?;
         let recorder = arena.recorder.clone();
         let mut evaluator = Evaluator::new(self, arena, prepared, collator, len, subject)?;
+        // Every cross-row node's groups, before any rule: the next evaluation's state, and what
+        // this one compares with the previous to choose its rows.
+        let closure = Measure::start();
+        let mut cross = nodes
+            .iter()
+            .copied()
+            .filter(|id| {
+                matches!(
+                    self.nodes[*id].op,
+                    Op::GroupCount
+                        | Op::GroupRank
+                        | Op::GroupTake
+                        | Op::GroupTally
+                        | Op::ExistsOther
+                        | Op::CorpusCount
+                )
+            })
+            .collect::<Vec<_>>();
+        cross.sort_unstable();
+        let mut step = Measure::start();
+        let stage = subject_stage(subject, Phase::Closure);
+        // A full evaluation takes the groups from its aggregates as they run; an incremental one
+        // reads them first, to choose its rows.
+        let recording = delta.is_none() && evaluator.cross_row_readable(&cross);
+        if recording {
+            // `existsOther`'s own pass drops the rows a `differing` value fails on, so its groups
+            // are read first, from the inputs its rule then reuses.
+            let first = cross
+                .iter()
+                .copied()
+                .filter(|id| self.nodes[*id].op == Op::ExistsOther)
+                .collect::<Vec<_>>();
+            let read = evaluator
+                .cross_row_groups(&first, None)?
+                .unwrap_or_default();
+            evaluator.recorded = Some(
+                read.into_iter()
+                    .map(|groups| (groups.node, groups))
+                    .collect(),
+            );
+            // A node no rule reads over every row is read after the rules: its `by` and `among`
+            // stay cached until then, holding the rows the rules computed.
+            for &id in &cross {
+                for &arg in self.nodes[id].args.iter().take(2) {
+                    evaluator.node_last[arg] = usize::MAX;
+                }
+            }
+            recorder.sub_stage(format!("{stage}.groups"), &step, first.len());
+        } else {
+            output.groups = evaluator.cross_row_groups(&cross, delta)?;
+            recorder.sub_stage(format!("{stage}.groups"), &step, cross.len());
+        }
+        if let (Some(delta), Some(groups)) = (delta, &output.groups) {
+            step = Measure::start();
+            evaluator.restrict = super::incremental::closure(len, delta, groups);
+            output.evaluated.clone_from(&evaluator.restrict);
+            recorder.sub_stage(format!("{stage}.select"), &step, len);
+        }
+        recorder.stage(
+            subject_stage(subject, Phase::Closure),
+            &closure,
+            output.evaluated.as_ref().map_or(len, Bits::count),
+        );
         recorder.enter(subject_stage(subject, Phase::Execute));
         let execute = Measure::start();
         let execute_workers = recorder.worker_adjustment();
@@ -3048,6 +3654,34 @@ impl Program {
             execute_workers,
         );
         recorder.memory(subject_stage(subject, Phase::Execute), evaluator.memory());
+        if recording {
+            let step = Measure::start();
+            output.groups = evaluator.recorded_groups(&cross)?;
+            recorder.sub_stage(
+                format!("{}.recorded", subject_stage(subject, Phase::Closure)),
+                &step,
+                cross.len(),
+            );
+            // Every test's full evaluation checks the recorded groups against the groups an
+            // incremental evaluation reads first.
+            #[cfg(test)]
+            if let Some(recorded) = &output.groups {
+                let read = evaluator
+                    .cross_row_groups(&cross, None)?
+                    .ok_or("The recorded nodes' groups can't be read.")?;
+                require(
+                    recorded.len() == read.len()
+                        && recorded.iter().zip(&read).all(|(a, b)| {
+                            if a.unreached {
+                                !evaluator.reached.contains(&a.node)
+                            } else {
+                                a.same_rows(b)
+                            }
+                        }),
+                    "A recorded aggregate's groups differ from the groups read first.",
+                )?;
+            }
+        }
         recorder.enter(subject_stage(subject, Phase::Diagnostics));
         let diagnostics_started = Measure::start();
         let diagnostic_workers = recorder.worker_adjustment();

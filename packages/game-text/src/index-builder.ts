@@ -39,6 +39,8 @@ export class GameTextIndexBuilder extends Context.Service<
 		readonly importLocalizationFile: typeof importLocalizationFile;
 		readonly importLocalizationTarget: typeof importLocalizationTarget;
 		readonly refreshPackageTextLayer: typeof refreshPackageTextLayer;
+		/** Whether its writer plans a package refresh from a Project Index Catalog generation. */
+		readonly plansPackages?: boolean;
 		readonly refreshJoinedTarget: RefreshJoinedTarget;
 		readonly intern: (
 			domain: string,

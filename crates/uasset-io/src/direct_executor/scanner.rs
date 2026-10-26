@@ -315,7 +315,7 @@ pub(crate) fn read_asset_signature(path: &Path) -> Option<FileSignature> {
     })
 }
 
-fn metadata_modified_nanos(metadata: &fs::Metadata) -> u64 {
+pub(crate) fn metadata_modified_nanos(metadata: &fs::Metadata) -> u64 {
     metadata
         .modified()
         .ok()

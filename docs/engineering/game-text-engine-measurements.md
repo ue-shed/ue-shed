@@ -798,6 +798,66 @@ No Rust product source changed, so no additional crate unit-test or clippy run w
 this report-only change. The full suite and `pnpm check` were not run, as required by the brief.
 `git diff --check` passed. Nothing was pushed, merged or opened as a PR.
 
+## Phase 5 results
+
+Measured on 2026-10-26 at `83409809` against the base `4b29f042` (main after Phase 4.5), built
+from `ba118925`, whose tree is identical, in its own worktree with its own reader. The base and
+Phase 5 ran interleaved in one session, three or four times each, because this machine ran about
+15% slower than when Phase 4.5 was measured: the base's own cold build and full evaluation moved
+by that much between sessions, so earlier numbers are not comparable. Node 26.12.0, Ryzen 9 5950X,
+`RAYON_NUM_THREADS=16`, `CARGO_BUILD_JOBS=8`, `UE_SHED_GAME_TEXT_STAGES=1`, every run alone
+under the shared heavy-job lock. The 1× project replays retained package records; the released
+project reads its saved packages through a warmed Project Index. Artifacts are under
+`E:/ue-shed-engine-scratch/p5-*-r8-*` and `p5-*-r9-*`, with anonymous labels.
+
+Medians, with the range and run count, in seconds. The cold build is the stage from a cold cache
+to the visible page; the build stage and the quality stage's first refresh both measure it.
+
+| Path                                       |                   Base |                Phase 5 | Change |
+| ------------------------------------------ | ---------------------: | ---------------------: | -----: |
+| Rescan after one package edit, 1×          | 35.34 (35.24–36.02, 3) | 24.68 (24.52–24.71, 3) |   −30% |
+| — its findings evaluation                  | 30.68 (30.63–30.93, 3) | 20.27 (20.21–20.31, 3) |   −34% |
+| Cold build, released project               | 51.47 (51.12–52.58, 4) | 52.04 (51.22–53.35, 4) |    +1% |
+| Cold build, 1×                             | 46.59 (45.97–47.94, 4) | 46.61 (46.47–46.70, 4) |     0% |
+| Full findings evaluation, released project | 31.29 (31.09–31.31, 3) | 33.02 (31.51–33.05, 3) |    +6% |
+| Full findings evaluation, 1×               | 26.66 (25.38–27.35, 3) | 27.69 (27.18–28.00, 3) |    +4% |
+
+The edit baseline is the step 1 measurement at `20df56b1`, the same day: the base product with
+the `edit` stage harness.
+
+**The cold build on the released project.** The host no longer pages the inventory (3.39 s),
+selects (0.43 s) or calls `stat` on every bundle (5.17 s): the reader plans in 1.93 s, and the
+only Project Index request crossing into the host is one status call of 734 bytes. The wall is
+unchanged, because the package branch was never alone on the critical path: the reader's read,
+now with its bundle checks, takes 26.74 s against the base's 20.23 s read plus the host's checks,
+and the localization import beside it slows from 24.53 s to 27.36 s. The first measurement found
+a 23 s regression here: the plan queued behind the localization import on the writer, which runs
+one command at a time. The localization import now waits for a plan on the writer, and only for
+one.
+
+**The full evaluation** costs 1.0–1.7 s more: the state the next incremental evaluation reads.
+`existsOther`'s keys are read before the rules (0.6 s on the released project), each finding's
+actual text is packed for merging (`layer.merge`, 0.7 s) and the state columns are published
+(0.5 s). The first measurement found 8–9 s here, from reading every cross-row key before the
+rules and again in the aggregates; the aggregates now record their groups, a node takes a twin's
+groups, and a node no rule evaluated keeps none.
+
+**What crosses into TypeScript** (§3 of the specification), per measured sample:
+
+| Stage               | Base                                                     | Phase 5                                           |
+| ------------------- | -------------------------------------------------------- | ------------------------------------------------- |
+| Inventory           | 167,401 entries' paths, signatures and headers, in pages | One status request, 734 bytes                     |
+| Staging request     | Every expected entry of every changed shard              | A plan file path and the shard numbers            |
+| Bundle verification | `stat` of every selected bundle from the host            | None on a cold build                              |
+| Edit rescan, 1×     | 1.19 MB                                                  | 1.16 MB: the evaluation reply is 39 KB, not 65 KB |
+
+**Correctness.** Every engine test evaluation checks its recorded groups against the groups read
+before the rules. The parity test chains incremental evaluations through a changed source, a line
+moving between groups, changed translations, a removed translation (which rebuilds the join) and
+restored sources, and requires each layer to equal a full one. The fuzzer's in-place round passed
+200 seeds before the review fixes and 32 on the final reader; it now fails unless a run has an
+incremental join and an incremental evaluation, judged by the rows each closure chose.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

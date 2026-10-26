@@ -105,6 +105,30 @@ export async function runEngineStage(options: EngineStageOptions) {
 	const listener = (message: unknown) =>
 		timings.push({ sampleId: activeSample, ...Schema.decodeUnknownSync(Timing)(message) });
 	if (process.env.UE_SHED_GAME_TEXT_MEASURE_DIR) topic.subscribe(listener);
+	// What each measured sample moved between the host and the native processes, per operation.
+	const boundaries = new Map<
+		string,
+		Record<string, { requests: number; requestBytes: number; responseBytes: number }>
+	>();
+	const Boundary = Schema.Struct({
+		transport: Schema.String,
+		operation: Schema.String,
+		requestBytes: Schema.Number,
+		responseBytes: Schema.Number
+	});
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- diagnostics_channel owns this boundary; decode it immediately.
+	const boundaryListener = (message: unknown) => {
+		if (activeSample === undefined) return;
+		const event = Schema.decodeUnknownSync(Boundary)(message);
+		const totals = boundaries.get(activeSample) ?? {};
+		const key = `${event.transport}:${event.operation}`;
+		const total = (totals[key] ??= { requests: 0, requestBytes: 0, responseBytes: 0 });
+		total.requests += 1;
+		total.requestBytes += event.requestBytes;
+		total.responseBytes += event.responseBytes;
+		boundaries.set(activeSample, totals);
+	};
+	channel("ue-shed.native-boundary").subscribe(boundaryListener);
 	let peakHeapBytes = 0;
 	let peakRssBytes = 0;
 	let measuring = false;
@@ -178,7 +202,8 @@ export async function runEngineStage(options: EngineStageOptions) {
 				ms,
 				...engineAnswerDigest(answer),
 				requests: requestCount,
-				metrics
+				metrics,
+				boundary: boundaries.get(id) ?? {}
 			};
 			samples.push(recorded);
 			process.send?.({ kind: "sample", sample: recorded });
@@ -256,8 +281,18 @@ export async function runEngineStage(options: EngineStageOptions) {
 				samples
 			};
 		}
-		const source = options.records
-			? retainedPackageSource(options.records)
+		// The edit stage changes a package, so it reads a linked working copy of the records.
+		const records =
+			stage === "edit" && options.records
+				? join(options.output, "edit-records")
+				: options.records;
+		if (stage === "edit") {
+			if (!options.records) throw new Error("The edit stage needs retained records.");
+			const { linkRetainedRecords } = await import("./package-text-generated.ts");
+			await linkRetainedRecords(options.records, records!);
+		}
+		const source = records
+			? retainedPackageSource(records)
 			: options.projectIndexCache && !options.coldProjectIndex
 				? gameTextIndexSourceNodeLayer(options.cache, {
 						refreshProjectIndex: false
@@ -409,6 +444,25 @@ export async function runEngineStage(options: EngineStageOptions) {
 				ready(await run(workspace.previewQualityRules(document)), "completed");
 				await measure(stage, async () =>
 					ready(await run(workspace.localizationQualitySearch({ target, filter: "all" })))
+				);
+			} else if (stage === "edit") {
+				// A rescan after one package edit, as the Workbench runs it: the refresh evaluates the
+				// previewed rules again. The first evaluation is outside the timer.
+				const document = await run(
+					decodeGameTextRuleDocumentJson(
+						await readFile(
+							new URL("./game-text-engine-rules.json", import.meta.url),
+							"utf8"
+						)
+					)
+				);
+				ready(await run(workspace.previewQualityRules(document)), "completed");
+				const { editRetainedRecords } = await import("./package-text-generated.ts");
+				await editRetainedRecords(options.records!, records!);
+				// The stage breakdown covers the rescan only, not the build before it.
+				recorder?.reset();
+				await measure("edit.refresh", async () =>
+					ready(await run(workspace.configuredRefresh(true)), "completed")
 				);
 			} else if (stage === "loc-check" || stage === "lines-export") {
 				// `loc check` and `loc export` as each commit's CLI runs them: the starter's checks

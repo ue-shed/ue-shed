@@ -42,6 +42,16 @@ export class GameTextIndexSource extends Context.Service<
 		readonly inventory: (
 			request: GameTextIndexSourceRequest
 		) => Effect.Effect<readonly PackageTextInventoryEntry[], GameTextIndexError>;
+		/**
+		 * The refreshed Project Index's Catalog generation, which the native writer plans the
+		 * package refresh from without the inventory crossing into the host.
+		 */
+		readonly catalog?: (
+			request: GameTextIndexSourceRequest
+		) => Effect.Effect<
+			import("./package-text-layer.js").PackageTextCatalog,
+			GameTextIndexError
+		>;
 		/** Reads must verify the complete package-and-sidecar signature around extraction. */
 		readonly read: (
 			projectRoot: string,

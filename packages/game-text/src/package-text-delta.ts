@@ -1,5 +1,5 @@
 import { Effect, Stream } from "effect";
-import type { PackageTextRefreshInput, packageTextSelection } from "./package-text-layer.js";
+import type { PackageTextRefreshInput, PackageTextShardEntries } from "./package-text-layer.js";
 import { type PackageTextStored } from "./package-text-columns.js";
 import type { SharedIndexReader, SharedIndexWriter } from "./shared-index.js";
 import { snapshotFailure } from "./snapshot-format.js";
@@ -9,7 +9,8 @@ import { encodeWtf8 } from "./wtf8.js";
 /** Read only package identity columns in JS; Rust retains the unchanged authored rows and IDs. */
 export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")(function* <E, R>(
 	input: PackageTextRefreshInput<E, R>,
-	changed: ReturnType<typeof packageTextSelection>,
+	packages: number,
+	changed: readonly PackageTextShardEntries[],
 	removed: readonly string[],
 	reader: SharedIndexReader,
 	writer: SharedIndexWriter,
@@ -64,7 +65,7 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 		}
 		const received = new Set<string>();
 		if (requests.size)
-			yield* input.read([...requests.keys()]).pipe(
+			yield* input.read([...requests.keys()], requests).pipe(
 				Stream.runForEach((event) =>
 					Effect.gen(function* () {
 						if (event.event === "text_summary") return;
@@ -119,7 +120,7 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 	});
 	return {
 		readPackages,
-		reusedPackages: input.inventory.length - readPackages,
+		reusedPackages: packages - readPackages,
 		changedShards: changed.length,
 		removedShards: removed.length,
 		published: true,

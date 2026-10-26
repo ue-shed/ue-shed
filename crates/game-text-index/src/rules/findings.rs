@@ -1,4 +1,7 @@
 //! Persisted finding evidence, identities, and diagnostics for a pinned joined view.
+use super::findings_merge::{
+    CULTURE_RULE, LINE_RULE, LayerState, PROJECTION, Previous, StateNode, SubjectMerge,
+};
 use super::findings_order::{CHANGE, FIXABLE, Facts, KEYLESS, NONE, OrderInput, SHADOWED};
 use super::identity::{
     localization_identity_encoded, source_identity_encoded, write_atom, write_string,
@@ -7,7 +10,7 @@ use super::replies::{
     EvaluationProfile, FindingsEvaluation, LayerMetadata, RuleCount, RuleMetadata, RunProfile,
 };
 use super::stages::{Measure, Phase, subject_stage};
-use super::{HostCollator, NativeSubjects, Subject, compile, javascript_json};
+use super::{HostCollator, NativeSubjects, Subject, compile, findings_merge, javascript_json};
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
 use crate::engine_reader::EngineReader;
@@ -19,7 +22,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, atomic::AtomicBool};
 
-const VERSION: u32 = 5;
+pub(super) const VERSION: u32 = 6;
 type Column = (String, String, Vec<u32>);
 pub(crate) struct FindingsLayer {
     reader: Reader,
@@ -156,8 +159,13 @@ pub(super) struct EvaluatedFindings {
     rules: Vec<RuleColumns>,
     roles: Vec<super::replies::RoleTotal>,
     findings: usize,
-    base_diagnostics: Vec<(u32, u32, u8)>,
-    regex_diagnostics: Vec<(u32, u32, u8)>,
+    /// `(line, culture, code, origin)`.
+    base_diagnostics: Vec<(u32, u32, u8, u8)>,
+    regex_diagnostics: Vec<(u32, u32, u8, u8)>,
+    /// The subjects an incremental evaluation evaluated only some rows of.
+    merges: Vec<SubjectMerge>,
+    /// Each subject's cross-row groups, for the next evaluation.
+    groups: Vec<(Subject, Option<Vec<super::incremental::NodeGroups>>)>,
     lc_lines: Vec<u32>,
     lc_cultures: Vec<u32>,
     unit_rows: Vec<u32>,
@@ -176,9 +184,11 @@ impl EngineQuery {
         cancelled: &AtomicBool,
         request: Option<&Measure>,
         reporter: Option<Arc<dyn crate::engine::Reporter>>,
+        previous: Option<&Previous>,
     ) -> Result<EvaluatedFindings> {
         self.reader.begin_evaluation()?;
-        let evaluated = self.evaluate_scoped(program, collator, cancelled, request, reporter);
+        let evaluated =
+            self.evaluate_scoped(program, collator, cancelled, request, reporter, previous);
         self.reader.end_evaluation();
         evaluated
     }
@@ -189,6 +199,7 @@ impl EngineQuery {
         cancelled: &AtomicBool,
         request: Option<&Measure>,
         reporter: Option<Arc<dyn crate::engine::Reporter>>,
+        previous: Option<&Previous>,
     ) -> Result<EvaluatedFindings> {
         let elapsed = Measure::start();
         #[cfg(test)]
@@ -215,6 +226,8 @@ impl EngineQuery {
         let mut lc_cultures = Vec::new();
         let mut unit_rows = Vec::new();
         let mut unit_sources = Vec::new();
+        let mut merges = Vec::new();
+        let mut node_groups = Vec::new();
         recorder.enter("relation.occurrences");
         let mut occurrences_measure = Measure::start();
         let occurrences =
@@ -249,7 +262,41 @@ impl EngineQuery {
             )?;
             subjects.query.reader.release_evaluation_columns();
             recorder.stage(subject_stage(subject, Phase::Columns), &setup, 0);
-            let evaluated = program.evaluate_shared(&mut subjects, collator, &mut arena)?;
+            let delta = match previous {
+                Some(previous) => previous.delta(
+                    subject,
+                    &subjects.cultures.lines,
+                    subjects.cultures.cultures(),
+                )?,
+                None => None,
+            };
+            let mut evaluated = program.evaluate_shared(
+                &mut subjects,
+                collator,
+                &mut arena,
+                delta.as_ref().map(|(delta, _)| delta),
+            )?;
+            node_groups.push((subject, evaluated.groups.take()));
+            if let (Some(rows), Some(previous), Some((_, map))) =
+                (&evaluated.evaluated, previous, delta)
+            {
+                let lines = if subject == Subject::Line {
+                    rows.clone()
+                } else {
+                    // A changed line is evaluated again even when it has no culture rows left.
+                    let mut lines = previous.changed.clone();
+                    for row in rows.ones() {
+                        lines.set(subjects.cultures.lines[row as usize] as usize);
+                    }
+                    lines
+                };
+                merges.push(SubjectMerge {
+                    subject,
+                    evaluated: rows.clone(),
+                    lines,
+                    rows: map,
+                });
+            }
             #[cfg(test)]
             if std::env::var_os("UE_SHED_GAME_TEXT_TIMING_CACHE").is_some() {
                 let digest_time = Measure::start();
@@ -383,7 +430,7 @@ impl EngineQuery {
             previous_encoded += encoded_bytes;
             for diagnostic in &evaluated.projection {
                 let (line, ci) = subjects.cultures.at(diagnostic.row as usize);
-                base_diagnostics.push((line as u32, ci as u32, diagnostic.code));
+                base_diagnostics.push((line as u32, ci as u32, diagnostic.code, PROJECTION));
             }
             if subject == Subject::LineCulture {
                 lc_lines.extend_from_slice(&subjects.cultures.lines);
@@ -399,7 +446,7 @@ impl EngineQuery {
                 let row = *row as usize;
                 if subject == Subject::LineCulture {
                     let (line, ci) = subjects.cultures.at(row);
-                    regex_diagnostics.push((line as u32, ci as u32, *code));
+                    regex_diagnostics.push((line as u32, ci as u32, *code, CULTURE_RULE));
                 } else if subject == Subject::Line {
                     let culture = subjects.line_field(row, "sourceCulture")?;
                     if let Some(ci) = subjects
@@ -408,7 +455,7 @@ impl EngineQuery {
                         .iter()
                         .position(|value| Some(value.as_str()) == culture.as_str())
                     {
-                        regex_diagnostics.push((row as u32, ci as u32, *code));
+                        regex_diagnostics.push((row as u32, ci as u32, *code, LINE_RULE));
                     }
                 }
             }
@@ -427,6 +474,8 @@ impl EngineQuery {
             findings,
             base_diagnostics,
             regex_diagnostics,
+            merges,
+            groups: node_groups,
             lc_lines,
             lc_cultures,
             unit_rows,
@@ -510,12 +559,27 @@ impl EngineQuery {
         )
     }
     /// Evaluates a rule document, reporting each rule it evaluates to `reporter`.
+    ///
+    /// When the previous findings layer evaluated the same document over the same joined base,
+    /// only the lines that changed since and the rows they share groups with are evaluated
+    /// again; `UE_SHED_GAME_TEXT_FULL_EVALUATION` evaluates every row.
     pub fn findings_evaluate_reporting(
         &self,
         text: &str,
         locale: &str,
         cancelled: &AtomicBool,
         reporter: Arc<dyn crate::engine::Reporter>,
+    ) -> Result<String> {
+        let incremental = std::env::var_os("UE_SHED_GAME_TEXT_FULL_EVALUATION").is_none();
+        self.findings_evaluate_with(text, locale, cancelled, reporter, incremental)
+    }
+    pub(crate) fn findings_evaluate_with(
+        &self,
+        text: &str,
+        locale: &str,
+        cancelled: &AtomicBool,
+        reporter: Arc<dyn crate::engine::Reporter>,
+        incremental: bool,
     ) -> Result<String> {
         let elapsed = Measure::start();
         checkpoint(cancelled)?;
@@ -558,12 +622,34 @@ impl EngineQuery {
         )?;
         let mut profile = EvaluationProfile::Cached;
         if store.root["layers"].get(&key).is_none() {
+            let document = digest(text.as_bytes());
+            let reads_join_position = program.nodes.iter().any(|node| {
+                matches!(&node.op, super::compiler::Op::Field(name) if name.ends_with("joinPosition"))
+            });
+            let opening = Measure::start();
+            let mut previous = if incremental {
+                Previous::open(
+                    self,
+                    &store.root,
+                    &document,
+                    locale,
+                    &collator.locale,
+                    reads_join_position,
+                    cancelled,
+                )?
+            } else {
+                None
+            };
+            let opened = usize::from(previous.is_some());
+            let opened_in = opening.elapsed();
             let EvaluatedFindings {
                 rules: mut encoded,
                 roles,
                 findings,
                 base_diagnostics,
                 regex_diagnostics,
+                merges,
+                groups: node_groups,
                 lc_lines,
                 lc_cultures,
                 unit_rows,
@@ -578,7 +664,12 @@ impl EngineQuery {
                 cancelled,
                 Some(&elapsed),
                 Some(reporter),
+                previous.as_ref(),
             )?;
+            recorder.stage_elapsed("layer.previous", &opening, opened_in, opened);
+            if merges.is_empty() {
+                previous = None;
+            }
             let publish = Measure::start();
             let mut ordered = program.rules.iter().collect::<Vec<_>>();
             ordered.sort_by_key(|rule| rule.ordinal);
@@ -641,22 +732,32 @@ impl EngineQuery {
             let mut set_offsets = vec![0u32];
             let mut set_members = Vec::new();
             let mut sets = HashMap::<Vec<u32>, u32>::new();
-            // Findings share their sets' allocations, so most repeats resolve by address.
-            let mut shared = HashMap::<usize, u32>::new();
-            let mut place_set = |affected: &Arc<super::Affected>| -> Result<u32> {
-                let address = Arc::as_ptr(affected) as usize;
-                if let Some(set) = shared.get(&address) {
+            // Findings share their sets' allocations, so most repeats resolve by address, and kept
+            // findings by their previous set.
+            let mut shared = HashMap::<(bool, usize), u32>::new();
+            let mut place_set = |place: Place<'_>| -> Result<u32> {
+                let cached = match place {
+                    Place::New(affected) => (false, Arc::as_ptr(affected) as usize),
+                    Place::Kept(set) => (true, set as usize),
+                };
+                if let Some(set) = shared.get(&cached) {
                     return Ok(*set);
                 }
-                let members = affected
-                    .ids
-                    .iter()
-                    .map(|id| {
-                        id.as_ref()
-                            .map(|id| interned[id_rows[id]])
-                            .ok_or_else(|| "A finding occurrence has no ID.".into())
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+                let members = match place {
+                    Place::New(affected) => affected
+                        .ids
+                        .iter()
+                        .map(|id| {
+                            id.as_ref()
+                                .map(|id| interned[id_rows[id]])
+                                .ok_or_else(|| "A finding occurrence has no ID.".into())
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                    Place::Kept(set) => previous
+                        .as_ref()
+                        .ok_or("A kept finding without a previous layer.")?
+                        .place_set(set)?,
+                };
                 let next = u32::try_from(set_offsets.len() - 1)?;
                 let set = *sets.entry(members).or_insert_with_key(|members| {
                     set_members.extend_from_slice(members);
@@ -665,11 +766,15 @@ impl EngineQuery {
                 if set == next {
                     set_offsets.push(u32::try_from(set_members.len())?);
                 }
-                shared.insert(address, set);
+                shared.insert(cached, set);
                 Ok(set)
             };
             let mut counts = BTreeMap::<(usize, u32), u32>::new();
             let mut facts = Vec::with_capacity(findings);
+            let merge_started = Measure::start();
+            let mut kept_findings = 0;
+            // Where each rule's facts start in the previous layer.
+            let mut previous_start = 0;
             for (index, compiled) in ordered.iter().enumerate() {
                 checkpoint(cancelled)?;
                 let RuleColumns {
@@ -679,13 +784,74 @@ impl EngineQuery {
                     places,
                     id0,
                     id1,
-                    facts: rule_facts,
+                    facts: mut rule_facts,
                 } = std::mem::take(&mut encoded[compiled.ordinal]);
+                let evidence = store.intern("findings", &evidence)?;
+                let kept = match &previous {
+                    Some(previous) => {
+                        let start = previous_start;
+                        previous_start += previous.column(&format!("r{index}.rows"))?.len();
+                        merges
+                            .iter()
+                            .find(|merge| merge.subject == compiled.rule.subject)
+                            .map(|merge| previous.kept(index, start, merge))
+                            .transpose()?
+                    }
+                    None => None,
+                };
+                let kept = kept.unwrap_or_default();
+                kept_findings += kept.rows.len();
+                // The evaluated and the kept findings, each in row order, on distinct rows.
+                let mut order = Vec::with_capacity(rows.len() + kept.rows.len());
+                let (mut new, mut old) = (0, 0);
+                while new < rows.len() || old < kept.rows.len() {
+                    if old == kept.rows.len() || new < rows.len() && rows[new] < kept.rows[old] {
+                        order.push(Ok(new));
+                        new += 1;
+                    } else {
+                        order.push(Err(old));
+                        old += 1;
+                    }
+                }
+                let mut merged = RuleOutput::default();
+                let mut kept_facts = kept.facts;
+                for item in order {
+                    match item {
+                        Ok(at) => {
+                            merged.rows.push(rows[at]);
+                            if let Some(culture) = cultures.get(at) {
+                                merged.cultures.push(*culture);
+                            }
+                            merged.evidence.push(evidence[at]);
+                            merged.places.push(place_set(Place::New(&places[at]))?);
+                            merged.id0.push(id0[at]);
+                            merged.id1.push(id1[at]);
+                            facts.push(std::mem::take(&mut rule_facts[at]));
+                        }
+                        Err(at) => {
+                            merged.rows.push(kept.rows[at]);
+                            merged.cultures.push(kept.cultures[at]);
+                            merged.evidence.push(kept.evidence[at]);
+                            merged.places.push(place_set(Place::Kept(kept.places[at]))?);
+                            merged.id0.push(kept.id0[at]);
+                            merged.id1.push(kept.id1[at]);
+                            facts.push(std::mem::take(&mut kept_facts[at]));
+                        }
+                    }
+                }
+                let RuleOutput {
+                    rows,
+                    cultures,
+                    evidence,
+                    places,
+                    id0,
+                    id1,
+                } = merged;
                 let rule = u32::try_from(index)?;
-                facts.extend(rule_facts.into_iter().map(|mut fact| {
+                let first = facts.len() - rows.len();
+                for fact in &mut facts[first..] {
                     fact.rule = rule;
-                    fact
-                }));
+                }
                 // A rule has one severity, so rule and culture key its count.
                 if compiled.rule.subject == Subject::UnitSource {
                     if !rows.is_empty() {
@@ -699,31 +865,34 @@ impl EngineQuery {
                 for (name, domain, values) in [
                     ("rows", "", rows),
                     ("cultures", "", cultures),
-                    ("evidence", "findings", store.intern("findings", &evidence)?),
-                    (
-                        "places",
-                        "",
-                        places.iter().map(&mut place_set).collect::<Result<_>>()?,
-                    ),
+                    ("evidence", "findings", evidence),
+                    ("places", "", places),
                     ("id0", "", id0),
                     ("id1", "", id1),
                 ] {
                     columns.push((format!("r{index}.{name}"), domain.into(), values));
                 }
             }
+            recorder.stage("layer.merge", &merge_started, kept_findings);
             columns.push(("places.offsets".into(), String::new(), set_offsets));
             columns.push((
                 "places.members".into(),
                 "findings.places".into(),
                 set_members,
             ));
-            let mut diagnostics = base_diagnostics;
+            // A line's diagnostics come from one evaluation per origin: the previous layer's on
+            // lines this one didn't evaluate.
+            let mut diagnostics = match &previous {
+                Some(previous) => previous.kept_diagnostics(&merges)?,
+                None => Vec::new(),
+            };
+            diagnostics.extend(base_diagnostics);
             diagnostics.extend(regex_diagnostics);
-            diagnostics.sort_by_key(|(line, _, _)| *line);
+            diagnostics.sort_by_key(|(line, _, _, origin)| (*line, *origin));
             // Intern each code once, in first-use order, which assigns the same IDs as interning
             // every diagnostic's code.
             let mut used = Vec::new();
-            for (_, _, code) in &diagnostics {
+            for (_, _, code, _) in &diagnostics {
                 if !used.contains(code) {
                     used.push(*code);
                 }
@@ -741,26 +910,37 @@ impl EngineQuery {
             }
             let codes = diagnostics
                 .iter()
-                .map(|(_, _, code)| table[*code as usize])
+                .map(|(_, _, code, _)| table[*code as usize])
                 .collect::<Vec<_>>();
             columns.push((
                 "diag.rows".into(),
                 String::new(),
-                diagnostics.iter().map(|(line, _, _)| *line).collect(),
+                diagnostics.iter().map(|(line, _, _, _)| *line).collect(),
             ));
             columns.push((
                 "diag.cultures".into(),
                 String::new(),
-                diagnostics.iter().map(|(_, ci, _)| *ci).collect(),
+                diagnostics.iter().map(|(_, ci, _, _)| *ci).collect(),
             ));
             columns.push(("diag.codes".into(), "findings".into(), codes));
+            columns.push((
+                "diag.origin".into(),
+                String::new(),
+                diagnostics
+                    .iter()
+                    .map(|(_, _, _, origin)| u32::from(*origin))
+                    .collect(),
+            ));
+            drop(previous);
+            let (actual_ends, actual_bytes) =
+                findings_merge::pack_strings(facts.iter().map(|fact| fact.actual.as_str()))?;
             let order_started = Measure::start();
             let orders = self.finding_orders(
                 &facts,
                 &rules,
                 &diagnostics
                     .iter()
-                    .map(|(line, _, _)| *line)
+                    .map(|(line, _, _, _)| *line)
                     .collect::<Vec<_>>(),
                 &collator,
                 cancelled,
@@ -771,6 +951,8 @@ impl EngineQuery {
                 ("f.unit", facts.iter().map(|fact| fact.unit).collect()),
                 ("f.culture", facts.iter().map(|fact| fact.culture).collect()),
                 ("f.flags", facts.iter().map(|fact| fact.flags).collect()),
+                ("f.actual.ends", actual_ends),
+                ("f.actual.bytes", actual_bytes),
                 ("order.report", orders.report),
                 ("order.line", orders.line),
                 ("order.source", orders.source),
@@ -780,6 +962,51 @@ impl EngineQuery {
             }
             drop(facts);
             recorder.stage("layer.order", &order_started, findings);
+            // What the next evaluation compares with: each cross-row node's groups, the lines
+            // the joined overlay rewrote, and join membership when a rule reads it.
+            let lines = self.reader.column("line.source")?.len();
+            let mut state = LayerState {
+                base: findings_merge::joined_base(self),
+                document,
+                locale: locale.to_owned(),
+                lines: u32::try_from(lines)?,
+                incremental: true,
+                nodes: Vec::new(),
+                join: reads_join_position,
+            };
+            for (subject, groups) in node_groups {
+                if subject == Subject::UnitSource {
+                    continue;
+                }
+                let Some(groups) = groups else {
+                    state.incremental = false;
+                    continue;
+                };
+                for groups in groups {
+                    for (name, values) in findings_merge::state_columns(subject, &groups)? {
+                        columns.push((name, String::new(), values));
+                    }
+                    state.nodes.push(StateNode {
+                        subject,
+                        node: u32::try_from(groups.node)?,
+                        corpus: groups.table.is_some(),
+                        sited: groups.starts.is_some(),
+                        unreached: groups.unreached,
+                    });
+                }
+            }
+            columns.push((
+                "state.patch_rows".into(),
+                String::new(),
+                findings_merge::patch_rows(self)?.to_vec(),
+            ));
+            if reads_join_position {
+                columns.push((
+                    "state.join".into(),
+                    String::new(),
+                    findings_merge::join_membership(self, lines, cancelled)?,
+                ));
+            }
             let counts = counts
                 .into_iter()
                 .map(|((rule, culture), count)| {
@@ -800,6 +1027,7 @@ impl EngineQuery {
                 counts,
                 diagnostic_count: diagnostics.len().try_into()?,
                 roles,
+                state: Some(state),
             };
             store.publish_global(
                 "findings",
@@ -824,6 +1052,47 @@ impl EngineQuery {
         self.findings.store(key, Arc::new(layer));
         Ok(result)
     }
+}
+
+/// Every section of a findings layer, its strings resolved, for comparing layers.
+#[cfg(test)]
+pub(crate) fn findings_dump(
+    configuration: &Configuration,
+    key: &str,
+    joined: &str,
+) -> Result<Value> {
+    let layer = FindingsLayer::open(configuration, key, joined)?;
+    let mut sections = serde_json::Map::new();
+    for entry in &layer.reader.entries {
+        let name = entry.name.as_str();
+        let value = match name {
+            "shared.meta" => continue,
+            "join.meta" => serde_json::from_slice(&section(&layer.reader, name)?)?,
+            _ if layer.record["stringColumns"].get(name).is_some() => {
+                json!(layer.dictionary.strings_batch(&layer.column(name)?)?)
+            }
+            _ => json!(layer.column(name)?.to_vec()),
+        };
+        sections.insert(name.to_owned(), value);
+    }
+    Ok(Value::Object(sections))
+}
+
+/// A finding's place set while the layer is built: evaluated, or kept from the previous layer.
+#[derive(Clone, Copy)]
+enum Place<'a> {
+    New(&'a Arc<super::Affected>),
+    Kept(u32),
+}
+/// One rule's published columns.
+#[derive(Default)]
+struct RuleOutput {
+    rows: Vec<u32>,
+    cultures: Vec<u32>,
+    evidence: Vec<u32>,
+    places: Vec<u32>,
+    id0: Vec<u32>,
+    id1: Vec<u32>,
 }
 
 /// Whether a role's scopes match a place: `role_matches` over the occurrence relation's fields.

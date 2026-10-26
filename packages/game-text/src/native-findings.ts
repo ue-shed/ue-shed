@@ -32,7 +32,14 @@ export const annotateFindingsProfile = (
 			[`${prefix}rules`]: profile.rules,
 			[`${prefix}findings`]: profile.findings,
 			[`${prefix}diagnostics`]: profile.diagnostics,
-			[`${prefix}wall_ms`]: profile.wallMs
+			[`${prefix}wall_ms`]: profile.wallMs,
+			// Steps inside a stage, such as a closure's groups and an aggregate's parts.
+			...Object.fromEntries(
+				Object.entries(profile.subStages).map(([name, sample]) => [
+					`${prefix}stage_ms.${name}`,
+					sample.wallMs
+				])
+			)
 		});
 		const parent = yield* Effect.option(Effect.currentSpan);
 		if (Option.isNone(parent)) return;

@@ -125,6 +125,7 @@ if (values.worker) {
 		"cached-reopen",
 		"quality",
 		"quality-default",
+		"edit",
 		"quality-in-process",
 		"overhead",
 		"overhead:small",
@@ -287,12 +288,16 @@ if (values.worker) {
 				for (const isControl of values["control-executable"] ? [true, false] : [false]) {
 					if (stage === "records" && repeat > 0) continue;
 					if (repeat >= (longStages.has(stage) ? longRuns : runs)) continue;
-					// Interactive repetitions past the last build reuse that build's cache.
+					// Interactive repetitions past the last build reuse that build's cache. An edit
+					// builds its own, so it has a new cache per repetition.
+					const fresh = stage === "build" || stage === "edit";
 					const cache = join(
 						cacheRoot,
-						`run-${(stage === "build" ? repeat : Math.min(repeat, longRuns - 1)) + 1}`
+						stage === "edit"
+							? `edit-${repeat + 1}`
+							: `run-${(stage === "build" ? repeat : Math.min(repeat, longRuns - 1)) + 1}`
 					);
-					if (stage === "build") {
+					if (fresh) {
 						try {
 							await access(cache);
 							throw new Error("Build requires an empty, new cache directory.");

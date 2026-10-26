@@ -10,7 +10,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 struct Fixture {
-    store: Store,
+    /// The writer, released while an evaluation takes its own.
+    store: Option<Store>,
     configuration: Configuration,
     target: Value,
 }
@@ -24,7 +25,7 @@ impl Fixture {
             shared_project: false,
             view_prefix: None,
         };
-        let store = Store::writer(configuration.clone())?;
+        let store = Some(Store::writer(configuration.clone())?);
         Ok(Self {
             store,
             configuration,
@@ -44,8 +45,18 @@ impl Fixture {
         })
     }
 
+    fn store(&mut self) -> Result<&mut Store> {
+        if self.store.is_none() {
+            self.store = Some(Store::writer(self.configuration.clone())?);
+        }
+        self.store.as_mut().ok_or_else(|| "No writer.".into())
+    }
+    fn release(&mut self) {
+        self.store = None;
+    }
+
     fn ids(&mut self, values: &[&str]) -> Result<Vec<u32>> {
-        self.store.intern(
+        self.store()?.intern(
             "source",
             &values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
         )
@@ -85,12 +96,12 @@ impl Fixture {
             String::new(),
             (0..rows.len() as u32).collect(),
         ));
-        let path = self
-            .store
+        let store = self.store()?;
+        let path = store
             .directory
             .join(format!("test-input-{}.snapshot", crate::store::token()));
         let mut writer = crate::snapshot::Writer::new(&path.with_extension("tmp"))?;
-        let values = crate::store::dictionary_bytes(&self.store.directory, &self.store.root)?;
+        let values = crate::store::dictionary_bytes(&store.directory, &store.root)?;
         let mut order = vec![writer.add(
             "source.b0",
             4,
@@ -123,7 +134,7 @@ impl Fixture {
             }
         }
         writer.finish(&path, &order)?;
-        self.store.publish_local(
+        self.store()?.publish_local(
             name,
             &format!("test:{name}:{}", crate::store::token()),
             &path,
@@ -200,21 +211,25 @@ impl Fixture {
             columns.push((format!("package.{field}"), String::new(), vec![0, 0]));
         }
         columns.push(("gap.reason".into(), String::new(), vec![]));
-        self.store.publish_global(
+        self.store()?.publish_global(
             "package-text.0",
             &format!("test:packages:{}", crate::store::token()),
             &columns,
-            b"{}",
+            b"",
             &BTreeMap::new(),
             &[],
         )?;
         Ok(())
     }
 
-    fn lines(&mut self) -> Result<Vec<Value>> {
+    fn join(&mut self) -> Result<crate::join::JoinOutcome> {
         let input: JoinInput =
             serde_json::from_value(json!({"projectRoot":"/project","target":self.target}))?;
-        let outcome = refresh(&mut self.store, &input)?;
+        refresh(self.store()?, &input)
+    }
+
+    fn lines(&mut self) -> Result<Vec<Value>> {
+        let outcome = self.join()?;
         let query = EngineQuery::open(&self.configuration, Some(&outcome.key))?;
         let count = query.reader.meta["count"].as_u64().ok_or("line count")? as usize;
         (0..count)
@@ -916,6 +931,287 @@ fn every_authored_kind_uses_the_same_evaluator_and_existing_evidence() -> Result
         );
         assert_eq!(findings[0].actual, actual);
         assert_eq!(findings[0].expectation, expectation);
+    }
+    Ok(())
+}
+
+/// A findings layer's sections with each cross-row node's state as its rows' key hashes, which
+/// don't depend on how an evaluation numbered the groups.
+/// Both layers without the state of a node either left unreached: a full evaluation keeps no
+/// groups for a node no rule evaluated, where an incremental one read them to choose its rows.
+fn without_unreached(
+    mut incremental: serde_json::Map<String, Value>,
+    mut full: serde_json::Map<String, Value>,
+) -> (
+    serde_json::Map<String, Value>,
+    serde_json::Map<String, Value>,
+) {
+    let nodes = |layer: &serde_json::Map<String, Value>| {
+        layer["join.meta"]["state"]["nodes"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    };
+    let unreached = nodes(&incremental)
+        .iter()
+        .chain(&nodes(&full))
+        .filter(|node| node["unreached"] == json!(true))
+        .map(|node| (node["subject"].clone(), node["node"].clone()))
+        .collect::<Vec<_>>();
+    for layer in [&mut incremental, &mut full] {
+        let names = layer.keys().cloned().collect::<Vec<_>>();
+        for (subject, node) in &unreached {
+            let prefix = format!("state.{}.n{node}.", subject.as_str().unwrap_or_default());
+            for name in names.iter().filter(|name| name.starts_with(&prefix)) {
+                layer.remove(name);
+            }
+        }
+        if let Some(Value::Array(nodes)) = layer
+            .get_mut("join.meta")
+            .and_then(|meta| meta.pointer_mut("/state/nodes"))
+        {
+            nodes.retain(|node| {
+                !unreached.contains(&(node["subject"].clone(), node["node"].clone()))
+            });
+        }
+    }
+    (incremental, full)
+}
+
+fn state_by_row(mut sections: serde_json::Map<String, Value>) -> serde_json::Map<String, Value> {
+    let numbers = |value: Option<&Value>| -> Vec<u64> {
+        value
+            .and_then(Value::as_array)
+            .map(|values| values.iter().filter_map(Value::as_u64).collect())
+            .unwrap_or_default()
+    };
+    let prefixes = sections
+        .keys()
+        .filter_map(|name| name.strip_suffix(".h0"))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for prefix in prefixes {
+        let groups = numbers(sections.get(&format!("{prefix}.rows")));
+        let low = numbers(sections.get(&format!("{prefix}.h0")));
+        let high = numbers(sections.get(&format!("{prefix}.h1")));
+        let hash = |group: u64| match group {
+            0xffff_ffff => json!("none"),
+            0xffff_fffe => json!("failed"),
+            group => json!(low[group as usize] | high[group as usize] << 32),
+        };
+        let rows = match sections.get(&format!("{prefix}.starts")) {
+            Some(starts) => {
+                let starts = numbers(Some(starts));
+                starts
+                    .windows(2)
+                    .map(|range| {
+                        let mut keys = groups[range[0] as usize..range[1] as usize]
+                            .iter()
+                            .map(|group| hash(*group).to_string())
+                            .collect::<Vec<_>>();
+                        keys.sort();
+                        json!(keys)
+                    })
+                    .collect::<Vec<_>>()
+            }
+            None => groups.iter().map(|group| hash(*group)).collect(),
+        };
+        for suffix in ["rows", "h0", "h1", "starts"] {
+            sections.remove(&format!("{prefix}.{suffix}"));
+        }
+        sections.insert(format!("{prefix}.keys"), json!(rows));
+    }
+    sections
+}
+
+#[test]
+fn an_incremental_evaluation_publishes_the_layer_a_full_one_would() -> Result<()> {
+    use crate::rules::findings_dump;
+    let count = 40;
+    let key = |i: usize| format!("K{i}");
+    let source = |i: usize| match i {
+        0 | 1 => "Save {Count}".to_owned(),
+        2..=4 => "Load".to_owned(),
+        _ => format!("Label number {i}"),
+    };
+    let translation = |i: usize| match i {
+        0 => "Speichern {Count}".to_owned(),
+        1 => "Sichern {Count}".to_owned(),
+        2 | 3 => "Laden".to_owned(),
+        4 => "Lade".to_owned(),
+        7 => String::new(),
+        _ => format!("Beschriftung {i}"),
+    };
+    let mut fixture = Fixture::new()?;
+    let manifest = (0..count)
+        .map(|i| json!({"namespace":"UI","key":key(i),"source":source(i),"path":format!("/Game/Text/Example.Example.Label{i}")}))
+        .collect::<Vec<_>>();
+    fixture.file("Game.manifest", "manifest", &manifest)?;
+    let archive = |translated: &dyn Fn(usize) -> String| {
+        (0..count)
+            .map(|i| json!({"namespace":"UI","key":key(i),"source":source(i),"translation":translated(i)}))
+            .collect::<Vec<_>>()
+    };
+    fixture.file("en.archive", "archive", &archive(&source))?;
+    fixture.file("de.archive", "archive", &archive(&translation))?;
+    fixture.file("en.po", "po", &[])?;
+    let po = |edited: &[(usize, &str)]| {
+        (10..14)
+            .map(|i| {
+                let text = edited
+                    .iter()
+                    .find(|(row, _)| *row == i)
+                    .map_or_else(|| format!("PO {i}"), |(_, text)| (*text).to_owned());
+                json!({"namespace":"UI","key":key(i),"source":source(i),"translation":text})
+            })
+            .collect::<Vec<_>>()
+    };
+    fixture.file("de.po", "po", &po(&[]))?;
+    let packages = |edited: &[(usize, &str)]| {
+        (0..count)
+            .map(|i| {
+                let text = edited
+                    .iter()
+                    .find(|(row, _)| *row == i)
+                    .map_or_else(|| source(i), |(_, text)| (*text).to_owned());
+                json!({"namespace":"UI","key":key(i),"source":text,"object":"/Game/Text/Example.Example","property":format!("Label{i}")})
+            })
+            .collect::<Vec<_>>()
+    };
+    fixture.packages(&packages(&[]))?;
+    fixture.join()?;
+    let rules = example_document(
+        &[
+            "format_arguments",
+            "argument_modifiers",
+            "rich_text",
+            "po_escape_safety",
+            "whitespace",
+            "empty_translation",
+            "missing_translator_notes",
+            "duplicate_source",
+            "format_argument_renamed",
+            "rich_text_tags",
+            "rich_text_tag_case",
+            "line_breaks",
+            "length_outlier",
+            "outdated_translation",
+            "source_line_endings_changed",
+            "inconsistent_translation",
+            "rich_text_tags_added",
+            "placeholder_translation",
+            "culture_invariant_text",
+            "placeholder_text",
+            "source_whitespace",
+            "source_markup",
+            "number_only_text",
+            "string_table_key_collision",
+        ],
+        None,
+    )?;
+    let configuration = fixture.configuration.clone();
+    let cancelled = AtomicBool::new(false);
+    // Evaluates incrementally, then again in full under the same key, and compares the layers.
+    let compare = |fixture: &mut Fixture, stage: &str| -> Result<Value> {
+        fixture.release();
+        let evaluate = |incremental| -> Result<(Value, Value)> {
+            let query = EngineQuery::open(&configuration, None)?;
+            let joined = query.reader.joined_key.clone();
+            let result = crate::json_value::parse(&query.findings_evaluate_with(
+                &rules,
+                "en",
+                &cancelled,
+                Arc::new(crate::engine::Unwatched),
+                incremental,
+            )?)?;
+            let key = result["key"].as_str().ok_or("Missing findings key.")?;
+            let layer = findings_dump(&configuration, key, &joined)?;
+            Ok((result, layer))
+        };
+        let (result, incremental) = evaluate(true)?;
+        let mut store = Store::writer(configuration.clone())?;
+        let key = result["key"].as_str().ok_or("Missing findings key.")?;
+        let record = store.root["layers"]
+            .as_object_mut()
+            .ok_or("layers")?
+            .remove(key)
+            .ok_or("Missing findings layer.")?;
+        store.root["active"]
+            .as_object_mut()
+            .ok_or("active")?
+            .remove("findings");
+        store.publish_root()?;
+        drop(store);
+        let (full_result, full) = evaluate(false)?;
+        assert_eq!(full_result["key"], result["key"], "{stage}");
+        assert_eq!(full_result["counts"], result["counts"], "{stage}");
+        // The next stage starts from the incremental layer.
+        let mut store = Store::writer(configuration.clone())?;
+        store.root["layers"][key] = record;
+        store.root["active"]["findings"] = json!(key);
+        store.publish_root()?;
+        drop(store);
+        let sections = |layer: &Value| state_by_row(layer.as_object().cloned().unwrap_or_default());
+        let (incremental, full) = without_unreached(sections(&incremental), sections(&full));
+        let differing = full
+            .keys()
+            .chain(incremental.keys())
+            .filter(|name| incremental.get(*name) != full.get(*name))
+            .map(|name| {
+                format!(
+                    "{name}: {:?} != {:?}",
+                    incremental.get(name),
+                    full.get(name)
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(differing.is_empty(), "{stage}: {differing:#?}");
+        Ok(result["profile"]["stages"].clone())
+    };
+    let stages = compare(&mut fixture, "initial")?;
+    assert_eq!(stages["layer.merge"]["rows"], 0);
+    let culture_rows = count * 2;
+    type Edit<'a> = &'a dyn Fn(&mut Fixture) -> Result<()>;
+    // Each edit, and whether the join patches it: a removed culture row rebuilds the join.
+    let edits: [(&str, bool, Edit); 5] = [
+        ("a changed source", true, &|fixture| {
+            fixture.packages(&packages(&[(5, "Label number 5 edited")]))
+        }),
+        ("a line that moves to another group", true, &|fixture| {
+            fixture.packages(&packages(&[(5, "Label number 5 edited"), (0, "Load")]))
+        }),
+        ("changed translations", true, &|fixture| {
+            fixture.file("de.po", "po", &po(&[(11, "PO changed"), (12, "")]))
+        }),
+        ("a removed translation", false, &|fixture| {
+            let mut entries = archive(&translation);
+            entries.remove(3);
+            fixture.file("de.archive", "archive", &entries)
+        }),
+        ("restored sources", true, &|fixture| {
+            fixture.packages(&packages(&[]))
+        }),
+    ];
+    for (stage, patched, edit) in edits {
+        edit(&mut fixture)?;
+        let outcome = fixture.join()?;
+        let stages = compare(&mut fixture, stage)?;
+        if !patched {
+            assert_eq!(outcome.strategy.as_deref(), Some("full"), "{stage}");
+            continue;
+        }
+        assert_eq!(outcome.strategy.as_deref(), Some("incremental"), "{stage}");
+        let evaluated = stages["line_culture.closure"]["rows"]
+            .as_u64()
+            .ok_or("Missing closure rows.")?;
+        assert!(
+            0 < evaluated && evaluated < culture_rows as u64,
+            "{stage}: {evaluated} rows"
+        );
+        assert!(
+            stages["layer.merge"]["rows"].as_u64() > Some(0),
+            "{stage}: {stages}"
+        );
     }
     Ok(())
 }

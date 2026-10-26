@@ -73,7 +73,8 @@ mod tests {
     use crate::engine_where::Facet;
     use crate::package_text_contract::{
         PackageTextAudienceMatch, PackageTextAudienceRule, PackageTextExpected,
-        PackageTextObjectPosition, PackageTextShard, PackageTextSnapshotRequest,
+        PackageTextObjectPosition, PackageTextPlan, PackageTextPlanRequest, PackageTextPlanShard,
+        PackageTextShard, PackageTextSnapshotRequest,
     };
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
@@ -195,6 +196,9 @@ mod tests {
             RowKind::decl(&config),
             PlacesSection::decl(&config),
             PackageTextSnapshotRequest::decl(&config),
+            PackageTextPlanRequest::decl(&config),
+            PackageTextPlan::decl(&config),
+            PackageTextPlanShard::decl(&config),
             PackageTextShard::decl(&config),
             PackageTextExpected::decl(&config),
             PackageTextAudienceRule::decl(&config),

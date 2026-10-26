@@ -639,6 +639,8 @@ impl EngineQuery {
             } else {
                 None
             };
+            let opened = usize::from(previous.is_some());
+            let opened_in = opening.elapsed();
             let EvaluatedFindings {
                 rules: mut encoded,
                 roles,
@@ -663,7 +665,7 @@ impl EngineQuery {
                 Some(reporter),
                 previous.as_ref(),
             )?;
-            recorder.stage("layer.previous", &opening, usize::from(previous.is_some()));
+            recorder.stage_elapsed("layer.previous", &opening, opened_in, opened);
             if merges.is_empty() {
                 previous = None;
             }

@@ -6,7 +6,8 @@
 //! groups changed and evaluate their members, and copy every other row's findings.
 use super::columns::Bits;
 use super::compiler::NodeId;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashSet;
+use std::collections::HashMap;
 use std::hash::Hasher;
 
 /// A single-group row outside the node's groups: outside `among`, or with a null key.
@@ -46,19 +47,20 @@ impl NodeGroups {
             },
         }
     }
-    /// The row's key hashes, sorted and distinct.
-    fn keys(&self, row: usize) -> Vec<u64> {
-        let mut keys = self
-            .row(row)
-            .iter()
-            .filter_map(|group| match *group {
-                FAILED_GROUP => Some(FAILED_KEY),
-                group => self.hashes.get(group as usize).copied(),
-            })
-            .collect::<Vec<_>>();
-        keys.sort_unstable();
-        keys.dedup();
-        keys
+    /// The row's key hashes, one per group: a row's groups are distinct, and so are their keys.
+    fn keys(&self, row: usize) -> impl Iterator<Item = u64> + '_ {
+        self.row(row).iter().filter_map(|group| match *group {
+            FAILED_GROUP => Some(FAILED_KEY),
+            group => self.hashes.get(group as usize).copied(),
+        })
+    }
+    fn has_key(&self, row: usize, key: u64) -> bool {
+        self.keys(row).any(|own| own == key)
+    }
+    /// Whether the row has the same keys here and in `other`.
+    fn same_keys(&self, other: &Self, row: usize) -> bool {
+        let (here, there) = (self.row(row), other.row(row));
+        here.len() == there.len() && self.keys(row).all(|key| other.has_key(row, key))
     }
     /// The rows' groups renumbered through `map`, from each current row to the row it was, or
     /// `NO_GROUP` for a row that is new.
@@ -133,7 +135,7 @@ pub(crate) fn closure(len: usize, delta: &SubjectDelta, current: &[NodeGroups]) 
         let previous = delta.previous.get(&groups.node)?;
         // Keys that a row joined or left, or whose corpus count changed, affect their groups
         // whichever rows are evaluated.
-        let mut affected = HashSet::new();
+        let mut affected = FxHashSet::default();
         if let (Some(old), Some(new)) = (&previous.table, &groups.table) {
             let old = old.iter().copied().collect::<HashMap<_, _>>();
             let new = new.iter().copied().collect::<HashMap<_, _>>();
@@ -154,31 +156,31 @@ pub(crate) fn closure(len: usize, delta: &SubjectDelta, current: &[NodeGroups]) 
         if !groups.keyed {
             continue;
         }
-        let mut keys = Vec::with_capacity(len);
         for row in 0..len {
-            let (old, new) = (previous.keys(row), groups.keys(row));
-            if old != new {
-                affected.extend(old.iter().filter(|key| !new.contains(key)));
-                affected.extend(new.iter().filter(|key| !old.contains(key)));
+            if !previous.same_keys(groups, row) {
+                affected.extend(previous.keys(row).filter(|key| !groups.has_key(row, *key)));
+                affected.extend(groups.keys(row).filter(|key| !previous.has_key(row, *key)));
             }
-            keys.push((old, new));
         }
-        nodes.push((keys, affected, HashSet::new()));
+        nodes.push((previous, groups, affected, FxHashSet::default()));
     }
     let mut selected = delta.changed.clone();
     loop {
         let before = selected.count();
-        for (keys, affected, scanned) in &mut nodes {
+        for (previous, groups, affected, scanned) in &mut nodes {
             for row in selected.ones() {
-                let (old, new) = &keys[row as usize];
-                affected.extend(old.iter().chain(new));
+                affected.extend(previous.keys(row as usize).chain(groups.keys(row as usize)));
             }
             // A node's rows are scanned again only for keys it hasn't scanned for.
             if affected.iter().all(|key| scanned.contains(key)) {
                 continue;
             }
-            for (row, (old, new)) in keys.iter().enumerate() {
-                if old.iter().chain(new).any(|key| affected.contains(key)) {
+            for row in 0..len {
+                if previous
+                    .keys(row)
+                    .chain(groups.keys(row))
+                    .any(|key| affected.contains(&key))
+                {
                     selected.set(row);
                 }
             }
@@ -188,7 +190,7 @@ pub(crate) fn closure(len: usize, delta: &SubjectDelta, current: &[NodeGroups]) 
             let touched = selected
                 .ones()
                 .map(|row| lines[row as usize])
-                .collect::<HashSet<_>>();
+                .collect::<FxHashSet<_>>();
             for (row, line) in lines.iter().enumerate() {
                 if touched.contains(line) {
                     selected.set(row);

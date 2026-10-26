@@ -281,6 +281,26 @@ impl Recorder {
         sample.busy += busy;
         sample.rows += rows;
     }
+    /// A stage that ran `wall` from `measure`'s start, on one thread.
+    pub fn stage_elapsed(
+        &self,
+        name: &'static str,
+        measure: &Measure,
+        wall: Duration,
+        rows: usize,
+    ) {
+        let mut recording = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let start = measure.start.saturating_duration_since(recording.origin);
+        let sample = recording.stages.entry(name).or_default();
+        sample.start.get_or_insert(start);
+        sample.end = start + wall;
+        sample.wall += wall;
+        sample.busy += wall;
+        sample.rows += rows;
+    }
     /// Bytes held by named owners at a point, with the live heap when it is counted.
     pub fn holders(&self, point: &'static str, mut holders: BTreeMap<&'static str, u64>) {
         if let Some(live) = process_metrics::heap_live() {

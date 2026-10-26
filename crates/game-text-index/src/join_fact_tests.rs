@@ -935,6 +935,54 @@ fn every_authored_kind_uses_the_same_evaluator_and_existing_evidence() -> Result
     Ok(())
 }
 
+/// A findings layer's sections with each cross-row node's state as its rows' key hashes, which
+/// don't depend on how an evaluation numbered the groups.
+fn state_by_row(mut sections: serde_json::Map<String, Value>) -> serde_json::Map<String, Value> {
+    let numbers = |value: Option<&Value>| -> Vec<u64> {
+        value
+            .and_then(Value::as_array)
+            .map(|values| values.iter().filter_map(Value::as_u64).collect())
+            .unwrap_or_default()
+    };
+    let prefixes = sections
+        .keys()
+        .filter_map(|name| name.strip_suffix(".h0"))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for prefix in prefixes {
+        let groups = numbers(sections.get(&format!("{prefix}.rows")));
+        let low = numbers(sections.get(&format!("{prefix}.h0")));
+        let high = numbers(sections.get(&format!("{prefix}.h1")));
+        let hash = |group: u64| match group {
+            0xffff_ffff => json!("none"),
+            0xffff_fffe => json!("failed"),
+            group => json!(low[group as usize] | high[group as usize] << 32),
+        };
+        let rows = match sections.get(&format!("{prefix}.starts")) {
+            Some(starts) => {
+                let starts = numbers(Some(starts));
+                starts
+                    .windows(2)
+                    .map(|range| {
+                        let mut keys = groups[range[0] as usize..range[1] as usize]
+                            .iter()
+                            .map(|group| hash(*group).to_string())
+                            .collect::<Vec<_>>();
+                        keys.sort();
+                        json!(keys)
+                    })
+                    .collect::<Vec<_>>()
+            }
+            None => groups.iter().map(|group| hash(*group)).collect(),
+        };
+        for suffix in ["rows", "h0", "h1", "starts"] {
+            sections.remove(&format!("{prefix}.{suffix}"));
+        }
+        sections.insert(format!("{prefix}.keys"), json!(rows));
+    }
+    sections
+}
+
 #[test]
 fn an_incremental_evaluation_publishes_the_layer_a_full_one_would() -> Result<()> {
     use crate::rules::findings_dump;
@@ -1042,10 +1090,11 @@ fn an_incremental_evaluation_publishes_the_layer_a_full_one_would() -> Result<()
         let (result, incremental) = evaluate(true)?;
         let mut store = Store::writer(configuration.clone())?;
         let key = result["key"].as_str().ok_or("Missing findings key.")?;
-        store.root["layers"]
+        let record = store.root["layers"]
             .as_object_mut()
             .ok_or("layers")?
-            .remove(key);
+            .remove(key)
+            .ok_or("Missing findings layer.")?;
         store.root["active"]
             .as_object_mut()
             .ok_or("active")?
@@ -1055,7 +1104,27 @@ fn an_incremental_evaluation_publishes_the_layer_a_full_one_would() -> Result<()
         let (full_result, full) = evaluate(false)?;
         assert_eq!(full_result["key"], result["key"], "{stage}");
         assert_eq!(full_result["counts"], result["counts"], "{stage}");
-        assert_eq!(incremental, full, "{stage}");
+        // The next stage starts from the incremental layer.
+        let mut store = Store::writer(configuration.clone())?;
+        store.root["layers"][key] = record;
+        store.root["active"]["findings"] = json!(key);
+        store.publish_root()?;
+        drop(store);
+        let sections = |layer: &Value| state_by_row(layer.as_object().cloned().unwrap_or_default());
+        let (incremental, full) = (sections(&incremental), sections(&full));
+        let differing = full
+            .keys()
+            .chain(incremental.keys())
+            .filter(|name| incremental.get(*name) != full.get(*name))
+            .map(|name| {
+                format!(
+                    "{name}: {:?} != {:?}",
+                    incremental.get(name),
+                    full.get(name)
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(differing.is_empty(), "{stage}: {differing:#?}");
         Ok(result["profile"]["stages"].clone())
     };
     let stages = compare(&mut fixture, "initial")?;

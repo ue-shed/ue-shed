@@ -14,19 +14,18 @@ const result = spawnSync(
 		"vitest.node.config.ts",
 		"scripts/columnar-join-fuzz-sweep.test.ts",
 		...(native ? ["scripts/native-game-text-join.test.ts"] : []),
-		...args.filter((arg) => arg !== "--native"),
+		...args.filter((arg) => arg !== "--native")
 	],
 	{
 		cwd: repositoryRoot,
 		env: {
 			...process.env,
 			UE_SHED_JOIN_FUZZ_SWEEP: "1",
-			UE_SHED_JOIN_FUZZ_SEEDS:
-				process.env.UE_SHED_JOIN_FUZZ_SEEDS ?? "2000",
+			UE_SHED_JOIN_FUZZ_SEEDS: process.env.UE_SHED_JOIN_FUZZ_SEEDS ?? "2000"
 		},
 		stdio: "inherit",
-		windowsHide: true,
-	},
+		windowsHide: true
+	}
 );
 
 if (result.error) throw result.error;

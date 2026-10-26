@@ -776,7 +776,11 @@ passed with the final reader explicitly selected. `pnpm -s run typecheck` passed
 `pnpm -s run check:static` passed.
 No Rust product source changed, so no additional crate unit-test or clippy run was needed for
 this report-only change. The full suite and `pnpm check` were not run, as required by the brief.
-`git diff --check` passed. Nothing was pushed, merged or opened as a PR.
+`git diff --check` passed.
+
+**The fuzz run.** One 10,000-line fuzz run on UE 5.8 with the final reader (seed 73131: 11,042
+lines, 44,168 subjects) has no unexpected disagreement and no stale defect, before and after a
+package edit, and its incremental and full scans agree.
 
 ## Instrumentation details
 

@@ -90,11 +90,31 @@ the join.
    assigned, remapping, encoding and publishing the 21 layers run in parallel; the merge of the
    sorted runs stays serial unless it parallelises without changing IDs. Snapshots stay
    byte-identical.
-7. **Deferred, with reasons:**
-    - _Parsing localization files in Rust_ would cut 97 s of worker CPU, but once the branch runs
-      beside extraction (decision 2) the parse is off the critical path. It is a large port with
-      fidelity risk (UTF-16, PO escapes, Unreal's archive rules). Revisit if the localization
-      branch becomes the critical path.
+7. **The writer parses localization files.** _Added after the first results._ Plan 059's own
+   lesson is that bulk data stays in Rust, and the localization import is the largest piece that
+   still doesn't: TypeScript workers spend 97 s of CPU decoding 1.4 GB of manifests, archives and
+   PO files, write staged snapshot files, and the native writer reads them back. Running the
+   branch beside extraction hid that cost; it didn't remove it, and the branch is now the longer
+   one (35 s against 29 s for the package read) and Node's 2.7 GiB share of the memory peak.
+    - A new writer command imports a target's localization files: it reads, decodes (UTF-16LE or
+      UTF-8 by BOM), hashes and parses each file in parallel, bounded by input bytes as the reader
+      is, and feeds the rows straight into the cold localization publication — no staged files, no
+      TypeScript workers. It answers with what `prepareLocalizationFile` returns today for each
+      file (key, content hash, provenance, relative path, format, input bytes) and the same
+      diagnostics, with the same error codes and messages.
+    - The parsers port `@ue-shed/localization`'s manifest, archive and PO parsers rule for rule;
+      the TypeScript parsers are the specification, cited by file and line in the Rust. They stay in
+      `@ue-shed/localization` for everything that isn't the index (evidence reads, PO writing).
+    - Both the cold import and the single-file import go through the command, so the index has one
+      parser. `localization-import-worker.ts` and the cold staging path are deleted;
+      `prepareLocalizationFile` stays exported, deprecated, until its last caller outside the index
+      moves.
+    - Byte identity is the gate: every localization layer and dictionary equals the TypeScript
+      path's on both benchmark projects, both canonical corpora and the corpus fixture's files, and
+      a differential test feeds both parsers the fixture's files plus generated edge cases (BOMs,
+      PO escapes and line continuations, empty and duplicate entries, invalid input) and compares
+      rows and diagnostics.
+8. **Deferred, with reasons:**
     - _The reader writing package layers directly_, without staged NDJSON and the TS prepare step,
       removes about 5.5 s of prepare and part of the reader's staging. It changes who owns
       extraction policy, so it needs its own decision once decisions 2 and 3 have landed.
@@ -122,7 +142,8 @@ their own span, so their overlap is measurable.
 5. **The join's parallel steps** (decision 4).
 6. **Parallel package interning** (decision 5).
 7. **Parallel localization encoding** (decision 6).
-8. **Parity and measurements:**
+8. **The writer parses localization files** (decision 7), measured against the results recorded at `08296cfd`.
+9. **Parity and measurements:**
     - every joined, package and localization snapshot byte-identical to the baseline's on both
       canonical corpora and both benchmark projects;
     - the corpus fixture exact on both canonical corpora;

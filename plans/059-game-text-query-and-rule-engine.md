@@ -18,7 +18,8 @@
   owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
   review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
   recorded. Phase 4 is complete (#170); its measurements and the owner's review are recorded.
-  Phase 4.5 (the cold scan, #171) is implemented and measured; the owner's review is pending.
+  Phase 4.5 (the cold scan) is complete (#171); its measurements and the owner's review are
+  recorded. Phase 5 (incremental findings) is in progress.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.

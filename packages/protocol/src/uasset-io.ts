@@ -318,14 +318,6 @@ const PackageTextOperation = Schema.Struct({
 	/** Staging needs v1.19 and a request that satisfies `StagedPackageTextOperation`. */
 	staging: Schema.optionalKey(Schema.Never)
 });
-/**
- * v1.19 package-text staging. The worker writes each requested package's `extract_text_packages`
- * record or package error as one JSON line to `<directory>/<group>.ndjson`, where `groups[i]` is
- * the group of `paths[i]`, and streams a `staged_text_package` result in its place. The directory
- * must exist; the worker creates each group's file and fails if one already exists.
- * v1.20 `snapshots` supplies complete shard inventories and writes uncompressed shard snapshots
- * directly. Retained record files or explicit serialized records replace package extraction.
- */
 const PackageTextAudienceMatch = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literals(["namespace", "folder", "location"]),
@@ -347,6 +339,10 @@ const PackageTextAudienceMatch = Schema.Union([
 		anywhere: Schema.optionalKey(Schema.Boolean)
 	})
 ]);
+/** Complete shard inventories for v1.20 native column preparation. The reader writes one raw
+ * snapshot per group and rejects missing/duplicate packages or mismatched retained signatures.
+ * Every shard must fit in one request; record files are bounded to 64 MiB per JSON record.
+ */
 export const UAssetIoPackageTextSnapshots: Schema.Codec<GameTextContract.PackageTextSnapshotRequest> =
 	Schema.Struct({
 		shards: Schema.Array(
@@ -368,6 +364,14 @@ export const UAssetIoPackageTextSnapshots: Schema.Codec<GameTextContract.Package
 		records: Schema.optionalKey(Schema.Array(Schema.String))
 	});
 export type UAssetIoPackageTextSnapshots = GameTextContract.PackageTextSnapshotRequest;
+/**
+ * v1.19 package-text staging. The worker writes each requested package's `extract_text_packages`
+ * record or package error as one JSON line to `<directory>/<group>.ndjson`, where `groups[i]` is
+ * the group of `paths[i]`, and streams a `staged_text_package` result in its place. The directory
+ * must exist; the worker creates each group's file and fails if one already exists.
+ * v1.20 `snapshots` supplies complete shard inventories and writes uncompressed shard snapshots
+ * directly. Retained record files or explicit serialized records replace package extraction.
+ */
 export const UAssetIoPackageTextStaging = Schema.Struct({
 	directory: NonEmptyString,
 	groups: Schema.Array(

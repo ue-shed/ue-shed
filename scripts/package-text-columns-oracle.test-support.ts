@@ -129,6 +129,38 @@ generated.push({
 	}
 });
 cases.push(generated);
+cases.push(
+	[
+		"ToolTip[foo[0]",
+		"ToolTip{foo{0}",
+		"ToolTip[0][foo[1]",
+		"ToolTip[[0]]",
+		"ToolTip{foo{0}.value"
+	].map((property_path, row) => {
+		const path = `Content/Suffix${row}.uasset`;
+		return {
+			path,
+			signature: "suffix",
+			evidence: {
+				...emptyPackageTextRecord(path),
+				occurrences: [
+					{
+						source: "edge",
+						dev_notes: "",
+						identity: { status: "resolved", namespace: "N", key: "K" },
+						location: {
+							kind: "asset_property",
+							object_path: "/Game/Edge.Asset",
+							class_path: "/Script/UMG.TextBlock",
+							property_path
+						},
+						edit_capability: "read_only"
+					}
+				]
+			}
+		};
+	})
+);
 cases.push([
 	{
 		path: "Content/ErrorOrder.uasset",

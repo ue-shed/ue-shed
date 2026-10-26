@@ -193,7 +193,8 @@ export async function readGeneratedPackageInventory(directory: string) {
 }
 
 export async function readGeneratedPackageRecord(directory: string, path: string) {
-	const { PackageTextStored } = await import("../packages/game-text/dist/package-text-columns.js");
+	const { PackageTextStored } =
+		await import("../packages/game-text/dist/package-text-columns.js");
 	const decode = Schema.decodeUnknownSync(Schema.fromJsonString(PackageTextStored));
 	for await (const line of packageTextJsonLines(
 		join(directory, `package-text.${packageTextShard(path)}.ndjson`)

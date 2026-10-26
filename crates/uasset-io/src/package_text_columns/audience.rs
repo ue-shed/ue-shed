@@ -19,8 +19,9 @@ fn suffix_start(element: &str) -> Option<usize> {
         return (!before[start + 2..].contains('"')).then_some(start);
     };
     let before = &element[..element.len() - closing.len_utf8()];
-    let start = before.rfind(opening)?;
-    (!before[start + 1..].contains(closing)).then_some(start)
+    // PROPERTY_SUFFIX permits opening delimiters in its body and takes the earliest match.
+    let after = before.rfind(closing).map_or(0, |p| p + closing.len_utf8());
+    before[after..].find(opening).map(|start| after + start)
 }
 fn property_elements(path: &str) -> Vec<String> {
     let mut after_map_entry = false;

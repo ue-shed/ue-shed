@@ -1,6 +1,6 @@
 import { importLocalizationFile, importLocalizationTarget } from "./localization-import.js";
 import { refreshPackageTextLayer } from "./package-text-layer.js";
-import { PackageTextReaderConfiguration } from "./package-text-native.js";
+import { packageTextReaderConfigurationLayer } from "./package-text-native.js";
 import { nativeIndexConfiguration } from "./native-index-configuration.js";
 import { nativeIndexQueryLayer } from "./index-query-native.js";
 import { snapshotStoreGuidance } from "./snapshot-store.js";
@@ -588,10 +588,7 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 								writer: () => Effect.succeed(native.writer)
 							});
 							return yield* effect.pipe(
-								Effect.provideService(
-									PackageTextReaderConfiguration,
-									configuration
-								),
+								Effect.provide(packageTextReaderConfigurationLayer(configuration)),
 								Effect.provideService(SharedIndex, leased),
 								Effect.provideService(NativeBuildSession, native),
 								Effect.provideService(LocalizationImportSession, {

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Context, Effect, Option, Stream } from "effect";
+import { Context, Effect, Layer, Option, Stream } from "effect";
 import {
 	AssetReader,
 	AssetReaderLive,
@@ -27,6 +27,9 @@ export class PackageTextReaderConfiguration extends Context.Service<
 	PackageTextReaderConfiguration,
 	AssetReaderConfiguration
 >()("@ue-shed/game-text/PackageTextReaderConfiguration") {}
+/** Bind conversion to the executable already selected by the enclosing native writer. */
+export const packageTextReaderConfigurationLayer = (configuration: AssetReaderConfiguration) =>
+	Layer.succeed(PackageTextReaderConfiguration, configuration);
 /** Keep every shard in one bounded native request, including its signature inventory. */
 export function packageTextSnapshotBatches(shards: PackageTextSnapshots["shards"]) {
 	const batches: PackageTextSnapshots["shards"][] = [];

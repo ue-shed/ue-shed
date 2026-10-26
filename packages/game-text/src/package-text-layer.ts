@@ -81,7 +81,10 @@ export interface PackageTextRefreshInput<E, R> {
 	readonly coldMinimumPackages?: number;
 	/** Awaited after the read, before any package layer is published. */
 	readonly publishGate?: Effect.Effect<void, never, never>;
-	/** Run once the refresh has planned, before it reads any package. */
+	/**
+	 * Run once the refresh no longer needs the writer to plan: after the writer's plan, or before
+	 * a plan made here.
+	 */
 	readonly planned?: Effect.Effect<void, never, never>;
 	/** Explicit prepare-pool budget when another cold pool runs beside this refresh. */
 	readonly memoryBudgetBytes?: number;
@@ -362,17 +365,14 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	const stagingRoot = Option.isSome(session)
 		? join(session.value.configuration.cacheRoot, "staging")
 		: tmpdir();
-	const planned =
-		input.catalog && writer.planPackages
-			? yield* planOnWriter(
-					input.catalog,
-					input.changedFiles,
-					writer.planPackages,
-					stagingRoot
-				)
-			: yield* planHere(input.inventory ?? [], input.changedFiles, manifest);
+	const onWriter = input.catalog && writer.planPackages;
+	// Planning here sends the writer nothing, so its other commands needn't wait for it.
+	if (!onWriter && input.planned) yield* input.planned;
+	const planned = onWriter
+		? yield* planOnWriter(input.catalog!, input.changedFiles, writer.planPackages!, stagingRoot)
+		: yield* planHere(input.inventory ?? [], input.changedFiles, manifest);
 	stages.mark("selection");
-	if (input.planned) yield* input.planned;
+	if (onWriter && input.planned) yield* input.planned;
 	if (!planned.packages && manifest.active[planned.first.name] === planned.first.key)
 		return {
 			readPackages: 0,

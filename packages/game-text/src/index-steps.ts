@@ -431,6 +431,8 @@ export const makeGameTextIndexSteps = (
 						request.savedPackages === false || !source.catalog || !builder.plansPackages
 							? undefined
 							: yield* source.catalog({ ...request, projectRoot });
+					// Without a Catalog the writer doesn't plan, so its other commands needn't wait.
+					if (!catalog && concurrent?.planned) yield* concurrent.planned;
 					const inventory =
 						request.savedPackages === false || catalog
 							? []

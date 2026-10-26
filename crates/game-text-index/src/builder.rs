@@ -41,6 +41,10 @@ pub enum BuildRequest {
     Status {
         configuration: Configuration,
     },
+    ImportLocalization {
+        configuration: Configuration,
+        request: crate::localization::import::Request,
+    },
     Publish {
         configuration: Configuration,
         inputs: Vec<InputLayer>,
@@ -102,6 +106,8 @@ pub struct BuildOutcome {
     pub string_count: Option<u32>,
     pub io: crate::snapshot::IoMetrics,
     pub stage_seconds: BTreeMap<String, f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub localization: Option<crate::localization::import::Outcome>,
 }
 
 impl BuildOutcome {
@@ -117,6 +123,7 @@ impl BuildOutcome {
             string_count: None,
             io: crate::snapshot::io_metrics(),
             stage_seconds: BTreeMap::new(),
+            localization: None,
         }
     }
 }
@@ -128,6 +135,7 @@ impl BuildRequest {
             Self::Begin { configuration }
             | Self::End { configuration }
             | Self::Status { configuration }
+            | Self::ImportLocalization { configuration, .. }
             | Self::Publish { configuration, .. }
             | Self::PublishIds { configuration, .. }
             | Self::PublishPackages { configuration, .. }
@@ -144,6 +152,7 @@ impl BuildRequest {
             config.identity()?;
         }
         match self {
+            Self::ImportLocalization { request, .. } => request.validate()?,
             Self::PublishPackages {
                 inputs,
                 removed_names,
@@ -241,6 +250,13 @@ pub struct BuildSession {
 
 impl BuildSession {
     pub fn execute(&mut self, request: &BuildRequest) -> Result<BuildOutcome> {
+        self.execute_with_progress(request, &mut |_, _| Ok(()))
+    }
+    pub fn execute_with_progress(
+        &mut self,
+        request: &BuildRequest,
+        progress: &mut dyn FnMut(usize, usize) -> Result<()>,
+    ) -> Result<BuildOutcome> {
         request.validate()?;
         if matches!(request, BuildRequest::Capabilities) {
             return Ok(BuildOutcome::new("capabilities"));
@@ -286,7 +302,7 @@ impl BuildSession {
             crate::ErrorCode::InvalidInput,
             "call begin in a protocol session first",
         ))?;
-        let result = execute(store, request);
+        let result = execute(store, request, progress);
         // A failed publication may have staged files or remapped IDs. Reopen before further work.
         if result.is_err() {
             self.leased.take();
@@ -306,10 +322,40 @@ fn response_root(store: &Store) -> Result<Value> {
     Ok(root)
 }
 
-fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
+fn execute(
+    store: &mut Store,
+    request: &BuildRequest,
+    progress: &mut dyn FnMut(usize, usize) -> Result<()>,
+) -> Result<BuildOutcome> {
+    let _measure = crate::scan_timings::Request::new(match request {
+        BuildRequest::Publish { inputs, .. }
+            if inputs.iter().all(|i| i.name.starts_with("package-text.")) =>
+        {
+            "publish_packages"
+        }
+        BuildRequest::Publish { .. } => "publish_localization",
+        BuildRequest::Join { .. } => "join",
+        _ => "builder_other",
+    });
+    let _span = crate::scan_timings::Span::new("builder.execute");
     let started = Instant::now();
     let mut outcome = BuildOutcome::new("status");
     match request {
+        BuildRequest::ImportLocalization { request, .. } => {
+            outcome.action = "import_localization".into();
+            let result = crate::localization::import::import(store, request, progress)?;
+            outcome
+                .stage_seconds
+                .insert("localization_parse".into(), result.parse_ms / 1000.0);
+            outcome.stage_seconds.insert(
+                "localization_parse_cpu".into(),
+                result.parse_cpu_ms / 1000.0,
+            );
+            outcome
+                .stage_seconds
+                .insert("localization_publish".into(), result.publish_ms / 1000.0);
+            outcome.localization = Some(result);
+        }
         BuildRequest::PublishPackages {
             inputs,
             removed_names,

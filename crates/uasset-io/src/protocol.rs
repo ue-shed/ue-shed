@@ -27,6 +27,8 @@ pub struct ContractVersion {
 #[serde(deny_unknown_fields)]
 pub struct ResourceLimits {
     pub concurrency: Option<u32>,
+    #[serde(rename = "maximumInFlightPackageBytes")]
+    pub maximum_in_flight_package_bytes: Option<u64>,
     #[serde(rename = "maximumAssets")]
     pub maximum_assets: Option<u64>,
     #[serde(rename = "maximumOutputBytes")]
@@ -46,6 +48,8 @@ pub const MAX_PACKAGE_TEXT_STAGING_GROUPS: u32 = 4096;
 pub struct PackageTextStaging {
     pub directory: String,
     pub groups: Vec<u32>,
+    #[serde(default)]
+    pub snapshots: Option<crate::package_text_columns::SnapshotRequest>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -610,6 +614,7 @@ fn validate_optional_paths(paths: &Option<Vec<String>>) -> Result<(), ProtocolEr
 fn validate_request(request: &Request) -> Result<(), ProtocolError> {
     validate_non_empty(&request.request_id, "requestId")?;
     if request.limits.concurrency == Some(0)
+        || request.limits.maximum_in_flight_package_bytes == Some(0)
         || request.limits.maximum_output_bytes == Some(0)
         || request.limits.timeout_ms == Some(0)
     {
@@ -683,6 +688,27 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                     ));
                 }
                 validate_non_empty(&staging.directory, "staging.directory")?;
+                if let Some(snapshots) = &staging.snapshots {
+                    if request.contract.version.minor < 20 {
+                        return Err(ProtocolError(
+                            "package-text snapshots require uasset-io v1.20".into(),
+                        ));
+                    }
+                    if snapshots.shards.is_empty()
+                        || snapshots.shards.len() > MAX_PACKAGE_TEXT_STAGING_GROUPS as usize
+                        || snapshots
+                            .shards
+                            .iter()
+                            .any(|s| s.group >= MAX_PACKAGE_TEXT_STAGING_GROUPS)
+                    {
+                        return Err(ProtocolError("invalid package-text snapshot shards".into()));
+                    }
+                    for shard in &snapshots.shards {
+                        for entry in &shard.expected {
+                            validate_non_empty(&entry.path, "package-text inventory path")?;
+                        }
+                    }
+                }
                 if selection
                     .paths
                     .as_ref()
@@ -1203,6 +1229,23 @@ mod tests {
         ] {
             decode_request(fixture.as_bytes()).expect("valid project index request");
         }
+    }
+
+    #[test]
+    fn active_package_byte_limit_is_optional_positive_and_additive() {
+        let request = decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-staged-request.json")).unwrap();
+        assert_eq!(
+            request.limits.maximum_in_flight_package_bytes,
+            Some(268_435_456)
+        );
+        assert_eq!(
+            decode_request(VALID_REQUEST.as_bytes())
+                .unwrap()
+                .limits
+                .maximum_in_flight_package_bytes,
+            None
+        );
+        assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-staged-request-zero-budget.json")).is_err());
     }
 
     #[test]

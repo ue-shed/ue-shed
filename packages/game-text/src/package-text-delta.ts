@@ -1,8 +1,10 @@
 import { Effect, Stream } from "effect";
 import type { PackageTextRefreshInput, packageTextSelection } from "./package-text-layer.js";
-import { packageTextColumns, type PackageTextStored } from "./package-text-columns.js";
+import { type PackageTextStored } from "./package-text-columns.js";
 import type { SharedIndexReader, SharedIndexWriter } from "./shared-index.js";
 import { snapshotFailure } from "./snapshot-format.js";
+import { nativePackageTextColumns } from "./package-text-native.js";
+import { encodeWtf8 } from "./wtf8.js";
 
 /** Read only package identity columns in JS; Rust retains the unchanged authored rows and IDs. */
 export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")(function* <E, R>(
@@ -11,7 +13,8 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 	removed: readonly string[],
 	reader: SharedIndexReader,
 	writer: SharedIndexWriter,
-	replace: NonNullable<SharedIndexWriter["replacePackages"]>
+	replace: NonNullable<SharedIndexWriter["replacePackages"]>,
+	publishGate?: Effect.Effect<void, never, never>
 ) {
 	const entries = [];
 	let readPackages = 0;
@@ -94,14 +97,20 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 			return yield* Effect.fail(
 				snapshotFailure(shard.name, "Previous package shard disappeared")
 			);
+		const original = records.map((record) => record.path);
+		records.sort((a, b) => Buffer.compare(encodeWtf8(a.path), encodeWtf8(b.path)));
+		const convertedRows = new Map(records.map((record, row) => [record.path, row]));
+		for (let row = 0; row < rows.length; row++)
+			if (rows[row]! < 0) rows[row] = -1 - convertedRows.get(original[-1 - rows[row]!]!)!;
 		entries.push({
 			name: shard.name,
 			key: shard.key,
 			previousKey,
 			rows,
-			source: packageTextColumns(records)
+			source: yield* nativePackageTextColumns(records)
 		});
 	}
+	if (publishGate) yield* publishGate;
 	yield* replace(entries, removed);
 	yield* Effect.annotateCurrentSpan({
 		"package-text.readPackages": readPackages,

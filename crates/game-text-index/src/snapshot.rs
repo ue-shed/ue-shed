@@ -74,6 +74,7 @@ fn sums(deltas: &mut [u8]) {
 /// The stored bytes and codec for a section's raw bytes. Integer columns use the transform that
 /// compresses a sample of them best: some hold packed text bytes, which grouping would scatter.
 pub(crate) fn encode_section(kind: u32, raw: &[u8], level: i32) -> Result<(Vec<u8>, u32)> {
+    let _span = crate::scan_timings::Span::new("snapshot.encode");
     let transform = |codec: u32, raw: &[u8]| match codec {
         CODEC_DELTA => shuffle(&differences(raw)),
         CODEC_SHUFFLED => shuffle(raw),
@@ -92,18 +93,22 @@ pub(crate) fn encode_section(kind: u32, raw: &[u8], level: i32) -> Result<(Vec<u
             CODEC_SHUFFLED
         };
         let sample = &raw[..raw.len().min(SHUFFLE_SAMPLE)];
-        if zstd::bulk::compress(&transform(candidate, sample), level)?.len()
-            < zstd::bulk::compress(sample, level)?.len()
+        if measured_compress(&transform(candidate, sample), level)?.len()
+            < measured_compress(sample, level)?.len()
         {
             codec = candidate;
         }
     }
-    let encoded = zstd::bulk::compress(&transform(codec, raw), level)?;
+    let encoded = measured_compress(&transform(codec, raw), level)?;
     Ok(if encoded.len() < raw.len() {
         (encoded, codec)
     } else {
         (raw.to_vec(), CODEC_RAW)
     })
+}
+fn measured_compress(raw: &[u8], level: i32) -> std::io::Result<Vec<u8>> {
+    let _span = crate::scan_timings::Span::new("snapshot.compress");
+    zstd::bulk::compress(raw, level)
 }
 /// A section's raw bytes from its stored bytes.
 pub(crate) fn decode_section(codec: u32, stored: Vec<u8>, raw: usize) -> Result<Vec<u8>> {
@@ -210,6 +215,7 @@ fn check_section(name: &str, kind: u32, domain: &str, raw: &[u8]) -> Result<()> 
 }
 impl Writer {
     pub fn new(path: &Path) -> Result<Self> {
+        let _span = crate::scan_timings::Span::new("snapshot.create");
         let payload = OpenOptions::new()
             .create_new(true)
             .read(true)
@@ -259,6 +265,7 @@ impl Writer {
         raw: &[u8],
         (bytes, codec): (Vec<u8>, u32),
     ) -> Result<usize> {
+        let _span = crate::scan_timings::Span::new("snapshot.payload_write");
         let offset = self.payload.stream_position()?;
         self.payload.write_all(&bytes)?;
         let id = self.entries.len();
@@ -279,7 +286,29 @@ impl Writer {
     pub fn column(&mut self, name: &str, values: &[u32]) -> Result<usize> {
         self.add(name, 2, "", &u32_bytes(values), 1)
     }
-    pub fn finish(mut self, output: &Path, order: &[usize]) -> Result<u64> {
+    /// Uncompressed, session-local input with the same framing as the host's staged writer.
+    pub fn add_staged(
+        &mut self,
+        name: &str,
+        kind: u32,
+        domain: &str,
+        raw: &[u8],
+        strings: u32,
+    ) -> Result<usize> {
+        check_section(name, kind, domain, raw)?;
+        let id = self.append(name, kind, domain, raw, (raw.to_vec(), CODEC_RAW))?;
+        self.entries[id].strings = strings;
+        Ok(id)
+    }
+    pub fn finish(self, output: &Path, order: &[usize]) -> Result<u64> {
+        self.finish_file(output, order, true)
+    }
+    /// Staged files are consumed in this session and discarded, without durable publication.
+    pub fn finish_staged(self, output: &Path, order: &[usize]) -> Result<u64> {
+        self.finish_file(output, order, false)
+    }
+    fn finish_file(mut self, output: &Path, order: &[usize], durable: bool) -> Result<u64> {
+        let _span = crate::scan_timings::Span::new("snapshot.finish");
         require(
             !order.is_empty() && order.len() <= 1_048_576,
             "directory count",
@@ -312,6 +341,7 @@ impl Writer {
         put(&mut header, 28, crc);
         let crc = crc32fast::hash(&header[..32]);
         put(&mut header, 32, crc);
+        let write_span = crate::scan_timings::Span::new("snapshot.final_write");
         let mut out = OpenOptions::new()
             .create_new(true)
             .write(true)
@@ -323,10 +353,16 @@ impl Writer {
             std::io::copy(&mut (&mut self.payload).take(u64::from(e.stored)), &mut out)?;
             out.write_all(&[0; 3][..(4 - e.stored as usize % 4) % 4])?;
         }
-        out.sync_all()?;
+        drop(write_span);
+        if durable {
+            let _span = crate::scan_timings::Span::new("snapshot.fsync");
+            out.sync_all()?;
+        }
         drop(out);
         WRITTEN_BYTES.fetch_add(offset, std::sync::atomic::Ordering::Relaxed);
-        Reader::open(output)?.verify()?;
+        if durable {
+            Reader::open(output)?.verify()?;
+        }
         Ok(offset)
     }
 }
@@ -385,7 +421,8 @@ pub fn io_metrics() -> IoMetrics {
 }
 
 pub struct Reader {
-    file: File,
+    file: Option<File>,
+    memory: Option<std::sync::Arc<crate::localization::columns::LocalLayer>>,
     pub entries: Vec<Entry>,
 }
 
@@ -404,7 +441,15 @@ fn read_exact_at(file: &File, mut buffer: &mut [u8], mut offset: u64) -> Result<
     Ok(())
 }
 impl Reader {
+    pub(crate) fn memory(layer: std::sync::Arc<crate::localization::columns::LocalLayer>) -> Self {
+        Self {
+            file: None,
+            entries: layer.columns.iter().map(|c| c.entry.clone()).collect(),
+            memory: Some(layer),
+        }
+    }
     pub fn open(path: &Path) -> Result<Self> {
+        let _span = crate::scan_timings::Span::new("snapshot.open");
         OPENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut file = File::open(path)?;
         let mut h = [0; 48];
@@ -525,15 +570,27 @@ impl Reader {
                 }
             }
         }
-        Ok(Self { file, entries })
+        Ok(Self {
+            file: Some(file),
+            entries,
+            memory: None,
+        })
     }
     pub fn load(&self, id: usize) -> Result<Vec<u8>> {
+        if let Some(memory) = &self.memory {
+            return Ok(memory.columns[id].bytes.as_ref().clone());
+        }
+        let file = self.file.as_ref().ok_or("snapshot file absent")?;
+        let _span = crate::scan_timings::Span::new("snapshot.load");
         let e = &self.entries[id];
         LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         STORED.fetch_add(e.stored as u64, std::sync::atomic::Ordering::Relaxed);
         RAW.fetch_add(e.raw as u64, std::sync::atomic::Ordering::Relaxed);
         let mut b = vec![0; e.stored as usize];
-        read_exact_at(&self.file, &mut b, e.offset)?;
+        {
+            let _span = crate::scan_timings::Span::new("snapshot.read");
+            read_exact_at(file, &mut b, e.offset)?;
+        }
         let raw = decode_section(e.codec, b, e.raw as usize)?;
         require(
             raw.len() == e.raw as usize && crc32fast::hash(&raw) == e.crc,
@@ -541,7 +598,7 @@ impl Reader {
         )?;
         let mut pad = [0; 3];
         let n = (4 - e.stored as usize % 4) % 4;
-        read_exact_at(&self.file, &mut pad[..n], e.offset + u64::from(e.stored))?;
+        read_exact_at(file, &mut pad[..n], e.offset + u64::from(e.stored))?;
         require(pad[..n].iter().all(|&x| x == 0), "padding")?;
         if e.kind == 4 {
             strings_bytes(&raw).map_err(|error| {
@@ -561,6 +618,7 @@ impl Reader {
         Ok(raw)
     }
     pub fn verify(&mut self) -> Result<()> {
+        let _span = crate::scan_timings::Span::new("snapshot.verify");
         VERIFIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         for id in 0..self.entries.len() {
             self.load(id)?;

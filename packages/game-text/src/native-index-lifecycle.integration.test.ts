@@ -12,6 +12,51 @@ import { SharedIndex } from "./shared-index.js";
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
 describe.skipIf(!executable)("native index lifecycle soak", () => {
+	it("interrupting an idle session retires its writer while the builder scope stays open", async () => {
+		if (!executable) throw new Error("Native reader is required");
+		const pids = new Set<number>();
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const fixture = yield* makeIndexRegressionFixture();
+					const builder = yield* GameTextIndexBuilder;
+					const entered = yield* Deferred.make<void>();
+					const running = yield* builder
+						.withSession(
+							{
+								configuration: {
+									cacheRoot: join(fixture.projectRoot, "cache"),
+									projectKey: "lifecycle-fixture",
+									targetKey: "source",
+									projectView: { kind: "source" }
+								}
+							},
+							Effect.gen(function* () {
+								yield* Deferred.succeed(entered, undefined);
+								yield* Effect.never;
+							})
+						)
+						.pipe(Effect.forkChild);
+					yield* Deferred.await(entered);
+					yield* Fiber.interrupt(running).pipe(Effect.timeout("1 second"));
+					expect(pids.size).toBeGreaterThan(0);
+					for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
+				}).pipe(
+					Effect.provide(
+						nativeIndexBuilderLayer({
+							executable,
+							timeoutMs: 30_000,
+							catalogTimeoutMs: 30_000,
+							protocolObserver: (event) => {
+								if (event.kind === "worker_started") pids.add(event.pid);
+							}
+						})
+					)
+				)
+			)
+		);
+	});
+
 	for (const phase of ["startup", "staging", "publication", "termination"] as const) {
 		it(`releases the process and lease after ${phase}, then reopens committed state`, async () => {
 			if (!executable) throw new Error("Native reader is required");

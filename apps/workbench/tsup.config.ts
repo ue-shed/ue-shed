@@ -8,9 +8,6 @@ export default defineConfig([
 		clean: false,
 		entry: {
 			main: "src/main/main.ts",
-			"localization-import-worker":
-				"../../packages/game-text/src/localization-import-worker.ts",
-			"package-text-worker": "../../packages/game-text/src/package-text-worker.ts",
 			"cold-layer-worker": "../../packages/game-text/src/cold-layer-worker.ts"
 		},
 		external: [/^electron(?:\/|$)/, "trash"],

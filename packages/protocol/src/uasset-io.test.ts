@@ -110,6 +110,7 @@ describe("uasset IO protocol v1", () => {
 					"invalid/request-wrong-major.json",
 					"invalid/extract-text-packages-request-old-minor.json",
 					"invalid/extract-text-packages-staged-request-old-minor.json",
+					"invalid/extract-text-packages-staged-request-zero-budget.json",
 					"invalid/extract-text-packages-staged-request-group-limit.json",
 					"invalid/extract-text-packages-unbounded-samples.json",
 					"invalid/extract-text-packages-text-capability-type.json",

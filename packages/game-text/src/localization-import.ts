@@ -15,6 +15,7 @@ import { isAbsolute, relative, resolve, sep, join, dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 import { writeSnapshotFile, type SnapshotSource } from "./snapshot-file.js";
 import { importColdLocalizationTarget } from "./localization-cold-import.js";
+import { withNativeLocalizationSession } from "./localization-native-session.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { Context, Effect, Metric, Option, Result, Schema } from "effect";
 import {
@@ -165,6 +166,8 @@ export interface LocalizationFileSnapshotKey {
 		readonly segments: number;
 		readonly stages?: Readonly<Record<string, number>>;
 	};
+	/** Per-file worker timings in milliseconds, when the file was parsed by a worker. */
+	readonly stages?: Readonly<Record<string, number>>;
 }
 function contained(root: string, path: string) {
 	const child = relative(root, path);
@@ -219,12 +222,57 @@ function sameStamp(a: typeof Stamp.Type, b: typeof Stamp.Type) {
 		a.dev === b.dev
 	);
 }
+/** Metadata hints preserve warm reuse without moving authored bytes into the host. */
+export const nativeLocalizationStat = Effect.fn("LocalizationImport.stat")(function* (
+	request: LocalizationFileImportRequest
+) {
+	const actualRoot = yield* io(request.relativePath, () => realpath(request.projectRoot));
+	const actual = yield* io(request.relativePath, () =>
+		realpath(resolve(actualRoot, request.relativePath))
+	);
+	const observed = stamp(yield* io(request.relativePath, () => stat(actual, { bigint: true })));
+	const options = Schema.decodeUnknownSync(Options)(request);
+	const path = join(
+		request.cacheRoot,
+		"localization-file-stats",
+		createHash("sha256")
+			.update(JSON.stringify([LOCALIZATION_IMPORT_VERSION, actualRoot, actual, options]))
+			.digest("hex") + ".json"
+	);
+	return { path, observed };
+});
+/** Publish only the metadata observed before the native read, so later writes invalidate it. */
+export const rememberNativeLocalizationStat = Effect.fn("LocalizationImport.rememberStat")(
+	function* (
+		state: Effect.Success<ReturnType<typeof nativeLocalizationStat>>,
+		contentHash: string,
+		key: string
+	) {
+		yield* io("localization stat", async () => {
+			await mkdir(dirname(state.path), { recursive: true });
+			const temporary = `${state.path}.${randomUUID()}.tmp`;
+			try {
+				await writeFile(
+					temporary,
+					JSON.stringify({ stamp: state.observed, contentHash, key }),
+					{ flag: "wx" }
+				);
+				await rename(temporary, state.path);
+			} finally {
+				await rm(temporary, { force: true });
+			}
+		});
+	}
+);
 /** Stat hits never open authored bytes; misses hash and parse one bounded read. */
 const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 	input: LocalizationFileImportRequest,
 	stagedFile?: string,
 	prepareSource?: (source: SnapshotSource) => Promise<void>
-) {
+): Effect.fn.Return<
+	LocalizationFileSnapshotKey,
+	LocalizationError | SnapshotStoreError | SnapshotFormatError
+> {
 	const boundary = Schema.decodeUnknownResult(FileRequest)(input);
 	if (Result.isFailure(boundary))
 		return yield* Effect.fail(importFailure("input", "invalid_schema"));
@@ -307,6 +355,13 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 	}
 	const indexLayer =
 		(yield* localizationImportLayer(storeOptions())) ?? sharedIndexNodeLayer(storeOptions());
+	if (
+		!stagedFile &&
+		(yield* LocalizationImportSource) === nodeSource &&
+		Option.isNone(yield* Effect.serviceOption(LocalizationImportSession))
+	) {
+		return yield* withNativeLocalizationSession(storeOptions(), importFile(input));
+	}
 	const existing = (hash: string) =>
 		Effect.scoped(
 			Effect.gen(function* () {
@@ -341,6 +396,8 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		decodeMs: 0,
 		parseMs: 0,
 		finishMs: 0,
+		prepareMs: 0,
+		writeMs: 0,
 		cachedLookupMs: 0
 	};
 	const hit =
@@ -360,6 +417,47 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		const result = yield* Effect.scoped(
 			Effect.gen(function* () {
 				const sourceAccess = yield* LocalizationImportSource;
+				const native =
+					!stagedFile && sourceAccess === nodeSource
+						? yield* Effect.scoped(
+								Effect.gen(function* () {
+									const writer = yield* (yield* SharedIndex).writer();
+									if (!writer.importLocalization) return undefined;
+									const reply = yield* writer.importLocalization({
+										files: [
+											{
+												projectRoot: actualRoot,
+												file: actual,
+												relativePath: file,
+												options,
+												limits,
+												chunkBytes
+											}
+										],
+										maximumInFlightBytes: 256 * 1024 ** 2,
+										cold: false
+									});
+									const entry = reply.files[0]!;
+									if (entry.error)
+										return yield* Effect.fail(
+											Schema.decodeUnknownSync(LocalizationError)({
+												_tag: "LocalizationError",
+												...entry.error
+											})
+										);
+									const prepared = entry.file!;
+									stages.parseMs = reply.parseMs;
+									stages.writeMs = reply.publishMs;
+									return {
+										hash: prepared.contentHash,
+										parsed: prepared.parsed,
+										bytes: prepared.snapshotBytes,
+										shared: writer.metrics()
+									};
+								})
+							).pipe(Effect.provide(indexLayer))
+						: undefined;
+				if (native) return native;
 				const stagingRoot = stagedFile
 					? dirname(stagedFile)
 					: join(request.cacheRoot, "localization-import-staging");
@@ -486,12 +584,18 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 				const source = yield* io(file, () => builder.finish());
 				stages.finishMs += performance.now() - finishStarted;
 				if (stagedFile) {
-					if (prepareSource) yield* io(file, () => prepareSource(source));
+					if (prepareSource) {
+						const prepareStarted = performance.now();
+						yield* io(file, () => prepareSource(source));
+						stages.prepareMs += performance.now() - prepareStarted;
+					}
+					const writeStarted = performance.now();
 					const written = yield* io(file, () =>
 						writeSnapshotFile(stagedFile, source, 1, undefined, undefined, {
 							durable: false
 						})
 					);
+					stages.writeMs += performance.now() - writeStarted;
 					return { hash: content.hash, parsed: true, bytes: written.fileLength };
 				}
 				const bytes = yield* Effect.gen(function* () {
@@ -595,7 +699,8 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		lookupStrings,
 		reusedStrings,
 		probePasses,
-		profile
+		profile,
+		stages: { ...stages }
 	} satisfies LocalizationFileSnapshotKey;
 });
 
@@ -607,7 +712,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFileRequest")(
 	(input: LocalizationFileImportRequest) => importFile(input)
 );
-/** Internal worker boundary: parse/hash once, stage local columns, publish no target or stat hints. */
+/** @deprecated Index imports use the native writer. Retained for external snapshot consumers. */
 export const prepareLocalizationFile = Effect.fn("LocalizationSnapshot.prepareFile")(
 	(
 		input: LocalizationFileImportRequest,
@@ -622,7 +727,9 @@ const TargetRequest = LocalizationProjectRequest.pipe(
 		targetName: Schema.NonEmptyString,
 		sharedTargetKey: Schema.optionalKey(Schema.NonEmptyString),
 		projectScoped: Schema.optionalKey(Schema.Boolean),
-		importLimits: Schema.optionalKey(LocalizationImportLimits)
+		importLimits: Schema.optionalKey(LocalizationImportLimits),
+		/** Explicit parser-pool budget when another cold pool runs beside this import. */
+		memoryBudgetBytes: Schema.optionalKey(Schema.Number)
 	})
 );
 /**
@@ -631,10 +738,22 @@ const TargetRequest = LocalizationProjectRequest.pipe(
  * unreadable cultures.
  */
 export type LocalizationTargetImportRequest = typeof TargetRequest.Type;
+type TargetImportReply = {
+	target: typeof LocalizationTarget.Type;
+	files: LocalizationFileSnapshotKey[];
+	diagnostics: { relativePath: string | null; error: LocalizationError }[];
+	profile:
+		| NonNullable<Effect.Success<ReturnType<typeof importColdLocalizationTarget>>>["profile"]
+		| null;
+};
 /** Discovery remains the localization service's authority. Each file has an independent key. */
 export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTarget")(function* (
 	input: LocalizationTargetImportRequest
-) {
+): Effect.fn.Return<
+	TargetImportReply,
+	LocalizationError | SnapshotStoreError | SnapshotFormatError,
+	LocalizationEvidence
+> {
 	const reportProgress = yield* GameTextIndexProgressReporter;
 	reportProgress({ phase: "localization", completed: 0, total: 0 });
 	const boundary = Schema.decodeUnknownResult(TargetRequest)(input);
@@ -674,6 +793,12 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 		Object.assign(configuration, {
 			projectView: { kind: "localization", target: target.name }
 		});
+	if (
+		(yield* LocalizationImportSource) === nodeSource &&
+		Option.isNone(yield* Effect.serviceOption(LocalizationImportSession))
+	) {
+		return yield* withNativeLocalizationSession(configuration, importLocalizationTarget(input));
+	}
 	const indexLayer =
 		(yield* localizationImportLayer(configuration)) ?? sharedIndexNodeLayer(configuration);
 	const session = yield* Effect.serviceOption(LocalizationImportSession);
@@ -731,18 +856,17 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 			if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
 			return fileRequest;
 		});
-		const result = yield* Effect.scoped(importColdLocalizationTarget(preparedRequests)).pipe(
-			Effect.provide(indexLayer),
-			Effect.result
-		);
-		if (Result.isSuccess(result))
+		const result = yield* Effect.scoped(
+			importColdLocalizationTarget(preparedRequests, request.memoryBudgetBytes)
+		).pipe(Effect.provide(indexLayer), Effect.result);
+		if (Result.isSuccess(result) && result.success)
 			return {
 				target,
 				files: result.success.files,
 				diagnostics,
 				profile: result.success.profile
 			};
-		if (!Schema.is(LocalizationError)(result.failure))
+		if (Result.isFailure(result) && !Schema.is(LocalizationError)(result.failure))
 			return yield* Effect.fail(result.failure);
 		// Preserve per-file diagnostics when an invalid authored file prevents the atomic cold build.
 	}

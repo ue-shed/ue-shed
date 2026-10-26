@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -11,11 +11,7 @@ import {
 	isPackageTextCandidate,
 	textCorpusWithExcludedPackages
 } from "./package-text-candidates.js";
-import {
-	packageTextColumns,
-	decodePackageTextColumns,
-	type PackageTextStored
-} from "./package-text-columns.js";
+import { decodePackageTextColumns, type PackageTextStored } from "./package-text-columns.js";
 import type { ColdLayerSource } from "./shared-string-sort.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
 import { comparePackageTextPathBytes } from "./package-text-order.js";
@@ -23,11 +19,12 @@ import { encodeWtf8 } from "./wtf8.js";
 import { LocalizationImportSession } from "./localization-import-session.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { writeSnapshotFile, openSnapshotFile, type SnapshotFileReader } from "./snapshot-file.js";
+import { importColdPackageTextShards } from "./package-text-cold.js";
 import {
-	importColdPackageTextShards,
-	packageTextWorkerCount,
-	startPackageTextWorkers
-} from "./package-text-cold.js";
+	nativePackageTextColumns,
+	packageTextAudienceRules,
+	type PackageTextSnapshots
+} from "./package-text-native.js";
 import { TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { StageClock } from "./stage-clock.js";
@@ -74,23 +71,26 @@ const shardName = (shard: number) => `package-text.${shard}`;
 export interface PackageTextRefreshInput<E, R> {
 	/** Override the cold-path inventory threshold for bounded integration fixtures. */
 	readonly coldMinimumPackages?: number;
+	/** Awaited after the read, before any package layer is published. */
+	readonly publishGate?: Effect.Effect<void, never, never>;
+	/** Explicit prepare-pool budget when another cold pool runs beside this refresh. */
+	readonly memoryBudgetBytes?: number;
 	readonly inventory: readonly PackageTextInventoryEntry[];
 	readonly changedFiles?: readonly string[];
 	readonly read: (
 		paths: readonly string[]
 	) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, E, R>;
 	/**
-	 * A staged read (`GameTextIndexSource.stage`) for cold imports: the reader writes the record
-	 * of `paths[i]` to a file of group `groups[i]` under `directory` and names that file in its
-	 * event, so records never pass through this thread. Workers make their paths relative to
-	 * `projectRoot` and mount them, as `read` does.
+	 * Native shard preparation (`GameTextIndexSource.stage`): workers mount and convert the
+	 * selected packages, and the coordinator writes each completed shard's snapshot.
 	 */
 	readonly stage?: {
 		readonly projectRoot: string;
 		readonly read: (
 			paths: readonly string[],
 			directory: string,
-			groups: readonly number[]
+			groups: readonly number[],
+			snapshots: PackageTextSnapshots
 		) => Stream.Stream<{ readonly path: string; readonly file: string }, E, R>;
 	};
 }
@@ -305,12 +305,13 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 		const empty = {
 			name: selection[0]!.name,
 			key: selection[0]!.key,
-			source: packageTextColumns([])
+			source: yield* nativePackageTextColumns([])
 		};
 		const retired = removed.filter((name) => name !== empty.name);
+		if (input.publishGate) yield* input.publishGate;
 		// Retain an empty prepared-inventory marker after deleting the last package, including
 		// when localization layers were imported before this first package preparation.
-		if (!Object.keys(manifest.layers).length) yield* writer.publishCold([empty]);
+		if (!Object.keys(writer.manifest().layers).length) yield* writer.publishCold([empty]);
 		else yield* writer.publishBatch([empty], retired);
 		return {
 			readPackages: 0,
@@ -346,7 +347,8 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			removed,
 			reader,
 			writer,
-			writer.replacePackages
+			writer.replacePackages,
+			input.publishGate
 		);
 	}
 	if (!reader && changed.length > 8 && inventory.length >= (input.coldMinimumPackages ?? 256)) {
@@ -368,88 +370,65 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			}),
 			(value) => Effect.promise(() => rm(value, { recursive: true, force: true }))
 		);
-		const buffers = new Map<string, { lines: string[]; bytes: number }>();
-		const flush = async (name: string) => {
-			const buffer = buffers.get(name)!;
-			if (!buffer.lines.length) return;
-			await appendFile(join(directory, `${name}.ndjson`), buffer.lines.join(""));
-			buffer.lines.length = 0;
-			buffer.bytes = 0;
-		};
-		const append = (record: PackageTextStored) =>
-			Effect.tryPromise({
-				try: async () => {
-					const name = shardName(packageTextShard(record.path)),
-						buffer = buffers.get(name) ?? { lines: [], bytes: 0 },
-						line = `${JSON.stringify(record)}\n`;
-					buffers.set(name, buffer);
-					buffer.lines.push(line);
-					buffer.bytes += Buffer.byteLength(line);
-					if (buffer.bytes >= 64 * 1024) await flush(name);
-				},
-				catch: (cause) =>
-					snapshotFailure(
-						"package-text.stage",
-						"The package text staging operation failed.",
-						cause
-					)
-			});
 		const requested = new Map<string, PackageTextInventoryEntry>();
 		for (const shard of changed)
 			for (const { entry, selected } of shard.entries)
 				if (selected) requested.set(entry.path, entry);
-		const occupied = selection.filter((shard) => shard.entries.length);
-		const workerCount = packageTextWorkerCount(requested.size, occupied.length);
-		// Workers load their modules while the reader extracts the packages they will convert.
-		const workers = yield* startPackageTextWorkers(workerCount);
 		const received = new Set<string>();
-		const receive = (path: string) =>
-			Effect.gen(function* () {
-				if (!requested.has(path) || received.has(path))
-					return yield* Effect.fail(
-						snapshotFailure("package-text.read", "Unexpected or duplicate package")
-					);
-				received.add(path);
-				completed++;
-				report();
-			});
+		const snapshots = new Map<string, string>();
 		const stage = input.stage;
-		// One staging group per shard: a worker then holds one shard's lines at a time.
-		const groups = stage
-			? Array.from({ length: PACKAGE_TEXT_SHARDS }, (_, shard) => [shardName(shard)])
-			: undefined;
-		// Each group's staged files, in the order the reader first wrote to them.
-		const groupFiles = Array.from({ length: PACKAGE_TEXT_SHARDS }, () => new Set<string>());
-		if (stage && groups) {
-			// The reader writes each group's records; unselected packages have none to write.
-			for (const shard of changed)
-				for (const { selected } of shard.entries) if (!selected) completed++;
+		if (stage) {
+			completed += inventory.length - requested.size;
 			report();
 			const paths = [...requested.keys()];
-			if (paths.length)
-				yield* stage
-					.read(
-						paths,
-						directory,
-						paths.map((path) => packageTextShard(path))
-					)
-					.pipe(
-						Stream.runForEach((event) => {
-							groupFiles[packageTextShard(event.path)]!.add(event.file);
-							return receive(event.path);
+			yield* stage
+				.read(paths, directory, paths.map(packageTextShard), {
+					rules: packageTextAudienceRules(),
+					shards: changed.map((shard) => ({
+						group: Number(shard.name.slice("package-text.".length)),
+						expected: shard.entries.map(({ entry, selected }) => ({
+							path: entry.path,
+							signature: entry.signature,
+							selected
+						}))
+					}))
+				})
+				.pipe(
+					Stream.runForEach((event) =>
+						Effect.gen(function* () {
+							if (!requested.has(event.path) || received.has(event.path))
+								return yield* Effect.fail(
+									snapshotFailure(
+										"package-text.read",
+										"Unexpected or duplicate package"
+									)
+								);
+							received.add(event.path);
+							completed++;
+							report();
 						})
-					);
-		} else {
+					)
+				);
 			for (const shard of changed)
-				for (const { entry, selected } of shard.entries) {
-					if (selected) continue;
-					yield* append({
-						path: entry.path,
-						signature: entry.signature,
-						evidence: { event: "not_gatherable", path: entry.path }
-					});
-					completed++;
-				}
+				snapshots.set(
+					shard.name,
+					join(directory, `${Number(shard.name.slice("package-text.".length))}.snapshot`)
+				);
+		} else {
+			const records = new Map<string, PackageTextStored[]>();
+			for (const shard of changed) {
+				const rows: PackageTextStored[] = [];
+				for (const { entry, selected } of shard.entries)
+					if (!selected) {
+						rows.push({
+							path: entry.path,
+							signature: entry.signature,
+							evidence: { event: "not_gatherable", path: entry.path }
+						});
+						completed++;
+					}
+				records.set(shard.name, rows);
+			}
 			report();
 			if (requested.size)
 				yield* input.read([...requested.keys()]).pipe(
@@ -465,7 +444,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 									)
 								);
 							received.add(event.path);
-							yield* append({
+							records.get(shardName(packageTextShard(event.path)))!.push({
 								path: event.path,
 								signature: entry.signature,
 								evidence: event
@@ -475,42 +454,40 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 						})
 					)
 				);
+			for (const shard of changed) {
+				const path = join(
+					directory,
+					`${Number(shard.name.slice("package-text.".length))}.snapshot`
+				);
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						const source = yield* nativePackageTextColumns(records.get(shard.name)!);
+						yield* Effect.tryPromise({
+							try: () =>
+								writeSnapshotFile(path, source, 0, undefined, undefined, {
+									durable: false
+								}),
+							catch: (cause) =>
+								snapshotFailure(
+									"package-text.stage",
+									"The package text staging operation failed.",
+									cause
+								)
+						});
+					})
+				);
+				records.delete(shard.name);
+				snapshots.set(shard.name, path);
+			}
 		}
 		if (received.size !== requested.size)
 			return yield* Effect.fail(
 				snapshotFailure("package-text.read", "Reader omitted requested packages")
 			);
-		yield* Effect.tryPromise({
-			try: async () => {
-				for (const name of buffers.keys()) await flush(name);
-			},
-			catch: (cause) =>
-				snapshotFailure(
-					"package-text.stage",
-					"The package text staging operation failed.",
-					cause
-				)
-		});
-		// Reading includes the reader's own work and staging the records it returns.
 		stages.mark("read");
-		const result = yield* importColdPackageTextShards(
-			{
-				inventory,
-				recordDirectory: directory,
-				stagingRoot: directory,
-				workers,
-				...(stage && groups
-					? {
-							staged: {
-								projectRoot: stage.projectRoot,
-								groups,
-								files: groupFiles.map((files) => [...files])
-							}
-						}
-					: undefined)
-			},
-			selection
-		).pipe(
+		if (input.publishGate) yield* input.publishGate;
+		stages.restart();
+		const result = yield* importColdPackageTextShards({ inventory, snapshots }, selection).pipe(
 			Effect.provideService(
 				SharedIndex,
 				SharedIndex.of({
@@ -626,22 +603,16 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			return yield* Effect.fail(
 				snapshotFailure("package-text.read", "Reader omitted requested packages")
 			);
-		next.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+		next.sort((a, b) => Buffer.compare(encodeWtf8(a.path), encodeWtf8(b.path)));
+		const source = yield* nativePackageTextColumns(next);
 		if (staged) {
 			const file = yield* Effect.tryPromise({
 				try: async () => {
 					const path = join(staged.directory, `${shard.name}.snapshot`);
 					// Staged for the writer: uncompressed and unsynced.
-					await writeSnapshotFile(
-						path,
-						packageTextColumns(next),
-						0,
-						undefined,
-						undefined,
-						{
-							durable: false
-						}
-					);
+					await writeSnapshotFile(path, source, 0, undefined, undefined, {
+						durable: false
+					});
 					return openSnapshotFile(path);
 				},
 				catch: (cause) =>
@@ -662,12 +633,14 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 					}))
 				}
 			});
-		} else sources.push({ name: shard.name, key: shard.key, source: packageTextColumns(next) });
+		} else sources.push({ name: shard.name, key: shard.key, source: source });
 	}
 	// Reading includes the reader's own work and each shard's staging.
 	stages.mark("read");
+	if (input.publishGate) yield* input.publishGate;
+	stages.restart();
 	reportProgress({ phase: "package_publish", completed: 0, total: 0 });
-	if (!Object.keys(manifest.layers).length || sources.length > 8)
+	if (!Object.keys(writer.manifest().layers).length || sources.length > 8)
 		yield* writer.publishCold(sources, removed);
 	else yield* writer.publishBatch(sources, removed);
 	stages.mark("publish");

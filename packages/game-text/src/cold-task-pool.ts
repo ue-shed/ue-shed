@@ -56,4 +56,7 @@ export async function runColdTasks<A>(
 
 /** Keep half the available process memory for the coordinator, dictionary and OS changes. */
 export const coldMemoryBudget = (availableBytes: number) => Math.max(1, availableBytes * 0.5);
+/** One pool's share when two cold pools can run at once against one shared budget. */
+export const coldHalfBudget = (availableBytes: number) =>
+	Math.max(1, Math.floor(coldMemoryBudget(availableBytes) / 2));
 export const coldParserReservation = (inputBytes: number) => 128 * 1024 ** 2 + inputBytes * 32;

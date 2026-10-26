@@ -12,7 +12,10 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 13] = [
+const SOURCES: [&str; 16] = [
+    include_str!("package_text_contract.rs"),
+    include_str!("localization/import.rs"),
+    include_str!("localization/mod.rs"),
     include_str!("contract.rs"),
     include_str!("session.rs"),
     include_str!("batch.rs"),
@@ -68,6 +71,10 @@ mod tests {
         QueryParts, RelatedSection, RowKind, RowSelection, RowsPart, Selection, TextSearch,
     };
     use crate::engine_where::Facet;
+    use crate::package_text_contract::{
+        PackageTextAudienceMatch, PackageTextAudienceRule, PackageTextExpected,
+        PackageTextObjectPosition, PackageTextShard, PackageTextSnapshotRequest,
+    };
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
         Order, Page, QueryRequest, RuleTotal, View,
@@ -115,6 +122,16 @@ mod tests {
              readonly [key: string]: JsonValue;\n};\n",
         );
         for declaration in [
+            crate::localization::Format::decl(&config),
+            crate::localization::Options::decl(&config),
+            crate::localization::Limits::decl(&config),
+            crate::localization::Diagnostic::decl(&config),
+            crate::localization::import::Input::decl(&config),
+            crate::localization::import::Request::decl(&config),
+            crate::localization::import::Provenance::decl(&config),
+            crate::localization::import::PreparedFile::decl(&config),
+            crate::localization::import::FileResult::decl(&config),
+            crate::localization::import::Outcome::decl(&config),
             EngineRequest::decl(&config),
             super::ContractIdentity::decl(&config),
             Configuration::decl(&config),
@@ -177,6 +194,12 @@ mod tests {
             RowSelection::decl(&config),
             RowKind::decl(&config),
             PlacesSection::decl(&config),
+            PackageTextSnapshotRequest::decl(&config),
+            PackageTextShard::decl(&config),
+            PackageTextExpected::decl(&config),
+            PackageTextAudienceRule::decl(&config),
+            PackageTextAudienceMatch::decl(&config),
+            PackageTextObjectPosition::decl(&config),
             DetailSection::decl(&config),
             RelatedSection::decl(&config),
             LineAnswer::decl(&config),

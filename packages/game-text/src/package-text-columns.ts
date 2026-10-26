@@ -160,7 +160,7 @@ const numberFields = [
 	"gap.reason"
 ];
 
-/** Bounded shard transformation. Every authored string is an ID, including sample coordinates. */
+/** Reference encoder for decoder and native differential tests; index writes use the reader. */
 export function packageTextColumns(records: readonly PackageTextStored[]) {
 	const tables = new Map(
 		["source", "identity", "paths"].map((domain) => [

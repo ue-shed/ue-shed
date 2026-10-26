@@ -31,8 +31,6 @@ const approvedRuntimeExits = new Set([
 	// Retained localization evidence getters use scoped synchronous cache reads. Corpus search,
 	// focus and quality use the asynchronous native engine.
 	"packages/game-text/src/joined-query-node.ts",
-	// Node worker messages are foreign callbacks; the target scope owns and terminates the pool.
-	"packages/game-text/src/localization-import-worker.ts",
 	// The browser worker is a foreign entrypoint; each read's scope terminates its runtime.
 	"apps/site/src/blueprints/blueprint.worker.ts",
 	"apps/cli/src/index.ts",
@@ -184,15 +182,9 @@ const approvedResourceAdapters = new Set([
 	"extensions/game-text/src/game-text-query-route.tsx",
 	// Parser workers and their listeners are closed on success, failure and scope cancellation.
 	"packages/game-text/src/localization-cold-import.ts",
-	// Package workers, reply/abort listeners, readers and staging belong to the cold-import scope.
-	"packages/game-text/src/package-text-cold.ts",
-	// The worker's parentPort listener lives only until that owning scope terminates the worker.
-	"packages/game-text/src/package-text-worker.ts",
 	// Cold layer listeners and workers terminate in the publication adapter's finally block.
 	"packages/game-text/src/cold-layer-pool.ts",
 	"packages/game-text/src/cold-layer-worker.ts",
-	// Parser parentPort listeners live only until the owning import scope terminates the worker.
-	"packages/game-text/src/localization-import-worker.ts",
 	// Site navigation owns click/popstate listeners through onSettled cleanup.
 	"apps/site/src/navigation.ts",
 	// Popover DOM listeners and animation frames are released by Solid effect/onSettled cleanup;

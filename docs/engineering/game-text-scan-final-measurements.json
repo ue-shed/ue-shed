@@ -1,0 +1,1340 @@
+{
+	"campaign": {
+		"implementation": "39b1748f",
+		"baselineProduct": "ea6b5cb0",
+		"harness": "39b1748f",
+		"baselineReplayAdapter": "Current helper read fallback; unsupported native snapshot stage and its import omitted"
+	},
+	"memory": {
+		"budgetMiB": 256,
+		"warmProjectIndex": false,
+		"nativeNode": true,
+		"t": 388161,
+		"phase": "packages",
+		"totalBytes": 4130533376,
+		"roles": {
+			"node-main": 308944896,
+			"other": 39858176,
+			"native-session": 1376968704,
+			"native-oneshot": 2404761600
+		},
+		"counts": {
+			"node-main": 1,
+			"other": 5,
+			"native-session": 3,
+			"native-oneshot": 1
+		},
+		"peakByRole": {
+			"node-main": 349896704,
+			"other": 214519808,
+			"native-session": 2355421184,
+			"native-oneshot": 2404761600
+		},
+		"nodeShareAtTreePeak": 0.07479539998274547,
+		"sampling": {
+			"count": 95,
+			"meanGapMs": 722.4042553191489,
+			"maxGapMs": 1128
+		},
+		"nodeHighSample": {
+			"t": 373440,
+			"phase": "inventory",
+			"nodeBytes": 349896704,
+			"treeBytes": 2561019904
+		},
+		"firstSampleMs": 360684,
+		"peakAfterFirstSampleMs": 27477
+	},
+	"measurements": {
+		"released": {
+			"base": {
+				"runs": [
+					{
+						"rep": 1,
+						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+						"rows": {
+							"inventory": 3.7980943000000003,
+							"localizationParse": 15.135194,
+							"localizationPublish": 16.293638,
+							"packageExtractionOrReplay": 37.804449500000004,
+							"bundleVerification": 5.7970473,
+							"packagePrepare": 5.097309,
+							"packagePublish": 8.535528000000001,
+							"join": 16.0105532,
+							"openPageAndWorkspace": 1.943745800000002,
+							"packageSelection": 0.3564,
+							"otherPackageRead": 0.06727319999999093,
+							"packageGateAndBookkeeping": 0.001471200000006334,
+							"wholeBuild": 111.323036,
+							"peakTreeGiB": 4.346897125244141
+						},
+						"timing": {
+							"localization": {
+								"start": 0.1603541,
+								"end": 31.6233432
+							},
+							"packageRead": {
+								"start": 36.0190893,
+								"end": 79.68785929999999
+							},
+							"overlap": 0,
+							"extraction": {
+								"start": 39.069017099999996,
+								"end": 76.8734666
+							}
+						},
+						"nativeLocalization": null,
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.4119,
+							"stage.GameTextIndexSource.inventory.endMs": 16414.76,
+							"stage.GameTextIndexSource.inventory.wallMs": 16412.3481,
+							"stage.GameTextIndexSource.inventory.maxMs": 16412.3481,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 13301.281,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 348.292,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2762.272,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4672,
+							"stage.unreal_assets.project_index_refresh.endMs": 13303.737,
+							"stage.unreal_assets.project_index_refresh.wallMs": 13300.2698,
+							"stage.unreal_assets.project_index_refresh.maxMs": 13300.2698
+						},
+						"answer": {
+							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
+							"bytes": 600006
+						}
+					},
+					{
+						"rep": 2,
+						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+						"rows": {
+							"inventory": 3.1598473,
+							"localizationParse": 14.554887,
+							"localizationPublish": 12.310149,
+							"packageExtractionOrReplay": 36.523483500000005,
+							"bundleVerification": 5.6949722000000005,
+							"packagePrepare": 4.828174,
+							"packagePublish": 7.7004340000000004,
+							"join": 15.5958912,
+							"openPageAndWorkspace": 1.9627995999999968,
+							"packageSelection": 0.346412,
+							"otherPackageRead": 0.07208029999999788,
+							"packageGateAndBookkeeping": 0.001354699999994935,
+							"wholeBuild": 103.2148349,
+							"peakTreeGiB": 4.142330169677734
+						},
+						"timing": {
+							"localization": {
+								"start": 0.147584,
+								"end": 27.036810799999998
+							},
+							"packageRead": {
+								"start": 30.7811599,
+								"end": 73.07169590000001
+							},
+							"overlap": 0,
+							"extraction": {
+								"start": 33.8009899,
+								"end": 70.3244734
+							}
+						},
+						"nativeLocalization": null,
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3517,
+							"stage.GameTextIndexSource.inventory.endMs": 3584.4567,
+							"stage.GameTextIndexSource.inventory.wallMs": 3582.105,
+							"stage.GameTextIndexSource.inventory.maxMs": 3582.105,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 584.284,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 338.352,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2658.978,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4173,
+							"stage.unreal_assets.project_index_refresh.endMs": 586.7077,
+							"stage.unreal_assets.project_index_refresh.wallMs": 583.2904,
+							"stage.unreal_assets.project_index_refresh.maxMs": 583.2904
+						},
+						"answer": {
+							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
+							"bytes": 600006
+						}
+					},
+					{
+						"rep": 3,
+						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+						"rows": {
+							"inventory": 3.1675854,
+							"localizationParse": 14.953333,
+							"localizationPublish": 12.441495999999999,
+							"packageExtractionOrReplay": 37.2744763,
+							"bundleVerification": 5.8087052,
+							"packagePrepare": 4.793465,
+							"packagePublish": 7.967645999999999,
+							"join": 16.127669700000002,
+							"openPageAndWorkspace": 1.9870327999999802,
+							"packageSelection": 0.349498,
+							"otherPackageRead": 0.05871749999999132,
+							"packageGateAndBookkeeping": 0.0012645000000048867,
+							"wholeBuild": 105.37358129999998,
+							"peakTreeGiB": 4.2281341552734375
+						},
+						"timing": {
+							"localization": {
+								"start": 0.1527749,
+								"end": 27.5733143
+							},
+							"packageRead": {
+								"start": 31.3070239,
+								"end": 74.4489229
+							},
+							"overlap": 0,
+							"extraction": {
+								"start": 34.367416299999995,
+								"end": 71.6418926
+							}
+						},
+						"nativeLocalization": null,
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.4763,
+							"stage.GameTextIndexSource.inventory.endMs": 3617.573,
+							"stage.GameTextIndexSource.inventory.wallMs": 3615.0967,
+							"stage.GameTextIndexSource.inventory.maxMs": 3615.0967,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 599.114,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 337.498,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2677.996,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.5743,
+							"stage.unreal_assets.project_index_refresh.endMs": 601.6588,
+							"stage.unreal_assets.project_index_refresh.wallMs": 598.0845,
+							"stage.unreal_assets.project_index_refresh.maxMs": 598.0845
+						},
+						"answer": {
+							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
+							"bytes": 600006
+						}
+					}
+				],
+				"stages": {
+					"inventory": {
+						"median": 3.1675854,
+						"minimum": 3.1598473,
+						"maximum": 3.7980943000000003
+					},
+					"localizationParse": {
+						"median": 14.953333,
+						"minimum": 14.554887,
+						"maximum": 15.135194
+					},
+					"localizationPublish": {
+						"median": 12.441495999999999,
+						"minimum": 12.310149,
+						"maximum": 16.293638
+					},
+					"packageExtractionOrReplay": {
+						"median": 37.2744763,
+						"minimum": 36.523483500000005,
+						"maximum": 37.804449500000004
+					},
+					"bundleVerification": {
+						"median": 5.7970473,
+						"minimum": 5.6949722000000005,
+						"maximum": 5.8087052
+					},
+					"packagePrepare": {
+						"median": 4.828174,
+						"minimum": 4.793465,
+						"maximum": 5.097309
+					},
+					"packagePublish": {
+						"median": 7.967645999999999,
+						"minimum": 7.7004340000000004,
+						"maximum": 8.535528000000001
+					},
+					"join": {
+						"median": 16.0105532,
+						"minimum": 15.5958912,
+						"maximum": 16.127669700000002
+					},
+					"openPageAndWorkspace": {
+						"median": 1.9627995999999968,
+						"minimum": 1.943745800000002,
+						"maximum": 1.9870327999999802
+					},
+					"packageSelection": {
+						"median": 0.349498,
+						"minimum": 0.346412,
+						"maximum": 0.3564
+					},
+					"otherPackageRead": {
+						"median": 0.06727319999999093,
+						"minimum": 0.05871749999999132,
+						"maximum": 0.07208029999999788
+					},
+					"packageGateAndBookkeeping": {
+						"median": 0.001354699999994935,
+						"minimum": 0.0012645000000048867,
+						"maximum": 0.001471200000006334
+					},
+					"wholeBuild": {
+						"median": 105.37358129999998,
+						"minimum": 103.2148349,
+						"maximum": 111.323036
+					},
+					"peakTreeGiB": {
+						"median": 4.2281341552734375,
+						"minimum": 4.142330169677734,
+						"maximum": 4.346897125244141
+					}
+				}
+			},
+			"final": {
+				"runs": [
+					{
+						"rep": 1,
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
+						"rows": {
+							"inventory": 3.3647073,
+							"localizationParse": 15.039316,
+							"localizationPublish": 9.7547234,
+							"packageExtractionOrReplay": 20.5861704,
+							"bundleVerification": 5.2554921000000006,
+							"packagePrepare": 0,
+							"packagePublish": 7.240298300000002,
+							"join": 14.3171644,
+							"openPageAndWorkspace": 1.9692944000000026,
+							"packageSelection": 0.42922899999999997,
+							"otherPackageRead": 0.15913249999999568,
+							"packageGateAndBookkeeping": 0.0015676000000013346,
+							"wholeBuild": 53.5201215,
+							"peakTreeGiB": 4.104286193847656
+						},
+						"timing": {
+							"localization": {
+								"start": 0.1690779,
+								"end": 25.3120418
+							},
+							"packageRead": {
+								"start": 4.0049187,
+								"end": 30.005713699999998
+							},
+							"overlap": 21.3071231,
+							"extraction": {
+								"start": 4.4322341,
+								"end": 29.9154266
+							}
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 51.109375
+						},
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.4329,
+							"stage.GameTextIndexSource.inventory.endMs": 8949.4873,
+							"stage.GameTextIndexSource.inventory.wallMs": 8947.0544,
+							"stage.GameTextIndexSource.inventory.maxMs": 8947.0544,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 5833.172,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 306.087,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2807.265,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.636,
+							"stage.unreal_assets.project_index_refresh.endMs": 5835.6628,
+							"stage.unreal_assets.project_index_refresh.wallMs": 5832.0268,
+							"stage.unreal_assets.project_index_refresh.maxMs": 5832.0268
+						},
+						"answer": {
+							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
+							"bytes": 600006
+						}
+					},
+					{
+						"rep": 2,
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
+						"rows": {
+							"inventory": 3.2876023,
+							"localizationParse": 14.9341366,
+							"localizationPublish": 9.2461332,
+							"packageExtractionOrReplay": 20.1944896,
+							"bundleVerification": 5.2371174,
+							"packagePrepare": 0,
+							"packagePublish": 7.208373800000001,
+							"join": 13.9490807,
+							"openPageAndWorkspace": 1.8801004999999975,
+							"packageSelection": 0.440166,
+							"otherPackageRead": 0.14809500000000053,
+							"packageGateAndBookkeeping": 0.0014786000000039934,
+							"wholeBuild": 52.532285099999996,
+							"peakTreeGiB": 4.2199249267578125
+						},
+						"timing": {
+							"localization": {
+								"start": 0.1484151,
+								"end": 24.7522474
+							},
+							"packageRead": {
+								"start": 3.9173823999999997,
+								"end": 29.497084400000002
+							},
+							"overlap": 20.834865,
+							"extraction": {
+								"start": 4.3162735,
+								"end": 29.4006991
+							}
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 50.9375
+						},
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3829,
+							"stage.GameTextIndexSource.inventory.endMs": 3640.8547,
+							"stage.GameTextIndexSource.inventory.wallMs": 3638.4718,
+							"stage.GameTextIndexSource.inventory.maxMs": 3638.4718,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 619.593,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 339.015,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2679.425,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4229,
+							"stage.unreal_assets.project_index_refresh.endMs": 622.0212,
+							"stage.unreal_assets.project_index_refresh.wallMs": 618.5983,
+							"stage.unreal_assets.project_index_refresh.maxMs": 618.5983
+						},
+						"answer": {
+							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
+							"bytes": 600006
+						}
+					},
+					{
+						"rep": 3,
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
+						"rows": {
+							"inventory": 3.5469001,
+							"localizationParse": 15.610054,
+							"localizationPublish": 10.3168985,
+							"packageExtractionOrReplay": 20.9092944,
+							"bundleVerification": 5.1828019,
+							"packagePrepare": 0,
+							"packagePublish": 7.9927813000000025,
+							"join": 14.0356621,
+							"openPageAndWorkspace": 1.9658749000000029,
+							"packageSelection": 0.44561399999999995,
+							"otherPackageRead": 0.1530396999999981,
+							"packageGateAndBookkeeping": 0.0015855999999985215,
+							"wholeBuild": 54.4298606,
+							"peakTreeGiB": 3.5361251831054688
+						},
+						"timing": {
+							"localization": {
+								"start": 0.14966089999999999,
+								"end": 26.3880359
+							},
+							"packageRead": {
+								"start": 4.1855642,
+								"end": 30.430700199999997
+							},
+							"overlap": 22.202471699999997,
+							"extraction": {
+								"start": 4.6019707,
+								"end": 30.3368256
+							}
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 53.28125
+						},
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3997,
+							"stage.GameTextIndexSource.inventory.endMs": 3632.6863,
+							"stage.GameTextIndexSource.inventory.wallMs": 3630.2866,
+							"stage.GameTextIndexSource.inventory.maxMs": 3630.2866,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 623.803,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 309.741,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2696.268,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4388,
+							"stage.unreal_assets.project_index_refresh.endMs": 626.247,
+							"stage.unreal_assets.project_index_refresh.wallMs": 622.8082,
+							"stage.unreal_assets.project_index_refresh.maxMs": 622.8082
+						},
+						"answer": {
+							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
+							"bytes": 600006
+						}
+					}
+				],
+				"stages": {
+					"inventory": {
+						"median": 3.3647073,
+						"minimum": 3.2876023,
+						"maximum": 3.5469001
+					},
+					"localizationParse": {
+						"median": 15.039316,
+						"minimum": 14.9341366,
+						"maximum": 15.610054
+					},
+					"localizationPublish": {
+						"median": 9.7547234,
+						"minimum": 9.2461332,
+						"maximum": 10.3168985
+					},
+					"packageExtractionOrReplay": {
+						"median": 20.5861704,
+						"minimum": 20.1944896,
+						"maximum": 20.9092944
+					},
+					"bundleVerification": {
+						"median": 5.2371174,
+						"minimum": 5.1828019,
+						"maximum": 5.2554921000000006
+					},
+					"packagePrepare": {
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
+					},
+					"packagePublish": {
+						"median": 7.240298300000002,
+						"minimum": 7.208373800000001,
+						"maximum": 7.9927813000000025
+					},
+					"join": {
+						"median": 14.0356621,
+						"minimum": 13.9490807,
+						"maximum": 14.3171644
+					},
+					"openPageAndWorkspace": {
+						"median": 1.9658749000000029,
+						"minimum": 1.8801004999999975,
+						"maximum": 1.9692944000000026
+					},
+					"packageSelection": {
+						"median": 0.440166,
+						"minimum": 0.42922899999999997,
+						"maximum": 0.44561399999999995
+					},
+					"otherPackageRead": {
+						"median": 0.1530396999999981,
+						"minimum": 0.14809500000000053,
+						"maximum": 0.15913249999999568
+					},
+					"packageGateAndBookkeeping": {
+						"median": 0.0015676000000013346,
+						"minimum": 0.0014786000000039934,
+						"maximum": 0.0015855999999985215
+					},
+					"wholeBuild": {
+						"median": 53.5201215,
+						"minimum": 52.532285099999996,
+						"maximum": 54.4298606
+					},
+					"peakTreeGiB": {
+						"median": 4.104286193847656,
+						"minimum": 3.5361251831054688,
+						"maximum": 4.2199249267578125
+					}
+				}
+			}
+		},
+		"1x": {
+			"base": {
+				"runs": [
+					{
+						"rep": 1,
+						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+						"rows": {
+							"inventory": 1.478369800000003,
+							"localizationParse": 12.225899,
+							"localizationPublish": 12.083404,
+							"packageExtractionOrReplay": 10.735835,
+							"bundleVerification": 0,
+							"packagePrepare": 4.048546,
+							"packagePublish": 13.168164,
+							"join": 16.917870599999997,
+							"openPageAndWorkspace": 1.962855200000007,
+							"packageSelection": 0.447755,
+							"otherPackageRead": 0,
+							"packageGateAndBookkeeping": 0.0015541999999939549,
+							"wholeBuild": 73.31366440000001,
+							"peakTreeGiB": 2.725116729736328
+						},
+						"timing": {
+							"localization": {
+								"start": 0.0826706,
+								"end": 24.423115600000003
+							},
+							"packageRead": {
+								"start": 26.353826,
+								"end": 37.089661
+							},
+							"overlap": 0
+						},
+						"nativeLocalization": null,
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3961,
+							"stage.GameTextIndexSource.inventory.endMs": 59.7788,
+							"stage.GameTextIndexSource.inventory.wallMs": 57.3827,
+							"stage.GameTextIndexSource.inventory.maxMs": 57.3827,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 35.227,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 19.054,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.748,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.453,
+							"stage.unreal_assets.project_index_refresh.endMs": 37.6548,
+							"stage.unreal_assets.project_index_refresh.wallMs": 34.2018,
+							"stage.unreal_assets.project_index_refresh.maxMs": 34.2018
+						},
+						"answer": {
+							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
+							"bytes": 686778
+						}
+					},
+					{
+						"rep": 2,
+						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+						"rows": {
+							"inventory": 0.873392599999999,
+							"localizationParse": 12.271195,
+							"localizationPublish": 8.998243,
+							"packageExtractionOrReplay": 10.170351,
+							"bundleVerification": 0,
+							"packagePrepare": 3.9110300000000002,
+							"packagePublish": 12.306209999999998,
+							"join": 16.3209831,
+							"openPageAndWorkspace": 1.976393299999998,
+							"packageSelection": 0.30106,
+							"otherPackageRead": 0,
+							"packageGateAndBookkeeping": 0.001458799999998206,
+							"wholeBuild": 67.36510279999999,
+							"peakTreeGiB": 2.6850357055664062
+						},
+						"timing": {
+							"localization": {
+								"start": 0.0779009,
+								"end": 21.3743751
+							},
+							"packageRead": {
+								"start": 22.576249999999998,
+								"end": 32.746601
+							},
+							"overlap": 0
+						},
+						"nativeLocalization": null,
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3857,
+							"stage.GameTextIndexSource.inventory.endMs": 58.1391,
+							"stage.GameTextIndexSource.inventory.wallMs": 55.7534,
+							"stage.GameTextIndexSource.inventory.maxMs": 55.7534,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 33.824,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.712,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.865,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4748,
+							"stage.unreal_assets.project_index_refresh.endMs": 36.2541,
+							"stage.unreal_assets.project_index_refresh.wallMs": 32.7793,
+							"stage.unreal_assets.project_index_refresh.maxMs": 32.7793
+						},
+						"answer": {
+							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
+							"bytes": 686778
+						}
+					},
+					{
+						"rep": 3,
+						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+						"rows": {
+							"inventory": 1.3944221999999975,
+							"localizationParse": 12.388786,
+							"localizationPublish": 12.256035,
+							"packageExtractionOrReplay": 11.405426,
+							"bundleVerification": 0,
+							"packagePrepare": 4.166543,
+							"packagePublish": 14.719129,
+							"join": 23.2053583,
+							"openPageAndWorkspace": 2.0646040000000028,
+							"packageSelection": 0.409302,
+							"otherPackageRead": 0,
+							"packageGateAndBookkeeping": 0.0015323000000009301,
+							"wholeBuild": 82.2533153,
+							"peakTreeGiB": 2.5343475341796875
+						},
+						"timing": {
+							"localization": {
+								"start": 0.0763356,
+								"end": 24.7480261
+							},
+							"packageRead": {
+								"start": 26.5616747,
+								"end": 37.9671007
+							},
+							"overlap": 0
+						},
+						"nativeLocalization": null,
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.464,
+							"stage.GameTextIndexSource.inventory.endMs": 55.5755,
+							"stage.GameTextIndexSource.inventory.wallMs": 53.1115,
+							"stage.GameTextIndexSource.inventory.maxMs": 53.1115,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 31.142,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.807,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.783,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.5387,
+							"stage.unreal_assets.project_index_refresh.endMs": 33.6507,
+							"stage.unreal_assets.project_index_refresh.wallMs": 30.112,
+							"stage.unreal_assets.project_index_refresh.maxMs": 30.112
+						},
+						"answer": {
+							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
+							"bytes": 686778
+						}
+					}
+				],
+				"stages": {
+					"inventory": {
+						"median": 1.3944221999999975,
+						"minimum": 0.873392599999999,
+						"maximum": 1.478369800000003
+					},
+					"localizationParse": {
+						"median": 12.271195,
+						"minimum": 12.225899,
+						"maximum": 12.388786
+					},
+					"localizationPublish": {
+						"median": 12.083404,
+						"minimum": 8.998243,
+						"maximum": 12.256035
+					},
+					"packageExtractionOrReplay": {
+						"median": 10.735835,
+						"minimum": 10.170351,
+						"maximum": 11.405426
+					},
+					"bundleVerification": {
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
+					},
+					"packagePrepare": {
+						"median": 4.048546,
+						"minimum": 3.9110300000000002,
+						"maximum": 4.166543
+					},
+					"packagePublish": {
+						"median": 13.168164,
+						"minimum": 12.306209999999998,
+						"maximum": 14.719129
+					},
+					"join": {
+						"median": 16.917870599999997,
+						"minimum": 16.3209831,
+						"maximum": 23.2053583
+					},
+					"openPageAndWorkspace": {
+						"median": 1.976393299999998,
+						"minimum": 1.962855200000007,
+						"maximum": 2.0646040000000028
+					},
+					"packageSelection": {
+						"median": 0.409302,
+						"minimum": 0.30106,
+						"maximum": 0.447755
+					},
+					"otherPackageRead": {
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
+					},
+					"packageGateAndBookkeeping": {
+						"median": 0.0015323000000009301,
+						"minimum": 0.001458799999998206,
+						"maximum": 0.0015541999999939549
+					},
+					"wholeBuild": {
+						"median": 73.31366440000001,
+						"minimum": 67.36510279999999,
+						"maximum": 82.2533153
+					},
+					"peakTreeGiB": {
+						"median": 2.6850357055664062,
+						"minimum": 2.5343475341796875,
+						"maximum": 2.725116729736328
+					}
+				}
+			},
+			"final": {
+				"runs": [
+					{
+						"rep": 1,
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
+						"rows": {
+							"inventory": 0.7302345999999993,
+							"localizationParse": 16.0806676,
+							"localizationPublish": 6.2234708,
+							"packageExtractionOrReplay": 5.715345,
+							"bundleVerification": 0,
+							"packagePrepare": 0,
+							"packagePublish": 8.574953100000002,
+							"join": 14.3856264,
+							"openPageAndWorkspace": 1.9480080000000015,
+							"packageSelection": 0.24635400000000002,
+							"otherPackageRead": 0,
+							"packageGateAndBookkeeping": 16.143059,
+							"wholeBuild": 47.805861799999995,
+							"peakTreeGiB": 2.4866714477539062
+						},
+						"timing": {
+							"localization": {
+								"start": 0.2740957,
+								"end": 22.8050703
+							},
+							"packageRead": {
+								"start": 1.005193,
+								"end": 6.720538
+							},
+							"overlap": 5.715345
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 50.1875
+						},
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3094,
+							"stage.GameTextIndexSource.inventory.endMs": 58.2238,
+							"stage.GameTextIndexSource.inventory.wallMs": 55.9144,
+							"stage.GameTextIndexSource.inventory.maxMs": 55.9144,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 34.352,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.491,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.717,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.38,
+							"stage.unreal_assets.project_index_refresh.endMs": 36.7127,
+							"stage.unreal_assets.project_index_refresh.wallMs": 33.3327,
+							"stage.unreal_assets.project_index_refresh.maxMs": 33.3327
+						},
+						"answer": {
+							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
+							"bytes": 686778
+						}
+					},
+					{
+						"rep": 2,
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
+						"rows": {
+							"inventory": 0.7299340000000036,
+							"localizationParse": 16.66302,
+							"localizationPublish": 6.6265422,
+							"packageExtractionOrReplay": 5.750272,
+							"bundleVerification": 0,
+							"packagePrepare": 0,
+							"packagePublish": 8.413093300000003,
+							"join": 14.5159766,
+							"openPageAndWorkspace": 1.993245899999991,
+							"packageSelection": 0.245942,
+							"otherPackageRead": 0,
+							"packageGateAndBookkeeping": 17.0945345,
+							"wholeBuild": 48.80006099999999,
+							"peakTreeGiB": 2.4447402954101562
+						},
+						"timing": {
+							"localization": {
+								"start": 0.2646852,
+								"end": 23.7794601
+							},
+							"packageRead": {
+								"start": 0.994246,
+								"end": 6.744517999999999
+							},
+							"overlap": 5.750271999999999
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 51.515625
+						},
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.6344,
+							"stage.GameTextIndexSource.inventory.endMs": 54.1649,
+							"stage.GameTextIndexSource.inventory.wallMs": 51.5305,
+							"stage.GameTextIndexSource.inventory.maxMs": 51.5305,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 29.875,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.578,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.728,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.7126,
+							"stage.unreal_assets.project_index_refresh.endMs": 32.5572,
+							"stage.unreal_assets.project_index_refresh.wallMs": 28.8446,
+							"stage.unreal_assets.project_index_refresh.maxMs": 28.8446
+						},
+						"answer": {
+							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
+							"bytes": 686778
+						}
+					},
+					{
+						"rep": 3,
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
+						"rows": {
+							"inventory": 0.7373808000000004,
+							"localizationParse": 15.9669037,
+							"localizationPublish": 6.3718735,
+							"packageExtractionOrReplay": 5.857136000000001,
+							"bundleVerification": 0,
+							"packagePrepare": 0,
+							"packagePublish": 8.6622395,
+							"join": 14.791341599999999,
+							"openPageAndWorkspace": 2.069156299999996,
+							"packageSelection": 0.255154,
+							"otherPackageRead": 0,
+							"packageGateAndBookkeeping": 16.026128,
+							"wholeBuild": 48.454978,
+							"peakTreeGiB": 2.2985687255859375
+						},
+						"timing": {
+							"localization": {
+								"start": 0.25947570000000003,
+								"end": 22.8367555
+							},
+							"packageRead": {
+								"start": 1.0110131,
+								"end": 6.8681491
+							},
+							"overlap": 5.857136000000001
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 49.96875
+						},
+						"warmProjectIndex": {
+							"stage.GameTextIndexSource.inventory.count": 1,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3165,
+							"stage.GameTextIndexSource.inventory.endMs": 59.1652,
+							"stage.GameTextIndexSource.inventory.wallMs": 56.8487,
+							"stage.GameTextIndexSource.inventory.maxMs": 56.8487,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 33.967,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 19.442,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 3.088,
+							"stage.unreal_assets.project_index_refresh.count": 1,
+							"stage.unreal_assets.project_index_refresh.startMs": 3.3582,
+							"stage.unreal_assets.project_index_refresh.endMs": 36.3235,
+							"stage.unreal_assets.project_index_refresh.wallMs": 32.9653,
+							"stage.unreal_assets.project_index_refresh.maxMs": 32.9653
+						},
+						"answer": {
+							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
+							"bytes": 686778
+						}
+					}
+				],
+				"stages": {
+					"inventory": {
+						"median": 0.7302345999999993,
+						"minimum": 0.7299340000000036,
+						"maximum": 0.7373808000000004
+					},
+					"localizationParse": {
+						"median": 16.0806676,
+						"minimum": 15.9669037,
+						"maximum": 16.66302
+					},
+					"localizationPublish": {
+						"median": 6.3718735,
+						"minimum": 6.2234708,
+						"maximum": 6.6265422
+					},
+					"packageExtractionOrReplay": {
+						"median": 5.750272,
+						"minimum": 5.715345,
+						"maximum": 5.857136000000001
+					},
+					"bundleVerification": {
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
+					},
+					"packagePrepare": {
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
+					},
+					"packagePublish": {
+						"median": 8.574953100000002,
+						"minimum": 8.413093300000003,
+						"maximum": 8.6622395
+					},
+					"join": {
+						"median": 14.5159766,
+						"minimum": 14.3856264,
+						"maximum": 14.791341599999999
+					},
+					"openPageAndWorkspace": {
+						"median": 1.993245899999991,
+						"minimum": 1.9480080000000015,
+						"maximum": 2.069156299999996
+					},
+					"packageSelection": {
+						"median": 0.24635400000000002,
+						"minimum": 0.245942,
+						"maximum": 0.255154
+					},
+					"otherPackageRead": {
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
+					},
+					"packageGateAndBookkeeping": {
+						"median": 16.143059,
+						"minimum": 16.026128,
+						"maximum": 17.0945345
+					},
+					"wholeBuild": {
+						"median": 48.454978,
+						"minimum": 47.805861799999995,
+						"maximum": 48.80006099999999
+					},
+					"peakTreeGiB": {
+						"median": 2.4447402954101562,
+						"minimum": 2.2985687255859375,
+						"maximum": 2.4866714477539062
+					}
+				}
+			}
+		}
+	},
+	"cancellation": {
+		"localization": {
+			"phase": "localization",
+			"results": [
+				{
+					"rep": 1,
+					"phase": "localization",
+					"delayMs": 1000,
+					"interrupted": true,
+					"interruptMs": 53,
+					"idleMs": 469,
+					"childrenRemaining": 0,
+					"inventoryChildrenRemaining": 0,
+					"childObservations": [
+						{
+							"elapsedMs": 469,
+							"children": []
+						}
+					],
+					"secondRefreshOk": true,
+					"secondRefreshMs": 49069
+				}
+			]
+		},
+		"packages": {
+			"phase": "packages",
+			"results": [
+				{
+					"rep": 1,
+					"phase": "packages",
+					"delayMs": 5000,
+					"interrupted": true,
+					"interruptMs": 77,
+					"idleMs": 454,
+					"childrenRemaining": 0,
+					"inventoryChildrenRemaining": 0,
+					"childObservations": [
+						{
+							"elapsedMs": 454,
+							"children": []
+						}
+					],
+					"secondRefreshOk": true,
+					"secondRefreshMs": 48491
+				}
+			]
+		},
+		"joining": {
+			"phase": "joining",
+			"results": [
+				{
+					"rep": 1,
+					"phase": "joining",
+					"delayMs": 500,
+					"interrupted": true,
+					"interruptMs": 89,
+					"idleMs": 434,
+					"childrenRemaining": 0,
+					"inventoryChildrenRemaining": 0,
+					"childObservations": [
+						{
+							"elapsedMs": 434,
+							"children": []
+						}
+					],
+					"secondRefreshOk": true,
+					"secondRefreshMs": 14711
+				}
+			]
+		}
+	},
+	"identity": {
+		"released-1": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13272,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305
+		},
+		"released-2": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13272,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305
+		},
+		"released-3": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13272,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305
+		},
+		"1x-1": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13017,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305
+		},
+		"1x-2": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13017,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305
+		},
+		"1x-3": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13017,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305
+		},
+		"ue57": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 19,
+				"package": 44,
+				"joined": 1
+			},
+			"dictionaries": 15,
+			"comparedStoredSections": 2295,
+			"rawEqualFiles": 15,
+			"metadataOnlyFiles": 69
+		},
+		"ue58": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 19,
+				"package": 44,
+				"joined": 1
+			},
+			"dictionaries": 15,
+			"comparedStoredSections": 2295,
+			"rawEqualFiles": 15,
+			"metadataOnlyFiles": 69
+		}
+	},
+	"fixtures": {
+		"ue57": {
+			"subjects": 1120,
+			"disagreements": 0,
+			"pinnedDisagreements": 0,
+			"integrationPassed": true
+		},
+		"ue58": {
+			"subjects": 1120,
+			"disagreements": 0,
+			"pinnedDisagreements": 0,
+			"integrationPassed": true
+		}
+	},
+	"exports": [
+		{
+			"version": "ue57",
+			"file": "browse.csv",
+			"bytes": 63943,
+			"sha256": "32a4a7b1c962ac5e675684440a8315a73339f8b3cb6bbb4c885cbd5941dad163",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "browse.json",
+			"bytes": 290356,
+			"sha256": "782c2ac35735f9216fd910151d663dd92b828b04adc69bd5bd81706bc587cc79",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "lines.csv",
+			"bytes": 65441,
+			"sha256": "469030f8e149ec227809214c1b4662d08f6c5c66aee5964f5824b6f8e33dcadb",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "loc-check.json",
+			"bytes": 114204,
+			"sha256": "bd9f53b3826965c199dbe4664c362fc76616c679c4231622aae5581b78c69ee3",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "preset.json",
+			"bytes": 1375,
+			"sha256": "2d9b5f112755097179d6ffefbe175d9b21c650de8849d437a611561c94860f22",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "quality.csv",
+			"bytes": 18266,
+			"sha256": "fff1c3f0972784cb4c506fcafbccdc533910986b8d4baddb2a3d52066f2bb526",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "quality.json",
+			"bytes": 48628,
+			"sha256": "5e7ed826c74aefc5d1371a5cc9d5d48521d627a2c65d0847f91d647a0ce8396f",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "report.csv",
+			"bytes": 355,
+			"sha256": "4d283851e188d8643ac12d45ddad36f0b4386284b12ef2b72c94ae2404f1a754",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "source-quality.csv",
+			"bytes": 181,
+			"sha256": "8522afffe5d1a9e6f5c40dc5f91db9d8522706bc994664c55e59f2a2b14d7ccc",
+			"identical": true
+		},
+		{
+			"version": "ue57",
+			"file": "source-quality.json",
+			"bytes": 2572,
+			"sha256": "ab1511a7d687741b7125bece02548ccbeb0903edc8a0fc7d0d9015337716c0c0",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "browse.csv",
+			"bytes": 63943,
+			"sha256": "32a4a7b1c962ac5e675684440a8315a73339f8b3cb6bbb4c885cbd5941dad163",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "browse.json",
+			"bytes": 290356,
+			"sha256": "72fe772bb93c083c6792537a8da8f285b6320ae170e97ca271568b95cb08d03e",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "lines.csv",
+			"bytes": 65441,
+			"sha256": "469030f8e149ec227809214c1b4662d08f6c5c66aee5964f5824b6f8e33dcadb",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "loc-check.json",
+			"bytes": 114204,
+			"sha256": "0fa7bd380695a3226bb23d3ade8bef39fb917537fc8fc2d58e32e44189ba4658",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "preset.json",
+			"bytes": 1375,
+			"sha256": "2d9b5f112755097179d6ffefbe175d9b21c650de8849d437a611561c94860f22",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "quality.csv",
+			"bytes": 18266,
+			"sha256": "fff1c3f0972784cb4c506fcafbccdc533910986b8d4baddb2a3d52066f2bb526",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "quality.json",
+			"bytes": 48628,
+			"sha256": "427729bfa2f3254605ba1ed9021fb0fad0bc83fa96ed6225dd985a22036e9f07",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "report.csv",
+			"bytes": 355,
+			"sha256": "4d283851e188d8643ac12d45ddad36f0b4386284b12ef2b72c94ae2404f1a754",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "source-quality.csv",
+			"bytes": 181,
+			"sha256": "8522afffe5d1a9e6f5c40dc5f91db9d8522706bc994664c55e59f2a2b14d7ccc",
+			"identical": true
+		},
+		{
+			"version": "ue58",
+			"file": "source-quality.json",
+			"bytes": 2572,
+			"sha256": "63ace451c058a724862c0dc9e240b6c9a498b48902ff3f53e5a5fb8c5eb5e73f",
+			"identical": true
+		}
+	],
+	"verification": {
+		"typecheckExit": 0,
+		"staticExit": 0
+	},
+	"readers": {
+		"final": "959736ad6a1f00d40a0504a69309191b68a4f2896f3a627641364eeac2f754e7",
+		"base": "65841e228d02d07eac4011eaf38d6522fcba5ed1b75da946e8f102797fb414cd",
+		"phase4": "afda2b00aa80d2c5f4207577025c1fa3be881df9c02cedea81b12751ce2b9caa"
+	}
+}

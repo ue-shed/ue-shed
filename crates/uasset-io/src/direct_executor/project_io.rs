@@ -35,6 +35,7 @@ use super::{
     scan_diagnostic, scan_failure_code, summary_diagnostics,
 };
 use crate::cancellation::CancellationToken;
+use crate::package_text_columns::{self, Columns, Expected, SnapshotRequest};
 use crate::protocol::{Operation, ProjectSelection, Request, ScanDepth, ScanFilters};
 use crate::protocol_result::{
     Completeness, ManifestEntryKind, ProjectionStatus, ResultFrame, SavedAssetHeader,
@@ -46,6 +47,12 @@ use crate::protocol_result::{
     SavedWorldPackageError, SavedWorldSourceKind, SavedWorldSummary, ScanSummaryDepth,
     TextGapCounts,
 };
+use crate::reader_memory::{self, Stage as MemoryStage};
+
+mod projection_budget;
+use projection_budget::JobQueue;
+
+const DEFAULT_IN_FLIGHT_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
 
 const SCHEMA_VERSION: u8 = 8;
 const SCAN_CACHE_VERSION: u32 = 3;
@@ -109,6 +116,18 @@ struct ProjectionWorkResult {
     failed: bool,
     partial: bool,
     skipped: bool,
+}
+
+struct ProjectionDelivery {
+    result: ProjectionWorkResult,
+    staged: Vec<StagedPackageTextRecord>,
+}
+
+struct StagedPackageTextRecord {
+    group: u32,
+    line: Vec<u8>,
+    path: String,
+    columns: Option<Columns>,
 }
 
 pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
@@ -566,10 +585,12 @@ pub(crate) fn extract_texture_with_cancellation(
 }
 
 /// Projection reads parse whole packages; one large package can take a worker for most of a
-/// read, so the default uses the machine's cores, bounded so each worker's package and decoded
-/// model stay within a predictable memory budget. Requests can still set `limits.concurrency`.
+/// read, so the default uses the machine's cores, with separate input-byte admission. Requests
+/// can set both the worker count and the active package-byte budget.
 fn default_projection_workers() -> usize {
-    std::thread::available_parallelism().map_or(4, |cores| cores.get().clamp(4, 8))
+    // Twelve workers are the fastest count measured whose reader peak stays under 5 GiB on the
+    // released project.
+    std::thread::available_parallelism().map_or(4, |cores| cores.get().clamp(4, 12))
 }
 
 #[derive(Clone, Copy)]
@@ -585,6 +606,8 @@ fn projection(
     cancellation: &CancellationToken,
     mut emit: Option<&mut ProjectionSink<'_>>,
 ) -> Result<ProjectionOutput, Failure> {
+    let _measure = game_text_index::scan_timings::Request::new("extract_text_packages");
+    let _span = game_text_index::scan_timings::Span::new("extract.coordinator");
     let (selection, staging) = match (&request.operation, kind) {
         (Operation::ExtractText { selection }, ProjectionKind::Text)
         | (Operation::ExtractTexture { selection }, ProjectionKind::Texture) => (selection, None),
@@ -600,7 +623,21 @@ fn projection(
             });
         }
     };
+    if let Some(staging) = staging
+        && let Some(snapshots) = &staging.snapshots
+        && (!snapshots.record_files.is_empty() || !snapshots.records.is_empty())
+    {
+        return replay_package_snapshots(
+            request,
+            selection,
+            staging,
+            snapshots,
+            cancellation,
+            emit,
+        );
+    }
     checkpoint(cancellation, "discovery")?;
+    let memory_probe = reader_memory::Probe::new(staging.is_some());
     let worker_count = request
         .limits
         .concurrency
@@ -610,13 +647,35 @@ fn projection(
     } else {
         resolve_roots(selection, cancellation)?
     };
+    let staging_groups = staging
+        .map(|staging| PackageTextGroups::new(staging, &roots, Path::new(&selection.project_root)))
+        .transpose()?;
     let mut stager = staging
-        .map(|staging| PackageTextStager::new(staging, &roots))
+        .map(|staging| PackageTextStager::new(staging, Path::new(&selection.project_root)))
         .transpose()?;
     let (paths, _) = scanner::discover_paths(&roots, false, cancellation)?;
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
     let filters = projection_filters(kind, selection.paths.is_none());
+    memory_probe.configure(&paths, || {
+        let path_storage = |paths: &[PathBuf]| paths.iter().map(|p| p.capacity()).sum::<usize>();
+        [
+            selection.paths.as_ref().map_or(0, |paths| {
+                (paths.capacity() * std::mem::size_of::<String>()
+                    + paths.iter().map(String::capacity).sum::<usize>()) as u64
+            }),
+            (roots.capacity() * std::mem::size_of::<PathBuf>() + path_storage(&roots)) as u64,
+            (paths.capacity() * std::mem::size_of::<PathBuf>() + path_storage(&paths)) as u64,
+            staging_groups.as_ref().map_or(0, |groups| {
+                (groups.groups.capacity() * std::mem::size_of::<(PathBuf, u32)>()
+                    + groups
+                        .groups
+                        .iter()
+                        .map(|(p, _)| p.capacity())
+                        .sum::<usize>()) as u64
+            }),
+        ]
+    });
     if let Some(emit) = &mut emit {
         emit(ProjectionStreamEvent::Progress {
             completed: 0,
@@ -630,19 +689,52 @@ fn projection(
     let mut partial_assets = 0_u64;
     let mut skipped_assets = 0_u64;
     let mut completed_assets = 0_u64;
-    let streaming = emit.is_some();
     // Staged records name their own group, so their results need no path order.
     let ordered = stager.is_none();
-    let mut consume = |index: usize, result: Result<ProjectionWorkResult, Failure>| {
-        let mut result = result?;
+    let work = |index: usize| {
+        let memory_job = memory_probe.job(index);
+        let result = project_one_path(&paths[index], kind, &filters, cancellation)?;
+        reader_memory::checkpoint(MemoryStage::Serialize);
+        let delivery = match &staging_groups {
+            Some(groups) => groups.prepare(&paths[index], result),
+            None => Ok(ProjectionDelivery {
+                result,
+                staged: Vec::new(),
+            }),
+        };
+        if let Ok(delivery) = &delivery {
+            memory_job.ready(|| {
+                delivery
+                    .staged
+                    .iter()
+                    .fold((0, 0), |(bytes, capacity), record| {
+                        (
+                            bytes
+                                + record.line.len() as u64
+                                + record
+                                    .columns
+                                    .as_ref()
+                                    .map_or(0, |c| c.resident_bytes() as u64),
+                            capacity
+                                + record.line.capacity() as u64
+                                + record
+                                    .columns
+                                    .as_ref()
+                                    .map_or(0, |c| c.resident_bytes() as u64),
+                        )
+                    })
+            });
+        }
+        delivery
+    };
+    let mut consume = |index: usize, delivery: Result<ProjectionDelivery, Failure>| {
+        let _memory_consume = memory_probe.consume(index);
+        let _span = game_text_index::scan_timings::Span::new("extract.consume");
+        let ProjectionDelivery { result, staged } = delivery?;
         checkpoint(cancellation, "inspection")?;
-        if let (Some(stager), Some(path)) = (&mut stager, paths.get(index)) {
-            for frame in &mut result.results {
-                if let ResultFrame::ExtractTextPackages { event } = frame
-                    && !matches!(event, SavedAssetPackageTextEvent::Summary { .. })
-                {
-                    *frame = stager.write(path, event)?;
-                }
+        if let Some(stager) = &mut stager {
+            for record in staged {
+                stager.write(record)?;
             }
         }
         if result.diagnostic.is_some() {
@@ -661,6 +753,7 @@ fn projection(
         }
         if let Some(emit) = &mut emit {
             for result in &result.results {
+                let _span = game_text_index::scan_timings::Span::new("extract.emit");
                 emit(ProjectionStreamEvent::Result(result))?;
             }
             completed_assets += 1;
@@ -675,55 +768,35 @@ fn projection(
         }
         Ok(())
     };
-    if streaming {
-        project_paths_bounded(
-            &paths,
-            worker_count,
-            kind,
-            &filters,
-            cancellation,
-            ordered,
-            &mut consume,
-        )?;
-    } else {
-        let next_path = AtomicUsize::new(0);
-        let slots = Mutex::new(
-            (0..paths.len())
-                .map(|_| None::<Result<ProjectionWorkResult, Failure>>)
-                .collect::<Vec<_>>(),
-        );
-        std::thread::scope(|scope| {
-            for _ in 0..worker_count.min(paths.len().max(1)) {
-                let next_path = &next_path;
-                let slots = &slots;
-                let filters = &filters;
-                let paths = &paths;
-                scope.spawn(move || {
-                    loop {
-                        if checkpoint(cancellation, "discovery").is_err() {
-                            break;
-                        }
-                        let index = next_path.fetch_add(1, Ordering::Relaxed);
-                        let Some(path) = paths.get(index) else {
-                            break;
-                        };
-                        let result = project_one_path(path, kind, filters, cancellation);
-                        slots.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
-                    }
-                });
-            }
-        });
-        for (index, result) in slots
-            .into_inner()
-            .unwrap_or_else(PoisonError::into_inner)
-            .into_iter()
-            .enumerate()
-        {
-            if let Some(result) = result {
-                consume(index, result)?;
-            }
-        }
-    }
+    let package_sizes = {
+        let _span = game_text_index::scan_timings::Span::new("extract.budget_inventory");
+        paths
+            .iter()
+            .map(|path| {
+                checkpoint(cancellation, "discovery")?;
+                // Unknown sizes reserve the largest size and keep the worker's read diagnostic.
+                Ok(fs::metadata(path).map_or_else(
+                    |_| {
+                        game_text_index::scan_timings::count("extract.budget_unknown_sizes", 1);
+                        u64::MAX
+                    },
+                    |metadata| metadata.len(),
+                ))
+            })
+            .collect::<Result<Vec<_>, Failure>>()?
+    };
+    project_paths_bounded(
+        &package_sizes,
+        worker_count,
+        request
+            .limits
+            .maximum_in_flight_package_bytes
+            .unwrap_or(DEFAULT_IN_FLIGHT_PACKAGE_BYTES),
+        cancellation,
+        ordered,
+        &work,
+        &mut consume,
+    )?;
     if let Some(stager) = stager {
         stager.finish()?;
     }
@@ -777,18 +850,195 @@ fn projection(
     })
 }
 
-/// v1.19 package-text staging: each record becomes one JSON line in its group's file, and the
-/// stream carries a `staged_text_package` result naming the group and line size instead.
-struct PackageTextStager {
-    directory: PathBuf,
-    groups: Vec<(PathBuf, u32)>,
-    files: BTreeMap<u32, io::BufWriter<fs::File>>,
+fn replay_package_snapshots(
+    request: &Request,
+    selection: &ProjectSelection,
+    staging: &crate::protocol::PackageTextStaging,
+    snapshots: &SnapshotRequest,
+    cancellation: &CancellationToken,
+    mut emit: Option<&mut ProjectionSink<'_>>,
+) -> Result<ProjectionOutput, Failure> {
+    use std::io::{BufRead, Read};
+    let _span = game_text_index::scan_timings::Span::new("extract.replay");
+    let root = Path::new(&selection.project_root);
+    let mut shards =
+        package_text_columns::shards::Shards::new(Path::new(&staging.directory), root, snapshots)
+            .map_err(|e| staging_failure(e.to_string()))?;
+    let expected = shards.expected.clone();
+    let weights = snapshots
+        .record_files
+        .iter()
+        .map(|file| fs::metadata(file).map_or(u64::MAX, |m| m.len()))
+        .chain(snapshots.records.iter().map(|record| record.len() as u64))
+        .collect::<Vec<_>>();
+    let convert = |line: &str| -> Result<Option<StagedPackageTextRecord>, Failure> {
+        checkpoint(cancellation, "package conversion")?;
+        if line.len() > MAX_STAGED_PACKAGE_TEXT_BYTES {
+            return Err(staging_failure("package record exceeds its bound".into()));
+        }
+        let stored: package_text_columns::Stored = game_text_index::wtf8::parse_json_as(line)
+            .map_err(|e| staging_failure(e.to_string()))?;
+        // Retained records hold scalar views; the inventory holds raw paths and signatures.
+        let (group, entry) = game_text_index::wtf8::Wtf8Buf::from_view(&stored.path)
+            .to_utf8()
+            .ok()
+            .and_then(|path| expected.get(&root.join(path)))
+            .ok_or_else(|| staging_failure("unexpected retained package".into()))?;
+        let evidence_path = match &stored.evidence {
+            package_text_columns::Evidence::Package { record, .. } => &record.path,
+            package_text_columns::Evidence::NotGatherable { path }
+            | package_text_columns::Evidence::Error { path, .. } => path,
+        };
+        if stored.signature
+            != game_text_index::wtf8::Wtf8Buf::from_utf8(&entry.signature).into_view()
+            || stored.path != *evidence_path
+            || entry.selected
+                == matches!(
+                    stored.evidence,
+                    package_text_columns::Evidence::NotGatherable { .. }
+                )
+        {
+            return Err(staging_failure(
+                "Cold records differ from their signature/header inventory.".into(),
+            ));
+        }
+        if !entry.selected {
+            return Ok(None);
+        }
+        let mut columns = Columns::new().map_err(|e| staging_failure(e.to_string()))?;
+        columns
+            .feed(stored, &snapshots.rules)
+            .map_err(|e| staging_failure(e.to_string()))?;
+        Ok(Some(StagedPackageTextRecord {
+            group: *group,
+            path: entry.path.clone(),
+            columns: Some(columns),
+            line: Vec::new(),
+        }))
+    };
+    let work = |index: usize| -> Result<Vec<StagedPackageTextRecord>, Failure> {
+        if index >= snapshots.record_files.len() {
+            return Ok(
+                convert(&snapshots.records[index - snapshots.record_files.len()])?
+                    .into_iter()
+                    .collect(),
+            );
+        }
+        let file = fs::File::open(&snapshots.record_files[index])
+            .map_err(|e| staging_failure(e.to_string()))?;
+        let mut reader = io::BufReader::new(file);
+        let mut bytes = Vec::new();
+        let mut converted = Vec::new();
+        loop {
+            bytes.clear();
+            let read = reader
+                .by_ref()
+                .take(MAX_STAGED_PACKAGE_TEXT_BYTES as u64 + 2)
+                .read_until(b'\n', &mut bytes)
+                .map_err(|e| staging_failure(e.to_string()))?;
+            if read == 0 {
+                break;
+            }
+            let text = std::str::from_utf8(&bytes)
+                .map_err(|e| staging_failure(e.to_string()))?
+                .trim_end_matches(['\r', '\n']);
+            if !text.is_empty()
+                && let Some(record) = convert(text)?
+            {
+                converted.push(record);
+            }
+        }
+        Ok(converted)
+    };
+    let mut completed = 0_u64;
+    let total = expected.values().filter(|(_, e)| e.selected).count() as u64;
+    let mut results = Vec::new();
+    project_paths_bounded(
+        &weights,
+        request
+            .limits
+            .concurrency
+            .map_or_else(default_projection_workers, |v| v as usize),
+        request
+            .limits
+            .maximum_in_flight_package_bytes
+            .unwrap_or(DEFAULT_IN_FLIGHT_PACKAGE_BYTES),
+        cancellation,
+        false,
+        &work,
+        &mut |_, records| {
+            for record in records? {
+                let frame = ResultFrame::StagedTextPackage {
+                    path: root.join(&record.path).to_string_lossy().into_owned(),
+                    group: record.group,
+                    bytes: 0,
+                };
+                shards
+                    .add(
+                        record.group,
+                        record.path,
+                        record
+                            .columns
+                            .ok_or_else(|| staging_failure("missing package columns".into()))?,
+                    )
+                    .map_err(|e| staging_failure(e.to_string()))?;
+                if let Some(emit) = &mut emit {
+                    emit(ProjectionStreamEvent::Result(&frame))?;
+                } else {
+                    results.push(frame);
+                }
+                completed += 1;
+                if let Some(emit) = &mut emit
+                    && (completed.is_multiple_of(128) || completed == total)
+                {
+                    emit(ProjectionStreamEvent::Progress { completed, total })?;
+                }
+            }
+            Ok(())
+        },
+    )?;
+    shards
+        .finish()
+        .map_err(|e| staging_failure(e.to_string()))?;
+    let summary = SavedAssetScanSummary {
+        cache_hits: 0,
+        depth: ScanSummaryDepth::Text,
+        diagnostics: Vec::new(),
+        emitted_assets: completed,
+        failed_assets: 0,
+        inventory_complete: Some(false),
+        inventory_files: Some(0),
+        partial_assets: 0,
+        project_root: selection.project_root.clone(),
+        roots: Vec::new(),
+        scanned_assets: completed,
+        schema_version: SCHEMA_VERSION,
+        skipped_assets: 0,
+    };
+    results.push(ResultFrame::ExtractTextPackages {
+        event: SavedAssetPackageTextEvent::Summary {
+            summary: summary.clone(),
+        },
+    });
+    Ok(ProjectionOutput {
+        results,
+        summary,
+        diagnostics: Vec::new(),
+        partial: false,
+    })
 }
 
-impl PackageTextStager {
+struct PackageTextGroups {
+    groups: Vec<(PathBuf, u32)>,
+    snapshots: Option<SnapshotRequest>,
+    expected: BTreeMap<PathBuf, (u32, Expected)>,
+}
+
+impl PackageTextGroups {
     fn new(
         staging: &crate::protocol::PackageTextStaging,
         roots: &[PathBuf],
+        project_root: &Path,
     ) -> Result<Self, Failure> {
         if roots.len() != staging.groups.len() {
             return Err(staging_failure(
@@ -796,13 +1046,23 @@ impl PackageTextStager {
             ));
         }
         Ok(Self {
-            directory: PathBuf::from(&staging.directory),
+            snapshots: staging.snapshots.clone(),
+            expected: staging
+                .snapshots
+                .iter()
+                .flat_map(|s| &s.shards)
+                .flat_map(|s| {
+                    s.expected
+                        .iter()
+                        .filter(|e| e.selected)
+                        .map(move |e| (project_root.join(&e.path), (s.group, e.clone())))
+                })
+                .collect(),
             groups: roots
                 .iter()
                 .cloned()
                 .zip(staging.groups.iter().copied())
                 .collect(),
-            files: BTreeMap::new(),
         })
     }
 
@@ -817,58 +1077,161 @@ impl PackageTextStager {
             .ok_or_else(|| staging_failure(format!("{} has no staging group", path.display())))
     }
 
-    fn write(
-        &mut self,
+    fn prepare(
+        &self,
         path: &Path,
-        event: &SavedAssetPackageTextEvent,
-    ) -> Result<ResultFrame, Failure> {
-        let group = self.group(path)?;
-        let record_path = match event {
-            SavedAssetPackageTextEvent::Package { record } => record.path.clone(),
-            SavedAssetPackageTextEvent::Error { path, .. } => path.clone(),
-            SavedAssetPackageTextEvent::Summary { .. } => {
-                return Err(staging_failure("a summary is not a package record".into()));
+        mut result: ProjectionWorkResult,
+    ) -> Result<ProjectionDelivery, Failure> {
+        let _span = game_text_index::scan_timings::Span::new("extract.serialize");
+        let mut staged = Vec::new();
+        for frame in &mut result.results {
+            if let ResultFrame::ExtractTextPackages { event } = frame {
+                let record_path = match event {
+                    SavedAssetPackageTextEvent::Package { record } => record.path.clone(),
+                    SavedAssetPackageTextEvent::Error { path, .. } => path.clone(),
+                    SavedAssetPackageTextEvent::Summary { .. } => continue,
+                };
+                let group = self.group(path)?;
+                if let Some(snapshots) = &self.snapshots {
+                    let (expected_group, expected) = self
+                        .expected
+                        .get(path)
+                        .ok_or_else(|| staging_failure("unexpected package".into()))?;
+                    if *expected_group != group {
+                        return Err(staging_failure(
+                            "package group differs from inventory".into(),
+                        ));
+                    }
+                    let original = std::mem::replace(
+                        frame,
+                        ResultFrame::StagedTextPackage {
+                            path: record_path,
+                            group,
+                            bytes: 0,
+                        },
+                    );
+                    let ResultFrame::ExtractTextPackages { event } = original else {
+                        unreachable!("matched package frame");
+                    };
+                    let stored = package_text_columns::native_stored(
+                        event,
+                        &expected.path,
+                        &expected.signature,
+                    )
+                    .ok_or_else(|| staging_failure("unexpected summary".into()))?;
+                    let mut columns = Columns::new().map_err(|e| staging_failure(e.to_string()))?;
+                    columns
+                        .feed(stored, &snapshots.rules)
+                        .map_err(|e| staging_failure(e.to_string()))?;
+                    staged.push(StagedPackageTextRecord {
+                        group,
+                        path: expected.path.clone(),
+                        columns: Some(columns),
+                        line: Vec::new(),
+                    });
+                    continue;
+                }
+                let mut line = serde_json::to_vec(event).map_err(|error| {
+                    staging_failure(format!("could not serialize a record: {error}"))
+                })?;
+                if line.len() > MAX_STAGED_PACKAGE_TEXT_BYTES {
+                    return Err(Failure {
+                        code: "resource_limit".to_owned(),
+                        message: format!(
+                            "{record_path} has more package text than one record can hold"
+                        ),
+                        retry_safe: false,
+                        ..Default::default()
+                    });
+                }
+                line.push(b'\n');
+                game_text_index::scan_timings::count("extract.staging_bytes", line.len() as u64);
+                *frame = ResultFrame::StagedTextPackage {
+                    path: record_path,
+                    group,
+                    bytes: line.len() as u64,
+                };
+                staged.push(StagedPackageTextRecord {
+                    group,
+                    line,
+                    path: String::new(),
+                    columns: None,
+                });
             }
-        };
-        let mut line = serde_json::to_vec(event)
-            .map_err(|error| staging_failure(format!("could not serialize a record: {error}")))?;
-        if line.len() > MAX_STAGED_PACKAGE_TEXT_BYTES {
-            return Err(Failure {
-                code: "resource_limit".to_owned(),
-                message: format!("{record_path} has more package text than one record can hold"),
-                retry_safe: false,
-                ..Default::default()
-            });
         }
-        line.push(b'\n');
-        let file = match self.files.entry(group) {
+        Ok(ProjectionDelivery { result, staged })
+    }
+}
+
+/// Workers prepare each v1.19 JSON line and its result; only this coordinator appends files.
+struct PackageTextStager {
+    directory: PathBuf,
+    files: BTreeMap<u32, io::BufWriter<fs::File>>,
+    snapshots: Option<package_text_columns::shards::Shards>,
+}
+
+impl PackageTextStager {
+    fn new(staging: &crate::protocol::PackageTextStaging, root: &Path) -> Result<Self, Failure> {
+        let snapshots = staging
+            .snapshots
+            .as_ref()
+            .map(|s| {
+                package_text_columns::shards::Shards::new(Path::new(&staging.directory), root, s)
+            })
+            .transpose()
+            .map_err(|e| staging_failure(e.to_string()))?;
+        Ok(Self {
+            directory: PathBuf::from(&staging.directory),
+            files: BTreeMap::new(),
+            snapshots,
+        })
+    }
+    fn write(&mut self, record: StagedPackageTextRecord) -> Result<(), Failure> {
+        if let Some(columns) = record.columns {
+            return self
+                .snapshots
+                .as_mut()
+                .ok_or_else(|| staging_failure("missing shard builder".into()))?
+                .add(record.group, record.path, columns)
+                .map_err(|e| staging_failure(e.to_string()));
+        }
+        let _span = game_text_index::scan_timings::Span::new("extract.staging");
+        let file = match self.files.entry(record.group) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let file = fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
-                    .open(self.directory.join(format!("{group}.ndjson")))
+                    .open(self.directory.join(format!("{}.ndjson", record.group)))
                     .map_err(|error| {
                         staging_failure(format!("could not create a staging file: {error}"))
                     })?;
                 entry.insert(io::BufWriter::with_capacity(16 * 1024, file))
             }
         };
-        file.write_all(&line)
+        file.write_all(&record.line)
             .map_err(|error| staging_failure(format!("could not write a staging file: {error}")))?;
-        Ok(ResultFrame::StagedTextPackage {
-            path: record_path,
-            group,
-            bytes: line.len() as u64,
-        })
+        reader_memory::writers(
+            self.files
+                .values()
+                .map(|file| (file.buffer().len(), file.capacity())),
+        );
+        Ok(())
     }
 
     fn finish(self) -> Result<(), Failure> {
+        if let Some(snapshots) = self.snapshots {
+            return snapshots
+                .finish()
+                .map_err(|e| staging_failure(e.to_string()));
+        }
+        let _span = game_text_index::scan_timings::Span::new("extract.staging_flush");
         for (_, mut file) in self.files {
             file.flush().map_err(|error| {
                 staging_failure(format!("could not write a staging file: {error}"))
             })?;
         }
+        reader_memory::writers(std::iter::empty());
         Ok(())
     }
 }
@@ -885,39 +1248,38 @@ fn staging_failure(message: String) -> Failure {
     }
 }
 
-/// At most two jobs per worker in flight. Ordered delivery schedules a job only after the next
-/// ordered result is consumed, so one slow package cannot grow the reorder buffer; unordered
-/// delivery consumes each result as it finishes, so a slow package delays only its own result.
-fn project_paths_bounded(
-    paths: &[PathBuf],
+/// At most two jobs per worker in flight, refilled before consumption. Ordered delivery refills
+/// only when the next result leaves the reorder buffer, so one slow package cannot grow it;
+/// unordered delivery consumes each completion, so a slow package delays only its own result.
+fn project_paths_bounded<T: Send>(
+    package_sizes: &[u64],
     worker_count: usize,
-    kind: ProjectionKind,
-    filters: &ScanFilters,
+    maximum_bytes: u64,
     cancellation: &CancellationToken,
     ordered: bool,
-    consume: &mut dyn FnMut(usize, Result<ProjectionWorkResult, Failure>) -> Result<(), Failure>,
+    work: &(impl Fn(usize) -> Result<T, Failure> + Sync),
+    consume: &mut dyn FnMut(usize, Result<T, Failure>) -> Result<(), Failure>,
 ) -> Result<(), Failure> {
-    let worker_count = worker_count.min(paths.len().max(1));
+    let path_count = package_sizes.len();
+    let worker_count = worker_count.min(path_count.max(1));
     let window = worker_count * 2;
-    let (jobs, receive_job) = mpsc::sync_channel::<usize>(window);
-    let receive_job = Mutex::new(receive_job);
+    let jobs = JobQueue::new(package_sizes, maximum_bytes, window);
     let (finished, receive_result) = mpsc::sync_channel(window);
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
-            let receive_job = &receive_job;
+            let jobs = &jobs;
             let finished = finished.clone();
             scope.spawn(move || {
+                let _span = game_text_index::scan_timings::Span::new("extract.worker");
                 loop {
-                    let Ok(index) = receive_job
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .recv()
-                    else {
-                        break;
+                    let admitted = match jobs.take(cancellation) {
+                        Ok(Some(admitted)) => admitted,
+                        Ok(None) | Err(_) => break,
                     };
-                    let result = checkpoint(cancellation, "inspection").and_then(|()| {
-                        project_one_path(&paths[index], kind, filters, cancellation)
-                    });
+                    let index = admitted.index;
+                    let result = checkpoint(cancellation, "inspection").and_then(|()| work(index));
+                    drop(admitted);
+                    let _send = game_text_index::scan_timings::Span::new("extract.send_wait");
                     if finished.send((index, result)).is_err() {
                         break;
                     }
@@ -927,45 +1289,64 @@ fn project_paths_bounded(
         drop(finished);
         let result = (|| {
             let mut scheduled = 0;
-            for index in 0..window.min(paths.len()) {
-                jobs.send(index).map_err(|_| workers_stopped())?;
+            for index in 0..window.min(path_count) {
+                reader_memory::scheduled(index);
+                jobs.push(index);
                 scheduled += 1;
             }
             if !ordered {
-                for _ in 0..paths.len() {
+                for _ in 0..path_count {
                     checkpoint(cancellation, "inspection")?;
-                    let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
-                    consume(index, result)?;
-                    if scheduled < paths.len() {
-                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
+                    let (index, result) = receive_projection_result(&receive_result, cancellation)?;
+                    if scheduled < path_count {
+                        reader_memory::scheduled(scheduled);
+                        jobs.push(scheduled);
                         scheduled += 1;
                     }
+                    consume(index, result)?;
                 }
                 return Ok(());
             }
             let mut pending = BTreeMap::new();
             let mut next = 0;
-            while next < paths.len() {
+            while next < path_count {
                 checkpoint(cancellation, "inspection")?;
-                let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
+                let (index, result) = receive_projection_result(&receive_result, cancellation)?;
                 pending.insert(index, result);
                 while let Some(result) = pending.remove(&next) {
-                    consume(next, result)?;
-                    next += 1;
-                    if scheduled < paths.len() {
-                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
+                    if scheduled < path_count {
+                        reader_memory::scheduled(scheduled);
+                        jobs.push(scheduled);
                         scheduled += 1;
                     }
+                    consume(next, result)?;
+                    next += 1;
                 }
             }
             Ok(())
         })();
-        // Dropping both channels releases waiting workers before the scoped joins, including
-        // cancellation, consumer failures and a broken stdout pipe.
-        drop(jobs);
+        // Closing admission and result delivery releases waiting workers before scoped joins.
+        jobs.close();
         drop(receive_result);
         result
     })
+}
+
+fn receive_projection_result<T>(
+    receiver: &mpsc::Receiver<T>,
+    cancellation: &CancellationToken,
+) -> Result<T, Failure> {
+    loop {
+        checkpoint(cancellation, "inspection")?;
+        match receiver.recv_timeout(std::time::Duration::from_millis(20)) {
+            Ok(result) => return Ok(result),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                checkpoint(cancellation, "inspection")?;
+                return Err(workers_stopped());
+            }
+        }
+    }
 }
 
 fn project_one_path(
@@ -974,6 +1355,8 @@ fn project_one_path(
     filters: &ScanFilters,
     cancellation: &CancellationToken,
 ) -> Result<ProjectionWorkResult, Failure> {
+    let mut measured_package = game_text_index::scan_timings::PackageTimer::new();
+    let _span = game_text_index::scan_timings::Span::new("extract.package");
     let path_string = path.to_string_lossy().into_owned();
     checkpoint(cancellation, "read")?;
     if !filters_empty(filters) {
@@ -1021,6 +1404,7 @@ fn project_one_path(
         }
     }
     checkpoint(cancellation, "read")?;
+    let read_span = game_text_index::scan_timings::Span::new("extract.read");
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1037,8 +1421,15 @@ fn project_one_path(
             });
         }
     };
+    drop(read_span);
+    let _memory_read = reader_memory::read_buffer(bytes.capacity());
+    reader_memory::checkpoint(MemoryStage::Parse);
+    measured_package.bytes = bytes.len() as u64;
+    game_text_index::scan_timings::count("extract.packages", 1);
+    game_text_index::scan_timings::count("extract.read_bytes", bytes.len() as u64);
     checkpoint(cancellation, "read")?;
     checkpoint(cancellation, "parsing")?;
+    let parse_span = game_text_index::scan_timings::Span::new("extract.parse");
     let package = match Package::parse(&bytes) {
         Ok(package) => package,
         Err(error) => {
@@ -1056,7 +1447,22 @@ fn project_one_path(
             });
         }
     };
-    project_parsed_package(kind, path_string, &bytes, &package, cancellation)
+    drop(parse_span);
+    reader_memory::checkpoint(MemoryStage::Decode);
+    if game_text_index::scan_timings::enabled() {
+        let class = owning_asset_class(&package, &path_string);
+        measured_package.kind = match class.as_deref().and_then(|s| s.rsplit('.').next()) {
+            Some("DataTable") => "DataTable",
+            Some("StringTable") => "StringTable",
+            Some("Blueprint") => "Blueprint",
+            Some("WidgetBlueprint") => "WidgetBlueprint",
+            Some("World") => "World",
+            _ => "Other",
+        };
+    }
+    let result = project_parsed_package(kind, path_string, &bytes, &package, cancellation);
+    reader_memory::checkpoint(MemoryStage::Release);
+    result
 }
 
 fn project_parsed_package(
@@ -1066,6 +1472,7 @@ fn project_parsed_package(
     package: &Package,
     cancellation: &CancellationToken,
 ) -> Result<ProjectionWorkResult, Failure> {
+    let _span = game_text_index::scan_timings::Span::new("extract.text");
     checkpoint(cancellation, "parsing")?;
     checkpoint(cancellation, "inspection")?;
     let context = AssetDecodeContext {
@@ -1110,7 +1517,12 @@ fn project_parsed_package(
             continue;
         }
         checkpoint(cancellation, "inspection")?;
-        match decode_export(export, &context) {
+        let decoded = {
+            let _span = game_text_index::scan_timings::Span::new("extract.decode");
+            decode_export(export, &context)
+        };
+        reader_memory::checkpoint(MemoryStage::Project);
+        match decoded {
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text | ProjectionKind::TextPackages => {
                     if matches!(kind, ProjectionKind::TextPackages)
@@ -1159,7 +1571,9 @@ fn project_parsed_package(
                 diagnostics.push(projection_diagnostic(export, error.kind(), error.message()))
             }
         }
+        reader_memory::checkpoint(MemoryStage::Decode);
     }
+    reader_memory::checkpoint(MemoryStage::Project);
     checkpoint(cancellation, "inspection")?;
     reconcile_blueprint_text(&mut text_projection.occurrences);
     if matches!(kind, ProjectionKind::TextPackages) {
@@ -2562,6 +2976,230 @@ mod tests {
     }
 
     #[test]
+    fn projection_refills_before_a_consumer_waits_for_more_work() {
+        for ordered in [false, true] {
+            let (started, receive) = std::sync::mpsc::channel();
+            let cancellation = CancellationToken::new();
+            let mut consumed = Vec::new();
+            super::project_paths_bounded(
+                &[1, 1, 1],
+                1,
+                256,
+                &cancellation,
+                ordered,
+                &|index| {
+                    if index == 2 {
+                        started.send(()).unwrap();
+                    }
+                    Ok(index)
+                },
+                &mut |index, result| {
+                    let output = result?;
+                    if index != output {
+                        return Err(super::staging_failure("wrong result index".into()));
+                    }
+                    if consumed.is_empty() {
+                        receive
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .map_err(|_| {
+                                super::staging_failure(
+                                    "replacement job did not start before consumption".into(),
+                                )
+                            })?;
+                    }
+                    consumed.push(index);
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(consumed, [0, 1, 2]);
+        }
+    }
+
+    #[test]
+    fn projection_cancels_while_workers_wait_for_input_byte_credits() {
+        let cancellation = CancellationToken::new();
+        let (started, receive) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let cancellation = &cancellation;
+            let task = scope.spawn(move || {
+                super::project_paths_bounded(
+                    &[100; 8],
+                    4,
+                    100,
+                    cancellation,
+                    false,
+                    &|index| {
+                        assert_eq!(index, 0, "only the first package fits");
+                        started.send(()).unwrap();
+                        while !cancellation.is_cancelled() {
+                            std::thread::yield_now();
+                        }
+                        super::checkpoint(cancellation, "inspection")?;
+                        Ok(())
+                    },
+                    &mut |_, result| result,
+                )
+            });
+            receive
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            let start = std::time::Instant::now();
+            cancellation.cancel();
+            assert_eq!(task.join().unwrap().unwrap_err().code, "cancelled");
+            assert!(start.elapsed() < std::time::Duration::from_millis(250));
+        });
+    }
+
+    #[test]
+    fn staging_preparation_uses_the_exact_root_before_a_containing_directory() {
+        let path = std::path::PathBuf::from("Content/Fixture/Text/ST_Game.uasset");
+        let groups = super::PackageTextGroups::new(
+            &crate::protocol::PackageTextStaging {
+                directory: "unused".into(),
+                groups: vec![2, 7],
+                snapshots: None,
+            },
+            &[std::path::PathBuf::from("Content/Fixture"), path.clone()],
+            std::path::Path::new(""),
+        )
+        .unwrap();
+        assert_eq!(groups.group(&path).unwrap(), 7);
+        assert_eq!(
+            groups
+                .group(std::path::Path::new(
+                    "Content/Fixture/Authoring/DT_Text.uasset"
+                ))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            groups
+                .group(std::path::Path::new("Other.uasset"))
+                .unwrap_err()
+                .code,
+            "staging"
+        );
+    }
+
+    #[test]
+    fn native_package_shards_match_streamed_columns_and_retained_replay() {
+        use crate::package_text_columns::{self, Columns, Expected, Shard, SnapshotRequest};
+        let mut request = text_projection_request(true);
+        request.contract.version.minor = 20;
+        let cancellation = CancellationToken::new();
+        let plain = super::extract_text_with_cancellation(&request, &cancellation).unwrap();
+        let (root, paths) = match &request.operation {
+            crate::protocol::Operation::ExtractTextPackages { selection, .. } => (
+                std::path::PathBuf::from(&selection.project_root),
+                selection.paths.clone().unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        let directory =
+            std::env::temp_dir().join(format!("ue-shed-package-shards-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut stored = plain
+            .results
+            .into_iter()
+            .filter_map(|result| {
+                let crate::protocol_result::ResultFrame::ExtractTextPackages { event } = result
+                else {
+                    return None;
+                };
+                let path = match &event {
+                    crate::protocol_result::SavedAssetPackageTextEvent::Package { record } => {
+                        &record.path
+                    }
+                    crate::protocol_result::SavedAssetPackageTextEvent::Error { path, .. } => path,
+                    _ => return None,
+                };
+                let relative = std::path::Path::new(path)
+                    .strip_prefix(&root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                package_text_columns::native_stored(event, &relative, "signature")
+            })
+            .collect::<Vec<_>>();
+        stored.sort_by(|a, b| a.path.cmp(&b.path));
+        let snapshots = SnapshotRequest {
+            rules: Vec::new(),
+            record_files: Vec::new(),
+            records: Vec::new(),
+            shards: vec![Shard {
+                group: 7,
+                expected: stored
+                    .iter()
+                    .map(|record| Expected {
+                        path: record.path.clone(),
+                        signature: record.signature.clone(),
+                        selected: true,
+                    })
+                    .collect(),
+            }],
+        };
+        if let crate::protocol::Operation::ExtractTextPackages { staging, .. } =
+            &mut request.operation
+        {
+            *staging = Some(crate::protocol::PackageTextStaging {
+                directory: directory.to_string_lossy().into_owned(),
+                groups: vec![7; paths.len()],
+                snapshots: Some(snapshots.clone()),
+            });
+        }
+        let mut completed = 0;
+        super::extract_text_streaming(&request, &cancellation, &mut |event| {
+            if let super::ProjectionStreamEvent::Result(
+                crate::protocol_result::ResultFrame::StagedTextPackage { .. },
+            ) = event
+            {
+                completed += 1;
+                assert_eq!(
+                    directory.join("7.snapshot").exists(),
+                    completed == stored.len()
+                );
+            }
+            Ok(())
+        })
+        .unwrap();
+        let mut columns = Columns::new().unwrap();
+        for record in &stored {
+            columns.feed(record.clone(), &[]).unwrap();
+        }
+        package_text_columns::write_staged(
+            &directory.join("expected.snapshot"),
+            &columns.finish().unwrap(),
+        )
+        .unwrap();
+        let expected = std::fs::read(directory.join("expected.snapshot")).unwrap();
+        assert_eq!(
+            std::fs::read(directory.join("7.snapshot")).unwrap(),
+            expected
+        );
+        let replay = directory.join("replay");
+        std::fs::create_dir_all(&replay).unwrap();
+        if let crate::protocol::Operation::ExtractTextPackages { selection, staging } =
+            &mut request.operation
+        {
+            selection.paths = Some(Vec::new());
+            let mut snapshots = snapshots;
+            snapshots.records = stored
+                .iter()
+                .map(|r| serde_json::to_string(r).unwrap())
+                .collect();
+            *staging = Some(crate::protocol::PackageTextStaging {
+                directory: replay.to_string_lossy().into_owned(),
+                groups: Vec::new(),
+                snapshots: Some(snapshots),
+            });
+        }
+        super::extract_text_with_cancellation(&request, &cancellation).unwrap();
+        assert_eq!(std::fs::read(replay.join("7.snapshot")).unwrap(), expected);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn staged_package_text_writes_each_record_line_to_its_group() {
         use crate::protocol_result::{ResultFrame, SavedAssetPackageTextEvent};
         let cancellation = CancellationToken::new();
@@ -2587,6 +3225,7 @@ mod tests {
         *staging = Some(crate::protocol::PackageTextStaging {
             directory: directory.to_string_lossy().into_owned(),
             groups: vec![7, 2, 7],
+            snapshots: None,
         });
         let mut staged = Vec::new();
         let output = super::extract_text_streaming(&request, &cancellation, &mut |event| {
@@ -2678,6 +3317,7 @@ mod tests {
             *staging = Some(crate::protocol::PackageTextStaging {
                 directory: directory.to_string_lossy().into_owned(),
                 groups: vec![5; requested.len()],
+                snapshots: None,
             });
             let mut staged = 0;
             super::extract_text_streaming(&request, &cancellation, &mut |event| {

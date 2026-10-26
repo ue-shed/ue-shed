@@ -20,6 +20,9 @@ import type { PackageTextInventoryEntry } from "./package-text-layer.js";
 import { encodeWtf8 } from "./wtf8.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
+import { StageClock } from "./stage-clock.js";
+
+import { packageTextSnapshotBatches } from "./package-text-native.js";
 
 const FileStamp = Schema.Struct({ size: Schema.Number, modifiedMs: Schema.Number });
 const Signature = Schema.Array(Schema.NullOr(FileStamp));
@@ -182,6 +185,7 @@ export function gameTextIndexSourceNodeLayer(
 				request: GameTextIndexSourceRequest
 			) {
 				const reportProgress = yield* GameTextIndexProgressReporter;
+				const stages = new StageClock();
 				const project = { projectRoot: request.projectRoot };
 				if (options.refreshProjectIndex !== false)
 					yield* projectIndex.refresh(project).pipe(
@@ -197,7 +201,9 @@ export function gameTextIndexSourceNodeLayer(
 						),
 						Effect.mapError(mapError)
 					);
+				stages.mark("refresh");
 				const status = yield* projectIndex.status(project).pipe(Effect.mapError(mapError));
+				stages.mark("status");
 				if (status.status !== "ready" || status.summary.completeness !== "complete")
 					return yield* Effect.fail(
 						failure(
@@ -214,6 +220,11 @@ export function gameTextIndexSourceNodeLayer(
 						packageCount: status.summary.packageCount
 					})
 				);
+				stages.mark("pages");
+				yield* Effect.annotateCurrentSpan({
+					"inventory.packages": result.length,
+					...stages.attributes("inventory.stage_ms")
+				});
 				reportProgress({
 					phase: "inventory",
 					completed: result.length,
@@ -343,8 +354,61 @@ export function gameTextIndexSourceNodeLayer(
 				? (
 						root: string,
 						entries: readonly PackageTextInventoryEntry[],
-						staging: { readonly directory: string; readonly groups: readonly number[] }
+						staging: {
+							readonly directory: string;
+							readonly groups: readonly number[];
+							readonly snapshots?: import("./package-text-native.js").PackageTextSnapshots;
+						}
 					) => {
+						if (staging.snapshots) {
+							const snapshots = staging.snapshots;
+							const batches = packageTextSnapshotBatches(snapshots.shards);
+							const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+							return Stream.fromIterable(batches).pipe(
+								Stream.flatMap((shards) => {
+									const selected = shards.flatMap((shard) =>
+										shard.expected
+											.filter((entry) => entry.selected)
+											.map((entry) => ({
+												entry: byPath.get(entry.path)!,
+												group: shard.group
+											}))
+									);
+									const selectedEntries = selected.map(({ entry }) => entry);
+									return Stream.fromEffect(verify(root, selectedEntries)).pipe(
+										Stream.flatMap(() =>
+											stageProjectTextPackages({
+												projectRoot: root,
+												paths: selectedEntries.map((entry) => entry.path),
+												staging: {
+													directory: staging.directory,
+													groups: selected.map(({ group }) => group),
+													snapshots: { ...snapshots, shards }
+												}
+											})
+										),
+										Stream.filter(
+											(event) => event.event === "text_package_staged"
+										),
+										Stream.map((event) => ({
+											path: relative(
+												root,
+												resolve(root, event.path)
+											).replaceAll("\\", "/"),
+											file: join(staging.directory, `${event.group}.snapshot`)
+										})),
+										Stream.mapError((cause) =>
+											failure("read", cause.message, cause)
+										),
+										Stream.concat(
+											Stream.fromEffect(verify(root, selectedEntries)).pipe(
+												Stream.drain
+											)
+										)
+									);
+								})
+							);
+						}
 						const stageBatch = (
 							batch: {
 								readonly entries: readonly PackageTextInventoryEntry[];

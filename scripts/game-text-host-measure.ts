@@ -20,7 +20,7 @@ import {
 } from "../packages/localization/dist/index.js";
 import { PackageTextStored } from "../packages/game-text/src/package-text-columns.ts";
 import { packageTextShard } from "../packages/game-text/src/package-text-layer.ts";
-import { packageTextJsonLines } from "../packages/game-text/src/package-text-ndjson.ts";
+import { packageTextJsonLines } from "./retained-package-lines.ts";
 import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 import { captureBenchmarkByte, restoreBenchmarkByte } from "./localization-benchmark-byte.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";

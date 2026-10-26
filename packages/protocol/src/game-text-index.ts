@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import type { GameTextContract } from "./game-text-contract.generated.js";
 
 const Text = Schema.NonEmptyString.check(Schema.isMaxLength(32767));
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -19,8 +20,42 @@ export type GameTextIndexConfiguration = typeof GameTextIndexConfiguration.Type;
 const Configuration = { configuration: GameTextIndexConfiguration };
 const Name = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 const Names = Schema.Array(Name).check(Schema.isMaxLength(2560));
+const Positive = Natural.check(Schema.isGreaterThan(0));
+const LocalizationFormat = Schema.Literals(["manifest", "archive", "po"]);
+const LocalizationOptions = Schema.Struct({
+	format: LocalizationFormat,
+	poFormat: Schema.optionalKey(Schema.String),
+	collapseMode: Schema.optionalKey(Schema.String)
+});
+const LocalizationLimits = Schema.Struct({
+	maxFileBytes: Positive,
+	maxEntries: Positive,
+	maxDepth: Positive,
+	maxFiles: Positive,
+	maxRecordBytes: Positive,
+	maxIdentityBytes: Positive
+});
+const LocalizationImport: Schema.Codec<GameTextContract.LocalizationImportRequest> = Schema.Struct({
+	files: Schema.Array(
+		Schema.Struct({
+			projectRoot: Text,
+			chunkBytes: Schema.optionalKey(Positive),
+			file: Text,
+			relativePath: Name,
+			options: LocalizationOptions,
+			limits: LocalizationLimits
+		})
+	),
+	maximumInFlightBytes: Positive,
+	cold: Schema.Boolean
+});
 /** One native index operation; begin/end own its session, and publish/join mutate cached state. */
 export const GameTextIndexPreviousBuildRequest = Schema.Union([
+	Schema.Struct({
+		action: Schema.Literal("import_localization"),
+		...Configuration,
+		request: LocalizationImport
+	}),
 	Schema.Struct({ action: Schema.Literal("capabilities") }),
 	...(["begin", "end", "status"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), ...Configuration })
@@ -105,6 +140,7 @@ export const GameTextIndexJoinOutcome = Schema.Struct({
 /** Snapshot contents stay private to the paired builder/reader; their domain decoder verifies them. */
 export const GameTextIndexBuildOutcome = Schema.Struct({
 	action: Schema.Literals([
+		"import_localization",
 		"capabilities",
 		"begin",
 		"end",
@@ -138,6 +174,46 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 	stageSeconds: Schema.Record(
 		Schema.String,
 		Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+	),
+	localization: Schema.optionalKey(
+		Schema.Struct({
+			lookupStrings: Natural,
+			reusedStrings: Natural,
+			files: Schema.Array(
+				Schema.Struct({
+					file: Schema.NullOr(
+						Schema.Struct({
+							key: Schema.String,
+							contentHash: Schema.String,
+							provenance: Schema.Struct({
+								relativePath: Schema.String,
+								size: Natural,
+								modifiedTime: Schema.String,
+								contentHash: Schema.String
+							}),
+							relativePath: Schema.String,
+							format: LocalizationFormat,
+							inputBytes: Natural,
+							parsed: Schema.Boolean,
+							snapshotBytes: Natural
+						})
+					),
+					error: Schema.NullOr(
+						Schema.Struct({
+							code: Schema.String,
+							message: Schema.String,
+							recovery: Schema.String,
+							retrySafe: Schema.Boolean,
+							nextStep: Schema.String
+						})
+					)
+				})
+			),
+			workerCount: Natural,
+			parseMs: Schema.Number,
+			parseCpuMs: Schema.Number,
+			publishMs: Schema.Number
+		})
 	)
 }).annotate({ identifier: "GameTextIndexBuildOutcome" });
 export type GameTextIndexBuildOutcome = typeof GameTextIndexBuildOutcome.Type;

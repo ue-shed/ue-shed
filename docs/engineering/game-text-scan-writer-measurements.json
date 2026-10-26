@@ -1,0 +1,2936 @@
+{
+	"date": "2026-10-26",
+	"method": {
+		"runsPerProjectPerRevision": 1,
+		"node": "26.12.0",
+		"rayonThreads": 16,
+		"cargoBuildJobs": 8,
+		"nativeInstrumentation": "UE_SHED_COLD_SCAN_MEASURE_DIR",
+		"hostInstrumentation": "UE_SHED_GAME_TEXT_STAGES=1",
+		"projectIndex": "Warmed outside the measured build; refreshProjectIndex false inside it",
+		"filesystemCache": "No OS cache flush",
+		"releasedRssStopGiB": 6,
+		"heavyJobs": "Sequential under E:/es-id-repairs-scratch/unreal.lock",
+		"cpu": "Process CPU inside each bounded interval; overlapping branch intervals are not additive",
+		"parity": "cmp per logical file pair, then exact stored section bytes and metadata with volatile references normalized",
+		"volatileMetadata": [
+			"generation tokens",
+			"physical snapshot filenames",
+			"joined keys derived from generation",
+			"physical layer byte sizes changed by compressed metadata",
+			"dependency state checksums verified before normalizing their token-bearing state"
+		]
+	},
+	"runs": [
+		{
+			"round": "base",
+			"kind": "1x",
+			"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+			"wallSeconds": 79.1641786,
+			"peakGiB": 2.6940383911132812,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 551.8357,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 63.6159,
+				"stage.GameTextIndex.openTarget.wallMs": 1187.0096,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 13030.942,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 25.527,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 10222.521,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 1843.223,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 990.702,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 2222.505,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 47417.693,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4284.837,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 20600.752,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 5151.894,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.024,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 4528.675,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 17554.529,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 365.817,
+				"stage.PackageText.refresh.package-text.stage_ms.read_stage": 3274.269,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 10649.689,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 22084.354
+			},
+			"native": [
+				{
+					"label": "publish_localization",
+					"wallSeconds": 10.093448,
+					"cpuSeconds": 13.8125,
+					"cores": 1.3684619963366333,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0352875,
+							"cpuSeconds": 0.203125,
+							"cores": 5.75628763726532
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0304029,
+							"cpuSeconds": 0.09375,
+							"cores": 3.083587420936819
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0355722,
+							"cpuSeconds": 0.296875,
+							"cores": 8.34570254299706
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0422008,
+							"cpuSeconds": 0.078125,
+							"cores": 1.851268222403367
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.040659,
+							"cpuSeconds": 0.140625,
+							"cores": 3.458643842691655
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0341505,
+							"cpuSeconds": 0.359375,
+							"cores": 10.523271987232983
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0368376,
+							"cpuSeconds": 0.265625,
+							"cores": 7.210703194562079
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0418493,
+							"cpuSeconds": 0.3125,
+							"cores": 7.467269464483277
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0384469,
+							"cpuSeconds": 0.25,
+							"cores": 6.502474841924837
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0337028,
+							"cpuSeconds": 0.3125,
+							"cores": 9.272226639923094
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.034683,
+							"cpuSeconds": 0.296875,
+							"cores": 8.559669002104778
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.040804,
+							"cpuSeconds": 0.296875,
+							"cores": 7.275634741691991
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0350679,
+							"cpuSeconds": 0.28125,
+							"cores": 8.020155184656053
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0376194,
+							"cpuSeconds": 0.28125,
+							"cores": 7.476195792596373
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0326364,
+							"cpuSeconds": 0.203125,
+							"cores": 6.2238788591879
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.032636,
+							"cpuSeconds": 0.265625,
+							"cores": 8.139018262041917
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0408889,
+							"cpuSeconds": 0.28125,
+							"cores": 6.878394870001394
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0409568,
+							"cpuSeconds": 0.265625,
+							"cores": 6.485492030627393
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 3.9261801,
+							"cpuSeconds": 7.75,
+							"cores": 1.9739288067809218
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.6601696,
+							"cpuSeconds": 2.640625,
+							"cores": 0.9926528744633424
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 0.5260319,
+							"cpuSeconds": 0.53125,
+							"cores": 1.0099197406088871
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 2.9585761,
+							"cpuSeconds": 2.875,
+							"cores": 0.9717512420924376
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 17.3223629,
+					"cpuSeconds": 21.015625,
+					"cores": 1.2132077546995623,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.118926,
+							"cpuSeconds": 1.484375,
+							"cores": 12.481501101525318
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 12.1183358,
+							"cpuSeconds": 11.984375,
+							"cores": 0.9889456108321407
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 3.4285377,
+							"cpuSeconds": 3.40625,
+							"cores": 0.9934993568832566
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 1.6314362,
+							"cpuSeconds": 4.109375,
+							"cores": 2.5188695702596275
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 18.6605913,
+					"cpuSeconds": 27.359375,
+					"cores": 1.4661579882519586,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0023,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.1495442,
+							"cpuSeconds": 1.15625,
+							"cores": 1.0058334425070388
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.4193538,
+							"cpuSeconds": 1.40625,
+							"cores": 0.9907677705164138
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 1.3894066999999999,
+							"cpuSeconds": 1.375,
+							"cores": 0.9896310417964734
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0317137,
+							"cpuSeconds": 0.03125,
+							"cores": 0.985378558793203
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.0682106,
+							"cpuSeconds": 0.078125,
+							"cores": 1.1453498429862807
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.7516596,
+							"cpuSeconds": 1.703125,
+							"cores": 0.9722922193330257
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.0951545,
+							"cpuSeconds": 0.09375,
+							"cores": 0.9852397942293849
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.9509998,
+							"cpuSeconds": 0.953125,
+							"cores": 1.0022347007854262
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 2.6527178,
+							"cpuSeconds": 2.5625,
+							"cores": 0.9659904268746566
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.3662578,
+							"cpuSeconds": 3.859375,
+							"cores": 10.537318249604512
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 1.1423983,
+							"cpuSeconds": 5.359375,
+							"cores": 4.6913366380184565
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.2031579,
+							"cpuSeconds": 0.203125,
+							"cores": 0.999838056999014
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.8889926,
+							"cpuSeconds": 0.890625,
+							"cores": 1.001836235757193
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 1.7878591,
+							"cpuSeconds": 1.78125,
+							"cores": 0.9963033440386886
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 7.1232695,
+							"cpuSeconds": 14.75,
+							"cores": 2.0706783591439297
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 1.7743986,
+							"cpuSeconds": 1.765625,
+							"cores": 0.9950554514639496
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.1178436,
+							"cpuSeconds": 0.125,
+							"cores": 1.0607279478902545
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 0.8466979,
+							"cpuSeconds": 0.84375,
+							"cores": 0.9965183567834525
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.7210794,
+							"cpuSeconds": 0.71875,
+							"cores": 0.9967695651824194
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.1717562,
+							"cpuSeconds": 2.3125,
+							"cores": 1.9735334022555207
+						}
+					]
+				}
+			]
+		},
+		{
+			"round": "base",
+			"kind": "released",
+			"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
+			"wallSeconds": 120.3008985,
+			"peakGiB": 4.276844024658203,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 205.069,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 22.6714,
+				"stage.GameTextIndex.openTarget.wallMs": 1253.5611,
+				"stage.GameTextIndexSource.inventory.wallMs": 3786.3052,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 0.012,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 323.911,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 3462.15,
+				"stage.GameTextIndexSource.verify.wallMs": 5889.9553,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 15712.114,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 37.882,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 14834.666,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 1926.674,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 898.258,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 1954.836,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 50812.761,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4607.938,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 27313.398,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 8471.464,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.021,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 5624.518,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 10186.495,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 408.936,
+				"stage.PackageText.refresh.package-text.stage_ms.read_receive": 299.428,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 47165.953,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 15812.099
+			},
+			"native": [
+				{
+					"label": "extract_text_packages",
+					"wallSeconds": 41.0075892,
+					"cpuSeconds": 214.21875,
+					"cores": 5.22388060793391,
+					"stages": []
+				},
+				{
+					"label": "publish_localization",
+					"wallSeconds": 14.690588800000002,
+					"cpuSeconds": 17.515625,
+					"cores": 1.1923024487622986,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0503476,
+							"cpuSeconds": 0.328125,
+							"cores": 6.517192477893683
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0310097,
+							"cpuSeconds": 0.09375,
+							"cores": 3.023247564471762
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0424574,
+							"cpuSeconds": 0.421875,
+							"cores": 9.936430398469996
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0280138,
+							"cpuSeconds": 0.15625,
+							"cores": 5.57760817882615
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0417849,
+							"cpuSeconds": 0.046875,
+							"cores": 1.1218167328388964
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0327966,
+							"cpuSeconds": 0.265625,
+							"cores": 8.09916271808663
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0308242,
+							"cpuSeconds": 0.265625,
+							"cores": 8.617417483665431
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0360485,
+							"cpuSeconds": 0.296875,
+							"cores": 8.235432819673496
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0394649,
+							"cpuSeconds": 0.09375,
+							"cores": 2.3755286343054207
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0453124,
+							"cpuSeconds": 0.125,
+							"cores": 2.7586267776590954
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0286041,
+							"cpuSeconds": 0.21875,
+							"cores": 7.647505077943372
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0418094,
+							"cpuSeconds": 0.15625,
+							"cores": 3.737197855027817
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0346669,
+							"cpuSeconds": 0.234375,
+							"cores": 6.760771802497484
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0358842,
+							"cpuSeconds": 0.28125,
+							"cores": 7.837711304696775
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0395021,
+							"cpuSeconds": 0.078125,
+							"cores": 1.9777429554378123
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0437687,
+							"cpuSeconds": 0.203125,
+							"cores": 4.640873500926461
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0473744,
+							"cpuSeconds": 0.25,
+							"cores": 5.277111689013476
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0311619,
+							"cpuSeconds": 0.125,
+							"cores": 4.011308681434701
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0038443,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 5.0933379,
+							"cpuSeconds": 8.0625,
+							"cores": 1.5829501514124953
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.7633796,
+							"cpuSeconds": 2.75,
+							"cores": 0.9951582475313925
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 1.3182198999999999,
+							"cpuSeconds": 1.28125,
+							"cores": 0.9719546791851649
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 5.4964887000000004,
+							"cpuSeconds": 5.40625,
+							"cores": 0.9835824823946239
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 9.9981651,
+					"cpuSeconds": 13.046875,
+					"cores": 1.3049269410444122,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.1014065,
+							"cpuSeconds": 0.890625,
+							"cores": 8.7827210287309
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 6.7208092,
+							"cpuSeconds": 6.703125,
+							"cores": 0.9973687394666703
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 1.261714,
+							"cpuSeconds": 1.265625,
+							"cores": 1.0030997516077336
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 1.8983101,
+							"cpuSeconds": 4.171875,
+							"cores": 2.197678345598014
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 19.6680329,
+					"cpuSeconds": 29.875,
+					"cores": 1.518962275073274,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0016601,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.4607018,
+							"cpuSeconds": 1.4375,
+							"cores": 0.9841159913679849
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.5377030999999999,
+							"cpuSeconds": 1.546875,
+							"cores": 1.0059646754955491
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 2.1714683,
+							"cpuSeconds": 2.15625,
+							"cores": 0.9929917005926359
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0310445,
+							"cpuSeconds": 0.03125,
+							"cores": 1.0066195300294738
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.1026244,
+							"cpuSeconds": 0.09375,
+							"cores": 0.9135254383947676
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.7918476,
+							"cpuSeconds": 1.796875,
+							"cores": 1.0028057073603804
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.1471014,
+							"cpuSeconds": 0.15625,
+							"cores": 1.0621924740349176
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.5729938,
+							"cpuSeconds": 0.5625,
+							"cores": 0.9816860147526902
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 1.6299597000000001,
+							"cpuSeconds": 1.609375,
+							"cores": 0.9873710374557113
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.5388797,
+							"cpuSeconds": 4.78125,
+							"cores": 8.872573971519062
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 1.4486786999999999,
+							"cpuSeconds": 6.140625,
+							"cores": 4.238776341503468
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.3548958,
+							"cpuSeconds": 0.34375,
+							"cores": 0.9685941620047349
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.2464583,
+							"cpuSeconds": 0.25,
+							"cores": 1.014370382332427
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 1.8578686,
+							"cpuSeconds": 1.859375,
+							"cores": 1.0008108216049294
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 6.1601053,
+							"cpuSeconds": 15.0625,
+							"cores": 2.4451692408569707
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 2.1564505,
+							"cpuSeconds": 2.15625,
+							"cores": 0.9999070231382543
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.1436234,
+							"cpuSeconds": 0.140625,
+							"cores": 0.9791231790919864
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 0.9662716,
+							"cpuSeconds": 0.953125,
+							"cores": 0.9863945085419047
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.6956024,
+							"cpuSeconds": 0.6875,
+							"cores": 0.988351966583209
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.6789304999999999,
+							"cpuSeconds": 3.03125,
+							"cores": 1.8054648480088962
+						}
+					]
+				}
+			]
+		},
+		{
+			"round": "join",
+			"kind": "1x",
+			"commit": "4b6f03a15befccb02a1bef9321e27155613657d4",
+			"wallSeconds": 72.76399520000001,
+			"peakGiB": 2.4660987854003906,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 291.3614,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 33.3955,
+				"stage.GameTextIndex.openTarget.wallMs": 1151.3305,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 12922.791,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 31.289,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 10426.542,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 2014.381,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 999.242,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 2081.786,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 46923.014,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4157.362,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 21218.289,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 5265.171,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.021,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 4062.511,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 14076.218,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 294.591,
+				"stage.PackageText.refresh.package-text.stage_ms.read_stage": 3285.508,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 10942.006,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 18139.582
+			},
+			"native": [
+				{
+					"label": "publish_localization",
+					"wallSeconds": 10.2591362,
+					"cpuSeconds": 13.359375,
+					"cores": 1.302192966304512,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0452557,
+							"cpuSeconds": 0.25,
+							"cores": 5.524166016656465
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0370073,
+							"cpuSeconds": 0.265625,
+							"cores": 7.177637925490376
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0310404,
+							"cpuSeconds": 0.140625,
+							"cores": 4.53038620636332
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.046259,
+							"cpuSeconds": 0.109375,
+							"cores": 2.3644047644782638
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0393,
+							"cpuSeconds": 0.1875,
+							"cores": 4.770992366412213
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0332528,
+							"cpuSeconds": 0.234375,
+							"cores": 7.0482786411971325
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.03594,
+							"cpuSeconds": 0.265625,
+							"cores": 7.39079020589872
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.042749,
+							"cpuSeconds": 0.3125,
+							"cores": 7.3101125172518655
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0373182,
+							"cpuSeconds": 0.296875,
+							"cores": 7.955233639350236
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0362234,
+							"cpuSeconds": 0.28125,
+							"cores": 7.764318092724591
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0350802,
+							"cpuSeconds": 0.28125,
+							"cores": 8.017343116629894
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.036879199999999994,
+							"cpuSeconds": 0.28125,
+							"cores": 7.626250027115556
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0331517,
+							"cpuSeconds": 0.046875,
+							"cores": 1.4139546388269681
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0361828,
+							"cpuSeconds": 0.28125,
+							"cores": 7.773030279580353
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.034529,
+							"cpuSeconds": 0.25,
+							"cores": 7.240290770077327
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0349484,
+							"cpuSeconds": 0.234375,
+							"cores": 6.70631559670829
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0341303,
+							"cpuSeconds": 0.125,
+							"cores": 3.662434845284102
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.047859,
+							"cpuSeconds": 0.078125,
+							"cores": 1.632399339727115
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 4.0313835,
+							"cpuSeconds": 7.234375,
+							"cores": 1.7945142157772886
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.487263,
+							"cpuSeconds": 2.5,
+							"cores": 1.005120889909913
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 0.5311175,
+							"cpuSeconds": 0.5,
+							"cores": 0.9414112696343087
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 3.1853797,
+							"cpuSeconds": 3.109375,
+							"cores": 0.9761395164287636
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 13.9128306,
+					"cpuSeconds": 17.09375,
+					"cores": 1.2286320800887205,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.1028381,
+							"cpuSeconds": 1.265625,
+							"cores": 12.306965998010465
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 10.253392,
+							"cpuSeconds": 10.203125,
+							"cores": 0.995097524799598
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 2.1204183,
+							"cpuSeconds": 2.125,
+							"cores": 1.0021607529042738
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 1.4206737,
+							"cpuSeconds": 3.5,
+							"cores": 2.463619900896314
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 16.3760666,
+					"cpuSeconds": 29.15625,
+					"cores": 1.7804183820307617,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0034805,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.4000002999999999,
+							"cpuSeconds": 1.40625,
+							"cores": 1.004464070471985
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.3923548000000001,
+							"cpuSeconds": 1.390625,
+							"cores": 0.998757644244125
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 1.5921174,
+							"cpuSeconds": 1.578125,
+							"cores": 0.9912114521203021
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0256232,
+							"cpuSeconds": 0.015625,
+							"cores": 0.6097989322176778
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.0536559,
+							"cpuSeconds": 0.0625,
+							"cores": 1.164829962781353
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.4789389,
+							"cpuSeconds": 1.453125,
+							"cores": 0.9825456616226675
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.085357,
+							"cpuSeconds": 0.09375,
+							"cores": 1.098328198038825
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.8885964,
+							"cpuSeconds": 0.890625,
+							"cores": 1.002282926196865
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 2.2129761,
+							"cpuSeconds": 4.375,
+							"cores": 1.9769757115768216
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 2.6380858,
+							"cpuSeconds": 4.8125,
+							"cores": 1.8242393784159712
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.3798907,
+							"cpuSeconds": 4.109375,
+							"cores": 10.817256121300153
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 1.00656,
+							"cpuSeconds": 5.4375,
+							"cores": 5.402062470195518
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.1564823,
+							"cpuSeconds": 0.15625,
+							"cores": 0.9985154870550856
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.8173764,
+							"cpuSeconds": 0.8125,
+							"cores": 0.9940340827065719
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 5.14759,
+							"cpuSeconds": 15.46875,
+							"cores": 3.005047022004472
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.1656405,
+							"cpuSeconds": 0.5,
+							"cores": 3.0185854304955613
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 1.0928213,
+							"cpuSeconds": 2.34375,
+							"cores": 2.1446781829746544
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 2.1704778,
+							"cpuSeconds": 3.421875,
+							"cores": 1.576553789216365
+						},
+						{
+							"label": "join.query_parallel",
+							"wallSeconds": 2.170593,
+							"cpuSeconds": 3.421875,
+							"cores": 1.5764701166916135
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.8157154,
+							"cpuSeconds": 0.8125,
+							"cores": 0.9960581840185928
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.2782309,
+							"cpuSeconds": 2.515625,
+							"cores": 1.9680520945002973
+						}
+					]
+				}
+			]
+		},
+		{
+			"round": "join",
+			"kind": "released",
+			"commit": "4b6f03a15befccb02a1bef9321e27155613657d4",
+			"wallSeconds": 107.87751540000001,
+			"peakGiB": 4.077846527099609,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 202.4208,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 22.8476,
+				"stage.GameTextIndex.openTarget.wallMs": 1287.3079,
+				"stage.GameTextIndexSource.inventory.wallMs": 3340.2094,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 0.007,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 307.168,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 3032.767,
+				"stage.GameTextIndexSource.verify.wallMs": 6065.6486,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 15611.211,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 36.667,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 12986.623,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 2005.954,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 900.653,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 1992.03,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 50527.471,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4675.174,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 27107.302,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 8443.293,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.021,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 5216.103,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 8758.035,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 348.852,
+				"stage.PackageText.refresh.package-text.stage_ms.read_receive": 277.329,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 43586.658,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 13975.333
+			},
+			"native": [
+				{
+					"label": "publish_localization",
+					"wallSeconds": 12.8519065,
+					"cpuSeconds": 15.703125,
+					"cores": 1.2218517929616122,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0421288,
+							"cpuSeconds": 0.375,
+							"cores": 8.90127418772906
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0372889,
+							"cpuSeconds": 0.40625,
+							"cores": 10.894663023044393
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0471402,
+							"cpuSeconds": 0.09375,
+							"cores": 1.9887484567311975
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0303652,
+							"cpuSeconds": 0.203125,
+							"cores": 6.689401024857403
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0409535,
+							"cpuSeconds": 0.15625,
+							"cores": 3.8153027213791253
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0365258,
+							"cpuSeconds": 0.078125,
+							"cores": 2.138899079554726
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0316342,
+							"cpuSeconds": 0.265625,
+							"cores": 8.396766790372444
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.037159,
+							"cpuSeconds": 0.078125,
+							"cores": 2.1024516267929707
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.037341,
+							"cpuSeconds": 0.203125,
+							"cores": 5.439731126643635
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0448215,
+							"cpuSeconds": 0.203125,
+							"cores": 4.5318652878640835
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0333896,
+							"cpuSeconds": 0.3125,
+							"cores": 9.359201667585117
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0432615,
+							"cpuSeconds": 0.34375,
+							"cores": 7.945864105497961
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0388276,
+							"cpuSeconds": 0.046875,
+							"cores": 1.2072597842771637
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0330195,
+							"cpuSeconds": 0.25,
+							"cores": 7.57128363542755
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0386115,
+							"cpuSeconds": 0.21875,
+							"cores": 5.665410564210145
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0324737,
+							"cpuSeconds": 0.203125,
+							"cores": 6.255061788462664
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.039895,
+							"cpuSeconds": 0.09375,
+							"cores": 2.349918536157413
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0279847,
+							"cpuSeconds": 0.046875,
+							"cores": 1.6750224229668353
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0038538,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 4.982299199999999,
+							"cpuSeconds": 7.875,
+							"cores": 1.5805955611818738
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.7283134,
+							"cpuSeconds": 2.71875,
+							"cores": 0.9964947575304215
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 1.0624852,
+							"cpuSeconds": 1.03125,
+							"cores": 0.9706017552056254
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 4.0544953,
+							"cpuSeconds": 4.0625,
+							"cores": 1.0019742777849563
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 8.528263,
+					"cpuSeconds": 11.71875,
+					"cores": 1.3741074823794714,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.0926743,
+							"cpuSeconds": 0.921875,
+							"cores": 9.947471952849927
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 5.5381968,
+							"cpuSeconds": 5.53125,
+							"cores": 0.9987456567090575
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 1.0665485,
+							"cpuSeconds": 1.0625,
+							"cores": 0.9962041107366426
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 1.8155295,
+							"cpuSeconds": 4.1875,
+							"cores": 2.306489649438359
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 15.197688,
+					"cpuSeconds": 30.0625,
+					"cores": 1.9780969315859096,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0015881,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.0592784,
+							"cpuSeconds": 1.0625,
+							"cores": 1.0030413156730091
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.5111728,
+							"cpuSeconds": 1.484375,
+							"cores": 0.9822668856930193
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 1.7447069,
+							"cpuSeconds": 1.75,
+							"cores": 1.0030338047038159
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0253405,
+							"cpuSeconds": 0.015625,
+							"cores": 0.6166018823622265
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.0701497,
+							"cpuSeconds": 0.078125,
+							"cores": 1.1136897235483545
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.351715,
+							"cpuSeconds": 1.34375,
+							"cores": 0.9941074856756048
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.1291062,
+							"cpuSeconds": 0.125,
+							"cores": 0.9681951757545338
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.4914689,
+							"cpuSeconds": 0.484375,
+							"cores": 0.9855659228895257
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 1.5068608000000001,
+							"cpuSeconds": 3,
+							"cores": 1.9908939166776385
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 2.1213295,
+							"cpuSeconds": 9.28125,
+							"cores": 4.3752043235150415
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.6154547,
+							"cpuSeconds": 6.28125,
+							"cores": 10.205868929102337
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 1.4027138,
+							"cpuSeconds": 6.390625,
+							"cores": 4.555900854472238
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.217006,
+							"cpuSeconds": 0.21875,
+							"cores": 1.0080366441480881
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.2525318,
+							"cpuSeconds": 0.265625,
+							"cores": 1.0518477276921165
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 4.1054772,
+							"cpuSeconds": 16.265625,
+							"cores": 3.961932853993197
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.2038844,
+							"cpuSeconds": 0.609375,
+							"cores": 2.9888260210197544
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 1.2292011999999999,
+							"cpuSeconds": 2.625,
+							"cores": 2.135533222714068
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 2.3317927,
+							"cpuSeconds": 3.703125,
+							"cores": 1.5881021499038057
+						},
+						{
+							"label": "join.query_parallel",
+							"wallSeconds": 2.3319151,
+							"cpuSeconds": 3.703125,
+							"cores": 1.5880187919362931
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.6981437,
+							"cpuSeconds": 0.703125,
+							"cores": 1.0071350640276493
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.63629,
+							"cpuSeconds": 3,
+							"cores": 1.8334158370460005
+						}
+					]
+				},
+				{
+					"label": "extract_text_packages",
+					"wallSeconds": 37.2730273,
+					"cpuSeconds": 209.59375,
+					"cores": 5.623201687188955,
+					"stages": []
+				}
+			]
+		},
+		{
+			"round": "package",
+			"kind": "1x",
+			"commit": "f96158fb796c9d98d08adb64624f1020da100dc2",
+			"wallSeconds": 65.2009687,
+			"peakGiB": 2.5879135131835938,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 299.6075,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 35.7547,
+				"stage.GameTextIndex.openTarget.wallMs": 1142.8708,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 12799.038,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 22.82,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 10065.485,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 1931.501,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 990.612,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 1900.792,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 45702.347,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4083.814,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 20707.751,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 5391.39,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.024,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 4118.617,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 8781.065,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 302.038,
+				"stage.PackageText.refresh.package-text.stage_ms.read_stage": 3196.697,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 10197.041,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 12900.799
+			},
+			"native": [
+				{
+					"label": "publish_localization",
+					"wallSeconds": 9.9474843,
+					"cpuSeconds": 13.28125,
+					"cores": 1.3351365631207883,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0435248,
+							"cpuSeconds": 0.109375,
+							"cores": 2.5129351542109326
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0373215,
+							"cpuSeconds": 0.296875,
+							"cores": 7.954530230564152
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0336492,
+							"cpuSeconds": 0.3125,
+							"cores": 9.286996421906018
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0437712,
+							"cpuSeconds": 0.328125,
+							"cores": 7.496367474503783
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0429184,
+							"cpuSeconds": 0.28125,
+							"cores": 6.553133388010735
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0370736,
+							"cpuSeconds": 0.1875,
+							"cores": 5.057507228863666
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0360181,
+							"cpuSeconds": 0.234375,
+							"cores": 6.50714501875446
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0401563,
+							"cpuSeconds": 0.21875,
+							"cores": 5.447464034286027
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0409853,
+							"cpuSeconds": 0.109375,
+							"cores": 2.6686397318062816
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0375924,
+							"cpuSeconds": 0.28125,
+							"cores": 7.481565422798226
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0411957,
+							"cpuSeconds": 0.296875,
+							"cores": 7.206456013613071
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0379296,
+							"cpuSeconds": 0.265625,
+							"cores": 7.003105753817599
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0332389,
+							"cpuSeconds": 0.078125,
+							"cores": 2.350408707869394
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0354434,
+							"cpuSeconds": 0.3125,
+							"cores": 8.816874227641819
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0398008,
+							"cpuSeconds": 0.0625,
+							"cores": 1.5703201945689536
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0360903,
+							"cpuSeconds": 0.203125,
+							"cores": 5.628243600080908
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0351819,
+							"cpuSeconds": 0.15625,
+							"cores": 4.441204141902513
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0409109,
+							"cpuSeconds": 0.34375,
+							"cores": 8.402406204703393
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 4.0193324,
+							"cpuSeconds": 7.390625,
+							"cores": 1.8387692941245666
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.5175263,
+							"cpuSeconds": 2.515625,
+							"cores": 0.9992447745233088
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 0.4585862,
+							"cpuSeconds": 0.46875,
+							"cores": 1.0221633359224502
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 2.9279962,
+							"cpuSeconds": 2.875,
+							"cores": 0.9819001814278311
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 8.5743255,
+					"cpuSeconds": 16.921875,
+					"cores": 1.9735517388510617,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.0987885,
+							"cpuSeconds": 1.359375,
+							"cores": 13.76045794804051
+						},
+						{
+							"label": "publication.collect_strings_parallel",
+							"wallSeconds": 0.4269245,
+							"cpuSeconds": 3.3125,
+							"cores": 7.758983145731857
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 5.901763600000001,
+							"cpuSeconds": 5.875,
+							"cores": 0.9954651521453689
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 0.2348648,
+							"cpuSeconds": 2.0625,
+							"cores": 8.781647994931552
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 1.8952573,
+							"cpuSeconds": 4.296875,
+							"cores": 2.267172378125123
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 15.3537756,
+					"cpuSeconds": 28.171875,
+					"cores": 1.8348499896012547,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0020935,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.0297549,
+							"cpuSeconds": 1.03125,
+							"cores": 1.0014518988936105
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.0568321,
+							"cpuSeconds": 1.03125,
+							"cores": 0.9757936005161084
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 1.3195209,
+							"cpuSeconds": 1.328125,
+							"cores": 1.0065206242659739
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0250891,
+							"cpuSeconds": 0.015625,
+							"cores": 0.6227804106165626
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.0555748,
+							"cpuSeconds": 0.0625,
+							"cores": 1.124610434945335
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.6322309000000002,
+							"cpuSeconds": 1.625,
+							"cores": 0.9955699282497346
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.0877291,
+							"cpuSeconds": 0.09375,
+							"cores": 1.0686305912177374
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.8870248,
+							"cpuSeconds": 0.875,
+							"cores": 0.9864436710225014
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 2.2973528,
+							"cpuSeconds": 4.578125,
+							"cores": 1.9927827367220219
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 2.7927977999999998,
+							"cpuSeconds": 5.078125,
+							"cores": 1.818293110944158
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.3854562,
+							"cpuSeconds": 4.09375,
+							"cores": 10.620532242054997
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 1.0353099,
+							"cpuSeconds": 5.484375,
+							"cores": 5.2973269163175205
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.1691243,
+							"cpuSeconds": 0.171875,
+							"cores": 1.0162643688695236
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.7855189,
+							"cpuSeconds": 0.796875,
+							"cores": 1.0144568131969836
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 5.2563732,
+							"cpuSeconds": 15.703125,
+							"cores": 2.9874448412452907
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.1645625,
+							"cpuSeconds": 0.5,
+							"cores": 3.038359285985568
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 1.0795365,
+							"cpuSeconds": 2.3125,
+							"cores": 2.142123031504725
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 1.9593319,
+							"cpuSeconds": 3.203125,
+							"cores": 1.6348047005206214
+						},
+						{
+							"label": "join.query_parallel",
+							"wallSeconds": 1.9594802,
+							"cpuSeconds": 3.203125,
+							"cores": 1.634680973045811
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.785847,
+							"cpuSeconds": 0.78125,
+							"cores": 0.9941502608014029
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.2090726,
+							"cpuSeconds": 2.375,
+							"cores": 1.964315459634103
+						}
+					]
+				}
+			]
+		},
+		{
+			"round": "package",
+			"kind": "released",
+			"commit": "f96158fb796c9d98d08adb64624f1020da100dc2",
+			"wallSeconds": 108.6763681,
+			"peakGiB": 4.3399200439453125,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 208.4107,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 23.8353,
+				"stage.GameTextIndex.openTarget.wallMs": 1252.6742,
+				"stage.GameTextIndexSource.inventory.wallMs": 3392.438,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 0.008,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 352.158,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 3040.038,
+				"stage.GameTextIndexSource.verify.wallMs": 6011.8975,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 15704.561,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 41.563,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 13826.99,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 1984.952,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 899.782,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 2064.859,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 50326.531,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4591.907,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 27348.035,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 8617.582,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.02,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 5216.634,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 6720.544,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 345.816,
+				"stage.PackageText.refresh.package-text.stage_ms.read_receive": 290.077,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 44987.065,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 11938.262
+			},
+			"native": [
+				{
+					"label": "publish_localization",
+					"wallSeconds": 13.6811873,
+					"cpuSeconds": 16.59375,
+					"cores": 1.2128881533549358,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0465495,
+							"cpuSeconds": 0.265625,
+							"cores": 5.706291152429134
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.03271720000000001,
+							"cpuSeconds": 0.09375,
+							"cores": 2.865465259863313
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0482461,
+							"cpuSeconds": 0.09375,
+							"cores": 1.9431622452384754
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0336184,
+							"cpuSeconds": 0.265625,
+							"cores": 7.901179116198272
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0451738,
+							"cpuSeconds": 0.171875,
+							"cores": 3.804749655773922
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0411687,
+							"cpuSeconds": 0.296875,
+							"cores": 7.211182281684872
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0384391,
+							"cpuSeconds": 0.078125,
+							"cores": 2.0324357230007988
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0422665,
+							"cpuSeconds": 0.21875,
+							"cores": 5.1754935942176425
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0389431,
+							"cpuSeconds": 0.046875,
+							"cores": 1.2036792140327812
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0469196,
+							"cpuSeconds": 0.296875,
+							"cores": 6.327313105823579
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0313116,
+							"cpuSeconds": 0.265625,
+							"cores": 8.483277762873822
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0443834,
+							"cpuSeconds": 0.265625,
+							"cores": 5.984782598899589
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0365853,
+							"cpuSeconds": 0.28125,
+							"cores": 7.687513837524906
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.038183,
+							"cpuSeconds": 0.078125,
+							"cores": 2.0460676217164706
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0383551,
+							"cpuSeconds": 0.3125,
+							"cores": 8.147547523015191
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0389399,
+							"cpuSeconds": 0.15625,
+							"cores": 4.012593766291131
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0429486,
+							"cpuSeconds": 0.3125,
+							"cores": 7.276139385218609
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.031907,
+							"cpuSeconds": 0.1875,
+							"cores": 5.876453442818191
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0038922,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 5.2908866,
+							"cpuSeconds": 8.265625,
+							"cores": 1.5622381700639736
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.9956071,
+							"cpuSeconds": 2.953125,
+							"cores": 0.9858185340794525
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 1.1083938,
+							"cpuSeconds": 1.109375,
+							"cores": 1.0008852449373138
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 4.2677891,
+							"cpuSeconds": 4.234375,
+							"cores": 0.992170629987316
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 6.5591954,
+					"cpuSeconds": 12.546875,
+					"cores": 1.9128680020723272,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.0892401,
+							"cpuSeconds": 0.984375,
+							"cores": 11.03063533097789
+						},
+						{
+							"label": "publication.collect_strings_parallel",
+							"wallSeconds": 0.237713,
+							"cpuSeconds": 2.09375,
+							"cores": 8.807890186906059
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 3.48341,
+							"cpuSeconds": 3.46875,
+							"cores": 0.9957914801875173
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 0.2737218,
+							"cpuSeconds": 1.140625,
+							"cores": 4.16709593463144
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 2.4554725,
+							"cpuSeconds": 4.84375,
+							"cores": 1.9726345947674022
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 15.7092172,
+					"cpuSeconds": 30.921875,
+					"cores": 1.9683905700915512,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0010533,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.3723759,
+							"cpuSeconds": 1.359375,
+							"cores": 0.9905267208495865
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.3245285,
+							"cpuSeconds": 1.328125,
+							"cores": 1.002715305861671
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 1.5242908,
+							"cpuSeconds": 1.5,
+							"cores": 0.9840641956246144
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0255982,
+							"cpuSeconds": 0.03125,
+							"cores": 1.2207889617238712
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.0725568,
+							"cpuSeconds": 0.078125,
+							"cores": 1.0767426347358207
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.3989365,
+							"cpuSeconds": 1.390625,
+							"cores": 0.9940587010203823
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.0954661,
+							"cpuSeconds": 0.09375,
+							"cores": 0.9820239854775674
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.3922414,
+							"cpuSeconds": 0.390625,
+							"cores": 0.995879068349236
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 1.6585415000000001,
+							"cpuSeconds": 3.328125,
+							"cores": 2.0066576567423846
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.538469,
+							"cpuSeconds": 5.609375,
+							"cores": 10.417266360737575
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 2.2768891,
+							"cpuSeconds": 9.09375,
+							"cores": 3.993936287893864
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 1.1776658,
+							"cpuSeconds": 6.59375,
+							"cores": 5.598999308632381
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.2793097,
+							"cpuSeconds": 0.28125,
+							"cores": 1.0069467691240224
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.2787839,
+							"cpuSeconds": 0.28125,
+							"cores": 1.0088459197249198
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 4.0538672,
+							"cpuSeconds": 16.21875,
+							"cores": 4.000809399972451
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.2678146,
+							"cpuSeconds": 0.75,
+							"cores": 2.8004447853104346
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 1.5075395999999999,
+							"cpuSeconds": 3.21875,
+							"cores": 2.1351014593580167
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 2.7181327,
+							"cpuSeconds": 4.4375,
+							"cores": 1.632554584255581
+						},
+						{
+							"label": "join.query_parallel",
+							"wallSeconds": 2.7182664,
+							"cpuSeconds": 4.4375,
+							"cores": 1.6324742858168722
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.87027,
+							"cpuSeconds": 0.859375,
+							"cores": 0.9874808967331977
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.8200406999999998,
+							"cpuSeconds": 3.203125,
+							"cores": 1.7599194347686842
+						}
+					]
+				},
+				{
+					"label": "extract_text_packages",
+					"wallSeconds": 38.7184839,
+					"cpuSeconds": 213,
+					"cores": 5.501248461848993,
+					"stages": []
+				}
+			]
+		},
+		{
+			"round": "localization",
+			"kind": "1x",
+			"commit": "b62df9f8690fc979514f4b54642d1693978e71c8",
+			"wallSeconds": 61.8115988,
+			"peakGiB": 3.1317367553710938,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 294.4171,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 31.5611,
+				"stage.GameTextIndex.openTarget.wallMs": 1117.9781,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 12761.711,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 22.138,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 7289.073,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 1903.099,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 993.026,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 1897.059,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 46310.455,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4052.98,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 20414.23,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 5266.253,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.02,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 4006.232,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 8770.876,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 290.866,
+				"stage.PackageText.refresh.package-text.stage_ms.read_stage": 3118.988,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 9960.888,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 12778.176
+			},
+			"native": [
+				{
+					"label": "publish_localization",
+					"wallSeconds": 7.1561986,
+					"cpuSeconds": 14.8125,
+					"cores": 2.0698838626418223,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0383406,
+							"cpuSeconds": 0.09375,
+							"cores": 2.4451886511948167
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.033394,
+							"cpuSeconds": 0.3125,
+							"cores": 9.35796849733485
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0331057,
+							"cpuSeconds": 0.203125,
+							"cores": 6.135650356283057
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0353812,
+							"cpuSeconds": 0.140625,
+							"cores": 3.9745684148643914
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.038366,
+							"cpuSeconds": 0.171875,
+							"cores": 4.479878016994213
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0353859,
+							"cpuSeconds": 0.34375,
+							"cores": 9.714321240946253
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0386387,
+							"cpuSeconds": 0.203125,
+							"cores": 5.2570350451749155
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0371333,
+							"cpuSeconds": 0.203125,
+							"cores": 5.470157513606386
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0371395,
+							"cpuSeconds": 0.125,
+							"cores": 3.365688821874285
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0352243,
+							"cpuSeconds": 0.25,
+							"cores": 7.0973731202607295
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0365813,
+							"cpuSeconds": 0.515625,
+							"cores": 14.095316459502532
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0383629,
+							"cpuSeconds": 0.265625,
+							"cores": 6.924007309145034
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0327799,
+							"cpuSeconds": 0.34375,
+							"cores": 10.486609172084114
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0338026,
+							"cpuSeconds": 0.171875,
+							"cores": 5.0846680432866105
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0381087,
+							"cpuSeconds": 0.390625,
+							"cores": 10.250284055871756
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0357878,
+							"cpuSeconds": 0.21875,
+							"cores": 6.112418198380453
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0363551,
+							"cpuSeconds": 0.203125,
+							"cores": 5.587249106727804
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0447897,
+							"cpuSeconds": 0.25,
+							"cores": 5.581640421793403
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 3.6869684,
+							"cpuSeconds": 7.34375,
+							"cores": 1.9918125688302617
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.4591559,
+							"cpuSeconds": 2.453125,
+							"cores": 0.9975475731327161
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 0.5284936,
+							"cpuSeconds": 0.53125,
+							"cores": 1.0052155787695443
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 0.4487518,
+							"cpuSeconds": 4.46875,
+							"cores": 9.958177326531057
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 8.5822906,
+					"cpuSeconds": 15.90625,
+					"cores": 1.853380494946186,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.1074224,
+							"cpuSeconds": 1.25,
+							"cores": 11.636306766558931
+						},
+						{
+							"label": "publication.collect_strings_parallel",
+							"wallSeconds": 0.4495802,
+							"cpuSeconds": 3.328125,
+							"cores": 7.402739266542432
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 5.7918851,
+							"cpuSeconds": 5.765625,
+							"cores": 0.9954660530126883
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 0.2468006,
+							"cpuSeconds": 1.609375,
+							"cores": 6.52095254225476
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 1.9720039,
+							"cpuSeconds": 3.9375,
+							"cores": 1.9966999051066787
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 15.4546036,
+					"cpuSeconds": 27.734375,
+					"cores": 1.7945704540749268,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0023074,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.1964955,
+							"cpuSeconds": 1.1875,
+							"cores": 0.9924817937050328
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.5413075,
+							"cpuSeconds": 1.5,
+							"cores": 0.973199702200891
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 1.3923198,
+							"cpuSeconds": 1.390625,
+							"cores": 0.998782750916851
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0308951,
+							"cpuSeconds": 0.03125,
+							"cores": 1.011487258497302
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.0716586,
+							"cpuSeconds": 0.078125,
+							"cores": 1.090238994342619
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.527043,
+							"cpuSeconds": 1.53125,
+							"cores": 1.0027549977309087
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.0772076,
+							"cpuSeconds": 0.0625,
+							"cores": 0.8095057999471554
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.8528765,
+							"cpuSeconds": 0.859375,
+							"cores": 1.0076195088034434
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 2.2485774,
+							"cpuSeconds": 4.484375,
+							"cores": 1.9943164953983796
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 2.7717142,
+							"cpuSeconds": 5,
+							"cores": 1.8039377941636263
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.3609742,
+							"cpuSeconds": 3.875,
+							"cores": 10.734839221196419
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 0.9904667,
+							"cpuSeconds": 5.203125,
+							"cores": 5.253205382876577
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.1451544,
+							"cpuSeconds": 0.140625,
+							"cores": 0.9687959855161127
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.7302148,
+							"cpuSeconds": 0.734375,
+							"cores": 1.0056972277198435
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 5.0828704,
+							"cpuSeconds": 15.03125,
+							"cores": 2.9572365252515587
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.1646384,
+							"cpuSeconds": 0.5,
+							"cores": 3.0369585710259575
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 0.9652688,
+							"cpuSeconds": 2.09375,
+							"cores": 2.1690849222517086
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 1.7214224,
+							"cpuSeconds": 2.859375,
+							"cores": 1.6610536728231258
+						},
+						{
+							"label": "join.query_parallel",
+							"wallSeconds": 1.7215042999999999,
+							"cpuSeconds": 2.859375,
+							"cores": 1.6609746487418011
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.734315,
+							"cpuSeconds": 0.71875,
+							"cores": 0.9788033745735821
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.1794233,
+							"cpuSeconds": 2.4375,
+							"cores": 2.0666880160837926
+						}
+					]
+				}
+			]
+		},
+		{
+			"round": "localization",
+			"kind": "released",
+			"commit": "b62df9f8690fc979514f4b54642d1693978e71c8",
+			"wallSeconds": 100.8961954,
+			"peakGiB": 4.0373077392578125,
+			"host": {
+				"stage.GameText.workspace.localization.search.wallMs": 197.7405,
+				"stage.GameText.workspace.localization.searchRows.wallMs": 22.8215,
+				"stage.GameTextIndex.openTarget.wallMs": 1269.7395,
+				"stage.GameTextIndexSource.inventory.wallMs": 3130.9089,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 0.012,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 310.299,
+				"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2820.419,
+				"stage.GameTextIndexSource.verify.wallMs": 6128.5292,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.parse": 15599.787,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.readers": 39.721,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.publish": 9496.761,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_readMs": 1910.109,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_hashMs": 896.67,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_decodeMs": 2087.774,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_parseMs": 49954.247,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_finishMs": 4477.004,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_prepareMs": 27068.638,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_writeMs": 8681.975,
+				"stage.LocalizationSnapshot.importColdTarget.localization.import.stage_ms.worker_cachedLookupMs": 0.02,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.prepare": 5103.787,
+				"stage.PackageText.importCold.package-text.cold.stage_ms.publish": 6420.484,
+				"stage.PackageText.refresh.package-text.stage_ms.selection": 314.845,
+				"stage.PackageText.refresh.package-text.stage_ms.read_receive": 277.2,
+				"stage.PackageText.refresh.package-text.stage_ms.read": 43097.362,
+				"stage.PackageText.refresh.package-text.stage_ms.import": 11525.32
+			},
+			"native": [
+				{
+					"label": "extract_text_packages",
+					"wallSeconds": 36.684911500000005,
+					"cpuSeconds": 207.765625,
+					"cores": 5.663517138374451,
+					"stages": []
+				},
+				{
+					"label": "publish_localization",
+					"wallSeconds": 9.342846399999999,
+					"cpuSeconds": 17.28125,
+					"cores": 1.8496772032985582,
+					"stages": [
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0474833,
+							"cpuSeconds": 0.25,
+							"cores": 5.265008961045251
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0313888,
+							"cpuSeconds": 0.265625,
+							"cores": 8.462413344887349
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0486841,
+							"cpuSeconds": 0.109375,
+							"cores": 2.2466267220714773
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0321413,
+							"cpuSeconds": 0.109375,
+							"cores": 3.402942631443034
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0417428,
+							"cpuSeconds": 0.390625,
+							"cores": 9.357901242849067
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.035458,
+							"cpuSeconds": 0.265625,
+							"cores": 7.491257262112921
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0345306,
+							"cpuSeconds": 0.15625,
+							"cores": 4.524972053772596
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0353898,
+							"cpuSeconds": 0.09375,
+							"cores": 2.6490683756336573
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0315473,
+							"cpuSeconds": 0.0625,
+							"cores": 1.981152111274182
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0462389,
+							"cpuSeconds": 0.1875,
+							"cores": 4.055027260596598
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0306601,
+							"cpuSeconds": 0.265625,
+							"cores": 8.663539910176418
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0427165,
+							"cpuSeconds": 0.25,
+							"cores": 5.852539416852973
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0367887,
+							"cpuSeconds": 0.09375,
+							"cores": 2.548336853435974
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.035376,
+							"cpuSeconds": 0.296875,
+							"cores": 8.39198891904116
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.036638,
+							"cpuSeconds": 0.1875,
+							"cores": 5.11763742562367
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0327571,
+							"cpuSeconds": 0.0625,
+							"cores": 1.9079833074356403
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.04535,
+							"cpuSeconds": 0.125,
+							"cores": 2.7563395810363835
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0305265,
+							"cpuSeconds": 0.09375,
+							"cores": 3.071102157142155
+						},
+						{
+							"label": "dictionary.sort_run",
+							"wallSeconds": 0.0036983,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "dictionary.collect_sort",
+							"wallSeconds": 4.9495938,
+							"cpuSeconds": 7.53125,
+							"cores": 1.5215895090219325
+						},
+						{
+							"label": "dictionary.merge",
+							"wallSeconds": 2.6981503,
+							"cpuSeconds": 2.6875,
+							"cores": 0.9960527402791461
+						},
+						{
+							"label": "dictionary.dictionary",
+							"wallSeconds": 1.0388739,
+							"cpuSeconds": 1.046875,
+							"cores": 1.0077017047016004
+						},
+						{
+							"label": "dictionary.layers",
+							"wallSeconds": 0.6375603,
+							"cpuSeconds": 6,
+							"cores": 9.410874547866296
+						}
+					]
+				},
+				{
+					"label": "publish_packages",
+					"wallSeconds": 6.2731138,
+					"cpuSeconds": 11.828125,
+					"cores": 1.8855269292261205,
+					"stages": [
+						{
+							"label": "publication.read_strings",
+							"wallSeconds": 0.0784377,
+							"cpuSeconds": 0.84375,
+							"cores": 10.75694468348766
+						},
+						{
+							"label": "publication.collect_strings_parallel",
+							"wallSeconds": 0.2331325,
+							"cpuSeconds": 1.96875,
+							"cores": 8.444768532915832
+						},
+						{
+							"label": "publication.intern_strings",
+							"wallSeconds": 3.2759854,
+							"cpuSeconds": 3.25,
+							"cores": 0.9920679133673794
+						},
+						{
+							"label": "publication.map_strings",
+							"wallSeconds": 0.2036549,
+							"cpuSeconds": 0.984375,
+							"cores": 4.833544392990299
+						},
+						{
+							"label": "publication.encode_parallel",
+							"wallSeconds": 2.4651246,
+							"cpuSeconds": 4.78125,
+							"cores": 1.939557132325076
+						}
+					]
+				},
+				{
+					"label": "join",
+					"wallSeconds": 15.0077864,
+					"cpuSeconds": 28.984375,
+					"cores": 1.9312891473455405,
+					"stages": [
+						{
+							"label": "join.inputs",
+							"wallSeconds": 0.0016232,
+							"cpuSeconds": 0,
+							"cores": 0
+						},
+						{
+							"label": "join.dictionary",
+							"wallSeconds": 1.1005875,
+							"cpuSeconds": 1.109375,
+							"cores": 1.0079843719831454
+						},
+						{
+							"label": "join.load",
+							"wallSeconds": 1.1171365,
+							"cpuSeconds": 1.109375,
+							"cores": 0.9930523261929047
+						},
+						{
+							"label": "join.order",
+							"wallSeconds": 1.5471241,
+							"cpuSeconds": 1.53125,
+							"cores": 0.9897396078310718
+						},
+						{
+							"label": "join.groups",
+							"wallSeconds": 0.0247484,
+							"cpuSeconds": 0.03125,
+							"cores": 1.2627078922273762
+						},
+						{
+							"label": "join.folders",
+							"wallSeconds": 0.0676112,
+							"cpuSeconds": 0.0625,
+							"cores": 0.9244030574816007
+						},
+						{
+							"label": "join.line_values",
+							"wallSeconds": 1.9636075,
+							"cpuSeconds": 1.96875,
+							"cores": 1.0026189042362081
+						},
+						{
+							"label": "join.lines",
+							"wallSeconds": 0.1450209,
+							"cpuSeconds": 0.140625,
+							"cores": 0.9696878174111455
+						},
+						{
+							"label": "join.marks",
+							"wallSeconds": 0.6932373,
+							"cpuSeconds": 0.6875,
+							"cores": 0.9917239017577388
+						},
+						{
+							"label": "query.entries",
+							"wallSeconds": 1.6063523,
+							"cpuSeconds": 3.203125,
+							"cores": 1.9940364265049453
+						},
+						{
+							"label": "query.raw_ids",
+							"wallSeconds": 0.5683272,
+							"cpuSeconds": 5.484375,
+							"cores": 9.650030827312152
+						},
+						{
+							"label": "query.translation_cache",
+							"wallSeconds": 2.3125969,
+							"cpuSeconds": 8.953125,
+							"cores": 3.8714593970094833
+						},
+						{
+							"label": "query.line_ids",
+							"wallSeconds": 1.1133381,
+							"cpuSeconds": 5.90625,
+							"cores": 5.304992257069079
+						},
+						{
+							"label": "query.package_order",
+							"wallSeconds": 0.2164545,
+							"cpuSeconds": 0.21875,
+							"cores": 1.0106050001270475
+						},
+						{
+							"label": "query.source_cache",
+							"wallSeconds": 0.2062755,
+							"cpuSeconds": 0.203125,
+							"cores": 0.9847267368155695
+						},
+						{
+							"label": "join.query_columns",
+							"wallSeconds": 3.821884,
+							"cpuSeconds": 15.125,
+							"cores": 3.9574722833032085
+						},
+						{
+							"label": "join.query",
+							"wallSeconds": 0.2154509,
+							"cpuSeconds": 0.625,
+							"cores": 2.900892964475897
+						},
+						{
+							"label": "join.graph",
+							"wallSeconds": 1.2150648,
+							"cpuSeconds": 2.609375,
+							"cores": 2.147519210498074
+						},
+						{
+							"label": "join.query_places",
+							"wallSeconds": 2.1469078,
+							"cpuSeconds": 3.53125,
+							"cores": 1.6448074761291567
+						},
+						{
+							"label": "join.query_parallel",
+							"wallSeconds": 2.1469926,
+							"cpuSeconds": 3.53125,
+							"cores": 1.6447425109895581
+						},
+						{
+							"label": "join.encode",
+							"wallSeconds": 0.6908201,
+							"cpuSeconds": 0.6875,
+							"cores": 0.9951939730763479
+						},
+						{
+							"label": "join.publish",
+							"wallSeconds": 1.6423312,
+							"cpuSeconds": 2.96875,
+							"cores": 1.8076439149423695
+						}
+					]
+				}
+			]
+		}
+	],
+	"parity": [
+		{
+			"round": "join",
+			"project": "1x",
+			"rawEqual": 22,
+			"volatileOnly": 303,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 13017,
+			"differences": []
+		},
+		{
+			"round": "join",
+			"project": "released",
+			"rawEqual": 22,
+			"volatileOnly": 303,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 13272,
+			"differences": []
+		},
+		{
+			"round": "package",
+			"project": "1x",
+			"rawEqual": 22,
+			"volatileOnly": 303,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 13017,
+			"differences": []
+		},
+		{
+			"round": "package",
+			"project": "released",
+			"rawEqual": 22,
+			"volatileOnly": 303,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 13272,
+			"differences": []
+		},
+		{
+			"round": "localization",
+			"project": "1x",
+			"rawEqual": 22,
+			"volatileOnly": 303,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 13017,
+			"differences": []
+		},
+		{
+			"round": "localization",
+			"project": "released",
+			"rawEqual": 22,
+			"volatileOnly": 303,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 13272,
+			"differences": []
+		},
+		{
+			"round": "localization",
+			"project": "ue57",
+			"rawEqual": 15,
+			"volatileOnly": 67,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 2295,
+			"differences": []
+		},
+		{
+			"round": "localization",
+			"project": "ue58",
+			"rawEqual": 15,
+			"volatileOnly": 67,
+			"jsonRawEqual": 0,
+			"jsonVolatileOnly": 2,
+			"sections": 2295,
+			"differences": []
+		}
+	]
+}

@@ -7,7 +7,16 @@ interface EndedSpan {
 	readonly endNs: bigint;
 	/** The span's numeric `*.stage_ms.*` attributes. */
 	readonly stages: ReadonlyMap<string, number>;
+	/** Bounded import measures the summary keeps beside the stage times. */
+	readonly measures: ReadonlyMap<string, number>;
 }
+
+const keptMeasure = (attribute: string) =>
+	attribute.startsWith("localization.import.files.") ||
+	attribute.startsWith("localization.import.bytes.") ||
+	attribute.startsWith("localization.import.slowest") ||
+	attribute === "localization.import.workerCount" ||
+	attribute === "localization.import.memoryBudgetBytes";
 
 const isMilliseconds = Schema.is(Schema.Finite);
 
@@ -41,10 +50,20 @@ export function makeStageRecorder() {
 		override end(endTime: bigint, exit: Parameters<Tracer.NativeSpan["end"]>[1]) {
 			super.end(endTime, exit);
 			const stages = new Map<string, number>();
-			for (const [attribute, value] of this.attributes)
+			const measures = new Map<string, number>();
+			for (const [attribute, value] of this.attributes) {
 				if (attribute.includes(".stage_ms.") && isMilliseconds(value))
 					stages.set(attribute, value);
-			ended.push({ name: this.name, startNs: this.startTime, endNs: endTime, stages });
+				else if (keptMeasure(attribute) && isMilliseconds(value))
+					measures.set(attribute, value);
+			}
+			ended.push({
+				name: this.name,
+				startNs: this.startTime,
+				endNs: endTime,
+				stages,
+				measures
+			});
 		}
 	}
 	const tracer = Tracer.make({ span: (options) => new RecordingSpan(options) });
@@ -52,6 +71,10 @@ export function makeStageRecorder() {
 		tracer,
 		/** Flat numeric counts `<prefix>.<span>.<measure>`, ready for a benchmark result. */
 		counts(prefix = "stage") {
+			const origin = ended.reduce(
+				(first, span) => (span.startNs < first ? span.startNs : first),
+				ended[0]?.startNs ?? 0n
+			);
 			const byName = new Map<string, EndedSpan[]>();
 			for (const span of ended) {
 				const spans = byName.get(span.name) ?? [];
@@ -63,6 +86,14 @@ export function makeStageRecorder() {
 				const key = `${prefix}.${name}`;
 				counts.set(`${key}.count`, spans.length);
 				counts.set(
+					`${key}.startMs`,
+					Math.min(...spans.map((span) => Number(span.startNs - origin) / 1e6))
+				);
+				counts.set(
+					`${key}.endMs`,
+					Math.max(...spans.map((span) => Number(span.endNs - origin) / 1e6))
+				);
+				counts.set(
 					`${key}.wallMs`,
 					coveredMs(spans.map((span) => [span.startNs, span.endNs]))
 				);
@@ -72,6 +103,12 @@ export function makeStageRecorder() {
 				);
 				for (const span of spans)
 					for (const [attribute, ms] of span.stages)
+						counts.set(
+							`${key}.${attribute}`,
+							(counts.get(`${key}.${attribute}`) ?? 0) + ms
+						);
+				for (const span of spans)
+					for (const [attribute, ms] of span.measures)
 						counts.set(
 							`${key}.${attribute}`,
 							(counts.get(`${key}.${attribute}`) ?? 0) + ms

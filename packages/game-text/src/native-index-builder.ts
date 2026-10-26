@@ -1,5 +1,6 @@
 import { importLocalizationFile, importLocalizationTarget } from "./localization-import.js";
 import { refreshPackageTextLayer } from "./package-text-layer.js";
+import { packageTextReaderConfigurationLayer } from "./package-text-native.js";
 import { nativeIndexConfiguration } from "./native-index-configuration.js";
 import { nativeIndexQueryLayer } from "./index-query-native.js";
 import { snapshotStoreGuidance } from "./snapshot-store.js";
@@ -150,13 +151,16 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		Effect.mapError((cause) => unavailable("native-index-root", cause))
 	);
 	const command = Effect.fn("NativeIndexBuilder.execute")(
-		function* (request: GameTextIndexBuildRequest) {
+		function* (
+			request: GameTextIndexBuildRequest,
+			onProgress?: (completed: number, total: number) => void
+		) {
 			if (closed)
 				return yield* Effect.fail(
 					unavailable("native-index-session", "The build session is closed.")
 				);
 			const result = yield* client
-				.execute(request)
+				.execute(request, onProgress)
 				.pipe(
 					Effect.mapError((cause) =>
 						nativeFailure(cause, `native-index-${request.action}`)
@@ -209,6 +213,21 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		}
 	);
 	const writer: SharedIndexWriter = {
+		importLocalization: Effect.fn("NativeIndexBuilder.importLocalization")(
+			function* (request, onProgress) {
+				const result = yield* command(
+					{ action: "import_localization", configuration, request },
+					onProgress
+				);
+				if (!result.localization)
+					return yield* Effect.fail(
+						unavailable("native-localization", "Missing import outcome.")
+					);
+				lookupStrings += result.localization.lookupStrings;
+				reusedStrings += result.localization.reusedStrings;
+				return result.localization;
+			}
+		),
 		sortsColdStrings: true,
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {
@@ -525,8 +544,10 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 						Effect.gen(function* () {
 							const client = yield* Pool.get(writers);
 							let endedCleanly = false;
-							yield* Effect.addFinalizer(() =>
-								endedCleanly ? Effect.void : Pool.invalidate(writers, client)
+							yield* Effect.addFinalizer((exit) =>
+								endedCleanly && Exit.isSuccess(exit)
+									? Effect.void
+									: Pool.invalidate(writers, client)
 							);
 							const backing = yield* SharedIndex;
 							const stage = yield* Effect.acquireRelease(
@@ -567,6 +588,7 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 								writer: () => Effect.succeed(native.writer)
 							});
 							return yield* effect.pipe(
+								Effect.provide(packageTextReaderConfigurationLayer(configuration)),
 								Effect.provideService(SharedIndex, leased),
 								Effect.provideService(NativeBuildSession, native),
 								Effect.provideService(LocalizationImportSession, {

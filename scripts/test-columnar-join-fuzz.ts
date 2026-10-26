@@ -2,15 +2,14 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { repositoryRoot } from "./native-tools.ts";
 
-// `--native` adds the native persisted join sweep, which needs the native reader build. Without
-// it the sweep stays TypeScript-only, as the hosted repository job runs it on every change.
+// The sweep needs the native reader: it converts package text to columns (Plan 059 Phase 4.5,
+// decision 8). `--native` adds the native persisted join sweep beside the TypeScript join's.
 const args = process.argv.slice(2);
 const native = args.includes("--native");
 const result = spawnSync(
 	process.execPath,
 	[
 		join(repositoryRoot, "scripts/test.ts"),
-		...(native ? [] : ["--without-uasset"]),
 		"--config",
 		"vitest.node.config.ts",
 		"scripts/columnar-join-fuzz-sweep.test.ts",

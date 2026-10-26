@@ -57,6 +57,7 @@
 						"status",
 						"publish",
 						"publish_packages",
+						"plan_packages",
 						"publish_ids",
 						"intern",
 						"strings",
@@ -341,6 +342,91 @@
 							}
 						]
 					}
+				},
+				"plan": {
+					"type": "object",
+					"properties": {
+						"changed": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"group": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 0
+											}
+										]
+									},
+									"key": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											}
+										]
+									},
+									"packages": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 0
+											}
+										]
+									},
+									"selected": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 0
+											}
+										]
+									}
+								},
+								"required": ["group", "key", "packages", "selected"],
+								"additionalProperties": false
+							}
+						},
+						"removed": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							}
+						},
+						"packages": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"firstKey": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						}
+					},
+					"required": ["changed", "removed", "packages", "firstKey"],
+					"additionalProperties": false
 				},
 				"localization": {
 					"type": "object",

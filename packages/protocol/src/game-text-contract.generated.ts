@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "b74d46a76711e9ed9d3e56dd61a8ce1ef58fbae5f8d3bb120135fb83a4ebb793"
+	contractHash: "9e65c12f809ee2c78fc7824eef6387d0cbe4cd361148ed386f6f33e1d9c86e24"
 } as const;
 
 /**
@@ -27,6 +27,26 @@ export type Finding = {
 	readonly id: string;
 	readonly [key: string]: JsonValue;
 };
+
+export type LocalizationFormat = "manifest" | "archive" | "po";
+
+export type LocalizationOptions = { format: LocalizationFormat, poFormat?: string | null, collapseMode?: string | null, };
+
+export type LocalizationLimits = { maxFileBytes: number, maxEntries: number, maxDepth: number, maxFiles: number, maxRecordBytes: number, maxIdentityBytes: number, };
+
+export type LocalizationDiagnostic = { code: string, message: string, recovery: string, retrySafe: boolean, nextStep: string, };
+
+export type LocalizationInput = { chunkBytes?: number, projectRoot: string, file: string, relativePath: string, options: LocalizationOptions, limits: LocalizationLimits, };
+
+export type LocalizationImportRequest = { files: ReadonlyArray<LocalizationInput>, maximumInFlightBytes: number, cold: boolean, };
+
+export type LocalizationProvenance = { relativePath: string, size: number, modifiedTime: string, contentHash: string, };
+
+export type LocalizationPreparedFile = { key: string, contentHash: string, provenance: LocalizationProvenance, relativePath: string, format: LocalizationFormat, inputBytes: number, parsed: boolean, snapshotBytes: number, };
+
+export type LocalizationFileResult = { file: LocalizationPreparedFile | null, error: LocalizationDiagnostic | null, };
+
+export type LocalizationImportOutcome = { lookupStrings: number, reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
 export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
 /**

@@ -16,6 +16,24 @@ pub struct LayerInput {
     pub name: String,
     pub file: PathBuf,
 }
+#[derive(Clone)]
+pub(crate) enum LayerSource {
+    File(PathBuf),
+    Memory(std::sync::Arc<crate::localization::columns::LocalLayer>),
+}
+impl LayerSource {
+    pub(crate) fn open(&self) -> Result<Reader> {
+        match self {
+            Self::File(path) => Reader::open(path),
+            Self::Memory(layer) => Ok(Reader::memory(layer.clone())),
+        }
+    }
+}
+pub(crate) struct SourceLayer {
+    pub name: String,
+    pub key: String,
+    pub source: LayerSource,
+}
 #[derive(Serialize, Deserialize)]
 pub struct Segment {
     file: String,
@@ -287,6 +305,22 @@ pub fn build_configured(
     run_bytes: usize,
     configuration: Option<(&str, &BTreeMap<String, String>)>,
 ) -> Result<Value> {
+    let sources = layers
+        .iter()
+        .map(|layer| SourceLayer {
+            name: layer.name.clone(),
+            key: String::new(),
+            source: LayerSource::File(layer.file.clone()),
+        })
+        .collect::<Vec<_>>();
+    build_sources(&sources, output, run_bytes, configuration)
+}
+pub(crate) fn build_sources(
+    layers: &[SourceLayer],
+    output: &Path,
+    run_bytes: usize,
+    configuration: Option<(&str, &BTreeMap<String, String>)>,
+) -> Result<Value> {
     fs::create_dir(output)?;
     let staging = output.join("staging");
     fs::create_dir(&staging)?;
@@ -295,7 +329,7 @@ pub fn build_configured(
     result
 }
 fn build_inner(
-    layers: &[LayerInput],
+    layers: &[SourceLayer],
     output: &Path,
     staging: &Path,
     run_bytes: usize,
@@ -303,11 +337,10 @@ fn build_inner(
 ) -> Result<Value> {
     let mut measure = crate::scan_timings::Cursor::new();
     for layer in layers {
-        if crate::scan_timings::enabled() {
-            crate::scan_timings::count(
-                "publication.staged_bytes",
-                fs::metadata(&layer.file)?.len(),
-            );
+        if crate::scan_timings::enabled()
+            && let LayerSource::File(file) = &layer.source
+        {
+            crate::scan_timings::count("publication.staged_bytes", fs::metadata(file)?.len());
         }
     }
     crate::scan_timings::count("publication.inputs", layers.len() as u64);
@@ -320,7 +353,7 @@ fn build_inner(
     let mut ranges = Vec::new();
     let mut total = 0;
     for layer in layers {
-        let reader = Reader::open(&layer.file)?;
+        let reader = layer.source.open()?;
         let mut range = BTreeMap::new();
         for e in &reader.entries {
             if e.kind != 4 || range.contains_key(&e.domain) {
@@ -355,7 +388,7 @@ fn build_inner(
     let mut bytes = 0;
     let mut runs = Vec::new();
     for (layer, range) in layers.iter().zip(&ranges) {
-        let reader = Reader::open(&layer.file)?;
+        let reader = layer.source.open()?;
         let mut positions = BTreeMap::<String, usize>::new();
         for id in 0..reader.entries.len() {
             let e = reader.entries[id].clone();
@@ -481,7 +514,7 @@ fn build_inner(
         .enumerate()
         .map(|(i, (layer, range))| {
             let _span = crate::scan_timings::Span::new("dictionary.encode_layer_parallel");
-            let mut reader = Reader::open(&layer.file)?;
+            let mut reader = layer.source.open()?;
             let file = if configuration.is_some() {
                 format!("layer-{generation}-{i:08x}.snapshot")
             } else {

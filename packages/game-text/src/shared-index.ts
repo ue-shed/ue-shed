@@ -1,4 +1,5 @@
 import { snapshotStoreGuidance } from "./snapshot-store.js";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { encodeWtf8 } from "./wtf8.js";
 import { projectIndexViewLayer, type GameTextProjectView } from "./project-index-view.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -132,6 +133,11 @@ export interface SharedIndexReader {
 	) => Effect.Effect<Awaited<ReturnType<SharedStringFiles["range"]>>, Failure>;
 }
 export interface SharedIndexWriter {
+	/** Parse authored files inside the writer and publish their native columns directly. */
+	readonly importLocalization?: (
+		request: GameTextContract.LocalizationImportRequest,
+		onProgress?: (completed: number, total: number) => void
+	) => Effect.Effect<GameTextContract.LocalizationImportOutcome, Failure>;
 	/** Native record replacement: nonnegative rows retain old records; -1-row selects a changed record. */
 	readonly replacePackages?: (
 		entries: readonly {

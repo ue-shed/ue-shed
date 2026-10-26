@@ -553,9 +553,8 @@ struct LocalStrings {
     /// The layer carries `file.meta` and may reuse a previous layer's dictionary blocks.
     reusable: bool,
 }
-fn local_strings(file: &Path) -> Result<LocalStrings> {
+fn local_strings(reader: Reader) -> Result<LocalStrings> {
     let _span = crate::scan_timings::Span::new("store.local_strings");
-    let reader = Reader::open(file)?;
     let mut domains: Vec<(String, Vec<Vec<u8>>)> = Vec::new();
     for index in 0..reader.entries.len() {
         let entry = reader.entries[index].clone();
@@ -581,12 +580,11 @@ fn local_strings(file: &Path) -> Result<LocalStrings> {
 fn encode_local_layer(
     directory: &Path,
     key: &str,
-    input: &Path,
+    reader: Reader,
     mapping: &BTreeMap<String, Vec<u32>>,
     generation: &Value,
     segment_count: usize,
 ) -> Result<Value> {
-    let reader = Reader::open(input)?;
     let mut writer = Writer::new(&directory.join(format!("{}.tmp", token())))?;
     let mut order = Vec::new();
     let mut string_columns = BTreeMap::new();
@@ -626,6 +624,7 @@ pub struct Compaction {
     pub total_bytes: u64,
 }
 pub struct Store {
+    pub(crate) localization_lookups: u64,
     pub directory: PathBuf,
     pub root: Value,
     configuration: Configuration,
@@ -693,6 +692,7 @@ impl Store {
             configuration,
             current,
             root,
+            localization_lookups: 0,
             dictionary: None,
             dictionary_lengths: None,
             _lock: lock,
@@ -712,11 +712,22 @@ impl Store {
         files: &[&Path],
         reuse: Option<&Value>,
     ) -> Result<bool> {
+        let readers = files
+            .iter()
+            .map(|file| Reader::open(file))
+            .collect::<Result<Vec<_>>>()?;
+        self.reserve_local_readers(&readers.iter().collect::<Vec<_>>(), reuse)
+    }
+    fn reserve_local_readers(
+        &mut self,
+        readers: &[&Reader],
+        reuse: Option<&Value>,
+    ) -> Result<bool> {
         let mut chunks = 0usize;
         let mut domains = 0usize;
         let metadata = if let Some(old) = reuse {
             require(
-                files.len() == 1 && old["storeGeneration"] == self.root["generation"],
+                readers.len() == 1 && old["storeGeneration"] == self.root["generation"],
                 "reuse preflight generation",
             )?;
             let previous = Reader::open(
@@ -736,8 +747,7 @@ impl Store {
         } else {
             Value::Null
         };
-        for file in files {
-            let reader = Reader::open(file)?;
+        for reader in readers {
             let mut file_domains = BTreeSet::new();
             for index in 0..reader.entries.len() {
                 if reader.entries[index].kind != 4 {
@@ -808,6 +818,7 @@ impl Store {
         values: &[Vec<u8>],
         sorted_unique: bool,
     ) -> Result<Vec<u32>> {
+        self.localization_lookups += values.len() as u64;
         let _span = crate::scan_timings::Span::new("store.intern");
         require(
             !self.uncertain && domain.len() <= 23,
@@ -961,15 +972,28 @@ impl Store {
         Ok(())
     }
     pub fn prepare_batch_cold(&mut self, inputs: &[crate::builder::InputLayer]) -> Result<()> {
+        let sources = inputs
+            .iter()
+            .map(|input| dictionary::SourceLayer {
+                name: input.name.clone(),
+                key: input.key.clone(),
+                source: dictionary::LayerSource::File(input.file.clone()),
+            })
+            .collect::<Vec<_>>();
+        self.prepare_batch_cold_sources(&sources)
+    }
+    pub(crate) fn prepare_batch_cold_sources(
+        &mut self,
+        inputs: &[dictionary::SourceLayer],
+    ) -> Result<()> {
         let _span = crate::scan_timings::Span::new("store.prepare_batch_cold");
         use rayon::prelude::*;
         let mut measure = crate::scan_timings::Cursor::new();
         for input in inputs {
-            if crate::scan_timings::enabled() {
-                crate::scan_timings::count(
-                    "publication.staged_bytes",
-                    fs::metadata(&input.file)?.len(),
-                );
+            if crate::scan_timings::enabled()
+                && let dictionary::LayerSource::File(file) = &input.source
+            {
+                crate::scan_timings::count("publication.staged_bytes", fs::metadata(file)?.len());
             }
         }
         crate::scan_timings::count("publication.inputs", inputs.len() as u64);
@@ -981,7 +1005,7 @@ impl Store {
         // first-open latency some platforms add to new files.
         let locals = pending
             .par_iter()
-            .map(|input| local_strings(&input.file))
+            .map(|input| local_strings(input.source.open()?))
             .collect::<Result<Vec<_>>>()?;
         measure.mark("publication.read_strings");
         // Per-layer collection and domain sorting share no mutable dictionary state. Only the
@@ -1045,7 +1069,7 @@ impl Store {
             });
         if !independent {
             for input in inputs {
-                self.prepare_local_with_mode(&input.name, &input.key, &input.file, false)?;
+                self.prepare_local_reader(&input.name, &input.key, input.source.open()?, false)?;
             }
             measure.mark("publication.encode_serial");
             return Ok(());
@@ -1095,7 +1119,7 @@ impl Store {
                 encode_local_layer(
                     &directory,
                     &input.key,
-                    &input.file,
+                    input.source.open()?,
                     mapping,
                     &generation,
                     segment_count,
@@ -1117,6 +1141,15 @@ impl Store {
         name: &str,
         key: &str,
         input: &Path,
+        track_garbage: bool,
+    ) -> Result<Value> {
+        self.prepare_local_reader(name, key, Reader::open(input)?, track_garbage)
+    }
+    pub(crate) fn prepare_local_reader(
+        &mut self,
+        name: &str,
+        key: &str,
+        mut reader: Reader,
         track_garbage: bool,
     ) -> Result<Value> {
         require(!self.uncertain, "publication uncertain: reopen writer")?;
@@ -1143,10 +1176,9 @@ impl Store {
             return Ok(record);
         }
         let _span = crate::scan_timings::Span::new("store.prepare_local");
-        let mut reader = Reader::open(input)?;
         let allow_reuse =
             if old.is_some() && reader.entries.iter().any(|entry| entry.name == "file.meta") {
-                self.reserve_local_segments(&[input], old.as_ref())?
+                self.reserve_local_readers(&[&reader], old.as_ref())?
             } else {
                 true
             };
@@ -1320,6 +1352,20 @@ impl Store {
     }
     /// The external merge builds a cold batch without per-file dictionary probes or segment growth.
     pub fn publish_cold(&mut self, inputs: &[crate::builder::InputLayer]) -> Result<Value> {
+        let sources = inputs
+            .iter()
+            .map(|i| dictionary::SourceLayer {
+                name: i.name.clone(),
+                key: i.key.clone(),
+                source: dictionary::LayerSource::File(i.file.clone()),
+            })
+            .collect::<Vec<_>>();
+        self.publish_cold_sources(&sources)
+    }
+    pub(crate) fn publish_cold_sources(
+        &mut self,
+        inputs: &[dictionary::SourceLayer],
+    ) -> Result<Value> {
         require(
             self.root["active"]
                 .as_object()
@@ -1331,20 +1377,13 @@ impl Store {
             .as_str()
             .ok_or("generation")?
             .to_owned();
-        let layers: Vec<_> = inputs
-            .iter()
-            .map(|i| dictionary::LayerInput {
-                name: i.name.clone(),
-                file: i.file.clone(),
-            })
-            .collect();
         let keys: BTreeMap<_, _> = inputs
             .iter()
             .map(|i| (i.name.clone(), i.key.clone()))
             .collect();
         let result = (|| {
-            let measured = dictionary::build_configured(
-                &layers,
+            let measured = dictionary::build_sources(
+                inputs,
                 &stage,
                 64 * 1024 * 1024,
                 Some((&generation, &keys)),

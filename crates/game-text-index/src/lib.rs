@@ -48,6 +48,7 @@ mod join_query;
 mod json_value;
 mod layer_reuse;
 mod line_break;
+pub mod localization;
 pub mod rules;
 pub mod scan_timings;
 pub mod session;

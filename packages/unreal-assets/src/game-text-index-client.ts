@@ -18,7 +18,8 @@ export class NativeGameTextIndexClient extends Context.Service<
 	NativeGameTextIndexClient,
 	{
 		readonly execute: (
-			request: GameTextIndexBuildRequest
+			request: GameTextIndexBuildRequest,
+			onProgress?: (completed: number, total: number) => void
 		) => Effect.Effect<NativeGameTextIndexOutcome, AssetReaderError>;
 	}
 >()("@ue-shed/unreal-assets/NativeGameTextIndexClient") {}
@@ -44,7 +45,7 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 				(session) => Effect.promise(() => session.close())
 			);
 			return NativeGameTextIndexClient.of({
-				execute: Effect.fn("NativeGameTextIndex.execute")(function* (input) {
+				execute: Effect.fn("NativeGameTextIndex.execute")(function* (input, onProgress) {
 					const decoded = yield* Schema.decodeUnknownEffect(GameTextIndexBuildRequest)(
 						input
 					).pipe(
@@ -85,6 +86,10 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 								{ contractMinor: request.action === "publish_packages" ? 16 : 13 }
 							),
 							expected: "game_text_index",
+							onEvent: (event) => {
+								if (event.kind === "progress")
+									onProgress?.(event.completedItems, event.totalItems ?? 0);
+							},
 							select: (result) =>
 								result.kind === "game_text_index" ? result.outcome : undefined
 						})

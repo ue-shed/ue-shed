@@ -1762,3 +1762,181 @@ license, StyleX and all 336 architecture regression tests. No unexplained identi
 fixture disagreement or cancellation regression occurred. No Unreal Editor, Perforce write,
 network service, push or PR was used. The only merge was the explicitly authorized specification
 amendment. The working default remains 256 MiB pending the lead's combined-tree measurement.
+
+## Native localization import
+
+Implemented on `perf/p45-native-localization` from `9cb6ecaa`, in `bf0b9548` (Rust parsers
+and differential oracle), `a705018c` (writer command and direct column publication),
+`5e3b34a5` (target and standalone imports, warm hints, cancellation and worker removal),
+and `8a562d25` (first-failure ordering when later syntax or encoding is invalid).
+[Numeric measurements](game-text-native-localization-measurements.json) retain the binary
+hashes, anonymous stage totals, all comparison counts and memory samples' summary.
+
+The writer reads, hashes and decodes authored files, with UTF-16LE BOM support for JSON and
+UTF-8 for PO, following the existing importer. Up to eight file workers share a **256 MiB
+input-byte bound**; an oversized file runs alone. Completed files retain request order. The
+parsers produce the original local columns and string-block boundaries in memory, feeding
+the existing external merge and layer encoders directly. The same command handles file
+refreshes, including content-hash reuse and nonempty-store cold publication. File progress
+stays in `localization`. Generated Rust contract types describe the request and result.
+
+Deleted `localization-import-worker.ts`, the cold worker pool, its staged snapshots and
+string runs, and both worker exceptions in the Effect architecture checker. The cold host
+adapter now submits paths and retains stat hints; it neither reads authored bytes nor
+prepares string runs. `prepareLocalizationFile` remains exported and deprecated for explicit
+snapshot/reference consumers. Repository-wide caller search, including apps and extensions,
+found only its exports and the removed worker. The independent localization package's
+parsers and PO writing are unchanged.
+
+### Method and retained artifacts
+
+The unchanged `9cb6ecaa` reader was built first in this worktree and preserved as
+`target/p45-localization-baseline.exe`. Baseline and changed TypeScript packages were built
+before their runs. Two initial setup attempts were discarded: loading the supplied environment
+file also overwrote the selected executable. Accepted runs extract only the two project
+variables from that file in memory. No private input identity is retained in this report.
+
+All builds and heavy runs were sequential under `E:/es-id-repairs-scratch/unreal.lock`, with
+`CARGO_BUILD_JOBS=8`, `RAYON_NUM_THREADS=16` and Node 26.12.0. Inputs remained read-only;
+no Unreal Editor, Perforce write, network service, push, PR or merge was used. Each timing
+condition uses one fresh Game Text cache, not a flushed OS cache. The harness warms its
+external project index outside the build timer; the 1× project replays retained records.
+
+Accepted baseline outputs are `E:/ue-shed-engine-scratch/p45-loc-base-{1x,released}-r3` and
+`p45-loc-base-ue{57,58}-r1`. Changed timing outputs are `p45-loc-after-{1x,released}-r4`;
+changed canonical outputs are `p45-loc-after-ue{57,58}-r3`. Host spans are each output's
+`run-1/build/stages.json`; caches are `caches/run-1`. Reproduction helpers remain in this
+worktree's ignored `target/p45-localization-repro/` directory.
+
+Both accepted timing conditions enable `UE_SHED_GAME_TEXT_STAGES=1` and leave
+`UE_SHED_COLD_SCAN_MEASURE_DIR` unset. Earlier changed `r2` runs enabled native attribution;
+their numbers from `5e3b34a5` are retained separately rather than compared against an
+uninstrumented baseline. The provisional 128 MiB implementation's `r1` outputs are also retained; they
+are neither a final timing result nor an isolated budget sweep.
+
+### Cold-build stage tables
+
+Times are seconds, except the GiB row. "Published before" is the final median in the
+"Phase 4.5 results" section of `game-text-engine-measurements.md`, as requested; "Fresh
+before" is this task's unchanged-base run. "After" uses matching instrumentation flags.
+Independent branches overlap, so rows must not be summed. Inventory for the 1× project is
+refresh setup residual; open/page includes the workspace residual outside preparation.
+Selection, the publication gate and other bookkeeping remain in whole-build wall.
+
+| Stage, the released project   | Published before | Fresh before |  After |
+| ----------------------------- | ---------------: | -----------: | -----: |
+| Package inventory             |            3.715 |        3.728 |  3.245 |
+| Localization parse            |           22.796 |       23.167 | 15.606 |
+| Localization publish          |           12.473 |       12.563 | 10.778 |
+| Package extraction            |           23.154 |       24.189 | 22.924 |
+| Bundle verification           |            5.574 |        5.470 |  5.459 |
+| Package prepare               |            4.759 |        4.822 |  4.483 |
+| Package publish               |            6.023 |        5.779 |  7.078 |
+| Join                          |           13.748 |       13.641 | 13.751 |
+| Open + first page / workspace |            1.999 |        1.900 |  1.945 |
+| Whole measured build          |           62.247 |       62.301 | 59.619 |
+| Peak tree working set, GiB    |            4.855 |        4.927 |  5.418 |
+
+| Stage, the 1× project             | Published before | Fresh before |  After |
+| --------------------------------- | ---------------: | -----------: | -----: |
+| Records inventory / refresh setup |            0.840 |        0.817 |  0.846 |
+| Localization parse                |           20.604 |       21.905 | 16.589 |
+| Localization publish              |            6.974 |        6.950 |  6.195 |
+| Retained-record replay            |           13.208 |       13.749 | 10.499 |
+| Bundle verification               |            0.000 |        0.000 |  0.000 |
+| Package prepare                   |            4.305 |        4.219 |  4.066 |
+| Package publish                   |            7.912 |        8.601 |  8.379 |
+| Join                              |           14.306 |       14.630 | 13.998 |
+| Open + first page / workspace     |            1.942 |        1.936 |  2.019 |
+| Whole measured build              |           56.705 |       58.815 | 51.962 |
+| Peak tree working set, GiB        |            2.841 |        2.737 |  2.938 |
+
+Native localization preparation consumed **52.938 s process CPU / 15.606 s wall** on the
+released project and **51.172 s CPU / 16.589 s wall** on the 1× project. This interval includes
+file reads, hashing, decoding, parsing, local column construction and ordering, before shared
+dictionary publication. CPU is summed across native threads using `GetProcessTimes`.
+The TypeScript baseline did not record equivalent CPU: the earlier attribution's 97.3 s
+(released) and 79.4 s (1×) are worker-busy wall sums, not CPU measurements.
+
+Against the fresh baselines, whole wall fell by **2.682 s (4.3%)** on the released project
+and **6.853 s (11.7%)** on the 1× project. Parsing fell by 7.561 s and 5.316 s. Package
+publication and join were slower on the released project, offsetting part of the savings.
+One run per condition describes these observations, not a distribution or an isolated
+causal attribution. This is not the lead's final three-run campaign. All timed runs remained
+below the memory ceiling, though the released build's coarse peak increased.
+
+### Byte identity
+
+The unchanged `scripts/p45-host-layers.ts` compared caches file by file using `cmp -s`, then
+checked every stored non-metadata section and descriptor where generated metadata prevented
+whole-file equality. It also verified current/previous roots, active pointers, layer keys,
+dictionary records, manifests and dependency state/checksums, and rejected unaccounted files.
+
+| Input                   | Package layers | Localization + observation layers | Joined layers | Dictionaries, whole-file equal | Stored data sections compared | Metadata-only files |
+| ----------------------- | -------------: | --------------------------------: | ------------: | -----------------------------: | ----------------------------: | ------------------: |
+| 1× project              |            256 |                                43 |             1 |                             22 |                        13,017 |                 305 |
+| Released project        |            256 |                                43 |             1 |                             22 |                        13,272 |                 305 |
+| UE 5.7 canonical corpus |             44 |                                19 |             1 |                             15 |                         2,295 |                  69 |
+| UE 5.8 canonical corpus |             44 |                                19 |             1 |                             15 |                         2,295 |                  69 |
+
+All comparisons passed. Each changed output's `parity.json` lists every differing physical
+filename. Every dictionary is whole-file identical, and every non-metadata stored payload
+matches, including compressed bytes, codecs, counts, checksums and `reuse.meta` hashes.
+Only the established exclusions apply: generated generation tokens, physical filenames and
+references, generation-derived joined keys, metadata-dependent layer byte lengths and
+framing/offsets. Dependency-envelope checksums are verified before normalizing generated
+references. No authored value, input hash/key, file timestamp, ID, dictionary boundary or
+data column is excluded. External stat hints, project-index caches, empty staging
+bookkeeping and measurement logs are outside the published-snapshot comparison.
+
+Differential coverage includes 38 authored localization files (20 fixture files and nine
+per canonical corpus) plus 124 generated cases. It compares every raw local column, string
+block and diagnostic with the TypeScript importer: BOM variants, invalid encodings, physical
+line endings, PO escape replacement order, continuations, contexts, comments, previous msgids,
+plurals and large indices, explicit/auto Crowdin modes, empty/duplicate rows, malformed input,
+earlier column-limit/syntax failures followed by later syntax/encoding failures,
+reserved Unicode scalars and string-block boundaries. The public-parser import oracle also
+checks every committed fixture localization file, including expected UE 5.7/5.8 outputs.
+
+### Released-project memory gate
+
+The unchanged memory probe used a fresh cache and its default cold project-index refresh,
+with `node --import tsx`, native attribution disabled and 250 ms requested sampling. It
+retained 101 samples, mean gap 653.220 ms and maximum gap 926 ms. Its process-tree peak was
+**5,134,487,552 bytes (4.782 GiB)** at 18.267 s, below the 6 GiB ceiling. The last progress
+label was `packages`; concurrent labels do not identify exclusive ownership of a sample.
+
+| Role at the tree peak                   |         Bytes |   GiB | Processes |
+| --------------------------------------- | ------------: | ----: | --------: |
+| Node coordinator and its worker threads |   984,858,624 | 0.917 |         1 |
+| Native sessions                         | 1,294,503,936 | 1.206 |         3 |
+| Native one-shot reader                  | 2,823,528,448 | 2.630 |         1 |
+| Sampler/loader/other                    |    31,596,544 | 0.029 |         4 |
+| Total                                   | 5,134,487,552 | 4.782 |         9 |
+
+Node's separate sampled high was **2,594,844,672 bytes (2.417 GiB)**; 0.917 GiB is its share
+at the tree peak, not its lifetime high. The artifact is
+`E:/ue-shed-engine-scratch/p45-loc-memory-r3/memory.json`. These are sampled lower bounds,
+not continuous high-water guarantees. The final released timing build's coarse sample was
+**5.418 GiB**. An earlier matched run before the error-ordering follow-up reached
+**5.552 GiB**; every retained timing run stayed below 6 GiB. The separate probe's
+4.782 GiB is not a claim that every run peaked at that lower value.
+
+### Verification
+
+Targeted Vitest coverage passed across 32 files and 240 tests, with a freshly built reader explicitly
+selected for every invocation. The initial broad run passed 31 files; the failing import file
+and native command integration file then passed their 50-test rerun. After the error-ordering
+follow-up, those 50 tests, both complete crate suites, clippy and typecheck passed again
+with the final executable and regenerated contract. Updated assertions
+measure native changed-block probes rather than the former TypeScript identity-diff lookup
+count, and cancel on native file progress instead of polling deleted staging files. Tests
+retain parsed-row equality, bounded reuse, failed cold-publication atomicity, stat/content
+reuse, interruption cleanup and immediate same-cache retry.
+
+`cargo test --locked -p game-text-index -- --test-threads=1` passed **148 tests**, with three
+existing opt-in tests ignored. `cargo test --locked -p uasset-io -- --test-threads=1` passed
+**134 tests**, with one existing helper ignored. Clippy passed for both crates, all targets,
+with warnings denied. `pnpm -s run typecheck` passed. Generated-contract checks and locked
+release builds passed. Final static validation is retained in
+`target/p45-localization-static-final.log`. The full suite and `pnpm check` were not run.

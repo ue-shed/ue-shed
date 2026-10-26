@@ -18,7 +18,7 @@
   owner's review are recorded. Phase 2 is complete (#168); its measurements and the owner's
   review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
   recorded. Phase 4 is complete (#170); its measurements and the owner's review are recorded.
-  Phase 4.5 (the cold scan) is in progress.
+  Phase 4.5 (the cold scan, #171) is implemented and measured; the owner's review is pending.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -523,7 +523,11 @@ from [the attribution](../docs/engineering/game-text-scan-attribution.md).
 - The localization import runs beside package extraction.
 - The reader's workers stage their own records; the join, package interning and localization
   encoding run their independent work in parallel.
+- The writer parses localization files, and the reader writes the package-text shard snapshots:
+  no bulk text crosses TypeScript.
 - Every snapshot and exported file stays byte-identical.
+- Cold build 105.4 → 53.5 s on the released project and 73.3 → 48.5 s on the 1× project; Node's
+  memory high 2.4 → 0.33 GiB ("Phase 4.5 results" in the measurements).
 
 ### Phase 5: incremental findings
 

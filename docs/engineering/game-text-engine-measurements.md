@@ -787,6 +787,10 @@ stat-cache, staging bookkeeping and measurement logs are outside the published-s
 Measurement, memory, cancellation, fixture, export and four-input snapshot gates completed
 without a STOP condition.
 
+**The fuzz run.** One 10,000-line fuzz run on UE 5.8 with the final reader (seed 73131: 11,042
+lines, 44,168 subjects) has no unexpected disagreement and no stale defect, before and after a
+package edit, and its incremental and full scans agree.
+
 **Verification.** The fresh locked release reader build passed. Both corpus integration tests
 passed with the final reader explicitly selected. `pnpm -s run typecheck` passed.
 `pnpm -s run check:static` passed.

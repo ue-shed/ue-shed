@@ -549,6 +549,8 @@ has every table.
 
 ### Phase 6: Electroswag
 
+The specification is [Game Text rule engine, Phase 6](../docs/engineering/game-text-rule-engine-phase-6.md).
+
 - Electroswag deletes its fork and its vendored oracle.
 - Rules come from the file plus the host overlay.
 - Its fixture runs on the same generator.

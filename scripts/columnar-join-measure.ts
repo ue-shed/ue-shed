@@ -20,7 +20,7 @@ import {
 } from "../packages/game-text/src/joined-target-reader.ts";
 import { hydrateJoinedTarget } from "../packages/game-text/src/joined-target-hydrate.test-support.ts";
 import { LocalizationLine } from "../packages/game-text/src/localization-schema.ts";
-import { packageTextJsonLines } from "../packages/game-text/src/package-text-ndjson.ts";
+import { packageTextJsonLines } from "./retained-package-lines.ts";
 import { compareLocalizationJoins } from "./localization-join-oracle.test-support.ts";
 import { refreshPackageTextLayer } from "../packages/game-text/src/package-text-layer.ts";
 import { importLocalizationTarget } from "../packages/game-text/src/localization-import.ts";

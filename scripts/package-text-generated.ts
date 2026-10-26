@@ -1,6 +1,6 @@
 import { openSync, closeSync, writeSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { packageTextJsonLines } from "../packages/game-text/src/package-text-ndjson.ts";
+import { packageTextJsonLines } from "./retained-package-lines.ts";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { Schema } from "effect";

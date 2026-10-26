@@ -182,10 +182,6 @@ const approvedResourceAdapters = new Set([
 	"extensions/game-text/src/game-text-query-route.tsx",
 	// Parser workers and their listeners are closed on success, failure and scope cancellation.
 	"packages/game-text/src/localization-cold-import.ts",
-	// Package workers, reply/abort listeners, readers and staging belong to the cold-import scope.
-	"packages/game-text/src/package-text-cold.ts",
-	// The worker's parentPort listener lives only until that owning scope terminates the worker.
-	"packages/game-text/src/package-text-worker.ts",
 	// Cold layer listeners and workers terminate in the publication adapter's finally block.
 	"packages/game-text/src/cold-layer-pool.ts",
 	"packages/game-text/src/cold-layer-worker.ts",

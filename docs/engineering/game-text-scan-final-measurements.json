@@ -1,33 +1,49 @@
 {
+	"campaign": {
+		"implementation": "39b1748f",
+		"baselineProduct": "ea6b5cb0",
+		"harness": "39b1748f",
+		"baselineReplayAdapter": "Current helper read fallback; unsupported native snapshot stage and its import omitted"
+	},
 	"memory": {
 		"budgetMiB": 256,
 		"warmProjectIndex": false,
-		"t": 50183,
+		"nativeNode": true,
+		"t": 388161,
 		"phase": "packages",
-		"totalBytes": 6014414848,
+		"totalBytes": 4130533376,
 		"roles": {
-			"node-main": 2660638720,
-			"other": 60309504,
-			"native-session": 186232832,
-			"native-oneshot": 3107233792
+			"node-main": 308944896,
+			"other": 39858176,
+			"native-session": 1376968704,
+			"native-oneshot": 2404761600
 		},
 		"counts": {
 			"node-main": 1,
-			"other": 6,
+			"other": 5,
 			"native-session": 3,
 			"native-oneshot": 1
 		},
 		"peakByRole": {
-			"node-main": 2801623040,
-			"other": 533372928,
-			"native-session": 2396971008,
-			"native-oneshot": 3107233792
+			"node-main": 349896704,
+			"other": 214519808,
+			"native-session": 2355421184,
+			"native-oneshot": 2404761600
 		},
+		"nodeShareAtTreePeak": 0.07479539998274547,
 		"sampling": {
-			"count": 101,
-			"meanGapMs": 673.3,
-			"maxGapMs": 1003
-		}
+			"count": 95,
+			"meanGapMs": 722.4042553191489,
+			"maxGapMs": 1128
+		},
+		"nodeHighSample": {
+			"t": 373440,
+			"phase": "inventory",
+			"nodeBytes": 349896704,
+			"treeBytes": 2561019904
+		},
+		"firstSampleMs": 360684,
+		"peakAfterFirstSampleMs": 27477
 	},
 	"measurements": {
 		"released": {
@@ -37,50 +53,51 @@
 						"rep": 1,
 						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
 						"rows": {
-							"inventory": 3.1664369000000003,
-							"localizationParse": 14.645802999999999,
-							"localizationPublish": 12.679051,
-							"packageExtractionOrReplay": 35.8946981,
-							"bundleVerification": 6.0829137,
-							"packagePrepare": 4.974659,
-							"packagePublish": 7.97766,
-							"join": 15.2446072,
-							"openPageAndWorkspace": 1.897119399999994,
-							"packageSelection": 0.323836,
-							"otherPackageRead": 0.07597420000000366,
-							"packageGateAndBookkeeping": 0.0010726999999981501,
-							"wholeBuild": 103.42678599999999,
-							"peakTreeGiB": 4.116161346435547
+							"inventory": 3.7980943000000003,
+							"localizationParse": 15.135194,
+							"localizationPublish": 16.293638,
+							"packageExtractionOrReplay": 37.804449500000004,
+							"bundleVerification": 5.7970473,
+							"packagePrepare": 5.097309,
+							"packagePublish": 8.535528000000001,
+							"join": 16.0105532,
+							"openPageAndWorkspace": 1.943745800000002,
+							"packageSelection": 0.3564,
+							"otherPackageRead": 0.06727319999999093,
+							"packageGateAndBookkeeping": 0.001471200000006334,
+							"wholeBuild": 111.323036,
+							"peakTreeGiB": 4.346897125244141
 						},
 						"timing": {
 							"localization": {
-								"start": 0.1437718,
-								"end": 27.4950672
+								"start": 0.1603541,
+								"end": 31.6233432
 							},
 							"packageRead": {
-								"start": 31.216618899999997,
-								"end": 73.2702049
+								"start": 36.0190893,
+								"end": 79.68785929999999
 							},
 							"overlap": 0,
 							"extraction": {
-								"start": 34.4404912,
-								"end": 70.3351893
+								"start": 39.069017099999996,
+								"end": 76.8734666
 							}
 						},
+						"nativeLocalization": null,
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.4392,
-							"stage.GameTextIndexSource.inventory.endMs": 8848.0076,
-							"stage.GameTextIndexSource.inventory.wallMs": 8845.5684,
-							"stage.GameTextIndexSource.inventory.maxMs": 8845.5684,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 5859.795,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 307.689,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2677.618,
+							"stage.GameTextIndexSource.inventory.startMs": 2.4119,
+							"stage.GameTextIndexSource.inventory.endMs": 16414.76,
+							"stage.GameTextIndexSource.inventory.wallMs": 16412.3481,
+							"stage.GameTextIndexSource.inventory.maxMs": 16412.3481,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 13301.281,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 348.292,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2762.272,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.5102,
-							"stage.unreal_assets.project_index_refresh.endMs": 5862.2799,
-							"stage.unreal_assets.project_index_refresh.wallMs": 5858.7697,
-							"stage.unreal_assets.project_index_refresh.maxMs": 5858.7697
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4672,
+							"stage.unreal_assets.project_index_refresh.endMs": 13303.737,
+							"stage.unreal_assets.project_index_refresh.wallMs": 13300.2698,
+							"stage.unreal_assets.project_index_refresh.maxMs": 13300.2698
 						},
 						"answer": {
 							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
@@ -91,50 +108,51 @@
 						"rep": 2,
 						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
 						"rows": {
-							"inventory": 3.0513865,
-							"localizationParse": 15.222868,
-							"localizationPublish": 13.398406999999999,
-							"packageExtractionOrReplay": 36.5361884,
-							"bundleVerification": 6.241986600000001,
-							"packagePrepare": 5.2903400000000005,
-							"packagePublish": 8.98236,
-							"join": 15.4226984,
-							"openPageAndWorkspace": 1.8827387999999985,
-							"packageSelection": 0.316373,
-							"otherPackageRead": 0.0787799999999983,
-							"packageGateAndBookkeeping": 0.0011391000000013918,
-							"wholeBuild": 106.8956311,
-							"peakTreeGiB": 4.303966522216797
+							"inventory": 3.1598473,
+							"localizationParse": 14.554887,
+							"localizationPublish": 12.310149,
+							"packageExtractionOrReplay": 36.523483500000005,
+							"bundleVerification": 5.6949722000000005,
+							"packagePrepare": 4.828174,
+							"packagePublish": 7.7004340000000004,
+							"join": 15.5958912,
+							"openPageAndWorkspace": 1.9627995999999968,
+							"packageSelection": 0.346412,
+							"otherPackageRead": 0.07208029999999788,
+							"packageGateAndBookkeeping": 0.001354699999994935,
+							"wholeBuild": 103.2148349,
+							"peakTreeGiB": 4.142330169677734
 						},
 						"timing": {
 							"localization": {
-								"start": 0.13976650000000002,
-								"end": 28.7945165
+								"start": 0.147584,
+								"end": 27.036810799999998
 							},
 							"packageRead": {
-								"start": 32.3795628,
-								"end": 75.2365178
+								"start": 30.7811599,
+								"end": 73.07169590000001
 							},
 							"overlap": 0,
 							"extraction": {
-								"start": 35.646257299999995,
-								"end": 72.1824457
+								"start": 33.8009899,
+								"end": 70.3244734
 							}
 						},
+						"nativeLocalization": null,
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.4657,
-							"stage.GameTextIndexSource.inventory.endMs": 3520.0398,
-							"stage.GameTextIndexSource.inventory.wallMs": 3517.5741,
-							"stage.GameTextIndexSource.inventory.maxMs": 3517.5741,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 566.964,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 331.144,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2619.036,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3517,
+							"stage.GameTextIndexSource.inventory.endMs": 3584.4567,
+							"stage.GameTextIndexSource.inventory.wallMs": 3582.105,
+							"stage.GameTextIndexSource.inventory.maxMs": 3582.105,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 584.284,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 338.352,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2658.978,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.5357,
-							"stage.unreal_assets.project_index_refresh.endMs": 569.4906,
-							"stage.unreal_assets.project_index_refresh.wallMs": 565.9549,
-							"stage.unreal_assets.project_index_refresh.maxMs": 565.9549
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4173,
+							"stage.unreal_assets.project_index_refresh.endMs": 586.7077,
+							"stage.unreal_assets.project_index_refresh.wallMs": 583.2904,
+							"stage.unreal_assets.project_index_refresh.maxMs": 583.2904
 						},
 						"answer": {
 							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
@@ -145,50 +163,51 @@
 						"rep": 3,
 						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
 						"rows": {
-							"inventory": 3.1363622,
-							"localizationParse": 14.717287,
-							"localizationPublish": 12.670269000000001,
-							"packageExtractionOrReplay": 35.8075962,
-							"bundleVerification": 6.1099691,
-							"packagePrepare": 4.969383,
-							"packagePublish": 7.859238,
-							"join": 15.4437242,
-							"openPageAndWorkspace": 1.8728174000000166,
-							"packageSelection": 0.353813,
-							"otherPackageRead": 0.06936170000000264,
-							"packageGateAndBookkeeping": 0.0013146999999928966,
-							"wholeBuild": 103.52041450000002,
-							"peakTreeGiB": 4.564647674560547
+							"inventory": 3.1675854,
+							"localizationParse": 14.953333,
+							"localizationPublish": 12.441495999999999,
+							"packageExtractionOrReplay": 37.2744763,
+							"bundleVerification": 5.8087052,
+							"packagePrepare": 4.793465,
+							"packagePublish": 7.967645999999999,
+							"join": 16.127669700000002,
+							"openPageAndWorkspace": 1.9870327999999802,
+							"packageSelection": 0.349498,
+							"otherPackageRead": 0.05871749999999132,
+							"packageGateAndBookkeeping": 0.0012645000000048867,
+							"wholeBuild": 105.37358129999998,
+							"peakTreeGiB": 4.2281341552734375
 						},
 						"timing": {
 							"localization": {
-								"start": 0.1483803,
-								"end": 27.56177
+								"start": 0.1527749,
+								"end": 27.5733143
 							},
 							"packageRead": {
-								"start": 31.2824018,
-								"end": 73.2693288
+								"start": 31.3070239,
+								"end": 74.4489229
 							},
 							"overlap": 0,
 							"extraction": {
-								"start": 34.5113967,
-								"end": 70.3189929
+								"start": 34.367416299999995,
+								"end": 71.6418926
 							}
 						},
+						"nativeLocalization": null,
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.4999,
-							"stage.GameTextIndexSource.inventory.endMs": 3542.2158,
-							"stage.GameTextIndexSource.inventory.wallMs": 3539.7159,
-							"stage.GameTextIndexSource.inventory.maxMs": 3539.7159,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 598.084,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 330.398,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2610.791,
+							"stage.GameTextIndexSource.inventory.startMs": 2.4763,
+							"stage.GameTextIndexSource.inventory.endMs": 3617.573,
+							"stage.GameTextIndexSource.inventory.wallMs": 3615.0967,
+							"stage.GameTextIndexSource.inventory.maxMs": 3615.0967,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 599.114,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 337.498,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2677.996,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.6013,
-							"stage.unreal_assets.project_index_refresh.endMs": 600.6371,
-							"stage.unreal_assets.project_index_refresh.wallMs": 597.0358,
-							"stage.unreal_assets.project_index_refresh.maxMs": 597.0358
+							"stage.unreal_assets.project_index_refresh.startMs": 3.5743,
+							"stage.unreal_assets.project_index_refresh.endMs": 601.6588,
+							"stage.unreal_assets.project_index_refresh.wallMs": 598.0845,
+							"stage.unreal_assets.project_index_refresh.maxMs": 598.0845
 						},
 						"answer": {
 							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
@@ -198,74 +217,74 @@
 				],
 				"stages": {
 					"inventory": {
-						"median": 3.1363622,
-						"minimum": 3.0513865,
-						"maximum": 3.1664369000000003
+						"median": 3.1675854,
+						"minimum": 3.1598473,
+						"maximum": 3.7980943000000003
 					},
 					"localizationParse": {
-						"median": 14.717287,
-						"minimum": 14.645802999999999,
-						"maximum": 15.222868
+						"median": 14.953333,
+						"minimum": 14.554887,
+						"maximum": 15.135194
 					},
 					"localizationPublish": {
-						"median": 12.679051,
-						"minimum": 12.670269000000001,
-						"maximum": 13.398406999999999
+						"median": 12.441495999999999,
+						"minimum": 12.310149,
+						"maximum": 16.293638
 					},
 					"packageExtractionOrReplay": {
-						"median": 35.8946981,
-						"minimum": 35.8075962,
-						"maximum": 36.5361884
+						"median": 37.2744763,
+						"minimum": 36.523483500000005,
+						"maximum": 37.804449500000004
 					},
 					"bundleVerification": {
-						"median": 6.1099691,
-						"minimum": 6.0829137,
-						"maximum": 6.241986600000001
+						"median": 5.7970473,
+						"minimum": 5.6949722000000005,
+						"maximum": 5.8087052
 					},
 					"packagePrepare": {
-						"median": 4.974659,
-						"minimum": 4.969383,
-						"maximum": 5.2903400000000005
+						"median": 4.828174,
+						"minimum": 4.793465,
+						"maximum": 5.097309
 					},
 					"packagePublish": {
-						"median": 7.97766,
-						"minimum": 7.859238,
-						"maximum": 8.98236
+						"median": 7.967645999999999,
+						"minimum": 7.7004340000000004,
+						"maximum": 8.535528000000001
 					},
 					"join": {
-						"median": 15.4226984,
-						"minimum": 15.2446072,
-						"maximum": 15.4437242
+						"median": 16.0105532,
+						"minimum": 15.5958912,
+						"maximum": 16.127669700000002
 					},
 					"openPageAndWorkspace": {
-						"median": 1.8827387999999985,
-						"minimum": 1.8728174000000166,
-						"maximum": 1.897119399999994
+						"median": 1.9627995999999968,
+						"minimum": 1.943745800000002,
+						"maximum": 1.9870327999999802
 					},
 					"packageSelection": {
-						"median": 0.323836,
-						"minimum": 0.316373,
-						"maximum": 0.353813
+						"median": 0.349498,
+						"minimum": 0.346412,
+						"maximum": 0.3564
 					},
 					"otherPackageRead": {
-						"median": 0.07597420000000366,
-						"minimum": 0.06936170000000264,
-						"maximum": 0.0787799999999983
+						"median": 0.06727319999999093,
+						"minimum": 0.05871749999999132,
+						"maximum": 0.07208029999999788
 					},
 					"packageGateAndBookkeeping": {
-						"median": 0.0011391000000013918,
-						"minimum": 0.0010726999999981501,
-						"maximum": 0.0013146999999928966
+						"median": 0.001354699999994935,
+						"minimum": 0.0012645000000048867,
+						"maximum": 0.001471200000006334
 					},
 					"wholeBuild": {
-						"median": 103.52041450000002,
-						"minimum": 103.42678599999999,
-						"maximum": 106.8956311
+						"median": 105.37358129999998,
+						"minimum": 103.2148349,
+						"maximum": 111.323036
 					},
 					"peakTreeGiB": {
-						"median": 4.303966522216797,
-						"minimum": 4.116161346435547,
-						"maximum": 4.564647674560547
+						"median": 4.2281341552734375,
+						"minimum": 4.142330169677734,
+						"maximum": 4.346897125244141
 					}
 				}
 			},
@@ -273,52 +292,55 @@
 				"runs": [
 					{
 						"rep": 1,
-						"commit": "e2de0df205e213a5dfa43118132e9a671f1291c8",
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
 						"rows": {
-							"inventory": 3.7359679,
-							"localizationParse": 22.758512,
-							"localizationPublish": 12.509969,
-							"packageExtractionOrReplay": 23.1540427,
-							"bundleVerification": 5.5757489,
-							"packagePrepare": 4.7750829999999995,
-							"packagePublish": 6.023377,
-							"join": 13.7396273,
-							"openPageAndWorkspace": 1.9992049000000023,
-							"packageSelection": 0.523694,
-							"otherPackageRead": 0.07350939999999984,
-							"packageGateAndBookkeeping": 2.3625275000000023,
-							"wholeBuild": 62.2467096,
-							"peakTreeGiB": 4.854976654052734
+							"inventory": 3.3647073,
+							"localizationParse": 15.039316,
+							"localizationPublish": 9.7547234,
+							"packageExtractionOrReplay": 20.5861704,
+							"bundleVerification": 5.2554921000000006,
+							"packagePrepare": 0,
+							"packagePublish": 7.240298300000002,
+							"join": 14.3171644,
+							"openPageAndWorkspace": 1.9692944000000026,
+							"packageSelection": 0.42922899999999997,
+							"otherPackageRead": 0.15913249999999568,
+							"packageGateAndBookkeeping": 0.0015676000000013346,
+							"wholeBuild": 53.5201215,
+							"peakTreeGiB": 4.104286193847656
 						},
 						"timing": {
 							"localization": {
-								"start": 0.1537115,
-								"end": 35.4549631
+								"start": 0.1690779,
+								"end": 25.3120418
 							},
 							"packageRead": {
-								"start": 4.4632027,
-								"end": 33.2665037
+								"start": 4.0049187,
+								"end": 30.005713699999998
 							},
-							"overlap": 28.803301,
+							"overlap": 21.3071231,
 							"extraction": {
-								"start": 7.6813513,
-								"end": 30.835394
+								"start": 4.4322341,
+								"end": 29.9154266
 							}
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 51.109375
 						},
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.3542,
-							"stage.GameTextIndexSource.inventory.endMs": 8640.212,
-							"stage.GameTextIndexSource.inventory.wallMs": 8637.8578,
-							"stage.GameTextIndexSource.inventory.maxMs": 8637.8578,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 5662.223,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 332.721,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2642.438,
+							"stage.GameTextIndexSource.inventory.startMs": 2.4329,
+							"stage.GameTextIndexSource.inventory.endMs": 8949.4873,
+							"stage.GameTextIndexSource.inventory.wallMs": 8947.0544,
+							"stage.GameTextIndexSource.inventory.maxMs": 8947.0544,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 5833.172,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 306.087,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2807.265,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.4051,
-							"stage.unreal_assets.project_index_refresh.endMs": 5664.6183,
-							"stage.unreal_assets.project_index_refresh.wallMs": 5661.2132,
-							"stage.unreal_assets.project_index_refresh.maxMs": 5661.2132
+							"stage.unreal_assets.project_index_refresh.startMs": 3.636,
+							"stage.unreal_assets.project_index_refresh.endMs": 5835.6628,
+							"stage.unreal_assets.project_index_refresh.wallMs": 5832.0268,
+							"stage.unreal_assets.project_index_refresh.maxMs": 5832.0268
 						},
 						"answer": {
 							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
@@ -327,52 +349,55 @@
 					},
 					{
 						"rep": 2,
-						"commit": "e2de0df205e213a5dfa43118132e9a671f1291c8",
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
 						"rows": {
-							"inventory": 3.7137462,
-							"localizationParse": 22.796283,
-							"localizationPublish": 12.40641,
-							"packageExtractionOrReplay": 22.952398000000002,
-							"bundleVerification": 5.4548356,
-							"packagePrepare": 4.671252000000001,
-							"packagePublish": 5.892753,
-							"join": 13.748104799999998,
-							"openPageAndWorkspace": 1.8859290999999985,
-							"packageSelection": 0.545981,
-							"otherPackageRead": 0.08441639999999762,
-							"packageGateAndBookkeeping": 2.5659806000000014,
-							"wholeBuild": 61.8093575,
-							"peakTreeGiB": 5.203479766845703
+							"inventory": 3.2876023,
+							"localizationParse": 14.9341366,
+							"localizationPublish": 9.2461332,
+							"packageExtractionOrReplay": 20.1944896,
+							"bundleVerification": 5.2371174,
+							"packagePrepare": 0,
+							"packagePublish": 7.208373800000001,
+							"join": 13.9490807,
+							"openPageAndWorkspace": 1.8801004999999975,
+							"packageSelection": 0.440166,
+							"otherPackageRead": 0.14809500000000053,
+							"packageGateAndBookkeeping": 0.0014786000000039934,
+							"wholeBuild": 52.532285099999996,
+							"peakTreeGiB": 4.2199249267578125
 						},
 						"timing": {
 							"localization": {
-								"start": 0.14826740000000002,
-								"end": 35.3875199
+								"start": 0.1484151,
+								"end": 24.7522474
 							},
 							"packageRead": {
-								"start": 4.4787092,
-								"end": 32.9703592
+								"start": 3.9173823999999997,
+								"end": 29.497084400000002
 							},
-							"overlap": 28.491649999999996,
+							"overlap": 20.834865,
 							"extraction": {
-								"start": 7.6568998,
-								"end": 30.6092978
+								"start": 4.3162735,
+								"end": 29.4006991
 							}
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 50.9375
 						},
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.338,
-							"stage.GameTextIndexSource.inventory.endMs": 3549.5694,
-							"stage.GameTextIndexSource.inventory.wallMs": 3547.2314,
-							"stage.GameTextIndexSource.inventory.maxMs": 3547.2314,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 590.932,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 329.159,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2626.663,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3829,
+							"stage.GameTextIndexSource.inventory.endMs": 3640.8547,
+							"stage.GameTextIndexSource.inventory.wallMs": 3638.4718,
+							"stage.GameTextIndexSource.inventory.maxMs": 3638.4718,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 619.593,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 339.015,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2679.425,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.392,
-							"stage.unreal_assets.project_index_refresh.endMs": 593.316,
-							"stage.unreal_assets.project_index_refresh.wallMs": 589.924,
-							"stage.unreal_assets.project_index_refresh.maxMs": 589.924
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4229,
+							"stage.unreal_assets.project_index_refresh.endMs": 622.0212,
+							"stage.unreal_assets.project_index_refresh.wallMs": 618.5983,
+							"stage.unreal_assets.project_index_refresh.maxMs": 618.5983
 						},
 						"answer": {
 							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
@@ -381,52 +406,55 @@
 					},
 					{
 						"rep": 3,
-						"commit": "e2de0df205e213a5dfa43118132e9a671f1291c8",
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
 						"rows": {
-							"inventory": 3.7151041,
-							"localizationParse": 22.945406,
-							"localizationPublish": 12.472876,
-							"packageExtractionOrReplay": 23.6013505,
-							"bundleVerification": 5.5736694,
-							"packagePrepare": 4.75935,
-							"packagePublish": 6.0827160000000005,
-							"join": 14.0816397,
-							"openPageAndWorkspace": 2.031174100000001,
-							"packageSelection": 0.526865,
-							"otherPackageRead": 0.07737610000000217,
-							"packageGateAndBookkeeping": 2.0573900999999957,
-							"wholeBuild": 62.7749137,
-							"peakTreeGiB": 4.742942810058594
+							"inventory": 3.5469001,
+							"localizationParse": 15.610054,
+							"localizationPublish": 10.3168985,
+							"packageExtractionOrReplay": 20.9092944,
+							"bundleVerification": 5.1828019,
+							"packagePrepare": 0,
+							"packagePublish": 7.9927813000000025,
+							"join": 14.0356621,
+							"openPageAndWorkspace": 1.9658749000000029,
+							"packageSelection": 0.44561399999999995,
+							"otherPackageRead": 0.1530396999999981,
+							"packageGateAndBookkeeping": 0.0015855999999985215,
+							"wholeBuild": 54.4298606,
+							"peakTreeGiB": 3.5361251831054688
 						},
 						"timing": {
 							"localization": {
-								"start": 0.1470147,
-								"end": 35.604212399999994
+								"start": 0.14966089999999999,
+								"end": 26.3880359
 							},
 							"packageRead": {
-								"start": 4.4578373000000004,
-								"end": 33.7102333
+								"start": 4.1855642,
+								"end": 30.430700199999997
 							},
-							"overlap": 29.252395999999997,
+							"overlap": 22.202471699999997,
 							"extraction": {
-								"start": 7.5966794,
-								"end": 31.1980299
+								"start": 4.6019707,
+								"end": 30.3368256
 							}
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 53.28125
 						},
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.4006,
-							"stage.GameTextIndexSource.inventory.endMs": 3518.8087,
-							"stage.GameTextIndexSource.inventory.wallMs": 3516.4081,
-							"stage.GameTextIndexSource.inventory.maxMs": 3516.4081,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 569.955,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 333.544,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2612.426,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3997,
+							"stage.GameTextIndexSource.inventory.endMs": 3632.6863,
+							"stage.GameTextIndexSource.inventory.wallMs": 3630.2866,
+							"stage.GameTextIndexSource.inventory.maxMs": 3630.2866,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 623.803,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 309.741,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2696.268,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.4871,
-							"stage.unreal_assets.project_index_refresh.endMs": 572.4147,
-							"stage.unreal_assets.project_index_refresh.wallMs": 568.9276,
-							"stage.unreal_assets.project_index_refresh.maxMs": 568.9276
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4388,
+							"stage.unreal_assets.project_index_refresh.endMs": 626.247,
+							"stage.unreal_assets.project_index_refresh.wallMs": 622.8082,
+							"stage.unreal_assets.project_index_refresh.maxMs": 622.8082
 						},
 						"answer": {
 							"sha256": "f54a6a08d20f661d09ca7cc1da58052d200da9a954f6d95662a3628da03a381b",
@@ -436,74 +464,74 @@
 				],
 				"stages": {
 					"inventory": {
-						"median": 3.7151041,
-						"minimum": 3.7137462,
-						"maximum": 3.7359679
+						"median": 3.3647073,
+						"minimum": 3.2876023,
+						"maximum": 3.5469001
 					},
 					"localizationParse": {
-						"median": 22.796283,
-						"minimum": 22.758512,
-						"maximum": 22.945406
+						"median": 15.039316,
+						"minimum": 14.9341366,
+						"maximum": 15.610054
 					},
 					"localizationPublish": {
-						"median": 12.472876,
-						"minimum": 12.40641,
-						"maximum": 12.509969
+						"median": 9.7547234,
+						"minimum": 9.2461332,
+						"maximum": 10.3168985
 					},
 					"packageExtractionOrReplay": {
-						"median": 23.1540427,
-						"minimum": 22.952398000000002,
-						"maximum": 23.6013505
+						"median": 20.5861704,
+						"minimum": 20.1944896,
+						"maximum": 20.9092944
 					},
 					"bundleVerification": {
-						"median": 5.5736694,
-						"minimum": 5.4548356,
-						"maximum": 5.5757489
+						"median": 5.2371174,
+						"minimum": 5.1828019,
+						"maximum": 5.2554921000000006
 					},
 					"packagePrepare": {
-						"median": 4.75935,
-						"minimum": 4.671252000000001,
-						"maximum": 4.7750829999999995
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
 					},
 					"packagePublish": {
-						"median": 6.023377,
-						"minimum": 5.892753,
-						"maximum": 6.0827160000000005
+						"median": 7.240298300000002,
+						"minimum": 7.208373800000001,
+						"maximum": 7.9927813000000025
 					},
 					"join": {
-						"median": 13.748104799999998,
-						"minimum": 13.7396273,
-						"maximum": 14.0816397
+						"median": 14.0356621,
+						"minimum": 13.9490807,
+						"maximum": 14.3171644
 					},
 					"openPageAndWorkspace": {
-						"median": 1.9992049000000023,
-						"minimum": 1.8859290999999985,
-						"maximum": 2.031174100000001
+						"median": 1.9658749000000029,
+						"minimum": 1.8801004999999975,
+						"maximum": 1.9692944000000026
 					},
 					"packageSelection": {
-						"median": 0.526865,
-						"minimum": 0.523694,
-						"maximum": 0.545981
+						"median": 0.440166,
+						"minimum": 0.42922899999999997,
+						"maximum": 0.44561399999999995
 					},
 					"otherPackageRead": {
-						"median": 0.07737610000000217,
-						"minimum": 0.07350939999999984,
-						"maximum": 0.08441639999999762
+						"median": 0.1530396999999981,
+						"minimum": 0.14809500000000053,
+						"maximum": 0.15913249999999568
 					},
 					"packageGateAndBookkeeping": {
-						"median": 2.3625275000000023,
-						"minimum": 2.0573900999999957,
-						"maximum": 2.5659806000000014
+						"median": 0.0015676000000013346,
+						"minimum": 0.0014786000000039934,
+						"maximum": 0.0015855999999985215
 					},
 					"wholeBuild": {
-						"median": 62.2467096,
-						"minimum": 61.8093575,
-						"maximum": 62.7749137
+						"median": 53.5201215,
+						"minimum": 52.532285099999996,
+						"maximum": 54.4298606
 					},
 					"peakTreeGiB": {
-						"median": 4.854976654052734,
-						"minimum": 4.742942810058594,
-						"maximum": 5.203479766845703
+						"median": 4.104286193847656,
+						"minimum": 3.5361251831054688,
+						"maximum": 4.2199249267578125
 					}
 				}
 			}
@@ -515,46 +543,47 @@
 						"rep": 1,
 						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
 						"rows": {
-							"inventory": 0.9271779000000002,
-							"localizationParse": 12.582865,
-							"localizationPublish": 9.196271000000001,
-							"packageExtractionOrReplay": 9.771294,
+							"inventory": 1.478369800000003,
+							"localizationParse": 12.225899,
+							"localizationPublish": 12.083404,
+							"packageExtractionOrReplay": 10.735835,
 							"bundleVerification": 0,
-							"packagePrepare": 4.034689,
-							"packagePublish": 12.459125,
-							"join": 15.8031726,
-							"openPageAndWorkspace": 1.9492622999999867,
-							"packageSelection": 0.268374,
+							"packagePrepare": 4.048546,
+							"packagePublish": 13.168164,
+							"join": 16.917870599999997,
+							"openPageAndWorkspace": 1.962855200000007,
+							"packageSelection": 0.447755,
 							"otherPackageRead": 0,
-							"packageGateAndBookkeeping": 0.001340400000003683,
-							"wholeBuild": 67.222253,
-							"peakTreeGiB": 2.5855751037597656
+							"packageGateAndBookkeeping": 0.0015541999999939549,
+							"wholeBuild": 73.31366440000001,
+							"peakTreeGiB": 2.725116729736328
 						},
 						"timing": {
 							"localization": {
-								"start": 0.08401890000000001,
-								"end": 21.8863597
+								"start": 0.0826706,
+								"end": 24.423115600000003
 							},
 							"packageRead": {
-								"start": 23.090329900000004,
-								"end": 32.861623900000005
+								"start": 26.353826,
+								"end": 37.089661
 							},
 							"overlap": 0
 						},
+						"nativeLocalization": null,
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.3809,
-							"stage.GameTextIndexSource.inventory.endMs": 57.1915,
-							"stage.GameTextIndexSource.inventory.wallMs": 54.8106,
-							"stage.GameTextIndexSource.inventory.maxMs": 54.8106,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 33.247,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.436,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.775,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3961,
+							"stage.GameTextIndexSource.inventory.endMs": 59.7788,
+							"stage.GameTextIndexSource.inventory.wallMs": 57.3827,
+							"stage.GameTextIndexSource.inventory.maxMs": 57.3827,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 35.227,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 19.054,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.748,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.4549,
-							"stage.unreal_assets.project_index_refresh.endMs": 35.6622,
-							"stage.unreal_assets.project_index_refresh.wallMs": 32.2073,
-							"stage.unreal_assets.project_index_refresh.maxMs": 32.2073
+							"stage.unreal_assets.project_index_refresh.startMs": 3.453,
+							"stage.unreal_assets.project_index_refresh.endMs": 37.6548,
+							"stage.unreal_assets.project_index_refresh.wallMs": 34.2018,
+							"stage.unreal_assets.project_index_refresh.maxMs": 34.2018
 						},
 						"answer": {
 							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
@@ -565,46 +594,47 @@
 						"rep": 2,
 						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
 						"rows": {
-							"inventory": 0.9123724000000024,
-							"localizationParse": 12.590281999999998,
-							"localizationPublish": 9.238556,
-							"packageExtractionOrReplay": 9.885321,
+							"inventory": 0.873392599999999,
+							"localizationParse": 12.271195,
+							"localizationPublish": 8.998243,
+							"packageExtractionOrReplay": 10.170351,
 							"bundleVerification": 0,
-							"packagePrepare": 3.995551,
-							"packagePublish": 12.3734,
-							"join": 15.8224106,
-							"openPageAndWorkspace": 1.9331054999999964,
-							"packageSelection": 0.254686,
+							"packagePrepare": 3.9110300000000002,
+							"packagePublish": 12.306209999999998,
+							"join": 16.3209831,
+							"openPageAndWorkspace": 1.976393299999998,
+							"packageSelection": 0.30106,
 							"otherPackageRead": 0,
-							"packageGateAndBookkeeping": 0.0010489999999983013,
-							"wholeBuild": 67.2112148,
-							"peakTreeGiB": 2.6052627563476562
+							"packageGateAndBookkeeping": 0.001458799999998206,
+							"wholeBuild": 67.36510279999999,
+							"peakTreeGiB": 2.6850357055664062
 						},
 						"timing": {
 							"localization": {
-								"start": 0.08376900000000001,
-								"end": 21.9369464
+								"start": 0.0779009,
+								"end": 21.3743751
 							},
 							"packageRead": {
-								"start": 23.0788358,
-								"end": 32.9641568
+								"start": 22.576249999999998,
+								"end": 32.746601
 							},
 							"overlap": 0
 						},
+						"nativeLocalization": null,
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.4381,
-							"stage.GameTextIndexSource.inventory.endMs": 54.3511,
-							"stage.GameTextIndexSource.inventory.wallMs": 51.913,
-							"stage.GameTextIndexSource.inventory.maxMs": 51.913,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 30.445,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.394,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.722,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3857,
+							"stage.GameTextIndexSource.inventory.endMs": 58.1391,
+							"stage.GameTextIndexSource.inventory.wallMs": 55.7534,
+							"stage.GameTextIndexSource.inventory.maxMs": 55.7534,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 33.824,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.712,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.865,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.526,
-							"stage.unreal_assets.project_index_refresh.endMs": 32.9331,
-							"stage.unreal_assets.project_index_refresh.wallMs": 29.4071,
-							"stage.unreal_assets.project_index_refresh.maxMs": 29.4071
+							"stage.unreal_assets.project_index_refresh.startMs": 3.4748,
+							"stage.unreal_assets.project_index_refresh.endMs": 36.2541,
+							"stage.unreal_assets.project_index_refresh.wallMs": 32.7793,
+							"stage.unreal_assets.project_index_refresh.maxMs": 32.7793
 						},
 						"answer": {
 							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
@@ -615,46 +645,47 @@
 						"rep": 3,
 						"commit": "ea6b5cb024efe7960c6393d1959100826e066a9e",
 						"rows": {
-							"inventory": 0.8938235999999975,
-							"localizationParse": 12.541223,
-							"localizationPublish": 9.235359,
-							"packageExtractionOrReplay": 9.875277,
+							"inventory": 1.3944221999999975,
+							"localizationParse": 12.388786,
+							"localizationPublish": 12.256035,
+							"packageExtractionOrReplay": 11.405426,
 							"bundleVerification": 0,
-							"packagePrepare": 4.04898,
-							"packagePublish": 12.692566999999999,
-							"join": 16.1206026,
-							"openPageAndWorkspace": 1.9355456000000117,
-							"packageSelection": 0.258423,
+							"packagePrepare": 4.166543,
+							"packagePublish": 14.719129,
+							"join": 23.2053583,
+							"openPageAndWorkspace": 2.0646040000000028,
+							"packageSelection": 0.409302,
 							"otherPackageRead": 0,
-							"packageGateAndBookkeeping": 0.0015284000000015396,
-							"wholeBuild": 67.81114730000002,
-							"peakTreeGiB": 2.7045059204101562
+							"packageGateAndBookkeeping": 0.0015323000000009301,
+							"wholeBuild": 82.2533153,
+							"peakTreeGiB": 2.5343475341796875
 						},
 						"timing": {
 							"localization": {
-								"start": 0.079457,
-								"end": 21.880238300000002
+								"start": 0.0763356,
+								"end": 24.7480261
 							},
 							"packageRead": {
-								"start": 23.0214233,
-								"end": 32.8967003
+								"start": 26.5616747,
+								"end": 37.9671007
 							},
 							"overlap": 0
 						},
+						"nativeLocalization": null,
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.4054,
-							"stage.GameTextIndexSource.inventory.endMs": 55.7712,
-							"stage.GameTextIndexSource.inventory.wallMs": 53.3658,
-							"stage.GameTextIndexSource.inventory.maxMs": 53.3658,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 31.112,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.991,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.908,
+							"stage.GameTextIndexSource.inventory.startMs": 2.464,
+							"stage.GameTextIndexSource.inventory.endMs": 55.5755,
+							"stage.GameTextIndexSource.inventory.wallMs": 53.1115,
+							"stage.GameTextIndexSource.inventory.maxMs": 53.1115,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 31.142,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.807,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.783,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.4904,
-							"stage.unreal_assets.project_index_refresh.endMs": 33.563,
-							"stage.unreal_assets.project_index_refresh.wallMs": 30.0726,
-							"stage.unreal_assets.project_index_refresh.maxMs": 30.0726
+							"stage.unreal_assets.project_index_refresh.startMs": 3.5387,
+							"stage.unreal_assets.project_index_refresh.endMs": 33.6507,
+							"stage.unreal_assets.project_index_refresh.wallMs": 30.112,
+							"stage.unreal_assets.project_index_refresh.maxMs": 30.112
 						},
 						"answer": {
 							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
@@ -664,24 +695,24 @@
 				],
 				"stages": {
 					"inventory": {
-						"median": 0.9123724000000024,
-						"minimum": 0.8938235999999975,
-						"maximum": 0.9271779000000002
+						"median": 1.3944221999999975,
+						"minimum": 0.873392599999999,
+						"maximum": 1.478369800000003
 					},
 					"localizationParse": {
-						"median": 12.582865,
-						"minimum": 12.541223,
-						"maximum": 12.590281999999998
+						"median": 12.271195,
+						"minimum": 12.225899,
+						"maximum": 12.388786
 					},
 					"localizationPublish": {
-						"median": 9.235359,
-						"minimum": 9.196271000000001,
-						"maximum": 9.238556
+						"median": 12.083404,
+						"minimum": 8.998243,
+						"maximum": 12.256035
 					},
 					"packageExtractionOrReplay": {
-						"median": 9.875277,
-						"minimum": 9.771294,
-						"maximum": 9.885321
+						"median": 10.735835,
+						"minimum": 10.170351,
+						"maximum": 11.405426
 					},
 					"bundleVerification": {
 						"median": 0,
@@ -689,29 +720,29 @@
 						"maximum": 0
 					},
 					"packagePrepare": {
-						"median": 4.034689,
-						"minimum": 3.995551,
-						"maximum": 4.04898
+						"median": 4.048546,
+						"minimum": 3.9110300000000002,
+						"maximum": 4.166543
 					},
 					"packagePublish": {
-						"median": 12.459125,
-						"minimum": 12.3734,
-						"maximum": 12.692566999999999
+						"median": 13.168164,
+						"minimum": 12.306209999999998,
+						"maximum": 14.719129
 					},
 					"join": {
-						"median": 15.8224106,
-						"minimum": 15.8031726,
-						"maximum": 16.1206026
+						"median": 16.917870599999997,
+						"minimum": 16.3209831,
+						"maximum": 23.2053583
 					},
 					"openPageAndWorkspace": {
-						"median": 1.9355456000000117,
-						"minimum": 1.9331054999999964,
-						"maximum": 1.9492622999999867
+						"median": 1.976393299999998,
+						"minimum": 1.962855200000007,
+						"maximum": 2.0646040000000028
 					},
 					"packageSelection": {
-						"median": 0.258423,
-						"minimum": 0.254686,
-						"maximum": 0.268374
+						"median": 0.409302,
+						"minimum": 0.30106,
+						"maximum": 0.447755
 					},
 					"otherPackageRead": {
 						"median": 0,
@@ -719,19 +750,19 @@
 						"maximum": 0
 					},
 					"packageGateAndBookkeeping": {
-						"median": 0.001340400000003683,
-						"minimum": 0.0010489999999983013,
-						"maximum": 0.0015284000000015396
+						"median": 0.0015323000000009301,
+						"minimum": 0.001458799999998206,
+						"maximum": 0.0015541999999939549
 					},
 					"wholeBuild": {
-						"median": 67.222253,
-						"minimum": 67.2112148,
-						"maximum": 67.81114730000002
+						"median": 73.31366440000001,
+						"minimum": 67.36510279999999,
+						"maximum": 82.2533153
 					},
 					"peakTreeGiB": {
-						"median": 2.6052627563476562,
-						"minimum": 2.5855751037597656,
-						"maximum": 2.7045059204101562
+						"median": 2.6850357055664062,
+						"minimum": 2.5343475341796875,
+						"maximum": 2.725116729736328
 					}
 				}
 			},
@@ -739,48 +770,51 @@
 				"runs": [
 					{
 						"rep": 1,
-						"commit": "e2de0df205e213a5dfa43118132e9a671f1291c8",
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
 						"rows": {
-							"inventory": 0.8401661000000047,
-							"localizationParse": 20.604066,
-							"localizationPublish": 6.9928230000000005,
-							"packageExtractionOrReplay": 13.281663,
+							"inventory": 0.7302345999999993,
+							"localizationParse": 16.0806676,
+							"localizationPublish": 6.2234708,
+							"packageExtractionOrReplay": 5.715345,
 							"bundleVerification": 0,
-							"packagePrepare": 4.3299009999999996,
-							"packagePublish": 7.945065,
-							"join": 14.306182399999999,
-							"openPageAndWorkspace": 1.9587259999999915,
-							"packageSelection": 0.236976,
+							"packagePrepare": 0,
+							"packagePublish": 8.574953100000002,
+							"join": 14.3856264,
+							"openPageAndWorkspace": 1.9480080000000015,
+							"packageSelection": 0.24635400000000002,
 							"otherPackageRead": 0,
-							"packageGateAndBookkeeping": 13.752960699999996,
-							"wholeBuild": 56.705216699999994,
-							"peakTreeGiB": 2.8745651245117188
+							"packageGateAndBookkeeping": 16.143059,
+							"wholeBuild": 47.805861799999995,
+							"peakTreeGiB": 2.4866714477539062
 						},
 						"timing": {
 							"localization": {
-								"start": 0.2600413,
-								"end": 27.9038236
+								"start": 0.2740957,
+								"end": 22.8050703
 							},
 							"packageRead": {
-								"start": 1.0011636,
-								"end": 14.2828266
+								"start": 1.005193,
+								"end": 6.720538
 							},
-							"overlap": 13.281663
+							"overlap": 5.715345
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 50.1875
 						},
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.4035,
-							"stage.GameTextIndexSource.inventory.endMs": 55.9901,
-							"stage.GameTextIndexSource.inventory.wallMs": 53.5866,
-							"stage.GameTextIndexSource.inventory.maxMs": 53.5866,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 31.699,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.705,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.814,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3094,
+							"stage.GameTextIndexSource.inventory.endMs": 58.2238,
+							"stage.GameTextIndexSource.inventory.wallMs": 55.9144,
+							"stage.GameTextIndexSource.inventory.maxMs": 55.9144,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 34.352,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.491,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.717,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.4608,
-							"stage.unreal_assets.project_index_refresh.endMs": 34.1438,
-							"stage.unreal_assets.project_index_refresh.wallMs": 30.683,
-							"stage.unreal_assets.project_index_refresh.maxMs": 30.683
+							"stage.unreal_assets.project_index_refresh.startMs": 3.38,
+							"stage.unreal_assets.project_index_refresh.endMs": 36.7127,
+							"stage.unreal_assets.project_index_refresh.wallMs": 33.3327,
+							"stage.unreal_assets.project_index_refresh.maxMs": 33.3327
 						},
 						"answer": {
 							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
@@ -789,48 +823,51 @@
 					},
 					{
 						"rep": 2,
-						"commit": "e2de0df205e213a5dfa43118132e9a671f1291c8",
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
 						"rows": {
-							"inventory": 0.8613147999999953,
-							"localizationParse": 20.992548,
-							"localizationPublish": 6.974468,
-							"packageExtractionOrReplay": 13.208074,
+							"inventory": 0.7299340000000036,
+							"localizationParse": 16.66302,
+							"localizationPublish": 6.6265422,
+							"packageExtractionOrReplay": 5.750272,
 							"bundleVerification": 0,
-							"packagePrepare": 4.304732,
-							"packagePublish": 7.810201,
-							"join": 14.1510586,
-							"openPageAndWorkspace": 1.9060829000000012,
-							"packageSelection": 0.240385,
+							"packagePrepare": 0,
+							"packagePublish": 8.413093300000003,
+							"join": 14.5159766,
+							"openPageAndWorkspace": 1.993245899999991,
+							"packageSelection": 0.245942,
 							"otherPackageRead": 0,
-							"packageGateAndBookkeeping": 14.192894800000001,
-							"wholeBuild": 56.7278675,
-							"peakTreeGiB": 2.8409385681152344
+							"packageGateAndBookkeeping": 17.0945345,
+							"wholeBuild": 48.80006099999999,
+							"peakTreeGiB": 2.4447402954101562
 						},
 						"timing": {
 							"localization": {
-								"start": 0.26013400000000003,
-								"end": 28.26932
+								"start": 0.2646852,
+								"end": 23.7794601
 							},
 							"packageRead": {
-								"start": 0.992381,
-								"end": 14.200455
+								"start": 0.994246,
+								"end": 6.744517999999999
 							},
-							"overlap": 13.208074
+							"overlap": 5.750271999999999
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 51.515625
 						},
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.567,
-							"stage.GameTextIndexSource.inventory.endMs": 57.7012,
-							"stage.GameTextIndexSource.inventory.wallMs": 55.1342,
-							"stage.GameTextIndexSource.inventory.maxMs": 55.1342,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 33.606,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.447,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.72,
+							"stage.GameTextIndexSource.inventory.startMs": 2.6344,
+							"stage.GameTextIndexSource.inventory.endMs": 54.1649,
+							"stage.GameTextIndexSource.inventory.wallMs": 51.5305,
+							"stage.GameTextIndexSource.inventory.maxMs": 51.5305,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 29.875,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.578,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.728,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.6864,
-							"stage.unreal_assets.project_index_refresh.endMs": 36.2342,
-							"stage.unreal_assets.project_index_refresh.wallMs": 32.5478,
-							"stage.unreal_assets.project_index_refresh.maxMs": 32.5478
+							"stage.unreal_assets.project_index_refresh.startMs": 3.7126,
+							"stage.unreal_assets.project_index_refresh.endMs": 32.5572,
+							"stage.unreal_assets.project_index_refresh.wallMs": 28.8446,
+							"stage.unreal_assets.project_index_refresh.maxMs": 28.8446
 						},
 						"answer": {
 							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
@@ -839,48 +876,51 @@
 					},
 					{
 						"rep": 3,
-						"commit": "e2de0df205e213a5dfa43118132e9a671f1291c8",
+						"commit": "39b1748f929b5adbf2e978b5084316bf7927f41a",
 						"rows": {
-							"inventory": 0.7967992999999964,
-							"localizationParse": 20.419040000000003,
-							"localizationPublish": 6.881866,
-							"packageExtractionOrReplay": 13.179525,
+							"inventory": 0.7373808000000004,
+							"localizationParse": 15.9669037,
+							"localizationPublish": 6.3718735,
+							"packageExtractionOrReplay": 5.857136000000001,
 							"bundleVerification": 0,
-							"packagePrepare": 4.110451,
-							"packagePublish": 7.912394,
-							"join": 14.3809611,
-							"openPageAndWorkspace": 1.9415908000000002,
-							"packageSelection": 0.23755600000000002,
+							"packagePrepare": 0,
+							"packagePublish": 8.6622395,
+							"join": 14.791341599999999,
+							"openPageAndWorkspace": 2.069156299999996,
+							"packageSelection": 0.255154,
 							"otherPackageRead": 0,
-							"packageGateAndBookkeeping": 13.58109690000001,
-							"wholeBuild": 56.1938333,
-							"peakTreeGiB": 2.8275489807128906
+							"packageGateAndBookkeeping": 16.026128,
+							"wholeBuild": 48.454978,
+							"peakTreeGiB": 2.2985687255859375
 						},
 						"timing": {
 							"localization": {
-								"start": 0.2608801,
-								"end": 27.632934000000002
+								"start": 0.25947570000000003,
+								"end": 22.8367555
 							},
 							"packageRead": {
-								"start": 0.9883422,
-								"end": 14.1678672
+								"start": 1.0110131,
+								"end": 6.8681491
 							},
-							"overlap": 13.179525
+							"overlap": 5.857136000000001
+						},
+						"nativeLocalization": {
+							"parseCpuSeconds": 49.96875
 						},
 						"warmProjectIndex": {
 							"stage.GameTextIndexSource.inventory.count": 1,
-							"stage.GameTextIndexSource.inventory.startMs": 2.382,
-							"stage.GameTextIndexSource.inventory.endMs": 53.5095,
-							"stage.GameTextIndexSource.inventory.wallMs": 51.1275,
-							"stage.GameTextIndexSource.inventory.maxMs": 51.1275,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 29.979,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 18.047,
-							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 2.751,
+							"stage.GameTextIndexSource.inventory.startMs": 2.3165,
+							"stage.GameTextIndexSource.inventory.endMs": 59.1652,
+							"stage.GameTextIndexSource.inventory.wallMs": 56.8487,
+							"stage.GameTextIndexSource.inventory.maxMs": 56.8487,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.refresh": 33.967,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.status": 19.442,
+							"stage.GameTextIndexSource.inventory.inventory.stage_ms.pages": 3.088,
 							"stage.unreal_assets.project_index_refresh.count": 1,
-							"stage.unreal_assets.project_index_refresh.startMs": 3.4234,
-							"stage.unreal_assets.project_index_refresh.endMs": 32.4073,
-							"stage.unreal_assets.project_index_refresh.wallMs": 28.9839,
-							"stage.unreal_assets.project_index_refresh.maxMs": 28.9839
+							"stage.unreal_assets.project_index_refresh.startMs": 3.3582,
+							"stage.unreal_assets.project_index_refresh.endMs": 36.3235,
+							"stage.unreal_assets.project_index_refresh.wallMs": 32.9653,
+							"stage.unreal_assets.project_index_refresh.maxMs": 32.9653
 						},
 						"answer": {
 							"sha256": "bd0936646f8a9add876e53bc6fc472ad08eec5663261ee7d6519ac248b4dfb70",
@@ -890,24 +930,24 @@
 				],
 				"stages": {
 					"inventory": {
-						"median": 0.8401661000000047,
-						"minimum": 0.7967992999999964,
-						"maximum": 0.8613147999999953
+						"median": 0.7302345999999993,
+						"minimum": 0.7299340000000036,
+						"maximum": 0.7373808000000004
 					},
 					"localizationParse": {
-						"median": 20.604066,
-						"minimum": 20.419040000000003,
-						"maximum": 20.992548
+						"median": 16.0806676,
+						"minimum": 15.9669037,
+						"maximum": 16.66302
 					},
 					"localizationPublish": {
-						"median": 6.974468,
-						"minimum": 6.881866,
-						"maximum": 6.9928230000000005
+						"median": 6.3718735,
+						"minimum": 6.2234708,
+						"maximum": 6.6265422
 					},
 					"packageExtractionOrReplay": {
-						"median": 13.208074,
-						"minimum": 13.179525,
-						"maximum": 13.281663
+						"median": 5.750272,
+						"minimum": 5.715345,
+						"maximum": 5.857136000000001
 					},
 					"bundleVerification": {
 						"median": 0,
@@ -915,29 +955,29 @@
 						"maximum": 0
 					},
 					"packagePrepare": {
-						"median": 4.304732,
-						"minimum": 4.110451,
-						"maximum": 4.3299009999999996
+						"median": 0,
+						"minimum": 0,
+						"maximum": 0
 					},
 					"packagePublish": {
-						"median": 7.912394,
-						"minimum": 7.810201,
-						"maximum": 7.945065
+						"median": 8.574953100000002,
+						"minimum": 8.413093300000003,
+						"maximum": 8.6622395
 					},
 					"join": {
-						"median": 14.306182399999999,
-						"minimum": 14.1510586,
-						"maximum": 14.3809611
+						"median": 14.5159766,
+						"minimum": 14.3856264,
+						"maximum": 14.791341599999999
 					},
 					"openPageAndWorkspace": {
-						"median": 1.9415908000000002,
-						"minimum": 1.9060829000000012,
-						"maximum": 1.9587259999999915
+						"median": 1.993245899999991,
+						"minimum": 1.9480080000000015,
+						"maximum": 2.069156299999996
 					},
 					"packageSelection": {
-						"median": 0.23755600000000002,
-						"minimum": 0.236976,
-						"maximum": 0.240385
+						"median": 0.24635400000000002,
+						"minimum": 0.245942,
+						"maximum": 0.255154
 					},
 					"otherPackageRead": {
 						"median": 0,
@@ -945,19 +985,19 @@
 						"maximum": 0
 					},
 					"packageGateAndBookkeeping": {
-						"median": 13.752960699999996,
-						"minimum": 13.58109690000001,
-						"maximum": 14.192894800000001
+						"median": 16.143059,
+						"minimum": 16.026128,
+						"maximum": 17.0945345
 					},
 					"wholeBuild": {
-						"median": 56.705216699999994,
-						"minimum": 56.1938333,
-						"maximum": 56.7278675
+						"median": 48.454978,
+						"minimum": 47.805861799999995,
+						"maximum": 48.80006099999999
 					},
 					"peakTreeGiB": {
-						"median": 2.8409385681152344,
-						"minimum": 2.8275489807128906,
-						"maximum": 2.8745651245117188
+						"median": 2.4447402954101562,
+						"minimum": 2.2985687255859375,
+						"maximum": 2.4866714477539062
 					}
 				}
 			}
@@ -972,18 +1012,18 @@
 					"phase": "localization",
 					"delayMs": 1000,
 					"interrupted": true,
-					"interruptMs": 34,
-					"idleMs": 430,
+					"interruptMs": 53,
+					"idleMs": 469,
 					"childrenRemaining": 0,
 					"inventoryChildrenRemaining": 0,
 					"childObservations": [
 						{
-							"elapsedMs": 430,
+							"elapsedMs": 469,
 							"children": []
 						}
 					],
 					"secondRefreshOk": true,
-					"secondRefreshMs": 61436
+					"secondRefreshMs": 49069
 				}
 			]
 		},
@@ -995,18 +1035,18 @@
 					"phase": "packages",
 					"delayMs": 5000,
 					"interrupted": true,
-					"interruptMs": 113,
-					"idleMs": 433,
+					"interruptMs": 77,
+					"idleMs": 454,
 					"childrenRemaining": 0,
 					"inventoryChildrenRemaining": 0,
 					"childObservations": [
 						{
-							"elapsedMs": 433,
+							"elapsedMs": 454,
 							"children": []
 						}
 					],
 					"secondRefreshOk": true,
-					"secondRefreshMs": 61267
+					"secondRefreshMs": 48491
 				}
 			]
 		},
@@ -1018,18 +1058,18 @@
 					"phase": "joining",
 					"delayMs": 500,
 					"interrupted": true,
-					"interruptMs": 79,
-					"idleMs": 424,
+					"interruptMs": 89,
+					"idleMs": 434,
 					"childrenRemaining": 0,
 					"inventoryChildrenRemaining": 0,
 					"childObservations": [
 						{
-							"elapsedMs": 424,
+							"elapsedMs": 434,
 							"children": []
 						}
 					],
 					"secondRefreshOk": true,
-					"secondRefreshMs": 14676
+					"secondRefreshMs": 14711
 				}
 			]
 		}
@@ -1293,7 +1333,7 @@
 		"staticExit": 0
 	},
 	"readers": {
-		"final": "48d79cb08c32a192d6ca623571a4b46673ca7d7320cf7f80f7260a100c2dbd59",
+		"final": "959736ad6a1f00d40a0504a69309191b68a4f2896f3a627641364eeac2f754e7",
 		"base": "65841e228d02d07eac4011eaf38d6522fcba5ed1b75da946e8f102797fb414cd",
 		"phase4": "afda2b00aa80d2c5f4207577025c1fa3be881df9c02cedea81b12751ce2b9caa"
 	}

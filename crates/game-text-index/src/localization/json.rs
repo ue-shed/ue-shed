@@ -252,11 +252,7 @@ impl Parser<'_> {
                     }
                 }
                 "FormatVersion" if node == 0 => self.version = Some(value.clone()),
-                "Children" | "Subnamespaces" => {
-                    if !value.is_array() {
-                        self.invalid = true;
-                    }
-                }
+                "Children" | "Subnamespaces" if !value.is_array() => self.invalid = true,
                 _ => {}
             },
             Mode::Nodes => self.invalid = true,

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -288,6 +289,104 @@ export function joinFuzzInput(seed: number): JoinFuzzInput {
 	return result;
 }
 
+/**
+ * A seed's input with nothing for the join to pair: every manifest line is a resolved occurrence's
+ * identity and source, and the archives and POs hold only those lines. The native join can then
+ * patch an in-place edit rather than rebuild.
+ */
+export function pairlessJoinFuzzInput(seed: number): JoinFuzzInput {
+	const seeded = joinFuzzInput(seed);
+	// Only resolved, keyed occurrences in gathered, complete packages, which the manifest lists;
+	// Unreal can't load localization files holding a lone surrogate.
+	const input = {
+		...seeded,
+		records: seeded.records.map((record) => ({
+			...record,
+			occurrences: record.occurrences.filter(
+				(occurrence) =>
+					!seeded.excluded.includes(record.path) &&
+					!record.path.includes("/L10N/") &&
+					record.status === "complete" &&
+					occurrence.identity.status === "resolved" &&
+					occurrence.identity.key &&
+					!occurrence.identity.namespace.includes("[") &&
+					occurrence.source.isWellFormed()
+			)
+		}))
+	};
+	const lines = new Map<string, Entry>();
+	for (const record of input.records)
+		for (const occurrence of record.occurrences)
+			if (occurrence.identity.status === "resolved") {
+				const { namespace, key } = occurrence.identity;
+				const id = JSON.stringify([namespace, key]);
+				if (!lines.has(id))
+					lines.set(id, {
+						namespace,
+						key,
+						source: occurrence.source,
+						notes: "",
+						path: `/Game/${record.path.slice(8, -7)}.Object.Label0`
+					});
+			}
+	const manifest = [...lines.values()];
+	const known = (entry: { readonly namespace: string; readonly key: string }) =>
+		lines.get(JSON.stringify([entry.namespace, entry.key]));
+	const { review: _review, ...rest } = input;
+	return {
+		...rest,
+		manifest,
+		archives: input.archives.map((entries) =>
+			entries.flatMap((entry) => {
+				const line = known(entry);
+				return line ? [{ ...entry, source: line.source }] : [];
+			})
+		),
+		pos: input.pos.map((entries) =>
+			entries.flatMap((entry) => {
+				const line = known(entry);
+				return line ? [{ ...entry, source: line.source, path: line.path }] : [];
+			})
+		)
+	};
+}
+
+/**
+ * The input after an in-place edit: some occurrences' sources change, to a new text or to another
+ * occurrence's, and each culture's PO changes one translation. Identities, counts and paths stay,
+ * so the native join can patch its lines rather than rebuild.
+ */
+export function editJoinFuzzInput(input: JoinFuzzInput): JoinFuzzInput {
+	let state = (input.seed ^ 0x5bd1e995) >>> 0;
+	const random = () => {
+		state += 0x6d2b79f5;
+		let value = Math.imul(state ^ (state >>> 15), 1 | state);
+		value ^= value + Math.imul(value ^ (value >>> 7), 61 | value);
+		return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+	};
+	const int = (limit: number) => Math.floor(random() * limit);
+	const sources = input.records.flatMap((record) =>
+		record.occurrences.map((occurrence) => occurrence.source)
+	);
+	const edits = 1 + int(3);
+	const records = input.records.map((record) => ({
+		...record,
+		occurrences: record.occurrences.map((occurrence) => ({ ...occurrence }))
+	}));
+	const occurrences = records.flatMap((record) => record.occurrences);
+	for (let edit = 0; edit < edits && occurrences.length > 0; edit++) {
+		const occurrence = occurrences[int(occurrences.length)]!;
+		occurrence.source = int(2) ? `${occurrence.source} edited` : sources[int(sources.length)]!;
+	}
+	const pos = input.pos.map((entries) => {
+		const at = int(entries.length + 1);
+		return entries.map((entry, index) =>
+			index === at ? { ...entry, translation: `${entry.translation} edited` } : entry
+		);
+	});
+	return { ...input, records, pos };
+}
+
 export interface FuzzDifference {
 	field: string;
 	detail: string;
@@ -561,7 +660,8 @@ export async function compareJoinFuzzInput(
 	const inventory = input.records
 		.map((record) => ({
 			path: record.path,
-			signature: "fuzz",
+			// The content's, so an edited record reads as a changed package.
+			signature: createHash("sha256").update(JSON.stringify(record)).digest("hex"),
 			headerData: {
 				packageFlags: input.excluded.includes(record.path) ? 0 : 0x00040000,
 				gatherableTextDataCount: 0,

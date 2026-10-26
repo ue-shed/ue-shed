@@ -391,7 +391,13 @@ impl Previous {
                 changed,
                 previous,
                 lines: row_lines,
-                limit: len / 4,
+                // Above a quarter of the rows a full evaluation is as quick. The fuzzer lifts the
+                // limit to compare small corpora's incremental evaluations with full ones.
+                limit: if std::env::var_os("UE_SHED_GAME_TEXT_UNLIMITED_CLOSURE").is_some() {
+                    len
+                } else {
+                    len / 4
+                },
             },
             rows,
         )))

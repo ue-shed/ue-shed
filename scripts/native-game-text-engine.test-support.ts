@@ -1,5 +1,8 @@
 import { Effect } from "effect";
 import { nativeGameTextEngineClientLayer } from "../packages/unreal-assets/dist/index.js";
+import type { GameTextContract } from "../packages/protocol/dist/index.js";
+import { effectiveRuleDocument } from "../packages/game-text/src/rules/effective.ts";
+import { STARTER_CHECK_RULES } from "../packages/game-text/src/starter-rules.ts";
 import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 import { openNativeTextQuery } from "../packages/game-text/src/native-query.ts";
 import type { TextCorpusSearchRequest } from "../packages/game-text/src/schema.ts";
@@ -35,4 +38,82 @@ export function nativeEngineLines(executable: string) {
 				})
 			).pipe(Effect.provide(nativeGameTextEngineClientLayer({ executable })))
 		);
+}
+
+/** What a findings layer reads as: its summary, its findings in each order, and its diagnostics. */
+export interface NativeFindingsRead {
+	readonly evaluation: Omit<GameTextContract.FindingsEvaluation, "profile">;
+	readonly pages: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Evaluate every starter check through the production client and read the layer back in pages.
+ * `full` evaluates every row, as `UE_SHED_GAME_TEXT_FULL_EVALUATION` asks of the engine process.
+ */
+export function nativeEngineFindings(executable: string) {
+	return async (
+		configuration: ReturnType<typeof joinStoreOptions>,
+		full = false
+	): Promise<NativeFindingsRead & { readonly incremental: boolean }> => {
+		// Full evaluates every row; otherwise the closure has no size limit, so small corpora
+		// evaluate incrementally too.
+		const name = full
+			? "UE_SHED_GAME_TEXT_FULL_EVALUATION"
+			: "UE_SHED_GAME_TEXT_UNLIMITED_CLOSURE";
+		process.env[name] = "1";
+		try {
+			return await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const root = yield* Effect.gen(function* () {
+							return yield* (yield* SharedIndex).inspect();
+						}).pipe(Effect.provide(sharedIndexNodeLayer(configuration)));
+						const query = yield* openNativeTextQuery({
+							configuration: { ...configuration, sharedProject: false },
+							generation: root.generation,
+							joinedKey: root.active.joined ?? "missing-test-join"
+						});
+						const { profile, ...evaluation } = yield* query.findingsEvaluate(
+							effectiveRuleDocument(STARTER_CHECK_RULES, {})
+						);
+						const size = 500;
+						const pages: Record<string, unknown> = {};
+						for (const [view, order] of [
+							["report", "report"],
+							["workspace", "line"],
+							["workspace", "source"]
+						] as const) {
+							const rows: unknown[] = [];
+							for (let offset = 0; ; offset += size) {
+								const { stages: _stages, ...page } = yield* query.findingsQuery({
+									key: evaluation.key,
+									view,
+									order,
+									offset,
+									limit: size,
+									...(offset === 0 ? { counts: true } : undefined),
+									diagnostics: { offset, limit: size }
+								});
+								rows.push(page);
+								if (
+									page.findings.length < size &&
+									(page.diagnostics?.rows.length ?? 0) < size
+								)
+									break;
+							}
+							pages[`${view}.${order}`] = rows;
+						}
+						const stages = "stages" in profile ? profile.stages : {};
+						return {
+							evaluation,
+							pages,
+							incremental: (stages["layer.merge"]?.rows ?? 0) > 0
+						};
+					})
+				).pipe(Effect.provide(nativeGameTextEngineClientLayer({ executable })))
+			);
+		} finally {
+			delete process.env[name];
+		}
+	};
 }

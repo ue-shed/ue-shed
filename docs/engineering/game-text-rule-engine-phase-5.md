@@ -65,20 +65,15 @@ A new writer-session operation, `package_text_plan`, replaces `GameTextIndexSour
   format, the audience-policy prefix (the exact string TypeScript hashes today: the format, then
   `JSON.stringify([TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY])`), and optional
   `changedFiles`.
-- **Work, in the writer:**
-    - Read the Catalog generation's inventory and header records directly. The writer session
-      runs in `uasset.exe`, so the operation lives in `uasset-io`, which owns the Catalog format
-      and links the store.
-    - Select each package with `isPackageTextCandidate`, ported rule for rule:
-      `REQUIRES_LOCALIZATION_GATHER` set, or a gatherable text count and offset both above zero.
-    - With `changedFiles`, a package not named keeps its stored signature and eligibility, read
-      from the active package-text layers in the writer's own store, exactly as
-      `package-text-layer.ts:216-282` does today.
-    - Shard each path with `packageTextShard` (FNV-1a over UTF-16 code units, modulo 256) and key
-      each shard as today: SHA-256 over the prefix, then `JSON.stringify([path, signature,
+- **Work, in the writer:** - Read the Catalog generation's inventory and header records directly. The writer session
+  runs in `uasset.exe`, so the operation lives in `uasset-io`, which owns the Catalog format
+  and links the store. - Select each package with `isPackageTextCandidate`, ported rule for rule:
+  `REQUIRES_LOCALIZATION_GATHER` set, or a gatherable text count and offset both above zero. - With `changedFiles`, a package not named keeps its stored signature and eligibility, read
+  from the active package-text layers in the writer's own store, exactly as
+  `package-text-layer.ts:216-282` does today. - Shard each path with `packageTextShard` (FNV-1a over UTF-16 code units, modulo 256) and key
+  each shard as today: SHA-256 over the prefix, then `JSON.stringify([path, signature,
 selected])` per entry in path byte order. The JSON is JavaScript's (`identity.rs`
-      `javascript_json`).
-    - Compare each key with the manifest's active key.
+  `javascript_json`). - Compare each key with the manifest's active key.
 - **Response:** per shard: number, key, entry count, selected count and whether it changed; plus
   the removed shard names. No paths.
 - **Then:** TypeScript asks the reader to stage the changed shards by number and Catalog

@@ -166,6 +166,44 @@ fn typescript_differential_localization_columns_and_diagnostics() {
             collapse_mode: None,
         },
     ));
+    for (format, prefix) in [
+        (Format::Manifest, "{} }"),
+        (
+            Format::Po,
+            "msgid \"broken\" trailing\nmsgstr \"x\"\n\nmsgid \"next\"\n",
+        ),
+    ] {
+        cases.push((
+            [prefix.as_bytes(), " ".repeat(300_000).as_bytes(), &[0xff]].concat(),
+            Options {
+                format,
+                po_format: None,
+                collapse_mode: None,
+            },
+        ));
+    }
+    let oversized = "s".repeat(1024 * 1024 + 1);
+    for (format, text) in [
+        (
+            Format::Manifest,
+            format!(
+                "{{\"Namespace\":\"\",\"FormatVersion\":1,\"Children\":[{{\"Source\":{{\"Text\":\"{oversized}\"}},\"Keys\":[{{\"Key\":\"k\"}}]}},oops]}}"
+            ),
+        ),
+        (
+            Format::Po,
+            format!("msgid \"{oversized}\"\nmsgstr \"x\"\n\nmsgid \"broken\" trailing\n"),
+        ),
+    ] {
+        cases.push((
+            text.into_bytes(),
+            Options {
+                format,
+                po_format: None,
+                collapse_mode: None,
+            },
+        ));
+    }
     let large = (0..2500).map(|i| json!({"Source":{"Text":format!("{i}-{}", "source".repeat(40))},"Keys":[{"Key":format!("{i}-{}", "key".repeat(40)),"Path":format!("/A/B/{i}")}]})).collect::<Vec<_>>();
     cases.push((
         serde_json::to_vec(&json!({"Namespace":"","Children":large,"FormatVersion":1})).unwrap(),

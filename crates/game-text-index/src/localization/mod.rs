@@ -246,27 +246,34 @@ fn parse_bytes_with_chunk(
         });
         Ok(())
     };
-    let prefix_size = bytes.len().min(3);
-    decode(
-        &bytes[prefix..prefix_size],
-        false,
-        bytes
-            .len()
-            .min(prefix_size.div_ceil(chunk_bytes) * chunk_bytes),
-    )?;
-    for (i, chunk) in bytes.chunks(chunk_bytes).enumerate() {
-        let start = i * chunk_bytes;
-        if start + chunk.len() < prefix_size {
-            continue;
-        }
-        let offset = prefix_size.saturating_sub(start);
+    let decoded = (|| {
+        let prefix_size = bytes.len().min(3);
         decode(
-            &chunk[offset..],
+            &bytes[prefix..prefix_size],
             false,
-            ((i + 1) * chunk_bytes).min(bytes.len()),
+            bytes
+                .len()
+                .min(prefix_size.div_ceil(chunk_bytes) * chunk_bytes),
         )?;
+        for (i, chunk) in bytes.chunks(chunk_bytes).enumerate() {
+            let start = i * chunk_bytes;
+            if start + chunk.len() < prefix_size {
+                continue;
+            }
+            let offset = prefix_size.saturating_sub(start);
+            decode(
+                &chunk[offset..],
+                false,
+                ((i + 1) * chunk_bytes).min(bytes.len()),
+            )?;
+        }
+        decode(&[], true, bytes.len())
+    })();
+    if let Err(error) = decoded {
+        // localization-import.ts keeps the first feed failure while finishing the file hash.
+        columns::validate_prefix(&chunks, file, options, limits)?;
+        return Err(error);
     }
-    decode(&[], true, bytes.len())?;
     columns::parse_columns(&chunks, file, options, limits)
 }
 

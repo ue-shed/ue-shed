@@ -211,6 +211,16 @@ pub struct PoDocument {
 }
 
 pub fn parse_po(text: &str, file: &str, options: &Options, limits: &Limits) -> Parsed<PoDocument> {
+    let (document, error) = parse_po_outcome(text, file, options, limits, true);
+    error.map_or(Ok(document), Err)
+}
+pub(super) fn parse_po_outcome(
+    text: &str,
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+    finalize: bool,
+) -> (PoDocument, Option<Diagnostic>) {
     let mut rows = Vec::new();
     let mut lines = Vec::new();
     let mut start = 0;
@@ -262,23 +272,70 @@ pub fn parse_po(text: &str, file: &str, options: &Options, limits: &Limits) -> P
         }
         Ok(())
     };
-    // packages/game-text/src/localization-stream.ts:391-467: CR/LF only, with trivia in blocks.
-    while start < text.len() {
-        let end = text[start..]
-            .find(['\r', '\n'])
-            .map_or(text.len(), |i| start + i);
-        let mut next = if end < text.len() { end + 1 } else { end };
-        if text.as_bytes().get(end) == Some(&b'\r') && text.as_bytes().get(next) == Some(&b'\n') {
-            next += 1;
+    let result = (|| {
+        // packages/game-text/src/localization-stream.ts:391-467: CR/LF only, with trivia in blocks.
+        while start < text.len() {
+            let end = text[start..]
+                .find(['\r', '\n'])
+                .map_or(text.len(), |i| start + i);
+            if !finalize && end == text.len() {
+                break;
+            }
+            let mut next = if end < text.len() { end + 1 } else { end };
+            if text.as_bytes().get(end) == Some(&b'\r') && text.as_bytes().get(next) == Some(&b'\n')
+            {
+                next += 1;
+            }
+            let raw = &text[start..end];
+            let ending = &text[end..next];
+            let t = trim(raw);
+            if !t.is_empty()
+                && (blank
+                    || (finished
+                        && (t.starts_with('#') || starts_keyword(t, &["msgctxt", "msgid"]))))
+                && !lines.is_empty()
+            {
+                blocks += 1;
+                if blocks > limits.max_entries {
+                    return Err(failure(
+                        file,
+                        "limit_exceeded",
+                        &format!(" at line {}", first + 1),
+                    ));
+                }
+                consume(
+                    &lines,
+                    first,
+                    &mut rows,
+                    &mut format,
+                    &mut header_seen,
+                    &mut unresolved,
+                )?;
+                lines.clear();
+                bytes = 0;
+                first = line;
+                finished = false;
+            }
+            lines.push((raw, ending));
+            bytes += (raw.encode_utf16().count() + ending.len()) * 2;
+            if bytes > limits.max_record_bytes {
+                return Err(failure(
+                    file,
+                    "limit_exceeded",
+                    &format!(" at line {}", first + 1),
+                ));
+            }
+            blank = t.is_empty();
+            if translation(t) {
+                finished = true;
+            }
+            line += 1;
+            start = next;
         }
-        let raw = &text[start..end];
-        let ending = &text[end..next];
-        let t = trim(raw);
-        if !t.is_empty()
-            && (blank
-                || (finished && (t.starts_with('#') || starts_keyword(t, &["msgctxt", "msgid"]))))
-            && !lines.is_empty()
-        {
+        if !finalize {
+            return Ok(());
+        }
+        if !lines.is_empty() {
             blocks += 1;
             if blocks > limits.max_entries {
                 return Err(failure(
@@ -295,56 +352,20 @@ pub fn parse_po(text: &str, file: &str, options: &Options, limits: &Limits) -> P
                 &mut header_seen,
                 &mut unresolved,
             )?;
-            lines.clear();
-            bytes = 0;
-            first = line;
-            finished = false;
         }
-        lines.push((raw, ending));
-        bytes += (raw.encode_utf16().count() + ending.len()) * 2;
-        if bytes > limits.max_record_bytes {
-            return Err(failure(
-                file,
-                "limit_exceeded",
-                &format!(" at line {}", first + 1),
-            ));
+        if options.po_format.is_none()
+            && format == "Crowdin"
+            && options
+                .collapse_mode
+                .as_deref()
+                .unwrap_or("IdenticalTextIdAndSource")
+                == "IdenticalTextIdAndSource"
+        {
+            for row in rows.iter_mut().take(unresolved) {
+                row.identity = Some(identity(&row.msgid));
+            }
         }
-        blank = t.is_empty();
-        if translation(t) {
-            finished = true;
-        }
-        line += 1;
-        start = next;
-    }
-    if !lines.is_empty() {
-        blocks += 1;
-        if blocks > limits.max_entries {
-            return Err(failure(
-                file,
-                "limit_exceeded",
-                &format!(" at line {}", first + 1),
-            ));
-        }
-        consume(
-            &lines,
-            first,
-            &mut rows,
-            &mut format,
-            &mut header_seen,
-            &mut unresolved,
-        )?;
-    }
-    if options.po_format.is_none()
-        && format == "Crowdin"
-        && options
-            .collapse_mode
-            .as_deref()
-            .unwrap_or("IdenticalTextIdAndSource")
-            == "IdenticalTextIdAndSource"
-    {
-        for row in rows.iter_mut().take(unresolved) {
-            row.identity = Some(identity(&row.msgid));
-        }
-    }
-    Ok(PoDocument { rows, format })
+        Ok(())
+    })();
+    (PoDocument { rows, format }, result.err())
 }

@@ -277,6 +277,23 @@ pub fn parse_columns(
     options: &Options,
     limits: &Limits,
 ) -> Parsed<LocalLayer> {
+    parse_columns_inner(chunks, file, options, limits, true)
+}
+pub(super) fn validate_prefix(
+    chunks: &[String],
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+) -> Parsed<()> {
+    parse_columns_inner(chunks, file, options, limits, false).map(|_| ())
+}
+fn parse_columns_inner(
+    chunks: &[String],
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+    finalize: bool,
+) -> Parsed<LocalLayer> {
     let mut b = Builder {
         file,
         limits,
@@ -296,7 +313,8 @@ pub fn parse_columns(
     let mut po_format = options.po_format.clone().unwrap_or_else(|| "Unreal".into());
     if options.format == Format::Po {
         // packages/game-text/src/localization-columns.ts:381-459: compact flags retain PO extras.
-        let document = super::parse_po(&chunks.concat(), file, options, limits)?;
+        let (document, error) =
+            super::po::parse_po_outcome(&chunks.concat(), file, options, limits, finalize);
         po_format = document.format;
         let keyed = po_format == "Crowdin"
             && options
@@ -378,6 +396,15 @@ pub fn parse_columns(
             }
             b.put(9, &extra(&extras))?;
         }
+        // The streaming host reports a retained-column failure before any later parser failure.
+        if let Some(error) = error {
+            return Err(error);
+        }
+        if !finalize {
+            return Ok(LocalLayer {
+                columns: Vec::new(),
+            });
+        }
         for (i, entry) in document.rows.iter().enumerate() {
             if entry
                 .identity
@@ -393,12 +420,13 @@ pub fn parse_columns(
             }
         }
     } else {
-        let document = super::json::parse_json_chunks(
+        let (document, error) = super::json::parse_json_outcome(
             &chunks.iter().map(String::as_str).collect::<Vec<_>>(),
             file,
             options.format,
             limits,
-        )?;
+            finalize,
+        );
         for (i, entry) in document.rows.iter().enumerate() {
             b.row();
             b.columns[1][i] = b.id(&entry.key)?;
@@ -430,6 +458,14 @@ pub fn parse_columns(
                 }
                 b.put(8, &extra(&translation.extra))?;
             }
+        }
+        if let Some(error) = error {
+            return Err(error);
+        }
+        if !finalize {
+            return Ok(LocalLayer {
+                columns: Vec::new(),
+            });
         }
         for namespace in &document.namespaces {
             b.id(namespace)?;

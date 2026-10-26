@@ -417,6 +417,16 @@ pub fn parse_json_chunks(
     format: Format,
     limits: &Limits,
 ) -> Parsed<JsonDocument> {
+    let (document, error) = parse_json_outcome(chunks, file, format, limits, true);
+    error.map_or(Ok(document), Err)
+}
+pub(super) fn parse_json_outcome(
+    chunks: &[&str],
+    file: &str,
+    format: Format,
+    limits: &Limits,
+    finalize: bool,
+) -> (JsonDocument, Option<Diagnostic>) {
     let mut p = Parser {
         file,
         format,
@@ -436,62 +446,77 @@ pub fn parse_json_chunks(
         lex_escaped: false,
         lex_record: None,
     };
-    for chunk in chunks {
-        p.feed(chunk)?;
-    }
-    if p.lex_quoted || p.lex_record.is_some() {
-        return Err(p.error("malformed_json"));
-    }
-    if !p.lex_token.is_empty() {
-        p.finish_token()?;
-    }
-    if !p.frames.is_empty() || !p.root_done {
-        return Err(p.error("malformed_json"));
-    }
-    let version = p.version.as_ref().and_then(Value::as_f64);
-    if version.is_none_or(|v| v.fract() != 0.0) {
-        return Err(p.error("invalid_schema"));
-    }
-    if version != Some(if format == Format::Manifest { 1.0 } else { 2.0 }) {
-        return Err(p.error("unsupported_version"));
-    }
-    if p.invalid {
-        return Err(p.error("invalid_schema"));
-    }
-    let mut namespaces = Vec::<String>::new();
-    let mut resolved = 0;
-    for node in &p.nodes {
-        let parent = node.parent.map_or("", |n| namespaces[n].as_str());
-        let namespace = if parent.is_empty() {
-            node.name.clone()
-        } else {
-            format!("{parent}.{}", node.name)
-        };
-        resolved += 128 + namespace.encode_utf16().count() * 5;
-        if resolved > limits.max_identity_bytes {
-            return Err(p.error("limit_exceeded"));
+    let result = (|| {
+        for chunk in chunks {
+            p.feed(chunk)?;
         }
-        namespaces.push(namespace);
+        if !finalize {
+            return Ok(None);
+        }
+        if p.lex_quoted || p.lex_record.is_some() {
+            return Err(p.error("malformed_json"));
+        }
+        if !p.lex_token.is_empty() {
+            p.finish_token()?;
+        }
+        if !p.frames.is_empty() || !p.root_done {
+            return Err(p.error("malformed_json"));
+        }
+        let version = p.version.as_ref().and_then(Value::as_f64);
+        if version.is_none_or(|v| v.fract() != 0.0) {
+            return Err(p.error("invalid_schema"));
+        }
+        if version != Some(if format == Format::Manifest { 1.0 } else { 2.0 }) {
+            return Err(p.error("unsupported_version"));
+        }
+        if p.invalid {
+            return Err(p.error("invalid_schema"));
+        }
+        let mut namespaces = Vec::<String>::new();
+        let mut resolved = 0;
+        for node in &p.nodes {
+            let parent = node.parent.map_or("", |n| namespaces[n].as_str());
+            let namespace = if parent.is_empty() {
+                node.name.clone()
+            } else {
+                format!("{parent}.{}", node.name)
+            };
+            resolved += 128 + namespace.encode_utf16().count() * 5;
+            if resolved > limits.max_identity_bytes {
+                return Err(p.error("limit_exceeded"));
+            }
+            namespaces.push(namespace);
+        }
+        if let Some(offset) = p.invalid_child {
+            p.offset = offset;
+            return Err(p.error("invalid_schema"));
+        }
+        // packages/game-text/src/localization-columns.ts:486-493: physical rows retain preorder ordinals.
+        let mut order = (0..p.rows.len()).collect::<Vec<_>>();
+        order.sort_by_key(|i| p.rows[*i].0);
+        for (ordinal, i) in order.into_iter().enumerate() {
+            p.rows[i].1.ordinal = ordinal;
+        }
+        Ok(Some(JsonDocument {
+            rows: p
+                .rows
+                .drain(..)
+                .map(|(node, mut row)| {
+                    row.namespace = namespaces[node].clone();
+                    row
+                })
+                .collect(),
+            namespaces,
+        }))
+    })();
+    match result {
+        Ok(Some(document)) => (document, None),
+        result => (
+            JsonDocument {
+                rows: p.rows.into_iter().map(|(_, row)| row).collect(),
+                namespaces: Vec::new(),
+            },
+            result.err(),
+        ),
     }
-    if let Some(offset) = p.invalid_child {
-        p.offset = offset;
-        return Err(p.error("invalid_schema"));
-    }
-    // packages/game-text/src/localization-columns.ts:486-493: physical rows retain preorder ordinals.
-    let mut order = (0..p.rows.len()).collect::<Vec<_>>();
-    order.sort_by_key(|i| p.rows[*i].0);
-    for (ordinal, i) in order.into_iter().enumerate() {
-        p.rows[i].1.ordinal = ordinal;
-    }
-    Ok(JsonDocument {
-        rows: p
-            .rows
-            .into_iter()
-            .map(|(node, mut row)| {
-                row.namespace = namespaces[node].clone();
-                row
-            })
-            .collect(),
-        namespaces,
-    })
 }

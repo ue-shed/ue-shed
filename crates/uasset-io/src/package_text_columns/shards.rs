@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use super::{Columns, Evidence, Expected, SnapshotRequest, Stored, write_staged};
+use game_text_index::wtf8::Wtf8Buf;
 use game_text_index::{Result, require};
 
 struct Builder {
@@ -109,10 +110,12 @@ impl Shards {
             if entry.selected {
                 columns.append(packages.remove(&path).ok_or("missing selected package")?)?;
             } else {
+                // The encoder reads scalar views; inventory strings are raw.
+                let path = Wtf8Buf::from_utf8(&path).into_view();
                 columns.feed(
                     Stored {
                         path: path.clone(),
-                        signature: entry.signature,
+                        signature: Wtf8Buf::from_utf8(&entry.signature).into_view(),
                         evidence: Evidence::NotGatherable { path },
                     },
                     &self.rules,

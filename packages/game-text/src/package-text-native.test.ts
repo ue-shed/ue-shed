@@ -52,6 +52,30 @@ describe.skipIf(!executable)("native package column preparation", () => {
 		);
 	it("uses the paired executable for an empty inventory despite a different ambient reader", () =>
 		compare([]));
+	// U+F0000–U+F0800 escape lone surrogates inside the reader; literal ones in inventory
+	// paths and signatures must survive both replayed and excluded packages.
+	const reserved = ["Content/\u{f0000}.uasset", "Content/\u{f0001}x.uasset"];
+	it("keeps reserved scalars in the paths and signatures of selected and excluded packages", () =>
+		compare([
+			...reserved.map((path) => ({
+				path,
+				signature: `\u{f0001}${path}`,
+				evidence: emptyPackageTextRecord(path)
+			})),
+			{
+				path: "Content/\u{f0800}None.uasset",
+				signature: "\u{f0800}",
+				evidence: { event: "not_gatherable", path: "Content/\u{f0800}None.uasset" }
+			}
+		]));
+	it("keeps reserved scalars in a shard of excluded packages only", () =>
+		compare(
+			reserved.map((path) => ({
+				path,
+				signature: `\u{f0000}`,
+				evidence: { event: "not_gatherable", path }
+			}))
+		));
 	it("converts a record larger than the request envelope from a bounded record file", () => {
 		const path = "Content/Large.uasset";
 		return compare([

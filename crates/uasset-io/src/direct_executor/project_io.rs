@@ -878,15 +878,19 @@ fn replay_package_snapshots(
         }
         let stored: package_text_columns::Stored = game_text_index::wtf8::parse_json_as(line)
             .map_err(|e| staging_failure(e.to_string()))?;
-        let (group, entry) = expected
-            .get(&root.join(&stored.path))
+        // Retained records hold scalar views; the inventory holds raw paths and signatures.
+        let (group, entry) = game_text_index::wtf8::Wtf8Buf::from_view(&stored.path)
+            .to_utf8()
+            .ok()
+            .and_then(|path| expected.get(&root.join(path)))
             .ok_or_else(|| staging_failure("unexpected retained package".into()))?;
         let evidence_path = match &stored.evidence {
             package_text_columns::Evidence::Package { record, .. } => &record.path,
             package_text_columns::Evidence::NotGatherable { path }
             | package_text_columns::Evidence::Error { path, .. } => path,
         };
-        if stored.signature != entry.signature
+        if stored.signature
+            != game_text_index::wtf8::Wtf8Buf::from_utf8(&entry.signature).into_view()
             || stored.path != *evidence_path
             || entry.selected
                 == matches!(

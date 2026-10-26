@@ -1,6 +1,7 @@
-use super::*;
+use game_text_index::wtf8;
 use serde::Deserialize;
 use std::process::{Command, Stdio};
+use uasset_io::package_text_test_support::{AudienceRule, Columns, Stored, write_staged};
 
 #[derive(Deserialize)]
 struct Oracle {
@@ -40,6 +41,7 @@ fn typescript_differential_package_columns_and_staged_bytes() {
             "scripts/package-text-columns-oracle.test-support.ts",
         ])
         .arg(&directory)
+        .env("UE_SHED_UASSET_EXECUTABLE", env!("CARGO_BIN_EXE_uasset"))
         .current_dir(workspace)
         .stdin(Stdio::null())
         .output()

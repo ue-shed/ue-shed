@@ -12,6 +12,11 @@ mod protocol_adapter;
 pub mod protocol_result;
 mod reader_memory;
 
+#[doc(hidden)]
+pub mod package_text_test_support {
+    pub use crate::package_text_columns::{AudienceRule, Columns, Stored, write_staged};
+}
+
 #[cfg(test)]
 use uasset_parser::{archive, package, version};
 #[cfg(test)]

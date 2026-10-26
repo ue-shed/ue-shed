@@ -659,8 +659,6 @@ pub fn write_staged(path: &std::path::Path, columns: &[Column]) -> Result<u64> {
     writer.finish_staged(path, &order)
 }
 
-#[cfg(test)]
-mod tests;
 pub fn location(location: &TextExtractionLocation) -> (&str, &str, &str, &str, u32) {
     match location {
         TextExtractionLocation::AssetProperty {

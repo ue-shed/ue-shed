@@ -708,12 +708,14 @@ fn projection(
         }
     };
     let planned;
+    let mut from_plan = false;
     let (selection, staging) = match staging {
         Some(staging)
             if let Some(snapshots) = &staging.snapshots
                 && let Some(file) = &snapshots.plan_file =>
         {
             planned = planned_staging(selection, staging, snapshots, file)?;
+            from_plan = true;
             (&planned.0, Some(&planned.1))
         }
         _ => (selection, staging),
@@ -742,9 +744,13 @@ fn projection(
     } else {
         resolve_roots(selection, cancellation)?
     };
-    let staging_groups = staging
+    let mut staging_groups = staging
         .map(|staging| PackageTextGroups::new(staging, &roots, Path::new(&selection.project_root)))
         .transpose()?;
+    // A plan file's packages are checked here; a host that names its packages checks them itself.
+    if let Some(groups) = &mut staging_groups {
+        groups.verifies = from_plan;
+    }
     let mut stager = staging
         .map(|staging| PackageTextStager::new(staging, Path::new(&selection.project_root)))
         .transpose()?;
@@ -1136,6 +1142,8 @@ struct PackageTextGroups {
     exact: std::collections::HashMap<PathBuf, u32>,
     snapshots: Option<SnapshotRequest>,
     expected: BTreeMap<PathBuf, (u32, Expected)>,
+    /// Whether each package's bundle is checked against its expected signature.
+    verifies: bool,
 }
 
 impl PackageTextGroups {
@@ -1150,6 +1158,7 @@ impl PackageTextGroups {
             ));
         }
         Ok(Self {
+            verifies: false,
             snapshots: staging.snapshots.clone(),
             expected: staging
                 .snapshots
@@ -1178,7 +1187,7 @@ impl PackageTextGroups {
     /// Fails when a staged package's bundle differs from its inventory signature: the package
     /// or a sidecar changed since the Catalog recorded it.
     fn verify(&self, path: &Path) -> Result<(), Failure> {
-        let Some((_, expected)) = self.expected.get(path) else {
+        let Some((_, expected)) = self.expected.get(path).filter(|_| self.verifies) else {
             return Ok(());
         };
         let _span = game_text_index::scan_timings::Span::new("extract.verify");
@@ -3214,6 +3223,73 @@ mod tests {
                 .code,
             "staging"
         );
+    }
+
+    #[test]
+    fn a_planned_package_whose_bundle_changed_fails_its_staging() {
+        use crate::package_text_columns::{Expected, SnapshotRequest};
+        let mut request = text_projection_request(true);
+        request.contract.version.minor = 20;
+        let (root, paths) = match &request.operation {
+            crate::protocol::Operation::ExtractTextPackages { selection, .. } => (
+                std::path::PathBuf::from(&selection.project_root),
+                selection.paths.clone().unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        let base =
+            std::env::temp_dir().join(format!("ue-shed-package-plan-{}", std::process::id()));
+        // Stages the selected packages from a plan file whose signatures `signature` gives.
+        let mut stage = |name: &str, signature: &dyn Fn(&std::path::Path) -> String| {
+            let directory = base.join(name);
+            std::fs::create_dir_all(&directory).unwrap();
+            let expected = paths
+                .iter()
+                .map(|path| {
+                    let full = root.join(path);
+                    Expected {
+                        path: full
+                            .strip_prefix(&root)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/"),
+                        signature: signature(&full),
+                        selected: true,
+                    }
+                })
+                .collect::<Vec<_>>();
+            let plan = directory.join("plan.ndjson");
+            std::fs::write(
+                &plan,
+                format!(
+                    "{}\n",
+                    serde_json::json!({"group": 7, "expected": expected})
+                ),
+            )
+            .unwrap();
+            if let crate::protocol::Operation::ExtractTextPackages { staging, .. } =
+                &mut request.operation
+            {
+                *staging = Some(crate::protocol::PackageTextStaging {
+                    directory: directory.to_string_lossy().into_owned(),
+                    groups: Vec::new(),
+                    snapshots: Some(SnapshotRequest {
+                        rules: Vec::new(),
+                        record_files: Vec::new(),
+                        records: Vec::new(),
+                        plan_file: Some(plan.to_string_lossy().into_owned()),
+                        groups: vec![7],
+                        shards: Vec::new(),
+                    }),
+                });
+            }
+            super::extract_text_streaming(&request, &CancellationToken::new(), &mut |_| Ok(()))
+                .map(|_| ())
+        };
+        stage("current", &|path| super::bundle_signature(path).unwrap()).unwrap();
+        let failure = stage("changed", &|_| "[null,null,null,null]".to_owned()).unwrap_err();
+        assert_eq!(failure.code, "package_changed");
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]

@@ -437,7 +437,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			input.publishGate
 		);
 	}
-	return yield* refreshChangedShards(input, planned, {
+	const result = yield* refreshChangedShards(input, planned, {
 		manifest,
 		reader,
 		writer,
@@ -449,6 +449,14 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			report();
 		}
 	});
+	// The refresh span holds the whole refresh's counts and stage times.
+	yield* Effect.annotateCurrentSpan({
+		"package-text.readPackages": result.readPackages,
+		"package-text.changedShards": result.changedShards,
+		"package-text.removedShards": result.removedShards,
+		...stages.attributes("package-text.stage_ms")
+	});
+	return result;
 });
 
 /** Plans an explicit inventory here: selects, shards and keys every package. */
@@ -759,10 +767,6 @@ const refreshChangedShards = Effect.fn("PackageText.refreshShards")(function* <E
 			)
 		);
 		stages.mark("import");
-		yield* Effect.annotateCurrentSpan({
-			"package-text.readPackages": expected,
-			...stages.attributes("package-text.stage_ms")
-		});
 		return {
 			readPackages: expected,
 			reusedPackages: planned.packages - expected,
@@ -902,12 +906,6 @@ const refreshChangedShards = Effect.fn("PackageText.refreshShards")(function* <E
 		yield* writer.publishCold(sources, removed);
 	else yield* writer.publishBatch(sources, removed);
 	stages.mark("publish");
-	yield* Effect.annotateCurrentSpan({
-		"package-text.readPackages": readPackages,
-		"package-text.changedShards": changed.length,
-		"package-text.removedShards": removed.length,
-		...stages.attributes("package-text.stage_ms")
-	});
 	return {
 		readPackages,
 		reusedPackages: planned.packages - readPackages,

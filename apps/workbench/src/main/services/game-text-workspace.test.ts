@@ -8,7 +8,7 @@ import {
 	type GameTextWorkspaceProject
 } from "@ue-shed/game-text/workspace";
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "@ue-shed/game-text/rules";
-import { makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
+import { LocalizationTargetName, makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
 import type { TextCorpus } from "@ue-shed/game-text/schema";
 import { Deferred, Effect, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
@@ -240,6 +240,89 @@ it.effect("creates starter rules exclusively in a non-disk host store", () =>
 		expect(store.contents.get(path)).toBe(previous);
 		expect(store.writes).toEqual([path]);
 		expect((yield* workspace.createStarterRules(true)).status).toBe("completed");
+	}).pipe(provideWorkspace)
+);
+
+it.effect("creates the host's starter rules", () =>
+	Effect.gen(function* () {
+		const store = memoryFiles();
+		const root = resolve("in-memory-project");
+		const starterRules = {
+			schemaVersion: 1 as const,
+			roles: [],
+			rules: [{ kind: "long" as const, enabled: false }]
+		};
+		const workspace = yield* makeGameTextWorkspace({
+			project: selected(root),
+			files: store.files,
+			starterRules
+		});
+		expect((yield* workspace.configuredRefresh()).status).toBe("completed");
+		expect((yield* workspace.createStarterRules(false)).status).toBe("completed");
+		const written = store.contents.get(resolve(root, GAME_TEXT_RULES_RELATIVE_PATH));
+		expect(JSON.parse(new TextDecoder().decode(written))).toEqual(starterRules);
+	}).pipe(provideWorkspace)
+);
+
+it.effect("answers an operation state poll from the published scan, without discovering", () =>
+	Effect.gen(function* () {
+		let discoveries = 0;
+		const root = "C:/Project";
+		yield* Effect.gen(function* () {
+			const workspace = yield* makeGameTextWorkspace({
+				project: selected(root),
+				files: memoryFiles().files
+			});
+			const name = LocalizationTargetName.make("FixtureGame");
+			// Before any scan there is nothing published, and the poll discovers nothing itself.
+			expect(yield* workspace.operationStateTarget(name)).toBeUndefined();
+			expect(discoveries).toBe(0);
+			expect((yield* workspace.configuredRefresh()).status).toBe("completed");
+			const scanned = discoveries;
+			expect(yield* workspace.operationStateTarget(name)).toBeUndefined();
+			expect(discoveries).toBe(scanned);
+		}).pipe(
+			Effect.scoped,
+			Effect.provide(cannedGameTextIndexLayer(() => Effect.succeed(emptyCorpus))),
+			Effect.provide(
+				makeLocalizationEvidenceTestLayer({
+					discover: () =>
+						Effect.sync(() => {
+							discoveries += 1;
+							return { schemaVersion: 1, targets: [], diagnostics: [] };
+						}),
+					read: () => Effect.die("No targets"),
+					targets: () => Effect.die("Not used")
+				})
+			)
+		);
+	})
+);
+
+it.effect("counts the host's project scan as the first of a scan's steps", () =>
+	Effect.gen(function* () {
+		const root = "C:/Project";
+		const workspace = yield* makeGameTextWorkspace({
+			project: {
+				...selected(root),
+				progress: () =>
+					Effect.succeed({
+						completed: 2,
+						total: 5,
+						phase: "scanning" as const,
+						stage: "project_index"
+					})
+			},
+			files: memoryFiles().files
+		});
+		expect(yield* workspace.progress()).toEqual({
+			completed: 2,
+			total: 5,
+			phase: "scanning",
+			stage: "project_index",
+			step: 1,
+			steps: 9
+		});
 	}).pipe(provideWorkspace)
 );
 

@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { indexPublicFailure } from "./index-public-error.js";
 import type { IndexFailure } from "./index-contract.js";
 import { Schema } from "effect";
@@ -68,7 +69,7 @@ import {
 import { Cause, Effect, Exit, Fiber, Ref, Result, Semaphore, type Scope } from "effect";
 import type { Layer } from "effect";
 import type { LocalizationFileAccess } from "@ue-shed/localization";
-import type { GameTextWorkspaceFileHooks } from "./workspace-host.js";
+import type { GameTextWorkspaceFileHooks, GameTextWorkspaceHost } from "./workspace-host.js";
 import type { LocalizationLineView } from "./index-reads.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
 
@@ -130,6 +131,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			readonly author: string;
 			/** Writes PO edits and review files. */
 			readonly localizationFiles: Layer.Layer<LocalizationFileAccess>;
+			/** Prepares every PO file an edit replaces before any is written. */
+			readonly prepareWrites?: GameTextWorkspaceHost["prepareWrites"];
 		} = { author: "game-text", localizationFiles: LocalizationFileAccessLive }
 	) {
 		const reader = yield* LocalizationEvidence;
@@ -917,6 +920,22 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					notSynced: retained.result.status === "ready" ? retained.result.notSynced : 0
 				};
 			}
+			if (options.prepareWrites) {
+				const prepared = yield* options
+					.prepareWrites(
+						reviewLocalizationChangeSet(retained.evidence, changeSet).files.map(
+							(file) => resolve(root, file.relativePath)
+						)
+					)
+					.pipe(Effect.result);
+				if (Result.isFailure(prepared))
+					return {
+						status: "failed" as const,
+						code: "file_unwritable",
+						message: prepared.failure.message,
+						recovery: prepared.failure.recovery
+					};
+			}
 			const receipt = yield* applyLocalizationChangeSet({
 				projectRoot: root,
 				changeSet
@@ -1049,6 +1068,18 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			preparation,
 			beforeGather,
 			linesFile,
+			/**
+			 * The target as the published discovery lists it, for state polls: never discovers,
+			 * so it never waits on a scan. Undefined until a discovery at `revision` is published.
+			 */
+			operationStateTarget: (name: LocalizationJoin["target"], revision: string) =>
+				Ref.get(discovery).pipe(
+					Effect.map((cached) =>
+						cached?.revision === revision
+							? cached.targets.find((target) => target.name === name)
+							: undefined
+					)
+				),
 			operationTarget: (name: LocalizationJoin["target"]) =>
 				targets().pipe(
 					Effect.flatMap((result) =>

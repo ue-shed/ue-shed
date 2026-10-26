@@ -5,6 +5,9 @@ import { Portal } from "@solidjs/web";
 
 export interface TaskProgress {
 	readonly detail?: string;
+	/** The scan step running now, of `steps`. */
+	readonly step?: number;
+	readonly steps?: number;
 	readonly cacheHits?: number;
 	readonly completed: number;
 	readonly phase: "idle" | "enumerating" | "scanning" | "ready" | "failed";

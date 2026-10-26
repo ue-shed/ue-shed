@@ -40,6 +40,7 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 			yield* makeGameTextOperations({
 				workspace: gameText,
 				project,
+				appName: "the Workbench",
 				engineRoot: () =>
 					configuration.unrealEngineRoot?.status === "configured"
 						? configuration.unrealEngineRoot.path

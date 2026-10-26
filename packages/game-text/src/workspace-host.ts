@@ -1,5 +1,6 @@
 import type { LocalizationFileAccess } from "@ue-shed/localization";
 import type { Effect, Layer, Stream } from "effect";
+import type { GameTextRuleDocument } from "./game-text-rules.js";
 
 /**
  * The project a host has selected. The workspace never chooses or changes the project; it reads
@@ -24,6 +25,12 @@ export interface GameTextWorkspaceProgress {
 	readonly phase: "idle" | "enumerating" | "scanning" | "ready" | "failed";
 	readonly stage: string;
 	readonly detail?: string;
+	/**
+	 * The scan step running now, of `steps`: the host's project scan, then each Game Text scan
+	 * phase in the order they start. A step a scan does not need is skipped, not renumbered.
+	 */
+	readonly step?: number;
+	readonly steps?: number;
 }
 
 /** A failure a host reports from one of its hooks, in words a user can act on. */
@@ -122,6 +129,17 @@ export interface GameTextWorkspaceHost {
 	 * are written to and loaded from. Defaults to `GAME_TEXT_RULES_RELATIVE_PATH`.
 	 */
 	readonly rulesRelativePath?: string;
+	/** Policy: the rules file **Create rules file** writes. Defaults to `STARTER_GAME_TEXT_RULES`. */
+	readonly starterRules?: GameTextRuleDocument;
+	/**
+	 * Writable-file hook for a batch: called with the absolute path of every PO file a
+	 * translation edit will replace, before the first one is written, so a host can check them
+	 * all out first. A failure writes nothing. `localizationFiles` still checks each file as it
+	 * writes it.
+	 */
+	readonly prepareWrites?: (
+		paths: readonly string[]
+	) => Effect.Effect<void, GameTextWorkspaceHostFailure>;
 	/**
 	 * Recovery copy: called with a file's previous bytes before the workspace overwrites it (a
 	 * saved rules file), so a host can keep a copy to restore. A read failure or recovery-copy

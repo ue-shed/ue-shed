@@ -309,6 +309,74 @@ it.live("reviews and writes staged edits into the PO file, then reports them as 
 	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
 );
 
+it.live("prepares every PO file an edit replaces, and writes nothing when that fails", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-prepare-")));
+		yield* Effect.addFinalizer(() =>
+			Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		for (const path of [
+			"Config/DefaultEditor.ini",
+			"Config/Localization/FixtureGame_Export.ini",
+			"Content/Localization/FixtureGame"
+		])
+			yield* Effect.promise(() =>
+				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
+					recursive: true
+				})
+			);
+		const prepared: (readonly string[])[] = [];
+		let refuse = true;
+		const saved = corpus([]);
+		const localization = yield* makeCannedGameTextLocalization(
+			fixtureAnswers,
+			() => Effect.succeed(saved),
+			() => Effect.succeed(testProjectIndex(root)),
+			undefined,
+			undefined,
+			(paths) =>
+				Effect.suspend(() => {
+					prepared.push(paths);
+					return refuse
+						? Effect.fail({ message: "Checked out elsewhere.", recovery: "Ask them." })
+						: Effect.void;
+				})
+		);
+		const selected = yield* localization.select(fixtureTarget);
+		if (selected.status !== "ready") throw new Error("Fixture target did not load.");
+		const edit = {
+			culture: cultureCode("de"),
+			namespace: TextNamespace.make("Fixture.Localization.Table"),
+			key: TextKey.make("NamedArgument"),
+			seenTranslation: "Gespräch mit {Name}",
+			translation: editedTranslation
+		};
+		const poPath = join(root, "Content/Localization/FixtureGame/de/FixtureGame.po");
+		const before = yield* Effect.promise(() => readFile(poPath, "utf8"));
+		const refused = yield* localization.edits({
+			target: fixtureTarget,
+			mode: "write",
+			edits: [edit]
+		});
+		expect(refused).toEqual({
+			status: "failed",
+			code: "file_unwritable",
+			message: "Checked out elsewhere.",
+			recovery: "Ask them."
+		});
+		expect(prepared).toEqual([[resolve(poPath)]]);
+		expect(yield* Effect.promise(() => readFile(poPath, "utf8"))).toBe(before);
+		// A review stages nothing, so it prepares nothing.
+		yield* localization.edits({ target: fixtureTarget, mode: "review", edits: [edit] });
+		expect(prepared).toHaveLength(1);
+		refuse = false;
+		expect(
+			yield* localization.edits({ target: fixtureTarget, mode: "write", edits: [edit] })
+		).toMatchObject({ status: "written", files: [{ culture: "de", written: true }] });
+		expect(prepared).toEqual([[resolve(poPath)], [resolve(poPath)]]);
+	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
+);
+
 it.live("writes review flags and shows a later edit as changed since review", () =>
 	Effect.gen(function* () {
 		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-review-")));

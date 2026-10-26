@@ -119,10 +119,28 @@ export const GameTextIndexPackageReplacement = Schema.Struct({
 	).check(Schema.isMaxLength(256)),
 	removedNames: Schema.optionalKey(Schema.Array(PackageLayerName).check(Schema.isMaxLength(256)))
 });
+/**
+ * The reader plans a package-text refresh from a Project Index Catalog generation and writes the
+ * changed shards' entries to `planFile`; the request names no packages.
+ */
+export const GameTextIndexPackagePlan = Schema.Struct({
+	action: Schema.Literal("plan_packages"),
+	...Configuration,
+	request: Schema.Struct({
+		cacheRoot: Text,
+		projectId: Text,
+		generation: Natural,
+		format: Text,
+		policyJson: Schema.String,
+		changedFiles: Schema.optionalKey(Schema.Array(Text)),
+		planFile: Text
+	})
+});
 /** Validated builder commands; package replacements require protocol minor 16 or later. */
 export const GameTextIndexBuildRequest = Schema.Union([
 	...GameTextIndexPreviousBuildRequest.members,
-	GameTextIndexPackageReplacement
+	GameTextIndexPackageReplacement,
+	GameTextIndexPackagePlan
 ]).annotate({ identifier: "GameTextIndexBuildRequest" });
 export type GameTextIndexBuildRequest = typeof GameTextIndexBuildRequest.Type;
 
@@ -147,6 +165,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"status",
 		"publish",
 		"publish_packages",
+		"plan_packages",
 		"publish_ids",
 		"intern",
 		"strings",
@@ -174,6 +193,16 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 	stageSeconds: Schema.Record(
 		Schema.String,
 		Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+	),
+	plan: Schema.optionalKey(
+		Schema.Struct({
+			changed: Schema.Array(
+				Schema.Struct({ group: Natural, key: Name, packages: Natural, selected: Natural })
+			),
+			removed: Schema.Array(Name),
+			packages: Natural,
+			firstKey: Name
+		})
 	),
 	localization: Schema.optionalKey(
 		Schema.Struct({

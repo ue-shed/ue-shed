@@ -25,25 +25,53 @@ export type ColdPackageTextInput = ColdPackageTextIdentity &
 		  }
 	);
 export const importColdPackageTextLayer = (input: ColdPackageTextInput) =>
-	Effect.suspend(() => importColdPackageTextShards(input, packageTextSelection(input.inventory)));
+	Effect.gen(function* () {
+		const selection = packageTextSelection(input.inventory);
+		const snapshots =
+			input.snapshots !== undefined
+				? input.snapshots
+				: yield* prepareRetainedPackageTextSnapshots(
+						selection,
+						input.recordDirectory,
+						input.stagingRoot
+					);
+		return yield* importColdPackageTextShards(
+			{
+				snapshots,
+				...(input.additionalSources
+					? { additionalSources: input.additionalSources }
+					: undefined)
+			},
+			selection.map((shard) => ({
+				name: shard.name,
+				key: shard.key,
+				packages: shard.entries.length
+			})),
+			input.inventory.length
+		);
+	});
+
+/** One shard a cold publication writes: its name, key and package count. */
+export interface ColdPackageTextShard {
+	readonly name: string;
+	readonly key: string;
+	readonly packages: number;
+}
 
 /** Publish the reader's completed shard files in one atomic cold publication. */
 export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(function* (
-	input: ColdPackageTextInput,
-	inventorySelection: ReturnType<typeof packageTextSelection>
+	input: {
+		readonly snapshots: ReadonlyMap<string, string>;
+		readonly additionalSources?: readonly ColdLayerSource[];
+	},
+	shards: readonly ColdPackageTextShard[],
+	packages: number
 ) {
 	const writer = yield* (yield* SharedIndex).writer();
 	const report = yield* GameTextIndexProgressReporter;
-	const selection = inventorySelection.filter((shard) => shard.entries.length);
-	const total = selection.reduce((sum, shard) => sum + shard.entries.length, 0);
-	const snapshots =
-		input.snapshots !== undefined
-			? input.snapshots
-			: yield* prepareRetainedPackageTextSnapshots(
-					inventorySelection,
-					input.recordDirectory,
-					input.stagingRoot
-				);
+	const selection = shards.filter((shard) => shard.packages);
+	const total = selection.reduce((sum, shard) => sum + shard.packages, 0);
+	const snapshots = input.snapshots;
 	report({ phase: "package_text", completed: 0, total });
 	const entries = selection.map((shard) => {
 		const stagedFile = snapshots.get(shard.name);
@@ -97,7 +125,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 		"package-text.cold.stage_ms.publish": performance.now() - started
 	});
 	return {
-		packages: input.inventory.length,
+		packages,
 		shards: published.length,
 		workerCount: 0,
 		layerBytes: published.reduce((sum, record) => sum + record.bytes, 0),

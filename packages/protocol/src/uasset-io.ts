@@ -5,7 +5,8 @@ import {
 	GameTextIndexBuildRequest,
 	GameTextIndexBuildOutcome,
 	GameTextIndexPreviousBuildRequest,
-	GameTextIndexPackageReplacement
+	GameTextIndexPackageReplacement,
+	GameTextIndexPackagePlan
 } from "./game-text-index.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
 import { AuthoringTableSnapshot } from "./authoring.js";
@@ -361,7 +362,10 @@ export const UAssetIoPackageTextSnapshots: Schema.Codec<GameTextContract.Package
 			Schema.Struct({ code: NonNegativeInt, when: Schema.Array(PackageTextAudienceMatch) })
 		),
 		recordFiles: Schema.optionalKey(Schema.Array(Schema.String)),
-		records: Schema.optionalKey(Schema.Array(Schema.String))
+		records: Schema.optionalKey(Schema.Array(Schema.String)),
+		/** A `plan_packages` plan file: the reader stages these shards' selected packages. */
+		planFile: Schema.optionalKey(Schema.String),
+		groups: Schema.optionalKey(Schema.Array(NonNegativeInt))
 	});
 export type UAssetIoPackageTextSnapshots = GameTextContract.PackageTextSnapshotRequest;
 /**
@@ -508,7 +512,7 @@ export const UAssetIoRequest = Schema.Union([
 		).annotate({ identifier: "UAssetIoPackageReplacementContract" }),
 		operation: Schema.Struct({
 			...GameTextIndexOperation.fields,
-			request: GameTextIndexPackageReplacement
+			request: Schema.Union([GameTextIndexPackageReplacement, GameTextIndexPackagePlan])
 		})
 	}),
 	Schema.Struct({ ...RequestFields, contract: UAssetIoContract, operation: ExistingOperation }),

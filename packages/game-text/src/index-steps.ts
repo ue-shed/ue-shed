@@ -422,8 +422,13 @@ export const makeGameTextIndexSteps = (
 				Effect.gen(function* () {
 					const index = yield* SharedIndex;
 					reportProgress({ phase: "inventory", completed: 0, total: 0 });
+					// The native writer plans from the Catalog; otherwise the inventory is read here.
+					const catalog =
+						request.savedPackages === false || !source.catalog || !builder.plansPackages
+							? undefined
+							: yield* source.catalog({ ...request, projectRoot });
 					const inventory =
-						request.savedPackages === false
+						request.savedPackages === false || catalog
 							? []
 							: yield* source.inventory({ ...request, projectRoot });
 					const byPath = new Map(inventory.map((entry) => [entry.path, entry]));
@@ -433,13 +438,19 @@ export const makeGameTextIndexSteps = (
 							name.startsWith("package-text.")
 						);
 					const packageRequest = {
-						inventory,
+						...(catalog ? { catalog } : { inventory }),
 						// Stored records carry Unreal's object paths, as the in-memory corpus does.
-						read: (paths) =>
+						read: (paths, signatures) =>
 							source
 								.read(
 									projectRoot,
-									paths.map((path) => byPath.get(path)!)
+									paths.map(
+										(path) =>
+											byPath.get(path) ?? {
+												path,
+												signature: signatures.get(path)!
+											}
+									)
 								)
 								.pipe(
 									Stream.map((event) => mountPackageTextEvent(projectRoot, event))

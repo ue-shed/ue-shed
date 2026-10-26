@@ -591,7 +591,7 @@ export function makeProtocolRequest(
 	// Narrow each branch to preserve the request union's operation/version correlation.
 	if (operation.kind === "game_text_index") {
 		const request = operation.request;
-		if (request.action === "publish_packages")
+		if (request.action === "publish_packages" || request.action === "plan_packages")
 			return { ...fields, operation: { kind: "game_text_index", request } };
 		return { ...fields, operation: { kind: "game_text_index", request } };
 	}

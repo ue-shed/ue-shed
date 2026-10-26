@@ -229,6 +229,14 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			}
 		),
 		sortsColdStrings: true,
+		planPackages: Effect.fn("NativeIndexBuilder.planPackages")(function* (request) {
+			const result = yield* command({ action: "plan_packages", configuration, request });
+			if (!result.plan)
+				return yield* Effect.fail(
+					unavailable("native-package-plan", new Error("The reader returned no plan."))
+				);
+			return result.plan;
+		}),
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {
 				const inputs = [];
@@ -531,6 +539,7 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 				importLocalizationFile,
 				importLocalizationTarget,
 				refreshPackageTextLayer,
+				plansPackages: true,
 				intern: Effect.fn("NativeIndexBuilder.intern")(function* (domain, values) {
 					const index = yield* SharedIndex;
 					return yield* (yield* index.writer()).intern(domain, values);

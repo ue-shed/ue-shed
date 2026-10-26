@@ -66,6 +66,11 @@ pub enum BuildRequest {
         #[serde(default)]
         removed: Vec<String>,
     },
+    /// Planned by the reader, which reads the Catalog: `BuildSession::plan_packages`.
+    PlanPackages {
+        configuration: Configuration,
+        request: crate::package_text_contract::PackageTextPlanRequest,
+    },
     PublishPackages {
         configuration: Configuration,
         inputs: Vec<PackageInput>,
@@ -108,6 +113,8 @@ pub struct BuildOutcome {
     pub stage_seconds: BTreeMap<String, f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub localization: Option<crate::localization::import::Outcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<crate::package_text_contract::PackageTextPlan>,
 }
 
 impl BuildOutcome {
@@ -124,6 +131,7 @@ impl BuildOutcome {
             io: crate::snapshot::io_metrics(),
             stage_seconds: BTreeMap::new(),
             localization: None,
+            plan: None,
         }
     }
 }
@@ -139,6 +147,7 @@ impl BuildRequest {
             | Self::Publish { configuration, .. }
             | Self::PublishIds { configuration, .. }
             | Self::PublishPackages { configuration, .. }
+            | Self::PlanPackages { configuration, .. }
             | Self::Intern { configuration, .. }
             | Self::Strings { configuration, .. }
             | Self::Join { configuration, .. }
@@ -311,6 +320,31 @@ impl BuildSession {
     }
 }
 
+impl BuildSession {
+    /// Plans a package-text refresh of the reader's Catalog `inventory` against the leased store.
+    pub fn plan_packages(
+        &mut self,
+        configuration: &Configuration,
+        request: &crate::package_text_contract::PackageTextPlanRequest,
+        inventory: Vec<crate::package_text_contract::PackageTextExpected>,
+    ) -> Result<BuildOutcome> {
+        let (active, store) = self.leased.as_ref().ok_or(crate::Error::new(
+            crate::ErrorCode::InvalidInput,
+            "call begin in a protocol session first",
+        ))?;
+        require(
+            active == configuration,
+            crate::Error::new(
+                crate::ErrorCode::InvalidInput,
+                "request belongs to another build lease",
+            ),
+        )?;
+        let mut outcome = BuildOutcome::new("plan_packages");
+        outcome.plan = Some(crate::package_text_plan::plan(store, request, inventory)?);
+        Ok(outcome)
+    }
+}
+
 fn response_root(store: &Store) -> Result<Value> {
     let mut root = store.root.clone();
     if store.configuration_view_prefix().is_some() {
@@ -365,6 +399,9 @@ fn execute(
             outcome.records = crate::package_delta::publish(store, inputs, removed_names)?;
         }
         BuildRequest::Status { .. } => {}
+        BuildRequest::PlanPackages { .. } => {
+            return Err("The reader plans package text from its Catalog.".into());
+        }
         BuildRequest::Publish {
             inputs,
             cold,

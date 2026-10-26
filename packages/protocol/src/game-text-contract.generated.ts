@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "adf061170029a8304cb4d3e528f256a1432001ad75687bb509d3e289ed4b193a"
+	contractHash: "62390ea01fdbdb7c716c7c506bd36590f7801945061da523cba2f40081d7651c"
 } as const;
 
 /**
@@ -387,7 +387,46 @@ export type PackageTextSnapshotRequest = { shards: ReadonlyArray<PackageTextShar
 /**
  * Serialized stored records are boundary input; workers decode directly into typed records.
  */
-records?: ReadonlyArray<string>, };
+records?: ReadonlyArray<string>, 
+/**
+ * The plan file `plan_packages` wrote: the reader reads the shards `groups` names from it,
+ * and reads their selected packages, so the request lists none.
+ */
+planFile?: string, groups?: ReadonlyArray<number>, };
+
+export type PackageTextPlanRequest = { 
+/**
+ * The Project Index cache root, project and generation the Catalog holds.
+ */
+cacheRoot: string, projectId: string, generation: number, 
+/**
+ * The shard key prefix: the package-text format, then the audience policy's JSON.
+ */
+format: string, policyJson: string, 
+/**
+ * Only these project-relative files changed; every other package keeps its stored entry.
+ */
+changedFiles?: ReadonlyArray<string>, 
+/**
+ * A new file the reader writes the changed shards' entries to, for staging.
+ */
+planFile: string, };
+
+export type PackageTextPlan = { 
+/**
+ * Shards with packages whose key differs from the index's.
+ */
+changed: ReadonlyArray<PackageTextPlanShard>, 
+/**
+ * Shards the index holds that no package falls in any more.
+ */
+removed: ReadonlyArray<string>, packages: number, 
+/**
+ * Shard 0's key, the marker an empty inventory publishes.
+ */
+firstKey: string, };
+
+export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 
 export type PackageTextShard = { group: number, expected: ReadonlyArray<PackageTextExpected>, };
 

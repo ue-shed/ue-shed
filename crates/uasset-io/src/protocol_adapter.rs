@@ -473,7 +473,7 @@ fn execute_direct(
     request: &Request,
     emitter: &mut Emitter,
     cancellation: &CancellationToken,
-    query_session: Option<&mut direct_executor::ProjectIndexQuerySession>,
+    mut query_session: Option<&mut direct_executor::ProjectIndexQuerySession>,
 ) -> Result<bool, Failure> {
     if query_session.is_some()
         && !matches!(
@@ -496,7 +496,19 @@ fn execute_direct(
     }
     match &request.operation {
         Operation::GameTextIndex { request: build } => {
-            let outcome = if let Some(session) = query_session {
+            let outcome = if let (
+                Some(session),
+                game_text_index::builder::BuildRequest::PlanPackages {
+                    configuration,
+                    request,
+                },
+            ) = (query_session.as_deref_mut(), build)
+            {
+                let inventory = session.package_text_inventory(request)?;
+                session
+                    .game_text
+                    .plan_packages(configuration, request, inventory)
+            } else if let Some(session) = query_session {
                 session
                     .game_text
                     .execute_with_progress(build, &mut |completed, total| {

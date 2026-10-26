@@ -694,12 +694,31 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                             "package-text snapshots require uasset-io v1.20".into(),
                         ));
                     }
-                    if snapshots.shards.is_empty()
-                        || snapshots.shards.len() > MAX_PACKAGE_TEXT_STAGING_GROUPS as usize
-                        || snapshots
-                            .shards
+                    // A plan file names its shards by group; the reader reads their entries.
+                    let (count, groups) = if snapshots.plan_file.is_some() {
+                        if !snapshots.shards.is_empty()
+                            || !staging.groups.is_empty()
+                            || selection
+                                .paths
+                                .as_ref()
+                                .is_none_or(|paths| !paths.is_empty())
+                        {
+                            return Err(ProtocolError(
+                                "a package-text plan file stages its own packages".into(),
+                            ));
+                        }
+                        (snapshots.groups.len(), snapshots.groups.clone())
+                    } else {
+                        (
+                            snapshots.shards.len(),
+                            snapshots.shards.iter().map(|shard| shard.group).collect(),
+                        )
+                    };
+                    if count == 0
+                        || count > MAX_PACKAGE_TEXT_STAGING_GROUPS as usize
+                        || groups
                             .iter()
-                            .any(|s| s.group >= MAX_PACKAGE_TEXT_STAGING_GROUPS)
+                            .any(|group| *group >= MAX_PACKAGE_TEXT_STAGING_GROUPS)
                     {
                         return Err(ProtocolError("invalid package-text snapshot shards".into()));
                     }

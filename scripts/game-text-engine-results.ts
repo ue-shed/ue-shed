@@ -52,7 +52,14 @@ export const EngineSample = Schema.Struct({
 	sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u)),
 	bytes: Count,
 	requests: Count,
-	metrics: Schema.Record(Schema.String, NonNegative)
+	metrics: Schema.Record(Schema.String, NonNegative),
+	/** Requests and bytes between the host and the native processes, by `transport:operation`. */
+	boundary: Schema.optionalKey(
+		Schema.Record(
+			Schema.String,
+			Schema.Struct({ requests: Count, requestBytes: Count, responseBytes: Count })
+		)
+	)
 });
 export type EngineSample = typeof EngineSample.Type;
 export const EngineTsTiming = Schema.Struct({

@@ -56,6 +56,8 @@ const TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS = 8 * 1024 * 1024;
 const PROJECT_INDEX_TYPE_SIDE_MIN_FRAME_CHARACTERS = 128 * 1024;
 const MAX_PROTOCOL_TERMINATION_WAIT_MS = 1_000;
 const benchmark = channel("ue-shed.game-text-benchmark");
+/** Bytes each request moves between the host and a native process, for boundary measurements. */
+const boundary = channel("ue-shed.native-boundary");
 const exactProtocolParseOptions = { onExcessProperty: "error" } as const;
 const validateProtocolEventType = Schema.decodeUnknownExit(
 	Schema.toType(UAssetIoEvent),
@@ -279,6 +281,7 @@ interface ProtocolTelemetry {
 	largestFrameBytes: number;
 	observer: ((event: AssetReaderProtocolObservation) => void) | undefined;
 	outputBytes: number;
+	requestBytes: number;
 	workerPid: number | undefined;
 	terminalState: ProtocolTerminalState | undefined;
 }
@@ -315,6 +318,7 @@ function makeProtocolTelemetry(
 		largestFrameBytes: 0,
 		observer,
 		outputBytes: 0,
+		requestBytes: 0,
 		partialFailures: 0,
 		queuedAt: nowMs(),
 		readBytes: 0,
@@ -522,6 +526,13 @@ function recordProtocolTelemetry(
 ): Effect.Effect<void> {
 	const at = nowMs();
 	finishDiscovery(telemetry, at);
+	if (boundary.hasSubscribers)
+		boundary.publish({
+			transport: "reader",
+			operation,
+			requestBytes: telemetry.requestBytes,
+			responseBytes: telemetry.outputBytes
+		});
 	const terminalState = telemetry.cancelled ? "cancelled" : (telemetry.terminalState ?? "failed");
 	notifyProtocolObserver(telemetry, {
 		kind: "worker_completed",
@@ -1078,6 +1089,7 @@ export class UassetProtocolSession {
 			try {
 				const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
 				const frame = `${JSON.stringify(options.request)}\n`;
+				telemetry.requestBytes = Buffer.byteLength(frame, "utf8");
 				if (encodeStarted !== undefined)
 					benchmark.publish({
 						stage: "tsFrameEncode",
@@ -1180,6 +1192,7 @@ async function* protocolEvents(options: {
 }): AsyncGenerator<ProtocolEvent> {
 	const queuedAt = options.telemetry.queuedAt;
 	const requestFrame = `${JSON.stringify(options.request)}\n`;
+	options.telemetry.requestBytes = Buffer.byteLength(requestFrame, "utf8");
 	if (Buffer.byteLength(requestFrame, "utf8") > MAX_PROTOCOL_REQUEST_BYTES) {
 		throw new ProtocolStreamFailure(
 			"contract",

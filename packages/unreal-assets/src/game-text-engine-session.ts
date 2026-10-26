@@ -15,6 +15,8 @@ import {
 import { type BatchRow, EngineBatch } from "./game-text-engine-batch.js";
 
 const benchmark = channel("ue-shed.game-text-benchmark");
+/** Bytes each request moves between the host and a native process, for boundary measurements. */
+const boundary = channel("ue-shed.native-boundary");
 
 /** Bytes of a worker's stderr kept for its failure message. */
 const MAX_STDERR_BYTES = 64 * 1024;
@@ -150,6 +152,9 @@ interface Pending {
 	/** Output bytes and the largest frame, for the reader's protocol observer. */
 	outputBytes: number;
 	largestFrameBytes: number;
+	/** The request's action and encoded size, for boundary measurements. */
+	readonly action: string;
+	readonly requestBytes: number;
 }
 
 const failure = (
@@ -360,6 +365,13 @@ class Worker {
 				return;
 			case FrameKind.end: {
 				const { profile } = contractJson<GameTextContract.EngineEnd>(frame.body);
+				if (boundary.hasSubscribers)
+					boundary.publish({
+						transport: "engine",
+						operation: pending.action,
+						requestBytes: pending.requestBytes,
+						responseBytes: pending.outputBytes
+					});
 				const answer = {
 					parts: pending.parts,
 					batches: pending.batches,
@@ -511,7 +523,9 @@ export class GameTextEngineSession {
 				progress,
 				resume,
 				outputBytes: 0,
-				largestFrameBytes: 0
+				largestFrameBytes: 0,
+				action: request.action,
+				requestBytes: FRAME_HEADER_BYTES + body.byteLength
 			});
 			if (worker.process.pid !== undefined)
 				this.observe({ kind: "worker_started", pid: worker.process.pid });

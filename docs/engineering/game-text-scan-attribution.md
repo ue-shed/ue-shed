@@ -1940,3 +1940,169 @@ existing opt-in tests ignored. `cargo test --locked -p uasset-io -- --test-threa
 with warnings denied. `pnpm -s run typecheck` passed. Generated-contract checks and locked
 release builds passed. Final static validation is retained in
 `target/p45-localization-static-final.log`. The full suite and `pnpm check` were not run.
+
+## Native package-text shard preparation
+
+Implemented on `perf/p45-reader-layers`, from unchanged `ee33f930`, in `9ed7b851`
+(column conversion and raw snapshot oracle), `25e77dc6` (reader shard builders, replay and
+Rust-owned preparation types), `476d432f` (host publication and worker removal),
+`e85c7074` (paired executable configuration, oversized-record regression and native-Node
+probe imports), and `270d814f` (audience suffix edge cases, layer wiring and final checks).
+[Numeric results](game-text-native-package-measurements.json) retain the
+reader hashes, complete stage totals, file-by-file comparison lists and probe summaries.
+
+Workers mount each package's paths, fold representation copies and convert its typed record
+into local column rows. The coordinator retains converted packages in their shard, merges
+string IDs in package byte order, and writes an uncompressed, unsynced snapshot when the last
+selected package arrives. Excluded inventory entries are encoded at shard completion without
+allocating a separate column builder per excluded package. Complete shards stay in one
+request; the host batches their signature inventories below the protocol frame limit.
+The existing twelve-worker default and **256 MiB input-byte admission** remain in effect.
+
+Retained-record files and explicit stored records use the same converter. Incremental
+replacement keeps its identity-only reuse and remaps negative replacement rows to the native
+snapshot's package order. Empty inventories also use native columns. Explicit conversion uses
+the writer's configured executable even when the ambient reader differs. Audience policy is
+supplied by the host as ordered matches and persisted codes; Rust does not duplicate its table.
+JSON-valued error and Blueprint metadata cells preserve input member order and UTF-16 units.
+
+Cold publication consumes the reader's snapshot files directly. Deleted the TypeScript prepare
+worker, `package-text-worker-protocol.ts`, worker startup/count/pool code, its Workbench entry,
+two Effect architecture exceptions, and the index's NDJSON spooling/conversion path.
+`package-text-ndjson.ts` moved out of the product package to `scripts/retained-package-lines.ts`
+for retained benchmark/fixture inputs. The existing v1.19 external raw-record staging contract
+remains compatible; the index uses v1.20 snapshot preparation. `packageTextColumns` has no
+index-write caller: it remains the decoder's reference counterpart for differential, coverage
+and synthetic-fixture tests. The decoder still reads stored columns during affected-shard reuse.
+
+### Method and cold-build stages
+
+Built the unchanged base first in this worktree with
+`cargo build --locked --release -p uasset-io`, retaining `target/p45-layers/base.exe`.
+Rebuilt the changed reader as `target/p45-layers/changed.exe`; their hashes are in the numeric
+report. TypeScript packages were built before each condition. Node 26.12.0,
+`CARGO_BUILD_JOBS=8`, `RAYON_NUM_THREADS=16`, and `UE_SHED_GAME_TEXT_STAGES=1` were used throughout.
+All heavy work was sequential under `E:/es-id-repairs-scratch/unreal.lock`.
+No Unreal Editor, Perforce write, network service, push, PR or merge ran.
+
+Each condition used one fresh-cache build per benchmark project, through the unchanged
+`scripts/benchmark-game-text-engine.ts --stages build --runs 1`. Native attribution was disabled
+for both timing conditions. The harness warmed its external project index outside the timer;
+the 1× project supplied retained records. Inputs were read-only, with no OS cache flush.
+Accepted outputs are `E:/ue-shed-engine-scratch/p45-layers-base-{1x,released}-r1` and
+`p45-layers-after-{1x,released}-r2`; canonical outputs use `ue57` and `ue58` instead.
+The final changed build is `270d814f`. Earlier development-revision runs remain separate;
+the table and acceptance results below use the final suffix-corrected reader.
+
+Seconds except the last row. Concurrent branches overlap: do not sum the rows. The 1× inventory
+row is refresh setup outside package refresh. Open/page includes workspace residual outside
+`prepareTarget`. Extraction now includes worker conversion and coordinator snapshot writing.
+
+| Stage                                | Released before | Released after | 1× before | 1× after |
+| ------------------------------------ | --------------: | -------------: | --------: | -------: |
+| Inventory / refresh setup            |           3.410 |          3.475 |     0.796 |    0.745 |
+| Localization parse                   |          15.760 |         15.432 |    16.941 |   16.663 |
+| Localization publish                 |          10.999 |          9.352 |     6.217 |    6.583 |
+| Package extraction / retained replay |          23.221 |         20.510 |    11.177 |    5.915 |
+| Bundle verification                  |           5.589 |          5.210 |     0.000 |    0.000 |
+| Separate package prepare             |           4.482 |          0.000 |     4.003 |    0.000 |
+| Package publish                      |           7.129 |          7.158 |     8.479 |    8.727 |
+| Join                                 |          13.723 |         14.011 |    15.451 |   15.252 |
+| Open + first page / workspace        |           1.965 |          1.929 |     1.943 |    1.968 |
+| Whole measured build                 |          60.296 |         53.048 |    53.699 |   49.786 |
+| Coarse peak tree working set, GiB    |           5.292 |          3.737 |     3.173 |    2.425 |
+
+The released build fell **7.248 s (12.0%)** and the 1× build **3.913 s (7.3%)**. The separate
+4.482/4.003 s prepare pool is gone from the critical path. Released extraction, including the
+new native work, stayed below the base extraction span; native retained replay also
+removed host record decoding and spooling. Localization, publication and join variation are
+reported, not attributed to this change. One run per condition is descriptive, not a distribution
+or the owner's final three-run campaign.
+
+### Byte identity
+
+The unchanged `scripts/p45-host-layers.ts` ran `cmp -s` on corresponding published files and,
+where generated metadata differed, compared every other stored section and descriptor. It
+checked current and previous roots, active pointers, layer keys and records, dictionary segments,
+manifests and dependency state/checksums, rejecting unaccounted store files.
+
+| Input                   | Package layers | Localization + observation layers | Joined | Whole-file equal dictionaries | Stored data sections compared | Metadata-only files |
+| ----------------------- | -------------: | --------------------------------: | -----: | ----------------------------: | ----------------------------: | ------------------: |
+| Released project        |            256 |                                43 |      1 |                            22 |                        13,272 |                 305 |
+| 1× project              |            256 |                                43 |      1 |                            22 |                        13,017 |                 305 |
+| UE 5.7 canonical corpus |             44 |                                19 |      1 |                            15 |                         2,295 |                  69 |
+| UE 5.8 canonical corpus |             44 |                                19 |      1 |                            15 |                         2,295 |                  69 |
+
+All four comparisons passed. Full physical filenames of metadata-only differences are retained
+in the numeric report and `target/p45-layers/parity-{released,1x,ue57,ue58}.json`. Only established
+exclusions apply: generated generation tokens and physical filenames/references, generation-derived
+joined keys, metadata-dependent byte lengths, checksums and framing/offsets. Dependency envelope
+checksums were verified before normalization. No authored value, file timestamp, input key, ID,
+dictionary boundary, codec, count or non-metadata payload is excluded. External stat hints,
+project-index caches, staging bookkeeping and measurement logs remain outside published-cache parity.
+There was no unexplained difference and no new exclusion.
+
+The differential oracle compares raw columns and **complete staged snapshot bytes**, without
+exclusions, for all twelve committed package fixture projects, both canonical corpora and generated
+cases. Coverage includes 120 generated records across every identity/location/copy kind, all gap
+reasons, gather coverage, empty strings, Unicode and lone surrogates, string-block boundaries,
+raw and already-folded Blueprints with and without authored sites, and error/Blueprint JSON member
+order, plus nested/unbalanced array and map suffixes used in audience classification. A native
+fixture regression also compares extraction, ordered package-local merges and
+retained replay byte for byte, and requires the shard file to exist when its last completion emits.
+
+### Memory, native work and cancellation
+
+The dedicated released-project probe used a new external cache and its normal cold project-index
+refresh, with native attribution enabled. It retained 97 samples: mean gap **675.146 ms**, maximum
+**980 ms**, against 250 ms requested sampling. Peak tree working set was **4,962,713,600 bytes
+(4.622 GiB)** at 15.337 s, last progress label `packages`, below 6 GiB. Labels interleave and do
+not identify exclusive ownership. The artifact is
+`E:/ue-shed-engine-scratch/p45-layers-memory-r3/memory.json`.
+
+| Role at tree peak      |         Bytes |   GiB |
+| ---------------------- | ------------: | ----: |
+| Node coordinator       |   319,389,696 | 0.297 |
+| Native sessions        | 2,101,280,768 | 1.957 |
+| Native one-shot reader | 2,510,364,672 | 2.338 |
+| Sampler / other        |    31,678,464 | 0.030 |
+| Total                  | 4,962,713,600 | 4.622 |
+
+Node's separate sampled high was **349,786,112 bytes (0.326 GiB)**. The reader reported at most
+**23 shard builders** and **48,455,782 bytes (46.211 MiB)** of retained converted-column capacity
+in one request. This is an ownership estimate, excluding inventory metadata and temporary merge
+buffers, not a heap census. The same counters are exposed to the optional reader-memory probe.
+In this instrumented run, `extract.columns` recorded 167,401 calls, **7.743 summed thread-seconds /
+6.500 CPU seconds**; `extract.shard_snapshot` recorded 256 calls, **4.081 summed wall seconds /
+4.031 CPU seconds**. They nest and overlap extraction and must not be added to build wall.
+Native artifacts are in `target/p45-layers/memory-native-r3/`. All sampled peaks are lower bounds.
+
+One earlier memory invocation failed during module loading, before acquiring the lock or creating
+a scan cache: native Node cannot resolve source `.js` specifiers through `.ts` imports. Retained
+helpers now import built package modules; the accepted memory and cancellation probes run on
+native Node without a loader process. That setup attempt is not a measured scan.
+
+The extraction cancellation probe ran once, 5 s after `packages` progress began. Interrupt returned
+in **89 ms**, every scan child was gone at the **434 ms** poll, and the immediate same-process,
+same-cache retry succeeded in **49.031 s**. Inventory descendants were zero before the timed scan;
+remaining descendants were zero afterward. Both deadlines passed. The artifact is
+`E:/ue-shed-engine-scratch/p45-layers-cancel-r2/cancellation.json`.
+
+### Verification
+
+Passed with the freshly built reader selected for every Vitest invocation:
+
+- Nineteen requested package-text, index, saved-fixture and native-delta files: **148 tests**.
+- Six follow-up configuration, large-record, concurrency and native-lifecycle files: **19 tests**
+  (some repeat the earlier files). A different ambient reader cannot override the configured
+  executable; a record beyond the request envelope uses bounded file input and matches the oracle.
+  The final reader also passed the configuration/lifecycle subset again: three files, 12 tests.
+- `cargo test --locked -p uasset-io -- --test-threads=1`: **136 passed**, one existing helper ignored.
+- `cargo test --locked -p game-text-index -- --test-threads=1`: **148 passed**, three opt-in tests ignored.
+- Clippy for both crates, all targets with warnings denied; Rust formatting; generated native
+  contract validation; the repository's contract checks; locked release builds.
+
+`pnpm -s run typecheck` and `pnpm -s run check:static` passed (336 architecture tests,
+existing lint warnings only). The full suite, `pnpm check`,
+Unreal Editor, the owner's final fuzz/export acceptance matrix and three-run timing campaign were
+not run. No byte-identity, fixture, memory or cancellation STOP condition was triggered.

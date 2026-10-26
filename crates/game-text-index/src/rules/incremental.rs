@@ -48,7 +48,7 @@ impl NodeGroups {
         }
     }
     /// The row's key hashes, one per group: a row's groups are distinct, and so are their keys.
-    fn keys(&self, row: usize) -> impl Iterator<Item = u64> + '_ {
+    pub(crate) fn keys(&self, row: usize) -> impl Iterator<Item = u64> + '_ {
         self.row(row).iter().filter_map(|group| match *group {
             FAILED_GROUP => Some(FAILED_KEY),
             group => self.hashes.get(group as usize).copied(),
@@ -61,6 +61,21 @@ impl NodeGroups {
     fn same_keys(&self, other: &Self, row: usize) -> bool {
         let (here, there) = (self.row(row), other.row(row));
         here.len() == there.len() && self.keys(row).all(|key| other.has_key(row, key))
+    }
+    /// Whether both hold the same keys on every row, and the same corpus table.
+    #[cfg(test)]
+    pub(crate) fn same_rows(&self, other: &Self) -> bool {
+        let rows = |groups: &Self| {
+            groups
+                .starts
+                .as_ref()
+                .map_or(groups.groups.len(), |starts| starts.len().saturating_sub(1))
+        };
+        self.node == other.node
+            && self.keyed == other.keyed
+            && self.table == other.table
+            && rows(self) == rows(other)
+            && (0..rows(self)).all(|row| self.same_keys(other, row))
     }
     /// The rows' groups renumbered through `map`, from each current row to the row it was, or
     /// `NO_GROUP` for a row that is new.
@@ -118,6 +133,8 @@ pub(crate) struct SubjectDelta {
     /// The previous evaluation's groups, renumbered to this evaluation's rows. A row the
     /// previous evaluation didn't have has no groups; it is in `changed`.
     pub previous: HashMap<NodeId, NodeGroups>,
+    /// The key hashes of the previous rows that a changed line no longer has.
+    pub removed: HashMap<NodeId, Vec<u64>>,
     /// `line_culture`: each row's line, so a line's rows are evaluated together.
     pub lines: Option<std::sync::Arc<[u32]>>,
     /// Above this many rows, evaluate every row.
@@ -136,9 +153,13 @@ pub(crate) fn closure(len: usize, delta: &SubjectDelta, current: &[NodeGroups]) 
         // Keys that a row joined or left, or whose corpus count changed, affect their groups
         // whichever rows are evaluated.
         let mut affected = FxHashSet::default();
-        if let (Some(old), Some(new)) = (&previous.table, &groups.table) {
-            let old = old.iter().copied().collect::<HashMap<_, _>>();
-            let new = new.iter().copied().collect::<HashMap<_, _>>();
+        if let (Some(old_table), Some(new_table)) = (&previous.table, &groups.table) {
+            let old = old_table.iter().copied().collect::<HashMap<_, _>>();
+            let new = new_table.iter().copied().collect::<HashMap<_, _>>();
+            // Two keys of one hash would share a count here and could hide a change.
+            if old.len() != old_table.len() || new.len() != new_table.len() {
+                return None;
+            }
             for (key, count) in &new {
                 if old.get(key) != Some(count) {
                     affected.insert(*key);
@@ -155,6 +176,9 @@ pub(crate) fn closure(len: usize, delta: &SubjectDelta, current: &[NodeGroups]) 
         }
         if !groups.keyed {
             continue;
+        }
+        if let Some(keys) = delta.removed.get(&groups.node) {
+            affected.extend(keys);
         }
         for row in 0..len {
             if !previous.same_keys(groups, row) {
@@ -263,6 +287,7 @@ mod tests {
         SubjectDelta {
             changed: bits,
             previous: HashMap::from([(previous.node, previous)]),
+            removed: HashMap::new(),
             lines: None,
             limit: len,
         }
@@ -307,6 +332,30 @@ mod tests {
         assert!(closure(3, &delta(&[], old.clone(), 3), std::slice::from_ref(&new)).is_none());
         new.table.clone_from(&old.table);
         assert_eq!(rows(closure(3, &delta(&[1], old, 3), &[new])), vec![1]);
+    }
+
+    #[test]
+    fn colliding_corpus_keys_evaluate_every_row() {
+        // Two keys of one hash: their counts can't be told apart, so neither can a change.
+        let mut old = groups(2, &[Some("x"), Some("y")]);
+        let mut new = old.clone();
+        old.table = Some(vec![(7, 1), (7, 10)]);
+        new.table = Some(vec![(7, 2), (7, 10)]);
+        assert!(closure(2, &delta(&[], old, 2), &[new]).is_none());
+    }
+
+    #[test]
+    fn a_removed_row_brings_the_groups_it_left() {
+        // The changed line lost the row that shared `a` with row 2; its other row is in `b`.
+        let old = groups(1, &[Some("b"), Some("c"), Some("a")]);
+        let new = old.clone();
+        let mut input = delta(&[0], old, 3);
+        assert_eq!(
+            rows(closure(3, &input, std::slice::from_ref(&new))),
+            vec![0]
+        );
+        input.removed.insert(1, vec![key_hash("a")]);
+        assert_eq!(rows(closure(3, &input, &[new])), vec![0, 2]);
     }
 
     #[test]

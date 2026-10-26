@@ -151,6 +151,9 @@ it.skipIf(!executable)(
 			console.log(
 				`In-place edits: ${tally.incremental} of ${seeds} evaluations incremental; joins ${JSON.stringify(tally.joins)}`
 			);
+			// Otherwise the round compares two full evaluations.
+			expect(tally.joins.incremental ?? 0, "incremental joins").toBeGreaterThan(0);
+			expect(tally.incremental, "incremental evaluations").toBeGreaterThan(0);
 		});
 	},
 	// The timeout scales with the sweep's seed count.

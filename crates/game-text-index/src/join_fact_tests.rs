@@ -1131,25 +1131,35 @@ fn an_incremental_evaluation_publishes_the_layer_a_full_one_would() -> Result<()
     assert_eq!(stages["layer.merge"]["rows"], 0);
     let culture_rows = count * 2;
     type Edit<'a> = &'a dyn Fn(&mut Fixture) -> Result<()>;
-    let edits: [(&str, Edit); 4] = [
-        ("a changed source", &|fixture| {
+    // Each edit, and whether the join patches it: a removed culture row rebuilds the join.
+    let edits: [(&str, bool, Edit); 5] = [
+        ("a changed source", true, &|fixture| {
             fixture.packages(&packages(&[(5, "Label number 5 edited")]))
         }),
-        ("a line that moves to another group", &|fixture| {
+        ("a line that moves to another group", true, &|fixture| {
             fixture.packages(&packages(&[(5, "Label number 5 edited"), (0, "Load")]))
         }),
-        ("changed translations", &|fixture| {
+        ("changed translations", true, &|fixture| {
             fixture.file("de.po", "po", &po(&[(11, "PO changed"), (12, "")]))
         }),
-        ("restored sources", &|fixture| {
+        ("a removed translation", false, &|fixture| {
+            let mut entries = archive(&translation);
+            entries.remove(3);
+            fixture.file("de.archive", "archive", &entries)
+        }),
+        ("restored sources", true, &|fixture| {
             fixture.packages(&packages(&[]))
         }),
     ];
-    for (stage, edit) in edits {
+    for (stage, patched, edit) in edits {
         edit(&mut fixture)?;
         let outcome = fixture.join()?;
-        assert_eq!(outcome.strategy.as_deref(), Some("incremental"), "{stage}");
         let stages = compare(&mut fixture, stage)?;
+        if !patched {
+            assert_eq!(outcome.strategy.as_deref(), Some("full"), "{stage}");
+            continue;
+        }
+        assert_eq!(outcome.strategy.as_deref(), Some("incremental"), "{stage}");
         let evaluated = stages["line_culture.closure"]["rows"]
             .as_u64()
             .ok_or("Missing closure rows.")?;

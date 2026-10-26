@@ -104,10 +104,16 @@ export function nativeEngineFindings(executable: string) {
 							pages[`${view}.${order}`] = rows;
 						}
 						const stages = "stages" in profile ? profile.stages : {};
+						const subStages = "subStages" in profile ? profile.subStages : {};
 						return {
 							evaluation,
 							pages,
-							incremental: (stages["layer.merge"]?.rows ?? 0) > 0
+							// A subject evaluated fewer rows than it has: its closure chose them.
+							incremental: ["line", "line_culture"].some(
+								(subject) =>
+									(stages[`${subject}.closure`]?.rows ?? Infinity) <
+									(subStages[`${subject}.closure.select`]?.rows ?? 0)
+							)
 						};
 					})
 				).pipe(Effect.provide(nativeGameTextEngineClientLayer({ executable })))

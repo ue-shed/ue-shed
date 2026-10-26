@@ -265,14 +265,8 @@ impl Previous {
             })
             .collect()
     }
-    /// The previous evaluation's groups of a node, renumbered through `rows` (each current row's
-    /// previous row) when the rows moved.
-    fn groups(
-        &self,
-        subject: Subject,
-        state: &StateNode,
-        rows: Option<&[u32]>,
-    ) -> Result<NodeGroups> {
+    /// The previous evaluation's groups of a node, numbered by the previous rows.
+    fn groups(&self, subject: Subject, state: &StateNode) -> Result<NodeGroups> {
         let StateNode {
             node,
             corpus,
@@ -315,10 +309,7 @@ impl Previous {
                 None
             },
         };
-        Ok(match rows {
-            Some(rows) => groups.renumbered(rows),
-            None => groups,
-        })
+        Ok(groups)
     }
     /// One subject's delta: the rows of the changed lines and the previous groups, renumbered,
     /// with `line_culture`'s map from previous rows to current rows. `lines` and `cultures` are
@@ -351,8 +342,9 @@ impl Previous {
             }
             None => changed.clone_from(&self.changed),
         }
-        // Each current row's previous row.
+        // Each current row's previous row, and the previous rows a changed line no longer has.
         let mut back = None;
+        let mut gone = Vec::new();
         if let (Some(rows), Some(row_lines)) = (&rows, &row_lines) {
             let mut map = vec![NO_GROUP; len];
             for (old, new) in rows.iter().enumerate() {
@@ -361,6 +353,7 @@ impl Previous {
                     if !self.changed.get(line) {
                         return Ok(None);
                     }
+                    gone.push(old);
                 } else {
                     map[*new as usize] = u32::try_from(old)?;
                 }
@@ -375,21 +368,34 @@ impl Previous {
             back = Some(map);
         }
         let mut previous = HashMap::new();
+        let mut removed = HashMap::new();
         for node in self
             .state
             .nodes
             .iter()
             .filter(|node| node.subject == subject)
         {
+            let groups = self.groups(subject, node)?;
+            // A removed row leaves its groups: their other members are evaluated again.
+            removed.insert(
+                node.node as usize,
+                gone.iter()
+                    .flat_map(|old| groups.keys(*old))
+                    .collect::<Vec<_>>(),
+            );
             previous.insert(
                 node.node as usize,
-                self.groups(subject, node, back.as_deref())?,
+                match &back {
+                    Some(map) => groups.renumbered(map),
+                    None => groups,
+                },
             );
         }
         Ok(Some((
             SubjectDelta {
                 changed,
                 previous,
+                removed,
                 lines: row_lines,
                 // Above a quarter of the rows a full evaluation is as quick. The fuzzer lifts the
                 // limit to compare small corpora's incremental evaluations with full ones.

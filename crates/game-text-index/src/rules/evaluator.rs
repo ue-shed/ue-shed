@@ -639,8 +639,12 @@ struct Evaluator<'a> {
     aggregates: Vec<Option<Arc<Column>>>,
     /// Each corpus count's rows by key, built once.
     corpus_tables: HashMap<NodeId, Arc<HashMap<String, i64>>>,
-    /// The rows an incremental evaluation evaluates; aggregates still read every row.
+    /// The rows an incremental evaluation evaluates. A group they are in holds every member, so
+    /// the aggregates read only them.
     restrict: Option<Bits>,
+    /// In a full evaluation, the groups each cross-row aggregate formed over every row, for the
+    /// next evaluation's state.
+    recorded: Option<FxHashMap<NodeId, super::incremental::NodeGroups>>,
     len: usize,
 }
 impl<'a> Evaluator<'a> {
@@ -734,6 +738,7 @@ impl<'a> Evaluator<'a> {
             aggregates: vec![None; program.nodes.len()],
             corpus_tables: HashMap::new(),
             restrict: None,
+            recorded: None,
             len,
             cache_ids: Vec::new(),
             prepared,
@@ -1136,6 +1141,9 @@ impl<'a> Evaluator<'a> {
                 groups.entry(self.key(value)).or_default().push(row);
             }
         }
+        if self.recorded.is_some() && len == self.len {
+            self.record_groups(id, &groups, &failed);
+        }
         let mut values = vec![Atom::Null; len];
         match op {
             Op::GroupCount => {
@@ -1251,6 +1259,40 @@ impl<'a> Evaluator<'a> {
         let mut column = Column::from_atoms(&values, &mut self.arena)?;
         column.failed = failed;
         Ok(column)
+    }
+    /// Records a full evaluation's groups of a group aggregate, numbered by their first row as
+    /// `cross_row_groups` numbers them.
+    fn record_groups(&mut self, id: NodeId, groups: &HashMap<String, Vec<usize>>, failed: &Bits) {
+        use super::incremental::{FAILED_GROUP, NO_GROUP, NodeGroups, key_hash};
+        let mut order = groups
+            .iter()
+            .map(|(key, members)| (members[0], key))
+            .collect::<Vec<_>>();
+        order.sort_unstable();
+        let mut rows = vec![NO_GROUP; self.len];
+        for row in failed.ones() {
+            rows[row as usize] = FAILED_GROUP;
+        }
+        let mut hashes = Vec::with_capacity(order.len());
+        for (number, (_, key)) in order.into_iter().enumerate() {
+            hashes.push(key_hash(key));
+            for row in &groups[key] {
+                rows[*row] = number as u32;
+            }
+        }
+        if let Some(recorded) = &mut self.recorded {
+            recorded.insert(
+                id,
+                NodeGroups {
+                    node: id,
+                    starts: None,
+                    groups: rows,
+                    hashes,
+                    table: None,
+                    keyed: true,
+                },
+            );
+        }
     }
     /// A display value's text for code-unit comparison; non-strings compare as their JSON.
     fn text_of(&self, value: Atom) -> String {
@@ -1536,29 +1578,19 @@ impl<'a> Evaluator<'a> {
         delta: Option<&super::incremental::SubjectDelta>,
     ) -> Result<Option<Vec<super::incremental::NodeGroups>>> {
         use super::incremental::NodeGroups;
+        if !self.cross_row_readable(nodes) {
+            return Ok(None);
+        }
         let all = Selection::from_mask(Bits::all(self.len));
         let changed = delta.map(|delta| Selection::from_mask(delta.changed.clone()));
         let mut output = Vec::with_capacity(nodes.len());
         for &id in nodes {
             let op = self.program.nodes[id].op.clone();
             let args = self.program.nodes[id].args.clone();
-            if args.iter().any(|arg| {
-                self.reads(*arg, |op| {
-                    matches!(op, Op::Finding(_) | Op::FindingField(..))
-                })
-            }) {
-                return Ok(None);
-            }
             // The arguments a row's keys read, and whether they read the site.
             let (keys, sited) = match op {
                 Op::CorpusCount => (vec![args[0]], false),
                 Op::ExistsOther => {
-                    if self.reads_unbound(args[0], &["item"])
-                        || self.reads_unbound(args[1], &[])
-                        || self.reads_unbound(args[2], &[])
-                    {
-                        return Ok(None);
-                    }
                     let sited = self.reads_item(args[0]);
                     (
                         if sited {
@@ -1569,12 +1601,7 @@ impl<'a> Evaluator<'a> {
                         sited,
                     )
                 }
-                _ => {
-                    if self.reads_unbound(args[0], &[]) || self.reads_unbound(args[1], &[]) {
-                        return Ok(None);
-                    }
-                    (vec![args[0], args[1]], false)
-                }
+                _ => (vec![args[0], args[1]], false),
             };
             // A key read per element of an enclosing lambda can't be read per row: only the
             // corpus count's table is followed.
@@ -1630,6 +1657,46 @@ impl<'a> Evaluator<'a> {
                 groups.table = Some(counts);
             }
             output.push(groups);
+        }
+        Ok(Some(output))
+    }
+    /// Whether each node's groups can be read per row: none reads another rule's findings, which
+    /// no rule has produced before the closure, or a variable bound outside it.
+    fn cross_row_readable(&self, nodes: &[NodeId]) -> bool {
+        nodes.iter().all(|&id| {
+            let node = &self.program.nodes[id];
+            let args = &node.args;
+            !args.iter().any(|arg| {
+                self.reads(*arg, |op| {
+                    matches!(op, Op::Finding(_) | Op::FindingField(..))
+                })
+            }) && match node.op {
+                Op::CorpusCount => true,
+                Op::ExistsOther => {
+                    !(self.reads_unbound(args[0], &["item"])
+                        || self.reads_unbound(args[1], &[])
+                        || self.reads_unbound(args[2], &[]))
+                }
+                _ => !(self.reads_unbound(args[0], &[]) || self.reads_unbound(args[1], &[])),
+            }
+        })
+    }
+    /// A full evaluation's groups: those its aggregates recorded as they ran, and the others read
+    /// now, as an incremental evaluation reads them first.
+    fn recorded_groups(
+        &mut self,
+        nodes: &[NodeId],
+    ) -> Result<Option<Vec<super::incremental::NodeGroups>>> {
+        let mut recorded = self.recorded.take().unwrap_or_default();
+        let mut output = Vec::with_capacity(nodes.len());
+        for &id in nodes {
+            match recorded.remove(&id) {
+                Some(groups) => output.push(groups),
+                None => match self.cross_row_groups(&[id], None)? {
+                    Some(groups) => output.extend(groups),
+                    None => return Ok(None),
+                },
+            }
         }
         Ok(Some(output))
     }
@@ -1865,12 +1932,51 @@ impl<'a> Evaluator<'a> {
             }
         };
         let keys = self.evaluate(args[0], selection)?;
-        let values = (0..selection.len())
-            .map(|index| match keys.get(index, &self.arena) {
-                Atom::Null => Atom::Null,
-                key => Atom::Int(table.get(&self.key(key)).copied().unwrap_or(0)),
-            })
-            .collect::<Vec<_>>();
+        use super::incremental::{FAILED_GROUP, NO_GROUP, NodeGroups, key_hash};
+        // Over every row of a full evaluation, the groups are recorded as `row_keys` reads them.
+        let mut recording = (self.recorded.is_some()
+            && selection.variables.is_empty()
+            && selection.mask().is_some()
+            && selection.len() == self.len)
+            .then(|| {
+                (
+                    NodeGroups {
+                        node: id,
+                        keyed: true,
+                        groups: Vec::with_capacity(self.len),
+                        ..NodeGroups::default()
+                    },
+                    FxHashMap::<u64, u32>::default(),
+                )
+            });
+        let mut values = Vec::with_capacity(selection.len());
+        for index in 0..selection.len() {
+            let key = keys.get(index, &self.arena);
+            let text = (key != Atom::Null).then(|| self.key(key));
+            if let Some((groups, numbers)) = &mut recording {
+                let group = match &text {
+                    _ if keys.failed.get(index) => FAILED_GROUP,
+                    None => NO_GROUP,
+                    Some(text) => Self::group_number(groups, numbers, key_hash(text))?,
+                };
+                groups.groups.push(group);
+            }
+            values.push(match text {
+                None => Atom::Null,
+                Some(text) => Atom::Int(table.get(&text).copied().unwrap_or(0)),
+            });
+        }
+        if let Some((mut groups, _)) = recording {
+            let mut counts = table
+                .iter()
+                .map(|(key, count)| (key_hash(key), *count))
+                .collect::<Vec<_>>();
+            counts.sort_unstable();
+            groups.table = Some(counts);
+            if let Some(recorded) = &mut self.recorded {
+                recorded.insert(id, groups);
+            }
+        }
         let mut column = Column::from_atoms(&values, &mut self.arena)?;
         column.failed = keys.failed.clone();
         Ok(column)
@@ -3251,9 +3357,16 @@ impl Program {
             .collect::<Vec<_>>();
         cross.sort_unstable();
         let mut step = Measure::start();
-        output.groups = evaluator.cross_row_groups(&cross, delta)?;
         let stage = subject_stage(subject, Phase::Closure);
-        recorder.sub_stage(format!("{stage}.groups"), &step, cross.len());
+        // A full evaluation takes the groups from its aggregates as they run; an incremental one
+        // reads them first, to choose its rows.
+        let recording = delta.is_none() && evaluator.cross_row_readable(&cross);
+        if recording {
+            evaluator.recorded = Some(FxHashMap::default());
+        } else {
+            output.groups = evaluator.cross_row_groups(&cross, delta)?;
+            recorder.sub_stage(format!("{stage}.groups"), &step, cross.len());
+        }
         if let (Some(delta), Some(groups)) = (delta, &output.groups) {
             step = Measure::start();
             evaluator.restrict = super::incremental::closure(len, delta, groups);
@@ -3457,6 +3570,28 @@ impl Program {
             execute_workers,
         );
         recorder.memory(subject_stage(subject, Phase::Execute), evaluator.memory());
+        if recording {
+            let step = Measure::start();
+            output.groups = evaluator.recorded_groups(&cross)?;
+            recorder.sub_stage(
+                format!("{}.groups", subject_stage(subject, Phase::Closure)),
+                &step,
+                cross.len(),
+            );
+            // Every test's full evaluation checks the recorded groups against the groups an
+            // incremental evaluation reads first.
+            #[cfg(test)]
+            if let Some(recorded) = &output.groups {
+                let read = evaluator
+                    .cross_row_groups(&cross, None)?
+                    .ok_or("The recorded nodes' groups can't be read.")?;
+                require(
+                    recorded.len() == read.len()
+                        && recorded.iter().zip(&read).all(|(a, b)| a.same_rows(b)),
+                    "A recorded aggregate's groups differ from the groups read first.",
+                )?;
+            }
+        }
         recorder.enter(subject_stage(subject, Phase::Diagnostics));
         let diagnostics_started = Measure::start();
         let diagnostic_workers = recorder.worker_adjustment();

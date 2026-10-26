@@ -283,7 +283,8 @@ impl EngineQuery {
                 let lines = if subject == Subject::Line {
                     rows.clone()
                 } else {
-                    let mut lines = super::columns::Bits::new(previous.state.lines as usize);
+                    // A changed line is evaluated again even when it has no culture rows left.
+                    let mut lines = previous.changed.clone();
                     for row in rows.ones() {
                         lines.set(subjects.cultures.lines[row as usize] as usize);
                     }

@@ -490,16 +490,19 @@ pub(crate) enum Phase {
     Execute,
     Diagnostics,
     Emission,
+    /// The rows an incremental evaluation chooses, with the groups every evaluation records.
+    Closure,
 }
 pub(crate) fn subject_stage(subject: super::Subject, phase: Phase) -> &'static str {
     use super::Subject::*;
-    const NAMES: [[&str; 5]; 3] = [
+    const NAMES: [[&str; 6]; 3] = [
         [
             "line.children",
             "line.columns",
             "line.execute",
             "line.diagnostics",
             "line.emission",
+            "line.closure",
         ],
         [
             "line_culture.children",
@@ -507,6 +510,7 @@ pub(crate) fn subject_stage(subject: super::Subject, phase: Phase) -> &'static s
             "line_culture.execute",
             "line_culture.diagnostics",
             "line_culture.emission",
+            "line_culture.closure",
         ],
         [
             "unit_source.children",
@@ -514,6 +518,7 @@ pub(crate) fn subject_stage(subject: super::Subject, phase: Phase) -> &'static s
             "unit_source.execute",
             "unit_source.diagnostics",
             "unit_source.emission",
+            "unit_source.closure",
         ],
     ];
     let subject = match subject {

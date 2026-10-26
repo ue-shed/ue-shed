@@ -145,7 +145,7 @@ fn persisted_default_catalogue_timing() -> Result<()> {
     let program = super::compile(rules)?;
     let collator =
         super::HostCollator::new(catalogue["locale"].as_str().ok_or("Missing host locale.")?)?;
-    let evaluated = query.evaluate_findings(&program, &collator, &cancelled, None, None)?;
+    let evaluated = query.evaluate_findings(&program, &collator, &cancelled, None, None, None)?;
     let profile = &evaluated.profile;
     // A fresh test process: its peaks are this evaluation's.
     let memory = process_metrics::memory()?;

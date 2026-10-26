@@ -4,6 +4,7 @@ mod columns;
 mod compiler;
 mod evaluator;
 mod grammar;
+mod incremental;
 pub(crate) mod ir;
 mod kernel;
 mod memo;
@@ -34,6 +35,9 @@ pub fn parse_json(text: &str) -> crate::Result<serde_json::Value> {
 mod identity;
 pub use identity::{javascript_json, localization_identity, source_identity};
 mod findings;
+#[cfg(test)]
+pub(crate) use findings::findings_dump;
+mod findings_merge;
 mod findings_order;
 pub(crate) mod findings_query;
 mod findings_read;

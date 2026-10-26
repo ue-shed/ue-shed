@@ -87,6 +87,9 @@ pub(super) struct LayerMetadata {
     pub counts: Vec<RuleCount>,
     pub diagnostic_count: u32,
     pub roles: Vec<RoleTotal>,
+    /// What an incremental evaluation of the next joined view starts from.
+    #[serde(default)]
+    pub state: Option<super::findings_merge::LayerState>,
 }
 
 /// `findings_evaluate`'s reply: the layer's key and summary.

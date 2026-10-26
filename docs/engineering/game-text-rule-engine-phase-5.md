@@ -236,3 +236,10 @@ overlay over the previous layer, as the joined layer has.
 - A shard key or selection that differs from TypeScript's for the same inventory.
 - A change to finding identity.
 - A regression of the cold build or of a full evaluation on either project.
+
+## 14. Results
+
+Recorded in [the measurements](game-text-engine-measurements.md#phase-5-results). A rescan after
+one package edit on the 1× project takes 24.7 s, from 35.3 s. The cold build is unchanged on both
+projects. A full evaluation costs 1.0–1.7 s (4–6%) more for the state it keeps: a regression under
+§13, recorded for the owner's review.

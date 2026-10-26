@@ -290,11 +290,16 @@ export interface SavedAssetExtractionOptions {
  * (uasset-io v1.19). `groups[i]` is the group of `paths[i]`; the reader writes each package's
  * `SavedAssetPackageTextEvent` as one JSON line to `<directory>/<group>.ndjson`. The directory
  * must exist and hold none of those files. Records stay off the host's stream, so a consumer can
- * read each group in its own worker.
+ * read each group in its own worker. v1.20 `snapshots` instead supplies each shard's signature
+ * inventory and audience policy: the reader converts and writes `<group>.snapshot` directly.
  */
 export interface SavedAssetStagedTextExtractionOptions extends SavedAssetExtractionOptions {
 	readonly paths: readonly string[];
-	readonly staging: { readonly directory: string; readonly groups: readonly number[] };
+	readonly staging: {
+		readonly directory: string;
+		readonly groups: readonly number[];
+		readonly snapshots?: import("@ue-shed/protocol").UAssetIoPackageTextSnapshots;
+	};
 }
 
 /** A package whose text record was staged, or the closing summary of a staged extraction. */
@@ -686,7 +691,7 @@ function makeAssetReader(
 						result.kind === "extract_text_packages" ? result.event : undefined
 				});
 	const stageProjectTextPackages = (options: SavedAssetStagedTextExtractionOptions) =>
-		options.paths.length === 0
+		options.paths.length === 0 && !options.staging.snapshots
 			? Stream.empty
 			: protocolProjectionStream({
 					configuration,

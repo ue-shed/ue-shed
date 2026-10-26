@@ -1,6 +1,6 @@
 import { GameTextIndexBuilderLive } from "../packages/game-text/dist/entry-index.js";
-import { AssetReaderLive } from "../packages/unreal-assets/dist/index.js";
-import { join } from "node:path";
+import { AssetReader, AssetReaderLive } from "../packages/unreal-assets/dist/index.js";
+import { join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Context, Effect, Exit, Layer, Schema, Scope, Stream, type Tracer } from "effect";
 import {
@@ -16,7 +16,8 @@ import {
 import { PackageTextStored } from "../packages/game-text/dist/package-text-columns.js";
 import { packageTextShard } from "../packages/game-text/dist/package-text-layer.js";
 import { LocalizationEvidenceNodeLive } from "../packages/localization/dist/index.js";
-import { packageTextJsonLines } from "../packages/game-text/src/package-text-ndjson.ts";
+import { packageTextJsonLines } from "./retained-package-lines.ts";
+import { packageTextSnapshotBatches } from "../packages/game-text/dist/package-text-native.js";
 import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 
 /** Interval of the stall probe. A gap well above it means the event loop was blocked. */
@@ -42,6 +43,46 @@ export function retainedPackageSource(records: string) {
 					try: () => readGeneratedPackageInventory(records),
 					catch: readFailure
 				}),
+			stage: (root, _entries, staging) =>
+				Stream.unwrap(
+					Effect.gen(function* () {
+						const reader = yield* AssetReader,
+							stage = reader.stageProjectTextPackages;
+						if (!stage || !staging.snapshots)
+							return Stream.fail(
+								readFailure(new Error("Reader snapshots are required."))
+							);
+						const snapshots = staging.snapshots;
+						return Stream.fromIterable(
+							packageTextSnapshotBatches(snapshots.shards)
+						).pipe(
+							Stream.flatMap((shards) =>
+								stage({
+									projectRoot: root,
+									paths: [],
+									staging: {
+										directory: staging.directory,
+										groups: [],
+										snapshots: {
+											...snapshots,
+											shards,
+											recordFiles: shards.map((shard) =>
+												join(records, `package-text.${shard.group}.ndjson`)
+											)
+										}
+									}
+								}).pipe(
+									Stream.filter((event) => event.event === "text_package_staged"),
+									Stream.map((event) => ({
+										path: relative(root, event.path).replaceAll("\\", "/"),
+										file: join(staging.directory, `${event.group}.snapshot`)
+									})),
+									Stream.mapError(readFailure)
+								)
+							)
+						);
+					})
+				).pipe(Stream.provide(AssetReaderLive), Stream.mapError(readFailure)),
 			read: (_root, entries) =>
 				Stream.fromAsyncIterable(
 					(async function* () {

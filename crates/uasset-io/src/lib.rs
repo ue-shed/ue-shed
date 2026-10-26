@@ -6,6 +6,7 @@
 mod cancellation;
 mod direct_executor;
 mod legacy;
+mod package_text_columns;
 pub mod protocol;
 mod protocol_adapter;
 pub mod protocol_result;

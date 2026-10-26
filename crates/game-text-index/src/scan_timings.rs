@@ -145,6 +145,13 @@ pub fn count(label: &'static str, amount: u64) {
         *lock().counters.entry(label).or_default() += amount;
     }
 }
+pub fn high_water(label: &'static str, amount: u64) {
+    if enabled() {
+        let mut data = lock();
+        let high = data.counters.entry(label).or_default();
+        *high = (*high).max(amount);
+    }
+}
 pub fn package(value: Package) {
     if enabled() {
         lock().record_package(value);

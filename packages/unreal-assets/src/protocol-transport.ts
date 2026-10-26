@@ -585,7 +585,28 @@ export function makeProtocolRequest(
 		return { ...fields, operation: { kind: "game_text_index", request } };
 	}
 	if (operation.kind === "extract_text_packages") {
-		if (operation.staging !== undefined) return { ...fields, operation };
+		if (operation.staging !== undefined) {
+			const staging = operation.staging;
+			if (staging.snapshots !== undefined)
+				return {
+					...fields,
+					operation: {
+						...operation,
+						staging: {
+							directory: staging.directory,
+							groups: staging.groups,
+							snapshots: staging.snapshots
+						}
+					}
+				};
+			return {
+				...fields,
+				operation: {
+					...operation,
+					staging: { directory: staging.directory, groups: staging.groups }
+				}
+			};
+		}
 		return { ...fields, operation };
 	}
 	return { ...fields, operation };
@@ -1559,7 +1580,7 @@ export function protocolProjectionStream<A>(options: {
 	readonly extraction: SavedAssetExtractionOptions;
 	readonly projection: "text" | "text_packages" | "texture";
 	/** Package-text staging (uasset-io v1.19); requires explicit paths. */
-	readonly staging?: { readonly directory: string; readonly groups: readonly number[] };
+	readonly staging?: import("./asset-reader.js").SavedAssetStagedTextExtractionOptions["staging"];
 	readonly scanStore: ScanProgressStore;
 	readonly decode: (event: UAssetIoResult) => A | undefined;
 }): Stream.Stream<A, AssetReaderError> {
@@ -1582,7 +1603,13 @@ export function protocolProjectionStream<A>(options: {
 					kind: operation,
 					projectRoot: selection.projectRoot,
 					paths: selection.paths ?? [],
-					staging: { directory: staging.directory, groups: [...staging.groups] }
+					staging: staging.snapshots
+						? {
+								directory: staging.directory,
+								groups: [...staging.groups],
+								snapshots: staging.snapshots
+							}
+						: { directory: staging.directory, groups: [...staging.groups] }
 				}
 			: operation === "extract_text"
 				? { kind: operation, ...selection }
@@ -1602,7 +1629,9 @@ export function protocolProjectionStream<A>(options: {
 		{
 			contractMinor:
 				staging !== undefined
-					? 19
+					? staging.snapshots
+						? 20
+						: 19
 					: options.projection === "text_packages" || options.projection === "text"
 						? 18
 						: 0

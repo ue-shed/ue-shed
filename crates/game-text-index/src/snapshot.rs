@@ -286,7 +286,28 @@ impl Writer {
     pub fn column(&mut self, name: &str, values: &[u32]) -> Result<usize> {
         self.add(name, 2, "", &u32_bytes(values), 1)
     }
-    pub fn finish(mut self, output: &Path, order: &[usize]) -> Result<u64> {
+    /// Uncompressed, session-local input with the same framing as the host's staged writer.
+    pub fn add_staged(
+        &mut self,
+        name: &str,
+        kind: u32,
+        domain: &str,
+        raw: &[u8],
+        strings: u32,
+    ) -> Result<usize> {
+        check_section(name, kind, domain, raw)?;
+        let id = self.append(name, kind, domain, raw, (raw.to_vec(), CODEC_RAW))?;
+        self.entries[id].strings = strings;
+        Ok(id)
+    }
+    pub fn finish(self, output: &Path, order: &[usize]) -> Result<u64> {
+        self.finish_file(output, order, true)
+    }
+    /// Staged files are consumed in this session and discarded, without durable publication.
+    pub fn finish_staged(self, output: &Path, order: &[usize]) -> Result<u64> {
+        self.finish_file(output, order, false)
+    }
+    fn finish_file(mut self, output: &Path, order: &[usize], durable: bool) -> Result<u64> {
         let _span = crate::scan_timings::Span::new("snapshot.finish");
         require(
             !order.is_empty() && order.len() <= 1_048_576,
@@ -333,13 +354,15 @@ impl Writer {
             out.write_all(&[0; 3][..(4 - e.stored as usize % 4) % 4])?;
         }
         drop(write_span);
-        {
+        if durable {
             let _span = crate::scan_timings::Span::new("snapshot.fsync");
             out.sync_all()?;
         }
         drop(out);
         WRITTEN_BYTES.fetch_add(offset, std::sync::atomic::Ordering::Relaxed);
-        Reader::open(output)?.verify()?;
+        if durable {
+            Reader::open(output)?.verify()?;
+        }
         Ok(offset)
     }
 }

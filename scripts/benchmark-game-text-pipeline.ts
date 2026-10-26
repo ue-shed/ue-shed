@@ -15,7 +15,7 @@ import {
 import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 import { killBenchmarkTree } from "./game-text-scale-safety.ts";
 import { PackageTextStored } from "../packages/game-text/src/package-text-columns.ts";
-import { packageTextJsonLines } from "../packages/game-text/src/package-text-ndjson.ts";
+import { packageTextJsonLines } from "./retained-package-lines.ts";
 import { packageTextShard } from "../packages/game-text/src/package-text-layer.ts";
 import { nativeIndexQueryLayer } from "../packages/game-text/src/index-query-native.ts";
 

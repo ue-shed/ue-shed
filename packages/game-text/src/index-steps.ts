@@ -461,12 +461,13 @@ export const makeGameTextIndexSteps = (
 								read: (
 									paths: readonly string[],
 									directory: string,
-									groups: readonly number[]
+									groups: readonly number[],
+									snapshots: import("./package-text-native.js").PackageTextSnapshots
 								) =>
 									stage(
 										projectRoot,
 										paths.map((path) => byPath.get(path)!),
-										{ directory, groups }
+										{ directory, groups, snapshots }
 									)
 							}
 						});

@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Stream } from "effect";
@@ -7,6 +7,7 @@ import { sharedIndexNodeLayer, SharedIndex } from "./shared-index.js";
 import { refreshPackageTextLayer, type PackageTextInventoryEntry } from "./package-text-layer.js";
 import { decodePackageTextColumns, type PackageTextStored } from "./package-text-columns.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
+import { preparePackageTextSnapshots, type PackageTextSnapshots } from "./package-text-native.js";
 import { mountPackageTextEvent } from "./package-object-path.js";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { encodeWtf8 } from "./wtf8.js";
@@ -146,31 +147,40 @@ describe("cold package refresh", () => {
 								read: (
 									paths: readonly string[],
 									directory: string,
-									groups: readonly number[]
+									groups: readonly number[],
+									snapshots: PackageTextSnapshots
 								) => {
 									reads.push("stage");
-									// Two reader requests, each in its own directory, so every
-									// group with two or more packages spans two files.
-									const fileOf = (row: number) =>
-										join(directory, String(row % 2), `${groups[row]}.ndjson`);
 									return Stream.fromEffect(
-										Effect.promise(async () => {
-											await mkdir(join(directory, "0"));
-											await mkdir(join(directory, "1"));
-											// Out of order and absolute, as the reader writes them.
-											for (let row = paths.length - 1; row >= 0; row--)
-												await appendFile(
-													fileOf(row),
-													`${JSON.stringify({ ...record(paths[row]!), path: join(root, paths[row]!) })}
-`
-												);
+										preparePackageTextSnapshots({
+											projectRoot: root,
+											paths: [],
+											staging: {
+												directory,
+												groups: [],
+												snapshots: {
+													...snapshots,
+													records: paths.map((path) =>
+														JSON.stringify({
+															path,
+															signature: inventory.find(
+																(entry) => entry.path === path
+															)!.signature,
+															evidence: mountPackageTextEvent(
+																root,
+																record(path)
+															)
+														})
+													)
+												}
+											}
 										})
 									).pipe(
 										Stream.flatMap(() =>
 											Stream.fromIterable(
 												paths.map((path, row) => ({
 													path,
-													file: fileOf(row)
+													file: join(directory, `${groups[row]}.snapshot`)
 												}))
 											)
 										)

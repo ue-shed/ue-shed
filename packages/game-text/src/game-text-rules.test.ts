@@ -4,8 +4,6 @@ import { it } from "@effect/vitest";
 import { describe, expect } from "vitest";
 import {
 	GameTextRuleDocument,
-	GameTextRuleOverlay,
-	applyRuleOverlay,
 	decodeGameTextRuleDocument,
 	decodeGameTextRuleDocumentJson,
 	resolveLocalizationChecks,
@@ -362,97 +360,6 @@ describe("the rules file", () => {
 					rules: [{ ...document.rules[1], label: " " }]
 				})
 			).toBe("invalid_structure");
-		})
-	);
-});
-
-describe("applyRuleOverlay", () => {
-	const overlay = Schema.decodeUnknownSync(GameTextRuleOverlay);
-	const project = Schema.decodeUnknownSync(GameTextRuleDocument)({
-		schemaVersion: 1,
-		roles: [menu],
-		rules: [
-			{ kind: "length_outlier", severity: "low", scope: { cultures: ["de"] } },
-			{ kind: "placeholder_text", params: { markers: ["TODO"] } },
-			{
-				kind: "character_budget",
-				id: "menu.limit",
-				role: "menu",
-				maximumCharacters: 8,
-				recovery: "Shorten it."
-			}
-		]
-	});
-	it.effect("patches listed rules and adds rules and roles after the project's", () =>
-		Effect.gen(function* () {
-			const patched = yield* applyRuleOverlay(
-				project,
-				overlay({
-					schemaVersion: 1,
-					roles: [{ id: "hud", scopes: menu.scopes }],
-					patches: [
-						{ id: "length_outlier", enabled: false, scope: {} },
-						{
-							id: "placeholder_text",
-							severity: "blocking",
-							params: { phrases: ["tbd"], markers: ["FIXME"] }
-						},
-						{
-							id: "menu.limit",
-							params: { maximumCharacters: 12 },
-							scope: { roles: ["hud"] }
-						},
-						// A later patch to the same rule wins key by key.
-						{ id: "placeholder_text", params: { markers: ["WIP"] } }
-					],
-					rules: [{ kind: "shared" }]
-				})
-			);
-			expect(patched.roles.map((role) => role.id)).toEqual(["menu", "hud"]);
-			expect(patched.rules).toEqual([
-				{ kind: "length_outlier", severity: "low", enabled: false },
-				{
-					kind: "placeholder_text",
-					severity: "blocking",
-					params: { markers: ["WIP"], phrases: ["tbd"] }
-				},
-				{
-					kind: "character_budget",
-					id: "menu.limit",
-					role: "menu",
-					maximumCharacters: 12,
-					scope: { roles: ["hud"] },
-					recovery: "Shorten it."
-				},
-				{ kind: "shared" }
-			]);
-			const unchanged = yield* applyRuleOverlay(project, { schemaVersion: 1 });
-			expect(unchanged).toEqual(project);
-		})
-	);
-	it.effect("rejects patches to unlisted rules, reused IDs and patches that break a rule", () =>
-		Effect.gen(function* () {
-			for (const input of [
-				{ patches: [{ id: "whitespace", enabled: false }] },
-				{ patches: [{ id: "menu.limit", params: { id: "x" } }] },
-				// Settings have their own fields, so a later `scope: {}` always clears the scope.
-				{
-					patches: [
-						{ id: "menu.limit", params: { scope: { pathPrefixes: ["/Game/UI/"] } } }
-					]
-				},
-				{ patches: [{ id: "menu.limit", params: { enabled: false } }] },
-				{ patches: [{ id: "menu.limit", params: { maximumCharacters: 0 } }] },
-				{ patches: [{ id: "length_outlier", params: { separator: "//" } }] },
-				{ rules: [{ kind: "placeholder_text" }] },
-				{ roles: [menu] }
-			]) {
-				const error = yield* applyRuleOverlay(
-					project,
-					overlay({ schemaVersion: 1, ...input })
-				).pipe(Effect.flip);
-				expect(error.code).toBe("invalid_overlay");
-			}
 		})
 	);
 });

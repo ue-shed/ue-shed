@@ -316,7 +316,6 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 			"duplicate_role_id",
 			"duplicate_rule_id",
 			"unknown_role_id",
-			"invalid_overlay",
 			"invalid_expression",
 			"rule_cycle"
 		]),
@@ -333,12 +332,6 @@ function ruleDocumentErrorText(code: GameTextRuleDocumentError["code"]) {
 			return {
 				message: "The Game Text rule file is not valid JSON.",
 				recovery: "Correct the JSON syntax and retry with a version-1 rule file."
-			};
-		case "invalid_overlay":
-			return {
-				message: "The Game Text rule overlay doesn't apply to the project's rule file.",
-				recovery:
-					"Patch only rules the file lists, add rules and roles under new IDs, and keep each patched rule valid."
 			};
 		default:
 			return {
@@ -486,32 +479,6 @@ export function decodeGameTextRuleDocumentJson(
 	});
 }
 
-/** A host's change to one rule its project's file lists. */
-export const GameTextRulePatch = Schema.Struct({
-	/** The rule to change: a built-in check's ID, or a project rule's. */
-	id: Schema.String.check(Schema.isNonEmpty()),
-	enabled: Schema.optionalKey(Schema.Boolean),
-	severity: Schema.optionalKey(CheckSeverity),
-	/** Replaces the rule's scope; `{}` removes it. */
-	scope: Schema.optionalKey(LocalizationCheckScope),
-	/** Merged key by key into a built-in check's `params`, or into a project rule's own fields. */
-	params: Schema.optionalKey(Schema.Record(Schema.String, Schema.Json))
-});
-export type GameTextRulePatch = typeof GameTextRulePatch.Type;
-/**
- * Changes a host makes to a project's rules file without editing it: patches to the rules it
- * lists, and roles and rules it adds.
- */
-export const GameTextRuleOverlay = Schema.Struct({
-	schemaVersion: Schema.Literal(1),
-	/** Added to the file's roles. */
-	roles: Schema.optionalKey(Schema.Array(TextRole).check(Schema.isMaxLength(256))),
-	patches: Schema.optionalKey(Schema.Array(GameTextRulePatch).check(Schema.isMaxLength(1024))),
-	/** Added after the file's rules. */
-	rules: Schema.optionalKey(Schema.Array(GameTextRuleEntry).check(Schema.isMaxLength(1024)))
-});
-export type GameTextRuleOverlay = typeof GameTextRuleOverlay.Type;
-
 /**
  * The engine's problem with a rules file's program as a rules file error: what is wrong with which
  * complete rule. A problem outside one is the program's structure, which decoding checked.
@@ -534,84 +501,6 @@ export function ruleProblemError(problem: GameTextContract.RuleProblem): GameTex
 				? "Make the rules read each other's findings in one direction only."
 				: "Correct the rule's expressions in the rules file: known operations, fields, parameters and variables, the types each takes, and finding references to rules of the same subject."
 	});
-}
-
-/** A rule's identity and the settings a patch sets in their own fields, never in `params`. */
-const reservedPatchParams = new Set(["id", "kind", "enabled", "severity", "scope"]);
-
-/** Two patches to one rule as one: the later one's settings win, `params` merged key by key. */
-const mergePatches = (earlier: GameTextRulePatch, later: GameTextRulePatch): GameTextRulePatch => ({
-	...earlier,
-	...later,
-	...(earlier.params && later.params
-		? { params: { ...earlier.params, ...later.params } }
-		: undefined)
-});
-
-/**
- * A rule with a patch's settings, to decode again: a patch's values are unchecked. A built-in
- * check's or complete rule's `params` take the patch's key by key; a project rule's parameters
- * are its own fields.
- */
-const patchedEntry = (entry: GameTextRuleEntry, patch: GameTextRulePatch) => {
-	const { scope, ...rest } = entry;
-	const replaced =
-		patch.scope === undefined
-			? scope
-			: Object.keys(patch.scope).length
-				? patch.scope
-				: undefined;
-	return {
-		...rest,
-		...(isBuiltInCheckEntry(entry) || entry.kind === "rule"
-			? patch.params
-				? { params: { ...entry.params, ...patch.params } }
-				: undefined
-			: patch.params),
-		...(replaced ? { scope: replaced } : undefined),
-		...(patch.enabled === undefined ? undefined : { enabled: patch.enabled }),
-		...(patch.severity === undefined ? undefined : { severity: patch.severity })
-	};
-};
-
-/**
- * A project's rules file with a host's overlay applied: what the host's scans read. A patch names a
- * rule the file lists; an added rule or role takes an ID the file doesn't use; the result must
- * decode as a rules file. Anything else is `invalid_overlay`. Without a file, the overlay applies
- * to an empty one.
- */
-export function applyRuleOverlay(
-	document: GameTextRuleDocument | undefined,
-	overlay: GameTextRuleOverlay
-): Effect.Effect<GameTextRuleDocument, GameTextRuleDocumentError> {
-	const listed = new Set((document?.rules ?? []).map(ruleEntryId));
-	const patches = new Map<string, GameTextRulePatch>();
-	for (const patch of overlay.patches ?? []) {
-		// A patch changes a rule's settings, never which rule it is; `params` holds only
-		// parameters, since the settings have their own fields.
-		if (
-			!listed.has(patch.id) ||
-			Object.keys(patch.params ?? {}).some((key) => reservedPatchParams.has(key))
-		)
-			return Effect.fail(invalid("invalid_overlay"));
-		const earlier = patches.get(patch.id);
-		patches.set(patch.id, earlier ? mergePatches(earlier, patch) : patch);
-	}
-	const roles = [...(document?.roles ?? []), ...(overlay.roles ?? [])];
-	if (
-		(overlay.rules ?? []).some((entry) => listed.has(ruleEntryId(entry))) ||
-		new Set(roles.map((role) => role.id)).size !== roles.length
-	)
-		return Effect.fail(invalid("invalid_overlay"));
-	const rules = (document?.rules ?? []).map((entry) => {
-		const patch = patches.get(ruleEntryId(entry));
-		return patch ? patchedEntry(entry, patch) : entry;
-	});
-	return decodeGameTextRuleDocument({
-		schemaVersion: 1,
-		roles,
-		rules: [...rules, ...(overlay.rules ?? [])]
-	}).pipe(Effect.mapError((cause) => invalid("invalid_overlay", cause)));
 }
 
 /**

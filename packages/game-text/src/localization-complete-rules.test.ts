@@ -17,7 +17,6 @@ import {
 import {
 	CompleteRule,
 	GameTextRuleDocument,
-	applyRuleOverlay,
 	customRulesOf,
 	decodeGameTextRuleDocumentJson,
 	ruleProblemError
@@ -191,7 +190,7 @@ describe("complete rules", () => {
 		);
 	});
 
-	it("decode only the file's fields, and take overlay params like a built-in check", () => {
+	it("decode only the file's fields", () => {
 		expect(failure([exclamation])).toBeUndefined();
 		expect(failure([{ ...exclamation, fix: { lit: "" } }])).toBe("invalid_structure");
 		expect(failure([{ ...exclamation, family: "custom" }])).toBe("invalid_structure");
@@ -200,16 +199,5 @@ describe("complete rules", () => {
 		expect(failure([{ ...exclamation, subject: "unit_source" }])).toBe("invalid_structure");
 		expect(failure([{ ...exclamation, id: "whitespace" }])).toBe("invalid_structure");
 		expect(failure([exclamation, exclamation])).toBe("duplicate_rule_id");
-		const patched = Effect.runSync(
-			applyRuleOverlay(document([exclamation]), {
-				schemaVersion: 1,
-				patches: [{ id: "ui.exclamation", severity: "blocking", params: { mark: "?" } }]
-			})
-		);
-		expect(patched.rules[0]).toMatchObject({
-			severity: "blocking",
-			params: { mark: "?" },
-			when: exclamation.when
-		});
 	});
 });

@@ -40,10 +40,17 @@ export function nativeEngineLines(executable: string) {
 		);
 }
 
+type NativeTextQuery = Effect.Success<ReturnType<typeof openNativeTextQuery>>;
+/** A findings page as a query returns it, without its timing. */
+type QueriedFindingsPage = Omit<
+	Effect.Success<ReturnType<NativeTextQuery["findingsQuery"]>>,
+	"stages"
+>;
+
 /** What a findings layer reads as: its summary, its findings in each order, and its diagnostics. */
 export interface NativeFindingsRead {
 	readonly evaluation: Omit<GameTextContract.FindingsEvaluation, "profile">;
-	readonly pages: Readonly<Record<string, unknown>>;
+	readonly pages: Readonly<Record<string, readonly QueriedFindingsPage[]>>;
 }
 
 /**
@@ -77,13 +84,13 @@ export function nativeEngineFindings(executable: string) {
 							effectiveRuleDocument(STARTER_CHECK_RULES, {})
 						);
 						const size = 500;
-						const pages: Record<string, unknown> = {};
+						const pages: Record<string, QueriedFindingsPage[]> = {};
 						for (const [view, order] of [
 							["report", "report"],
 							["workspace", "line"],
 							["workspace", "source"]
 						] as const) {
-							const rows: unknown[] = [];
+							const rows: QueriedFindingsPage[] = [];
 							for (let offset = 0; ; offset += size) {
 								const { stages: _stages, ...page } = yield* query.findingsQuery({
 									key: evaluation.key,

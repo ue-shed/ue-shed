@@ -101,7 +101,8 @@ it.skipIf(!executable)(
 		if (!executable) throw new Error("Native reader is required");
 		const findings = nativeEngineFindings(executable);
 		await withJoinCache(async (cache) => {
-			const tally = { joins: {} as Record<string, number>, incremental: 0 };
+			const joins: Record<string, number> = {};
+			let incremental = 0;
 			for (let seed = 0; seed < seeds; seed++) {
 				const directory = join(cache, String(seed));
 				await mkdir(directory);
@@ -136,24 +137,24 @@ it.skipIf(!executable)(
 					),
 					`seed ${seed} edited`
 				).toEqual([]);
-				for (const strategy of strategies)
-					tally.joins[strategy] = (tally.joins[strategy] ?? 0) + 1;
+				for (const strategy of strategies) joins[strategy] = (joins[strategy] ?? 0) + 1;
 				const full = `${directory}-full`;
 				await cp(directory, full, { recursive: true });
-				const { incremental, ...evaluated } = await findings(configuration);
+				const { incremental: evaluatedIncrementally, ...evaluated } =
+					await findings(configuration);
 				const { incremental: _full, ...expected } = await findings(
 					{ ...configuration, cacheRoot: full },
 					true
 				);
 				expect(evaluated, `seed ${seed}`).toEqual(expected);
-				if (incremental) tally.incremental++;
+				if (evaluatedIncrementally) incremental++;
 			}
 			console.log(
-				`In-place edits: ${tally.incremental} of ${seeds} evaluations incremental; joins ${JSON.stringify(tally.joins)}`
+				`In-place edits: ${incremental} of ${seeds} evaluations incremental; joins ${JSON.stringify(joins)}`
 			);
 			// Otherwise the round compares two full evaluations.
-			expect(tally.joins.incremental ?? 0, "incremental joins").toBeGreaterThan(0);
-			expect(tally.incremental, "incremental evaluations").toBeGreaterThan(0);
+			expect(joins.incremental ?? 0, "incremental joins").toBeGreaterThan(0);
+			expect(incremental, "incremental evaluations").toBeGreaterThan(0);
 		});
 	},
 	// The timeout scales with the sweep's seed count.

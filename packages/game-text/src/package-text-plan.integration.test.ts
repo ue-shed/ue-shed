@@ -70,7 +70,15 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 				);
 				const layers = yield* Effect.gen(function* () {
 					const reader = yield* (yield* SharedIndex).open();
-					const layers: Record<string, unknown> = {};
+					const layers: Record<
+						string,
+						{
+							readonly key: string | undefined;
+							readonly records: Effect.Success<
+								ReturnType<typeof decodePackageTextColumns>
+							>;
+						}
+					> = {};
 					for (const name of Object.keys(reader.manifest.active).sort())
 						if (name.startsWith("package-text."))
 							layers[name] = {

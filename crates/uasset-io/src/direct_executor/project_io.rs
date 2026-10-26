@@ -708,14 +708,12 @@ fn projection(
         }
     };
     let planned;
-    let mut from_plan = false;
     let (selection, staging) = match staging {
         Some(staging)
             if let Some(snapshots) = &staging.snapshots
                 && let Some(file) = &snapshots.plan_file =>
         {
             planned = planned_staging(selection, staging, snapshots, file)?;
-            from_plan = true;
             (&planned.0, Some(&planned.1))
         }
         _ => (selection, staging),
@@ -744,13 +742,9 @@ fn projection(
     } else {
         resolve_roots(selection, cancellation)?
     };
-    let mut staging_groups = staging
+    let staging_groups = staging
         .map(|staging| PackageTextGroups::new(staging, &roots, Path::new(&selection.project_root)))
         .transpose()?;
-    // A plan file's packages are checked here; a host that names its packages checks them itself.
-    if let Some(groups) = &mut staging_groups {
-        groups.verifies = from_plan;
-    }
     let mut stager = staging
         .map(|staging| PackageTextStager::new(staging, Path::new(&selection.project_root)))
         .transpose()?;
@@ -1142,8 +1136,6 @@ struct PackageTextGroups {
     exact: std::collections::HashMap<PathBuf, u32>,
     snapshots: Option<SnapshotRequest>,
     expected: BTreeMap<PathBuf, (u32, Expected)>,
-    /// Whether each package's bundle is checked against its expected signature.
-    verifies: bool,
 }
 
 impl PackageTextGroups {
@@ -1158,7 +1150,6 @@ impl PackageTextGroups {
             ));
         }
         Ok(Self {
-            verifies: false,
             snapshots: staging.snapshots.clone(),
             expected: staging
                 .snapshots
@@ -1187,7 +1178,7 @@ impl PackageTextGroups {
     /// Fails when a staged package's bundle differs from its inventory signature: the package
     /// or a sidecar changed since the Catalog recorded it.
     fn verify(&self, path: &Path) -> Result<(), Failure> {
-        let Some((_, expected)) = self.expected.get(path).filter(|_| self.verifies) else {
+        let Some((_, expected)) = self.expected.get(path) else {
             return Ok(());
         };
         let _span = game_text_index::scan_timings::Span::new("extract.verify");
@@ -3329,7 +3320,8 @@ mod tests {
                     .unwrap()
                     .to_string_lossy()
                     .replace('\\', "/");
-                package_text_columns::native_stored(event, &relative, "signature")
+                let signature = super::bundle_signature(std::path::Path::new(path)).unwrap();
+                package_text_columns::native_stored(event, &relative, &signature)
             })
             .collect::<Vec<_>>();
         stored.sort_by(|a, b| a.path.cmp(&b.path));

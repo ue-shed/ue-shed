@@ -1718,7 +1718,9 @@ impl<'a> Evaluator<'a> {
                 output
                     .iter()
                     .chain(recorded.values())
-                    .find(|groups| self.row_grouping(groups.node) == Some(grouping))
+                    .find(|groups| {
+                        !groups.unreached && self.row_grouping(groups.node) == Some(grouping)
+                    })
                     .cloned()
             });
             if let Some(mut groups) = twin {
@@ -3669,10 +3671,13 @@ impl Program {
                     .ok_or("The recorded nodes' groups can't be read.")?;
                 require(
                     recorded.len() == read.len()
-                        && recorded
-                            .iter()
-                            .zip(&read)
-                            .all(|(a, b)| a.unreached || a.same_rows(b)),
+                        && recorded.iter().zip(&read).all(|(a, b)| {
+                            if a.unreached {
+                                !evaluator.reached.contains(&a.node)
+                            } else {
+                                a.same_rows(b)
+                            }
+                        }),
                     "A recorded aggregate's groups differ from the groups read first.",
                 )?;
             }

@@ -94,14 +94,14 @@ the retained-eligibility read in `refreshPackageTextLayer` whenever the source k
 
 ## 5. The reader verifies bundles
 
-- When it stages from a plan file, the reader computes each package's bundle signature (the
-  package and its `.uexp`, `.ubulk`, `.uptnl` files: size and modification time, or null when
-  missing) and compares it with the plan's signature before it decodes the package and again
-  after.
+- When it stages shard snapshots, from a plan file or from the host's list, the reader computes
+  each package's bundle signature (the package and its `.uexp`, `.ubulk`, `.uptnl` files: size and
+  modification time, or null when missing) and compares it with the expected signature before it
+  decodes the package and again after.
 - A difference fails the scan ("Package or sidecar changed while reading"), naming the package.
   Cancellation and the byte budget are unchanged.
 - The TypeScript `verify` remains only around `read` (a warm refresh's changed packages) and the
-  path-list staging the TypeScript builder uses.
+  staging that writes record lines instead of snapshots.
 
 ## 6. Which lines changed
 

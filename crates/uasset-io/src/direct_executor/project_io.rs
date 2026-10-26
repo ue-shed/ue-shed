@@ -35,6 +35,7 @@ use super::{
     scan_diagnostic, scan_failure_code, summary_diagnostics,
 };
 use crate::cancellation::CancellationToken;
+use crate::package_text_columns::{self, Columns, Expected, SnapshotRequest};
 use crate::protocol::{Operation, ProjectSelection, Request, ScanDepth, ScanFilters};
 use crate::protocol_result::{
     Completeness, ManifestEntryKind, ProjectionStatus, ResultFrame, SavedAssetHeader,
@@ -125,6 +126,8 @@ struct ProjectionDelivery {
 struct StagedPackageTextRecord {
     group: u32,
     line: Vec<u8>,
+    path: String,
+    columns: Option<Columns>,
 }
 
 pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
@@ -620,6 +623,19 @@ fn projection(
             });
         }
     };
+    if let Some(staging) = staging
+        && let Some(snapshots) = &staging.snapshots
+        && (!snapshots.record_files.is_empty() || !snapshots.records.is_empty())
+    {
+        return replay_package_snapshots(
+            request,
+            selection,
+            staging,
+            snapshots,
+            cancellation,
+            emit,
+        );
+    }
     checkpoint(cancellation, "discovery")?;
     let memory_probe = reader_memory::Probe::new(staging.is_some());
     let worker_count = request
@@ -632,12 +648,11 @@ fn projection(
         resolve_roots(selection, cancellation)?
     };
     let staging_groups = staging
-        .map(|staging| PackageTextGroups::new(staging, &roots))
+        .map(|staging| PackageTextGroups::new(staging, &roots, Path::new(&selection.project_root)))
         .transpose()?;
-    let mut stager = staging.map(|staging| PackageTextStager {
-        directory: PathBuf::from(&staging.directory),
-        files: BTreeMap::new(),
-    });
+    let mut stager = staging
+        .map(|staging| PackageTextStager::new(staging, Path::new(&selection.project_root)))
+        .transpose()?;
     let (paths, _) = scanner::discover_paths(&roots, false, cancellation)?;
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
@@ -694,8 +709,18 @@ fn projection(
                     .iter()
                     .fold((0, 0), |(bytes, capacity), record| {
                         (
-                            bytes + record.line.len() as u64,
-                            capacity + record.line.capacity() as u64,
+                            bytes
+                                + record.line.len() as u64
+                                + record
+                                    .columns
+                                    .as_ref()
+                                    .map_or(0, |c| c.resident_bytes() as u64),
+                            capacity
+                                + record.line.capacity() as u64
+                                + record
+                                    .columns
+                                    .as_ref()
+                                    .map_or(0, |c| c.resident_bytes() as u64),
                         )
                     })
             });
@@ -709,7 +734,7 @@ fn projection(
         checkpoint(cancellation, "inspection")?;
         if let Some(stager) = &mut stager {
             for record in staged {
-                stager.write(&record)?;
+                stager.write(record)?;
             }
         }
         if result.diagnostic.is_some() {
@@ -825,14 +850,191 @@ fn projection(
     })
 }
 
+fn replay_package_snapshots(
+    request: &Request,
+    selection: &ProjectSelection,
+    staging: &crate::protocol::PackageTextStaging,
+    snapshots: &SnapshotRequest,
+    cancellation: &CancellationToken,
+    mut emit: Option<&mut ProjectionSink<'_>>,
+) -> Result<ProjectionOutput, Failure> {
+    use std::io::{BufRead, Read};
+    let _span = game_text_index::scan_timings::Span::new("extract.replay");
+    let root = Path::new(&selection.project_root);
+    let mut shards =
+        package_text_columns::shards::Shards::new(Path::new(&staging.directory), root, snapshots)
+            .map_err(|e| staging_failure(e.to_string()))?;
+    let expected = shards.expected.clone();
+    let weights = snapshots
+        .record_files
+        .iter()
+        .map(|file| fs::metadata(file).map_or(u64::MAX, |m| m.len()))
+        .chain(snapshots.records.iter().map(|record| record.len() as u64))
+        .collect::<Vec<_>>();
+    let convert = |line: &str| -> Result<Option<StagedPackageTextRecord>, Failure> {
+        checkpoint(cancellation, "package conversion")?;
+        if line.len() > MAX_STAGED_PACKAGE_TEXT_BYTES {
+            return Err(staging_failure("package record exceeds its bound".into()));
+        }
+        let stored: package_text_columns::Stored = game_text_index::wtf8::parse_json_as(line)
+            .map_err(|e| staging_failure(e.to_string()))?;
+        let (group, entry) = expected
+            .get(&root.join(&stored.path))
+            .ok_or_else(|| staging_failure("unexpected retained package".into()))?;
+        let evidence_path = match &stored.evidence {
+            package_text_columns::Evidence::Package { record, .. } => &record.path,
+            package_text_columns::Evidence::NotGatherable { path }
+            | package_text_columns::Evidence::Error { path, .. } => path,
+        };
+        if stored.signature != entry.signature
+            || stored.path != *evidence_path
+            || entry.selected
+                == matches!(
+                    stored.evidence,
+                    package_text_columns::Evidence::NotGatherable { .. }
+                )
+        {
+            return Err(staging_failure(
+                "Cold records differ from their signature/header inventory.".into(),
+            ));
+        }
+        if !entry.selected {
+            return Ok(None);
+        }
+        let mut columns = Columns::new().map_err(|e| staging_failure(e.to_string()))?;
+        columns
+            .feed(stored, &snapshots.rules)
+            .map_err(|e| staging_failure(e.to_string()))?;
+        Ok(Some(StagedPackageTextRecord {
+            group: *group,
+            path: entry.path.clone(),
+            columns: Some(columns),
+            line: Vec::new(),
+        }))
+    };
+    let work = |index: usize| -> Result<Vec<StagedPackageTextRecord>, Failure> {
+        if index >= snapshots.record_files.len() {
+            return Ok(
+                convert(&snapshots.records[index - snapshots.record_files.len()])?
+                    .into_iter()
+                    .collect(),
+            );
+        }
+        let file = fs::File::open(&snapshots.record_files[index])
+            .map_err(|e| staging_failure(e.to_string()))?;
+        let mut reader = io::BufReader::new(file);
+        let mut bytes = Vec::new();
+        let mut converted = Vec::new();
+        loop {
+            bytes.clear();
+            let read = reader
+                .by_ref()
+                .take(MAX_STAGED_PACKAGE_TEXT_BYTES as u64 + 2)
+                .read_until(b'\n', &mut bytes)
+                .map_err(|e| staging_failure(e.to_string()))?;
+            if read == 0 {
+                break;
+            }
+            let text = std::str::from_utf8(&bytes)
+                .map_err(|e| staging_failure(e.to_string()))?
+                .trim_end_matches(['\r', '\n']);
+            if !text.is_empty()
+                && let Some(record) = convert(text)?
+            {
+                converted.push(record);
+            }
+        }
+        Ok(converted)
+    };
+    let mut completed = 0_u64;
+    let total = expected.values().filter(|(_, e)| e.selected).count() as u64;
+    let mut results = Vec::new();
+    project_paths_bounded(
+        &weights,
+        request
+            .limits
+            .concurrency
+            .map_or_else(default_projection_workers, |v| v as usize),
+        request
+            .limits
+            .maximum_in_flight_package_bytes
+            .unwrap_or(DEFAULT_IN_FLIGHT_PACKAGE_BYTES),
+        cancellation,
+        false,
+        &work,
+        &mut |_, records| {
+            for record in records? {
+                let frame = ResultFrame::StagedTextPackage {
+                    path: root.join(&record.path).to_string_lossy().into_owned(),
+                    group: record.group,
+                    bytes: 0,
+                };
+                shards
+                    .add(
+                        record.group,
+                        record.path,
+                        record
+                            .columns
+                            .ok_or_else(|| staging_failure("missing package columns".into()))?,
+                    )
+                    .map_err(|e| staging_failure(e.to_string()))?;
+                if let Some(emit) = &mut emit {
+                    emit(ProjectionStreamEvent::Result(&frame))?;
+                } else {
+                    results.push(frame);
+                }
+                completed += 1;
+                if let Some(emit) = &mut emit
+                    && (completed.is_multiple_of(128) || completed == total)
+                {
+                    emit(ProjectionStreamEvent::Progress { completed, total })?;
+                }
+            }
+            Ok(())
+        },
+    )?;
+    shards
+        .finish()
+        .map_err(|e| staging_failure(e.to_string()))?;
+    let summary = SavedAssetScanSummary {
+        cache_hits: 0,
+        depth: ScanSummaryDepth::Text,
+        diagnostics: Vec::new(),
+        emitted_assets: completed,
+        failed_assets: 0,
+        inventory_complete: Some(false),
+        inventory_files: Some(0),
+        partial_assets: 0,
+        project_root: selection.project_root.clone(),
+        roots: Vec::new(),
+        scanned_assets: completed,
+        schema_version: SCHEMA_VERSION,
+        skipped_assets: 0,
+    };
+    results.push(ResultFrame::ExtractTextPackages {
+        event: SavedAssetPackageTextEvent::Summary {
+            summary: summary.clone(),
+        },
+    });
+    Ok(ProjectionOutput {
+        results,
+        summary,
+        diagnostics: Vec::new(),
+        partial: false,
+    })
+}
+
 struct PackageTextGroups {
     groups: Vec<(PathBuf, u32)>,
+    snapshots: Option<SnapshotRequest>,
+    expected: BTreeMap<PathBuf, (u32, Expected)>,
 }
 
 impl PackageTextGroups {
     fn new(
         staging: &crate::protocol::PackageTextStaging,
         roots: &[PathBuf],
+        project_root: &Path,
     ) -> Result<Self, Failure> {
         if roots.len() != staging.groups.len() {
             return Err(staging_failure(
@@ -840,6 +1042,18 @@ impl PackageTextGroups {
             ));
         }
         Ok(Self {
+            snapshots: staging.snapshots.clone(),
+            expected: staging
+                .snapshots
+                .iter()
+                .flat_map(|s| &s.shards)
+                .flat_map(|s| {
+                    s.expected
+                        .iter()
+                        .filter(|e| e.selected)
+                        .map(move |e| (project_root.join(&e.path), (s.group, e.clone())))
+                })
+                .collect(),
             groups: roots
                 .iter()
                 .cloned()
@@ -874,6 +1088,45 @@ impl PackageTextGroups {
                     SavedAssetPackageTextEvent::Summary { .. } => continue,
                 };
                 let group = self.group(path)?;
+                if let Some(snapshots) = &self.snapshots {
+                    let (expected_group, expected) = self
+                        .expected
+                        .get(path)
+                        .ok_or_else(|| staging_failure("unexpected package".into()))?;
+                    if *expected_group != group {
+                        return Err(staging_failure(
+                            "package group differs from inventory".into(),
+                        ));
+                    }
+                    let original = std::mem::replace(
+                        frame,
+                        ResultFrame::StagedTextPackage {
+                            path: record_path,
+                            group,
+                            bytes: 0,
+                        },
+                    );
+                    let ResultFrame::ExtractTextPackages { event } = original else {
+                        unreachable!("matched package frame");
+                    };
+                    let stored = package_text_columns::native_stored(
+                        event,
+                        &expected.path,
+                        &expected.signature,
+                    )
+                    .ok_or_else(|| staging_failure("unexpected summary".into()))?;
+                    let mut columns = Columns::new().map_err(|e| staging_failure(e.to_string()))?;
+                    columns
+                        .feed(stored, &snapshots.rules)
+                        .map_err(|e| staging_failure(e.to_string()))?;
+                    staged.push(StagedPackageTextRecord {
+                        group,
+                        path: expected.path.clone(),
+                        columns: Some(columns),
+                        line: Vec::new(),
+                    });
+                    continue;
+                }
                 let mut line = serde_json::to_vec(event).map_err(|error| {
                     staging_failure(format!("could not serialize a record: {error}"))
                 })?;
@@ -894,7 +1147,12 @@ impl PackageTextGroups {
                     group,
                     bytes: line.len() as u64,
                 };
-                staged.push(StagedPackageTextRecord { group, line });
+                staged.push(StagedPackageTextRecord {
+                    group,
+                    line,
+                    path: String::new(),
+                    columns: None,
+                });
             }
         }
         Ok(ProjectionDelivery { result, staged })
@@ -905,10 +1163,34 @@ impl PackageTextGroups {
 struct PackageTextStager {
     directory: PathBuf,
     files: BTreeMap<u32, io::BufWriter<fs::File>>,
+    snapshots: Option<package_text_columns::shards::Shards>,
 }
 
 impl PackageTextStager {
-    fn write(&mut self, record: &StagedPackageTextRecord) -> Result<(), Failure> {
+    fn new(staging: &crate::protocol::PackageTextStaging, root: &Path) -> Result<Self, Failure> {
+        let snapshots = staging
+            .snapshots
+            .as_ref()
+            .map(|s| {
+                package_text_columns::shards::Shards::new(Path::new(&staging.directory), root, s)
+            })
+            .transpose()
+            .map_err(|e| staging_failure(e.to_string()))?;
+        Ok(Self {
+            directory: PathBuf::from(&staging.directory),
+            files: BTreeMap::new(),
+            snapshots,
+        })
+    }
+    fn write(&mut self, record: StagedPackageTextRecord) -> Result<(), Failure> {
+        if let Some(columns) = record.columns {
+            return self
+                .snapshots
+                .as_mut()
+                .ok_or_else(|| staging_failure("missing shard builder".into()))?
+                .add(record.group, record.path, columns)
+                .map_err(|e| staging_failure(e.to_string()));
+        }
         let _span = game_text_index::scan_timings::Span::new("extract.staging");
         let file = match self.files.entry(record.group) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -934,6 +1216,11 @@ impl PackageTextStager {
     }
 
     fn finish(self) -> Result<(), Failure> {
+        if let Some(snapshots) = self.snapshots {
+            return snapshots
+                .finish()
+                .map_err(|e| staging_failure(e.to_string()));
+        }
         let _span = game_text_index::scan_timings::Span::new("extract.staging_flush");
         for (_, mut file) in self.files {
             file.flush().map_err(|error| {
@@ -2767,8 +3054,10 @@ mod tests {
             &crate::protocol::PackageTextStaging {
                 directory: "unused".into(),
                 groups: vec![2, 7],
+                snapshots: None,
             },
             &[std::path::PathBuf::from("Content/Fixture"), path.clone()],
+            std::path::Path::new(""),
         )
         .unwrap();
         assert_eq!(groups.group(&path).unwrap(), 7);
@@ -2787,6 +3076,123 @@ mod tests {
                 .code,
             "staging"
         );
+    }
+
+    #[test]
+    fn native_package_shards_match_streamed_columns_and_retained_replay() {
+        use crate::package_text_columns::{self, Columns, Expected, Shard, SnapshotRequest};
+        let mut request = text_projection_request(true);
+        request.contract.version.minor = 20;
+        let cancellation = CancellationToken::new();
+        let plain = super::extract_text_with_cancellation(&request, &cancellation).unwrap();
+        let (root, paths) = match &request.operation {
+            crate::protocol::Operation::ExtractTextPackages { selection, .. } => (
+                std::path::PathBuf::from(&selection.project_root),
+                selection.paths.clone().unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        let directory =
+            std::env::temp_dir().join(format!("ue-shed-package-shards-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut stored = plain
+            .results
+            .into_iter()
+            .filter_map(|result| {
+                let crate::protocol_result::ResultFrame::ExtractTextPackages { event } = result
+                else {
+                    return None;
+                };
+                let path = match &event {
+                    crate::protocol_result::SavedAssetPackageTextEvent::Package { record } => {
+                        &record.path
+                    }
+                    crate::protocol_result::SavedAssetPackageTextEvent::Error { path, .. } => path,
+                    _ => return None,
+                };
+                let relative = std::path::Path::new(path)
+                    .strip_prefix(&root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                package_text_columns::native_stored(event, &relative, "signature")
+            })
+            .collect::<Vec<_>>();
+        stored.sort_by(|a, b| a.path.cmp(&b.path));
+        let snapshots = SnapshotRequest {
+            rules: Vec::new(),
+            record_files: Vec::new(),
+            records: Vec::new(),
+            shards: vec![Shard {
+                group: 7,
+                expected: stored
+                    .iter()
+                    .map(|record| Expected {
+                        path: record.path.clone(),
+                        signature: record.signature.clone(),
+                        selected: true,
+                    })
+                    .collect(),
+            }],
+        };
+        if let crate::protocol::Operation::ExtractTextPackages { staging, .. } =
+            &mut request.operation
+        {
+            *staging = Some(crate::protocol::PackageTextStaging {
+                directory: directory.to_string_lossy().into_owned(),
+                groups: vec![7; paths.len()],
+                snapshots: Some(snapshots.clone()),
+            });
+        }
+        let mut completed = 0;
+        super::extract_text_streaming(&request, &cancellation, &mut |event| {
+            if let super::ProjectionStreamEvent::Result(
+                crate::protocol_result::ResultFrame::StagedTextPackage { .. },
+            ) = event
+            {
+                completed += 1;
+                assert_eq!(
+                    directory.join("7.snapshot").exists(),
+                    completed == stored.len()
+                );
+            }
+            Ok(())
+        })
+        .unwrap();
+        let mut columns = Columns::new().unwrap();
+        for record in &stored {
+            columns.feed(record.clone(), &[]).unwrap();
+        }
+        package_text_columns::write_staged(
+            &directory.join("expected.snapshot"),
+            &columns.finish().unwrap(),
+        )
+        .unwrap();
+        let expected = std::fs::read(directory.join("expected.snapshot")).unwrap();
+        assert_eq!(
+            std::fs::read(directory.join("7.snapshot")).unwrap(),
+            expected
+        );
+        let replay = directory.join("replay");
+        std::fs::create_dir_all(&replay).unwrap();
+        if let crate::protocol::Operation::ExtractTextPackages { selection, staging } =
+            &mut request.operation
+        {
+            selection.paths = Some(Vec::new());
+            let mut snapshots = snapshots;
+            snapshots.records = stored
+                .iter()
+                .map(|r| serde_json::to_string(r).unwrap())
+                .collect();
+            *staging = Some(crate::protocol::PackageTextStaging {
+                directory: replay.to_string_lossy().into_owned(),
+                groups: Vec::new(),
+                snapshots: Some(snapshots),
+            });
+        }
+        super::extract_text_with_cancellation(&request, &cancellation).unwrap();
+        assert_eq!(std::fs::read(replay.join("7.snapshot")).unwrap(), expected);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -2815,6 +3221,7 @@ mod tests {
         *staging = Some(crate::protocol::PackageTextStaging {
             directory: directory.to_string_lossy().into_owned(),
             groups: vec![7, 2, 7],
+            snapshots: None,
         });
         let mut staged = Vec::new();
         let output = super::extract_text_streaming(&request, &cancellation, &mut |event| {
@@ -2906,6 +3313,7 @@ mod tests {
             *staging = Some(crate::protocol::PackageTextStaging {
                 directory: directory.to_string_lossy().into_owned(),
                 groups: vec![5; requested.len()],
+                snapshots: None,
             });
             let mut staged = 0;
             super::extract_text_streaming(&request, &cancellation, &mut |event| {

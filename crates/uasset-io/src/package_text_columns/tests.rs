@@ -56,10 +56,21 @@ fn typescript_differential_package_columns_and_staged_bytes() {
     );
     for (index, case) in oracle.cases.into_iter().enumerate() {
         let mut builder = Columns::new().unwrap();
+        let mut merged = Columns::new().unwrap();
         for record in case.records {
+            let mut package = Columns::new().unwrap();
+            package.feed(record.clone(), &oracle.rules).unwrap();
+            merged.append(package).unwrap();
             builder.feed(record, &oracle.rules).unwrap();
         }
         let actual = builder.finish().unwrap();
+        for (a, b) in actual.iter().zip(merged.finish().unwrap()) {
+            assert!(
+                a.bytes == b.bytes,
+                "case {index} {} package merge differs",
+                a.name
+            );
+        }
         assert_eq!(
             actual.len(),
             case.columns.len(),

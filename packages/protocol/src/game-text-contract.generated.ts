@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.21.0",
-	contractHash: "9e65c12f809ee2c78fc7824eef6387d0cbe4cd361148ed386f6f33e1d9c86e24"
+	contractHash: "900202fe0f6a79bbee6a45c4506a8c95aa8cdc3498eb7cebc5ebfd546632e120"
 } as const;
 
 /**
@@ -382,6 +382,22 @@ export type PlacesSection = { unit?: string, limit: number,
  * The ID of the place the previous page ended with.
  */
 after?: string, };
+
+export type PackageTextSnapshotRequest = { shards: ReadonlyArray<PackageTextShard>, rules: ReadonlyArray<PackageTextAudienceRule>, recordFiles?: ReadonlyArray<string>, 
+/**
+ * Serialized stored records are boundary input; workers decode directly into typed records.
+ */
+records?: ReadonlyArray<string>, };
+
+export type PackageTextShard = { group: number, expected: ReadonlyArray<PackageTextExpected>, };
+
+export type PackageTextExpected = { path: string, signature: string, selected: boolean, };
+
+export type PackageTextAudienceRule = { code: number, when: ReadonlyArray<PackageTextAudienceMatch>, };
+
+export type PackageTextAudienceMatch = { "kind": "namespace", value: string, } | { "kind": "folder", value: string, } | { "kind": "object", value: string, position: PackageTextObjectPosition, } | { "kind": "module", value: string, suffix?: boolean, } | { "kind": "property", value: string, anywhere?: boolean, } | { "kind": "location", value: string, };
+
+export type PackageTextObjectPosition = "prefix" | "suffix" | "equals";
 
 export type DetailSection = { cultureOffset?: number, locationOffset?: number, poContextOffset?: number, };
 

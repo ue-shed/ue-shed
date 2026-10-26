@@ -13,7 +13,10 @@ use crate::protocol_result::{
 
 mod audience;
 mod copies;
+mod mounting;
+pub mod shards;
 pub use audience::AudienceRule;
+pub use mounting::native_stored;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -71,13 +74,37 @@ pub struct RepresentationCopy {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gather_editor_only: Option<bool>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", deny_unknown_fields)]
 pub enum Evidence {
     #[serde(rename = "text_package_record")]
     Package {
         #[serde(flatten)]
-        record: SavedAssetPackageTextRecord<Occurrence>,
+        record: Box<SavedAssetPackageTextRecord<Occurrence>>,
+        #[serde(skip)]
+        blueprint_json: Option<String>,
+    },
+    #[serde(rename = "not_gatherable")]
+    NotGatherable { path: String },
+    #[serde(rename = "error")]
+    Error {
+        code: String,
+        message: String,
+        path: String,
+        #[serde(rename = "retrySafe")]
+        retry_safe: bool,
+        #[serde(skip)]
+        json: Option<String>,
+    },
+}
+// The two persisted JSON-valued cells retain member order at this input boundary.
+#[derive(Deserialize)]
+#[serde(tag = "event", deny_unknown_fields)]
+enum EvidenceInput {
+    #[serde(rename = "text_package_record")]
+    Package {
+        #[serde(flatten)]
+        record: Box<SavedAssetPackageTextRecord<Occurrence>>,
     },
     #[serde(rename = "not_gatherable")]
     NotGatherable { path: String },
@@ -90,6 +117,45 @@ pub enum Evidence {
         retry_safe: bool,
     },
 }
+impl<'de> Deserialize<'de> for Evidence {
+    fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error;
+        let value = serde_json::Value::deserialize(decoder)?;
+        let cell = |value: &serde_json::Value| {
+            wtf8::view_json(value)
+                .map(|json| Wtf8Buf::from_utf8(&json).into_view())
+                .map_err(D::Error::custom)
+        };
+        let error_json = if value.get("event").and_then(serde_json::Value::as_str) == Some("error")
+        {
+            Some(cell(&value)?)
+        } else {
+            None
+        };
+        let blueprint_json = value.get("blueprintClasses").map(cell).transpose()?;
+        Ok(
+            match serde_json::from_value(value).map_err(D::Error::custom)? {
+                EvidenceInput::Package { record } => Self::Package {
+                    record,
+                    blueprint_json,
+                },
+                EvidenceInput::NotGatherable { path } => Self::NotGatherable { path },
+                EvidenceInput::Error {
+                    code,
+                    message,
+                    path,
+                    retry_safe,
+                } => Self::Error {
+                    code,
+                    message,
+                    path,
+                    retry_safe,
+                    json: error_json,
+                },
+            },
+        )
+    }
+}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Stored {
@@ -97,6 +163,12 @@ pub struct Stored {
     pub path: String,
     pub evidence: Evidence,
 }
+
+#[cfg(test)]
+pub use game_text_index::package_text_contract::PackageTextShard as Shard;
+pub use game_text_index::package_text_contract::{
+    PackageTextExpected as Expected, PackageTextSnapshotRequest as SnapshotRequest,
+};
 
 const DOMAINS: [&str; 3] = ["source", "identity", "paths"];
 const STRINGS: [(&str, usize); 23] = [
@@ -163,7 +235,7 @@ impl Table {
             Wtf8Buf::from_view(value).as_bytes().len() <= 1024 * 1024,
             "string exceeds 1 MiB",
         )?;
-        require(self.values.len() < 16_777_216, "string count exceeds cap")?;
+        require(self.values.len() < 64_000_000, "string count exceeds cap")?;
         let id = self.values.len() as u32;
         self.values.push(value.to_owned());
         self.ids.insert(value.to_owned(), id);
@@ -179,6 +251,62 @@ pub struct Columns {
     missing: u32,
 }
 impl Columns {
+    pub fn resident_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.values.capacity()
+                * (std::mem::size_of::<&str>() + std::mem::size_of::<Vec<u32>>())
+            + self
+                .tables
+                .iter()
+                .map(|t| {
+                    t.values.capacity() * std::mem::size_of::<String>()
+                        + t.values.iter().map(String::capacity).sum::<usize>()
+                        + t.ids.capacity() * (std::mem::size_of::<String>() + 4)
+                        + t.ids.keys().map(String::capacity).sum::<usize>()
+                })
+                .sum::<usize>()
+            + self
+                .values
+                .values()
+                .map(|v| v.capacity() * 4)
+                .sum::<usize>()
+    }
+    /// Merge package-local tables in sorted package order to preserve first-insertion IDs.
+    pub fn append(&mut self, other: Self) -> Result<()> {
+        let mut maps: [Vec<u32>; 3] = std::array::from_fn(|_| Vec::new());
+        for (domain, table) in other.tables.into_iter().enumerate() {
+            for text in table.values {
+                maps[domain].push(self.tables[domain].intern(&text)?);
+            }
+        }
+        for (name, values) in other.values {
+            let domain = STRINGS
+                .iter()
+                .find(|(field, _)| *field == name)
+                .map(|(_, d)| *d);
+            let offset = match name {
+                "package.occurrence_start" => self.occurrences,
+                "package.gap_start" => self.gaps,
+                "package.missing_start" => self.missing,
+                _ => 0,
+            };
+            for value in values {
+                self.number(
+                    name,
+                    match domain {
+                        Some(d) => *maps[d]
+                            .get(value as usize)
+                            .ok_or("invalid local string ID")?,
+                        None => value + offset,
+                    },
+                );
+            }
+        }
+        self.occurrences += other.occurrences;
+        self.gaps += other.gaps;
+        self.missing += other.missing;
+        Ok(())
+    }
     pub fn new() -> Result<Self> {
         let mut tables = std::array::from_fn(|_| Table::default());
         for table in &mut tables {
@@ -225,20 +353,25 @@ impl Columns {
     pub fn feed(&mut self, stored: Stored, rules: &[AudienceRule]) -> Result<()> {
         let _span = game_text_index::scan_timings::Span::new("extract.columns");
         let mut evidence = stored.evidence;
-        if let Evidence::Package { record } = &mut evidence {
+        if let Evidence::Package { record, .. } = &mut evidence {
             copies::fold(record)?;
         }
         self.string("package.path", &stored.path)?;
         self.string("package.signature", &stored.signature)?;
         self.string(
             "package.error",
-            &if matches!(evidence, Evidence::Error { .. }) {
+            &if let Evidence::Error {
+                json: Some(json), ..
+            } = &evidence
+            {
+                json.clone()
+            } else if matches!(evidence, Evidence::Error { .. }) {
                 Wtf8Buf::from_utf8(&wtf8::view_json(&serde_json::to_value(&evidence)?)?).into_view()
             } else {
                 String::new()
             },
         )?;
-        let record = if let Evidence::Package { record } = &evidence {
+        let record = if let Evidence::Package { record, .. } = &evidence {
             Some(record)
         } else {
             None
@@ -254,7 +387,7 @@ impl Columns {
         self.number(
             "package.status",
             match &evidence {
-                Evidence::Package { record } => {
+                Evidence::Package { record, .. } => {
                     u32::from(record.status == ProjectionStatus::Partial)
                 }
                 Evidence::NotGatherable { .. } => 2,
@@ -274,10 +407,20 @@ impl Columns {
         self.string(
             "package.blueprints",
             &match record {
-                Some(r) if !r.blueprint_classes.is_empty() => Wtf8Buf::from_utf8(&wtf8::view_json(
-                    &serde_json::to_value(&r.blueprint_classes)?,
-                )?)
-                .into_view(),
+                Some(r) if !r.blueprint_classes.is_empty() => {
+                    if let Evidence::Package {
+                        blueprint_json: Some(json),
+                        ..
+                    } = &evidence
+                    {
+                        json.clone()
+                    } else {
+                        Wtf8Buf::from_utf8(&wtf8::view_json(&serde_json::to_value(
+                            &r.blueprint_classes,
+                        )?)?)
+                        .into_view()
+                    }
+                }
                 _ => String::new(),
             },
         )?;

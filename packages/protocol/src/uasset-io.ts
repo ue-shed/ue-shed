@@ -1,5 +1,6 @@
 import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
+import type { GameTextContract } from "./game-text-contract.generated.js";
 import {
 	GameTextIndexBuildRequest,
 	GameTextIndexBuildOutcome,
@@ -322,19 +323,74 @@ const PackageTextOperation = Schema.Struct({
  * record or package error as one JSON line to `<directory>/<group>.ndjson`, where `groups[i]` is
  * the group of `paths[i]`, and streams a `staged_text_package` result in its place. The directory
  * must exist; the worker creates each group's file and fails if one already exists.
+ * v1.20 `snapshots` supplies complete shard inventories and writes uncompressed shard snapshots
+ * directly. Retained record files or explicit serialized records replace package extraction.
  */
+const PackageTextAudienceMatch = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literals(["namespace", "folder", "location"]),
+		value: Schema.String
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("object"),
+		value: Schema.String,
+		position: Schema.Literals(["prefix", "suffix", "equals"])
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("module"),
+		value: Schema.String,
+		suffix: Schema.optionalKey(Schema.Boolean)
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("property"),
+		value: Schema.String,
+		anywhere: Schema.optionalKey(Schema.Boolean)
+	})
+]);
+export const UAssetIoPackageTextSnapshots: Schema.Codec<GameTextContract.PackageTextSnapshotRequest> =
+	Schema.Struct({
+		shards: Schema.Array(
+			Schema.Struct({
+				group: NonNegativeInt,
+				expected: Schema.Array(
+					Schema.Struct({
+						path: Schema.String,
+						signature: Schema.String,
+						selected: Schema.Boolean
+					})
+				)
+			})
+		),
+		rules: Schema.Array(
+			Schema.Struct({ code: NonNegativeInt, when: Schema.Array(PackageTextAudienceMatch) })
+		),
+		recordFiles: Schema.optionalKey(Schema.Array(Schema.String)),
+		records: Schema.optionalKey(Schema.Array(Schema.String))
+	});
+export type UAssetIoPackageTextSnapshots = GameTextContract.PackageTextSnapshotRequest;
 export const UAssetIoPackageTextStaging = Schema.Struct({
 	directory: NonEmptyString,
 	groups: Schema.Array(
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThan(4096))
-	)
+	),
+	snapshots: Schema.optionalKey(UAssetIoPackageTextSnapshots)
 }).annotate({ identifier: "UAssetIoPackageTextStaging" });
 export type UAssetIoPackageTextStaging = typeof UAssetIoPackageTextStaging.Type;
 const StagedPackageTextOperation = Schema.Struct({
 	paths: Schema.Array(NonEmptyString),
 	projectRoot: NonEmptyString,
 	kind: Schema.Literal("extract_text_packages"),
-	staging: UAssetIoPackageTextStaging
+	staging: Schema.Struct({
+		...UAssetIoPackageTextStaging.fields,
+		snapshots: Schema.optionalKey(Schema.Never)
+	})
+});
+const SnapshotPackageTextOperation = Schema.Struct({
+	...StagedPackageTextOperation.fields,
+	staging: Schema.Struct({
+		...UAssetIoPackageTextStaging.fields,
+		snapshots: UAssetIoPackageTextSnapshots
+	})
 });
 const ExistingOperation = Schema.Union([
 	Schema.Struct({
@@ -407,6 +463,7 @@ export const UAssetIoOperation = Schema.Union([
 	GameTextIndexOperation,
 	...ExistingOperation.members,
 	StagedPackageTextOperation,
+	SnapshotPackageTextOperation,
 	PackageTextOperation
 ]).annotate({ identifier: "UAssetIoOperation" });
 export type UAssetIoOperation = Schema.Schema.Type<typeof UAssetIoOperation>;
@@ -451,6 +508,18 @@ export const UAssetIoRequest = Schema.Union([
 		})
 	}),
 	Schema.Struct({ ...RequestFields, contract: UAssetIoContract, operation: ExistingOperation }),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(20))
+				})
+			})
+		),
+		operation: SnapshotPackageTextOperation
+	}),
 	Schema.Struct({
 		...RequestFields,
 		contract: UAssetIoContract.pipe(

@@ -1,49 +1,12 @@
 //! Matcher for text-audience.ts; the host supplies the ordered policy and its persisted codes.
-use serde::{Deserialize, Serialize};
 
 use super::{Occurrence, location};
 use crate::protocol_result::TextExtractionIdentity;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AudienceRule {
-    pub code: u32,
-    pub when: Vec<AudienceMatch>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum AudienceMatch {
-    Namespace {
-        value: String,
-    },
-    Folder {
-        value: String,
-    },
-    Object {
-        value: String,
-        position: ObjectPosition,
-    },
-    Module {
-        value: String,
-        #[serde(default)]
-        suffix: bool,
-    },
-    Property {
-        value: String,
-        #[serde(default)]
-        anywhere: bool,
-    },
-    Location {
-        value: String,
-    },
-}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ObjectPosition {
-    Prefix,
-    Suffix,
-    Equals,
-}
+pub use game_text_index::package_text_contract::PackageTextAudienceRule as AudienceRule;
+use game_text_index::package_text_contract::{
+    PackageTextAudienceMatch as AudienceMatch, PackageTextObjectPosition as ObjectPosition,
+};
 
 fn suffix_start(element: &str) -> Option<usize> {
     let (opening, closing) = if element.ends_with(']') {

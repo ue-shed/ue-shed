@@ -50,6 +50,7 @@
 				"action": {
 					"type": "string",
 					"enum": [
+						"import_localization",
 						"capabilities",
 						"begin",
 						"end",
@@ -340,6 +341,231 @@
 							}
 						]
 					}
+				},
+				"localization": {
+					"type": "object",
+					"properties": {
+						"lookupStrings": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"reusedStrings": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"files": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"file": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"key": {
+														"type": "string"
+													},
+													"contentHash": {
+														"type": "string"
+													},
+													"provenance": {
+														"type": "object",
+														"properties": {
+															"relativePath": {
+																"type": "string"
+															},
+															"size": {
+																"type": "integer",
+																"allOf": [
+																	{
+																		"minimum": 0
+																	}
+																]
+															},
+															"modifiedTime": {
+																"type": "string"
+															},
+															"contentHash": {
+																"type": "string"
+															}
+														},
+														"required": [
+															"relativePath",
+															"size",
+															"modifiedTime",
+															"contentHash"
+														],
+														"additionalProperties": false
+													},
+													"relativePath": {
+														"type": "string"
+													},
+													"format": {
+														"type": "string",
+														"enum": ["manifest", "archive", "po"]
+													},
+													"inputBytes": {
+														"type": "integer",
+														"allOf": [
+															{
+																"minimum": 0
+															}
+														]
+													},
+													"parsed": {
+														"type": "boolean"
+													},
+													"snapshotBytes": {
+														"type": "integer",
+														"allOf": [
+															{
+																"minimum": 0
+															}
+														]
+													}
+												},
+												"required": [
+													"key",
+													"contentHash",
+													"provenance",
+													"relativePath",
+													"format",
+													"inputBytes",
+													"parsed",
+													"snapshotBytes"
+												],
+												"additionalProperties": false
+											},
+											{
+												"type": "null"
+											}
+										]
+									},
+									"error": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"code": {
+														"type": "string"
+													},
+													"message": {
+														"type": "string"
+													},
+													"recovery": {
+														"type": "string"
+													},
+													"retrySafe": {
+														"type": "boolean"
+													},
+													"nextStep": {
+														"type": "string"
+													}
+												},
+												"required": [
+													"code",
+													"message",
+													"recovery",
+													"retrySafe",
+													"nextStep"
+												],
+												"additionalProperties": false
+											},
+											{
+												"type": "null"
+											}
+										]
+									}
+								},
+								"required": ["file", "error"],
+								"additionalProperties": false
+							}
+						},
+						"workerCount": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"parseMs": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"parseCpuMs": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"publishMs": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						}
+					},
+					"required": [
+						"lookupStrings",
+						"reusedStrings",
+						"files",
+						"workerCount",
+						"parseMs",
+						"parseCpuMs",
+						"publishMs"
+					],
+					"additionalProperties": false
 				}
 			},
 			"required": [

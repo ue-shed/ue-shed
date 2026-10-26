@@ -48,6 +48,8 @@ pub const MAX_PACKAGE_TEXT_STAGING_GROUPS: u32 = 4096;
 pub struct PackageTextStaging {
     pub directory: String,
     pub groups: Vec<u32>,
+    #[serde(default)]
+    pub snapshots: Option<crate::package_text_columns::SnapshotRequest>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -686,6 +688,27 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                     ));
                 }
                 validate_non_empty(&staging.directory, "staging.directory")?;
+                if let Some(snapshots) = &staging.snapshots {
+                    if request.contract.version.minor < 20 {
+                        return Err(ProtocolError(
+                            "package-text snapshots require uasset-io v1.20".into(),
+                        ));
+                    }
+                    if snapshots.shards.is_empty()
+                        || snapshots.shards.len() > MAX_PACKAGE_TEXT_STAGING_GROUPS as usize
+                        || snapshots
+                            .shards
+                            .iter()
+                            .any(|s| s.group >= MAX_PACKAGE_TEXT_STAGING_GROUPS)
+                    {
+                        return Err(ProtocolError("invalid package-text snapshot shards".into()));
+                    }
+                    for shard in &snapshots.shards {
+                        for entry in &shard.expected {
+                            validate_non_empty(&entry.path, "package-text inventory path")?;
+                        }
+                    }
+                }
                 if selection
                     .paths
                     .as_ref()

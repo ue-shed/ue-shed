@@ -66,16 +66,16 @@ for (let index = 0; index < 120; index++) {
 		identity: identity[index % identity.length]!,
 		location,
 		edit_capability: index % 2 ? "read_only" : "source_editable",
-		...(index % 3 === 0 ? {} : { gather_editor_only: index % 3 === 1 }),
+		...(index % 3 === 0 ? undefined : { gather_editor_only: index % 3 === 1 }),
 		copies: (["generated_class", "class_default", "skeleton", "instance"] as const).map(
 			(kind, row) => ({
 				kind,
 				object_path: `${object}_C.Copy${row}`,
 				source: row % 2 ? `Other ${source}` : source,
 				...(row % 3 === 0
-					? {}
+					? undefined
 					: { class_path: row % 3 === 1 ? "/Script/UMG.TextBlock" : "" }),
-				...(row % 3 === 0 ? {} : { gather_editor_only: row % 3 === 1 })
+				...(row % 3 === 0 ? undefined : { gather_editor_only: row % 3 === 1 })
 			})
 		)
 	};
@@ -129,6 +129,36 @@ generated.push({
 	}
 });
 cases.push(generated);
+cases.push([
+	{
+		path: "Content/ErrorOrder.uasset",
+		signature: "",
+		evidence: {
+			path: "Content/ErrorOrder.uasset",
+			retrySafe: true,
+			message: "\ud800\u{f0000}",
+			event: "error",
+			code: "io"
+		}
+	}
+]);
+cases.push([
+	{
+		path: "Content/BlueprintOrder.uasset",
+		signature: "",
+		evidence: {
+			...emptyPackageTextRecord("Content/BlueprintOrder.uasset"),
+			blueprintClasses: [
+				{
+					generatedClass: "Class",
+					skeletonClass: "Skeleton",
+					blueprint: "Blueprint",
+					classDefault: "Default"
+				}
+			]
+		}
+	}
+]);
 const blueprintPath = "/Game/Blueprint.Blueprint";
 const base: PackageTextOccurrence = {
 	source: "Authored",

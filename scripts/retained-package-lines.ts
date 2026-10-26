@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { snapshotCheck } from "../packages/game-text/src/snapshot-format.ts";
+import { snapshotCheck } from "../packages/game-text/dist/snapshot-format.js";
 
 /** NDJSON framing is LF only. Node readline also splits authored U+2028/U+2029 on Node 24+. */
 export async function* packageTextJsonLines(path: string) {

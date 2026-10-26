@@ -1,8 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Option, Stream } from "effect";
-import { AssetReader, AssetReaderLive } from "@ue-shed/unreal-assets";
+import { Context, Effect, Option, Stream } from "effect";
+import {
+	AssetReader,
+	AssetReaderLive,
+	assetReaderLayer,
+	type AssetReaderConfiguration
+} from "@ue-shed/unreal-assets";
 import type { UAssetIoPackageTextSnapshots } from "@ue-shed/protocol";
 import type { PackageTextStored } from "./package-text-columns.js";
 import { openSnapshotFile } from "./snapshot-file.js";
@@ -17,6 +22,11 @@ const nativeFailure = (cause: unknown) =>
 	);
 
 export type PackageTextSnapshots = UAssetIoPackageTextSnapshots;
+/** The writer's paired executable also owns conversion when no extraction source is involved. */
+export class PackageTextReaderConfiguration extends Context.Service<
+	PackageTextReaderConfiguration,
+	AssetReaderConfiguration
+>()("@ue-shed/game-text/PackageTextReaderConfiguration") {}
 /** Keep every shard in one bounded native request, including its signature inventory. */
 export function packageTextSnapshotBatches(shards: PackageTextSnapshots["shards"]) {
 	const batches: PackageTextSnapshots["shards"][] = [];
@@ -59,6 +69,9 @@ export const preparePackageTextSnapshots = Effect.fn("PackageText.prepareSnapsho
 			);
 		yield* stage(options).pipe(Stream.runDrain, Effect.mapError(nativeFailure));
 	});
+	const configuration = yield* Effect.serviceOption(PackageTextReaderConfiguration);
+	if (Option.isSome(configuration))
+		return yield* convert.pipe(Effect.provide(assetReaderLayer(configuration.value)));
 	const supplied = yield* Effect.serviceOption(AssetReader);
 	yield* Option.isSome(supplied)
 		? convert.pipe(Effect.provideService(AssetReader, supplied.value))

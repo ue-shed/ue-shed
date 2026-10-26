@@ -17,7 +17,7 @@ import { PackageTextStored } from "../packages/game-text/dist/package-text-colum
 import { packageTextShard } from "../packages/game-text/dist/package-text-layer.js";
 import { LocalizationEvidenceNodeLive } from "../packages/localization/dist/index.js";
 import { packageTextJsonLines } from "./retained-package-lines.ts";
-import { packageTextSnapshotBatches } from "../packages/game-text/src/package-text-native.ts";
+import { packageTextSnapshotBatches } from "../packages/game-text/dist/package-text-native.js";
 import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 
 /** Interval of the stall probe. A gap well above it means the event loop was blocked. */

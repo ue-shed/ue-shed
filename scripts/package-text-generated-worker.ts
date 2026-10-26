@@ -4,7 +4,7 @@ import { packageTextJsonLines } from "./retained-package-lines.ts";
 import { once } from "node:events";
 import { Schema } from "effect";
 import { SavedAssetTextOccurrence } from "../packages/unreal-assets/dist/index.js";
-import { PackageTextStored } from "../packages/game-text/src/package-text-columns.ts";
+import { PackageTextStored } from "../packages/game-text/dist/package-text-columns.js";
 
 const Request = Schema.Struct({ input: Schema.String, output: Schema.String });
 const Occurrence = Schema.Struct({

@@ -8,12 +8,12 @@ import { SavedAssetTextExtractionEvent } from "../packages/unreal-assets/dist/in
 import {
 	emptyPackageTextRecord,
 	retainPackageTextGap
-} from "../packages/game-text/src/package-text-record.ts";
+} from "../packages/game-text/dist/package-text-record.js";
 import {
 	PackageTextInventoryEntry,
 	packageTextShard,
 	PACKAGE_TEXT_SHARDS
-} from "../packages/game-text/src/package-text-layer.ts";
+} from "../packages/game-text/dist/package-text-layer.js";
 import type { SavedAssetTextCoverageGap } from "../packages/unreal-assets/dist/index.js";
 
 class Spool {
@@ -193,7 +193,7 @@ export async function readGeneratedPackageInventory(directory: string) {
 }
 
 export async function readGeneratedPackageRecord(directory: string, path: string) {
-	const { PackageTextStored } = await import("../packages/game-text/src/package-text-columns.ts");
+	const { PackageTextStored } = await import("../packages/game-text/dist/package-text-columns.js");
 	const decode = Schema.decodeUnknownSync(Schema.fromJsonString(PackageTextStored));
 	for await (const line of packageTextJsonLines(
 		join(directory, `package-text.${packageTextShard(path)}.ndjson`)

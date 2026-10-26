@@ -7,13 +7,23 @@ import { packageTextSelection, type PackageTextInventoryEntry } from "./package-
 import { prepareRetainedPackageTextSnapshots } from "./package-text-native.js";
 import type { ColdLayerSource } from "./shared-string-sort.js";
 
-export interface ColdPackageTextInput {
+interface ColdPackageTextIdentity {
 	readonly inventory: readonly PackageTextInventoryEntry[];
-	readonly snapshots?: ReadonlyMap<string, string>;
-	readonly recordDirectory?: string;
-	readonly stagingRoot?: string;
 	readonly additionalSources?: readonly ColdLayerSource[];
 }
+export type ColdPackageTextInput = ColdPackageTextIdentity &
+	(
+		| {
+				readonly snapshots: ReadonlyMap<string, string>;
+				readonly recordDirectory?: never;
+				readonly stagingRoot?: never;
+		  }
+		| {
+				readonly snapshots?: never;
+				readonly recordDirectory: string;
+				readonly stagingRoot: string;
+		  }
+	);
 export const importColdPackageTextLayer = (input: ColdPackageTextInput) =>
 	Effect.suspend(() => importColdPackageTextShards(input, packageTextSelection(input.inventory)));
 
@@ -27,12 +37,13 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 	const selection = inventorySelection.filter((shard) => shard.entries.length);
 	const total = selection.reduce((sum, shard) => sum + shard.entries.length, 0);
 	const snapshots =
-		input.snapshots ??
-		(yield* prepareRetainedPackageTextSnapshots(
-			inventorySelection,
-			input.recordDirectory!,
-			input.stagingRoot!
-		));
+		input.snapshots !== undefined
+			? input.snapshots
+			: yield* prepareRetainedPackageTextSnapshots(
+					inventorySelection,
+					input.recordDirectory,
+					input.stagingRoot
+				);
 	report({ phase: "package_text", completed: 0, total });
 	const entries = selection.map((shard) => {
 		const stagedFile = snapshots.get(shard.name);

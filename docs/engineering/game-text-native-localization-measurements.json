@@ -1,0 +1,228 @@
+{
+	"baselineCommit": "9cb6ecaa4fd070731aec9f342f21449bc26c789b",
+	"implementationCommit": "8a562d25",
+	"attributedAfterCommit": "5e3b34a5",
+	"attributedAfterExecutableSha256": "5782f620492bff49a1fa7dd458957de8c05d830a56596edeb089ea3636eb734f",
+	"node": "26.12.0",
+	"runsPerCondition": 1,
+	"rayonThreads": 16,
+	"cargoBuildJobs": 8,
+	"maximumInFlightLocalizationBytes": 268435456,
+	"baselineExecutableSha256": "e0ba22d178cca062147e7767dc573fe829c2201fe8b64347b017d66285466ba2",
+	"changedExecutableSha256": "24d768396a56f89b05ff2dacb033ff332575fb9c08419e65c002c95558316177",
+	"referenceBefore": {
+		"released": {
+			"inventory": 3.715,
+			"localizationParse": 22.796,
+			"localizationPublish": 12.473,
+			"extractionOrReplay": 23.154,
+			"verification": 5.574,
+			"packagePrepare": 4.759,
+			"packagePublish": 6.023,
+			"join": 13.748,
+			"openAndWorkspace": 1.999,
+			"whole": 62.247,
+			"peakTreeGiB": 4.855
+		},
+		"1x": {
+			"inventory": 0.84,
+			"localizationParse": 20.604,
+			"localizationPublish": 6.974,
+			"extractionOrReplay": 13.208,
+			"verification": 0,
+			"packagePrepare": 4.305,
+			"packagePublish": 7.912,
+			"join": 14.306,
+			"openAndWorkspace": 1.942,
+			"whole": 56.705,
+			"peakTreeGiB": 2.841
+		}
+	},
+	"builds": {
+		"1x": {
+			"before": {
+				"inventory": 0.817,
+				"localizationParse": 21.905,
+				"localizationParseCpu": null,
+				"localizationPublish": 6.95,
+				"extractionOrReplay": 13.749,
+				"verification": 0,
+				"packagePrepare": 4.219,
+				"packagePublish": 8.601,
+				"join": 14.63,
+				"openAndWorkspace": 1.936,
+				"whole": 58.815,
+				"peakTreeGiB": 2.737,
+				"nodeThreadCpuMs": 13891,
+				"output": "p45-loc-base-1x-r3"
+			},
+			"after": {
+				"inventory": 0.846,
+				"localizationParse": 16.589,
+				"localizationParseCpu": 51.172,
+				"localizationPublish": 6.195,
+				"extractionOrReplay": 10.499,
+				"verification": 0,
+				"packagePrepare": 4.066,
+				"packagePublish": 8.379,
+				"join": 13.998,
+				"openAndWorkspace": 2.019,
+				"whole": 51.962,
+				"peakTreeGiB": 2.938,
+				"nodeThreadCpuMs": 10953,
+				"output": "p45-loc-after-1x-r4"
+			}
+		},
+		"released": {
+			"before": {
+				"inventory": 3.728,
+				"localizationParse": 23.167,
+				"localizationParseCpu": null,
+				"localizationPublish": 12.563,
+				"extractionOrReplay": 24.189,
+				"verification": 5.47,
+				"packagePrepare": 4.822,
+				"packagePublish": 5.779,
+				"join": 13.641,
+				"openAndWorkspace": 1.9,
+				"whole": 62.301,
+				"peakTreeGiB": 4.927,
+				"nodeThreadCpuMs": 11515,
+				"output": "p45-loc-base-released-r3"
+			},
+			"after": {
+				"inventory": 3.245,
+				"localizationParse": 15.606,
+				"localizationParseCpu": 52.938,
+				"localizationPublish": 10.778,
+				"extractionOrReplay": 22.924,
+				"verification": 5.459,
+				"packagePrepare": 4.483,
+				"packagePublish": 7.078,
+				"join": 13.751,
+				"openAndWorkspace": 1.945,
+				"whole": 59.619,
+				"peakTreeGiB": 5.418,
+				"nodeThreadCpuMs": 10734,
+				"output": "p45-loc-after-released-r4"
+			}
+		}
+	},
+	"attributedAfter": {
+		"1x": {
+			"inventory": 0.833,
+			"localizationParse": 17.954,
+			"localizationParseCpu": 55.484,
+			"localizationPublish": 6.826,
+			"extractionOrReplay": 10.931,
+			"verification": 0,
+			"packagePrepare": 4.181,
+			"packagePublish": 11.191,
+			"join": 15.28,
+			"openAndWorkspace": 2.014,
+			"whole": 58.492,
+			"peakTreeGiB": 2.95,
+			"nodeThreadCpuMs": 11375,
+			"output": "p45-loc-after-1x-r2"
+		},
+		"released": {
+			"inventory": 3.341,
+			"localizationParse": 15.949,
+			"localizationParseCpu": 54.469,
+			"localizationPublish": 11.413,
+			"extractionOrReplay": 24.494,
+			"verification": 5.85,
+			"packagePrepare": 4.693,
+			"packagePublish": 8.741,
+			"join": 15.085,
+			"openAndWorkspace": 1.888,
+			"whole": 64.865,
+			"peakTreeGiB": 5.382,
+			"nodeThreadCpuMs": 10561,
+			"output": "p45-loc-after-released-r2"
+		}
+	},
+	"parity": {
+		"1x": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13017,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305,
+			"report": "p45-loc-after-1x-r4/parity.json"
+		},
+		"released": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 43,
+				"package": 256,
+				"joined": 1
+			},
+			"dictionaries": 22,
+			"comparedStoredSections": 13272,
+			"rawEqualFiles": 22,
+			"metadataOnlyFiles": 305,
+			"report": "p45-loc-after-released-r4/parity.json"
+		},
+		"ue57": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 19,
+				"package": 44,
+				"joined": 1
+			},
+			"dictionaries": 15,
+			"comparedStoredSections": 2295,
+			"rawEqualFiles": 15,
+			"metadataOnlyFiles": 69,
+			"report": "p45-loc-after-ue57-r3/parity.json"
+		},
+		"ue58": {
+			"equal": true,
+			"categories": {
+				"localization-and-metadata": 19,
+				"package": 44,
+				"joined": 1
+			},
+			"dictionaries": 15,
+			"comparedStoredSections": 2295,
+			"rawEqualFiles": 15,
+			"metadataOnlyFiles": 69,
+			"report": "p45-loc-after-ue58-r3/parity.json"
+		}
+	},
+	"memory": {
+		"peak": {
+			"t": 18267,
+			"phase": "packages",
+			"totalBytes": 5134487552,
+			"roles": {
+				"node-main": 984858624,
+				"native-session": 1294503936,
+				"other": 31596544,
+				"native-oneshot": 2823528448
+			},
+			"counts": {
+				"node-main": 1,
+				"native-session": 3,
+				"other": 4,
+				"native-oneshot": 1
+			}
+		},
+		"peakByRole": {
+			"node-main": 2594844672,
+			"native-session": 2382675968,
+			"other": 505540608,
+			"native-oneshot": 2823528448
+		},
+		"sampleCount": 101,
+		"meanGapMs": 653.22,
+		"maximumGapMs": 926,
+		"output": "p45-loc-memory-r3/memory.json"
+	}
+}

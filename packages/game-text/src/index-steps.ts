@@ -38,7 +38,11 @@ import {
 	sharedIndexDirectory
 } from "./shared-index.js";
 import { GameTextIndexBuilder, type GameTextIndexBuildSessionRequest } from "./index-builder.js";
-import { type GameTextIndexProgress, GameTextIndexProgressReporter } from "./index-progress.js";
+import {
+	type GameTextIndexProgress,
+	GameTextIndexProgressReporter,
+	progressHost
+} from "./index-progress.js";
 import {
 	GameTextIndexError,
 	isGameTextIndexError,
@@ -190,6 +194,15 @@ export interface GameTextTargetIndex {
 export interface GameTextIndexModel extends GameTextIndexRefreshResult {
 	readonly project: GameTextProjectIndex;
 }
+
+/**
+ * The latest event of each quality evaluation running for a progress host, least recent first.
+ * Every model opened for one host shares it, so an evaluation that ends leaves the others shown.
+ */
+const runningEvaluations = new WeakMap<
+	(progress: GameTextIndexProgress) => void,
+	Map<symbol, GameTextIndexProgress>
+>();
 
 /** Models opened by this process, numbering each model's revision. */
 let openedModels = 0;
@@ -894,8 +907,10 @@ export const makeGameTextIndexSteps = (
 					indexedEvidence,
 					query
 				] as const;
-			/** The latest event of each evaluation running on this model, least recent first. */
-			const evaluations = new Map<symbol, GameTextIndexProgress>();
+			// The host's running evaluations, on any model opened for it.
+			const host = progressHost(reportProgress);
+			const evaluations = runningEvaluations.get(host) ?? new Map();
+			runningEvaluations.set(host, evaluations);
 			/**
 			 * Evaluates a document's findings with a check's progress, in rules: one event before
 			 * the engine runs, one as each rule finishes, and one after, with the findings of the

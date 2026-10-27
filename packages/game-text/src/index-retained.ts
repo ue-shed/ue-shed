@@ -1,5 +1,5 @@
 import { Effect, Exit, RcRef, Ref, Scope } from "effect";
-import { GameTextIndexProgressReporter } from "./index-progress.js";
+import { GameTextIndexProgressReporter, forwardsProgressTo } from "./index-progress.js";
 import {
 	GameTextIndexRefresh,
 	type GameTextIndexRefreshRequest,
@@ -66,9 +66,12 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 								)
 							);
 							return yield* acquire(request).pipe(
-								Effect.provideService(GameTextIndexProgressReporter, (progress) => {
-									if (!Ref.getUnsafe(retired)) reportProgress(progress);
-								})
+								Effect.provideService(
+									GameTextIndexProgressReporter,
+									forwardsProgressTo((progress) => {
+										if (!Ref.getUnsafe(retired)) reportProgress(progress);
+									}, reportProgress)
+								)
 							);
 						})
 					}).pipe(Effect.provideService(Scope.Scope, lifetime));

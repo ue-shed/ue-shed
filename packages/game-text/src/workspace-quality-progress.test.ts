@@ -239,6 +239,46 @@ it.live(
 					phase: "idle",
 					stage: "game_text"
 				});
+
+				// And across models: another target's localization check ends while a source preview
+				// on the project's model still runs.
+				fixture.addTarget("Other");
+				expect((yield* workspace.configuredRefresh(true)).status).toBe("completed");
+				const other = LocalizationTargetName.make("Other");
+				expect((yield* workspace.localizationTarget(other)).status).toBe("ready");
+				const previewHold = yield* Deferred.make<void>();
+				entered = yield* Deferred.make<void>();
+				hold = previewHold;
+				armed = true;
+				const previewing = yield* workspace
+					.previewQualityRules(fewer(4))
+					.pipe(Effect.forkChild);
+				yield* Deferred.await(entered);
+				const checkHold = yield* Deferred.make<void>();
+				entered = yield* Deferred.make<void>();
+				hold = checkHold;
+				const checking = yield* workspace
+					.localizationQualitySearch({ target: other, filter: "all", offset: 0 })
+					.pipe(Effect.forkChild);
+				yield* Deferred.await(entered);
+				armed = false;
+				yield* Deferred.succeed(checkHold, undefined);
+				expect((yield* Fiber.join(checking)).status).toBe("ready");
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: enabledRuleDocument(effectiveRuleDocument(fewer(4))).rules.length,
+					phase: "scanning",
+					stage: "game_text",
+					detail: "Checking source text"
+				});
+				yield* Deferred.succeed(previewHold, undefined);
+				expect((yield* Fiber.join(previewing)).status).toBe("completed");
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: 0,
+					phase: "idle",
+					stage: "game_text"
+				});
 			}).pipe(Effect.provide(layer));
 		}).pipe(Effect.scoped),
 	60_000

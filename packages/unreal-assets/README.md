@@ -247,11 +247,15 @@ scanSavedProject({
 root or absolute, and must resolve inside it. It defaults to `Content`. A list too large for one
 4 MiB reader request is sent in consecutive batches, one reader process at a time, and merged into
 one result; projections such as `extractProjectText` likewise stream the batches in order and close
-with one merged summary. A single path or option too large for any request fails with an
-`AssetReaderError` of kind `request_too_large`. `maximumAssets` refuses a
-scan during enumeration, before any package is decoded, and surfaces as an `AssetReaderError` of
-kind `resource_limit`. It bounds a batched scan as a whole, so a later batch can refuse after
-earlier ones were read.
+with one merged summary. Before batching, paths the reader would read twice are dropped (repeats,
+and paths beneath another requested directory), and a package a later batch reports again is
+skipped, so each package appears once as it would from one request. Batches are cut against the
+measured size of the rest of the request, filters included; a single path that cannot fit beside
+it fails with an `AssetReaderError` of kind `request_too_large`. `maximumAssets` refuses a scan
+during enumeration, before any package is decoded, and surfaces as an `AssetReaderError` of kind
+`resource_limit`. In a batched scan it bounds the unique packages of the whole scan and is checked
+after each batch, so a later batch can be refused after earlier ones were read. A batched header
+scan keeps one cache per batch beside `cachePath`.
 
 Pass `inventory: true` when a caller needs a persisted project signature. The same native scan then
 streams the path, size, and modified time of every package and `.uexp`, `.ubulk`, or `.uptnl`

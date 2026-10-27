@@ -9,6 +9,7 @@ import type {
 	ScanProgressStore
 } from "./asset-reader.js";
 import { MAX_PROTOCOL_REQUEST_BYTES } from "./protocol-request-limit.js";
+import { readerPathKey, uniqueRequestPathIndices } from "./protocol-path-identity.js";
 import {
 	invokeProtocolScan,
 	type ProtocolProcessFactory,
@@ -288,10 +289,9 @@ describe("AssetReader path batching", () => {
 			expect(Buffer.byteLength(`${JSON.stringify(request)}\n`)).toBeLessThanOrEqual(
 				MAX_PROTOCOL_REQUEST_BYTES
 			);
-		// The package limit bounds the whole read: the second batch gets what the first left.
+		// Each batch gets the caller's limit; the unique packages of the whole read are checked here.
 		expect(spawner.requests.map((request) => request.limits.maximumAssets)).toEqual([
-			50_000,
-			50_000 - batches[0]!.length
+			50_000, 50_000
 		]);
 		// One process per batch, each with its own telemetry, recorded once that process is done.
 		expect(observed.map((event) => [event.kind, event.pid])).toEqual([
@@ -373,7 +373,7 @@ describe("AssetReader path batching", () => {
 				configuration,
 				{ depth: "header", paths, projectRoot: "C:/Project" },
 				store,
-				spawner.factory
+				{ processFactory: spawner.factory }
 			)
 		);
 
@@ -416,7 +416,7 @@ describe("AssetReader path batching", () => {
 				configuration,
 				{ depth: "header", paths, projectRoot: "C:/Project" },
 				store,
-				spawner.factory
+				{ processFactory: spawner.factory }
 			)
 		);
 		await spawner.started(2);
@@ -471,7 +471,7 @@ describe("AssetReader path batching", () => {
 					configuration,
 					{ depth: "header", paths, projectRoot: "C:/Project" },
 					recordingStore(),
-					spawner.factory
+					{ processFactory: spawner.factory }
 				)
 			)
 		);
@@ -491,7 +491,7 @@ describe("AssetReader path batching", () => {
 						projectRoot: "C:/Project"
 					},
 					recordingStore(),
-					spawner.factory
+					{ processFactory: spawner.factory }
 				)
 			)
 		);
@@ -505,6 +505,156 @@ describe("AssetReader path batching", () => {
 			"A package path or option in this request is too large for the asset reader. Shorten it or leave it out, then try again."
 		);
 		expect(spawner.children.length).toBe(0);
+	});
+
+	it("budgets batches against the real request envelope, filters included", async () => {
+		// About 2,030 paths of about 2 KiB beside about 80 KiB of name filters: more than the
+		// fixed 64 KiB envelope reserve, so cutting against that reserve overflows a request.
+		const paths = largePathList(2_030, 2_048);
+		const names = Array.from(
+			{ length: 2_000 },
+			(_, index) => `Name_${"n".repeat(30)}_${index}`
+		);
+		expect(Buffer.byteLength(JSON.stringify(names))).toBeGreaterThan(80 * 1024);
+		const spawner = new ScriptedSpawner(scanReply);
+		const scan = await Effect.runPromise(
+			invokeProtocolScan(
+				configuration,
+				{ depth: "header", names, paths, projectRoot: "C:/Project" },
+				recordingStore(),
+				{ processFactory: spawner.factory }
+			)
+		);
+
+		expect(spawner.requests.length).toBeGreaterThan(1);
+		expect(spawner.requests.flatMap(requestedPaths)).toEqual(paths);
+		for (const request of spawner.requests)
+			expect(Buffer.byteLength(`${JSON.stringify(request)}\n`)).toBeLessThanOrEqual(
+				MAX_PROTOCOL_REQUEST_BYTES
+			);
+		expect(scan.summary.scannedAssets).toBe(paths.length);
+	});
+
+	/** A header scan whose every batch also reports one package under an overlapping root. */
+	const sharedReply = (request: UAssetIoRequest, index: number): Reply => {
+		const frames = scanReply(request, index);
+		if (frames === "hang") return frames;
+		const shared = {
+			kind: "result",
+			result: {
+				kind: "scan_asset",
+				entry: {
+					depth: "header",
+					fileBytes: 10,
+					header: {
+						exports: [],
+						package: { name: "Shared" },
+						path:
+							index === 0
+								? "C:/Project/Content/Shared.uasset"
+								: "c:\\Project\\Content\\Shared.uasset",
+						schema_version: 8
+					}
+				}
+			}
+		};
+		return [...frames.slice(0, 2), shared, ...frames.slice(2)];
+	};
+
+	it("reports a package two batches found once, and counts it once", async () => {
+		const paths = largePathList(40_000, 120);
+		const spawner = new ScriptedSpawner(sharedReply);
+		const scan = await Effect.runPromise(
+			invokeProtocolScan(
+				configuration,
+				{ depth: "header", paths, projectRoot: "C:/Project" },
+				recordingStore(),
+				{ processFactory: spawner.factory }
+			)
+		);
+
+		expect(spawner.requests.length).toBe(2);
+		const reported = scan.assets.map((entry) => ("header" in entry ? entry.header.path : ""));
+		expect(reported.filter((path) => path.endsWith("Shared.uasset"))).toEqual([
+			"C:/Project/Content/Shared.uasset"
+		]);
+		expect(reported.length).toBe(5);
+		expect(scan.summary.scannedAssets).toBe(paths.length - 1);
+		expect(scan.summary.emittedAssets).toBe(3);
+	});
+
+	it("skips a projected package an earlier batch already reported", async () => {
+		const paths = largePathList(40_000, 120);
+		const spawner = new ScriptedSpawner((request, index) => {
+			const frames = textReply(request, index);
+			if (frames === "hang") return frames;
+			const shared = {
+				kind: "result",
+				result: {
+					kind: "extract_text",
+					event: {
+						event: "text_package",
+						coverage_gaps: 0,
+						diagnostics: [],
+						fileBytes: 10,
+						occurrences: 0,
+						path: "C:/Project/Content/Shared.uasset",
+						schema_version: 1,
+						status: "complete"
+					}
+				}
+			};
+			return [...frames.slice(0, 2), shared, ...frames.slice(2)];
+		});
+		const events = await Effect.runPromise(
+			Stream.runCollect(
+				protocolProjectionStream({
+					configuration,
+					extraction: {
+						maximumAssets: paths.length - 1,
+						paths,
+						projectRoot: "C:/Project"
+					},
+					projection: "text",
+					scanStore: recordingStore(),
+					processFactory: spawner.factory,
+					decode: decodeText
+				})
+			)
+		);
+
+		const packages = events.filter((event) => event.event === "text_package");
+		expect(packages.length).toBe(5);
+		expect(events.at(-1)).toMatchObject({
+			event: "text_summary",
+			emittedAssets: 3,
+			scannedAssets: paths.length - 1
+		});
+	});
+});
+
+describe("reader path identity", () => {
+	it("keys paths as the reader's path equality compares them", () => {
+		const root = "C:/Project";
+		const key = (path: string) => readerPathKey(root, path);
+		expect(key("Content/A.uasset")).toBe(key("C:\\Project\\Content\\A.uasset"));
+		expect(key("./Content//A.uasset")).toBe(key("c:/Project/Content/A.uasset"));
+		// `..` is a segment to the reader, and case is not folded.
+		expect(key("Content/B/../A.uasset")).not.toBe(key("Content/A.uasset"));
+		expect(key("content/A.uasset")).not.toBe(key("Content/A.uasset"));
+	});
+
+	it("keeps the first of each repeated path and none beneath another requested path", () => {
+		expect(
+			uniqueRequestPathIndices("C:/Project", [
+				"Content/Maps/M.umap",
+				"Content/UI",
+				"Content\\UI\\T.uasset",
+				"Content/Maps/M.umap",
+				"Content/UI/../Maps/N.umap",
+				"Content/Other.uasset"
+			])
+		).toEqual([0, 1, 4, 5]);
 	});
 });
 

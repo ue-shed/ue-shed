@@ -266,7 +266,10 @@ export interface SavedAssetScanOptions {
 	/**
 	 * Reuse header results for packages whose size and mtime are unchanged. Requires
 	 * `depth: "header"`. The cache is scoped to the class filters it was written with, so a caller
-	 * with different filters must name a different path.
+	 * with different filters must name a different path. A `paths` list too large for one request
+	 * is scanned in batches, and batch `i` keeps its own cache at `${cachePath}.batch-${i}`; the
+	 * file at `cachePath` itself is left for scans that fit one request. Files of batch indices past
+	 * the last are removed after the scan.
 	 */
 	readonly cachePath?: string;
 	/**

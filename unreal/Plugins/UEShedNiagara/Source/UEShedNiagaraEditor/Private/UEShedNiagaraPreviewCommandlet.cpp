@@ -2,6 +2,7 @@
 
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformMemory.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformTime.h"
 #include "UObject/GarbageCollection.h"
@@ -551,6 +552,12 @@ int32 UUEShedNiagaraPreviewCommandlet::RunSession(const FString& Directory)
             }
             SessionCancelPath.Reset();
             CollectGarbage(RF_NoFlags);
+            // Retire the torn-down scene's RHI resources before the next request.
+            FUEShedNiagaraCapture::EndCommandletFrame();
+            const FPlatformMemoryStats Memory = FPlatformMemory::GetStats();
+            UE_LOG(LogUEShedNiagaraPreview, Display,
+                   TEXT("Session request %d finished: process commit %.0f MiB, peak %.0f MiB"),
+                   Completed + 1, Memory.UsedVirtual / 1048576.0, Memory.PeakUsedVirtual / 1048576.0);
             const FString Result = FString::Printf(TEXT("{\"protocol\":\"ue-shed-niagara-session.v1\",\"runId\":\"%s\",\"exitCode\":%d}"), *Id, Code);
             const FString Temporary = ResultPath + TEXT(".tmp");
             if (!FFileHelper::SaveStringToFile(Result, *Temporary) ||

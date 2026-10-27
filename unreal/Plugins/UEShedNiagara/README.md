@@ -29,4 +29,9 @@ The host verifies that the recorded camera matches the override.
 See [the product contract](../../../docs/products/niagara-preview.md) for profiles, timing and poster
 selection, video encoding, and the limits of an isolated scene.
 
+Commandlets have no engine loop, so the capture ends a render frame after every scene capture and
+after each session request. Without that the RHI frame fence never advances, frame-fenced D3D12
+pools never recycle, and a host-owned session grows by roughly 400 MiB per request. Session logs
+report process commit after each request.
+
 A bounded, atomically replaced `progress.json` in the run staging directory reports initialization, compilation, camera fitting, frame capture and receipt-writing phases. It is optional telemetry and is not a publication receipt. Both one-shot commandlets and host-owned sessions use the same producer progress path.

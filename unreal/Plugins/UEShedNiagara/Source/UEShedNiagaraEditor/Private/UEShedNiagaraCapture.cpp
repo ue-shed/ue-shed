@@ -18,6 +18,7 @@
 #include "FXSystem.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
+#include "Misc/CoreDelegates.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Modules/ModuleManager.h"
@@ -31,6 +32,8 @@
 #include "NiagaraRendererProperties.h"
 #include "NiagaraSystem.h"
 #include "NiagaraWorldManager.h"
+#include "RenderGraphBuilder.h"
+#include "RenderTargetPool.h"
 #include "RenderingThread.h"
 #include "SceneInterface.h"
 #include "Serialization/JsonSerializer.h"
@@ -775,21 +778,38 @@ void FUEShedNiagaraCapture::CaptureScene() const
 	SceneCaptureComponent->CaptureScene();
 	SceneCaptureComponent->TextureTarget = nullptr;
 	// Keep one registered component for the run; teardown owns unregistration.
-	if (Options.RenderMode == TEXT("scene"))
+	if (Options.RenderMode != TEXT("scene"))
 	{
-		Canvas.Flush_GameThread();
-		return;
+		// SceneColorHDR stores inverse opacity. Convert it before readback.
+		FCanvasTileItem TileItem(
+			FVector2D::ZeroVector,
+			FVector2D(RenderTarget->GetSurfaceWidth(), RenderTarget->GetSurfaceHeight()),
+			FLinearColor::White);
+		TileItem.BlendMode = SE_BLEND_Opaque;
+		TileItem.BatchedElementParameters = new FBatchedElementNiagaraInvertColorChannel(0);
+		Canvas.DrawItem(TileItem);
 	}
-
-	// SceneColorHDR stores inverse opacity. Convert it before readback.
-	FCanvasTileItem TileItem(
-		FVector2D::ZeroVector,
-		FVector2D(RenderTarget->GetSurfaceWidth(), RenderTarget->GetSurfaceHeight()),
-		FLinearColor::White);
-	TileItem.BlendMode = SE_BLEND_Opaque;
-	TileItem.BatchedElementParameters = new FBatchedElementNiagaraInvertColorChannel(0);
-	Canvas.DrawItem(TileItem);
 	Canvas.Flush_GameThread();
+	EndCommandletFrame();
+}
+
+void FUEShedNiagaraCapture::EndCommandletFrame()
+{
+	// Mirrors the rendering half of CommandletHelpers::TickEngine plus the engine loop's pool
+	// tick. Without it the D3D12 frame fence never advances, so every released upload/buffer
+	// block stays queued for deletion and a long session grows by ~400 MiB per request.
+	// GEngine->Tick is deliberately avoided: it would advance the preview world's simulation.
+	ENQUEUE_RENDER_COMMAND(UEShedNiagaraEndFrame)(
+		[](FRHICommandListImmediate& RHICmdList)
+		{
+			GFrameNumberRenderThread++;
+			FCoreDelegates::OnBeginFrameRT.Broadcast();
+			GRenderTargetPool.TickPoolElements();
+			FRDGBuilder::TickPoolElements();
+			FCoreDelegates::OnEndFrameRT.Broadcast();
+			RHICmdList.EndFrame();
+		});
+	FlushRenderingCommands();
 }
 
 bool FUEShedNiagaraCapture::ExportPng(const FString& FilePath,

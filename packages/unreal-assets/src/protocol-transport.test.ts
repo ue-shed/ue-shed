@@ -412,10 +412,8 @@ it("rejects a one-shot request over the native 4 MiB frame limit before spawning
 	);
 
 	expect(spawner.spawns).toBe(0);
-	expect(oversized?.kind).toBe("contract");
-	expect(oversized?.message).toBe(
-		"Native reader request exceeds 4 MiB; split package paths with batchProtocolPaths"
-	);
+	expect(oversized?.kind).toBe("request_too_large");
+	expect(oversized?.message).toBe("The asset reader request is larger than its 4 MiB limit.");
 
 	// The native reader accepts a frame of exactly 4 MiB, trailing newline included.
 	const atLimit = await drainProtocolEvents(

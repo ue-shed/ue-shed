@@ -1254,6 +1254,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.4
+    optionalDependencies:
+      '@ue-shed/uasset-win32-x64':
+        specifier: workspace:0.22.0
+        version: link:../uasset-win32-x64
 
   packages/unreal-connection:
     dependencies:

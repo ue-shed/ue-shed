@@ -202,6 +202,43 @@ it.live(
 					phase: "idle",
 					stage: "game_text"
 				});
+
+				// Overlapping evaluations: the one still running stays shown when the other ends.
+				const fewer = (skipped: number) => ({
+					...STARTER_CHECK_RULES,
+					rules: STARTER_CHECK_RULES.rules.slice(skipped)
+				});
+				const firstHold = yield* Deferred.make<void>();
+				entered = yield* Deferred.make<void>();
+				hold = firstHold;
+				armed = true;
+				const first = yield* workspace.previewQualityRules(fewer(2)).pipe(Effect.forkChild);
+				yield* Deferred.await(entered);
+				const secondHold = yield* Deferred.make<void>();
+				entered = yield* Deferred.make<void>();
+				hold = secondHold;
+				const second = yield* workspace
+					.previewQualityRules(fewer(3))
+					.pipe(Effect.forkChild);
+				yield* Deferred.await(entered);
+				armed = false;
+				yield* Deferred.succeed(firstHold, undefined);
+				expect((yield* Fiber.join(first)).status).toBe("completed");
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: enabledRuleDocument(effectiveRuleDocument(fewer(3))).rules.length,
+					phase: "scanning",
+					stage: "game_text",
+					detail: "Checking source text"
+				});
+				yield* Deferred.succeed(secondHold, undefined);
+				expect((yield* Fiber.join(second)).status).toBe("completed");
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: 0,
+					phase: "idle",
+					stage: "game_text"
+				});
 			}).pipe(Effect.provide(layer));
 		}).pipe(Effect.scoped),
 	60_000

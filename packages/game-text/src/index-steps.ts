@@ -38,7 +38,7 @@ import {
 	sharedIndexDirectory
 } from "./shared-index.js";
 import { GameTextIndexBuilder, type GameTextIndexBuildSessionRequest } from "./index-builder.js";
-import { GameTextIndexProgressReporter } from "./index-progress.js";
+import { type GameTextIndexProgress, GameTextIndexProgressReporter } from "./index-progress.js";
 import {
 	GameTextIndexError,
 	isGameTextIndexError,
@@ -894,38 +894,55 @@ export const makeGameTextIndexSteps = (
 					indexedEvidence,
 					query
 				] as const;
+			/** The latest event of each evaluation running on this model, least recent first. */
+			const evaluations = new Map<symbol, GameTextIndexProgress>();
 			/**
 			 * Evaluates a document's findings with a check's progress, in rules: one event before
 			 * the engine runs, one as each rule finishes, and one after, with the findings of the
-			 * rules `counted` selects, then ready. Reports through the reporter captured when this target
-			 * opened, so later evaluations still reach the host that opened the index.
+			 * rules `counted` selects. Reports through the reporter captured when this target opened,
+			 * so later evaluations still reach the host that opened the index. When it ends, also by
+			 * failing or being interrupted, the host sees another running evaluation's latest event,
+			 * or ready when none runs, as after a scan.
 			 */
 			const evaluateWithProgress = (
 				phase: "localization_quality" | "source_quality",
 				document: RuleDocumentV4,
 				counted: (rule: GameTextContract.RuleMetadata) => boolean
 			) =>
-				Effect.gen(function* () {
-					const rules = enabledRuleDocument(document).rules.length;
-					reportProgress({ phase, completed: 0, total: rules, findings: 0 });
-					const evaluation = yield* query.findingsEvaluate(document, (progress) => {
-						if (progress.unit === "rules" && progress.completed > 0)
-							reportProgress({ phase, completed: progress.completed, total: rules });
-					});
-					let findings = 0;
-					for (const { rule, count } of evaluation.counts)
-						if (counted(evaluation.rules[rule]!)) findings += count;
-					reportProgress({ phase, completed: rules, total: rules, findings });
-					return evaluation;
-				}).pipe(
-					// Like a scan, an evaluation ends ready, also when it fails or is interrupted, so the
-					// host stops showing it as running.
-					Effect.ensuring(
-						Effect.sync(() =>
-							reportProgress({ phase: "ready", completed: 0, total: 0 })
+				Effect.suspend(() => {
+					const evaluation = Symbol(phase);
+					const report = (progress: GameTextIndexProgress) => {
+						evaluations.delete(evaluation);
+						evaluations.set(evaluation, progress);
+						reportProgress(progress);
+					};
+					return Effect.gen(function* () {
+						const rules = enabledRuleDocument(document).rules.length;
+						report({ phase, completed: 0, total: rules, findings: 0 });
+						const evaluated = yield* query.findingsEvaluate(document, (progress) => {
+							if (progress.unit === "rules" && progress.completed > 0)
+								report({ phase, completed: progress.completed, total: rules });
+						});
+						let findings = 0;
+						for (const { rule, count } of evaluated.counts)
+							if (counted(evaluated.rules[rule]!)) findings += count;
+						report({ phase, completed: rules, total: rules, findings });
+						return evaluated;
+					}).pipe(
+						Effect.ensuring(
+							Effect.sync(() => {
+								evaluations.delete(evaluation);
+								reportProgress(
+									[...evaluations.values()].at(-1) ?? {
+										phase: "ready",
+										completed: 0,
+										total: 0
+									}
+								);
+							})
 						)
-					)
-				);
+					);
+				});
 			return {
 				...result,
 				project: target.project,

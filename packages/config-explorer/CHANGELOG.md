@@ -1,5 +1,24 @@
 # @ue-shed/config-explorer
 
+## 0.23.0
+
+### Patch Changes
+
+- 430728c: Add the lightweight `@ue-shed/protocol/errors` subpath with the same error schemas as the root export. This entry point is additive. Reuse the shared guidance schemas across libraries and hosts; plugin distribution retains its independent fields with compile-time equality checks.
+
+    Breaking: World preparation errors accept only the documented client and editor failure codes. Each code carries its own recovery guidance. Unknown producer codes fail contract decoding.
+
+    Breaking: Niagara preview failures now require `nextStep` so hosts retain the next recovery action.
+
+    Preserve Niagara session recovery, retry safety and next steps through preview error adaptation. Classify CLI plugin installation failures as input fixes, safe transient retries or escalation. Keep localization guidance host-neutral and add command hints in CLI output.
+
+- Updated dependencies [d2a3165]
+- Updated dependencies [33249ad]
+- Updated dependencies [742a808]
+- Updated dependencies [430728c]
+    - @ue-shed/engine@0.23.0
+    - @ue-shed/protocol@0.23.0
+
 ## 0.22.0
 
 ### Patch Changes

@@ -607,8 +607,21 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	if (observatory?.exports?.["./presentation"] === undefined) {
 		failures.push("@ue-shed/observatory must export ./presentation");
 	}
-	if (gameText?.exports?.["./browser"] === undefined) {
-		failures.push(`${GAME_TEXT_PACKAGE_NAME} must export ./browser`);
+	for (const entrypoint of [
+		"./schema",
+		"./rules",
+		"./checks",
+		"./labels",
+		"./corpus",
+		"./index",
+		"./workspace"
+	]) {
+		if (gameText?.exports?.[entrypoint] === undefined) {
+			failures.push(`${GAME_TEXT_PACKAGE_NAME} must export ${entrypoint}`);
+		}
+	}
+	if (gameText?.exports?.["./browser"] !== undefined || gameText?.exports?.["."] !== undefined) {
+		failures.push(`${GAME_TEXT_PACKAGE_NAME} must not export its removed aggregates`);
 	}
 	if (configExplorer?.exports?.["./browser"] === undefined) {
 		failures.push(`${CONFIG_EXPLORER_PACKAGE_NAME} must export ./browser`);

@@ -7,7 +7,7 @@
 	"type": "module",
 	"scripts": {
 		"build:typescript-packages": "pnpm --filter \"./packages/**\" --filter \"!@ue-shed/uasset-inspection-wasm\" --recursive --if-present run build",
-		"check": "pnpm run uasset:check && pnpm run engine:check:native && pnpm run typecheck && pnpm run effect:architecture && pnpm run license:check && pnpm run stylex:check && pnpm run test:architecture && pnpm run test:release && pnpm run test:release:packages && pnpm run test:adoption:data-authoring && pnpm run lint && pnpm run format:check && pnpm run contract:check && pnpm run test && pnpm run test:game-text:responsiveness",
+		"check": "pnpm run build:typescript-packages && pnpm run uasset:check && pnpm run engine:check:native && pnpm run typecheck && pnpm run effect:architecture && pnpm run license:check && pnpm run stylex:check && pnpm run test:architecture && pnpm run test:release && pnpm run test:release:packages && pnpm run test:adoption:data-authoring && pnpm run lint && pnpm run format:check && pnpm run contract:check && pnpm run test && pnpm run test:game-text:responsiveness",
 		"check:precommit": "pnpm run check:static && pnpm run typecheck && pnpm run contract:check",
 		"check:repository": "pnpm run check:static && pnpm run engine:check:native && pnpm run typecheck && pnpm run contract:check && pnpm run test:release && pnpm run test:repository",
 		"changeset": "changeset",

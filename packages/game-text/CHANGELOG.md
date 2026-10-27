@@ -1,5 +1,98 @@
 # @ue-shed/game-text
 
+## 0.23.0
+
+### Minor Changes
+
+- 87d6e83: Breaking: remove the deprecated root `@ue-shed/game-text` and `@ue-shed/game-text/browser`
+  aggregates and the package's `main` and `types` fallbacks. Use browser-safe `/schema` for contracts,
+  `/rules` for rule documents, `/checks` for checks and filter helpers, and `/labels` for presentation.
+  Node hosts use `/corpus` for queries and reports, `/index` for scanning and native index composition,
+  and `/workspace` for selected-project workflows and operations.
+
+    Replace `WorkbenchOperationRequest`, `WorkbenchOperationFailure`, `WorkbenchOperationPlan`,
+    `WorkbenchOperationPlanResult`, `WorkbenchOperationReceipt`, `WorkbenchOperationResult`,
+    `WorkbenchOperationProgress`, `WorkbenchOperationState`, `WorkbenchOperationId`,
+    `WorkbenchOperationTarget`, `WorkbenchOperationFilesRequest` and `WorkbenchOperationFilesResult`
+    with the corresponding `GameTextOperation*` names from `/schema`. Replace `ScanTextCorpusOptions`
+    with `TextCorpusScanOptions`, `TextCorpusServiceShape` with `TextCorpusServiceApi`, and
+    `TextCorpusServiceTestShape` with `TextCorpusServiceTestApi`, all from `/index`.
+
+    Replace `TextReviewLens` with `TextFilter` clauses from `/schema`:
+    `finding` names rule IDs and `fact` names review signals. Replace `TextFinding`,
+    `TextCountedFindings`, `textFindings`, `textCountedFindings` and row `countedFindings` with the
+    row's `findings` rule IDs (`TextRowFindings` from `/checks`). Omit
+    `GameTextIndexStepsOptions.qualityWorker`; quality runs in the native engine.
+
+    Replace `gameTextCsv` with the opened query's `NativeTextQuery.writeCorpusCsv`, and
+    `localizationLinesCsv` with `NativeTextQuery.writeLocalizationLinesCsv`. Replace
+    `prepareLocalizationFile` with native index imports through `GameTextIndexSteps.importTarget`
+    from `/index`. Saved investigation presets with a `lens` still open with the same selection: `investigationRequest` reads the lens as its filter clause.
+
+- ed1feff: `GameTextWorkspaceContract`, from `@ue-shed/game-text/schema`, is the browser-safe contract of the Game Text workspace: for each `GameTextWorkspaceApi` method a host serves, its params and success schemas, and for `progressChanges` the schema of each event. It names no channels, so a host maps each method to its own IPC, WebSocket or MCP transport, decodes the params and calls the method with them. Methods that only run inside the host (operation admission, `localizationBeforeGather` and `configuredScan`) are left out and listed in its doc comment. The workspace no longer compiles if a method and its entry disagree.
+
+    Breaking: every method the contract describes takes at most one argument. `configuredRefresh(refresh?)` is now `configuredRefresh({ refresh? })`, `createStarterRules(loadExisting)` is now `createStarterRules({ loadExisting })`, and `investigationExport(query, format)` is now `investigationExport({ query, format })`.
+
+- ed1feff: Breaking: `GameTextWorkspaceProgress` is now an Effect Schema, exported from `@ue-shed/game-text/schema`, and carries raw phase codes instead of English text. Its `phase` is a `GameTextWorkspacePhase`: `idle`, `scanning`, `project_enumerating` or `project_scanning` while the host's project scan runs, or the running Game Text index phase (`localization`, `packages`, `source_quality` and so on). `stage` and `detail` are gone; word the phase with the new `GAME_TEXT_WORKSPACE_PHASE_LABELS`, or an index phase with `GAME_TEXT_INDEX_PHASE_LABELS`, both from `@ue-shed/game-text/labels`, which keep the wording `detail` had. During a quality scan, progress also carries `findings`, the findings so far.
+
+    Breaking: the host's `project.progress()` now returns a `GameTextWorkspaceProjectProgress` (`phase`, `completed`, `total`); any other fields a host's progress carries are ignored rather than passed through.
+
+    `GameTextIndexPhase` names the index's phase codes, from `./schema` and `./index`. The index's quality reads now name their first argument `ruleDocument` throughout, and their docs agree on how progress is counted: in rules evaluated, with the findings on the last event.
+
+### Patch Changes
+
+- 7a756bb: The asset reader now splits a package path list too large for one 4 MiB request itself. Scans,
+  text and texture projections and staged package-text reads send the list in consecutive batches,
+  one reader process at a time, so a project with tens of thousands of candidate paths no longer
+  fails. A scan returns one merged result. A projection streams the batches in order and closes with
+  one merged summary. Before batching, paths the reader would read twice (repeats, and paths
+  beneath another requested directory) are dropped, and a package a later batch reports again is
+  skipped, so each package appears once. Batches are cut against the measured size of the rest of
+  the request, filters included. Progress counts keep growing across batches, and `maximumAssets`
+  bounds the unique packages of the whole operation, checked after each batch. A batched header
+  scan keeps one cache per batch at `${cachePath}.batch-${i}`, so an unchanged scan hits its cache
+  on every batch. Cancelling stops the running batch and starts no more, and a failed batch fails
+  the whole operation. Staged reads are cut only where the staging group changes. A path list that
+  fits one request still runs exactly as before. Each operation's span records its batch count as
+  `ue_shed.reader.batches`.
+
+    Breaking: `AssetReaderError` has a new kind, `request_too_large`, with `nextStep: "fix_input"`.
+    It replaces the `contract` error that an oversized request used to raise, and its message no
+    longer names `batchProtocolPaths`. After batching, the error only comes from a single path or
+    option that is too large on its own. A staged read whose staging group cannot fit one request
+    also fails this way.
+
+    Breaking: when no executable is configured, `assetReaderLayer` and `AssetReaderLive` now run the
+    `uasset.exe` from the installed `@ue-shed/uasset-win32-x64` package before trying `uasset` on PATH.
+    `getAssetReaderSource()` reports this as the new value `"package"`. `UE_SHED_UASSET_EXECUTABLE`
+    still takes precedence for `AssetReaderLive`.
+
+    Projection streams now report their protocol telemetry (the protocol observer's
+    `worker_completed` event, boundary bytes and reader metrics) after their worker finishes. Before
+    this change it was recorded when the stream was created, so it held zero counts.
+
+    The Game Text index source passes its whole selection to the reader in one call. It now checks
+    every package's bundle signature once before and once after the whole read, rather than around
+    each batch.
+
+- a91f56c: Quality evaluations on an opened Game Text index report progress again: a source rules preview shows "Checking source text" and a localization Quality request shows "Checking localization quality", counting the rules as they run. When a check finishes, fails or is cancelled, progress returns to idle.
+- 354c9e9: A Scan that finds the project's text unchanged keeps the open Game Text index with its source and localization quality, instead of checking everything again. A rules document equal to the published one (a host's copy, or the same file reloaded) reuses the quality already computed for it.
+- 430728c: Add the lightweight `@ue-shed/protocol/errors` subpath with the same error schemas as the root export. This entry point is additive. Reuse the shared guidance schemas across libraries and hosts; plugin distribution retains its independent fields with compile-time equality checks.
+
+    Breaking: World preparation errors accept only the documented client and editor failure codes. Each code carries its own recovery guidance. Unknown producer codes fail contract decoding.
+
+    Breaking: Niagara preview failures now require `nextStep` so hosts retain the next recovery action.
+
+    Preserve Niagara session recovery, retry safety and next steps through preview error adaptation. Classify CLI plugin installation failures as input fixes, safe transient retries or escalation. Keep localization guidance host-neutral and add command hints in CLI output.
+
+- Updated dependencies [7a756bb]
+- Updated dependencies [742a808]
+- Updated dependencies [430728c]
+    - @ue-shed/unreal-assets@0.23.0
+    - @ue-shed/localization@0.23.0
+    - @ue-shed/protocol@0.23.0
+    - @ue-shed/unreal-connection@0.23.0
+
 ## 0.22.0
 
 ### Minor Changes

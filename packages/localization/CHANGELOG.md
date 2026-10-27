@@ -1,5 +1,37 @@
 # @ue-shed/localization
 
+## 0.23.0
+
+### Minor Changes
+
+- 742a808: The write audit around a localization commandlet run no longer reads the whole project. It records
+  every file's size and modification time, hashes the plan's own files, and after the run hashes only
+  files that are new or whose size or modification time changed. A write outside the plan is still
+  reported. On a 35,000-file, 15.7 GB project the audit used to fail with `limit_exceeded` after 10
+  seconds, so no gather or compile could run; its first snapshot now takes 2.6 seconds.
+  `LocalizationAuditLimits.maxFileBytes` and `maxTotalBytes` now bound only hashed bytes, and the
+  default `maxEntries` is 1,000,000. A change found by size or modification time alone carries
+  `beforeUnread: true`, because the file's earlier content was not hashed.
+
+### Patch Changes
+
+- 430728c: Add the lightweight `@ue-shed/protocol/errors` subpath with the same error schemas as the root export. This entry point is additive. Reuse the shared guidance schemas across libraries and hosts; plugin distribution retains its independent fields with compile-time equality checks.
+
+    Breaking: World preparation errors accept only the documented client and editor failure codes. Each code carries its own recovery guidance. Unknown producer codes fail contract decoding.
+
+    Breaking: Niagara preview failures now require `nextStep` so hosts retain the next recovery action.
+
+    Preserve Niagara session recovery, retry safety and next steps through preview error adaptation. Classify CLI plugin installation failures as input fixes, safe transient retries or escalation. Keep localization guidance host-neutral and add command hints in CLI output.
+
+- Updated dependencies [d2a3165]
+- Updated dependencies [33249ad]
+- Updated dependencies [742a808]
+- Updated dependencies [430728c]
+    - @ue-shed/engine@0.23.0
+    - @ue-shed/config-explorer@0.23.0
+    - @ue-shed/protocol@0.23.0
+    - @ue-shed/unreal-connection@0.23.0
+
 ## 0.22.0
 
 ### Minor Changes

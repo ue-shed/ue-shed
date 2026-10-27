@@ -1,5 +1,40 @@
 # @ue-shed/niagara
 
+## 0.23.0
+
+### Minor Changes
+
+- 430728c: Add the lightweight `@ue-shed/protocol/errors` subpath with the same error schemas as the root export. This entry point is additive. Reuse the shared guidance schemas across libraries and hosts; plugin distribution retains its independent fields with compile-time equality checks.
+
+    Breaking: World preparation errors accept only the documented client and editor failure codes. Each code carries its own recovery guidance. Unknown producer codes fail contract decoding.
+
+    Breaking: Niagara preview failures now require `nextStep` so hosts retain the next recovery action.
+
+    Preserve Niagara session recovery, retry safety and next steps through preview error adaptation. Classify CLI plugin installation failures as input fixes, safe transient retries or escalation. Keep localization guidance host-neutral and add command hints in CLI output.
+
+### Patch Changes
+
+- d2a3165: Editor launches take per-run options, on both `UnrealProjectLauncher` and supervised sessions:
+    - `startupMap` opens a map directly (`/Game/Maps/Arena`) instead of loading the default map first. A `/Game` map or a launched plugin's map that does not exist fails with `startup_map_missing` before spawning, because the editor would otherwise open the default map without a word.
+    - `logPath` writes the run's editor log to an absolute path; the launch result, session handle and early-exit error name it.
+    - `sourceControl: "disabled"` starts the editor without connecting to source control for that run.
+    - `additionalArguments` passes other editor switches. Switches the launcher owns, or that would break the session or the user's project (plugins, Remote Control, `-NullRHI`, `-run=`, `-game`, crash-recovery switches and others), are refused with `invalid_request`; `reservedUnrealEditorArgument` gives the reason.
+    - With plugins, `remoteControlAllowedFunctions` allows single engine or project functions on UE 5.8, and `remoteControlWebSocketPort` sets the WebSocket port, so a host no longer rewrites the launcher's arguments.
+    - Supervised sessions add `unattended` (no dialogs; refused with `recovery_pending` while the project has unsaved work to recover, because the editor would delete it) and `window: "offscreen"` (UE 5 only).
+
+    Live Coding is now really off in plugin sessions: `-NoLiveCoding` is a build-tool switch the editor ignores, so the launcher sets the Live Coding setting for the run instead. Niagara preview and other commandlets pass `-SCCProvider=None` in place of `-nop4`, which only AutomationTool reads.
+
+- 1d9f850: The UEShedNiagara preview commandlet ends a render frame after every scene capture and session
+  request. Host-owned sessions no longer grow by about 400 MiB per request, and they log process commit
+  after each request. When auto-fit coverage already reaches the image edge, the capture now keeps the
+  bounds-based camera and logs a warning instead of failing; edge activity still sets `needsReview`.
+- Updated dependencies [d2a3165]
+- Updated dependencies [33249ad]
+- Updated dependencies [742a808]
+- Updated dependencies [430728c]
+    - @ue-shed/engine@0.23.0
+    - @ue-shed/protocol@0.23.0
+
 ## 0.22.0
 
 ### Patch Changes

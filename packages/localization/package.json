@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/localization",
-	"version": "0.22.0",
+	"version": "0.23.0",
 	"description": "Read Unreal localization evidence and plan or run headless localization operations.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -41,10 +41,10 @@
 		"typecheck": "tsc --noEmit && tsc -p tsconfig.browser.json --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/config-explorer": "workspace:0.22.0",
-		"@ue-shed/engine": "workspace:0.22.0",
-		"@ue-shed/protocol": "workspace:0.22.0",
-		"@ue-shed/unreal-connection": "workspace:0.22.0"
+		"@ue-shed/config-explorer": "workspace:0.23.0",
+		"@ue-shed/engine": "workspace:0.23.0",
+		"@ue-shed/protocol": "workspace:0.23.0",
+		"@ue-shed/unreal-connection": "workspace:0.23.0"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",

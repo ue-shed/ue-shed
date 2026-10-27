@@ -1,5 +1,31 @@
 # @ue-shed/engine
 
+## 0.23.0
+
+### Minor Changes
+
+- d2a3165: Editor launches take per-run options, on both `UnrealProjectLauncher` and supervised sessions:
+    - `startupMap` opens a map directly (`/Game/Maps/Arena`) instead of loading the default map first. A `/Game` map or a launched plugin's map that does not exist fails with `startup_map_missing` before spawning, because the editor would otherwise open the default map without a word.
+    - `logPath` writes the run's editor log to an absolute path; the launch result, session handle and early-exit error name it.
+    - `sourceControl: "disabled"` starts the editor without connecting to source control for that run.
+    - `additionalArguments` passes other editor switches. Switches the launcher owns, or that would break the session or the user's project (plugins, Remote Control, `-NullRHI`, `-run=`, `-game`, crash-recovery switches and others), are refused with `invalid_request`; `reservedUnrealEditorArgument` gives the reason.
+    - With plugins, `remoteControlAllowedFunctions` allows single engine or project functions on UE 5.8, and `remoteControlWebSocketPort` sets the WebSocket port, so a host no longer rewrites the launcher's arguments.
+    - Supervised sessions add `unattended` (no dialogs; refused with `recovery_pending` while the project has unsaved work to recover, because the editor would delete it) and `window: "offscreen"` (UE 5 only).
+
+    Live Coding is now really off in plugin sessions: `-NoLiveCoding` is a build-tool switch the editor ignores, so the launcher sets the Live Coding setting for the run instead. Niagara preview and other commandlets pass `-SCCProvider=None` in place of `-nop4`, which only AutomationTool reads.
+
+- 33249ad: A supervised editor session now checks the project's build ID and the engine's Remote Control build before it starts the editor, as the plain launcher does. A project compiled for another engine fails at once with `build_mismatch` (stage `validation`, next step `fix_input`) instead of a readiness timeout. `SupervisedEditorSessionError` gains the codes `build_mismatch`, `invalid_module_manifest`, `plugin_unavailable` and `engine_plugins_stale`; the launcher's error is kept as the cause.
+- 742a808: `ProcessSupervisorExecutable` and `processSupervisorExecutableLayer(path)` let a host run the
+  Windows process supervisor from its own location, such as an Electron app's resources, instead of
+  resolving it from the installed `@ue-shed/engine-win32-x64` package. Editor launches and foreground
+  permission both use it.
+
+### Patch Changes
+
+- Updated dependencies [430728c]
+    - @ue-shed/protocol@0.23.0
+    - @ue-shed/unreal-connection@0.23.0
+
 ## 0.22.0
 
 ### Patch Changes

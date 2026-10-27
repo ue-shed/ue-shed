@@ -89,6 +89,17 @@ describe.skipIf(!executable)("batched reads against the native reader", () => {
 		expect(result.summary.scannedAssets).toBe(2);
 	});
 
+	it("sends a list that fits only without its repeats as one request without them", async () => {
+		const a = "Content/Fixture/Animation/SK_Fixture.uasset";
+		// Over the reader's real 4 MiB request limit as given, one path once its repeats go.
+		const paths = Array.from({ length: 2_200 }, () => pad(a));
+		const result = await Effect.runPromise(scan({ maximumAssets: 1, paths }));
+
+		expect(workers).toBe(1);
+		expect(keys(result)).toEqual([readerPathKey(fixture.root, a)]);
+		expect(result.summary.scannedAssets).toBe(1);
+	});
+
 	it("reads overlapping roots as one request would", async () => {
 		const paths = [
 			"Content/Fixture/Animation",

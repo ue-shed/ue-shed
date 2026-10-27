@@ -1750,13 +1750,18 @@ export function invokeProtocolScan(
 		if (batches instanceof ProtocolStreamFailure)
 			return yield* Effect.fail(mapProtocolFailure(batches, "scan", projectRoot));
 		yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
-		if (paths === undefined || batches === undefined || batches.length === 1)
+		if (paths === undefined || batches === undefined || batches.length === 1) {
+			// A list that only fit once its repeats were dropped is sent without them.
+			const only = batches?.[0];
 			return yield* invokeProtocolScanBatch(
 				configuration,
-				options,
+				paths === undefined || only === undefined || only.length === paths.length
+					? options
+					: { ...options, paths: only.map((index) => paths[index] ?? "") },
 				progress,
 				batching.processFactory
 			);
+		}
 		const batched = new BatchedScanProgress(progress, batches.length);
 		const assetIdentities = new BatchIdentities(projectRoot);
 		const inventoryIdentities = new BatchIdentities(projectRoot);

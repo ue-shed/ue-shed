@@ -7,8 +7,10 @@ import type {
 } from "./ipc-contracts.js";
 import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
-import type { GameTextOperationProgress } from "@ue-shed/game-text/schema";
-import type { WorkbenchTaskProgress } from "../shared/project-workspace-contract.js";
+import type {
+	GameTextOperationProgress,
+	GameTextWorkspaceProgress
+} from "@ue-shed/game-text/schema";
 
 export const workbenchInvokeChannels = {
 	assetNavigation: { locate: "asset-navigation:locate" },
@@ -209,7 +211,9 @@ export type WorkbenchRendererApi = Omit<Invokes, "mapCapture" | "gameText"> & {
 			listener: (progress: GameTextOperationProgress) => void
 		) => () => void;
 		/** Each change to Game Text's progress; `progress` reads it once. */
-		readonly onProgress: (listener: (progress: WorkbenchTaskProgress) => void) => () => void;
+		readonly onProgress: (
+			listener: (progress: GameTextWorkspaceProgress) => void
+		) => () => void;
 	};
 	readonly mapCapture: Invokes["mapCapture"] & {
 		readonly onProgress: (listener: (progress: MapCaptureProgressEvent) => void) => () => void;

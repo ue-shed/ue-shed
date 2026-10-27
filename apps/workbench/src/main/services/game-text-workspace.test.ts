@@ -46,7 +46,7 @@ function selected(projectRoot: string): GameTextWorkspaceProject {
 		current: () => Effect.succeed(ready(projectRoot, 3)),
 		refresh: () => Effect.succeed(ready(projectRoot, 3)),
 		candidates: () => Effect.succeed({ generation: 3, summary: { projectRoot } }),
-		progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "host" })
+		progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle" })
 	};
 }
 function memoryFiles() {
@@ -137,7 +137,7 @@ for (const full of [false, true]) {
 							files: memoryFiles().files
 						});
 						const run = () =>
-							full ? workspace.configuredScan() : workspace.configuredRefresh(true);
+							full ? workspace.configuredScan() : workspace.configuredRefresh({});
 						const first = yield* run().pipe(Effect.forkChild);
 						yield* Deferred.await(disconnectDuringRefresh ? hostStarted : started);
 						yield* Fiber.interrupt(first);
@@ -197,7 +197,7 @@ for (const full of [false, true]) {
 						}
 					});
 					const run = () =>
-						full ? workspace.configuredScan() : workspace.configuredRefresh();
+						full ? workspace.configuredScan() : workspace.configuredRefresh({});
 					const request = yield* run().pipe(Effect.forkChild);
 					yield* Deferred.await(entered);
 					yield* Fiber.interrupt(request).pipe(
@@ -228,18 +228,22 @@ it.effect("creates starter rules exclusively in a non-disk host store", () =>
 			files: store.files,
 			rulesRelativePath: "Config/Custom/text-rules.json"
 		});
-		expect((yield* workspace.configuredRefresh()).status).toBe("completed");
-		expect((yield* workspace.createStarterRules(false)).status).toBe("completed");
+		expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
+		expect((yield* workspace.createStarterRules({ loadExisting: false })).status).toBe(
+			"completed"
+		);
 		const previous = store.contents.get(path);
 		expect(previous).toBeDefined();
 		expect(store.writes).toEqual([path]);
-		expect(yield* workspace.createStarterRules(false)).toMatchObject({
+		expect(yield* workspace.createStarterRules({ loadExisting: false })).toMatchObject({
 			status: "failed",
 			error: { code: "already_exists" }
 		});
 		expect(store.contents.get(path)).toBe(previous);
 		expect(store.writes).toEqual([path]);
-		expect((yield* workspace.createStarterRules(true)).status).toBe("completed");
+		expect((yield* workspace.createStarterRules({ loadExisting: true })).status).toBe(
+			"completed"
+		);
 	}).pipe(provideWorkspace)
 );
 
@@ -257,8 +261,10 @@ it.effect("creates the host's starter rules", () =>
 			files: store.files,
 			starterRules
 		});
-		expect((yield* workspace.configuredRefresh()).status).toBe("completed");
-		expect((yield* workspace.createStarterRules(false)).status).toBe("completed");
+		expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
+		expect((yield* workspace.createStarterRules({ loadExisting: false })).status).toBe(
+			"completed"
+		);
 		const written = store.contents.get(resolve(root, GAME_TEXT_RULES_RELATIVE_PATH));
 		expect(JSON.parse(new TextDecoder().decode(written))).toEqual(starterRules);
 	}).pipe(provideWorkspace)
@@ -277,7 +283,7 @@ it.effect("answers an operation state poll from the published scan, without disc
 			// Before any scan there is nothing published, and the poll discovers nothing itself.
 			expect(yield* workspace.operationStateTarget(name)).toBeUndefined();
 			expect(discoveries).toBe(0);
-			expect((yield* workspace.configuredRefresh()).status).toBe("completed");
+			expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
 			const scanned = discoveries;
 			expect(yield* workspace.operationStateTarget(name)).toBeUndefined();
 			expect(discoveries).toBe(scanned);
@@ -318,8 +324,7 @@ it.effect("counts the host's project scan as the first of a scan's steps", () =>
 		expect(yield* workspace.progress()).toEqual({
 			completed: 2,
 			total: 5,
-			phase: "scanning",
-			stage: "project_index",
+			phase: "project_scanning",
 			step: 1,
 			steps: 9
 		});
@@ -344,8 +349,8 @@ it.effect("never falls back to disk when the host refuses starter creation", () 
 					})
 			}
 		});
-		expect((yield* workspace.configuredRefresh()).status).toBe("completed");
-		expect(yield* workspace.createStarterRules(false)).toMatchObject({
+		expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
+		expect(yield* workspace.createStarterRules({ loadExisting: false })).toMatchObject({
 			status: "failed",
 			error: { code: "write_failed", message: "Host denied write." }
 		});
@@ -388,8 +393,10 @@ for (const failedHook of ["read", "recovery"] as const) {
 						});
 					})
 			});
-			expect((yield* workspace.configuredRefresh()).status).toBe("completed");
-			expect((yield* workspace.createStarterRules(true)).status).toBe("completed");
+			expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
+			expect((yield* workspace.createStarterRules({ loadExisting: true })).status).toBe(
+				"completed"
+			);
 			expect(yield* workspace.saveQualityRules(STARTER_GAME_TEXT_RULES)).toMatchObject({
 				status: "failed",
 				error: { code: "write_failed" }
@@ -428,8 +435,10 @@ it.effect("copies previous rule bytes before the host replaces them", () =>
 					events.push("copy");
 				})
 		});
-		expect((yield* workspace.configuredRefresh()).status).toBe("completed");
-		expect((yield* workspace.createStarterRules(true)).status).toBe("completed");
+		expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
+		expect((yield* workspace.createStarterRules({ loadExisting: true })).status).toBe(
+			"completed"
+		);
 		expect((yield* workspace.saveQualityRules(STARTER_GAME_TEXT_RULES)).status).toBe(
 			"completed"
 		);

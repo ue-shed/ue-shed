@@ -10,6 +10,7 @@ import {
 	type TextQualityRuleUpdateResult
 } from "@ue-shed/game-text/corpus";
 import {
+	GAME_TEXT_WORKSPACE_PHASE_LABELS,
 	textLocationLabel,
 	textCountLabel,
 	textReviewSignalLabel
@@ -27,6 +28,7 @@ import {
 	type TextGroupBy,
 	type TextUnitId,
 	type LocalizationState,
+	type GameTextWorkspaceProgress,
 	LocalizationReviewLens
 } from "@ue-shed/game-text/schema";
 import {
@@ -38,7 +40,6 @@ import {
 	createEffectSubscription
 } from "@ue-shed/ui";
 import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
-import type { TaskProgress } from "@ue-shed/ui/task-progress";
 import { Effect, Schedule, Stream } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onSettled, untrack } from "solid-js";
 import type { JSX } from "@solidjs/web";
@@ -252,11 +253,10 @@ export function GameTextRoute(props: {
 	const [qualityDocument, setQualityDocument] = createSignal<GameTextRuleDocument | undefined>(
 		initial?.qualityDocument
 	);
-	const [progress, setProgress] = createSignal<TaskProgress>({
+	const [progress, setProgress] = createSignal<GameTextWorkspaceProgress>({
 		completed: 0,
 		total: 0,
-		phase: "idle",
-		stage: "game_text"
+		phase: "idle"
 	});
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
@@ -281,14 +281,11 @@ export function GameTextRoute(props: {
 	const progressLabel = () =>
 		!loading() && localization.ready()
 			? "Loading first results"
-			: (progress().detail ??
-				(progress().stage === "project_index"
-					? "Discovering saved packages"
-					: progress().phase === "scanning"
-						? "Inspecting text-bearing packages"
-						: !loading()
-							? "Loading translations"
-							: "Preparing saved text index"));
+			: progress().phase !== "idle"
+				? GAME_TEXT_WORKSPACE_PHASE_LABELS[progress().phase]
+				: !loading()
+					? "Loading translations"
+					: "Preparing saved text index";
 	let observingProgress = false;
 	let preparationStarted = 0;
 	createEffect(indexBusy, (busy) => {
@@ -761,8 +758,7 @@ export function GameTextRoute(props: {
 		setScanNotice(undefined);
 		// A route already following progress has the host's current value; a reset would hide it
 		// until the next change.
-		if (!observingProgress)
-			setProgress({ completed: 0, total: 0, phase: "idle", stage: "game_text" });
+		if (!observingProgress) setProgress({ completed: 0, total: 0, phase: "idle" });
 		refreshAction.run(props.client.loadConfiguredProject(refresh), {
 			onFailure: (cause) => {
 				setPreparing(false);

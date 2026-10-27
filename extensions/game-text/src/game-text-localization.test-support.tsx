@@ -365,7 +365,7 @@ export function client(
 		loadConfiguredProject: () => Effect.succeed({ status: "completed", summary }),
 		...cannedSearch([...sourceAnswers, ...targetAnswers]),
 		focus: cannedFocus(focuses),
-		progress: Stream.make({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
+		progress: Stream.make({ completed: 0, total: 0, phase: "idle" }),
 		locateAsset: (objectPath) =>
 			Effect.succeed({
 				status: "located",

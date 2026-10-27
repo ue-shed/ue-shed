@@ -18,19 +18,17 @@ export type GameTextWorkspaceProjectState =
 			readonly project: { readonly projectRoot: string; readonly generation?: number };
 	  };
 
-/** Latest operation-scoped progress reported by the host or Game Text pipeline. */
-export interface GameTextWorkspaceProgress {
+export type { GameTextWorkspaceProgress } from "./workspace-progress.js";
+
+/**
+ * The host's own project scan, as the workspace reads it: while it is `enumerating` or
+ * `scanning`, the workspace reports it as `project_enumerating` or `project_scanning`, with its
+ * counts. Other fields a host's progress carries are ignored.
+ */
+export interface GameTextWorkspaceProjectProgress {
+	readonly phase: "idle" | "enumerating" | "scanning" | "ready" | "failed";
 	readonly completed: number;
 	readonly total: number;
-	readonly phase: "idle" | "enumerating" | "scanning" | "ready" | "failed";
-	readonly stage: string;
-	readonly detail?: string;
-	/**
-	 * The scan step running now, of `steps`: the host's project scan, then each Game Text scan
-	 * phase in the order they start. A step a scan does not need is skipped, not renumbered.
-	 */
-	readonly step?: number;
-	readonly steps?: number;
 }
 
 /** A failure a host reports from one of its hooks, in words a user can act on. */
@@ -57,7 +55,7 @@ export interface GameTextWorkspaceProject {
 		GameTextWorkspaceHostFailure
 	>;
 	/** The host's own project progress, shown while the host enumerates or scans the project. */
-	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
+	readonly progress: () => Effect.Effect<GameTextWorkspaceProjectProgress>;
 	/**
 	 * Each change to the host's project progress, so the workspace's progress follows it without
 	 * polling. A host without one is read when Game Text's own progress changes.

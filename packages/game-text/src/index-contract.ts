@@ -75,11 +75,7 @@ export class GameTextIndexSource extends Context.Service<
 	}
 >()("@ue-shed/game-text/GameTextIndexSource") {}
 
-/**
- * Check options of an indexed quality read. Progress goes to `GameTextIndexProgressReporter`: a
- * `localization_quality` event before the engine checks, with no lines checked, and one after,
- * with every line checked and the findings the checks found.
- */
+/** Check options of an indexed localization quality read, after its rule document. */
 export type IndexedLocalizationQualityOptions = LocalizationCheckOptions;
 
 /**
@@ -101,8 +97,16 @@ export type GameTextIndexRefreshRequest = typeof GameTextIndexRefreshRequest.Typ
 type ImportedTarget = Effect.Success<ReturnType<typeof importLocalizationTarget>>;
 /**
  * Pinned corpus, localization and query views from one validated revision. Keep its scope open
- * while executing asynchronous reads; sourceQuality and localizationQuality are required, interruptible
- * operations with the rule document first.
+ * while executing asynchronous reads.
+ *
+ * The quality reads take `(ruleDocument, options)`: the rule document first, which only
+ * `sourceQuality` requires, then the localization reads' check options. `sourceQuality` and
+ * `localizationQuality` are interruptible and report progress through
+ * `GameTextIndexProgressReporter`, counted in rules: a `source_quality` or
+ * `localization_quality` event with no rules evaluated and no findings, one as each rule
+ * finishes, and a last one with every rule evaluated and the findings; then `ready`, or the
+ * latest event of another evaluation still running.
+ * `prepareLocalizationCheck` and `localizationCheck` report none.
  */
 export interface GameTextIndexRefreshResult {
 	/** Present on the steps implementation; optional for existing host-provided refresh adapters. */
@@ -144,9 +148,8 @@ export interface GameTextIndexRefreshResult {
 	readonly review: LocalizationReviewSnapshot;
 	/**
 	 * Localization quality over the index: the engine checks the rule document once per document,
-	 * and the workspace reads its findings a page at a time. It can be interrupted, and reports
-	 * `localization_quality` progress through `GameTextIndexProgressReporter`. Arguments are in
-	 * the same order as `sourceQuality`: the rule document first.
+	 * and the workspace reads its findings a page at a time. Reports `localization_quality`
+	 * progress.
 	 */
 	readonly localizationQuality: (
 		ruleDocument?: GameTextRuleDocument,
@@ -159,7 +162,7 @@ export interface GameTextIndexRefreshResult {
 	 * error.
 	 */
 	readonly prepareLocalizationCheck: (
-		document?: GameTextRuleDocument,
+		ruleDocument?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
 	) => Effect.Effect<
 		import("./localization-check-report.js").PreparedLocalizationCheck,
@@ -167,7 +170,7 @@ export interface GameTextIndexRefreshResult {
 	>;
 	/** `prepareLocalizationCheck`'s report as a value, for hosts that keep it. */
 	readonly localizationCheck: (
-		document?: GameTextRuleDocument,
+		ruleDocument?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
 	) => Effect.Effect<
 		import("./localization-quality-schema.js").LocalizationQualityReport,
@@ -176,8 +179,8 @@ export interface GameTextIndexRefreshResult {
 	/**
 	 * Source quality rules evaluated over the index in bounded pages: the query
 	 * `textQualityQuery(evaluateGameTextSourceQuality(corpus, ruleDocument))` gives, without
-	 * building the corpus's units. The scan yields between pages and can be interrupted, and
-	 * reports `source_quality` progress through `GameTextIndexProgressReporter`.
+	 * building the corpus's units. The scan yields between pages. Reports `source_quality`
+	 * progress.
 	 */
 	readonly sourceQuality: (
 		ruleDocument: GameTextRuleDocument

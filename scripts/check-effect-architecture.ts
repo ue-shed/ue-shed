@@ -258,7 +258,11 @@ const approvedResourceAdapters = new Set([
 	// exit polling inside Effect callbacks and a scoped acquire/release session.
 	"packages/engine/src/supervised-editor-session.ts"
 ]);
-const operationlessServices = new Set(["apps/workbench/src/main/workbench-config.ts"]);
+const operationlessServices = new Set([
+	"apps/workbench/src/main/workbench-config.ts",
+	// Serves the Game Text workspace as built, whose operations are its own Effect.fn spans.
+	"apps/workbench/src/main/services/game-text.ts"
+]);
 const externalServiceEvidence = new Map([
 	[
 		"packages/game-text/src/index-builder.ts",

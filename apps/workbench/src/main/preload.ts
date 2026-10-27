@@ -17,7 +17,10 @@ import type {
 } from "@ue-shed/extension-camera-review/client";
 import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
-import type { GameTextOperationProgress } from "@ue-shed/game-text/schema";
+import type {
+	GameTextOperationProgress,
+	GameTextWorkspaceProgress
+} from "@ue-shed/game-text/schema";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraScheduleConfig,
@@ -201,17 +204,19 @@ const workbenchRendererApi = {
 		localizationTarget: (target) => ipcRenderer.invoke("game-text:localization:target", target),
 		localizationFocus: (request) => ipcRenderer.invoke("game-text:localization:focus", request),
 		related: (request) => ipcRenderer.invoke("game-text:related", request),
-		investigationExport: (query, format) =>
-			ipcRenderer.invoke("game-text:investigation-export", query, format),
+		investigationExport: (request) =>
+			ipcRenderer.invoke("game-text:investigation-export", request),
 		investigationSave: (query) => ipcRenderer.invoke("game-text:investigation-save", query),
 		investigationOpen: () => ipcRenderer.invoke("game-text:investigation-open"),
 		loadConfiguredProject: () => ipcRenderer.invoke("game-text:configured-scan"),
-		refreshConfiguredProject: (refresh = true) =>
-			ipcRenderer.invoke("game-text:configured-refresh", refresh),
+		refreshConfiguredProject: (request) =>
+			ipcRenderer.invoke("game-text:configured-refresh", request),
 		progress: () => ipcRenderer.invoke("game-text:progress"),
-		onProgress: (listener: (progress: WorkbenchTaskProgress) => void) => {
-			const handler = (_event: Electron.IpcRendererEvent, progress: WorkbenchTaskProgress) =>
-				listener(progress);
+		onProgress: (listener: (progress: GameTextWorkspaceProgress) => void) => {
+			const handler = (
+				_event: Electron.IpcRendererEvent,
+				progress: GameTextWorkspaceProgress
+			) => listener(progress);
 			ipcRenderer.on("game-text:progress-changed", handler);
 			return () => ipcRenderer.removeListener("game-text:progress-changed", handler);
 		},
@@ -220,8 +225,8 @@ const workbenchRendererApi = {
 		focus: (request) => ipcRenderer.invoke("game-text:focus", request),
 		chooseQualityRules: () => ipcRenderer.invoke("game-text:quality:choose-rules"),
 		reloadQualityRules: () => ipcRenderer.invoke("game-text:quality:reload-rules"),
-		createStarterRules: (loadExisting) =>
-			ipcRenderer.invoke("game-text:quality:create-starter-rules", loadExisting),
+		createStarterRules: (request) =>
+			ipcRenderer.invoke("game-text:quality:create-starter-rules", request),
 		previewQualityRules: (document) =>
 			ipcRenderer.invoke("game-text:quality:preview-rules", document),
 		saveQualityRules: (document) =>

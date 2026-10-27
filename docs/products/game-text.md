@@ -46,9 +46,9 @@ existing joined view without refreshing inventory, importing localization, build
 the writer lease. It returns `Option.none()` for any unusable cache and traces the reason as
 `game_text.cache.miss_reason`; an opened model belongs to the caller's scope.
 
-The workspace's `configuredRefresh(false)` uses that path when it has no published model and no
+The workspace's `configuredRefresh({ refresh: false })` uses that path when it has no published model and no
 scan is running. A successful reopen returns `{ status: "completed", summary, cached: true }`.
-Hosts can display it immediately and request `configuredRefresh(true)` in the background; reopening
+Hosts can display it immediately and request `configuredRefresh({})` in the background; reopening
 itself never starts a scan. Missing or unusable caches return `not_scanned`. Source browsing and
 selection of the published localization target keep using the immutable model while the Project
 Index generation changes. Refresh publication replaces it and retires its reader; outstanding

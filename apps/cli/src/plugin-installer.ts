@@ -207,7 +207,7 @@ function parseManifest(value: Schema.Json): PluginReleaseManifest {
 			fail("fix_input", `${cause.message} Recovery: ${cause.recovery}`, cause);
 		}
 		fail(
-			"fix_input",
+			"escalate",
 			"Plugin manifest does not match the plugin bundle manifest schema.",
 			cause
 		);

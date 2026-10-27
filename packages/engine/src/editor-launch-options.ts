@@ -40,6 +40,7 @@ export const UnrealEditorLaunchOptionFields = {
 	)
 };
 
+/** The per-run launch options as plain values; see `UnrealEditorLaunchOptionFields`. */
 export interface UnrealEditorLaunchOptions {
 	readonly startupMap?: string | undefined;
 	readonly logPath?: string | undefined;

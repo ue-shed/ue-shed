@@ -208,14 +208,11 @@ export function localizationFileChanges(
 		const beforeHash = previous?.hash ?? null;
 		const afterHash = current?.hash ?? null;
 		if (previous?.hash !== undefined && beforeHash === afterHash) return [];
+		const change = { relativePath: path, beforeHash, afterHash, planned: planned.has(path) };
 		return [
-			{
-				relativePath: path,
-				beforeHash,
-				afterHash,
-				planned: planned.has(path),
-				...(previous && previous.hash === undefined ? { beforeUnread: true as const } : {})
-			}
+			previous && previous.hash === undefined
+				? { ...change, beforeUnread: true as const }
+				: change
 		];
 	});
 }

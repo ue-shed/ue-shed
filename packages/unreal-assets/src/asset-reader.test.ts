@@ -1,7 +1,15 @@
 import { it as effectIt } from "@effect/vitest";
-import { Effect } from "effect";
+import { ConfigProvider, Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { type BlueprintGraphProjection, assetReaderLayer, readSavedBlueprint } from "./index.js";
+import { installedUassetExecutable, resolveAssetReaderExecutable } from "./asset-reader.js";
+import {
+	AssetReader,
+	AssetReaderLive,
+	type BlueprintGraphProjection,
+	assetReaderLayer,
+	getAssetReaderSource,
+	readSavedBlueprint
+} from "./index.js";
 
 import {
 	ProtocolLineDecoder,
@@ -27,6 +35,56 @@ effectIt.effect("preserves an unavailable reader as a typed process failure", ()
 		expect(error.path).toBe("C:/Fixture/BP_Test.uasset");
 	})
 );
+
+describe("AssetReader executable resolution", () => {
+	const installed = () => "C:/node_modules/@ue-shed/uasset-win32-x64/bin/uasset.exe";
+
+	it("prefers the configured executable, then the installed package, then PATH", () => {
+		expect(resolveAssetReaderExecutable("D:/reader/uasset.exe", installed)).toEqual({
+			executable: "D:/reader/uasset.exe",
+			source: "configured"
+		});
+		expect(resolveAssetReaderExecutable(undefined, installed)).toEqual({
+			executable: installed(),
+			source: "package"
+		});
+		expect(resolveAssetReaderExecutable(undefined, () => undefined)).toEqual({
+			executable: "uasset",
+			source: "path"
+		});
+	});
+
+	effectIt.effect("reports an explicit layer executable as configured", () =>
+		getAssetReaderSource().pipe(
+			Effect.provide(assetReaderLayer({ executable: "D:/reader/uasset.exe" })),
+			Effect.map((source) => expect(source).toBe("configured"))
+		)
+	);
+
+	effectIt.effect("reads UE_SHED_UASSET_EXECUTABLE before any installed package", () =>
+		Effect.gen(function* () {
+			const reader = yield* AssetReader;
+			expect(yield* reader.source()).toBe("configured");
+			expect((yield* reader.configuration()).executable).toBe("D:/env/uasset.exe");
+		}).pipe(
+			Effect.provide(AssetReaderLive),
+			Effect.provide(
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({ UE_SHED_UASSET_EXECUTABLE: "D:/env/uasset.exe" })
+				)
+			)
+		)
+	);
+
+	effectIt.effect("falls back to the installed package or PATH without configuration", () =>
+		getAssetReaderSource().pipe(
+			Effect.provide(assetReaderLayer()),
+			Effect.map((source) =>
+				expect(source).toBe(installedUassetExecutable() === undefined ? "path" : "package")
+			)
+		)
+	);
+});
 
 it("preserves native Blueprint failure codes through the reader error boundary", () => {
 	const error = mapProtocolFailure(

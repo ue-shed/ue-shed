@@ -325,7 +325,7 @@ export const ShowcaseContext = Schema.Struct({
 	health: RuntimeHealth,
 	project: ShowcaseProjectEvidence,
 	projectRoot: Schema.optionalKey(Schema.String),
-	reader: Schema.Literals(["configured", "path"]),
+	reader: Schema.Literals(["configured", "package", "path"]),
 	ruleFile: Schema.optionalKey(Schema.String)
 });
 export interface ShowcaseContext extends Schema.Schema.Type<typeof ShowcaseContext> {}

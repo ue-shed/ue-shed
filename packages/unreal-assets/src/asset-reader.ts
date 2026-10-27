@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import {
 	ErrorCauseFields,
 	ErrorGuidanceFields,
@@ -429,7 +432,19 @@ export interface AssetReaderApi {
 	) => Effect.Effect<SavedAssetScan, AssetReaderError>;
 	readonly scanProgress: () => Effect.Effect<SavedAssetScanProgress>;
 	readonly savedWorldProgress: () => Effect.Effect<SavedWorldProgress>;
-	readonly source: () => Effect.Effect<"configured" | "path">;
+	readonly source: () => Effect.Effect<AssetReaderSource>;
+}
+
+/**
+ * Where the reader executable came from: the host's configuration, the installed
+ * `@ue-shed/uasset-win32-x64` platform package, or `uasset` on PATH.
+ */
+type AssetReaderSource = "configured" | "package" | "path";
+
+/** The reader executable a layer runs, and where it came from. */
+interface AssetReaderExecutable {
+	readonly executable: string;
+	readonly source: AssetReaderSource;
 }
 
 /** Complete reader port supplied to a test layer; omitted operations are type errors. */
@@ -645,7 +660,7 @@ function discoverSavedAssetsWith(
  * shared scan, measurably faster, and leaves one project enumeration instead of two.
  */
 function makeAssetReader(
-	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" },
+	configuration: AssetReaderConfiguration & AssetReaderExecutable,
 	progress: CatalogProgressStore,
 	scanStore: ScanProgressStore,
 	savedWorldStore: SavedWorldProgressStore,
@@ -904,9 +919,7 @@ function makeAssetReader(
 	});
 }
 
-function makeScopedAssetReader(
-	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" }
-) {
+function makeScopedAssetReader(configuration: AssetReaderConfiguration & AssetReaderExecutable) {
 	return Effect.gen(function* () {
 		const mutex = yield* Semaphore.make(1);
 		const session = yield* Effect.acquireRelease(
@@ -938,24 +951,60 @@ function makeScopedAssetReader(
 	});
 }
 
+const UASSET_PLATFORM_PACKAGE = "@ue-shed/uasset-win32-x64";
+
+/**
+ * @internal The executable in the installed `@ue-shed/uasset-win32-x64` package, or undefined when
+ * this is not Windows x64 or the package is not installed.
+ */
+export function installedUassetExecutable(): string | undefined {
+	if (process.platform !== "win32" || process.arch !== "x64") return undefined;
+	try {
+		const manifest = createRequire(import.meta.url).resolve(
+			`${UASSET_PLATFORM_PACKAGE}/package.json`
+		);
+		const executable = join(dirname(manifest), "bin", "uasset.exe");
+		return existsSync(executable) ? executable : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * @internal The reader executable: the configured one, else the installed platform package's,
+ * else `uasset` on PATH.
+ */
+export function resolveAssetReaderExecutable(
+	configured: string | undefined,
+	installed: () => string | undefined = installedUassetExecutable
+): AssetReaderExecutable {
+	if (configured !== undefined) return { executable: configured, source: "configured" };
+	const packaged = installed();
+	return packaged === undefined
+		? { executable: "uasset", source: "path" }
+		: { executable: packaged, source: "package" };
+}
+
 /**
  * Creates a scoped native reader with explicit executable/timeouts and optional observation.
- * Defaults resolve uasset on PATH; the layer closes its owned session when released.
+ * Without an executable it runs the one in the installed `@ue-shed/uasset-win32-x64` package,
+ * else `uasset` on PATH. The layer closes its owned session when released.
  */
 export function assetReaderLayer(
 	configuration: Partial<AssetReaderConfiguration> = {}
 ): Layer.Layer<AssetReader> {
 	return Layer.effect(
 		AssetReader,
-		makeScopedAssetReader({
-			catalogTimeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
-			executable: configuration.executable ?? "uasset",
-			...(configuration.protocolObserver === undefined
-				? undefined
-				: { protocolObserver: configuration.protocolObserver }),
-			source: configuration.executable === undefined ? "path" : "configured",
-			timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
-		})
+		Effect.suspend(() =>
+			makeScopedAssetReader({
+				catalogTimeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
+				...resolveAssetReaderExecutable(configuration.executable),
+				...(configuration.protocolObserver === undefined
+					? undefined
+					: { protocolObserver: configuration.protocolObserver }),
+				timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
+			})
+		)
 	);
 }
 
@@ -969,7 +1018,8 @@ const readerCatalogTimeout = Config.Duration("UE_SHED_UASSET_CATALOG_TIMEOUT").p
 
 /**
  * Effect Config-backed scoped reader. Reads UE_SHED_UASSET_EXECUTABLE and ordinary/catalog
- * timeout settings; defaults to uasset on PATH and owns its protocol session lifecycle.
+ * timeout settings. Without an executable it runs the one in the installed
+ * `@ue-shed/uasset-win32-x64` package, else `uasset` on PATH. It owns its protocol session.
  */
 export const AssetReaderLive = Layer.effect(
 	AssetReader,
@@ -977,8 +1027,7 @@ export const AssetReaderLive = Layer.effect(
 		const executable = yield* readerExecutable;
 		return yield* makeScopedAssetReader({
 			catalogTimeoutMs: Duration.toMillis(yield* readerCatalogTimeout),
-			executable: Option.getOrElse(executable, () => "uasset"),
-			source: Option.isSome(executable) ? "configured" : "path",
+			...resolveAssetReaderExecutable(Option.getOrUndefined(executable)),
 			timeoutMs: Duration.toMillis(yield* readerTimeout)
 		});
 	})
@@ -1111,9 +1160,9 @@ export function readSavedWorld(
 }
 
 /**
- * Reports whether the configured reader executable was explicit or resolved from PATH. It
- * does not launch the worker or prove its protocol compatibility.
+ * Reports whether the reader executable was configured, found in the installed platform package,
+ * or left to PATH. It does not launch the worker or prove its protocol compatibility.
  */
-export function getAssetReaderSource(): Effect.Effect<"configured" | "path", never, AssetReader> {
+export function getAssetReaderSource(): Effect.Effect<AssetReaderSource, never, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.source());
 }

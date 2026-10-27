@@ -283,10 +283,13 @@ bounded worker; interruption terminates it, and closing the layer closes the pro
 remain explicit batched operations in fresh workers. Protocol validation rejects excess fields on
 every frame; measured large frames use the schema's exact type-side parser, while smaller frames use
 the normal decoder. The executable keeps the human `authoring` command for compatibility.
-Callers can pass an explicit executable, set
-`UE_SHED_UASSET_EXECUTABLE`, or provide `uasset` on `PATH`. The UE Shed source-checkout launchers
-incrementally build `crates/uasset-io` and configure its executable automatically; this package
-does not depend on a monorepo-relative path. Expected partial outcomes are typed terminal protocol
+The reader runs, in order: the executable passed to `assetReaderLayer`; for `AssetReaderLive`,
+`UE_SHED_UASSET_EXECUTABLE`; the executable in the installed `@ue-shed/uasset-win32-x64` package,
+which installing `@ue-shed/uasset` brings in; else `uasset` on `PATH`. `getAssetReaderSource`
+reports which of these it chose as `"configured"`, `"package"` or `"path"`. The reader is started
+without a shell, so a `PATH` entry must be the executable itself, not an npm `.cmd` shim. The UE
+Shed source-checkout launchers incrementally build `crates/uasset-io` and configure its executable
+automatically; this package does not depend on a monorepo-relative path. Expected partial outcomes are typed terminal protocol
 events; the legacy human command retains exit code 6 for compatibility.
 
 The reader currently normalizes DataTables and the parser's supported saved-asset inspection models.

@@ -279,6 +279,33 @@ it.live(
 					phase: "idle",
 					stage: "game_text"
 				});
+
+				// And across a replaced model: an evaluation still running on the model a Scan
+				// replaced is not shown again, so progress ends idle once everything has finished.
+				const staleHold = yield* Deferred.make<void>();
+				entered = yield* Deferred.make<void>();
+				hold = staleHold;
+				armed = true;
+				const stale = yield* workspace.previewQualityRules(fewer(5)).pipe(Effect.forkChild);
+				yield* Deferred.await(entered);
+				armed = false;
+				fixture.setSource("Updated source");
+				expect((yield* workspace.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* workspace.previewQualityRules(fewer(6))).status).toBe("completed");
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: 0,
+					phase: "idle",
+					stage: "game_text"
+				});
+				yield* Deferred.succeed(staleHold, undefined);
+				yield* Fiber.await(stale);
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: 0,
+					phase: "idle",
+					stage: "game_text"
+				});
 			}).pipe(Effect.provide(layer));
 		}).pipe(Effect.scoped),
 	60_000

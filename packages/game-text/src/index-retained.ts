@@ -68,9 +68,13 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 							return yield* acquire(request).pipe(
 								Effect.provideService(
 									GameTextIndexProgressReporter,
-									forwardsProgressTo((progress) => {
-										if (!Ref.getUnsafe(retired)) reportProgress(progress);
-									}, reportProgress)
+									forwardsProgressTo(
+										(progress) => {
+											if (!Ref.getUnsafe(retired)) reportProgress(progress);
+										},
+										reportProgress,
+										() => !Ref.getUnsafe(retired)
+									)
 								)
 							);
 						})

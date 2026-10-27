@@ -41,7 +41,8 @@ import { GameTextIndexBuilder, type GameTextIndexBuildSessionRequest } from "./i
 import {
 	type GameTextIndexProgress,
 	GameTextIndexProgressReporter,
-	progressHost
+	progressHost,
+	reachesProgressHost
 } from "./index-progress.js";
 import {
 	GameTextIndexError,
@@ -196,12 +197,19 @@ export interface GameTextIndexModel extends GameTextIndexRefreshResult {
 }
 
 /**
- * The latest event of each quality evaluation running for a progress host, least recent first.
- * Every model opened for one host shares it, so an evaluation that ends leaves the others shown.
+ * The latest event of each quality evaluation running for a progress host, least recent first,
+ * with the reporter it reports through. Every model opened for one host shares it, so an
+ * evaluation that ends leaves the others shown.
  */
 const runningEvaluations = new WeakMap<
 	(progress: GameTextIndexProgress) => void,
-	Map<symbol, GameTextIndexProgress>
+	Map<
+		symbol,
+		{
+			readonly progress: GameTextIndexProgress;
+			readonly reporter: (progress: GameTextIndexProgress) => void;
+		}
+	>
 >();
 
 /** Models opened by this process, numbering each model's revision. */
@@ -928,7 +936,7 @@ export const makeGameTextIndexSteps = (
 					const evaluation = Symbol(phase);
 					const report = (progress: GameTextIndexProgress) => {
 						evaluations.delete(evaluation);
-						evaluations.set(evaluation, progress);
+						evaluations.set(evaluation, { progress, reporter: reportProgress });
 						reportProgress(progress);
 					};
 					return Effect.gen(function* () {
@@ -947,8 +955,13 @@ export const makeGameTextIndexSteps = (
 						Effect.ensuring(
 							Effect.sync(() => {
 								evaluations.delete(evaluation);
+								// A replaced model's evaluation no longer reaches the host, so it is
+								// never shown again; its own end could not clear it.
+								const running = [...evaluations.values()].filter(({ reporter }) =>
+									reachesProgressHost(reporter)
+								);
 								reportProgress(
-									[...evaluations.values()].at(-1) ?? {
+									running.at(-1)?.progress ?? {
 										phase: "ready",
 										completed: 0,
 										total: 0

@@ -185,7 +185,8 @@ export function nativeDetectCustom(check: CustomLocalizationCheck, text: string)
 			manifestNotes: [],
 			manifestLocations: [],
 			originKind: "corpus",
-			stringTables: []
+			stringTables: [],
+			missingStringTableEntries: []
 		},
 		occurrences: []
 	});

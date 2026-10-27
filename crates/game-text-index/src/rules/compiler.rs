@@ -340,6 +340,7 @@ fn field_type(subject: Subject, name: &str) -> Result<Type> {
             "identity" => Type::Object,
             "sourceVariants" | "manifestNotes" | "manifestLocations" | "stringTables"
             | "duplicateSites" => Type::List(Box::new(Type::String)),
+            "missingStringTableEntries" => Type::List(Box::new(Type::Object)),
             "comparable" | "checkable" | "gathered" | "bytecodeOnly" | "allOutside"
             | "conflicting" => Type::Bool,
             "joinPosition" => Type::Number,

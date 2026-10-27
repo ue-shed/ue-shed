@@ -19,10 +19,11 @@ Every rule that reads only its own row, plus references to other rules on the sa
 - `outdated_translation`, `rich_text_tags_added`, `source_line_endings_changed`, `placeholder_translation`;
 - `length_outlier`. It reads its own row plus a reference to `placeholder_translation`, so it moves up from Phase 2.
 
-**On `line` (6):**
+**On `line` (7):**
 
 - `missing_translator_notes`, `placeholder_text`, `source_whitespace`, `source_markup`, `number_only_text`;
 - `string_table_key_collision`. It is a child aggregate over the line's own occurrences, so it also moves up from Phase 2.
+- `string_table_entry_missing`. It reads the line's own String Table references, so it also moves up from Phase 2.
 
 **Authored kinds (7):**
 
@@ -70,25 +71,26 @@ The evaluator sees three relations.
 
 One row per joined line, keyed and keyless. Fields:
 
-| Field                | Type                       | Definition                                                                                              |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `lineId`             | string                     | The line ID.                                                                                            |
-| `identity`           | `{namespace, key}` \| null | Null for a keyless line.                                                                                |
-| `source`             | string                     | The line's saved source.                                                                                |
-| `manifestSource`     | string \| null             | `line.manifest[0].source.Text`.                                                                         |
-| `comparisonSource`   | string                     | `manifestSource ?? source` (`localization-checks.ts:937-938`).                                          |
-| `sourceVariants`     | string list \| null        | See below.                                                                                              |
-| `comparable`         | bool                       | `sourceVariants == null \|\| manifestSource != null` (`:945`).                                          |
-| `checkable`          | bool                       | `identity != null` and not (both `comparisonSource` and `source` blank after JS `trim`) (`:901, :940`). |
-| `sourceCulture`      | string \| null             | `localizationSourceCulture` (`:337-349`), with root collation.                                          |
-| `sourceLatestOrigin` | string                     | `latestOrigin` of the `sourceCulture` row. `"absent"` when there is none (`:977`).                      |
-| `nativeCulture`      | string \| null             |                                                                                                         |
-| `gathered`           | bool                       | `manifest.length > 0`.                                                                                  |
-| `bytecodeOnly`       | bool                       | `:950-952`.                                                                                             |
-| `manifestNotes`      | string list                | `localizationManifestNotes` over every manifest entry, flattened.                                       |
-| `manifestLocations`  | string list                | Unique and sorted by code unit (`:946`).                                                                |
-| `originKind`         | string                     | `line.origin.kind`.                                                                                     |
-| `stringTables`       | string list                | `localizationStringTables` (`:203`), or the native equivalent `context.stringTables` uses.              |
+| Field                       | Type                       | Definition                                                                                                     |
+| --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `lineId`                    | string                     | The line ID.                                                                                                   |
+| `identity`                  | `{namespace, key}` \| null | Null for a keyless line.                                                                                       |
+| `source`                    | string                     | The line's saved source.                                                                                       |
+| `manifestSource`            | string \| null             | `line.manifest[0].source.Text`.                                                                                |
+| `comparisonSource`          | string                     | `manifestSource ?? source` (`localization-checks.ts:937-938`).                                                 |
+| `sourceVariants`            | string list \| null        | See below.                                                                                                     |
+| `comparable`                | bool                       | `sourceVariants == null \|\| manifestSource != null` (`:945`).                                                 |
+| `checkable`                 | bool                       | `identity != null` and not (both `comparisonSource` and `source` blank after JS `trim`) (`:901, :940`).        |
+| `sourceCulture`             | string \| null             | `localizationSourceCulture` (`:337-349`), with root collation.                                                 |
+| `sourceLatestOrigin`        | string                     | `latestOrigin` of the `sourceCulture` row. `"absent"` when there is none (`:977`).                             |
+| `nativeCulture`             | string \| null             |                                                                                                                |
+| `gathered`                  | bool                       | `manifest.length > 0`.                                                                                         |
+| `bytecodeOnly`              | bool                       | `:950-952`.                                                                                                    |
+| `manifestNotes`             | string list                | `localizationManifestNotes` over every manifest entry, flattened.                                              |
+| `manifestLocations`         | string list                | Unique and sorted by code unit (`:946`).                                                                       |
+| `originKind`                | string                     | `line.origin.kind`.                                                                                            |
+| `stringTables`              | string list                | `localizationStringTables` (`:203`), or the native equivalent `context.stringTables` uses.                     |
+| `missingStringTableEntries` | `{tableId, key}` list      | The line's String Table references whose table is known (a resolved entry names it) but whose entry is absent. |
 
 `sourceVariants` is null unless the line has `conflicting_source`. Then it is the distinct `source` values of the authored (non-String-Table) units' occurrences, or of every unit's occurrences when none is authored, sorted by code unit. It is null when fewer than two remain (`:751-761`).
 

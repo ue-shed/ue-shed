@@ -53,17 +53,15 @@ import {
 	GameTextClientError,
 	type GameTextClientApi
 } from "@ue-shed/extension-game-text/client";
-import {
-	WorkbenchTaskProgress,
-	WorkbenchProjectState
-} from "../shared/project-workspace-contract.js";
+import { WorkbenchProjectState } from "../shared/project-workspace-contract.js";
 import { Effect, Queue, Schema, Stream } from "effect";
 import {
 	GameTextOperationState,
 	GameTextOperationPlanResult,
 	GameTextOperationResult,
 	GameTextOperationFilesResult,
-	GameTextOperationProgress
+	GameTextOperationProgress,
+	GameTextWorkspaceProgress
 } from "@ue-shed/game-text/schema";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
@@ -292,7 +290,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 	createStarterRules: Effect.fn("GameTextClient.createStarterRules")((loadExisting: boolean) =>
 		invokeRequest(
 			"gameText.createStarterRules",
-			() => window.ueShed.gameText.createStarterRules(loadExisting),
+			() => window.ueShed.gameText.createStarterRules({ loadExisting }),
 			parseTextQualityQueryRunResult
 		)
 	),
@@ -300,7 +298,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 		export: (query, format) =>
 			invokeRequest(
 				"gameText.investigationExport",
-				() => window.ueShed.gameText.investigationExport(query, format),
+				() => window.ueShed.gameText.investigationExport({ query, format }),
 				Schema.decodeUnknownEffect(InvestigationFileResult)
 			),
 		save: (query) =>
@@ -319,7 +317,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 	loadConfiguredProject: Effect.fn("GameTextClient.loadConfiguredProject")((refresh = true) =>
 		invokeRequest(
 			"gameText.loadConfiguredProject",
-			() => window.ueShed.gameText.refreshConfiguredProject(refresh),
+			() => window.ueShed.gameText.refreshConfiguredProject({ refresh }),
 			parseTextCorpusQueryRunResult
 		)
 	),
@@ -347,7 +345,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 		{ bufferSize: 1, strategy: "sliding" }
 	).pipe(
 		Stream.mapEffect((progress) =>
-			Schema.decodeUnknownEffect(WorkbenchTaskProgress)(progress).pipe(
+			Schema.decodeUnknownEffect(GameTextWorkspaceProgress)(progress).pipe(
 				Effect.mapError(
 					(cause) =>
 						new GameTextClientError({

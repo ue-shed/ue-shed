@@ -10,13 +10,13 @@ it.live(
 			const test = yield* makeHost("retirement");
 			yield* Effect.gen(function* () {
 				const host = yield* WorkbenchGameText;
-				expect((yield* host.configuredRefresh()).status).toBe("completed");
+				expect((yield* host.configuredRefresh({})).status).toBe("completed");
 				const before = yield* host.search(request);
 				if (before.status !== "ready") throw new Error("Expected initial search");
 				const id = before.page.units[0]!.id;
 				test.armRetirement();
 				test.fixture.setSource("Replacement");
-				const refresh = yield* host.configuredRefresh().pipe(Effect.forkChild);
+				const refresh = yield* host.configuredRefresh({}).pipe(Effect.forkChild);
 				yield* Deferred.await(test.retiring);
 				const focus = yield* host.focus({ id, pageSize: 10 });
 				expect(focus).toMatchObject({
@@ -44,11 +44,11 @@ it.live(
 			const test = yield* makeHost("search");
 			yield* Effect.gen(function* () {
 				const host = yield* WorkbenchGameText;
-				expect((yield* host.configuredRefresh()).status).toBe("completed");
+				expect((yield* host.configuredRefresh({})).status).toBe("completed");
 				const pending = yield* host.search(request).pipe(Effect.forkChild);
 				yield* Deferred.await(test.searching);
 				test.fixture.setSource("Replacement");
-				expect((yield* host.configuredRefresh()).status).toBe("completed");
+				expect((yield* host.configuredRefresh({})).status).toBe("completed");
 				expect(yield* Deferred.isDone(test.retiring)).toBe(false);
 				yield* Deferred.succeed(test.allowSearch, undefined);
 				expect((yield* Fiber.join(pending)).status).toBe("not_ready");
@@ -68,8 +68,8 @@ it.live(
 			const test = yield* makeHost("rejected");
 			yield* Effect.gen(function* () {
 				const host = yield* WorkbenchGameText;
-				expect((yield* host.configuredRefresh()).status).toBe("completed");
-				const pending = yield* host.configuredRefresh().pipe(Effect.forkChild);
+				expect((yield* host.configuredRefresh({})).status).toBe("completed");
+				const pending = yield* host.configuredRefresh({}).pipe(Effect.forkChild);
 				yield* Deferred.await(test.prepared);
 				yield* Ref.set(test.generation, 1);
 				yield* Deferred.succeed(test.allowPublication, undefined);

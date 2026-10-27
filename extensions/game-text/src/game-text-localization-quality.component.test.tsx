@@ -44,7 +44,7 @@ function client(): GameTextClientApi {
 		search: text.search,
 		searchRows: text.searchRows,
 		focus: text.focus,
-		progress: Stream.make({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
+		progress: Stream.make({ completed: 0, total: 0, phase: "idle" }),
 		locateAsset: () => Effect.die("Not used"),
 		chooseQualityRules: () => reviewed(document),
 		previewQualityRules: reviewed,

@@ -91,17 +91,17 @@ it.live(
 			const test = yield* makeHost("localization");
 			yield* Effect.gen(function* () {
 				const host = yield* WorkbenchGameText;
-				expect((yield* host.configuredRefresh()).status).toBe("completed");
+				expect((yield* host.configuredRefresh({})).status).toBe("completed");
 				expect((yield* host.localizationTarget(test.fixture.target.name)).status).toBe(
 					"ready"
 				);
 				test.armRetirement();
 				test.fixture.setSource("Older");
-				const older = yield* host.configuredRefresh().pipe(Effect.forkChild);
+				const older = yield* host.configuredRefresh({}).pipe(Effect.forkChild);
 				yield* Deferred.await(test.retiring);
 				yield* Ref.set(test.generation, 1);
 				test.fixture.setSource("Newer");
-				expect((yield* host.configuredRefresh()).status).toBe("completed");
+				expect((yield* host.configuredRefresh({})).status).toBe("completed");
 				const current = yield* host.search(request);
 				expect(current).toMatchObject({
 					status: "ready",
@@ -128,7 +128,7 @@ for (const release of [true, false])
 				const test = yield* makeHost("source");
 				yield* Effect.gen(function* () {
 					const host = yield* WorkbenchGameText;
-					expect((yield* host.configuredRefresh()).status).toBe("completed");
+					expect((yield* host.configuredRefresh({})).status).toBe("completed");
 					expect((yield* host.previewQualityRules(STARTER_GAME_TEXT_RULES)).status).toBe(
 						"completed"
 					);
@@ -137,7 +137,7 @@ for (const release of [true, false])
 					// A rescan of changed source carries the rules over and evaluates them on its
 					// new model; an unchanged rescan keeps the published model and its quality.
 					test.fixture.setSource("Changed");
-					const pending = yield* host.configuredRefresh().pipe(Effect.forkChild);
+					const pending = yield* host.configuredRefresh({}).pipe(Effect.forkChild);
 					yield* Deferred.await(test.evaluating);
 					yield* Ref.set(test.generation, 1);
 					if (release) yield* Deferred.succeed(test.allowEvaluation, undefined);
@@ -173,7 +173,7 @@ it.live(
 			const test = yield* makeHost("source-read");
 			yield* Effect.gen(function* () {
 				const host = yield* WorkbenchGameText;
-				expect((yield* host.configuredRefresh()).status).toBe("completed");
+				expect((yield* host.configuredRefresh({})).status).toBe("completed");
 				expect((yield* host.previewQualityRules(STARTER_GAME_TEXT_RULES)).status).toBe(
 					"completed"
 				);

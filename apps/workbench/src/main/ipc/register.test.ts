@@ -1041,7 +1041,7 @@ it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 		const { recorder } = yield* runRegistered((ipc) =>
 			Effect.gen(function* () {
 				yield* ipc.invoke("game-text:configured-scan");
-				yield* ipc.invoke("game-text:configured-refresh", false);
+				yield* ipc.invoke("game-text:configured-refresh", { refresh: false });
 			})
 		);
 		expect(yield* recorder.calls()).toEqual([

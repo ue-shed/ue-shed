@@ -66,7 +66,7 @@ function client(operations: NonNullable<GameTextClientApi["operations"]>): GameT
 		search: text.search,
 		searchRows: text.searchRows,
 		focus: text.focus,
-		progress: Stream.make({ phase: "idle", completed: 0, total: 0, stage: "game_text" }),
+		progress: Stream.make({ phase: "idle", completed: 0, total: 0 }),
 		locateAsset: () => Effect.die("unused"),
 		chooseQualityRules: () => Effect.die("unused"),
 		qualityFocus: () => Effect.die("unused"),

@@ -48,7 +48,6 @@ import type {
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
-import type { TaskProgress } from "@ue-shed/ui/task-progress";
 import { Context, type Effect, Schema, type Stream } from "effect";
 import type {
 	WorkbenchOperationRequest,
@@ -57,7 +56,8 @@ import type {
 	WorkbenchOperationState,
 	WorkbenchOperationProgress,
 	WorkbenchOperationFilesRequest,
-	WorkbenchOperationFilesResult
+	WorkbenchOperationFilesResult,
+	GameTextWorkspaceProgress
 } from "@ue-shed/game-text/schema";
 
 export class GameTextClientError extends Schema.TaggedError<GameTextClientError>()(
@@ -165,7 +165,7 @@ export interface GameTextClientApi {
 		objectPath: string
 	) => Effect.Effect<EditorAssetLocateResult, GameTextClientError>;
 	/** Game Text's progress, then each change to it, pushed by the host. */
-	readonly progress: Stream.Stream<TaskProgress, GameTextClientError>;
+	readonly progress: Stream.Stream<GameTextWorkspaceProgress, GameTextClientError>;
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;

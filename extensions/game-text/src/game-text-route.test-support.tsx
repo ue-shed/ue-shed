@@ -317,7 +317,7 @@ export function makeClient(
 	let quality = textQualityQuery(indexedTestReports(text.corpus).source(rulesDocument));
 	return {
 		loadConfiguredProject: () => Effect.succeed({ status: "completed", summary: text.summary }),
-		progress: Stream.make({ completed: 0, total: 0, phase: "idle", stage: "game_text" }),
+		progress: Stream.make({ completed: 0, total: 0, phase: "idle" }),
 		...cannedSearch(text.answers),
 		focus: cannedFocus(text.focus),
 		locateAsset: (objectPath) =>

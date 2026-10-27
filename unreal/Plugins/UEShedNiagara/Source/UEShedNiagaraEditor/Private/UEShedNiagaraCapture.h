@@ -62,6 +62,8 @@ class FUEShedNiagaraCapture final
 							  const TArray<FUEShedNiagaraPreviewFrame>& Frames,
 							  FString& OutError) const;
 	void FlushPendingWork() const;
+	// Commandlets have no engine loop. Ends one render frame so frame-fenced RHI pools recycle.
+	static void EndCommandletFrame();
 
   private:
 	void SetAbsoluteTime(float AbsoluteTime);

@@ -43,7 +43,11 @@ export {
 	type IndexFailure
 } from "./index-contract.js";
 
-export { GameTextIndexProgress, GameTextIndexProgressReporter } from "./index-progress.js";
+export {
+	GameTextIndexPhase,
+	GameTextIndexProgress,
+	GameTextIndexProgressReporter
+} from "./index-progress.js";
 
 export type { PreparedLocalizationCheck } from "./localization-check-report.js";
 

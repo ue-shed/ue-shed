@@ -195,3 +195,21 @@ export {
 	TextCorpusHeader,
 	type LocalizationLineView
 } from "./index-reads.js";
+
+export { GameTextIndexPhase, GameTextIndexProgress } from "./index-progress.js";
+
+export { GameTextWorkspacePhase, GameTextWorkspaceProgress } from "./workspace-progress.js";
+
+export {
+	GameTextInvestigationExportRequest,
+	GameTextStarterRulesRequest,
+	GameTextWorkspaceContract,
+	type GameTextWorkspaceContractApi,
+	type GameTextWorkspaceContractEntry,
+	type GameTextWorkspaceContractMethod,
+	type GameTextWorkspaceContractMismatch,
+	type GameTextWorkspaceContractName,
+	type GameTextWorkspaceHostOnlyMethod,
+	GameTextWorkspaceNoParams,
+	GameTextWorkspaceRefreshRequest
+} from "./workspace-contract.js";

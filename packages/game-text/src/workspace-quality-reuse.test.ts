@@ -114,7 +114,7 @@ function projectFor(root: string): GameTextWorkspaceProject {
 		current: () => Effect.succeed(ready),
 		refresh: () => Effect.succeed(ready),
 		candidates: () => Effect.succeed({ generation: 3, summary: { projectRoot: root } }),
-		progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "host" })
+		progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle" })
 	};
 }
 
@@ -131,7 +131,7 @@ it.live(
 					project: projectFor(root),
 					files: memoryFiles()
 				});
-				const firstScan = yield* workspace.configuredRefresh(true);
+				const firstScan = yield* workspace.configuredRefresh({});
 				expect(firstScan.status).toBe("completed");
 				expect((yield* workspace.previewQualityRules(STARTER_CHECK_RULES)).status).toBe(
 					"completed"
@@ -153,7 +153,7 @@ it.live(
 				// A target added beside unchanged text: the scan keeps the model, not the listing.
 				fixture.addTarget("Added");
 
-				const secondScan = yield* workspace.configuredRefresh(true);
+				const secondScan = yield* workspace.configuredRefresh({});
 				expect(secondScan.status).toBe("completed");
 				if (firstScan.status === "completed" && secondScan.status === "completed")
 					expect(secondScan.summary).toEqual(firstScan.summary);
@@ -177,7 +177,7 @@ it.live(
 						'msgctxt "UI,K"\nmsgid "Source"\nmsgstr "A changed shipped translation"\n'
 					)
 				);
-				expect((yield* workspace.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
 				expect((yield* workspace.localizationTarget(target)).status).toBe("ready");
 				const third = yield* workspace.localizationQualitySearch({
 					target,
@@ -209,7 +209,7 @@ it.live(
 					files: memoryFiles(),
 					starterRules: STARTER_CHECK_RULES
 				});
-				expect((yield* workspace.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
 				expect((yield* workspace.previewQualityRules(STARTER_CHECK_RULES)).status).toBe(
 					"completed"
 				);
@@ -246,7 +246,9 @@ it.live(
 				expect(counts.localization).toBe(afterFirstQuality.localization);
 				expect(counts.source).toBe(afterFirstQuality.source);
 
-				expect((yield* workspace.createStarterRules(false)).status).toBe("completed");
+				expect((yield* workspace.createStarterRules({ loadExisting: false })).status).toBe(
+					"completed"
+				);
 				expect(counts.source).toBe(afterFirstQuality.source);
 				expect((yield* workspace.reloadQualityRules()).status).toBe("completed");
 				expect(counts.source).toBe(afterFirstQuality.source);

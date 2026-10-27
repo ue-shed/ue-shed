@@ -58,8 +58,15 @@ selected-project state, explicit engine-root policy and progress notification ho
 `LocalizationOperations` service. Unreal remains a separately enabled capability.
 
 The underlying pipeline uses `GameTextIndexProgressReporter` for each operation; `workspace.progress()`
-returns the host/workspace's latest presentation state. Prove scan/search/focus through the adopter's
-real transport, a non-disk rules store, refused/recovery writes and disconnect/rejoin behavior.
+and `progressChanges()` return the workspace's latest `GameTextWorkspaceProgress`: a raw phase code
+with its counts, which the host words with `GAME_TEXT_WORKSPACE_PHASE_LABELS` from `./labels`.
+
+To serve the workspace over a transport (IPC, WebSocket, MCP), build its handlers from
+`GameTextWorkspaceContract` in `./schema`: each method's params and success schemas, and the event
+schema of `progressChanges`. Map each method name to the host's own channel, decode the params,
+call the method with them and encode its result. Host-only methods are not in it; its doc comment
+lists them. Prove scan/search/focus through the adopter's real transport, a non-disk rules store,
+refused/recovery writes and disconnect/rejoin behavior.
 
 ## Required and optional capabilities
 

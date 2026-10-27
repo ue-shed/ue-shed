@@ -118,15 +118,14 @@ it.live(
 				current: () => Effect.succeed(ready),
 				refresh: () => Effect.succeed(ready),
 				candidates: () => Effect.succeed({ generation: 3, summary: { projectRoot: root } }),
-				progress: () =>
-					Effect.succeed({ completed: 0, total: 0, phase: "idle", stage: "host" })
+				progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle" })
 			};
 			yield* Effect.gen(function* () {
 				const workspace = yield* makeGameTextWorkspace({
 					project,
 					files: memoryFiles()
 				});
-				expect((yield* workspace.configuredRefresh()).status).toBe("completed");
+				expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
 				const rules = enabledRuleDocument(effectiveRuleDocument(STARTER_CHECK_RULES)).rules
 					.length;
 				expect(rules).toBeGreaterThan(0);
@@ -141,9 +140,8 @@ it.live(
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: rules,
-					phase: "scanning",
-					stage: "game_text",
-					detail: "Checking source text"
+					phase: "source_quality",
+					findings: 0
 				});
 				yield* Deferred.succeed(hold, undefined);
 				expect((yield* Fiber.join(preview)).status).toBe("completed");
@@ -152,8 +150,7 @@ it.live(
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: 0,
-					phase: "idle",
-					stage: "game_text"
+					phase: "idle"
 				});
 
 				const target = LocalizationTargetName.make("Review");
@@ -168,9 +165,8 @@ it.live(
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: rules,
-					phase: "scanning",
-					stage: "game_text",
-					detail: "Checking localization quality"
+					phase: "localization_quality",
+					findings: 0
 				});
 				yield* Deferred.succeed(hold, undefined);
 				expect((yield* Fiber.join(search)).status).toBe("ready");
@@ -178,8 +174,7 @@ it.live(
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: 0,
-					phase: "idle",
-					stage: "game_text"
+					phase: "idle"
 				});
 
 				// Nor does an interrupted one.
@@ -193,14 +188,13 @@ it.live(
 					})
 					.pipe(Effect.forkChild);
 				yield* Deferred.await(entered);
-				expect((yield* workspace.progress()).phase).toBe("scanning");
+				expect((yield* workspace.progress()).phase).toBe("source_quality");
 				yield* Fiber.interrupt(interrupted);
 				armed = false;
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: 0,
-					phase: "idle",
-					stage: "game_text"
+					phase: "idle"
 				});
 
 				// Overlapping evaluations: the one still running stays shown when the other ends.
@@ -227,23 +221,21 @@ it.live(
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: enabledRuleDocument(effectiveRuleDocument(fewer(3))).rules.length,
-					phase: "scanning",
-					stage: "game_text",
-					detail: "Checking source text"
+					phase: "source_quality",
+					findings: 0
 				});
 				yield* Deferred.succeed(secondHold, undefined);
 				expect((yield* Fiber.join(second)).status).toBe("completed");
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: 0,
-					phase: "idle",
-					stage: "game_text"
+					phase: "idle"
 				});
 
 				// And across models: another target's localization check ends while a source preview
 				// on the project's model still runs.
 				fixture.addTarget("Other");
-				expect((yield* workspace.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
 				const other = LocalizationTargetName.make("Other");
 				expect((yield* workspace.localizationTarget(other)).status).toBe("ready");
 				const previewHold = yield* Deferred.make<void>();
@@ -267,17 +259,15 @@ it.live(
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: enabledRuleDocument(effectiveRuleDocument(fewer(4))).rules.length,
-					phase: "scanning",
-					stage: "game_text",
-					detail: "Checking source text"
+					phase: "source_quality",
+					findings: 0
 				});
 				yield* Deferred.succeed(previewHold, undefined);
 				expect((yield* Fiber.join(previewing)).status).toBe("completed");
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: 0,
-					phase: "idle",
-					stage: "game_text"
+					phase: "idle"
 				});
 
 				// And across a replaced model: an evaluation still running on the model a Scan
@@ -290,21 +280,19 @@ it.live(
 				yield* Deferred.await(entered);
 				armed = false;
 				fixture.setSource("Updated source");
-				expect((yield* workspace.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
 				expect((yield* workspace.previewQualityRules(fewer(6))).status).toBe("completed");
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: 0,
-					phase: "idle",
-					stage: "game_text"
+					phase: "idle"
 				});
 				yield* Deferred.succeed(staleHold, undefined);
 				yield* Fiber.await(stale);
 				expect(yield* workspace.progress()).toEqual({
 					completed: 0,
 					total: 0,
-					phase: "idle",
-					stage: "game_text"
+					phase: "idle"
 				});
 			}).pipe(Effect.provide(layer));
 		}).pipe(Effect.scoped),

@@ -2,6 +2,10 @@
 
 export { textCountLabel, textLocationLabel, textReviewSignalLabel } from "./csv.js";
 
+export { GAME_TEXT_INDEX_PHASE_LABELS } from "./index-progress.js";
+
+export { GAME_TEXT_WORKSPACE_PHASE_LABELS } from "./workspace-progress.js";
+
 export { LOCALIZATION_STATE_LABELS } from "./localization-export.js";
 
 export { TEXT_ASSET_TYPE_LABELS, textAssetTypeLabel } from "./text-asset-type.js";

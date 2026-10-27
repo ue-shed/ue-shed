@@ -56,13 +56,13 @@ pub struct NativeSubjects<'a> {
     place_arena: Option<super::columns::Arena>,
     join_positions: Option<Arc<[u32]>>,
     /// Known String Tables and their entries, by occurrence string ID, built on first use.
-    string_table_entries: Option<
-        Arc<(
-            std::collections::HashSet<u32>,
-            std::collections::HashSet<(u32, u32)>,
-        )>,
-    >,
+    string_table_entries: Option<StringTableEntries>,
 }
+/// Known String Tables, by their object's string ID, and their `(table, entry key)` pairs.
+type StringTableEntries = Arc<(
+    std::collections::HashSet<u32>,
+    std::collections::HashSet<(u32, u32)>,
+)>;
 impl<'a> NativeSubjects<'a> {
     pub fn new(
         query: &'a EngineQuery,
@@ -157,14 +157,7 @@ impl<'a> NativeSubjects<'a> {
         })
     }
     /// Known String Tables (a resolved entry's object) and their `(table, entry key)` pairs.
-    fn string_table_entries(
-        &mut self,
-    ) -> Result<
-        Arc<(
-            std::collections::HashSet<u32>,
-            std::collections::HashSet<(u32, u32)>,
-        )>,
-    > {
+    fn string_table_entries(&mut self) -> Result<StringTableEntries> {
         if let Some(entries) = &self.string_table_entries {
             return Ok(Arc::clone(entries));
         }

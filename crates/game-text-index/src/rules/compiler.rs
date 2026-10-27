@@ -1189,7 +1189,7 @@ mod tests {
         )?;
         let program = compile(std::str::from_utf8(&output.stdout)?)?;
         // Every built-in but segment_separator, which needs a separator.
-        assert_eq!(program.rules.len(), 24);
+        assert_eq!(program.rules.len(), 25);
         assert_eq!(
             program
                 .nodes

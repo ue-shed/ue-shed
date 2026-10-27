@@ -38,7 +38,12 @@ import {
 	sharedIndexDirectory
 } from "./shared-index.js";
 import { GameTextIndexBuilder, type GameTextIndexBuildSessionRequest } from "./index-builder.js";
-import { GameTextIndexProgressReporter } from "./index-progress.js";
+import {
+	type GameTextIndexProgress,
+	GameTextIndexProgressReporter,
+	progressHost,
+	reachesProgressHost
+} from "./index-progress.js";
 import {
 	GameTextIndexError,
 	isGameTextIndexError,
@@ -190,6 +195,22 @@ export interface GameTextTargetIndex {
 export interface GameTextIndexModel extends GameTextIndexRefreshResult {
 	readonly project: GameTextProjectIndex;
 }
+
+/**
+ * The latest event of each quality evaluation running for a progress host, least recent first,
+ * with the reporter it reports through. Every model opened for one host shares it, so an
+ * evaluation that ends leaves the others shown.
+ */
+const runningEvaluations = new WeakMap<
+	(progress: GameTextIndexProgress) => void,
+	Map<
+		symbol,
+		{
+			readonly progress: GameTextIndexProgress;
+			readonly reporter: (progress: GameTextIndexProgress) => void;
+		}
+	>
+>();
 
 /** Models opened by this process, numbering each model's revision. */
 let openedModels = 0;
@@ -894,29 +915,61 @@ export const makeGameTextIndexSteps = (
 					indexedEvidence,
 					query
 				] as const;
+			// The host's running evaluations, on any model opened for it.
+			const host = progressHost(reportProgress);
+			const evaluations = runningEvaluations.get(host) ?? new Map();
+			runningEvaluations.set(host, evaluations);
 			/**
 			 * Evaluates a document's findings with a check's progress, in rules: one event before
 			 * the engine runs, one as each rule finishes, and one after, with the findings of the
-			 * rules `counted` selects.
+			 * rules `counted` selects. Reports through the reporter captured when this target opened,
+			 * so later evaluations still reach the host that opened the index. When it ends, also by
+			 * failing or being interrupted, the host sees another running evaluation's latest event,
+			 * or ready when none runs, as after a scan.
 			 */
 			const evaluateWithProgress = (
 				phase: "localization_quality" | "source_quality",
 				document: RuleDocumentV4,
 				counted: (rule: GameTextContract.RuleMetadata) => boolean
 			) =>
-				Effect.gen(function* () {
-					const reportProgress = yield* GameTextIndexProgressReporter;
-					const rules = enabledRuleDocument(document).rules.length;
-					reportProgress({ phase, completed: 0, total: rules, findings: 0 });
-					const evaluation = yield* query.findingsEvaluate(document, (progress) => {
-						if (progress.unit === "rules" && progress.completed > 0)
-							reportProgress({ phase, completed: progress.completed, total: rules });
-					});
-					let findings = 0;
-					for (const { rule, count } of evaluation.counts)
-						if (counted(evaluation.rules[rule]!)) findings += count;
-					reportProgress({ phase, completed: rules, total: rules, findings });
-					return evaluation;
+				Effect.suspend(() => {
+					const evaluation = Symbol(phase);
+					const report = (progress: GameTextIndexProgress) => {
+						evaluations.delete(evaluation);
+						evaluations.set(evaluation, { progress, reporter: reportProgress });
+						reportProgress(progress);
+					};
+					return Effect.gen(function* () {
+						const rules = enabledRuleDocument(document).rules.length;
+						report({ phase, completed: 0, total: rules, findings: 0 });
+						const evaluated = yield* query.findingsEvaluate(document, (progress) => {
+							if (progress.unit === "rules" && progress.completed > 0)
+								report({ phase, completed: progress.completed, total: rules });
+						});
+						let findings = 0;
+						for (const { rule, count } of evaluated.counts)
+							if (counted(evaluated.rules[rule]!)) findings += count;
+						report({ phase, completed: rules, total: rules, findings });
+						return evaluated;
+					}).pipe(
+						Effect.ensuring(
+							Effect.sync(() => {
+								evaluations.delete(evaluation);
+								// A replaced model's evaluation no longer reaches the host, so it is
+								// never shown again; its own end could not clear it.
+								const running = [...evaluations.values()].filter(({ reporter }) =>
+									reachesProgressHost(reporter)
+								);
+								reportProgress(
+									running.at(-1)?.progress ?? {
+										phase: "ready",
+										completed: 0,
+										total: 0
+									}
+								);
+							})
+						)
+					);
 				});
 			return {
 				...result,

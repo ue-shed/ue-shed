@@ -309,6 +309,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			// acquires the same immutable worker. It is unavailable through `selected` meanwhile.
 			if (!preservePrepared) yield* refreshIndex.release();
 		});
+		/**
+		 * Forgets the discovered targets, so the next listing reads the project's targets again. A
+		 * scan that keeps its model calls it: the selection and its quality stay, but targets may
+		 * have been added or removed.
+		 */
+		const rediscover = Effect.fn("GameText.workspace.localization.rediscover")(function* () {
+			yield* Ref.update(version, (value) => value + 1);
+			yield* Ref.set(discovery, undefined);
+		});
 		const targets = Effect.fn("GameText.workspace.localization.targets")(function* () {
 			const revision = yield* currentRevision();
 			const root = yield* currentRoot();
@@ -1123,6 +1132,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					)
 				),
 			reset,
+			rediscover,
 			targets,
 			select,
 			search,

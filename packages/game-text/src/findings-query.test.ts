@@ -40,9 +40,12 @@ const expectRuleProgress = (
 	rules: number,
 	findings: number
 ) => {
-	expect(events[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
-	expect(events.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
-	const between = events.slice(1, -1);
+	// The evaluation ends ready, so the host stops showing it as running.
+	expect(events.at(-1)).toEqual({ phase: "ready", completed: 0, total: 0 });
+	const quality = events.slice(0, -1);
+	expect(quality[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
+	expect(quality.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
+	const between = quality.slice(1, -1);
 	for (const [index, event] of between.entries()) {
 		expect(event).toEqual({ phase, completed: event.completed, total: rules });
 		expect(event.completed).toBeGreaterThan(
@@ -716,7 +719,14 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, entries));
 		fixture.update(entries.map(({ key, source }, index) => occurrence(key, source, index * 4)));
 		yield* Effect.gen(function* () {
-			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
+			// Quality progress goes to the reporter provided when the index opened.
+			let last: GameTextIndexProgress | undefined;
+			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request).pipe(
+				Effect.provideService(GameTextIndexProgressReporter, (step) => {
+					// The last quality event; the evaluation then ends ready.
+					if (step.phase === "localization_quality") last = step;
+				})
+			);
 			const join = yield* result.localizationJoin;
 			expect(join.lines[0]!.id).not.toBe(join.lines[1]!.id);
 			expect(join.lines[0]!.id.localeCompare(join.lines[1]!.id)).toBe(0);
@@ -758,12 +768,7 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 			yield* expectSameQuality(result, [{}, { review }]);
 			// Lines whose IDs compare equal are each checked once; progress counts what the
 			// checks found, before the review hides any.
-			let last: GameTextIndexProgress | undefined;
-			yield* result
-				.localizationQuality(STARTER_CHECK_RULES, { review })
-				.pipe(
-					Effect.provideService(GameTextIndexProgressReporter, (step) => (last = step))
-				);
+			yield* result.localizationQuality(STARTER_CHECK_RULES, { review });
 			const rules = enabledRuleDocument(effectiveRuleDocument(STARTER_CHECK_RULES)).rules
 				.length;
 			expect(last).toEqual({
@@ -787,7 +792,15 @@ it.live("queried quality over more lines than a page equals the in-memory checks
 			many.slice(0, 590).map(({ key, source }, index) => occurrence(key, source, index))
 		);
 		yield* Effect.gen(function* () {
-			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
+			// Quality progress goes to the reporter provided when the index opened.
+			const progress: GameTextIndexProgress[] = [];
+			const result = yield* (yield* GameTextIndexRefresh)
+				.refresh(fixture.request)
+				.pipe(
+					Effect.provideService(GameTextIndexProgressReporter, (step) =>
+						progress.push(step)
+					)
+				);
 			const join = yield* result.localizationJoin;
 			expect(join.lines.length).toBeGreaterThan(512);
 			const legacy = localizationQualityWorkspace(
@@ -811,14 +824,8 @@ it.live("queried quality over more lines than a page equals the in-memory checks
 				);
 			}
 			// Progress in rules: before the engine runs, as it runs each rule, and after.
-			const progress: GameTextIndexProgress[] = [];
-			const reported = yield* result
-				.localizationQuality(STARTER_CHECK_RULES)
-				.pipe(
-					Effect.provideService(GameTextIndexProgressReporter, (step) =>
-						progress.push(step)
-					)
-				);
+			progress.length = 0;
+			const reported = yield* result.localizationQuality(STARTER_CHECK_RULES);
 			const request = { target: join.target, filter: "all" as const };
 			const exported = yield* reported.workspace.export(request);
 			expectRuleProgress(

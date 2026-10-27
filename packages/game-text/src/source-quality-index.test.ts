@@ -21,9 +21,12 @@ const expectRuleProgress = (
 	rules: number,
 	findings: number
 ) => {
-	expect(events[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
-	expect(events.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
-	const between = events.slice(1, -1);
+	// The evaluation ends ready, so the host stops showing it as running.
+	expect(events.at(-1)).toEqual({ phase: "ready", completed: 0, total: 0 });
+	const quality = events.slice(0, -1);
+	expect(quality[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
+	expect(quality.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
+	const between = quality.slice(1, -1);
 	for (const [index, event] of between.entries()) {
 		expect(event).toEqual({ phase, completed: event.completed, total: rules });
 		expect(event.completed).toBeGreaterThan(
@@ -387,14 +390,16 @@ it.live(
 			// Over two pages of units; every unit reports under the `everything` document.
 			fixture.update(occurrences(700));
 			yield* Effect.gen(function* () {
-				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-				yield* expectSameSourceQuality(result, documents.everything);
+				// Quality progress goes to the reporter provided when the index opened.
 				const calls: GameTextIndexProgress[] = [];
-				const indexed = yield* result.sourceQuality(documents.everything).pipe(
+				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request).pipe(
 					Effect.provideService(GameTextIndexProgressReporter, (progress) => {
 						calls.push(progress);
 					})
 				);
+				yield* expectSameSourceQuality(result, documents.everything);
+				calls.length = 0;
+				const indexed = yield* result.sourceQuality(documents.everything);
 				const phase = "source_quality";
 				expectRuleProgress(
 					calls,
@@ -403,18 +408,13 @@ it.live(
 					indexed.summary().findingCount
 				);
 				// No rule reads nothing: progress still starts and ends.
-				const empty: GameTextIndexProgress[] = [];
-				yield* result
-					.sourceQuality(documents.none)
-					.pipe(
-						Effect.provideService(GameTextIndexProgressReporter, (progress) =>
-							empty.push(progress)
-						)
-					);
+				calls.length = 0;
+				yield* result.sourceQuality(documents.none);
 				const none = enabledRuleDocument(effectiveRuleDocument(documents.none)).rules
 					.length;
-				expect(empty[0]).toEqual({ phase, completed: 0, total: none, findings: 0 });
-				expect(empty.at(-1)).toEqual({ phase, completed: none, total: none, findings: 0 });
+				expect(calls[0]).toEqual({ phase, completed: 0, total: none, findings: 0 });
+				expect(calls.at(-2)).toEqual({ phase, completed: none, total: none, findings: 0 });
+				expect(calls.at(-1)).toEqual({ phase: "ready", completed: 0, total: 0 });
 			}).pipe(Effect.provide(fixture.layer()));
 		}).pipe(Effect.scoped),
 	120_000

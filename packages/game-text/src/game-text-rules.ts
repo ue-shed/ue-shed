@@ -211,6 +211,11 @@ export const GameTextRuleDocument = Schema.Struct({
 });
 export type GameTextRuleDocument = typeof GameTextRuleDocument.Type;
 
+/** A decoded document's canonical JSON: equal documents encode alike, whatever object held them. */
+export function canonicalGameTextRuleDocumentJson(document: GameTextRuleDocument): string {
+	return JSON.stringify(Schema.encodeSync(GameTextRuleDocument)(document));
+}
+
 const isBuiltInCheck = Schema.is(BuiltInCheckId);
 /** Whether an entry names a built-in check rather than defining a project rule. */
 export function isBuiltInCheckEntry(entry: GameTextRuleEntry): entry is BuiltInCheckEntry {

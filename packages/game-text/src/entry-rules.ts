@@ -17,6 +17,7 @@ export {
 	GameTextRuleDocument,
 	GameTextRuleDocumentError,
 	BuiltInCheckEntry,
+	canonicalGameTextRuleDocumentJson,
 	GameTextRuleEntry,
 	decodeGameTextRuleDocument,
 	isBuiltInCheckEntry,

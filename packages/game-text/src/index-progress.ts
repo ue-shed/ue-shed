@@ -48,3 +48,35 @@ export const GameTextIndexProgressReporter = Context.Reference<
 >("@ue-shed/game-text/GameTextIndexProgressReporter", {
 	defaultValue: () => () => {}
 });
+
+type ProgressReporter = (progress: GameTextIndexProgress) => void;
+const forwardedTo = new WeakMap<
+	ProgressReporter,
+	{ readonly host: ProgressReporter; readonly live: () => boolean }
+>();
+/**
+ * Records that `reporter` forwards its events to `host` while `live` holds, so both reach one
+ * host and a reporter that stopped forwarding can be told apart.
+ */
+export const forwardsProgressTo = (
+	reporter: ProgressReporter,
+	host: ProgressReporter,
+	live: () => boolean = () => true
+) => {
+	forwardedTo.set(reporter, { host, live });
+	return reporter;
+};
+/** The reporter that receives a reporter's events at the end of its forwarding: its host. */
+export const progressHost = (reporter: ProgressReporter) => {
+	let host = reporter;
+	for (let next = forwardedTo.get(host); next; next = forwardedTo.get(host)) host = next.host;
+	return host;
+};
+/** Whether a reporter's events still reach its host: every forwarding step is live. */
+export const reachesProgressHost = (reporter: ProgressReporter) => {
+	for (let next = forwardedTo.get(reporter); next; next = forwardedTo.get(reporter)) {
+		if (!next.live()) return false;
+		reporter = next.host;
+	}
+	return true;
+};

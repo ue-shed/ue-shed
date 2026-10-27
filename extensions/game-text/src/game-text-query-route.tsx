@@ -315,6 +315,12 @@ export function GameTextRoute(props: {
 		);
 	});
 	const progressTotal = () => (!loading() && localization.ready() ? 0 : progress().total);
+	const progressStep = () => {
+		const { step, steps } = progress();
+		return (loading() || !localization.ready()) && step !== undefined && steps !== undefined
+			? { step, steps }
+			: undefined;
+	};
 	const operations = createGameTextOperations({
 		client: props.client,
 		target: localization.target,
@@ -1299,6 +1305,13 @@ export function GameTextRoute(props: {
 											: "Opening saved text index"
 										: "Preparing translations and results"}
 								</span>
+								<Show when={progressStep()}>
+									{(current) => (
+										<>
+											{" · "}Step {current().step} of {current().steps}
+										</>
+									)}
+								</Show>
 								{" · "}
 								{progressLabel()}
 								<Show when={progressTotal() > 0}>

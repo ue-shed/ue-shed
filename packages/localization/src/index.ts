@@ -150,6 +150,7 @@ export {
 export { defaultLocalizationAuditLimits, type LocalizationAuditLimits } from "./operation-io.js";
 export {
 	applyLocalizationChangeSet,
+	type ApplyLocalizationChangeSetOptions,
 	ApplyLocalizationChangeSetRequest,
 	LocalizationChangeSetReceipt
 } from "./change-set-apply.js";

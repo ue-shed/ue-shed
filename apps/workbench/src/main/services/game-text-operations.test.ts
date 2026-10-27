@@ -128,6 +128,7 @@ function environment(
 		});
 		const gameText = makeWorkbenchGameTextTestLayer({
 			configuredScan: () => Effect.die("unused"),
+			operationStateTarget: () => Effect.succeed(options.noTargets ? undefined : target),
 			operationTarget: () => Effect.succeed(options.noTargets ? undefined : target),
 			operationBusyReason: () =>
 				Ref.get(busy).pipe(

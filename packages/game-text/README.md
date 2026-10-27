@@ -677,11 +677,9 @@ empty terms and non-positive budgets fail with typed recovery guidance. See
 [the example](fixtures/quality-rules.localization.json) for an authored file; its limits and terms are
 examples, not built-ins.
 
-A host can change a project's rules without editing its file. `applyRuleOverlay(document, overlay)`
-takes a `GameTextRuleOverlay`: `patches` to rules the file lists (`enabled`, `severity`, `scope`, and
-`params` merged into a check's parameters or a project rule's fields, never its `id`, `kind` or the
-settings above; later patches to the same rule win), and `roles` and `rules` it adds under new IDs. Anything else, or a patched file that no longer validates, is
-`invalid_overlay`. The scans read the patched file as they read a project's.
+A host's policy is the rules file it writes as a starter (`GameTextWorkspaceHost.starterRules`);
+what runs is only what the project's file lists, so every host and `ue-shed loc check` report the
+same findings for a project.
 
 `localizationProgressReport(corpus, joined, evidence, baseline?)` is pure and browser-safe. It
 reports every primary state's line/source-word counts, independent `notSynced` counts including

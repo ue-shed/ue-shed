@@ -35,10 +35,12 @@ pnpm corpus:fuzz --scratch E:/Scratch/GameTextFuzz --seed 73131 --lines 10000
 ```
 
 Without a corpus folder or `UE_SHED_GAME_TEXT_CORPUS`, the comparison and the integration test
-skip and print how to generate one. CI runs only the tests that need no Unreal:
+skip and print how to generate one. CI runs only the tests that need no Unreal; the plan's tests
+read the built `@ue-shed/game-text-corpus`:
 
 ```sh
-node --test scripts/game-text-corpus.test.ts scripts/game-text-corpus-plan.test.ts scripts/game-text-corpus-ownership.test.ts scripts/game-text-corpus-scratch.test.ts
+node --test scripts/game-text-corpus.test.ts scripts/game-text-corpus-ownership.test.ts scripts/game-text-corpus-scratch.test.ts
+node scripts/test.ts scripts/game-text-corpus-plan.test.ts scripts/game-text-corpus-fixes.test.ts
 ```
 
 | Option          | Default                                  | Meaning                                                    |
@@ -88,11 +90,13 @@ Set `RAYON_NUM_THREADS` and `CARGO_BUILD_JOBS` to cap native scans.
     The commandlet makes no choices of its own. It derives editor GUIDs from the seed only so that
     graphs, nodes and pins serialize the same way every run.
 
-3. **The comparison.** [`compare-game-text-corpus.ts`](../../scripts/compare-game-text-corpus.ts)
-   scans the corpus through UE Shed's public APIs and compares every line in every culture with
-   its answer. The comparison covers the line's identity, state, facts, unknown reasons,
-   problems, signals and findings, with each finding's evidence. Anything missing, extra or
-   different fails, unless it is a known defect.
+3. **The comparison.** `compareGameTextCorpus` in
+   [`@ue-shed/game-text-corpus`](../../packages/game-text-corpus/README.md) scans the corpus
+   through UE Shed's public APIs and compares every line in every culture with its answer. The
+   comparison covers the line's identity, state, facts, unknown reasons, problems, signals and
+   findings, with each finding's evidence. Anything missing, extra or different fails, unless it
+   is a known defect. [`compare-game-text-corpus.ts`](../../scripts/compare-game-text-corpus.ts)
+   runs it under the Unreal lock with the in-repo reader.
 
 New expectations set `findingFixes: true` and compare each finding's optional `fix`, with the
 exact proposed-change shape: target, culture, namespace, key, source, previous translation and
@@ -169,7 +173,7 @@ UE Shed doesn't expose compiled values or how far a stage lags yet. The answers 
 ## Known defects
 
 Where today's engine is wrong, the answer stays right and
-[`game-text-corpus-defects.ts`](../../scripts/game-text-corpus-defects.ts) records today's output
+[`defects.ts`](../../packages/game-text-corpus/src/defects.ts) records today's output
 beside it, with the reason. The comparison passes only while today's output matches the recorded
 defect exactly. When a fix lands, the entry fails as stale and must be deleted. The comparison
 prints the number of recorded disagreements by defect.

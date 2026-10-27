@@ -7,7 +7,11 @@ import { Effect, Layer, Result } from "effect";
 import { afterEach, expect } from "vitest";
 import { applyLocalizationChangeSet } from "./change-set-apply.js";
 import { reviewLocalizationChangeSet } from "./change-set-review.js";
-import { LocalizationChange, LocalizationChangeSet } from "./change-sets.js";
+import {
+	LocalizationChange,
+	LocalizationChangeSet,
+	LocalizationChangeSetError
+} from "./change-sets.js";
 import {
 	LocalizationFileAccess,
 	LocalizationFileAccessLive,
@@ -100,6 +104,41 @@ it.effect("writes a current change into the culture's PO file and nothing else",
 		// Unreal's files are untouched: the edit waits in the PO until the next sync.
 		expect(yield* Effect.promise(() => hash(join(root, deArchive)))).toBe(archiveBefore);
 	}).pipe(Effect.provide(layer))
+);
+
+it.effect(
+	"prepares the batch it writes before the first write, and writes nothing on refusal",
+	() =>
+		Effect.gen(function* () {
+			const root = yield* Effect.promise(project);
+			const before = yield* Effect.promise(() => hash(join(root, dePO)));
+			const prepared: (readonly string[])[] = [];
+			const refusal = new LocalizationChangeSetError({
+				code: "unwritable_change",
+				message: "Checked out elsewhere.",
+				recovery: "Ask them.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
+			const refused = yield* applyLocalizationChangeSet(
+				{ projectRoot: root, changeSet: changeSet(named) },
+				{
+					prepareWrites: (paths) => {
+						prepared.push(paths);
+						return Effect.fail(refusal);
+					}
+				}
+			).pipe(Effect.flip);
+			expect(refused).toBe(refusal);
+			expect(prepared).toEqual([[dePO]]);
+			expect(yield* Effect.promise(() => hash(join(root, dePO)))).toBe(before);
+			const receipt = yield* applyLocalizationChangeSet(
+				{ projectRoot: root, changeSet: changeSet(named) },
+				{ prepareWrites: (paths) => Effect.sync(() => void prepared.push(paths)) }
+			);
+			expect(receipt.status).toBe("written");
+			expect(prepared).toEqual([[dePO], [dePO]]);
+		}).pipe(Effect.provide(layer))
 );
 
 it.effect("rejects the whole set when any change is stale, unless asked to skip it", () =>

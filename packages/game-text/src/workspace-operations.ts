@@ -31,6 +31,7 @@ export interface GameTextOperationsHost {
 	/** The workspace the steps refresh and that admits one scan or step at a time. */
 	readonly workspace: Pick<
 		GameTextWorkspaceApi,
+		| "operationStateTarget"
 		| "operationTarget"
 		| "operationBusyReason"
 		| "beginOperation"
@@ -44,6 +45,8 @@ export interface GameTextOperationsHost {
 	readonly engineRoot: () => string | undefined;
 	/** Pushes step progress to whoever shows it; a failure is ignored. */
 	readonly notifyProgress: (progress: GameTextOperationProgress) => Effect.Effect<void, unknown>;
+	/** The application recoveries tell the person to start or restart. Defaults to "the host". */
+	readonly appName?: string;
 }
 
 /** Plans, runs and cancels Unreal localization steps for the selected project. */
@@ -93,12 +96,12 @@ const failureMessages = {
 	config_changed: "The target's configuration changed after the file list was prepared.",
 	target_not_found: "The selected localization target was not found."
 } satisfies Record<LocalizationOperationError["code"], string>;
-function failure(error: LocalizationOperationError): GameTextOperationFailure {
+function failure(error: LocalizationOperationError, appName: string): GameTextOperationFailure {
 	const recovery =
 		error.code === "engine_not_found" || error.code === "engine_ambiguous"
-			? "Install the engine associated with this project, or set UE_SHED_UNREAL_ENGINE_ROOT before starting the host."
+			? `Install the engine associated with this project, or set UE_SHED_UNREAL_ENGINE_ROOT before starting ${appName}.`
 			: error.code === "termination_failed"
-				? "Stop the remaining Unreal process and restart the host before retrying. Check the project files first."
+				? `Stop the remaining Unreal process and restart ${appName} before retrying. Check the project files first.`
 				: error.recovery;
 	return {
 		status: "failed",
@@ -158,6 +161,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 	const runner = yield* LocalizationOperations;
 	const gameText = host.workspace;
 	const project = host.project;
+	const appName = host.appName ?? "the host";
 	const scope = yield* Effect.scope;
 	const confirmation = yield* Ref.make<RetainedPlan | undefined>(undefined);
 	const receipt = yield* Ref.make<RetainedReceipt | undefined>(undefined);
@@ -210,7 +214,8 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 	const state = Effect.fn("GameText.workspace.operations.operations.state")(function* (
 		target: LocalizationTargetName
 	): Effect.fn.Return<GameTextOperationState> {
-		const selected = yield* gameText.operationTarget(target);
+		// A poll reads the published scan only, so it answers while a scan holds the index.
+		const selected = yield* gameText.operationStateTarget(target);
 		const current = yield* project.current();
 		const pending = yield* Ref.get(progress);
 		const last = yield* Ref.get(lastResult);
@@ -288,7 +293,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 						if (!(yield* authorized(saved))) return stale();
 						yield* Ref.set(confirmation, saved);
 						return { status: "ready" as const, plan: view };
-					}).pipe(Effect.catch((error) => Effect.succeed(failure(error))))
+					}).pipe(Effect.catch((error) => Effect.succeed(failure(error, appName))))
 				).pipe(Effect.ensuring(gameText.endOperation()));
 			})
 		);
@@ -391,7 +396,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 						changedFileCount: result.changes.length
 					});
 					return completed;
-				}).pipe(Effect.catch((error) => Effect.succeed(failure(error))));
+				}).pipe(Effect.catch((error) => Effect.succeed(failure(error, appName))));
 				const complete = execute.pipe(
 					Effect.onExit((exit) =>
 						Effect.gen(function* () {
@@ -407,7 +412,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 							const result: GameTextOperationResult = Exit.isSuccess(exit)
 								? exit.value
 								: terminationError
-									? failure(terminationError)
+									? failure(terminationError, appName)
 									: Exit.hasInterrupts(exit)
 										? { status: "cancelled" }
 										: failed(

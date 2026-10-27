@@ -19,9 +19,8 @@
   review are recorded. Phase 3 is complete (#169); its measurements and the owner's review are
   recorded. Phase 4 is complete (#170); its measurements and the owner's review are recorded.
   Phase 4.5 (the cold scan) is complete (#171); its measurements and the owner's review are
-  recorded. Phase 5 (incremental findings, #172) is implemented and measured; the owner's
-  review is pending. A rescan after one edit is 30% faster; a full evaluation costs 4–6% more
-  for the state it keeps, recorded against the STOP conditions.
+  recorded. Phase 5 (incremental findings, #172) is complete; its measurements and the owner's
+  review are recorded. Phase 6 (Electroswag) is in progress.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -536,7 +535,21 @@ from [the attribution](../docs/engineering/game-text-scan-attribution.md).
 
 Package deltas re-evaluate only affected rows and groups. The fuzzer covers scan, change and rescan.
 
+The specification is [Game Text rule engine, Phase 5](../docs/engineering/game-text-rule-engine-phase-5.md).
+
+- A rescan after one package edit: 35.34 → 24.68 s on the 1× project (−30%); its findings
+  evaluation 30.68 → 20.27 s.
+- Cold build unchanged: 46.59 → 46.61 s on 1×, 51.47 → 52.04 s on the released project.
+- A full evaluation costs 1.0–1.7 s more (4–6%) for the group state the next incremental
+  evaluation reads: 26.66 → 27.69 s on 1×, 31.29 → 33.02 s on the released project.
+- **Owner review, 2026-10-26:** accepted for Phase 5, including the full evaluation's cost.
+
+The [measurement record](../docs/engineering/game-text-engine-measurements.md#phase-5-results)
+has every table.
+
 ### Phase 6: Electroswag
+
+The specification is [Game Text rule engine, Phase 6](../docs/engineering/game-text-rule-engine-phase-6.md).
 
 - Electroswag deletes its fork and its vendored oracle.
 - Rules come from the file plus the host overlay.

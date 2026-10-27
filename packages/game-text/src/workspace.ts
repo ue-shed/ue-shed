@@ -149,6 +149,13 @@ type ProjectCandidates = {
  * result value; none fails. Hosts register these as their own commands or IPC handlers.
  */
 export interface GameTextWorkspaceApi {
+	/**
+	 * The target as the published scan lists it, for state polls: it never prepares, borrows or
+	 * discovers, so it answers while a scan holds the index.
+	 */
+	readonly operationStateTarget: (
+		name: LocalizationJoin["target"]
+	) => Effect.Effect<LocalizationTarget | undefined>;
 	/** Main-only admission and refresh methods. These are never registered as IPC handlers. */
 	readonly operationTarget: (
 		name: LocalizationJoin["target"]
@@ -235,6 +242,18 @@ export interface GameTextWorkspaceApi {
 		request: TextQualitySearchRequest
 	) => Effect.Effect<TextQualitySearchResult>;
 }
+
+/** A scan's phases in the order they start, after the host's project scan (step 1). */
+const scanSteps: readonly GameTextIndexProgress["phase"][] = [
+	"localization",
+	"localization_publish",
+	"inventory",
+	"packages",
+	"package_text",
+	"package_publish",
+	"joining",
+	"opening"
+];
 
 function unavailableProject(message: string, recovery: string): TextCorpusRunResult {
 	return {
@@ -363,42 +382,46 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const qualityRulePath = yield* Ref.make<
 		{ readonly path: string; readonly projectRoot: string } | undefined
 	>(undefined);
-	const progress = Effect.fn("GameText.workspace.progress")(function* () {
-		const projectProgress = yield* project.progress();
-		if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
-			return projectProgress;
-		}
-		const current = indexProgress;
-		if (current && current.phase !== "ready" && current.phase !== "failed") {
-			const labels = {
-				inventory: "Reading project asset inventory",
-				localization: "Reading localization files",
-				localization_publish: "Saving localization text",
-				packages: "Checking saved packages for text",
-				package_text: "Preparing package text",
-				package_publish: "Saving package text",
-				joining: "Joining source text and translations",
-				opening: "Opening text index",
-				corpus: "Reading saved packages",
-				localization_quality: "Checking localization quality",
-				source_quality: "Checking source text"
-			};
+	const progress = Effect.fn("GameText.workspace.progress")(
+		function* (): Effect.fn.Return<GameTextWorkspaceProgress> {
+			const projectProgress = yield* project.progress();
+			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
+				return { ...projectProgress, step: 1, steps: scanSteps.length + 1 };
+			}
+			const current = indexProgress;
+			if (current && current.phase !== "ready" && current.phase !== "failed") {
+				const labels = {
+					inventory: "Reading project asset inventory",
+					localization: "Reading localization files",
+					localization_publish: "Saving localization text",
+					packages: "Checking saved packages for text",
+					package_text: "Preparing package text",
+					package_publish: "Saving package text",
+					joining: "Joining source text and translations",
+					opening: "Opening text index",
+					corpus: "Reading saved packages",
+					localization_quality: "Checking localization quality",
+					source_quality: "Checking source text"
+				};
+				const step = scanSteps.indexOf(current.phase);
+				return {
+					completed: current.completed,
+					total: current.total,
+					phase: "scanning" as const,
+					stage: "game_text" as const,
+					detail: labels[current.phase],
+					...(step >= 0 ? { step: step + 2, steps: scanSteps.length + 1 } : undefined)
+				};
+			}
+			const active = yield* Ref.get(activity);
 			return {
-				completed: current.completed,
-				total: current.total,
-				phase: "scanning" as const,
+				completed: 0,
+				phase: active.scans ? ("scanning" as const) : ("idle" as const),
 				stage: "game_text" as const,
-				detail: labels[current.phase]
+				total: 0
 			};
 		}
-		const active = yield* Ref.get(activity);
-		return {
-			completed: 0,
-			phase: active.scans ? ("scanning" as const) : ("idle" as const),
-			stage: "game_text" as const,
-			total: 0
-		};
-	});
+	);
 	const scanCorpus = (projectRoot: string) =>
 		refreshIndex.refresh({ projectRoot }).pipe(
 			Effect.flatMap((result) => result.corpus),
@@ -458,7 +481,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		currentIndex,
 		{
 			author: host.changeAuthor ?? "game-text",
-			localizationFiles: host.localizationFiles ?? LocalizationFileAccessLive
+			localizationFiles: host.localizationFiles ?? LocalizationFileAccessLive,
+			...(host.prepareWrites ? { prepareWrites: host.prepareWrites } : undefined)
 		}
 	).pipe(Effect.provideService(GameTextIndexProgressReporter, reportProgress));
 	// The host has no selection event port. Retire on the next workspace call that observes a switch.
@@ -970,7 +994,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		const path = resolve(root, rulesRelativePath);
 		if (!loadExisting) {
 			const bytes = new TextEncoder().encode(
-				`${JSON.stringify(STARTER_GAME_TEXT_RULES, null, "\t")}\n`
+				`${JSON.stringify(host.starterRules ?? STARTER_GAME_TEXT_RULES, null, "\t")}\n`
 			);
 			const created = yield* files
 				.writeFile(path, bytes, { maxBytes: 1_048_576, exclusive: true })
@@ -1519,6 +1543,18 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const sharedScan = yield* sharedScans<Effect.Success<ReturnType<typeof fullScan>>>();
 
 	return {
+		operationStateTarget: (name) =>
+			Effect.gen(function* () {
+				const current = yield* project.current();
+				const owner = yield* Ref.get(modelSelection);
+				if (
+					current.status !== "ready" ||
+					current.project.projectRoot !== owner?.projectRoot ||
+					(current.project.generation ?? 0) !== owner.generation
+				)
+					return undefined;
+				return yield* localization.operationStateTarget(name, owner.indexed.revision);
+			}),
 		operationTarget: scoped((name) =>
 			consistentIndex().pipe(
 				Effect.flatMap((index) =>
@@ -1597,7 +1633,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 								left.stage === right.stage &&
 								left.completed === right.completed &&
 								left.total === right.total &&
-								left.detail === right.detail
+								left.detail === right.detail &&
+								left.step === right.step
 						)
 					);
 				})

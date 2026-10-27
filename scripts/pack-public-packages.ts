@@ -49,6 +49,7 @@ interface RunOptions {
 
 export const WASM_PACKAGE_NAME = "@ue-shed/uasset-inspection-wasm";
 export const GAME_TEXT_PACKAGE_NAME = "@ue-shed/game-text";
+export const GAME_TEXT_CORPUS_PACKAGE_NAME = "@ue-shed/game-text-corpus";
 export const MAP_HISTORY_PACKAGE_NAME = "@ue-shed/map-history";
 export const ENGINE_PACKAGE_NAME = "@ue-shed/engine";
 export const ENGINE_WINDOWS_PACKAGE_NAME = "@ue-shed/engine-win32-x64";
@@ -82,6 +83,7 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: MAP_HISTORY_PACKAGE_NAME, directory: "packages/map-history" },
 	{ name: "@ue-shed/uasset", directory: "packages/uasset" },
 	{ name: GAME_TEXT_PACKAGE_NAME, directory: "packages/game-text" },
+	{ name: GAME_TEXT_CORPUS_PACKAGE_NAME, directory: "packages/game-text-corpus" },
 	{ name: CONFIG_EXPLORER_PACKAGE_NAME, directory: "packages/config-explorer" },
 	{ name: LOCALIZATION_PACKAGE_NAME, directory: "packages/localization" },
 	{ name: PROJECT_CUSTODIAN_PACKAGE_NAME, directory: "packages/project-custodian" },
@@ -492,6 +494,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	const launcher = byName.get("@ue-shed/uasset");
 	const platform = byName.get("@ue-shed/uasset-win32-x64");
 	const gameText = byName.get(GAME_TEXT_PACKAGE_NAME);
+	const gameTextCorpus = byName.get(GAME_TEXT_CORPUS_PACKAGE_NAME);
 	const mapHistory = byName.get(MAP_HISTORY_PACKAGE_NAME);
 	const configExplorer = byName.get(CONFIG_EXPLORER_PACKAGE_NAME);
 	const localization = byName.get(LOCALIZATION_PACKAGE_NAME);
@@ -542,6 +545,11 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	requireExactInternalDependency(gameText, "@ue-shed/unreal-assets", byName, failures);
 	requireExactInternalDependency(gameText, LOCALIZATION_PACKAGE_NAME, byName, failures);
 	requirePeerDependency(gameText, "effect", effectPeerRange, failures);
+	requireExactInternalDependency(gameTextCorpus, GAME_TEXT_PACKAGE_NAME, byName, failures);
+	requireExactInternalDependency(gameTextCorpus, LOCALIZATION_PACKAGE_NAME, byName, failures);
+	requireExactInternalDependency(gameTextCorpus, "@ue-shed/unreal-assets", byName, failures);
+	requireExactInternalDependency(gameTextCorpus, "@ue-shed/protocol", byName, failures);
+	requirePeerDependency(gameTextCorpus, "effect", effectPeerRange, failures);
 	requireExactInternalDependency(mapHistory, "@ue-shed/protocol", byName, failures);
 	requireExactInternalDependency(mapHistory, "@ue-shed/unreal-assets", byName, failures);
 	requirePeerDependency(mapHistory, "effect", effectPeerRange, failures);

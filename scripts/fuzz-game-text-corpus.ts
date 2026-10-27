@@ -7,10 +7,15 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { Effect } from "effect";
 import { installedEngineRoots, queryWindowsRegistry } from "../packages/engine/dist/index.js";
+import {
+	corpusPlanName,
+	decodeCorpusPlan,
+	diffCorpus,
+	findingCounts,
+	gameTextCorpusIndexLayer
+} from "../packages/game-text-corpus/dist/index.js";
 import { compareGameTextCorpus } from "./compare-game-text-corpus.ts";
-import { decodeCorpusPlan } from "./game-text-corpus-plan.ts";
-import { corpusPlanName } from "./game-text-corpus-contract.ts";
-import { diffCorpus, findingCounts } from "./game-text-corpus-contract.ts";
+import { ensureUassetExecutable } from "./native-tools.ts";
 import { unrealEngineVersion } from "./unreal-plugin-host.ts";
 
 const { values } = parseArgs({
@@ -66,8 +71,12 @@ if (generated.error) throw generated.error;
 if (generated.status !== 0)
 	throw new Error(`Corpus generation failed (${generated.status}). Scratch: ${scratch}`);
 const corpus = join(dirname(project), "Content", "Fixture", "Corpus");
-const cacheRoot = join(scratch, "IndexCache");
-const result = await compareGameTextCorpus(corpus, undefined, { cacheRoot });
+// One index across the scans, so the edited scan refreshes incrementally.
+const layer = gameTextCorpusIndexLayer({
+	executable: ensureUassetExecutable(),
+	cacheRoot: join(scratch, "IndexCache")
+});
+const result = await compareGameTextCorpus(corpus, { layer });
 await writeFile(join(scratch, "comparison.json"), JSON.stringify(result.triage, null, "\t"));
 process.stdout.write(
 	`Initial scan: ${result.triage.unexpected.length} unexpected/${result.triage.stale.length} stale.\n`
@@ -93,8 +102,8 @@ const patched = spawnSync(
 );
 if (patched.error) throw patched.error;
 if (patched.status !== 0) throw new Error(`Incremental patch failed (${patched.status}).`);
-const incremental = await compareGameTextCorpus(corpus, undefined, {
-	cacheRoot,
+const incremental = await compareGameTextCorpus(corpus, {
+	layer,
 	changedFiles: decodeCorpusPlan(await readFile(join(corpus, corpusPlanName), "utf8")).edits
 		.changedFiles
 });

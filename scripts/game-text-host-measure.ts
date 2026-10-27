@@ -352,7 +352,7 @@ export async function measureGameTextHosts(
 		);
 		const built = await run(Layer.buildWithScope(layer, rootScope));
 		workbench = Context.get(built, WorkbenchGameText);
-		const refreshed = await run(workbench.configuredRefresh(true));
+		const refreshed = await run(workbench.configuredRefresh({ refresh: true }));
 		if (refreshed.status !== "completed") throw new Error(JSON.stringify(refreshed));
 		const localized = await run(workbench.localizationTarget(targetName));
 		if (localized.status !== "ready") throw new Error(JSON.stringify(localized));
@@ -365,7 +365,7 @@ export async function measureGameTextHosts(
 	const refresh = async () => {
 		if (host === "cli") return openCli();
 		if (!workbench) return openWorkbench();
-		const refreshed = await run(workbench.configuredRefresh(true));
+		const refreshed = await run(workbench.configuredRefresh({ refresh: true }));
 		if (refreshed.status !== "completed") throw new Error(JSON.stringify(refreshed));
 		const localized = await run(workbench.localizationTarget(targetName));
 		if (localized.status !== "ready") throw new Error(JSON.stringify(localized));

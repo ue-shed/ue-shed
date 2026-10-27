@@ -404,7 +404,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 		};
 		if (stage === "build" || stage === "cached-reopen") {
 			await measure(stage, async () => {
-				ready(await run(workspace.configuredRefresh(true)), "completed");
+				ready(await run(workspace.configuredRefresh({ refresh: true })), "completed");
 				ready(await run(workspace.localizationTarget(target)));
 				return firstPage(search, searchRows);
 			});
@@ -422,7 +422,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				);
 			});
 		} else {
-			ready(await run(workspace.configuredRefresh(true)), "completed");
+			ready(await run(workspace.configuredRefresh({ refresh: true })), "completed");
 			ready(await run(workspace.localizationTarget(target)));
 			if (
 				stage === "quality" ||
@@ -462,7 +462,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				// The stage breakdown covers the rescan only, not the build before it.
 				recorder?.reset();
 				await measure("edit.refresh", async () =>
-					ready(await run(workspace.configuredRefresh(true)), "completed")
+					ready(await run(workspace.configuredRefresh({ refresh: true })), "completed")
 				);
 			} else if (stage === "loc-check" || stage === "lines-export") {
 				// `loc check` and `loc export` as each commit's CLI runs them: the starter's checks

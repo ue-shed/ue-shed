@@ -141,13 +141,20 @@ export {
 export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
 
 /**
- * Native reader discovery, process, timeout, contract or resource-limit failure. Carries
- * operation/path context and original cause; honor nextStep before replaying a mutating index
- * command.
+ * Native reader discovery, process, timeout, contract or resource-limit failure, or a request too
+ * large for the reader. Carries operation/path context and original cause; honor nextStep before
+ * replaying a mutating index command.
  */
 export class AssetReaderError extends Schema.TaggedError<AssetReaderError>()("AssetReaderError", {
 	code: Schema.optional(Schema.String),
-	kind: Schema.Literals(["timeout", "process", "contract", "discovery", "resource_limit"]),
+	kind: Schema.Literals([
+		"timeout",
+		"process",
+		"contract",
+		"discovery",
+		"resource_limit",
+		"request_too_large"
+	]),
 	operation: Schema.Literals([
 		"game_text_engine",
 		"game_text_index",
@@ -206,6 +213,12 @@ export function assetReaderGuidance(
 			return {
 				recovery:
 					"Narrow the request to fewer packages, or raise the configured reader limit.",
+				nextStep: "fix_input"
+			};
+		case "request_too_large":
+			return {
+				recovery:
+					"A package path or option in this request is too large for the asset reader. Shorten it or leave it out, then try again.",
 				nextStep: "fix_input"
 			};
 	}

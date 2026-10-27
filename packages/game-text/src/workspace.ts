@@ -61,7 +61,11 @@ import {
 	type GameTextIndexProgress,
 	type RetainedGameTextIndexResult
 } from "./entry-index.js";
-import { decodeGameTextRuleDocumentJson, type GameTextRuleDocument } from "./entry-rules.js";
+import {
+	canonicalGameTextRuleDocumentJson,
+	decodeGameTextRuleDocumentJson,
+	type GameTextRuleDocument
+} from "./entry-rules.js";
 import {
 	type LocalizationJoin,
 	type TextCorpusFocusRequest,
@@ -615,6 +619,36 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						const supersession = Effect.gen(function* () {
 							while (yield* owned) yield* Effect.sleep("100 millis");
 						});
+						// A scan that found the published model's inputs unchanged keeps that model, with
+						// its source quality, localization selection and quality scans; the new open closes.
+						const kept = yield* Effect.gen(function* () {
+							if (!(yield* owned)) return superseded();
+							const previous = yield* Ref.get(modelSelection);
+							if (
+								previous?.projectRoot !== projectRoot ||
+								previous.cached ||
+								indexed.queryRevision === undefined ||
+								previous.indexed.queryRevision !== indexed.queryRevision
+							)
+								return undefined;
+							yield* Ref.set(modelSelection, {
+								...previous,
+								generation: index.generation
+							});
+							yield* Ref.update(
+								investigationSnapshot,
+								(snapshot) =>
+									snapshot && {
+										...snapshot,
+										source: { ...snapshot.source, generation: index.generation }
+									}
+							);
+							return {
+								summary: previous.indexed.summary,
+								status: "completed" as const
+							};
+						}).pipe(publication.withPermit, Effect.uninterruptible);
+						if (kept) return kept;
 						while (true) {
 							if (!(yield* owned)) return superseded();
 							// Source rules are evaluated before anything is published, and interruptibly: a scan
@@ -907,6 +941,24 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				status: "failed" as const
 			};
 		}
+		// A document equal to the published one (a host's copy, a reloaded file) keeps the published
+		// object and model, so the source and localization quality computed for it stay current.
+		const snapshot = yield* Ref.get(investigationSnapshot);
+		const published = yield* Ref.get(qualityDocument);
+		const publishedModel = yield* Ref.get(qualityModel);
+		if (
+			snapshot?.revision === revision &&
+			published !== undefined &&
+			publishedModel !== undefined &&
+			canonicalGameTextRuleDocumentJson(published) ===
+				canonicalGameTextRuleDocumentJson(document.value)
+		)
+			return {
+				revision,
+				document: published,
+				model: publishedModel,
+				status: "ready" as const
+			};
 		const checked = yield* checkCompleteRules(index.query, document.value).pipe(Effect.result);
 		if (Result.isFailure(checked))
 			return {

@@ -897,7 +897,8 @@ export const makeGameTextIndexSteps = (
 			/**
 			 * Evaluates a document's findings with a check's progress, in rules: one event before
 			 * the engine runs, one as each rule finishes, and one after, with the findings of the
-			 * rules `counted` selects.
+			 * rules `counted` selects. Reports through the reporter captured when this target
+			 * opened, so later evaluations still reach the host that opened the index.
 			 */
 			const evaluateWithProgress = (
 				phase: "localization_quality" | "source_quality",
@@ -905,7 +906,6 @@ export const makeGameTextIndexSteps = (
 				counted: (rule: GameTextContract.RuleMetadata) => boolean
 			) =>
 				Effect.gen(function* () {
-					const reportProgress = yield* GameTextIndexProgressReporter;
 					const rules = enabledRuleDocument(document).rules.length;
 					reportProgress({ phase, completed: 0, total: rules, findings: 0 });
 					const evaluation = yield* query.findingsEvaluate(document, (progress) => {

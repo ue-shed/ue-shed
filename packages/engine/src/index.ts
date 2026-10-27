@@ -113,3 +113,9 @@ export {
 	SupervisedEditorSessionLive,
 	SupervisedEditorSessionRequest
 } from "./supervised-editor-session.js";
+export {
+	ProcessSupervisorExecutable,
+	processSupervisorExecutable,
+	processSupervisorExecutableLayer,
+	WINDOWS_SUPERVISOR_PACKAGE
+} from "./process-supervisor.js";

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, cp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, cp, writeFile, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Deferred, Effect, Fiber, Layer, Ref, Stream, Result } from "effect";
@@ -174,6 +174,84 @@ it.effect("streams bounded progress, audits planned/unplanned writes, and releas
 			);
 			expect(events.filter((event) => event.type === "progress")).toHaveLength(2);
 			expect(yield* Ref.get(terminated)).toBe(true);
+		})
+	)
+);
+it.effect("the audit reads unplanned files only when their size or modification time changed", () =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const paths = yield* fixture();
+			const selected = yield* target(paths.project);
+			const content = (name: string) => join(paths.project, "Content", name);
+			const past = new Date("2020-01-01T00:00:00Z");
+			yield* Effect.promise(async () => {
+				// Larger than one hashed file may be, so reading it would fail the run.
+				await writeFile(content("Big.uasset"), new Uint8Array(2 * 1024 * 1024));
+				await writeFile(content("Rewritten.uasset"), "before");
+				await writeFile(content("Gone.uasset"), "removed");
+				for (const name of ["Big.uasset", "Rewritten.uasset", "Gone.uasset"])
+					await utimes(content(name), past, past);
+			});
+			const processes = makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed({
+					pid: 12345,
+					awaitExit: Effect.promise(async () => {
+						await writeFile(content("Rewritten.uasset"), "after!");
+						await rm(content("Gone.uasset"));
+						return {
+							kind: "exited",
+							exitCode: 0,
+							signal: null
+						} satisfies OwnedProcessExit;
+					}),
+					terminate: () =>
+						Effect.succeed({
+							kind: "exited",
+							exitCode: 0,
+							signal: null
+						} satisfies OwnedProcessExit)
+				} satisfies OwnedProcessTreeHandle)
+			);
+			const layer = makeLocalizationOperationsLayer({
+				auditLimits: { ...defaultLocalizationAuditLimits, maxFileBytes: 1024 * 1024 }
+			}).pipe(
+				Layer.provide(
+					makeEngineInstallationDiscoveryTestLayer(() =>
+						Effect.succeed({
+							root: paths.engine,
+							version: { major: 4, minor: 27, patch: 2 }
+						})
+					)
+				),
+				Layer.provide(processes)
+			);
+			const events = yield* Effect.flatMap(LocalizationOperations, (service) =>
+				service
+					.run({ projectRoot: paths.project, target: selected, operation: "export" })
+					.pipe(Stream.runCollect)
+			).pipe(Effect.provide(layer));
+			const receipt = events.find((event) => event.type === "receipt");
+			if (!receipt || receipt.type !== "receipt") throw new Error("No receipt.");
+			expect(receipt.diagnostics).toEqual([
+				{ code: "unplanned_file_change", relativePath: "Content/Gone.uasset" },
+				{ code: "unplanned_file_change", relativePath: "Content/Rewritten.uasset" }
+			]);
+			expect(receipt.changes).toEqual([
+				{
+					relativePath: "Content/Gone.uasset",
+					beforeHash: null,
+					afterHash: null,
+					planned: false,
+					beforeUnread: true
+				},
+				{
+					relativePath: "Content/Rewritten.uasset",
+					beforeHash: null,
+					afterHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+					planned: false,
+					beforeUnread: true
+				}
+			]);
 		})
 	)
 );

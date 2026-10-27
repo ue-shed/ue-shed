@@ -1,7 +1,6 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { createRequire } from "node:module";
 import { access, readFile, readdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import {
 	ErrorCauseFields,
 	ErrorGuidanceFields,
@@ -24,6 +23,7 @@ import {
 	unrealProjectLaunchArguments
 } from "./project-launcher.js";
 import { RemoteControlAllowedClass } from "./remote-control-permissions.js";
+import { processSupervisorExecutable, WINDOWS_SUPERVISOR_PACKAGE } from "./process-supervisor.js";
 
 const BoundedString = Schema.NonEmptyString.check(Schema.isMaxLength(32_767));
 const BoundedCapability = Schema.NonEmptyString.check(Schema.isMaxLength(256));
@@ -38,7 +38,6 @@ const SupervisorMessage = Schema.Union([
 	Schema.Struct({ exitCode: WindowsExitCode, type: Schema.Literal("exited") })
 ]);
 type SupervisorMessage = typeof SupervisorMessage.Type;
-const WINDOWS_SUPERVISOR_PACKAGE = "@ue-shed/engine-win32-x64";
 const SUPERVISOR_OUTPUT_LIMIT = 16_384;
 
 /**
@@ -364,19 +363,11 @@ async function waitForProcessGroupExit(pid: number): Promise<void> {
 }
 
 function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSessionError> {
-	return Effect.tryPromise({
-		try: async () => {
-			const require = createRequire(import.meta.url);
-			const packageManifest = require.resolve(`${WINDOWS_SUPERVISOR_PACKAGE}/package.json`);
-			const executable = join(
-				dirname(packageManifest),
-				"bin",
-				"ue-shed-process-supervisor.exe"
-			);
-			await access(executable);
-			return executable;
-		},
-		catch: (cause) =>
+	return processSupervisorExecutable.pipe(
+		Effect.tap((executable) =>
+			Effect.tryPromise({ try: () => access(executable), catch: (cause) => cause })
+		),
+		Effect.mapError((cause) =>
 			sessionError(
 				"process_tree_supervision_unavailable",
 				"launch",
@@ -386,7 +377,8 @@ function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSe
 				undefined,
 				cause
 			)
-	});
+		)
+	);
 }
 
 type SupervisorCompletion =

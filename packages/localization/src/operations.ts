@@ -357,7 +357,7 @@ export const makeLocalizationOperationsLayer = (
 							)
 						);
 						const after = yield* Effect.tryPromise({
-							try: () => snapshotLocalizationProject(root, plan, auditLimits),
+							try: () => snapshotLocalizationProject(root, plan, auditLimits, before),
 							catch: localizationIOFailure
 						});
 						const changes = localizationFileChanges(before, after, plan);

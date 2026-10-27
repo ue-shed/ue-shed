@@ -180,13 +180,16 @@ export const LocalizationProgress = Schema.Struct({
 export type LocalizationProgress = typeof LocalizationProgress.Type;
 /**
  * Audited relative file change with before/after hashes and whether the plan declared it. A
- * null hash denotes absence before or after the run.
+ * null hash denotes absence before or after the run, except with `beforeUnread`: the file existed
+ * before the run, but outside the plan only its size and modification time were recorded, so its
+ * earlier content has no hash.
  */
 export const LocalizationFileChange = Schema.Struct({
 	relativePath: Schema.NonEmptyString,
 	beforeHash: Schema.NullOr(Schema.String),
 	afterHash: Schema.NullOr(Schema.String),
-	planned: Schema.Boolean
+	planned: Schema.Boolean,
+	beforeUnread: Schema.optionalKey(Schema.Literal(true))
 });
 export type LocalizationFileChange = typeof LocalizationFileChange.Type;
 /**

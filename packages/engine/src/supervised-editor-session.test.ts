@@ -51,6 +51,35 @@ function installationFixture(): Effect.Effect<TestInstallation> {
 		yield* Effect.promise(() => writeFile(executable, ""));
 		yield* Effect.promise(() => writeFile(projectDescriptor, "{}"));
 		yield* Effect.promise(() => writeFile(pluginDescriptor, "{}"));
+		// A built engine with Remote Control, as the pre-spawn validation reads it.
+		const folder =
+			process.platform === "win32"
+				? "Win64"
+				: process.platform === "darwin"
+					? "Mac"
+					: "Linux";
+		const engineBin = join(binaries, folder);
+		const remoteControl = join(root, "Engine", "Plugins", "VirtualProduction", "RemoteControl");
+		const remoteControlBin = join(remoteControl, "Binaries", folder);
+		yield* Effect.promise(async () => {
+			await mkdir(remoteControlBin, { recursive: true });
+			await writeFile(
+				join(engineBin, "UnrealEditor.modules"),
+				JSON.stringify({ BuildId: "fixture" })
+			);
+			await writeFile(
+				join(remoteControl, "RemoteControl.uplugin"),
+				JSON.stringify({ Modules: [{ Name: "RemoteControl" }] })
+			);
+			await writeFile(
+				join(remoteControlBin, "UnrealEditor.modules"),
+				JSON.stringify({
+					BuildId: "fixture",
+					Modules: { RemoteControl: "UnrealEditor-RemoteControl.dll" }
+				})
+			);
+			await writeFile(join(remoteControlBin, "UnrealEditor-RemoteControl.dll"), "fixture");
+		});
 		return { executable, pluginDescriptor, projectDescriptor, root };
 	});
 }
@@ -174,6 +203,54 @@ it.effect("validates files before starting the owned process", () =>
 			).pipe(Effect.provide(layer))
 		);
 		expect(error.code).toBe("invalid_request");
+		expect(yield* Ref.get(launches)).toEqual([]);
+		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
+	})
+);
+
+it.effect("refuses a project built for another engine before spawning", () =>
+	Effect.gen(function* () {
+		const launches = yield* Ref.make<readonly OwnedProcessTreeLaunchOptions[]>([]);
+		const terminations = yield* Ref.make<readonly OwnedProcessTerminationReason[]>([]);
+		const fixture = yield* installationFixture();
+		const folder =
+			process.platform === "win32"
+				? "Win64"
+				: process.platform === "darwin"
+					? "Mac"
+					: "Linux";
+		const projectBin = join(dirname(fixture.projectDescriptor), "Binaries", folder);
+		yield* Effect.promise(async () => {
+			await mkdir(projectBin, { recursive: true });
+			await writeFile(
+				join(projectBin, "UnrealEditor.modules"),
+				JSON.stringify({ BuildId: "other" })
+			);
+		});
+		const layer = sessionLayer({
+			connection: makeEditorConnectionTestLayer({
+				connect: () => Effect.succeed(manifest),
+				waitUntilReady: () => Effect.succeed(manifest)
+			}),
+			fixture,
+			process: makeOwnedProcessTreeTestLayer((options) =>
+				Ref.update(launches, (current) => [...current, options]).pipe(
+					Effect.as(testHandle(43, terminations))
+				)
+			)
+		});
+		const error = yield* Effect.flip(
+			Effect.scoped(
+				Effect.flatMap(SupervisedEditorSession, (sessions) =>
+					sessions.acquire(request(fixture))
+				)
+			).pipe(Effect.provide(layer))
+		);
+		expect(error).toMatchObject({
+			code: "build_mismatch",
+			nextStep: "fix_input",
+			stage: "validation"
+		});
 		expect(yield* Ref.get(launches)).toEqual([]);
 		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
 	})

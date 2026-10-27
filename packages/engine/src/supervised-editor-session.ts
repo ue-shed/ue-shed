@@ -19,8 +19,11 @@ import {
 } from "./editor-connection.js";
 import {
 	UnrealLaunchPlugin,
+	type UnrealProjectLaunchError,
 	unrealEditorExecutable,
-	unrealProjectLaunchArguments
+	unrealProjectLaunchArguments,
+	validateUnrealProjectBuildId,
+	validateUnrealRemoteControlBuild
 } from "./project-launcher.js";
 import { RemoteControlAllowedClass } from "./remote-control-permissions.js";
 import { processSupervisorExecutable, WINDOWS_SUPERVISOR_PACKAGE } from "./process-supervisor.js";
@@ -105,6 +108,10 @@ export class SupervisedEditorSessionError extends Schema.TaggedError<SupervisedE
 			"editor_missing",
 			"project_missing",
 			"plugin_missing",
+			"build_mismatch",
+			"invalid_module_manifest",
+			"plugin_unavailable",
+			"engine_plugins_stale",
 			"process_tree_supervision_unavailable",
 			"spawn_failed",
 			"supervisor_failed",
@@ -210,6 +217,10 @@ const sessionNextStep = {
 	editor_missing: "fix_input",
 	project_missing: "fix_input",
 	plugin_missing: "fix_input",
+	build_mismatch: "fix_input",
+	invalid_module_manifest: "fix_input",
+	plugin_unavailable: "fix_input",
+	engine_plugins_stale: "fix_input",
 	process_tree_supervision_unavailable: "fix_input",
 	spawn_failed: "fix_input",
 	supervisor_failed: "retry",
@@ -242,6 +253,24 @@ function sessionError(
 function engineDiscoveryError(cause: EngineInstallationError): SupervisedEditorSessionError {
 	return sessionError(
 		"engine_discovery_failed",
+		"validation",
+		cause.message,
+		cause.recovery,
+		cause.retrySafe,
+		cause.nextStep,
+		cause
+	);
+}
+
+/** A build the editor cannot load, found before spawning; the launch error stays as the cause. */
+function buildValidationError(cause: UnrealProjectLaunchError): SupervisedEditorSessionError {
+	return sessionError(
+		cause.code === "build_mismatch" ||
+			cause.code === "invalid_module_manifest" ||
+			cause.code === "plugin_unavailable" ||
+			cause.code === "engine_plugins_stale"
+			? cause.code
+			: "invalid_request",
 		"validation",
 		cause.message,
 		cause.recovery,
@@ -771,6 +800,17 @@ export const SupervisedEditorSessionLive = Layer.effect(
 				installation.version
 			);
 			yield* filesystemEntry(executable, "editor_missing", "Unreal Editor executable");
+			yield* validateUnrealProjectBuildId(
+				installation.root,
+				projectDescriptor,
+				globalThis.process.platform,
+				installation.version
+			).pipe(Effect.mapError(buildValidationError));
+			yield* validateUnrealRemoteControlBuild(
+				installation.root,
+				globalThis.process.platform,
+				installation.version
+			).pipe(Effect.mapError(buildValidationError));
 			const process = yield* Effect.acquireRelease(
 				processes.launch({
 					args: unrealProjectLaunchArguments({

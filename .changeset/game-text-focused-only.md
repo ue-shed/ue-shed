@@ -16,7 +16,7 @@ with the corresponding `GameTextOperation*` names from `/schema`. Replace `ScanT
 with `TextCorpusScanOptions`, `TextCorpusServiceShape` with `TextCorpusServiceApi`, and
 `TextCorpusServiceTestShape` with `TextCorpusServiceTestApi`, all from `/index`.
 
-Replace `TextReviewLens` and investigation `lens` with `TextFilter` clauses from `/schema`:
+Replace `TextReviewLens` with `TextFilter` clauses from `/schema`:
 `finding` names rule IDs and `fact` names review signals. Replace `TextFinding`,
 `TextCountedFindings`, `textFindings`, `textCountedFindings` and row `countedFindings` with the
 row's `findings` rule IDs (`TextRowFindings` from `/checks`). Omit
@@ -25,4 +25,4 @@ row's `findings` rule IDs (`TextRowFindings` from `/checks`). Omit
 Replace `gameTextCsv` with the opened query's `NativeTextQuery.writeCorpusCsv`, and
 `localizationLinesCsv` with `NativeTextQuery.writeLocalizationLinesCsv`. Replace
 `prepareLocalizationFile` with native index imports through `GameTextIndexSteps.importTarget`
-from `/index`. Convert saved investigation lenses into filter clauses before replaying them.
+from `/index`. Saved investigation presets with a `lens` still open with the same selection: `investigationRequest` reads the lens as its filter clause.

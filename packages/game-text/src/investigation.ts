@@ -9,12 +9,22 @@ import {
 	InvestigationError,
 	investigationTable
 } from "@ue-shed/unreal-assets/investigation";
-import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
+import { TextCorpus, TextCorpusSearchRequest, type TextFilterClause } from "./schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
 import { TextQualityFilter, type AsyncTextQualityQuery } from "./quality-query.js";
 import type { TextUnit } from "./schema.js";
+
+/** The review lens presets saved before findings were the project's rules; read as a clause. */
+const SavedLens = Schema.Literals([
+	"all",
+	"shared",
+	"duplicate_source",
+	"long",
+	"unresolved",
+	"conflicting"
+]);
 
 /**
  * Serializable corpus or quality query for a reusable investigation. Localization quality
@@ -25,6 +35,11 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	mode: Schema.Literals(["corpus", "quality"]),
 	query: TextCorpusSearchRequest.fields.query,
 	capability: TextCorpusSearchRequest.fields.capability,
+	/**
+	 * A lens from a preset saved before filter pills; `investigationRequest` reads it as the clause
+	 * it is now. New presets use `filter`.
+	 */
+	lens: Schema.optional(SavedLens),
 	where: TextCorpusSearchRequest.fields.where,
 	/** Filter pills; presets saved before them use the fields above. */
 	filter: TextCorpusSearchRequest.fields.filter,
@@ -47,11 +62,21 @@ export const GameTextInvestigationQuery = Schema.Struct({
 );
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
 
-/** The corpus request carried by an investigation query. */
+/**
+ * The request an investigation query runs, with a saved lens read as its clause: `shared`,
+ * `duplicate_source` and `long` name those checks' findings (`localization.<check>`), and
+ * `unresolved` and `conflicting` are facts.
+ */
 export function investigationRequest(
 	query: GameTextInvestigationQuery
-): GameTextInvestigationQuery {
-	return query;
+): Omit<GameTextInvestigationQuery, "lens"> {
+	const { lens, ...request } = query;
+	if (lens === undefined || lens === "all") return request;
+	const clause: TextFilterClause =
+		lens === "unresolved" || lens === "conflicting"
+			? { field: "fact", op: "is", values: [lens] }
+			: { field: "finding", op: "is", values: [`localization.${lens}`] };
+	return { ...request, filter: [...(request.filter ?? []), clause] };
 }
 /**
  * Versioned reusable query with domain ordering and optional embedded rules. Source quality

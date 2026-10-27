@@ -37,16 +37,17 @@ for corpus queries and reports, `/index` for scanning and native index compositi
 | `WorkbenchOperation*`                                                                              | Corresponding `GameTextOperation*` from `/schema`                                      |
 | `ScanTextCorpusOptions`                                                                            | `TextCorpusScanOptions` from `/index`                                                  |
 | `TextCorpusServiceShape`, `TextCorpusServiceTestShape`                                             | `TextCorpusServiceApi`, `TextCorpusServiceTestApi` from `/index`                       |
-| `TextReviewLens`, investigation `lens`                                                             | `TextFilter` clauses from `/schema`: `finding` for rule IDs, `fact` for review signals |
+| `TextReviewLens`                                                                                   | `TextFilter` clauses from `/schema`: `finding` for rule IDs, `fact` for review signals |
 | `TextFinding`, `TextCountedFindings`, `textFindings`, `textCountedFindings`, row `countedFindings` | Row `findings` rule IDs (`TextRowFindings` from `/checks`)                             |
 | `GameTextIndexStepsOptions.qualityWorker`                                                          | Omit it; quality runs in the native engine                                             |
 | `gameTextCsv`                                                                                      | `NativeTextQuery.writeCorpusCsv` on the opened index query                             |
 | `localizationLinesCsv`                                                                             | `NativeTextQuery.writeLocalizationLinesCsv` on the opened index query                  |
 | `prepareLocalizationFile`                                                                          | Native index imports through `GameTextIndexSteps.importTarget` from `/index`           |
 
-Convert saved investigation lenses into filter clauses before replaying them. For example,
-`shared`, `duplicate_source` and `long` become `finding` clauses naming `localization.<check>`;
-`unresolved` and `conflicting` become `fact` clauses. A lens of `all` adds no clause.
+Saved investigation presets that still carry a `lens` keep working: `investigationRequest` reads
+it as its clause. `shared`, `duplicate_source` and `long` become `finding` clauses naming
+`localization.<check>`, `unresolved` and `conflicting` become `fact` clauses, and `all` adds no
+clause. New presets use `filter`.
 
 ## Ownership
 

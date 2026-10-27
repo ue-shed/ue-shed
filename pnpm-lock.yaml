@@ -985,6 +985,25 @@ importers:
         specifier: 'catalog:'
         version: 4.0.4
 
+  packages/game-text-corpus:
+    dependencies:
+      '@ue-shed/game-text':
+        specifier: workspace:0.21.0
+        version: link:../game-text
+      '@ue-shed/localization':
+        specifier: workspace:0.21.0
+        version: link:../localization
+      '@ue-shed/protocol':
+        specifier: workspace:0.21.0
+        version: link:../protocol
+      '@ue-shed/unreal-assets':
+        specifier: workspace:0.21.0
+        version: link:../unreal-assets
+    devDependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.4
+
   packages/host:
     dependencies:
       '@ue-shed/authoring':

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { Schema } from "effect";
-import { CorpusSubject, sameCorpusSubject, subjectKey } from "./game-text-corpus-contract.ts";
+import { CorpusSubject, sameCorpusSubject, subjectKey } from "./contract.js";
 
 /** Each exception pins both sides. Any unlisted field still has to agree exactly. */
 export interface CorpusKnownDefect {

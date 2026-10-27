@@ -13,9 +13,12 @@ import {
 } from "node:fs";
 import { userInfo, availableParallelism } from "node:os";
 import { dirname } from "node:path";
-import { decodeCorpusPlan, planCorpus } from "./game-text-corpus-plan.ts";
-import { corpusPlanName } from "./game-text-corpus-contract.ts";
-import { corpusLocalization } from "./game-text-corpus-localization.ts";
+import {
+	corpusLocalization,
+	corpusPlanName,
+	decodeCorpusPlan
+} from "../packages/game-text-corpus/dist/index.js";
+import { planCorpus } from "./game-text-corpus-plan.ts";
 import { prepareCorpusOutput, writeCorpusOwnership } from "./game-text-corpus-ownership.ts";
 import { basename, join, relative } from "node:path";
 import { performance } from "node:perf_hooks";

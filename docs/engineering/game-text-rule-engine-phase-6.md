@@ -71,14 +71,11 @@ Surveyed at Electroswag `0e6f470e` (UE Shed 0.21.0) against UE Shed `bf2dc2c3` (
       discovery only, never through `consistentIndex` or `targets()`.
     - `operations.state` uses it. A target the published discovery doesn't list yet reads as
       not selected, as the fork's does.
-5. **Writes are prepared up front.**
-    - `GameTextWorkspaceHost.prepareWrites?: (paths: readonly string[]) => Effect<void,
+5. **Writes are prepared up front.** - `GameTextWorkspaceHost.prepareWrites?: (paths: readonly string[]) => Effect<void,
 GameTextWorkspaceHostFailure>` is called with every absolute path a localization edit or
-      review write will replace, before the first byte is written.
-    - A failure returns `file_unwritable` with the host's message and recovery, and nothing is
-      written.
-    - Electroswag checks the files out in Perforce there. The per-file `localizationFiles` layer
-      stays: it checks each file again as it writes.
+   review write will replace, before the first byte is written. - A failure returns `file_unwritable` with the host's message and recovery, and nothing is
+   written. - Electroswag checks the files out in Perforce there. The per-file `localizationFiles` layer
+   stays: it checks each file again as it writes.
 6. **Recovery text names the host.** `GameTextOperationsHost.appName?: string` replaces "the host"
    in the two engine-launch recoveries. It defaults to `"the host"`.
 7. **Scan progress counts steps.** `GameTextWorkspaceProgress` gains optional `step` and `steps`:
@@ -138,16 +135,17 @@ GameTextWorkspaceHostFailure>` is called with every absolute path a localization
 | Workbench                                 | shows `step` of `steps`                                                                                                    |
 
 The corpus package depends on `@ue-shed/game-text`, `@ue-shed/localization`,
-`@ue-shed/unreal-assets` and Effect only.
+`@ue-shed/unreal-assets`, `@ue-shed/protocol` (for its error's guidance fields) and Effect only.
 
 ```ts
-compareGameTextCorpus(corpusRoot: string, options?: {
-	layer?: Layer<GameTextIndexRefresh>; // defaults to UE Shed's own composition
-	changedFiles?: readonly string[];
-})
+compareGameTextCorpus(corpusRoot: string, options?: { changedFiles?: readonly string[] })
+	: Effect<GameTextCorpusComparison, GameTextCorpusError | …, GameTextIndexRefresh>
+gameTextCorpusIndexLayer({ executable, cacheRoot }): Layer<GameTextIndexRefresh> // UE Shed's own
 ```
 
-It returns the same report as today's script.
+It returns the same report as today's script. The host provides its `GameTextIndexRefresh` and
+owns the runtime exit, as with every UE Shed package; the collapse probe is scanned through the
+same index. The script keeps the Unreal lock, the in-repo reader and the temporary cache.
 
 ## 4. Electroswag changes
 

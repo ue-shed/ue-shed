@@ -19,6 +19,7 @@
 			"@ue-shed/map-history",
 			"@ue-shed/uasset",
 			"@ue-shed/game-text",
+			"@ue-shed/game-text-corpus",
 			"@ue-shed/config-explorer",
 			"@ue-shed/localization",
 			"@ue-shed/project-custodian",

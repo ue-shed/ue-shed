@@ -1,4 +1,4 @@
-import type { CorpusPlan, PlannedText } from "./game-text-corpus-plan.ts";
+import type { CorpusPlan, PlannedText } from "./plan.js";
 
 /** Unreal's gather strips the editor package namespace (TextNamespaceUtil.cpp). */
 export function gatheredNamespace(namespace: string) {

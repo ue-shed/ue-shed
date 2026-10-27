@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import test from "node:test";
+import { test } from "vitest";
 import {
 	corpusCultures,
-	decodeCorpusExpectations,
-	diffCorpus,
-	subjectKey
-} from "./game-text-corpus-contract.ts";
-import { decodeCorpusPlan, planCorpus, probeSubject } from "./game-text-corpus-plan.ts";
-import { corpusLocalization } from "./game-text-corpus-localization.ts";
-import {
 	corpusDefectsFor,
-	triageCorpusDifferences,
+	corpusLocalization,
+	decodeCorpusExpectations,
+	decodeCorpusPlan,
+	diffCorpus,
 	formatCorpusComparisonSummary,
+	probeSubject,
+	subjectKey,
+	triageCorpusDifferences,
 	type CorpusKnownDefect
-} from "./game-text-corpus-defects.ts";
+} from "../packages/game-text-corpus/dist/index.js";
+import { planCorpus } from "./game-text-corpus-plan.ts";
 
 /** A subject pin for the triage tests, since every pin the corpus still needs is a probe. */
 const syntheticPin: CorpusKnownDefect = {
@@ -202,13 +202,19 @@ test("UTF-16 long boundaries include surrogate pairs", () => {
 	}
 });
 test("the expectation derivation never imports checks, rules or index code", () => {
+	// The plan reads the corpus format, whose plan, contract and localization modules import
+	// nothing of UE Shed's either.
 	for (const name of [
 		"game-text-corpus-plan.ts",
-		"game-text-corpus-contract.ts",
-		"game-text-corpus-localization.ts"
+		"../packages/game-text-corpus/src/plan.ts",
+		"../packages/game-text-corpus/src/contract.ts",
+		"../packages/game-text-corpus/src/localization.ts"
 	])
 		assert.doesNotMatch(
-			readFileSync(new URL(name, import.meta.url), "utf8"),
+			readFileSync(new URL(name, import.meta.url), "utf8").replace(
+				'"../packages/game-text-corpus/dist/index.js"',
+				""
+			),
 			/from ["'][^"']*(?:@ue-shed|packages\/|localization-checks|text-problems|index\.js)/u
 		);
 });

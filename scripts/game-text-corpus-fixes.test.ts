@@ -14,7 +14,7 @@ import {
 	success,
 	unit
 } from "../packages/game-text/src/localization.test-support.ts";
-import { diffCorpus } from "./game-text-corpus-contract.ts";
+import { diffCorpus } from "../packages/game-text-corpus/dist/index.js";
 import { planCorpus } from "./game-text-corpus-plan.ts";
 
 for (const seed of [1, 73139]) {

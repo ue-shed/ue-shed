@@ -1,7 +1,6 @@
 ---
 "@ue-shed/unreal-assets": minor
 "@ue-shed/game-text": patch
-"@ue-shed/workbench": patch
 ---
 
 The asset reader now splits a package path list too large for one 4 MiB request itself. Scans,
@@ -31,4 +30,4 @@ this change it was recorded when the stream was created, so it held zero counts.
 
 The Game Text index source passes its whole selection to the reader in one call. It now checks
 every package's bundle signature once before and once after the whole read, rather than around
-each batch. The Workbench showcase context accepts the `"package"` reader source.
+each batch.

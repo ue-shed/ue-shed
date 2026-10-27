@@ -278,6 +278,17 @@ export const LocalizationQualityFinding = Schema.Union([
 		/** The longest distinct saved source, in UTF-16 code units. */
 		actual: Schema.Struct({ length: Count }),
 		expectation: Schema.Struct({ maximumLength: Count })
+	}),
+	Schema.Struct({
+		...SourceBase,
+		kind: Schema.Literal("string_table_entry_missing"),
+		actual: Schema.Struct({
+			entries: Schema.Array(
+				Schema.Struct({ tableId: Schema.String, key: Schema.String })
+			).check(Schema.isMaxLength(16)),
+			entryCount: Count
+		}),
+		expectation: Schema.Struct({ entryExists: Schema.Literal(true) })
 	})
 ]);
 export type LocalizationQualityFinding = typeof LocalizationQualityFinding.Type;

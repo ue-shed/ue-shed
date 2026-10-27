@@ -40,7 +40,8 @@ export const SourceCheckId = Schema.Literals([
 	"number_only_text",
 	"string_table_key_collision",
 	"shared",
-	"long"
+	"long",
+	"string_table_entry_missing"
 ]);
 export type SourceCheckId = typeof SourceCheckId.Type;
 

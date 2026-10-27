@@ -474,6 +474,14 @@ export const localizationCheckCatalogue = {
 		optIn: true,
 		params: LongTextParams,
 		condition: (params) => `A saved source of ${params.limit} or more UTF-16 code units`
+	}),
+	// The referenced table is known, so the missing entry is certain, not an unscanned table.
+	string_table_entry_missing: check("string_table_entry_missing", {
+		basis: "unreal",
+		label: "Missing String Table entry",
+		severity: "normal",
+		params: NoCheckParams,
+		condition: fixed("An entry the text references that a known String Table does not have")
 	})
 } as const satisfies {
 	readonly [Id in BuiltInCheckId]: LocalizationCheckDescriptor<Id, object, unknown>;

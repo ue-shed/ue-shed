@@ -6,7 +6,7 @@ use crate::engine_match::checkpoint;
 use crate::engine_types::{REASONS, STATES};
 use crate::join_policy::trim;
 use crate::{Result, require};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 type Ids = Arc<[u32]>;
@@ -635,6 +635,63 @@ impl<'a, 'q> Projector<'a, 'q> {
                 });
                 for list in lists {
                     values.push(self.arena.list(list)?);
+                }
+            }
+            "missingStringTableEntries" => {
+                let data = Arc::clone(&self.subjects.occurrences);
+                for field in ["namespace", "key", "object", "row"] {
+                    self.strings(&data.columns[field])?;
+                }
+                let arena = &self.arena;
+                let text = |id: u32| arena.text(StrId(id));
+                let mut known = HashSet::new();
+                let mut entries = HashSet::new();
+                for row in 0..data.len() {
+                    if data.value(row, "location") == 2
+                        && data.value(row, "identity") == 0
+                        && !text(data.value(row, "key")).is_empty()
+                    {
+                        known.insert(data.value(row, "object"));
+                        entries.insert((data.value(row, "object"), data.value(row, "row")));
+                    }
+                }
+                let p = &self.subjects.projection;
+                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
+                    let mut missing = (p.starts[*row] as usize..p.starts[*row + 1] as usize)
+                        .flat_map(|slice| p.slice.members(slice).iter())
+                        .filter(|member| {
+                            let member = **member as usize;
+                            data.value(member, "identity") == 1
+                                && !text(data.value(member, "key")).is_empty()
+                                && known.contains(&data.value(member, "namespace"))
+                                && !entries.contains(&(
+                                    data.value(member, "namespace"),
+                                    data.value(member, "key"),
+                                ))
+                        })
+                        .map(|member| {
+                            (
+                                data.value(*member as usize, "namespace"),
+                                data.value(*member as usize, "key"),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    missing.sort_by(|a, b| {
+                        super::text::code_unit_compare(text(a.0), text(b.0))
+                            .then_with(|| super::text::code_unit_compare(text(a.1), text(b.1)))
+                    });
+                    missing.dedup();
+                    missing
+                });
+                for list in lists {
+                    let mut objects = Vec::new();
+                    for (table, key) in list {
+                        objects.push(self.arena.object(vec![
+                            ("tableId", Atom::Str(StrId(table))),
+                            ("key", Atom::Str(StrId(key))),
+                        ])?);
+                    }
+                    values.push(self.arena.list(objects)?);
                 }
             }
             "__expectedSource" => {

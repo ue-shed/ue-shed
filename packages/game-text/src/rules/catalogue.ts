@@ -775,5 +775,16 @@ export const exampleRules: readonly Rule[] = [
 		expectation: o({ maximumLength: p("limit") }),
 		recovery:
 			"Check that the text and its translations fit where they are shown; translations often run longer."
+	}),
+	// Keyless by definition: the referenced entry, and so the line's identity, does not exist.
+	builtin("string_table_entry_missing", "line", {
+		when: positive(x.count(f("missingStringTableEntries"))),
+		actual: o({
+			entries: x.take(f("missingStringTableEntries"), 16),
+			entryCount: x.count(f("missingStringTableEntries"))
+		}),
+		expectation: o({ entryExists: true }),
+		recovery:
+			"Add the missing key to the String Table, or point the text at an entry that exists; until then the game shows the raw key."
 	})
 ];

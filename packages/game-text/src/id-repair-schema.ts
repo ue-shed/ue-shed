@@ -1,4 +1,5 @@
 import {
+	ErrorNextStep,
 	AuthoringApplyRequest,
 	GameTextActionEdit,
 	GameTextActionsResult
@@ -55,7 +56,7 @@ export const TextIdRepairResult = Schema.Union([
 		message: Schema.String,
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
+		nextStep: ErrorNextStep
 	})
 ]);
 export type TextIdRepairResult = typeof TextIdRepairResult.Type;

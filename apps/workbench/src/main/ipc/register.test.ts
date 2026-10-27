@@ -691,6 +691,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 						code: "plugin_unavailable" as const,
 						message: "Plugin unavailable.",
 						recovery: "Install UEShedNiagara.",
+						nextStep: "fix_input" as const,
 						retrySafe: false,
 						stage: "validation" as const
 					},

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Schema } from "effect";
 
 /**
@@ -9,7 +10,7 @@ export class SnapshotStoreError extends Schema.TaggedError<SnapshotStoreError>()
 	"SnapshotStoreError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		operation: Schema.String,
 		code: Schema.Literals([
 			"unavailable",

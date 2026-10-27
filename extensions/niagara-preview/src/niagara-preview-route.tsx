@@ -119,6 +119,7 @@ function clientFailure(
 						: `Workbench could not complete the preview request: ${defect.message}`,
 				recovery: "Restart Workbench, verify the selected project, and retry the preview.",
 				retrySafe: true,
+				nextStep: "retry",
 				stage
 			},
 			technical
@@ -129,7 +130,8 @@ function clientFailure(
 			code: "process_failed",
 			message: typed.message,
 			recovery: typed.recovery,
-			retrySafe: true,
+			retrySafe: typed.retrySafe,
+			nextStep: typed.nextStep,
 			stage
 		},
 		technical

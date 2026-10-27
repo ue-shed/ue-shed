@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
 import { randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
@@ -226,7 +227,7 @@ export class SavedWorldUnavailable extends Schema.TaggedError<SavedWorldUnavaila
 	"SavedWorldUnavailable",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("saved_world_unavailable"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		message: Schema.String,

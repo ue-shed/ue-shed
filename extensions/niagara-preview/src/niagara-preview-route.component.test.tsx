@@ -277,7 +277,7 @@ describe("NiagaraPreviewRoute", () => {
 			screen.getByText("Restart Workbench and verify the selected project.")
 		).toBeDefined();
 		expect(screen.queryByText(/Fail\(NiagaraPreview/)).toBeNull();
-		expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
+		expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 	});
 
 	it("keeps a manually typed path for engine content", async () => {
@@ -359,6 +359,7 @@ describe("NiagaraPreviewRoute", () => {
 							code: "baker_camera_missing",
 							message: "No valid saved Baker camera was available.",
 							recovery: "Save a Baker camera on the Niagara System, then retry.",
+							nextStep: "fix_input" as const,
 							retrySafe: false,
 							stage: "capture"
 						},

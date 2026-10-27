@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import type {
 	ScenarioDocument,
 	ScenarioDocumentFileResult,
@@ -11,7 +12,7 @@ export class ScenarioStudioClientError extends Schema.TaggedError<ScenarioStudio
 	"ScenarioStudioClientError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("scenario_studio_client_failed"),
 		cause: Schema.Defect(),
 		message: Schema.String,

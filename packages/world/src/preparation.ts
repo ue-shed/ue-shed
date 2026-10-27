@@ -32,10 +32,84 @@ import {
 	type WorldTarget
 } from "./schema.js";
 
+const WorldPreparationErrorCode = Schema.Literals([
+	"connection_failed",
+	"active_lease_limit",
+	"lease_conflict",
+	"correlation_mismatch",
+	"lease_released",
+	"lease_unknown",
+	"revision_conflict",
+	"world_changed",
+	"actor_missing",
+	"bounds_unavailable",
+	"budget_exceeded",
+	"capability_unavailable",
+	"container_unavailable",
+	"dependency_budget_exceeded",
+	"editor_required",
+	"invalid_request",
+	"layer_conflict",
+	"layer_missing",
+	"policy_mismatch",
+	"preparation_blocked",
+	"retention_budget_exceeded",
+	"invalid_contract",
+	"restoration_failed",
+	"restoration_conflict"
+]);
+
+const worldPreparationRecovery = {
+	connection_failed:
+		"Check the editor connection and reconnect before repeating the world preparation request.",
+	active_lease_limit: "Wait for an active world preparation lease to finish, then try again.",
+	lease_conflict:
+		"Inspect the retained lease in the editor and choose a new acquisition identity.",
+	correlation_mismatch:
+		"Read the current world and lease evidence, then prepare the intended world again.",
+	lease_released:
+		"Acquire a new world preparation lease before inspecting or replacing its targets.",
+	lease_unknown:
+		"Inspect the active editor leases and acquire a new lease for the intended world.",
+	revision_conflict: "Read the current lease revision before replacing its targets.",
+	world_changed:
+		"Select the intended editor world and refresh its identity before preparing it again.",
+	actor_missing:
+		"Check that the requested actor exists in the selected map and update the target.",
+	bounds_unavailable:
+		"Give the requested actor valid bounds in the editor or choose an explicit region.",
+	budget_exceeded:
+		"Narrow the requested actors or region, or increase the explicit actor budget.",
+	capability_unavailable:
+		"Enable a matching UEShedWorld plugin in the project and restart the editor.",
+	container_unavailable:
+		"Load the requested actor container in the editor or choose an available container.",
+	dependency_budget_exceeded:
+		"Narrow the target dependencies or increase the explicit dependency budget.",
+	editor_required: "Open the project in an editor world and end any active play session.",
+	invalid_request:
+		"Correct the world preparation request and use the supported contract version.",
+	layer_conflict:
+		"Remove duplicate Data Layer requests and resolve conflicting layer states in the editor.",
+	layer_missing: "Check the Data Layer names in the selected map and choose an existing layer.",
+	policy_mismatch:
+		"Refresh the selected world streaming policy and update the preparation requirements.",
+	preparation_blocked:
+		"Inspect the blocked actors and Data Layers in the editor and make them available.",
+	retention_budget_exceeded:
+		"Wait for retained lease evidence to expire before acquiring another lease.",
+	invalid_contract:
+		"Update the host and UEShedWorld plugin to matching versions and report the retained contract failure.",
+	restoration_failed:
+		"Inspect the editor world and restore the owned actors and Data Layers manually, then report the restoration failure.",
+	restoration_conflict:
+		"Inspect the actors and Data Layers changed during the lease and report the restoration conflict before preparing again."
+} satisfies Record<typeof WorldPreparationErrorCode.Type, string>;
+
 export class WorldPreparationError extends Schema.TaggedError<WorldPreparationError>()(
 	"WorldPreparationError",
 	{
-		code: Schema.String,
+		code: WorldPreparationErrorCode,
 		operation: Schema.String,
 		...ErrorGuidanceFields,
 		...ErrorCauseFields,
@@ -55,22 +129,26 @@ class WorldRestorationFailure extends Error {
 /**
  * Guidance for client and editor failure codes. Requests carry a lease id and revision, so a lost
  * response may be sent again; a held or full lease table may free up. Changed worlds, revisions
- * and leases need a fresh read; unknown codes go to a person.
+ * and leases need a fresh read; contract and restoration failures go to a person.
  */
 export function worldPreparationGuidance(
-	code: string
-): Pick<WorldPreparationError, "retrySafe" | "nextStep"> {
+	code: WorldPreparationError["code"]
+): Pick<WorldPreparationError, "retrySafe" | "nextStep" | "recovery"> {
 	switch (code) {
 		case "connection_failed":
 		case "active_lease_limit":
-			return { retrySafe: true, nextStep: "retry" };
+			return { recovery: worldPreparationRecovery[code], retrySafe: true, nextStep: "retry" };
 		case "lease_conflict":
 		case "correlation_mismatch":
 		case "lease_released":
 		case "lease_unknown":
 		case "revision_conflict":
 		case "world_changed":
-			return { retrySafe: false, nextStep: "reconcile" };
+			return {
+				recovery: worldPreparationRecovery[code],
+				retrySafe: false,
+				nextStep: "reconcile"
+			};
 		case "actor_missing":
 		case "bounds_unavailable":
 		case "budget_exceeded":
@@ -84,13 +162,23 @@ export function worldPreparationGuidance(
 		case "policy_mismatch":
 		case "preparation_blocked":
 		case "retention_budget_exceeded":
-			return { retrySafe: false, nextStep: "fix_input" };
-		default:
-			return { retrySafe: false, nextStep: "escalate" };
+			return {
+				recovery: worldPreparationRecovery[code],
+				retrySafe: false,
+				nextStep: "fix_input"
+			};
+		case "invalid_contract":
+		case "restoration_failed":
+		case "restoration_conflict":
+			return {
+				recovery: worldPreparationRecovery[code],
+				retrySafe: false,
+				nextStep: "escalate"
+			};
 	}
 }
 const failure = (
-	code: string,
+	code: WorldPreparationError["code"],
 	operation: string,
 	message: string,
 	snapshot?: WorldSnapshot,
@@ -101,7 +189,6 @@ const failure = (
 		operation,
 		message,
 		...(cause === undefined ? undefined : { cause }),
-		recovery: "Inspect world preparation evidence and the existing lease before retrying.",
 		...worldPreparationGuidance(code),
 		...(snapshot === undefined ? undefined : { snapshot })
 	});
@@ -243,12 +330,15 @@ export function makeWorldPreparation(
 				Effect.flatMap((value) => decode(WorldResponse, value, request.action))
 			);
 		yield* Metric.update(outcomes, response.status);
-		if (response.status === "failed")
+		if (response.status === "failed") {
+			const code = yield* decode(WorldPreparationErrorCode, response.code, request.action);
 			return yield* new WorldPreparationError({
 				...response,
 				operation: request.action,
-				...worldPreparationGuidance(response.code)
+				code,
+				...worldPreparationGuidance(code)
 			});
+		}
 		return response;
 	});
 	const snapshot = (request: WorldRequest) =>

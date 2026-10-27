@@ -2,8 +2,8 @@ import { Schema } from "effect";
 
 /**
  * What a caller can do next after an expected failure. Same names and literal set as
- * `ErrorNextStep` in `@ue-shed/protocol`, defined locally because this package stays independent
- * of it:
+ * `ErrorNextStep` in `@ue-shed/protocol`, defined locally to keep protocol outside this package's
+ * runtime dependency boundary:
  *
  * - `fix_input`: the request, configuration or release is wrong; change it and try again.
  * - `retry`: the same request may succeed later without changes. Only valid when `retrySafe` is true.

@@ -292,6 +292,7 @@ describe("InputAtlasRoute interactions", () => {
 						code: "invalid_project",
 						message: "Content directory is missing.",
 						recovery: "Choose an Unreal project directory.",
+						nextStep: "fix_input" as const,
 						retrySafe: true
 					}
 				})

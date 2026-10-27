@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { join } from "node:path";
 import { Effect, FileSystem, Metric, Result, Schema } from "effect";
 import { LocalizationChangeSet, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
@@ -17,7 +18,7 @@ export class LocalizationCheckOutputError extends Schema.TaggedError<Localizatio
 	"LocalizationCheckOutputError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"changes_exists",

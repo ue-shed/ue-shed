@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Effect, Schema } from "effect";
 
 /**
@@ -8,7 +9,7 @@ import { Effect, Schema } from "effect";
 export class GameTextResponseError extends Schema.TaggedError<GameTextResponseError>()(
 	"GameTextResponseError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("invalid_response"),
 		message: Schema.String,
 		recovery: Schema.String,

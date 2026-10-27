@@ -34,7 +34,14 @@ function failure(
 	stage: NiagaraPreviewFailure["stage"] = "validation",
 	retrySafe = false
 ): NiagaraPreviewFailure {
-	return { code, message, recovery, retrySafe, stage };
+	return {
+		code,
+		message,
+		recovery,
+		retrySafe,
+		stage,
+		nextStep: code === "invalid_request" ? "fix_input" : retrySafe ? "retry" : "reconcile"
+	};
 }
 
 function failureResult(error: NiagaraPreviewFailure): NiagaraPreviewRunResult {

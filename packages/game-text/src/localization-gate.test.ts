@@ -148,7 +148,9 @@ describe("checking a change's text", () => {
 					file: "Content/Text/DT_Menu"
 				});
 				expect(result.items[0]?.guidance).toContain("NS,OldStart");
-				expect(result.items[0]?.guidance).toContain("loc run prepare --carry");
+				expect(result.items[0]?.guidance).toContain(
+					"Carry the translations to the new key"
+				);
 			})
 	);
 

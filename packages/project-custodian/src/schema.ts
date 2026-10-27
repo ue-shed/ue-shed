@@ -1,4 +1,4 @@
-import { ErrorGuidanceFields } from "./error-guidance.js";
+import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { Effect, Schema } from "effect";
 
 const Bytes = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import type {
 	GameTextInvestigationQuery,
 	GameTextInvestigationPresetResult,
@@ -65,7 +66,7 @@ export class GameTextClientError extends Schema.TaggedError<GameTextClientError>
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("game_text_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,

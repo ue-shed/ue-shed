@@ -1,9 +1,10 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Context, Effect, Layer, Ref, Schema } from "effect";
 
 export class WorkbenchWindowError extends Schema.TaggedError<WorkbenchWindowError>()(
 	"Workbench.WorkbenchWindowError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("workbench_window_failed"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,

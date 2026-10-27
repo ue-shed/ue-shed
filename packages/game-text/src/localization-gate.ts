@@ -125,7 +125,7 @@ function guidance(
 			const earlier = line.keyChange?.direction === "from" ? line.identity : other;
 			return (
 				`Its earlier key ${identityText(earlier)} has translations that the next gather drops. ` +
-				"Carry them with loc run prepare --carry and loc apply --sync, or keep the earlier key in Unreal."
+				"Carry the translations to the new key and synchronize them with the project, or keep the earlier key in Unreal."
 			);
 		}
 		case "conflicting_source":

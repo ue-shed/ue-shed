@@ -1,10 +1,11 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Context, Effect, Fiber, Layer, Ref, Schema, type Scope } from "effect";
 import { decodeInvokeArgs, encodeInvokeResult, type InvokeContract } from "../ipc-contracts.js";
 
 export class ElectronIpcError extends Schema.TaggedError<ElectronIpcError>()(
 	"Workbench.ElectronIpcError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("electron_ipc_failed"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,

@@ -1,9 +1,10 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Context, Effect, Layer, Ref, Schema } from "effect";
 
 export class ElectronAppError extends Schema.TaggedError<ElectronAppError>()(
 	"Workbench.ElectronAppError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("electron_app_failed"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,

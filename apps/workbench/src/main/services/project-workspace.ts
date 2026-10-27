@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import {
 	ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
 	ENHANCED_INPUT_CLASS_PREFIX,
@@ -99,7 +100,7 @@ export class WorkbenchProjectUnavailable extends Schema.TaggedError<WorkbenchPro
 	"WorkbenchProjectUnavailable",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("workbench_project_unavailable"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		message: Schema.String,
@@ -802,7 +803,8 @@ export const WorkbenchProjectLive = Layer.effect(
 						code: "invalid_project" as const,
 						message: "No Workbench project is selected.",
 						recovery: "Choose a project from the Workbench header, then retry.",
-						retrySafe: true
+						retrySafe: true,
+						nextStep: "fix_input" as const
 					},
 					status: "failed" as const
 				};
@@ -814,7 +816,8 @@ export const WorkbenchProjectLive = Layer.effect(
 							code: "invalid_project" as const,
 							message: error.message,
 							recovery: error.recovery,
-							retrySafe: true
+							retrySafe: error.retrySafe,
+							nextStep: error.nextStep
 						},
 						status: "failed" as const
 					})

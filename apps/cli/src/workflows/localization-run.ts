@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import {
 	GameTextIndexError,
 	SnapshotStoreError,
@@ -30,7 +31,7 @@ type LocalizationRunCommand = Extract<CliCommand, { readonly _tag: "Localization
 class LocalizationRunConfigurationError extends Schema.TaggedError<LocalizationRunConfigurationError>()(
 	"LocalizationRunConfigurationError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literal("invalid_configuration"),
 		message: Schema.String,
@@ -237,7 +238,15 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 							const output = {
 								schemaVersion: 1,
 								type: "failure",
-								error: Schema.encodeSync(LocalizationRunFailure)(error)
+								error: Schema.encodeSync(LocalizationRunFailure)(
+									error.code === "target_not_found"
+										? new LocalizationOperationError({
+												...error,
+												message: error.message,
+												recovery: `${error.recovery} Run loc targets and choose a listed target.`
+											})
+										: error
+								)
 							};
 							if (command.json) yield* runtime.print(`${JSON.stringify(output)}\n`);
 							else yield* printJson(output);

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Schema } from "effect";
 
 export const BlueprintWorkerRequest = Schema.Struct({
@@ -29,7 +30,7 @@ export class BlueprintBrowserError extends Schema.TaggedError<BlueprintBrowserEr
 	{
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("blueprint_browser_failed"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		operation: Schema.String,

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { Effect, Metric, Result, Schema } from "effect";
 import {
@@ -63,7 +64,7 @@ class LocalizationGateError extends Schema.TaggedError<LocalizationGateError>()(
 	"LocalizationGateError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["unreadable_evidence", "unreadable_package"]),
 		message: Schema.String,
@@ -223,7 +224,20 @@ export const runLocalizationGate = Effect.fn("Cli.workflow.localization_gate")(
 					yield* runtime.setExitCode(2);
 					return;
 				}
-				const verdict = result.success;
+				const verdict = {
+					...result.success,
+					targets: result.success.targets.map((target) => ({
+						...target,
+						items: target.items.map((item) =>
+							item.check === "key_changed"
+								? {
+										...item,
+										guidance: `${item.guidance} Use loc run prepare --carry and loc apply --sync.`
+									}
+								: item
+						)
+					}))
+				};
 				if (verdict.status === "failed")
 					yield* Metric.update(Metric.counter("cli.localization.gate.failed"), 1);
 				if (command.summary) yield* runtime.print(localizationGateSummary(verdict));

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -9,7 +10,7 @@ export class OfflineTexturePreviewHostError extends Schema.TaggedError<OfflineTe
 	"Workbench.OfflineTexturePreviewHostError",
 	{
 		recovery: Schema.String,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("offline_texture_preview_host_failed"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,

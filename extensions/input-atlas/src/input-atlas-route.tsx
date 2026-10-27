@@ -292,6 +292,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 						code: "invalid_project",
 						message: Cause.pretty(cause),
 						recovery: "Check the selected project and scan again.",
+						nextStep: "fix_input",
 						retrySafe: true
 					}
 				})

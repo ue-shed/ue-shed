@@ -1,9 +1,10 @@
 import { indexedTestReports } from "./indexed-reports.test-support.js";
-import { gameTextCsv } from "./export-reference.test-support.js";
+import { corpusCsvForTest } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { it } from "@effect/vitest";
 import { describe, expect } from "vitest";
-import { gameTextCsv as formatCsv, gameTextQualityCsv } from "./csv.js";
+import { referenceCorpusCsv as formatCsv } from "./csv-reference.test-support.js";
+import { gameTextQualityCsv } from "./csv.js";
 import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
 import { GameTextRuleDocument, decodeGameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
@@ -181,7 +182,7 @@ describe("human CSV", () => {
 					}))
 				}))
 			};
-			const csv = gameTextCsv(corpus);
+			const csv = corpusCsvForTest(corpus);
 			expect(csv).toContain('"😀","\' \t@notes","\'+key","\'-namespace"');
 			expect(csv).toContain('"Yes","2","1"');
 			const rules = {
@@ -233,7 +234,7 @@ describe("human CSV", () => {
 		};
 		const report = indexedTestReports(corpus).source(STARTER_GAME_TEXT_RULES);
 		for (const csv of [
-			gameTextCsv(corpus),
+			corpusCsvForTest(corpus),
 			gameTextQualityCsv(report, indexedTestReports(corpus).corpus())
 		]) {
 			expect(csv).toContain('"String table entry","ST_Game","PromptHold",""');
@@ -242,7 +243,7 @@ describe("human CSV", () => {
 	});
 	it("keeps each conflicting location's own source rather than joining variants", () => {
 		const input = corpusOf(["first"]);
-		const csv = gameTextCsv({
+		const csv = corpusCsvForTest({
 			...input,
 			units: input.units.map((unit) => ({
 				...unit,
@@ -258,7 +259,9 @@ describe("human CSV", () => {
 		expect(csv).not.toContain('"first second"');
 	});
 	it("quotes cells, doubles quotes, preserves newlines, and protects formulas before whitespace", () => {
-		const csv = gameTextCsv(corpusOf(['=SUM(1,2) "quoted"\nnext', " +cmd", "-cmd", "@cmd"]));
+		const csv = corpusCsvForTest(
+			corpusOf(['=SUM(1,2) "quoted"\nnext', " +cmd", "-cmd", "@cmd"])
+		);
 		expect(csv.startsWith('\uFEFF"Source","Translator notes"')).toBe(true);
 		expect(csv.endsWith("\r\n")).toBe(true);
 		expect(csv).toContain('"\'=SUM(1,2) ""quoted""\nnext"');

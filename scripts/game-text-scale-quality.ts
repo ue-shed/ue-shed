@@ -7,12 +7,14 @@ import {
 	GameTextIndexError,
 	GameTextIndexRefresh,
 	GameTextIndexSource,
-	GameTextRuleDocument,
-	STARTER_CHECK_RULES,
 	gameTextIndexRefreshLayer,
-	textQualityQuery,
 	type GameTextIndexRefreshResult
-} from "../packages/game-text/dist/index.js";
+} from "../packages/game-text/dist/entry-index.js";
+import {
+	GameTextRuleDocument,
+	STARTER_CHECK_RULES
+} from "../packages/game-text/dist/entry-rules.js";
+import { textQualityQuery } from "../packages/game-text/dist/entry-corpus.js";
 import { PackageTextStored } from "../packages/game-text/dist/package-text-columns.js";
 import { packageTextShard } from "../packages/game-text/dist/package-text-layer.js";
 import { LocalizationEvidenceNodeLive } from "../packages/localization/dist/index.js";

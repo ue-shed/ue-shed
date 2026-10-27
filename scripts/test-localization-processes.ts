@@ -19,12 +19,11 @@ import {
 	type LocalizationTarget,
 	type LocalizationOperationReceipt
 } from "../packages/localization/src/index.ts";
+import { TextCorpusService, TextCorpusServiceLive } from "../packages/game-text/src/entry-index.ts";
 import {
-	TextCorpusService,
-	TextCorpusServiceLive,
 	applyLocalizationReview,
 	joinLocalizationTarget
-} from "../packages/game-text/src/index.ts";
+} from "../packages/game-text/src/entry-corpus.ts";
 import { runCli } from "../apps/cli/src/command.ts";
 import { CliRuntime } from "../apps/cli/src/cli-runtime.ts";
 import { readerLayer } from "../apps/cli/src/cli-operation.ts";

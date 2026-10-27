@@ -19,7 +19,6 @@ import {
 	type TextFilter,
 	type TextFilterClause,
 	type TextFilterField,
-	type TextReviewLens,
 	type TextWhere
 } from "@ue-shed/game-text/schema";
 
@@ -265,7 +264,14 @@ const isAudience = (value: string): value is TextAudience =>
 /** The saved filters of an earlier Game Text, before pills. */
 export interface LegacyFilters {
 	readonly capability?: TextCapabilityFilter | undefined;
-	readonly lens?: TextReviewLens | undefined;
+	readonly lens?:
+		| "all"
+		| "shared"
+		| "duplicate_source"
+		| "long"
+		| "unresolved"
+		| "conflicting"
+		| undefined;
 	readonly withoutNotes?: boolean | undefined;
 	readonly where?: TextWhere | undefined;
 	readonly localizationState?: LocalizationState | undefined;

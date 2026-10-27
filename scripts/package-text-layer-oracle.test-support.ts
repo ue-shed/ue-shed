@@ -4,7 +4,7 @@ import type {
 	SavedAssetTextExtractionEvent,
 	SavedAssetPackageTextEvent
 } from "../packages/unreal-assets/dist/index.js";
-import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/index.js";
+import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/entry-index.js";
 import { textCorpusWithExcludedPackages } from "../packages/game-text/dist/package-text-candidates.js";
 import {
 	packageTextSelection,

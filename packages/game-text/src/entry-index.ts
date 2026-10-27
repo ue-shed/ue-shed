@@ -2,7 +2,6 @@
 
 export {
 	STRING_TABLE_CLASS,
-	type ScanTextCorpusOptions,
 	TEXT_PROPERTY_NAME,
 	TextCorpusScanError,
 	TextCorpusScanLimit,
@@ -85,8 +84,7 @@ export {
 	type LocalizationTargetImportRequest,
 	importLocalizationFile,
 	importLocalizationTarget,
-	localizationImportMetrics,
-	prepareLocalizationFile
+	localizationImportMetrics
 } from "./localization-import.js";
 
 export { type GameTextProjectView } from "./project-index-view.js";

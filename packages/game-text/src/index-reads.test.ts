@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { referenceLocalizationLinesCsv } from "./localization-csv-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,11 +25,10 @@ import {
 import { DEFAULT_GATE_FAILURES, indexedLocalizationGateTarget } from "./localization-gate.js";
 import {
 	LOCALIZATION_LINES_CSV_FIELDS,
-	localizationLinesCsv,
 	pickedLocalizationCultures
 } from "./localization-export.js";
 import { localizationWordCount } from "./localization-words.js";
-import { gameTextCsv } from "./csv.js";
+import { referenceCorpusCsv } from "./csv-reference.test-support.js";
 import {
 	corpusInvestigationEnvelope,
 	exportGameTextInvestigation,
@@ -932,7 +932,7 @@ describe("index reads", () => {
 							// The all-languages CSV from projected lines equals the CSV from whole lines.
 							const all = yield* model.query.localizationLines(lines);
 							expect(
-								localizationLinesCsv({
+								referenceLocalizationLinesCsv({
 									join: model.localization,
 									lines: yield* model.query.selectLocalizationLines(
 										lines,
@@ -940,7 +940,7 @@ describe("index reads", () => {
 									)
 								})
 							).toEqual(
-								localizationLinesCsv({
+								referenceLocalizationLinesCsv({
 									join: model.localization,
 									lines: all,
 									corpus
@@ -961,7 +961,7 @@ describe("index reads", () => {
 								};
 								for (const [index, request] of [lines, picked].entries()) {
 									const path = resolve(directory, `${index}.csv`);
-									const expected = localizationLinesCsv({
+									const expected = referenceLocalizationLinesCsv({
 										join: model.localization,
 										lines: yield* model.query.localizationLines(request),
 										corpus,
@@ -1000,7 +1000,7 @@ describe("index reads", () => {
 								for (const [index, request] of corpusRequests.entries()) {
 									const exported = yield* model.query.exportWithSignals(request);
 									const bytes = new TextEncoder().encode(
-										gameTextCsv(
+										referenceCorpusCsv(
 											exported.corpus,
 											exported.reviewSignals,
 											exported.findings

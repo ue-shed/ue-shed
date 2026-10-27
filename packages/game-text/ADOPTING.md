@@ -23,6 +23,31 @@ Workbench unless a named verification failure leaves the public package contract
 7. Prove the acceptance journey below and record the exact package versions, reader provider, target
    files, project input, and verification commands in the host repository.
 
+## Migrating to 0.23
+
+The root and `/browser` aggregates, their `main`/`types` fallbacks, and deprecated names were
+removed. Import browser-safe schemas from `/schema`, rule documents from `/rules`, checks and
+filter helpers from `/checks`, and presentation labels from `/labels`. Node hosts use `/corpus`
+for corpus queries and reports, `/index` for scanning and native index composition, and
+`/workspace` for selected-project workflows and operations.
+
+| Old import or name                                                                                 | Replacement                                                                            |
+| -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `@ue-shed/game-text`, `@ue-shed/game-text/browser`                                                 | The focused entry point that owns each name, listed above                              |
+| `WorkbenchOperation*`                                                                              | Corresponding `GameTextOperation*` from `/schema`                                      |
+| `ScanTextCorpusOptions`                                                                            | `TextCorpusScanOptions` from `/index`                                                  |
+| `TextCorpusServiceShape`, `TextCorpusServiceTestShape`                                             | `TextCorpusServiceApi`, `TextCorpusServiceTestApi` from `/index`                       |
+| `TextReviewLens`, investigation `lens`                                                             | `TextFilter` clauses from `/schema`: `finding` for rule IDs, `fact` for review signals |
+| `TextFinding`, `TextCountedFindings`, `textFindings`, `textCountedFindings`, row `countedFindings` | Row `findings` rule IDs (`TextRowFindings` from `/checks`)                             |
+| `GameTextIndexStepsOptions.qualityWorker`                                                          | Omit it; quality runs in the native engine                                             |
+| `gameTextCsv`                                                                                      | `NativeTextQuery.writeCorpusCsv` on the opened index query                             |
+| `localizationLinesCsv`                                                                             | `NativeTextQuery.writeLocalizationLinesCsv` on the opened index query                  |
+| `prepareLocalizationFile`                                                                          | Native index imports through `GameTextIndexSteps.importTarget` from `/index`           |
+
+Convert saved investigation lenses into filter clauses before replaying them. For example,
+`shared`, `duplicate_source` and `long` become `finding` clauses naming `localization.<check>`;
+`unresolved` and `conflicting` become `fact` clauses. A lens of `all` adds no clause.
+
 ## Ownership
 
 - UE Shed owns the installed package and its schemas.
@@ -137,7 +162,7 @@ Which query answers which question:
 | How many lines per key, text, problem, origin, audience or asset | `query.aggregate({ ...scope, by: ["translation_key"] })`, and so on                                   |
 | A target's progress report and baseline                          | `indexedLocalizationProgressReport(model, baseline)`, `indexedLocalizationBaseline(model, createdAt)` |
 | Lines in changed files and their problems                        | `indexedLocalizationGateTarget(model.query, { join, files, failOn })`                                 |
-| A spreadsheet of every line                                      | `query.selectLocalizationLines(request, LOCALIZATION_LINES_CSV_FIELDS)` and `localizationLinesCsv`    |
+| A spreadsheet of every line                                      | `query.writeLocalizationLinesCsv(request, { path })`                                                  |
 | Keys and translations before a gather                            | `query.selectLocalizationLines(request, KEY_CHANGE_FIELDS)`                                           |
 | Package coverage and diagnostics                                 | `query.readCorpusHeader()`                                                                            |
 | The units quality findings name                                  | `query.readUnits(ids)`, or `readFindingUnits`                                                         |

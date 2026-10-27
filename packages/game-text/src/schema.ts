@@ -11,7 +11,6 @@ import {
 import { TextAudience, TextAudienceReason } from "./text-audience-schema.js";
 import { gameTextResponseParser } from "./response-parser.js";
 import {
-	TextCountedFindings,
 	TextFindingsSelection,
 	TextFindingsStatus,
 	TextRowProblems,
@@ -342,21 +341,6 @@ export const TextFileScopeSummary = Schema.Struct({
 export type TextFileScopeSummary = Schema.Schema.Type<typeof TextFileScopeSummary>;
 
 /**
- * Convenience review filter for shared, duplicate, long, unresolved or conflicting text.
- * @deprecated Searches have no lens: filter by `finding` (the project's rules) or `fact`.
- */
-export const TextReviewLens = Schema.Literals([
-	"all",
-	"shared",
-	"duplicate_source",
-	"long",
-	"unresolved",
-	"conflicting"
-]);
-/** @deprecated See `TextReviewLens`. */
-export type TextReviewLens = Schema.Schema.Type<typeof TextReviewLens>;
-
-/**
  * A row's facts: unresolved identity, conflicting sources, evidence-only lines and compiled-copy
  * differences. `fact` clauses filter by them; findings come from the project's rules instead.
  */
@@ -382,14 +366,6 @@ export type TextReviewSignal = Schema.Schema.Type<typeof TextReviewSignal>;
  */
 export const TextProblem = Schema.Literals(TEXT_PROBLEMS);
 export type TextProblem = Schema.Schema.Type<typeof TextProblem>;
-
-/**
- * Findings: reused text, the same text under different keys, long text, unlocalizable text.
- * @deprecated Findings are the project's rules: `finding` clauses name rule IDs.
- */
-export const TextFinding = Schema.Literals(["shared", "duplicate_source", "long", "unresolved"]);
-/** @deprecated See `TextFinding`. */
-export type TextFinding = Schema.Schema.Type<typeof TextFinding>;
 
 /** Translation work in one culture: no translation, one written for older text, or not in Unreal. */
 export const TextTranslationState = Schema.Literals(["missing", "to_update", "not_synced"]);
@@ -671,8 +647,6 @@ export const TextUnitSearchResult = Schema.Struct({
 	reviewSignals: Schema.Array(TextReviewSignal),
 	/** In a search page: the row's problems under the request, worst first. */
 	problems: Schema.optionalKey(TextRowProblems),
-	/** @deprecated Nothing sets it: read `findings`. */
-	countedFindings: Schema.optionalKey(TextCountedFindings),
 	/** With a findings layer: the rules with a finding on the row, and how many more there are. */
 	...textRowFindingFields,
 	/** Whitespace-delimited words in that same longest source, never the joined variants. */

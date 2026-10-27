@@ -288,13 +288,13 @@ const validArgsByChannel = {
 				qualityFilter: "all",
 				query: "",
 				capability: "all",
-				lens: "all"
+				filter: []
 			},
 			format: "json"
 		}
 	],
 	"game-text:investigation-save": [
-		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", lens: "all" }
+		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", filter: [] }
 	],
 	"game-text:investigation-open": [],
 	"game-text:localization:quality-search": [{ target: "FixtureGame", filter: "all" }],

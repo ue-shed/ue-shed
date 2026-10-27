@@ -9,12 +9,7 @@ import {
 	InvestigationError,
 	investigationTable
 } from "@ue-shed/unreal-assets/investigation";
-import {
-	TextCorpus,
-	TextCorpusSearchRequest,
-	TextReviewLens,
-	type TextFilterClause
-} from "./schema.js";
+import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
@@ -30,12 +25,6 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	mode: Schema.Literals(["corpus", "quality"]),
 	query: TextCorpusSearchRequest.fields.query,
 	capability: TextCorpusSearchRequest.fields.capability,
-	/**
-	 * A lens from a preset saved before findings were the project's rules; requests read it as the
-	 * clause it is now (`investigationRequest`).
-	 * @deprecated Use `filter`: `finding` names rules and `fact` the facts.
-	 */
-	lens: Schema.optional(TextReviewLens),
 	where: TextCorpusSearchRequest.fields.where,
 	/** Filter pills; presets saved before them use the fields above. */
 	filter: TextCorpusSearchRequest.fields.filter,
@@ -58,21 +47,11 @@ export const GameTextInvestigationQuery = Schema.Struct({
 );
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
 
-/**
- * A preset query without its lens, which becomes a clause: `shared`, `duplicate_source` and
- * `long` name those checks' findings (`localization.<check>`), and `unresolved` and
- * `conflicting` are facts.
- */
+/** The corpus request carried by an investigation query. */
 export function investigationRequest(
 	query: GameTextInvestigationQuery
-): Omit<GameTextInvestigationQuery, "lens"> {
-	const { lens, ...request } = query;
-	if (lens === undefined || lens === "all") return request;
-	const clause: TextFilterClause =
-		lens === "unresolved" || lens === "conflicting"
-			? { field: "fact", op: "is", values: [lens] }
-			: { field: "finding", op: "is", values: [`localization.${lens}`] };
-	return { ...request, filter: [...(request.filter ?? []), clause] };
+): GameTextInvestigationQuery {
+	return query;
 }
 /**
  * Versioned reusable query with domain ordering and optional embedded rules. Source quality

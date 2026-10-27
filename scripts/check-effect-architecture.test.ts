@@ -189,7 +189,7 @@ test("browser closures skip erased type-only imports but follow inline type impo
 	}
 });
 
-test("Game Text entry points are named and first-party code imports focused entry points", async () => {
+test("Game Text entry points are named and first-party code rejects removed aggregate entry points", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-game-text-entries-"));
 	try {
 		const source = join(fixtureRoot, "packages/game-text/src");
@@ -322,7 +322,7 @@ test("checks the Game Text browser closure and its localization dependency", asy
 		await mkdir(corpus, { recursive: true });
 		await writeFile(join(formats, "package.json"), '{"dependencies":{"effect":"catalog:"}}');
 		await writeFile(join(formats, "src/browser.ts"), 'import { Schema } from "effect";\n');
-		await writeFile(join(corpus, "browser.ts"), 'export * from "./join.js";\n');
+		await writeFile(join(corpus, "entry-corpus.ts"), 'export * from "./join.js";\n');
 		await writeFile(join(corpus, "join.ts"), 'import { readFile } from "node:fs/promises";\n');
 		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
 			"packages/game-text/src/join.ts: browser closure must not import node:fs/promises"
@@ -336,10 +336,13 @@ test("checks the Game Text browser closure and its localization dependency", asy
 			join(corpus, "localization-words.ts"),
 			'import LineBreaker from "linebreak";\n'
 		);
-		await writeFile(join(corpus, "browser.ts"), 'export * from "./localization-words.js";\n');
+		await writeFile(
+			join(corpus, "entry-corpus.ts"),
+			'export * from "./localization-words.js";\n'
+		);
 		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
 		await writeFile(join(corpus, "join.ts"), 'import LineBreaker from "linebreak";\n');
-		await writeFile(join(corpus, "browser.ts"), 'export * from "./join.js";\n');
+		await writeFile(join(corpus, "entry-corpus.ts"), 'export * from "./join.js";\n');
 		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
 			"packages/game-text/src/join.ts: linebreak must be confined to localization-words.ts"
 		]);

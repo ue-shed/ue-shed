@@ -1,4 +1,4 @@
-import type { TextCorpus } from "../packages/game-text/dist/index.js";
+import type { TextCorpus } from "../packages/game-text/dist/entry-schema.js";
 import type { Schema } from "effect";
 
 type OracleValue = Schema.Json | TextCorpus["diagnostics"][number] | undefined;

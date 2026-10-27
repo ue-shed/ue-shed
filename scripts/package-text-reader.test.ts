@@ -8,7 +8,7 @@ import {
 	scanSavedProject
 } from "../packages/unreal-assets/dist/index.js";
 import { auditPackageTextCandidates } from "./package-text-candidates.test-support.ts";
-import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/index.js";
+import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/entry-index.js";
 import { compareTextCorpora } from "./package-text-oracle.test-support.ts";
 import {
 	measureNativeText,

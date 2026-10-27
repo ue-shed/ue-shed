@@ -141,9 +141,6 @@ function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
 	});
 }
 
-/** @deprecated Prefer TextCorpusScanOptions */
-export type ScanTextCorpusOptions = TextCorpusScanOptions;
-
 /**
  * Saved inspection input to corpus construction. Failed packages retain file provenance and a
  * diagnostic instead of disappearing from coverage counts.
@@ -1109,9 +1106,6 @@ export interface TextCorpusServiceApi {
 	) => Effect.Effect<TextCorpus, TextCorpusScanError>;
 }
 
-/** @deprecated Use `TextCorpusServiceApi`. */
-export type TextCorpusServiceShape = TextCorpusServiceApi;
-
 /** Canonical TextCorpus domain service (plan name: TextCorpus.Service). */
 export class TextCorpusService extends Context.Service<TextCorpusService, TextCorpusServiceApi>()(
 	"@ue-shed/game-text/TextCorpus"
@@ -1146,9 +1140,6 @@ export const TextCorpusServiceLive = Layer.effect(
  */
 export type TextCorpusServiceTestApi = Omit<TextCorpusServiceApi, "scanFromProjectIndex"> &
 	Partial<Pick<TextCorpusServiceApi, "scanFromProjectIndex">>;
-
-/** @deprecated Use `TextCorpusServiceTestApi`. */
-export type TextCorpusServiceTestShape = TextCorpusServiceTestApi;
 
 /**
  * Provides a complete corpus service for tests. Supply scanFromProjectIndex to assert

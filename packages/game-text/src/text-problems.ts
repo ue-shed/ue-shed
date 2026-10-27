@@ -7,7 +7,6 @@ import {
 	type TextFilter,
 	type TextFilterClause,
 	type TextFilterField,
-	type TextFinding,
 	type TextNotes,
 	type TextOriginKind,
 	type TextProblemCounts,
@@ -15,7 +14,6 @@ import {
 	type TextTranslationState
 } from "./schema.js";
 import { matchesTextPathPrefix, textFileKey } from "./text-origin.js";
-import type { TextCountedFindings } from "./text-problem-schema.js";
 import { TEXT_PROBLEMS, TEXT_PROBLEM_LABELS, TEXT_PROBLEM_RULES } from "./text-problem-rules.js";
 
 export { TEXT_PROBLEM_LABELS };
@@ -59,22 +57,6 @@ export interface TextFacts {
 export function needsWork(problems: readonly TextProblem[]): boolean {
 	const worst = problems[0];
 	return worst !== undefined && TEXT_PROBLEM_RULES[worst].work;
-}
-
-function isFinding(signal: TextReviewSignal): signal is TextFinding & TextReviewSignal {
-	return signal === "unresolved";
-}
-
-/**
- * The review signals of `signals` that once counted as findings.
- * @deprecated No signal makes a finding: findings come from the project's rules, so this lists
- * none. Read a row's `findings`.
- */
-export function textCountedFindings(
-	_signals: readonly TextReviewSignal[],
-	_counted?: readonly TextReviewSignal[]
-): readonly TextCountedFindings[number][] {
-	return [];
 }
 
 /** Translation work in the given cultures' marks. */
@@ -121,14 +103,6 @@ export function textProblems(input: {
 	if (input.finding === true) found.add("finding");
 	if (found.size === 0) return ["up_to_date"];
 	return TextProblem.literals.filter((problem) => found.has(problem));
-}
-
-/**
- * Keeps the review signals that are also a `TextFinding`: `unresolved`.
- * @deprecated Findings come from the project's rules: read a row's `findings`.
- */
-export function textFindings(signals: readonly TextReviewSignal[]): readonly TextFinding[] {
-	return signals.filter(isFinding);
 }
 
 function clauseHas(facts: TextFacts, clause: TextFilterClause): boolean {

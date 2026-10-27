@@ -19,7 +19,7 @@ import { LocalizationJoin } from "./localization-schema.js";
 import { TextUnit } from "./schema.js";
 import { buildTextCorpus } from "./corpus.js";
 import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
-import { localizationLinesCsv } from "./localization-export.js";
+import { referenceLocalizationLinesCsv } from "./localization-csv-reference.test-support.js";
 import { localizationLineUnits } from "./gathered-text.js";
 import { localizationLineFingerprint } from "./localization-review.js";
 import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
@@ -280,7 +280,7 @@ describe("localization identity join and precedence", () => {
 					);
 				}
 			}
-			const { csv } = localizationLinesCsv({
+			const { csv } = referenceLocalizationLinesCsv({
 				join: joined,
 				lines: joined.lines,
 				corpus: text

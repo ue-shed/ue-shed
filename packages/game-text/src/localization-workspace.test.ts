@@ -98,7 +98,7 @@ describe("bounded localization workspace", () => {
 				mode: "quality",
 				query: "",
 				capability: "all",
-				lens: "all",
+
 				qualityFilter: "all"
 			},
 			rules: document

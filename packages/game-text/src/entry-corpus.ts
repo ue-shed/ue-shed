@@ -12,13 +12,7 @@ export {
 	textPackageCoverageSummary
 } from "./corpus-summary.js";
 
-export {
-	gameTextCsv,
-	gameTextQualityCsv,
-	spreadsheetCsv,
-	textAssetName,
-	textQualityProblem
-} from "./csv.js";
+export { gameTextQualityCsv, spreadsheetCsv, textAssetName, textQualityProblem } from "./csv.js";
 
 export {
 	GameTextInvestigationExport,
@@ -46,7 +40,6 @@ export {
 	LocalizationLinesFileResult,
 	LOCALIZATION_LINES_CSV_FIELDS,
 	type LocalizationCsvLine,
-	localizationLinesCsv,
 	pickedLocalizationCultures
 } from "./localization-export.js";
 

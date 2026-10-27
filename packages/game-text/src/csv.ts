@@ -1,8 +1,5 @@
 import type { TextCorpus, TextIdentity, TextLocation, TextReviewSignal } from "./schema.js";
 import type { TextQualityFinding, TextQualityReport } from "./quality-schema.js";
-import { hasSearchableSource } from "./search.js";
-import { TEXT_AUDIENCE_LABELS } from "./text-audience-schema.js";
-import { occurrenceTextAudience } from "./text-audience.js";
 
 /**
  * Human review copy for a stable signal code. Labels are presentation text; persisted filters
@@ -85,80 +82,6 @@ export function spreadsheetCsv(rows: Iterable<readonly (string | number)[]>): st
 			)
 			.join("\r\n") +
 		"\r\n"
-	);
-}
-
-/**
- * One row per searchable line's saved location. Optional context keeps scan-wide review signals.
- * With `findings`, a Findings column lists the labels of each unit's rules.
- * @deprecated The engine writes this CSV: `NativeTextQuery.writeCorpusCsv`. Kept until hosts adopt it.
- */
-export function gameTextCsv(
-	corpus: Pick<TextCorpus, "units">,
-	reviewSignals: ReadonlyMap<TextCorpus["units"][number]["id"], readonly TextReviewSignal[]>,
-	findings?: {
-		readonly labels: ReadonlyMap<string, string>;
-		readonly units: ReadonlyMap<TextCorpus["units"][number]["id"], readonly string[]>;
-	}
-): string {
-	return spreadsheetCsv(
-		(function* () {
-			yield [
-				"Source",
-				"Translator notes",
-				"Key",
-				"Namespace / string table",
-				"Localization",
-				"Location type",
-				"Asset",
-				"Row / entry",
-				"Property",
-				"Editable",
-				"Characters",
-				"Words",
-				"Review signals",
-				...(findings ? ["Findings"] : []),
-				"Audience",
-				"Text unit ID",
-				"Package file"
-			];
-			for (const unit of corpus.units.filter(hasSearchableSource)) {
-				const signals = reviewSignals.get(unit.id);
-				if (signals === undefined)
-					throw new Error(
-						"CSV export is missing native review signals for a selected unit."
-					);
-				const ruleLabels = (findings?.units.get(unit.id) ?? []).map(
-					(rule) => findings?.labels.get(rule) ?? rule
-				);
-				for (const occurrence of unit.occurrences) {
-					yield [
-						occurrence.source,
-						occurrence.devNotes,
-						...identityCells(occurrence.identity),
-						occurrence.identity.status === "unresolved"
-							? occurrence.identity.reason === "culture_invariant"
-								? "Not localized (culture invariant)"
-								: "Missing localization key"
-							: "Localizable",
-						...locationCells(occurrence.location),
-						occurrence.editCapability === "source_editable" ? "Yes" : "No",
-						occurrence.source.length,
-						occurrence.source.trim() === ""
-							? 0
-							: occurrence.source.trim().split(/\s+/u).length,
-						signals
-							.filter((signal) => signal !== "evidence_only")
-							.map(textReviewSignalLabel)
-							.join("; "),
-						...(findings ? [ruleLabels.join("; ")] : []),
-						TEXT_AUDIENCE_LABELS[occurrenceTextAudience(occurrence).audience],
-						unit.id,
-						occurrence.packageFile
-					];
-				}
-			}
-		})()
 	);
 }
 

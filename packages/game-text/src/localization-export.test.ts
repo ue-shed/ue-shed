@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
-import { localizationLinesCsv, pickedLocalizationCultures } from "./localization-export.js";
+import { referenceLocalizationLinesCsv } from "./localization-csv-reference.test-support.js";
+import { pickedLocalizationCultures } from "./localization-export.js";
 import {
 	archiveEntry,
 	corpus,
@@ -35,7 +36,7 @@ describe("all-languages spreadsheet", () => {
 				[archiveEntry("Zeta", "Last line", "Last line")]
 			)
 		);
-		const { csv, rows: count } = localizationLinesCsv({
+		const { csv, rows: count } = referenceLocalizationLinesCsv({
 			join: joined,
 			lines: joined.lines,
 			corpus: text
@@ -91,7 +92,7 @@ describe("all-languages spreadsheet", () => {
 		expect(pickedLocalizationCultures({ target: target.name })).toEqual([]);
 		// The native culture always leads; other cultures appear only when picked.
 		const table = rows(
-			localizationLinesCsv({
+			referenceLocalizationLinesCsv({
 				join: joined,
 				lines,
 				corpus: text,

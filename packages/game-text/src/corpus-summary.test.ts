@@ -136,7 +136,7 @@ describe("bounded corpus reports", () => {
 				mode: "corpus",
 				query: "",
 				capability: "all",
-				lens: "all",
+
 				qualityFilter: "all"
 			}
 		});

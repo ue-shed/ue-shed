@@ -48,20 +48,3 @@ export const TextFindingsStatus = Schema.Struct({
 	status: Schema.Literals(["none", "pending", "ready"])
 });
 export type TextFindingsStatus = typeof TextFindingsStatus.Type;
-
-/**
- * Review signals that once made a row a finding.
- * @deprecated Rows list their rules' findings in `findings`; nothing sets `countedFindings`.
- */
-export const TextCountedFindings = Schema.Array(
-	Schema.Literals([
-		"shared",
-		"duplicate_source",
-		"long",
-		"unresolved",
-		"evidence_only",
-		"compiled_copy_differs"
-	])
-).check(Schema.isMaxLength(6));
-/** @deprecated See `TextCountedFindings`. */
-export type TextCountedFindings = typeof TextCountedFindings.Type;

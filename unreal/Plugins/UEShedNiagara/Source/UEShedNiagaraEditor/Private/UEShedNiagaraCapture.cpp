@@ -704,14 +704,18 @@ bool FUEShedNiagaraCapture::FitCaptureCamera(FString& OutError)
 			Max.X = FMath::Max(Max.X, X);
 			Max.Y = FMath::Max(Max.Y, Y);
 		}
-		if (Max.X >= Min.X && Max.Y >= Min.Y)
+		// Edge coverage is incomplete evidence: never tighten an already clipped frame. Keep the
+		// bounds-based camera instead; edge activity in the final frames sets needsReview.
+		const bool bReachesEdge =
+			Min.X == 0 || Min.Y == 0 || Max.X == Options.Width - 1 || Max.Y == Options.Height - 1;
+		if (bReachesEdge)
 		{
-			// Edge coverage is incomplete evidence: never tighten an already clipped frame.
-			if (Min.X == 0 || Min.Y == 0 || Max.X == Options.Width - 1 || Max.Y == Options.Height - 1)
-			{
-				OutError = TEXT("Auto-fit coverage reaches the image edge; increase camera padding or use an explicit camera.");
-				return false;
-			}
+			UE_LOG(LogTemp, Warning,
+				   TEXT("Auto-fit coverage reaches the image edge; keeping the untightened bounds "
+						"camera. Increase camera padding or use an explicit camera to reframe."));
+		}
+		else if (Max.X >= Min.X && Max.Y >= Min.Y)
+		{
 			const float Scale = FMath::Max(static_cast<float>(Max.X - Min.X + 1) / Options.Width,
 										   static_cast<float>(Max.Y - Min.Y + 1) / Options.Height);
 			const float HalfWidth = Distance * FMath::Tan(FMath::DegreesToRadians(22.5f));

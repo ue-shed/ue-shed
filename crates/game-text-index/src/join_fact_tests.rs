@@ -1430,6 +1430,41 @@ fn missing_table_entry_retains_unknown_without_claiming_an_unavailable_namespace
 }
 
 #[test]
+fn string_table_entry_missing_rule_reports_only_a_known_tables_missing_entry() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject};
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    fixture.packages(&[
+        json!({"source":"An entry","namespace":"UI","key":"Present","object":"/Game/Text/Table.Table","row":"Present","location":2}),
+        json!({"source":"Present entry","namespace":"/Game/Text/Table.Table","key":"Present","object":"/Game/Text/Example.Example","property":"PresentEntry","identity":1}),
+        json!({"source":"Missing entry","namespace":"/Game/Text/Table.Table","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingEntry","identity":1}),
+        json!({"source":"Missing table","namespace":"/Game/Text/Missing.Missing","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingTable","identity":1})
+    ])?;
+    fixture.lines()?;
+    let program = example_program(&["string_table_entry_missing"], None)?;
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let collator = HostCollator::new("en")?;
+    let cancelled = AtomicBool::new(false);
+    let mut rows = NativeSubjects::new(&query, Subject::Line, &collator, &cancelled)?;
+    let findings = program.evaluate(&mut rows, &collator)?.findings;
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].actual,
+        json!({"entries":[{"tableId":"/Game/Text/Table.Table","key":"Absent"}],"entryCount":1})
+    );
+    assert_eq!(findings[0].expectation, json!({"entryExists":true}));
+    Ok(())
+}
+
+#[test]
 fn foreign_sources_use_native_archive_translations_including_metadata() -> Result<()> {
     let mut fixture = Fixture::new()?;
     let cases = [

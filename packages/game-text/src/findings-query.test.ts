@@ -246,6 +246,15 @@ it.live(
 						entry_key: "Shared"
 					}
 				})),
+				// A reference to an entry TableA, a known table, does not have.
+				{
+					...occurrence("Absent", "Missing entry text", 8),
+					identity: {
+						status: "string_table" as const,
+						table_id: "/Game/Text/TableA.TableA",
+						key: "Absent"
+					}
+				},
 				{
 					...occurrence("", "Invariant", 3),
 					identity: {

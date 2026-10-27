@@ -245,7 +245,7 @@ for (const engine of engines) {
 					`-NativeParserEvidence=${evidence}`,
 					`-SavedReviewEvidence=${evidence}`,
 					"-unattended",
-					"-nop4",
+					"-SCCProvider=None",
 					...localDerivedDataCacheArguments,
 					"-NullRHI",
 					"-nosplash"
@@ -326,7 +326,7 @@ for (const engine of engines) {
 				"-run=UEShedBuildFixture",
 				"-NativeParserOnly",
 				"-unattended",
-				"-nop4",
+				"-SCCProvider=None",
 				...localDerivedDataCacheArguments,
 				"-NullRHI",
 				"-nosplash"

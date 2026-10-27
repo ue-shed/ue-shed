@@ -79,7 +79,7 @@ function commandlet(name: string, args: readonly string[], label: string) {
 			`-EnablePlugins=${pluginIds.join(",")}`,
 			...args,
 			"-Unattended",
-			"-nop4",
+			"-SCCProvider=None",
 			...localDerivedDataCacheArguments,
 			"-NoSound",
 			"-NullRHI",

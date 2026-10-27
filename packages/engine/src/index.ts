@@ -94,8 +94,16 @@ export {
 } from "./project-launcher.js";
 export {
 	RemoteControlAllowedClass,
+	RemoteControlAllowedFunction,
 	unrealRemoteControlPermissions
 } from "./remote-control-permissions.js";
+export {
+	reservedUnrealEditorArgument,
+	UnrealEditorArgument,
+	type UnrealEditorLaunchOptions,
+	UnrealEditorLaunchOptionFields,
+	UnrealStartupMap
+} from "./editor-launch-options.js";
 export {
 	makeOwnedProcessTreeTestLayer,
 	makeSupervisedEditorSessionTestLayer,

@@ -1032,7 +1032,7 @@ export const NiagaraPreviewLive = Layer.effect(
 				"-AllowCommandletRendering",
 				"-RenderOffscreen",
 				"-unattended",
-				"-nop4",
+				"-SCCProvider=None",
 				"-nosplash"
 			];
 			if (options.sessionDirectory !== undefined) {

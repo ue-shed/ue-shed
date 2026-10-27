@@ -1324,7 +1324,7 @@ async function main(): Promise<void> {
 			"-run=UEShedBuildFixture",
 			"-VerifyOnly",
 			"-unattended",
-			"-nop4",
+			"-SCCProvider=None",
 			"-nosplash",
 			"-NullRHI"
 		];
@@ -1346,7 +1346,7 @@ async function main(): Promise<void> {
 					"-run=UEShedBuildFixture",
 					"-BenchmarkLevelParse",
 					"-unattended",
-					"-nop4",
+					"-SCCProvider=None",
 					"-nosplash",
 					"-NullRHI"
 				],

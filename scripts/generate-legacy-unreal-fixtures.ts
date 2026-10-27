@@ -127,7 +127,7 @@ for (const version of legacyVersions) {
 		]);
 		const commandletArguments = [
 			"-unattended",
-			"-nop4",
+			"-SCCProvider=None",
 			...localDerivedDataCacheArguments,
 			"-nosplash",
 			"-NullRHI",

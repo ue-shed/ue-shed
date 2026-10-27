@@ -204,7 +204,7 @@ function probe(engineRoot: string, executable: string) {
 			"-run=pythonscript",
 			`-script=${join(repositoryRoot, "scripts", "unreal-enhanced-input-probe.py")}`,
 			"-unattended",
-			"-nop4",
+			"-SCCProvider=None",
 			"-nosplash",
 			"-NullRHI",
 			...localDerivedDataCacheArguments

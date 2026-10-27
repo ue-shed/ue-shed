@@ -428,7 +428,7 @@ export const OfflineTexturePreviewLive = Layer.effect(
 							"-run=UEShedTexturePreview",
 							`-Request=${manifestPath}`,
 							"-unattended",
-							"-nop4",
+							"-SCCProvider=None",
 							"-nosplash",
 							"-NullRHI"
 						],

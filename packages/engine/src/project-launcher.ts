@@ -5,8 +5,14 @@ import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-s
 import { Context, Effect, Layer, Schema } from "effect";
 import {
 	RemoteControlAllowedClass,
+	RemoteControlAllowedFunction,
 	unrealRemoteControlPermissions
 } from "./remote-control-permissions.js";
+import {
+	checkEditorLaunchOptions,
+	UnrealEditorLaunchOptionFields,
+	unrealEditorOptionArguments
+} from "./editor-launch-options.js";
 import {
 	EngineInstallationDiscovery,
 	type EngineVersion,
@@ -30,8 +36,10 @@ export type UnrealLaunchPlugin = typeof UnrealLaunchPlugin.Type;
 /**
  * Normal launch or explicit plugin-enabled launch, optionally with a Remote Control HTTP
  * port. Plugin enablement is per launch rather than a persistent project-descriptor edit.
- * `remoteControlAllowedClasses` adds a host's own Remote Control classes to the per-launch
- * allowlist beside the enabled UE Shed plugins' classes.
+ * `remoteControlAllowedClasses` and `remoteControlAllowedFunctions` add a host's own Remote
+ * Control classes and single functions to the per-launch allowlist beside the enabled UE Shed
+ * plugins' classes. The WebSocket server listens on `remoteControlWebSocketPort`, else the port
+ * after the HTTP port.
  */
 export const UnrealProjectLaunchMode = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("normal") }),
@@ -41,19 +49,25 @@ export const UnrealProjectLaunchMode = Schema.Union([
 		remoteControlHttpPort: Schema.optional(HttpPort),
 		remoteControlAllowedClasses: Schema.optional(
 			Schema.Array(RemoteControlAllowedClass).check(Schema.isMaxLength(64))
-		)
+		),
+		remoteControlAllowedFunctions: Schema.optional(
+			Schema.Array(RemoteControlAllowedFunction).check(Schema.isMaxLength(256))
+		),
+		remoteControlWebSocketPort: Schema.optional(HttpPort)
 	})
 ]);
 export type UnrealProjectLaunchMode = typeof UnrealProjectLaunchMode.Type;
 
 /**
- * Explicit .uproject descriptor, launch mode and optional engine root. The launcher validates
- * the request and installed binaries before spawning the editor.
+ * Explicit .uproject descriptor, launch mode, optional engine root and per-run options (see
+ * `UnrealEditorLaunchOptionFields`). The launcher validates the request, its options and the
+ * installed binaries before spawning the editor.
  */
 export const UnrealProjectLaunchRequest = Schema.Struct({
 	explicitEngineRoot: Schema.optional(Schema.NonEmptyString),
 	mode: UnrealProjectLaunchMode,
-	projectDescriptor: Schema.NonEmptyString
+	projectDescriptor: Schema.NonEmptyString,
+	...UnrealEditorLaunchOptionFields
 });
 export type UnrealProjectLaunchRequest = typeof UnrealProjectLaunchRequest.Type;
 
@@ -66,7 +80,9 @@ export const UnrealProjectLaunchResult = Schema.Struct({
 	executable: Schema.NonEmptyString,
 	mode: Schema.Literals(["normal", "with_plugins"]),
 	pid: Schema.Int.check(Schema.isGreaterThan(0)),
-	projectDescriptor: Schema.NonEmptyString
+	projectDescriptor: Schema.NonEmptyString,
+	/** The run's editor log, when the request set `logPath`. */
+	logPath: Schema.optional(Schema.NonEmptyString)
 });
 export type UnrealProjectLaunchResult = typeof UnrealProjectLaunchResult.Type;
 
@@ -85,6 +101,7 @@ export class UnrealProjectLaunchError extends Schema.TaggedError<UnrealProjectLa
 			"invalid_module_manifest",
 			"plugin_unavailable",
 			"engine_plugins_stale",
+			"startup_map_missing",
 			"spawn_failed"
 		]),
 		details: Schema.optionalKey(Schema.String),
@@ -435,49 +452,64 @@ export function unrealEditorCommandletExecutable(
 }
 
 /**
- * Builds per-launch plugin and Remote Control arguments, including HTTP and adjacent
- * WebSocket ports. Accepts already validated input; does not persist settings or start a
- * process. `allowedClasses` adds a host's own classes to the UE 5.8 Remote Control allowlist.
+ * Builds per-launch plugin and Remote Control arguments: the HTTP port, the WebSocket port
+ * (`webSocketPort`, else the next port) and the allowlist. Accepts already validated input; does
+ * not persist settings or start a process. `allowedClasses` and `allowedFunctions` add a host's
+ * own classes and single functions to the UE 5.8 Remote Control allowlist. Live Coding is off for
+ * the run through its setting, which UE 4.27 and 5.x both read.
  */
 export function unrealRemoteControlArguments(
 	plugins: readonly UnrealLaunchPlugin[],
 	httpPort: number,
-	allowedClasses: readonly RemoteControlAllowedClass[] = []
+	allowedClasses: readonly RemoteControlAllowedClass[] = [],
+	options: {
+		readonly allowedFunctions?: readonly RemoteControlAllowedFunction[] | undefined;
+		readonly webSocketPort?: number | undefined;
+	} = {}
 ): readonly string[] {
 	const enabledPlugins = [...new Set([...plugins.map(({ id }) => id), "RemoteControl"])];
 	return [
 		`-EnablePlugins=${enabledPlugins.join(",")}`,
 		"-RCWebControlEnable",
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${httpPort}`,
-		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${httpPort + 1}`,
+		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${options.webSocketPort ?? httpPort + 1}`,
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
-		...unrealRemoteControlPermissions(enabledPlugins, allowedClasses),
-		"-NoLiveCoding"
+		...unrealRemoteControlPermissions(enabledPlugins, allowedClasses, options.allowedFunctions),
+		"-ini:EditorPerProjectUserSettings:[/Script/LiveCoding.LiveCodingSettings]:bEnabled=False"
 	];
 }
 
 /**
- * Builds literal editor arguments for a validated normal or plugin-enabled request. Resolves
- * descriptor paths and adds Remote Control configuration only when its port is explicitly
- * requested.
+ * Builds literal editor arguments for a validated normal or plugin-enabled request: the project,
+ * the startup map (the editor reads it only as the token right after the project), plugins,
+ * Remote Control configuration when its port is requested, then the per-run options. Resolves
+ * descriptor paths.
  */
 export function unrealProjectLaunchArguments(
 	request: UnrealProjectLaunchRequest
 ): readonly string[] {
-	if (request.mode.kind === "normal") return [resolve(request.projectDescriptor)];
 	const args = [
 		resolve(request.projectDescriptor),
-		...request.mode.plugins.map(({ descriptor }) => `-PLUGIN=${resolve(descriptor)}`)
+		...(request.startupMap === undefined ? [] : [request.startupMap])
 	];
-	if (request.mode.remoteControlHttpPort !== undefined) {
+	if (request.mode.kind === "with_plugins") {
 		args.push(
-			...unrealRemoteControlArguments(
-				request.mode.plugins,
-				request.mode.remoteControlHttpPort,
-				request.mode.remoteControlAllowedClasses
-			)
+			...request.mode.plugins.map(({ descriptor }) => `-PLUGIN=${resolve(descriptor)}`)
 		);
+		if (request.mode.remoteControlHttpPort !== undefined)
+			args.push(
+				...unrealRemoteControlArguments(
+					request.mode.plugins,
+					request.mode.remoteControlHttpPort,
+					request.mode.remoteControlAllowedClasses,
+					{
+						allowedFunctions: request.mode.remoteControlAllowedFunctions,
+						webSocketPort: request.mode.remoteControlWebSocketPort
+					}
+				)
+			);
 	}
+	args.push(...unrealEditorOptionArguments(request));
 	return args;
 }
 
@@ -598,6 +630,19 @@ export const UnrealProjectLauncherLive = Layer.effect(
 				process.platform,
 				installation.version
 			);
+			const plugins = request.mode.kind === "with_plugins" ? request.mode.plugins : [];
+			yield* checkEditorLaunchOptions(projectDescriptor, request, plugins).pipe(
+				Effect.mapError((failure) =>
+					launchError(
+						failure.code,
+						failure.message,
+						failure.recovery,
+						false,
+						"fix_input",
+						failure.cause
+					)
+				)
+			);
 			if (
 				request.mode.kind === "with_plugins" &&
 				request.mode.remoteControlHttpPort !== undefined
@@ -617,7 +662,10 @@ export const UnrealProjectLauncherLive = Layer.effect(
 				executable,
 				mode: request.mode.kind,
 				pid,
-				projectDescriptor
+				projectDescriptor,
+				...(request.logPath === undefined
+					? undefined
+					: { logPath: resolve(request.logPath) })
 			});
 		});
 		return UnrealProjectLauncher.of({ launch });

@@ -365,7 +365,7 @@ for (const engine of configured) {
 			"-unattended",
 			"-nullrhi",
 			"-nosplash",
-			"-nop4",
+			"-SCCProvider=None",
 			...localDerivedDataCacheArguments
 		]);
 	}

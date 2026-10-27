@@ -1,7 +1,7 @@
 import { watch } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Layer, Ref, Schema } from "effect";
@@ -204,6 +204,110 @@ it.effect("validates files before starting the owned process", () =>
 		);
 		expect(error.code).toBe("invalid_request");
 		expect(yield* Ref.get(launches)).toEqual([]);
+		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
+	})
+);
+
+it.effect("runs unattended and offscreen, and protects unsaved work to recover", () =>
+	Effect.gen(function* () {
+		const launches = yield* Ref.make<readonly OwnedProcessTreeLaunchOptions[]>([]);
+		const terminations = yield* Ref.make<readonly OwnedProcessTerminationReason[]>([]);
+		const fixture = yield* installationFixture();
+		const layer = sessionLayer({
+			connection: makeEditorConnectionTestLayer({
+				connect: () => Effect.succeed(manifest),
+				waitUntilReady: () => Effect.succeed(manifest)
+			}),
+			fixture,
+			process: makeOwnedProcessTreeTestLayer((options) =>
+				Ref.update(launches, (current) => [...current, options]).pipe(
+					Effect.as(testHandle(44, terminations))
+				)
+			)
+		});
+		const acquire = Effect.scoped(
+			Effect.flatMap(SupervisedEditorSession, (sessions) =>
+				sessions.acquire({ ...request(fixture), unattended: true, window: "offscreen" })
+			)
+		).pipe(Effect.provide(layer));
+		yield* acquire;
+		expect((yield* Ref.get(launches))[0]?.args).toEqual(
+			expect.arrayContaining(["-unattended", "-RenderOffscreen"])
+		);
+		const autosaves = join(dirname(fixture.projectDescriptor), "Saved", "Autosaves");
+		yield* Effect.promise(async () => {
+			await mkdir(autosaves, { recursive: true });
+			await writeFile(
+				join(autosaves, "PackageRestoreData.json"),
+				JSON.stringify({ RestoreEnabled: true, Packages: [{ PackagePathName: "/Game/A" }] })
+			);
+		});
+		expect(yield* Effect.flip(acquire)).toMatchObject({
+			code: "recovery_pending",
+			nextStep: "fix_input",
+			stage: "validation"
+		});
+		expect(yield* Ref.get(launches)).toHaveLength(1);
+		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
+	})
+);
+
+it.effect("refuses an offscreen window on UE 4", () =>
+	Effect.gen(function* () {
+		const fixture = yield* installationFixture();
+		const layer = SupervisedEditorSessionLive.pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					makeEngineInstallationDiscoveryTestLayer(() =>
+						Effect.succeed({
+							root: fixture.root,
+							version: { major: 4, minor: 27, patch: 2 }
+						})
+					),
+					makeEditorConnectionTestLayer({
+						connect: () => Effect.succeed(manifest),
+						waitUntilReady: () => Effect.succeed(manifest)
+					}),
+					makeOwnedProcessTreeTestLayer(() => Effect.die("must not spawn"))
+				)
+			)
+		);
+		// UE 4 names its editor binaries UE4Editor.
+		yield* Effect.promise(async () => {
+			const executable = fixture.executable.replaceAll("UnrealEditor", "UE4Editor");
+			await mkdir(dirname(executable), { recursive: true });
+			await writeFile(executable, "");
+			const bin = dirname(fixture.executable.replace(/UnrealEditor\.app[\\/].*$/u, "x"));
+			await writeFile(join(bin, "UE4Editor.modules"), JSON.stringify({ BuildId: "fixture" }));
+			const plugin = join(
+				fixture.root,
+				"Engine",
+				"Plugins",
+				"VirtualProduction",
+				"RemoteControl"
+			);
+			const pluginBin = join(plugin, "Binaries", basename(bin));
+			await writeFile(
+				join(pluginBin, "UE4Editor.modules"),
+				JSON.stringify({
+					BuildId: "fixture",
+					Modules: { RemoteControl: "UnrealEditor-RemoteControl.dll" }
+				})
+			);
+		});
+		expect(
+			yield* Effect.flip(
+				Effect.scoped(
+					Effect.flatMap(SupervisedEditorSession, (sessions) =>
+						sessions.acquire({ ...request(fixture), window: "offscreen" })
+					)
+				).pipe(Effect.provide(layer))
+			)
+		).toMatchObject({
+			code: "invalid_request",
+			message: "An offscreen editor window needs Unreal Engine 5.",
+			stage: "validation"
+		});
 		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
 	})
 );

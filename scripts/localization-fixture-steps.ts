@@ -15,7 +15,7 @@ export function localizationFixtureSteps(project: string, evidence: string) {
 	const common = [
 		project,
 		"-unattended",
-		"-nop4",
+		"-SCCProvider=None",
 		...localDerivedDataCacheArguments,
 		"-nosplash",
 		"-NullRHI"
@@ -64,7 +64,7 @@ export function gameTextProblemsFixtureSteps(project: string) {
 	const common = [
 		project,
 		"-unattended",
-		"-nop4",
+		"-SCCProvider=None",
 		...localDerivedDataCacheArguments,
 		"-nosplash",
 		"-NullRHI"
@@ -105,7 +105,7 @@ export function gameTextActionsFixtureSteps(project: string, evidence: string) {
 	const common = [
 		project,
 		"-unattended",
-		"-nop4",
+		"-SCCProvider=None",
 		...localDerivedDataCacheArguments,
 		"-nosplash",
 		"-NullRHI"

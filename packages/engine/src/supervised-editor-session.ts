@@ -25,7 +25,15 @@ import {
 	validateUnrealProjectBuildId,
 	validateUnrealRemoteControlBuild
 } from "./project-launcher.js";
-import { RemoteControlAllowedClass } from "./remote-control-permissions.js";
+import {
+	RemoteControlAllowedClass,
+	RemoteControlAllowedFunction
+} from "./remote-control-permissions.js";
+import {
+	checkEditorLaunchOptions,
+	pendingPackageRecovery,
+	UnrealEditorLaunchOptionFields
+} from "./editor-launch-options.js";
 import { processSupervisorExecutable, WINDOWS_SUPERVISOR_PACKAGE } from "./process-supervisor.js";
 
 const BoundedString = Schema.NonEmptyString.check(Schema.isMaxLength(32_767));
@@ -46,7 +54,14 @@ const SUPERVISOR_OUTPUT_LIMIT = 16_384;
 /**
  * Bounded explicit project/plugin launch with readiness, capability and termination
  * requirements. The HTTP port determines the local endpoint; optional timeouts are
- * milliseconds, not Effect duration strings.
+ * milliseconds, not Effect duration strings. Takes the launcher's per-run options
+ * (`UnrealEditorLaunchOptionFields`), plus two for sessions no user watches:
+ *
+ * - `unattended`: the editor logs dialogs instead of showing them and exits instead of offering
+ *   to rebuild (`-unattended`). It also deletes the project's unsaved-work recovery data, so the
+ *   session is refused with `recovery_pending` while the project has some.
+ * - `window: "offscreen"`: no editor window on the user's desktop (`-RenderOffscreen`). UE 5 only;
+ *   UE 4.27 on Windows ignores the switch, so the request is refused there.
  */
 export const SupervisedEditorSessionRequest = Schema.Struct({
 	explicitEngineRoot: Schema.optional(BoundedString),
@@ -59,6 +74,13 @@ export const SupervisedEditorSessionRequest = Schema.Struct({
 	remoteControlAllowedClasses: Schema.optional(
 		Schema.Array(RemoteControlAllowedClass).check(Schema.isMaxLength(64))
 	),
+	remoteControlAllowedFunctions: Schema.optional(
+		Schema.Array(RemoteControlAllowedFunction).check(Schema.isMaxLength(256))
+	),
+	remoteControlWebSocketPort: Schema.optional(HttpPort),
+	unattended: Schema.optional(Schema.Boolean),
+	window: Schema.optional(Schema.Literals(["visible", "offscreen"])),
+	...UnrealEditorLaunchOptionFields,
 	requiredCapabilities: Schema.optional(
 		Schema.Array(BoundedCapability).check(Schema.isMaxLength(64))
 	),
@@ -112,6 +134,8 @@ export class SupervisedEditorSessionError extends Schema.TaggedError<SupervisedE
 			"invalid_module_manifest",
 			"plugin_unavailable",
 			"engine_plugins_stale",
+			"startup_map_missing",
+			"recovery_pending",
 			"process_tree_supervision_unavailable",
 			"spawn_failed",
 			"supervisor_failed",
@@ -178,6 +202,8 @@ export interface SupervisedEditorSessionHandle {
 	readonly awaitExit: Effect.Effect<OwnedProcessExit, SupervisedEditorSessionError>;
 	readonly engineRoot: string;
 	readonly executable: string;
+	/** The run's editor log, when the request set `logPath`. */
+	readonly logPath?: string;
 	readonly manifest: CompanionCapabilityManifest;
 	readonly pid: number;
 	readonly projectDescriptor: string;
@@ -221,6 +247,8 @@ const sessionNextStep = {
 	invalid_module_manifest: "fix_input",
 	plugin_unavailable: "fix_input",
 	engine_plugins_stale: "fix_input",
+	startup_map_missing: "fix_input",
+	recovery_pending: "fix_input",
 	process_tree_supervision_unavailable: "fix_input",
 	spawn_failed: "fix_input",
 	supervisor_failed: "retry",
@@ -811,22 +839,55 @@ export const SupervisedEditorSessionLive = Layer.effect(
 				globalThis.process.platform,
 				installation.version
 			).pipe(Effect.mapError(buildValidationError));
+			yield* checkEditorLaunchOptions(projectDescriptor, request, request.plugins).pipe(
+				Effect.mapError((failure) =>
+					sessionError(
+						failure.code,
+						"validation",
+						failure.message,
+						failure.recovery,
+						false,
+						sessionNextStep[failure.code],
+						failure.cause
+					)
+				)
+			);
+			if (request.window === "offscreen" && installation.version.major < 5)
+				return yield* sessionError(
+					"invalid_request",
+					"validation",
+					"An offscreen editor window needs Unreal Engine 5.",
+					"Launch with a visible window on this engine."
+				);
+			if (request.unattended === true && (yield* pendingPackageRecovery(projectDescriptor)))
+				return yield* sessionError(
+					"recovery_pending",
+					"validation",
+					"Unreal has unsaved work to recover for this project.",
+					"Open the project in Unreal and choose whether to restore the unsaved work, then try again."
+				);
 			const process = yield* Effect.acquireRelease(
 				processes.launch({
-					args: unrealProjectLaunchArguments({
-						mode: {
-							kind: "with_plugins",
-							plugins: request.plugins,
-							remoteControlHttpPort: request.remoteControlHttpPort,
-							...(request.remoteControlAllowedClasses === undefined
-								? undefined
-								: {
-										remoteControlAllowedClasses:
-											request.remoteControlAllowedClasses
-									})
-						},
-						projectDescriptor
-					}),
+					args: [
+						...unrealProjectLaunchArguments({
+							mode: {
+								kind: "with_plugins",
+								plugins: request.plugins,
+								remoteControlHttpPort: request.remoteControlHttpPort,
+								remoteControlAllowedClasses: request.remoteControlAllowedClasses,
+								remoteControlAllowedFunctions:
+									request.remoteControlAllowedFunctions,
+								remoteControlWebSocketPort: request.remoteControlWebSocketPort
+							},
+							projectDescriptor,
+							startupMap: request.startupMap,
+							logPath: request.logPath,
+							sourceControl: request.sourceControl,
+							additionalArguments: request.additionalArguments
+						}),
+						...(request.unattended === true ? ["-unattended"] : []),
+						...(request.window === "offscreen" ? ["-RenderOffscreen"] : [])
+					],
 					cwd: dirname(projectDescriptor),
 					executable,
 					terminationTimeout: Duration.millis(request.terminationTimeoutMs ?? 15_000)
@@ -834,6 +895,7 @@ export const SupervisedEditorSessionLive = Layer.effect(
 				(process, exit) => process.terminate(releaseReason(exit)).pipe(Effect.orDie),
 				{ interruptible: true }
 			);
+			const logPath = request.logPath === undefined ? undefined : resolve(request.logPath);
 			const endpoint = `http://127.0.0.1:${request.remoteControlHttpPort}`;
 			const readinessRequest: EditorReadinessRequest = {
 				endpoint,
@@ -852,7 +914,9 @@ export const SupervisedEditorSessionLive = Layer.effect(
 								"process_exited",
 								"readiness",
 								`The supervised editor exited before readiness (${JSON.stringify(outcome)}).`,
-								"Inspect the editor log and launch arguments before retrying.",
+								logPath === undefined
+									? "Inspect the editor log in the project's Saved/Logs folder and the launch arguments before retrying."
+									: `Inspect the editor log at ${logPath} and the launch arguments before retrying.`,
 								true
 							)
 						)
@@ -874,6 +938,7 @@ export const SupervisedEditorSessionLive = Layer.effect(
 				awaitExit: process.awaitExit,
 				engineRoot: installation.root,
 				executable,
+				...(logPath === undefined ? undefined : { logPath }),
 				manifest,
 				pid: process.pid,
 				projectDescriptor,

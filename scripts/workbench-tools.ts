@@ -102,7 +102,7 @@ export function unrealRemoteControlLaunchArguments(pluginIds: readonly string[],
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${httpPort + 1}`,
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
 		...unrealRemoteControlPermissions(enabledPlugins),
-		"-NoLiveCoding"
+		"-ini:EditorPerProjectUserSettings:[/Script/LiveCoding.LiveCodingSettings]:bEnabled=False"
 	];
 }
 

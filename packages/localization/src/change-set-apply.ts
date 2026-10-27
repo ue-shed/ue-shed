@@ -69,12 +69,26 @@ function poEditFailure(error: POEditError): LocalizationChangeSetError {
 	});
 }
 
+/** A host's hooks around a change set's write. */
+export interface ApplyLocalizationChangeSetOptions {
+	/**
+	 * Called with the project-relative path of every PO file the write will replace, from the
+	 * freshly read evidence, before the first one is written, so a host can check them all out.
+	 * Its failure, typically `unwritable_change` with the host's reason as its `cause`, writes
+	 * nothing and fails the apply.
+	 */
+	readonly prepareWrites?: (
+		relativePaths: readonly string[]
+	) => Effect.Effect<void, LocalizationChangeSetError>;
+}
+
 /**
  * Revalidates a change set against freshly read evidence and writes the current changes into
  * each culture's PO file. Only `msgstr` values change; Unreal imports them on the next sync.
  */
 export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet")(function* (
-	input: ApplyLocalizationChangeSetRequest
+	input: ApplyLocalizationChangeSetRequest,
+	options: ApplyLocalizationChangeSetOptions = {}
 ) {
 	const request = yield* Schema.decodeUnknownEffect(ApplyLocalizationChangeSetRequest)(
 		input
@@ -143,6 +157,8 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 			review,
 			files: []
 		});
+	if (options.prepareWrites)
+		yield* options.prepareWrites(review.files.map((file) => file.relativePath));
 
 	const written: LocalizationChangeSetReceipt["files"][number][] = [];
 	for (const file of review.files) {

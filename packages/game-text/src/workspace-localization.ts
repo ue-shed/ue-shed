@@ -56,6 +56,8 @@ import {
 } from "./entry-schema.js";
 import {
 	applyLocalizationChangeSet,
+	defaultLocalizationReviewPath,
+	LocalizationChangeSetError,
 	LocalizationEvidence,
 	LocalizationFileAccessLive,
 	localizationEvidenceFingerprint,
@@ -69,7 +71,11 @@ import {
 import { Cause, Effect, Exit, Fiber, Ref, Result, Semaphore, type Scope } from "effect";
 import type { Layer } from "effect";
 import type { LocalizationFileAccess } from "@ue-shed/localization";
-import type { GameTextWorkspaceFileHooks, GameTextWorkspaceHost } from "./workspace-host.js";
+import type {
+	GameTextWorkspaceFileHooks,
+	GameTextWorkspaceHost,
+	GameTextWorkspaceHostFailure
+} from "./workspace-host.js";
 import type { LocalizationLineView } from "./index-reads.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
 
@@ -920,26 +926,30 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					notSynced: retained.result.status === "ready" ? retained.result.notSynced : 0
 				};
 			}
-			if (options.prepareWrites) {
-				const prepared = yield* options
-					.prepareWrites(
-						reviewLocalizationChangeSet(retained.evidence, changeSet).files.map(
-							(file) => resolve(root, file.relativePath)
-						)
-					)
-					.pipe(Effect.result);
-				if (Result.isFailure(prepared))
-					return {
-						status: "failed" as const,
-						code: "file_unwritable",
-						message: prepared.failure.message,
-						recovery: prepared.failure.recovery
-					};
-			}
-			const receipt = yield* applyLocalizationChangeSet({
-				projectRoot: root,
-				changeSet
-			}).pipe(
+			// The apply prepares the batch it read fresh, which is the batch it writes.
+			const prepareWrites = options.prepareWrites;
+			let refused: GameTextWorkspaceHostFailure | undefined;
+			const receipt = yield* applyLocalizationChangeSet(
+				{ projectRoot: root, changeSet },
+				prepareWrites
+					? {
+							prepareWrites: (paths) =>
+								prepareWrites(paths.map((path) => resolve(root, path))).pipe(
+									Effect.mapError((cause) => {
+										refused = cause;
+										return new LocalizationChangeSetError({
+											code: "unwritable_change",
+											message: cause.message,
+											recovery: cause.recovery,
+											retrySafe: true,
+											nextStep: "fix_input",
+											cause
+										});
+									})
+								)
+						}
+					: {}
+			).pipe(
 				Effect.provideService(LocalizationEvidence, reader),
 				Effect.provide(options.localizationFiles),
 				Effect.result
@@ -947,7 +957,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			if (Result.isFailure(receipt))
 				return {
 					status: "failed" as const,
-					code: receipt.failure.code,
+					// A host's refusal reads as a refused review write does.
+					code: refused ? "file_unwritable" : receipt.failure.code,
 					message: receipt.failure.message,
 					recovery: receipt.failure.recovery
 				};
@@ -1024,6 +1035,24 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						recovery: "Gather the target with Unreal, then review the line."
 					};
 				updates.push({ ...change, fingerprint });
+			}
+			if (options.prepareWrites) {
+				const prepared = yield* options
+					.prepareWrites([
+						resolve(
+							root,
+							retained.review?.relativePath ??
+								defaultLocalizationReviewPath(request.target)
+						)
+					])
+					.pipe(Effect.result);
+				if (Result.isFailure(prepared))
+					return {
+						status: "failed" as const,
+						code: "file_unwritable",
+						message: prepared.failure.message,
+						recovery: prepared.failure.recovery
+					};
 			}
 			const written = yield* updateLocalizationReview(
 				{ projectRoot: root, target: request.target },

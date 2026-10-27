@@ -10,6 +10,7 @@ import {
 import { Deferred, Effect, Fiber, Ref } from "effect";
 import type { LocalizationKeyChangePair } from "@ue-shed/game-text/corpus";
 import { LocalizationLineId, type LocalizationLineMark } from "@ue-shed/game-text/schema";
+import { existsSync } from "node:fs";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -374,6 +375,143 @@ it.live("prepares every PO file an edit replaces, and writes nothing when that f
 			yield* localization.edits({ target: fixtureTarget, mode: "write", edits: [edit] })
 		).toMatchObject({ status: "written", files: [{ culture: "de", written: true }] });
 		expect(prepared).toEqual([[resolve(poPath)], [resolve(poPath)]]);
+	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
+);
+
+it.live("prepares the PO files the write finds, after the target's output moves", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-moved-")));
+		yield* Effect.addFinalizer(() =>
+			Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		for (const path of [
+			"Config/DefaultEditor.ini",
+			"Config/Localization/FixtureGame_Export.ini",
+			"Content/Localization/FixtureGame"
+		])
+			yield* Effect.promise(() =>
+				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
+					recursive: true
+				})
+			);
+		const prepared: (readonly string[])[] = [];
+		const saved = corpus([]);
+		const localization = yield* makeCannedGameTextLocalization(
+			fixtureAnswers,
+			() => Effect.succeed(saved),
+			() => Effect.succeed(testProjectIndex(root)),
+			undefined,
+			undefined,
+			(paths) => Effect.sync(() => void prepared.push(paths))
+		);
+		const selected = yield* localization.select(fixtureTarget);
+		if (selected.status !== "ready") throw new Error("Fixture target did not load.");
+		// The target's output moves between selecting it and writing.
+		yield* Effect.promise(async () => {
+			await cp(
+				join(root, "Content/Localization/FixtureGame"),
+				join(root, "Content/Localization/MovedFixture"),
+				{ recursive: true }
+			);
+			const config = join(root, "Config/Localization/FixtureGame_Export.ini");
+			await writeFile(
+				config,
+				(await readFile(config, "utf8")).replaceAll(
+					"Content/Localization/FixtureGame",
+					"Content/Localization/MovedFixture"
+				)
+			);
+		});
+		const result = yield* localization.edits({
+			target: fixtureTarget,
+			mode: "write",
+			edits: [
+				{
+					culture: cultureCode("de"),
+					namespace: TextNamespace.make("Fixture.Localization.Table"),
+					key: TextKey.make("NamedArgument"),
+					seenTranslation: "Gespräch mit {Name}",
+					translation: editedTranslation
+				}
+			]
+		});
+		const moved = "Content/Localization/MovedFixture/de/FixtureGame.po";
+		expect(result).toMatchObject({
+			status: "written",
+			files: [{ relativePath: moved, written: true }]
+		});
+		expect(prepared).toEqual([[resolve(root, moved)]]);
+	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
+);
+
+it.live("prepares the review file before creating or replacing it", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-wb-review-prep-"))
+		);
+		yield* Effect.addFinalizer(() =>
+			Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		for (const path of [
+			"Config/DefaultEditor.ini",
+			"Config/Localization/FixtureGame_Export.ini",
+			"Content/Localization/FixtureGame"
+		])
+			yield* Effect.promise(() =>
+				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
+					recursive: true
+				})
+			);
+		const prepared: (readonly string[])[] = [];
+		let refuse = true;
+		const saved = corpus([]);
+		const localization = yield* makeCannedGameTextLocalization(
+			fixtureAnswers,
+			() => Effect.succeed(saved),
+			() => Effect.succeed(testProjectIndex(root)),
+			undefined,
+			undefined,
+			(paths) =>
+				Effect.suspend(() => {
+					prepared.push(paths);
+					return refuse
+						? Effect.fail({ message: "Checked out elsewhere.", recovery: "Ask them." })
+						: Effect.void;
+				})
+		);
+		yield* localization.select(fixtureTarget);
+		const line = {
+			culture: cultureCode("de"),
+			namespace: TextNamespace.make("Fixture.Localization.Table"),
+			key: TextKey.make("NamedArgument")
+		};
+		const reviewPath = resolve(root, "Config/UEShed/Localization/FixtureGame.review.json");
+		const reviewed = localization.review(
+			{ target: fixtureTarget, changes: [{ kind: "set", ...line, flags: ["reviewed"] }] },
+			"tester"
+		);
+		const cleared = localization.review(
+			{ target: fixtureTarget, changes: [{ kind: "clear", ...line, flags: [] }] },
+			"tester"
+		);
+		expect(yield* reviewed).toEqual({
+			status: "failed",
+			code: "file_unwritable",
+			message: "Checked out elsewhere.",
+			recovery: "Ask them."
+		});
+		expect(prepared).toEqual([[reviewPath]]);
+		expect(existsSync(reviewPath)).toBe(false);
+		refuse = false;
+		expect(yield* reviewed).toMatchObject({ status: "written" });
+		// Replacing the file it created prepares it again; a refusal leaves its bytes unchanged.
+		const created = yield* Effect.promise(() => readFile(reviewPath, "utf8"));
+		refuse = true;
+		expect(yield* cleared).toMatchObject({ status: "failed", code: "file_unwritable" });
+		expect(yield* Effect.promise(() => readFile(reviewPath, "utf8"))).toBe(created);
+		refuse = false;
+		expect(yield* cleared).toMatchObject({ status: "written" });
+		expect(prepared).toEqual([[reviewPath], [reviewPath], [reviewPath], [reviewPath]]);
 	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
 );
 

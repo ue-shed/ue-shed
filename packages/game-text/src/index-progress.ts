@@ -2,34 +2,55 @@ import { Context, Schema } from "effect";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
+/** The phase a Game Text operation reports, as a raw code; `GAME_TEXT_INDEX_PHASE_LABELS` words it. */
+export const GameTextIndexPhase = Schema.Literals([
+	"inventory",
+	"localization",
+	/** Publishing the parsed localization files; no count. */
+	"localization_publish",
+	"packages",
+	/** Preparing the package text layer: packages prepared of the packages in the inventory. */
+	"package_text",
+	/** Publishing the package text layer; no count. */
+	"package_publish",
+	/** Joining source text with translations; no count. */
+	"joining",
+	/** Opening the joined index: the engine's preparation stages done, of three. */
+	"opening",
+	"ready",
+	"failed",
+	/** A corpus scan reading packages: assets read of assets selected. */
+	"corpus",
+	/** A localization quality scan: the rule document's rules evaluated, of its rules. */
+	"localization_quality",
+	/** A source quality scan: the rule document's rules evaluated, of its rules. */
+	"source_quality"
+]);
+export type GameTextIndexPhase = typeof GameTextIndexPhase.Type;
+
+/** Each index phase in words, for hosts that show progress. */
+export const GAME_TEXT_INDEX_PHASE_LABELS = {
+	inventory: "Reading project asset inventory",
+	localization: "Reading localization files",
+	localization_publish: "Saving localization text",
+	packages: "Checking saved packages for text",
+	package_text: "Preparing package text",
+	package_publish: "Saving package text",
+	joining: "Joining source text and translations",
+	opening: "Opening text index",
+	ready: "Text index ready",
+	failed: "Text index failed",
+	corpus: "Reading saved packages",
+	localization_quality: "Checking localization quality",
+	source_quality: "Checking source text"
+} as const satisfies Record<GameTextIndexPhase, string>;
+
 /**
  * Progress of any Game Text operation: an index refresh, a corpus scan or a quality scan.
  * Counts describe the current phase, not a percentage of the whole operation.
  */
 export const GameTextIndexProgress = Schema.Struct({
-	phase: Schema.Literals([
-		"inventory",
-		"localization",
-		/** Publishing the parsed localization files; no count. */
-		"localization_publish",
-		"packages",
-		/** Preparing the package text layer: packages prepared of the packages in the inventory. */
-		"package_text",
-		/** Publishing the package text layer; no count. */
-		"package_publish",
-		/** Joining source text with translations; no count. */
-		"joining",
-		/** Opening the joined index: the engine's preparation stages done, of three. */
-		"opening",
-		"ready",
-		"failed",
-		/** A corpus scan reading packages: assets read of assets selected. */
-		"corpus",
-		/** A localization quality scan: the rule document's rules evaluated, of its rules. */
-		"localization_quality",
-		/** A source quality scan: the rule document's rules evaluated, of its rules. */
-		"source_quality"
-	]),
+	phase: GameTextIndexPhase,
 	completed: Count,
 	total: Count,
 	/** Findings so far, during a quality scan; the last event has the scan's count. */

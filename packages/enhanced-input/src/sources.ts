@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 // Effectful evidence sources for the analysis: saved config through Config Explorer, a host
 // document, Blueprint packages and platform data classes through the asset reader. Each is its own
 // function with its requirement in the type, so a host provides only the services it uses.
@@ -56,7 +57,7 @@ export class EnhancedInputAnalysisError extends Schema.TaggedError<EnhancedInput
 		message: Schema.String,
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect())
 	}
 ) {}

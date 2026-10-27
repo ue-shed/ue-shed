@@ -28,7 +28,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory/browser";
-import { EditorWorldOpenResponse, EditorWorldState } from "@ue-shed/protocol";
+import { ErrorNextStep, EditorWorldOpenResponse, EditorWorldState } from "@ue-shed/protocol";
 import type { SavedWorld, SavedWorldMap, SavedWorldProgress } from "@ue-shed/protocol";
 import { Context, type Effect, Schema, type Stream } from "effect";
 
@@ -68,7 +68,7 @@ export class MapReviewClientError extends Schema.TaggedError<MapReviewClientErro
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("map_review_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,

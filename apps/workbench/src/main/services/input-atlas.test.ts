@@ -161,6 +161,7 @@ it.effect("passes failed scans through without resolving analysis", () =>
 				code: "invalid_project",
 				message: "No project.",
 				recovery: "Choose one.",
+				nextStep: "fix_input" as const,
 				retrySafe: true
 			}
 		});
@@ -172,6 +173,7 @@ it.effect("passes failed scans through without resolving analysis", () =>
 					code: "invalid_project",
 					message: "No project.",
 					recovery: "Choose one.",
+					nextStep: "fix_input" as const,
 					retrySafe: true
 				}
 			})).layer

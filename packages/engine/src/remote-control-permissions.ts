@@ -38,22 +38,50 @@ export const RemoteControlAllowedClass = Schema.NonEmptyString.check(
 export type RemoteControlAllowedClass = typeof RemoteControlAllowedClass.Type;
 
 /**
+ * One function a launch allows Remote Control to call on an exact class, for engine or project
+ * functions whose whole class should stay closed (for example `UnrealEd.EditorActorSubsystem`
+ * and `GetAllLevelActors`). The function name accepts only letters, digits and underscores.
+ */
+export const RemoteControlAllowedFunction = Schema.Struct({
+	classPath: RemoteControlAllowedClass,
+	functionName: Schema.NonEmptyString.check(
+		Schema.isMaxLength(256),
+		Schema.isPattern(/^[A-Za-z0-9_]+$/u)
+	)
+});
+/** A single class function that a launch adds to the Remote Control allowlist. */
+export type RemoteControlAllowedFunction = typeof RemoteControlAllowedFunction.Type;
+
+const allowRule =
+	"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=";
+
+/**
  * Editor arguments that add process-local Remote Control allowlist rules, which UE 5.8 requires,
  * without replacing the project's own permissions. Each enabled UE Shed plugin ID adds its exact
- * API classes; `additionalClasses` adds a host's own plugin classes the same way. Child classes
- * are never allowed. Earlier engines ignore these settings.
+ * API classes; `additionalClasses` adds a host's own plugin classes the same way, and
+ * `functions` adds single functions. Child classes are never allowed. Earlier engines ignore
+ * these settings.
  */
 export function unrealRemoteControlPermissions(
 	pluginIds: readonly string[],
-	additionalClasses: readonly RemoteControlAllowedClass[] = []
+	additionalClasses: readonly RemoteControlAllowedClass[] = [],
+	functions: readonly RemoteControlAllowedFunction[] = []
 ): readonly string[] {
 	const enabled = new Set(pluginIds);
 	const classes = [
 		...Object.entries(remoteClasses).flatMap(([id, owned]) => (enabled.has(id) ? owned : [])),
 		...additionalClasses
 	];
-	return [...new Set(classes)].map(
-		(classPath) =>
-			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/${classPath},bAllowChildClasses=False)`
-	);
+	return [
+		...new Set([
+			...classes.map(
+				(classPath) =>
+					`${allowRule}(ClassPath=/Script/${classPath},bAllowChildClasses=False)`
+			),
+			...functions.map(
+				({ classPath, functionName }) =>
+					`${allowRule}(ClassPath="/Script/${classPath}",FunctionName=("${functionName}"),bAllowChildClasses=False)`
+			)
+		])
+	];
 }

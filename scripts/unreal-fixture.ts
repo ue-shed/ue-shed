@@ -177,7 +177,7 @@ function runCommandlet(
 		...extraArgs,
 		...pluginArguments(pluginDescriptors),
 		"-unattended",
-		"-nop4",
+		"-SCCProvider=None",
 		...localDerivedDataCacheArguments,
 		"-nosplash",
 		"-NullRHI"
@@ -213,7 +213,7 @@ function launch(tools: UnrealEngineTools, pluginDescriptors: readonly string[]) 
 			"-ResY=720",
 			...unrealRemoteControlLaunchArguments(ueShedPluginIds, Number(remoteControlPort)),
 			"-ini:EditorSettings:[/Script/UnrealEd.EditorPerformanceSettings]:bThrottleCPUWhenNotForeground=False",
-			"-nop4",
+			"-SCCProvider=None",
 			"-nosplash"
 		],
 		{
@@ -244,7 +244,7 @@ function launchAuthoring(tools: UnrealEngineTools, pluginDescriptors: readonly s
 			...unrealRemoteControlLaunchArguments(ueShedPluginIds, Number(remoteControlPort)),
 			...(process.env.UE_SHED_FIXTURE_UNATTENDED === "1" ? ["-unattended"] : []),
 			"-ini:EditorSettings:[/Script/UnrealEd.EditorPerformanceSettings]:bThrottleCPUWhenNotForeground=False",
-			"-nop4",
+			"-SCCProvider=None",
 			"-nosplash"
 		],
 		{
@@ -376,7 +376,7 @@ if (action === "localization-427") {
 		"-run=GatherText",
 		`-config=${join(fixtureRoot, "Config", "Localization", "Fixture427.ini")}`,
 		"-unattended",
-		"-nop4",
+		"-SCCProvider=None",
 		...localDerivedDataCacheArguments,
 		"-nosplash",
 		"-NullRHI"

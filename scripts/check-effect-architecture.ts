@@ -258,7 +258,11 @@ const approvedResourceAdapters = new Set([
 	// exit polling inside Effect callbacks and a scoped acquire/release session.
 	"packages/engine/src/supervised-editor-session.ts"
 ]);
-const operationlessServices = new Set(["apps/workbench/src/main/workbench-config.ts"]);
+const operationlessServices = new Set([
+	"apps/workbench/src/main/workbench-config.ts",
+	// Serves the Game Text workspace as built, whose operations are its own Effect.fn spans.
+	"apps/workbench/src/main/services/game-text.ts"
+]);
 const externalServiceEvidence = new Map([
 	[
 		"packages/game-text/src/index-builder.ts",
@@ -784,7 +788,6 @@ function moduleSpecifiers(
 /** Localization formats are independently usable; browser consumers receive no Node authority. */
 /** Browser-safe Game Text entry points; the Node-only `entry-index.ts` is excluded. */
 const gameTextBrowserEntries = [
-	"browser.ts",
 	"entry-schema.ts",
 	"entry-rules.ts",
 	"entry-checks.ts",
@@ -795,17 +798,12 @@ const gameTextBrowserEntries = [
 /**
  * Game Text entry points list their exports by name, so a new module stays private until it is
  * added on purpose, and first-party code imports the focused entry points instead of the
- * deprecated root and `/browser` aggregates.
+ * removed root and `/browser` aggregates.
  */
 export async function checkGameTextEntryPoints(root: string = repositoryRoot) {
 	const failures: string[] = [];
 	const source = join(root, "packages/game-text/src");
-	for (const entry of [
-		...gameTextBrowserEntries,
-		"index.ts",
-		"entry-index.ts",
-		"entry-workspace.ts"
-	]) {
+	for (const entry of [...gameTextBrowserEntries, "entry-index.ts", "entry-workspace.ts"]) {
 		let text: string;
 		try {
 			text = await readFile(join(source, entry), "utf8");
@@ -919,6 +917,8 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 				pending.push(join(root, "packages/unreal-assets/src/text-extraction.ts"));
 			} else if (specifier === "@ue-shed/protocol") {
 				pending.push(join(root, "packages/protocol/src/index.ts"));
+			} else if (specifier === "@ue-shed/protocol/errors") {
+				pending.push(join(root, "packages/protocol/src/errors.ts"));
 			} else if (specifier === "linebreak") {
 				// Reviewed: MIT, exact pin 1.1.0, packaged iterator/table data with no Node/IO.
 				// UE 5.7/5.8 FLocTextHelper::GetWordCountReport counts positive spans from
@@ -939,6 +939,7 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
  * Game Text keep their own stricter check above.
  */
 const browserSafeSubpaths = new Map([
+	["protocol", ["./errors"]],
 	["map-history", ["./contract", "./playback", "./diff"]],
 	["observatory", ["./presentation"]],
 	["unreal-assets", ["./investigation", "./saved-review", "./text-extraction"]],
@@ -1293,11 +1294,29 @@ export async function checkErrorGuidance(root: string = repositoryRoot) {
 			const label = relative(root, path).replaceAll("\\", "/");
 			const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
 			const locals = new Map<string, ts.Expression>();
-			for (const statement of source.statements)
-				if (ts.isVariableStatement(statement))
+			for (const statement of source.statements) {
+				if (
+					ts.isImportDeclaration(statement) &&
+					ts.isStringLiteral(statement.moduleSpecifier) &&
+					["@ue-shed/protocol", "@ue-shed/protocol/errors"].includes(
+						statement.moduleSpecifier.text
+					)
+				) {
+					const bindings = statement.importClause?.namedBindings;
+					if (bindings && ts.isNamedImports(bindings))
+						for (const binding of bindings.elements) {
+							const imported = binding.propertyName ?? binding.name;
+							if (
+								imported.text === "ErrorGuidanceFields" ||
+								imported.text === "ErrorCauseFields"
+							)
+								locals.set(binding.name.text, imported);
+						}
+				} else if (ts.isVariableStatement(statement))
 					for (const declaration of statement.declarationList.declarations)
 						if (ts.isIdentifier(declaration.name) && declaration.initializer)
 							locals.set(declaration.name.text, declaration.initializer);
+			}
 			for (const statement of source.statements) {
 				if (!ts.isClassDeclaration(statement) || statement.name === undefined) continue;
 				const heritage = statement.heritageClauses?.[0]?.types[0]?.expression;

@@ -52,29 +52,17 @@ export {
 export {
 	OperationRelativePath,
 	GameTextOperationFailure,
-	WorkbenchOperationFailure,
 	GameTextOperationFilesRequest,
-	WorkbenchOperationFilesRequest,
 	GameTextOperationFilesResult,
-	WorkbenchOperationFilesResult,
 	GameTextOperationId,
-	WorkbenchOperationId,
 	GameTextOperationPlan,
-	WorkbenchOperationPlan,
 	GameTextOperationPlanResult,
-	WorkbenchOperationPlanResult,
 	GameTextOperationProgress,
-	WorkbenchOperationProgress,
 	GameTextOperationReceipt,
-	WorkbenchOperationReceipt,
 	GameTextOperationRequest,
-	WorkbenchOperationRequest,
 	GameTextOperationResult,
-	WorkbenchOperationResult,
 	GameTextOperationState,
-	WorkbenchOperationState,
-	GameTextOperationTarget,
-	WorkbenchOperationTarget
+	GameTextOperationTarget
 } from "./operation-query.js";
 
 export {
@@ -141,7 +129,6 @@ export {
 	TextFilter,
 	TextFilterClause,
 	type TextFilterField,
-	TextFinding,
 	TextGroup,
 	TextGroupBy,
 	TextGroupList,
@@ -155,7 +142,6 @@ export {
 	TextProblem,
 	TextProblemCounts,
 	TextRepresentationCopy,
-	TextReviewLens,
 	TextReviewSignal,
 	TextTranslationKey,
 	TextSourceText,
@@ -195,3 +181,21 @@ export {
 	TextCorpusHeader,
 	type LocalizationLineView
 } from "./index-reads.js";
+
+export { GameTextIndexPhase, GameTextIndexProgress } from "./index-progress.js";
+
+export { GameTextWorkspacePhase, GameTextWorkspaceProgress } from "./workspace-progress.js";
+
+export {
+	GameTextInvestigationExportRequest,
+	GameTextStarterRulesRequest,
+	GameTextWorkspaceContract,
+	type GameTextWorkspaceContractApi,
+	type GameTextWorkspaceContractEntry,
+	type GameTextWorkspaceContractMethod,
+	type GameTextWorkspaceContractMismatch,
+	type GameTextWorkspaceContractName,
+	type GameTextWorkspaceHostOnlyMethod,
+	GameTextWorkspaceNoParams,
+	GameTextWorkspaceRefreshRequest
+} from "./workspace-contract.js";

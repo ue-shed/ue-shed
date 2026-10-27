@@ -5,7 +5,12 @@ import {
 	MapTilePyramidManifest,
 	type MapCapturePlan as MapCapturePlanValue
 } from "@ue-shed/cameras/map-tiles";
-import { EditorWorldOpenResponse, SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
+import {
+	ErrorNextStep,
+	EditorWorldOpenResponse,
+	SavedWorld,
+	SavedWorldMap
+} from "@ue-shed/protocol";
 import { Effect, Schema, type Stream } from "effect";
 
 const MapCaptureUiOperationId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
@@ -151,7 +156,7 @@ export class MapCaptureClientError extends Schema.TaggedError<MapCaptureClientEr
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("map_capture_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
@@ -191,7 +196,7 @@ export interface MapCaptureClientApi {
 export class MapCaptureContractError extends Schema.TaggedError<MapCaptureContractError>()(
 	"MapCaptureContractError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("invalid_contract"),
 		message: Schema.String,
 		recovery: Schema.String,

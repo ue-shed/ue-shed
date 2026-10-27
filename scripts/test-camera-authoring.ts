@@ -102,7 +102,7 @@ async function startEditor(ids: readonly string[], label: string) {
 			),
 			`-abslog=${join(root, `${label}.log`)}`,
 			"-unattended",
-			"-nop4",
+			"-SCCProvider=None",
 			"-nosplash",
 			"-RenderOffscreen",
 			"-NoSound",

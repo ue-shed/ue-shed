@@ -150,7 +150,7 @@ test("does not publish when confirmation is blank or interrupted", async () => {
 });
 
 const tree: readonly TreeEntry[] = [
-	{ path: "packages/game-text/src/index.ts", object: "1".repeat(40) },
+	{ path: "packages/game-text/src/entry-schema.ts", object: "1".repeat(40) },
 	{ path: "packages/game-text/CHANGELOG.md", object: "2".repeat(40) },
 	{ path: "docs/releases/0.5.2.md", object: "3".repeat(40) }
 ];
@@ -200,7 +200,7 @@ test("a release-notes edit only invalidates the release-text gate", () => {
 test("a source edit invalidates every gate", () => {
 	const { problems } = releaseGateCoverage(
 		passedOn(tree),
-		edited("packages/game-text/src/index.ts")
+		edited("packages/game-text/src/entry-schema.ts")
 	);
 	// An engine recorded as unavailable is rechecked too: it may be installed by now.
 	assert.equal(problems.length, RELEASE_GATES.length);

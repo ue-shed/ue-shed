@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Effect, FileSystem, Metric, Result, Schema } from "effect";
 import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import {
@@ -16,7 +17,7 @@ export class LocalizationBaselineIOError extends Schema.TaggedError<Localization
 	"LocalizationBaselineIOError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"baseline_exists",
@@ -93,7 +94,14 @@ export const readLocalizationBaseline = Effect.fn("Cli.localization.read_baselin
 			})
 	});
 	const decoded = decodeLocalizationBaselineJson(text);
-	if (Result.isFailure(decoded)) return yield* Effect.fail(decoded.failure);
+	if (Result.isFailure(decoded))
+		return yield* Effect.fail(
+			new LocalizationReportError({
+				...decoded.failure,
+				message: decoded.failure.message,
+				recovery: `${decoded.failure.recovery} Run loc report --save-baseline with a new JSON destination.`
+			})
+		);
 	return decoded.success;
 });
 export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report")(

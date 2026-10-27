@@ -225,3 +225,46 @@ async function workspacePackageDirectories(repositoryRoot: string) {
 	}
 	return directories;
 }
+
+test("Game Text packs focused entry points without aggregate fallbacks", async () => {
+	const manifest = JSON.parse(
+		await readFile(join(import.meta.dirname, "../packages/game-text/package.json"), "utf8")
+	);
+	delete manifest.devDependencies;
+	manifest.dependencies = Object.fromEntries(
+		Object.keys(manifest.dependencies).map((name) => [name, PUBLIC_VERSION])
+	);
+	assert.equal(manifest.main, undefined);
+	assert.equal(manifest.types, undefined);
+	assert.deepEqual(Object.keys(manifest.exports).sort(), [
+		"./checks",
+		"./corpus",
+		"./index",
+		"./labels",
+		"./rules",
+		"./schema",
+		"./workspace"
+	]);
+	const typeScriptSources = Object.keys(manifest.exports).map(
+		(subpath) => `entry-${subpath.slice(2)}.ts`
+	);
+	const files = [
+		"package/package.json",
+		"package/LICENSE",
+		"package/README.md",
+		"package/ADOPTING.md",
+		"package/adoption.manifest.json",
+		...typeScriptSources.flatMap(emitted)
+	];
+	assert.deepEqual(
+		validatePackedManifest({
+			manifest,
+			manifestRaw: JSON.stringify(manifest),
+			expectedName: manifest.name,
+			expectedVersion: PUBLIC_VERSION,
+			files,
+			typeScriptSources
+		}),
+		[]
+	);
+});

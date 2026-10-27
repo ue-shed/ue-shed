@@ -23,6 +23,32 @@ Workbench unless a named verification failure leaves the public package contract
 7. Prove the acceptance journey below and record the exact package versions, reader provider, target
    files, project input, and verification commands in the host repository.
 
+## Migrating to 0.23
+
+The root and `/browser` aggregates, their `main`/`types` fallbacks, and deprecated names were
+removed. Import browser-safe schemas from `/schema`, rule documents from `/rules`, checks and
+filter helpers from `/checks`, and presentation labels from `/labels`. Node hosts use `/corpus`
+for corpus queries and reports, `/index` for scanning and native index composition, and
+`/workspace` for selected-project workflows and operations.
+
+| Old import or name                                                                                 | Replacement                                                                            |
+| -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `@ue-shed/game-text`, `@ue-shed/game-text/browser`                                                 | The focused entry point that owns each name, listed above                              |
+| `WorkbenchOperation*`                                                                              | Corresponding `GameTextOperation*` from `/schema`                                      |
+| `ScanTextCorpusOptions`                                                                            | `TextCorpusScanOptions` from `/index`                                                  |
+| `TextCorpusServiceShape`, `TextCorpusServiceTestShape`                                             | `TextCorpusServiceApi`, `TextCorpusServiceTestApi` from `/index`                       |
+| `TextReviewLens`                                                                                   | `TextFilter` clauses from `/schema`: `finding` for rule IDs, `fact` for review signals |
+| `TextFinding`, `TextCountedFindings`, `textFindings`, `textCountedFindings`, row `countedFindings` | Row `findings` rule IDs (`TextRowFindings` from `/checks`)                             |
+| `GameTextIndexStepsOptions.qualityWorker`                                                          | Omit it; quality runs in the native engine                                             |
+| `gameTextCsv`                                                                                      | `NativeTextQuery.writeCorpusCsv` on the opened index query                             |
+| `localizationLinesCsv`                                                                             | `NativeTextQuery.writeLocalizationLinesCsv` on the opened index query                  |
+| `prepareLocalizationFile`                                                                          | Native index imports through `GameTextIndexSteps.importTarget` from `/index`           |
+
+Saved investigation presets that still carry a `lens` keep working: `investigationRequest` reads
+it as its clause. `shared`, `duplicate_source` and `long` become `finding` clauses naming
+`localization.<check>`, `unresolved` and `conflicting` become `fact` clauses, and `all` adds no
+clause. New presets use `filter`.
+
 ## Ownership
 
 - UE Shed owns the installed package and its schemas.
@@ -58,8 +84,15 @@ selected-project state, explicit engine-root policy and progress notification ho
 `LocalizationOperations` service. Unreal remains a separately enabled capability.
 
 The underlying pipeline uses `GameTextIndexProgressReporter` for each operation; `workspace.progress()`
-returns the host/workspace's latest presentation state. Prove scan/search/focus through the adopter's
-real transport, a non-disk rules store, refused/recovery writes and disconnect/rejoin behavior.
+and `progressChanges()` return the workspace's latest `GameTextWorkspaceProgress`: a raw phase code
+with its counts, which the host words with `GAME_TEXT_WORKSPACE_PHASE_LABELS` from `./labels`.
+
+To serve the workspace over a transport (IPC, WebSocket, MCP), build its handlers from
+`GameTextWorkspaceContract` in `./schema`: each method's params and success schemas, and the event
+schema of `progressChanges`. Map each method name to the host's own channel, decode the params,
+call the method with them and encode its result. Host-only methods are not in it; its doc comment
+lists them. Prove scan/search/focus through the adopter's real transport, a non-disk rules store,
+refused/recovery writes and disconnect/rejoin behavior.
 
 ## Required and optional capabilities
 
@@ -130,7 +163,7 @@ Which query answers which question:
 | How many lines per key, text, problem, origin, audience or asset | `query.aggregate({ ...scope, by: ["translation_key"] })`, and so on                                   |
 | A target's progress report and baseline                          | `indexedLocalizationProgressReport(model, baseline)`, `indexedLocalizationBaseline(model, createdAt)` |
 | Lines in changed files and their problems                        | `indexedLocalizationGateTarget(model.query, { join, files, failOn })`                                 |
-| A spreadsheet of every line                                      | `query.selectLocalizationLines(request, LOCALIZATION_LINES_CSV_FIELDS)` and `localizationLinesCsv`    |
+| A spreadsheet of every line                                      | `query.writeLocalizationLinesCsv(request, { path })`                                                  |
 | Keys and translations before a gather                            | `query.selectLocalizationLines(request, KEY_CHANGE_FIELDS)`                                           |
 | Package coverage and diagnostics                                 | `query.readCorpusHeader()`                                                                            |
 | The units quality findings name                                  | `query.readUnits(ids)`, or `readFindingUnits`                                                         |

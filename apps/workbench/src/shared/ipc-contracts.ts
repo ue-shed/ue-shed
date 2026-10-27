@@ -27,11 +27,6 @@ import {
 } from "@ue-shed/asset-audits/browser";
 
 import {
-	GameTextInvestigationQuery,
-	GameTextInvestigationPresetResult,
-	LocalizationLinesFileResult
-} from "@ue-shed/game-text/corpus";
-import {
 	TextIdRepairRequest,
 	TextIdRepairId,
 	TextIdRepairResult,
@@ -43,7 +38,10 @@ import {
 	GameTextOperationResult,
 	GameTextOperationFilesRequest,
 	GameTextOperationFilesResult,
-	GameTextOperationProgress
+	GameTextOperationProgress,
+	GameTextWorkspaceContract,
+	GameTextWorkspaceNoParams,
+	type GameTextWorkspaceContractName
 } from "@ue-shed/game-text/schema";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
 import {
@@ -103,43 +101,6 @@ import {
 	ConfigExplorerPublicError
 } from "@ue-shed/config-explorer/browser";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input/browser";
-import {
-	WorkspaceQualityRequest,
-	WorkspaceQualityResult,
-	WorkspaceQualityFocusRequest,
-	WorkspaceQualityFocusResult,
-	WorkspaceChangesResult,
-	LocalizationEditRequest,
-	LocalizationEditResult,
-	LocalizationReviewRequest,
-	LocalizationReviewResult,
-	WorkspaceReportRequest,
-	WorkspaceReportResult,
-	WorkspaceReportFileRequest,
-	WorkspaceReportFileResult,
-	LocalizationTargetsResult,
-	LocalizationTargetResult,
-	LocalizationFocusRequest,
-	LocalizationFocusResult,
-	RelatedLinesRequest,
-	RelatedLinesResult,
-	TextQualityFocusRequest,
-	TextQualityFocusResult,
-	TextQualityQueryRunResult,
-	TextQualityRuleUpdateResult,
-	TextQualitySearchRequest,
-	TextQualitySearchResult
-} from "@ue-shed/game-text/corpus";
-import { GameTextRuleDocument } from "@ue-shed/game-text/rules";
-import {
-	LocalizationSelection,
-	TextCorpusFocusRequest,
-	TextCorpusFocusResult,
-	TextCorpusQueryRunResult,
-	TextCorpusRowsResult,
-	TextCorpusSearchRequest,
-	TextCorpusSearchResult
-} from "@ue-shed/game-text/schema";
 import { RuntimeHealth } from "@ue-shed/observability/health";
 import {
 	ScenarioDocument,
@@ -325,7 +286,7 @@ export const ShowcaseContext = Schema.Struct({
 	health: RuntimeHealth,
 	project: ShowcaseProjectEvidence,
 	projectRoot: Schema.optionalKey(Schema.String),
-	reader: Schema.Literals(["configured", "path"]),
+	reader: Schema.Literals(["configured", "package", "path"]),
 	ruleFile: Schema.optionalKey(Schema.String)
 });
 export interface ShowcaseContext extends Schema.Schema.Type<typeof ShowcaseContext> {}
@@ -519,6 +480,35 @@ const invoke = <
 	kind: "invoke",
 	...contract
 });
+
+type GameTextServed = Exclude<GameTextWorkspaceContractName, "progressChanges">;
+type GameTextArgs<Name extends GameTextServed> =
+	keyof GameTextWorkspaceContract[Name]["params"]["Type"] extends never
+		? typeof EmptyArgs
+		: Schema.Tuple<readonly [GameTextWorkspaceContract[Name]["params"]]>;
+
+/**
+ * A Game Text workspace method on its Workbench channel, with the schemas of its
+ * `GameTextWorkspaceContract` entry: no arguments for a method without a parameter, else its one.
+ */
+const gameTextInvoke = <const Channel extends string, const Name extends GameTextServed>(
+	channel: Channel,
+	name: Name
+) => {
+	const entry: { readonly params: Schema.Top; readonly success: Schema.Top } =
+		GameTextWorkspaceContract[name];
+	return invoke({
+		channel,
+		// SAFETY: a method without a parameter is exactly one whose params is the no-params schema;
+		// GameTextArgs makes the same choice from its type.
+		// Verified by: apps/workbench/src/main/ipc-contracts.test.ts ("rejects no-input channels
+		// that receive unexpected values", "rejects malformed input for every input-bearing channel")
+		args: (entry.params === GameTextWorkspaceNoParams
+			? EmptyArgs
+			: Schema.Tuple([entry.params])) as GameTextArgs<Name>,
+		result: GameTextWorkspaceContract[name].success
+	});
+};
 
 export const invokeContracts = {
 	"editor-window:activate": invoke({
@@ -719,33 +709,25 @@ export const invokeContracts = {
 	"game-text:configured-scan": invoke({
 		channel: "game-text:configured-scan",
 		args: EmptyArgs,
-		result: TextCorpusQueryRunResult
+		result: GameTextWorkspaceContract.configuredRefresh.success
 	}),
-	"game-text:configured-refresh": invoke({
-		channel: "game-text:configured-refresh",
-		args: Schema.Tuple([Schema.Boolean]),
-		result: TextCorpusQueryRunResult
-	}),
-	"game-text:progress": invoke({
-		channel: "game-text:progress",
-		args: EmptyArgs,
-		result: WorkbenchTaskProgress
-	}),
-	"game-text:investigation-export": invoke({
-		channel: "game-text:investigation-export",
-		args: Schema.Tuple([GameTextInvestigationQuery, InvestigationFormat]),
-		result: InvestigationFileResult
-	}),
-	"game-text:investigation-save": invoke({
-		channel: "game-text:investigation-save",
-		args: Schema.Tuple([GameTextInvestigationQuery]),
-		result: InvestigationFileResult
-	}),
-	"game-text:investigation-open": invoke({
-		channel: "game-text:investigation-open",
-		args: Schema.Tuple([]),
-		result: GameTextInvestigationPresetResult
-	}),
+	"game-text:configured-refresh": gameTextInvoke(
+		"game-text:configured-refresh",
+		"configuredRefresh"
+	),
+	"game-text:progress": gameTextInvoke("game-text:progress", "progress"),
+	"game-text:investigation-export": gameTextInvoke(
+		"game-text:investigation-export",
+		"investigationExport"
+	),
+	"game-text:investigation-save": gameTextInvoke(
+		"game-text:investigation-save",
+		"investigationSave"
+	),
+	"game-text:investigation-open": gameTextInvoke(
+		"game-text:investigation-open",
+		"investigationOpen"
+	),
 	"game-text:id-repair:prepare": invoke({
 		channel: "game-text:id-repair:prepare",
 		args: Schema.Tuple([TextIdRepairRequest]),
@@ -781,116 +763,76 @@ export const invokeContracts = {
 		args: Schema.Tuple([GameTextOperationFilesRequest]),
 		result: GameTextOperationFilesResult
 	}),
-	"game-text:localization:quality-search": invoke({
-		channel: "game-text:localization:quality-search",
-		args: Schema.Tuple([WorkspaceQualityRequest]),
-		result: WorkspaceQualityResult
-	}),
-	"game-text:localization:quality-focus": invoke({
-		channel: "game-text:localization:quality-focus",
-		args: Schema.Tuple([WorkspaceQualityFocusRequest]),
-		result: WorkspaceQualityFocusResult
-	}),
-	"game-text:localization:changes": invoke({
-		channel: "game-text:localization:changes",
-		args: Schema.Tuple([WorkspaceQualityRequest]),
-		result: WorkspaceChangesResult
-	}),
-	"game-text:localization:edits": invoke({
-		channel: "game-text:localization:edits",
-		args: Schema.Tuple([LocalizationEditRequest]),
-		result: LocalizationEditResult
-	}),
-	"game-text:localization:review": invoke({
-		channel: "game-text:localization:review",
-		args: Schema.Tuple([LocalizationReviewRequest]),
-		result: LocalizationReviewResult
-	}),
-	"game-text:localization:report": invoke({
-		channel: "game-text:localization:report",
-		args: Schema.Tuple([WorkspaceReportRequest]),
-		result: WorkspaceReportResult
-	}),
-	"game-text:localization:report-file": invoke({
-		channel: "game-text:localization:report-file",
-		args: Schema.Tuple([WorkspaceReportFileRequest]),
-		result: WorkspaceReportFileResult
-	}),
-	"game-text:localization:lines-file": invoke({
-		channel: "game-text:localization:lines-file",
-		args: Schema.Tuple([TextCorpusSearchRequest]),
-		result: LocalizationLinesFileResult
-	}),
-	"game-text:localization:targets": invoke({
-		channel: "game-text:localization:targets",
-		args: Schema.Tuple([]),
-		result: LocalizationTargetsResult
-	}),
-	"game-text:localization:target": invoke({
-		channel: "game-text:localization:target",
-		args: Schema.Tuple([LocalizationSelection.fields.target]),
-		result: LocalizationTargetResult
-	}),
-	"game-text:localization:focus": invoke({
-		channel: "game-text:localization:focus",
-		args: Schema.Tuple([LocalizationFocusRequest]),
-		result: LocalizationFocusResult
-	}),
-	"game-text:related": invoke({
-		channel: "game-text:related",
-		args: Schema.Tuple([RelatedLinesRequest]),
-		result: RelatedLinesResult
-	}),
-	"game-text:search": invoke({
-		channel: "game-text:search",
-		args: Schema.Tuple([TextCorpusSearchRequest]),
-		result: TextCorpusSearchResult
-	}),
-	"game-text:search-rows": invoke({
-		channel: "game-text:search-rows",
-		args: Schema.Tuple([TextCorpusSearchRequest]),
-		result: TextCorpusRowsResult
-	}),
-	"game-text:focus": invoke({
-		channel: "game-text:focus",
-		args: Schema.Tuple([TextCorpusFocusRequest]),
-		result: TextCorpusFocusResult
-	}),
-	"game-text:quality:choose-rules": invoke({
-		channel: "game-text:quality:choose-rules",
-		args: EmptyArgs,
-		result: TextQualityQueryRunResult
-	}),
-	"game-text:quality:create-starter-rules": invoke({
-		channel: "game-text:quality:create-starter-rules",
-		args: Schema.Tuple([Schema.Boolean]),
-		result: TextQualityQueryRunResult
-	}),
-	"game-text:quality:reload-rules": invoke({
-		channel: "game-text:quality:reload-rules",
-		args: EmptyArgs,
-		result: TextQualityQueryRunResult
-	}),
-	"game-text:quality:preview-rules": invoke({
-		channel: "game-text:quality:preview-rules",
-		args: Schema.Tuple([GameTextRuleDocument]),
-		result: TextQualityRuleUpdateResult
-	}),
-	"game-text:quality:save-rules": invoke({
-		channel: "game-text:quality:save-rules",
-		args: Schema.Tuple([GameTextRuleDocument]),
-		result: TextQualityRuleUpdateResult
-	}),
-	"game-text:quality:search": invoke({
-		channel: "game-text:quality:search",
-		args: Schema.Tuple([TextQualitySearchRequest]),
-		result: TextQualitySearchResult
-	}),
-	"game-text:quality:focus": invoke({
-		channel: "game-text:quality:focus",
-		args: Schema.Tuple([TextQualityFocusRequest]),
-		result: TextQualityFocusResult
-	}),
+	"game-text:localization:quality-search": gameTextInvoke(
+		"game-text:localization:quality-search",
+		"localizationQualitySearch"
+	),
+	"game-text:localization:quality-focus": gameTextInvoke(
+		"game-text:localization:quality-focus",
+		"localizationQualityFocus"
+	),
+	"game-text:localization:changes": gameTextInvoke(
+		"game-text:localization:changes",
+		"localizationChanges"
+	),
+	"game-text:localization:edits": gameTextInvoke(
+		"game-text:localization:edits",
+		"localizationEdits"
+	),
+	"game-text:localization:review": gameTextInvoke(
+		"game-text:localization:review",
+		"localizationReview"
+	),
+	"game-text:localization:report": gameTextInvoke(
+		"game-text:localization:report",
+		"localizationReport"
+	),
+	"game-text:localization:report-file": gameTextInvoke(
+		"game-text:localization:report-file",
+		"localizationReportFile"
+	),
+	"game-text:localization:lines-file": gameTextInvoke(
+		"game-text:localization:lines-file",
+		"localizationLinesFile"
+	),
+	"game-text:localization:targets": gameTextInvoke(
+		"game-text:localization:targets",
+		"localizationTargets"
+	),
+	"game-text:localization:target": gameTextInvoke(
+		"game-text:localization:target",
+		"localizationTarget"
+	),
+	"game-text:localization:focus": gameTextInvoke(
+		"game-text:localization:focus",
+		"localizationFocus"
+	),
+	"game-text:related": gameTextInvoke("game-text:related", "related"),
+	"game-text:search": gameTextInvoke("game-text:search", "search"),
+	"game-text:search-rows": gameTextInvoke("game-text:search-rows", "searchRows"),
+	"game-text:focus": gameTextInvoke("game-text:focus", "focus"),
+	"game-text:quality:choose-rules": gameTextInvoke(
+		"game-text:quality:choose-rules",
+		"chooseQualityRules"
+	),
+	"game-text:quality:create-starter-rules": gameTextInvoke(
+		"game-text:quality:create-starter-rules",
+		"createStarterRules"
+	),
+	"game-text:quality:reload-rules": gameTextInvoke(
+		"game-text:quality:reload-rules",
+		"reloadQualityRules"
+	),
+	"game-text:quality:preview-rules": gameTextInvoke(
+		"game-text:quality:preview-rules",
+		"previewQualityRules"
+	),
+	"game-text:quality:save-rules": gameTextInvoke(
+		"game-text:quality:save-rules",
+		"saveQualityRules"
+	),
+	"game-text:quality:search": gameTextInvoke("game-text:quality:search", "qualitySearch"),
+	"game-text:quality:focus": gameTextInvoke("game-text:quality:focus", "qualityFocus"),
 	"asset-navigation:locate": invoke({
 		channel: "asset-navigation:locate",
 		args: Schema.Tuple([GameObjectPath]),
@@ -1268,7 +1210,7 @@ export const mapCaptureProgressEvent = {
 /** Each change to Game Text's progress, after the snapshot `game-text:progress` reads. */
 export const gameTextProgressEvent = {
 	channel: "game-text:progress-changed",
-	payload: WorkbenchTaskProgress
+	payload: GameTextWorkspaceContract.progressChanges.events
 } as const;
 
 export const gameTextOperationProgressEvent = {

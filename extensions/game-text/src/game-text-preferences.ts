@@ -16,13 +16,12 @@ import {
 	TextCapabilityFilter,
 	TextFilter,
 	TextGroupBy,
-	TextReviewLens,
 	TextUnitId,
 	TextWhere,
 	TextQualityRule,
 	TextTerminologyEntry
 } from "@ue-shed/game-text/schema";
-import { legacyFilter } from "./game-text-filter-model.js";
+import { legacyFilter, type LegacyFilters } from "./game-text-filter-model.js";
 import type { RuleEditorState } from "./game-text-rule-state.js";
 
 const TranslationDraft = LocalizationEdit.mapFields((fields) => ({
@@ -105,6 +104,16 @@ const DraftDocument = GameTextRuleDocument.mapFields((fields) => ({
 const lenient = <S extends Schema.Top>(field: S) =>
 	field.pipe(Schema.catchDecoding(() => Effect.succeedNone));
 
+/** Lenses stored before filter pills; decoded only to migrate the host's preferences. */
+const LegacyReviewLens = Schema.Literals([
+	"all",
+	"shared",
+	"duplicate_source",
+	"long",
+	"unresolved",
+	"conflicting"
+]);
+
 const StoredPreferences = Schema.Struct({
 	localizationTarget: lenient(Schema.optionalKey(LocalizationSelection.fields.target)),
 	localizationCulture: lenient(LocalizationSelection.fields.culture),
@@ -116,7 +125,7 @@ const StoredPreferences = Schema.Struct({
 	selectedLocalizationId: lenient(Schema.optionalKey(LocalizationLineId)),
 	query: lenient(Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512)))),
 	capability: lenient(Schema.optionalKey(TextCapabilityFilter)),
-	lens: lenient(Schema.optionalKey(TextReviewLens)),
+	lens: lenient(Schema.optionalKey(LegacyReviewLens)),
 	withoutNotes: lenient(Schema.optionalKey(Schema.Boolean)),
 	where: lenient(Schema.optionalKey(TextWhere)),
 	mode: lenient(Schema.optionalKey(Schema.Literals(["corpus", "quality", "reports"]))),
@@ -162,7 +171,7 @@ export interface GameTextPreferences {
 	readonly query: string;
 	readonly capability: Schema.Schema.Type<typeof TextCapabilityFilter>;
 	/** A lens saved by an earlier Game Text; `migratePreferences` turns it into a pill. */
-	readonly lens?: Schema.Schema.Type<typeof TextReviewLens> | undefined;
+	readonly lens?: LegacyFilters["lens"];
 	readonly withoutNotes?: boolean;
 	readonly where?: Schema.Schema.Type<typeof TextWhere> | undefined;
 	readonly mode?: "corpus" | "quality" | "reports";

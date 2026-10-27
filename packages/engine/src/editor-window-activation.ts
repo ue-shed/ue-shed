@@ -1,6 +1,4 @@
 import { execFile } from "node:child_process";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import {
 	decodeCompanionCapabilityManifest,
 	ContractParseError,
@@ -13,6 +11,7 @@ import {
 import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schema } from "effect";
 import { isLoopbackEndpoint } from "./loopback-endpoint.js";
+import { processSupervisorExecutable } from "./process-supervisor.js";
 
 /**
  * Foreground permission, negotiation or activation failure with operation context and
@@ -83,16 +82,22 @@ export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPerm
 				)
 			)
 		);
+		const unavailable = (cause: unknown) =>
+			failure(
+				"grant",
+				`The process supervisor could not grant foreground permission to process ${processId}.`,
+				{
+					recovery:
+						"Reinstall UE Shed so its process supervisor is present, or focus the editor window manually.",
+					retrySafe: true,
+					nextStep: "escalate"
+				},
+				cause
+			);
+		const executable = yield* processSupervisorExecutable.pipe(Effect.mapError(unavailable));
 		const result = yield* Effect.tryPromise({
 			try: (signal) =>
 				new Promise<string>((resolve, reject) => {
-					const require = createRequire(import.meta.url);
-					const manifest = require.resolve("@ue-shed/engine-win32-x64/package.json");
-					const executable = join(
-						dirname(manifest),
-						"bin",
-						"ue-shed-process-supervisor.exe"
-					);
 					execFile(
 						executable,
 						["--allow-foreground", String(processId)],
@@ -100,18 +105,7 @@ export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPerm
 						(error, stdout) => (error ? reject(error) : resolve(stdout.trim()))
 					);
 				}),
-			catch: (cause) =>
-				failure(
-					"grant",
-					`The process supervisor could not grant foreground permission to process ${processId}.`,
-					{
-						recovery:
-							"Reinstall UE Shed so its process supervisor is present, or focus the editor window manually.",
-						retrySafe: true,
-						nextStep: "escalate"
-					},
-					cause
-				)
+			catch: unavailable
 		});
 		if (result !== "granted")
 			yield* Effect.logDebug("Foreground permission was not granted", { result });

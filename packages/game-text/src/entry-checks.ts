@@ -44,8 +44,6 @@ export {
 	type TextFacts,
 	matchesTextFilter,
 	needsWork,
-	textCountedFindings,
-	textFindings,
 	textProblemCounts,
 	textProblems,
 	translationStates
@@ -55,7 +53,6 @@ export { TEXT_PROBLEMS, TEXT_PROBLEM_RULES, type TextProblemRule } from "./text-
 
 export {
 	MAX_TEXT_ROW_FINDINGS,
-	TextCountedFindings,
 	TextFindingsSelection,
 	TextFindingsStatus,
 	TextRowFindings,

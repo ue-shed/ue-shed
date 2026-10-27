@@ -712,14 +712,6 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFileRequest")(
 	(input: LocalizationFileImportRequest) => importFile(input)
 );
-/** @deprecated Index imports use the native writer. Retained for external snapshot consumers. */
-export const prepareLocalizationFile = Effect.fn("LocalizationSnapshot.prepareFile")(
-	(
-		input: LocalizationFileImportRequest,
-		stagedFile: string,
-		prepareSource?: (source: SnapshotSource) => Promise<void>
-	) => importFile(input, stagedFile, prepareSource)
-);
 
 const TargetRequest = LocalizationProjectRequest.pipe(
 	Schema.fieldsAssign({

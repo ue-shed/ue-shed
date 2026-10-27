@@ -20,6 +20,7 @@
 		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/project-custodian": "workspace:*",
+		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/ui": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",

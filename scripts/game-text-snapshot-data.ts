@@ -1,7 +1,10 @@
 import { relative } from "node:path";
 
-import type { LocalizationJoin, TextCorpus } from "../packages/game-text/dist/index.js";
-import { localizationStates, LocalizationUnknownReason } from "../packages/game-text/dist/index.js";
+import type { LocalizationJoin, TextCorpus } from "../packages/game-text/dist/entry-schema.js";
+import {
+	localizationStates,
+	LocalizationUnknownReason
+} from "../packages/game-text/dist/entry-schema.js";
 import {
 	snapshotStringTableBuilder,
 	type SnapshotColumn

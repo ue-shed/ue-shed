@@ -1,10 +1,11 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Effect, Schema } from "effect";
 
 export class CliSignalError extends Schema.TaggedError<CliSignalError>()("CliSignalError", {
 	message: Schema.String,
 	recovery: Schema.String,
 	retrySafe: Schema.Boolean,
-	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+	nextStep: ErrorNextStep,
 	code: Schema.Literal("cli_signal_failed"),
 	cause: Schema.optionalKey(Schema.Defect()),
 	signal: Schema.Literals(["SIGINT", "SIGTERM"])

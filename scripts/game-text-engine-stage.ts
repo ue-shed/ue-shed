@@ -17,7 +17,6 @@ import * as currentAssets from "../packages/unreal-assets/dist/index.js";
 import * as currentLocalization from "../packages/localization/dist/index.js";
 import * as currentCorpus from "../packages/game-text/dist/entry-corpus.js";
 import * as currentRules from "../packages/game-text/dist/entry-rules.js";
-import * as currentPublic from "../packages/game-text/dist/index.js";
 import { retainedPackageSource } from "./game-text-scale-quality.ts";
 import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
 import {
@@ -79,15 +78,11 @@ export async function runEngineStage(options: EngineStageOptions) {
 	);
 	const { LocalizationEvidence, LocalizationEvidenceNodeLive, LocalizationTargetName } =
 		await load("localization/dist/index.js", currentLocalization);
-	const { LOCALIZATION_LINES_CSV_FIELDS, localizationLinesCsv } = await load(
-		"game-text/dist/entry-corpus.js",
-		currentCorpus
-	);
 	const { decodeGameTextRuleDocumentJson, effectiveRuleDocument, STARTER_CHECK_RULES } =
 		await load("game-text/dist/entry-rules.js", currentRules);
-	const { gatheredIdentityKey, gatheredTextIdentity } = await load(
-		"game-text/dist/index.js",
-		currentPublic
+	const { LOCALIZATION_LINES_CSV_FIELDS, gatheredIdentityKey, gatheredTextIdentity } = await load(
+		"game-text/dist/entry-corpus.js",
+		currentCorpus
 	);
 	const [stage, scenarioHost, scenarioGroups] = options.stage.split(":");
 	const mix = decodeEngineRequestMix(JSON.parse(await readFile(options.mix, "utf8")));
@@ -404,7 +399,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 		};
 		if (stage === "build" || stage === "cached-reopen") {
 			await measure(stage, async () => {
-				ready(await run(workspace.configuredRefresh(true)), "completed");
+				ready(await run(workspace.configuredRefresh({ refresh: true })), "completed");
 				ready(await run(workspace.localizationTarget(target)));
 				return firstPage(search, searchRows);
 			});
@@ -422,7 +417,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				);
 			});
 		} else {
-			ready(await run(workspace.configuredRefresh(true)), "completed");
+			ready(await run(workspace.configuredRefresh({ refresh: true })), "completed");
 			ready(await run(workspace.localizationTarget(target)));
 			if (
 				stage === "quality" ||
@@ -462,7 +457,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				// The stage breakdown covers the rescan only, not the build before it.
 				recorder?.reset();
 				await measure("edit.refresh", async () =>
-					ready(await run(workspace.configuredRefresh(true)), "completed")
+					ready(await run(workspace.configuredRefresh({ refresh: true })), "completed")
 				);
 			} else if (stage === "loc-check" || stage === "lines-export") {
 				// `loc check` and `loc export` as each commit's CLI runs them: the starter's checks
@@ -544,24 +539,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 							capability: "all" as const,
 							localization: { target }
 						};
-						if (Reflect.has(opened.query, "writeLocalizationLinesCsv")) {
-							const written = await run(
-								opened.query.writeLocalizationLinesCsv(request, { path })
-							);
-							return { rowCount: "rows" in written ? written.rows : -1 };
-						}
-						const lines = await run(
-							opened.query.selectLocalizationLines(
-								request,
-								LOCALIZATION_LINES_CSV_FIELDS
-							)
+						const written = await run(
+							opened.query.writeLocalizationLinesCsv(request, { path })
 						);
-						const { csv, rows } = localizationLinesCsv({
-							join: opened.localization,
-							lines
-						});
-						await writeFile(path, csv, { flag: "wx" });
-						return { rowCount: rows };
+						return { rowCount: "rows" in written ? written.rows : -1 };
 					});
 			} else if (stage === "engine-load") {
 				// The engine under load: a keystroke while rules evaluate, cancel latency, a 5,000-row

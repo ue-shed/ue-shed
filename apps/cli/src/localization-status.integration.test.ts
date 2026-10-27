@@ -543,7 +543,6 @@ it.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE).each(["game_text", "texture_au
 								mode: "quality",
 								query: "",
 								capability: "all",
-								lens: "all",
 								qualityFilter: "character_budget"
 							}
 						: { findingsOnly: true, query: "" },
@@ -612,7 +611,6 @@ describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality pr
 				mode: "quality",
 				query: "",
 				capability: "all",
-				lens: "all",
 				qualityFilter: "all",
 				workspaceFilter: "format_argument_renamed",
 				localization: { target: "FixtureGame", culture: "de" }

@@ -1,3 +1,4 @@
+import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 import { CoActivationSet, CoActivationSourceStatus } from "./coactivation.js";
@@ -232,13 +233,12 @@ export type EnhancedInputReport = Schema.Schema.Type<typeof EnhancedInputReport>
 export const EnhancedInputPublicError = Schema.Struct({
 	code: Schema.Literals([
 		"invalid_project",
+		"invalid_options",
 		"scan_limit_exceeded",
 		"invalid_path",
 		"reader_failed"
 	]),
-	message: Schema.String,
-	recovery: Schema.String,
-	retrySafe: Schema.Boolean
+	...ErrorGuidanceFields
 });
 export type EnhancedInputPublicError = Schema.Schema.Type<typeof EnhancedInputPublicError>;
 

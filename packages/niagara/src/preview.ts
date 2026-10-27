@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { readNiagaraPreviewProgress, type NiagaraPreviewProgress } from "./progress.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -136,24 +137,33 @@ function previewError(
 	});
 }
 
-function safeIo<A>(
+const hasErrorGuidance = Schema.is(
+	Schema.Struct({
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: ErrorNextStep
+	})
+);
+
+/** @internal Keeps session recovery decisions when adapting failures to preview errors. */
+export function safeIo<A>(
 	operation: Effect.Effect<A, unknown>,
 	error: NiagaraPreviewError
 ): Effect.Effect<A, NiagaraPreviewError> {
 	return operation.pipe(
-		Effect.mapError(
-			(cause) =>
-				new NiagaraPreviewError({
-					code: error.code,
-					message: error.message,
-					nextStep: error.nextStep,
-					recovery: error.recovery,
-					retrySafe: error.retrySafe,
-					stage: error.stage,
-					...(error.runId === undefined ? undefined : { runId: error.runId }),
-					cause
-				})
-		)
+		Effect.mapError((cause) => {
+			const guidance = hasErrorGuidance(cause) ? cause : error;
+			return new NiagaraPreviewError({
+				code: error.code,
+				message: error.message,
+				nextStep: guidance.nextStep,
+				recovery: guidance.recovery,
+				retrySafe: guidance.retrySafe,
+				stage: error.stage,
+				...(error.runId === undefined ? undefined : { runId: error.runId }),
+				cause
+			});
+		})
 	);
 }
 
@@ -1032,7 +1042,7 @@ export const NiagaraPreviewLive = Layer.effect(
 				"-AllowCommandletRendering",
 				"-RenderOffscreen",
 				"-unattended",
-				"-nop4",
+				"-SCCProvider=None",
 				"-nosplash"
 			];
 			if (options.sessionDirectory !== undefined) {

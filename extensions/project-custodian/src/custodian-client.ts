@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import {
 	CustodianCancelResult,
 	CustodianExecutionMode,
@@ -32,7 +33,7 @@ export type CustodianRunResult = typeof CustodianRunResult.Type;
 export class CustodianClientContractError extends Schema.TaggedError<CustodianClientContractError>()(
 	"CustodianClientContractError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("invalid_contract"),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -129,7 +130,7 @@ export class CustodianClientError extends Schema.TaggedError<CustodianClientErro
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("custodian_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,

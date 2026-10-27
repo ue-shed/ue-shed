@@ -5,9 +5,36 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { Effect, Exit } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
-import { installPluginBundle, verifyPluginManifest } from "./plugin-installer.js";
+import {
+	installPluginBundle,
+	readPluginManifest,
+	verifyPluginManifest
+} from "./plugin-installer.js";
 
 const roots: string[] = [];
+
+it("classifies a missing manifest path as input the caller can fix", async () => {
+	const fixture = await makeFixture();
+	const error = await Effect.runPromise(
+		readPluginManifest(join(fixture.root, "missing.manifest.json")).pipe(Effect.flip)
+	);
+	expect(error.nextStep).toBe("fix_input");
+	expect(error.retrySafe).toBe(false);
+	expect(error.message).toContain("does not exist");
+});
+
+it("classifies an invalid project argument as fix_input", async () => {
+	const fixture = await makeFixture();
+	const error = await Effect.runPromise(
+		installPluginBundle({
+			manifestPath: fixture.manifestPath,
+			projectPath: fixture.manifestPath
+		}).pipe(Effect.flip)
+	);
+	expect(error.nextStep).toBe("fix_input");
+	expect(error.retrySafe).toBe(false);
+	expect(error.message).toContain(".uproject extension");
+});
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 async function makeFixture(): Promise<{

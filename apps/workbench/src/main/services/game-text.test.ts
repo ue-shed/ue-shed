@@ -53,7 +53,8 @@ import {
 } from "./game-text-localization.test-support.js";
 import {
 	WorkbenchGameTextLive as indexedWorkbenchGameTextLive,
-	WorkbenchGameText
+	WorkbenchGameText,
+	type WorkbenchGameTextApi
 } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
@@ -216,7 +217,7 @@ it.effect(
 			const scans = yield* Ref.make(0);
 			yield* Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				const scan = yield* service.configuredRefresh(true).pipe(Effect.forkChild);
+				const scan = yield* service.configuredRefresh({}).pipe(Effect.forkChild);
 				yield* Deferred.await(started);
 				expect(yield* service.beginOperation()).toBe(false);
 				expect(yield* service.operationBusyReason()).toContain("scan");
@@ -224,21 +225,23 @@ it.effect(
 				expect((yield* Fiber.join(scan)).status).toBe("completed");
 				expect(yield* service.beginOperation()).toBe(true);
 				expect(yield* service.beginOperation()).toBe(false);
-				expect((yield* service.configuredRefresh(false)).status).toBe("completed");
-				expect((yield* service.configuredRefresh(true)).status).toBe("failed");
+				expect((yield* service.configuredRefresh({ refresh: false })).status).toBe(
+					"completed"
+				);
+				expect((yield* service.configuredRefresh({})).status).toBe("failed");
 				expect((yield* service.configuredScan()).status).toBe("failed");
 				expect(yield* service.saveQualityRules(STARTER_GAME_TEXT_RULES)).toMatchObject({
 					status: "failed",
 					error: { code: "write_failed" }
 				});
-				expect(yield* service.createStarterRules(false)).toMatchObject({
+				expect(yield* service.createStarterRules({ loadExisting: false })).toMatchObject({
 					status: "failed",
 					error: { code: "write_failed" }
 				});
 				expect(yield* Ref.get(scans)).toBe(1);
 				yield* service.endOperation();
 				expect(yield* service.operationBusyReason()).toBeUndefined();
-				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* service.configuredRefresh({})).status).toBe("completed");
 				expect(yield* Ref.get(scans)).toBe(2);
 			}).pipe(
 				Effect.provide(
@@ -372,7 +375,7 @@ it.effect("passes localization corpus focus through the selected target's query"
 	Effect.gen(function* () {
 		const saved = splitUnit();
 		const service = yield* WorkbenchGameText;
-		yield* service.configuredRefresh();
+		yield* service.configuredRefresh({});
 		yield* service.localizationTarget(localizationTarget.name);
 		const result = yield* service.search({
 			capability: "all",
@@ -460,7 +463,7 @@ it.effect("operation refresh reloads evidence and gathers also rescan the retain
 		});
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
-			yield* service.configuredRefresh(true);
+			yield* service.configuredRefresh({});
 			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
 				notSynced: 2
 			});
@@ -523,7 +526,7 @@ it.effect(
 			yield* Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
 				expect(yield* service.localizationTargets()).toEqual({ status: "not_ready" });
-				yield* service.configuredRefresh(true);
+				yield* service.configuredRefresh({});
 				expect(yield* service.localizationTargets()).toMatchObject({
 					status: "ready",
 					targets: [{ name: localizationTarget.name }]
@@ -532,18 +535,18 @@ it.effect(
 					status: "ready",
 					notSynced: 2
 				});
-				yield* service.configuredRefresh(false);
+				yield* service.configuredRefresh({ refresh: false });
 				yield* service.localizationTarget(localizationTarget.name);
 				expect(reads).toBe(1);
 				translation = "Translation";
-				yield* service.configuredRefresh(true);
+				yield* service.configuredRefresh({});
 				expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
 					status: "ready",
 					notSynced: 0
 				});
 				expect(reads).toBe(2);
 				available = false;
-				yield* service.configuredRefresh(true);
+				yield* service.configuredRefresh({});
 				expect(yield* service.localizationTargets()).toEqual({
 					status: "ready",
 					targets: []
@@ -578,12 +581,14 @@ it.effect("reuses navigation results and refreshes only when requested", () =>
 		const scans = yield* Ref.make(0);
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
-			expect((yield* service.configuredRefresh(false)).status).toBe("not_scanned");
+			expect((yield* service.configuredRefresh({ refresh: false })).status).toBe(
+				"not_scanned"
+			);
 			expect(yield* Ref.get(scans)).toBe(0);
-			expect((yield* service.configuredRefresh(true)).status).toBe("completed");
-			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+			expect((yield* service.configuredRefresh({})).status).toBe("completed");
+			expect((yield* service.configuredRefresh({ refresh: false })).status).toBe("completed");
 			expect(yield* Ref.get(scans)).toBe(1);
-			expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+			expect((yield* service.configuredRefresh({})).status).toBe("completed");
 			expect(yield* Ref.get(scans)).toBe(2);
 		}).pipe(
 			Effect.provide(
@@ -649,19 +654,23 @@ it("creates starter rules exclusively, reloads the file and retains it through r
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect(yield* service.createStarterRules(false)).toEqual({ status: "not_ready" });
-				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
-				expect(yield* service.createStarterRules(false)).toMatchObject({
+				expect(yield* service.createStarterRules({ loadExisting: false })).toEqual({
+					status: "not_ready"
+				});
+				expect((yield* service.configuredRefresh({})).status).toBe("completed");
+				expect(yield* service.createStarterRules({ loadExisting: false })).toMatchObject({
 					status: "completed",
 					document: STARTER_GAME_TEXT_RULES
 				});
 				const original = yield* Effect.promise(() => readFile(path, "utf8"));
-				expect(yield* service.createStarterRules(false)).toMatchObject({
+				expect(yield* service.createStarterRules({ loadExisting: false })).toMatchObject({
 					status: "failed",
 					error: { code: "already_exists", retrySafe: true }
 				});
 				expect(yield* Effect.promise(() => readFile(path, "utf8"))).toBe(original);
-				expect((yield* service.createStarterRules(true)).status).toBe("completed");
+				expect((yield* service.createStarterRules({ loadExisting: true })).status).toBe(
+					"completed"
+				);
 				const revised = {
 					...STARTER_GAME_TEXT_RULES,
 					rules: STARTER_GAME_TEXT_RULES.rules.map((rule) =>
@@ -673,7 +682,7 @@ it("creates starter rules exclusively, reloads the file and retains it through r
 					status: "completed",
 					document: revised
 				});
-				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* service.configuredRefresh({})).status).toBe("completed");
 				expect((yield* service.qualitySearch({ filter: "all", pageSize: 50 })).status).toBe(
 					"ready"
 				);
@@ -686,7 +695,7 @@ it("creates starter rules exclusively, reloads the file and retains it through r
 					status: "failed",
 					error: { code: "invalid_rules" }
 				});
-				expect(yield* service.createStarterRules(true)).toMatchObject({
+				expect(yield* service.createStarterRules({ loadExisting: true })).toMatchObject({
 					status: "failed",
 					error: { code: "invalid_rules" }
 				});
@@ -735,10 +744,10 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 		});
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
-			const first = yield* Effect.forkChild(service.configuredRefresh(true));
+			const first = yield* Effect.forkChild(service.configuredRefresh({}));
 			yield* Deferred.await(started);
 			yield* Ref.set(root, "C:/B");
-			expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+			expect((yield* service.configuredRefresh({})).status).toBe("completed");
 			yield* Deferred.succeed(release, undefined);
 			expect((yield* Fiber.join(first)).status).toBe("failed");
 			expect(
@@ -790,7 +799,7 @@ for (const phase of ["candidates", "scan"] as const) {
 				});
 				yield* Effect.gen(function* () {
 					const service = yield* WorkbenchGameText;
-					const first = yield* Effect.forkChild(service.configuredRefresh(true));
+					const first = yield* Effect.forkChild(service.configuredRefresh({}));
 					yield* Deferred.await(started);
 					yield* Ref.set(generation, 2);
 					yield* Deferred.succeed(release, undefined);
@@ -803,18 +812,18 @@ for (const phase of ["candidates", "scan"] as const) {
 						})).status
 					).not.toBe("ready");
 					expect(
-						(yield* service.investigationExport(
-							{
+						(yield* service.investigationExport({
+							query: {
 								mode: "corpus",
 								query: "",
 								capability: "all",
-								lens: "all",
+								filter: [],
 								qualityFilter: "all"
 							},
-							"json"
-						)).status
+							format: "json"
+						})).status
 					).toBe("failed");
-					expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+					expect((yield* service.configuredRefresh({})).status).toBe("completed");
 					expect(
 						(yield* service.search({
 							query: "",
@@ -880,12 +889,18 @@ const validQualityDocument = GameTextRuleDocument.make({
 	schemaVersion: 1
 });
 
+/** A full scan, or a refresh that scans. */
+const runScan = (
+	service: WorkbenchGameTextApi,
+	operation: "configuredScan" | "configuredRefresh"
+) => (operation === "configuredScan" ? service.configuredScan() : service.configuredRefresh({}));
+
 for (const code of ["reader_failed"] as const) {
 	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
 		it.effect(`preserves ${code} in ${operation} failures`, () =>
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				const result = yield* service[operation]();
+				const result = yield* runScan(service, operation);
 				expect(result).toEqual({
 					error: {
 						code,
@@ -930,7 +945,7 @@ it.effect(
 		Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
 			expect(yield* service.chooseQualityRules()).toEqual({ status: "not_ready" });
-			const refreshed = yield* service.configuredRefresh();
+			const refreshed = yield* service.configuredRefresh({});
 			expect(refreshed).toMatchObject({
 				status: "completed",
 				summary: {
@@ -1045,7 +1060,7 @@ it.effect(
 		});
 		return Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
-			expect((yield* service.configuredRefresh()).status).toBe("completed");
+			expect((yield* service.configuredRefresh({})).status).toBe("completed");
 			const loaded = yield* service.chooseQualityRules();
 			expect(loaded.status).toBe("completed");
 			if (loaded.status !== "completed") return;
@@ -1125,22 +1140,26 @@ it("exports one captured generation when the project changes during the save dia
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* service.configuredRefresh({})).status).toBe("completed");
 				const query = {
 					mode: "corpus" as const,
 					query: "",
 					capability: "all" as const,
-					lens: "all" as const,
+					filter: [],
 					qualityFilter: "all" as const
 				};
-				expect(yield* service.investigationExport(query, "json")).toMatchObject({
-					status: "saved",
-					rowCount: 0,
-					path
-				});
-				expect(yield* service.investigationExport(query, "json")).toMatchObject({
-					status: "failed"
-				});
+				expect(yield* service.investigationExport({ query, format: "json" })).toMatchObject(
+					{
+						status: "saved",
+						rowCount: 0,
+						path
+					}
+				);
+				expect(yield* service.investigationExport({ query, format: "json" })).toMatchObject(
+					{
+						status: "failed"
+					}
+				);
 			}).pipe(
 				Effect.provide(
 					WorkbenchGameTextLive.pipe(
@@ -1194,7 +1213,7 @@ it("exports the selected target's localization quality list as a replayable repo
 		mode: "quality" as const,
 		query: "",
 		capability: "all" as const,
-		lens: "all" as const,
+		filter: [],
 		qualityFilter: "all" as const,
 		workspaceFilter: "empty_translation" as const,
 		localization: { target: localizationTarget.name, culture: cultureCode("de") }
@@ -1203,15 +1222,17 @@ it("exports the selected target's localization quality list as a replayable repo
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* service.configuredRefresh({})).status).toBe("completed");
 				// Without rules nothing runs; preview the starter's checks.
 				expect((yield* service.previewQualityRules(STARTER_CHECK_RULES)).status).toBe(
 					"completed"
 				);
 				// Without a loaded target the export reports guidance instead of an empty list.
-				expect(yield* service.investigationExport(query, "json")).toMatchObject({
-					status: "failed"
-				});
+				expect(yield* service.investigationExport({ query, format: "json" })).toMatchObject(
+					{
+						status: "failed"
+					}
+				);
 				expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
 					status: "ready"
 				});
@@ -1222,10 +1243,12 @@ it("exports the selected target's localization quality list as a replayable repo
 				});
 				if (listed.status !== "ready") throw new Error("Missing quality list.");
 				expect(listed.page.total).toBeGreaterThan(0);
-				expect(yield* service.investigationExport(query, "json")).toMatchObject({
-					status: "saved",
-					rowCount: listed.page.total
-				});
+				expect(yield* service.investigationExport({ query, format: "json" })).toMatchObject(
+					{
+						status: "saved",
+						rowCount: listed.page.total
+					}
+				);
 				const exported = JSON.parse(
 					yield* Effect.promise(() => readFile(outputPath, "utf8"))
 				);
@@ -1249,7 +1272,9 @@ it("exports the selected target's localization quality list as a replayable repo
 				);
 				expect(savedPreset).toMatchObject({ schemaVersion: 2, query });
 				outputPath = join(root, "export.csv");
-				expect((yield* service.investigationExport(query, "csv")).status).toBe("saved");
+				expect((yield* service.investigationExport({ query, format: "csv" })).status).toBe(
+					"saved"
+				);
 				const csv = yield* Effect.promise(() => readFile(outputPath, "utf8"));
 				expect(csv.split("\r\n")[0]).toContain('"Finding ID","Scan status"');
 			}).pipe(
@@ -1288,7 +1313,7 @@ it("restores embedded rules without retaining another rule file's write destinat
 		mode: "corpus" as const,
 		query: "",
 		capability: "all" as const,
-		lens: "all" as const,
+		filter: [],
 		qualityFilter: "all" as const
 	};
 	const preset = {
@@ -1314,7 +1339,7 @@ it("restores embedded rules without retaining another rule file's write destinat
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* service.configuredRefresh({})).status).toBe("completed");
 				expect((yield* service.chooseQualityRules()).status).toBe("completed");
 				openPath = presetPath;
 				expect((yield* service.investigationOpen()).status).toBe("opened");
@@ -1334,13 +1359,15 @@ it("restores embedded rules without retaining another rule file's write destinat
 				expect(yield* service.qualitySearch({ filter: "all", pageSize: 50 })).toEqual({
 					status: "not_ready"
 				});
-				expect((yield* service.investigationExport(query, "json")).status).toBe("saved");
+				expect((yield* service.investigationExport({ query, format: "json" })).status).toBe(
+					"saved"
+				);
 				// Problem and translation pills need the target's files; none are loaded here.
 				expect(
-					yield* service.investigationExport(
-						{ ...query, localization: { target: localizationTarget.name } },
-						"json"
-					)
+					yield* service.investigationExport({
+						query: { ...query, localization: { target: localizationTarget.name } },
+						format: "json"
+					})
 				).toMatchObject({
 					status: "failed",
 					message: expect.stringContaining("not loaded")
@@ -1417,7 +1444,7 @@ for (const failure of [
 		it.effect(`reports ${failure.code} in ${operation} without blaming the project`, () =>
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect(yield* service[operation]()).toEqual({
+				expect(yield* runScan(service, operation)).toEqual({
 					status: "failed",
 					error: {
 						code: failure.code,
@@ -1494,7 +1521,7 @@ for (const native of [
 			const failedSteps = failedIndexSteps(failure);
 			return Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect(yield* service[operation]()).toEqual({
+				expect(yield* runScan(service, operation)).toEqual({
 					status: "failed",
 					error: {
 						code: "index_failed",

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Effect, Schema } from "effect";
@@ -12,7 +13,7 @@ export class TextRulesFileError extends Schema.TaggedError<TextRulesFileError>()
 	"TextRulesFileError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["already_exists", "write_failed", "invalid_project"]),
 		message: Schema.String,

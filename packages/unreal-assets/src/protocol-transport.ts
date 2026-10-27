@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { unlink } from "node:fs/promises";
 import { channel } from "node:diagnostics_channel";
 import type { Readable, Writable } from "node:stream";
 import {
@@ -21,10 +22,17 @@ import type {
 	ProtocolTerminalState,
 	SavedAssetExtractionOptions,
 	SavedAssetScanOptions,
+	SavedAssetStagedTextExtractionOptions,
 	SavedWorldProgressStore,
 	ScanProgressStore
 } from "./asset-reader.js";
-import { MAX_PROTOCOL_REQUEST_BYTES } from "./protocol-request-limit.js";
+import { readerPathKey, uniqueRequestPathIndices } from "./protocol-path-identity.js";
+import {
+	MAX_PROTOCOL_REQUEST_BYTES,
+	protocolPathBytes,
+	requestPathBudget,
+	stagedPathBytes
+} from "./protocol-request-limit.js";
 import {
 	AssetReaderError,
 	assetReaderGuidance,
@@ -242,7 +250,13 @@ export class ProtocolStreamValidator {
 	}
 }
 
-type ProtocolFailureKind = "contract" | "discovery" | "process" | "resource_limit" | "timeout";
+type ProtocolFailureKind =
+	| "contract"
+	| "discovery"
+	| "process"
+	| "request_too_large"
+	| "resource_limit"
+	| "timeout";
 
 export class ProtocolStreamFailure extends Error {
 	readonly _tag = "ProtocolStreamFailure";
@@ -1195,8 +1209,8 @@ async function* protocolEvents(options: {
 	options.telemetry.requestBytes = Buffer.byteLength(requestFrame, "utf8");
 	if (Buffer.byteLength(requestFrame, "utf8") > MAX_PROTOCOL_REQUEST_BYTES) {
 		throw new ProtocolStreamFailure(
-			"contract",
-			"Native reader request exceeds 4 MiB; split package paths with batchProtocolPaths"
+			"request_too_large",
+			"The asset reader request is larger than its 4 MiB limit."
 		);
 	}
 	const child = (options.processFactory ?? spawnProtocolProcess)(
@@ -1299,14 +1313,256 @@ async function* protocolEvents(options: {
 	}
 }
 
-async function collectProtocolScan(
+/** Span attribute naming how many reader processes one operation's path list was split across. */
+const READER_BATCHES_ATTRIBUTE = "ue_shed.reader.batches";
+
+/**
+ * Publishes each batch's progress on top of the finished batches before it, so a caller polling
+ * the store sees counts that only grow and `ready` only once the last batch is done.
+ */
+class BatchedScanProgress {
+	private done = { cacheHits: 0, emittedAssets: 0, processedAssets: 0, totalAssets: 0 };
+
+	constructor(
+		private readonly store: ScanProgressStore,
+		private readonly batches: number
+	) {}
+
+	/** The store one batch writes to. A single batch writes to the caller's store directly. */
+	batch(index: number): ScanProgressStore {
+		if (this.batches === 1) return this.store;
+		const store = this.store;
+		const done = this.done;
+		const last = index === this.batches - 1;
+		let local: SavedAssetScanProgress = {
+			cacheHits: 0,
+			emittedAssets: 0,
+			phase: store.current.phase,
+			processedAssets: 0,
+			totalAssets: 0
+		};
+		return {
+			get current(): SavedAssetScanProgress {
+				return local;
+			},
+			set current(next: SavedAssetScanProgress) {
+				local = next;
+				store.current = {
+					cacheHits: done.cacheHits + next.cacheHits,
+					emittedAssets: done.emittedAssets + next.emittedAssets,
+					phase: next.phase === "ready" && !last ? "scanning" : next.phase,
+					processedAssets: done.processedAssets + next.processedAssets,
+					totalAssets: done.totalAssets + next.totalAssets
+				};
+			}
+		};
+	}
+
+	/** Adds a finished batch's counts to the base the next batch publishes on. */
+	finish(batch: ScanProgressStore): void {
+		if (this.batches === 1) return;
+		const finished = batch.current;
+		const packages = Math.max(finished.processedAssets, finished.totalAssets);
+		this.done = {
+			cacheHits: this.done.cacheHits + finished.cacheHits,
+			emittedAssets: this.done.emittedAssets + finished.emittedAssets,
+			processedAssets: this.done.processedAssets + packages,
+			totalAssets: this.done.totalAssets + packages
+		};
+	}
+}
+
+type ScanSummaryCounts = Pick<
+	SavedAssetScanSummary,
+	| "cacheHits"
+	| "diagnostics"
+	| "emittedAssets"
+	| "failedAssets"
+	| "inventoryComplete"
+	| "inventoryFiles"
+	| "partialAssets"
+	| "roots"
+	| "scannedAssets"
+	| "skippedAssets"
+>;
+
+/**
+ * The summary fields of consecutive batches over disjoint paths, merged into one: counts add,
+ * diagnostics concatenate in order, roots are their ordered union, and the inventory is complete
+ * only when every batch's was.
+ */
+function mergeScanSummaryCounts(summaries: readonly ScanSummaryCounts[]): ScanSummaryCounts {
+	const sum = (
+		field:
+			| "cacheHits"
+			| "emittedAssets"
+			| "failedAssets"
+			| "partialAssets"
+			| "scannedAssets"
+			| "skippedAssets"
+	) => summaries.reduce((total, summary) => total + summary[field], 0);
+	const complete = summaries.flatMap((summary) =>
+		summary.inventoryComplete === undefined ? [] : [summary.inventoryComplete]
+	);
+	const files = summaries.flatMap((summary) =>
+		summary.inventoryFiles === undefined ? [] : [summary.inventoryFiles]
+	);
+	return {
+		cacheHits: sum("cacheHits"),
+		diagnostics: summaries.flatMap((summary) => summary.diagnostics),
+		emittedAssets: sum("emittedAssets"),
+		failedAssets: sum("failedAssets"),
+		...(complete.length === 0 ? undefined : { inventoryComplete: complete.every(Boolean) }),
+		...(files.length === 0
+			? undefined
+			: { inventoryFiles: files.reduce((total, count) => total + count, 0) }),
+		partialAssets: sum("partialAssets"),
+		roots: [...new Set(summaries.flatMap((summary) => summary.roots))],
+		scannedAssets: sum("scannedAssets"),
+		skippedAssets: sum("skippedAssets")
+	};
+}
+
+/** One scan over consecutive path batches: entries, failures and inventory in order. */
+function mergeSavedAssetScans(scans: readonly SavedAssetScan[]): SavedAssetScan {
+	const [first, ...rest] = scans;
+	if (first === undefined) throw new RangeError("A scan has at least one batch");
+	if (rest.length === 0) return first;
+	const inventory = scans.flatMap((scan) => scan.inventory ?? []);
+	return {
+		assets: scans.flatMap((scan) => scan.assets),
+		failures: scans.flatMap((scan) => scan.failures),
+		...(inventory.length === 0 ? undefined : { inventory }),
+		summary: {
+			...(rest.at(-1) ?? first).summary,
+			...mergeScanSummaryCounts(scans.map((scan) => scan.summary))
+		}
+	};
+}
+
+/** Internal seams of a batched operation: tests fake the worker and lower the request limit. */
+export interface ProtocolBatchingOptions {
+	readonly processFactory?: ProtocolProcessFactory;
+	/** Request frame limit batches are cut against. Defaults to the native reader's 4 MiB. */
+	readonly maximumRequestBytes?: number;
+}
+
+/** The native reader's own `maximumAssets` refusal, raised for packages counted across batches. */
+function packageLimitFailure(count: number, maximum: number): ProtocolStreamFailure {
+	return new ProtocolStreamFailure(
+		"resource_limit",
+		`Scan found ${count} packages, above the limit of ${maximum}.`,
+		7,
+		undefined,
+		"resource_limit"
+	);
+}
+
+const requestTooLarge = () =>
+	new ProtocolStreamFailure(
+		"request_too_large",
+		"A package path in this request does not fit in one 4 MiB asset reader request next to the request's options."
+	);
+
+/**
+ * Indices of `paths`, in consecutive batches whose requests each fit the frame limit next to an
+ * envelope of `envelopeBytes`. A list that fits one request is sent whole and unchanged. A longer
+ * list first drops paths the reader would read twice (`uniqueRequestPathIndices`), so batches are
+ * disjoint. Fails only when the envelope cannot hold even one of the paths.
+ */
+function requestPathBatches(
+	projectRoot: string,
+	paths: readonly string[],
+	envelopeBytes: number,
+	maximumRequestBytes: number
+): readonly (readonly number[])[] | ProtocolStreamFailure {
+	const budget = requestPathBudget(envelopeBytes, maximumRequestBytes);
+	// The options alone are over the limit, with or without paths.
+	if (budget < 0) return requestTooLarge();
+	const sizes = paths.map(protocolPathBytes);
+	if (sizes.reduce((total, size) => total + size, 0) <= budget) return [paths.map((_, i) => i)];
+	if (sizes.some((size) => size > budget)) return requestTooLarge();
+	const batches: number[][] = [];
+	let batch: number[] = [];
+	let bytes = 0;
+	for (const index of uniqueRequestPathIndices(projectRoot, paths)) {
+		const size = sizes[index] ?? 0;
+		if (batch.length > 0 && bytes + size > budget) {
+			batches.push(batch);
+			batch = [];
+			bytes = 0;
+		}
+		batch.push(index);
+		bytes += size;
+	}
+	if (batch.length > 0) batches.push(batch);
+	return batches;
+}
+
+/**
+ * The reader's package identities already emitted by earlier batches. A later batch's record for
+ * one of them is dropped, so overlapping roots the path de-duplication could not see still yield
+ * each package once.
+ */
+class BatchIdentities {
+	private readonly earlier = new Set<string>();
+	private readonly current = new Set<string>();
+	private readonly dropped = new Set<string>();
+
+	constructor(private readonly projectRoot: string) {}
+
+	/** Whether a record for `path` in the running batch is new to the operation. */
+	keep(path: string): boolean {
+		const key = readerPathKey(this.projectRoot, path);
+		if (this.earlier.has(key)) {
+			this.dropped.add(key);
+			return false;
+		}
+		this.current.add(key);
+		return true;
+	}
+
+	/** Closes the running batch; returns how many of its packages earlier batches already had. */
+	finish(): number {
+		for (const key of this.current) this.earlier.add(key);
+		const dropped = this.dropped.size;
+		this.current.clear();
+		this.dropped.clear();
+		return dropped;
+	}
+}
+
+/** The path of a package-level scan entry. */
+function scanEntryPath(entry: SavedAssetScanEntry): string {
+	return entry.depth === "header" ? entry.header.path : entry.inspection.path;
+}
+
+/**
+ * Removes the per-batch header caches a longer earlier scan left behind, from batch `from` up to
+ * the first index with no file. Removal failures are ignored: the files are only caches.
+ */
+async function removeLeftoverBatchCaches(cachePath: string, from: number): Promise<void> {
+	for (let index = from; ; index += 1) {
+		try {
+			await unlink(batchCachePath(cachePath, index));
+		} catch (cause) {
+			const code = cause instanceof Error && "code" in cause ? cause.code : undefined;
+			if (code === "ENOENT" || code === "ENOTDIR") return;
+		}
+	}
+}
+
+/** The header cache file of batch `index` in a scan split across several requests. */
+function batchCachePath(cachePath: string, index: number): string {
+	return `${cachePath}.batch-${index}`;
+}
+
+/** The request one scan batch sends. */
+function makeScanRequest(
 	configuration: AssetReaderConfiguration,
-	options: SavedAssetScanOptions,
-	progress: ScanProgressStore,
-	telemetry: ProtocolTelemetry,
-	signal?: AbortSignal
-): Promise<SavedAssetScan> {
-	const request = makeProtocolRequest(
+	options: SavedAssetScanOptions
+): UAssetIoRequest {
+	return makeProtocolRequest(
 		{
 			kind: "scan",
 			projectRoot: options.projectRoot,
@@ -1335,6 +1591,17 @@ async function collectProtocolScan(
 		},
 		{ contractMinor: options.depth === "header" ? (options.headerData ? 9 : 0) : 14 }
 	);
+}
+
+async function collectProtocolScan(
+	configuration: AssetReaderConfiguration,
+	options: SavedAssetScanOptions,
+	progress: ScanProgressStore,
+	telemetry: ProtocolTelemetry,
+	signal?: AbortSignal,
+	processFactory?: ProtocolProcessFactory
+): Promise<SavedAssetScan> {
+	const request = makeScanRequest(configuration, options);
 	const assets: SavedAssetScanEntry[] = [];
 	const failures: SavedAssetScanFailure[] = [];
 	const inventory: SavedAssetManifestEntry[] = [];
@@ -1344,6 +1611,7 @@ async function collectProtocolScan(
 		configuration,
 		operation: "scan",
 		path: options.projectRoot,
+		...(processFactory === undefined ? undefined : { processFactory }),
 		request,
 		signal,
 		telemetry,
@@ -1403,17 +1671,27 @@ async function collectProtocolScan(
 	};
 }
 
-export function invokeProtocolScan(
+/** One scan request in one reader process, with that process's telemetry. */
+function invokeProtocolScanBatch(
 	configuration: AssetReaderConfiguration,
 	options: SavedAssetScanOptions,
-	progress: ScanProgressStore
+	progress: ScanProgressStore,
+	processFactory: ProtocolProcessFactory | undefined
 ): Effect.Effect<SavedAssetScan, AssetReaderError> {
 	const telemetry = makeProtocolTelemetry(
 		options.cachePath !== undefined,
 		configuration.protocolObserver
 	);
 	const operation = Effect.tryPromise({
-		try: (signal) => collectProtocolScan(configuration, options, progress, telemetry, signal),
+		try: (signal) =>
+			collectProtocolScan(
+				configuration,
+				options,
+				progress,
+				telemetry,
+				signal,
+				processFactory
+			),
 		catch: (cause) => mapProtocolFailure(cause, "scan", options.projectRoot)
 	});
 	return Effect.gen(function* () {
@@ -1424,11 +1702,124 @@ export function invokeProtocolScan(
 		yield* recordProtocolTelemetry("scan", telemetry);
 		return yield* exit;
 	}).pipe(
-		Effect.withSpan("unreal_assets.protocol_scan"),
 		Effect.withSpan("unreal_assets.protocol_process", {
 			attributes: { "unreal.operation": "scan", "unreal.path": options.projectRoot }
 		})
 	);
+}
+
+/**
+ * Scans in one reader process per path batch, one after another, and merges the batches into one
+ * result. A path list that fits one request is sent unchanged. A longer one is de-duplicated as the
+ * reader would, cut against the measured request envelope, and each package is reported once even
+ * where roots overlap. `maximumAssets` bounds the unique packages of the whole scan, and each batch
+ * keeps its own header cache beside `cachePath`.
+ */
+export function invokeProtocolScan(
+	configuration: AssetReaderConfiguration,
+	options: SavedAssetScanOptions,
+	progress: ScanProgressStore,
+	batching: ProtocolBatchingOptions = {}
+): Effect.Effect<SavedAssetScan, AssetReaderError> {
+	const projectRoot = options.projectRoot;
+	return Effect.gen(function* () {
+		const paths = options.paths;
+		const batches =
+			paths === undefined
+				? undefined
+				: requestPathBatches(
+						projectRoot,
+						paths,
+						Buffer.byteLength(
+							JSON.stringify(
+								makeScanRequest(configuration, {
+									...options,
+									paths: [],
+									...(options.cachePath === undefined
+										? undefined
+										: {
+												cachePath: batchCachePath(
+													options.cachePath,
+													paths.length
+												)
+											})
+								})
+							),
+							"utf8"
+						),
+						batching.maximumRequestBytes ?? MAX_PROTOCOL_REQUEST_BYTES
+					);
+		if (batches instanceof ProtocolStreamFailure)
+			return yield* Effect.fail(mapProtocolFailure(batches, "scan", projectRoot));
+		yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
+		if (paths === undefined || batches === undefined || batches.length === 1) {
+			// A list that only fit once its repeats were dropped is sent without them.
+			const only = batches?.[0];
+			return yield* invokeProtocolScanBatch(
+				configuration,
+				paths === undefined || only === undefined || only.length === paths.length
+					? options
+					: { ...options, paths: only.map((index) => paths[index] ?? "") },
+				progress,
+				batching.processFactory
+			);
+		}
+		const batched = new BatchedScanProgress(progress, batches.length);
+		const assetIdentities = new BatchIdentities(projectRoot);
+		const inventoryIdentities = new BatchIdentities(projectRoot);
+		const scans: SavedAssetScan[] = [];
+		let counted = 0;
+		for (const [index, batch] of batches.entries()) {
+			const batchProgress = batched.batch(index);
+			const scan = yield* invokeProtocolScanBatch(
+				configuration,
+				{
+					...options,
+					paths: batch.map((pathIndex) => paths[pathIndex] ?? ""),
+					...(options.cachePath === undefined
+						? undefined
+						: { cachePath: batchCachePath(options.cachePath, index) })
+				},
+				batchProgress,
+				batching.processFactory
+			);
+			const assets = scan.assets.filter((entry) =>
+				assetIdentities.keep(scanEntryPath(entry))
+			);
+			const inventory = scan.inventory?.filter((entry) =>
+				inventoryIdentities.keep(entry.path)
+			);
+			const repeated = assetIdentities.finish();
+			const repeatedInventory = inventoryIdentities.finish();
+			counted += scan.summary.scannedAssets - repeated;
+			if (options.maximumAssets !== undefined && counted > options.maximumAssets)
+				return yield* Effect.fail(
+					mapProtocolFailure(
+						packageLimitFailure(counted, options.maximumAssets),
+						"scan",
+						projectRoot
+					)
+				);
+			scans.push({
+				...scan,
+				assets,
+				...(inventory === undefined ? undefined : { inventory }),
+				summary: {
+					...scan.summary,
+					emittedAssets: scan.summary.emittedAssets - repeated,
+					scannedAssets: scan.summary.scannedAssets - repeated,
+					...(scan.summary.inventoryFiles === undefined
+						? undefined
+						: { inventoryFiles: scan.summary.inventoryFiles - repeatedInventory })
+				}
+			});
+			batched.finish(batchProgress);
+		}
+		const cachePath = options.cachePath;
+		if (cachePath !== undefined)
+			yield* Effect.promise(() => removeLeftoverBatchCaches(cachePath, batches.length));
+		return mergeSavedAssetScans(scans);
+	}).pipe(Effect.withSpan("unreal_assets.protocol_scan"));
 }
 
 async function collectProtocolSingle<A>(options: {
@@ -1588,29 +1979,179 @@ export function invokeProtocolSingle<A>(options: {
 	return invokeProtocolSingleWithEvidence(options).pipe(Effect.map((evidence) => evidence.value));
 }
 
-export function protocolProjectionStream<A>(options: {
+type ProjectionStaging = SavedAssetStagedTextExtractionOptions["staging"];
+
+/** The paths, and staging groups, one projection request sends. */
+interface ProjectionBatch {
+	readonly paths?: readonly string[];
+	readonly groups?: readonly number[];
+}
+
+const stagedGroupTooLarge = () =>
+	new ProtocolStreamFailure(
+		"request_too_large",
+		"This staged package-text read is larger than one 4 MiB asset reader request, and its staging groups cannot be split into requests that each hold whole groups."
+	);
+
+/**
+ * Consecutive staged batches that each fit `budget`. Every batch writes into the same directory,
+ * where the reader creates each group file exclusively, so batches are cut only where the group
+ * changes and a group may not reappear in a later batch.
+ */
+function stagedProjectionBatches(
+	paths: readonly string[],
+	groups: readonly number[],
+	indices: readonly number[],
+	budget: number
+): readonly ProjectionBatch[] | ProtocolStreamFailure {
+	const batches: ProjectionBatch[] = [];
+	const batchOfGroup = new Map<number, number>();
+	let start = 0;
+	let bytes = 0;
+	let groupStart = 0;
+	let groupBytes = 0;
+	const close = (end: number) => {
+		const batch = indices.slice(start, end);
+		batches.push({
+			paths: batch.map((index) => paths[index] ?? ""),
+			groups: batch.map((index) => groups[index] ?? 0)
+		});
+		start = end;
+	};
+	for (const [position, index] of indices.entries()) {
+		const group = groups[index] ?? 0;
+		if (position > 0 && group !== groups[indices[position - 1] ?? 0]) {
+			groupStart = position;
+			groupBytes = 0;
+		}
+		const size = stagedPathBytes(paths[index] ?? "", group);
+		if (size > budget) return requestTooLarge();
+		if (bytes + size > budget && position > start) {
+			if (groupStart === start) return stagedGroupTooLarge();
+			close(groupStart);
+			bytes = groupBytes;
+			// The group's earlier paths moved into the new batch with it.
+			if (groupStart < position) batchOfGroup.set(group, batches.length);
+		}
+		if ((batchOfGroup.get(group) ?? batches.length) !== batches.length)
+			return stagedGroupTooLarge();
+		batchOfGroup.set(group, batches.length);
+		bytes += size;
+		groupBytes += size;
+	}
+	close(indices.length);
+	return batches;
+}
+
+/**
+ * Consecutive projection batches that each fit one request next to the measured envelope. A list
+ * that fits one request is sent whole and unchanged; snapshot staging is always sent whole, since
+ * its shards carry their own inventories.
+ */
+function projectionBatches(
+	options: ProjectionRequestOptions,
+	operation: ProjectionOperation,
+	maximumRequestBytes: number
+): readonly ProjectionBatch[] | ProtocolStreamFailure {
+	const { paths, projectRoot } = options.extraction;
+	const staging = options.staging;
+	if (paths === undefined) return [{}];
+	if (staging?.snapshots !== undefined) return [{ paths, groups: staging.groups }];
+	const envelopeBytes = Buffer.byteLength(
+		JSON.stringify(makeProjectionRequest(options, operation, { paths: [], groups: [] })),
+		"utf8"
+	);
+	if (staging === undefined) {
+		const batches = requestPathBatches(projectRoot, paths, envelopeBytes, maximumRequestBytes);
+		return batches instanceof ProtocolStreamFailure
+			? batches
+			: batches.map((batch) => ({ paths: batch.map((index) => paths[index] ?? "") }));
+	}
+	const { groups } = staging;
+	if (groups.length !== paths.length) return [{ paths, groups }];
+	const budget = requestPathBudget(envelopeBytes, maximumRequestBytes);
+	if (budget < 0) return requestTooLarge();
+	const sizes = paths.map((path, index) => stagedPathBytes(path, groups[index] ?? 0));
+	if (sizes.reduce((total, size) => total + size, 0) <= budget) return [{ paths, groups }];
+	return stagedProjectionBatches(
+		paths,
+		groups,
+		uniqueRequestPathIndices(projectRoot, paths),
+		budget
+	);
+}
+
+/** The package path a projection record belongs to; summaries have none. */
+function projectionRecordPath(result: UAssetIoResult): string | undefined {
+	if (result.kind === "staged_text_package") return result.path;
+	if (
+		result.kind === "extract_text" ||
+		result.kind === "extract_text_packages" ||
+		result.kind === "extract_texture"
+	)
+		return "path" in result.event ? result.event.path : undefined;
+	return undefined;
+}
+
+type ProjectionSummary = Extract<
+	UAssetIoResult,
+	{ readonly kind: "extract_text" | "extract_text_packages" | "extract_texture" }
+>["event"] & { readonly event: "text_summary" | "texture_summary" };
+
+function projectionSummary(result: UAssetIoResult): ProjectionSummary | undefined {
+	return (result.kind === "extract_text" ||
+		result.kind === "extract_text_packages" ||
+		result.kind === "extract_texture") &&
+		(result.event.event === "text_summary" || result.event.event === "texture_summary")
+		? result.event
+		: undefined;
+}
+
+/** `result`, a closing projection summary, with its counts replaced by `counts`. */
+function withSummaryCounts(result: UAssetIoResult, counts: ScanSummaryCounts): UAssetIoResult {
+	switch (result.kind) {
+		case "extract_text":
+			return result.event.event === "text_summary"
+				? { ...result, event: { ...result.event, ...counts } }
+				: result;
+		case "extract_text_packages":
+			return result.event.event === "text_summary"
+				? { ...result, event: { ...result.event, ...counts } }
+				: result;
+		case "extract_texture":
+			return result.event.event === "texture_summary"
+				? { ...result, event: { ...result.event, ...counts } }
+				: result;
+		default:
+			return result;
+	}
+}
+
+type ProjectionOperation = "extract_text" | "extract_text_packages" | "extract_texture";
+
+/** What a projection request is built from. */
+interface ProjectionRequestOptions {
 	readonly configuration: AssetReaderConfiguration;
 	readonly extraction: SavedAssetExtractionOptions;
 	readonly projection: "text" | "text_packages" | "texture";
-	/** Package-text staging (uasset-io v1.19); requires explicit paths. */
-	readonly staging?: import("./asset-reader.js").SavedAssetStagedTextExtractionOptions["staging"];
-	readonly scanStore: ScanProgressStore;
-	readonly decode: (event: UAssetIoResult) => A | undefined;
-}): Stream.Stream<A, AssetReaderError> {
-	const operation =
-		options.projection === "text"
-			? "extract_text"
-			: options.projection === "text_packages"
-				? "extract_text_packages"
-				: "extract_texture";
-	const staging = options.staging;
+	readonly staging?: ProjectionStaging;
+}
+
+/** The request one projection batch sends. */
+function makeProjectionRequest(
+	options: ProjectionRequestOptions,
+	operation: ProjectionOperation,
+	batch: ProjectionBatch
+): UAssetIoRequest {
+	const staging =
+		options.staging === undefined
+			? undefined
+			: { ...options.staging, groups: batch.groups ?? options.staging.groups };
 	const selection = {
 		projectRoot: options.extraction.projectRoot,
-		...(options.extraction.paths === undefined
-			? undefined
-			: { paths: [...options.extraction.paths] })
+		...(batch.paths === undefined ? undefined : { paths: [...batch.paths] })
 	};
-	const request = makeProtocolRequest(
+	return makeProtocolRequest(
 		staging !== undefined && operation === "extract_text_packages"
 			? {
 					kind: operation,
@@ -1650,6 +2191,128 @@ export function protocolProjectionStream<A>(options: {
 						: 0
 		}
 	);
+}
+
+/**
+ * Streams one compact projection. A path list that fits one request is sent unchanged. A longer
+ * one is de-duplicated as the reader would, cut against the measured request envelope and sent in
+ * consecutive batches, one reader process at a time. Their events are concatenated in order, a
+ * package an earlier batch already reported is skipped, and their closing summaries merge into one,
+ * emitted after the last batch. `maximumAssets` bounds the unique packages of the whole projection.
+ */
+export function protocolProjectionStream<A>(
+	options: ProjectionRequestOptions & {
+		readonly scanStore: ScanProgressStore;
+		readonly decode: (event: UAssetIoResult) => A | undefined;
+		readonly processFactory?: ProtocolProcessFactory;
+		readonly maximumRequestBytes?: number;
+	}
+): Stream.Stream<A, AssetReaderError> {
+	const operation: ProjectionOperation =
+		options.projection === "text"
+			? "extract_text"
+			: options.projection === "text_packages"
+				? "extract_text_packages"
+				: "extract_texture";
+	const projectRoot = options.extraction.projectRoot;
+	const maximumAssets = options.extraction.maximumAssets;
+	const batches = projectionBatches(
+		options,
+		operation,
+		options.maximumRequestBytes ?? MAX_PROTOCOL_REQUEST_BYTES
+	);
+	const spans = <B>(stream: Stream.Stream<B, AssetReaderError>, count: number) =>
+		stream.pipe(
+			Stream.withSpan(`unreal_assets.protocol_extract_${options.projection}`, {
+				attributes: {
+					"unreal.project_root": projectRoot,
+					[READER_BATCHES_ATTRIBUTE]: count
+				}
+			})
+		);
+	if (batches instanceof ProtocolStreamFailure)
+		return spans(Stream.fail(mapProtocolFailure(batches, operation, projectRoot)), 0);
+	if (batches.length === 1)
+		return spans(
+			protocolProjectionBatch(options, operation, batches[0] ?? {}, options.scanStore),
+			1
+		);
+	// Batch state lives in the run, so every run of the stream starts from the first batch.
+	const batched = Stream.suspend(() => {
+		const progress = new BatchedScanProgress(options.scanStore, batches.length);
+		const identities = new BatchIdentities(projectRoot);
+		const summaries: ScanSummaryCounts[] = [];
+		let lastSummary: UAssetIoResult | undefined;
+		let counted = 0;
+		/** Counts a finished batch's new packages and refuses the projection once over the limit. */
+		const finish = (batchProgress: ScanProgressStore) =>
+			Effect.suspend(() => {
+				const repeated = identities.finish();
+				const summary = summaries.at(-1);
+				if (summary !== undefined && repeated > 0)
+					summaries[summaries.length - 1] = {
+						...summary,
+						emittedAssets: Math.max(0, summary.emittedAssets - repeated),
+						scannedAssets: Math.max(0, summary.scannedAssets - repeated)
+					};
+				counted += summaries.at(-1)?.scannedAssets ?? 0;
+				progress.finish(batchProgress);
+				return maximumAssets !== undefined && counted > maximumAssets
+					? Effect.fail(
+							mapProtocolFailure(
+								packageLimitFailure(counted, maximumAssets),
+								operation,
+								projectRoot
+							)
+						)
+					: Effect.void;
+			});
+		const batchStream = (batch: ProjectionBatch, index: number) => {
+			const batchProgress = progress.batch(index);
+			return protocolProjectionBatch(options, operation, batch, batchProgress, {
+				identities,
+				onSummary: (result, summary) => {
+					lastSummary = result;
+					summaries.push(summary);
+				}
+			}).pipe(Stream.concat(Stream.fromEffect(finish(batchProgress)).pipe(Stream.drain)));
+		};
+		const mergedSummary = Stream.suspend(() => {
+			const value =
+				lastSummary === undefined
+					? undefined
+					: options.decode(
+							withSummaryCounts(lastSummary, mergeScanSummaryCounts(summaries))
+						);
+			return value === undefined ? Stream.empty : Stream.succeed(value);
+		});
+		return Stream.fromIterable(batches.map((batch, index) => ({ batch, index }))).pipe(
+			Stream.flatMap(({ batch, index }) => batchStream(batch, index)),
+			Stream.concat(mergedSummary)
+		);
+	});
+	return spans(batched, batches.length);
+}
+
+/**
+ * One projection request in one reader process, with that process's telemetry. In a batched
+ * projection the closing summary goes to `onSummary` instead of the stream, records of packages
+ * an earlier batch reported are skipped.
+ */
+function protocolProjectionBatch<A>(
+	options: ProjectionRequestOptions & {
+		readonly decode: (event: UAssetIoResult) => A | undefined;
+		readonly processFactory?: ProtocolProcessFactory;
+	},
+	operation: ProjectionOperation,
+	batch: ProjectionBatch,
+	scanStore: ScanProgressStore,
+	batched?: {
+		readonly identities: BatchIdentities;
+		readonly onSummary: (result: UAssetIoResult, summary: ProjectionSummary) => void;
+	}
+): Stream.Stream<A, AssetReaderError> {
+	const request = makeProjectionRequest(options, operation, batch);
 	const telemetry = makeProtocolTelemetry(false, options.configuration.protocolObserver);
 	const controller = new AbortController();
 	const events = (async function* (): AsyncGenerator<A> {
@@ -1658,6 +2321,9 @@ export function protocolProjectionStream<A>(options: {
 				configuration: options.configuration,
 				operation,
 				path: options.extraction.projectRoot,
+				...(options.processFactory === undefined
+					? undefined
+					: { processFactory: options.processFactory }),
 				request,
 				signal: controller.signal,
 				telemetry,
@@ -1667,8 +2333,8 @@ export function protocolProjectionStream<A>(options: {
 					throw protocolFailureFromEvent(event);
 				}
 				if (event.kind === "progress") {
-					options.scanStore.current = {
-						...options.scanStore.current,
+					scanStore.current = {
+						...scanStore.current,
 						phase: protocolPhase(event.phase),
 						processedAssets: event.completedItems,
 						...(event.totalItems === undefined
@@ -1677,21 +2343,22 @@ export function protocolProjectionStream<A>(options: {
 					};
 				}
 				if (event.kind === "result") {
-					if (
-						(event.result.kind === "extract_text" ||
-							event.result.kind === "extract_text_packages" ||
-							event.result.kind === "extract_texture") &&
-						(event.result.event.event === "text_summary" ||
-							event.result.event.event === "texture_summary")
-					) {
-						options.scanStore.current = {
-							...options.scanStore.current,
-							cacheHits: event.result.event.cacheHits,
-							emittedAssets: event.result.event.emittedAssets,
-							processedAssets: event.result.event.scannedAssets,
-							totalAssets: event.result.event.scannedAssets
+					const summary = projectionSummary(event.result);
+					if (summary !== undefined) {
+						scanStore.current = {
+							...scanStore.current,
+							cacheHits: summary.cacheHits,
+							emittedAssets: summary.emittedAssets,
+							processedAssets: summary.scannedAssets,
+							totalAssets: summary.scannedAssets
 						};
+						if (batched !== undefined) {
+							batched.onSummary(event.result, summary);
+							continue;
+						}
 					}
+					const path = projectionRecordPath(event.result);
+					if (path !== undefined && batched?.identities.keep(path) === false) continue;
 					const value = options.decode(event.result);
 					if (value !== undefined) yield value;
 				}
@@ -1707,10 +2374,8 @@ export function protocolProjectionStream<A>(options: {
 		mapProtocolFailure(cause, operation, options.extraction.projectRoot)
 	).pipe(
 		Stream.ensuring(Effect.sync(() => controller.abort())),
-		Stream.ensuring(recordProtocolTelemetry(operation, telemetry)),
-		Stream.withSpan(`unreal_assets.protocol_extract_${options.projection}`, {
-			attributes: { "unreal.project_root": options.extraction.projectRoot }
-		}),
+		// Suspended: recording reads the telemetry, so it must run after the worker, not when built.
+		Stream.ensuring(Effect.suspend(() => recordProtocolTelemetry(operation, telemetry))),
 		Stream.withSpan("unreal_assets.protocol_process", {
 			attributes: {
 				"unreal.operation": operation,

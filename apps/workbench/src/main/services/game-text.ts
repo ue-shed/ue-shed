@@ -2,7 +2,6 @@ import { userInfo } from "node:os";
 import { makeGameTextWorkspace, type GameTextWorkspaceApi } from "@ue-shed/game-text/workspace";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
 import { Context, Effect, Layer, Stream } from "effect";
-import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { LocalFiles } from "../adapters/local-files.js";
 import { WorkbenchProject } from "./project-workspace.js";
@@ -11,24 +10,7 @@ import { WorkbenchProject } from "./project-workspace.js";
  * The Game Text workspace from `@ue-shed/game-text/workspace`, with Workbench's selected project,
  * dialogs and local files as its host hooks.
  */
-export interface WorkbenchGameTextApi extends Omit<
-	GameTextWorkspaceApi,
-	"progress" | "progressChanges"
-> {
-	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
-	readonly progressChanges: () => Stream.Stream<WorkbenchTaskProgress>;
-}
-
-/** The workspace reports Game Text's own stage; Workbench's progress contract names it. */
-const workbenchProgress = (
-	value: Effect.Success<ReturnType<GameTextWorkspaceApi["progress"]>>
-): WorkbenchTaskProgress => ({
-	...value,
-	stage:
-		value.stage === "project_index" || value.stage === "texture_audit"
-			? value.stage
-			: "game_text"
-});
+export type WorkbenchGameTextApi = GameTextWorkspaceApi;
 
 export class WorkbenchGameText extends Context.Service<WorkbenchGameText, WorkbenchGameTextApi>()(
 	"@ue-shed/workbench/WorkbenchGameText"
@@ -68,13 +50,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 			changeAuthor: "workbench",
 			localizationFiles: LocalizationFileAccessLive
 		});
-		return WorkbenchGameText.of({
-			...workspace,
-			progress: Effect.fn("Workbench.WorkbenchGameText.progress")(function* () {
-				return workbenchProgress(yield* workspace.progress());
-			}),
-			progressChanges: () => workspace.progressChanges().pipe(Stream.map(workbenchProgress))
-		});
+		return WorkbenchGameText.of(workspace);
 	})
 );
 
@@ -112,13 +88,7 @@ export function makeWorkbenchGameTextTestLayer(
 			chooseQualityRules: () => Effect.succeed({ status: "not_ready" }),
 			reloadQualityRules: () => Effect.succeed({ status: "not_ready" }),
 			createStarterRules: () => Effect.succeed({ status: "not_ready" }),
-			progress: () =>
-				Effect.succeed({
-					completed: 0,
-					phase: "idle",
-					stage: "game_text",
-					total: 0
-				}),
+			progress: () => Effect.succeed({ completed: 0, phase: "idle", total: 0 }),
 			progressChanges: () => Stream.empty,
 			search: () => Effect.succeed({ status: "not_ready" }),
 			searchRows: () => Effect.succeed({ status: "not_ready" }),

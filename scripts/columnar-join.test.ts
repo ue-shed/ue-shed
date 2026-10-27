@@ -8,7 +8,7 @@ import {
 	applyLocalizationKeyChanges,
 	joinLocalizationTarget,
 	localizationKeyChanges
-} from "../packages/game-text/src/index.ts";
+} from "../packages/game-text/src/entry-corpus.ts";
 import { textCorpusFromExtractionEvents } from "../packages/game-text/src/corpus.ts";
 import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";

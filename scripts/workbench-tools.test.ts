@@ -15,7 +15,7 @@ test("enables every discovered plugin with Unreal's plural plugin switch", () =>
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=30002",
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
 		...unrealRemoteControlPermissions(["UEShedCore", "UEShedCameras"]),
-		"-NoLiveCoding"
+		"-ini:EditorPerProjectUserSettings:[/Script/LiveCoding.LiveCodingSettings]:bEnabled=False"
 	]);
 });
 

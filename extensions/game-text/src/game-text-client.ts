@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import type {
 	GameTextInvestigationQuery,
 	GameTextInvestigationPresetResult,
@@ -48,16 +49,16 @@ import type {
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/schema";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
-import type { TaskProgress } from "@ue-shed/ui/task-progress";
 import { Context, type Effect, Schema, type Stream } from "effect";
 import type {
-	WorkbenchOperationRequest,
-	WorkbenchOperationPlanResult,
-	WorkbenchOperationResult,
-	WorkbenchOperationState,
-	WorkbenchOperationProgress,
-	WorkbenchOperationFilesRequest,
-	WorkbenchOperationFilesResult
+	GameTextOperationRequest,
+	GameTextOperationPlanResult,
+	GameTextOperationResult,
+	GameTextOperationState,
+	GameTextOperationProgress,
+	GameTextOperationFilesRequest,
+	GameTextOperationFilesResult,
+	GameTextWorkspaceProgress
 } from "@ue-shed/game-text/schema";
 
 export class GameTextClientError extends Schema.TaggedError<GameTextClientError>()(
@@ -65,7 +66,7 @@ export class GameTextClientError extends Schema.TaggedError<GameTextClientError>
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("game_text_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
@@ -85,18 +86,18 @@ export interface GameTextClientApi {
 	readonly operations?: {
 		readonly state: (
 			target: LocalizationSelection["target"]
-		) => Effect.Effect<WorkbenchOperationState, GameTextClientError>;
+		) => Effect.Effect<GameTextOperationState, GameTextClientError>;
 		readonly plan: (
-			request: WorkbenchOperationRequest
-		) => Effect.Effect<WorkbenchOperationPlanResult, GameTextClientError>;
-		readonly run: (id: string) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+			request: GameTextOperationRequest
+		) => Effect.Effect<GameTextOperationPlanResult, GameTextClientError>;
+		readonly run: (id: string) => Effect.Effect<GameTextOperationResult, GameTextClientError>;
 		readonly cancel: (
 			id: string
-		) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+		) => Effect.Effect<GameTextOperationResult, GameTextClientError>;
 		readonly files: (
-			request: WorkbenchOperationFilesRequest
-		) => Effect.Effect<WorkbenchOperationFilesResult, GameTextClientError>;
-		readonly progress: Stream.Stream<WorkbenchOperationProgress, GameTextClientError>;
+			request: GameTextOperationFilesRequest
+		) => Effect.Effect<GameTextOperationFilesResult, GameTextClientError>;
+		readonly progress: Stream.Stream<GameTextOperationProgress, GameTextClientError>;
 	};
 	readonly localizationQualitySearch?: (
 		request: WorkspaceQualityRequest
@@ -165,7 +166,7 @@ export interface GameTextClientApi {
 		objectPath: string
 	) => Effect.Effect<EditorAssetLocateResult, GameTextClientError>;
 	/** Game Text's progress, then each change to it, pushed by the host. */
-	readonly progress: Stream.Stream<TaskProgress, GameTextClientError>;
+	readonly progress: Stream.Stream<GameTextWorkspaceProgress, GameTextClientError>;
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;

@@ -1,10 +1,11 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { spawn, type ChildProcess } from "node:child_process";
 import { Context, Effect, Exit, Layer, Ref, Schema, type Scope } from "effect";
 
 export class FixtureProcessError extends Schema.TaggedError<FixtureProcessError>()(
 	"Workbench.FixtureProcessError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("fixture_process_failed"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,

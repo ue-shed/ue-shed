@@ -316,7 +316,7 @@ const editorArguments = [
 	...descriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
 	...unrealRemoteControlLaunchArguments(ueShedPluginIds, port),
 	"-unattended",
-	"-nop4",
+	"-SCCProvider=None",
 	"-nosplash",
 	"-RenderOffscreen",
 	`-abslog=${join(run, "editor.log")}`
@@ -492,7 +492,7 @@ runProcess(tools.editorCommandlet, [
 	"-GameTextActionsStage=Evidence",
 	`-GameTextActionsEvidence=${evidenceDirectory}`,
 	"-unattended",
-	"-nop4",
+	"-SCCProvider=None",
 	...localDerivedDataCacheArguments,
 	"-nosplash",
 	"-NullRHI"

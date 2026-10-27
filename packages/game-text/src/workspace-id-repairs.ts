@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
 import { Effect, Option, Schema, Semaphore } from "effect";
@@ -44,13 +45,13 @@ class RepairError extends Schema.TaggedError<RepairError>()("TextIdRepairError",
 	message: Schema.String,
 	recovery: Schema.String,
 	retrySafe: Schema.Boolean,
-	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
+	nextStep: ErrorNextStep
 }) {}
 
 /** Recovery guidance carried by typed failures from the editor, reader and this workflow. */
 const Guidance = Schema.Struct({
 	retrySafe: Schema.Boolean,
-	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
+	nextStep: ErrorNextStep
 });
 
 const unavailable = (error: {

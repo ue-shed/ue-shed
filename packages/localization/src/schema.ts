@@ -1,3 +1,4 @@
+import { ErrorGuidanceFields as LocalizationErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { Schema } from "effect";
 
 const PathComponent = Schema.NonEmptyString.check(
@@ -57,27 +58,10 @@ export const LocalizationErrorCode = Schema.Literals([
 	"file_changed",
 	"file_unwritable"
 ]);
-/**
- * What a caller can do next after a localization failure. Same codes as `ErrorNextStep` in
- * `@ue-shed/protocol`, which this package does not depend on: `retry` only when `retrySafe` is
- * true, `reconcile` when state changed underneath (re-read first), `escalate` when the caller
- * cannot fix it.
- */
-export const LocalizationErrorNextStep = Schema.Literals([
-	"fix_input",
-	"retry",
-	"reconcile",
-	"escalate"
-]);
-export type LocalizationErrorNextStep = typeof LocalizationErrorNextStep.Type;
-
-/** The guidance fields every localization tagged error carries, named as in `@ue-shed/protocol`. */
-export const LocalizationErrorGuidanceFields = {
-	message: Schema.String,
-	recovery: Schema.String,
-	retrySafe: Schema.Boolean,
-	nextStep: LocalizationErrorNextStep
-};
+export {
+	ErrorNextStep as LocalizationErrorNextStep,
+	ErrorGuidanceFields as LocalizationErrorGuidanceFields
+} from "@ue-shed/protocol/errors";
 
 /**
  * Sanitized evidence failure carrying a stable code and recovery guidance. Authored text,

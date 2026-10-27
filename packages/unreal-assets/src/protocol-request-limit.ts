@@ -52,17 +52,12 @@ export function batchStagedProtocolPaths(
 ): readonly number[] {
 	if (groups.length !== paths.length)
 		throw new RangeError("A staged read needs one group for each path");
-	const budget =
-		maximumRequestBytes -
-		REQUEST_ENVELOPE_RESERVE_BYTES -
-		Buffer.byteLength(JSON.stringify(directory), "utf8");
+	const budget = stagedPathBudget(directory, maximumRequestBytes);
 	const lengths: number[] = [];
 	let length = 0;
 	let bytes = 0;
 	for (const [index, path] of paths.entries()) {
-		// Each path's string literal and group number, with their separating commas.
-		const size =
-			Buffer.byteLength(JSON.stringify(path), "utf8") + String(groups[index]).length + 2;
+		const size = stagedPathBytes(path, groups[index] ?? 0);
 		if (length > 0 && bytes + size > budget) {
 			lengths.push(length);
 			length = 0;
@@ -73,4 +68,43 @@ export function batchStagedProtocolPaths(
 	}
 	if (length > 0) lengths.push(length);
 	return lengths;
+}
+
+/** @internal Bytes one staged path adds to a request: its string literal and group, with commas. */
+export function stagedPathBytes(path: string, group: number): number {
+	return Buffer.byteLength(JSON.stringify(path), "utf8") + String(group).length + 2;
+}
+
+/** @internal Bytes one path adds to a request's path list: its string literal and a comma. */
+export function protocolPathBytes(path: string): number {
+	return Buffer.byteLength(JSON.stringify(path), "utf8") + 1;
+}
+
+/**
+ * Bytes a measured envelope leaves aside for the trailing newline, the separators between list
+ * items, and a request id or batch cache suffix a few digits longer than the measured one.
+ */
+const REQUEST_FRAME_MARGIN_BYTES = 64;
+
+/**
+ * @internal Bytes left for paths (and staging groups) in a request whose envelope, encoded with
+ * empty lists, takes `envelopeBytes`.
+ */
+export function requestPathBudget(
+	envelopeBytes: number,
+	maximumRequestBytes: number = MAX_PROTOCOL_REQUEST_BYTES
+): number {
+	return maximumRequestBytes - envelopeBytes - REQUEST_FRAME_MARGIN_BYTES;
+}
+
+/** Bytes left for staged paths and groups in a request staging into `directory`. */
+function stagedPathBudget(
+	directory: string,
+	maximumRequestBytes: number = MAX_PROTOCOL_REQUEST_BYTES
+): number {
+	return (
+		maximumRequestBytes -
+		REQUEST_ENVELOPE_RESERVE_BYTES -
+		Buffer.byteLength(JSON.stringify(directory), "utf8")
+	);
 }

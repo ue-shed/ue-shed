@@ -58,7 +58,7 @@ export function localizationOperationError(
 	const recovery = {
 		missing_config:
 			"Open the Localization Dashboard once to generate this target's operation configs.",
-		target_not_found: "Run loc targets and select a listed target name.",
+		target_not_found: "Choose one of the project's localization targets.",
 		unsupported_operation:
 			"Choose an operation supported by this target's existing recipe steps, or generate separate Dashboard configs.",
 		unsupported_config:

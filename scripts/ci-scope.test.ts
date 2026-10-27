@@ -50,7 +50,7 @@ test("main and shared toolchain/dependency/workflow changes always exercise ever
 
 test("Game Text, native index and CLI changes exercise IO without the site or Catalog oracle", () => {
 	for (const file of [
-		"packages/game-text/src/index.ts",
+		"packages/game-text/src/entry-schema.ts",
 		"crates/game-text-index/src/lib.rs",
 		"apps/cli/src/localization.test.ts",
 		"scripts/native-game-text-join.test.ts",

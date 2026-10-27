@@ -77,6 +77,8 @@
 			"packages/observability/src/index.ts",
 			"packages/observability/src/metrics.ts",
 			"packages/observability/src/telemetry-sdk.ts",
+			"packages/uasset-win32-x64/package.json",
+			"packages/uasset-win32-x64/LICENSE",
 			"packages/unreal-assets/package.json",
 			"packages/unreal-assets/contracts",
 			"packages/unreal-assets/tsconfig.json",

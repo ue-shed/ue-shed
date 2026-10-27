@@ -42,6 +42,7 @@
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",
+		"@ue-shed/protocol": "workspace:*",
 		"effect": "catalog:"
 	},
 	"peerDependencies": {

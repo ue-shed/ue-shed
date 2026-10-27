@@ -1,4 +1,4 @@
-import { ErrorCauseFields } from "@ue-shed/protocol";
+import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
 import { Clock, Effect, Schema } from "effect";
 import type {
 	MapReviewFlowAttachment,
@@ -17,7 +17,7 @@ export class MapReviewFlowExecutionError extends Schema.TaggedError<MapReviewFlo
 	{
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("map_review_flow_execution_failed"),
 		message: Schema.NonEmptyString,
 		operation: Schema.NonEmptyString,

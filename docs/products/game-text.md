@@ -46,9 +46,9 @@ existing joined view without refreshing inventory, importing localization, build
 the writer lease. It returns `Option.none()` for any unusable cache and traces the reason as
 `game_text.cache.miss_reason`; an opened model belongs to the caller's scope.
 
-The workspace's `configuredRefresh(false)` uses that path when it has no published model and no
+The workspace's `configuredRefresh({ refresh: false })` uses that path when it has no published model and no
 scan is running. A successful reopen returns `{ status: "completed", summary, cached: true }`.
-Hosts can display it immediately and request `configuredRefresh(true)` in the background; reopening
+Hosts can display it immediately and request `configuredRefresh({})` in the background; reopening
 itself never starts a scan. Missing or unusable caches return `not_scanned`. Source browsing and
 selection of the published localization target keep using the immutable model while the Project
 Index generation changes. Refresh publication replaces it and retires its reader; outstanding
@@ -385,12 +385,10 @@ Each line is classified by what it needs, worst first:
 "Not found in the project" counts as **Changed since gather**: Unreal gathered the key, and its
 package, read completely, no longer holds it.
 
-Which review signals make a line a finding follows the request. By default they are `shared`,
-`duplicate_source` and `unresolved`; `long` is a review signal and a filter, not a finding. A
-`finding is` clause (or the lens) that names a signal counts it as a finding for every problem in
-that request: the problem filter, problem groups, aggregates and counts. Search rows carry
-`problems` (under the request) and `countedFindings` (the signals that made them a finding), so a
-host shows on each row exactly what put it in its group. `TEXT_PROBLEM_RULES`
+Findings come from the project's rules. A `finding is` clause names rule IDs, while a `fact`
+clause names review signals. Search rows carry `problems` and the rules' `findings`, with
+`findingsOmitted` counting additional rule IDs beyond the row limit. The deprecated
+`countedFindings` field was removed in 0.23; read `findings` instead. `TEXT_PROBLEM_RULES`
 (`packages/game-text/src/text-problem-rules.ts`) is the one definition: `textProblems` reads it and
 the native engine compiles a table generated from it (`node scripts/generate-text-problem-rules.ts`).
 
@@ -588,15 +586,12 @@ contain source excerpts and project evidence because review output is their purp
 spans, metrics, and error telemetry must not contain source text, project paths, identities, rule
 contents, or project-authored terms.
 
-## Existing review lenses
+## Review filters
 
-Configured character-budget findings coexist with the existing hardcoded `long` review lens. The
-`long` lens remains a lightweight browsing heuristic for sources of 40 or more JavaScript string
-characters. It is not a project rule, does not assign a role, and does not produce a quality
-finding. Project-authored budgets are the only authoritative budget checks in quality reports.
-
-Changing or removing the `long` heuristic requires a separate explicit contract change. Loading a
-rule document must not silently redefine its threshold or counts.
+Searches use `TextFilter` clauses from `@ue-shed/game-text/schema`. Findings name project rule
+IDs; facts name review signals. The deprecated `TextReviewLens` and investigation `lens` field
+were removed in 0.23. Convert saved lenses into `finding` or `fact` clauses before replaying them;
+see the [migration table](../../packages/game-text/ADOPTING.md#migrating-to-023).
 
 ## Headless and Workbench surfaces
 
@@ -710,7 +705,7 @@ the existing provenance document; `gameTextInvestigationCsv` keeps its documente
 
 Use **Presets → Save preset… / Open preset…** to retain or restore the current settings. A preset
 stores the corpus/quality view, search text, filter pills and grouping (or, in presets saved before
-pills, capability, **No translator notes**, origin and path filters and review lens), finding-type
+pills, capability, **No translator notes**, origin and path filters), finding-type
 filter, existing domain sort order, and optional quality rules. Source quality mode requires a rule
 document, including semantic validation of rule and role identities. Localization quality presets
 additionally carry `workspaceFilter`, the target and optional culture, and built-in checks can run

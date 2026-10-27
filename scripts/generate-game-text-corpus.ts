@@ -208,7 +208,7 @@ await run(runLog, unrealEngineTools(engineRoot).editorCommandlet, [
 	"-unattended",
 	"-nullrhi",
 	"-nosplash",
-	"-nop4",
+	"-SCCProvider=None",
 	...localDerivedDataCacheArguments,
 	"-UTF8Output"
 ]);

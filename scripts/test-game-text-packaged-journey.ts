@@ -136,7 +136,7 @@ if (!existsSync(baselinePath)) {
 			"-Create",
 			`-Evidence=${baselinePath}`,
 			"-Unattended",
-			"-nop4",
+			"-SCCProvider=None",
 			...localDerivedDataCacheArguments,
 			"-NullRHI",
 			"-NoSound",
@@ -239,7 +239,7 @@ const program = Effect.scoped(
 				...installed.descriptorPaths.map((path) => `-PLUGIN=${path}`),
 				...unrealRemoteControlLaunchArguments(installed.resolvedPluginIds, port),
 				"-Unattended",
-				"-nop4",
+				"-SCCProvider=None",
 				"-NoSound",
 				...(legacy
 					? [...localDerivedDataCacheArguments, "-NullRHI"]

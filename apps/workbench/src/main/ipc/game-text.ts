@@ -65,15 +65,15 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:quality:reload-rules"], () =>
 		gameText.reloadQualityRules()
 	);
-	yield* ipc.register(invokeContracts["game-text:quality:create-starter-rules"], (loadExisting) =>
-		gameText.createStarterRules(loadExisting)
+	yield* ipc.register(invokeContracts["game-text:quality:create-starter-rules"], (request) =>
+		gameText.createStarterRules(request)
 	);
 
 	yield* ipc.register(invokeContracts["game-text:configured-scan"], () =>
-		gameText.configuredRefresh(true)
+		gameText.configuredRefresh({})
 	);
-	yield* ipc.register(invokeContracts["game-text:configured-refresh"], (refresh) =>
-		gameText.configuredRefresh(refresh)
+	yield* ipc.register(invokeContracts["game-text:configured-refresh"], (request) =>
+		gameText.configuredRefresh(request)
 	);
 	yield* ipc.register(invokeContracts["game-text:progress"], () => gameText.progress());
 	yield* ipc.register(invokeContracts["game-text:investigation-export"], (...args) =>

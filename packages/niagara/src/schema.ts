@@ -1,3 +1,4 @@
+import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
@@ -180,14 +181,6 @@ export const NiagaraPreviewDiagnostic = Schema.Struct({
 });
 export type NiagaraPreviewDiagnostic = typeof NiagaraPreviewDiagnostic.Type;
 
-/** The shared UE Shed error guidance shape; this package does not depend on the protocol. */
-export const NiagaraErrorGuidanceFields = {
-	message: Schema.String,
-	recovery: Schema.String,
-	retrySafe: Schema.Boolean,
-	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
-};
-
 export const NiagaraPreviewFailure = Schema.Struct({
 	code: Schema.Literals([
 		"invalid_request",
@@ -207,9 +200,7 @@ export const NiagaraPreviewFailure = Schema.Struct({
 		"run_exists",
 		"publish_failed"
 	]),
-	message: Schema.String,
-	recovery: Schema.String,
-	retrySafe: Schema.Boolean,
+	...ErrorGuidanceFields,
 	runId: Schema.optionalKey(Schema.String),
 	stage: Schema.Literals(["validation", "capture", "publication"])
 });
@@ -247,3 +238,5 @@ export const decodeNiagaraPreviewRunManifest = contractParser(
 	NiagaraPreviewRunManifest,
 	"NiagaraPreviewRunManifest"
 );
+
+export { ErrorGuidanceFields as NiagaraErrorGuidanceFields } from "@ue-shed/protocol/errors";

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { open, readdir, realpath, type FileHandle } from "node:fs/promises";
+import { open, readdir, realpath, stat, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Result, Schema } from "effect";
 import { localizationOperationError, localizationRelativePath } from "./operation-plan.js";
@@ -76,38 +76,98 @@ export async function readLocalizationConfig(root: string, path: string): Promis
 }
 
 /**
- * Bounds on the before/after write audit of a commandlet run, which hashes every project file
- * outside the plan's excluded directories. Exceeding one fails the run with `limit_exceeded`.
+ * Bounds on the before/after write audit of a commandlet run. The audit records the size and
+ * modification time of every project file outside the plan's excluded directories, and reads only
+ * the files it hashes. Exceeding one fails the run with `limit_exceeded`.
  */
 export interface LocalizationAuditLimits {
 	/** Directory entries visited. */
 	readonly maxEntries: number;
-	/** Bytes in one audited file. */
+	/** Bytes in one hashed file. */
 	readonly maxFileBytes: number;
-	/** Bytes across all audited files. */
+	/** Bytes across all hashed files. */
 	readonly maxTotalBytes: number;
 }
 
-/** Default audit bounds: 100,000 entries, 512 MiB per file and 2 GiB in total. */
+/** Default audit bounds: 1,000,000 entries, 512 MiB per hashed file and 2 GiB hashed in total. */
 export const defaultLocalizationAuditLimits: LocalizationAuditLimits = {
-	maxEntries: 100_000,
+	maxEntries: 1_000_000,
 	maxFileBytes: 512 * 1024 * 1024,
 	maxTotalBytes: 2 * 1024 * 1024 * 1024
 };
 
-/** Durable project inputs/outputs, excluding named engine scratch/build directories at any depth. */
+/** One audited file: its size and modification time, and its content hash when it was read. */
+export interface LocalizationAuditedFile {
+	readonly size: number;
+	readonly mtimeMs: number;
+	readonly hash?: string;
+}
+
+/** Files stated at once within one directory. */
+const AUDIT_STAT_CONCURRENCY = 64;
+
+/**
+ * Durable project inputs/outputs, excluding named engine scratch/build directories at any depth.
+ * Every file is recorded by size and modification time. The plan's own files are hashed, and so,
+ * given the snapshot from before the run, is every file that is new or whose size or modification
+ * time changed. A write outside the plan is still found without reading the whole project.
+ */
 export async function snapshotLocalizationProject(
 	root: string,
 	plan: LocalizationOperationPlan,
-	limits: LocalizationAuditLimits = defaultLocalizationAuditLimits
-): Promise<ReadonlyMap<string, string>> {
-	const hashes = new Map<string, string>();
+	limits: LocalizationAuditLimits = defaultLocalizationAuditLimits,
+	before?: ReadonlyMap<string, LocalizationAuditedFile>
+): Promise<ReadonlyMap<string, LocalizationAuditedFile>> {
+	const planned = new Set(plan.files.map((file) => file.relativePath));
+	const files = new Map<string, LocalizationAuditedFile>();
 	const pending = [""];
-	let totalBytes = 0;
+	let hashedBytes = 0;
 	let entriesSeen = 0;
+	const hashFile = async (path: string): Promise<LocalizationAuditedFile> => {
+		await validateLocalizationOutputPath(root, path);
+		const handle = await open(resolve(root, path), "r");
+		try {
+			const info = await handle.stat();
+			hashedBytes += info.size;
+			if (info.size > limits.maxFileBytes || hashedBytes > limits.maxTotalBytes)
+				throw localizationOperationError("limit_exceeded");
+			const hash = createHash("sha256");
+			const bytes = new Uint8Array(64 * 1024);
+			let offset = 0;
+			while (offset < info.size) {
+				const result = await handle.read(
+					bytes,
+					0,
+					Math.min(bytes.length, info.size - offset),
+					offset
+				);
+				if (!result.bytesRead) throw localizationOperationError("io_failed");
+				hash.update(bytes.subarray(0, result.bytesRead));
+				offset += result.bytesRead;
+			}
+			const after = await handle.stat();
+			if (info.size !== after.size || info.mtimeMs !== after.mtimeMs)
+				throw localizationOperationError("io_failed");
+			return { size: info.size, mtimeMs: info.mtimeMs, hash: hash.digest("hex") };
+		} finally {
+			await handle.close();
+		}
+	};
+	const auditFile = async (path: string) => {
+		if (planned.has(path)) return hashFile(path);
+		const info = await stat(resolve(root, path));
+		const previous = before?.get(path);
+		const changed =
+			before !== undefined &&
+			(previous === undefined ||
+				previous.size !== info.size ||
+				previous.mtimeMs !== info.mtimeMs);
+		return changed ? hashFile(path) : { size: info.size, mtimeMs: info.mtimeMs };
+	};
 	while (pending.length) {
 		const directory = pending.pop();
 		if (directory === undefined) break;
+		const paths: string[] = [];
 		for (const entry of await readdir(resolve(root, directory), { withFileTypes: true })) {
 			if (++entriesSeen > limits.maxEntries)
 				throw localizationOperationError("limit_exceeded");
@@ -118,56 +178,42 @@ export async function snapshotLocalizationProject(
 			)
 				continue;
 			const path = directory ? `${directory}/${entry.name}` : entry.name;
+			// The walk starts at the root and refuses links, so no audited path leaves the project.
 			if (entry.isSymbolicLink()) throw localizationOperationError("unsafe_path");
-			if (entry.isDirectory()) {
-				pending.push(path);
-				continue;
-			}
-			if (!entry.isFile()) continue;
-			await validateLocalizationOutputPath(root, path);
-			const handle = await open(resolve(root, path), "r");
-			try {
-				const info = await handle.stat();
-				totalBytes += info.size;
-				if (info.size > limits.maxFileBytes || totalBytes > limits.maxTotalBytes)
-					throw localizationOperationError("limit_exceeded");
-				const hash = createHash("sha256");
-				const bytes = new Uint8Array(64 * 1024);
-				let offset = 0;
-				while (offset < info.size) {
-					const result = await handle.read(
-						bytes,
-						0,
-						Math.min(bytes.length, info.size - offset),
-						offset
-					);
-					if (!result.bytesRead) throw localizationOperationError("io_failed");
-					hash.update(bytes.subarray(0, result.bytesRead));
-					offset += result.bytesRead;
-				}
-				const after = await handle.stat();
-				if (info.size !== after.size || info.mtimeMs !== after.mtimeMs)
-					throw localizationOperationError("io_failed");
-				hashes.set(path, hash.digest("hex"));
-			} finally {
-				await handle.close();
-			}
+			if (entry.isDirectory()) pending.push(path);
+			else if (entry.isFile()) paths.push(path);
+		}
+		for (let start = 0; start < paths.length; start += AUDIT_STAT_CONCURRENCY) {
+			const batch = paths.slice(start, start + AUDIT_STAT_CONCURRENCY);
+			const audited = await Promise.all(batch.map(auditFile));
+			batch.forEach((path, index) => {
+				const file = audited[index];
+				if (file) files.set(path, file);
+			});
 		}
 	}
-	return hashes;
+	return files;
 }
 export function localizationFileChanges(
-	before: ReadonlyMap<string, string>,
-	after: ReadonlyMap<string, string>,
+	before: ReadonlyMap<string, LocalizationAuditedFile>,
+	after: ReadonlyMap<string, LocalizationAuditedFile>,
 	plan: LocalizationOperationPlan
 ): readonly LocalizationFileChange[] {
 	const planned = new Set(plan.files.map((file) => file.relativePath));
 	return [...new Set([...before.keys(), ...after.keys()])].sort().flatMap((path) => {
-		const beforeHash = before.get(path) ?? null;
-		const afterHash = after.get(path) ?? null;
-		return beforeHash === afterHash
-			? []
-			: [{ relativePath: path, beforeHash, afterHash, planned: planned.has(path) }];
+		const previous = before.get(path);
+		const current = after.get(path);
+		// An unplanned file whose size and modification time held was not read again.
+		if (previous && current && current.hash === undefined) return [];
+		const beforeHash = previous?.hash ?? null;
+		const afterHash = current?.hash ?? null;
+		if (previous?.hash !== undefined && beforeHash === afterHash) return [];
+		const change = { relativePath: path, beforeHash, afterHash, planned: planned.has(path) };
+		return [
+			previous && previous.hash === undefined
+				? { ...change, beforeUnread: true as const }
+				: change
+		];
 	});
 }
 

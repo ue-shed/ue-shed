@@ -1,4 +1,4 @@
-import { gameTextCsv } from "./export-reference.test-support.js";
+import { corpusCsvForTest } from "./export-reference.test-support.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -486,7 +486,7 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 					(line) => line.identity?.key ?? NO_KEY
 				)
 			).toEqual([...keyed, NO_KEY]);
-			expect(gameTextCsv(memory).split("\r\n").filter(Boolean)).toHaveLength(1 + 9);
+			expect(corpusCsvForTest(memory).split("\r\n").filter(Boolean)).toHaveLength(1 + 9);
 
 			// Edit the authored title again, still without compiling: only place text changes, so
 			// the join refreshes incrementally and keeps the signal. Then compile: the copy catches

@@ -94,8 +94,16 @@ export {
 } from "./project-launcher.js";
 export {
 	RemoteControlAllowedClass,
+	RemoteControlAllowedFunction,
 	unrealRemoteControlPermissions
 } from "./remote-control-permissions.js";
+export {
+	reservedUnrealEditorArgument,
+	UnrealEditorArgument,
+	type UnrealEditorLaunchOptions,
+	UnrealEditorLaunchOptionFields,
+	UnrealStartupMap
+} from "./editor-launch-options.js";
 export {
 	makeOwnedProcessTreeTestLayer,
 	makeSupervisedEditorSessionTestLayer,
@@ -113,3 +121,9 @@ export {
 	SupervisedEditorSessionLive,
 	SupervisedEditorSessionRequest
 } from "./supervised-editor-session.js";
+export {
+	ProcessSupervisorExecutable,
+	processSupervisorExecutable,
+	processSupervisorExecutableLayer,
+	WINDOWS_SUPERVISOR_PACKAGE
+} from "./process-supervisor.js";

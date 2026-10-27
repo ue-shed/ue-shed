@@ -107,6 +107,12 @@ import type {
 	GameTextWorkspaceProgress,
 	GameTextWorkspaceProjectState
 } from "./workspace-host.js";
+import type {
+	GameTextInvestigationExportRequest,
+	GameTextStarterRulesRequest,
+	GameTextWorkspaceContractMismatch,
+	GameTextWorkspaceRefreshRequest
+} from "./workspace-contract.js";
 
 /** A preset of the workspace's query, with the rules its scan used. */
 const investigationPreset = (
@@ -209,14 +215,16 @@ export interface GameTextWorkspaceApi {
 	/** A selection's related units and lines, with their places and translations. */
 	readonly related: (request: RelatedLinesRequest) => Effect.Effect<RelatedLinesResult>;
 	readonly investigationExport: (
-		query: GameTextInvestigationQuery,
-		format: InvestigationFormat
+		request: GameTextInvestigationExportRequest
 	) => Effect.Effect<InvestigationFileResult>;
 	readonly investigationSave: (
 		query: GameTextInvestigationQuery
 	) => Effect.Effect<InvestigationFileResult>;
 	readonly investigationOpen: () => Effect.Effect<GameTextInvestigationPresetResult>;
-	readonly configuredRefresh: (refresh?: boolean) => Effect.Effect<TextCorpusQueryRunResult>;
+	/** Scans the selected project, unless `refresh` is false: then opens its committed index. */
+	readonly configuredRefresh: (
+		request: GameTextWorkspaceRefreshRequest
+	) => Effect.Effect<TextCorpusQueryRunResult>;
 	readonly configuredScan: () => Effect.Effect<TextCorpusRunResult>;
 	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
 	/**
@@ -231,7 +239,7 @@ export interface GameTextWorkspaceApi {
 	readonly chooseQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
 	readonly reloadQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
 	readonly createStarterRules: (
-		loadExisting: boolean
+		request: GameTextStarterRulesRequest
 	) => Effect.Effect<TextQualityQueryRunResult>;
 	readonly previewQualityRules: (
 		document: GameTextRuleDocument
@@ -246,6 +254,12 @@ export interface GameTextWorkspaceApi {
 		request: TextQualitySearchRequest
 	) => Effect.Effect<TextQualitySearchResult>;
 }
+
+type MatchesContract<Mismatch extends never> = Mismatch;
+/** Fails to compile, naming the methods, when the API and `GameTextWorkspaceContract` differ. */
+type _GameTextWorkspaceMatchesContract = MatchesContract<
+	GameTextWorkspaceContractMismatch<GameTextWorkspaceApi>
+>;
 
 /** A scan's phases in the order they start, after the host's project scan (step 1). */
 const scanSteps: readonly GameTextIndexProgress["phase"][] = [
@@ -390,40 +404,29 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (): Effect.fn.Return<GameTextWorkspaceProgress> {
 			const projectProgress = yield* project.progress();
 			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
-				return { ...projectProgress, step: 1, steps: scanSteps.length + 1 };
+				return {
+					phase: `project_${projectProgress.phase}`,
+					completed: projectProgress.completed,
+					total: projectProgress.total,
+					step: 1,
+					steps: scanSteps.length + 1
+				};
 			}
 			const current = indexProgress;
 			if (current && current.phase !== "ready" && current.phase !== "failed") {
-				const labels = {
-					inventory: "Reading project asset inventory",
-					localization: "Reading localization files",
-					localization_publish: "Saving localization text",
-					packages: "Checking saved packages for text",
-					package_text: "Preparing package text",
-					package_publish: "Saving package text",
-					joining: "Joining source text and translations",
-					opening: "Opening text index",
-					corpus: "Reading saved packages",
-					localization_quality: "Checking localization quality",
-					source_quality: "Checking source text"
-				};
 				const step = scanSteps.indexOf(current.phase);
 				return {
+					phase: current.phase,
 					completed: current.completed,
 					total: current.total,
-					phase: "scanning" as const,
-					stage: "game_text" as const,
-					detail: labels[current.phase],
+					...(current.findings === undefined
+						? undefined
+						: { findings: current.findings }),
 					...(step >= 0 ? { step: step + 2, steps: scanSteps.length + 1 } : undefined)
 				};
 			}
 			const active = yield* Ref.get(activity);
-			return {
-				completed: 0,
-				phase: active.scans ? ("scanning" as const) : ("idle" as const),
-				stage: "game_text" as const,
-				total: 0
-			};
+			return { phase: active.scans ? "scanning" : "idle", completed: 0, total: 0 };
 		}
 	);
 	const scanCorpus = (projectRoot: string) =>
@@ -1663,10 +1666,12 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				)
 		),
 		related: scoped(related),
-		investigationExport: scoped(investigationExport),
+		investigationExport: scoped((request: GameTextInvestigationExportRequest) =>
+			investigationExport(request.query, request.format)
+		),
 		investigationSave: scoped(investigationSave),
 		investigationOpen: scoped(investigationOpen),
-		configuredRefresh: (refresh = true) =>
+		configuredRefresh: ({ refresh = true }: GameTextWorkspaceRefreshRequest) =>
 			refresh ? sharedRefresh(refreshScan) : Effect.scoped(configuredRefresh(false)),
 		configuredScan: () => sharedScan(fullScan),
 		focus: scoped(focus),
@@ -1684,10 +1689,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						Stream.changesWith(
 							(left, right) =>
 								left.phase === right.phase &&
-								left.stage === right.stage &&
 								left.completed === right.completed &&
 								left.total === right.total &&
-								left.detail === right.detail &&
+								left.findings === right.findings &&
 								left.step === right.step
 						)
 					);
@@ -1697,7 +1701,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		searchRows: scoped(searchRows),
 		chooseQualityRules: scoped(chooseQualityRules),
 		reloadQualityRules: scoped(reloadQualityRules),
-		createStarterRules: scoped(createStarterRules),
+		createStarterRules: scoped((request: GameTextStarterRulesRequest) =>
+			createStarterRules(request.loadExisting)
+		),
 		qualityFocus: scoped(qualityFocus),
 		qualitySearch: scoped(qualitySearch),
 		previewQualityRules: scoped(previewQualityRules),

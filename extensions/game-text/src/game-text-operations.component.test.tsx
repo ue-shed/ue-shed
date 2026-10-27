@@ -4,12 +4,12 @@ import { userEvent } from "@testing-library/user-event";
 import { Button, EffectRuntimeProvider } from "@ue-shed/ui";
 import { localizationFocusPage } from "@ue-shed/game-text/corpus";
 import {
-	type WorkbenchOperationRequest,
-	type WorkbenchOperationResult,
-	type WorkbenchOperationState,
-	type WorkbenchOperationProgress,
-	type WorkbenchOperationPlan,
-	type WorkbenchOperationFilesRequest
+	type GameTextOperationRequest,
+	type GameTextOperationResult,
+	type GameTextOperationState,
+	type GameTextOperationProgress,
+	type GameTextOperationPlan,
+	type GameTextOperationFilesRequest
 } from "@ue-shed/game-text/schema";
 import { Deferred, Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { createSignal } from "solid-js";
@@ -28,7 +28,7 @@ import {
 const runtime = ManagedRuntime.make(Layer.empty);
 const fixture = qualityFixture();
 const text = qualityFixtureText(fixture);
-const plan: WorkbenchOperationPlan = {
+const plan: GameTextOperationPlan = {
 	id: "sync-1",
 	target: fixture.join.target,
 	operation: "sync",
@@ -41,7 +41,7 @@ const fileNames = [
 	"Content/Localization/Game/de/Game.archive",
 	"Content/Localization/Game/de/Game.locres"
 ];
-const completed: WorkbenchOperationResult = {
+const completed: GameTextOperationResult = {
 	status: "completed",
 	receipt: {
 		id: plan.id,
@@ -66,7 +66,7 @@ function client(operations: NonNullable<GameTextClientApi["operations"]>): GameT
 		search: text.search,
 		searchRows: text.searchRows,
 		focus: text.focus,
-		progress: Stream.make({ phase: "idle", completed: 0, total: 0, stage: "game_text" }),
+		progress: Stream.make({ phase: "idle", completed: 0, total: 0 }),
 		locateAsset: () => Effect.die("unused"),
 		chooseQualityRules: () => Effect.die("unused"),
 		qualityFocus: () => Effect.die("unused"),
@@ -107,8 +107,8 @@ function client(operations: NonNullable<GameTextClientApi["operations"]>): GameT
 }
 function api(
 	options: {
-		readonly state?: WorkbenchOperationState;
-		readonly result?: WorkbenchOperationResult;
+		readonly state?: GameTextOperationState;
+		readonly result?: GameTextOperationResult;
 	} = {}
 ): NonNullable<GameTextClientApi["operations"]> {
 	return {
@@ -119,7 +119,7 @@ function api(
 					wholeRecipe: false
 				}
 			),
-		plan: vi.fn((request: WorkbenchOperationRequest) =>
+		plan: vi.fn((request: GameTextOperationRequest) =>
 			Effect.succeed({
 				status: "ready" as const,
 				plan: {
@@ -253,7 +253,7 @@ it("pages confirmation files reactively and copies the whole file list through b
 	const operations = {
 		...api(),
 		plan: () => Effect.succeed({ status: "ready" as const, plan: { ...plan, fileCount: 60 } }),
-		files: vi.fn((request: WorkbenchOperationFilesRequest) => {
+		files: vi.fn((request: GameTextOperationFilesRequest) => {
 			const offset = request.offset ?? 0;
 			return Effect.succeed({
 				status: "ready" as const,
@@ -277,8 +277,8 @@ it("pages confirmation files reactively and copies the whole file list through b
 
 it("shows bounded live progress and Cancel, disables scans and releases actions after cancellation", async () => {
 	const user = userEvent.setup();
-	const done = await Effect.runPromise(Deferred.make<WorkbenchOperationResult>());
-	const events = await Effect.runPromise(Queue.unbounded<WorkbenchOperationProgress>());
+	const done = await Effect.runPromise(Deferred.make<GameTextOperationResult>());
+	const events = await Effect.runPromise(Queue.unbounded<GameTextOperationProgress>());
 	const operations = {
 		...api(),
 		run: vi.fn(() => Deferred.await(done)),

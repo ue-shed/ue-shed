@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Effect, Schema } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { CultureCode } from "@ue-shed/localization/browser";
@@ -312,7 +313,7 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 	"GameTextRuleDocumentError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_json",

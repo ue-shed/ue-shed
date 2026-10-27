@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
@@ -7,7 +8,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 export class LocalFilesError extends Schema.TaggedError<LocalFilesError>()(
 	"Workbench.LocalFilesError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,
 		code: Schema.optionalKey(Schema.Literal("already_exists")),

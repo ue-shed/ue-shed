@@ -18,6 +18,21 @@ import { ENHANCED_INPUT_CLASS_PREFIX, INPUT_ACTION_CLASS } from "./projectors.js
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
+it.effect("classifies malformed scan options separately from exhausted scan limits", () =>
+	Effect.gen(function* () {
+		const error = yield* Effect.flatMap(EnhancedInputService, (service) =>
+			service.scan({ projectRoot: "C:/Fixture", maximumAssets: 0 })
+		).pipe(
+			Effect.flip,
+			Effect.provide(EnhancedInputServiceLive),
+			Effect.provide(readerOffering(() => unexpected("scanProject")))
+		);
+		expect(error.code).toBe("invalid_options");
+		expect(error.nextStep).toBe("fix_input");
+		expect(error.retrySafe).toBe(false);
+	})
+);
+
 it.effect("preserves reader failures without blaming the selected project", () =>
 	Effect.gen(function* () {
 		const original = new AssetReaderError({

@@ -652,8 +652,7 @@ it("keeps scan progress visible until the scan completes", async () => {
 				Effect.sync(() => ({
 					completed: scanning ? 1 : 0,
 					total: scanning ? 2 : 0,
-					phase: scanning ? "scanning" : "idle",
-					stage: "game_text"
+					phase: scanning ? "scanning" : "idle"
 				}))
 			)
 		}),
@@ -688,9 +687,7 @@ it("keeps progress through translations and the first results query", async () =
 			progress: Stream.make({
 				completed: 3,
 				total: 21,
-				phase: "scanning",
-				stage: "game_text",
-				detail: "Reading localization files"
+				phase: "localization"
 			}),
 			search: () => Deferred.await(firstPage)
 		})

@@ -1,4 +1,5 @@
 import {
+	ErrorNextStep,
 	GAME_TEXT_ACTIONS_CONTRACT,
 	GAME_TEXT_ACTIONS_VERSION,
 	GameTextActionsRequest,
@@ -40,7 +41,7 @@ export class LocalizationTextActionsError extends Schema.TaggedError<Localizatio
 		message: Schema.String,
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		endpoint: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect())
 	}

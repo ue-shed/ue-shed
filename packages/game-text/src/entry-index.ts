@@ -2,7 +2,6 @@
 
 export {
 	STRING_TABLE_CLASS,
-	type ScanTextCorpusOptions,
 	TEXT_PROPERTY_NAME,
 	TextCorpusScanError,
 	TextCorpusScanLimit,
@@ -43,7 +42,11 @@ export {
 	type IndexFailure
 } from "./index-contract.js";
 
-export { GameTextIndexProgress, GameTextIndexProgressReporter } from "./index-progress.js";
+export {
+	GameTextIndexPhase,
+	GameTextIndexProgress,
+	GameTextIndexProgressReporter
+} from "./index-progress.js";
 
 export type { PreparedLocalizationCheck } from "./localization-check-report.js";
 
@@ -81,8 +84,7 @@ export {
 	type LocalizationTargetImportRequest,
 	importLocalizationFile,
 	importLocalizationTarget,
-	localizationImportMetrics,
-	prepareLocalizationFile
+	localizationImportMetrics
 } from "./localization-import.js";
 
 export { type GameTextProjectView } from "./project-index-view.js";

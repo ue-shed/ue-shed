@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Schema } from "effect";
 import { decodeWtf8, encodeWtf8, hasWtf8Surrogate, isWtf8 } from "./wtf8.js";
 
@@ -27,7 +28,7 @@ export class SnapshotFormatError extends Schema.TaggedError<SnapshotFormatError>
 	"SnapshotFormatError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("invalid_snapshot"),
 		cause: Schema.optionalKey(Schema.Defect()),
 		section: Schema.String,

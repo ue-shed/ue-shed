@@ -279,14 +279,22 @@ const validArgsByChannel = {
 		}
 	],
 	"game-text:id-repair:apply": ["11111111-1111-4111-8111-111111111111"],
-	"game-text:configured-refresh": [true],
+	"game-text:configured-refresh": [{ refresh: true }],
 	"game-text:progress": [],
 	"game-text:investigation-export": [
-		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", lens: "all" },
-		"json"
+		{
+			query: {
+				mode: "corpus",
+				qualityFilter: "all",
+				query: "",
+				capability: "all",
+				filter: []
+			},
+			format: "json"
+		}
 	],
 	"game-text:investigation-save": [
-		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", lens: "all" }
+		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", filter: [] }
 	],
 	"game-text:investigation-open": [],
 	"game-text:localization:quality-search": [{ target: "FixtureGame", filter: "all" }],
@@ -355,7 +363,7 @@ const validArgsByChannel = {
 		}
 	],
 	"game-text:quality:choose-rules": [],
-	"game-text:quality:create-starter-rules": [false],
+	"game-text:quality:create-starter-rules": [{ loadExisting: false }],
 	"game-text:quality:reload-rules": [],
 	"game-text:quality:preview-rules": [qualityRuleDocument],
 	"game-text:quality:save-rules": [qualityRuleDocument],
@@ -678,12 +686,7 @@ const validResultByChannel = {
 	},
 	"game-text:configured-scan": { status: "not_configured" },
 	"game-text:configured-refresh": { status: "not_configured" },
-	"game-text:progress": {
-		completed: 0,
-		phase: "idle",
-		stage: "game_text",
-		total: 0
-	},
+	"game-text:progress": { completed: 0, phase: "idle", total: 0 },
 	"game-text:investigation-export": { status: "cancelled" },
 	"game-text:investigation-save": { status: "cancelled" },
 	"game-text:investigation-open": { status: "cancelled" },
@@ -818,6 +821,7 @@ const validResultByChannel = {
 			code: "plugin_unavailable",
 			message: "UEShedNiagara is not installed.",
 			recovery: "Install the separately enabled Editor plugin.",
+			nextStep: "fix_input" as const,
 			retrySafe: false,
 			stage: "validation"
 		},

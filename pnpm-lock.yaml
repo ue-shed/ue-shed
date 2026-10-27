@@ -244,6 +244,9 @@ importers:
       '@ue-shed/extension-sequencer':
         specifier: workspace:*
         version: link:../../extensions/sequencer
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@ue-shed/uasset-inspection-wasm':
         specifier: workspace:*
         version: link:../../packages/uasset-inspection-wasm
@@ -701,6 +704,9 @@ importers:
       '@ue-shed/enhanced-input':
         specifier: workspace:*
         version: link:../../packages/enhanced-input
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@ue-shed/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -752,6 +758,9 @@ importers:
       '@ue-shed/project-custodian':
         specifier: workspace:*
         version: link:../../packages/project-custodian
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@ue-shed/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -773,6 +782,9 @@ importers:
       '@stylexjs/stylex':
         specifier: 'catalog:'
         version: 0.19.0
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@ue-shed/scenarios':
         specifier: workspace:*
         version: link:../../packages/scenarios
@@ -1157,12 +1169,18 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.4(effect@4.0.4)(vitest@5.0.4)
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       effect:
         specifier: 'catalog:'
         version: 4.0.4
 
   packages/project-custodian:
     dependencies:
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       trash:
         specifier: 10.1.1
         version: 10.1.1
@@ -1226,6 +1244,9 @@ importers:
       '@tanstack/virtual-core':
         specifier: 3.17.8
         version: 3.17.8
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@ue-shed/ui-theme':
         specifier: workspace:*
         version: link:../ui-theme
@@ -1254,6 +1275,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.4
+    optionalDependencies:
+      '@ue-shed/uasset-win32-x64':
+        specifier: workspace:0.22.0
+        version: link:../uasset-win32-x64
 
   packages/unreal-connection:
     dependencies:

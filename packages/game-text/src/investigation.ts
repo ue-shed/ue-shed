@@ -9,17 +9,22 @@ import {
 	InvestigationError,
 	investigationTable
 } from "@ue-shed/unreal-assets/investigation";
-import {
-	TextCorpus,
-	TextCorpusSearchRequest,
-	TextReviewLens,
-	type TextFilterClause
-} from "./schema.js";
+import { TextCorpus, TextCorpusSearchRequest, type TextFilterClause } from "./schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
 import { TextQualityFilter, type AsyncTextQualityQuery } from "./quality-query.js";
 import type { TextUnit } from "./schema.js";
+
+/** The review lens presets saved before findings were the project's rules; read as a clause. */
+const SavedLens = Schema.Literals([
+	"all",
+	"shared",
+	"duplicate_source",
+	"long",
+	"unresolved",
+	"conflicting"
+]);
 
 /**
  * Serializable corpus or quality query for a reusable investigation. Localization quality
@@ -31,11 +36,10 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	query: TextCorpusSearchRequest.fields.query,
 	capability: TextCorpusSearchRequest.fields.capability,
 	/**
-	 * A lens from a preset saved before findings were the project's rules; requests read it as the
-	 * clause it is now (`investigationRequest`).
-	 * @deprecated Use `filter`: `finding` names rules and `fact` the facts.
+	 * A lens from a preset saved before filter pills; `investigationRequest` reads it as the clause
+	 * it is now. New presets use `filter`.
 	 */
-	lens: Schema.optional(TextReviewLens),
+	lens: Schema.optional(SavedLens),
 	where: TextCorpusSearchRequest.fields.where,
 	/** Filter pills; presets saved before them use the fields above. */
 	filter: TextCorpusSearchRequest.fields.filter,
@@ -59,9 +63,9 @@ export const GameTextInvestigationQuery = Schema.Struct({
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
 
 /**
- * A preset query without its lens, which becomes a clause: `shared`, `duplicate_source` and
- * `long` name those checks' findings (`localization.<check>`), and `unresolved` and
- * `conflicting` are facts.
+ * The request an investigation query runs, with a saved lens read as its clause: `shared`,
+ * `duplicate_source` and `long` name those checks' findings (`localization.<check>`), and
+ * `unresolved` and `conflicting` are facts.
  */
 export function investigationRequest(
 	query: GameTextInvestigationQuery

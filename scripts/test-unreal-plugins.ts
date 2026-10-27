@@ -124,7 +124,7 @@ const result = spawnSync(
 		`-UEShedCameraRenderContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/cameras/render/v1/fixtures")}`,
 		`-abslog=${join(root, "editor.log")}`,
 		"-unattended",
-		"-nop4",
+		"-SCCProvider=None",
 		"-nosplash",
 		"-RenderOffscreen",
 		"-ResX=1280",

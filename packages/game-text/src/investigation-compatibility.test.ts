@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
 	GameTextInvestigationQuery,
 	GameTextInvestigationPreset,
-	GameTextInvestigationExport
+	GameTextInvestigationExport,
+	investigationRequest
 } from "./investigation.js";
 import { qualityFixture } from "./localization-workspace.test-support.js";
 
@@ -139,5 +140,31 @@ describe("investigation format compatibility", () => {
 				})._tag
 			).toBe("Failure");
 		}
+	});
+
+	it("reads a saved lens as the filter clause it stands for", () => {
+		const open = (lens: string) =>
+			investigationRequest(
+				Schema.decodeUnknownSync(GameTextInvestigationPreset)({
+					schemaVersion: 1,
+					kind: "game_text",
+					sort: "domain_order",
+					query: {
+						mode: "corpus",
+						query: "",
+						capability: "all",
+						qualityFilter: "all",
+						lens
+					}
+				}).query
+			);
+		expect(open("unresolved").filter).toEqual([
+			{ field: "fact", op: "is", values: ["unresolved"] }
+		]);
+		expect(open("shared").filter).toEqual([
+			{ field: "finding", op: "is", values: ["localization.shared"] }
+		]);
+		expect(open("all").filter).toBeUndefined();
+		expect("lens" in open("long")).toBe(false);
 	});
 });

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { relative } from "node:path";
 import {
 	AssetReader,
@@ -40,21 +41,15 @@ import { GameTextIndexProgressReporter } from "./index-progress.js";
 const makeOccurrenceId = TextOccurrenceId.make;
 const makeUnitId = TextUnitId.make;
 
-interface ExtractionProgress {
-	readonly phase: "scanning" | "ready" | "failed";
-	readonly processedAssets: number;
-	readonly totalAssets: number;
-}
-
 /** A scan's progress, as `corpus` (or `failed`) events to the caller's reporter. */
-const reportExtraction = (progress: ExtractionProgress): Effect.Effect<void> =>
+const reportExtraction = (
+	phase: "corpus" | "failed",
+	completed: number,
+	total: number
+): Effect.Effect<void> =>
 	Effect.gen(function* () {
 		const report = yield* GameTextIndexProgressReporter;
-		report({
-			phase: progress.phase === "failed" ? "failed" : "corpus",
-			completed: progress.processedAssets,
-			total: progress.totalAssets
-		});
+		report({ phase, completed, total });
 	});
 
 /**
@@ -65,7 +60,7 @@ const reportExtraction = (progress: ExtractionProgress): Effect.Effect<void> =>
 export class TextCorpusScanError extends Schema.TaggedError<TextCorpusScanError>()(
 	"TextCorpusScanError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: TextCorpusPublicError.fields.code,
 		message: Schema.String,
 		recovery: Schema.String,
@@ -145,9 +140,6 @@ function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
 		retrySafe: error.retrySafe
 	});
 }
-
-/** @deprecated Prefer TextCorpusScanOptions */
-export type ScanTextCorpusOptions = TextCorpusScanOptions;
 
 /**
  * Saved inspection input to corpus construction. Failed packages retain file provenance and a
@@ -963,8 +955,7 @@ function extractTextCorpusWith(
 		readonly paths?: readonly string[];
 		readonly projectRoot: string;
 	},
-	inheritedFailures: readonly TextCorpusDiagnostic[] = [],
-	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void> = reportExtraction
+	inheritedFailures: readonly TextCorpusDiagnostic[] = []
 ): Effect.Effect<TextCorpus, TextCorpusScanError> {
 	if (options.paths?.length === 0) {
 		const accumulator = emptyTextExtractionAccumulator();
@@ -978,7 +969,7 @@ function extractTextCorpusWith(
 				})
 			)
 		);
-		return reportProgress({ phase: "ready", processedAssets: 0, totalAssets: 0 }).pipe(
+		return reportExtraction("corpus", 0, 0).pipe(
 			Effect.as(
 				buildTextCorpusFromExtraction({
 					accumulator,
@@ -989,7 +980,7 @@ function extractTextCorpusWith(
 	}
 	const totalAssets = options.paths?.length ?? 0;
 	let processedAssets = 0;
-	return reportProgress({ phase: "scanning", processedAssets: 0, totalAssets }).pipe(
+	return reportExtraction("corpus", 0, totalAssets).pipe(
 		Effect.andThen(
 			reader
 				.extractProjectText({
@@ -1005,21 +996,17 @@ function extractTextCorpusWith(
 						if (event.event === "text_summary") {
 							processedAssets =
 								event.emittedAssets + event.failedAssets + event.skippedAssets;
-							return reportProgress({
-								phase: "scanning",
+							return reportExtraction(
+								"corpus",
 								processedAssets,
-								totalAssets: totalAssets > 0 ? totalAssets : event.scannedAssets
-							});
+								totalAssets > 0 ? totalAssets : event.scannedAssets
+							);
 						}
 						if (event.event !== "text_package" && event.event !== "error") {
 							return Effect.void;
 						}
 						processedAssets += 1;
-						return reportProgress({
-							phase: "scanning",
-							processedAssets,
-							totalAssets
-						});
+						return reportExtraction("corpus", processedAssets, totalAssets);
 					}),
 					Stream.runFold(
 						() => {
@@ -1047,11 +1034,11 @@ function extractTextCorpusWith(
 					),
 					Effect.mapError(textCorpusScanFailure),
 					Effect.onExit((exit) =>
-						reportProgress({
-							phase: exit._tag === "Success" ? "ready" : "failed",
+						reportExtraction(
+							exit._tag === "Success" ? "corpus" : "failed",
 							processedAssets,
 							totalAssets
-						})
+						)
 					)
 				)
 		)
@@ -1119,9 +1106,6 @@ export interface TextCorpusServiceApi {
 	) => Effect.Effect<TextCorpus, TextCorpusScanError>;
 }
 
-/** @deprecated Use `TextCorpusServiceApi`. */
-export type TextCorpusServiceShape = TextCorpusServiceApi;
-
 /** Canonical TextCorpus domain service (plan name: TextCorpus.Service). */
 export class TextCorpusService extends Context.Service<TextCorpusService, TextCorpusServiceApi>()(
 	"@ue-shed/game-text/TextCorpus"
@@ -1156,9 +1140,6 @@ export const TextCorpusServiceLive = Layer.effect(
  */
 export type TextCorpusServiceTestApi = Omit<TextCorpusServiceApi, "scanFromProjectIndex"> &
 	Partial<Pick<TextCorpusServiceApi, "scanFromProjectIndex">>;
-
-/** @deprecated Use `TextCorpusServiceTestApi`. */
-export type TextCorpusServiceTestShape = TextCorpusServiceTestApi;
 
 /**
  * Provides a complete corpus service for tests. Supply scanFromProjectIndex to assert

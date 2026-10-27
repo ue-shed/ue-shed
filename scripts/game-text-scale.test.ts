@@ -22,7 +22,7 @@ import {
 	projectPOEvidence
 } from "../packages/localization/dist/index.js";
 import { Result } from "effect";
-import { LocalizationLineId } from "../packages/game-text/dist/index.js";
+import { LocalizationLineId } from "../packages/game-text/dist/entry-schema.js";
 import { validateGameTextScale } from "./game-text-scale-validation.ts";
 import {
 	assertSafePipelineScale,

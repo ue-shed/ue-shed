@@ -785,6 +785,6 @@ export const exampleRules: readonly Rule[] = [
 		}),
 		expectation: o({ entryExists: true }),
 		recovery:
-			"Add the missing key to the String Table, or point the text at an entry that exists; until then the game shows the raw key."
+			"Add the missing key to the String Table, or point the text at an entry that exists; until then the game shows <MISSING STRING TABLE ENTRY>."
 	})
 ];

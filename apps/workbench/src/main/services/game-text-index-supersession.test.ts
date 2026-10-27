@@ -134,7 +134,9 @@ for (const release of [true, false])
 					);
 					const published = yield* host.qualitySearch({ filter: "all", pageSize: 50 });
 					expect(published.status).toBe("ready");
-					// The rescan carries the rules over and evaluates them on its new model.
+					// A rescan of changed source carries the rules over and evaluates them on its
+					// new model; an unchanged rescan keeps the published model and its quality.
+					test.fixture.setSource("Changed");
 					const pending = yield* host.configuredRefresh().pipe(Effect.forkChild);
 					yield* Deferred.await(test.evaluating);
 					yield* Ref.set(test.generation, 1);

@@ -29,14 +29,14 @@ import {
 } from "@ue-shed/cameras/review-contracts";
 import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { ErrorCauseFields } from "@ue-shed/protocol";
+import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
 
 export class CameraWorkspaceError extends Schema.TaggedError<CameraWorkspaceError>()(
 	"CameraWorkspaceError",
 	{
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("camera_workspace_failed"),
 		message: Schema.String,
 		...ErrorCauseFields

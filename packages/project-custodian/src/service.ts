@@ -1,4 +1,4 @@
-import { ErrorGuidanceFields } from "./error-guidance.js";
+import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { Context, Effect, Layer, Ref, Schema } from "effect";
 import {
 	custodianProposalStorageIsValid,

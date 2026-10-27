@@ -818,6 +818,7 @@ const validResultByChannel = {
 			code: "plugin_unavailable",
 			message: "UEShedNiagara is not installed.",
 			recovery: "Install the separately enabled Editor plugin.",
+			nextStep: "fix_input" as const,
 			retrySafe: false,
 			stage: "validation"
 		},

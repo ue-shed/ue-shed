@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { decodeTexturePreviewResult, type TexturePreviewResult } from "@ue-shed/asset-audits";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
@@ -32,7 +33,7 @@ const decodePreviewRequest = Schema.decodeUnknownEffect(PreviewRequest);
 export class OfflineTexturePreviewError extends Schema.TaggedError<OfflineTexturePreviewError>()(
 	"Workbench.OfflineTexturePreviewError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"cache_failure",

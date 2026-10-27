@@ -1,4 +1,4 @@
-import { contractParser } from "@ue-shed/protocol";
+import { ErrorNextStep, contractParser } from "@ue-shed/protocol";
 import {
 	NiagaraPreviewFailure,
 	NiagaraPreviewArtifact,
@@ -73,7 +73,7 @@ export class NiagaraPreviewClientError extends Schema.TaggedError<NiagaraPreview
 	"NiagaraPreview.ClientError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("niagara_preview_client_failed"),
 		cause: Schema.Defect(),
 		message: Schema.String,

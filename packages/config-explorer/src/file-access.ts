@@ -1,13 +1,6 @@
+import { ErrorGuidanceFields as ConfigErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import { Context, Effect, Layer, Schema } from "effect";
-
-/** The shared UE Shed error guidance shape; this package does not depend on the protocol. */
-export const ConfigErrorGuidanceFields = {
-	message: Schema.String,
-	recovery: Schema.String,
-	retrySafe: Schema.Boolean,
-	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
-};
 
 export class ConfigFileAccessError extends Schema.TaggedError<ConfigFileAccessError>()(
 	"ConfigFileAccessError",
@@ -99,3 +92,5 @@ export function makeConfigFileAccessTestLayer(
 ): Layer.Layer<ConfigFileAccess> {
 	return Layer.succeed(ConfigFileAccess, ConfigFileAccess.of(service));
 }
+
+export { ErrorGuidanceFields as ConfigErrorGuidanceFields } from "@ue-shed/protocol/errors";

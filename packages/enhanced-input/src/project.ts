@@ -1,3 +1,4 @@
+import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { relative } from "node:path";
 import {
 	AssetReader,
@@ -16,14 +17,6 @@ import {
 	type EnhancedInputPackageOutcome
 } from "./projectors.js";
 import { EnhancedInputPublicError, type EnhancedInputReport } from "./schema.js";
-
-/** The shared UE Shed error guidance shape, defined here because this package stays protocol-free. */
-const ErrorGuidanceFields = {
-	message: Schema.String,
-	recovery: Schema.String,
-	retrySafe: Schema.Boolean,
-	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"])
-};
 
 export class EnhancedInputScanError extends Schema.TaggedError<EnhancedInputScanError>()(
 	"EnhancedInputScanError",
@@ -225,7 +218,7 @@ export const EnhancedInputServiceLive = Layer.effect(
 				Effect.mapError(
 					(cause) =>
 						new EnhancedInputScanError({
-							code: "scan_limit_exceeded",
+							code: "invalid_options",
 							message:
 								"Enhanced Input scan options need a project root and positive scan limits.",
 							recovery: "Provide a project root and positive scan limits.",

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import {
 	ArchiveEntry,
 	CultureCode,
@@ -308,7 +309,7 @@ export class GameTextLocalizationError extends Schema.TaggedError<GameTextLocali
 	"GameTextLocalizationError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"target_not_found",

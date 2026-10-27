@@ -1,4 +1,4 @@
-import { contractParser } from "@ue-shed/protocol";
+import { ErrorNextStep, contractParser } from "@ue-shed/protocol";
 import type {
 	TextureInvestigationQuery,
 	TextureInvestigationPresetResult,
@@ -33,7 +33,7 @@ export class TextureAuditClientError extends Schema.TaggedError<TextureAuditClie
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("texture_audit_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,

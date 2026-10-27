@@ -1,5 +1,6 @@
 import { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import {
+	ErrorNextStep,
 	CameraStatus,
 	decodeCameraStatus,
 	decodeEditorPlaySessionCommandResponse,
@@ -47,7 +48,7 @@ export class WorkbenchRendererError extends Schema.TaggedError<WorkbenchRenderer
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("workbench_renderer_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,

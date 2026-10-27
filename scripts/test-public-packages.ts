@@ -444,6 +444,8 @@ try {
 			"import { resolve } from 'node:path';",
 			"import { Effect, Schema } from 'effect';",
 			"import * as protocol from '@ue-shed/protocol';",
+			"import { ErrorNextStep, ErrorGuidanceFields, ErrorCauseFields } from '@ue-shed/protocol/errors';",
+			"if (ErrorNextStep !== protocol.ErrorNextStep || ErrorGuidanceFields !== protocol.ErrorGuidanceFields || ErrorCauseFields !== protocol.ErrorCauseFields) throw new Error('protocol error subpath differs from root');",
 			"import * as assets from '@ue-shed/unreal-assets';",
 			"import * as observability from '@ue-shed/observability';",
 			"import * as connection from '@ue-shed/unreal-connection';",

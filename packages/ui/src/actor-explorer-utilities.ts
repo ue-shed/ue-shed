@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Effect, Schema } from "effect";
 import type { ActorExplorerFilters, ActorExplorerItem } from "./actor-explorer-core.js";
 
@@ -16,7 +17,7 @@ export class ActorUtilityError extends Schema.TaggedError<ActorUtilityError>()(
 		message: Schema.String,
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect())
 	}
 ) {}

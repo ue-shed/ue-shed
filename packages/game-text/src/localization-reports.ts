@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import {
 	TextCorpusDiagnosticSummary,
 	TextPackageCoverageSummary,
@@ -79,7 +80,7 @@ export class LocalizationReportError extends Schema.TaggedError<LocalizationRepo
 	"LocalizationReportError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_baseline",
@@ -99,8 +100,7 @@ function reportError(
 	cause?: unknown
 ): LocalizationReportError {
 	const recovery = {
-		invalid_baseline:
-			"Regenerate a version-1 baseline with loc report --save-baseline using a new JSON destination.",
+		invalid_baseline: "Save a new version-1 localization baseline to a new JSON destination.",
 		baseline_target_mismatch:
 			"Choose a baseline recorded for the selected localization target.",
 		missing_manifest:

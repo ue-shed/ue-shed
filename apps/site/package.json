@@ -17,6 +17,7 @@
 		"@ue-shed/extension-blueprint-graphs": "workspace:*",
 		"@ue-shed/extension-data-authoring": "workspace:*",
 		"@ue-shed/extension-sequencer": "workspace:*",
+		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/uasset-inspection-wasm": "workspace:*",
 		"@ue-shed/ui": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",

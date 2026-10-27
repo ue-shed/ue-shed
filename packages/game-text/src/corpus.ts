@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { relative } from "node:path";
 import {
 	AssetReader,
@@ -65,7 +66,7 @@ const reportExtraction = (progress: ExtractionProgress): Effect.Effect<void> =>
 export class TextCorpusScanError extends Schema.TaggedError<TextCorpusScanError>()(
 	"TextCorpusScanError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: TextCorpusPublicError.fields.code,
 		message: Schema.String,
 		recovery: Schema.String,

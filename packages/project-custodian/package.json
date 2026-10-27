@@ -40,6 +40,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@ue-shed/protocol": "workspace:*",
 		"trash": "10.1.1"
 	},
 	"devDependencies": {

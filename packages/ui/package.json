@@ -38,6 +38,7 @@
 		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
 		"@tanstack/virtual-core": "3.17.8",
+		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",
 		"solid-js": "catalog:"

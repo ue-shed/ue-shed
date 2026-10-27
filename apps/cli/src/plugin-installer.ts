@@ -21,7 +21,7 @@ import {
 	validatePluginBundleManifest,
 	verifyPluginArtifact
 } from "@ue-shed/plugin-distribution";
-import { ErrorCauseFields } from "@ue-shed/protocol";
+import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
 import { Effect, Predicate, Schema } from "effect";
 
 /**
@@ -36,7 +36,7 @@ export class PluginInstallerError extends Schema.TaggedError<PluginInstallerErro
 	{
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("plugin_installer_failed"),
 		message: Schema.String,
 		...ErrorCauseFields
@@ -113,10 +113,65 @@ function isRecord(value: Schema.Json): value is Schema.JsonObject {
 }
 
 /** A classified installer refusal; its message is authored here, never copied from a cause. */
-class PluginInstallRejected extends Error {}
+type InstallerNextStep = "fix_input" | "retry" | "escalate";
+class PluginInstallRejected extends Error {
+	readonly nextStep: InstallerNextStep;
+	constructor(nextStep: InstallerNextStep, message: string, cause?: unknown) {
+		super(message, cause === undefined ? undefined : { cause });
+		this.nextStep = nextStep;
+	}
+}
 
-function fail(message: string, cause?: unknown): never {
-	throw new PluginInstallRejected(message, cause === undefined ? undefined : { cause });
+function fail(nextStep: InstallerNextStep, message: string, cause?: unknown): never {
+	throw new PluginInstallRejected(nextStep, message, cause);
+}
+
+const transientIoCodes = new Set([
+	"EAGAIN",
+	"EBUSY",
+	"ETXTBSY",
+	"EMFILE",
+	"ENFILE",
+	"EINTR",
+	"EIO",
+	"ETIMEDOUT",
+	"ECONNRESET",
+	"ECONNREFUSED",
+	"ENETUNREACH",
+	"EHOSTUNREACH",
+	"ENOTFOUND"
+]);
+function ioNextStep(cause: unknown): InstallerNextStep {
+	const code = errnoCode(cause);
+	if (code !== undefined && transientIoCodes.has(code)) return "retry";
+	if (
+		code === "ENOENT" ||
+		code === "ENOTDIR" ||
+		code === "EISDIR" ||
+		code === "EINVAL" ||
+		code === "ENAMETOOLONG" ||
+		code === "ERR_INVALID_ARG_TYPE" ||
+		code === "ERR_INVALID_ARG_VALUE"
+	)
+		return "fix_input";
+	return "escalate";
+}
+function artifactNextStep(cause: unknown): InstallerNextStep {
+	if (cause instanceof Object && "cause" in cause && cause.cause !== undefined) {
+		const step = ioNextStep(cause.cause);
+		if (step !== "escalate") return step;
+	}
+	return ioNextStep(cause);
+}
+function installerRecovery(nextStep: InstallerNextStep): string {
+	switch (nextStep) {
+		case "fix_input":
+			return "Correct the supplied paths, project or manifest, then install again.";
+		case "retry":
+			return "Wait for the temporary file or network failure to clear, then try again.";
+		case "escalate":
+			return "Inspect the plugin destination and retained cause, then repair the installation before retrying.";
+	}
 }
 
 function errnoCode(cause: unknown): string | undefined {
@@ -149,9 +204,13 @@ function parseManifest(value: Schema.Json): PluginReleaseManifest {
 		return Effect.runSync(validatePluginBundleManifest(value));
 	} catch (cause) {
 		if (isPluginBundleManifestValidationError(cause)) {
-			fail(`${cause.message} Recovery: ${cause.recovery}`);
+			fail("fix_input", `${cause.message} Recovery: ${cause.recovery}`, cause);
 		}
-		fail("Plugin manifest does not match the plugin bundle manifest schema.", cause);
+		fail(
+			"fix_input",
+			"Plugin manifest does not match the plugin bundle manifest schema.",
+			cause
+		);
 	}
 }
 
@@ -162,6 +221,9 @@ async function readManifest(path: string): Promise<PluginReleaseManifest> {
 		parsed = decodeJson(JSON.parse(await readFile(resolved, "utf8")));
 	} catch (cause) {
 		fail(
+			cause instanceof SyntaxError || Schema.isSchemaError(cause)
+				? "fix_input"
+				: ioNextStep(cause),
 			cause instanceof SyntaxError || Schema.isSchemaError(cause)
 				? `Plugin manifest ${resolved} is not valid JSON.`
 				: errnoCode(cause) === "ENOENT"
@@ -189,11 +251,15 @@ async function fileDigests(root: string): Promise<Record<string, string>> {
 			const path = join(directory, entry.name);
 			const relativePath = relative(root, path).replaceAll(sep, "/");
 			if (entry.isSymbolicLink())
-				fail(`Plugin installation contains an unsupported symlink: ${relativePath}`);
+				fail(
+					"fix_input",
+					`Plugin installation contains an unsupported symlink: ${relativePath}`
+				);
 			if (entry.isDirectory()) await walk(path);
 			else if (entry.isFile()) result[relativePath] = await digestFile(path);
 			else
 				fail(
+					"fix_input",
 					`Plugin installation contains an unsupported filesystem entry: ${relativePath}`
 				);
 		}
@@ -210,7 +276,13 @@ async function readJsonRecord(path: string): Promise<Schema.JsonObject> {
 	try {
 		return Schema.decodeUnknownSync(JsonObject)(JSON.parse(await readFile(path, "utf8")));
 	} catch (cause) {
-		fail(`Could not read JSON object file ${path}.`, cause);
+		fail(
+			cause instanceof SyntaxError || Schema.isSchemaError(cause)
+				? "fix_input"
+				: ioNextStep(cause),
+			`Could not read JSON object file ${path}.`,
+			cause
+		);
 	}
 }
 
@@ -219,13 +291,13 @@ function parseOwnership(value: Schema.JsonObject, path: string): OwnershipRecord
 	try {
 		ownership = Schema.decodeUnknownSync(OwnershipRecordDocument)(value);
 	} catch {
-		return fail(`Malformed plugin ownership record in ${path}.`);
+		return fail("fix_input", `Malformed plugin ownership record in ${path}.`);
 	}
 	if (
 		!sha256Pattern.test(ownership.artifactSha256) ||
 		Object.values(ownership.files).some((digest) => !sha256Pattern.test(digest))
 	) {
-		return fail(`Malformed plugin ownership record in ${path}.`);
+		return fail("fix_input", `Malformed plugin ownership record in ${path}.`);
 	}
 	return ownership;
 }
@@ -239,13 +311,21 @@ async function assertOwnedFilesUnmodified(
 		try {
 			const details = await lstat(path);
 			if (!details.isFile())
-				fail(`Installer-owned path is no longer a regular file: ${relativePath}`);
+				fail(
+					"fix_input",
+					`Installer-owned path is no longer a regular file: ${relativePath}`
+				);
 		} catch (cause) {
 			if (cause instanceof PluginInstallRejected) throw cause;
-			fail(`Installer-owned file is missing or inaccessible: ${relativePath}`, cause);
+			fail(
+				ioNextStep(cause),
+				`Installer-owned file is missing or inaccessible: ${relativePath}`,
+				cause
+			);
 		}
 		if ((await digestFile(path)) !== expectedDigest)
 			fail(
+				"fix_input",
 				`Installer-owned file was modified: ${relativePath}. Restore it or remove the project plugin installation.`
 			);
 	}
@@ -263,6 +343,7 @@ async function assertOwnedFilesUnmodified(
 	);
 	if (unownedFiles.length > 0)
 		fail(
+			"fix_input",
 			`Plugin installation contains files not recorded by the installer: ${unownedFiles.join(", ")}. Move them outside Plugins/UEShed before upgrading.`
 		);
 }
@@ -276,6 +357,7 @@ async function projectFileFor(
 		details = await stat(resolved);
 	} catch (cause) {
 		fail(
+			ioNextStep(cause),
 			errnoCode(cause) === "ENOENT"
 				? `Project path does not exist: ${resolved}`
 				: `Could not read project path: ${resolved}`,
@@ -284,16 +366,16 @@ async function projectFileFor(
 	}
 	if (details.isFile()) {
 		if (extname(resolved).toLowerCase() !== ".uproject")
-			fail(`Project file must have a .uproject extension: ${resolved}`);
+			fail("fix_input", `Project file must have a .uproject extension: ${resolved}`);
 		return { projectFile: resolved, root: dirname(resolved) };
 	}
 	if (!details.isDirectory())
-		fail(`Project path is neither a directory nor a .uproject file: ${resolved}`);
+		fail("fix_input", `Project path is neither a directory nor a .uproject file: ${resolved}`);
 	const projects = (await readdir(resolved, { withFileTypes: true }))
 		.filter((entry) => entry.isFile() && extname(entry.name).toLowerCase() === ".uproject")
 		.map((entry) => join(resolved, entry.name));
 	if (projects.length !== 1)
-		fail(`Project directory must contain exactly one .uproject file: ${resolved}`);
+		fail("fix_input", `Project directory must contain exactly one .uproject file: ${resolved}`);
 	return { projectFile: projects[0]!, root: resolved };
 }
 
@@ -307,19 +389,23 @@ async function updateProjectFile(
 	try {
 		parsed = decodeJson(JSON.parse(original));
 	} catch (cause) {
-		fail(`Project file is not valid JSON: ${projectFile}`, cause);
+		fail("fix_input", `Project file is not valid JSON: ${projectFile}`, cause);
 	}
-	if (!isRecord(parsed)) fail(`Project file must contain a JSON object: ${projectFile}`);
+	if (!isRecord(parsed))
+		fail("fix_input", `Project file must contain a JSON object: ${projectFile}`);
 	const existing = parsed.Plugins;
 	if (existing !== undefined && !Array.isArray(existing))
-		fail(`Project Plugins field must be an array: ${projectFile}`);
+		fail("fix_input", `Project Plugins field must be an array: ${projectFile}`);
 	const requestedPlugins = new Set(pluginNames);
 	const previouslyOwnedPlugins = new Set(previouslyOwnedPluginNames);
 	const plugins = (
 		Array.isArray(existing)
 			? existing.map((item, index) => {
 					if (!isRecord(item))
-						fail(`Project Plugins entry ${index} must be an object: ${projectFile}`);
+						fail(
+							"fix_input",
+							`Project Plugins entry ${index} must be an object: ${projectFile}`
+						);
 					return { ...item };
 				})
 			: []
@@ -366,6 +452,7 @@ async function verifyArtifact(
 		);
 	} catch (cause) {
 		fail(
+			artifactNextStep(cause),
 			`Plugin artifact ${Predicate.isTagged(cause, "ArtifactDigestMismatch") ? "checksum mismatch" : "verification failed"}: ${artifact}.${recoverySuffix(cause)}`,
 			cause
 		);
@@ -383,6 +470,7 @@ async function verifyArtifact(
 		);
 	} catch (cause) {
 		fail(
+			artifactNextStep(cause),
 			`Plugin artifact archive validation failed: ${artifact}.${recoverySuffix(cause)}`,
 			cause
 		);
@@ -411,7 +499,10 @@ function artifactPathFor(
 ): string {
 	if (artifactPath) return artifactPath;
 	if (manifest.artifact.path) return join(dirname(resolve(manifestPath)), manifest.artifact.path);
-	fail("A plugin artifact path is required because the manifest does not declare artifact.path.");
+	fail(
+		"fix_input",
+		"A plugin artifact path is required because the manifest does not declare artifact.path."
+	);
 }
 
 async function install(options: PluginInstallOptions): Promise<PluginInstallReport> {
@@ -429,7 +520,7 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 		const destinationDetails = await lstat(destination);
 		destinationExists = true;
 		if (!destinationDetails.isDirectory())
-			fail(`Plugin destination is not a directory: ${destination}`);
+			fail("fix_input", `Plugin destination is not a directory: ${destination}`);
 		try {
 			existingOwnership = parseOwnership(
 				await readJsonRecord(join(destination, ownershipFile)),
@@ -439,6 +530,7 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 			const entries = await readdir(destination);
 			if (entries.length > 0)
 				fail(
+					"fix_input",
 					`Refusing to install over an existing non-UE Shed plugin directory: ${destination}`
 				);
 		}
@@ -471,6 +563,7 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 			);
 		} catch (cause) {
 			fail(
+				artifactNextStep(cause),
 				`Plugin artifact extraction failed: ${resolvedArtifact}.${recoverySuffix(cause)}`,
 				cause
 			);
@@ -478,17 +571,18 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 		const sourceRoot = join(extractionRoot, "Plugins");
 		const sourceDetails = await stat(sourceRoot).catch(() => undefined);
 		if (!sourceDetails?.isDirectory())
-			fail("Plugin artifact is missing UEShed/Plugins archive root.");
+			fail("escalate", "Plugin artifact is missing UEShed/Plugins archive root.");
 		await fileDigests(sourceRoot);
 		for (const plugin of manifest.plugins) {
 			const source = join(sourceRoot, plugin.directory);
 			const destinationPlugin = join(stageDestination, plugin.directory);
 			const details = await lstat(source).catch(() => undefined);
-			if (!details?.isDirectory()) fail(`Plugin artifact is missing ${plugin.id}/.`);
+			if (!details?.isDirectory())
+				fail("escalate", `Plugin artifact is missing ${plugin.id}/.`);
 			const descriptor = join(sourceRoot, plugin.descriptorPath);
 			const descriptorDetails = await lstat(descriptor).catch(() => undefined);
 			if (!descriptorDetails?.isFile())
-				fail(`Plugin artifact is missing descriptor ${plugin.descriptorPath}.`);
+				fail("escalate", `Plugin artifact is missing descriptor ${plugin.descriptorPath}.`);
 			await rm(destinationPlugin, { force: true, recursive: true });
 			await cp(source, destinationPlugin, { recursive: true, force: true });
 		}
@@ -597,6 +691,7 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 		}
 		if (rollbackFailures.length > 0)
 			fail(
+				"escalate",
 				`Plugin installation failed and could not be fully undone (${rollbackFailures.join("; ")}). Check ${destination}${backupPath ? `, the previous plugins at ${backupPath},` : ""} and ${project.projectFile} before installing again.`,
 				cause
 			);
@@ -614,21 +709,20 @@ function fromPromise<A>(
 		catch: (cause) => {
 			if (cause instanceof PluginInstallRejected) {
 				return new PluginInstallerError({
-					recovery:
-						"Inspect the plugin destination and retained cause, then repair the installation before retrying.",
-					retrySafe: false,
-					nextStep: "escalate",
+					recovery: installerRecovery(cause.nextStep),
+					retrySafe: cause.nextStep === "retry",
+					nextStep: cause.nextStep,
 					code: "plugin_installer_failed",
 					message: cause.message,
 					cause
 				});
 			}
 			const code = errnoCode(cause);
+			const nextStep = ioNextStep(cause);
 			return new PluginInstallerError({
-				recovery:
-					"Inspect the plugin destination and retained cause, then repair the installation before retrying.",
-				retrySafe: false,
-				nextStep: "escalate",
+				recovery: installerRecovery(nextStep),
+				retrySafe: nextStep === "retry",
+				nextStep,
 				code: "plugin_installer_failed",
 				message:
 					code === "EACCES" || code === "EPERM"

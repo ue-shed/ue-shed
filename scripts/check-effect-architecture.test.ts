@@ -357,6 +357,23 @@ test("checks the Game Text browser closure and its localization dependency", asy
 		);
 		await writeFile(join(protocol, "index.ts"), 'import { Schema } from "effect";\n');
 		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+		await writeFile(join(protocol, "errors.ts"), 'import { Schema } from "effect";\n');
+		await writeFile(
+			join(reader, "text-extraction.ts"),
+			'export { ErrorGuidanceFields } from "@ue-shed/protocol/errors";\n'
+		);
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+		await writeFile(
+			join(protocol, "errors.ts"),
+			'import { readFile } from "node:fs/promises";\n'
+		);
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
+			"packages/protocol/src/errors.ts: browser closure must not import node:fs/promises"
+		]);
+		await writeFile(
+			join(reader, "text-extraction.ts"),
+			'export { SavedAssetTextCoverageGap } from "@ue-shed/protocol";\n'
+		);
 		await writeFile(
 			join(protocol, "index.ts"),
 			'import { readFile } from "node:fs/promises";\n'
@@ -751,9 +768,11 @@ test("tagged errors in migrated packages carry the guidance fields", async () =>
 			[
 				'import { Schema } from "effect";',
 				'import { ErrorGuidanceFields } from "@ue-shed/protocol";',
+				'import { ErrorGuidanceFields as Guidance, ErrorCauseFields as Causes } from "@ue-shed/protocol/errors";',
 				"const Shared = { ...ErrorGuidanceFields, message: Schema.String };",
 				'export class Good extends Schema.TaggedError<Good>()("Good", { id: Schema.String, ...ErrorGuidanceFields }) {}',
 				'export class Local extends Schema.TaggedError<Local>()("Local", Shared) {}',
+				'export class Aliased extends Schema.TaggedError<Aliased>()("Aliased", { ...Guidance, ...Causes }) {}',
 				'export class Bad extends Schema.TaggedError<Bad>()("Bad", { message: Schema.String, retrySafe: Schema.Boolean }) {}'
 			].join("\n")
 		);

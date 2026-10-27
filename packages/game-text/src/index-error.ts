@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { Schema } from "effect";
 import { LocalizationError } from "@ue-shed/localization/browser";
 
@@ -9,7 +10,7 @@ import { LocalizationError } from "@ue-shed/localization/browser";
 export class GameTextIndexError extends Schema.TaggedError<GameTextIndexError>()(
 	"GameTextIndexError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("index_failed"),
 		operation: Schema.String,
 		message: Schema.String,

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { refreshCliGameTextIndex } from "./game-text-index.js";
 import { cultureList, parseTextFilter } from "./text-filter.js";
 import { readChangedFiles } from "./changed-files.js";
@@ -225,7 +226,7 @@ class LocalizationExportError extends Schema.TaggedError<LocalizationExportError
 	"LocalizationExportError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["invalid_destination", "destination_exists", "unwritable"]),
 		message: Schema.String,

@@ -24,6 +24,34 @@ const world = {
 	partitioned: true,
 	streamingEnabled: true
 };
+
+it("decodes only known world preparation error codes", () => {
+	const decodeCode = Schema.decodeUnknownSync(WorldPreparationError.fields.code);
+	expect(decodeCode("actor_missing")).toBe("actor_missing");
+	expect(() => decodeCode("unknown_failure")).toThrow();
+	const recoveries = WorldPreparationError.fields.code.literals.map(
+		(code) => worldPreparationGuidance(code).recovery
+	);
+	expect(new Set(recoveries).size).toBe(recoveries.length);
+});
+
+it.effect("reports an unknown producer failure as an invalid contract", () =>
+	Effect.gen(function* () {
+		const h = harness((request) =>
+			request.action === "describe"
+				? Effect.succeed({
+						status: "failed",
+						code: "unknown_failure",
+						message: "Unknown",
+						recovery: "Inspect"
+					})
+				: undefined
+		);
+		const error = yield* Effect.flip(h.api.describe());
+		expect(error.code).toBe("invalid_contract");
+		expect(error.nextStep).toBe("escalate");
+	})
+);
 const requirements: WorldRequirements = {
 	world,
 	targets: [
@@ -269,7 +297,7 @@ it.effect("reports work and restoration failures through the scoped public bound
 			acquire: (input) => h.api.acquire(input, { leaseId: id })
 		});
 		const workError = new WorldPreparationError({
-			code: "work_failed",
+			code: "invalid_request",
 			operation: "test",
 			message: "Work failed",
 			recovery: "Inspect work",
@@ -407,19 +435,19 @@ it.effect("rejects unrelated response evidence and cleans up uncertain ownership
 );
 
 it("guides each world failure to its next step", () => {
-	expect(worldPreparationGuidance("connection_failed")).toEqual({
+	expect(worldPreparationGuidance("connection_failed")).toMatchObject({
 		retrySafe: true,
 		nextStep: "retry"
 	});
-	expect(worldPreparationGuidance("revision_conflict")).toEqual({
+	expect(worldPreparationGuidance("revision_conflict")).toMatchObject({
 		retrySafe: false,
 		nextStep: "reconcile"
 	});
-	expect(worldPreparationGuidance("layer_missing")).toEqual({
+	expect(worldPreparationGuidance("layer_missing")).toMatchObject({
 		retrySafe: false,
 		nextStep: "fix_input"
 	});
-	expect(worldPreparationGuidance("restoration_failed")).toEqual({
+	expect(worldPreparationGuidance("restoration_failed")).toMatchObject({
 		retrySafe: false,
 		nextStep: "escalate"
 	});
@@ -452,7 +480,7 @@ it.effect("reconciles a retained lease identity acquired with different requirem
 			expect(error.retrySafe).toBe(false);
 			expect(error.recovery).toContain("new acquisition identity");
 		}
-		expect(worldPreparationGuidance("active_lease_limit")).toEqual({
+		expect(worldPreparationGuidance("active_lease_limit")).toMatchObject({
 			retrySafe: true,
 			nextStep: "retry"
 		});

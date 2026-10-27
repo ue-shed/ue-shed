@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { invalidateCliGameTextIndex } from "./game-text-index.js";
 import { Effect, FileSystem, Metric, Result, Schema, Stream } from "effect";
 import {
@@ -28,7 +29,7 @@ class LocalizationApplyInputError extends Schema.TaggedError<LocalizationApplyIn
 	"LocalizationApplyInputError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["change_set_unreadable", "change_set_too_large"]),
 		message: Schema.String,

@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "./errors.js";
 import { Schema } from "effect";
 
 /**
@@ -137,12 +138,7 @@ export const GameTextActionErrorCode = Schema.Literals([
 export type GameTextActionErrorCode = typeof GameTextActionErrorCode.Type;
 
 /** Required recovery action; reconcile requires inspecting editor state before resubmitting. */
-export const GameTextActionNextStep = Schema.Literals([
-	"fix_input",
-	"retry",
-	"reconcile",
-	"escalate"
-]);
+export const GameTextActionNextStep = ErrorNextStep;
 export type GameTextActionNextStep = typeof GameTextActionNextStep.Type;
 
 /** Action failure with replay guidance; retrySafe alone does not authorize automatic retries. */

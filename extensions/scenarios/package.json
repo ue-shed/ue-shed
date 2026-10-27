@@ -22,6 +22,7 @@
 	"dependencies": {
 		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
+		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/scenarios": "workspace:*",
 		"@ue-shed/ui": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",

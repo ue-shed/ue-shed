@@ -1,3 +1,4 @@
+import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { invalidateCliGameTextIndex } from "./game-text-index.js";
 import { Effect, Metric, Result, Schema } from "effect";
 import {
@@ -21,7 +22,7 @@ class LocalizationReviewCommandError extends Schema.TaggedError<LocalizationRevi
 	"LocalizationReviewCommandError",
 	{
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_line",

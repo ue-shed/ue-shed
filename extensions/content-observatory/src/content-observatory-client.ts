@@ -7,7 +7,7 @@ import {
 	PerforceFastMapHistory,
 	ProjectRelativeMapPath
 } from "@ue-shed/map-history/contract";
-import { SavedWorld, SavedWorldProgress, decodeSavedWorld } from "@ue-shed/protocol";
+import { ErrorNextStep, SavedWorld, SavedWorldProgress, decodeSavedWorld } from "@ue-shed/protocol";
 import { Context, Effect, Schema } from "effect";
 
 const historyRequestFields = {
@@ -111,7 +111,7 @@ export type ContentObservatoryState = Schema.Schema.Type<typeof ContentObservato
 export class ContentObservatoryContractError extends Schema.TaggedError<ContentObservatoryContractError>()(
 	"ContentObservatoryContractError",
 	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("invalid_contract"),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -159,7 +159,7 @@ export class ContentObservatoryClientError extends Schema.TaggedError<ContentObs
 	{
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		nextStep: ErrorNextStep,
 		code: Schema.Literal("content_observatory_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,

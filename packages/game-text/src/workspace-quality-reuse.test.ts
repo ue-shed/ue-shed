@@ -146,6 +146,12 @@ it.live(
 				expect(first.status).toBe("ready");
 				const afterFirst = counts.localization;
 				expect(afterFirst).toBeGreaterThan(0);
+				const listed = yield* workspace.localizationTargets();
+				expect(listed.status === "ready" && listed.targets.map(({ name }) => name)).toEqual(
+					["Review"]
+				);
+				// A target added beside unchanged text: the scan keeps the model, not the listing.
+				fixture.addTarget("Added");
 
 				const secondScan = yield* workspace.configuredRefresh(true);
 				expect(secondScan.status).toBe("completed");
@@ -158,6 +164,11 @@ it.live(
 					offset: 0
 				});
 				expect(second).toEqual(first);
+				expect(counts.localization).toBe(afterFirst);
+				const relisted = yield* workspace.localizationTargets();
+				expect(
+					relisted.status === "ready" && relisted.targets.map(({ name }) => name)
+				).toEqual(["Review", "Added"]);
 				expect(counts.localization).toBe(afterFirst);
 
 				yield* Effect.promise(() =>
@@ -175,6 +186,10 @@ it.live(
 				});
 				expect(third.status).toBe("ready");
 				expect(counts.localization).toBeGreaterThan(afterFirst);
+				expect(
+					(yield* workspace.localizationTarget(LocalizationTargetName.make("Added")))
+						.status
+				).toBe("ready");
 			}).pipe(Effect.provide(layer));
 		}).pipe(Effect.scoped),
 	60_000

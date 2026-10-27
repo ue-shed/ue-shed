@@ -621,6 +621,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						});
 						// A scan that found the published model's inputs unchanged keeps that model, with
 						// its source quality, localization selection and quality scans; the new open closes.
+						// Only the discovered targets are read again: the scan covers one target's text.
 						const kept = yield* Effect.gen(function* () {
 							if (!(yield* owned)) return superseded();
 							const previous = yield* Ref.get(modelSelection);
@@ -631,6 +632,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 								previous.indexed.queryRevision !== indexed.queryRevision
 							)
 								return undefined;
+							yield* localization.rediscover();
 							yield* Ref.set(modelSelection, {
 								...previous,
 								generation: index.generation

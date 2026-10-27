@@ -897,7 +897,7 @@ export const makeGameTextIndexSteps = (
 			/**
 			 * Evaluates a document's findings with a check's progress, in rules: one event before
 			 * the engine runs, one as each rule finishes, and one after, with the findings of the
-			 * rules `counted` selects. Reports through the reporter captured when this target
+			 * rules `counted` selects, then ready. Reports through the reporter captured when this target
 			 * opened, so later evaluations still reach the host that opened the index.
 			 */
 			const evaluateWithProgress = (
@@ -917,7 +917,15 @@ export const makeGameTextIndexSteps = (
 						if (counted(evaluation.rules[rule]!)) findings += count;
 					reportProgress({ phase, completed: rules, total: rules, findings });
 					return evaluation;
-				});
+				}).pipe(
+					// Like a scan, an evaluation ends ready, also when it fails or is interrupted, so the
+					// host stops showing it as running.
+					Effect.ensuring(
+						Effect.sync(() =>
+							reportProgress({ phase: "ready", completed: 0, total: 0 })
+						)
+					)
+				);
 			return {
 				...result,
 				project: target.project,

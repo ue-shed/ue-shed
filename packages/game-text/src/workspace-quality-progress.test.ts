@@ -148,6 +148,13 @@ it.live(
 				yield* Deferred.succeed(hold, undefined);
 				expect((yield* Fiber.join(preview)).status).toBe("completed");
 				armed = false;
+				// A finished evaluation no longer shows as running.
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: 0,
+					phase: "idle",
+					stage: "game_text"
+				});
 
 				const target = LocalizationTargetName.make("Review");
 				expect((yield* workspace.localizationTarget(target)).status).toBe("ready");
@@ -168,6 +175,33 @@ it.live(
 				yield* Deferred.succeed(hold, undefined);
 				expect((yield* Fiber.join(search)).status).toBe("ready");
 				armed = false;
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: 0,
+					phase: "idle",
+					stage: "game_text"
+				});
+
+				// Nor does an interrupted one.
+				entered = yield* Deferred.make<void>();
+				hold = yield* Deferred.make<void>();
+				armed = true;
+				const interrupted = yield* workspace
+					.previewQualityRules({
+						...STARTER_CHECK_RULES,
+						rules: STARTER_CHECK_RULES.rules.slice(1)
+					})
+					.pipe(Effect.forkChild);
+				yield* Deferred.await(entered);
+				expect((yield* workspace.progress()).phase).toBe("scanning");
+				yield* Fiber.interrupt(interrupted);
+				armed = false;
+				expect(yield* workspace.progress()).toEqual({
+					completed: 0,
+					total: 0,
+					phase: "idle",
+					stage: "game_text"
+				});
 			}).pipe(Effect.provide(layer));
 		}).pipe(Effect.scoped),
 	60_000

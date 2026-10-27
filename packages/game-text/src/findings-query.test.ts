@@ -40,9 +40,12 @@ const expectRuleProgress = (
 	rules: number,
 	findings: number
 ) => {
-	expect(events[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
-	expect(events.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
-	const between = events.slice(1, -1);
+	// The evaluation ends ready, so the host stops showing it as running.
+	expect(events.at(-1)).toEqual({ phase: "ready", completed: 0, total: 0 });
+	const quality = events.slice(0, -1);
+	expect(quality[0]).toEqual({ phase, completed: 0, total: rules, findings: 0 });
+	expect(quality.at(-1)).toEqual({ phase, completed: rules, total: rules, findings });
+	const between = quality.slice(1, -1);
 	for (const [index, event] of between.entries()) {
 		expect(event).toEqual({ phase, completed: event.completed, total: rules });
 		expect(event.completed).toBeGreaterThan(
@@ -718,11 +721,12 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 		yield* Effect.gen(function* () {
 			// Quality progress goes to the reporter provided when the index opened.
 			let last: GameTextIndexProgress | undefined;
-			const result = yield* (yield* GameTextIndexRefresh)
-				.refresh(fixture.request)
-				.pipe(
-					Effect.provideService(GameTextIndexProgressReporter, (step) => (last = step))
-				);
+			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request).pipe(
+				Effect.provideService(GameTextIndexProgressReporter, (step) => {
+					// The last quality event; the evaluation then ends ready.
+					if (step.phase === "localization_quality") last = step;
+				})
+			);
 			const join = yield* result.localizationJoin;
 			expect(join.lines[0]!.id).not.toBe(join.lines[1]!.id);
 			expect(join.lines[0]!.id.localeCompare(join.lines[1]!.id)).toBe(0);

@@ -1477,6 +1477,8 @@ function requestPathBatches(
 	maximumRequestBytes: number
 ): readonly (readonly number[])[] | ProtocolStreamFailure {
 	const budget = requestPathBudget(envelopeBytes, maximumRequestBytes);
+	// The options alone are over the limit, with or without paths.
+	if (budget < 0) return requestTooLarge();
 	const sizes = paths.map(protocolPathBytes);
 	if (sizes.reduce((total, size) => total + size, 0) <= budget) return [paths.map((_, i) => i)];
 	if (sizes.some((size) => size > budget)) return requestTooLarge();
@@ -2068,6 +2070,7 @@ function projectionBatches(
 	const { groups } = staging;
 	if (groups.length !== paths.length) return [{ paths, groups }];
 	const budget = requestPathBudget(envelopeBytes, maximumRequestBytes);
+	if (budget < 0) return requestTooLarge();
 	const sizes = paths.map((path, index) => stagedPathBytes(path, groups[index] ?? 0));
 	if (sizes.reduce((total, size) => total + size, 0) <= budget) return [{ paths, groups }];
 	return stagedProjectionBatches(

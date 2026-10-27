@@ -479,6 +479,28 @@ describe("AssetReader path batching", () => {
 		expect(spawner.children.length).toBe(2);
 	});
 
+	it("rejects options larger than a request as bad input, even with no paths", async () => {
+		const spawner = new ScriptedSpawner(scanReply);
+		const exit = await Effect.runPromiseExit(
+			invokeProtocolScan(
+				configuration,
+				{
+					depth: "header",
+					names: ["x".repeat(MAX_PROTOCOL_REQUEST_BYTES)],
+					paths: [],
+					projectRoot: "C:/Project"
+				},
+				recordingStore(),
+				{ processFactory: spawner.factory }
+			)
+		);
+		expect(exit).toMatchObject({
+			_tag: "Failure",
+			cause: { reasons: [{ _tag: "Fail", error: { kind: "request_too_large" } }] }
+		});
+		expect(spawner.requests).toEqual([]);
+	});
+
 	it("rejects one path larger than a request as bad input, before starting its worker", async () => {
 		const spawner = new ScriptedSpawner(scanReply);
 		const error = await Effect.runPromise(
@@ -549,10 +571,11 @@ describe("AssetReader path batching", () => {
 					header: {
 						exports: [],
 						package: { name: "Shared" },
+						// The second batch spells the same package differently.
 						path:
 							index === 0
 								? "C:/Project/Content/Shared.uasset"
-								: "c:\\Project\\Content\\Shared.uasset",
+								: "C:/Project/Content/./Shared.uasset",
 						schema_version: 8
 					}
 				}
@@ -634,22 +657,37 @@ describe("AssetReader path batching", () => {
 });
 
 describe("reader path identity", () => {
-	it("keys paths as the reader's path equality compares them", () => {
-		const root = "C:/Project";
-		const key = (path: string) => readerPathKey(root, path);
-		expect(key("Content/A.uasset")).toBe(key("C:\\Project\\Content\\A.uasset"));
-		expect(key("./Content//A.uasset")).toBe(key("c:/Project/Content/A.uasset"));
-		// `..` is a segment to the reader, and case is not folded.
-		expect(key("Content/B/../A.uasset")).not.toBe(key("Content/A.uasset"));
-		expect(key("content/A.uasset")).not.toBe(key("Content/A.uasset"));
-	});
+	it.skipIf(process.platform !== "win32")(
+		"keys Windows paths as the reader's path equality compares them",
+		() => {
+			const key = (path: string) => readerPathKey("C:/Project", path);
+			expect(key("Content/A.uasset")).toBe(key("C:\\Project\\Content\\A.uasset"));
+			expect(key("./Content//A.uasset")).toBe(key("c:/Project/Content/A.uasset"));
+			// `..` is a segment to the reader, and case is not folded.
+			expect(key("Content/B/../A.uasset")).not.toBe(key("Content/A.uasset"));
+			expect(key("content/A.uasset")).not.toBe(key("Content/A.uasset"));
+		}
+	);
+
+	it.skipIf(process.platform === "win32")(
+		"keys POSIX paths as the reader's path equality compares them",
+		() => {
+			const key = (path: string) => readerPathKey("/project", path);
+			expect(key("Content/A.uasset")).toBe(key("/project/Content/A.uasset"));
+			expect(key("./Content//A.uasset")).toBe(key("/project/Content/A.uasset"));
+			// A backslash is part of a name here, `..` is a segment, and case is not folded.
+			expect(key("Content\\A.uasset")).not.toBe(key("Content/A.uasset"));
+			expect(key("Content/B/../A.uasset")).not.toBe(key("Content/A.uasset"));
+			expect(key("content/A.uasset")).not.toBe(key("Content/A.uasset"));
+		}
+	);
 
 	it("keeps the first of each repeated path and none beneath another requested path", () => {
 		expect(
 			uniqueRequestPathIndices("C:/Project", [
 				"Content/Maps/M.umap",
 				"Content/UI",
-				"Content\\UI\\T.uasset",
+				"Content/UI/./T.uasset",
 				"Content/Maps/M.umap",
 				"Content/UI/../Maps/N.umap",
 				"Content/Other.uasset"

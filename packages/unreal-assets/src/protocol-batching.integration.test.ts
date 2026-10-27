@@ -77,7 +77,8 @@ describe.skipIf(!executable)("batched reads against the native reader", () => {
 		const a = "Content/Fixture/Animation/SK_Fixture.uasset";
 		const b = "Content/Fixture/Animation/A_FixtureMotion.uasset";
 		// The repeat is spelled differently but is one path to the reader.
-		const paths = [pad(a), pad(b), pad(a.replaceAll("/", "\\"))];
+		const repeat = process.platform === "win32" ? a.replaceAll("/", "\\") : `./${a}`;
+		const paths = [pad(a), pad(b), pad(repeat)];
 		const result = await Effect.runPromise(
 			scan({ maximumAssets: 2, paths }, ONE_PATH_PER_REQUEST)
 		);

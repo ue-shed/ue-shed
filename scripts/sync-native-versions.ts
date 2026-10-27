@@ -119,6 +119,17 @@ await replace("packages/cameras/src/version.ts", (source) => {
 	return source.replace(pattern, `$1${version}`);
 });
 
+// The engine reports its crate version as its build; the host's generated contract names the same.
+await replace("packages/protocol/src/game-text-contract.generated.ts", (source) => {
+	const pattern = /(\bbuildId: ")[^"]+/u;
+	if (!pattern.test(source)) {
+		throw new Error(
+			"packages/protocol/src/game-text-contract.generated.ts has no buildId to synchronize."
+		);
+	}
+	return source.replace(pattern, `$1${version}`);
+});
+
 console.log(
 	`Public npm packages, native Rust crates, generated metadata, and Unreal plugin descriptors agree on ${version}.`
 );

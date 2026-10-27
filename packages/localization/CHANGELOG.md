@@ -1,5 +1,27 @@
 # @ue-shed/localization
 
+## 0.22.0
+
+### Minor Changes
+
+- 07fd9e8: `applyLocalizationChangeSet` takes an optional `prepareWrites` hook. It is called with every PO
+  file the write will replace, from the freshly read evidence, before the first one is written, so
+  a host can check them all out; a failure writes nothing.
+
+### Patch Changes
+
+- Updated dependencies [1f38a2e]
+- Updated dependencies [f682dbc]
+- Updated dependencies [1d62dd0]
+- Updated dependencies [150caea]
+- Updated dependencies [05c1ba5]
+- Updated dependencies [704c68b]
+- Updated dependencies [5f6f15f]
+    - @ue-shed/protocol@0.22.0
+    - @ue-shed/config-explorer@0.22.0
+    - @ue-shed/engine@0.22.0
+    - @ue-shed/unreal-connection@0.22.0
+
 ## 0.21.0
 
 ### Minor Changes

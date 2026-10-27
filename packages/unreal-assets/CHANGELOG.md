@@ -1,5 +1,136 @@
 # @ue-shed/unreal-assets
 
+## 0.22.0
+
+### Minor Changes
+
+- 1f38a2e: Browse's findings are the project's rules. A workspace evaluates the published rules and sets a
+  search's, focus's and line detail's `findings` layer; the page's `findings.status` says whether
+  they are `none`, `pending` or `ready`. With a target every rule runs, with the target review's
+  acceptance; without one, only source rules.
+    - `finding` clauses name rule IDs, and the new `fact` field takes the four facts (`unresolved`,
+      `conflicting`, `evidence_only`, `compiled_copy_differs`). `facets.findings` lists every rule with
+      its rows, `facets.facts` counts each fact, and `group: "finding"` groups by rule.
+    - The `finding` problem comes from rules whose `counts` is not `false`; `unresolved` no longer
+      raises it. Rows, focus and detail list `findings` and `findingsOmitted`.
+    - The corpus export lists each unit's rules, and `gameTextCsv` adds a Findings column.
+    - Aggregates: the `finding` dimension is the layer's rules, and `review_signal` the facts.
+    - Removed: the search `lens`, the `shared`, `duplicate_source` and `long` signals and counts
+      (also the summary's `review.shared`, `review.duplicateSource` and `review.long`),
+      `countedFindings()`, `TEXT_FINDING_SIGNALS` and `TextCountedFinding`. A saved investigation's
+      lens reads as the clause it now is (`investigationRequest`). `TextFinding`, `TextReviewLens`,
+      `textFindings`, `textCountedFindings` and rows' `countedFindings` stay, deprecated.
+
+- f682dbc: A rules file can hold complete rules: entries with `kind: "rule"` written in the engine's rule
+  language, with `when`, `actual`, `expectation` and `finding` references to other rules. Their
+  findings are custom findings with `check: "rule"`, listed under `custom.<id>` with the rule's
+  label. The engine's new `rules_check` request compiles a program and names the rule at fault;
+  a workspace and `loc check` report `invalid_expression` and `rule_cycle` as
+  `GameTextRuleDocumentError`s with the rule's `ruleId`. `customRulesOf`, `completeRulesOf` and
+  `ruleProblemError` are new; `LocalizationCustomFinding` is now a union with the `rule` variant.
+  The rule editor lists complete rules and says to edit them in the file.
+- 1d62dd0: The Game Text engine runs in its own binary session, `uasset game-text-engine`, instead of the
+  uasset-io protocol's `game_text_engine` operation, which is removed. Requests and replies are
+  length-prefixed frames carrying request IDs, and requests carry their values inline: the JSON
+  text `payload` fields are gone, and the rule document travels as an object.
+  `GameTextEngineRequest` and `GameTextEngineOutcome` are removed from `@ue-shed/protocol`; the
+  engine's types are `GameTextContract.EngineRequest`, `OpenReply`, `EngineEnd`, `EngineFailure`
+  and `EngineProfile`, generated from the engine. `NativeGameTextEngineClient.execute` returns an
+  `EngineAnswer` (its parts and profile); `answerJson` reads its reply.
+
+    One engine process serves a host: `nativeIndexQueryLayer` starts it on the first read, and every
+    open snapshot's reader lives in it, instead of two processes per snapshot. Requests run
+    concurrently in the engine, keystrokes on threads of their own, so a search answers while an
+    evaluation or an export runs. Interrupting a read cancels it in the engine rather than letting it
+    finish unseen, and a panic in the engine fails only its request.
+
+    Bulk reads stream as column batches instead of files: the corpus, its header, localization lines,
+    aggregates and findings pages no longer write temporary files under the cache root, and a large
+    findings page no longer spills to one. An `EngineAnswer` carries its `batches`, read through
+    `EngineBatch` views over each frame's buffer, and `answerRows` reads one part's rows; the
+    relations and their columns are generated as `GameTextContract.Relations`. The engine requests
+    lose their `output` paths, `SpilledReply` is removed, and `ReadProfile` drops `responseBytes` and
+    `fileFallback`; `EngineProfile` counts `batches`, `batchBytes` and `creditStallMs`.
+
+    The engine reports progress as it works: opening reports its preparation stages and an
+    evaluation each rule it runs. `NativeGameTextEngineClient.execute` and `findingsEvaluate` take a
+    progress observer, and a quality scan's `localization_quality` and `source_quality` progress
+    counts rules rather than lines. The workspace's `progressChanges()` streams its progress and each
+    change to it, and a host's project port may supply `progressChanges` so the workspace follows it
+    without polling.
+
+    Searches reach the engine as a `query` request instead of `search`: a selection whose `where` is
+    in the rule IR's grammar, and the parts the answer needs. `GameTextContract.Query`,
+    `QuerySelection`, `QueryParts` and `QueryAnswer` type it; the rule IR gains `anyCulture`,
+    `everyCulture`, `anyPlace` and `facet`, which the rule compiler refuses. A query's rows stream as
+    `browseUnit` and `browseLine` batches. The `aggregate`, `export` and `localization_export`
+    requests take a `selection` beside their own fields instead of the search fields.
+
+    A `line` request reads a selected row's sections (its places, detail, related rows and the whole
+    line) and replaces `focus`, `localization_detail`, `related` and `localization_focus_export`;
+    `GameTextContract.LineRequest` and `LineAnswer` type it. The 50-row page cap is gone:
+    `MAX_TEXT_QUERY_PAGE_SIZE` is 100,000, a page over 500 rows streams as a bulk read, and the CLI's
+    `--limit` takes up to that. A unit's places, open groups' first rows and related rows list up to
+    `MAX_TEXT_SECTION_ROWS` (500) at once, validated by `TextSectionRows`.
+
+    The engine encodes exports itself. A request's `sink` names a format and a file, written beside
+    it and moved into place, or streams the encoded rows as `text` frames that
+    `NativeGameTextEngineClient.execute` hands to an `EngineTextSink`, an Effect writer; it answers with a
+    `SinkSummary`. `NativeTextQuery.writeLocalizationLinesCsv` writes the all-languages CSV this way,
+    so the Workbench export and `ue-shed loc export` no longer read the lines into the host, and
+    the Workbench's 64 MiB cap on that file is gone. Engine errors gain the `exists` code.
+
+    `ue-shed loc check` prints its report as the engine writes the findings, so it never holds them;
+    the bytes are unchanged. `GameTextIndexRefreshResult.prepareLocalizationCheck` reads everything
+    but the findings and returns a `PreparedLocalizationCheck`, whose `write` writes the report;
+    `localizationCheck` still returns the report as a value. `findings_query` takes a `findingJson`
+    sink without a `limit`, and `NativeFindings.findingsWrite` sends one. If the engine fails after
+    the report starts printing, `loc check` writes the failure to stderr and exits with 2.
+
+    `NativeTextQuery.writeCorpusCsv` writes Browse's CSV through a `corpusCsv` sink on the corpus
+    export, so an investigation's corpus CSV asks for its file first and no unit reaches the host.
+    Both file writers answer with a `SinkFileWritten`. `NativeTextQuery.writeCorpusJson` writes a
+    corpus investigation's units into the document around them, a sink `envelope` that
+    `corpusInvestigationEnvelope` makes; the corpus investigation JSON is written that way, and
+    `corpusWithoutUnits` makes its document from the corpus header. `gameTextCsv` and
+    `localizationLinesCsv` are deprecated in favour of those writers. Saving an investigation preset
+    no longer reads the investigation's results; a query that can't be a preset fails with its reason.
+
+- 150caea: Quality, source quality and `loc check` read their findings from the engine. It checks a rule
+  document once, and each page, focus, export and proposal is a `findings_query`. A review's
+  accepted findings are registered once with `findings_accept`. Nothing scans on the host thread,
+  so the Quality worker is gone and the `qualityWorker` option has no effect.
+    - `localizationQuality` returns `QueriedLocalizationQuality`, a `workspace` of the Quality
+      reads. `localizationQualityWorkspaceOf(source, quality)` returns that workspace. The in-memory
+      `localizationQuality(report, join)` returns the same shape and still lists a given source
+      report's findings.
+    - `indexedLocalizationStatusReport(query, evidence, page)` is an Effect that reads the index's
+      report header.
+    - Removed: `indexedLocalizationQuality`, `indexedSourceQuality`, `LocalizationFindingList`,
+      `LocalizationFindingGroup`, `LocalizationQuality` and `LocalizationQualityMetadata`.
+      `NativeFindings` loses `findingsLines` and `findingsUnits`, and the engine loses the `rows`,
+      `findings_lines` and `findings_units` actions.
+
+- 5f6f15f: `workspace.related` reads a unit's or a target line's related members in one engine request
+  (the `related` action): the units under its key, the units or lines with exactly its text, and
+  with a target its key's conflicting units and its key change's paired line, each with its
+  places and translations. The ID repair panel reads it instead of a text search and one focus per
+  match.
+
+### Patch Changes
+
+- 704c68b: Correct Game Text's native source, String Table, compiled-copy, collapsed-PO and deleted-package
+  facts. Missing String Table entries now report `string_table_entry_missing`. Retire the unused
+  inline localization actions; maintained callers continue through the export and detail APIs.
+- Updated dependencies [1f38a2e]
+- Updated dependencies [f682dbc]
+- Updated dependencies [1d62dd0]
+- Updated dependencies [150caea]
+- Updated dependencies [05c1ba5]
+- Updated dependencies [704c68b]
+- Updated dependencies [5f6f15f]
+    - @ue-shed/protocol@0.22.0
+
 ## 0.21.0
 
 ### Minor Changes

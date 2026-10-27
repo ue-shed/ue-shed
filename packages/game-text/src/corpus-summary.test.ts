@@ -98,7 +98,8 @@ describe("bounded corpus reports", () => {
 			reports[1]
 		);
 	});
-	it("bounds quality reports used by checks and investigations", () => {
+	// Each report is its own driver process that builds a native index: about 15 s apiece.
+	it("bounds quality reports used by checks and investigations", { timeout: 120_000 }, () => {
 		const { packageCoverage: _packages, ...base } = corpus();
 		const reportText = {
 			...base,

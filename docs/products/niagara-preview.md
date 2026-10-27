@@ -59,7 +59,10 @@ Profiles use 512×512 pixels, 30 playback FPS, 60 simulation FPS, one stop of ex
 and 1.2 camera padding. Frame count and duration are independent overrides; set both to preserve
 playback FPS. Auto fitting samples animated bounds and rendered coverage before the final capture;
 it costs two additional passes. It accommodates oversized fixed bounds and faint effects, but
-outlying particles can still make the central effect small. Saved-camera capture remains available.
+outlying particles can still make the central effect small. When rendered coverage already reaches
+the image edge, the coverage pass is not trusted to tighten the framing: the capture keeps the
+bounds-based camera, logs a warning, and edge activity in the final frames sets `needsReview`.
+Saved-camera capture remains available.
 
 Scene rendering uses Unreal's tone curve, fixed exposure, a neutral cubemap, and controlled lights.
 It exports opaque sRGB frames, avoiding brightness-derived alpha for the finished review image.

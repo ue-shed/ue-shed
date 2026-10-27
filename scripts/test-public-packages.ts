@@ -375,7 +375,13 @@ try {
 			`const packages = ${JSON.stringify(
 				packed
 					.filter((entry) => entry.manifest.peerDependencies?.effect)
-					.map((entry) => entry.name)
+					.map((entry) => {
+						// A package with only focused entry points resolves through its first one.
+						const subpaths = Object.keys(entry.manifest.exports ?? {});
+						return !subpaths[0]?.startsWith("./")
+							? entry.name
+							: `${entry.name}${subpaths[0]!.slice(1)}`;
+					})
 			)};`,
 			'for (const name of [...packages, "@effect/opentelemetry"]) {',
 			"  const library = createRequire(import.meta.resolve(name));",

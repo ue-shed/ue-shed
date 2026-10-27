@@ -1,7 +1,7 @@
 import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { Effect } from "effect";
 import { textQualityQuery } from "./quality-query.js";
-import { gameTextCsv as formatCsv } from "./csv.js";
+import { referenceCorpusCsv as formatCsv } from "./csv-reference.test-support.js";
 import { exportGameTextInvestigation as exportInvestigation } from "./investigation.js";
 import type { NativeTextQuery } from "./native-query-contract.js";
 import type { TextCorpus, TextReviewSignal, TextUnit } from "./schema.js";
@@ -9,7 +9,7 @@ import type { TextCorpus, TextReviewSignal, TextUnit } from "./schema.js";
  * Supplies planted results to export-format tests; never a production backend. Units without
  * planted review signals have none.
  */
-export function gameTextCsv(
+export function corpusCsvForTest(
 	corpus: TextCorpus,
 	signals: ReadonlyMap<TextUnit["id"], readonly TextReviewSignal[]> = new Map()
 ) {

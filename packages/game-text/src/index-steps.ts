@@ -328,13 +328,7 @@ export interface ConcurrentPrepareOptions {
 }
 
 /** How the index steps place their work. */
-export interface GameTextIndexStepsOptions {
-	/**
-	 * Has no effect: the engine checks quality, so no host thread scans.
-	 * @deprecated Quality needs no worker; leave it out.
-	 */
-	readonly qualityWorker?: boolean;
-}
+export type GameTextIndexStepsOptions = Record<string, never>;
 
 /**
  * Constructs the independently usable step port in the caller's Effect scope. Its service

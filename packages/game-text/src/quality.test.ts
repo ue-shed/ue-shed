@@ -377,7 +377,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 				mode: "quality" as const,
 				query: "",
 				capability: "all" as const,
-				lens: "all" as const,
+
 				qualityFilter: "terminology" as const
 			},
 			rules

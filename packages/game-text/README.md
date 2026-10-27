@@ -66,8 +66,8 @@ are private to the package.
 | `@ue-shed/game-text/workspace` | Node         | Workspace and localization operations with selected-project and file hooks                    |
 
 The browser-safe entry points do not expose filesystem, process, Electron, Perforce, or Unreal
-authority. The root `@ue-shed/game-text` and `@ue-shed/game-text/browser` aggregates still re-export
-the public names for one release and are deprecated. The compact snapshot codec, `SnapshotStore`,
+authority. The root `@ue-shed/game-text` and `@ue-shed/game-text/browser` aggregates were removed
+in 0.23. Import each name from the focused entry point that owns it. The compact snapshot codec, `SnapshotStore`,
 `SharedIndex`, joined-target readers, package-text storage/columns and cold-pool modules are private;
 `SnapshotStoreError` and `SnapshotFormatError` stay exported from `/index` because public index
 signatures name them.
@@ -111,7 +111,7 @@ a busy worker can take the same fallback. Asynchronous searches retain their 30-
 
 `localizationQuality` and `sourceQuality` run in the engine: it checks a rule document once,
 and the workspace reads each page, focus, export and proposal as a findings query. The host thread
-does no scanning, so `qualityWorker` has no effect; it is removed in Phase 6.
+does no scanning and needs no `qualityWorker` option; that option was removed in 0.23.
 
 For host-owned composition, use `GameTextIndexSteps` from `gameTextIndexStepsLayer(cacheRoot)`:
 
@@ -158,9 +158,9 @@ only lines with searchable source and their saved locations. `TextCorpus.coverag
 provenance, including empty FText values; it is not a count of writer-visible lines. Character counts
 in search, checks and human CSV use JavaScript string length (UTF-16 code units).
 
-`gameTextCsv(corpus)` produces one human-readable row per saved location of each searchable line.
-Pass the full scan as its optional second argument when exporting a filtered corpus to retain the
-same review signals shown in search, and Browse's findings as its third to add a Findings column.
+`query.writeCorpusCsv(request, { path })` produces one human-readable row per saved location of
+each searchable line through the native writer.
+Pass Browse's findings selection on the request to retain the same rule findings shown in search.
 
 ### Findings in Browse
 
@@ -254,7 +254,7 @@ query.search({
 });
 ```
 
-`group: "audience"` groups by it, and `gameTextCsv` and `localizationLinesCsv` have an Audience
+`group: "audience"` groups by it, and the native corpus and localization CSV writers have an Audience
 column. With a target that does not gather editor-only data (`ShouldGatherFromEditorOnlyData`,
 false by default), a line that would be `not_gathered` and whose every in-scope place is editor
 text is `outside_target` with `outOfScope: "editor_only_data_not_gathered"`; developer-folder text

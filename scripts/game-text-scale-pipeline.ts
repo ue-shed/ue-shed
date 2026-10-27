@@ -16,13 +16,15 @@ import {
 } from "../packages/localization/dist/index.js";
 import {
 	TextCorpusService,
-	TextCorpusServiceLive,
+	TextCorpusServiceLive
+} from "../packages/game-text/dist/entry-index.js";
+import {
 	applyLocalizationReview,
 	applyLocalizationKeyChanges,
 	joinLocalizationTarget,
-	localizationKeyChanges,
-	type TextCorpus
-} from "../packages/game-text/dist/index.js";
+	localizationKeyChanges
+} from "../packages/game-text/dist/entry-corpus.js";
+import { type TextCorpus } from "../packages/game-text/dist/entry-schema.js";
 
 const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(SavedAssetTextExtractionEvent));
 

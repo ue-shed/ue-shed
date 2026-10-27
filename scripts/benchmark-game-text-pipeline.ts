@@ -70,13 +70,14 @@ const Result = Schema.Struct({
 
 if (values.worker) {
 	const variant = Schema.decodeUnknownSync(Schema.Literals(["before", "after"]))(values.variant);
-	const module: typeof import("../packages/game-text/dist/index.js") = await import(
-		pathToFileURL(
-			resolve(
-				variant === "before" ? values["before-module"] : "packages/game-text/dist/index.js"
-			)
-		).href
-	);
+	const module: typeof import("../packages/game-text/dist/entry-index.js") &
+		typeof import("../packages/game-text/dist/entry-schema.js") =
+		variant === "before"
+			? await import(pathToFileURL(resolve(values["before-module"])).href)
+			: {
+					...(await import("../packages/game-text/dist/entry-index.js")),
+					...(await import("../packages/game-text/dist/entry-schema.js"))
+				};
 	// The historical baseline is deliberately loaded from another checkout. Its synchronous
 	// query API and exported reference builder are not part of the current package.
 	// SAFETY: the explicit historical module supplies the legacy builder ABI; validate the

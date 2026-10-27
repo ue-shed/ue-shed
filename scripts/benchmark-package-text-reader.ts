@@ -5,7 +5,7 @@ import {
 	measureNativeText,
 	packageTextFixtureProjects
 } from "./package-text-reader.test-support.ts";
-import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/index.js";
+import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/entry-index.js";
 import { compareTextCorpora } from "./package-text-oracle.test-support.ts";
 
 const executable = resolve(process.argv[2] ?? "target/release/uasset.exe");

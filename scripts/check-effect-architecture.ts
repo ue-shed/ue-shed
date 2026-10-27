@@ -788,7 +788,6 @@ function moduleSpecifiers(
 /** Localization formats are independently usable; browser consumers receive no Node authority. */
 /** Browser-safe Game Text entry points; the Node-only `entry-index.ts` is excluded. */
 const gameTextBrowserEntries = [
-	"browser.ts",
 	"entry-schema.ts",
 	"entry-rules.ts",
 	"entry-checks.ts",
@@ -799,17 +798,12 @@ const gameTextBrowserEntries = [
 /**
  * Game Text entry points list their exports by name, so a new module stays private until it is
  * added on purpose, and first-party code imports the focused entry points instead of the
- * deprecated root and `/browser` aggregates.
+ * removed root and `/browser` aggregates.
  */
 export async function checkGameTextEntryPoints(root: string = repositoryRoot) {
 	const failures: string[] = [];
 	const source = join(root, "packages/game-text/src");
-	for (const entry of [
-		...gameTextBrowserEntries,
-		"index.ts",
-		"entry-index.ts",
-		"entry-workspace.ts"
-	]) {
+	for (const entry of [...gameTextBrowserEntries, "entry-index.ts", "entry-workspace.ts"]) {
 		let text: string;
 		try {
 			text = await readFile(join(source, entry), "utf8");

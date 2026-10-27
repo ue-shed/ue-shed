@@ -3,12 +3,12 @@ import { textCountLabel } from "@ue-shed/game-text/labels";
 import {
 	type LocalizationSelection,
 	type TextCorpusQuerySummary,
-	type WorkbenchOperationFilesResult,
-	type WorkbenchOperationPlan,
-	type WorkbenchOperationProgress,
-	type WorkbenchOperationRequest,
-	type WorkbenchOperationResult,
-	type WorkbenchOperationState
+	type GameTextOperationFilesResult,
+	type GameTextOperationPlan,
+	type GameTextOperationProgress,
+	type GameTextOperationRequest,
+	type GameTextOperationResult,
+	type GameTextOperationState
 } from "@ue-shed/game-text/schema";
 import { Button, createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { Effect, Schedule, Stream } from "effect";
@@ -27,7 +27,7 @@ const operationLabels = {
 	reports: "Generate Unreal reports",
 	sync: "Sync with Unreal",
 	prepare: "Gather and export"
-} satisfies Record<WorkbenchOperationRequest["operation"], string>;
+} satisfies Record<GameTextOperationRequest["operation"], string>;
 const runningLabels = {
 	gather: "Gathering text",
 	import: "Importing translations",
@@ -36,7 +36,7 @@ const runningLabels = {
 	reports: "Generating Unreal reports",
 	sync: "Syncing with Unreal",
 	prepare: "Gathering and exporting"
-} satisfies Record<WorkbenchOperationRequest["operation"], string>;
+} satisfies Record<GameTextOperationRequest["operation"], string>;
 const resultLabels = {
 	gather: "Gathered",
 	import: "Imported",
@@ -45,7 +45,7 @@ const resultLabels = {
 	reports: "Reports generated",
 	sync: "Synced",
 	prepare: "Gathered and exported"
-} satisfies Record<WorkbenchOperationRequest["operation"], string>;
+} satisfies Record<GameTextOperationRequest["operation"], string>;
 const stepLabels = {
 	gather_source: "Gather source text",
 	gather_assets: "Gather saved asset text",
@@ -56,9 +56,9 @@ const stepLabels = {
 	export: "Export",
 	compile: "Compile",
 	reports: "Reports"
-} satisfies Record<NonNullable<WorkbenchOperationProgress["kind"]>, string>;
-type FilePage = Extract<WorkbenchOperationFilesResult, { status: "ready" }>;
-function progressLabel(value: WorkbenchOperationProgress): string {
+} satisfies Record<NonNullable<GameTextOperationProgress["kind"]>, string>;
+type FilePage = Extract<GameTextOperationFilesResult, { status: "ready" }>;
+function progressLabel(value: GameTextOperationProgress): string {
 	return value.phase === "refreshing"
 		? "Reloading translations…"
 		: value.kind
@@ -74,14 +74,14 @@ export function createGameTextOperations(props: {
 	readonly onCompleted: () => void;
 }) {
 	const api = props.client.operations;
-	const [state, setState] = createSignal<WorkbenchOperationState>();
-	const [plan, setPlan] = createSignal<WorkbenchOperationPlan>();
+	const [state, setState] = createSignal<GameTextOperationState>();
+	const [plan, setPlan] = createSignal<GameTextOperationPlan>();
 	const [files, setFiles] = createSignal<FilePage>();
 	const [changedFiles, setChangedFiles] = createSignal<FilePage>();
-	const [result, setResult] = createSignal<WorkbenchOperationResult>();
+	const [result, setResult] = createSignal<GameTextOperationResult>();
 	const [planning, setPlanning] = createSignal(false);
 	const [running, setRunning] = createSignal(false);
-	const [progress, setProgress] = createSignal<WorkbenchOperationProgress>();
+	const [progress, setProgress] = createSignal<GameTextOperationProgress>();
 	const [copied, setCopied] = createSignal(false);
 	const [copyError, setCopyError] = createSignal<string>();
 	const planAction = createEffectAction();
@@ -95,7 +95,7 @@ export function createGameTextOperations(props: {
 	let generation = 0;
 	let completedId: string | undefined;
 	let finishedId: string | undefined;
-	const complete = (value: WorkbenchOperationResult) => {
+	const complete = (value: GameTextOperationResult) => {
 		finishedId = value.status === "completed" ? value.receipt.id : untrack(progress)?.id;
 		setResult(value);
 		setRunning(false);
@@ -181,7 +181,7 @@ export function createGameTextOperations(props: {
 					: running()
 						? "An Unreal step is running. Cancel it or wait."
 						: undefined));
-	const prepare = (operation: WorkbenchOperationRequest["operation"]) => {
+	const prepare = (operation: GameTextOperationRequest["operation"]) => {
 		const target = props.target();
 		if (!api || !target || busy()) return;
 		const version = ++generation;
@@ -295,7 +295,7 @@ export function createGameTextOperations(props: {
 				const paths: string[] = [];
 				let offset: number | undefined = 0;
 				while (offset !== undefined) {
-					const page: WorkbenchOperationFilesResult = yield* api.files({
+					const page: GameTextOperationFilesResult = yield* api.files({
 						id: current.id,
 						kind: "planned",
 						offset

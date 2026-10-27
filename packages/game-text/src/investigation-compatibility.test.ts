@@ -17,7 +17,6 @@ const legacyPreset = Schema.Struct({
 		mode: GameTextInvestigationQuery.fields.mode,
 		query: GameTextInvestigationQuery.fields.query,
 		capability: GameTextInvestigationQuery.fields.capability,
-		lens: GameTextInvestigationQuery.fields.lens,
 		where: GameTextInvestigationQuery.fields.where,
 		filter: GameTextInvestigationQuery.fields.filter,
 		group: GameTextInvestigationQuery.fields.group,

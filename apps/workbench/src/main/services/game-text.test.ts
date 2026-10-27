@@ -817,7 +817,7 @@ for (const phase of ["candidates", "scan"] as const) {
 								mode: "corpus",
 								query: "",
 								capability: "all",
-								lens: "all",
+								filter: [],
 								qualityFilter: "all"
 							},
 							format: "json"
@@ -1145,7 +1145,7 @@ it("exports one captured generation when the project changes during the save dia
 					mode: "corpus" as const,
 					query: "",
 					capability: "all" as const,
-					lens: "all" as const,
+					filter: [],
 					qualityFilter: "all" as const
 				};
 				expect(yield* service.investigationExport({ query, format: "json" })).toMatchObject(
@@ -1213,7 +1213,7 @@ it("exports the selected target's localization quality list as a replayable repo
 		mode: "quality" as const,
 		query: "",
 		capability: "all" as const,
-		lens: "all" as const,
+		filter: [],
 		qualityFilter: "all" as const,
 		workspaceFilter: "empty_translation" as const,
 		localization: { target: localizationTarget.name, culture: cultureCode("de") }
@@ -1313,7 +1313,7 @@ it("restores embedded rules without retaining another rule file's write destinat
 		mode: "corpus" as const,
 		query: "",
 		capability: "all" as const,
-		lens: "all" as const,
+		filter: [],
 		qualityFilter: "all" as const
 	};
 	const preset = {

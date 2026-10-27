@@ -27,7 +27,7 @@ import {
 	applyLocalizationKeyChanges,
 	localizationKeyChanges,
 	applyLocalizationReview
-} from "../packages/game-text/src/index.ts";
+} from "../packages/game-text/src/entry-corpus.ts";
 import type {
 	TextCorpusSearchRequest,
 	TextCorpusSearchPage

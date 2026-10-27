@@ -15,7 +15,7 @@ import type {
 	TextProblem,
 	TextReviewSignal
 } from "./schema.js";
-import { textCountedFindings, textProblemCounts, textProblems } from "./text-problems.js";
+import { textProblemCounts, textProblems } from "./text-problems.js";
 import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -296,7 +296,6 @@ describe("text problems in the engine and textProblems", () => {
 		expect(textProblems({ signals: ["unresolved"], keyChanged: false, finding: true })).toEqual(
 			["finding"]
 		);
-		expect(textCountedFindings(["unresolved", "conflicting"])).toEqual([]);
 		expect(TEXT_PROBLEMS.indexOf("unchecked")).toBe(TEXT_PROBLEMS.length - 2);
 	});
 

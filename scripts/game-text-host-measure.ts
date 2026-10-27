@@ -8,10 +8,12 @@ import {
 	GameTextIndexBuilder,
 	GameTextIndexSource,
 	gameTextIndexRefreshLayer,
-	type GameTextIndexRefreshResult,
+	type GameTextIndexRefreshResult
+} from "../packages/game-text/dist/entry-index.js";
+import {
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchPage
-} from "../packages/game-text/dist/index.js";
+} from "../packages/game-text/dist/entry-schema.js";
 import {
 	LocalizationEvidenceNodeLive,
 	LocalizationEvidence,

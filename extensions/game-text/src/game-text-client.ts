@@ -51,13 +51,13 @@ import type {
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
 import { Context, type Effect, Schema, type Stream } from "effect";
 import type {
-	WorkbenchOperationRequest,
-	WorkbenchOperationPlanResult,
-	WorkbenchOperationResult,
-	WorkbenchOperationState,
-	WorkbenchOperationProgress,
-	WorkbenchOperationFilesRequest,
-	WorkbenchOperationFilesResult,
+	GameTextOperationRequest,
+	GameTextOperationPlanResult,
+	GameTextOperationResult,
+	GameTextOperationState,
+	GameTextOperationProgress,
+	GameTextOperationFilesRequest,
+	GameTextOperationFilesResult,
 	GameTextWorkspaceProgress
 } from "@ue-shed/game-text/schema";
 
@@ -86,18 +86,18 @@ export interface GameTextClientApi {
 	readonly operations?: {
 		readonly state: (
 			target: LocalizationSelection["target"]
-		) => Effect.Effect<WorkbenchOperationState, GameTextClientError>;
+		) => Effect.Effect<GameTextOperationState, GameTextClientError>;
 		readonly plan: (
-			request: WorkbenchOperationRequest
-		) => Effect.Effect<WorkbenchOperationPlanResult, GameTextClientError>;
-		readonly run: (id: string) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+			request: GameTextOperationRequest
+		) => Effect.Effect<GameTextOperationPlanResult, GameTextClientError>;
+		readonly run: (id: string) => Effect.Effect<GameTextOperationResult, GameTextClientError>;
 		readonly cancel: (
 			id: string
-		) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+		) => Effect.Effect<GameTextOperationResult, GameTextClientError>;
 		readonly files: (
-			request: WorkbenchOperationFilesRequest
-		) => Effect.Effect<WorkbenchOperationFilesResult, GameTextClientError>;
-		readonly progress: Stream.Stream<WorkbenchOperationProgress, GameTextClientError>;
+			request: GameTextOperationFilesRequest
+		) => Effect.Effect<GameTextOperationFilesResult, GameTextClientError>;
+		readonly progress: Stream.Stream<GameTextOperationProgress, GameTextClientError>;
 	};
 	readonly localizationQualitySearch?: (
 		request: WorkspaceQualityRequest

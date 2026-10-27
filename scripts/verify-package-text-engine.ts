@@ -7,7 +7,7 @@ import {
 	extractProjectText,
 	extractProjectTextPackages
 } from "../packages/unreal-assets/dist/index.js";
-import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/index.js";
+import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/entry-index.js";
 import { ensureUassetExecutable } from "./native-tools.ts";
 import { compareTextCorpora } from "./package-text-oracle.test-support.ts";
 

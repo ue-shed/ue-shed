@@ -57,6 +57,7 @@ const allTests = [
 	"UEShed.Authoring.Defaults",
 	"UEShed.Authoring.DefaultsCodec",
 	"UEShed.Authoring.TextIdentity",
+	"UEShed.Authoring.EditorNotifications",
 	"UEShed.Authoring.ActorReferences",
 	"UEShed.Authoring.ActorReferenceDepth",
 	"UEShed.GameText.ObjectProperties",

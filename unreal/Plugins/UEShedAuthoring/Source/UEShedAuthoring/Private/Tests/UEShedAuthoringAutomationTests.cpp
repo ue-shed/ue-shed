@@ -4,12 +4,14 @@
 
 #include "Tests/UEShedAuthoringTestTypes.h"
 #include "Containers/StringConv.h"
+#include "DataTableEditorUtils.h"
 #include "Dom/JsonObject.h"
 #include "Engine/World.h"
 #include "Kismet2/StructureEditorUtils.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Guid.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
@@ -84,6 +86,98 @@ TSet<FString> ResultPaths(const TSharedPtr<FJsonObject>& Result)
 	for (const TSharedPtr<FJsonValue>& Value : Result->GetArrayField(TEXT("actorObjectPaths")))
 		Paths.Add(Value->AsString());
 	return Paths;
+}
+
+// Listens through the public DataTable editor manager, as an open DataTable editor does.
+class FTableChangeRecorder : public FDataTableEditorUtils::INotifyOnDataTableChanged
+{
+public:
+	explicit FTableChangeRecorder(const UDataTable* InTable) : Table(InTable) {}
+
+	virtual void PreChange(
+		const UDataTable* Changed, FDataTableEditorUtils::EDataTableChangeInfo Info) override
+	{
+		Record(Changed, TEXT("pre"), Info);
+	}
+
+	virtual void PostChange(
+		const UDataTable* Changed, FDataTableEditorUtils::EDataTableChangeInfo Info) override
+	{
+		Record(Changed, TEXT("post"), Info);
+	}
+
+	FString Take()
+	{
+		const FString Result = FString::Join(Events, TEXT(","));
+		Events.Empty();
+		return Result;
+	}
+
+private:
+	void Record(const UDataTable* Changed, const TCHAR* Phase,
+		FDataTableEditorUtils::EDataTableChangeInfo Info)
+	{
+		if (Changed != Table) return;
+		Events.Add(FString(Phase) + TEXT(":")
+			+ (Info == FDataTableEditorUtils::EDataTableChangeInfo::RowData
+				? TEXT("RowData") : TEXT("RowList")));
+	}
+
+	const UDataTable* Table;
+	TArray<FString> Events;
+};
+
+TSharedRef<FJsonObject> IntValue(int32 Value)
+{
+	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetStringField(TEXT("kind"), TEXT("int"));
+	Result->SetStringField(TEXT("value"), LexToString(Value));
+	return Result;
+}
+
+TSharedPtr<FJsonValue> ApplyCommandJson(
+	UDataTable* Table, const FString& Id, const TSharedRef<FJsonObject>& Body)
+{
+	const TSharedRef<FJsonObject> Command = MakeShared<FJsonObject>();
+	Command->SetStringField(TEXT("id"), Id);
+	Command->SetStringField(TEXT("tableObjectPath"), Table->GetPathName());
+	Command->SetObjectField(TEXT("body"), Body);
+	return MakeShared<FJsonValueObject>(Command);
+}
+
+TSharedPtr<FJsonValue> SetCount(
+	UDataTable* Table, const FString& RowId, int32 OldCount, int32 NewCount)
+{
+	const TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("kind"), TEXT("set_cell"));
+	Body->SetStringField(TEXT("rowId"), RowId);
+	Body->SetStringField(TEXT("fieldName"), TEXT("Count"));
+	Body->SetObjectField(TEXT("oldValue"), IntValue(OldCount));
+	Body->SetObjectField(TEXT("newValue"), IntValue(NewCount));
+	return ApplyCommandJson(Table, TEXT("set-") + RowId, Body);
+}
+
+TSharedPtr<FJsonObject> ApplyToTable(
+	UDataTable* Table, const TArray<TSharedPtr<FJsonValue>>& Commands)
+{
+	const TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	const TSharedRef<FJsonObject> Contract = MakeShared<FJsonObject>();
+	Contract->SetStringField(TEXT("name"), TEXT("unreal-authoring-apply"));
+	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
+	Version->SetNumberField(TEXT("major"), 1);
+	Version->SetNumberField(TEXT("minor"), 2);
+	Contract->SetObjectField(TEXT("version"), Version);
+	Request->SetObjectField(TEXT("contract"), Contract);
+	Request->SetStringField(TEXT("operationId"), FGuid::NewGuid().ToString());
+	const TSharedRef<FJsonObject> Plan = MakeShared<FJsonObject>();
+	Plan->SetStringField(TEXT("objectPath"), Table->GetPathName());
+	Plan->SetStringField(TEXT("expectedFingerprint"),
+		Snapshot(Table)->GetObjectField(TEXT("fingerprint"))->GetStringField(TEXT("value")));
+	Request->SetArrayField(TEXT("tables"), { MakeShared<FJsonValueObject>(Plan) });
+	Request->SetArrayField(TEXT("commands"), Commands);
+	FString Json;
+	UUEShedAuthoringLibrary::Apply(WriteObject(Request), Json);
+	return ReadObject(Json);
 }
 }
 
@@ -325,6 +419,68 @@ bool FUEShedAuthoringActorReferencesTest::RunTest(const FString& Parameters)
 			FString(TEXT("rejected")));
 		TestFalse(TEXT("Rejected scans are never complete"), Rejected->GetBoolField(TEXT("isComplete")));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedAuthoringEditorNotificationsTest,
+	"UEShed.Authoring.EditorNotifications",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedAuthoringEditorNotificationsTest::RunTest(const FString& Parameters)
+{
+	UPackage* Package = CreatePackage(*FString::Printf(
+		TEXT("/Temp/UEShedAuthoringNotifications_%s"), *FGuid::NewGuid().ToString()));
+	UDataTable* Table = NewObject<UDataTable>(Package, TEXT("DT_Notifications"), RF_Transient);
+	Table->RowStruct = FUEShedAuthoringTestRow::StaticStruct();
+	FUEShedAuthoringTestRow Alpha;
+	Alpha.Count = 7;
+	Table->AddRow(TEXT("Alpha"), Alpha);
+	Table->AddRow(TEXT("Beta"), FUEShedAuthoringTestRow());
+	auto Count = [&](const TCHAR* RowName)
+	{
+		const FUEShedAuthoringTestRow* Row = Table->FindRow<FUEShedAuthoringTestRow>(
+			RowName, TEXT("EditorNotificationsTest"), false);
+		return Row ? Row->Count : INDEX_NONE;
+	};
+	FTableChangeRecorder Recorder(Table);
+
+	const TSharedPtr<FJsonObject> Edited = ApplyToTable(
+		Table, { SetCount(Table, TEXT("row:Alpha"), 7, 8) });
+	if (!TestTrue(TEXT("Cell edit Apply returns JSON"), Edited.IsValid())) return false;
+	TestEqual(TEXT("Cell edit commits"), Edited->GetStringField(TEXT("status")), FString(TEXT("committed")));
+	TestEqual(TEXT("Cell edit reaches the row"), Count(TEXT("Alpha")), 8);
+	TestEqual(TEXT("A cell edit sends one RowData pair, so an open editor refreshes"),
+		Recorder.Take(), FString(TEXT("pre:RowData,post:RowData")));
+
+	const TSharedRef<FJsonObject> Gamma = MakeShared<FJsonObject>();
+	Gamma->SetStringField(TEXT("id"), TEXT("row:Gamma"));
+	Gamma->SetStringField(TEXT("name"), TEXT("Gamma"));
+	const TSharedRef<FJsonObject> GammaCount = MakeShared<FJsonObject>();
+	GammaCount->SetStringField(TEXT("name"), TEXT("Count"));
+	GammaCount->SetObjectField(TEXT("value"), IntValue(9));
+	Gamma->SetArrayField(TEXT("fields"), { MakeShared<FJsonValueObject>(GammaCount) });
+	const TSharedRef<FJsonObject> AddBody = MakeShared<FJsonObject>();
+	AddBody->SetStringField(TEXT("kind"), TEXT("add_row"));
+	AddBody->SetObjectField(TEXT("row"), Gamma);
+	AddBody->SetNumberField(TEXT("atIndex"), 2);
+	const TSharedPtr<FJsonObject> Added = ApplyToTable(
+		Table, { ApplyCommandJson(Table, TEXT("add-gamma"), AddBody) });
+	if (!TestTrue(TEXT("Add-row Apply returns JSON"), Added.IsValid())) return false;
+	TestEqual(TEXT("Add-row commits"), Added->GetStringField(TEXT("status")), FString(TEXT("committed")));
+	TestEqual(TEXT("Added row keeps its assigned field"), Count(TEXT("Gamma")), 9);
+	// AddRow notifies before Apply assigns the row's fields, so the RowData post must come last.
+	TestEqual(TEXT("Add-row keeps the util's RowList pair inside one RowData pair"),
+		Recorder.Take(), FString(TEXT("pre:RowData,pre:RowList,post:RowList,post:RowData")));
+
+	const TSharedPtr<FJsonObject> RolledBack = ApplyToTable(Table,
+		{ SetCount(Table, TEXT("row:Alpha"), 8, 10), SetCount(Table, TEXT("row:Missing"), 0, 1) });
+	if (!TestTrue(TEXT("Failing Apply returns JSON"), RolledBack.IsValid())) return false;
+	TestEqual(TEXT("Failing Apply rolls back"),
+		RolledBack->GetStringField(TEXT("status")), FString(TEXT("rolled_back")));
+	TestEqual(TEXT("Rollback restores the edited cell"), Count(TEXT("Alpha")), 8);
+	TestEqual(TEXT("Rollback keeps every row"), Table->GetRowMap().Num(), 3);
+	TestEqual(TEXT("Rollback releases rows with RowList and closes the RowData pair"),
+		Recorder.Take(), FString(TEXT("pre:RowData,pre:RowList,post:RowList,post:RowData")));
 	return true;
 }
 

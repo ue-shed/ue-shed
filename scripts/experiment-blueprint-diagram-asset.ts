@@ -8,7 +8,6 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { Predicate, Schema } from "effect";
 import { BlueprintGraphProjection } from "../packages/protocol/dist/index.js";
-import { createNodeRuntime } from "../packages/uasset-inspection-wasm/dist/node.js";
 import { isBlueprintTopologyGap } from "../packages/blueprints/dist/index.js";
 import { blueprintDiagramReport } from "./blueprint-diagram-report.ts";
 import {
@@ -17,6 +16,11 @@ import {
 	parseBlueprintDiagram,
 	renderBlueprintSvg
 } from "./blueprint-diagram-prototype.ts";
+
+// The wasm package is built separately from build:typescript-packages, so load its output at run
+// time and type it from source, as test-saved-review.ts does.
+const { createNodeRuntime }: typeof import("../packages/uasset-inspection-wasm/src/node.js") =
+	await import(new URL("../packages/uasset-inspection-wasm/dist/node.js", import.meta.url).href);
 
 const { values } = parseArgs({
 	options: {

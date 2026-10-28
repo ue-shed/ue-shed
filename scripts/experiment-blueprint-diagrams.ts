@@ -13,7 +13,6 @@ import {
 	BlueprintPin,
 	type BlueprintGraph
 } from "../packages/protocol/dist/index.js";
-import { createNodeRuntime } from "../packages/uasset-inspection-wasm/dist/node.js";
 import {
 	exportBlueprintDiagram,
 	exportMermaidOverview,
@@ -25,6 +24,11 @@ import {
 	blueprintDiagramReport,
 	type BlueprintDiagramExample
 } from "./blueprint-diagram-report.ts";
+
+// The wasm package is built separately from build:typescript-packages, so load its output at run
+// time and type it from source, as test-saved-review.ts does.
+const { createNodeRuntime }: typeof import("../packages/uasset-inspection-wasm/src/node.js") =
+	await import(new URL("../packages/uasset-inspection-wasm/dist/node.js", import.meta.url).href);
 
 const { values } = parseArgs({
 	options: {

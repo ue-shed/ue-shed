@@ -1,0 +1,612 @@
+{
+	"wall_seconds": 138.1443284,
+	"cpu_seconds": 533.96875,
+	"peak_working_set_bytes": 3864485888,
+	"peak_private_bytes": 3924549632,
+	"counts": {
+		"total": {
+			"label": "all",
+			"count": 23801518,
+			"distinct": 1345045
+		},
+		"retained": {
+			"label": "remaining",
+			"count": 13942584,
+			"distinct": 624177
+		},
+		"exclusions": [
+			{
+				"label": "dotted tag-like name",
+				"count": 3733214,
+				"distinct": 533336
+			},
+			{
+				"label": "None",
+				"count": 3475994,
+				"distinct": 4
+			},
+			{
+				"label": "file path/extension",
+				"count": 1756163,
+				"distinct": 142931
+			},
+			{
+				"label": "empty",
+				"count": 412560,
+				"distinct": 1
+			},
+			{
+				"label": "number",
+				"count": 188467,
+				"distinct": 897
+			},
+			{
+				"label": "GUID/hex",
+				"count": 163838,
+				"distinct": 40853
+			},
+			{
+				"label": "object path/soft reference",
+				"count": 128659,
+				"distinct": 2843
+			},
+			{
+				"label": "whitespace-only",
+				"count": 39,
+				"distinct": 3
+			}
+		],
+		"properties": [
+			{
+				"label": "Name",
+				"count": 1588170,
+				"distinct": 75352,
+				"examples_as_shapes": ["8 chars, 1 words", "16 chars, 1 words", "16 chars, 2 words"]
+			},
+			{
+				"label": "ProjectProperty01",
+				"count": 888681,
+				"distinct": 2216,
+				"examples_as_shapes": [
+					"12 chars, 1 words",
+					"12 chars, 1 words",
+					"12 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty02",
+				"count": 804211,
+				"distinct": 1034,
+				"examples_as_shapes": ["9 chars, 1 words", "14 chars, 1 words", "13 chars, 1 words"]
+			},
+			{
+				"label": "ProjectProperty03",
+				"count": 746537,
+				"distinct": 3531,
+				"examples_as_shapes": [
+					"10 chars, 1 words",
+					"10 chars, 1 words",
+					"10 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty04",
+				"count": 729732,
+				"distinct": 105450,
+				"examples_as_shapes": [
+					"63 chars, 11 words",
+					"6 chars, 1 words, sentence punctuation",
+					"12 chars, 2 words"
+				]
+			},
+			{
+				"label": "ProjectProperty05",
+				"count": 716700,
+				"distinct": 19846,
+				"examples_as_shapes": [
+					"62 chars, 14 words",
+					"7 chars, 1 words, sentence punctuation",
+					"13 chars, 2 words"
+				]
+			},
+			{
+				"label": "Channel",
+				"count": 595724,
+				"distinct": 38,
+				"examples_as_shapes": [
+					"11 chars, 1 words",
+					"12 chars, 1 words",
+					"11 chars, 1 words"
+				]
+			},
+			{
+				"label": "PayloadVariables",
+				"count": 510765,
+				"distinct": 160,
+				"examples_as_shapes": ["12 chars, 1 words", "6 chars, 1 words", "11 chars, 1 words"]
+			},
+			{
+				"label": "ExpansionStates",
+				"count": 453685,
+				"distinct": 89048,
+				"examples_as_shapes": [
+					"10 chars, 1 words",
+					"30 chars, 1 words",
+					"26 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty06",
+				"count": 417679,
+				"distinct": 162,
+				"examples_as_shapes": [
+					"27 chars, 1 words",
+					"27 chars, 1 words",
+					"21 chars, 1 words"
+				]
+			},
+			{
+				"label": "MemberName",
+				"count": 399824,
+				"distinct": 18311,
+				"examples_as_shapes": ["8 chars, 1 words", "21 chars, 1 words", "22 chars, 1 words"]
+			},
+			{
+				"label": "ActorLabel",
+				"count": 340030,
+				"distinct": 176123,
+				"examples_as_shapes": [
+					"13 chars, 1 words",
+					"14 chars, 1 words",
+					"25 chars, 1 words"
+				]
+			},
+			{
+				"label": "FuncMap",
+				"count": 327476,
+				"distinct": 34130,
+				"examples_as_shapes": ["20 chars, 1 words", "19 chars, 1 words", "9 chars, 1 words"]
+			},
+			{
+				"label": "ProjectProperty07",
+				"count": 285052,
+				"distinct": 394,
+				"examples_as_shapes": [
+					"11 chars, 1 words",
+					"11 chars, 1 words",
+					"16 chars, 1 words"
+				]
+			},
+			{
+				"label": "BoundObjectPinName",
+				"count": 278925,
+				"distinct": 3181,
+				"examples_as_shapes": ["12 chars, 1 words", "25 chars, 1 words", "8 chars, 1 words"]
+			},
+			{
+				"label": "RowName",
+				"count": 215551,
+				"distinct": 12813,
+				"examples_as_shapes": ["4 chars, 1 words", "9 chars, 1 words", "4 chars, 1 words"]
+			},
+			{
+				"label": "Value",
+				"count": 193258,
+				"distinct": 13346,
+				"examples_as_shapes": [
+					"8 chars, 1 words",
+					"5 chars, 1 words",
+					"29 chars, 1 words, sentence punctuation"
+				]
+			},
+			{
+				"label": "StaticMeshDerivedDataKey",
+				"count": 188282,
+				"distinct": 19718,
+				"examples_as_shapes": [
+					"382 chars, 1 words",
+					"382 chars, 1 words",
+					"382 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty08",
+				"count": 157735,
+				"distinct": 8675,
+				"examples_as_shapes": [
+					"10 chars, 1 words",
+					"10 chars, 1 words",
+					"10 chars, 1 words"
+				]
+			},
+			{
+				"label": "PropertyName",
+				"count": 155315,
+				"distinct": 1518,
+				"examples_as_shapes": [
+					"54 chars, 1 words",
+					"54 chars, 1 words",
+					"54 chars, 1 words"
+				]
+			},
+			{
+				"label": "BindingName",
+				"count": 150330,
+				"distinct": 9045,
+				"examples_as_shapes": [
+					"14 chars, 1 words",
+					"32 chars, 1 words",
+					"32 chars, 1 words"
+				]
+			},
+			{
+				"label": "CustomFunctionName",
+				"count": 149654,
+				"distinct": 22683,
+				"examples_as_shapes": [
+					"79 chars, 1 words",
+					"111 chars, 1 words",
+					"109 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty09",
+				"count": 140141,
+				"distinct": 213,
+				"examples_as_shapes": ["9 chars, 1 words", "4 chars, 1 words", "10 chars, 1 words"]
+			},
+			{
+				"label": "CollisionProfileName",
+				"count": 131356,
+				"distinct": 27,
+				"examples_as_shapes": ["6 chars, 1 words", "8 chars, 1 words", "11 chars, 1 words"]
+			},
+			{
+				"label": "ProjectProperty10",
+				"count": 113482,
+				"distinct": 5425,
+				"examples_as_shapes": [
+					"10 chars, 1 words",
+					"10 chars, 1 words",
+					"12 chars, 1 words"
+				]
+			},
+			{
+				"label": "SectionOriginalMaterialName",
+				"count": 93360,
+				"distinct": 9522,
+				"examples_as_shapes": ["17 chars, 1 words", "9 chars, 1 words", "8 chars, 1 words"]
+			},
+			{
+				"label": "FriendlyName",
+				"count": 91328,
+				"distinct": 6752,
+				"examples_as_shapes": ["8 chars, 1 words", "16 chars, 2 words", "15 chars, 3 words"]
+			},
+			{
+				"label": "PropertyPath",
+				"count": 88218,
+				"distinct": 91,
+				"examples_as_shapes": ["13 chars, 1 words", "7 chars, 1 words", "15 chars, 1 words"]
+			},
+			{
+				"label": "UniqueTrackName",
+				"count": 88191,
+				"distinct": 90,
+				"examples_as_shapes": ["13 chars, 1 words", "7 chars, 1 words", "15 chars, 1 words"]
+			},
+			{
+				"label": "Type",
+				"count": 87745,
+				"distinct": 17,
+				"examples_as_shapes": [
+					"13 chars, 1 words",
+					"14 chars, 1 words",
+					"14 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty11",
+				"count": 85770,
+				"distinct": 4664,
+				"examples_as_shapes": [
+					"10 chars, 1 words",
+					"10 chars, 1 words",
+					"10 chars, 1 words"
+				]
+			},
+			{
+				"label": "FullName",
+				"count": 81427,
+				"distinct": 2302,
+				"examples_as_shapes": [
+					"19 chars, 1 words",
+					"32 chars, 1 words",
+					"59 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty12",
+				"count": 80351,
+				"distinct": 1989,
+				"examples_as_shapes": [
+					"16 chars, 1 words",
+					"25 chars, 1 words",
+					"26 chars, 1 words"
+				]
+			},
+			{
+				"label": "Tags",
+				"count": 80184,
+				"distinct": 139,
+				"examples_as_shapes": ["14 chars, 1 words", "14 chars, 1 words", "5 chars, 1 words"]
+			},
+			{
+				"label": "ProjectProperty13",
+				"count": 79981,
+				"distinct": 620,
+				"examples_as_shapes": [
+					"27 chars, 1 words",
+					"34 chars, 1 words",
+					"27 chars, 1 words"
+				]
+			},
+			{
+				"label": "ProjectProperty14",
+				"count": 79981,
+				"distinct": 539,
+				"examples_as_shapes": ["10 chars, 1 words", "8 chars, 1 words", "16 chars, 1 words"]
+			},
+			{
+				"label": "ProjectProperty15",
+				"count": 77423,
+				"distinct": 4964,
+				"examples_as_shapes": [
+					"10 chars, 1 words",
+					"10 chars, 1 words",
+					"10 chars, 1 words"
+				]
+			},
+			{
+				"label": "FunctionDisplayName",
+				"count": 69872,
+				"distinct": 290,
+				"examples_as_shapes": [
+					"45 chars, 1 words",
+					"45 chars, 1 words",
+					"10 chars, 1 words"
+				]
+			},
+			{
+				"label": "ImportMaterialOriginalNameData",
+				"count": 65560,
+				"distinct": 11526,
+				"examples_as_shapes": ["17 chars, 1 words", "9 chars, 1 words", "8 chars, 1 words"]
+			},
+			{
+				"label": "CategoryName",
+				"count": 64698,
+				"distinct": 242,
+				"examples_as_shapes": ["13 chars, 1 words", "6 chars, 1 words", "6 chars, 1 words"]
+			}
+		],
+		"classes": [
+			{
+				"label": "Blueprint",
+				"count": 4606101,
+				"distinct": 49175
+			},
+			{
+				"label": "LevelSequence",
+				"count": 2816734,
+				"distinct": 138817
+			},
+			{
+				"label": "DataTable",
+				"count": 2303324,
+				"distinct": 141247
+			},
+			{
+				"label": "NiagaraSystem",
+				"count": 1296697,
+				"distinct": 34088
+			},
+			{
+				"label": "World",
+				"count": 1142232,
+				"distinct": 180281
+			},
+			{
+				"label": "WidgetBlueprint",
+				"count": 352132,
+				"distinct": 30449
+			},
+			{
+				"label": "StaticMesh",
+				"count": 320188,
+				"distinct": 10877
+			},
+			{
+				"label": "AnimBlueprint",
+				"count": 239492,
+				"distinct": 4945
+			},
+			{
+				"label": "BlueprintGeneratedClass",
+				"count": 210298,
+				"distinct": 27528
+			},
+			{
+				"label": "MaterialInstanceConstant",
+				"count": 194366,
+				"distinct": 17658
+			},
+			{
+				"label": "ProjectClass01",
+				"count": 91865,
+				"distinct": 3977
+			},
+			{
+				"label": "PhysicsAsset",
+				"count": 78948,
+				"distinct": 1904
+			},
+			{
+				"label": "ProjectClass02",
+				"count": 47184,
+				"distinct": 3829
+			},
+			{
+				"label": "Material",
+				"count": 38756,
+				"distinct": 4635
+			},
+			{
+				"label": "PaperSprite",
+				"count": 32598,
+				"distinct": 2
+			},
+			{
+				"label": "AnimMontage",
+				"count": 28429,
+				"distinct": 5682
+			},
+			{
+				"label": "ProjectClass03",
+				"count": 21666,
+				"distinct": 616
+			},
+			{
+				"label": "AnimSequence",
+				"count": 20103,
+				"distinct": 11126
+			},
+			{
+				"label": "ProjectClass04",
+				"count": 17938,
+				"distinct": 9058
+			},
+			{
+				"label": "SkeletalMesh",
+				"count": 17820,
+				"distinct": 3148
+			}
+		],
+		"locations": [
+			{
+				"label": "struct member",
+				"count": 4584704,
+				"distinct": 155309
+			},
+			{
+				"label": "CDO",
+				"count": 4198081,
+				"distinct": 20391
+			},
+			{
+				"label": "DataTable cell",
+				"count": 2301060,
+				"distinct": 140889
+			},
+			{
+				"label": "array/map/set element",
+				"count": 1680283,
+				"distinct": 159236
+			},
+			{
+				"label": "plain property",
+				"count": 1175309,
+				"distinct": 268679
+			},
+			{
+				"label": "graph pin",
+				"count": 3147,
+				"distinct": 1040
+			}
+		],
+		"kinds": [
+			{
+				"label": "FName",
+				"count": 15758329,
+				"distinct": 224114
+			},
+			{
+				"label": "FString",
+				"count": 7906078,
+				"distinct": 1143158
+			},
+			{
+				"label": "FName pin literal",
+				"count": 91061,
+				"distinct": 658
+			},
+			{
+				"label": "user pin literal",
+				"count": 41774,
+				"distinct": 4
+			},
+			{
+				"label": "FString pin literal",
+				"count": 4276,
+				"distinct": 449
+			}
+		],
+		"shapes": [
+			{
+				"label": "CamelCase/snake_case identifier",
+				"count": 8420276,
+				"distinct": 358759
+			},
+			{
+				"label": "Capitalized",
+				"count": 2513514,
+				"distinct": 6971
+			},
+			{
+				"label": "multiple words",
+				"count": 2397261,
+				"distinct": 218780
+			},
+			{
+				"label": "other single token",
+				"count": 407128,
+				"distinct": 38079
+			},
+			{
+				"label": "lowercase",
+				"count": 204405,
+				"distinct": 1588
+			}
+		],
+		"contains_space": {
+			"label": "contains space",
+			"count": 2392637,
+			"distinct": 217877
+		},
+		"sentence": {
+			"label": "sentence-like",
+			"count": 1789591,
+			"distinct": 183940
+		},
+		"raw_values": 653331,
+		"unresolved_names": 0,
+		"decoded_exports": 6917776,
+		"cap_hit": false
+	},
+	"transport": {
+		"outcome": "partial",
+		"summary": {
+			"scannedAssets": 167401,
+			"emittedAssets": 167401,
+			"failedAssets": 0,
+			"partialAssets": 2129,
+			"skippedAssets": 0
+		},
+		"decodeErrors": 139919,
+		"packageRecords": 167401,
+		"frames": 168715,
+		"bytes": 635975448,
+		"digest": "020a80b295bf722a0654b583ccffc261853681376306a53f5a91cdffefb6614a",
+		"wallSeconds": 138.87149349999999
+	}
+}

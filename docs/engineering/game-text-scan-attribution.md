@@ -2106,3 +2106,290 @@ Passed with the freshly built reader selected for every Vitest invocation:
 existing lint warnings only). The full suite, `pnpm check`,
 Unreal Editor, the owner's final fuzz/export acceptance matrix and three-run timing campaign were
 not run. No byte-identity, fixture, memory or cancellation STOP condition was triggered.
+
+## Hardcoded text volume probe
+
+The question: how many user-visible strings does a project store in `FString` and `FName`
+properties instead of `FText`? Unreal never gathers those, so they can never be translated. The
+answer decides whether a Game Text section that lists them for review is feasible as a plain list,
+needs grouping, or should not be built.
+
+The research ran on 2026-10-26 on branch `scratch/hardcoded-text-probe`, based exactly on
+`perf/game-text-scan-stages` (`39b1748f`). Every number below was measured with a reader built from
+`22b3f8cf` on that branch. The branch was later ported onto `main` at `2585d62b` (UE Shed 0.23.0) so
+the probe and its record are kept. The port leaves the probe module as it was and only threads its
+argument through the current `project_io.rs`. The reader around it has changed since `39b1748f`,
+and the numbers were not re-measured after the port. The opt-in collector is in
+`crates/uasset-io/src/direct_executor/project_io/hardcoded_probe.rs`; the private streaming runner
+is `scripts/hardcoded-text-probe.mjs`. Neither runs unless its environment variables are set.
+
+### Method and scope
+
+The released project is the only benchmark input. Explicit selection `paths: ["Content"]`
+disables the normal FText name-map prefilter: otherwise packages with only FString/FName would
+be skipped. The same release executable, 12 reader workers and 256 MiB input-byte budget serve
+both runs. Package discovery, decoding, existing FText projection and streaming output run in
+both. `UE_SHED_HARDCODED_METRICS` enables request wall/CPU and lifetime peak memory counters;
+`UE_SHED_HARDCODED_PROBE=1` additionally visits already-decoded string/name values. Normal requests
+have neither variable set. There are no new dependencies or decoder changes.
+
+The runner reads the input path only into memory from the supplied environment file and sends
+the request through stdin. It incrementally parses stdout, retains numeric summary fields and
+a SHA-256 stream digest, and discards every package record. Stderr is discarded. No extracted
+value or input path is logged or saved. Output contains property/class metadata, counts, and
+anonymous example shapes only. Root and project descriptor names are redacted from metadata.
+
+Coverage includes tagged properties, nested structs and instanced structs, native property
+trees already exposed by the decoder, arrays/sets, map keys and values, DataTable row properties,
+struct defaults, CDOs and nested default subobjects, and string/name-category graph pin defaults
+including user-defined pin defaults. FText and localizable StringTable entries, enum symbols,
+row/bone/pin identifiers that are native metadata rather than properties, and graph tooltips
+are outside this count. Compiled FString/FName bytecode literals and unparsed native tails are
+not newly decoded. Serialization copies, including Blueprint skeleton/default representations,
+are counted as saved occurrences; exact distinct values collapse equal strings across types
+and assets. This is a census of what the current decoder exposes, not a completeness claim for
+every string stored anywhere in the project.
+
+Exclusions are ordered and mutually exclusive: empty; whitespace-only; case-insensitive None;
+object/soft paths; GUID; number; other hex; file path/extension; dotted tag-like token. GUID and
+hex share one reported category. Classification trims for exclusion but interns the original
+value, so whitespace variants remain distinct. Hex is explicitly prefixed or at least eight hex
+characters; file extensions use the visible list in the probe. Remaining space counts use a
+literal space. Sentence-like means whitespace plus `. ! ?` (also their CJK equivalents), or at
+least four whitespace-separated words. Single-token classes are lowercase, Capitalized,
+CamelCase/snake_case (also acronyms), and other. These are research heuristics, not a guarantee
+that a survivor is player-visible or that every exclusion is safe for a shipping review tool.
+
+For locations, DataTable/CDO/graph provenance takes precedence; elsewhere the innermost
+struct/container determines the bucket. Property breakdown uses the leaf member name (container
+scalars keep the containing property name); pin literals use `Pin.DefaultValue` or
+`UserPin.DefaultValue`. Class is the owning asset class, not each export's class. Groups overlap
+in distinct values, so distinct counts must not be summed across groups. Example shapes describe
+up to three distinct values per property; repeated shapes can represent different values. No
+content examples are retained. Interning is capped at 8 million values / 512 MiB raw value bytes,
+and each property/class grouping at 200,000 labels; a cap invalidates completeness and is reported.
+
+Commands from Git Bash (Node 26.12.0 first on PATH):
+
+```bash
+export PATH="/c/Users/denny/AppData/Local/vite-plus/data/js_runtime/node/26.12.0:$PATH"
+node scripts/hardcoded-text-probe.mjs check
+node scripts/hardcoded-text-probe.mjs build
+node scripts/hardcoded-text-probe.mjs fixture target/hardcoded-fixture
+node scripts/hardcoded-text-probe.mjs off
+node scripts/hardcoded-text-probe.mjs on
+```
+
+Every command acquires the shared heavy-job lock and releases it before the next command.
+The first on-run waiter was stopped before acquiring the lock or starting a reader after
+30-second polling repeatedly missed short handoffs. Runner-only commit `f0c67be6` uses the
+same create-exclusive/owner-PID lease with one-second polling and 30-second wait messages.
+The completed off run and the native executable use `22b3f8cf`; extraction code is identical.
+The runner sets `CARGO_BUILD_JOBS=8`, `RAYON_NUM_THREADS=16` and the supplied TEMP/TMP directory.
+Native elapsed wall uses `Instant`; CPU is whole-process kernel plus user CPU summed across
+threads. Windows lifetime peak working set and peak private bytes come from process counters,
+not a sampled host tree. Native timing ends before aggregate report construction/cleanup;
+transport wall includes startup, streaming, reporting and exit. One released-project run per
+mode, off then on, is sufficient for this volume probe but cannot establish repeatability or
+separate cache warming from instrumentation cost. The OS file cache is not flushed. This does
+not measure a cold Game Text index build, localization import, joins, UI, or review accuracy.
+
+### Observed counts (2026-10-26)
+
+Reader source/build commit: `22b3f8cf`. Aggregate artifacts:
+[off](hardcoded-text-probe-off.json), [on](hardcoded-text-probe-on.json), and
+[compact tables](hardcoded-text-probe.html). Counts include saved copies and pin literals.
+All distinct counts are exact within the stated decoded scope. The survivor set is not a
+count of verified user-visible text. Property and class names that the project defined itself are
+replaced by anonymous placeholders numbered by rank (`ProjectPropertyNN`, `ProjectClassNN`), the
+same in every artifact; stock Unreal Engine identifiers are kept.
+
+| Measure                         | Occurrences | Distinct  |
+| ------------------------------- | ----------- | --------- |
+| all                             | 23,801,518  | 1,345,045 |
+| remaining                       | 13,942,584  | 624,177   |
+| FName                           | 15,758,329  | 224,114   |
+| FString                         | 7,906,078   | 1,143,158 |
+| FName pin literal               | 91,061      | 658       |
+| user pin literal                | 41,774      | 4         |
+| FString pin literal             | 4,276       | 449       |
+| contains space                  | 2,392,637   | 217,877   |
+| sentence-like                   | 1,789,591   | 183,940   |
+| CamelCase/snake_case identifier | 8,420,276   | 358,759   |
+| Capitalized                     | 2,513,514   | 6,971     |
+| multiple words                  | 2,397,261   | 218,780   |
+| other single token              | 407,128     | 38,079    |
+| lowercase                       | 204,405     | 1,588     |
+
+### Ordered exclusions
+
+| Measure                    | Occurrences | Distinct |
+| -------------------------- | ----------- | -------- |
+| dotted tag-like name       | 3,733,214   | 533,336  |
+| None                       | 3,475,994   | 4        |
+| file path/extension        | 1,756,163   | 142,931  |
+| empty                      | 412,560     | 1        |
+| number                     | 188,467     | 897      |
+| GUID/hex                   | 163,838     | 40,853   |
+| object path/soft reference | 128,659     | 2,843    |
+| whitespace-only            | 39          | 3        |
+
+### Locations after exclusions
+
+| Measure               | Occurrences | Distinct |
+| --------------------- | ----------- | -------- |
+| struct member         | 4,584,704   | 155,309  |
+| CDO                   | 4,198,081   | 20,391   |
+| DataTable cell        | 2,301,060   | 140,889  |
+| array/map/set element | 1,680,283   | 159,236  |
+| plain property        | 1,175,309   | 268,679  |
+| graph pin             | 3,147       | 1,040    |
+
+### Top 40 properties after exclusions
+
+Example shapes for the top 20 use `characters c / words w / p`; `p` means sentence
+punctuation occurs somewhere, not necessarily at the end. Each shape describes a distinct
+example value. Where fewer than three distinct values exist, fewer examples are reported.
+
+| Property                       | Occurrences | Distinct | Three examples as anonymous shapes |
+| ------------------------------ | ----------- | -------- | ---------------------------------- |
+| Name                           | 1,588,170   | 75,352   | 8c/1w, 16c/1w, 16c/2w              |
+| ProjectProperty01              | 888,681     | 2,216    | 12c/1w, 12c/1w, 12c/1w             |
+| ProjectProperty02              | 804,211     | 1,034    | 9c/1w, 14c/1w, 13c/1w              |
+| ProjectProperty03              | 746,537     | 3,531    | 10c/1w, 10c/1w, 10c/1w             |
+| ProjectProperty04              | 729,732     | 105,450  | 63c/11w, 6c/1w/p, 12c/2w           |
+| ProjectProperty05              | 716,700     | 19,846   | 62c/14w, 7c/1w/p, 13c/2w           |
+| Channel                        | 595,724     | 38       | 11c/1w, 12c/1w, 11c/1w             |
+| PayloadVariables               | 510,765     | 160      | 12c/1w, 6c/1w, 11c/1w              |
+| ExpansionStates                | 453,685     | 89,048   | 10c/1w, 30c/1w, 26c/1w             |
+| ProjectProperty06              | 417,679     | 162      | 27c/1w, 27c/1w, 21c/1w             |
+| MemberName                     | 399,824     | 18,311   | 8c/1w, 21c/1w, 22c/1w              |
+| ActorLabel                     | 340,030     | 176,123  | 13c/1w, 14c/1w, 25c/1w             |
+| FuncMap                        | 327,476     | 34,130   | 20c/1w, 19c/1w, 9c/1w              |
+| ProjectProperty07              | 285,052     | 394      | 11c/1w, 11c/1w, 16c/1w             |
+| BoundObjectPinName             | 278,925     | 3,181    | 12c/1w, 25c/1w, 8c/1w              |
+| RowName                        | 215,551     | 12,813   | 4c/1w, 9c/1w, 4c/1w                |
+| Value                          | 193,258     | 13,346   | 8c/1w, 5c/1w, 29c/1w/p             |
+| StaticMeshDerivedDataKey       | 188,282     | 19,718   | 382c/1w, 382c/1w, 382c/1w          |
+| ProjectProperty08              | 157,735     | 8,675    | 10c/1w, 10c/1w, 10c/1w             |
+| PropertyName                   | 155,315     | 1,518    | 54c/1w, 54c/1w, 54c/1w             |
+| BindingName                    | 150,330     | 9,045    |                                    |
+| CustomFunctionName             | 149,654     | 22,683   |                                    |
+| ProjectProperty09              | 140,141     | 213      |                                    |
+| CollisionProfileName           | 131,356     | 27       |                                    |
+| ProjectProperty10              | 113,482     | 5,425    |                                    |
+| SectionOriginalMaterialName    | 93,360      | 9,522    |                                    |
+| FriendlyName                   | 91,328      | 6,752    |                                    |
+| PropertyPath                   | 88,218      | 91       |                                    |
+| UniqueTrackName                | 88,191      | 90       |                                    |
+| Type                           | 87,745      | 17       |                                    |
+| ProjectProperty11              | 85,770      | 4,664    |                                    |
+| FullName                       | 81,427      | 2,302    |                                    |
+| ProjectProperty12              | 80,351      | 1,989    |                                    |
+| Tags                           | 80,184      | 139      |                                    |
+| ProjectProperty13              | 79,981      | 620      |                                    |
+| ProjectProperty14              | 79,981      | 539      |                                    |
+| ProjectProperty15              | 77,423      | 4,964    |                                    |
+| FunctionDisplayName            | 69,872      | 290      |                                    |
+| ImportMaterialOriginalNameData | 65,560      | 11,526   |                                    |
+| CategoryName                   | 64,698      | 242      |                                    |
+
+### Top 20 owning asset classes after exclusions
+
+| Class                    | Occurrences | Distinct |
+| ------------------------ | ----------- | -------- |
+| Blueprint                | 4,606,101   | 49,175   |
+| LevelSequence            | 2,816,734   | 138,817  |
+| DataTable                | 2,303,324   | 141,247  |
+| NiagaraSystem            | 1,296,697   | 34,088   |
+| World                    | 1,142,232   | 180,281  |
+| WidgetBlueprint          | 352,132     | 30,449   |
+| StaticMesh               | 320,188     | 10,877   |
+| AnimBlueprint            | 239,492     | 4,945    |
+| BlueprintGeneratedClass  | 210,298     | 27,528   |
+| MaterialInstanceConstant | 194,366     | 17,658   |
+| ProjectClass01           | 91,865      | 3,977    |
+| PhysicsAsset             | 78,948      | 1,904    |
+| ProjectClass02           | 47,184      | 3,829    |
+| Material                 | 38,756      | 4,635    |
+| PaperSprite              | 32,598      | 2        |
+| AnimMontage              | 28,429      | 5,682    |
+| ProjectClass03           | 21,666      | 616      |
+| AnimSequence             | 20,103      | 11,126   |
+| ProjectClass04           | 17,938      | 9,058    |
+| SkeletalMesh             | 17,820      | 3,148    |
+
+### Extraction cost and coverage
+
+| Pass | Native wall s | CPU s   | Peak WS GiB | Peak private GiB | Transport wall s |
+| ---- | ------------- | ------- | ----------- | ---------------- | ---------------- |
+| off  | 94.530        | 460.469 | 3.266       | 3.313            | 94.641           |
+| on   | 138.144       | 533.969 | 3.599       | 3.655            | 138.871          |
+
+Observed on-minus-off: wall 43.614 s (46.1%), CPU 73.500 s (16.0%), peak working set 0.333 GiB. One run each; no variance estimate or cache control.
+
+167,401 packages; 6,917,776 successful decoded exports; 139,919 export decode errors; 2,129 partial packages; 653,331 Raw property/container nodes; 0 unresolved names; cap reached: false. No package read failures. Off/on streams are byte-identical: 635,975,448 bytes, SHA-256 020a80b295bf722a0654b583ccffc261853681376306a53f5a91cdffefb6614a.
+
+Top 20 properties cover 71.7% of remaining occurrences; top 40 cover 85.3%; top 20 classes cover 99.5%. Sentence-like values cover 12.8%. These are occurrence proportions, not distinct-value unions.
+
+The CDO bucket alone repeats 20,391 distinct values across 4,198,081 occurrences (205.9 occurrences
+per distinct value). Two project-defined properties whose names mark them as localization source
+and translation strings (`ProjectProperty05` and `ProjectProperty04`) together contribute 1,446,432
+occurrences (10.4% of survivors). Inference from those names: some FString data may already
+participate in localization; property type alone cannot establish that text is untranslated.
+LevelSequence contributes 2,816,734 occurrences, another indication that the list needs domain
+context.
+
+The collector locks once per decoded export and interns strings into one shared table; its
+measured overhead includes this instrumentation strategy. It is not a lower bound on the
+overhead of a future production implementation.
+
+### Interpretation and verification
+
+A flat list of survivors is not a reliable review inventory. Group by property and owning
+asset class, collapse equal values and serialization copies, and let reviewers select relevant
+groups before opening individual occurrences. Sentence-like text can form a smaller triage
+queue, but editor comments/metadata can also look like prose. Conversely, short labels may be
+valid user-visible text. Decoder errors and Raw nodes leave possible text uncounted; false
+positives also prevent interpreting survivors as a lower bound on actual user-visible text.
+
+Passed: 32 targeted `uasset-io` project-IO tests (including four probe tests),
+`cargo clippy --locked -p uasset-io -- -D warnings`, Rust formatting, runner syntax/lint/format,
+`pnpm -s run typecheck`,
+the release fixture streaming check (115 packages, zero decode errors, cap not reached),
+and aggregate consistency / byte-identity assertions over the two released-project runs.
+The fixture reported one partial package. No full suites, Unreal
+Editor, Perforce writes, push, PR, or merge ran.
+
+The final audit checked that all changed artifacts omit the input path and project/descriptor
+names, that prior attribution sections are byte-for-byte unchanged apart from line-ending
+normalization, and that each top-20 property has three distinct example shapes (or all examples
+when fewer than three distinct values exist). The compact tables also passed HTML preview with
+no console errors.
+
+### Outcome
+
+Status: parked. The hard problem is limiting the scan to strings a player actually sees. Nothing in
+a saved package says whether an `FString` or `FName` is shown to players or used as an identifier,
+so any scan finds mostly identifiers. The volume figures above show that cost; they are a symptom
+of the problem, not the reason for parking. No filter was found: value-shape exclusions and the
+sentence-like slice still leave mostly identifiers, and editor comments read like prose while real
+labels can be one word. Grouping by property and class makes review possible but still needs a
+person to judge each group. Revisit when there is a reliable signal for user-facing text. Two
+untested candidates: a string flowing into a widget text setter, which would catch only text set
+through those graph pins, and project annotations that mark display fields.
+
+On 2026-10-26 the numbers settled three things. Hardcoded text is not added to the default cold
+scan. The scan opens only packages marked as holding gatherable text, and a census must open every
+package: 94.5 s of extraction against about 21 s at the time. A flat review list in Game Text is not
+built: even the sentence-like slice is 183,940 distinct values, and identifiers lead every group.
+`FString` storage does not by itself mean untranslated text: the two project-defined localization
+source and translation properties show localization stored in strings. Two candidates were parked
+for later. One is an opt-in audit that shows property × asset-class groups and lets a reviewer
+accept or dismiss a whole group. The other is narrow, high-signal checks, such as string pins on
+widget text setters, which need no census. Neither is planned.
+
+The branch was ported onto `main` at `2585d62b` with one conflict. `main` now verifies staged
+packages before and after `project_one_path`, and the probe argument is passed inside that
+verification. The runner's request (`uasset-io` v1.8, unstaged `extract_text_packages`) is still
+accepted by the current reader. Verification after the port is in the pull request.

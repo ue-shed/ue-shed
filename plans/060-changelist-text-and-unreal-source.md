@@ -281,6 +281,22 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   57 and `UnrealSourceEditor` 62; with the engine found from the association (5.7), 54. The 5.7
   engine's wrappers took 3.7 s to find with a warm file cache and 0.4 ms from the cache; 52
   wrappers with the project's.
+- **Against Unreal's own gather**, same file set, second runs, Unreal's logged stage times. The
+  commandlet ran from the fixture projects with a recipe pointing at the research projects, so
+  nothing was written into them; Unreal's 5.7 prepass therefore read the fixture's source, not the
+  project's (about 4,250 files, a small skew in Unreal's favour).
+
+    | Stage                                    |                                      Unreal |                          `unreal-source` |
+    | ---------------------------------------- | ------------------------------------------: | ---------------------------------------: |
+    | UE 5.7 project, wrapper prepass          |           2.97 s every gather (5.05 s cold) | 3.7 s once per engine build, then 0.4 ms |
+    | UE 5.7 project, main scan                |                                      0.47 s |       358 ms on 1 thread, 32 ms parallel |
+    | Large UE 4.27 project, scan (no prepass) |                                       6.6 s |       853 ms on 1 thread, 93 ms parallel |
+    | Editor start before the gather           | about 5 s, and needs built project binaries |                                     none |
+
+    Unreal's 5.x line scanner is itself quick (about 50 MB/s); the gain there is parallelism, the
+    wrapper cache and no editor. Its 4.27 scanner is about 9 MB/s, so the port is 8× faster on
+    one thread there.
+
 - Not split yet: within the scan stage, reading files versus line scanning and CSV import. The
   scan stage is 3 ms on the fixture and 32–93 ms on the research projects, so the split waits
   until a profile shows it matters.

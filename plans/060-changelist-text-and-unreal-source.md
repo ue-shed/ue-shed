@@ -14,7 +14,7 @@
 
 ## Status
 
-- **State**: In progress. Phase 0 not started.
+- **State**: In progress. Phase 0: oracle done on 5.7, 5.8 and 4.27; baseline pending.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -135,8 +135,8 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
    log macros, `LOCTABLE_NEW`/`SETSTRING`/`FROMFILE_GAME` with a UTF-8 and a UTF-16 CSV, and INI
    text. Each case records its expected manifest entries in `FixtureExpected`.
 2. **Reference gathers**: run Unreal's gather on the fixture's source recipe with UE 5.7 and UE 5.8,
-   and on the same cases (without the 5.x-only macros) in `fixtures/legacy-unreal-project` with
-   UE 4.27, one Unreal task at a time. Commit the manifests as the oracle.
+   and on the same cases through `fixtures/unreal-427-localization` with UE 4.27, one Unreal task
+   at a time. Commit the manifests as the oracle.
 3. **Baseline**: time today's `loc gate` on the fixture and on one large local project for a
    changelist's file list, and record the full-scan cost the new path must beat.
 4. **Sample changelists** on a real project, chosen with the owner: code-only, asset-only, mixed,
@@ -151,7 +151,7 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   `UnrealSource.ini` (no editor-only text) and `UnrealSourceEditor.ini` (with it).
   `pnpm fixture:generate-unreal-source` gathers both and keeps the manifests in
   `FixtureExpected/unreal-source/<engine>`.
-- UE 5.8 gathered 41 entries without editor-only text and 43 with it, in 3.7 s; the manifest is
+- UE 5.8 gathered 44 entries without editor-only text and 46 with it, in 3.7 s; the manifest is
   UTF-16. It corrected four of the research's assumptions, so the oracle, not the research, is the
   spec:
     - `MYLOCTEXT("Prefixed", …)` gathers as `LOCTEXT`: no identifier boundary is checked.
@@ -164,7 +164,33 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   `NSLOCTEXT("[/Script/UnrealSource]", …)` gathers under the empty namespace; `UI_COMMAND`
   under a namespace gathers as `UICommands.<namespace>`; CSV cells in extra columns become
   `MetaData.Info`, and `DevNotes` becomes the entry's developer notes.
-- UE 5.7, UE 4.27 and the baseline: pending.
+- Encoding: a UTF-8 file without a byte order mark, one with it and a UTF-16 file all gather
+  `Café ❄ 港` identically on 5.7, 5.8 and 4.27.
+- UE 5.7 (41 and 43 entries) differs from 5.8 only where expected:
+    - 5.7 gathers the whitespace-only `Blank`; 5.8 drops it.
+    - A CSV `DevNotes` column is `MetaData.Info.DevNotes` in 5.7 and the entry's developer notes
+      in 5.8.
+    - `NOTELOCTEXT`, `NSNOTELOCTEXT`, `LOCTABLE_SETNOTESTRING` and `UE_DECLARE_ERROR` gather
+      nothing in 5.7.
+- UE 4.27 gathers the same cases through `fixtures/unreal-427-localization`'s
+  `UnrealSource427.ini` recipe, which points at the 5.x fixture's sources (37 entries). Against
+  5.7:
+    - A macro call spread over several lines gathers nothing (`Spanning`, the multi-line
+      `UI_COMMAND`): 4.27 reads arguments from one line only.
+    - `UI_COMMAND` with four arguments still gathers (`TooFew`).
+    - Localized log macros gather nothing.
+    - `NOTELOCTEXT(` matches as `LOCTEXT` and fails its argument count, as in 5.x without the
+      macro, and so is only a warning.
+    - Source locations read `path:line` relative to the recipe, not `path(line)`.
+- 4.27 crashes (an access violation) on `LOCTABLE_SETSTRING` for a table the file never
+  registers; 5.x drops those entries with a warning. That case lives in
+  `StringTablesUnregistered.cpp`, which the 4.27 recipe excludes. 4.27 resolves exclude filters
+  against the project folder, so the filter names the file by its relative path.
+- The `#define` wrapper prepass is project-wide: a wrapper defined in a header applies to every
+  file, one defined in a `.cpp` only to that file, and two header wrappers with the same name are
+  both excluded. A changelist that edits a header wrapper can change text in files it never
+  touched, so a point keeps its wrapper set.
+- The baseline and the sample changelists: pending.
 
 ## Phase 1: `unreal-source`, the scanner
 

@@ -26,6 +26,7 @@
 		"fixture:generate-game-text-problems": "node scripts/unreal-fixture.ts game-text-problems",
 		"fixture:generate-game-text-actions": "node scripts/unreal-fixture.ts game-text-actions",
 		"fixture:generate-unreal-source": "node scripts/unreal-fixture.ts unreal-source",
+		"fixture:generate-unreal-source-427": "node scripts/unreal-fixture.ts unreal-source-427",
 		"fixture:generate-localization-427": "node scripts/unreal-fixture.ts localization-427",
 		"fixture:verify-localization": "node scripts/unreal-fixture.ts localization-verify",
 		"fixture:generate-legacy": "node scripts/generate-legacy-unreal-fixtures.ts",

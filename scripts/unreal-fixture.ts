@@ -28,6 +28,8 @@ import { findUnrealEngine } from "./unreal-engines.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const action = process.argv[2];
+// UE 4.27 runs use the separate 4.27 project, with the stock commandlet and no build.
+const is427 = action === "localization-427" || action === "unreal-source-427";
 const isLocalization =
 	action === "localization" ||
 	action === "localization-verify" ||
@@ -37,14 +39,10 @@ const isLocalization =
 const fixtureRoot =
 	isLocalization && process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT
 		? resolve(process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT)
-		: join(
-				repositoryRoot,
-				"fixtures",
-				action === "localization-427" ? "unreal-427-localization" : "unreal-project"
-			);
+		: join(repositoryRoot, "fixtures", is427 ? "unreal-427-localization" : "unreal-project");
 const projectFile = join(
 	fixtureRoot,
-	action === "localization-427" ? "UEShedLocalization427.uproject" : "UEShedFixture.uproject"
+	is427 ? "UEShedLocalization427.uproject" : "UEShedFixture.uproject"
 );
 // SAFETY: the repository fixture contract owns this required engine version object.
 const contract = JSON.parse(
@@ -62,19 +60,18 @@ function engineVersion(engineRoot: string) {
 
 function isMatchingEngine(engineRoot: string) {
 	const version = engineVersion(engineRoot);
-	if (action === "localization-427") return version?.label === "4.27";
+	if (is427) return version?.label === "4.27";
 	if (isLocalization)
 		return version?.label === "5.6" || version?.label === "5.7" || version?.label === "5.8";
 	return version?.major === contract.engine.major && version?.minor === contract.engine.minor;
 }
 
 async function discoverEngineRoot() {
-	const requiredVersion =
-		action === "localization-427"
-			? "4.27"
-			: isLocalization
-				? "5.6, 5.7 or 5.8"
-				: `${contract.engine.major}.${contract.engine.minor}`;
+	const requiredVersion = is427
+		? "4.27"
+		: isLocalization
+			? "5.6, 5.7 or 5.8"
+			: `${contract.engine.major}.${contract.engine.minor}`;
 	const configured = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
 	if (configured) {
 		const root = resolve(configured);
@@ -85,7 +82,7 @@ async function discoverEngineRoot() {
 	}
 
 	const root = await findUnrealEngine(
-		action === "localization-427"
+		is427
 			? ["4.27"]
 			: isLocalization
 				? ["5.6", "5.7", "5.8"]
@@ -132,7 +129,7 @@ function engineTools(engineRoot: string): UnrealEngineTools {
 			"Engine",
 			"Binaries",
 			"Win64",
-			action === "localization-427" ? "UE4Editor-Cmd.exe" : "UnrealEditor-Cmd.exe"
+			is427 ? "UE4Editor-Cmd.exe" : "UnrealEditor-Cmd.exe"
 		)
 	};
 }
@@ -280,6 +277,7 @@ if (
 		"game-text-problems",
 		"game-text-actions",
 		"unreal-source",
+		"unreal-source-427",
 		"world-partition",
 		"save",
 		"scenario",
@@ -288,13 +286,13 @@ if (
 	]).has(action)
 ) {
 	throw new Error(
-		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|localization|localization-verify|localization-427|game-text-problems|game-text-actions|unreal-source|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
+		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|localization|localization-verify|localization-427|game-text-problems|game-text-actions|unreal-source|unreal-source-427|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
 	);
 }
 
 const engineRoot = await discoverEngineRoot();
 const tools = engineTools(engineRoot);
-if (action !== "localization-427") build(engineRoot, tools);
+if (!is427) build(engineRoot, tools);
 if (action === "localization") {
 	const output = process.argv[3]
 		? resolve(process.argv[3])
@@ -381,6 +379,36 @@ if (action === "unreal-source") {
 			force: true
 		});
 	}
+}
+if (action === "unreal-source-427") {
+	const output = resolve(
+		process.argv[3] ??
+			join(
+				repositoryRoot,
+				"fixtures",
+				"unreal-project",
+				"FixtureExpected",
+				"unreal-source",
+				"4.27"
+			)
+	);
+	const target = join(fixtureRoot, "Content", "Localization", "UnrealSource427");
+	process.stdout.write(`Unreal source gather writes: ${target}, ${output}
+`);
+	rmSync(target, { recursive: true, force: true });
+	run(tools.editorCommandlet, [
+		projectFile,
+		"-run=GatherText",
+		`-config=${join(fixtureRoot, "Config", "Localization", "UnrealSource427.ini")}`,
+		"-unattended",
+		"-SCCProvider=None",
+		...localDerivedDataCacheArguments,
+		"-nosplash",
+		"-NullRHI"
+	]);
+	mkdirSync(output, { recursive: true });
+	copyFileSync(join(target, "UnrealSource427.manifest"), join(output, "UnrealSource.manifest"));
+	rmSync(target, { recursive: true, force: true });
 }
 if (action === "localization-verify") {
 	runCommandlet(

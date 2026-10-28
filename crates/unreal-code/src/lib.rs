@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 pub use discovery::{GatherStep, StepFiles, step_files, wrapper_files};
 pub use nested::WrapperMacro;
 pub use request::{
-    EngineWrappers, FileCounts, SourceTarget, SourceTextProfile, SourceTextRequest,
-    SourceTextResult, TargetText, run,
+    CodeTarget, CodeTextProfile, CodeTextRequest, CodeTextResult, EngineWrappers, FileCounts,
+    TargetText, run,
 };
 
 use nested::{NestedWrapper, prune, report_twins};
@@ -77,7 +77,7 @@ pub struct MetadataField {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SourcePlace {
+pub struct CodePlace {
     /// The file as Unreal names it, relative to the gather's base. For a String Table CSV entry,
     /// the CSV path as the `LOCTABLE_FROMFILE_*` call wrote it.
     pub file: String,
@@ -137,14 +137,14 @@ pub enum DiagnosticCode {
 /// Something Unreal's gather would log, at the place it would name.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourceDiagnostic {
+pub struct CodeDiagnostic {
     pub file: String,
     pub line: Option<u32>,
     pub code: DiagnosticCode,
     pub message: String,
 }
 
-impl SourceDiagnostic {
+impl CodeDiagnostic {
     pub(crate) fn new(
         file: &str,
         line: Option<u32>,
@@ -162,19 +162,19 @@ impl SourceDiagnostic {
 
 /// A file to scan: its name as the gather reports it, and where to read it from.
 #[derive(Clone, Debug)]
-pub struct SourceFile {
+pub struct CodeFile {
     pub path: String,
     pub location: PathBuf,
 }
 
 /// Where file contents come from: the disk, or a revision a host read from version control.
-pub trait SourceStore: Sync {
+pub trait FileStore: Sync {
     fn read(&self, location: &Path) -> std::io::Result<Vec<u8>>;
 }
 
 pub struct DiskStore;
 
-impl SourceStore for DiskStore {
+impl FileStore for DiskStore {
     fn read(&self, location: &Path) -> std::io::Result<Vec<u8>> {
         std::fs::read(location)
     }
@@ -201,9 +201,9 @@ pub struct ScanSettings {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SourceScan {
-    pub places: Vec<SourcePlace>,
-    pub diagnostics: Vec<SourceDiagnostic>,
+pub struct CodeScan {
+    pub places: Vec<CodePlace>,
+    pub diagnostics: Vec<CodeDiagnostic>,
     /// Files that held a token and went through the line scanner.
     pub files_scanned: usize,
     /// Files whose bytes held no token.
@@ -243,8 +243,8 @@ fn searcher(needles: &[String]) -> Option<AhoCorasick> {
 /// keep the engine's part per engine build. 4.27 has no wrapper prepass.
 pub fn find_wrappers(
     engine: EngineLine,
-    files: &[SourceFile],
-    store: &dyn SourceStore,
+    files: &[CodeFile],
+    store: &dyn FileStore,
 ) -> Vec<WrapperMacro> {
     if engine == EngineLine::Ue4_27 {
         return Vec::new();
@@ -291,7 +291,7 @@ pub fn find_wrappers(
 
 struct ContentReader<'a> {
     settings: &'a ScanSettings,
-    store: &'a dyn SourceStore,
+    store: &'a dyn FileStore,
 }
 
 impl CsvSource for ContentReader<'_> {
@@ -322,10 +322,10 @@ fn is_whitespace_only(text: &str) -> bool {
 /// the wrappers [`find_wrappers`] found across the engine and the project.
 pub fn scan(
     settings: &ScanSettings,
-    files: &[SourceFile],
+    files: &[CodeFile],
     wrappers: &[WrapperMacro],
-    store: &dyn SourceStore,
-) -> SourceScan {
+    store: &dyn FileStore,
+) -> CodeScan {
     let engine = settings.engine;
     let mut diagnostics = Vec::new();
     let mut nested: Vec<NestedWrapper> = if engine == EngineLine::Ue4_27 {
@@ -347,7 +347,7 @@ pub fn scan(
         .map(|descriptor| narrow(&descriptor.token))
         .collect();
     let Some(needles) = searcher(&tokens) else {
-        return SourceScan::default();
+        return CodeScan::default();
     };
     let results: Vec<FileResult> = files
         .par_iter()
@@ -356,7 +356,7 @@ pub fn scan(
             let bytes = match store.read(&file.location) {
                 Ok(bytes) => bytes,
                 Err(error) => {
-                    sink.diagnostics.push(SourceDiagnostic::new(
+                    sink.diagnostics.push(CodeDiagnostic::new(
                         &file.path,
                         None,
                         DiagnosticCode::Unreadable,
@@ -399,7 +399,7 @@ pub fn scan(
             };
             let state = scanner.run(&mut sink);
             if let Some(line) = state.namespace_line() {
-                sink.diagnostics.push(SourceDiagnostic::new(
+                sink.diagnostics.push(CodeDiagnostic::new(
                     &file.path,
                     Some(line as u32),
                     DiagnosticCode::NamespaceNotClosed,
@@ -416,7 +416,7 @@ pub fn scan(
 
     let reader = ContentReader { settings, store };
     let platform_of = |path: &str| split_platform(&settings.split_platforms, path);
-    let mut scan = SourceScan::default();
+    let mut scan = CodeScan::default();
     let mut project_tables = Tables::default();
     for (file, result) in files.iter().zip(results) {
         scan.bytes_read += result.bytes;
@@ -429,7 +429,7 @@ pub fn scan(
         diagnostics.extend(sink.diagnostics);
         for found in sink.found {
             let editor_only = found.editor_only;
-            scan.places.push(SourcePlace {
+            scan.places.push(CodePlace {
                 file: file.path.clone(),
                 line: Some(found.line),
                 macro_name: narrow(&found.macro_name),
@@ -479,7 +479,7 @@ pub fn scan(
     // The manifest refuses an empty key; 5.8 also drops empty and whitespace-only text.
     scan.places.retain(|place| {
         if place.key.is_empty() {
-            diagnostics.push(SourceDiagnostic::new(
+            diagnostics.push(CodeDiagnostic::new(
                 &place.file,
                 place.line,
                 DiagnosticCode::EmptyIdentifier,
@@ -488,7 +488,7 @@ pub fn scan(
             return false;
         }
         if engine == EngineLine::Ue5_8 && is_whitespace_only(&place.source) {
-            diagnostics.push(SourceDiagnostic::new(
+            diagnostics.push(CodeDiagnostic::new(
                 &place.file,
                 place.line,
                 DiagnosticCode::WhitespaceOnly,

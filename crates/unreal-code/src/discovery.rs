@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{EngineLine, SourceFile};
+use crate::{CodeFile, EngineLine};
 
 /// One `GatherTextFromSource` step of a localization target, as its config file states it.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -26,7 +26,7 @@ pub struct GatherStep {
 /// The files a step reads, sorted as Unreal processes them, and how many the filters left out.
 #[derive(Clone, Debug, Default)]
 pub struct StepFiles {
-    pub files: Vec<SourceFile>,
+    pub files: Vec<CodeFile>,
     pub excluded: usize,
 }
 
@@ -329,7 +329,7 @@ pub fn step_files(
     let base = absolute(project);
     let files = found
         .into_iter()
-        .map(|file| SourceFile {
+        .map(|file| CodeFile {
             path: relative_to(&file, &base),
             location: PathBuf::from(&file),
         })
@@ -339,7 +339,7 @@ pub fn step_files(
 
 /// The files Unreal's wrapper prepass reads under one root (the project, or the engine's `Engine`
 /// folder): `*.cpp` and `*.h` in `Source` and `Plugins`, without `Source/ThirdParty`.
-pub fn wrapper_files(root: &Path, project: &Path) -> Vec<SourceFile> {
+pub fn wrapper_files(root: &Path, project: &Path) -> Vec<CodeFile> {
     let filters = ["*.cpp".to_owned(), "*.h".to_owned()];
     let third_party = fold(&format!("{}/Source/ThirdParty/", absolute(root)));
     let mut found = Vec::new();
@@ -351,7 +351,7 @@ pub fn wrapper_files(root: &Path, project: &Path) -> Vec<SourceFile> {
     let base = absolute(project);
     found
         .into_iter()
-        .map(|file| SourceFile {
+        .map(|file| CodeFile {
             path: relative_to(&file, &base),
             location: PathBuf::from(&file),
         })

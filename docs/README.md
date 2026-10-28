@@ -115,7 +115,7 @@ should follow [Website and illustrated guides](engineering/website.md).
 - [UAsset source-derived parser model](../crates/uasset-source-gen/README.md) — source-derived class
   metadata, composable native serialization layouts, and Unreal-backed parser conformance.
 
-- [Unreal source text](../crates/unreal-source/README.md) — the `GatherTextFromSource` port: two-tier
+- [Unreal code text](../crates/unreal-code/README.md) — the `GatherTextFromSource` port: two-tier
   scan, wrapper prepass, String Tables, engine lines, and conformance with 4.27, 5.7 and 5.8 gathers.
 
 - [Source-model parser optimization (2026-09-19)](research/uasset-source-model-performance-2026-09-19.md) —

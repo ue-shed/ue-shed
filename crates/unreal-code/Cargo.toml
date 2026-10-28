@@ -1,10 +1,10 @@
 [package]
-name = "unreal-source"
+name = "unreal-code"
 version = "0.23.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
-description = "Unreal's source text gather (GatherTextFromSource) as a native token scanner"
+description = "Reads an Unreal project's code as Unreal's tools do; first, its GatherTextFromSource text gather"
 
 [dependencies]
 aho-corasick = "=1.1.5"

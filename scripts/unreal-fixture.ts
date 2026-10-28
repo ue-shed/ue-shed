@@ -29,13 +29,13 @@ import { findUnrealEngine } from "./unreal-engines.ts";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const action = process.argv[2];
 // UE 4.27 runs use the separate 4.27 project, with the stock commandlet and no build.
-const is427 = action === "localization-427" || action === "unreal-source-427";
+const is427 = action === "localization-427" || action === "unreal-code-427";
 const isLocalization =
 	action === "localization" ||
 	action === "localization-verify" ||
 	action === "game-text-problems" ||
 	action === "game-text-actions" ||
-	action === "unreal-source";
+	action === "unreal-code";
 const fixtureRoot =
 	isLocalization && process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT
 		? resolve(process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT)
@@ -276,8 +276,8 @@ if (
 		"localization-427",
 		"game-text-problems",
 		"game-text-actions",
-		"unreal-source",
-		"unreal-source-427",
+		"unreal-code",
+		"unreal-code-427",
 		"world-partition",
 		"save",
 		"scenario",
@@ -286,7 +286,7 @@ if (
 	]).has(action)
 ) {
 	throw new Error(
-		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|localization|localization-verify|localization-427|game-text-problems|game-text-actions|unreal-source|unreal-source-427|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
+		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|localization|localization-verify|localization-427|game-text-problems|game-text-actions|unreal-code|unreal-code-427|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
 	);
 }
 
@@ -353,11 +353,11 @@ if (action === "game-text-actions") {
 	for (const args of gameTextActionsFixtureSteps(projectFile, output))
 		run(tools.editorCommandlet, args);
 }
-if (action === "unreal-source") {
+if (action === "unreal-code") {
 	const version = engineVersion(engineRoot);
 	if (version === undefined) throw new Error("The engine version is unavailable.");
 	const output = resolve(
-		process.argv[3] ?? join(fixtureRoot, "FixtureExpected", "unreal-source", version.label)
+		process.argv[3] ?? join(fixtureRoot, "FixtureExpected", "unreal-code", version.label)
 	);
 	process.stdout.write(
 		`Unreal source gathers write: ${join(fixtureRoot, "Content/Localization/UnrealSource")}, ` +
@@ -380,7 +380,7 @@ if (action === "unreal-source") {
 		});
 	}
 }
-if (action === "unreal-source-427") {
+if (action === "unreal-code-427") {
 	const output = resolve(
 		process.argv[3] ??
 			join(
@@ -388,7 +388,7 @@ if (action === "unreal-source-427") {
 				"fixtures",
 				"unreal-project",
 				"FixtureExpected",
-				"unreal-source",
+				"unreal-code",
 				"4.27"
 			)
 	);

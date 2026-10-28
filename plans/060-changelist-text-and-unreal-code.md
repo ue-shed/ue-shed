@@ -1,4 +1,4 @@
-# Plan 060: Text in a changelist, and the text in a project's source
+# Plan 060: Text in a changelist, and the text in a project's code
 
 > **Executor instructions**: Read this plan fully before starting. Also read `AGENTS.md`,
 > `docs/README.md`, `docs/vision-and-architecture.md` (especially
@@ -16,7 +16,7 @@
 
 - **State**: In progress. Phase 0: oracle done on 5.7, 5.8 and 4.27; baseline pending. Phase 1:
   done, awaiting owner review. The scanner matches all three engines' gathers, and
-  `ue-shed source text` runs it through the Game Text engine.
+  `ue-shed code text` runs it through the Game Text engine.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -80,9 +80,10 @@ Research findings this plan relies on (measured 2026-10-28 on this PC):
 Taken by the owner, or by the planner on the research's recommendation (marked _recommended_).
 The owner can reverse any of them at a phase review.
 
-1. **Package and crate**: `@ue-shed/unreal-source` and `crates/unreal-source`. It reads a
-   project's source tree (C++, headers, config and String Table CSVs), not its content. Game Text
-   is its first consumer; reflection for authoring and Remote Control comes later. _(planner)_
+1. **Package and crate**: `@ue-shed/code` and `crates/unreal-code` (owner). It reads a project's
+   code (C++, headers, config and String Table CSVs), not its content. Game Text is its first
+   consumer; reflection for authoring and Remote Control comes later. "Source" was rejected: it
+   already means the native text in Game Text and source-built engines in `@ue-shed/engine`.
 2. **A token scanner, not a parser** (owner). No clang, no tree-sitter, no Pierre fork. Unknown
    constructs are kept as unknown and reported, never guessed. The core is a port of Unreal's own
    scanner, not the spike's: the spike matched whole identifiers, which Unreal does not (Phase 0),
@@ -104,7 +105,7 @@ The owner can reverse any of them at a phase review.
    build left it.
 8. **Read-only.** UE Shed never edits C++, INI or CSV source. A C++ place is `read_only`, with a
    reveal-in-IDE affordance for hosts.
-9. **One store for every place** (_recommended_): source places sit beside saved-package places in
+9. **One store for every place** (_recommended_): code places sit beside saved-package places in
    the same snapshots and diffs from the start, not in a sidecar report.
 10. **A point is a set of file digests** (_planner_). A changelist review reads only the files the
     changelist touched, at its two revisions, plus the localization files at the base. No full
@@ -122,9 +123,9 @@ The owner can reverse any of them at a phase review.
   `depot@<CL>` is a stream or path at a submitted changelist; `shelved:<CL>` is a shelved
   changelist over its base. A point is a manifest from project-relative path to a content digest.
 - **File record**: the text found in one file's content: saved-package occurrences from the
-  asset reader, or source places from `unreal-source`. Records are content-addressed, so two points
+  asset reader, or code places from `unreal-code`. Records are content-addressed, so two points
   share every file they have in common, and a revision read once is never read again.
-- **Source place**: `(file, line, column, macro, namespace, key, source, devNotes?, editorOnly,
+- **Code place**: `(file, line, column, macro, namespace, key, source, devNotes?, editorOnly,
 platform?, tableId?)`. It joins localization by `(namespace, key)` like any other place.
 - **Change**: per place, `added`, `removed`, `edited` (same key, new text), `rekeyed` (same place,
   new key) or `unchanged`, as `diffPackageText` defines today.
@@ -154,8 +155,8 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   context, `UI_COMMAND`, localized logs, a wrapper macro, code String Tables with a UTF-8 and a
   UTF-16 CSV under `Content/Fixture/UnrealSource`, 5.8 developer notes, INI). Recipes
   `UnrealSource.ini` (no editor-only text) and `UnrealSourceEditor.ini` (with it).
-  `pnpm fixture:generate-unreal-source` gathers both and keeps the manifests in
-  `FixtureExpected/unreal-source/<engine>`.
+  `pnpm fixture:generate-unreal-code` gathers both and keeps the manifests in
+  `FixtureExpected/unreal-code/<engine>`.
 - UE 5.8 gathered 44 entries without editor-only text and 46 with it, in 3.7 s; the manifest is
   UTF-16. It corrected four of the research's assumptions, so the oracle, not the research, is the
   spec:
@@ -201,9 +202,9 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   set, and the engine's part can be kept per engine build.
 - The baseline and the sample changelists: pending.
 
-## Phase 1: `unreal-source`, the scanner
+## Phase 1: `unreal-code`, the scanner
 
-1. `crates/unreal-source`:
+1. `crates/unreal-code`:
     - **Two tiers.** A SIMD substring check (memchr's `memmem`) skips every file that holds no
       descriptor token at all; no place can come from such a file. The few files left go through
       a faithful port of Unreal's line scanner (`ParseSourceText`): its per-character token
@@ -228,9 +229,9 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
       named blind spots (direct `RegisterStringTable`, computed keys, custom gather callbacks).
     - Output as compact typed records; `ts-rs` types generated into `packages/protocol`.
 2. **Parallel scan** over files with rayon, bounded by the existing reader budget.
-3. `packages/unreal-source`: an Effect service that resolves each target's `GatherTextFromSource`
+3. `packages/code`: an Effect service that resolves each target's `GatherTextFromSource`
    steps through `packages/localization` and runs the scan through the `uasset` worker.
-4. CLI: `ue-shed source text <project-root> [--target]` prints places, diagnostics and coverage.
+4. CLI: `ue-shed code text <project-root> [--target]` prints places, diagnostics and coverage.
 5. **Conformance**: the scanner's identities match the Phase 0 manifests exactly, on all three
    engines. Unit tests per descriptor, per escape and per encoding.
 6. **Measure** single-threaded and parallel MB/s on the two research projects against the
@@ -238,7 +239,7 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 
 **Evidence (2026-10-28)**:
 
-- `crates/unreal-source` ports `GatherTextFromSourceCommandlet` on UTF-16 code units: the line
+- `crates/unreal-code` ports `GatherTextFromSourceCommandlet` on UTF-16 code units: the line
   scanner, every descriptor, the argument gatherer and look-ahead, escapes, `TEXT()`, the
   `#if` stack, `LOC_DEFINE_REGION`, INI sections, String Tables (per file on 5.x, project-wide on
   4.27), an `FCsvParser` port, and the 5.x wrapper prepass. Tier one is an Aho-Corasick pass over
@@ -268,15 +269,18 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
     the files, so the engine's wrappers (48 with the project's) are worth keeping per engine build.
 
 - **Wiring (items 3 and 4)**: the scan runs inside the Game Text engine as a
-  `{ action: "source_text" }` request, so it shares the engine's build identity and its types are
+  `{ action: "code_text" }` request, so it shares the engine's build identity and its types are
   generated into `game-text-contract.generated.ts`. File contents never cross into the host: the
   host sends the targets' steps, the engine answers with places, diagnostics, file counts and a
-  per-stage profile (engine wrappers, project wrappers, listing, scan). - `packages/unreal-source` (private) reads each target's `GatherTextFromSource` steps through
+  per-stage profile (engine wrappers, project wrappers, listing, scan).
+- `packages/code` (private) reads each target's `GatherTextFromSource` steps through
   `LocalizationEvidence`, a step's missing fields falling back to `CommonSettings` as the
-  commandlet reads them, and annotates its span with the profile. - `ue-shed source text <project-root> [--target …] [--engine-root] [--engine-version]
-[--cache-root]` takes the engine from `@ue-shed/engine` discovery (the explicit root or the
-  `.uproject` association) unless `--engine-version` names the behaviour directly. - The engine's wrappers are cached under the cache root per crate version, engine root,
-  engine line, project and `Build.version`.
+  commandlet reads them, and annotates its span with the profile.
+- `ue-shed code text <project-root>` takes `--target`, `--engine-root`, `--engine-version` and
+  `--cache-root`. The engine comes from `@ue-shed/engine` discovery (the explicit root or the
+  `.uproject` association) unless `--engine-version` names the behaviour directly.
+- The engine's wrappers are cached under the cache root per crate version, engine root, engine
+  line, project and `Build.version`.
 - Through the command, the fixture's targets gather what Unreal gathered: on 5.8 `UnrealSource`
   57 and `UnrealSourceEditor` 62; with the engine found from the association (5.7), 54. The 5.7
   engine's wrappers took 3.7 s to find with a warm file cache and 0.4 ms from the cache; 52
@@ -286,7 +290,7 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   nothing was written into them; Unreal's 5.7 prepass therefore read the fixture's source, not the
   project's (about 4,250 files, a small skew in Unreal's favour).
 
-    | Stage                                    |                                      Unreal |                          `unreal-source` |
+    | Stage                                    |                                      Unreal |                            `unreal-code` |
     | ---------------------------------------- | ------------------------------------------: | ---------------------------------------: |
     | UE 5.7 project, wrapper prepass          |           2.97 s every gather (5.05 s cold) | 3.7 s once per engine build, then 0.4 ms |
     | UE 5.7 project, main scan                |                                      0.47 s |       358 ms on 1 thread, 32 ms parallel |
@@ -301,15 +305,15 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   scan stage is 3 ms on the fixture and 32–93 ms on the research projects, so the split waits
   until a profile shows it matters.
 
-## Phase 2: Source places in Game Text
+## Phase 2: Code places in Game Text
 
-1. A `source_text` place kind beside the three saved kinds in `packages/game-text/src/schema.ts`
+1. A `code_text` place kind beside the three saved kinds in `packages/game-text/src/schema.ts`
    and the index's place columns. Places are `read_only`.
 2. **Current source against the manifest**: a gathered key whose current source differs from the
    manifest's is "Changed since gather", the existing line state, now for C++ and config text too.
 3. **Audience evidence**: editor-only context and `UICommands.*` namespaces feed the existing
-   audience policy as a new reason, `source_editor_only`.
-4. **Incremental**: source records are keyed by file digest, so a rescan reads only changed source
+   audience policy as a new reason, `code_editor_only`.
+4. **Incremental**: code records are keyed by file digest, so a rescan reads only changed source
    files, like packages today.
 5. `loc gate` no longer warns `gathered_source` for a changed C++ or config file it can read: it
    judges its places like any other.
@@ -336,7 +340,7 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 ## Phase 4: Diff and impact, natively
 
 1. **Diff** two points' records in the engine, with `diffPackageText`'s pairing rules for both
-   package and source places. Retire the TypeScript per-line diff once the host reads the native
+   package and code places. Retire the TypeScript per-line diff once the host reads the native
    one.
 2. **Impact** in one call: the diff joined to the base point's localization, returning per
    culture the stale translations, keys that lose translations through a rekey, colliding text and
@@ -389,7 +393,7 @@ In the Electroswag repository, on its own branch:
 
 - Reflected metadata (DisplayName, ToolTip, enum names). Named in every coverage statement.
 - Reflection for authoring and Remote Control, the module and plugin graph, gameplay tags, console
-  variables and log categories. They are `unreal-source`'s follow-ons, on the same scanner.
+  variables and log categories. They are `unreal-code`'s follow-ons, on the same scanner.
 - Editing C++, INI or CSV source.
 - File compare against a chosen PO, archive or CSV, and our own CSV format. Later work.
 - Translation briefs for agents and review comments that travel with a branch (owner, 2026-10-28).

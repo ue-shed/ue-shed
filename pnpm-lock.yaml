@@ -213,9 +213,9 @@ importers:
       '@ue-shed/unreal-connection':
         specifier: workspace:*
         version: link:../../packages/unreal-connection
-      '@ue-shed/unreal-source':
+      '@ue-shed/code':
         specifier: workspace:*
-        version: link:../../packages/unreal-source
+        version: link:../../packages/code
       '@ue-shed/world':
         specifier: workspace:0.23.0
         version: link:../../packages/world
@@ -1296,7 +1296,7 @@ importers:
         specifier: 'catalog:'
         version: 4.0.4
 
-  packages/unreal-source:
+  packages/code:
     dependencies:
       '@ue-shed/localization':
         specifier: workspace:*

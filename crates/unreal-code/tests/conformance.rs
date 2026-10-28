@@ -1,6 +1,6 @@
 //! The scanner against Unreal's own gathers of the fixture's source cases (Plan 060, Phase 0).
 //!
-//! Each manifest in `fixtures/unreal-project/FixtureExpected/unreal-source/<engine>` is what the
+//! Each manifest in `fixtures/unreal-project/FixtureExpected/unreal-code/<engine>` is what the
 //! stock `GatherTextFromSource` commandlet wrote for one recipe. The scan of the same files must
 //! produce exactly its entries: namespace, key, text, source location, developer notes and
 //! String Table metadata.
@@ -9,8 +9,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use unreal_source::{
-    DiagnosticCode, DiskStore, EngineLine, GatherStep, ScanSettings, SourcePlace, SourceScan,
+use unreal_code::{
+    CodePlace, CodeScan, DiagnosticCode, DiskStore, EngineLine, GatherStep, ScanSettings,
     find_wrappers, scan, step_files, wrapper_files,
 };
 
@@ -127,7 +127,7 @@ fn recipe_step(path: &Path) -> GatherStep {
     step
 }
 
-fn label(place: &SourcePlace, engine: EngineLine) -> String {
+fn label(place: &CodePlace, engine: EngineLine) -> String {
     match (place.line, engine) {
         (Some(line), EngineLine::Ue4_27) => format!("{}:{line}", place.file),
         (Some(line), _) => format!("{}({line})", place.file),
@@ -135,7 +135,7 @@ fn label(place: &SourcePlace, engine: EngineLine) -> String {
     }
 }
 
-fn fixture_scan(engine: EngineLine, recipe: &str) -> SourceScan {
+fn fixture_scan(engine: EngineLine, recipe: &str) -> CodeScan {
     let repository = repository();
     let project = if engine == EngineLine::Ue4_27 {
         repository.join("fixtures/unreal-427-localization")
@@ -191,7 +191,7 @@ fn check(engine: EngineLine, folder: &str, target: &str) {
     };
     let expected = manifest_rows(
         &repository()
-            .join("fixtures/unreal-project/FixtureExpected/unreal-source")
+            .join("fixtures/unreal-project/FixtureExpected/unreal-code")
             .join(folder)
             .join(&manifest),
     );

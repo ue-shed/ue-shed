@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "dcb18743a0fdf9551d1283e12a0855ad30045cf9ef96e6545e4bef0fd56f790b"
+	contractHash: "5c39f0d04e10b45140104bafdfa412ed3d3f178944c8fb52b80779997dbadda4"
 } as const;
 
 /**
@@ -56,28 +56,28 @@ rules: RuleDocumentV4, collationLocale: string, } | { "action": "findings_accept
 /**
  * The v4 rule document.
  */
-rules: RuleDocumentV4, } | { "action": "source_text", request: SourceTextRequest, };
+rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, };
 
-export type SourceTextRequest = { projectRoot: string, 
+export type CodeTextRequest = { projectRoot: string, 
 /**
  * The engine installation root, holding `Engine/`. Without it, the engine's wrappers and
  * `LOCTABLE_FROMFILE_ENGINE` tables are left out, and the result says so.
  */
-engineRoot: string | null, engine: EngineLine, targets: ReadonlyArray<SourceTarget>, 
+engineRoot: string | null, engine: EngineLine, targets: ReadonlyArray<CodeTarget>, 
 /**
  * Where the engine's wrappers are kept between scans.
  */
 cacheRoot: string | null, refreshEngineWrappers: boolean, };
 
-export type SourceTarget = { name: string, steps: ReadonlyArray<GatherStep>, };
+export type CodeTarget = { name: string, steps: ReadonlyArray<GatherStep>, };
 
 export type GatherStep = { searchDirectoryPaths: ReadonlyArray<string>, excludePathFilters: ReadonlyArray<string>, fileNameFilters: ReadonlyArray<string>, gatherEditorOnly: boolean, };
 
 export type EngineLine = "4.27" | "5.7" | "5.8";
 
-export type SourceTextResult = { engine: EngineLine, targets: ReadonlyArray<TargetText>, engineWrappers: EngineWrappers, wrapperCount: number, profile: SourceTextProfile, };
+export type CodeTextResult = { engine: EngineLine, targets: ReadonlyArray<TargetText>, engineWrappers: EngineWrappers, wrapperCount: number, profile: CodeTextProfile, };
 
-export type TargetText = { name: string, places: ReadonlyArray<SourcePlace>, diagnostics: ReadonlyArray<SourceDiagnostic>, files: FileCounts, };
+export type TargetText = { name: string, places: ReadonlyArray<CodePlace>, diagnostics: ReadonlyArray<CodeDiagnostic>, files: FileCounts, };
 
 export type FileCounts = { 
 /**
@@ -99,9 +99,9 @@ skipped: number, bytesRead: number, };
 
 export type EngineWrappers = "not-used" | "no-engine-root" | "read" | "cached";
 
-export type SourceTextProfile = { engineWrappersMicros: number, projectWrappersMicros: number, listMicros: number, scanMicros: number, };
+export type CodeTextProfile = { engineWrappersMicros: number, projectWrappersMicros: number, listMicros: number, scanMicros: number, };
 
-export type SourcePlace = { 
+export type CodePlace = { 
 /**
  * The file as Unreal names it, relative to the gather's base. For a String Table CSV entry,
  * the CSV path as the `LOCTABLE_FROMFILE_*` call wrote it.
@@ -138,7 +138,7 @@ table: string | null, };
 
 export type MetadataField = { name: string, value: string, };
 
-export type SourceDiagnostic = { file: string, line: number | null, code: DiagnosticCode, message: string, };
+export type CodeDiagnostic = { file: string, line: number | null, code: DiagnosticCode, message: string, };
 
 export type DiagnosticCode = "argument-count" | "argument-parse" | "unexpected-bracket" | "end-of-file" | "missing-bracket" | "missing-quotes" | "empty-identifier" | "empty-source" | "whitespace-only" | "no-namespace" | "namespace-redefined" | "namespace-not-defined" | "namespace-not-closed" | "region-redefined" | "region-not-defined" | "unterminated-string" | "unterminated-raw-string" | "table-redefined" | "table-entry-redefined" | "table-metadata-redefined" | "table-not-registered" | "table-import-failed" | "wrapper-unsupported" | "wrapper-duplicate" | "crashes-unreal427" | "unreadable";
 

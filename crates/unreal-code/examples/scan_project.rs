@@ -6,14 +6,14 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use unreal_source::{DiskStore, EngineLine, ScanSettings, SourceFile, find_wrappers, scan};
+use unreal_code::{CodeFile, DiskStore, EngineLine, ScanSettings, find_wrappers, scan};
 
 fn walk(
     folder: &Path,
     base: &Path,
     extensions: &[&str],
     skip: Option<&Path>,
-    files: &mut Vec<SourceFile>,
+    files: &mut Vec<CodeFile>,
 ) {
     let Ok(entries) = std::fs::read_dir(folder) else {
         return;
@@ -37,7 +37,7 @@ fn walk(
                 .unwrap_or(&location)
                 .to_string_lossy()
                 .replace('\\', "/");
-            files.push(SourceFile { path, location });
+            files.push(CodeFile { path, location });
         }
     }
 }
@@ -47,7 +47,7 @@ fn collect(
     folders: &[&str],
     extensions: &[&str],
     skip: Option<&Path>,
-) -> Vec<SourceFile> {
+) -> Vec<CodeFile> {
     let mut files = Vec::new();
     for folder in folders {
         walk(&base.join(folder), base, extensions, skip, &mut files);

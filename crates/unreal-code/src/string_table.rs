@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::csv;
 use crate::literal::replace_escaped_char_with_char;
 use crate::wide::{Wide, equals_ignore_case, narrow, wide};
-use crate::{DiagnosticCode, EngineLine, MetadataField, SourceDiagnostic, SourcePlace};
+use crate::{CodeDiagnostic, CodePlace, DiagnosticCode, EngineLine, MetadataField};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ContentRoot {
@@ -243,7 +243,7 @@ impl Tables {
         call: &TableCall,
         table: &[u16],
         namespace: &[u16],
-        diagnostics: &mut Vec<SourceDiagnostic>,
+        diagnostics: &mut Vec<CodeDiagnostic>,
         engine: EngineLine,
     ) -> bool {
         let location = Location {
@@ -252,7 +252,7 @@ impl Tables {
         };
         let entry = self.table(table);
         if let Some(existing) = &entry.registered {
-            diagnostics.push(SourceDiagnostic::new(
+            diagnostics.push(CodeDiagnostic::new(
                 &call.file,
                 Some(call.line),
                 DiagnosticCode::TableRedefined,
@@ -273,7 +273,7 @@ impl Tables {
         &mut self,
         table: &[u16],
         new: Entry,
-        diagnostics: &mut Vec<SourceDiagnostic>,
+        diagnostics: &mut Vec<CodeDiagnostic>,
         engine: EngineLine,
     ) {
         let at_file = new.location.file.clone();
@@ -287,7 +287,7 @@ impl Tables {
             if existing.source == new.source {
                 existing.editor_only &= new.editor_only;
             } else {
-                diagnostics.push(SourceDiagnostic::new(
+                diagnostics.push(CodeDiagnostic::new(
 					&at_file,
 					at_line,
 					DiagnosticCode::TableEntryRedefined,
@@ -309,7 +309,7 @@ impl Tables {
         table: &[u16],
         key: &[u16],
         new: Meta,
-        diagnostics: &mut Vec<SourceDiagnostic>,
+        diagnostics: &mut Vec<CodeDiagnostic>,
         engine: EngineLine,
     ) {
         let at_file = new.location.file.clone();
@@ -334,7 +334,7 @@ impl Tables {
             if existing.value == new.value {
                 existing.editor_only &= new.editor_only;
             } else {
-                diagnostics.push(SourceDiagnostic::new(
+                diagnostics.push(CodeDiagnostic::new(
 					&at_file,
 					at_line,
 					DiagnosticCode::TableMetadataRedefined,
@@ -358,7 +358,7 @@ impl Tables {
         engine: EngineLine,
         csv_source: &dyn CsvSource,
         split_platform: &dyn Fn(&str) -> Option<String>,
-        diagnostics: &mut Vec<SourceDiagnostic>,
+        diagnostics: &mut Vec<CodeDiagnostic>,
     ) {
         let here = Location {
             file: call.file.clone(),
@@ -383,7 +383,7 @@ impl Tables {
                     .read_csv(*root, &path_text)
                     .and_then(|text| import_csv(&text, engine));
                 let Some(rows) = imported else {
-                    diagnostics.push(SourceDiagnostic::new(
+                    diagnostics.push(CodeDiagnostic::new(
                         &call.file,
                         Some(call.line),
                         DiagnosticCode::TableImportFailed,
@@ -479,8 +479,8 @@ impl Tables {
         self,
         engine: EngineLine,
         gather_editor_only: bool,
-        places: &mut Vec<SourcePlace>,
-        diagnostics: &mut Vec<SourceDiagnostic>,
+        places: &mut Vec<CodePlace>,
+        diagnostics: &mut Vec<CodeDiagnostic>,
         unregistered_file: &str,
     ) {
         for table in self.tables {
@@ -510,7 +510,7 @@ impl Tables {
                         .first()
                         .map_or(unregistered_file, |entry| entry.location.file.as_str());
                     let line = table.entries.first().and_then(|entry| entry.location.line);
-                    diagnostics.push(SourceDiagnostic::new(file, line, code, message));
+                    diagnostics.push(CodeDiagnostic::new(file, line, code, message));
                 }
                 continue;
             }
@@ -530,7 +530,7 @@ impl Tables {
                             .collect()
                     })
                     .unwrap_or_default();
-                places.push(SourcePlace {
+                places.push(CodePlace {
                     file: entry.location.file,
                     line: entry.location.line,
                     macro_name: narrow(&entry.macro_name),

@@ -23,7 +23,7 @@ import { mapCaptureCommand } from "./commands/map-capture.js";
 import { niagaraCommand } from "./commands/niagara.js";
 import { pluginsCommand } from "./commands/plugins.js";
 import { projectIndexCommand } from "./commands/project-index.js";
-import { sourceCommand } from "./commands/source.js";
+import { codeCommand } from "./commands/code.js";
 import { reviewCommand } from "./commands/review.js";
 import { cameraCommand } from "./commands/camera-render.js";
 import { worldCommand } from "./commands/world.js";
@@ -55,7 +55,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		mapCaptureCommand,
 		niagaraCommand,
 		projectIndexCommand,
-		sourceCommand,
+		codeCommand,
 		reviewCommand,
 		cameraCommand,
 		worldCommand,

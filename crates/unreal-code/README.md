@@ -1,6 +1,6 @@
-# Unreal source text
+# Unreal code text
 
-`unreal-source` finds the text in an Unreal project's source the way Unreal's
+`unreal-code` finds the text in an Unreal project's code (C++, config and String Table CSVs) the way Unreal's
 `GatherTextFromSource` commandlet does: `LOCTEXT` and its family, `UI_COMMAND`, String Tables
 declared in code and imported from CSV, localized log and error macros, `#define` wrappers around
 them, and `NSLOCTEXT` in config files. Plan 060 introduces it; Game Text is its first consumer.
@@ -27,16 +27,16 @@ with the same namespace, key, text and location, and nothing else is.
   table and the version differences: one-line arguments and a three-argument `UI_COMMAND` on 4.27;
   developer notes, `UE_DECLARE_ERROR` and dropping whitespace-only text on 5.8.
 
-`SourcePlace` records every gathered place with `editorOnly` and `gathered`, so text a target
-leaves out stays visible as out of scope. `SourceDiagnostic` carries what Unreal would log.
+`CodePlace` records every gathered place with `editorOnly` and `gathered`, so text a target
+leaves out stays visible as out of scope. `CodeDiagnostic` carries what Unreal would log.
 
 ## Conformance
 
 `tests/conformance.rs` scans the fixture's `FixtureSource/UnrealSource` cases and compares them, row
 for row, with the manifests Unreal 4.27, 5.7 and 5.8 wrote for the same recipes
-(`fixtures/unreal-project/FixtureExpected/unreal-source`). Regenerate those with
-`pnpm fixture:generate-unreal-source` (once per 5.x engine) and
-`pnpm fixture:generate-unreal-source-427`.
+(`fixtures/unreal-project/FixtureExpected/unreal-code`). Regenerate those with
+`pnpm fixture:generate-unreal-code` (once per 5.x engine) and
+`pnpm fixture:generate-unreal-code-427`.
 
 Known approximations, none of them seen in the fixture:
 

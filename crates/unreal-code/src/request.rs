@@ -12,14 +12,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::discovery::{GatherStep, step_files, wrapper_files};
 use crate::{
-    DiskStore, EngineLine, ScanSettings, SourceDiagnostic, SourcePlace, WrapperMacro,
-    find_wrappers, scan,
+    CodeDiagnostic, CodePlace, DiskStore, EngineLine, ScanSettings, WrapperMacro, find_wrappers,
+    scan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SourceTarget {
+pub struct CodeTarget {
     pub name: String,
     pub steps: Vec<GatherStep>,
 }
@@ -27,13 +27,13 @@ pub struct SourceTarget {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SourceTextRequest {
+pub struct CodeTextRequest {
     pub project_root: String,
     /// The engine installation root, holding `Engine/`. Without it, the engine's wrappers and
     /// `LOCTABLE_FROMFILE_ENGINE` tables are left out, and the result says so.
     pub engine_root: Option<String>,
     pub engine: EngineLine,
-    pub targets: Vec<SourceTarget>,
+    pub targets: Vec<CodeTarget>,
     /// Where the engine's wrappers are kept between scans.
     pub cache_root: Option<String>,
     #[serde(default)]
@@ -61,8 +61,8 @@ pub struct FileCounts {
 #[serde(rename_all = "camelCase")]
 pub struct TargetText {
     pub name: String,
-    pub places: Vec<SourcePlace>,
-    pub diagnostics: Vec<SourceDiagnostic>,
+    pub places: Vec<CodePlace>,
+    pub diagnostics: Vec<CodeDiagnostic>,
     pub files: FileCounts,
 }
 
@@ -82,7 +82,7 @@ pub enum EngineWrappers {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-pub struct SourceTextProfile {
+pub struct CodeTextProfile {
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub engine_wrappers_micros: u64,
     #[cfg_attr(feature = "ts", ts(type = "number"))]
@@ -96,12 +96,12 @@ pub struct SourceTextProfile {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-pub struct SourceTextResult {
+pub struct CodeTextResult {
     pub engine: EngineLine,
     pub targets: Vec<TargetText>,
     pub engine_wrappers: EngineWrappers,
     pub wrapper_count: u32,
-    pub profile: SourceTextProfile,
+    pub profile: CodeTextProfile,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -122,7 +122,7 @@ fn fnv(text: &str) -> u64 {
 }
 
 fn engine_wrappers(
-    request: &SourceTextRequest,
+    request: &CodeTextRequest,
     project: &Path,
 ) -> (Vec<WrapperMacro>, EngineWrappers) {
     if request.engine == EngineLine::Ue4_27 {
@@ -144,7 +144,7 @@ fn engine_wrappers(
     );
     let cache_file = request.cache_root.as_deref().map(|cache| {
         Path::new(cache)
-            .join("unreal-source")
+            .join("unreal-code")
             .join(format!("engine-wrappers-{:016x}.json", fnv(&key)))
     });
     if let (Some(file), false) = (&cache_file, request.refresh_engine_wrappers) {
@@ -176,10 +176,10 @@ fn engine_wrappers(
 
 /// Scans each target's steps. Unreal gathers all of a target's steps into one manifest, so their
 /// places and diagnostics are reported together.
-pub fn run(request: &SourceTextRequest) -> SourceTextResult {
+pub fn run(request: &CodeTextRequest) -> CodeTextResult {
     let project = PathBuf::from(&request.project_root);
     let engine_root = request.engine_root.as_deref().map(Path::new);
-    let mut profile = SourceTextProfile::default();
+    let mut profile = CodeTextProfile::default();
 
     let started = Instant::now();
     let (mut wrappers, engine_state) = engine_wrappers(request, &project);
@@ -226,7 +226,7 @@ pub fn run(request: &SourceTextRequest) -> SourceTextResult {
         }
         targets.push(text);
     }
-    SourceTextResult {
+    CodeTextResult {
         engine: request.engine,
         targets,
         engine_wrappers: engine_state,

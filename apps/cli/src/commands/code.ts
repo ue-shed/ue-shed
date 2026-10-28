@@ -2,9 +2,9 @@ import { Argument, Command, Flag } from "effect/cli";
 import { optionalFlag, optionalValue, readerFields } from "./options.js";
 import { lazyWorkflow } from "../lazy-workflows.js";
 
-const runSourceText = lazyWorkflow(
-	() => import("../workflows/source-text.js"),
-	(module) => module.runSourceText
+const runCodeText = lazyWorkflow(
+	() => import("../workflows/code-text.js"),
+	(module) => module.runCodeText
 );
 
 const text = Command.make(
@@ -21,8 +21,8 @@ const text = Command.make(
 		const engineRoot = optionalValue(value.engineRoot);
 		const engineVersion = optionalValue(value.engineVersion);
 		const cacheRoot = optionalValue(value.cacheRoot);
-		return runSourceText({
-			_tag: "SourceText",
+		return runCodeText({
+			_tag: "CodeText",
 			projectRoot: value.projectRoot,
 			targets: value.targets,
 			...(engineRoot === undefined ? undefined : { engineRoot }),
@@ -37,7 +37,9 @@ const text = Command.make(
 	)
 );
 
-export const sourceCommand = Command.make("source").pipe(
-	Command.withDescription("Read an Unreal project's source the way Unreal's commandlets do."),
+export const codeCommand = Command.make("code").pipe(
+	Command.withDescription(
+		"Read an Unreal project's code (C++, config and String Table CSVs) the way Unreal's tools do."
+	),
 	Command.withSubcommands([text])
 );

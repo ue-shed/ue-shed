@@ -1,8 +1,8 @@
 {
-	"name": "@ue-shed/unreal-source",
+	"name": "@ue-shed/code",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Find the text in an Unreal project's C++, config and String Table CSVs the way Unreal's source gather does.",
+	"description": "Find the text in an Unreal project's C++, config and String Table CSVs the way Unreal's GatherTextFromSource does.",
 	"type": "module",
 	"exports": {
 		".": {

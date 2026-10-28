@@ -13,7 +13,7 @@ use crate::wide::{
     find_unit, is_alnum, is_text_whitespace, narrow, replace, trim, trim_end, trim_start,
     until_nul, wide,
 };
-use crate::{DiagnosticCode, EngineLine, SourceDiagnostic};
+use crate::{CodeDiagnostic, DiagnosticCode, EngineLine};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Semantic {
@@ -262,7 +262,7 @@ pub(crate) struct Found {
 pub(crate) struct Sink {
     pub(crate) found: Vec<Found>,
     pub(crate) tables: Vec<TableCall>,
-    pub(crate) diagnostics: Vec<SourceDiagnostic>,
+    pub(crate) diagnostics: Vec<CodeDiagnostic>,
     pub(crate) wrappers: Vec<NestedWrapper>,
 }
 
@@ -366,7 +366,7 @@ impl Scanner<'_> {
     }
 
     fn warn(&self, sink: &mut Sink, state: &State, code: DiagnosticCode, message: String) {
-        sink.diagnostics.push(SourceDiagnostic::new(
+        sink.diagnostics.push(CodeDiagnostic::new(
             self.file,
             Some(state.line_number as u32),
             code,
@@ -582,7 +582,7 @@ impl Scanner<'_> {
             state.line_index += 1;
         }
         if state.string_literal && !state.raw_closing.is_empty() {
-            sink.diagnostics.push(SourceDiagnostic::new(
+            sink.diagnostics.push(CodeDiagnostic::new(
                 self.file,
                 Some(state.starting_line as u32),
                 DiagnosticCode::UnterminatedRawString,

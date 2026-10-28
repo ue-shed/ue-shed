@@ -24,11 +24,11 @@ fsst-rs = "0.6"
 sha2 = "0.10"
 rustc-hash = "=2.1.3"
 process-metrics = { path = "../process-metrics" }
-unreal-source = { path = "../unreal-source" }
+unreal-code = { path = "../unreal-code" }
 
 [dev-dependencies]
 ts-rs = "12.0"
-unreal-source = { path = "../unreal-source", features = ["ts"] }
+unreal-code = { path = "../unreal-code", features = ["ts"] }
 
 [features]
 # Count live heap in test builds, for memory attribution runs. Off for timing runs: the counters

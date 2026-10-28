@@ -243,7 +243,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "ts-rs",
- "unreal-source",
+ "unreal-code",
  "zstd",
 ]
 
@@ -903,7 +903,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
-name = "unreal-source"
+name = "unreal-code"
 version = "0.23.0"
 dependencies = [
  "aho-corasick",

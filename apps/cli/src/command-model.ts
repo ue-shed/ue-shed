@@ -314,7 +314,7 @@ export const CliCommand = Schema.TaggedUnion({
 		format: Schema.Literals(["csv", "markdown", "json"]),
 		output: Schema.optionalKey(Schema.String)
 	},
-	SourceText: {
+	CodeText: {
 		...Project,
 		...Reader,
 		targets: Schema.Array(Schema.NonEmptyString),

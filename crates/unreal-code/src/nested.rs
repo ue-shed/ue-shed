@@ -11,7 +11,7 @@ use crate::wide::{
     BACKSLASH, CLOSE, COMMA, OPEN, QUOTE, Wide, ends_with_ignore_case, equals_ignore_case, narrow,
     trim, wide,
 };
-use crate::{DiagnosticCode, SourceDiagnostic};
+use crate::{CodeDiagnostic, DiagnosticCode};
 
 #[derive(Clone, Debug)]
 pub(crate) struct NestedWrapper {
@@ -78,7 +78,7 @@ fn same(left: &NestedWrapper, right: &NestedWrapper) -> bool {
 
 /// `PrunePrepassResults`: sort by name, drop exact repeats, and exclude same-named header pairs.
 /// Unreal's sort is not stable; this one is, so ties keep the order files were scanned in.
-pub(crate) fn prune(wrappers: &mut Vec<NestedWrapper>, diagnostics: &mut Vec<SourceDiagnostic>) {
+pub(crate) fn prune(wrappers: &mut Vec<NestedWrapper>, diagnostics: &mut Vec<CodeDiagnostic>) {
     wrappers.sort_by(|left, right| {
         let fold = |name: &Wide| -> Wide {
             name.iter()
@@ -101,7 +101,7 @@ pub(crate) fn prune(wrappers: &mut Vec<NestedWrapper>, diagnostics: &mut Vec<Sou
         {
             let header = |file: &str| ends_with_ignore_case(&wide(file), &wide(".h"));
             if header(&left.file) || header(&right.file) {
-                diagnostics.push(SourceDiagnostic::new(
+                diagnostics.push(CodeDiagnostic::new(
 					&left.file,
 					Some(left.line_start as u32),
 					DiagnosticCode::WrapperDuplicate,
@@ -125,7 +125,7 @@ pub(crate) fn prune(wrappers: &mut Vec<NestedWrapper>, diagnostics: &mut Vec<Sou
 /// `UI_COMMAND_EXT` holds `UI_COMMAND`), so the prepass registers the wrapper twice under one name.
 /// At every call both descriptors match the same characters and each defers to the other as the
 /// "longer" token, so neither ever parses. The scan reproduces that; this says so once per name.
-pub(crate) fn report_twins(wrappers: &[NestedWrapper], diagnostics: &mut Vec<SourceDiagnostic>) {
+pub(crate) fn report_twins(wrappers: &[NestedWrapper], diagnostics: &mut Vec<CodeDiagnostic>) {
     let is_cpp = |wrapper: &NestedWrapper| wrapper.file.to_ascii_lowercase().ends_with(".cpp");
     let mut reported: Vec<&Wide> = Vec::new();
     for (index, wrapper) in wrappers.iter().enumerate() {
@@ -146,7 +146,7 @@ pub(crate) fn report_twins(wrappers: &[NestedWrapper], diagnostics: &mut Vec<Sou
             continue;
         }
         reported.push(&wrapper.name);
-        diagnostics.push(SourceDiagnostic::new(
+        diagnostics.push(CodeDiagnostic::new(
             &wrapper.file,
             Some(wrapper.line_start as u32),
             DiagnosticCode::WrapperUnsupported,

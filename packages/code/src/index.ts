@@ -3,13 +3,13 @@ import type { GameTextContract } from "@ue-shed/protocol";
 import { LocalizationEvidence, type LocalizationTarget } from "@ue-shed/localization";
 import { answerJson, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 
-export type SourceTextRequest = GameTextContract.SourceTextRequest;
-export type SourceTextResult = GameTextContract.SourceTextResult;
-export type SourceTarget = GameTextContract.SourceTarget;
+export type CodeTextRequest = GameTextContract.CodeTextRequest;
+export type CodeTextResult = GameTextContract.CodeTextResult;
+export type CodeTarget = GameTextContract.CodeTarget;
 export type GatherStep = GameTextContract.GatherStep;
 export type EngineLine = GameTextContract.EngineLine;
-export type SourcePlace = GameTextContract.SourcePlace;
-export type SourceDiagnostic = GameTextContract.SourceDiagnostic;
+export type CodePlace = GameTextContract.CodePlace;
+export type CodeDiagnostic = GameTextContract.CodeDiagnostic;
 
 /** The commandlet behaviour a scan reproduces for an engine version; none before 4.27. */
 export const engineLine = (major: number, minor: number): EngineLine | undefined =>
@@ -39,7 +39,7 @@ export const sourceSteps = (target: LocalizationTarget): GatherStep[] =>
 			})
 	);
 
-export interface SourceTextInput {
+export interface CodeTextInput {
 	readonly projectRoot: string;
 	/** The engine installation root, holding `Engine/`; without it engine wrappers are missing. */
 	readonly engineRoot?: string | undefined;
@@ -51,24 +51,24 @@ export interface SourceTextInput {
 }
 
 /**
- * Scans the project's source as each localization target's `GatherTextFromSource` steps would.
+ * Scans the project's code as each localization target's `GatherTextFromSource` steps would.
  * Targets come from the project's localization configs; the scan runs in the native engine,
  * so file contents never cross into the host.
  */
-export const scanSourceText = Effect.fn("UnrealSource.scan")(function* (input: SourceTextInput) {
+export const scanCodeText = Effect.fn("UnrealCode.scan")(function* (input: CodeTextInput) {
 	const evidence = yield* LocalizationEvidence;
 	const discovery = yield* evidence.discover({ projectRoot: input.projectRoot });
 	const wanted =
 		input.targets === undefined || input.targets.length === 0
 			? undefined
 			: new Set(input.targets);
-	const targets: SourceTarget[] = discovery.targets
+	const targets: CodeTarget[] = discovery.targets
 		.filter((target) => wanted === undefined || wanted.has(target.name))
 		.map((target) => ({ name: target.name, steps: sourceSteps(target) }))
 		.filter((target) => target.steps.length > 0);
 	const engine = yield* NativeGameTextEngineClient;
 	const answer = yield* engine.execute({
-		action: "source_text",
+		action: "code_text",
 		request: {
 			projectRoot: input.projectRoot,
 			engineRoot: input.engineRoot ?? null,
@@ -78,18 +78,18 @@ export const scanSourceText = Effect.fn("UnrealSource.scan")(function* (input: S
 			refreshEngineWrappers: false
 		}
 	});
-	const result = answerJson<SourceTextResult>(answer);
+	const result = answerJson<CodeTextResult>(answer);
 	if (result === undefined)
-		return yield* Effect.die("The engine answered source_text without a result.");
+		return yield* Effect.die("The engine answered code_text without a result.");
 	yield* Effect.annotateCurrentSpan({
-		"unrealSource.targets": result.targets.length,
-		"unrealSource.places": result.targets.reduce(
+		"unrealCode.targets": result.targets.length,
+		"unrealCode.places": result.targets.reduce(
 			(count, target) => count + target.places.length,
 			0
 		),
-		"unrealSource.engineWrappers": result.engineWrappers,
-		"unrealSource.engineWrappersMicros": result.profile.engineWrappersMicros,
-		"unrealSource.scanMicros": result.profile.scanMicros
+		"unrealCode.engineWrappers": result.engineWrappers,
+		"unrealCode.engineWrappersMicros": result.profile.engineWrappersMicros,
+		"unrealCode.scanMicros": result.profile.scanMicros
 	});
 	return { result, configDiagnostics: discovery.diagnostics };
 });

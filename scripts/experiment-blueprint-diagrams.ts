@@ -139,10 +139,16 @@ function measure(run: () => Svg) {
 
 function exerciseEdgeCases(graph: BlueprintGraph) {
 	const original = graph.nodes[0]!;
-	const hostile = '#quot; &amp; #x3c; %% <script>alert("saved text")</script> 雨 🐉';
+	const hostile = '#quot; &amp; #x3c; %% %%{wrap}%% <script>alert("saved text")</script> 雨 🐉';
 	const changed = { ...graph, name: hostile, nodes: [{ ...original, title: hostile }] };
 	const text = exportBlueprintDiagram(changed);
 	assert.deepEqual(parseBlueprintDiagram(text), changed);
+	const overview = exportMermaidOverview(changed);
+	assert.ok(!overview.includes("%"), "The overview must not hand Pele a directive.");
+	assert.ok(
+		stock.render(overview).svg.includes("%%{wrap}%%"),
+		"Stock Pele must show directive-like saved text literally."
+	);
 	const svg = renderBlueprintSvg(changed).svg;
 	assert.ok(!svg.includes("<script>"));
 	assert.equal(

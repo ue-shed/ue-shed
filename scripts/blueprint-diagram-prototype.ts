@@ -245,8 +245,9 @@ export function renderBlueprintSvg(graph: BlueprintGraph) {
 /** A portable overview: edge labels describe pin names, but endpoints remain nodes. */
 export function exportMermaidOverview(graph: BlueprintGraph): string {
 	const index = checkedIndex(graph);
+	// Pele reads %%{…}%% directives even inside quoted labels, so % is encoded too.
 	const quote = (label: string) =>
-		'"' + label.replace(/[&<>"#\r\n]/gu, (character) => `#${character.charCodeAt(0)};`) + '"';
+		'"' + label.replace(/[&<>"#%\r\n]/gu, (character) => `#${character.charCodeAt(0)};`) + '"';
 	const lines = ["flowchart LR"];
 	for (const node of graph.nodes) {
 		const comment = node.class_path.endsWith(".EdGraphNode_Comment")

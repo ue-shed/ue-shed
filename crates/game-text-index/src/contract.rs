@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 16] = [
+const SOURCES: [&str; 19] = [
     include_str!("package_text_contract.rs"),
     include_str!("localization/import.rs"),
     include_str!("localization/mod.rs"),
@@ -29,6 +29,9 @@ const SOURCES: [&str; 16] = [
     include_str!("engine_types.rs"),
     include_str!("engine_where.rs"),
     include_str!("sink.rs"),
+    include_str!("../../unreal-source/src/lib.rs"),
+    include_str!("../../unreal-source/src/discovery.rs"),
+    include_str!("../../unreal-source/src/request.rs"),
 ];
 
 /// The engine's build and contract identity, reported by `capabilities`.
@@ -134,6 +137,19 @@ mod tests {
             crate::localization::import::FileResult::decl(&config),
             crate::localization::import::Outcome::decl(&config),
             EngineRequest::decl(&config),
+            unreal_source::SourceTextRequest::decl(&config),
+            unreal_source::SourceTarget::decl(&config),
+            unreal_source::GatherStep::decl(&config),
+            unreal_source::EngineLine::decl(&config),
+            unreal_source::SourceTextResult::decl(&config),
+            unreal_source::TargetText::decl(&config),
+            unreal_source::FileCounts::decl(&config),
+            unreal_source::EngineWrappers::decl(&config),
+            unreal_source::SourceTextProfile::decl(&config),
+            unreal_source::SourcePlace::decl(&config),
+            unreal_source::MetadataField::decl(&config),
+            unreal_source::SourceDiagnostic::decl(&config),
+            unreal_source::DiagnosticCode::decl(&config),
             super::ContractIdentity::decl(&config),
             Configuration::decl(&config),
             EnginePolicy::decl(&config),

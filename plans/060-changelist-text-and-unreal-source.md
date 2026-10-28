@@ -15,7 +15,8 @@
 ## Status
 
 - **State**: In progress. Phase 0: oracle done on 5.7, 5.8 and 4.27; baseline pending. Phase 1:
-  the scanner matches all three engines' gathers; the service, command and contract are next.
+  done, awaiting owner review. The scanner matches all three engines' gathers, and
+  `ue-shed source text` runs it through the Game Text engine.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -232,7 +233,7 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 6. **Measure** single-threaded and parallel MB/s on the two research projects against the
    spike's numbers, with bounded spans per stage (read, lex, descriptors, CSV).
 
-**Evidence (2026-10-28, partial: items 1, 2, 5 and 6 done)**:
+**Evidence (2026-10-28)**:
 
 - `crates/unreal-source` ports `GatherTextFromSourceCommandlet` on UTF-16 code units: the line
   scanner, every descriptor, the argument gatherer and look-ahead, escapes, `TEXT()`, the
@@ -253,17 +254,36 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 - **Speed**, release build, file reads included, second runs, `scan_project` example (target files
   are `*.cpp`, `*.h`, `*.ini` under `Source`, `Plugins` and `Config`):
 
-  | Project | Files | MB | Line-scanned | Places | 1 thread | Parallel |
-  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-  | Large UE 4.27 project | 12,303 | 60.8 | 537 | 1,782 | 853 ms (71 MB/s) | 93 ms (656 MB/s) |
-  | UE 5.7 project | 4,301 | 23.8 | 210 | 668 | 358 ms (66 MB/s) | 32 ms (736 MB/s) |
+    | Project               |  Files |   MB | Line-scanned | Places |         1 thread |         Parallel |
+    | --------------------- | -----: | ---: | -----------: | -----: | ---------------: | ---------------: |
+    | Large UE 4.27 project | 12,303 | 60.8 |          537 |  1,782 | 853 ms (71 MB/s) | 93 ms (656 MB/s) |
+    | UE 5.7 project        |  4,301 | 23.8 |          210 |    668 | 358 ms (66 MB/s) | 32 ms (736 MB/s) |
 
-  The spike read 49–75 MB/s single-threaded; the faithful port matches it, because tier one
-  leaves 4–5 % of the files for the line scanner. The 5.7 project's wrapper prepass over the
-  engine (79,614 files) took 5.96 s single-threaded and 0.53 s parallel, plus about 10 s to list
-  the files, so the engine's wrappers (48 with the project's) are worth keeping per engine build.
-- Pending: the `packages/unreal-source` service, the `source text` command, the typed contract
-  and per-stage spans.
+    The spike read 49–75 MB/s single-threaded; the faithful port matches it, because tier one
+    leaves 4–5 % of the files for the line scanner. The 5.7 project's wrapper prepass over the
+    engine (79,614 files) took 5.96 s single-threaded and 0.53 s parallel, plus about 10 s to list
+    the files, so the engine's wrappers (48 with the project's) are worth keeping per engine build.
+
+- **Wiring (items 3 and 4)**: the scan runs inside the Game Text engine as a
+  `{ action: "source_text" }` request, so it shares the engine's build identity and its types are
+  generated into `game-text-contract.generated.ts`. File contents never cross into the host: the
+  host sends the targets' steps, the engine answers with places, diagnostics, file counts and a
+  per-stage profile (engine wrappers, project wrappers, listing, scan).
+    - `packages/unreal-source` (private) reads each target's `GatherTextFromSource` steps through
+      `LocalizationEvidence`, a step's missing fields falling back to `CommonSettings` as the
+      commandlet reads them, and annotates its span with the profile.
+    - `ue-shed source text <project-root> [--target …] [--engine-root] [--engine-version]
+[--cache-root]` takes the engine from `@ue-shed/engine` discovery (the explicit root or the
+      `.uproject` association) unless `--engine-version` names the behaviour directly.
+    - The engine's wrappers are cached under the cache root per crate version, engine root,
+      engine line, project and `Build.version`.
+- Through the command, the fixture's targets gather what Unreal gathered: on 5.8 `UnrealSource`
+  57 and `UnrealSourceEditor` 62; with the engine found from the association (5.7), 54. The 5.7
+  engine's wrappers took 3.7 s to find with a warm file cache and 0.4 ms from the cache; 52
+  wrappers with the project's.
+- Not split yet: within the scan stage, reading files versus line scanning and CSV import. The
+  scan stage is 3 ms on the fixture and 32–93 ms on the research projects, so the split waits
+  until a profile shows it matters.
 
 ## Phase 2: Source places in Game Text
 

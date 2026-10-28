@@ -243,6 +243,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "ts-rs",
+ "unreal-source",
  "zstd",
 ]
 
@@ -910,6 +911,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "ts-rs",
 ]
 
 [[package]]

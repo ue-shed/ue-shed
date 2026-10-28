@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "62390ea01fdbdb7c716c7c506bd36590f7801945061da523cba2f40081d7651c"
+	contractHash: "dcb18743a0fdf9551d1283e12a0855ad30045cf9ef96e6545e4bef0fd56f790b"
 } as const;
 
 /**
@@ -56,7 +56,91 @@ rules: RuleDocumentV4, collationLocale: string, } | { "action": "findings_accept
 /**
  * The v4 rule document.
  */
-rules: RuleDocumentV4, };
+rules: RuleDocumentV4, } | { "action": "source_text", request: SourceTextRequest, };
+
+export type SourceTextRequest = { projectRoot: string, 
+/**
+ * The engine installation root, holding `Engine/`. Without it, the engine's wrappers and
+ * `LOCTABLE_FROMFILE_ENGINE` tables are left out, and the result says so.
+ */
+engineRoot: string | null, engine: EngineLine, targets: ReadonlyArray<SourceTarget>, 
+/**
+ * Where the engine's wrappers are kept between scans.
+ */
+cacheRoot: string | null, refreshEngineWrappers: boolean, };
+
+export type SourceTarget = { name: string, steps: ReadonlyArray<GatherStep>, };
+
+export type GatherStep = { searchDirectoryPaths: ReadonlyArray<string>, excludePathFilters: ReadonlyArray<string>, fileNameFilters: ReadonlyArray<string>, gatherEditorOnly: boolean, };
+
+export type EngineLine = "4.27" | "5.7" | "5.8";
+
+export type SourceTextResult = { engine: EngineLine, targets: ReadonlyArray<TargetText>, engineWrappers: EngineWrappers, wrapperCount: number, profile: SourceTextProfile, };
+
+export type TargetText = { name: string, places: ReadonlyArray<SourcePlace>, diagnostics: ReadonlyArray<SourceDiagnostic>, files: FileCounts, };
+
+export type FileCounts = { 
+/**
+ * Files the steps' search folders and name filters found.
+ */
+listed: number, 
+/**
+ * Of those, files the exclude filters left out.
+ */
+excluded: number, 
+/**
+ * Files that held a descriptor token and went through the line scanner.
+ */
+scanned: number, 
+/**
+ * Files with no token, skipped after a substring search.
+ */
+skipped: number, bytesRead: number, };
+
+export type EngineWrappers = "not-used" | "no-engine-root" | "read" | "cached";
+
+export type SourceTextProfile = { engineWrappersMicros: number, projectWrappersMicros: number, listMicros: number, scanMicros: number, };
+
+export type SourcePlace = { 
+/**
+ * The file as Unreal names it, relative to the gather's base. For a String Table CSV entry,
+ * the CSV path as the `LOCTABLE_FROMFILE_*` call wrote it.
+ */
+file: string, 
+/**
+ * 1-based; none for an entry imported from a CSV.
+ */
+line: number | null, 
+/**
+ * The macro that produced it, such as `LOCTEXT` or `LOCTABLE_SETSTRING`.
+ */
+macroName: string, 
+/**
+ * The `#define` wrapper the macro was expanded from, if any.
+ */
+wrapper: string | null, namespace: string, key: string, source: string, devNotes: string | null, metadata: ReadonlyArray<MetadataField>, 
+/**
+ * Inside `#if WITH_EDITOR` or `#if WITH_EDITORONLY_DATA` (exactly those spellings).
+ */
+editorOnly: boolean, 
+/**
+ * Whether the target gathers it: false for editor-only text in a target that leaves it out.
+ */
+gathered: boolean, 
+/**
+ * The split platform whose path holds the file, when the target splits platforms.
+ */
+platform: string | null, 
+/**
+ * The String Table ID, for String Table entries.
+ */
+table: string | null, };
+
+export type MetadataField = { name: string, value: string, };
+
+export type SourceDiagnostic = { file: string, line: number | null, code: DiagnosticCode, message: string, };
+
+export type DiagnosticCode = "argument-count" | "argument-parse" | "unexpected-bracket" | "end-of-file" | "missing-bracket" | "missing-quotes" | "empty-identifier" | "empty-source" | "whitespace-only" | "no-namespace" | "namespace-redefined" | "namespace-not-defined" | "namespace-not-closed" | "region-redefined" | "region-not-defined" | "unterminated-string" | "unterminated-raw-string" | "table-redefined" | "table-entry-redefined" | "table-metadata-redefined" | "table-not-registered" | "table-import-failed" | "wrapper-unsupported" | "wrapper-duplicate" | "crashes-unreal427" | "unreadable";
 
 export type ContractIdentity = { 
 /**

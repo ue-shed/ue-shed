@@ -459,9 +459,7 @@ impl Scanner<'_> {
                                 }
                                 let allowed = is_alnum(delimiter)
                                     || (self.engine != EngineLine::Ue4_27
-                                        && [b'_', b'|', b'!']
-                                            .iter()
-                                            .any(|&c| u16::from(c) == delimiter));
+                                        && b"_|!".iter().any(|&c| u16::from(c) == delimiter));
                                 if delimiter == 0 || !allowed {
                                     valid = false;
                                     break;
@@ -1554,7 +1552,7 @@ impl Scanner<'_> {
             }
         }
         // Longer parameter names first, so NAME_TEXT is replaced before NAME.
-        replacements.sort_by(|left, right| right.0.len().cmp(&left.0.len()));
+        replacements.sort_by_key(|entry| std::cmp::Reverse(entry.0.len()));
         let Some(inner) = Descriptor::nested(&wrapper.nested, self.engine) else {
             return;
         };

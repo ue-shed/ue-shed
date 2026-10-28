@@ -167,14 +167,18 @@ pub(crate) fn decode(bytes: &[u8]) -> Wide {
     let even = bytes.len() >= 2 && bytes.len().is_multiple_of(2);
     if even && bytes[0] == 0xFF && bytes[1] == 0xFE {
         return bytes[2..]
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect();
     }
     if even && bytes[0] == 0xFE && bytes[1] == 0xFF {
         return bytes[2..]
-            .chunks_exact(2)
-            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_be_bytes(*pair))
             .collect();
     }
     let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{EngineLine, SourceFile};
 
 /// One `GatherTextFromSource` step of a localization target, as its config file states it.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GatherStep {

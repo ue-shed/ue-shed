@@ -140,13 +140,18 @@ pub enum EngineRequest {
         #[cfg_attr(test, ts(type = "RuleDocumentV4"))]
         rules: Value,
     },
+    /// The text in a project's source, found the way Unreal's `GatherTextFromSource` finds it;
+    /// needs no reader (Plan 060).
+    SourceText {
+        request: unreal_source::SourceTextRequest,
+    },
 }
 impl EngineRequest {
     pub fn validate(&self) -> Result<()> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("requestValidate");
         match self {
-            Self::Capabilities | Self::RulesCheck { .. } => {}
+            Self::Capabilities | Self::RulesCheck { .. } | Self::SourceText { .. } => {}
             Self::Open {
                 configuration,
                 expected_generation,
@@ -353,6 +358,10 @@ impl EngineSession {
             EngineRequest::RulesCheck { rules } => (
                 "rules_check",
                 Some(serde_json::to_string(&crate::rules::check(&text(rules)?))?),
+            ),
+            EngineRequest::SourceText { request } => (
+                "source_text",
+                Some(serde_json::to_string(&unreal_source::run(request))?),
             ),
             EngineRequest::Open {
                 configuration,

@@ -13,6 +13,7 @@ mod csv;
 mod discovery;
 mod literal;
 mod nested;
+mod request;
 mod scanner;
 mod string_table;
 mod wide;
@@ -25,6 +26,10 @@ use serde::{Deserialize, Serialize};
 
 pub use discovery::{GatherStep, StepFiles, step_files, wrapper_files};
 pub use nested::WrapperMacro;
+pub use request::{
+    EngineWrappers, FileCounts, SourceTarget, SourceTextProfile, SourceTextRequest,
+    SourceTextResult, TargetText, run,
+};
 
 use nested::{NestedWrapper, prune, report_twins};
 use scanner::{Descriptor, Scanner, Sink, main_descriptors};
@@ -32,6 +37,7 @@ use string_table::{ContentRoot, CsvSource, Tables};
 use wide::{Wide, decode, is_text_whitespace, narrow, split_lines};
 
 /// Which commandlet's behaviour a scan reproduces.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EngineLine {
     /// UE 4.27: arguments on one line, project-wide String Tables, no wrappers or log macros.
@@ -60,6 +66,7 @@ impl EngineLine {
     }
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MetadataField {
     pub name: String,
@@ -67,6 +74,7 @@ pub struct MetadataField {
 }
 
 /// One gathered piece of text and where it is.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourcePlace {
@@ -94,6 +102,7 @@ pub struct SourcePlace {
     pub table: Option<String>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiagnosticCode {
@@ -126,6 +135,7 @@ pub enum DiagnosticCode {
 }
 
 /// Something Unreal's gather would log, at the place it would name.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceDiagnostic {
     pub file: String,

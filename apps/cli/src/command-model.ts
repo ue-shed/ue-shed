@@ -314,6 +314,14 @@ export const CliCommand = Schema.TaggedUnion({
 		format: Schema.Literals(["csv", "markdown", "json"]),
 		output: Schema.optionalKey(Schema.String)
 	},
+	SourceText: {
+		...Project,
+		...Reader,
+		targets: Schema.Array(Schema.NonEmptyString),
+		engineRoot: Schema.optionalKey(Schema.String),
+		engineVersion: Schema.optionalKey(Schema.String),
+		cacheRoot: Schema.optionalKey(Schema.String)
+	},
 	ProjectIndexStatus: ProjectIndexTarget,
 	ProjectIndexRefresh: ProjectIndexTarget,
 	ProjectIndexRebuild: ProjectIndexTarget,

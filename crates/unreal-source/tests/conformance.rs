@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use unreal_source::{
-    DiagnosticCode, DiskStore, EngineLine, ScanSettings, SourceFile, SourcePlace, SourceScan,
-    find_wrappers, scan,
+    DiagnosticCode, DiskStore, EngineLine, GatherStep, ScanSettings, SourcePlace, SourceScan,
+    find_wrappers, scan, step_files, wrapper_files,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -97,37 +97,32 @@ fn manifest_rows(path: &Path) -> BTreeSet<Row> {
     rows
 }
 
-/// The project's half of Unreal's wrapper prepass: `Source` and `Plugins`, `*.cpp` and `*.h`.
-/// The engine's half holds no wrapper the fixture calls.
-fn prepass_files(project: &Path) -> Vec<SourceFile> {
-    fn walk(folder: &Path, project: &Path, files: &mut Vec<SourceFile>) {
-        let Ok(entries) = std::fs::read_dir(folder) else {
-            return;
+/// The `GatherTextFromSource` step of a fixture recipe, read from its config file.
+fn recipe_step(path: &Path) -> GatherStep {
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    let mut step = GatherStep::default();
+    let mut in_step = false;
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_step = line == "[GatherTextStep0]";
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=').filter(|_| in_step) else {
+            continue;
         };
-        for entry in entries.filter_map(Result::ok) {
-            let location = entry.path();
-            if location.is_dir() {
-                walk(&location, project, files);
-                continue;
+        let value = value.trim().to_owned();
+        match key.trim() {
+            "SearchDirectoryPaths" => step.search_directory_paths.push(value),
+            "ExcludePathFilters" => step.exclude_path_filters.push(value),
+            "FileNameFilters" => step.file_name_filters.push(value),
+            "ShouldGatherFromEditorOnlyData" => {
+                step.gather_editor_only = value.eq_ignore_ascii_case("true")
             }
-            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
-            let generated = name.ends_with(".generated.h") || name.ends_with(".gen.cpp");
-            if (name.ends_with(".cpp") || name.ends_with(".h")) && !generated {
-                let path = location
-                    .strip_prefix(project)
-                    .unwrap_or(&location)
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                files.push(SourceFile { path, location });
-            }
+            _ => {}
         }
     }
-    let mut files = Vec::new();
-    for folder in ["Source", "Plugins"] {
-        walk(&project.join(folder), project, &mut files);
-    }
-    files.sort_by_key(|file| file.path.to_ascii_lowercase());
-    files
+    step
 }
 
 fn label(place: &SourcePlace, engine: EngineLine) -> String {
@@ -138,52 +133,29 @@ fn label(place: &SourcePlace, engine: EngineLine) -> String {
     }
 }
 
-fn fixture_scan(engine: EngineLine, gather_editor_only: bool) -> SourceScan {
+fn fixture_scan(engine: EngineLine, recipe: &str) -> SourceScan {
     let repository = repository();
-    let project = repository.join("fixtures/unreal-project");
-    let folder = project.join("FixtureSource/UnrealSource");
-    let (base, content, excluded) = if engine == EngineLine::Ue4_27 {
-        (
-            "../unreal-project/FixtureSource/UnrealSource",
-            repository.join("fixtures/unreal-427-localization/Content"),
-            Some("StringTablesUnregistered.cpp"),
-        )
+    let project = if engine == EngineLine::Ue4_27 {
+        repository.join("fixtures/unreal-427-localization")
     } else {
-        ("FixtureSource/UnrealSource", project.join("Content"), None)
+        repository.join("fixtures/unreal-project")
     };
-    let mut names: Vec<String> = std::fs::read_dir(&folder)
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                .collect()
-        })
-        .unwrap_or_default();
-    names.retain(|name| {
-        let lower = name.to_ascii_lowercase();
-        (lower.ends_with(".cpp") || lower.ends_with(".ini")) && Some(name.as_str()) != excluded
-    });
-    names.sort_by_key(|name| name.to_ascii_lowercase());
-    let files: Vec<SourceFile> = names
-        .iter()
-        .map(|name| SourceFile {
-            path: format!("{base}/{name}"),
-            location: folder.join(name),
-        })
-        .collect();
+    let step = recipe_step(&project.join("Config/Localization").join(recipe));
+    let files = step_files(engine, &project, None, &step).files;
     let settings = ScanSettings {
         engine,
-        gather_editor_only,
-        game_content: content,
+        gather_editor_only: step.gather_editor_only,
+        game_content: project.join("Content"),
         engine_content: PathBuf::new(),
         split_platforms: Vec::new(),
     };
-    let wrappers = find_wrappers(engine, &prepass_files(&project), &DiskStore);
+    // The project's half of the wrapper prepass; the engine's half holds no wrapper the fixture calls.
+    let wrappers = find_wrappers(engine, &wrapper_files(&project, &project), &DiskStore);
     scan(&settings, &files, &wrappers, &DiskStore)
 }
 
-fn scanned_rows(engine: EngineLine, gather_editor_only: bool) -> BTreeSet<Row> {
-    fixture_scan(engine, gather_editor_only)
+fn scanned_rows(engine: EngineLine, recipe: &str) -> BTreeSet<Row> {
+    fixture_scan(engine, recipe)
         .places
         .iter()
         .filter(|place| place.gathered)
@@ -206,12 +178,20 @@ fn scanned_rows(engine: EngineLine, gather_editor_only: bool) -> BTreeSet<Row> {
         .collect()
 }
 
-fn check(engine: EngineLine, folder: &str, manifest: &str, gather_editor_only: bool) {
+/// Scans with the target's recipe and compares with the manifest Unreal wrote for it. The 4.27
+/// recipe lives in the 4.27 project and is named for it.
+fn check(engine: EngineLine, folder: &str, target: &str) {
+    let manifest = format!("{target}.manifest");
+    let recipe = if engine == EngineLine::Ue4_27 {
+        format!("{target}427.ini")
+    } else {
+        format!("{target}.ini")
+    };
     let expected = manifest_rows(
         &repository()
             .join("fixtures/unreal-project/FixtureExpected/unreal-source")
             .join(folder)
-            .join(manifest),
+            .join(&manifest),
     );
     // Every manifest holds at least the shared cases; an empty read would pass vacuously.
     assert!(
@@ -219,7 +199,7 @@ fn check(engine: EngineLine, folder: &str, manifest: &str, gather_editor_only: b
         "{folder}/{manifest}: only {} entries read",
         expected.len()
     );
-    let actual = scanned_rows(engine, gather_editor_only);
+    let actual = scanned_rows(engine, &recipe);
     println!("{folder}/{manifest}: {} entries match", actual.len());
     let missing: Vec<&Row> = expected.difference(&actual).collect();
     let extra: Vec<&Row> = actual.difference(&expected).collect();
@@ -234,7 +214,7 @@ fn check(engine: EngineLine, folder: &str, manifest: &str, gather_editor_only: b
 #[test]
 fn says_which_wrappers_unreal_never_gathers() {
     for engine in [EngineLine::Ue5_7, EngineLine::Ue5_8] {
-        let result = fixture_scan(engine, false);
+        let result = fixture_scan(engine, "UnrealSource.ini");
         let twins: Vec<&str> = result
             .diagnostics
             .iter()
@@ -251,27 +231,17 @@ fn says_which_wrappers_unreal_never_gathers() {
 
 #[test]
 fn matches_unreal_5_8() {
-    check(EngineLine::Ue5_8, "5.8", "UnrealSource.manifest", false);
-    check(
-        EngineLine::Ue5_8,
-        "5.8",
-        "UnrealSourceEditor.manifest",
-        true,
-    );
+    check(EngineLine::Ue5_8, "5.8", "UnrealSource");
+    check(EngineLine::Ue5_8, "5.8", "UnrealSourceEditor");
 }
 
 #[test]
 fn matches_unreal_5_7() {
-    check(EngineLine::Ue5_7, "5.7", "UnrealSource.manifest", false);
-    check(
-        EngineLine::Ue5_7,
-        "5.7",
-        "UnrealSourceEditor.manifest",
-        true,
-    );
+    check(EngineLine::Ue5_7, "5.7", "UnrealSource");
+    check(EngineLine::Ue5_7, "5.7", "UnrealSourceEditor");
 }
 
 #[test]
 fn matches_unreal_4_27() {
-    check(EngineLine::Ue4_27, "4.27", "UnrealSource.manifest", false);
+    check(EngineLine::Ue4_27, "4.27", "UnrealSource");
 }

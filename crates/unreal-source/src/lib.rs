@@ -10,6 +10,7 @@
 //! faithful line scanner. Behaviour follows the engine line: 4.27, 5.0 to 5.7, and 5.8.
 
 mod csv;
+mod discovery;
 mod literal;
 mod nested;
 mod scanner;
@@ -22,6 +23,7 @@ use aho_corasick::AhoCorasick;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub use discovery::{GatherStep, StepFiles, step_files, wrapper_files};
 pub use nested::WrapperMacro;
 
 use nested::{NestedWrapper, prune, report_twins};

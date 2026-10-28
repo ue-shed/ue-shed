@@ -15,6 +15,9 @@ const text = Command.make(
 		engineRoot: optionalFlag("engine-root"),
 		engineVersion: optionalFlag("engine-version"),
 		cacheRoot: optionalFlag("cache-root"),
+		refreshEngineWrappers: Flag.Boolean("refresh-engine-wrappers").pipe(
+			Flag.withDefault(false)
+		),
 		reader: optionalFlag("reader")
 	},
 	(value) => {
@@ -25,6 +28,7 @@ const text = Command.make(
 			_tag: "CodeText",
 			projectRoot: value.projectRoot,
 			targets: value.targets,
+			refreshEngineWrappers: value.refreshEngineWrappers,
 			...(engineRoot === undefined ? undefined : { engineRoot }),
 			...(engineVersion === undefined ? undefined : { engineVersion }),
 			...(cacheRoot === undefined ? undefined : { cacheRoot }),

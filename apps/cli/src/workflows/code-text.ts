@@ -90,7 +90,8 @@ export const runCodeText = Effect.fn("Cli.workflow.code_text")((command: CodeTex
 				engine,
 				engineRoot,
 				targets: command.targets,
-				cacheRoot: command.cacheRoot
+				cacheRoot: command.cacheRoot,
+				refreshEngineWrappers: command.refreshEngineWrappers
 			});
 			yield* printJson(scanned);
 		}).pipe(

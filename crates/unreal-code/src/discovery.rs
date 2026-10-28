@@ -34,7 +34,7 @@ fn slashes(path: &str) -> String {
     path.replace('\\', "/")
 }
 
-fn absolute(path: &Path) -> String {
+pub(crate) fn absolute(path: &Path) -> String {
     collapse(&slashes(&path.to_string_lossy()))
 }
 

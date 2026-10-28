@@ -2,15 +2,16 @@
 //! the project, its engine, and each localization target's `GatherTextFromSource` steps.
 //!
 //! The engine's wrappers come from about 80,000 files and change only with the engine build, so
-//! they are kept under the cache root, keyed by the engine's `Build.version`. A source-built
-//! engine edited without a version change needs `refreshEngineWrappers`.
+//! they are kept under the cache root, one file per engine build shared by every project, keyed
+//! by the engine's `Build.version`. A source-built engine edited without a version change needs
+//! `refreshEngineWrappers`.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::discovery::{GatherStep, step_files, wrapper_files};
+use crate::discovery::{GatherStep, absolute, relative_to, step_files, wrapper_files};
 use crate::{
     CodeDiagnostic, CodePlace, DiskStore, EngineLine, ScanSettings, WrapperMacro, find_wrappers,
     scan,
@@ -121,6 +122,8 @@ fn fnv(text: &str) -> u64 {
     })
 }
 
+/// The engine's wrappers, with paths relative to the project as Unreal reports them. The cache
+/// keeps them relative to the engine root, so every project on one engine build shares a file.
 fn engine_wrappers(
     request: &CodeTextRequest,
     project: &Path,
@@ -131,16 +134,31 @@ fn engine_wrappers(
     let Some(root) = request.engine_root.as_deref().map(PathBuf::from) else {
         return (Vec::new(), EngineWrappers::NoEngineRoot);
     };
+    let (wrappers, state) = engine_wrappers_in_root(request, &root);
+    let root = absolute(&root);
+    let project = absolute(project);
+    let wrappers = wrappers
+        .into_iter()
+        .map(|mut wrapper| {
+            wrapper.file = relative_to(&format!("{root}/{}", wrapper.file), &project);
+            wrapper
+        })
+        .collect();
+    (wrappers, state)
+}
+
+fn engine_wrappers_in_root(
+    request: &CodeTextRequest,
+    root: &Path,
+) -> (Vec<WrapperMacro>, EngineWrappers) {
     let engine_folder = root.join("Engine");
     let version =
         std::fs::read_to_string(engine_folder.join("Build/Build.version")).unwrap_or_default();
-    // Wrapper paths are relative to the project, so the project is part of the key too.
     let key = format!(
-        "{}\n{}\n{:?}\n{}\n{version}",
+        "{}\n{}\n{:?}\n{version}",
         env!("CARGO_PKG_VERSION"),
         root.to_string_lossy(),
         request.engine,
-        project.to_string_lossy()
     );
     let cache_file = request.cache_root.as_deref().map(|cache| {
         Path::new(cache)
@@ -158,7 +176,7 @@ fn engine_wrappers(
     }
     let wrappers = find_wrappers(
         request.engine,
-        &wrapper_files(&engine_folder, project),
+        &wrapper_files(&engine_folder, root),
         &DiskStore,
     );
     if let Some(file) = cache_file {

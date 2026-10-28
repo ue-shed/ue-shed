@@ -320,7 +320,8 @@ export const CliCommand = Schema.TaggedUnion({
 		targets: Schema.Array(Schema.NonEmptyString),
 		engineRoot: Schema.optionalKey(Schema.String),
 		engineVersion: Schema.optionalKey(Schema.String),
-		cacheRoot: Schema.optionalKey(Schema.String)
+		cacheRoot: Schema.optionalKey(Schema.String),
+		refreshEngineWrappers: Schema.Boolean
 	},
 	ProjectIndexStatus: ProjectIndexTarget,
 	ProjectIndexRefresh: ProjectIndexTarget,

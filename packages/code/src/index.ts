@@ -48,6 +48,8 @@ export interface CodeTextInput {
 	readonly targets?: readonly string[] | undefined;
 	/** Where the engine's wrappers are kept between scans. */
 	readonly cacheRoot?: string | undefined;
+	/** Read the engine's wrappers again, for a source-built engine edited without a version change. */
+	readonly refreshEngineWrappers?: boolean | undefined;
 }
 
 /**
@@ -75,7 +77,7 @@ export const scanCodeText = Effect.fn("UnrealCode.scan")(function* (input: CodeT
 			engine: input.engine,
 			targets,
 			cacheRoot: input.cacheRoot ?? null,
-			refreshEngineWrappers: false
+			refreshEngineWrappers: input.refreshEngineWrappers === true
 		}
 	});
 	const result = answerJson<CodeTextResult>(answer);

@@ -1555,6 +1555,10 @@ bool ApplyCommand(
 
 void RestoreTable(UDataTable* Table, const UDataTable* Backup)
 {
+	// Restoring frees and reallocates every row, so an open row editor must let go of its row
+	// first, as it does for FDataTableEditorUtils::RemoveRow.
+	FDataTableEditorUtils::BroadcastPreChange(
+		Table, FDataTableEditorUtils::EDataTableChangeInfo::RowList);
 	Table->EmptyTable();
 	for (const FName RowName : Backup->GetRowNames())
 	{
@@ -1562,6 +1566,8 @@ void RestoreTable(UDataTable* Table, const UDataTable* Backup)
 		if (RowData) Table->AddRow(RowName, *RowData, Backup->GetRowStruct());
 	}
 	Table->HandleDataTableChanged();
+	FDataTableEditorUtils::BroadcastPostChange(
+		Table, FDataTableEditorUtils::EDataTableChangeInfo::RowList);
 }
 
 FString ErrorJson(const FString& Code, const FString& Message)
@@ -1767,6 +1773,14 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 	}
 	FScopedTransaction Transaction(NSLOCTEXT("UEShedAuthoring", "Apply", "Apply authoring draft"));
 	for (const TPair<FString, UDataTable*>& Pair : Tables) Pair.Value->Modify();
+	// An open DataTable editor refreshes only on editor-manager notifications. Row structure
+	// commands send their own RowList pair through FDataTableEditorUtils; one RowData pair per
+	// table covers cell writes and the fields add_row assigns after AddRow has notified.
+	for (const TPair<FString, UDataTable*>& Pair : Tables)
+	{
+		FDataTableEditorUtils::BroadcastPreChange(
+			Pair.Value, FDataTableEditorUtils::EDataTableChangeInfo::RowData);
+	}
 	for (const TSharedPtr<FJsonValue>& CommandValue : *Commands)
 	{
 		const TSharedPtr<FJsonObject> Command = CommandValue->AsObject();
@@ -1783,6 +1797,8 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 			for (const TPair<FString, UDataTable*>& Pair : Tables)
 			{
 				RestoreTable(Pair.Value, Backups.FindChecked(Pair.Key));
+				FDataTableEditorUtils::BroadcastPostChange(
+					Pair.Value, FDataTableEditorUtils::EDataTableChangeInfo::RowData);
 			}
 			for (const TPair<FString, UDataTable*>& Pair : Backups) Pair.Value->RemoveFromRoot();
 			Errors.Add(OperationError(TEXT("command_failed"), Error, false, ObjectPath, CommandId,
@@ -1790,6 +1806,11 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 			Finish(TEXT("rolled_back"), Errors, true);
 			return;
 		}
+	}
+	for (const TPair<FString, UDataTable*>& Pair : Tables)
+	{
+		FDataTableEditorUtils::BroadcastPostChange(
+			Pair.Value, FDataTableEditorUtils::EDataTableChangeInfo::RowData);
 	}
 	for (const TPair<FString, UDataTable*>& Pair : Backups) Pair.Value->RemoveFromRoot();
 	Finish(TEXT("committed"), Errors, true);

@@ -42,6 +42,12 @@ checks identity per command instead:
 Both comparisons read `float` values as Unreal stores them, rounded to 32 bits. A draft can
 therefore name a float it wrote earlier in the same Apply.
 
+Apply tells open DataTable editors about its changes through Unreal's DataTable editor
+notifications, so an open table shows the applied or restored rows without another edit. Each
+table in the plan gets one `RowData` pre-change before its commands run and one post-change after
+it commits or rolls back. Row add, remove, rename and move send their own `RowList` pair through
+`FDataTableEditorUtils`, and rollback sends a `RowList` pair around restoring the table.
+
 `FindActorsReferencingRow(RequestJson, ResultJson)` implements
 `unreal-authoring-actor-references` version 1.0. The request selects an already-loaded editor or PIE
 `worldObjectPath`, an already-loaded `tableObjectPath`, and an existing `rowName`, plus explicit
@@ -62,5 +68,7 @@ Native automation tests `UEShed.Authoring.Defaults` and `UEShed.Authoring.ActorR
 transient tables, Blueprint structs, worlds, actors, and components, and verify that read operations
 preserve row values and dirty state. `UEShed.Authoring.DefaultsCodec` creates a row through the
 actual command decoder using the snapshot defaults, and `UEShed.Authoring.TextIdentity` covers
-localized, minted, string-table, culture-invariant, generated, and Apply 1.1 text writes. The plugin gate passes shared wire fixtures via
-`-UEShedAuthoringContractFixtures=<directory>`.
+localized, minted, string-table, culture-invariant, generated, and Apply 1.1 text writes.
+`UEShed.Authoring.EditorNotifications` listens like an open DataTable editor and checks the
+notifications for a cell edit, an added row, and a rolled-back Apply. The plugin gate passes
+shared wire fixtures via `-UEShedAuthoringContractFixtures=<directory>`.

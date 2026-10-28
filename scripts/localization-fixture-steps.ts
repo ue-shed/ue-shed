@@ -136,3 +136,20 @@ export function gameTextActionsFixtureSteps(project: string, evidence: string) {
 		stage("Evidence", `-GameTextActionsEvidence=${evidence}`)
 	];
 }
+
+/**
+ * Plan 060's scanner oracle: Unreal gathers the source cases in `FixtureSource/UnrealSource` twice,
+ * without and with editor-only text. Source-only gathers load no content.
+ */
+export function unrealSourceFixtureSteps(project: string) {
+	return ["UnrealSource", "UnrealSourceEditor"].map((name) => [
+		project,
+		"-run=GatherText",
+		`-config=${join(dirname(project), "Config", "Localization", `${name}.ini`)}`,
+		"-unattended",
+		"-SCCProvider=None",
+		...localDerivedDataCacheArguments,
+		"-nosplash",
+		"-NullRHI"
+	]);
+}

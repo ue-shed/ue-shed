@@ -143,14 +143,38 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
    a key rename with translations, and a shelved one. Record their numbers only, never names or
    text.
 
-**Evidence**: _pending_.
+**Evidence (2026-10-28, partial)**:
+
+- Cases in `fixtures/unreal-project/FixtureSource/UnrealSource` (namespaces, literals, editor-only
+  context, `UI_COMMAND`, localized logs, a wrapper macro, code String Tables with a UTF-8 and a
+  UTF-16 CSV under `Content/Fixture/UnrealSource`, 5.8 developer notes, INI). Recipes
+  `UnrealSource.ini` (no editor-only text) and `UnrealSourceEditor.ini` (with it).
+  `pnpm fixture:generate-unreal-source` gathers both and keeps the manifests in
+  `FixtureExpected/unreal-source/<engine>`.
+- UE 5.8 gathered 41 entries without editor-only text and 43 with it, in 3.7 s; the manifest is
+  UTF-16. It corrected four of the research's assumptions, so the oracle, not the research, is the
+  spec:
+    - `MYLOCTEXT("Prefixed", …)` gathers as `LOCTEXT`: no identifier boundary is checked.
+    - `LOCTEXT(KeyConstant, …)` gathers with the identifier itself as the key.
+    - Adjacent literals do not join: `"Two literals " "become one"` gathers as
+      `Two literals " "become one`.
+    - `#if defined(WITH_EDITOR)` is runtime text: only `#if WITH_EDITOR`,
+      `#if WITH_EDITORONLY_DATA` and their `#ifdef` forms make text editor-only.
+- Also observed: `TEXT("Inside TEXT()")` as a source keeps its `TEXT(...)` wrapper; an INI
+  `NSLOCTEXT("[/Script/UnrealSource]", …)` gathers under the empty namespace; `UI_COMMAND`
+  under a namespace gathers as `UICommands.<namespace>`; CSV cells in extra columns become
+  `MetaData.Info`, and `DevNotes` becomes the entry's developer notes.
+- UE 5.7, UE 4.27 and the baseline: pending.
 
 ## Phase 1: `unreal-source`, the scanner
 
 1. `crates/unreal-source`:
-    - **Lexer** from the spike: memchr hops, exact identifier table, terminator hops. Fix the
-      spike's known gap: an identifier match must start at an identifier boundary (`MY_LOCTEXT`
-      is not `LOCTEXT`).
+    - **Two tiers.** A SIMD substring check (memchr's `memmem`) skips every file that holds no
+      descriptor token at all; no place can come from such a file. The few files left go through
+      a faithful port of Unreal's line scanner (`ParseSourceText`): its per-character token
+      counters, longest-token deferral, comment and string state, and argument gatherer, quirks
+      included. Unreal checks no identifier boundary, so `MYLOCTEXT(` gathers as `LOCTEXT`; the
+      spike's planned boundary fix would break parity and is dropped.
     - **Descriptors as versioned data**: a table per engine line (4.27, 5.x, 5.8), not code
       branches. Each descriptor names its argument shape and how namespace, key and source are
       formed.

@@ -3,3 +3,8 @@
 fixtures/**/Content/Localization/** -text
 fixtures/**/Config/Localization/** -text
 fixtures/**/FixtureExpected/localization/*-output/** -text
+# Plan 060 scanner oracle: Unreal reads these source cases and String Table CSVs byte for byte,
+# and the manifests it gathers from them are the expected output.
+fixtures/**/FixtureSource/UnrealSource/** -text
+fixtures/**/Content/Fixture/UnrealSource/** -text
+fixtures/**/FixtureExpected/unreal-source/** -text

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -13,7 +13,8 @@ import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 import {
 	gameTextActionsFixtureSteps,
 	gameTextProblemsFixtureSteps,
-	localizationFixtureSteps
+	localizationFixtureSteps,
+	unrealSourceFixtureSteps
 } from "./localization-fixture-steps.ts";
 import { retainLocalizationFixtureOutput } from "./localization-fixture-output.ts";
 import {
@@ -31,7 +32,8 @@ const isLocalization =
 	action === "localization" ||
 	action === "localization-verify" ||
 	action === "game-text-problems" ||
-	action === "game-text-actions";
+	action === "game-text-actions" ||
+	action === "unreal-source";
 const fixtureRoot =
 	isLocalization && process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT
 		? resolve(process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT)
@@ -277,6 +279,7 @@ if (
 		"localization-427",
 		"game-text-problems",
 		"game-text-actions",
+		"unreal-source",
 		"world-partition",
 		"save",
 		"scenario",
@@ -285,7 +288,7 @@ if (
 	]).has(action)
 ) {
 	throw new Error(
-		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|localization|localization-verify|localization-427|game-text-problems|game-text-actions|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
+		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|localization|localization-verify|localization-427|game-text-problems|game-text-actions|unreal-source|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
 	);
 }
 
@@ -351,6 +354,33 @@ if (action === "game-text-actions") {
 		rmSync(join(fixtureRoot, generated), { recursive: true, force: true });
 	for (const args of gameTextActionsFixtureSteps(projectFile, output))
 		run(tools.editorCommandlet, args);
+}
+if (action === "unreal-source") {
+	const version = engineVersion(engineRoot);
+	if (version === undefined) throw new Error("The engine version is unavailable.");
+	const output = resolve(
+		process.argv[3] ?? join(fixtureRoot, "FixtureExpected", "unreal-source", version.label)
+	);
+	process.stdout.write(
+		`Unreal source gathers write: ${join(fixtureRoot, "Content/Localization/UnrealSource")}, ` +
+			`${join(fixtureRoot, "Content/Localization/UnrealSourceEditor")}, ${output}
+`
+	);
+	for (const name of ["UnrealSource", "UnrealSourceEditor"])
+		rmSync(join(fixtureRoot, "Content", "Localization", name), {
+			recursive: true,
+			force: true
+		});
+	for (const args of unrealSourceFixtureSteps(projectFile)) run(tools.editorCommandlet, args);
+	mkdirSync(output, { recursive: true });
+	for (const name of ["UnrealSource", "UnrealSourceEditor"]) {
+		const manifest = join(fixtureRoot, "Content", "Localization", name, `${name}.manifest`);
+		copyFileSync(manifest, join(output, `${name}.manifest`));
+		rmSync(join(fixtureRoot, "Content", "Localization", name), {
+			recursive: true,
+			force: true
+		});
+	}
 }
 if (action === "localization-verify") {
 	runCommandlet(

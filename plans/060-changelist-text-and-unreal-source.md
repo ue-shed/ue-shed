@@ -83,9 +83,12 @@ The owner can reverse any of them at a phase review.
 1. **Package and crate**: `@ue-shed/unreal-source` and `crates/unreal-source`. It reads a
    project's source tree (C++, headers, config and String Table CSVs), not its content. Game Text
    is its first consumer; reflection for authoring and Remote Control comes later. _(planner)_
-2. **A token scanner, not a parser** (owner). No clang, no tree-sitter, no Pierre fork. The
-   spike's scanner is the starting core. Unknown constructs are kept as unknown and reported, never
-   guessed.
+2. **A token scanner, not a parser** (owner). No clang, no tree-sitter, no Pierre fork. Unknown
+   constructs are kept as unknown and reported, never guessed. The core is a port of Unreal's own
+   scanner, not the spike's: the spike matched whole identifiers, which Unreal does not (Phase 0),
+   so its idea survives as tier one, the skip of files that hold no descriptor token. Later
+   consumers (reflection, modules) mirror their own Unreal tool, UHT's tokenizer for reflection,
+   and share the crate's encoding, literal, CSV and path code, not the gather's quirks.
 3. **Never smarter than Unreal** (_recommended_). No include following, no `#if` evaluation and no
    constant resolution in the gathered set. Extras such as `FText::FromString` or `INVTEXT` are
    reported as findings that never become keys.
@@ -268,15 +271,12 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   `{ action: "source_text" }` request, so it shares the engine's build identity and its types are
   generated into `game-text-contract.generated.ts`. File contents never cross into the host: the
   host sends the targets' steps, the engine answers with places, diagnostics, file counts and a
-  per-stage profile (engine wrappers, project wrappers, listing, scan).
-    - `packages/unreal-source` (private) reads each target's `GatherTextFromSource` steps through
-      `LocalizationEvidence`, a step's missing fields falling back to `CommonSettings` as the
-      commandlet reads them, and annotates its span with the profile.
-    - `ue-shed source text <project-root> [--target …] [--engine-root] [--engine-version]
+  per-stage profile (engine wrappers, project wrappers, listing, scan). - `packages/unreal-source` (private) reads each target's `GatherTextFromSource` steps through
+  `LocalizationEvidence`, a step's missing fields falling back to `CommonSettings` as the
+  commandlet reads them, and annotates its span with the profile. - `ue-shed source text <project-root> [--target …] [--engine-root] [--engine-version]
 [--cache-root]` takes the engine from `@ue-shed/engine` discovery (the explicit root or the
-      `.uproject` association) unless `--engine-version` names the behaviour directly.
-    - The engine's wrappers are cached under the cache root per crate version, engine root,
-      engine line, project and `Build.version`.
+  `.uproject` association) unless `--engine-version` names the behaviour directly. - The engine's wrappers are cached under the cache root per crate version, engine root,
+  engine line, project and `Build.version`.
 - Through the command, the fixture's targets gather what Unreal gathered: on 5.8 `UnrealSource`
   57 and `UnrealSourceEditor` 62; with the engine found from the association (5.7), 54. The 5.7
   engine's wrappers took 3.7 s to find with a warm file cache and 0.4 ms from the cache; 52

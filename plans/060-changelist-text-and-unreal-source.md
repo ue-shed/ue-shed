@@ -14,7 +14,8 @@
 
 ## Status
 
-- **State**: In progress. Phase 0: oracle done on 5.7, 5.8 and 4.27; baseline pending.
+- **State**: In progress. Phase 0: oracle done on 5.7, 5.8 and 4.27; baseline pending. Phase 1:
+  the scanner matches all three engines' gathers; the service, command and contract are next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -182,14 +183,18 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
     - `NOTELOCTEXT(` matches as `LOCTEXT` and fails its argument count, as in 5.x without the
       macro, and so is only a warning.
     - Source locations read `path:line` relative to the recipe, not `path(line)`.
-- 4.27 crashes (an access violation) on `LOCTABLE_SETSTRING` for a table the file never
-  registers; 5.x drops those entries with a warning. That case lives in
-  `StringTablesUnregistered.cpp`, which the 4.27 recipe excludes. 4.27 resolves exclude filters
-  against the project folder, so the filter names the file by its relative path.
-- The `#define` wrapper prepass is project-wide: a wrapper defined in a header applies to every
-  file, one defined in a `.cpp` only to that file, and two header wrappers with the same name are
-  both excluded. A changelist that edits a header wrapper can change text in files it never
-  touched, so a point keeps its wrapper set.
+- 4.27 crashes (an access violation) when a String Table has entries but no registration: its
+  "never registered" warning passes the entry count to a `%s`. 4.27 keeps String Tables
+  project-wide, so a table registered in another file is fine there; 5.x keeps them per file and
+  drops the entries with a warning. The case lives in `StringTablesUnregistered.cpp`, which the
+  4.27 recipe excludes. 4.27 resolves exclude filters against the project folder, so the filter
+  names the file by its relative path.
+- The `#define` wrapper prepass ignores the target's scope: it reads `*.cpp` and `*.h` under the
+  engine's and the project's `Source` and `Plugins` (its `.inl` filter lacks the `*`, so it never
+  matches). A wrapper defined in a header applies to every file, one defined in a `.cpp` only to
+  that file, and two header wrappers with the same name are both excluded. A changelist that
+  edits a header wrapper can change text in files it never touched, so a point keeps its wrapper
+  set, and the engine's part can be kept per engine build.
 - The baseline and the sample changelists: pending.
 
 ## Phase 1: `unreal-source`, the scanner
@@ -227,7 +232,38 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 6. **Measure** single-threaded and parallel MB/s on the two research projects against the
    spike's numbers, with bounded spans per stage (read, lex, descriptors, CSV).
 
-**Evidence**: _pending_.
+**Evidence (2026-10-28, partial: items 1, 2, 5 and 6 done)**:
+
+- `crates/unreal-source` ports `GatherTextFromSourceCommandlet` on UTF-16 code units: the line
+  scanner, every descriptor, the argument gatherer and look-ahead, escapes, `TEXT()`, the
+  `#if` stack, `LOC_DEFINE_REGION`, INI sections, String Tables (per file on 5.x, project-wide on
+  4.27), an `FCsvParser` port, and the 5.x wrapper prepass. Tier one is an Aho-Corasick pass over
+  the descriptors' tokens. Its README lists the approximations it knowingly makes.
+- The fixture gained `Lexing.cpp` (comments, continued and raw strings over lines, quote
+  characters, `LLOCTEXT`, `#else`, `#elif`, `#ifdef`) and three header wrappers in
+  `Source/UEShedFixture/Public/UEShedFixtureTextWrappers.h`, called from `Wrappers.cpp`.
+- **Conformance**: the scan reproduces every Unreal manifest exactly: 4.27 (46 entries), 5.7 (54
+  and 59) and 5.8 (57 and 62), namespace, key, text, location, developer notes and metadata.
+- Two more Unreal behaviours the oracle showed:
+    - A wrapper around `NSLOCTEXT` gathers nothing on 5.x. Its body also holds `LOCTEXT`, so the
+      prepass registers it twice under one name, and at every call each registration defers to
+      the other. The scan reproduces this and reports it as `wrapper-unsupported`.
+    - `HARBOR_LOCTEXT("Wrapped", …)` gathers on every engine, 4.27 included, without any prepass:
+      its name ends in `LOCTEXT(`.
+- **Speed**, release build, file reads included, second runs, `scan_project` example (target files
+  are `*.cpp`, `*.h`, `*.ini` under `Source`, `Plugins` and `Config`):
+
+  | Project | Files | MB | Line-scanned | Places | 1 thread | Parallel |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Large UE 4.27 project | 12,303 | 60.8 | 537 | 1,782 | 853 ms (71 MB/s) | 93 ms (656 MB/s) |
+  | UE 5.7 project | 4,301 | 23.8 | 210 | 668 | 358 ms (66 MB/s) | 32 ms (736 MB/s) |
+
+  The spike read 49–75 MB/s single-threaded; the faithful port matches it, because tier one
+  leaves 4–5 % of the files for the line scanner. The 5.7 project's wrapper prepass over the
+  engine (79,614 files) took 5.96 s single-threaded and 0.53 s parallel, plus about 10 s to list
+  the files, so the engine's wrappers (48 with the project's) are worth keeping per engine build.
+- Pending: the `packages/unreal-source` service, the `source text` command, the typed contract
+  and per-stage spans.
 
 ## Phase 2: Source places in Game Text
 

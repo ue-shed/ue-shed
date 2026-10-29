@@ -88,7 +88,8 @@ export const BuiltInQualityFilter = Schema.Literals([
 	"source_line_endings_changed",
 	"placeholder_translation",
 	"shared",
-	"long"
+	"long",
+	"string_table_entry_missing"
 ]);
 export type BuiltInQualityFilter = typeof BuiltInQualityFilter.Type;
 /** A custom check's filter: `custom.` and the check's rule ID. */
@@ -453,6 +454,11 @@ function problem(finding: Finding): string {
 			return "Used in " + textCountLabel(finding.actual.occurrences, "place");
 		case "long":
 			return "Long text · " + textCountLabel(finding.actual.length, "character");
+		case "string_table_entry_missing":
+			return (
+				"Missing entry " +
+				finding.actual.entries.map((entry) => entry.key + " in " + entry.tableId).join(", ")
+			);
 		case "character_budget":
 		case "localization_character_budget":
 			return (

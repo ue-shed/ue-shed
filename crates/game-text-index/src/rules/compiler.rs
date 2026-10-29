@@ -340,6 +340,7 @@ fn field_type(subject: Subject, name: &str) -> Result<Type> {
             "identity" => Type::Object,
             "sourceVariants" | "manifestNotes" | "manifestLocations" | "stringTables"
             | "duplicateSites" => Type::List(Box::new(Type::String)),
+            "missingStringTableEntries" => Type::List(Box::new(Type::Object)),
             "comparable" | "checkable" | "gathered" | "bytecodeOnly" | "allOutside"
             | "conflicting" => Type::Bool,
             "joinPosition" => Type::Number,
@@ -1188,7 +1189,7 @@ mod tests {
         )?;
         let program = compile(std::str::from_utf8(&output.stdout)?)?;
         // Every built-in but segment_separator, which needs a separator.
-        assert_eq!(program.rules.len(), 24);
+        assert_eq!(program.rules.len(), 25);
         assert_eq!(
             program
                 .nodes

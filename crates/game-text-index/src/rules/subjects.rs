@@ -55,7 +55,14 @@ pub struct NativeSubjects<'a> {
     /// The strings `places` reads, kept for the rest of this read.
     place_arena: Option<super::columns::Arena>,
     join_positions: Option<Arc<[u32]>>,
+    /// Known String Tables and their entries, by occurrence string ID, built on first use.
+    string_table_entries: Option<StringTableEntries>,
 }
+/// Known String Tables, by their object's string ID, and their `(table, entry key)` pairs.
+type StringTableEntries = Arc<(
+    std::collections::HashSet<u32>,
+    std::collections::HashSet<(u32, u32)>,
+)>;
 impl<'a> NativeSubjects<'a> {
     pub fn new(
         query: &'a EngineQuery,
@@ -146,7 +153,29 @@ impl<'a> NativeSubjects<'a> {
             read_arena: None,
             place_arena: None,
             join_positions: None,
+            string_table_entries: None,
         })
+    }
+    /// Known String Tables (a resolved entry's object) and their `(table, entry key)` pairs.
+    fn string_table_entries(&mut self) -> Result<StringTableEntries> {
+        if let Some(entries) = &self.string_table_entries {
+            return Ok(Arc::clone(entries));
+        }
+        let data = Arc::clone(&self.occurrences);
+        let mut known = std::collections::HashSet::new();
+        let mut entries = std::collections::HashSet::new();
+        for row in 0..data.len() {
+            if data.value(row, "location") == 2
+                && data.value(row, "identity") == 0
+                && !self.query.reader.string(data.value(row, "key"))?.is_empty()
+            {
+                known.insert(data.value(row, "object"));
+                entries.insert((data.value(row, "object"), data.value(row, "row")));
+            }
+        }
+        let built: Arc<(_, _)> = Arc::new((known, entries));
+        self.string_table_entries = Some(Arc::clone(&built));
+        Ok(built)
     }
     /// Each line's position in the join, as the host's join rows list it
     /// (`indexedLocalizationLinesRequest`), or `u32::MAX` for a line outside the join: a hidden
@@ -491,6 +520,42 @@ impl<'a> NativeSubjects<'a> {
                 }
                 tables.sort_by(|a, b| super::text::code_unit_compare(a, b));
                 json!(tables)
+            }
+            "missingStringTableEntries" => {
+                let (known, entries) = &*self.string_table_entries()?;
+                let mut missing = Vec::new();
+                for member in self.line_members(line) {
+                    let member = member as usize;
+                    if self.occurrences.value(member, "identity") != 1 {
+                        continue;
+                    }
+                    let table = self.occurrences.value(member, "namespace");
+                    let key = self.occurrences.value(member, "key");
+                    if !self.query.reader.string(key)?.is_empty()
+                        && known.contains(&table)
+                        && !entries.contains(&(table, key))
+                        && !missing.contains(&(table, key))
+                    {
+                        missing.push((table, key));
+                    }
+                }
+                let mut decoded = Vec::new();
+                for (table, key) in missing {
+                    decoded.push((
+                        self.query.reader.string(table)?,
+                        self.query.reader.string(key)?,
+                    ));
+                }
+                decoded.sort_by(|a, b| {
+                    super::text::code_unit_compare(&a.0, &b.0)
+                        .then_with(|| super::text::code_unit_compare(&a.1, &b.1))
+                });
+                json!(
+                    decoded
+                        .into_iter()
+                        .map(|(table, key)| json!({"tableId":table,"key":key}))
+                        .collect::<Vec<_>>()
+                )
             }
             "allOutside" => {
                 let outside = STATES

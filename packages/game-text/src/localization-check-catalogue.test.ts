@@ -126,6 +126,26 @@ describe("localization check catalogue", () => {
 		).toBeUndefined();
 	});
 
+	it("reports a String Table entry missing from a known table", () => {
+		// The projector lists only references to a known table with no entry: a present entry
+		// and a reference to an unscanned table both give an empty list, so neither fires.
+		const missing = evaluateCatalogueRule("string_table_entry_missing", {
+			sourceCulture: "en",
+			missingStringTableEntries: [{ tableId: "/Game/Text/Table.Table", key: "Absent" }]
+		});
+		expect(missing?.actual).toEqual({
+			entries: [{ tableId: "/Game/Text/Table.Table", key: "Absent" }],
+			entryCount: 1
+		});
+		expect(missing?.expectation).toEqual({ entryExists: true });
+		expect(
+			evaluateCatalogueRule("string_table_entry_missing", {
+				sourceCulture: "en",
+				missingStringTableEntries: []
+			})
+		).toBeUndefined();
+	});
+
 	it("generates the README check table", () => {
 		const readme = readFileSync(README, "utf8");
 		const generated = withLocalizationCheckTable(readme);

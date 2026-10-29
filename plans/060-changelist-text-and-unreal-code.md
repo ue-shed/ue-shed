@@ -452,6 +452,51 @@ the code scan. The owner left the choice of changelists to the planner.
 4. **Measure**: a changelist review's wall time and bytes read against Phase 0's full-scan
    baseline, on the sample changelists.
 
+**Where a warm `loc gate` goes (2026-10-29)**, the asset-only sample on the UE 4.27 project, 10.3 s
+end to end, from the CLI's spans:
+
+| Stage                                                                    |   Time |
+| ------------------------------------------------------------------------ | -----: |
+| Node and the TypeScript loader starting (a dev run; not the release CLI) | ~2.0 s |
+| Project refresh: Catalog (`project_index_refresh` and `status`)          |  0.9 s |
+| Project refresh: package plan over 167,507 packages                      |  2.3 s |
+| Code layer: scan and key                                                 |  0.5 s |
+| Opening the index for queries                                            |  1.2 s |
+| Corpus header: every package's coverage and diagnostics, into TS         |  1.9 s |
+| The gate's own read of the listed files' lines                           |  0.5 s |
+
+The changelist's own work is 0.5 s; everything else is the whole project, every time. The corpus
+header also breaks the bulk-data rule: the gate needs the coverage of a few listed files and
+receives 167,507 packages'.
+
+**Design (2026-10-29, planner)**:
+
+- **A record is one file's package-text columns**: exactly the per-package `Columns` the shard
+  path builds before appending them to a shard (`project_one_path`, then `native_stored`, then
+  `Columns::feed`), written alone as a staged file. Key: SHA-256 over the format, the saved-text
+  policy key and the SHA-256 of the file's bytes. Records live in the cache root's
+  `records/<k[0..2]>/<k>` and are written once: a revision read for one changelist is a hit for
+  every later one, in any project on the machine. A code file's record is its places from
+  `unreal-code`, in the same columns, keyed by its bytes and the target's scan context (wrappers,
+  engine line); on 4.27, String Tables are project-wide, so a code point keeps the context's key.
+- **A point is a manifest**, `points/<id>`: `{ base, entries: path → record key | removed }`. A
+  changelist's points are sparse: only its files, over a base. Ids: `local`, `depot@<CL>`,
+  `shelved:<CL>`.
+- **Revisions**: the host prints each revision a point needs into `revisions/<md5>-<size>`, from
+  the digest and size `p4 describe` reports, so a revision is printed once. Submitted: base is
+  each file at `#rev-1` (an add has none), head at `#rev` (a delete has none). Shelved: base is
+  the revision the shelf is based on (`shelvedDiffRevisions`), head `@=<CL>`. Local: head is the
+  file on disk, base `#have`. The engine reads these files; it starts no processes.
+- **Perforce**: through the `p4client-ts` connection Map History already resolves
+  (`resolveConnection`, `describeChangelist`, `printBatch`), moved where both use it rather than
+  copied.
+- **Reader request** `read_point`, intercepted in the reader as `publish_code` is: it hashes,
+  looks up and fills records and writes the point; its outcome counts hits, misses and bytes and
+  carries per-stage times, which the host puts on its span.
+- **Not in Phase 3**: the diff and impact (Phase 4), so this phase measures reading a changelist's
+  two points against the full refresh. The corpus header cut (the gate reads listed files'
+  coverage natively) is a clear cut taken here, since every changelist check pays it.
+
 **Evidence**: _pending_.
 
 ## Phase 4: Diff and impact, natively

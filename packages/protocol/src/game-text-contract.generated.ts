@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "02006c09855b4038434ea54ab32bb6256b70035c6b3244d7c80987e20d0d78fa"
+	contractHash: "cfea4a645c585accd474bf54dd3489eb99fd70338684ba3e6bf06d2ac367026c"
 } as const;
 
 /**
@@ -56,7 +56,7 @@ rules: RuleDocumentV4, collationLocale: string, } | { "action": "findings_accept
 /**
  * The v4 rule document.
  */
-rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, } | { "action": "compare_points", configuration: IndexConfiguration, request: ComparePointsRequest, };
+rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, } | { "action": "compare_points", configuration: IndexConfiguration, request: ComparePointsRequest, } | { "action": "compare_text_files", request: CompareTextFilesRequest, };
 
 export type CodeTextRequest = { projectRoot: string, 
 /**
@@ -670,6 +670,44 @@ export type PointFindings = { counts: PointFindingCounts, total: number, rows: R
 built: boolean, };
 
 export type PointComparison = { point: string, base: string, counts: PointChangeCounts, complete: boolean, total: number, changes: ReadonlyArray<PointChange>, findings?: PointFindings, stageSeconds: { [key in string]: number }, };
+
+export type CompareTextFilesRequest = { options: LocalizationOptions, before?: TextFileSide, after?: TextFileSide, changes: PageRequest, };
+
+export type TextFileSide = { 
+/**
+ * The file on disk.
+ */
+file: string, 
+/**
+ * The name it is reported under, such as its depot path and revision.
+ */
+path: string, };
+
+export type TextFileFieldName = "source" | "source_plural" | "translation" | "path" | "notes" | "comments" | "references" | "flags";
+
+export type TextFileField = { name: TextFileFieldName, 
+/**
+ * The PO plural form of a translation.
+ */
+form?: number, before?: string, after?: string, };
+
+export type TextFileKey = { namespace: string, key: string, };
+
+export type TextFileChange = { kind: PointChangeKind, before?: TextFileKey, after?: TextFileKey, fields: ReadonlyArray<TextFileField>, };
+
+export type TextFileComparison = { format: LocalizationFormat, 
+/**
+ * The PO dialect read from the newer side, such as "Crowdin".
+ */
+poFormat?: string, counts: PointChangeCounts, 
+/**
+ * Changes in all pages.
+ */
+total: number, changes: ReadonlyArray<TextFileChange>, 
+/**
+ * Whether the comparison was kept from the previous request for the same revisions.
+ */
+kept: boolean, stageSeconds: { [key in string]: number }, };
 
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 

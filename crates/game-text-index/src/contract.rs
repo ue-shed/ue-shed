@@ -12,8 +12,9 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 19] = [
+const SOURCES: [&str; 20] = [
     include_str!("package_text_contract.rs"),
+    include_str!("text_file_compare.rs"),
     include_str!("localization/import.rs"),
     include_str!("localization/mod.rs"),
     include_str!("contract.rs"),
@@ -245,6 +246,13 @@ mod tests {
             PointFindingCounts::decl(&config),
             PointFindings::decl(&config),
             PointComparison::decl(&config),
+            crate::text_file_compare::CompareTextFilesRequest::decl(&config),
+            crate::text_file_compare::TextFileSide::decl(&config),
+            crate::text_file_compare::TextFileFieldName::decl(&config),
+            crate::text_file_compare::TextFileField::decl(&config),
+            crate::text_file_compare::TextFileKey::decl(&config),
+            crate::text_file_compare::TextFileChange::decl(&config),
+            crate::text_file_compare::TextFileComparison::decl(&config),
             PackageTextPlanShard::decl(&config),
             PackageTextShard::decl(&config),
             PackageTextExpected::decl(&config),

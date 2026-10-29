@@ -554,22 +554,44 @@ function localRootKey(root: string): string {
 
 const p4ConfigBypassPath = join(tmpdir(), "ue-shed-no-p4config");
 
-/** Selects the client whose local workspace root is the selected project root. */
+/**
+ * Selects the client whose local workspace root holds the selected project: its root is the
+ * project folder, or else the deepest workspace root above it, as with a project kept in a
+ * subfolder of its stream. Several equally deep candidates keep the configured client when it is
+ * one of them.
+ */
 export function selectPerforceWorkspace(options: {
 	readonly configuredClient: string | null;
 	readonly projectRoot: string;
 	readonly workspaces: readonly { readonly client: string; readonly root: string }[];
 }): string | undefined {
-	const matching = options.workspaces.filter(
-		(workspace) => localRootKey(workspace.root) === localRootKey(options.projectRoot)
-	);
+	const project = localRootKey(options.projectRoot);
+	const holding = options.workspaces
+		.map((workspace) => ({ client: workspace.client, root: localRootKey(workspace.root) }))
+		.filter(({ root }) => project === root || project.startsWith(`${root}${sep(root)}`));
+	const depth = Math.max(-1, ...holding.map(({ root }) => root.length));
+	const matching = holding.filter(({ root }) => root.length === depth);
 	if (matching.length === 1) return matching[0]?.client;
 	return matching.some((workspace) => workspace.client === options.configuredClient)
 		? (options.configuredClient ?? undefined)
 		: undefined;
 }
+/** The separator a resolved root uses: a drive or UNC root is Windows. */
+const sep = (root: string) => (/^[a-z]:|^\\\\/u.test(root) ? "\\" : "/");
 
 type PerforceLayerFactory = (options: P4ClientOptions) => ReturnType<typeof layerNode>;
+
+/**
+ * A Perforce client for a project: the workspace whose root holds it, chosen as Map History
+ * chooses it. Game Text reads a changelist's revisions through it.
+ */
+export const perforceProjectLayer = Effect.fn("Perforce.projectLayer")(function* (
+	projectRoot: string,
+	options: P4ClientOptions = {},
+	makeLayer: PerforceLayerFactory = layerNode
+) {
+	return makeLayer(yield* optionsForProject(options, projectRoot, makeLayer));
+});
 
 const optionsForProject = Effect.fn("PerforceHistorySource.optionsForProject")(function* (
 	options: P4ClientOptions,

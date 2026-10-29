@@ -153,6 +153,16 @@ export interface SharedIndexWriter {
 	readonly publishCode?: (
 		request: Omit<GameTextContract.CodeLayerRequest, "stagingFile">
 	) => Effect.Effect<GameTextContract.CodeLayerOutcome, Failure>;
+	/**
+	 * Reads a set of files at one revision into per-file records keyed by content, reusing those
+	 * the cache holds, and writes the point's manifest (`read_point`).
+	 */
+	readonly readPoint?: (
+		request: GameTextContract.PointRequest
+	) => Effect.Effect<
+		GameTextContract.PointOutcome & { readonly stageSeconds: Readonly<Record<string, number>> },
+		Failure
+	>;
 	/** Native record replacement: nonnegative rows retain old records; -1-row selects a changed record. */
 	readonly replacePackages?: (
 		entries: readonly {

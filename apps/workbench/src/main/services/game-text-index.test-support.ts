@@ -82,6 +82,7 @@ function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>):
 		writeCorpusJson: unplanted("writeCorpusJson"),
 		readUnits: unplanted("readUnits"),
 		readCorpusHeader: unplanted("readCorpusHeader"),
+		readFileCoverage: unplanted("readFileCoverage"),
 		readCorpusReportHeader: unplanted("readCorpusReportHeader"),
 		corpusFingerprint: unplanted("corpusFingerprint"),
 		export: unplanted("export"),
@@ -548,6 +549,7 @@ const testIndexStepsLayer = Layer.effect(
 							)
 					: Effect.die("Missing test request");
 			},
+			readPoint: () => Effect.die("This test reads no points."),
 			invalidate: legacy.invalidate
 		});
 		return steps;

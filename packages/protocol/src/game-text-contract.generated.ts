@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "76e01a0b9ff39352876cb00fbc29957e25a1f521ebc5d884032ee53914ddabbe"
+	contractHash: "046f1d6d8aca96bc590fb7b7da2bd3f5e1508f3c709283016f8425222b583782"
 } as const;
 
 /**
@@ -48,7 +48,7 @@ export type LocalizationFileResult = { file: LocalizationPreparedFile | null, er
 
 export type LocalizationImportOutcome = { lookupStrings: number, reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
 /**
  * The v4 rule document.
  */
@@ -545,6 +545,52 @@ files: number, counts?: FileCounts, diagnosticCount: number,
  * The first [`CODE_DIAGNOSTIC_SAMPLES`] diagnostics, in scan order.
  */
 diagnostics: ReadonlyArray<CodeDiagnostic>, engineWrappers?: EngineWrappers, profile?: CodeTextProfile, };
+
+export type PointFile = { 
+/**
+ * Relative to the project folder, as the project spells it.
+ */
+path: string, 
+/**
+ * The file holding its bytes at this point; none when the point removes it.
+ */
+file?: string, };
+
+export type PointRequest = { 
+/**
+ * The point's id, such as `depot@220368` or `shelved:220258`.
+ */
+point: string, 
+/**
+ * The point this one changes, by id; none when it changes the project's index as it is.
+ */
+base?: string, 
+/**
+ * The record key prefix: the package-text format, then the saved-text policy's JSON.
+ */
+format: string, policyJson: string, rules: ReadonlyArray<PackageTextAudienceRule>, files: ReadonlyArray<PointFile>, };
+
+export type PointEntry = { path: string, 
+/**
+ * The record's key; none for a removed file or one no record describes.
+ */
+record?: string, status: PointFileStatus, };
+
+export type PointFileStatus = "complete" | "partial" | "not_gatherable" | "failed" | "removed" | "unread";
+
+export type PointOutcome = { point: string, 
+/**
+ * Records read from their files now.
+ */
+read: number, 
+/**
+ * Records already in the cache.
+ */
+reused: number, 
+/**
+ * Bytes of the files read: every file is hashed; only misses are parsed.
+ */
+bytes: number, entries: ReadonlyArray<PointEntry>, };
 
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 

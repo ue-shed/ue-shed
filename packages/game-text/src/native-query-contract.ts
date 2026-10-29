@@ -119,6 +119,17 @@ export interface NativeTextQuery extends NativeFindings {
 	/** The corpus without its units: status, coverage, package coverage and diagnostics. */
 	readonly readCorpusHeader: () => Effect.Effect<TextCorpusHeader, GameTextIndexError>;
 	/**
+	 * The package coverage and diagnostics of the listed files only, matched as `where.files`
+	 * matches them, selected in Rust: a check of a few files receives their rows, not every
+	 * package's.
+	 */
+	readonly readFileCoverage: (
+		files: readonly string[]
+	) => Effect.Effect<
+		Pick<TextCorpusHeader, "packageCoverage" | "diagnostics">,
+		GameTextIndexError
+	>;
+	/**
 	 * The corpus header as a report shows it, computed in Rust: coverage, every diagnostic and
 	 * package count, and the first `MAX_CORPUS_REPORT_ITEMS` diagnostics and incomplete packages.
 	 */

@@ -6,6 +6,7 @@ export * from "./map-history.js";
 export * from "./package-correlation.js";
 export * from "./playback.js";
 export * from "./perforce.js";
+export * from "./perforce-revisions.js";
 export * from "./perforce-map-scope.js";
 export * from "./revision-plan.js";
 export * from "./revision-materialization.js";

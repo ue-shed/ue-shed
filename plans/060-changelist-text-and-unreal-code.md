@@ -497,7 +497,42 @@ receives 167,507 packages'.
   two points against the full refresh. The corpus header cut (the gate reads listed files'
   coverage natively) is a clear cut taken here, since every changelist check pays it.
 
-**Evidence**: _pending_.
+**Evidence (2026-10-29, first slice: packages)**:
+
+- **The corpus header cut**: the gate asks for the listed files' coverage (`file_coverage`); the
+  engine matches files as `where.files` does and builds diagnostics for those packages only. That
+  stage went from 1.94 s to 0.61 s and the warm gate on the UE 4.27 project from 10.3 s to 8.3 s,
+  with the same verdict. The 0.61 s left decodes every package's path to match a few.
+- **Records and points**: `read_point` hashes each package, reuses its record when the cache holds
+  one, else parses it through the shard staging's projection and writes the record beside a status
+  file; the point's manifest names a record per file. A reader test reads a package once, reuses it
+  at a second point, and marks a removed file and a code file.
+- **Revisions**: Map History's `readChangelistRevisions` describes the change, maps the project
+  folder, and prints only the files the caller's points read, one `print` per side; a revision is
+  printed once. Map History's workspace choice now also finds a project in a subfolder of its
+  workspace (the deepest workspace root above it).
+- **The sample changelists' points**, through `scripts/changelist-points-measure.ts`, cold (empty
+  caches) then warm, packages only:
+
+    | Kind                  |     Changelist | Packages | Printed              |  Cold |  Warm |
+    | --------------------- | -------------: | -------: | -------------------- | ----: | ----: |
+    | Asset only            |         220368 |        9 | 18 revisions, 2.0 MB | 3.8 s | 1.9 s |
+    | Mixed                 |         220253 |       16 | 24 revisions, 4.4 MB | 5.6 s | 1.8 s |
+    | Shelved               |         220258 |       12 | 18 revisions, 3.6 MB | 4.8 s | 1.5 s |
+    | Code only, key rename | 220336, 219062 |        0 | none (not read yet)  | 1.8 s | 1.7 s |
+
+    Reading the points takes 0.03–0.09 s; the rest is Perforce and starting the processes. The
+    first version printed one revision per `print` and every changed file: 27 s for the mixed
+    sample, and 3.0 GB in 189 s for the gather commit's compiled localization files.
+
+- **Found on the way**:
+    - `p4client-ts` 0.13.0 rejects `print` output for a shelved add, whose revision Perforce names
+      `none`; such a file is printed with `print -o` through its untyped runner. The fix belongs
+      upstream.
+    - Map History looks only at the user's own workspaces. On the measuring machine the project's
+      workspace belongs to another user and `P4CLIENT` names a build agent's, so the runs named the
+      workspace in `P4CLIENT`. A host setting for the workspace is still to come.
+- **Next in this phase**: code files in points, and the base point's manifest and archives.
 
 ## Phase 4: Diff and impact, natively
 

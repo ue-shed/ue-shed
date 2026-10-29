@@ -61,6 +61,7 @@ mod package_delta;
 mod package_evidence;
 pub mod package_text_contract;
 pub mod package_text_plan;
+pub mod points;
 pub mod snapshot;
 pub mod store;
 mod summary_state;

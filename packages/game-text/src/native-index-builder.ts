@@ -244,6 +244,14 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				);
 			return result.code;
 		}),
+		readPoint: Effect.fn("NativeIndexBuilder.readPoint")(function* (request) {
+			const result = yield* command({ action: "read_point", configuration, request });
+			if (!result.point)
+				return yield* Effect.fail(
+					unavailable("native-point", new Error("The reader returned no point."))
+				);
+			return { ...result.point, stageSeconds: result.stageSeconds };
+		}),
 		planPackages: Effect.fn("NativeIndexBuilder.planPackages")(function* (request) {
 			const result = yield* command({ action: "plan_packages", configuration, request });
 			if (!result.plan)

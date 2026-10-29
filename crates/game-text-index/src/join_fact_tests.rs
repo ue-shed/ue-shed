@@ -1371,6 +1371,47 @@ fn an_evaluation_reports_its_stages_and_each_rule_it_runs() -> Result<()> {
 }
 
 #[test]
+fn file_coverage_answers_only_the_listed_files() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    // A package Unreal's gather does not select: no text, one diagnostic.
+    fixture.packages_with_status(&[], 2)?;
+    let outcome = fixture.join()?;
+    let query = EngineQuery::open(&fixture.configuration, Some(&outcome.key))?;
+    let cancelled = AtomicBool::new(false);
+    // Spelled as a change list spells it: another case and separator, with the extension.
+    let listed = query.file_coverage(&["content\\TEXT\\Example.uasset".into()], &cancelled)?;
+    // The file as the corpus header spells it, in the platform's separators.
+    let file = listed["packages"][0]["packageFile"].clone();
+    assert_eq!(
+        crate::join_policy::file_key(file.as_str().ok_or("package file")?),
+        "content/text/example"
+    );
+    assert_eq!(
+        listed,
+        json!({
+            "packages": [{"packageFile": file, "status": "not_gatherable"}],
+            "diagnostics": [{
+                "code": "package_not_gatherable",
+                "packageFile": file,
+                "message": "Excluded because Unreal does not gather this package. Its text payload was not inspected."
+            }]
+        })
+    );
+    let other = query.file_coverage(&["Content/Text/Other.uasset".into()], &cancelled)?;
+    assert_eq!(other, json!({"packages": [], "diagnostics": []}));
+    Ok(())
+}
+
+#[test]
 fn persisted_place_sets_may_exceed_one_dictionary_string() -> Result<()> {
     // One line placed 6,000 times under long object paths: its finding's place set, as one JSON
     // string, would pass the dictionary's 1 MiB string cap.

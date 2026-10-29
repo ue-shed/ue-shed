@@ -56,7 +56,7 @@ import {
 } from "./index-contract.js";
 import { codeLayerName, PACKAGE_TEXT_FORMAT } from "./package-text-layer.js";
 import { packageTextAudienceRules } from "./package-text-native.js";
-import { TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
+import { SAVED_TEXT_AUDIENCE_POLICY_KEY, TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
 import { isSnapshotStoreError } from "./snapshot-store.js";
 import { isSnapshotFormatError } from "./snapshot-format.js";
 import {
@@ -675,6 +675,57 @@ export const makeGameTextIndexSteps = (
 					} satisfies GameTextTargetImport;
 				}),
 				request.changedFiles
+			);
+		});
+
+		/**
+		 * Reads a set of files at one revision into per-file records keyed by content and writes
+		 * the point's manifest. The host puts each revision's bytes on disk; the
+		 * reader parses only the files the record cache lacks.
+		 */
+		const readPoint = Effect.fn("GameTextIndex.readPoint")(function* (request: {
+			readonly projectRoot: string;
+			readonly point: string;
+			readonly base?: string;
+			readonly files: GameTextContract.PointRequest["files"];
+		}) {
+			const { projectRoot } = yield* openProject(request);
+			return yield* withSession(
+				configurationFor(cacheRoot, projectRoot),
+				Effect.gen(function* () {
+					const writer = yield* (yield* SharedIndex).writer();
+					if (!writer.readPoint)
+						return yield* Effect.fail(
+							failure(
+								"point",
+								"This index cannot read points.",
+								"Use the native reader."
+							)
+						);
+					const outcome = yield* writer.readPoint({
+						point: request.point,
+						...(request.base === undefined ? undefined : { base: request.base }),
+						format: PACKAGE_TEXT_FORMAT,
+						policyJson: SAVED_TEXT_AUDIENCE_POLICY_KEY,
+						rules: packageTextAudienceRules(),
+						files: request.files
+					});
+					yield* Effect.annotateCurrentSpan({
+						"point.files": request.files.length,
+						"point.read": outcome.read,
+						"point.reused": outcome.reused,
+						"point.bytes": outcome.bytes,
+						...Object.fromEntries(
+							Object.entries(outcome.stageSeconds).map(([stage, seconds]) => [
+								`${stage}Seconds`,
+								seconds
+							])
+						)
+					});
+					return outcome;
+				}),
+				undefined,
+				true
 			);
 		});
 
@@ -1318,6 +1369,7 @@ export const makeGameTextIndexSteps = (
 			prepareTarget: sliced(prepareTarget),
 			openTarget: sliced(openTarget),
 			openCommitted: sliced(openCommitted),
+			readPoint: sliced(readPoint),
 			invalidate: sliced(invalidate)
 		};
 	});

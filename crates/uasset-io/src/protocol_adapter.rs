@@ -523,6 +523,15 @@ fn execute_direct(
             ) = (query_session.as_deref_mut(), build)
             {
                 crate::code_layer::publish(&mut session.game_text, configuration, request)
+            } else if let (
+                Some(_),
+                game_text_index::builder::BuildRequest::ReadPoint {
+                    configuration,
+                    request,
+                },
+            ) = (query_session.as_deref_mut(), build)
+            {
+                crate::point_reader::read(configuration, request)
             } else if let Some(session) = query_session {
                 session
                     .game_text

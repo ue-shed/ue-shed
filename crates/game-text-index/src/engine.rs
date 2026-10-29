@@ -81,6 +81,12 @@ pub enum EngineRequest {
     CorpusHeader {
         reader: String,
     },
+    /// The package coverage and diagnostics of the listed files only, matched as `where.files`
+    /// matches them.
+    FileCoverage {
+        reader: String,
+        files: Vec<String>,
+    },
     /// The corpus content fingerprint.
     CorpusFingerprint {
         reader: String,
@@ -172,6 +178,7 @@ impl EngineRequest {
             | Self::Query { reader, .. }
             | Self::Corpus { reader }
             | Self::CorpusHeader { reader }
+            | Self::FileCoverage { reader, .. }
             | Self::CorpusFingerprint { reader }
             | Self::CorpusReportHeader { reader }
             | Self::Aggregate { reader, .. }
@@ -463,6 +470,7 @@ impl EngineSession {
             | EngineRequest::Query { reader, .. }
             | EngineRequest::Corpus { reader }
             | EngineRequest::CorpusHeader { reader }
+            | EngineRequest::FileCoverage { reader, .. }
             | EngineRequest::CorpusFingerprint { reader }
             | EngineRequest::CorpusReportHeader { reader }
             | EngineRequest::Aggregate { reader, .. }
@@ -515,6 +523,12 @@ impl EngineSession {
                         query.send_corpus_header(cancelled, reply)?;
                         ("corpus_header", None)
                     }
+                    EngineRequest::FileCoverage { files, .. } => (
+                        "file_coverage",
+                        Some(crate::wtf8::view_json(
+                            &query.file_coverage(files, cancelled)?,
+                        )?),
+                    ),
                     EngineRequest::CorpusReportHeader { .. } => (
                         "corpus_report_header",
                         Some(crate::wtf8::view_json(

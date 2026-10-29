@@ -199,12 +199,31 @@ export const GameTextIndexCodeLayer = Schema.Struct({
 		scan: Schema.optionalKey(CodeTextRequest)
 	})
 });
+/** A point's id: `local`, `depot@<CL>`, `shelved:<CL>` or another short name. */
+const PointId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9@:._-]{1,128}$/u));
+/**
+ * The reader reads a set of files at one revision into per-file records keyed by content, reusing
+ * any the cache holds, and writes the point's manifest.
+ */
+export const GameTextIndexReadPoint = Schema.Struct({
+	action: Schema.Literal("read_point"),
+	...Configuration,
+	request: Schema.Struct({
+		point: PointId,
+		base: Schema.optionalKey(PointId),
+		format: Text,
+		policyJson: Schema.String,
+		rules: Schema.Array(PackageTextAudienceRule),
+		files: Schema.Array(Schema.Struct({ path: Text, file: Schema.optionalKey(Text) }))
+	})
+});
 /** Validated builder commands; package replacements require protocol minor 16 or later. */
 export const GameTextIndexBuildRequest = Schema.Union([
 	...GameTextIndexPreviousBuildRequest.members,
 	GameTextIndexPackageReplacement,
 	GameTextIndexPackagePlan,
-	GameTextIndexCodeLayer
+	GameTextIndexCodeLayer,
+	GameTextIndexReadPoint
 ]).annotate({ identifier: "GameTextIndexBuildRequest" });
 export type GameTextIndexBuildRequest = typeof GameTextIndexBuildRequest.Type;
 
@@ -252,6 +271,27 @@ const CodeDiagnostic = Schema.Struct({
 	]),
 	message: Schema.String
 });
+/** What a `read_point` request did: each file's record, and how many were read or reused. */
+export const PointOutcome = Schema.Struct({
+	point: Schema.String,
+	read: Natural,
+	reused: Natural,
+	bytes: Natural,
+	entries: Schema.Array(
+		Schema.Struct({
+			path: Schema.String,
+			record: Schema.optionalKey(Schema.String),
+			status: Schema.Literals([
+				"complete",
+				"partial",
+				"not_gatherable",
+				"failed",
+				"removed",
+				"unread"
+			])
+		})
+	)
+});
 /** What a `publish_code` request did: the layer's key, whether it changed, and the scan's counts. */
 export const CodeLayerOutcome = Schema.Struct({
 	name: Name,
@@ -296,6 +336,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"publish_packages",
 		"plan_packages",
 		"publish_code",
+		"read_point",
 		"publish_ids",
 		"intern",
 		"strings",
@@ -325,6 +366,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
 	),
 	code: Schema.optionalKey(CodeLayerOutcome),
+	point: Schema.optionalKey(PointOutcome),
 	plan: Schema.optionalKey(
 		Schema.Struct({
 			changed: Schema.Array(

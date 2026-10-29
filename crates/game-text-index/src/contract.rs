@@ -77,7 +77,8 @@ mod tests {
     use crate::package_text_contract::{
         CodeLayerOutcome, CodeLayerRequest, PackageTextAudienceMatch, PackageTextAudienceRule,
         PackageTextExpected, PackageTextObjectPosition, PackageTextPlan, PackageTextPlanRequest,
-        PackageTextPlanShard, PackageTextShard, PackageTextSnapshotRequest,
+        PackageTextPlanShard, PackageTextShard, PackageTextSnapshotRequest, PointEntry, PointFile,
+        PointFileStatus, PointOutcome, PointRequest,
     };
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
@@ -216,6 +217,11 @@ mod tests {
             PackageTextPlan::decl(&config),
             CodeLayerRequest::decl(&config),
             CodeLayerOutcome::decl(&config),
+            PointFile::decl(&config),
+            PointRequest::decl(&config),
+            PointEntry::decl(&config),
+            PointFileStatus::decl(&config),
+            PointOutcome::decl(&config),
             PackageTextPlanShard::decl(&config),
             PackageTextShard::decl(&config),
             PackageTextExpected::decl(&config),

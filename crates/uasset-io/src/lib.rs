@@ -8,6 +8,7 @@ mod code_layer;
 mod direct_executor;
 mod legacy;
 mod package_text_columns;
+mod point_reader;
 pub mod protocol;
 mod protocol_adapter;
 pub mod protocol_result;

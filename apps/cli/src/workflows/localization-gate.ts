@@ -178,8 +178,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 		target: item.target.name,
 		reason: "It has no manifest; Unreal has not gathered it."
 	}));
-	// Package coverage alone says which listed packages were read; the units are not exported.
-	const header = yield* indexed[0]!.query.readCorpusHeader();
+	// The listed packages' coverage alone says which were read, selected natively.
+	const header = yield* indexed[0]!.query.readFileCoverage(files);
 	const unscanned = localizationGateUnreadPackages(header, files);
 	if (unscanned.length > 0)
 		return yield* Effect.fail(

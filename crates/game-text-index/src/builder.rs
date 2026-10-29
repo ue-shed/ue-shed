@@ -76,6 +76,11 @@ pub enum BuildRequest {
         configuration: Configuration,
         request: crate::package_text_contract::CodeLayerRequest,
     },
+    /// Read by the reader, which parses the packages: per-file records and the point's manifest.
+    ReadPoint {
+        configuration: Configuration,
+        request: crate::package_text_contract::PointRequest,
+    },
     PublishPackages {
         configuration: Configuration,
         inputs: Vec<PackageInput>,
@@ -122,6 +127,8 @@ pub struct BuildOutcome {
     pub plan: Option<crate::package_text_contract::PackageTextPlan>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<Box<crate::package_text_contract::CodeLayerOutcome>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point: Option<Box<crate::package_text_contract::PointOutcome>>,
 }
 
 impl BuildOutcome {
@@ -140,6 +147,7 @@ impl BuildOutcome {
             localization: None,
             plan: None,
             code: None,
+            point: None,
         }
     }
 }
@@ -157,6 +165,7 @@ impl BuildRequest {
             | Self::PublishPackages { configuration, .. }
             | Self::PlanPackages { configuration, .. }
             | Self::PublishCode { configuration, .. }
+            | Self::ReadPoint { configuration, .. }
             | Self::Intern { configuration, .. }
             | Self::Strings { configuration, .. }
             | Self::Join { configuration, .. }
@@ -257,6 +266,16 @@ impl BuildRequest {
                     crate::ErrorCode::InvalidInput,
                     "a code layer scans its one target",
                 ),
+            )?,
+            Self::ReadPoint { request, .. } => require(
+                crate::points::valid_id(&request.point)
+                    && request.base.as_deref().is_none_or(crate::points::valid_id)
+                    && request.files.len() <= 1_000_000
+                    && request
+                        .files
+                        .iter()
+                        .all(|file| !file.path.is_empty() && file.path.len() <= 4096),
+                crate::Error::new(crate::ErrorCode::InvalidInput, "an invalid point"),
             )?,
             Self::Strings { ids, .. } => require(
                 ids.len() <= 8192,
@@ -449,6 +468,9 @@ fn execute(
         }
         BuildRequest::PublishCode { .. } => {
             return Err("The reader scans code text and stages its layer.".into());
+        }
+        BuildRequest::ReadPoint { .. } => {
+            return Err("The reader parses a point's packages.".into());
         }
         BuildRequest::Publish {
             inputs,

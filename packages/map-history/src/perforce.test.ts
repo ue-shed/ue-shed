@@ -85,6 +85,29 @@ describe("PerforceHistorySource", () => {
 		).toBe("example-client");
 	});
 
+	it("selects the deepest workspace holding a project kept in a subfolder", () => {
+		const workspaces = [
+			{ client: "stream-client", root: "E:\\Perforce\\Stream" },
+			{ client: "engine-client", root: "E:\\Perforce\\Stream\\ue4" },
+			{ client: "sibling-client", root: "E:\\Perforce\\StreamOther" }
+		];
+		expect(
+			selectPerforceWorkspace({
+				configuredClient: "build-agent",
+				projectRoot: "E:/Perforce/Stream/ue4/Project",
+				workspaces
+			})
+		).toBe("engine-client");
+		// A folder whose name merely starts with a root's is not inside it.
+		expect(
+			selectPerforceWorkspace({
+				configuredClient: null,
+				projectRoot: "E:/Perforce/StreamOther2/Project",
+				workspaces
+			})
+		).toBeUndefined();
+	});
+
 	it("runs project-scoped commands with the matching client", async () => {
 		const calls: {
 			client: string | undefined;

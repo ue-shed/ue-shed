@@ -3124,6 +3124,321 @@
 											},
 											"required": ["action", "configuration", "request"],
 											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["read_point"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"request": {
+													"type": "object",
+													"properties": {
+														"point": {
+															"type": "string",
+															"allOf": [
+																{
+																	"pattern": "^[A-Za-z0-9@:._-]{1,128}$"
+																}
+															]
+														},
+														"base": {
+															"type": "string",
+															"allOf": [
+																{
+																	"pattern": "^[A-Za-z0-9@:._-]{1,128}$"
+																}
+															]
+														},
+														"format": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"policyJson": {
+															"type": "string"
+														},
+														"rules": {
+															"type": "array",
+															"items": {
+																"type": "object",
+																"properties": {
+																	"code": {
+																		"type": "integer",
+																		"allOf": [
+																			{
+																				"minimum": 0
+																			}
+																		]
+																	},
+																	"when": {
+																		"type": "array",
+																		"items": {
+																			"anyOf": [
+																				{
+																					"type": "object",
+																					"properties": {
+																						"kind": {
+																							"type": "string",
+																							"enum": [
+																								"namespace",
+																								"folder",
+																								"location",
+																								"macro"
+																							]
+																						},
+																						"value": {
+																							"type": "string"
+																						}
+																					},
+																					"required": [
+																						"kind",
+																						"value"
+																					],
+																					"additionalProperties": false
+																				},
+																				{
+																					"type": "object",
+																					"properties": {
+																						"kind": {
+																							"type": "string",
+																							"enum": [
+																								"object"
+																							]
+																						},
+																						"value": {
+																							"type": "string"
+																						},
+																						"position": {
+																							"type": "string",
+																							"enum": [
+																								"prefix",
+																								"suffix",
+																								"equals"
+																							]
+																						}
+																					},
+																					"required": [
+																						"kind",
+																						"value",
+																						"position"
+																					],
+																					"additionalProperties": false
+																				},
+																				{
+																					"type": "object",
+																					"properties": {
+																						"kind": {
+																							"type": "string",
+																							"enum": [
+																								"module"
+																							]
+																						},
+																						"value": {
+																							"type": "string"
+																						},
+																						"suffix": {
+																							"type": "boolean"
+																						}
+																					},
+																					"required": [
+																						"kind",
+																						"value"
+																					],
+																					"additionalProperties": false
+																				},
+																				{
+																					"type": "object",
+																					"properties": {
+																						"kind": {
+																							"type": "string",
+																							"enum": [
+																								"property"
+																							]
+																						},
+																						"value": {
+																							"type": "string"
+																						},
+																						"anywhere": {
+																							"type": "boolean"
+																						}
+																					},
+																					"required": [
+																						"kind",
+																						"value"
+																					],
+																					"additionalProperties": false
+																				}
+																			]
+																		}
+																	}
+																},
+																"required": ["code", "when"],
+																"additionalProperties": false
+															}
+														},
+														"files": {
+															"type": "array",
+															"items": {
+																"type": "object",
+																"properties": {
+																	"path": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"minLength": 1
+																			},
+																			{
+																				"maxLength": 32767
+																			}
+																		]
+																	},
+																	"file": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"minLength": 1
+																			},
+																			{
+																				"maxLength": 32767
+																			}
+																		]
+																	}
+																},
+																"required": ["path"],
+																"additionalProperties": false
+															}
+														}
+													},
+													"required": [
+														"point",
+														"format",
+														"policyJson",
+														"rules",
+														"files"
+													],
+													"additionalProperties": false
+												}
+											},
+											"required": ["action", "configuration", "request"],
+											"additionalProperties": false
 										}
 									]
 								}

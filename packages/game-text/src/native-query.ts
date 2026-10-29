@@ -22,7 +22,9 @@ import {
 	TextCorpusQuerySummary,
 	TextCorpusRowsPage,
 	TextCorpusSearchPage,
-	TextCorpusSearchRequest
+	TextCorpusSearchRequest,
+	TextCorpusDiagnostic,
+	TextPackageCoverage
 } from "./schema.js";
 import { LocalizationLine, type LocalizationLineId } from "./localization-schema.js";
 import { LocalizationFocus, LocalizationFocusRequest } from "./localization-view.js";
@@ -389,6 +391,21 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			diagnostics: answerRows(answer, "diagnostics")
 		});
 	});
+	const FileCoverage = Schema.Struct({
+		packages: Schema.Array(TextPackageCoverage),
+		diagnostics: Schema.Array(TextCorpusDiagnostic)
+	});
+	const readFileCoverage = (pinned: Pinned, files: readonly string[]) =>
+		response(
+			pinned,
+			{ action: "file_coverage", reader: pinned.reader, files },
+			FileCoverage
+		).pipe(
+			Effect.map((coverage) => ({
+				packageCoverage: coverage.packages,
+				diagnostics: coverage.diagnostics
+			}))
+		);
 	const readCorpusReportHeader = (pinned: Pinned) =>
 		response(
 			pinned,
@@ -698,6 +715,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		writeCorpusJson: (request, file, envelope) =>
 			writeSinkFile(pinned, "export", "corpusJson", request, file, envelope),
 		readCorpusHeader: () => readCorpusHeader(pinned),
+		readFileCoverage: (files) => readFileCoverage(pinned, files),
 		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),
 		corpusFingerprint: () => corpusFingerprint(pinned)

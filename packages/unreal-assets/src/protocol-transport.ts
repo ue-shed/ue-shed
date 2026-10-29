@@ -608,7 +608,8 @@ export function makeProtocolRequest(
 		if (
 			request.action === "publish_packages" ||
 			request.action === "plan_packages" ||
-			request.action === "publish_code"
+			request.action === "publish_code" ||
+			request.action === "read_point"
 		)
 			return { ...fields, operation: { kind: "game_text_index", request } };
 		return { ...fields, operation: { kind: "game_text_index", request } };

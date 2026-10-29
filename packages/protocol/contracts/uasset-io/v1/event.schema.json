@@ -59,6 +59,7 @@
 						"publish_packages",
 						"plan_packages",
 						"publish_code",
+						"read_point",
 						"publish_ids",
 						"intern",
 						"strings",
@@ -571,6 +572,67 @@
 						"diagnosticCount",
 						"diagnostics"
 					],
+					"additionalProperties": false
+				},
+				"point": {
+					"type": "object",
+					"properties": {
+						"point": {
+							"type": "string"
+						},
+						"read": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"reused": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"bytes": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"entries": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"path": {
+										"type": "string"
+									},
+									"record": {
+										"type": "string"
+									},
+									"status": {
+										"type": "string",
+										"enum": [
+											"complete",
+											"partial",
+											"not_gatherable",
+											"failed",
+											"removed",
+											"unread"
+										]
+									}
+								},
+								"required": ["path", "status"],
+								"additionalProperties": false
+							}
+						}
+					},
+					"required": ["point", "read", "reused", "bytes", "entries"],
 					"additionalProperties": false
 				},
 				"plan": {

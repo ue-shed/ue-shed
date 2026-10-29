@@ -179,7 +179,10 @@ const REQUIRES_LOCALIZATION_GATHER: u32 = 0x0004_0000;
 /// Whether Unreal's gatherer reads a package (`isPackageTextCandidate`): flagged as needing a
 /// gather, or holding a current gather table. A package without header evidence is read, as one
 /// that failed its header is.
-fn gathered(header: Option<&uasset_inspection::package_header::PackageHeaderData>) -> bool {
+/// Whether Unreal's gatherer reads a package, from its header: the Catalog's selection.
+pub(crate) fn gathered(
+    header: Option<&uasset_inspection::package_header::PackageHeaderData>,
+) -> bool {
     header.is_none_or(|header| {
         header.package_flags & REQUIRES_LOCALIZATION_GATHER != 0
             || (header.gatherable_text_data_count > 0 && header.gatherable_text_data_offset > 0)

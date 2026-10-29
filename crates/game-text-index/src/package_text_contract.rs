@@ -160,6 +160,80 @@ pub struct CodeLayerRequest {
     pub scan: Option<unreal_code::CodeTextRequest>,
 }
 
+/// One file of a point: the path it stands for, and where its bytes are at that point.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointFile {
+    /// Relative to the project folder, as the project spells it.
+    pub path: String,
+    /// The file holding its bytes at this point; none when the point removes it.
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub file: Option<String>,
+}
+
+/// Reads the text in a set of files at one revision into per-file records keyed by content, and
+/// writes the point's manifest. A record already in the cache is reused, not read again.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointRequest {
+    /// The point's id, such as `depot@220368` or `shelved:220258`.
+    pub point: String,
+    /// The point this one changes, by id; none when it changes the project's index as it is.
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub base: Option<String>,
+    /// The record key prefix: the package-text format, then the saved-text policy's JSON.
+    pub format: String,
+    pub policy_json: String,
+    pub rules: Vec<PackageTextAudienceRule>,
+    pub files: Vec<PointFile>,
+}
+
+/// A point file's record and how it was read.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointEntry {
+    pub path: String,
+    /// The record's key; none for a removed file or one no record describes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub record: Option<String>,
+    pub status: PointFileStatus,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum PointFileStatus {
+    Complete,
+    Partial,
+    NotGatherable,
+    Failed,
+    Removed,
+    /// Not a saved package; code files join points in a later step.
+    Unread,
+}
+
+/// What reading a point did: its files, how many records were read or reused, and the bytes read.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointOutcome {
+    pub point: String,
+    /// Records read from their files now.
+    pub read: u32,
+    /// Records already in the cache.
+    pub reused: u32,
+    /// Bytes of the files read: every file is hashed; only misses are parsed.
+    #[cfg_attr(test, ts(type = "number"))]
+    pub bytes: u64,
+    pub entries: Vec<PointEntry>,
+}
+
 /// Diagnostics a code layer outcome carries at most; the count says how many there were.
 pub const CODE_DIAGNOSTIC_SAMPLES: usize = 200;
 

@@ -14,7 +14,7 @@
 
 ## Status
 
-- **State**: In progress. Phase 0: done (oracle on 5.7, 5.8 and 4.27; baseline and sample
+- **State**: Done (2026-10-30). Phase 0: done (oracle on 5.7, 5.8 and 4.27; baseline and sample
   changelists, 2026-10-29). Phase 1: done and reviewed (owner, 2026-10-29). The scanner matches all
   three engines' gathers, and `ue-shed code text` runs it through the Game Text engine. Phase 2:
   done and reviewed (owner, 2026-10-29). Game Text reads each target's code and judges C++ text
@@ -23,9 +23,9 @@
   reviewed (owner, 2026-10-29): the engine compares two points and judges the change by the gate's
   checks against the base's localization. Phase 5: done and reviewed (owner, 2026-10-29):
   `loc gate --change` and `--shelved`, `loc diff`, `--format markdown`, exit codes and an error
-  table from the error's next step, and the agent guide. Phase 6: done, for owner review: ranges,
-  `compareChange` for hosts, and Electroswag's review page, Compare and code places (draft
-  Stairway-Games/electroswag#124 until 0.24.0 is published).
+  table from the error's next step, and the agent guide. Phase 6: done and reviewed (owner, 2026-10-30):
+  ranges, `compareChange` for hosts, and Electroswag's review page, Compare, the text diff and code
+  places (draft Stairway-Games/electroswag#124 until 0.24.0 is published).
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next

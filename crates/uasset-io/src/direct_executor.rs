@@ -5,6 +5,8 @@
 //! to `protocol_adapter`, which is the only process-output seam.
 
 mod blueprint;
+#[cfg(test)]
+mod blueprint_diff_corpus;
 mod level_sequence;
 pub(crate) use level_sequence::level_sequence_with_cancellation;
 mod catalog;

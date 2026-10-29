@@ -910,6 +910,29 @@ rework kept.
   "Passes" on nothing read; it now says **Not checked**, and "files read" counts only what was.
   Shelf 220630 (5 C++ files) shows it. The sticky diff file header was see-through.
 
+**The text diff (2026-10-29)**: the owner asked for the changed text itself as a diff, built to
+diff `.po` and `.archive` files later.
+
+- Electroswag's `TextDiff` takes neutral entries: a kind, the key on each side, the file, a place,
+  and fields (source, notes, a key, later a culture's translation). It knows nothing of Game Text.
+  Entries group by file; each is diff lines with the sign and colour saying what happened, the
+  words that differ marked (`Intl.Segmenter` words, so text without spaces splits too), and the
+  key and place in aligned columns. A new key is a `Key` field, old over new, so a namespace or
+  generated key that the short label hides shows where it differs. Kind filters and a text, key
+  or file filter work on the loaded page; Load more keeps them.
+- `.po` and `.archive` need a differ that pairs entries by key, natively and paged, as the
+  comparison does; `TextDiff` takes its pages unchanged.
+- **Found while reading real ranges:**
+    - Changelists 220671 to 220804 failed with `spawn ENAMETOOLONG`: `readRangeRevisions` named
+      every changed file on one `p4 files` command line. It now lists them in batches under
+      Windows' limit.
+    - Recompiling a Blueprint renumbers its generated functions, so cutscene lines showed as removed
+      and added with the same key and text. A text that only moves to another object of its package
+      is now unchanged. On that range, added went from 192 to 161 and removed from 35 to 4.
+    - Two rekeys the diff now makes plain are real: 184 interaction prompts in one map got new
+      generated keys, and 397 lines of a dialogue DataTable went from row-named keys to GUIDs. Both
+      lose their translations.
+
 ## STOP conditions
 
 - The scanner's identities differ from a Phase 0 reference manifest and the difference cannot be

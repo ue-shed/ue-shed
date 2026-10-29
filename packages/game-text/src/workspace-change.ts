@@ -4,6 +4,7 @@ import type { ChangeComparisonRequest, ChangeComparisonResult } from "./change-c
 import {
 	changeComparisonTarget,
 	readGameTextChangePoints,
+	unreadableChangePaths,
 	type GameTextChangeRevisions
 } from "./change-points.js";
 import { GameTextIndexSteps } from "./index-steps.js";
@@ -68,6 +69,13 @@ export const makeWorkspaceChangeComparison = Effect.fn("GameText.workspace.chang
 					findings: request.findings,
 					...(code === undefined ? undefined : { code })
 				}).pipe(lock.withPermits(1));
+				const unreadable = unreadableChangePaths(points.targets);
+				if (unreadable.length > 0)
+					return failed(
+						"unreadable_package",
+						`Changed files could not be read: ${unreadable.slice(0, 20).join(", ")}${unreadable.length > 20 ? ` and ${unreadable.length - 20} more` : ""}.`,
+						"Check that the packages are saved and not damaged, and that the reader supports their engine version, then compare again."
+					);
 				return {
 					status: "ready",
 					change: points.change,

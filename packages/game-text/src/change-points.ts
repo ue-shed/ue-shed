@@ -21,10 +21,26 @@ import {
  * Files a point reads: saved packages, and the source and config files a gather step may scan.
  * String Table CSVs are not among them: the scan reads those from the project on disk.
  */
-const READ = /\.(?:uasset|umap|h|hh|hpp|inl|c|cc|cpp|cxx|mm|ini)$/iu;
+const READ = /\.(?:uasset|umap|h|hh|hpp|hxx|inl|c|cc|cpp|cxx|mm|ini)$/iu;
 
 /** Whether a point reads a project file, by its path. */
 export const changePointReads = (path: string) => READ.test(path);
+
+/**
+ * Changed packages, or code and config files, a point could not read at all, by path. A verdict
+ * over a change with any of them could pass what it never saw.
+ */
+export function unreadableChangePaths(targets: readonly GameTextTargetPoints[]): string[] {
+	return [
+		...new Set(
+			targets.flatMap((target) =>
+				[...target.before.entries, ...target.after.entries].flatMap((entry) =>
+					entry.status === "failed" ? [entry.path] : []
+				)
+			)
+		)
+	];
+}
 
 /** One changed project file at both sides, on disk; a side the file lacks is absent. */
 export interface GameTextChangedFile {
@@ -41,6 +57,11 @@ export interface GameTextRevisionFile {
 	readonly depotPath: string;
 	readonly revision: number;
 	readonly file: string;
+	/**
+	 * The server the revision is on, as the host keys it: one depot path and revision name
+	 * different bytes on two servers, even when the workspace holds them.
+	 */
+	readonly server?: string;
 }
 
 /** A change's files at both sides, and the files asked for as the change found them. */
@@ -122,7 +143,8 @@ const outputPaths = (outputs: Iterable<TargetOutputs>) => [
 
 /**
  * The target's localization at a base, from the files fetched there; a revision is named by its
- * depot path and number, which never change. Undefined without the manifest. A culture whose
+ * depot path and number, which never change on one server, and the server (or, from a host that
+ * does not name it, the file it was read from). Undefined without the manifest. A culture whose
  * archive the base lacks has nothing translated.
  */
 function baseLocalization(
@@ -134,7 +156,11 @@ function baseLocalization(
 		const file = byPath.get(path);
 		return file === undefined
 			? undefined
-			: { path, file: file.file, revision: `${file.depotPath}#${file.revision}` };
+			: {
+					path,
+					file: file.file,
+					revision: `${file.depotPath}#${file.revision} ${file.server ?? file.file}`
+				};
 	};
 	const manifest = outputs === undefined ? undefined : revision(outputs.manifest);
 	if (outputs === undefined || manifest === undefined) return undefined;

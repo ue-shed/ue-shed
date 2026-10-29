@@ -184,12 +184,13 @@ fn engine_wrappers_in_root(
             return (cache.wrappers, EngineWrappers::Cached);
         }
     }
-    let wrappers = find_wrappers(
+    let (wrappers, complete) = crate::wrappers_read(
         request.engine,
         &wrapper_files(&engine_folder, root),
         &DiskStore,
     );
-    if let Some(file) = cache_file {
+    // A prepass that could not read a header may lack its wrappers: the next scan reads again.
+    if let (Some(file), true) = (cache_file, complete) {
         let written = serde_json::to_vec(&WrapperCache {
             key,
             wrappers: wrappers.clone(),

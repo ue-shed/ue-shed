@@ -40,6 +40,11 @@ export interface ChangelistRevisions {
 export interface RevisionFile {
 	/** Relative to the project folder, with `/`. */
 	readonly path: string;
+	/**
+	 * The server the revision is on, as a short key: a depot path and revision name different
+	 * bytes on two servers, even when the workspace holds them.
+	 */
+	readonly server: string;
 	readonly depotPath: string;
 	readonly revision: number;
 	readonly file: string;
@@ -172,6 +177,26 @@ const cacheFile = (directory: string, spec: string, digest: string | null) => {
 	return join(directory, key.slice(0, 2), key);
 };
 
+/**
+ * The server the client talks to, as a short key, and its revision cache folder. Two servers can
+ * hold the same depot path at the same revision with different bytes, so each server's revisions
+ * are kept apart.
+ */
+const serverDirectory = Effect.fnUntraced(function* (directory: string) {
+	const p4 = yield* P4;
+	const environment = yield* p4.getEnvironment({});
+	const address = environment.serverAddress ?? environment.port ?? "unknown";
+	const server = createHash("sha256").update(address).digest("hex").slice(0, 16);
+	return { directory: join(directory, server), server };
+});
+
+/**
+ * Revisions one `print` takes. `printBatch` and its watched form hold every printed file in
+ * memory (the watched form in an unbounded queue), so a side of large packages prints in batches
+ * this size: at most this many files are held, and each batch is one round trip.
+ */
+const PRINT_BATCH = 16;
+
 /** The depot folder the workspace maps the project folder to, ending in `/`. */
 const projectPrefix = Effect.fnUntraced(function* (projectRoot: string) {
 	const p4 = yield* P4;
@@ -240,30 +265,35 @@ const printMissing = Effect.fnUntraced(function* (
 		const byDepotFile = new Map(
 			needed.map((item) => [item.spec.replace(/[#@].*$/u, ""), item])
 		);
-		const batch = yield* p4
-			.printBatch({ fileSpec: needed.map((item) => item.spec) })
-			.pipe(step(`print the changed files of ${what}`));
-		if (batch.failures.length > 0 || batch.items.length !== needed.length)
-			return yield* Effect.fail(
-				failure(
-					`Perforce printed ${batch.items.length} of ${needed.length} revisions for ${what}.`,
-					batch.failures
-				)
-			);
-		for (const item of batch.items) {
-			const target = byDepotFile.get(item.file.depotFile);
-			if (target === undefined)
+		// A print holds its files in memory until it ends, so a side prints `PRINT_BATCH` at a time
+		// and each batch is written before the next: memory follows the batch, not the side.
+		for (let start = 0; start < needed.length; start += PRINT_BATCH) {
+			const chunk = needed.slice(start, start + PRINT_BATCH);
+			const batch = yield* p4
+				.printBatch({ fileSpec: chunk.map((item) => item.spec) })
+				.pipe(step(`print the changed files of ${what}`));
+			if (batch.failures.length > 0 || batch.items.length !== chunk.length)
 				return yield* Effect.fail(
-					failure(`Perforce printed ${item.file.depotFile}, which was not asked for.`)
+					failure(
+						`Perforce printed ${batch.items.length} of ${chunk.length} revisions for ${what}.`,
+						batch.failures
+					)
 				);
-			bytes += item.content.byteLength;
-			printed++;
-			yield* Effect.promise(async () => {
-				await mkdir(join(target.file, ".."), { recursive: true });
-				const temporary = `${target.file}.${process.pid}.tmp`;
-				await writeFile(temporary, item.content);
-				await rename(temporary, target.file);
-			});
+			for (const item of batch.items) {
+				const target = byDepotFile.get(item.file.depotFile);
+				if (target === undefined)
+					return yield* Effect.fail(
+						failure(`Perforce printed ${item.file.depotFile}, which was not asked for.`)
+					);
+				bytes += item.content.byteLength;
+				printed++;
+				yield* Effect.promise(async () => {
+					await mkdir(join(target.file, ".."), { recursive: true });
+					const temporary = `${target.file}.${process.pid}.tmp`;
+					await writeFile(temporary, item.content);
+					await rename(temporary, target.file);
+				});
+			}
 		}
 	}
 	return { bytes, printed };
@@ -309,8 +339,9 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 				);
 			const at = options.shelved ? "head" : options.change - 1;
 			// Each command is a round trip to the server, so the independent ones run together.
-			const [description, prefix, listed] = yield* Effect.all(
+			const [cache, description, prefix, listed] = yield* Effect.all(
 				[
+					serverDirectory(options.directory).pipe(step("identify the server")),
 					p4
 						.describeChangelist({ change: options.change, shelved: options.shelved })
 						.pipe(step(`describe changelist ${options.change}`)),
@@ -338,7 +369,7 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 					})
 				);
 			const cached = (spec: string, digest: string | null) =>
-				cacheFile(options.directory, spec, digest);
+				cacheFile(cache.directory, spec, digest);
 			const files: ChangelistRevisionFile[] = [];
 			const skipped: string[] = [];
 			const baseWanted: Wanted[] = [];
@@ -393,7 +424,7 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 							prefix,
 							paths: options.before,
 							listed,
-							directory: options.directory
+							...cache
 						}).pipe(step(`print the files changelist ${options.change} changes from`));
 			const requested = wanted.base.length + wanted.head.length;
 			yield* Effect.annotateCurrentSpan({
@@ -491,7 +522,9 @@ const fetchAt = Effect.fnUntraced(function* (options: {
 	readonly paths: readonly string[];
 	readonly listed: Effect.Success<ReturnType<typeof listAt>>;
 	readonly directory: string;
+	readonly server: string;
 }) {
+	const server = options.server;
 	const haves = new Map<string, number | null>(
 		options.listed.have.items.map((item) => [item.depotFile, item.revision])
 	);
@@ -518,7 +551,7 @@ const fetchAt = Effect.fnUntraced(function* (options: {
 			)
 		);
 		if (workspaceHolds(revision, haves.get(depotPath) ?? undefined, writable)) {
-			files.push({ path, depotPath, revision, file: local, workspace: true });
+			files.push({ path, depotPath, revision, server, file: local, workspace: true });
 			continue;
 		}
 		const spec = `${depotPath}#${revision}`;
@@ -533,7 +566,7 @@ const fetchAt = Effect.fnUntraced(function* (options: {
 			bytes += yield* printToFile(spec, file);
 			printed++;
 		}
-		files.push({ path, depotPath, revision, file, workspace: false });
+		files.push({ path, depotPath, revision, server, file, workspace: false });
 	}
 	const reused = files.length - printed;
 	yield* Effect.annotateCurrentSpan({
@@ -572,14 +605,15 @@ export const readRevisionFiles = Effect.fn("Perforce.revisionFiles")(function* (
 				? "the workspace's revisions"
 				: `changelist ${options.at}`;
 	return yield* Effect.gen(function* () {
-		const [prefix, listed] = yield* Effect.all(
+		const [cache, prefix, listed] = yield* Effect.all(
 			[
+				serverDirectory(options.directory),
 				projectPrefix(options.projectRoot),
 				listAt(options.projectRoot, options.paths, options.at)
 			],
-			{ concurrency: 2 }
+			{ concurrency: 3 }
 		);
-		return yield* fetchAt({ ...options, prefix, listed });
+		return yield* fetchAt({ ...options, ...cache, prefix, listed });
 	}).pipe(
 		Effect.provide(layer),
 		Effect.mapError((cause) => classified(`Perforce could not read files at ${where}`, cause))
@@ -632,8 +666,9 @@ export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function*
 		const p4 = yield* P4;
 		const step = (name: string) =>
 			Effect.mapError((cause: unknown) => classified(`Perforce could not ${name}`, cause));
-		const [prefix, listed] = yield* Effect.all(
+		const [cache, prefix, listed] = yield* Effect.all(
 			[
+				serverDirectory(options.directory).pipe(step("identify the server")),
 				projectPrefix(options.projectRoot).pipe(step("map the project folder")),
 				options.before === undefined
 					? Effect.succeed(undefined)
@@ -696,13 +731,9 @@ export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function*
 			);
 			if (specs === undefined) continue;
 			const base =
-				specs.base === undefined
-					? undefined
-					: cacheFile(options.directory, specs.base, null);
+				specs.base === undefined ? undefined : cacheFile(cache.directory, specs.base, null);
 			const head =
-				specs.head === undefined
-					? undefined
-					: cacheFile(options.directory, specs.head, null);
+				specs.head === undefined ? undefined : cacheFile(cache.directory, specs.head, null);
 			if (specs.base !== undefined && base !== undefined)
 				wanted.base.push({ spec: specs.base, file: base, unnumbered: false });
 			if (specs.head !== undefined && head !== undefined)
@@ -724,7 +755,7 @@ export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function*
 						prefix,
 						paths: options.before,
 						listed,
-						directory: options.directory
+						...cache
 					}).pipe(step(`print the files ${what} change from`));
 		const requested = wanted.base.length + wanted.head.length;
 		yield* Effect.annotateCurrentSpan({

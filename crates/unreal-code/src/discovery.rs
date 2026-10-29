@@ -221,13 +221,18 @@ fn walk_427(folder: &Path, filter: &str, out: &mut Vec<String>) {
     }
 }
 
+/// Whether a file is Unreal Header Tool output, which 5.x's gather leaves out.
+fn uht_output(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".generated.h") || lower.ends_with(".gen.cpp")
+}
+
 /// 5.x's visitor: every file under the folder matching any filter, UHT output left out.
 fn walk_5(folder: &Path, filters: &[String], out: &mut Vec<String>) {
     let (files, folders) = entries(folder);
     for file in files {
         let name = file_name(&file);
-        let lower = name.to_ascii_lowercase();
-        if lower.ends_with(".generated.h") || lower.ends_with(".gen.cpp") {
+        if uht_output(&name) {
             continue;
         }
         if filters.iter().any(|filter| matches_wildcard(&name, filter)) {
@@ -317,10 +322,12 @@ pub fn step_includes(
         slashes(path)
     ));
     let name = file.rsplit('/').next().unwrap_or_default();
-    patterns
-        .filters
-        .iter()
-        .any(|filter| matches_wildcard(name, filter))
+    // As the walk does: 5.x leaves UHT output out, 4.27 does not.
+    !(engine != EngineLine::Ue4_27 && uht_output(name))
+        && patterns
+            .filters
+            .iter()
+            .any(|filter| matches_wildcard(name, filter))
         && Matcher::new(&patterns.includes, &patterns.excludes).includes(&file)
 }
 

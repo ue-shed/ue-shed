@@ -12,7 +12,8 @@ use std::time::Instant;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::join_policy::file_key;
+use crate::join_columns::keeps_namespace;
+use crate::join_policy::{file_key, strip_namespace};
 use crate::package_evidence::editor_only;
 use crate::package_text_contract::{
     ComparePointsRequest, GateCheck, PageRequest, PointChange, PointChangeCounts, PointChangeKind,
@@ -429,11 +430,18 @@ fn diff_code<'a>(
     }
 }
 
-/// A key with text: a resolved identity's namespace and key.
+/// A key with text: a resolved identity's namespace and key, as the manifest names it. Unreal
+/// gathers package text without its package marker (`UI [1C66…]` is `UI`); String Table entries
+/// and code text keep their namespace as written, as the index's units do.
 fn resolved(occurrence: Option<&Occurrence>) -> Option<(&str, &str)> {
-    occurrence
-        .filter(|o| o.identity == 0)
-        .map(|o| (o.namespace.as_str(), o.key.as_str()))
+    occurrence.filter(|o| o.identity == 0).map(|o| {
+        let namespace = if keeps_namespace(o.location) {
+            o.namespace.as_str()
+        } else {
+            strip_namespace(&o.namespace)
+        };
+        (namespace, o.key.as_str())
+    })
 }
 
 struct Findings {
@@ -633,9 +641,55 @@ fn judge(
         }
     }
     let moved_from = moved_to.values().copied().collect::<HashSet<usize>>();
+    // The text each removed key had, so a key the change moved to another place, such as a
+    // renumbered Blueprint function, and gave new text is judged as an edit of that text.
+    let mut removed_sources = HashMap::<(&str, &str), &str>::new();
+    for change in changes {
+        if change.kind == PointChangeKind::Removed
+            && let (Some(key), Some(before)) = (resolved(change.before), change.before)
+        {
+            removed_sources.entry(key).or_insert(before.source.as_str());
+        }
+    }
     let mut findings = Findings {
         rows: Vec::new(),
         seen: HashSet::new(),
+    };
+    // The cultures whose translation was made for `previous`, the text the change replaced.
+    let stale = |found: &Entry, previous: &str| -> BTreeSet<usize> {
+        translated(Some(found))
+            .into_iter()
+            .filter(|culture| {
+                found.translations[*culture]
+                    .as_ref()
+                    .is_some_and(|t| t.source == previous)
+            })
+            .collect()
+    };
+    let edited = |findings: &mut Findings,
+                  path: &str,
+                  key: (&str, &str),
+                  source: &str,
+                  stale: BTreeSet<usize>| {
+        if stale.is_empty() {
+            findings.add(
+                GateCheck::TextChanged,
+                path,
+                Some(key),
+                source,
+                Vec::new(),
+                None,
+            );
+        } else {
+            findings.add(
+                GateCheck::TranslatedTextChanged,
+                path,
+                Some(key),
+                source,
+                names(stale),
+                None,
+            );
+        }
     };
     let mut conflicts = Vec::new();
     for (index, change) in changes.iter().enumerate() {
@@ -694,6 +748,14 @@ fn judge(
                         Vec::new(),
                         None,
                     );
+                } else if let Some(later) = later
+                    && change.kind == PointChangeKind::Added
+                    && let Some(&previous) = removed_sources.get(&later)
+                    && previous != source
+                    && let Some(found) = entry(later)
+                {
+                    let stale = stale(found, previous);
+                    edited(&mut findings, change.path, later, source, stale);
                 }
             }
             PointChangeKind::Edited => {
@@ -701,33 +763,8 @@ fn judge(
                     && before.source != after.source
                     && let Some(found) = entry(key)
                 {
-                    let stale = translated(Some(found))
-                        .into_iter()
-                        .filter(|culture| {
-                            found.translations[*culture]
-                                .as_ref()
-                                .is_some_and(|t| t.source == before.source)
-                        })
-                        .collect::<BTreeSet<_>>();
-                    if stale.is_empty() {
-                        findings.add(
-                            GateCheck::TextChanged,
-                            change.path,
-                            Some(key),
-                            source,
-                            Vec::new(),
-                            None,
-                        );
-                    } else {
-                        findings.add(
-                            GateCheck::TranslatedTextChanged,
-                            change.path,
-                            Some(key),
-                            source,
-                            names(stale),
-                            None,
-                        );
-                    }
+                    let stale = stale(found, &before.source);
+                    edited(&mut findings, change.path, key, source, stale);
                 }
             }
             PointChangeKind::Removed => {
@@ -1160,6 +1197,114 @@ mod tests {
                 )
             ]
         );
+    }
+
+    /// A base localization with one translated key, `UI`/`B1` "Bye", in a lookup built from files.
+    fn bye_lookup(name: &str) -> Result<(Lookup, std::path::PathBuf)> {
+        use crate::package_text_contract::{
+            BaseLocalization, CultureArchive, LocalizationRevision,
+        };
+        let folder = std::env::temp_dir().join(format!("gt-judge-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder)?;
+        let manifest = folder.join("Game.manifest");
+        fs::write(
+            &manifest,
+            r#"{"FormatVersion":1,"Namespace":"","Subnamespaces":[{"Namespace":"UI","Children":[
+                {"Source":{"Text":"Bye"},"Keys":[{"Key":"B1","Path":"/Game/UI/W_Menu.W_Menu_C:Bye"}]}]}]}"#,
+        )?;
+        let archive = folder.join("Game.archive");
+        fs::write(
+            &archive,
+            r#"{"FormatVersion":2,"Namespace":"","Subnamespaces":[{"Namespace":"UI","Children":[
+                {"Source":{"Text":"Bye"},"Translation":{"Text":"Tschuess"},"Key":"B1"}]}]}"#,
+        )?;
+        let revision = |file: &Path, name: &str| LocalizationRevision {
+            path: name.into(),
+            file: file.to_string_lossy().into_owned(),
+            revision: format!("{name}#1"),
+        };
+        let configuration = crate::store::Configuration {
+            cache_root: folder.join("cache"),
+            project_key: "project".into(),
+            target_key: "target".into(),
+            shared_project: false,
+            view_prefix: None,
+        };
+        let base = BaseLocalization {
+            native_culture: "en".into(),
+            manifest: revision(&manifest, "m"),
+            archives: vec![CultureArchive {
+                culture: "de".into(),
+                archive: revision(&archive, "de"),
+            }],
+        };
+        let (lookup, _) = open_or_build(&configuration, &base)?;
+        Ok((lookup, folder))
+    }
+
+    fn judged(lookup: &mut Lookup, before: &[Occurrence], after: &[Occurrence]) -> Vec<GateCheck> {
+        let mut changes = Vec::new();
+        let mut counts = PointChangeCounts::default();
+        let (before, after) = (
+            before.iter().collect::<Vec<_>>(),
+            after.iter().collect::<Vec<_>>(),
+        );
+        diff_package(
+            "Content/UI/W_Menu.uasset",
+            &before,
+            &after,
+            &mut changes,
+            &mut counts,
+        );
+        let files = HashSet::from([file_key("Content/UI/W_Menu.uasset")]);
+        judge(lookup, &changes, &before, &after, &files)
+            .expect("judged")
+            .into_iter()
+            .map(|finding| finding.check)
+            .collect()
+    }
+
+    #[test]
+    fn a_package_texts_key_is_found_without_its_package_marker() -> Result<()> {
+        let (mut lookup, folder) = bye_lookup("marker")?;
+        let stamped = |source: &str| Occurrence {
+            namespace: "UI [1C66B5FE8224ED34EC87FB91DA650434]".into(),
+            ..property("Text", source, "B1")
+        };
+        assert_eq!(
+            judged(&mut lookup, &[stamped("Bye")], &[stamped("Bye now")]),
+            [GateCheck::TranslatedTextChanged]
+        );
+        let _ = fs::remove_dir_all(folder);
+        Ok(())
+    }
+
+    #[test]
+    fn a_text_edited_as_its_function_renumbers_is_an_edit() -> Result<()> {
+        let (mut lookup, folder) = bye_lookup("moved")?;
+        let event = |object: &str, source: &str| Occurrence {
+            namespace: "UI".into(),
+            object: format!(
+                "SequenceDirector_C.SequenceEvent__ENTRYPOINTSequenceDirector_{object}"
+            ),
+            ..property("ScriptBytecode[0]", source, "B1")
+        };
+        assert_eq!(
+            judged(
+                &mut lookup,
+                &[event("196", "Bye")],
+                &[event("2", "Bye now")]
+            ),
+            [GateCheck::TranslatedTextChanged]
+        );
+        // Moved without an edit, it is not a finding.
+        assert_eq!(
+            judged(&mut lookup, &[event("196", "Bye")], &[event("2", "Bye")]),
+            []
+        );
+        let _ = fs::remove_dir_all(folder);
+        Ok(())
     }
 
     #[test]

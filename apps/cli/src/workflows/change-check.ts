@@ -6,6 +6,7 @@ import { GameTextLocalizationError } from "@ue-shed/game-text/schema";
 import {
 	GameTextIndexError,
 	readGameTextChangePoints,
+	unreadableChangePaths,
 	type GameTextTargetPoints
 } from "@ue-shed/game-text/index";
 import type { GameTextChange } from "@ue-shed/game-text/schema";
@@ -132,15 +133,8 @@ export class LocalizationGateError extends Schema.TaggedError<LocalizationGateEr
 
 /** Changed packages, or code and config files, a point could not read at all. */
 export function unreadableFiles(targets: readonly GameTextTargetPoints[]) {
-	const failed = new Set(
-		targets.flatMap((target) =>
-			[...target.before.entries, ...target.after.entries].flatMap((entry) =>
-				entry.status === "failed" ? [entry.path] : []
-			)
-		)
-	);
-	if (failed.size === 0) return Effect.void;
-	const paths = [...failed];
+	const paths = unreadableChangePaths(targets);
+	if (paths.length === 0) return Effect.void;
 	return Effect.fail(
 		new LocalizationGateError({
 			retrySafe: false,

@@ -35,6 +35,10 @@ struct Code<'a> {
     context: String,
 }
 
+/// What a code record means, in its key. v2: a scan that dropped String Table text it could not
+/// resolve alone is partial, so records cached as complete before are not reused.
+const CODE_RECORDS: &str = "code-records-v2";
+
 pub fn read(configuration: &Configuration, request: &PointRequest) -> Result<BuildOutcome> {
     let started = Instant::now();
     let mut stages = Stages::default();
@@ -59,7 +63,7 @@ pub fn read(configuration: &Configuration, request: &PointRequest) -> Result<Bui
                 point: code,
                 wrappers,
                 context: digest(
-                    [key.as_str(), &code.policy_json, &scan]
+                    [CODE_RECORDS, key.as_str(), &code.policy_json, &scan]
                         .join("\0")
                         .as_bytes(),
                 ),

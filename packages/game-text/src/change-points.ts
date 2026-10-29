@@ -57,6 +57,11 @@ export interface GameTextRevisionFile {
 	readonly depotPath: string;
 	readonly revision: number;
 	readonly file: string;
+	/**
+	 * The server the revision is on, as the host keys it: one depot path and revision name
+	 * different bytes on two servers, even when the workspace holds them.
+	 */
+	readonly server?: string;
 }
 
 /** A change's files at both sides, and the files asked for as the change found them. */
@@ -138,9 +143,9 @@ const outputPaths = (outputs: Iterable<TargetOutputs>) => [
 
 /**
  * The target's localization at a base, from the files fetched there; a revision is named by its
- * depot path and number, which never change on one server, and the file it was read from, which
- * the revision cache keeps per server. Undefined without the manifest. A culture whose archive the
- * base lacks has nothing translated.
+ * depot path and number, which never change on one server, and the server (or, from a host that
+ * does not name it, the file it was read from). Undefined without the manifest. A culture whose
+ * archive the base lacks has nothing translated.
  */
 function baseLocalization(
 	outputs: TargetOutputs | undefined,
@@ -154,7 +159,7 @@ function baseLocalization(
 			: {
 					path,
 					file: file.file,
-					revision: `${file.depotPath}#${file.revision} ${file.file}`
+					revision: `${file.depotPath}#${file.revision} ${file.server ?? file.file}`
 				};
 	};
 	const manifest = outputs === undefined ? undefined : revision(outputs.manifest);

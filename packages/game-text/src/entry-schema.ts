@@ -213,3 +213,13 @@ export {
 	gameTextChangeLabel,
 	gameTextChangePoints
 } from "./change-comparison.js";
+
+export {
+	LocalizationFileChange,
+	LocalizationFileComparisonRequest,
+	LocalizationFileComparisonResult,
+	LocalizationFileField,
+	LocalizationFileFormat,
+	LocalizationFilePair,
+	localizationFileFormat
+} from "./file-comparison.js";

@@ -71,7 +71,7 @@ describe.skipIf(!executable)("comparing two localization files in the engine", (
 					options: { format: "po" as const },
 					before: { file: before, path: "before.po" },
 					after: { file: after, path: "after.po" },
-					filter: { groups: [], query: "" },
+					filter: { groups: [], query: "", preview: 0 },
 					changes: { offset: 0, limit: 1 }
 				};
 				const first = yield* index.compareTextFiles(request);
@@ -84,10 +84,12 @@ describe.skipIf(!executable)("comparing two localization files in the engine", (
 		);
 		expect(first.counts).toEqual({
 			rekeyed: 0,
-			source: 0,
+			reworded: 0,
+			retouched: 0,
 			removed: 0,
 			added: 1,
 			translation: 1,
+			carried: 0,
 			context: 0,
 			unchanged: 1
 		});

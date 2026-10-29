@@ -215,6 +215,7 @@ export {
 } from "./change-comparison.js";
 
 export {
+	LocalizationFileAsset,
 	LocalizationFileChange,
 	LocalizationFileChoiceRequest,
 	LocalizationFileChoiceResult,

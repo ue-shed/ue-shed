@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import {
 	LocalizationFileGroup,
+	type LocalizationFileAsset,
 	type LocalizationFileChange,
 	type LocalizationFileComparisonResult,
 	type LocalizationFileCounts,
@@ -15,10 +16,11 @@ import {
 	type TextDiffEntry,
 	type TextDiffField,
 	type TextDiffFilter,
-	type TextDiffGroup
+	type TextDiffGroup,
+	type TextDiffKey
 } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
 
 export type ReadyFileComparison = Extract<LocalizationFileComparisonResult, { status: "ready" }>;
@@ -44,68 +46,88 @@ const SECONDARY_FIELDS = new Set<LocalizationFileField["name"]>([
 	"references",
 	"flags"
 ]);
+/** Groups whose entries show their translation even unchanged: the reader has to check it. */
+const TRANSLATION_CONTEXT = new Set<LocalizationFileGroup>(["rekeyed", "reworded", "retouched"]);
 
-/** The groups in the order the engine lists them, with what each means for the reader. */
-export function fileComparisonGroups(counts: LocalizationFileCounts): TextDiffGroup[] {
-	const groups: {
-		readonly id: LocalizationFileGroup;
-		readonly group: Omit<TextDiffGroup, "id" | "count">;
-	}[] = [
+/**
+ * The groups in the order the engine lists them, each with what it means for translations. A
+ * manifest holds no translations: its new keys are a risk because the archives still hold the old
+ * key.
+ */
+export function fileComparisonGroups(
+	format: LocalizationFileFormat,
+	counts: LocalizationFileCounts,
+	listed: LocalizationFileCounts
+): TextDiffGroup[] {
+	const manifest = format === "manifest";
+	const groups = [
 		{
 			id: "rekeyed",
-			group: {
-				label: "New key",
-				tone: "rekeyed",
-				description:
-					"Same text under another key: translations made for the old key are lost."
-			}
+			label: manifest ? "New key" : "New key, translation lost",
+			tone: "attention",
+			description: manifest
+				? "The archives still hold translations under the old key."
+				: "The translation stayed with the old key."
 		},
 		{
-			id: "source",
-			group: {
-				label: "Source changed",
-				tone: "edited",
-				description: "A translation made for the old source is out of date."
-			}
+			id: "reworded",
+			label: "Wording changed",
+			tone: "attention",
+			description: "Translations made for the old wording need redoing."
 		},
-		{ id: "removed", group: { label: "Removed", tone: "removed" } },
-		{ id: "added", group: { label: "Added", tone: "added" } },
+		{
+			id: "retouched",
+			label: "Case, punctuation or spacing",
+			tone: "attention",
+			description: "Only the source's case, punctuation or spacing changed."
+		},
+		{ id: "removed", label: "Removed", tone: "removed" },
+		{ id: "added", label: "Added", tone: "added" },
 		{
 			id: "translation",
-			group: {
-				label: "Translation changed",
-				tone: "edited",
-				description: "The source is the same."
-			}
+			label: "Translation changed",
+			tone: "changed",
+			description: "The source is the same."
+		},
+		{
+			id: "carried",
+			label: "New key, translation kept",
+			tone: "quiet",
+			description: "Same text and translation under a new key."
 		},
 		{
 			id: "context",
-			group: {
-				label: "Notes and references only",
-				tone: "edited",
-				description: "Where the text is, not what it says.",
-				folded: true
-			}
+			label: "Notes and references only",
+			tone: "quiet",
+			description: "Where the text is, not what it says.",
+			folded: true
 		}
-	];
-	return groups.map(({ id, group }) => ({ id, count: counts[id], ...group }));
+	] as const satisfies readonly (Omit<TextDiffGroup, "count"> & {
+		readonly id: LocalizationFileGroup;
+	})[];
+	return groups.map((group) => ({
+		...group,
+		count: counts[group.id],
+		...(listed[group.id] === counts[group.id] ? undefined : { listed: listed[group.id] })
+	}));
 }
-
-const fullKey = (key: { readonly namespace: string; readonly key: string }) =>
-	key.namespace === "" ? key.key : `${key.namespace},${key.key}`;
 
 /** A key Unreal generated rather than a person wrote: a GUID or a long hexadecimal hash. */
 const generated = (key: string) => /^[0-9A-F]{16,}$/iu.test(key.replaceAll("-", ""));
 
+/** A key as listed: a generated one shortened, its namespace when that is what changed. */
+function keyLabel(key: LocalizationFileChange["after"] & object, namespaced: boolean): TextDiffKey {
+	const full = key.namespace === "" ? key.key : `${key.namespace},${key.key}`;
+	const short = generated(key.key) ? `${key.key.slice(0, 8)}…` : key.key;
+	return { label: namespaced ? `${key.namespace || "(no namespace)"}, ${short}` : short, full };
+}
+
 function field(change: LocalizationFileChange, value: LocalizationFileField): TextDiffField {
 	const translation = value.name === "translation";
-	// Under a changed source or a new key, a translation is context the reader must check.
-	const context = translation && (change.group === "source" || change.group === "rekeyed");
+	const source = change.fields.find((each) => each.name === "source")?.after;
 	const note =
-		context && value.before === value.after && value.after !== undefined
-			? change.group === "source"
-				? "made for the old source"
-				: "carried to the new key"
+		translation && value.after !== undefined && value.after === source
+			? "same as the source"
 			: undefined;
 	return {
 		label:
@@ -115,15 +137,31 @@ function field(change: LocalizationFileChange, value: LocalizationFileField): Te
 		...(value.before === undefined ? undefined : { before: value.before }),
 		...(value.after === undefined ? undefined : { after: value.after }),
 		...(CODE_FIELDS.has(value.name) ? { code: true } : undefined),
-		...(context ? { context: true } : undefined),
+		...(translation && TRANSLATION_CONTEXT.has(change.group) ? { context: true } : undefined),
 		...(note === undefined ? undefined : { note }),
 		...(SECONDARY_FIELDS.has(value.name) ? { secondary: true } : undefined)
 	};
 }
 
+/** What an entry's change means when it is the exception in its group. */
+function entryNote(
+	change: LocalizationFileChange,
+	format: LocalizationFileFormat
+): string | undefined {
+	if (format === "manifest") return undefined;
+	const translations = change.fields.filter((each) => each.name === "translation");
+	const cleared = translations.some(
+		(each) => each.before !== undefined && each.after === undefined
+	);
+	if (cleared && change.group !== "removed")
+		return "Now untranslated: the game shows the source.";
+	if (change.group === "added" && translations.length === 0) return "Not translated.";
+	return undefined;
+}
+
 /**
  * A page of a file comparison as `TextDiff` entries: the key, its namespace as the place, each
- * field, and what a new key or a changed source means for the entry's translation.
+ * field, and a note where an entry is the exception in its group.
  */
 export function fileComparisonEntries(
 	file: string,
@@ -133,57 +171,48 @@ export function fileComparisonEntries(
 ): TextDiffEntry[] {
 	return changes.map((change, index) => {
 		const key = change.after ?? change.before;
-		const fields = change.fields.map((value) => field(change, value));
-		const translated = change.fields.some(
-			(value) => value.name === "translation" && value.after !== undefined
-		);
-		const note =
-			change.group === "rekeyed" &&
+		const namespaced =
 			change.before !== undefined &&
 			change.after !== undefined &&
-			generated(change.after.key) &&
-			!generated(change.before.key)
-				? "A key someone wrote was replaced by a generated one."
-				: (change.group === "source" || change.group === "rekeyed") &&
-					  format !== "manifest" &&
-					  !translated
-					? "Not translated."
-					: undefined;
+			change.before.namespace !== change.after.namespace;
+		const note = entryNote(change, format);
 		return {
 			id: String(offset + index),
 			kind: change.kind,
 			group: change.group,
-			...(change.before
-				? { before: { label: change.before.key, full: fullKey(change.before) } }
-				: undefined),
-			...(change.after
-				? { after: { label: change.after.key, full: fullKey(change.after) } }
-				: undefined),
+			...(change.before ? { before: keyLabel(change.before, namespaced) } : undefined),
+			...(change.after ? { after: keyLabel(change.after, namespaced) } : undefined),
 			file,
-			...(key && key.namespace !== "" ? { place: key.namespace } : undefined),
+			...(key && key.namespace !== "" && !namespaced ? { place: key.namespace } : undefined),
 			...(note === undefined ? undefined : { note }),
-			fields
+			fields: change.fields.map((value) => field(change, value))
 		};
 	});
 }
 
-/** One sentence of what the comparison found, biggest consequences first. */
-export function fileComparisonSummary(counts: LocalizationFileCounts): string {
-	const parts = [
-		[counts.rekeyed, "moved to a new key"],
-		[counts.source, "with a changed source"],
-		[counts.removed, "removed"],
-		[counts.added, "added"],
-		[counts.translation, "with a changed translation"],
-		[counts.context, "with only notes or references changed"]
-	] as const;
-	const found = parts
-		.filter(([count]) => count > 0)
-		.map(([count, words]) => `${count.toLocaleString()} ${words}`);
-	const unchanged = `${counts.unchanged.toLocaleString()} unchanged.`;
-	return found.length === 0
-		? `The files hold the same text: ${unchanged}`
-		: `${found.join(" · ")} · ${unchanged}`;
+/** What the comparison means for translators first, then everything else. */
+export function fileComparisonSummary(
+	format: LocalizationFileFormat,
+	counts: LocalizationFileCounts
+): string {
+	const count = (value: number, words: string) =>
+		value > 0 ? [`${value.toLocaleString()} ${words}`] : [];
+	const work = [
+		...count(counts.rekeyed, format === "manifest" ? "new keys" : "lost on a new key"),
+		...count(counts.reworded, "reworded"),
+		...count(counts.retouched, "retouched")
+	];
+	const other = [
+		...count(counts.removed, "removed"),
+		...count(counts.added, "added"),
+		...count(counts.translation, "translations changed"),
+		...count(counts.carried, "moved with their translation"),
+		...count(counts.context, "notes or references only"),
+		`${counts.unchanged.toLocaleString()} unchanged`
+	];
+	return work.length === 0
+		? `Nothing for translators to redo. ${other.join(" · ")}.`
+		: `For translators: ${work.join(" · ")}. Also ${other.join(" · ")}.`;
 }
 
 /** How two chosen files are named on screen. */
@@ -205,8 +234,10 @@ export function distinctNames(before: string, after: string): FilePairNames {
 	return { before: textDiffFileName(before).name, after: textDiffFileName(after).name };
 }
 
-/** Changes a comparison loads at a time. */
+/** Changes a filtered comparison loads at a time. */
 const PAGE = 200;
+/** Changes of each group an unfiltered comparison shows. */
+const PREVIEW = 5;
 /** How long typing waits before the engine filters again. */
 const QUERY_DELAY_MS = 250;
 
@@ -218,7 +249,8 @@ interface ChosenFile {
 /**
  * Compare two localization files: choose an older and a newer `.po`, `.archive` or `.manifest`,
  * and see which keys came, went, moved to a new key or changed, grouped by what that means for
- * their translations. The engine filters and pages over every change.
+ * their translations. The engine filters and pages over every change; unfiltered, each group shows
+ * a few changes and the assets most of them come from.
  */
 export function GameTextFileComparison(props: { readonly client: GameTextClientApi }) {
 	const choose = createEffectAction();
@@ -226,7 +258,8 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 	const [before, setBefore] = createSignal<ChosenFile>();
 	const [after, setAfter] = createSignal<ChosenFile>();
 	const [comparison, setComparison] = createSignal<ReadyFileComparison>();
-	const [changes, setChanges] = createSignal<readonly LocalizationFileChange[]>([]);
+	// Entries are mapped once per page and appended, so a later page leaves earlier ones as they are.
+	const [entries, setEntries] = createSignal<readonly TextDiffEntry[]>([]);
 	const [filter, setFilter] = createSignal<TextDiffFilter>({ query: "" });
 	const [loading, setLoading] = createSignal(false);
 	const [problem, setProblem] = createSignal<string>();
@@ -259,7 +292,7 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 		compare.cancel();
 		setLoading(false);
 		setComparison(undefined);
-		setChanges([]);
+		setEntries([]);
 		setFilter({ query: "" });
 	};
 	const swap = () => {
@@ -269,15 +302,21 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 		setAfter(older);
 		reset();
 	};
+	const mismatch = () => {
+		const older = before();
+		const newer = after();
+		return older !== undefined && newer !== undefined && older.format !== newer.format;
+	};
 	/**
 	 * The first page of a filter, or with `more` the next page of the open one. The filter is passed
-	 * in: a signal set in the same tick still reads its old value.
+	 * in: a signal set in the same tick still reads its old value. Without a group it is an
+	 * overview: a few changes of each group.
 	 */
 	const load = (more = false, current = filter()) => {
 		const action = props.client.compareLocalizationFiles;
 		const older = before();
 		const newer = after();
-		if (!action || !older || !newer) return;
+		if (!action || !older || !newer || older.format !== newer.format) return;
 		const version = more ? generation : ++generation;
 		const kind = LocalizationFileGroup.literals.find((group) => group === current.kind);
 		setLoading(true);
@@ -286,9 +325,10 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 				files: { before: older.path, after: newer.path },
 				filter: {
 					groups: kind === undefined ? [] : [kind],
-					query: current.query
+					query: current.query,
+					preview: kind === undefined ? PREVIEW : 0
 				},
-				changes: { offset: more ? changes().length : 0, limit: PAGE }
+				changes: { offset: more ? entries().length : 0, limit: PAGE }
 			}),
 			{
 				onFailure: () => {
@@ -304,14 +344,28 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 						return;
 					}
 					setProblem(undefined);
-					setChanges((previous) =>
-						more ? [...previous, ...result.changes] : result.changes
-					);
+					const file = result.files.after ?? result.files.before ?? "";
+					setEntries((previous) => {
+						const page = fileComparisonEntries(
+							file,
+							result.format,
+							result.changes,
+							more ? previous.length : 0
+						);
+						return more ? [...previous, ...page] : page;
+					});
 					setComparison(result);
 				}
 			}
 		);
 	};
+	// Two files of one kind compare as soon as both are chosen.
+	createEffect(
+		() => [before(), after()] as const,
+		([older, newer]) => {
+			if (older && newer && older.format === newer.format) load(false, { query: "" });
+		}
+	);
 	const refilter = (next: TextDiffFilter) => {
 		const typed = next.query !== filter().query;
 		setFilter(next);
@@ -329,22 +383,19 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 					after: newer ? textDiffFileName(newer.path).name : ""
 				};
 	});
-	const mismatch = () => {
-		const older = before();
-		const newer = after();
-		return older !== undefined && newer !== undefined && older.format !== newer.format;
-	};
-	const entries = createMemo(() => {
+	const lead = (group: TextDiffGroup) => {
 		const open = comparison();
-		return open
-			? fileComparisonEntries(
-					open.files.after ?? open.files.before ?? "",
-					open.format,
-					changes(),
-					0
-				)
-			: [];
-	});
+		const assets = open?.assets.filter((asset) => asset.group === group.id) ?? [];
+		// One asset with one change says nothing the entry does not.
+		if (assets.length === 0 || (assets.length === 1 && (assets[0]?.count ?? 0) < 2))
+			return <></>;
+		return (
+			<Rollup
+				assets={assets}
+				onPick={(asset) => refilter({ kind: group.id, query: asset })}
+			/>
+		);
+	};
 	return (
 		<div {...stylex.attrs(styles.compare)}>
 			<section aria-label="Files to compare" {...stylex.attrs(styles.picker)}>
@@ -373,11 +424,11 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 					onChoose={() => pick("after")}
 				/>
 				<Button
-					tone="primary"
+					tone="quiet"
 					disabled={!before() || !after() || mismatch() || loading()}
-					onClick={() => load()}
+					onClick={() => load(false, filter())}
 				>
-					{loading() && !comparison() ? "Comparing…" : "Compare"}
+					{loading() ? "Comparing…" : "Compare again"}
 				</Button>
 			</section>
 			<Show when={mismatch()}>
@@ -405,15 +456,21 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 				{(open) => (
 					<section aria-label="File comparison" {...stylex.attrs(styles.result)}>
 						<p role="status" {...stylex.attrs(styles.summary)}>
-							{fileComparisonSummary(open().counts)}
+							{fileComparisonSummary(open().format, open().counts)}
 						</p>
 						<TextDiff
 							label="Changed entries"
 							entries={entries()}
-							groups={fileComparisonGroups(open().counts)}
+							groups={fileComparisonGroups(
+								open().format,
+								open().counts,
+								open().listed
+							)}
 							total={open().total}
 							filter={filter()}
 							onFilter={refilter}
+							overview
+							sectionLead={lead}
 							loadingMore={loading()}
 							onMore={() => load(true)}
 						/>
@@ -421,6 +478,51 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 				)}
 			</Show>
 		</div>
+	);
+}
+
+/** The assets most of a group's changes come from; picking one filters the group to it. */
+function Rollup(props: {
+	readonly assets: readonly LocalizationFileAsset[];
+	readonly onPick: (asset: string) => void;
+}) {
+	return (
+		<ul aria-label="Most changes come from" {...stylex.attrs(styles.rollup)}>
+			<For each={props.assets}>
+				{(asset) => (
+					<li>
+						<button
+							type="button"
+							onClick={() => props.onPick(asset.asset)}
+							{...stylex.attrs(styles.asset)}
+						>
+							<Show when={asset.previous}>
+								{(previous) => (
+									<>
+										<span {...stylex.attrs(styles.assetName)}>
+											{previous()}
+										</span>
+										<span aria-hidden="true">→</span>
+									</>
+								)}
+							</Show>
+							<span {...stylex.attrs(styles.assetName)}>{asset.asset}</span>
+							<span {...stylex.attrs(styles.assetCount)}>
+								{asset.count.toLocaleString()}
+							</span>
+							<Show when={asset.generated > 0}>
+								<span {...stylex.attrs(styles.assetNote)}>
+									{asset.generated === asset.count
+										? "every"
+										: asset.generated.toLocaleString()}{" "}
+									written key replaced by a generated one
+								</span>
+							</Show>
+						</button>
+					</li>
+				)}
+			</For>
+		</ul>
 	);
 }
 
@@ -526,5 +628,31 @@ const styles = stylex.create({
 	problem: { margin: 0, fontSize: 12, color: tokens.colorWarning },
 	intro: { margin: 0, maxWidth: 720, fontSize: 13, color: tokens.colorTextMuted },
 	result: { display: "grid", gap: 10 },
-	summary: { margin: 0, fontSize: 13, color: tokens.colorTextStrong }
+	summary: { margin: 0, fontSize: 13, color: tokens.colorTextStrong },
+	rollup: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: 6,
+		margin: 0,
+		padding: 0,
+		listStyle: "none"
+	},
+	asset: {
+		display: "flex",
+		alignItems: "baseline",
+		gap: 6,
+		paddingBlock: 3,
+		paddingInline: 8,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: { default: tokens.colorBorder, ":hover": tokens.colorBorderStrong },
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorText,
+		fontSize: 12,
+		cursor: "pointer"
+	},
+	assetName: { fontFamily: tokens.fontMono, fontSize: 11 },
+	assetCount: { fontVariantNumeric: "tabular-nums", color: tokens.colorTextStrong },
+	assetNote: { fontSize: 11, color: tokens.colorWarning }
 });

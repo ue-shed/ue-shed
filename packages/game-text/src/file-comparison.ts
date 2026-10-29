@@ -23,18 +23,22 @@ export type LocalizationFilePair = typeof LocalizationFilePair.Type;
 
 /**
  * What a change means for the text and its translations, in the order changes are listed:
- * - `rekeyed`: the text moved to a new key, so translations made for the old key no longer apply;
- * - `source`: the source changed, so a translation made for the old source is out of date;
+ * - `rekeyed`: the text moved to a new key without its translation (in a manifest, any new key);
+ * - `reworded`: the source's wording changed, so its translation needs redoing;
+ * - `retouched`: only the source's case, punctuation or spacing changed;
  * - `removed`, `added`;
  * - `translation`: a translation, translator comment or flag changed, and the source did not;
+ * - `carried`: the text moved to a new key and kept its translation, or had none;
  * - `context`: only notes, references or a manifest path changed.
  */
 export const LocalizationFileGroup = Schema.Literals([
 	"rekeyed",
-	"source",
+	"reworded",
+	"retouched",
 	"removed",
 	"added",
 	"translation",
+	"carried",
 	"context"
 ]);
 export type LocalizationFileGroup = typeof LocalizationFileGroup.Type;
@@ -71,7 +75,11 @@ export const LocalizationFileComparisonRequest = Schema.Struct({
 	filter: Schema.optionalKey(
 		Schema.Struct({
 			groups: Schema.Array(LocalizationFileGroup),
-			query: Schema.String.check(Schema.isMaxLength(1000))
+			query: Schema.String.check(Schema.isMaxLength(1000)),
+			/** At most this many changes of each group, for an overview; all of them when 0. */
+			preview: Schema.optionalKey(
+				Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 50 }))
+			)
 		})
 	),
 	changes: Schema.Struct({
@@ -116,14 +124,27 @@ export type LocalizationFileChange = typeof LocalizationFileChange.Type;
 /** Changes per group, and the entries both files have alike. */
 export const LocalizationFileCounts = Schema.Struct({
 	rekeyed: Count,
-	source: Count,
+	reworded: Count,
+	retouched: Count,
 	removed: Count,
 	added: Count,
 	translation: Count,
+	carried: Count,
 	context: Count,
 	unchanged: Count
 });
 export type LocalizationFileCounts = typeof LocalizationFileCounts.Type;
+
+/** An asset many of a group's changes come from, and its older name when it was renamed. */
+export const LocalizationFileAsset = Schema.Struct({
+	group: LocalizationFileGroup,
+	asset: Schema.String,
+	previous: Schema.optionalKey(Schema.String),
+	count: Count,
+	/** New keys among them where a written key became a generated one. */
+	generated: Count
+});
+export type LocalizationFileAsset = typeof LocalizationFileAsset.Type;
 
 /**
  * `compareLocalizationFiles`: the files compared, counts of every change, and the requested page
@@ -141,7 +162,11 @@ export const LocalizationFileComparisonResult = Schema.Union([
 		files: LocalizationFilePair,
 		format: LocalizationFileFormat,
 		counts: LocalizationFileCounts,
+		/** Per group, the changes that hold the filter's text. */
+		listed: LocalizationFileCounts,
 		total: Count,
+		/** Per group, the assets most of its changes come from. */
+		assets: Schema.Array(LocalizationFileAsset),
 		changes: Schema.Array(LocalizationFileChange).check(Schema.isMaxLength(MAX_CHANGE_PAGE))
 	})
 ]);

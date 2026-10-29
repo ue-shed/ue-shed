@@ -25,16 +25,16 @@ const changes: LocalizationFileChange[] = [
 	{
 		kind: "rekeyed",
 		group: "rekeyed",
-		before: { namespace: "Dialogue", key: "Line_01" },
+		before: { namespace: "Dialogue", key: "74_Text" },
 		after: { namespace: "Dialogue", key: "00A6E0EA46DC851E2C1872BF76A5AA48" },
 		fields: [
 			{ name: "source", before: "Where were you?", after: "Where were you?" },
-			{ name: "translation", before: "Wo warst du?", after: "Wo warst du?" }
+			{ name: "translation", before: "Wo warst du?" }
 		]
 	},
 	{
 		kind: "edited",
-		group: "source",
+		group: "reworded",
 		before: { namespace: "Menu", key: "Quit" },
 		after: { namespace: "Menu", key: "Quit" },
 		fields: [
@@ -47,18 +47,20 @@ const changes: LocalizationFileChange[] = [
 		group: "added",
 		after: { namespace: "Shop", key: "Apples" },
 		fields: [
-			{ name: "source", after: "{0} apple" },
-			{ name: "translation", form: 0, after: "{0} Apfel" },
+			{ name: "source", after: "Apples" },
+			{ name: "translation", after: "Apples" },
 			{ name: "references", after: "/Game/UI/Shop.Shop" }
 		]
 	}
 ];
 const counts = {
 	rekeyed: 1,
-	source: 1,
+	reworded: 1,
+	retouched: 0,
 	removed: 0,
 	added: 1,
 	translation: 0,
+	carried: 0,
 	context: 0,
 	unchanged: 40
 };
@@ -93,33 +95,38 @@ function client(
 			const listed = changes.filter(
 				(change) => groups.length === 0 || groups.includes(change.group)
 			);
-			const offset = request.changes.offset;
 			return Effect.succeed({
 				status: "ready",
 				files: request.files,
 				format: "po",
 				counts,
+				listed: counts,
 				total: listed.length,
-				changes: listed.slice(offset, offset === 0 ? 2 : undefined)
+				changes: listed,
+				assets: [{ group: "rekeyed", asset: "DT_Scott", count: 2, generated: 2 }]
 			});
 		}
 	};
 }
 
-it("names a new key, a stale translation and an untranslated entry", () => {
+it("notes only the exceptions: a cleared translation and one that copies the source", () => {
 	const entries = fileComparisonEntries("Game.po", "po", changes, 0);
-	expect(entries[0]?.note).toBe("A key someone wrote was replaced by a generated one.");
-	expect(entries[1]?.fields.find((field) => field.label === "Translation")).toMatchObject({
-		context: true,
-		note: "made for the old source"
+	expect(entries[0]?.note).toBe("Now untranslated: the game shows the source.");
+	expect(entries[0]?.after).toEqual({
+		label: "00A6E0EA…",
+		full: "Dialogue,00A6E0EA46DC851E2C1872BF76A5AA48"
 	});
-	expect(entries[2]?.fields.map((field) => [field.label, field.secondary === true])).toEqual([
-		["Source", false],
-		["Translation [0]", false],
-		["References", true]
+	expect(entries[1]?.note).toBeUndefined();
+	expect(entries[1]?.fields.find((field) => field.label === "Translation")).toMatchObject({
+		context: true
+	});
+	expect(entries[2]?.fields.map((field) => [field.label, field.note ?? ""])).toEqual([
+		["Source", ""],
+		["Translation", "same as the source"],
+		["References", ""]
 	]);
-	expect(fileComparisonSummary(counts)).toBe(
-		"1 moved to a new key · 1 with a changed source · 1 added · 40 unchanged."
+	expect(fileComparisonSummary("po", counts)).toBe(
+		"For translators: 1 lost on a new key · 1 reworded. Also 1 added · 40 unchanged."
 	);
 });
 
@@ -134,7 +141,7 @@ it("tells two files of one name apart by their folders", () => {
 	});
 });
 
-it("compares two chosen files, filters in the engine and pages", async () => {
+it("compares as soon as both files are chosen, as an overview filtered in the engine", async () => {
 	const requests: LocalizationFileComparisonRequest[] = [];
 	const user = userEvent.setup();
 	const api = client(["C:/new/de/Game.po", "C:/old/de/Game.po"], requests);
@@ -143,8 +150,6 @@ it("compares two chosen files, filters in the engine and pages", async () => {
 			<GameTextFileComparison client={api} />
 		</EffectRuntimeProvider>
 	));
-	const compare = screen.getByRole("button", { name: "Compare" });
-	expect(compare.hasAttribute("disabled")).toBe(true);
 	const before = screen.getByRole("group", { name: "Before" });
 	const after = screen.getByRole("group", { name: "After" });
 	// Picked the wrong way round, then swapped.
@@ -152,48 +157,47 @@ it("compares two chosen files, filters in the engine and pages", async () => {
 	await user.click(within(after).getByRole("button", { name: "Choose…" }));
 	await user.click(screen.getByRole("button", { name: "Swap before and after" }));
 	expect(within(before).getByText("old\\de\\Game.po")).toBeTruthy();
-	await user.click(compare);
 	const comparison = await screen.findByRole("region", { name: "File comparison" });
-	expect(within(comparison).getByRole("status").textContent).toContain("1 moved to a new key");
+	expect(within(comparison).getByRole("status").textContent).toContain(
+		"For translators: 1 lost on a new key"
+	);
 	expect(
 		within(comparison)
 			.getAllByRole("heading", { level: 4 })
 			.map((heading) => heading.textContent)
-	).toEqual(["New key", "Source changed"]);
-	await user.click(within(comparison).getByRole("button", { name: "Load more" }));
-	await waitFor(() =>
-		expect(within(comparison).getAllByRole("listitem", { name: "Added" })).toHaveLength(1)
-	);
+	).toEqual(["New key, translation lost", "Wording changed", "Added"]);
+	const rollup = within(comparison).getByRole("list", { name: "Most changes come from" });
+	expect(rollup.textContent).toContain("every written key replaced by a generated one");
 	await user.click(within(comparison).getByRole("button", { name: "Added, 1" }));
 	await waitFor(() =>
-		expect(within(comparison).queryByRole("listitem", { name: "New key" })).toBeNull()
+		expect(within(comparison).queryByRole("listitem", { name: /^New key:/u })).toBeNull()
 	);
-	expect(requests.map((request) => [request.filter, request.changes.offset])).toEqual([
-		[{ groups: [], query: "" }, 0],
-		[{ groups: [], query: "" }, 2],
-		[{ groups: ["added"], query: "" }, 0]
-	]);
-	expect(requests[0]?.files).toEqual({ before: "C:/old/de/Game.po", after: "C:/new/de/Game.po" });
+	expect(requests.at(-2)).toEqual({
+		files: { before: "C:/old/de/Game.po", after: "C:/new/de/Game.po" },
+		filter: { groups: [], query: "", preview: 5 },
+		changes: { offset: 0, limit: 200 }
+	});
+	expect(requests.at(-1)?.filter).toEqual({ groups: ["added"], query: "", preview: 0 });
 });
 
 it("will not compare files of two kinds", async () => {
 	const user = userEvent.setup();
-	const api = client(["C:/a/Game.po", "C:/a/Game.archive"], []);
+	const requests: LocalizationFileComparisonRequest[] = [];
+	const api = client(["C:/a/Game.po", "C:/a/Game.archive"], requests);
 	render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
 			<GameTextFileComparison client={api} />
 		</EffectRuntimeProvider>
 	));
-	await user.click(
-		within(screen.getByRole("group", { name: "Before" })).getByRole("button", {
-			name: "Choose…"
-		})
-	);
-	await user.click(
-		within(screen.getByRole("group", { name: "After" })).getByRole("button", {
-			name: "Choose…"
-		})
-	);
+	for (const side of ["Before", "After"])
+		await user.click(
+			within(screen.getByRole("group", { name: side })).getByRole("button", {
+				name: "Choose…"
+			})
+		);
 	expect(screen.getByRole("alert").textContent).toContain("same kind");
-	expect(screen.getByRole("button", { name: "Compare" }).hasAttribute("disabled")).toBe(true);
+	expect(screen.getByRole("button", { name: "Compare again" }).hasAttribute("disabled")).toBe(
+		true
+	);
+	expect(requests).toEqual([]);
 });

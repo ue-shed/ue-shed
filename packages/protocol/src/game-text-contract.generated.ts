@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "e3fded5db8886ef2cc37da46265ba6228de535cd30f9cc3bf6147571e312e120"
+	contractHash: "8b4182da6802dd3d7ef91684960f8ccb2a14df40f1dba99fcc0fed6c1242862f"
 } as const;
 
 /**
@@ -691,11 +691,25 @@ groups: ReadonlyArray<TextFileGroup>,
 /**
  * Only changes whose key, namespace or any field holds this text, ignoring case.
  */
-query: string, };
+query: string, 
+/**
+ * At most this many changes of each group, for an overview; every change when 0.
+ */
+preview: number, };
 
-export type TextFileGroup = "rekeyed" | "source" | "removed" | "added" | "translation" | "context";
+export type TextFileGroup = "rekeyed" | "reworded" | "retouched" | "removed" | "added" | "translation" | "carried" | "context";
 
-export type TextFileCounts = { rekeyed: number, source: number, removed: number, added: number, translation: number, context: number, unchanged: number, };
+export type TextFileCounts = { rekeyed: number, reworded: number, retouched: number, removed: number, added: number, translation: number, carried: number, context: number, unchanged: number, };
+
+export type TextFileAsset = { group: TextFileGroup, asset: string, 
+/**
+ * The asset's name in the older file, when its entries now point at a renamed asset.
+ */
+previous?: string, count: number, 
+/**
+ * New keys among them where a key someone wrote became one Unreal generated.
+ */
+generated: number, };
 
 export type TextFileFieldName = "source" | "source_plural" | "translation" | "path" | "notes" | "comments" | "references" | "flags";
 
@@ -715,9 +729,17 @@ export type TextFileComparison = { format: LocalizationFormat,
  */
 poFormat?: string, counts: TextFileCounts, 
 /**
+ * Changes per group that hold the filter's text: `counts` when there is none.
+ */
+listed: TextFileCounts, 
+/**
  * Changes the filter lists, in all pages.
  */
-total: number, changes: ReadonlyArray<TextFileChange>, 
+total: number, 
+/**
+ * Per group, the assets most of its changes come from, most first.
+ */
+assets: ReadonlyArray<TextFileAsset>, changes: ReadonlyArray<TextFileChange>, 
 /**
  * Whether the comparison was kept from the previous request for the same revisions.
  */

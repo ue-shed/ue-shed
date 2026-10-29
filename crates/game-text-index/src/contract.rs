@@ -251,6 +251,7 @@ mod tests {
             crate::text_file_compare::TextFileFilter::decl(&config),
             crate::text_file_compare::TextFileGroup::decl(&config),
             crate::text_file_compare::TextFileCounts::decl(&config),
+            crate::text_file_compare::TextFileAsset::decl(&config),
             crate::text_file_compare::TextFileFieldName::decl(&config),
             crate::text_file_compare::TextFileField::decl(&config),
             crate::text_file_compare::TextFileKey::decl(&config),

@@ -87,7 +87,8 @@ export function workspaceFileComparison(
 				...(after === undefined ? undefined : { after }),
 				filter: {
 					groups: [...(request.filter?.groups ?? [])],
-					query: request.filter?.query ?? ""
+					query: request.filter?.query ?? "",
+					preview: request.filter?.preview ?? 0
 				},
 				changes: request.changes
 			});
@@ -96,7 +97,9 @@ export function workspaceFileComparison(
 				files,
 				format,
 				counts: comparison.counts,
+				listed: comparison.listed,
 				total: comparison.total,
+				assets: comparison.assets,
 				changes: comparison.changes
 			} satisfies LocalizationFileComparisonResult;
 		},

@@ -1247,7 +1247,12 @@ export function GameTextRoute(props: {
 					selected={mode()}
 					onSelect={setMode}
 				/>
-				<span aria-label="Index status" {...stylex.attrs(styles.coverage)}>
+				<span
+					aria-label="Index status"
+					// The project's scan state says nothing about two files being compared.
+					hidden={mode() === "compare"}
+					{...stylex.attrs(styles.coverage)}
+				>
 					<Show
 						when={indexBusy()}
 						fallback={
@@ -1333,7 +1338,7 @@ export function GameTextRoute(props: {
 						</span>
 					</Show>
 				</span>
-				<Show when={summary()}>
+				<Show when={summary() && mode() !== "compare"}>
 					<ToolButton
 						label="Rescan"
 						showLabel

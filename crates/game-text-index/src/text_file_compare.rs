@@ -5,11 +5,15 @@
 //! the same source text is a rekey when that text is the only one of its kind among both the
 //! removed and the added.
 //!
-//! Changes come by consequence, in [`TextFileGroup`] order: text moved to a new key, changed
-//! source, removed, added, changed translation, then changes only to notes, references or paths.
-//! Within a group they keep the newer file's order, each removed entry placed before the next entry
-//! that followed it in the older file. Filters by group and text run over every change, so a page
-//! of a filter holds what the filter's count promises.
+//! When a text repeats, a removed and an added entry with the same text and the same reference
+//! (or manifest path) are a rekey too: the same row of the same asset under a new key.
+//!
+//! Changes come by what they mean for translations, in [`TextFileGroup`] order: a new key that lost
+//! its translation, reworded source, retouched source, removed, added, changed translation, a new
+//! key that kept its translation, then changes only to notes, references or paths. Within a group
+//! they keep the newer file's order, each removed entry placed before the next entry that followed
+//! it in the older file. Filters by group and text run over every change, so a page of a filter
+//! holds what the filter's count promises, and a rollup names the assets most changes come from.
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
@@ -64,6 +68,9 @@ pub struct TextFileFilter {
     /// Only changes whose key, namespace or any field holds this text, ignoring case.
     #[serde(default)]
     pub query: String,
+    /// At most this many changes of each group, for an overview; every change when 0.
+    #[serde(default)]
+    pub preview: u32,
 }
 
 /// What a change means for the text and its translations, in the order changes are listed.
@@ -71,14 +78,19 @@ pub struct TextFileFilter {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TextFileGroup {
-    /// The text moved to a new key; translations made for the old key no longer apply.
+    /// The text moved to a new key and its translation did not come with it. In a manifest, which
+    /// holds no translations, every new key: the archives still have the old one.
     Rekeyed,
-    /// The source or its plural changed; a translation made for the old source is out of date.
-    Source,
+    /// The source's wording changed: a translation made for the old source needs redoing.
+    Reworded,
+    /// Only the source's case, punctuation or spacing changed: its translation needs a look.
+    Retouched,
     Removed,
     Added,
     /// A translation, a translator comment or a flag changed; the source did not.
     Translation,
+    /// The text moved to a new key and kept its translation, or had none to lose.
+    Carried,
     /// Only notes, references or a manifest path changed: where the text is, not what it says.
     Context,
 }
@@ -89,10 +101,12 @@ pub enum TextFileGroup {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextFileCounts {
     pub rekeyed: u32,
-    pub source: u32,
+    pub reworded: u32,
+    pub retouched: u32,
     pub removed: u32,
     pub added: u32,
     pub translation: u32,
+    pub carried: u32,
     pub context: u32,
     pub unchanged: u32,
 }
@@ -100,14 +114,36 @@ impl TextFileCounts {
     fn add(&mut self, group: TextFileGroup) {
         *match group {
             TextFileGroup::Rekeyed => &mut self.rekeyed,
-            TextFileGroup::Source => &mut self.source,
+            TextFileGroup::Reworded => &mut self.reworded,
+            TextFileGroup::Retouched => &mut self.retouched,
             TextFileGroup::Removed => &mut self.removed,
             TextFileGroup::Added => &mut self.added,
             TextFileGroup::Translation => &mut self.translation,
+            TextFileGroup::Carried => &mut self.carried,
             TextFileGroup::Context => &mut self.context,
         } += 1;
     }
 }
+
+/// An asset many of a group's changes come from, read from the entries' references or manifest
+/// paths: the table that lost its written keys, or the asset that was renamed.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextFileAsset {
+    pub group: TextFileGroup,
+    pub asset: String,
+    /// The asset's name in the older file, when its entries now point at a renamed asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub previous: Option<String>,
+    pub count: u32,
+    /// New keys among them where a key someone wrote became one Unreal generated.
+    pub generated: u32,
+}
+
+/// Assets a group's rollup names at most.
+const ROLLUP: usize = 5;
 
 /// What a compared field holds. Hosts label them.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -183,8 +219,12 @@ pub struct TextFileComparison {
     #[cfg_attr(test, ts(optional))]
     pub po_format: Option<String>,
     pub counts: TextFileCounts,
+    /// Changes per group that hold the filter's text: `counts` when there is none.
+    pub listed: TextFileCounts,
     /// Changes the filter lists, in all pages.
     pub total: u32,
+    /// Per group, the assets most of its changes come from, most first.
+    pub assets: Vec<TextFileAsset>,
     pub changes: Vec<TextFileChange>,
     /// Whether the comparison was kept from the previous request for the same revisions.
     pub kept: bool,
@@ -202,12 +242,20 @@ impl Row {
             .get(&(TextFileFieldName::Source, None))
             .map(String::as_str)
     }
+    /// Where the entry is: its references in a PO, its path in a manifest.
+    fn place(&self) -> Option<&str> {
+        self.fields
+            .get(&(TextFileFieldName::References, None))
+            .or_else(|| self.fields.get(&(TextFileFieldName::Path, None)))
+            .map(String::as_str)
+    }
 }
 
 struct Compared {
     po_format: Option<String>,
     counts: TextFileCounts,
     changes: Vec<TextFileChange>,
+    assets: Vec<TextFileAsset>,
     stage_seconds: BTreeMap<String, f64>,
 }
 
@@ -256,13 +304,29 @@ pub fn compare(request: &CompareTextFilesRequest) -> Result<TextFileComparison> 
     };
     let started = Instant::now();
     let needle = request.filter.query.trim().to_lowercase();
-    let listed = compared
+    let matching = compared
         .changes
         .iter()
+        .filter(|change| needle.is_empty() || holds(change, &needle))
+        .collect::<Vec<_>>();
+    let mut listed_counts = TextFileCounts {
+        unchanged: compared.counts.unchanged,
+        ..TextFileCounts::default()
+    };
+    for change in &matching {
+        listed_counts.add(change.group);
+    }
+    let mut taken = HashMap::<TextFileGroup, u32>::new();
+    let listed = matching
+        .into_iter()
         .filter(|change| {
             request.filter.groups.is_empty() || request.filter.groups.contains(&change.group)
         })
-        .filter(|change| needle.is_empty() || holds(change, &needle))
+        .filter(|change| {
+            let taken = taken.entry(change.group).or_default();
+            *taken += 1;
+            request.filter.preview == 0 || *taken <= request.filter.preview
+        })
         .collect::<Vec<_>>();
     let mut stage_seconds = compared.stage_seconds.clone();
     stage_seconds.insert("text_files.filter".into(), started.elapsed().as_secs_f64());
@@ -270,7 +334,9 @@ pub fn compare(request: &CompareTextFilesRequest) -> Result<TextFileComparison> 
         format: request.options.format,
         po_format: compared.po_format.clone(),
         counts: compared.counts.clone(),
+        listed: listed_counts,
         total: listed.len() as u32,
+        assets: compared.assets.clone(),
         changes: listed
             .into_iter()
             .skip(request.changes.offset as usize)
@@ -352,12 +418,14 @@ fn compare_files(request: &CompareTextFilesRequest) -> Result<Compared> {
     let (after, po_format) = after?;
     stage_seconds.insert("text_files.parse".into(), started.elapsed().as_secs_f64());
     let started = Instant::now();
-    let (counts, changes) = diff(&before, &after);
+    let (counts, changes) = diff(&before, &after, request.options.format != Format::Manifest);
+    let assets = rollup(&changes);
     stage_seconds.insert("text_files.diff".into(), started.elapsed().as_secs_f64());
     Ok(Compared {
         po_format,
         counts,
         changes,
+        assets,
         stage_seconds,
     })
 }
@@ -514,6 +582,85 @@ fn rows(
     Ok((rows, Some(document.format)))
 }
 
+/// Whether two texts say the same words, differing only in case, punctuation or spacing.
+fn alike(before: Option<&str>, after: Option<&str>) -> bool {
+    let words = |text: Option<&str>| {
+        text.unwrap_or_default()
+            .chars()
+            .filter(|letter| letter.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    words(before) == words(after)
+}
+
+/// A key Unreal generated rather than a person wrote: a GUID or a long hexadecimal hash.
+fn generated(key: &str) -> bool {
+    let digits = key
+        .chars()
+        .filter(|letter| *letter != '-')
+        .collect::<Vec<_>>();
+    digits.len() >= 16 && digits.iter().all(char::is_ascii_hexdigit)
+}
+
+/// The asset a reference or manifest path names: `/Game/UI/WBP_Menu.WBP_Menu:Title` is `WBP_Menu`.
+fn asset(place: &str) -> Option<String> {
+    let line = place.lines().next()?.trim();
+    let name = line.rsplit('/').next()?;
+    let name = name.split(['.', ':']).next()?.trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
+/// Per group, the assets most of its changes come from: where a reference or path points, and
+/// what it pointed at before when that changed.
+fn rollup(changes: &[TextFileChange]) -> Vec<TextFileAsset> {
+    let mut assets = BTreeMap::<(TextFileGroup, String, Option<String>), (u32, u32)>::new();
+    for change in changes {
+        let place = change.fields.iter().find(|field| {
+            field.form.is_none()
+                && matches!(
+                    field.name,
+                    TextFileFieldName::References | TextFileFieldName::Path
+                )
+        });
+        let Some(place) = place else {
+            continue;
+        };
+        let before = place.before.as_deref().and_then(asset);
+        let after = place.after.as_deref().and_then(asset);
+        let Some(name) = after.clone().or_else(|| before.clone()) else {
+            continue;
+        };
+        let previous = before.filter(|before| after.as_ref().is_some_and(|after| after != before));
+        let written = change
+            .before
+            .as_ref()
+            .is_some_and(|key| !generated(&key.key))
+            && change.after.as_ref().is_some_and(|key| generated(&key.key));
+        let entry = assets.entry((change.group, name, previous)).or_default();
+        entry.0 += 1;
+        entry.1 += u32::from(written);
+    }
+    let mut groups = BTreeMap::<TextFileGroup, Vec<TextFileAsset>>::new();
+    for ((group, asset, previous), (count, generated)) in assets {
+        groups.entry(group).or_default().push(TextFileAsset {
+            group,
+            asset,
+            previous,
+            count,
+            generated,
+        });
+    }
+    groups
+        .into_values()
+        .flat_map(|mut assets| {
+            assets.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.asset.cmp(&b.asset)));
+            assets.truncate(ROLLUP);
+            assets
+        })
+        .collect()
+}
+
 /// Whether a PO note only repeats the entry's key or one of its references, as Unreal's
 /// `Key:` and `SourceLocation:` notes do.
 fn repeats(line: &str, key: &TextFileKey, references: &[String]) -> bool {
@@ -525,7 +672,7 @@ fn repeats(line: &str, key: &TextFileKey, references: &[String]) -> bool {
 
 /// Pairs the older and newer rows and lists what differs, by group, each group in the newer
 /// file's order.
-fn diff(before: &[Row], after: &[Row]) -> (TextFileCounts, Vec<TextFileChange>) {
+fn diff(before: &[Row], after: &[Row], translated: bool) -> (TextFileCounts, Vec<TextFileChange>) {
     // Identity, then occurrence: the nth row of a repeated key pairs with the nth.
     let mut seen = HashMap::<&TextFileKey, u32>::new();
     let mut older = HashMap::<(&TextFileKey, u32), usize>::with_capacity(before.len());
@@ -581,17 +728,59 @@ fn diff(before: &[Row], after: &[Row]) -> (TextFileCounts, Vec<TextFileChange>) 
             rekeys[index] = true;
         }
     }
+    // A repeated text pairs by where it is: the same row of the same asset under a new key.
+    let mut removed = HashMap::<(&str, &str), (u32, usize)>::new();
+    for (index, row) in before
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !paired[*index])
+    {
+        if let (Some(source), Some(place)) = (row.source(), row.place()) {
+            let entry = removed.entry((source, place)).or_insert((0, index));
+            entry.0 += 1;
+        }
+    }
+    let mut added = HashMap::<(&str, &str), u32>::new();
+    for (_, row) in after
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| pairs[*index].is_none())
+    {
+        if let (Some(source), Some(place)) = (row.source(), row.place()) {
+            *added.entry((source, place)).or_default() += 1;
+        }
+    }
+    for (index, row) in after.iter().enumerate() {
+        if pairs[index].is_some() {
+            continue;
+        }
+        let (Some(source), Some(place)) = (row.source(), row.place()) else {
+            continue;
+        };
+        if let (Some(&(1, old)), Some(1)) =
+            (removed.get(&(source, place)), added.get(&(source, place)))
+        {
+            pairs[index] = Some(old);
+            paired[old] = true;
+            rekeys[index] = true;
+        }
+    }
     let mut counts = TextFileCounts::default();
     let mut changes = Vec::new();
     let mut gone = (0..before.len()).filter(|index| !paired[*index]).peekable();
     let mut remove_before = |until: usize, changes: &mut Vec<_>| {
         while let Some(index) = gone.next_if(|index| *index < until) {
-            changes.push(change(PointChangeKind::Removed, Some(&before[index]), None));
+            changes.push(change(
+                PointChangeKind::Removed,
+                Some(&before[index]),
+                None,
+                translated,
+            ));
         }
     };
     for (index, row) in after.iter().enumerate() {
         match pairs[index] {
-            None => changes.push(change(PointChangeKind::Added, None, Some(row))),
+            None => changes.push(change(PointChangeKind::Added, None, Some(row), translated)),
             Some(old) => {
                 remove_before(old, &mut changes);
                 if rekeys[index] {
@@ -599,12 +788,14 @@ fn diff(before: &[Row], after: &[Row]) -> (TextFileCounts, Vec<TextFileChange>) 
                         PointChangeKind::Rekeyed,
                         Some(&before[old]),
                         Some(row),
+                        translated,
                     ));
                 } else if before[old].fields != row.fields {
                     changes.push(change(
                         PointChangeKind::Edited,
                         Some(&before[old]),
                         Some(row),
+                        translated,
                     ));
                 } else {
                     counts.unchanged += 1;
@@ -621,7 +812,12 @@ fn diff(before: &[Row], after: &[Row]) -> (TextFileCounts, Vec<TextFileChange>) 
     (counts, changes)
 }
 
-fn change(kind: PointChangeKind, before: Option<&Row>, after: Option<&Row>) -> TextFileChange {
+fn change(
+    kind: PointChangeKind,
+    before: Option<&Row>,
+    after: Option<&Row>,
+    translated: bool,
+) -> TextFileChange {
     let mut fields = BTreeMap::<(TextFileFieldName, Option<u32>), TextFileField>::new();
     for (row, after_side) in [(before, false), (after, true)] {
         for ((name, form), value) in row.map(|row| &row.fields).into_iter().flatten() {
@@ -646,15 +842,28 @@ fn change(kind: PointChangeKind, before: Option<&Row>, after: Option<&Row>) -> T
             .iter()
             .any(|field| names.contains(&field.name) && field.before != field.after)
     };
+    let source = [TextFileFieldName::Source, TextFileFieldName::SourcePlural];
+    // A translation the older entry had and the newer one does not, or not the same.
+    let lost = fields.iter().any(|field| {
+        field.name == TextFileFieldName::Translation
+            && field.before.is_some()
+            && field.before != field.after
+    });
     let group = match kind {
         PointChangeKind::Added => TextFileGroup::Added,
         PointChangeKind::Removed => TextFileGroup::Removed,
-        PointChangeKind::Rekeyed => TextFileGroup::Rekeyed,
+        PointChangeKind::Rekeyed if lost || !translated => TextFileGroup::Rekeyed,
+        PointChangeKind::Rekeyed => TextFileGroup::Carried,
         PointChangeKind::Edited
-            if changed(&[TextFileFieldName::Source, TextFileFieldName::SourcePlural]) =>
+            if fields.iter().any(|field| {
+                source.contains(&field.name)
+                    && field.before != field.after
+                    && !alike(field.before.as_deref(), field.after.as_deref())
+            }) =>
         {
-            TextFileGroup::Source
+            TextFileGroup::Reworded
         }
+        PointChangeKind::Edited if changed(&source) => TextFileGroup::Retouched,
         PointChangeKind::Edited
             if changed(&[
                 TextFileFieldName::Translation,

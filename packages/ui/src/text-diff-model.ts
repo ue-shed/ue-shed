@@ -66,14 +66,30 @@ export interface TextDiffEntry {
 }
 
 /**
+ * What a section's colour says: red and green for text that went and came, amber for text whose
+ * translation needs attention, blue for other changes, grey for changes most readers can skip.
+ */
+export type TextDiffTone = "added" | "removed" | "attention" | "changed" | "quiet";
+
+/** The tone each kind of entry has when a diff lists entries by file, not in groups. */
+export const TEXT_DIFF_KIND_TONES = {
+	added: "added",
+	removed: "removed",
+	rekeyed: "attention",
+	edited: "changed"
+} as const satisfies Record<TextDiffKind, TextDiffTone>;
+
+/**
  * A section of a diff: entries of one consequence, such as text moved to a new key. Its tone
  * colours its entries; `count` is of every entry in it, loaded or not.
  */
 export interface TextDiffGroup {
 	readonly id: string;
 	readonly label: string;
-	readonly tone: TextDiffKind;
+	readonly tone: TextDiffTone;
 	readonly count: number;
+	/** Of `count`, those the text filter lists, when a text filter is on. */
+	readonly listed?: number;
 	/** What the section means for the reader, under its heading. */
 	readonly description?: string;
 	/** Starts folded, for changes most readers skip, such as notes only. */

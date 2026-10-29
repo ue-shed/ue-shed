@@ -42,11 +42,11 @@ const entries = [quit, credits, line];
 
 it("groups entries by file, splitting a Windows path, and marks only what changed", () => {
 	render(() => <TextDiff label="Changes" entries={entries} />);
-	const files = screen.getAllByRole("list", { name: "Changes in Game.po" });
-	expect(files).toHaveLength(2);
-	const [french] = files;
-	if (french === undefined) throw new Error("No French file.");
-	const edit = within(within(french).getByRole("listitem", { name: "Edited" }));
+	const french = screen.getByRole("list", { name: "Changes in Localization/Game/fr/Game.po" });
+	expect(
+		screen.getByRole("list", { name: "Changes in Localization\\Game\\de\\Game.po" })
+	).toBeTruthy();
+	const edit = within(within(french).getByRole("listitem", { name: /^Edited:/u }));
 	expect(
 		edit.getAllByText(/le jeu/u, { selector: "mark" }).map((mark) => mark.textContent)
 	).toEqual([" le jeu"]);
@@ -59,14 +59,14 @@ it("shows a new key's old and new key, and its unchanged translation as context"
 		[" ", "context", "Translation"]
 	]);
 	render(() => <TextDiff label="Changes" entries={[line]} />);
-	const entry = screen.getByRole("listitem", { name: "New key" });
+	const entry = screen.getByRole("listitem", { name: /^New key:/u });
 	expect(within(entry).getByText("Line_01")).toBeTruthy();
 	expect(within(entry).getByText("6F1C")).toBeTruthy();
 });
 
 it("folds an added entry's secondary fields until asked", () => {
 	render(() => <TextDiff label="Changes" entries={[credits]} />);
-	const entry = screen.getByRole("listitem", { name: "Added" });
+	const entry = screen.getByRole("listitem", { name: /^Added:/u });
 	expect(within(entry).queryByText("Shown at the end")).toBeNull();
 	fireEvent.click(within(entry).getByRole("button", { name: "More details" }));
 	expect(within(entry).getByText("Shown at the end")).toBeTruthy();
@@ -108,24 +108,24 @@ it("filters by kind and by text on the entries it has, and asks for more", () =>
 		/>
 	));
 	fireEvent.click(screen.getByRole("button", { name: "Added, 4" }));
-	expect(screen.getAllByRole("listitem", { name: "Added" })).toHaveLength(1);
-	expect(screen.queryByRole("listitem", { name: "Edited" })).toBeNull();
+	expect(screen.getAllByRole("listitem", { name: /^Added:/u })).toHaveLength(1);
+	expect(screen.queryByRole("listitem", { name: /^Edited:/u })).toBeNull();
 	expect(screen.getByText(/Filtering the first 3 of 10/u)).toBeTruthy();
 	fireEvent.click(screen.getByRole("button", { name: "All, 10" }));
 	fireEvent.input(screen.getByRole("searchbox", { name: "Filter by text or key" }), {
 		target: { value: "where" }
 	});
-	expect(screen.getAllByRole("listitem", { name: "New key" })).toHaveLength(1);
-	expect(screen.queryByRole("listitem", { name: "Added" })).toBeNull();
+	expect(screen.getAllByRole("listitem", { name: /^New key:/u })).toHaveLength(1);
+	expect(screen.queryByRole("listitem", { name: /^Added:/u })).toBeNull();
 	fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 	expect(more).toHaveBeenCalledOnce();
 });
 
 const groups: readonly TextDiffGroup[] = [
-	{ id: "rekeyed", label: "Moved to a new key", tone: "rekeyed", count: 1 },
+	{ id: "rekeyed", label: "Moved to a new key", tone: "attention", count: 1 },
 	{ id: "added", label: "Added", tone: "added", count: 1 },
-	{ id: "translation", label: "Translation changed", tone: "edited", count: 1 },
-	{ id: "context", label: "Notes only", tone: "edited", count: 1, folded: true }
+	{ id: "translation", label: "Translation changed", tone: "changed", count: 1 },
+	{ id: "context", label: "Notes only", tone: "quiet", count: 1, folded: true }
 ];
 
 it("lists entries in their groups' sections, and leaves filtering to the host that does it", () => {
@@ -160,6 +160,33 @@ it("lists entries in their groups' sections, and leaves filtering to the host th
 	);
 });
 
+it("shows a few of each section in an overview, and counts what a text filter lists", () => {
+	const filters: TextDiffFilter[] = [];
+	render(() => (
+		<TextDiff
+			label="Changes"
+			overview
+			groups={[
+				{
+					id: "rekeyed",
+					label: "Moved to a new key",
+					tone: "attention",
+					count: 435,
+					listed: 4
+				}
+			]}
+			entries={[{ ...line, group: "rekeyed" }]}
+			filter={{ query: "fishing" }}
+			onFilter={(next) => filters.push(next)}
+			sectionLead={(group) => <p>{group.id} lead</p>}
+		/>
+	));
+	expect(screen.getByRole("button", { name: "Moved to a new key, 4 of 435" })).toBeTruthy();
+	expect(screen.getByText("rekeyed lead")).toBeTruthy();
+	fireEvent.click(screen.getByRole("button", { name: "Show all 4 moved to a new key" }));
+	expect(filters).toEqual([{ kind: "rekeyed", query: "fishing" }]);
+});
+
 it("folds a folded group's section until it is shown", () => {
 	render(() => (
 		<TextDiff
@@ -168,9 +195,29 @@ it("folds a folded group's section until it is shown", () => {
 			entries={[{ ...quit, group: "context" }]}
 		/>
 	));
-	expect(screen.queryByRole("listitem", { name: "Edited" })).toBeNull();
+	expect(screen.queryByRole("listitem", { name: /^Edited:/u })).toBeNull();
 	fireEvent.click(screen.getByRole("button", { name: "Show" }));
-	expect(screen.getByRole("listitem", { name: "Edited" })).toBeTruthy();
+	expect(screen.getByRole("listitem", { name: /^Edited:/u })).toBeTruthy();
+});
+
+it("shows an entry whose text is empty as its key, named for screen readers", () => {
+	render(() => (
+		<TextDiff
+			label="Changes"
+			entries={[
+				{
+					id: "blank",
+					kind: "added",
+					after: { label: "Blank", full: "UI,Blank" },
+					file: "Game.po",
+					fields: []
+				}
+			]}
+		/>
+	));
+	const entry = screen.getByRole("listitem", { name: "Added: UI,Blank" });
+	expect(within(entry).getByText("(empty)")).toBeTruthy();
+	expect(within(entry).getByText("Blank")).toBeTruthy();
 });
 
 it("says when nothing changed", () => {

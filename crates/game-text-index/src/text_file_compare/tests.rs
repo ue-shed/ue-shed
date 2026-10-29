@@ -170,8 +170,11 @@ fn text_moved_to_a_new_key_is_a_rekey_when_its_source_is_unique() -> Result<()> 
         .as_bytes(),
     );
     let comparison = compare(&request(Format::Archive, Some(before), Some(after)))?;
-    let rekey = &comparison.changes[0];
-    assert_eq!(rekey.kind, PointChangeKind::Rekeyed);
+    let rekey = comparison
+        .changes
+        .iter()
+        .find(|change| change.kind == PointChangeKind::Rekeyed)
+        .expect("a rekey");
     assert_eq!(
         rekey.before.as_ref().map(|key| key.key.as_str()),
         Some("Line_01")
@@ -180,8 +183,10 @@ fn text_moved_to_a_new_key_is_a_rekey_when_its_source_is_unique() -> Result<()> 
         rekey.after.as_ref().map(|key| key.key.as_str()),
         Some("6F1C")
     );
-    // "Yes" is on two keys each side, so which went where is not known.
-    assert_eq!(comparison.counts.rekeyed, 1);
+    // "Yes" is on two keys each side, and an archive says nothing of where, so which went where
+    // is not known. The moved line kept its translation.
+    assert_eq!(rekey.group, TextFileGroup::Carried);
+    assert_eq!(comparison.counts.carried, 1);
     assert_eq!(comparison.counts.added, 2);
     assert_eq!(comparison.counts.removed, 2);
     Ok(())
@@ -351,16 +356,17 @@ fn changes_come_by_consequence_and_filters_page_over_all_of_them() -> Result<()>
             .map(|change| change.group)
             .collect::<Vec<_>>(),
         [
-            TextFileGroup::Rekeyed,
-            TextFileGroup::Source,
+            TextFileGroup::Reworded,
             TextFileGroup::Removed,
             TextFileGroup::Added,
             TextFileGroup::Translation,
+            TextFileGroup::Carried,
         ]
     );
     request.filter = TextFileFilter {
-        groups: vec![TextFileGroup::Source, TextFileGroup::Translation],
+        groups: vec![TextFileGroup::Reworded, TextFileGroup::Translation],
         query: String::new(),
+        preview: 0,
     };
     request.changes.limit = 1;
     let page = compare(&request)?;
@@ -370,16 +376,210 @@ fn changes_come_by_consequence_and_filters_page_over_all_of_them() -> Result<()>
     request.filter = TextFileFilter {
         groups: Vec::new(),
         query: "QUITTER LE".into(),
+        preview: 0,
     };
     request.changes.limit = 10;
+    let found = compare(&request)?;
     assert_eq!(
-        kinds(&compare(&request)?),
+        kinds(&found),
         [(PointChangeKind::Edited, "Quit".to_owned())]
+    );
+    assert_eq!(
+        (
+            found.listed.translation,
+            found.listed.added,
+            found.counts.added
+        ),
+        (1, 0, 1),
+        "listed counts follow the text filter; counts do not"
     );
     request.filter.query = "line_01".into();
     assert_eq!(
         kinds(&compare(&request)?),
         [(PointChangeKind::Rekeyed, "6F1C".to_owned())]
     );
+    Ok(())
+}
+
+fn po_entry(context: &str, source: &str, translation: &str, reference: &str) -> String {
+    format!(
+        "#: {reference}\nmsgctxt \"{context}\"\nmsgid \"{source}\"\nmsgstr \"{translation}\"\n\n"
+    )
+}
+
+#[test]
+fn a_source_with_only_new_punctuation_is_retouched_and_new_wording_is_reworded() -> Result<()> {
+    let header = po(&[]);
+    let before = file(
+        "retouched",
+        "before.po",
+        format!(
+            "{header}\n{}{}",
+            po_entry("UI,Smell", "It's here", "Da", "/Game/A.A"),
+            po_entry("UI,Fish", "I wanna go fishing", "Angeln", "/Game/A.A")
+        )
+        .as_bytes(),
+    );
+    let after = file(
+        "retouched",
+        "after.po",
+        format!(
+            "{header}\n{}{}",
+            po_entry("UI,Smell", "It’s Here.", "Da", "/Game/A.A"),
+            po_entry(
+                "UI,Fish",
+                "I was hoping to go fishing",
+                "Angeln",
+                "/Game/A.A"
+            )
+        )
+        .as_bytes(),
+    );
+    let comparison = compare(&request(Format::Po, Some(before), Some(after)))?;
+    assert_eq!(
+        comparison
+            .changes
+            .iter()
+            .map(|change| (
+                change.group,
+                change.after.as_ref().map(|key| key.key.as_str())
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (TextFileGroup::Reworded, Some("Fish")),
+            (TextFileGroup::Retouched, Some("Smell"))
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_repeated_text_pairs_by_its_reference_and_a_lost_translation_comes_first() -> Result<()> {
+    let header = po(&[]);
+    let before = file(
+        "repeated",
+        "before.po",
+        format!(
+            "{header}\n{}{}{}",
+            po_entry(
+                "Scott,74_Text",
+                "Happy",
+                "Froh",
+                "/Game/D/DT_Scott.DT_Scott.74.Text"
+            ),
+            po_entry(
+                "Scott,75_Text",
+                "Happy",
+                "Froh",
+                "/Game/D/DT_Scott.DT_Scott.75.Text"
+            ),
+            po_entry(
+                "Ben,1_Text",
+                "Hello",
+                "Hallo",
+                "/Game/D/DT_Ben.DT_Ben.1.Text"
+            )
+        )
+        .as_bytes(),
+    );
+    let after = file(
+        "repeated",
+        "after.po",
+        format!(
+            "{header}\n{}{}{}",
+            po_entry(
+                "Scott,00A6E0EA46DC851E2C1872BF76A5AA48",
+                "Happy",
+                "Froh",
+                "/Game/D/DT_Scott.DT_Scott.74.Text"
+            ),
+            po_entry(
+                "Scott,013B27724FE480F961574DB7C2A65ED7",
+                "Happy",
+                "",
+                "/Game/D/DT_Scott.DT_Scott.75.Text"
+            ),
+            po_entry(
+                "Ben,1_Text",
+                "Hello",
+                "Hallo",
+                "/Game/D/DT_Ben_New.DT_Ben_New.1.Text"
+            )
+        )
+        .as_bytes(),
+    );
+    let mut request = request(Format::Po, Some(before), Some(after));
+    let comparison = compare(&request)?;
+    assert_eq!(
+        (
+            comparison.counts.rekeyed,
+            comparison.counts.carried,
+            comparison.counts.added,
+            comparison.counts.removed,
+            comparison.counts.context
+        ),
+        (1, 1, 0, 0, 1)
+    );
+    assert_eq!(
+        comparison.changes[0]
+            .after
+            .as_ref()
+            .map(|key| key.key.as_str()),
+        Some("013B27724FE480F961574DB7C2A65ED7"),
+        "the new key that lost its translation comes first"
+    );
+    assert_eq!(
+        comparison.assets,
+        [
+            TextFileAsset {
+                group: TextFileGroup::Rekeyed,
+                asset: "DT_Scott".into(),
+                previous: None,
+                count: 1,
+                generated: 1,
+            },
+            TextFileAsset {
+                group: TextFileGroup::Carried,
+                asset: "DT_Scott".into(),
+                previous: None,
+                count: 1,
+                generated: 1,
+            },
+            TextFileAsset {
+                group: TextFileGroup::Context,
+                asset: "DT_Ben_New".into(),
+                previous: Some("DT_Ben".into()),
+                count: 1,
+                generated: 0,
+            },
+        ]
+    );
+    request.filter.preview = 1;
+    request.filter.query = "scott".into();
+    let overview = compare(&request)?;
+    assert_eq!(overview.total, 2, "one of each group the text matches");
+    assert_eq!((overview.listed.rekeyed, overview.listed.context), (1, 0));
+    Ok(())
+}
+
+#[test]
+fn a_new_key_in_a_manifest_is_always_a_risk() -> Result<()> {
+    let manifest = |key: &str| {
+        format!(
+            r#"{{"FormatVersion":1,"Namespace":"","Subnamespaces":[{{"Namespace":"Menu","Children":[{{"Source":{{"Text":"Back"}},"Keys":[{{"Key":"{key}","Path":"/Game/A"}}]}}]}}]}}"#
+        )
+    };
+    let before = file(
+        "manifest-rekey",
+        "before.manifest",
+        manifest("Back").as_bytes(),
+    );
+    let after = file(
+        "manifest-rekey",
+        "after.manifest",
+        manifest("B4C2").as_bytes(),
+    );
+    let comparison = compare(&request(Format::Manifest, Some(before), Some(after)))?;
+    assert_eq!(comparison.counts.rekeyed, 1);
     Ok(())
 }

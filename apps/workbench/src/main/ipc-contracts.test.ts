@@ -745,13 +745,27 @@ const validResultByChannel = {
 		format: "po",
 		counts: {
 			rekeyed: 0,
-			source: 0,
+			reworded: 0,
+			retouched: 0,
 			removed: 0,
 			added: 1,
 			translation: 0,
+			carried: 0,
 			context: 0,
 			unchanged: 4
 		},
+		listed: {
+			rekeyed: 0,
+			reworded: 0,
+			retouched: 0,
+			removed: 0,
+			added: 1,
+			translation: 0,
+			carried: 0,
+			context: 0,
+			unchanged: 4
+		},
+		assets: [{ group: "added", asset: "WBP_Credits", count: 1, generated: 0 }],
 		total: 1,
 		changes: [
 			{

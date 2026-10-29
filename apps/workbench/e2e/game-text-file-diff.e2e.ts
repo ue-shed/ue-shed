@@ -57,24 +57,25 @@ test("Game Text compares two localization files without a scan", async ({
 				.getByRole("group", { name: side, exact: true })
 				.getByRole("button", { name: "Choose…" })
 				.click();
-		await page.getByRole("button", { name: "Compare", exact: true }).click();
 		const comparison = page.getByRole("region", { name: "File comparison" });
 		await expect(comparison).toBeVisible({ timeout: 60_000 });
-		await expect(comparison.getByRole("status")).toContainText("1 moved to a new key");
-		await expect(comparison.getByRole("listitem", { name: "New key" })).toContainText(
+		await expect(comparison.getByRole("status")).toContainText(
+			"1 moved with their translation"
+		);
+		await expect(comparison.getByRole("listitem", { name: /^New key:/u })).toContainText(
 			"6F1C2A0B44E1"
 		);
-		await expect(comparison.getByRole("listitem", { name: "Added" })).toContainText(
+		await expect(comparison.getByRole("listitem", { name: /^Added:/u })).toContainText(
 			"Générique"
 		);
-		await expect(comparison.getByRole("listitem", { name: "Removed" })).toContainText(
+		await expect(comparison.getByRole("listitem", { name: /^Removed:/u })).toContainText(
 			"Options"
 		);
-		await expect(comparison.getByRole("listitem", { name: "Edited" })).toContainText(
+		await expect(comparison.getByRole("listitem", { name: /^Edited:/u })).toContainText(
 			"Retour à l’écran titre"
 		);
 		await page.screenshot({ path: testInfo.outputPath("game-text-file-diff-1440.png") });
-		await comparison.getByRole("button", { name: /^New key,/u }).click();
+		await comparison.getByRole("button", { name: "New key, translation kept, 1" }).click();
 		await expect(comparison.getByRole("listitem")).toHaveCount(1);
 		await page.screenshot({
 			path: testInfo.outputPath("game-text-file-diff-new-keys-1440.png")

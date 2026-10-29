@@ -20,7 +20,13 @@ import { ShowInUnrealButton } from "./game-text-locate-button.js";
 import { GameTextRuleEditor } from "./game-text-rule-editor.js";
 import type { GameTextRuleState } from "./game-text-rule-state.js";
 import { styles } from "./game-text-styles.js";
-import { locationDetail, textContext } from "./game-text-view.js";
+import {
+	copyPathLabel,
+	locationDetail,
+	placePath,
+	savedObjectPath,
+	textContext
+} from "./game-text-view.js";
 
 const filters = [
 	{ label: "All findings", value: "all" },
@@ -300,7 +306,7 @@ export function GameTextQualityWorkspace(props: {
 									</span>
 									<span {...stylex.attrs(styles.muted)}>{problem(finding)}</span>
 									<span
-										title={finding.location?.objectPath}
+										title={finding.location && placePath(finding.location)}
 										{...stylex.attrs(styles.context, styles.mono)}
 									>
 										{finding.location
@@ -457,7 +463,7 @@ export function GameTextQualityWorkspace(props: {
 													{textLocationLabel(occurrence.location)}
 												</strong>
 												<code {...stylex.attrs(styles.mono)}>
-													{occurrence.location.objectPath}
+													{placePath(occurrence.location)}
 												</code>
 												<span {...stylex.attrs(styles.muted)}>
 													{locationDetail(occurrence.location)}
@@ -472,13 +478,19 @@ export function GameTextQualityWorkspace(props: {
 												</details>
 												<div {...stylex.attrs(styles.bar)}>
 													<CopyButton
-														label="Copy asset path"
-														value={occurrence.location.objectPath}
+														label={copyPathLabel(occurrence.location)}
+														value={placePath(occurrence.location)}
 													/>
-													<ShowInUnrealButton
-														client={props.client}
-														objectPath={occurrence.location.objectPath}
-													/>
+													<Show
+														when={savedObjectPath(occurrence.location)}
+													>
+														{(objectPath) => (
+															<ShowInUnrealButton
+																client={props.client}
+																objectPath={objectPath()}
+															/>
+														)}
+													</Show>
 												</div>
 											</article>
 										)}

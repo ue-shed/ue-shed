@@ -314,15 +314,18 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			Effect.sync(signalProgress)
 		).pipe(Effect.forkIn(workspaceScope));
 	const steps = yield* GameTextIndexSteps;
+	const codeSource = (projectRoot: string) =>
+		host.codeSource ? host.codeSource(projectRoot) : Effect.succeed(undefined);
 	const refreshIndex = yield* makeRetainedGameTextIndexWith(
 		Effect.fn("GameText.workspace.prepareWorkspace")(function* (request) {
 			const preferred = yield* localization
 				.preparation(request.projectRoot)
 				.pipe(Effect.scoped);
+			const code = yield* codeSource(request.projectRoot);
 			// A target index also contains the complete raw source projection. Importing it first
 			// lets the cold pipeline prepare one joined index for both views.
 			const target = yield* steps.prepareTarget(
-				{ ...request, ...preferred },
+				{ ...request, ...preferred, ...(code === undefined ? undefined : { code }) },
 				{ fallbackToSource: true }
 			);
 			return yield* steps.openTarget(target);
@@ -489,7 +492,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		{
 			author: host.changeAuthor ?? "game-text",
 			localizationFiles: host.localizationFiles ?? LocalizationFileAccessLive,
-			...(host.prepareWrites ? { prepareWrites: host.prepareWrites } : undefined)
+			...(host.prepareWrites ? { prepareWrites: host.prepareWrites } : undefined),
+			codeSource
 		}
 	).pipe(Effect.provideService(GameTextIndexProgressReporter, reportProgress));
 	// The host has no selection event port. Retire on the next workspace call that observes a switch.

@@ -514,6 +514,15 @@ fn execute_direct(
                         outcome.stage_seconds.insert("plan.catalog".into(), catalog);
                         outcome
                     })
+            } else if let (
+                Some(session),
+                game_text_index::builder::BuildRequest::PublishCode {
+                    configuration,
+                    request,
+                },
+            ) = (query_session.as_deref_mut(), build)
+            {
+                crate::code_layer::publish(&mut session.game_text, configuration, request)
             } else if let Some(session) = query_session {
                 session
                     .game_text

@@ -58,7 +58,9 @@ switches through its host's current-selection hook and retires the old model on 
 read or refresh, or when its scope closes.
 
 The CLI cache is under `UE_SHED_PROJECT_INDEX_CACHE_ROOT`, defaulting to `.cache/ue-shed` in the
-user's home directory. Workbench uses `project-catalogs-v1` under its existing Electron user-data
+user's home directory. The CLI reads a target's code ([Code text](#code-text)) with the engine the
+project's association names; `UE_SHED_ENGINE_VERSION` (4.27, 5.7 or 5.8) and `UE_SHED_ENGINE_ROOT`
+name it instead, as `code text`'s `--engine-version` and `--engine-root` do. Workbench uses `project-catalogs-v1` under its existing Electron user-data
 root. The `game-text-v2` descendants are disposable; close the affected hosts before deleting those
 cache directories, then refresh to rebuild. This removes derived data without changing saved
 packages, localization evidence, review state or authored rules. Format version 4 preserves UTF-16
@@ -161,9 +163,10 @@ Unknown types remain text-capable. The table is written on every editor save, so
 is needed.
 
 Saved-scan completeness is limited to the selected package inventory and supported decoders; it
-does not certify parity with a fresh Unreal gather. New C++/INI and code/CSV String Table text,
-reflected metadata, custom gather callbacks and content outside the
-default project inventory can be missing even without a reported decoder gap. A readable manifest
+does not certify parity with a fresh Unreal gather. Reflected metadata, custom gather callbacks
+and content outside the default project inventory can be missing even without a reported decoder
+gap, and so can C++, config and String Table CSV text when the host names no engine to read a
+target's code with (see [Code text](#code-text)). A readable manifest
 can supply previously gathered evidence from those sources. See
 [coverage compared with Unreal gather](../engineering/game-text-gather-coverage.md) for the precise
 boundary and the explicitly requested Unreal workflow.
@@ -192,10 +195,14 @@ for policy matches, the policy row (`audienceRule`). The evidence, strongest fir
    Blueprints with bytecode have no trusted table, so their text falls through to the policy.
 2. **The policy table** below (`TEXT_AUDIENCE_POLICY`): first matching row wins, and editor rows
    come before player rows, so a K2 node inside a Widget Blueprint graph stays editor text.
-3. Otherwise `unknown` (`no_evidence`).
+3. **The code scan.** Code text inside `#if WITH_EDITOR` or `#if WITH_EDITORONLY_DATA` (exactly
+   those spellings, as Unreal tracks them) is editor text, `code_editor_only`. Other code text goes
+   through the policy, whose `ui_command` row marks `UI_COMMAND` labels editor text.
+4. Otherwise `unknown` (`no_evidence`).
 
-A line or unit is player text if any of its saved places with visible text is, else unknown if any
-is, else editor. Lines without a saved place (C++, config) are unknown. The audience is a filter
+A line or unit is player text if any of its places with visible text is, else unknown if any is,
+else editor. Lines only the manifest knows, such as C++ text of a target whose code was not read,
+are unknown. The audience is a filter
 field and a facet (`facets.audiences`, which leaves out its own clause like the others), a
 grouping (`group: "audience"`), a column in both spreadsheet exports, and part of the exported JSON
 occurrences and lines.
@@ -205,14 +212,19 @@ data: `ShouldGatherFromEditorOnlyData` on its `GatherTextFromAssets` steps (or t
 `GatherFromPackages`) is false, Unreal's default. A line that would otherwise be "Not gathered
 yet", whose every place inside the gather paths is such editor text, is "Outside this target"
 instead, with `outOfScope: "editor_only_data_not_gathered"`; lines outside the include and exclude
-paths carry `outside_gather_paths`. Lines Unreal did gather keep their state, and developer-folder
+paths carry `outside_gather_paths`. Code text follows the target's `GatherTextFromSource` steps
+instead: editor-only code text in a target whose source steps do not gather editor-only data is
+"Outside this target" with `editor_only_data_not_gathered`, whether or not Unreal gathered it.
+Lines Unreal did gather keep their state, and developer-folder
 text is editor text by convention, not editor-only data, so it stays in scope. Localization checks
 skip out-of-scope lines, as before.
 
 Names compare case-insensitively. `object` matches the class name or any object name in the
 occurrence's outer chain (graph objects are named after their class). `property` matches the last
 element(s) of the property path, ignoring container indexes; "in" matches any element. Map entries
-(`DisplayNameMap{0}.value`, `{0}.key`) match as the map property (`DisplayNameMap`).
+(`DisplayNameMap{0}.value`, `{0}.key`) match as the map property (`DisplayNameMap`). `macro`
+matches a code place's macro; a code place names a file, not an object, so only namespace,
+location and macro rows can hold for it.
 
 | Rule                              | Audience | Reason             | Match                                             | Why                                 |
 | --------------------------------- | -------- | ------------------ | ------------------------------------------------- | ----------------------------------- |
@@ -251,11 +263,13 @@ element(s) of the property path, ignoring container indexes; "in" matches any el
 | `user_defined_enum_display_name`  | player   | `player_asset`     | class `UserDefinedEnum` and leaf `DisplayNameMap` | Blueprint enum display names        |
 | `widget_tree`                     | player   | `player_asset`     | object `WidgetTree` in the outer chain            | Widget designer tree                |
 | `script_bytecode`                 | player   | `player_asset`     | property `ScriptBytecode`                         | Compiled Blueprint text literals    |
+| `ui_command`                      | editor   | `editor_namespace` | macro `UI_COMMAND`                                | Slate command labels and tooltips   |
 
 The table is studio-agnostic. Project conventions, such as debug or demo folders, belong in the
-project's rules, not here. The compact index stores each occurrence's audience; the policy table
-is part of every package shard's key, so changing it re-encodes the stored shards from their saved
-evidence without reading packages again.
+project's rules, not here. The compact index stores each occurrence's audience; the rows saved
+text can match are part of every package shard's key, so changing them re-encodes the stored
+shards from their saved evidence without reading packages again. Code rows come last and key only
+the code layers, so adding one leaves the package shards as they are.
 
 ### Compiled Blueprint copies
 
@@ -314,6 +328,29 @@ The compact corpus path is governed by Plan 033:
 - `@ue-shed/game-text` owns normalized text meaning and queries;
 - Workbench main owns the active query instance and returns bounded pages over validated IPC;
 - renderer state never receives a complete project corpus.
+
+### Code text
+
+With a target selected and the project's engine known, the index reads the target's code the way
+its `GatherTextFromSource` steps do, with [`unreal-code`](../../crates/unreal-code/README.md): C++
+macros, config entries and String Table CSV rows in the steps' folders, filters and excludes. Each
+place is a read-only `code_place` location, `{ file, line?, macro, wrapper? }`, with the file as the
+manifest names it. Its origin is C++ for C and C++ files, Other source for config and CSV files.
+
+Code places join the manifest by namespace and key like saved places, so an edited `LOCTEXT` is
+"Changed since gather" and a new one "Not gathered yet" before anyone gathers, and a rekeyed one
+pairs with its old key by file and line.
+
+- Each target keeps its own code layer beside its localization files, because each target's steps
+  pick their own files and editor-only setting. A rescan reads the target's code again (tens of
+  milliseconds on large projects) and publishes the layer only when its places changed.
+- Hosts name the engine on the refresh request: `code: { engine, engineRoot? }`, the source gather
+  behaviour (`sourceGatherEngine`) and the installation root. The CLI resolves it from the project's
+  engine association. Without it the target's code is not read, and gathered C++ text shows from
+  the manifest only. Without the root, the engine's `#define` wrappers and
+  `LOCTABLE_FROMFILE_ENGINE` tables are left out.
+- The engine's wrappers are read once per engine build and kept in the index's cache folder.
+- Reflected metadata (display names, tooltips) is not read from code; it stays a gap.
 
 ## Reviewing text in Workbench
 
@@ -1216,7 +1253,7 @@ disk now, so a problem already in a touched file counts too.
 | `not_gathered`            | warns   | New text Unreal has not gathered, including a key change that loses nothing |
 | `unresolved_key`          | warns   | Text without a reliable key, which cannot be translated                     |
 | `removed`                 | warns   | Gathered text its file no longer has, or a file that could not be read      |
-| `gathered_source`         | warns   | Text in a changed C++ or config file, whose keys show only after a gather   |
+| `gathered_source`         | warns   | Gathered text in a changed code file the index did not read                 |
 
 - `--fail-on <check>` and `--warn-on <check>` (repeatable) change the defaults for a project.
 - `--target <name>` (repeatable) picks targets. Without it every target is checked, and a target
@@ -1235,8 +1272,10 @@ disk now, so a problem already in a touched file counts too.
   change; with Perforce, list the changelist's opened files and map them to local paths.
 - Run it where the change is: on the submitter's machine, or in a build that has the change
   applied. A Perforce server trigger has no workspace to read.
-- C++ and config key changes show only across a gather UE Shed runs, so changed source files that
-  hold gathered text only warn.
+- Text in a changed C++, config or String Table CSV file is judged like asset text when the index
+  read the target's code (the project's engine is installed): a new `LOCTEXT` is `not_gathered`, an
+  edited one `text_changed` or `translated_text_changed`. Without the engine, gathered text in those
+  files only warns `gathered_source`.
 - Fixes are made in Unreal (ADR 0009 addendum); the way forward names the step, such as carrying
   translations with `loc run prepare --carry`.
 

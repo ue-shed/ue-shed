@@ -36,6 +36,7 @@ fn location_label(kind: &str) -> &'static str {
     match kind {
         "data_table_cell" => "Data table cell",
         "string_table_entry" => "String table entry",
+        "code_place" => "Code",
         _ => "Asset property",
     }
 }
@@ -105,6 +106,7 @@ fn occurrence(value: &Value) -> Value {
         match value["location"]["kind"].as_str() {
             Some("data_table_cell") => &["kind", "objectPath", "row", "propertyPath"],
             Some("string_table_entry") => &["kind", "objectPath", "entryKey"],
+            Some("code_place") => &["kind", "file", "line", "macro", "wrapper"],
             _ => &["kind", "objectPath", "classPath", "propertyPath"],
         },
     );
@@ -270,14 +272,27 @@ impl EngineQuery {
                 };
                 let location = &occurrence["location"];
                 let kind = text(&location["kind"]);
+                // A code place's file names its asset column, its line the entry, its macro the
+                // property.
+                let line = location["line"]
+                    .as_u64()
+                    .map_or_else(String::new, |line| line.to_string());
                 let entry = match kind {
                     "data_table_cell" => text(&location["row"]),
                     "string_table_entry" => text(&location["entryKey"]),
+                    "code_place" => &line,
                     _ => "",
                 };
                 let property = match kind {
                     "string_table_entry" => "",
+                    "code_place" => text(&location["macro"]),
                     _ => text(&location["propertyPath"]),
+                };
+                let object = if kind == "code_place" {
+                    let file = text(&location["file"]);
+                    file.rsplit(['/', '\\']).next().unwrap_or(file)
+                } else {
+                    asset_name(text(&location["objectPath"]))
                 };
                 let length = characters(source).to_string();
                 let count = words(source).to_string();
@@ -288,7 +303,7 @@ impl EngineQuery {
                     Cell::Text(scope),
                     Cell::Text(localization),
                     Cell::Text(location_label(kind)),
-                    Cell::Text(asset_name(text(&location["objectPath"]))),
+                    Cell::Text(object),
                     Cell::Text(entry),
                     Cell::Text(property),
                     Cell::Text(

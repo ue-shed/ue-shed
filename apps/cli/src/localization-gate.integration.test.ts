@@ -64,15 +64,18 @@ describe.skipIf(!executable)("loc gate with the real reader", () => {
 					yield* Effect.addFinalizer(() =>
 						Effect.promise(() => rm(folder, { recursive: true, force: true }))
 					);
+					// The fixture's code is read with 5.7's source gather, whichever engines this
+					// machine has.
+					const config = ConfigProvider.layer(
+						ConfigProvider.fromUnknown({
+							UE_SHED_PROJECT_INDEX_CACHE_ROOT: join(folder, "cache"),
+							UE_SHED_ENGINE_VERSION: "5.7"
+						})
+					);
 					const indexContext = yield* Layer.build(
-						cliGameTextIndexLayer(executable).pipe(
-							Layer.provide(
-								ConfigProvider.layer(
-									ConfigProvider.fromUnknown({
-										UE_SHED_PROJECT_INDEX_CACHE_ROOT: join(folder, "cache")
-									})
-								)
-							)
+						Layer.merge(
+							cliGameTextIndexLayer(executable).pipe(Layer.provide(config)),
+							config
 						)
 					);
 					const list = (name: string, ...files: string[]) =>
@@ -111,7 +114,11 @@ describe.skipIf(!executable)("loc gate with the real reader", () => {
 						"GameTextActions",
 						"GameTextActionsSource"
 					]);
-					expect(unchanged.skipped).toEqual([]);
+					// The source gather oracle's targets keep their manifests outside the project.
+					expect(unchanged.skipped.map((skipped) => skipped.target)).toEqual([
+						"UnrealSource",
+						"UnrealSourceEditor"
+					]);
 					expect(unchanged.targets[0]?.checks.key_changed).toBe(0);
 					expect(unchanged.targets[0]?.lines).toBeGreaterThan(0);
 

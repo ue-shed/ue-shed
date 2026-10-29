@@ -174,12 +174,7 @@ impl Entries {
             {
                 flags |= 16;
             }
-            origins |= 1
-                << match c[O_LOCATION][i] {
-                    2 => 0,
-                    1 => 1,
-                    _ => 2,
-                };
+            origins |= 1 << place_origin(c[O_LOCATION][i], || j.string(c[O_OBJECT][i]));
             editing |= if c[O_EDITABLE][i] != 0 { 1 } else { 2 };
             audience |= crate::package_evidence::audience(c[O_AUDIENCE][i]);
             if c[O_COPIES][i] & 2 != 0 {

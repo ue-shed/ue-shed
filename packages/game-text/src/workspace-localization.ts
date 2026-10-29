@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { indexPublicFailure } from "./index-public-error.js";
-import type { IndexFailure } from "./index-contract.js";
+import type { GameTextCodeSource, IndexFailure } from "./index-contract.js";
 import { Schema } from "effect";
 import {
 	localizationQualityWorkspaceOf,
@@ -139,6 +139,10 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			readonly localizationFiles: Layer.Layer<LocalizationFileAccess>;
 			/** Prepares every PO file an edit replaces before any is written. */
 			readonly prepareWrites?: GameTextWorkspaceHost["prepareWrites"];
+			/** The engine a target's code is read with; undefined leaves code unread. */
+			readonly codeSource?: (
+				projectRoot: string
+			) => Effect.Effect<GameTextCodeSource | undefined>;
 		} = { author: "game-text", localizationFiles: LocalizationFileAccessLive }
 	) {
 		const reader = yield* LocalizationEvidence;
@@ -159,7 +163,13 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							recovery: "Scan the selected project again."
 						})
 					);
-				const imported = yield* index.importTarget(project, request);
+				const code = options.codeSource
+					? yield* options.codeSource(project.projectRoot)
+					: undefined;
+				const imported = yield* index.importTarget(
+					project,
+					code === undefined ? request : { ...request, code }
+				);
 				const target = yield* index.buildTarget(project, imported, request);
 				const prepared = yield* (currentIndex?.() ?? Effect.succeed(undefined)).pipe(
 					Effect.scoped

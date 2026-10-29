@@ -143,6 +143,7 @@ impl OccurrenceData {
         let suffix = match self.value(row, "location") {
             2 => format!("entry:{entry}"),
             1 => format!("row:{entry}:property:{property}"),
+            3 => format!("line:{entry}:macro:{property}"),
             _ => format!("property:{property}"),
         };
         format!(
@@ -153,6 +154,17 @@ impl OccurrenceData {
     pub fn location(&self, row: usize, arena: &Arena) -> serde_json::Value {
         use serde_json::json;
         let text = |field| arena.text(StrId(self.value(row, field)));
+        if self.value(row, "location") == 3 {
+            let mut location =
+                json!({"kind":"code_place","file":text("object"),"macro":text("property")});
+            if let Ok(line) = text("row").parse::<u32>() {
+                location["line"] = json!(line);
+            }
+            if !text("class").is_empty() {
+                location["wrapper"] = json!(text("class"));
+            }
+            return location;
+        }
         let mut location = json!({"objectPath":text("object")});
         match self.value(row, "location") {
             0 => {
@@ -192,6 +204,8 @@ impl OccurrenceData {
             kind => {
                 let path = if kind == 1 {
                     format!("{object}.{}.{}", text("row"), text("property"))
+                } else if kind == 3 {
+                    format!("{object}({})", text("row"))
                 } else {
                     format!("{object}.{}", text("property"))
                 };
@@ -271,13 +285,25 @@ impl Arena {
         };
         let row = row as usize;
         let kind = data.value(row, "location");
+        // A code place's members (`file`, `macro`, `wrapper`) sit in the object, property and
+        // class columns. Its line is not a rule field.
         let field = match name {
-            "objectPath" => "object",
-            "propertyPath" if kind != 2 => "property",
+            "objectPath" if kind != 3 => "object",
+            "propertyPath" if kind < 2 => "property",
             "classPath" if kind == 0 => "class",
             "row" if kind == 1 => "row",
             "entryKey" if kind == 2 => "row",
-            "kind" => return self.occurrences.location_kinds[kind as usize],
+            "file" if kind == 3 => "object",
+            "macro" if kind == 3 => "property",
+            "wrapper" if kind == 3 && data.value(row, "class") != 0 => "class",
+            "kind" => {
+                return self
+                    .occurrences
+                    .location_kinds
+                    .get(kind as usize)
+                    .copied()
+                    .unwrap_or(Atom::Null);
+            }
             _ => return Atom::Null,
         };
         Atom::Str(StrId(data.value(row, field)))

@@ -37,6 +37,10 @@ pub enum PackageTextAudienceMatch {
     Location {
         value: String,
     },
+    /// A code place's macro, such as `UI_COMMAND`.
+    Macro {
+        value: String,
+    },
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -126,4 +130,65 @@ pub struct PackageTextPlan {
     pub packages: u32,
     /// Shard 0's key, the marker an empty inventory publishes.
     pub first_key: String,
+}
+
+/// The layer holding a target's code text: places `unreal-code` found in the C++, config and
+/// String Table CSV files its `GatherTextFromSource` steps read, in the package shards' format.
+#[must_use]
+pub fn code_layer(target: &str) -> String {
+    format!("{CODE_LAYER_PREFIX}{target}")
+}
+pub const CODE_LAYER_PREFIX: &str = "code-text:";
+
+/// `publish_code`: the reader scans one target's code and publishes its code layer when the
+/// layer's content changed. Without `scan` the layer is removed: the host could not name the
+/// engine, so the target's code is not read.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CodeLayerRequest {
+    pub target: String,
+    /// The layer key prefix: the package-text format, then the audience policy's JSON.
+    pub format: String,
+    pub policy_json: String,
+    pub rules: Vec<PackageTextAudienceRule>,
+    /// A new file the reader stages the layer in.
+    pub staging_file: String,
+    /// One target, named `target`.
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub scan: Option<unreal_code::CodeTextRequest>,
+}
+
+/// Diagnostics a code layer outcome carries at most; the count says how many there were.
+pub const CODE_DIAGNOSTIC_SAMPLES: usize = 200;
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CodeLayerOutcome {
+    pub name: String,
+    /// The active key after the request; none when the layer was removed or never existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub key: Option<String>,
+    /// Whether the request changed the active layer.
+    pub published: bool,
+    /// Code places in the layer, and of those, the ones the target's gather leaves out.
+    pub places: u32,
+    pub left_out: u32,
+    /// Files with at least one place.
+    pub files: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub counts: Option<unreal_code::FileCounts>,
+    pub diagnostic_count: u32,
+    /// The first [`CODE_DIAGNOSTIC_SAMPLES`] diagnostics, in scan order.
+    pub diagnostics: Vec<unreal_code::CodeDiagnostic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub engine_wrappers: Option<unreal_code::EngineWrappers>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub profile: Option<unreal_code::CodeTextProfile>,
 }

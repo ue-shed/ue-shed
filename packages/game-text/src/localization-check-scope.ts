@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { Schema } from "effect";
 import { CultureCode } from "@ue-shed/localization/browser";
 import { TextRoleId, type TextRole } from "./quality-schema.js";
@@ -50,7 +51,7 @@ export function localizationCheckInScope(
 			(!scopeRoles || scopeRoles.some((role) => matchesTextRole(occurrence, role))) &&
 			(!scope.pathPrefixes ||
 				scope.pathPrefixes.some((prefix) =>
-					occurrence.location.objectPath.startsWith(prefix)
+					textLocationPath(occurrence.location).startsWith(prefix)
 				))
 	);
 }

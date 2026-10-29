@@ -22,8 +22,13 @@ const LABELS: [&str; 6] = [
     "readOnly",
     "withoutNotes",
 ];
-/// v2 drops the shared, duplicate source and long counters.
-const VERSION: u32 = 2;
+/// v2 drops the shared, duplicate source and long counters; v3 counts all five origins.
+const VERSION: u32 = 3;
+/// Counters per raw row: six labels, five origins, mixed origins, occurrences.
+const TOTALS: usize = 13;
+const ORIGIN_TOTALS: usize = 6;
+const MIXED: usize = 11;
+const OCCURRENCES: usize = 12;
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Coverage {
@@ -75,15 +80,15 @@ pub(crate) struct SummaryState {
     coverage: Coverage,
     units: u64,
     occurrences: u64,
-    totals: [u64; 11],
+    totals: [u64; TOTALS],
 }
 
 /// A raw row's counters: all, unresolved, conflicting, editable, read-only, without notes, its
-/// three origins, mixed origins, then its occurrences.
-pub(crate) fn contribution(values: [u32; 7]) -> Result<[u64; 11]> {
+/// five origins (`ORIGINS`), mixed origins, then its occurrences.
+pub(crate) fn contribution(values: [u32; 7]) -> Result<[u64; TOTALS]> {
     let [visible, flags, origins, editing, notes, start, end] = values;
     require(visible <= 1 && end >= start, "summary raw row bounds")?;
-    let mut totals = [0; 11];
+    let mut totals = [0; TOTALS];
     if visible == 0 {
         return Ok(totals);
     }
@@ -93,11 +98,11 @@ pub(crate) fn contribution(values: [u32; 7]) -> Result<[u64; 11]> {
     totals[3] = u64::from(editing & 1 != 0);
     totals[4] = u64::from(editing & 2 != 0);
     totals[5] = u64::from(notes == 0);
-    for bit in 0..3 {
-        totals[6 + bit] = u64::from(origins & (1 << bit) != 0);
+    for bit in 0..5 {
+        totals[ORIGIN_TOTALS + bit] = u64::from(origins & (1 << bit) != 0);
     }
-    totals[9] = u64::from(origins.count_ones() > 1);
-    totals[10] = u64::from(end - start);
+    totals[MIXED] = u64::from(origins.count_ones() > 1);
+    totals[OCCURRENCES] = u64::from(end - start);
     Ok(totals)
 }
 
@@ -129,6 +134,18 @@ impl SummaryState {
         for name in names {
             let (mut reader, record) = layer(store, name)?.ok_or("summary package shard")?;
             let mut get = |field: &str| column(&mut reader, &record, field);
+            let identities = get("occurrence.identity")?;
+            let keys = get("occurrence.key")?;
+            require(identities.len() == keys.len(), "summary identity lengths")?;
+            coverage.resolved += identities
+                .iter()
+                .zip(keys)
+                .filter(|(identity, key)| **identity < 2 && !empty.contains(key))
+                .count() as u64;
+            // A code layer's files are not packages; the code scan reports its own coverage.
+            if name.starts_with(crate::package_text_contract::CODE_LAYER_PREFIX) {
+                continue;
+            }
             let statuses = get("package.status")?;
             let histories = get("package.gap0")?;
             let missing = get("package.gather_missing")?;
@@ -178,21 +195,13 @@ impl SummaryState {
                     _ => return Err("summary package status".into()),
                 }
             }
-            let identities = get("occurrence.identity")?;
-            let keys = get("occurrence.key")?;
-            require(identities.len() == keys.len(), "summary identity lengths")?;
-            coverage.resolved += identities
-                .iter()
-                .zip(keys)
-                .filter(|(identity, key)| **identity < 2 && !empty.contains(key))
-                .count() as u64;
         }
         let mut state = Self {
             version: VERSION,
             coverage,
             units: units as u64,
             occurrences: occurrences as u64,
-            totals: [0; 11],
+            totals: [0; TOTALS],
         };
         for index in 0..units {
             let values = contribution(row(index)?)?;
@@ -213,8 +222,8 @@ impl SummaryState {
             self.version == VERSION
                 && self.coverage.resolved <= self.occurrences
                 && self.totals[0] <= self.units
-                && self.totals[10] <= self.occurrences
-                && self.totals[1..10]
+                && self.totals[OCCURRENCES] <= self.occurrences
+                && self.totals[1..OCCURRENCES]
                     .iter()
                     .all(|count| *count <= self.totals[0]),
             "invalid persisted summary counters",
@@ -247,13 +256,17 @@ impl SummaryState {
         for (index, label) in LABELS.iter().enumerate() {
             counts.insert((*label).into(), json!(self.totals[index]));
         }
-        counts.insert("origins".into(), json!({"string_table":self.totals[6],"data_table":self.totals[7],"asset":self.totals[8],"cpp":0,"other_source":0}));
+        let mut origins = serde_json::Map::new();
+        for (index, origin) in crate::engine_types::ORIGINS.iter().enumerate() {
+            origins.insert((*origin).into(), json!(self.totals[ORIGIN_TOTALS + index]));
+        }
+        counts.insert("origins".into(), Value::Object(origins));
         Ok(
             json!({"schemaVersion":1,"status":if c.partial>0 || c.failed>0 {"partial"} else {"complete"},
             "diagnosticCount":c.diagnostics,"notGatherablePackages":c.excluded,"coverage":coverage,
-            "searchable":{"textUnits":self.totals[0],"textOccurrences":self.totals[10]},
+            "searchable":{"textUnits":self.totals[0],"textOccurrences":self.totals[OCCURRENCES]},
             "review":{"all":self.totals[0],"unresolved":self.totals[1],"conflicting":self.totals[2]},
-            "sources":{"assetProperty":self.totals[8],"dataTable":self.totals[7],"stringTable":self.totals[6],"mixed":self.totals[9]},"counts":counts}),
+            "sources":{"assetProperty":self.totals[8],"dataTable":self.totals[7],"stringTable":self.totals[6],"mixed":self.totals[MIXED]},"counts":counts}),
         )
     }
 }

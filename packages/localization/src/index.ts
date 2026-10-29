@@ -195,3 +195,9 @@ export {
 	makeStringTableKeyMigrations,
 	type StringTableKeyMigrationHostApi
 } from "./string-table-migration-runner.js";
+export {
+	projectSourceGatherEngine,
+	sourceGatherEngine,
+	sourceGatherSteps,
+	type SourceGatherEngine
+} from "./source-gather.js";

@@ -30,11 +30,15 @@ const placeKey = (path: string) =>
 const place = (location: ReturnType<typeof occurrenceLocation>) =>
 	location.kind === "string_table_entry"
 		? undefined
-		: location.kind === "data_table_cell"
-			? placeKey(`${location.objectPath}.${location.row}.${location.propertyPath}`)
-			: location.propertyPath === ""
+		: location.kind === "code_place"
+			? location.line === undefined
 				? undefined
-				: placeKey(`${location.objectPath}.${location.propertyPath}`);
+				: placeKey(`${location.file}(${location.line})`)
+			: location.kind === "data_table_cell"
+				? placeKey(`${location.objectPath}.${location.row}.${location.propertyPath}`)
+				: location.propertyPath === ""
+					? undefined
+					: placeKey(`${location.objectPath}.${location.propertyPath}`);
 export function translationId(columns: JoinedColumns, row: number, culture: number) {
 	const marks = columns.culture[culture]!,
 		fromPO = Boolean(marks.facts![row]! & stateBit("not_synced"));

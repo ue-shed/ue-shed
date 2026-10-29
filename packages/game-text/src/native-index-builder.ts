@@ -229,6 +229,21 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			}
 		),
 		sortsColdStrings: true,
+		publishCode: Effect.fn("NativeIndexBuilder.publishCode")(function* (request) {
+			const result = yield* command({
+				action: "publish_code",
+				configuration,
+				request: { ...request, stagingFile: join(stage, `${++sequence}.code`) }
+			});
+			if (!result.code)
+				return yield* Effect.fail(
+					unavailable(
+						"native-code-layer",
+						new Error("The reader returned no code layer.")
+					)
+				);
+			return result.code;
+		}),
 		planPackages: Effect.fn("NativeIndexBuilder.planPackages")(function* (request) {
 			const result = yield* command({ action: "plan_packages", configuration, request });
 			if (!result.plan)

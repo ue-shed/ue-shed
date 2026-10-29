@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -95,7 +96,7 @@ const places = (page: TextCorpusSearchPage) =>
 			id: unit.id,
 			namespace: unit.identity.status === "resolved" ? unit.identity.namespace : "",
 			places: unit.occurrenceCount,
-			files: unit.contexts.map((context) => context.location.objectPath).sort()
+			files: unit.contexts.map((context) => textLocationPath(context.location)).sort()
 		}))
 		.sort((left, right) => left.id.localeCompare(right.id));
 

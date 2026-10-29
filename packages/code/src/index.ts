@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
-import { LocalizationEvidence, type LocalizationTarget } from "@ue-shed/localization";
+import { LocalizationEvidence, sourceGatherSteps } from "@ue-shed/localization";
 import { answerJson, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
 
 export type CodeTextRequest = GameTextContract.CodeTextRequest;
@@ -10,34 +10,6 @@ export type GatherStep = GameTextContract.GatherStep;
 export type EngineLine = GameTextContract.EngineLine;
 export type CodePlace = GameTextContract.CodePlace;
 export type CodeDiagnostic = GameTextContract.CodeDiagnostic;
-
-/** The commandlet behaviour a scan reproduces for an engine version; none before 4.27. */
-export const engineLine = (major: number, minor: number): EngineLine | undefined =>
-	major === 4 && minor === 27 ? "4.27" : major === 5 ? (minor <= 7 ? "5.7" : "5.8") : undefined;
-
-/**
- * A target's `GatherTextFromSource` steps. A step without a value takes `CommonSettings`' value,
- * as Unreal's commandlets read their config.
- */
-export const sourceSteps = (target: LocalizationTarget): GatherStep[] =>
-	target.configs.flatMap((recipe) =>
-		recipe.steps
-			.filter((step) => step.commandletClass.toLowerCase() === "gathertextfromsource")
-			.map((step) => {
-				const list = (
-					field: "SearchDirectoryPaths" | "ExcludePathFilters" | "FileNameFilters"
-				) => (step.fields[field].length > 0 ? step.fields[field] : recipe.common[field]);
-				const editorOnly =
-					step.fields.ShouldGatherFromEditorOnlyData ??
-					recipe.common.ShouldGatherFromEditorOnlyData;
-				return {
-					searchDirectoryPaths: list("SearchDirectoryPaths"),
-					excludePathFilters: list("ExcludePathFilters"),
-					fileNameFilters: list("FileNameFilters"),
-					gatherEditorOnly: editorOnly === true
-				};
-			})
-	);
 
 export interface CodeTextInput {
 	readonly projectRoot: string;
@@ -66,7 +38,7 @@ export const scanCodeText = Effect.fn("UnrealCode.scan")(function* (input: CodeT
 			: new Set(input.targets);
 	const targets: CodeTarget[] = discovery.targets
 		.filter((target) => wanted === undefined || wanted.has(target.name))
-		.map((target) => ({ name: target.name, steps: sourceSteps(target) }))
+		.map((target) => ({ name: target.name, steps: sourceGatherSteps(target) }))
 		.filter((target) => target.steps.length > 0);
 	const engine = yield* NativeGameTextEngineClient;
 	const answer = yield* engine.execute({

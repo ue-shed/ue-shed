@@ -46,6 +46,7 @@ fn location(location: &Value) -> Value {
     let members: &[&str] = match location["kind"].as_str() {
         Some("asset_property") => &["kind", "objectPath", "classPath", "propertyPath"],
         Some("data_table_cell") => &["kind", "objectPath", "row", "propertyPath"],
+        Some("code_place") => &["kind", "file", "line", "macro", "wrapper"],
         _ => &["kind", "objectPath", "entryKey"],
     };
     picked(location, members)

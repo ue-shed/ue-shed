@@ -15,8 +15,9 @@
 ## Status
 
 - **State**: In progress. Phase 0: oracle done on 5.7, 5.8 and 4.27; baseline pending. Phase 1:
-  done, awaiting owner review. The scanner matches all three engines' gathers, and
-  `ue-shed code text` runs it through the Game Text engine.
+  done and reviewed (owner, 2026-10-29). The scanner matches all three engines' gathers, and
+  `ue-shed code text` runs it through the Game Text engine. Phase 2: done, awaiting owner review.
+  Game Text reads each target's code and judges C++ text like asset text.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -279,8 +280,13 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 - `ue-shed code text <project-root>` takes `--target`, `--engine-root`, `--engine-version` and
   `--cache-root`. The engine comes from `@ue-shed/engine` discovery (the explicit root or the
   `.uproject` association) unless `--engine-version` names the behaviour directly.
-- The engine's wrappers are cached under the cache root per crate version, engine root, engine
-  line, project and `Build.version`.
+- The engine's wrappers are cached under the cache root, one file per engine build shared by
+  every project: keyed by crate version, engine root, engine line and `Build.version`, with paths
+  kept relative to the engine root and rebased onto each project. `--refresh-engine-wrappers`
+  reads them again, for a source-built engine edited without a version change. A second project
+  on the 5.7 engine found the fixture's file and took 0.4 ms; the fixture's output was unchanged.
+  The cache lasts across runs only when the caller passes a cache root: the CLI's `--cache-root`,
+  and from Phase 2 the host's own cache folder.
 - Through the command, the fixture's targets gather what Unreal gathered: on 5.8 `UnrealSource`
   57 and `UnrealSourceEditor` 62; with the engine found from the association (5.7), 54. The 5.7
   engine's wrappers took 3.7 s to find with a warm file cache and 0.4 ms from the cache; 52
@@ -318,7 +324,72 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 5. `loc gate` no longer warns `gathered_source` for a changed C++ or config file it can read: it
    judges its places like any other.
 
-**Evidence**: _pending_.
+**Design (2026-10-29, planner)**, from a map of every consumer of the three saved kinds:
+
+- **A code layer per target**, `code-text:<target>`, in the package shards' column format, so
+  the join, search, focus, rules and exports read code places as occurrences. The Catalog lists
+  only `Content` packages, so code files cannot join the 256 package shards; and a target's code
+  set is exact only per target (its steps' folders, filters and editor-only setting, its split
+  platforms, and on 4.27 its project-wide String Tables). The store already holds each target's
+  own localization layers beside the shared package shards; the code layer sits with them.
+- **Location kind 3, `code_place`**: `{ file, line, macro }`, with the file as Unreal names it in
+  the manifest (`Source/…/Foo.cpp`) and no line for a String Table CSV entry. Columns: object =
+  file, property = macro, row = line, class = wrapper. Read-only; origin `cpp` for C and C++
+  files, `other_source` for INI and CSV.
+- **Scope is the scan's**: a code place the target gathers rates inside; editor-only text the
+  target leaves out rates outside with `editor_only_data_not_gathered`. Asset filters never apply
+  to code places.
+- **Audience**: editor-only context is evidence, reason `code_editor_only` (like the gather
+  table's); a `UICommands` policy row marks `UI_COMMAND` text editor text.
+- **Producer**: a reader operation runs `unreal-code` for one target and stages the layer; the
+  host publishes it only when its content key changed, so an unchanged scan leaves the join
+  alone. The host passes the engine line, engine root and its cache folder; without them no code
+  layer is built, and the coverage statement says code was not read.
+- **Item 4, changed**: a full target scan is 32–93 ms parallel on the research projects
+  (Phase 1), so a rescan scans every file and publishes only on change. Per-file records keyed
+  by content belong to Phase 3's record store, which needs them for points anyway.
+
+**Evidence (2026-10-29)**:
+
+- **Writer**: `publish_code`, a builder request the reader runs (as it runs `plan_packages`):
+  `unreal-code` scans the target, one package-text record per file with places, staged in the
+  package columns and published cold under `code-text:<target>` when its content key differs.
+  `occurrence.gather` 3 marks code text the target leaves out; the join rates it outside. The
+  outcome carries the scan's counts, up to 200 diagnostics and the per-stage profile, which the
+  host puts on its span.
+- **Readers**: the join, incremental join, summary, focus, line places, corpus and CSV exports and
+  the rules engine all know kind 3. Before, a code place would have panicked the rules engine
+  (`location_kinds[3]`), failed focus, places and the gate, and rendered as an asset elsewhere.
+  Key-change pairing reads a code place as `file[line]`, and a 4.27 manifest's `file:line` the
+  same way. The summary counts all five origins (state v3; joins rebuild once).
+- **Policy**: `code_editor_only` is appended to the audience reasons; the `ui_command` row
+  (`macro` match) is the policy's last row, so stored row positions hold. Package shards key on
+  the rows saved text can match, so this phase re-reads no package and re-encodes no shard.
+- **Hosts**: `GameTextIndexRefreshRequest.code` (`{ engine, engineRoot? }`) and the workspace's
+  `codeSource` hook. The CLI resolves the engine from the project's association, or from
+  `UE_SHED_ENGINE_VERSION` and `UE_SHED_ENGINE_ROOT`; Workbench from its engine setting or the
+  association. `sourceGatherSteps`, `sourceGatherEngine` and `projectSourceGatherEngine` moved to
+  `@ue-shed/localization`, since the published `@ue-shed/game-text` cannot use the private
+  `@ue-shed/code`. The Game Text UI shows a code place's `file:line` and macro, offers no Show in
+  Unreal for it, and refuses ID repair ("Change this text in its source file").
+- **Fixture through the CLI** (`FixtureGame`, 5.7 from the association): its two gathered C++
+  lines now come from the code layer, translated in every culture, where they were gathered-only
+  manifest evidence. With `UEShedLocalizationText.cpp` edited and then restored:
+
+    | Edit                           | State                                                         | `loc gate`                       |
+    | ------------------------------ | ------------------------------------------------------------- | -------------------------------- |
+    | `LOCTEXT` text changed         | Changed since gather                                          | `translated_text_changed` (fail) |
+    | New `LOCTEXT`                  | Not gathered yet                                              | `not_gathered` (warn)            |
+    | `LOCTEXT` in `#if WITH_EDITOR` | Outside this target (`editor_only_data_not_gathered`), editor | not judged                       |
+    | Unedited                       | Translated, from the code layer                               | passed, no `gathered_source`     |
+
+    `loc status` took 9.0 s cold (the whole index), 2.0 s warm and 2.1 s after the edit.
+
+- **Found on the way**: the gate integration test expected no skipped targets, but Phase 1's
+  oracle targets (`UnrealSource`, `UnrealSourceEditor`) have no manifest in the project; and
+  Phase 1's rename left `apps/cli/package.json` unformatted, which stopped PR CI before its tests.
+- **Gaps**: asset references to a code-defined String Table are not yet resolved against it;
+  Electroswag passes no `codeSource` until Phase 6.
 
 ## Phase 3: Points
 

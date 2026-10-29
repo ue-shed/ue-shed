@@ -6,7 +6,9 @@ import {
 	GameTextIndexBuildOutcome,
 	GameTextIndexPreviousBuildRequest,
 	GameTextIndexPackageReplacement,
-	GameTextIndexPackagePlan
+	GameTextIndexPackagePlan,
+	GameTextIndexCodeLayer,
+	PackageTextAudienceRule
 } from "./game-text-index.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
 import { AuthoringTableSnapshot } from "./authoring.js";
@@ -319,27 +321,6 @@ const PackageTextOperation = Schema.Struct({
 	/** Staging needs v1.19 and a request that satisfies `StagedPackageTextOperation`. */
 	staging: Schema.optionalKey(Schema.Never)
 });
-const PackageTextAudienceMatch = Schema.Union([
-	Schema.Struct({
-		kind: Schema.Literals(["namespace", "folder", "location"]),
-		value: Schema.String
-	}),
-	Schema.Struct({
-		kind: Schema.Literal("object"),
-		value: Schema.String,
-		position: Schema.Literals(["prefix", "suffix", "equals"])
-	}),
-	Schema.Struct({
-		kind: Schema.Literal("module"),
-		value: Schema.String,
-		suffix: Schema.optionalKey(Schema.Boolean)
-	}),
-	Schema.Struct({
-		kind: Schema.Literal("property"),
-		value: Schema.String,
-		anywhere: Schema.optionalKey(Schema.Boolean)
-	})
-]);
 /** Complete shard inventories for v1.20 native column preparation. The reader writes one raw
  * snapshot per group and rejects missing/duplicate packages or mismatched retained signatures.
  * Every shard must fit in one request; record files are bounded to 64 MiB per JSON record.
@@ -358,9 +339,7 @@ export const UAssetIoPackageTextSnapshots: Schema.Codec<GameTextContract.Package
 				)
 			})
 		),
-		rules: Schema.Array(
-			Schema.Struct({ code: NonNegativeInt, when: Schema.Array(PackageTextAudienceMatch) })
-		),
+		rules: Schema.Array(PackageTextAudienceRule),
 		recordFiles: Schema.optionalKey(Schema.Array(Schema.String)),
 		records: Schema.optionalKey(Schema.Array(Schema.String)),
 		/** A `plan_packages` plan file: the reader stages these shards' selected packages. */
@@ -512,7 +491,11 @@ export const UAssetIoRequest = Schema.Union([
 		).annotate({ identifier: "UAssetIoPackageReplacementContract" }),
 		operation: Schema.Struct({
 			...GameTextIndexOperation.fields,
-			request: Schema.Union([GameTextIndexPackageReplacement, GameTextIndexPackagePlan])
+			request: Schema.Union([
+				GameTextIndexPackageReplacement,
+				GameTextIndexPackagePlan,
+				GameTextIndexCodeLayer
+			])
 		})
 	}),
 	Schema.Struct({ ...RequestFields, contract: UAssetIoContract, operation: ExistingOperation }),

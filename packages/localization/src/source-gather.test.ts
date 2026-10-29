@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import { LocalizationTarget, parseLocalizationRecipe } from "@ue-shed/localization";
+import { LocalizationTarget } from "./schema.js";
+import { parseLocalizationRecipe } from "./index.js";
 import { Result, Schema } from "effect";
-import { engineLine, sourceSteps } from "./index.js";
+import { sourceGatherEngine, sourceGatherSteps } from "./source-gather.js";
 
 const recipe = (text: string) => {
 	const parsed = parseLocalizationRecipe(text, "Config/Localization/Game_Gather.ini");
@@ -29,9 +30,9 @@ const target = (text: string): LocalizationTarget =>
 		collapseMode: "IdenticalTextIdAndSource"
 	});
 
-describe("sourceSteps", () => {
+describe("sourceGatherSteps", () => {
 	it("takes CommonSettings for what a source step leaves out", () => {
-		const steps = sourceSteps(
+		const steps = sourceGatherSteps(
 			target(`[CommonSettings]
 SearchDirectoryPaths=%LOCPROJECTROOT%Source
 ExcludePathFilters=Config/Localization/*
@@ -70,12 +71,12 @@ ShouldGatherFromEditorOnlyData=false
 	});
 });
 
-describe("engineLine", () => {
+describe("sourceGatherEngine", () => {
 	it("maps engine versions to the commandlet behaviour a scan reproduces", () => {
-		expect(engineLine(4, 27)).toBe("4.27");
-		expect(engineLine(4, 26)).toBeUndefined();
-		expect(engineLine(5, 3)).toBe("5.7");
-		expect(engineLine(5, 7)).toBe("5.7");
-		expect(engineLine(5, 8)).toBe("5.8");
+		expect(sourceGatherEngine(4, 27)).toBe("4.27");
+		expect(sourceGatherEngine(4, 26)).toBeUndefined();
+		expect(sourceGatherEngine(5, 3)).toBe("5.7");
+		expect(sourceGatherEngine(5, 7)).toBe("5.7");
+		expect(sourceGatherEngine(5, 8)).toBe("5.8");
 	});
 });

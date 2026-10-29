@@ -31,6 +31,10 @@ pub struct Occurrence {
     pub gather_editor_only: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub copies: Vec<RepresentationCopy>,
+    /// Code text the target's gather leaves out: editor-only text in a target that does not
+    /// gather editor-only data. Its `gather_editor_only` is `Some(true)`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub left_out: bool,
 }
 impl From<SavedAssetTextOccurrence> for Occurrence {
     fn from(value: SavedAssetTextOccurrence) -> Self {
@@ -42,6 +46,7 @@ impl From<SavedAssetTextOccurrence> for Occurrence {
             edit_capability: value.edit_capability,
             gather_editor_only: value.gather_editor_only,
             copies: Vec::new(),
+            left_out: false,
         }
     }
 }
@@ -476,6 +481,13 @@ impl Columns {
                 ),
             };
             let (object, property, class, row, location) = location(&occurrence.location);
+            let line = match &occurrence.location {
+                TextExtractionLocation::CodePlace {
+                    line: Some(line), ..
+                } => line.to_string(),
+                _ => String::new(),
+            };
+            let row = if location == 3 { line.as_str() } else { row };
             for (field, text) in [
                 ("occurrence.source", occurrence.source.as_str()),
                 ("occurrence.notes", occurrence.dev_notes.as_str()),
@@ -494,11 +506,16 @@ impl Columns {
                 "occurrence.editable",
                 u32::from(occurrence.edit_capability == EditCapability::SourceEditable),
             );
+            // 3 marks code text the target leaves out; the join rates it outside the target.
             self.number(
                 "occurrence.gather",
-                occurrence
-                    .gather_editor_only
-                    .map_or(0, |v| if v { 2 } else { 1 }),
+                if occurrence.left_out {
+                    3
+                } else {
+                    occurrence
+                        .gather_editor_only
+                        .map_or(0, |v| if v { 2 } else { 1 })
+                },
             );
             self.number(
                 "occurrence.audience",
@@ -675,5 +692,12 @@ pub fn location(location: &TextExtractionLocation) -> (&str, &str, &str, &str, u
             object_path,
             entry_key,
         } => (object_path, "", "", entry_key, 2),
+        // The line is a number; `Columns::feed` writes it to the row column itself.
+        TextExtractionLocation::CodePlace {
+            file,
+            macro_name,
+            wrapper,
+            ..
+        } => (file, macro_name, wrapper.as_deref().unwrap_or(""), "", 3),
     }
 }

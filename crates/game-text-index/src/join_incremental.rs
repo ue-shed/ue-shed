@@ -361,7 +361,10 @@ pub(crate) fn refresh(
         if store.root["layers"].get(before).is_none() {
             return fallback("retired-input");
         }
-        if name.starts_with("package-text.") {
+        // A code layer has the package shards' columns, and sits among them in the join.
+        if name.starts_with("package-text.")
+            || name.starts_with(crate::package_text_contract::CODE_LAYER_PREFIX)
+        {
             let Some(shard) = names.iter().position(|value| value == name) else {
                 return fallback("package-shard");
             };

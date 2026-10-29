@@ -28,7 +28,8 @@ import {
 	localizationError,
 	type LocalizationError,
 	LocalizationEvidence,
-	LocalizationTarget
+	LocalizationTarget,
+	sourceGatherSteps
 } from "@ue-shed/localization";
 import {
 	SharedIndex,
@@ -49,9 +50,13 @@ import {
 	isGameTextIndexError,
 	GameTextIndexSource,
 	GameTextIndexRefreshRequest,
+	type GameTextCodeSource,
 	type GameTextIndexRefreshResult,
 	type IndexFailure
 } from "./index-contract.js";
+import { codeLayerName, PACKAGE_TEXT_FORMAT } from "./package-text-layer.js";
+import { packageTextAudienceRules } from "./package-text-native.js";
+import { TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
 import { isSnapshotStoreError } from "./snapshot-store.js";
 import { isSnapshotFormatError } from "./snapshot-format.js";
 import {
@@ -112,7 +117,8 @@ export const GameTextTargetImportRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, [
 		"targetName",
 		"requireManifest",
-		"changedFiles"
+		"changedFiles",
+		"code"
 	])
 );
 export type GameTextTargetImportRequest = typeof GameTextTargetImportRequest.Type;
@@ -171,6 +177,8 @@ export interface GameTextTargetImport {
 	readonly fileErrors: NonNullable<JoinedTargetInput["fileErrors"]>;
 	readonly fileProvenances: NonNullable<JoinedTargetInput["fileProvenances"]>;
 	readonly fileDiagnostics: NonNullable<JoinedTargetInput["fileDiagnostics"]>;
+	/** What the import did with the target's code layer; absent when it had none to touch. */
+	readonly code?: GameTextContract.CodeLayerOutcome | undefined;
 }
 /**
  * Built target and its exact project/input identities, before opening readers. A queryRevision
@@ -648,7 +656,12 @@ export const makeGameTextIndexSteps = (
 						fileProvenances,
 						fileDiagnostics
 					});
+					const code =
+						request.targetName === undefined
+							? undefined
+							: yield* publishTargetCode(project, imported.target, request.code);
 					return {
+						...(code === undefined ? undefined : { code }),
 						project,
 						view:
 							request.targetName === undefined
@@ -663,6 +676,57 @@ export const makeGameTextIndexSteps = (
 				}),
 				request.changedFiles
 			);
+		});
+
+		/**
+		 * Scans the target's code in the reader and publishes its code layer when it changed, or
+		 * removes the layer when the host names no engine or the target reads no code.
+		 */
+		const publishTargetCode = Effect.fn("GameTextIndex.publishTargetCode")(function* (
+			project: GameTextProject,
+			target: LocalizationTarget,
+			source: GameTextCodeSource | undefined
+		) {
+			const index = yield* SharedIndex;
+			const writer = yield* index.writer();
+			if (!writer.publishCode) return undefined;
+			const steps = sourceGatherSteps(target);
+			const scan =
+				source === undefined || steps.length === 0
+					? undefined
+					: {
+							projectRoot: project.projectRoot,
+							engineRoot: source.engineRoot ?? null,
+							engine: source.engine,
+							targets: [{ name: target.name, steps }],
+							cacheRoot,
+							refreshEngineWrappers: source.refreshEngineWrappers === true
+						};
+			if (scan === undefined && !(yield* index.inspect()).active[codeLayerName(target.name)])
+				return undefined;
+			const outcome = yield* writer.publishCode({
+				target: target.name,
+				format: PACKAGE_TEXT_FORMAT,
+				policyJson: TEXT_AUDIENCE_POLICY_KEY,
+				rules: packageTextAudienceRules(),
+				...(scan === undefined ? undefined : { scan })
+			});
+			yield* Effect.annotateCurrentSpan({
+				"code.places": outcome.places,
+				"code.leftOut": outcome.leftOut,
+				"code.files": outcome.files,
+				"code.published": outcome.published,
+				"code.diagnostics": outcome.diagnosticCount,
+				...(outcome.profile === undefined
+					? undefined
+					: {
+							"code.engineWrappersMicros": outcome.profile.engineWrappersMicros,
+							"code.projectWrappersMicros": outcome.profile.projectWrappersMicros,
+							"code.listMicros": outcome.profile.listMicros,
+							"code.scanMicros": outcome.profile.scanMicros
+						})
+			});
+			return outcome;
 		});
 
 		const buildTarget = Effect.fn("GameTextIndex.buildTarget")(function* (

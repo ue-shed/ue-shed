@@ -23,14 +23,15 @@ const fixture = useSavedFixtureProject();
 let indexed: ReturnType<typeof makeIndexRuntime>;
 let cacheRoot: string;
 function makeIndexRuntime(root: string) {
+	// The fixture's code is read with 5.7's source gather, whichever engines this machine has.
+	const config = ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			UE_SHED_PROJECT_INDEX_CACHE_ROOT: root,
+			UE_SHED_ENGINE_VERSION: "5.7"
+		})
+	);
 	return ManagedRuntime.make(
-		cliGameTextIndexLayer(executable).pipe(
-			Layer.provide(
-				ConfigProvider.layer(
-					ConfigProvider.fromUnknown({ UE_SHED_PROJECT_INDEX_CACHE_ROOT: root })
-				)
-			)
-		)
+		Layer.merge(cliGameTextIndexLayer(executable).pipe(Layer.provide(config)), config)
 	);
 }
 beforeAll(async () => {
@@ -69,13 +70,16 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 					setExitCode: (code) => Ref.set(exitCode, code)
 				})
 			);
+			// The fixture's C++ text, read from its code and translated in every culture.
 			const flags = [
 				"--target",
 				"FixtureGame",
 				"--culture",
 				"de",
 				"--state",
-				"gathered_only",
+				"translated",
+				"--kind",
+				"cpp",
 				"--limit",
 				"1",
 				"--reader",
@@ -100,9 +104,10 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 			).toBe(true);
 			expect(status.page.total).toBe(2);
 			expect(status.page.localization?.lines).toHaveLength(1);
+			expect(status.page.localization?.lines[0]?.origin.kind).toBe("corpus");
 			expect(
 				status.counts.find((count) => count.culture === "de")?.states.gathered_only.lines
-			).toBe(2);
+			).toBe(0);
 			yield* Ref.set(output, "");
 			yield* runCli(["text", "search", fixture.root, "Ready", ...flags]).pipe(
 				Effect.provide(runtime)
@@ -111,9 +116,7 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 				Schema.fromJsonString(LocalizationStatusReport)
 			)(yield* Ref.get(output));
 			expect(search.page.total).toBe(1);
-			expect(
-				search.counts.find((count) => count.culture === "de")?.states.gathered_only.lines
-			).toBe(1);
+			expect(search.page.localization?.lines[0]?.source).toBe("Ready to begin");
 			expect(yield* Ref.get(exitCode)).toBe(0);
 		})
 	);

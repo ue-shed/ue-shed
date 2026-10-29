@@ -78,6 +78,18 @@ pub enum TextExtractionLocation {
         class_path: String,
         property_path: String,
     },
+    /// Text `unreal-code` found in the project's code: a C++ macro, an INI entry or a String
+    /// Table CSV row. `file` is the path the gather manifest names; a CSV row has no line.
+    #[serde(rename = "code_place")]
+    CodePlace {
+        file: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        line: Option<u32>,
+        macro_name: String,
+        /// The `#define` wrapper the macro was expanded from.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wrapper: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

@@ -30,6 +30,8 @@ export function textLocationLabel(location: TextLocation): string {
 			return "String table entry";
 		case "asset_property":
 			return "Asset property";
+		case "code_place":
+			return "Code";
 	}
 }
 
@@ -54,6 +56,14 @@ export function textCountLabel(count: number, singular: string): string {
 }
 
 function locationCells(location: TextLocation): readonly string[] {
+	// A code place's file names its asset column, its line the entry, its macro the property.
+	if (location.kind === "code_place")
+		return [
+			textLocationLabel(location),
+			location.file.split(/[/\\]/u).at(-1) ?? location.file,
+			location.line === undefined ? "" : String(location.line),
+			location.macro
+		];
 	return [
 		textLocationLabel(location),
 		textAssetName(location.objectPath),

@@ -26,6 +26,8 @@ const generated = fileURLToPath(
 const decodeOccurrence = Schema.decodeUnknownSync(SavedAssetTextOccurrence);
 /** The reader's wire spelling, to compare with Unreal's evidence. */
 function wireOccurrence(occurrence: TextOccurrence) {
+	if (occurrence.location.kind === "code_place")
+		throw new Error("A code place has no saved package.");
 	return {
 		source: occurrence.source,
 		dev_notes: occurrence.devNotes,

@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "355095243e073a665376bcd226486614e4f5f5a1e7e9da55707a43950dc534bb"
+	contractHash: "76e01a0b9ff39352876cb00fbc29957e25a1f521ebc5d884032ee53914ddabbe"
 } as const;
 
 /**
@@ -510,6 +510,42 @@ removed: ReadonlyArray<string>, packages: number,
  */
 firstKey: string, };
 
+export type CodeLayerRequest = { target: string, 
+/**
+ * The layer key prefix: the package-text format, then the audience policy's JSON.
+ */
+format: string, policyJson: string, rules: ReadonlyArray<PackageTextAudienceRule>, 
+/**
+ * A new file the reader stages the layer in.
+ */
+stagingFile: string, 
+/**
+ * One target, named `target`.
+ */
+scan?: CodeTextRequest, };
+
+export type CodeLayerOutcome = { name: string, 
+/**
+ * The active key after the request; none when the layer was removed or never existed.
+ */
+key?: string, 
+/**
+ * Whether the request changed the active layer.
+ */
+published: boolean, 
+/**
+ * Code places in the layer, and of those, the ones the target's gather leaves out.
+ */
+places: number, leftOut: number, 
+/**
+ * Files with at least one place.
+ */
+files: number, counts?: FileCounts, diagnosticCount: number, 
+/**
+ * The first [`CODE_DIAGNOSTIC_SAMPLES`] diagnostics, in scan order.
+ */
+diagnostics: ReadonlyArray<CodeDiagnostic>, engineWrappers?: EngineWrappers, profile?: CodeTextProfile, };
+
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 
 export type PackageTextShard = { group: number, expected: ReadonlyArray<PackageTextExpected>, };
@@ -518,7 +554,7 @@ export type PackageTextExpected = { path: string, signature: string, selected: b
 
 export type PackageTextAudienceRule = { code: number, when: ReadonlyArray<PackageTextAudienceMatch>, };
 
-export type PackageTextAudienceMatch = { "kind": "namespace", value: string, } | { "kind": "folder", value: string, } | { "kind": "object", value: string, position: PackageTextObjectPosition, } | { "kind": "module", value: string, suffix?: boolean, } | { "kind": "property", value: string, anywhere?: boolean, } | { "kind": "location", value: string, };
+export type PackageTextAudienceMatch = { "kind": "namespace", value: string, } | { "kind": "folder", value: string, } | { "kind": "object", value: string, position: PackageTextObjectPosition, } | { "kind": "module", value: string, suffix?: boolean, } | { "kind": "property", value: string, anywhere?: boolean, } | { "kind": "location", value: string, } | { "kind": "macro", value: string, };
 
 export type PackageTextObjectPosition = "prefix" | "suffix" | "equals";
 

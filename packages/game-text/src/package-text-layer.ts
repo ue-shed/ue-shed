@@ -26,7 +26,7 @@ import {
 	packageTextAudienceRules,
 	type PackageTextSnapshots
 } from "./package-text-native.js";
-import { TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY } from "./text-audience.js";
+import { SAVED_TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { StageClock } from "./stage-clock.js";
 import { replacePackageTextRecords } from "./package-text-delta.js";
@@ -68,6 +68,8 @@ export function packageTextShard(path: string) {
 	return (hash >>> 0) % PACKAGE_TEXT_SHARDS;
 }
 const shardName = (shard: number) => `package-text.${shard}`;
+/** A target's code layer (`code_layer` in `package_text_contract.rs`). */
+export const codeLayerName = (target: string) => `code-text:${target}`;
 
 /** The Project Index Catalog generation a native writer plans a refresh from. */
 export interface PackageTextCatalog {
@@ -133,9 +135,7 @@ class PackageTextSelectionBuilder {
 	private readonly buckets: { entry: PackageTextInventoryEntry; selected: boolean }[][] =
 		Array.from({ length: PACKAGE_TEXT_SHARDS }, () => []);
 	private readonly hashes = Array.from({ length: PACKAGE_TEXT_SHARDS }, () =>
-		createHash("sha256")
-			.update(PACKAGE_TEXT_FORMAT)
-			.update(JSON.stringify([TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY]))
+		createHash("sha256").update(PACKAGE_TEXT_FORMAT).update(SAVED_TEXT_AUDIENCE_POLICY_KEY)
 	);
 	private previous: Uint8Array | undefined;
 	private readonly retainedEligibility: ReadonlyMap<string, boolean> | undefined;
@@ -277,7 +277,7 @@ const planOnWriter = Effect.fn("PackageText.plan")(function* (
 	const result = yield* plan({
 		...catalog,
 		format: PACKAGE_TEXT_FORMAT,
-		policyJson: JSON.stringify([TEXT_AUDIENCE_MATCHER_VERSION, TEXT_AUDIENCE_POLICY]),
+		policyJson: SAVED_TEXT_AUDIENCE_POLICY_KEY,
 		...(changedFiles ? { changedFiles: [...changedFiles] } : undefined),
 		planFile: file
 	} satisfies GameTextContract.PackageTextPlanRequest);

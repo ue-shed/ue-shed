@@ -19,7 +19,10 @@ export const TextAudienceReason = Schema.Literals([
 	"editor_object",
 	"editor_property",
 	"player_asset",
-	"no_evidence"
+	"no_evidence",
+	// The code scan found the text inside `#if WITH_EDITOR` or `#if WITH_EDITORONLY_DATA`.
+	// Appended: a reason's position is its stored code.
+	"code_editor_only"
 ]);
 export type TextAudienceReason = typeof TextAudienceReason.Type;
 

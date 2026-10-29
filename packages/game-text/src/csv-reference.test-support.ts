@@ -9,6 +9,13 @@ function identityCells(identity: TextIdentity): readonly string[] {
 	return ["", ""];
 }
 function locationCells(location: TextLocation): readonly string[] {
+	if (location.kind === "code_place")
+		return [
+			textLocationLabel(location),
+			location.file.split("/").at(-1) ?? location.file,
+			location.line === undefined ? "" : String(location.line),
+			location.macro
+		];
 	return [
 		textLocationLabel(location),
 		textAssetName(location.objectPath),

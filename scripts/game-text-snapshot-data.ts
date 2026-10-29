@@ -106,19 +106,32 @@ export function joinedTargetSnapshot(root: string, corpus: TextCorpus, join: Loc
 			packages[cursor] = paths.intern(
 				relative(root, occurrence.packageFile).replaceAll("\\", "/")
 			);
-			objects[cursor] = paths.intern(occurrence.location.objectPath);
+			const location = occurrence.location;
+			// Code places use the reader's columns: file, macro and line.
+			objects[cursor] = paths.intern(
+				location.kind === "code_place" ? location.file : location.objectPath
+			);
 			properties[cursor] = paths.intern(
-				occurrence.location.kind === "string_table_entry"
-					? occurrence.location.entryKey
-					: occurrence.location.propertyPath
+				location.kind === "string_table_entry"
+					? location.entryKey
+					: location.kind === "code_place"
+						? location.macro
+						: location.propertyPath
 			);
 			rows[cursor] = paths.intern(
-				occurrence.location.kind === "data_table_cell" ? occurrence.location.row : ""
+				location.kind === "data_table_cell"
+					? location.row
+					: location.kind === "code_place"
+						? String(location.line ?? "")
+						: ""
 			);
 			occurrenceIds[cursor] = table.intern(occurrence.id);
-			kinds[cursor] = ["asset_property", "data_table_cell", "string_table_entry"].indexOf(
-				occurrence.location.kind
-			);
+			kinds[cursor] = [
+				"asset_property",
+				"data_table_cell",
+				"string_table_entry",
+				"code_place"
+			].indexOf(location.kind);
 			cursor++;
 		}
 	}

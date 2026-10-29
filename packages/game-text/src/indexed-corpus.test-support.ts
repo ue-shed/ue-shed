@@ -23,6 +23,7 @@ type SavedOccurrence = SavedAssetPackageTextRecord["occurrences"][number];
 /** The reader's form of a saved place. */
 export function savedOccurrence(occurrence: TextOccurrence): SavedOccurrence {
 	const location = occurrence.location;
+	if (location.kind === "code_place") throw new Error("A code place has no saved package.");
 	return {
 		source: occurrence.source,
 		dev_notes: occurrence.devNotes,

@@ -110,6 +110,18 @@ pub fn native_stored(
                         remount(object_path, mounted.as_deref(), serialized);
                         view(entry_key);
                     }
+                    TextExtractionLocation::CodePlace {
+                        file,
+                        macro_name,
+                        wrapper,
+                        ..
+                    } => {
+                        view(file);
+                        view(macro_name);
+                        if let Some(wrapper) = wrapper {
+                            view(wrapper);
+                        }
+                    }
                 }
                 view(&mut occurrence.source);
                 view(&mut occurrence.dev_notes);

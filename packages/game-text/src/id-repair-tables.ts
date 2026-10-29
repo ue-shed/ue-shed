@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { connectUnrealAuthoring } from "@ue-shed/unreal-connection";
 import { stripPackageNamespace } from "@ue-shed/localization";
 import {
@@ -70,13 +71,13 @@ export const prepareTextIdTableRepair = Effect.fn("GameText.idRepairs.tables.pre
 	const outcomes: GameTextActionOutcome[] = [];
 	const packages: GameTextActionsResult["packages"][number][] = [];
 	for (const objectPath of new Set(
-		request.changes.map((item) => item.occurrence.location.objectPath)
+		request.changes.map((item) => textLocationPath(item.occurrence.location))
 	)) {
 		// Authoring resolves an object path, so bind it to the reviewed file before querying it.
 		// The index moves a moved or copied file's paths to its package, but a request can still
 		// carry a serialized one; the live table must also report the same package below.
 		const changes = request.changes.filter(
-			(item) => item.occurrence.location.objectPath === objectPath
+			(item) => textLocationPath(item.occurrence.location) === objectPath
 		);
 		const packageNames = changes.map((item) =>
 			mountedPackageName(request.projectKey, item.occurrence.packageFile)
@@ -194,7 +195,7 @@ export const prepareTextIdTableRepair = Effect.fn("GameText.idRepairs.tables.pre
 			});
 		}
 		const packageFile = request.changes.find(
-			(item) => item.occurrence.location.objectPath === objectPath
+			(item) => textLocationPath(item.occurrence.location) === objectPath
 		)?.occurrence.packageFile;
 		if (!packageFile) return yield* invalid("The table's saved file is missing.");
 		packages.push({

@@ -65,7 +65,8 @@ function placeKey(path: string): string {
 export function manifestPlace(path: string): string | undefined {
 	const place = placeKey(path);
 	if (place.startsWith("/")) return /^\/[^.]+\.[^.:]+[.:].+/u.test(place) ? place : undefined;
-	return /(?:\[\d+\]|:\d+)$/u.test(place) ? place : undefined;
+	// 4.27 writes a source line as `file:12`, 5.x as `file(12)`; both are `file[12]`.
+	return /(?:\[\d+\]|:\d+)$/u.test(place) ? place.replace(/:(\d+)$/u, "[$1]") : undefined;
 }
 
 function occurrencePlace(location: TextLocation): string | undefined {
@@ -79,6 +80,10 @@ function occurrencePlace(location: TextLocation): string | undefined {
 		case "string_table_entry":
 			// The manifest names only the String Table, so an entry has no place of its own.
 			return undefined;
+		case "code_place":
+			return location.line === undefined
+				? undefined
+				: placeKey(`${location.file}(${location.line})`);
 	}
 }
 

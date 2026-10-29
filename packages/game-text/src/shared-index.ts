@@ -146,6 +146,13 @@ export interface SharedIndexWriter {
 	readonly planPackages?: (
 		request: GameTextContract.PackageTextPlanRequest
 	) => Effect.Effect<GameTextContract.PackageTextPlan, Failure>;
+	/**
+	 * Scans one target's code in the reader and publishes its code layer when the layer changed
+	 * (`publish_code`). Without `scan`, removes it.
+	 */
+	readonly publishCode?: (
+		request: Omit<GameTextContract.CodeLayerRequest, "stagingFile">
+	) => Effect.Effect<GameTextContract.CodeLayerOutcome, Failure>;
 	/** Native record replacement: nonnegative rows retain old records; -1-row selects a changed record. */
 	readonly replacePackages?: (
 		entries: readonly {

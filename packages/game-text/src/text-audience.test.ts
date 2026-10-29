@@ -9,6 +9,7 @@ import type { SavedAssetTextOccurrence } from "@ue-shed/unreal-assets";
 import { textOccurrenceFromExtraction } from "./corpus.js";
 import {
 	TEXT_AUDIENCE_POLICY,
+	type TextAudienceMatch,
 	type TextAudienceRule,
 	classifySavedTextAudience,
 	classifyTextAudience,
@@ -79,10 +80,14 @@ describe("text audience policy table", () => {
 	});
 
 	it("lists editor rows before player rows, so editor evidence wins", () => {
-		const firstPlayer = TEXT_AUDIENCE_POLICY.findIndex((rule) => rule.audience === "player");
-		expect(
-			TEXT_AUDIENCE_POLICY.slice(firstPlayer).every((rule) => rule.audience === "player")
-		).toBe(true);
+		// Code rows come last, keeping stored row positions; no player row can hold for code text.
+		const code = (rule: (typeof TEXT_AUDIENCE_POLICY)[number]) =>
+			rule.when.some((match: TextAudienceMatch) => match.kind === "macro");
+		const saved = TEXT_AUDIENCE_POLICY.filter((rule) => !code(rule));
+		const firstPlayer = saved.findIndex((rule) => rule.audience === "player");
+		expect(saved.slice(firstPlayer).every((rule) => rule.audience === "player")).toBe(true);
+		const firstCode = TEXT_AUDIENCE_POLICY.findIndex(code);
+		expect(TEXT_AUDIENCE_POLICY.slice(firstCode).every(code)).toBe(true);
 	});
 
 	it.each([

@@ -875,6 +875,7 @@ dependencies = [
  "serde_json",
  "uasset-inspection",
  "uasset-parser",
+ "unreal-code",
  "zstd",
 ]
 

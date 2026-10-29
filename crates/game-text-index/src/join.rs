@@ -493,7 +493,11 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         .as_object()
         .ok_or("active")?
         .keys()
-        .filter(|name| name.starts_with("package-text.") || paths.contains(name))
+        .filter(|name| {
+            name.starts_with("package-text.")
+                || paths.contains(name)
+                || target["name"].as_str().map(code_layer).as_ref() == Some(*name)
+        })
         .cloned()
         .collect::<Vec<_>>();
     names.sort_by(|a, b| ordinal(a, b));
@@ -515,7 +519,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                     input.file_errors.clone().unwrap_or_default(),
                     input.file_provenances.clone().unwrap_or(json!({})),
                     input.file_diagnostics.clone().unwrap_or(json!({})),
-                    "native-summary-v1"
+                    "native-summary-v3"
                 ])
                 .as_array()
                 .ok_or("join key values")?
@@ -628,7 +632,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         .collect::<HashMap<_, _>>();
     let unit_ns = (0..count)
         .map(|row| {
-            if c[O_IDENTITY][row] == 0 && c[O_LOCATION][row] != 2 {
+            if c[O_IDENTITY][row] == 0 && !keeps_namespace(c[O_LOCATION][row]) {
                 namespace_map[&c[O_NS][row]]
             } else {
                 c[O_NS][row]
@@ -661,7 +665,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             continue;
         }
         if c[O_IDENTITY][row] == 0 {
-            gathered_ns[row] = if c[O_LOCATION][row] == 2 {
+            gathered_ns[row] = if keeps_namespace(c[O_LOCATION][row]) {
                 c[O_NS][row]
             } else {
                 namespace_map[&c[O_NS][row]]
@@ -890,6 +894,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         let mut inside = false;
         let mut outside = true;
         let mut editor_only_outside = true;
+        let mut code_left_out = true;
         let mut audience = 0;
         let mut out_of_scope = 0;
         let mut coverage_reasons = 0;
@@ -920,11 +925,9 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 if searchable {
                     for member in members {
                         origins |= 1
-                            << match c[O_LOCATION][member] {
-                                2 => 0,
-                                1 => 1,
-                                _ => 2,
-                            };
+                            << place_origin(c[O_LOCATION][member], || {
+                                joined.string(c[O_OBJECT][member])
+                            });
                         editing |= if c[O_EDITABLE][member] != 0 { 1 } else { 2 };
                         audience |= crate::package_evidence::audience(c[O_AUDIENCE][member]);
                         if !trim(joined.string(c[O_NOTES][member])).is_empty() {
@@ -948,6 +951,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             outside &= coverage == 0;
             editor_only_outside &=
                 coverage == 0 || crate::package_evidence::editor_only(c[O_AUDIENCE][i]);
+            code_left_out &= c[O_LOCATION][i] == CODE_PLACE && c[O_GATHER][i] == CODE_LEFT_OUT;
             if coverage >= 2 {
                 coverage_reasons |= 1 << (coverage + 10);
             }
@@ -1019,7 +1023,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         if g.oe > g.os {
             if outside {
                 structural |= 1 << 8;
-                out_of_scope = 1;
+                // Code text is out only when it is editor-only and the target skips that.
+                out_of_scope = if code_left_out { 2 } else { 1 };
             } else if !inside {
                 reasons |= coverage_reasons;
             } else if first == ABSENT && joined.manifest.loaded && g.ns != ABSENT {

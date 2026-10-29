@@ -13,6 +13,23 @@ import { readChangelistPoints } from "../apps/cli/src/workflows/changelist-point
 import { cliGameTextIndexLayer } from "../apps/cli/src/workflows/game-text-index.ts";
 
 const [projectRoot, cacheRoot, reader, ...changes] = process.argv.slice(2);
+// `UE_SHED_POINT_TARGET` and `UE_SHED_ENGINE_VERSION` read the target's code too.
+const pointTarget = process.env.UE_SHED_POINT_TARGET;
+const engine = (["4.27", "5.7", "5.8"] as const).find(
+	(line) => line === process.env.UE_SHED_ENGINE_VERSION
+);
+const code =
+	pointTarget === undefined || engine === undefined
+		? {}
+		: {
+				targetName: pointTarget,
+				code: {
+					engine,
+					...(process.env.UE_SHED_ENGINE_ROOT === undefined
+						? undefined
+						: { engineRoot: process.env.UE_SHED_ENGINE_ROOT })
+				}
+			};
 if (projectRoot === undefined || cacheRoot === undefined || reader === undefined)
 	throw new Error("Usage: <project> <cache-root> <reader> <change>[s]...");
 const config = ConfigProvider.layer(
@@ -27,7 +44,7 @@ await Effect.runPromise(
 			const change = Number.parseInt(argument, 10);
 			const started = performance.now();
 			const read = yield* Effect.result(
-				readChangelistPoints({ projectRoot, change, shelved, cacheRoot })
+				readChangelistPoints({ projectRoot, change, shelved, cacheRoot, ...code })
 			);
 			// One changelist's failure is reported and the rest are still measured.
 			if (read._tag === "Failure") {

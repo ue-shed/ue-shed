@@ -11,10 +11,12 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::discovery::{GatherStep, absolute, relative_to, step_files, wrapper_files};
+use crate::discovery::{
+    GatherStep, absolute, relative_to, step_files, step_includes, wrapper_files,
+};
 use crate::{
-    CodeDiagnostic, CodePlace, DiskStore, EngineLine, ScanSettings, WrapperMacro, find_wrappers,
-    scan,
+    CodeDiagnostic, CodeFile, CodePlace, DiskStore, EngineLine, FileStore, ScanSettings,
+    WrapperMacro, find_wrappers, scan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,6 +149,14 @@ fn engine_wrappers(
     (wrappers, state)
 }
 
+/// The project's wrappers. 4.27 has no wrapper prepass, so its project is not walked.
+fn project_wrappers(request: &CodeTextRequest, project: &Path) -> Vec<WrapperMacro> {
+    if request.engine == EngineLine::Ue4_27 {
+        return Vec::new();
+    }
+    find_wrappers(request.engine, &wrapper_files(project, project), &DiskStore)
+}
+
 fn engine_wrappers_in_root(
     request: &CodeTextRequest,
     root: &Path,
@@ -194,6 +204,87 @@ fn engine_wrappers_in_root(
 
 /// Scans each target's steps. Unreal gathers all of a target's steps into one manifest, so their
 /// places and diagnostics are reported together.
+/// The engine's and the project's wrappers as `run` finds them, and a key that names them, so a
+/// cache of scanned files can tell when they change.
+pub fn code_wrappers(request: &CodeTextRequest) -> (Vec<WrapperMacro>, String) {
+    let project = PathBuf::from(&request.project_root);
+    let (mut wrappers, _) = engine_wrappers(request, &project);
+    wrappers.extend(project_wrappers(request, &project));
+    let mut names = wrappers
+        .iter()
+        .map(|wrapper| format!("{wrapper:?}"))
+        .collect::<Vec<_>>();
+    names.sort();
+    let key = format!("{:016x}", fnv(&names.join("\n")));
+    (wrappers, key)
+}
+
+/// Whether the request's one target gathers a file, by its path under the project.
+#[must_use]
+pub fn target_includes(request: &CodeTextRequest, path: &str) -> bool {
+    let project = PathBuf::from(&request.project_root);
+    let engine_root = request.engine_root.as_deref().map(Path::new);
+    request
+        .targets
+        .iter()
+        .take(1)
+        .flat_map(|target| &target.steps)
+        .any(|step| step_includes(request.engine, &project, engine_root, step, path))
+}
+
+/// Scans given files of the request's one target with `code_wrappers`' wrappers, read through
+/// `store`: each a gather path under the project and where its bytes are, as at a revision a host
+/// read from version control. Each step scans the files it gathers, judged by path, so a file need
+/// not be on disk. On 4.27, String Tables registered in another file than their entries are not
+/// seen.
+pub fn scan_files(
+    request: &CodeTextRequest,
+    files: &[CodeFile],
+    wrappers: &[WrapperMacro],
+    store: &dyn FileStore,
+) -> TargetText {
+    let project = PathBuf::from(&request.project_root);
+    let engine_root = request.engine_root.as_deref().map(Path::new);
+    let mut text = TargetText {
+        name: request
+            .targets
+            .first()
+            .map_or_else(String::new, |target| target.name.clone()),
+        places: Vec::new(),
+        diagnostics: Vec::new(),
+        files: FileCounts::default(),
+    };
+    for step in request
+        .targets
+        .iter()
+        .take(1)
+        .flat_map(|target| &target.steps)
+    {
+        let listed = files
+            .iter()
+            .filter(|file| step_includes(request.engine, &project, engine_root, step, &file.path))
+            .cloned()
+            .collect::<Vec<_>>();
+        let settings = ScanSettings {
+            engine: request.engine,
+            gather_editor_only: step.gather_editor_only,
+            game_content: project.join("Content"),
+            engine_content: engine_root
+                .map(|root| root.join("Engine/Content"))
+                .unwrap_or_default(),
+            split_platforms: Vec::new(),
+        };
+        let result = scan(&settings, &listed, wrappers, store);
+        text.files.listed += listed.len() as u32;
+        text.files.scanned += result.files_scanned as u32;
+        text.files.skipped += result.files_skipped as u32;
+        text.files.bytes_read += result.bytes_read;
+        text.places.extend(result.places);
+        text.diagnostics.extend(result.diagnostics);
+    }
+    text
+}
+
 pub fn run(request: &CodeTextRequest) -> CodeTextResult {
     let project = PathBuf::from(&request.project_root);
     let engine_root = request.engine_root.as_deref().map(Path::new);
@@ -203,11 +294,7 @@ pub fn run(request: &CodeTextRequest) -> CodeTextResult {
     let (mut wrappers, engine_state) = engine_wrappers(request, &project);
     profile.engine_wrappers_micros = micros(started);
     let started = Instant::now();
-    wrappers.extend(find_wrappers(
-        request.engine,
-        &wrapper_files(&project, &project),
-        &DiskStore,
-    ));
+    wrappers.extend(project_wrappers(request, &project));
     profile.project_wrappers_micros = micros(started);
 
     let mut targets = Vec::new();

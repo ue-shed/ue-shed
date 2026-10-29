@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "046f1d6d8aca96bc590fb7b7da2bd3f5e1508f3c709283016f8425222b583782"
+	contractHash: "1f16bd5d876ac46de9adef01b4b0fa553e2646096d9b8c40be3a10a5098a19cb"
 } as const;
 
 /**
@@ -556,6 +556,12 @@ path: string,
  */
 file?: string, };
 
+export type PointCode = { policyJson: string, 
+/**
+ * One target, as `publish_code` scans it.
+ */
+scan: CodeTextRequest, };
+
 export type PointRequest = { 
 /**
  * The point's id, such as `depot@220368` or `shelved:220258`.
@@ -568,7 +574,11 @@ base?: string,
 /**
  * The record key prefix: the package-text format, then the saved-text policy's JSON.
  */
-format: string, policyJson: string, rules: ReadonlyArray<PackageTextAudienceRule>, files: ReadonlyArray<PointFile>, };
+format: string, policyJson: string, rules: ReadonlyArray<PackageTextAudienceRule>, files: ReadonlyArray<PointFile>, 
+/**
+ * How the target reads code; without it, code files are `unread`.
+ */
+code?: PointCode, };
 
 export type PointEntry = { path: string, 
 /**

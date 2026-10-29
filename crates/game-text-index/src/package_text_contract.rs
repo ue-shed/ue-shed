@@ -190,6 +190,20 @@ pub struct PointRequest {
     pub policy_json: String,
     pub rules: Vec<PackageTextAudienceRule>,
     pub files: Vec<PointFile>,
+    /// How the target reads code; without it, code files are `unread`.
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub code: Option<PointCode>,
+}
+
+/// A point's code: the target's scan and the audience policy its code text is judged by.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointCode {
+    pub policy_json: String,
+    /// One target, as `publish_code` scans it.
+    pub scan: unreal_code::CodeTextRequest,
 }
 
 /// A point file's record and how it was read.
@@ -214,7 +228,7 @@ pub enum PointFileStatus {
     NotGatherable,
     Failed,
     Removed,
-    /// Not a saved package; code files join points in a later step.
+    /// Neither a saved package nor a file the point reads code from.
     Unread,
 }
 

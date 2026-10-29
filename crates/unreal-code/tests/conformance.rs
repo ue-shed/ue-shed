@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use unreal_code::{
-    CodePlace, CodeScan, DiagnosticCode, DiskStore, EngineLine, GatherStep, ScanSettings,
-    find_wrappers, scan, step_files, wrapper_files,
+    CodePlace, CodeScan, CodeTarget, CodeTextRequest, DiagnosticCode, DiskStore, EngineLine,
+    GatherStep, ScanSettings, code_wrappers, find_wrappers, scan, scan_files, step_files,
+    step_includes, target_includes, wrapper_files,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -246,4 +247,69 @@ fn matches_unreal_5_7() {
 #[test]
 fn matches_unreal_4_27() {
     check(EngineLine::Ue4_27, "4.27", "UnrealSource");
+}
+
+/// A revision's files are scanned as the whole target scan reads them: the steps judge each file
+/// by its path, and the places match file for file.
+#[test]
+fn files_at_a_revision_are_scanned_as_the_target_scan_reads_them() {
+    for (engine, recipe) in [
+        (EngineLine::Ue5_8, "UnrealSourceEditor.ini"),
+        (EngineLine::Ue5_7, "UnrealSource.ini"),
+        (EngineLine::Ue4_27, "UnrealSource427.ini"),
+    ] {
+        let repository = repository();
+        let project = if engine == EngineLine::Ue4_27 {
+            repository.join("fixtures/unreal-427-localization")
+        } else {
+            repository.join("fixtures/unreal-project")
+        };
+        let step = recipe_step(&project.join("Config/Localization").join(recipe));
+        let listed = step_files(engine, &project, None, &step).files;
+        assert!(!listed.is_empty(), "{engine:?}: no files listed");
+        for file in &listed {
+            assert!(
+                step_includes(engine, &project, None, &step, &file.path),
+                "{engine:?}: {} is listed but not included",
+                file.path
+            );
+        }
+        for outside in ["Content/Fixture/Readme.cpp", "Binaries/Win64/Generated.h"] {
+            assert!(
+                !step_includes(engine, &project, None, &step, outside),
+                "{engine:?}: {outside} is included"
+            );
+        }
+        let request = CodeTextRequest {
+            project_root: project.to_string_lossy().into_owned(),
+            engine_root: None,
+            engine,
+            targets: vec![CodeTarget {
+                name: "UnrealSource".into(),
+                steps: vec![step],
+            }],
+            cache_root: None,
+            refresh_engine_wrappers: false,
+        };
+        for file in &listed {
+            assert!(
+                target_includes(&request, &file.path),
+                "{engine:?}: {}",
+                file.path
+            );
+        }
+        let (wrappers, key) = code_wrappers(&request);
+        assert!(!key.is_empty());
+        let text = scan_files(&request, &listed, &wrappers, &DiskStore);
+        let whole = fixture_scan(engine, recipe);
+        let places = |places: &[CodePlace]| {
+            let mut labels = places
+                .iter()
+                .map(|place| label(place, engine))
+                .collect::<Vec<_>>();
+            labels.sort();
+            labels
+        };
+        assert_eq!(places(&text.places), places(&whole.places), "{engine:?}");
+    }
 }

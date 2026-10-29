@@ -532,7 +532,37 @@ receives 167,507 packages'.
     - Map History looks only at the user's own workspaces. On the measuring machine the project's
       workspace belongs to another user and `P4CLIENT` names a build agent's, so the runs named the
       workspace in `P4CLIENT`. A host setting for the workspace is still to come.
-- **Next in this phase**: code files in points, and the base point's manifest and archives.
+
+**Evidence (2026-10-29, second slice: code)**:
+
+- **A code file's record** is its places as the target scans them, from the revision's bytes:
+  `unreal-code`'s `scan_files` runs each gather step over the files it gathers, judged by path, so
+  a printed revision need not be on disk. A conformance test scans the fixture's code from a copy
+  elsewhere on 5.8, 5.7 and 4.27 and gets the target scan's places. The record key replaces the
+  policy with the scan context (wrappers, audience policy, scan request), so a change to any of
+  them makes new records. A code file the target does not gather is `not_gatherable`; without a
+  target, code files stay `unread`.
+- **What a point does not take from the revision**: wrappers and String Table CSVs come from the
+  project on disk, as the full scan reads them. A changelist that changes a wrapper or a CSV is
+  read with the workspace's; the CLI does not print CSVs.
+- **A clear cut found on the way**: on 4.27, finding the project's wrappers walked the whole
+  project source tree and then discarded it (4.27 has no wrapper prepass): 0.21 s per point, and
+  part of every full code scan. It no longer walks.
+- **The sample changelists' points with code** (target `Game`, 4.27), cold then warm:
+
+    | Kind                | Changelist | Files read | Printed              |  Cold |  Warm |
+    | ------------------- | ---------: | ---------: | -------------------- | ----: | ----: |
+    | Code only           |     220336 |    19 code | 38 revisions, 0.3 MB | 3.7 s | 1.5 s |
+    | Asset only          |     220368 |          9 | 18 revisions, 2.0 MB | 2.9 s | 1.5 s |
+    | Mixed               |     220253 |         36 | 64 revisions, 5.0 MB | 5.0 s | 1.5 s |
+    | Shelved             |     220258 |         26 | 44 revisions, 3.7 MB | 6.1 s | 1.5 s |
+    | Key rename (gather) |     219062 |          0 | none                 | 1.5 s | 1.5 s |
+
+    The reader takes 0.004–0.022 s of a warm read and 0.07–0.20 s of a cold one; the rest is
+    Perforce and starting the processes. Against Phase 0's warm `loc gate`, 9.0–11.9 s, a warm
+    changelist read is 1.5 s.
+
+- **Next in this phase**: the base point's manifest and archives.
 
 ## Phase 4: Diff and impact, natively
 

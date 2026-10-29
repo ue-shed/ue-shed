@@ -24,11 +24,11 @@ use aho_corasick::AhoCorasick;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-pub use discovery::{GatherStep, StepFiles, step_files, wrapper_files};
+pub use discovery::{GatherStep, StepFiles, step_files, step_includes, wrapper_files};
 pub use nested::WrapperMacro;
 pub use request::{
     CodeTarget, CodeTextProfile, CodeTextRequest, CodeTextResult, EngineWrappers, FileCounts,
-    TargetText, run,
+    TargetText, code_wrappers, run, scan_files, target_includes,
 };
 
 use nested::{NestedWrapper, prune, report_twins};

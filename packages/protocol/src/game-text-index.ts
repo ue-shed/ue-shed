@@ -214,7 +214,10 @@ export const GameTextIndexReadPoint = Schema.Struct({
 		format: Text,
 		policyJson: Schema.String,
 		rules: Schema.Array(PackageTextAudienceRule),
-		files: Schema.Array(Schema.Struct({ path: Text, file: Schema.optionalKey(Text) }))
+		files: Schema.Array(Schema.Struct({ path: Text, file: Schema.optionalKey(Text) })),
+		code: Schema.optionalKey(
+			Schema.Struct({ policyJson: Schema.String, scan: CodeTextRequest })
+		)
 	})
 });
 /** Validated builder commands; package replacements require protocol minor 16 or later. */

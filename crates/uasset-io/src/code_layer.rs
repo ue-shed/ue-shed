@@ -142,29 +142,35 @@ fn records(result: &CodeTextResult) -> Result<Vec<Stored>> {
     }
     Ok(files
         .into_iter()
-        .map(|(file, places)| Stored {
-            signature: String::new(),
-            path: file.to_owned(),
-            evidence: Evidence::Package {
-                record: Box::new(SavedAssetPackageTextRecord {
-                    file_bytes: 0,
-                    path: file.to_owned(),
-                    package_name: None,
-                    asset_class: None,
-                    schema_version: SCHEMA_VERSION,
-                    status: ProjectionStatus::Complete,
-                    decode_errors: 0,
-                    occurrences: places.into_iter().map(occurrence).collect(),
-                    gap_counts: TextGapCounts::default(),
-                    text_gap_counts: None,
-                    gap_samples: Vec::new(),
-                    gather_coverage: None,
-                    blueprint_classes: Vec::new(),
-                }),
-                blueprint_json: None,
-            },
-        })
+        .map(|(file, places)| code_record(file, &places))
         .collect())
+}
+
+/// One code file's record: its places, in scan order, as a package-text record. A file with no
+/// places is a record with no occurrences.
+pub(crate) fn code_record(file: &str, places: &[&CodePlace]) -> Stored {
+    Stored {
+        signature: String::new(),
+        path: file.to_owned(),
+        evidence: Evidence::Package {
+            record: Box::new(SavedAssetPackageTextRecord {
+                file_bytes: 0,
+                path: file.to_owned(),
+                package_name: None,
+                asset_class: None,
+                schema_version: SCHEMA_VERSION,
+                status: ProjectionStatus::Complete,
+                decode_errors: 0,
+                occurrences: places.iter().map(|place| occurrence(place)).collect(),
+                gap_counts: TextGapCounts::default(),
+                text_gap_counts: None,
+                gap_samples: Vec::new(),
+                gather_coverage: None,
+                blueprint_classes: Vec::new(),
+            }),
+            blueprint_json: None,
+        },
+    }
 }
 
 fn occurrence(place: &CodePlace) -> Occurrence {

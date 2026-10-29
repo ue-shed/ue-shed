@@ -32,6 +32,7 @@ export {
 } from "./index-context.js";
 
 export {
+	GameTextCodeSource,
 	GameTextIndexError,
 	GameTextIndexRefresh,
 	GameTextIndexRefreshRequest,

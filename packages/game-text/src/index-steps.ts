@@ -688,8 +688,34 @@ export const makeGameTextIndexSteps = (
 			readonly point: string;
 			readonly base?: string;
 			readonly files: GameTextContract.PointRequest["files"];
+			/** The target whose code the point reads, scanned with `code`; without both, code files are `unread`. */
+			readonly targetName?: string;
+			readonly code?: GameTextCodeSource;
 		}) {
 			const { projectRoot } = yield* openProject(request);
+			const target =
+				request.targetName === undefined || request.code === undefined
+					? undefined
+					: (yield* evidence
+							.discover({ projectRoot })
+							.pipe(Effect.mapError(manifestIndexFailure))).targets.find(
+							(item) => item.name === request.targetName
+						);
+			const steps = target === undefined ? [] : sourceGatherSteps(target);
+			const code =
+				target === undefined || request.code === undefined || steps.length === 0
+					? undefined
+					: {
+							policyJson: TEXT_AUDIENCE_POLICY_KEY,
+							scan: {
+								projectRoot,
+								engineRoot: request.code.engineRoot ?? null,
+								engine: request.code.engine,
+								targets: [{ name: target.name, steps }],
+								cacheRoot,
+								refreshEngineWrappers: request.code.refreshEngineWrappers === true
+							}
+						};
 			return yield* withSession(
 				configurationFor(cacheRoot, projectRoot),
 				Effect.gen(function* () {
@@ -708,7 +734,8 @@ export const makeGameTextIndexSteps = (
 						format: PACKAGE_TEXT_FORMAT,
 						policyJson: SAVED_TEXT_AUDIENCE_POLICY_KEY,
 						rules: packageTextAudienceRules(),
-						files: request.files
+						files: request.files,
+						...(code === undefined ? undefined : { code })
 					});
 					yield* Effect.annotateCurrentSpan({
 						"point.files": request.files.length,

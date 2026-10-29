@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use game_text_index::builder::BuildOutcome;
 use game_text_index::package_text_contract::{
-    PointEntry, PointFile, PointFileStatus, PointOutcome, PointRequest,
+    PointCode, PointEntry, PointFile, PointFileStatus, PointOutcome, PointRequest,
 };
 use game_text_index::points;
 use game_text_index::store::{Configuration, digest, token};
@@ -24,6 +24,15 @@ struct Stages {
     hash: f64,
     parse: f64,
     write: f64,
+    wrappers: f64,
+}
+
+/// The target's code scan with its wrappers, found once for a point with code files.
+struct Code<'a> {
+    point: &'a PointCode,
+    wrappers: Vec<unreal_code::WrapperMacro>,
+    /// Names the wrappers and the scan context, so records change when either does.
+    context: String,
 }
 
 pub fn read(configuration: &Configuration, request: &PointRequest) -> Result<BuildOutcome> {
@@ -36,8 +45,37 @@ pub fn read(configuration: &Configuration, request: &PointRequest) -> Result<Bui
         bytes: 0,
         entries: Vec::with_capacity(request.files.len()),
     };
+    let reads_code = request
+        .files
+        .iter()
+        .any(|file| file.file.is_some() && !is_package(&file.path));
+    let code = match &request.code {
+        Some(code) if reads_code => {
+            let finding = Instant::now();
+            let (wrappers, key) = unreal_code::code_wrappers(&code.scan);
+            stages.wrappers = finding.elapsed().as_secs_f64();
+            let scan = serde_json::to_string(&code.scan)?;
+            Some(Code {
+                point: code,
+                wrappers,
+                context: digest(
+                    [key.as_str(), &code.policy_json, &scan]
+                        .join("\0")
+                        .as_bytes(),
+                ),
+            })
+        }
+        _ => None,
+    };
     for file in &request.files {
-        let entry = entry(configuration, request, file, &mut point, &mut stages)?;
+        let entry = entry(
+            configuration,
+            request,
+            code.as_ref(),
+            file,
+            &mut point,
+            &mut stages,
+        )?;
         point.entries.push(entry);
     }
     points::write_point(
@@ -51,6 +89,7 @@ pub fn read(configuration: &Configuration, request: &PointRequest) -> Result<Bui
         ("point.hash", stages.hash),
         ("point.parse", stages.parse),
         ("point.write", stages.write),
+        ("point.wrappers", stages.wrappers),
         ("point.total", started.elapsed().as_secs_f64()),
     ] {
         outcome.stage_seconds.insert(stage.into(), seconds);
@@ -62,6 +101,7 @@ pub fn read(configuration: &Configuration, request: &PointRequest) -> Result<Bui
 fn entry(
     configuration: &Configuration,
     request: &PointRequest,
+    code: Option<&Code>,
     file: &PointFile,
     point: &mut PointOutcome,
     stages: &mut Stages,
@@ -74,18 +114,33 @@ fn entry(
             status: PointFileStatus::Removed,
         });
     };
-    if !is_package(&path) {
-        return Ok(PointEntry {
-            path,
-            record: None,
-            status: PointFileStatus::Unread,
-        });
+    let package = is_package(&path);
+    if !package {
+        let Some(code) = code else {
+            return Ok(PointEntry {
+                path,
+                record: None,
+                status: PointFileStatus::Unread,
+            });
+        };
+        // A code file the target does not gather holds no text it gathers, as in Unreal.
+        if !unreal_code::target_includes(&code.point.scan, &path) {
+            return Ok(PointEntry {
+                path,
+                record: None,
+                status: PointFileStatus::NotGatherable,
+            });
+        }
     }
     let hashing = Instant::now();
     let bytes = fs::read(source)?;
     point.bytes += bytes.len() as u64;
     let content = digest(&bytes);
-    let key = points::record_key(&request.format, &request.policy_json, &path, &content);
+    let policy = match code {
+        Some(code) if !package => code.context.as_str(),
+        _ => request.policy_json.as_str(),
+    };
+    let key = points::record_key(&request.format, policy, &path, &content);
     stages.hash += hashing.elapsed().as_secs_f64();
     let record = points::record_file(configuration, &key);
     let status_file = record.with_extension("status");
@@ -98,7 +153,10 @@ fn entry(
         });
     }
     let parsing = Instant::now();
-    let (stored, status) = project(&path, &content, &bytes);
+    let (stored, status) = match code {
+        Some(code) if !package => (scan_code(code, &path, source), PointFileStatus::Complete),
+        _ => project(&path, &content, &bytes),
+    };
     let mut columns = Columns::new()?;
     columns.feed(stored, &request.rules)?;
     let columns = columns.finish()?;
@@ -112,6 +170,22 @@ fn entry(
         record: Some(key),
         status,
     })
+}
+
+/// One code file's record: its places as the target's scan finds them in the file's bytes.
+fn scan_code(code: &Code, path: &str, source: &str) -> Stored {
+    let file = unreal_code::CodeFile {
+        path: path.to_owned(),
+        location: source.into(),
+    };
+    let text = unreal_code::scan_files(
+        &code.point.scan,
+        std::slice::from_ref(&file),
+        &code.wrappers,
+        &unreal_code::DiskStore,
+    );
+    let places = text.places.iter().collect::<Vec<_>>();
+    crate::code_layer::code_record(path, &places)
 }
 
 fn is_package(path: &str) -> bool {
@@ -215,6 +289,7 @@ mod tests {
             policy_json: "{}".into(),
             rules: Vec::new(),
             files,
+            code: None,
         }
     }
 
@@ -258,6 +333,71 @@ mod tests {
         assert_eq!((second.read, second.reused), (0, 1));
         assert_eq!(second.entries[0].record.as_deref(), Some(key.as_str()));
         assert_eq!(second.entries[0].status, PointFileStatus::Complete);
+        let _ = fs::remove_dir_all(&configuration.cache_root);
+        Ok(())
+    }
+
+    #[test]
+    fn a_point_reads_the_code_its_target_gathers() -> Result<()> {
+        let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+        let configuration = configuration();
+        let code = PointCode {
+            policy_json: "{}".into(),
+            scan: unreal_code::CodeTextRequest {
+                project_root: project.to_string_lossy().into_owned(),
+                engine_root: None,
+                engine: unreal_code::EngineLine::Ue5_7,
+                targets: vec![unreal_code::CodeTarget {
+                    name: "UnrealSource".into(),
+                    steps: vec![unreal_code::GatherStep {
+                        search_directory_paths: vec!["FixtureSource/UnrealSource".into()],
+                        exclude_path_filters: Vec::new(),
+                        file_name_filters: vec!["*.cpp".into()],
+                        gather_editor_only: false,
+                    }],
+                }],
+                cache_root: None,
+                refresh_engine_wrappers: false,
+            },
+        };
+        let literals = project.join("FixtureSource/UnrealSource/Literals.cpp");
+        let file = |path: &str| PointFile {
+            path: path.into(),
+            file: Some(literals.to_string_lossy().into_owned()),
+        };
+        let mut point = request(
+            "local",
+            vec![
+                file("FixtureSource/UnrealSource/Literals.cpp"),
+                // Outside the step's folder: the target does not gather it.
+                file("Source/Other/Literals.cpp"),
+            ],
+        );
+        point.code = Some(code.clone());
+        let first = read(&configuration, &point)?
+            .point
+            .ok_or("a point outcome")?;
+        assert_eq!(
+            first.entries.iter().map(|e| e.status).collect::<Vec<_>>(),
+            [PointFileStatus::Complete, PointFileStatus::NotGatherable]
+        );
+        assert_eq!((first.read, first.reused), (1, 0));
+        let record = first.entries[0].record.clone().ok_or("a record")?;
+        assert!(points::record_file(&configuration, &record).is_file());
+        // Another scan context makes another record; the same one reuses it.
+        let again = read(&configuration, &point)?
+            .point
+            .ok_or("a point outcome")?;
+        assert_eq!((again.read, again.reused), (0, 1));
+        point.code = Some(PointCode {
+            policy_json: "{\"other\":1}".into(),
+            ..code
+        });
+        let other = read(&configuration, &point)?
+            .point
+            .ok_or("a point outcome")?;
+        assert_eq!((other.read, other.reused), (1, 0));
+        assert_ne!(other.entries[0].record.as_deref(), Some(record.as_str()));
         let _ = fs::remove_dir_all(&configuration.cache_root);
         Ok(())
     }

@@ -267,40 +267,83 @@ fn unique_filters(filters: &[String]) -> Vec<String> {
 }
 
 /// The files one step reads, named relative to the project as the gather names them.
+/// A step's include and exclude path patterns, resolved, and its file name filters.
+struct StepPatterns {
+    includes: Vec<String>,
+    excludes: Vec<String>,
+    filters: Vec<String>,
+}
+
+fn step_patterns(
+    engine: EngineLine,
+    project: &Path,
+    engine_root: Option<&Path>,
+    step: &GatherStep,
+) -> StepPatterns {
+    let resolve = |path: &String| resolve(path, project, engine_root);
+    let searches: Vec<String> = step.search_directory_paths.iter().map(resolve).collect();
+    let includes = searches
+        .iter()
+        .map(|search| {
+            if engine != EngineLine::Ue4_27 && (search.ends_with('*') || search.ends_with('?')) {
+                search.clone()
+            } else {
+                format!("{}/*", search.trim_end_matches('/'))
+            }
+        })
+        .collect();
+    StepPatterns {
+        includes,
+        excludes: step.exclude_path_filters.iter().map(resolve).collect(),
+        filters: unique_filters(&step.file_name_filters),
+    }
+}
+
+/// Whether a step gathers a file, by its path under the project, whether or not the file is on
+/// disk now: a revision a host read from version control is judged as the step would judge it.
+#[must_use]
+pub fn step_includes(
+    engine: EngineLine,
+    project: &Path,
+    engine_root: Option<&Path>,
+    step: &GatherStep,
+    path: &str,
+) -> bool {
+    let patterns = step_patterns(engine, project, engine_root, step);
+    // A gather path may climb out of the project (`../Other/...`), as a recipe's folders can.
+    let file = collapse(&format!(
+        "{}{}",
+        with_slash(&absolute(project)),
+        slashes(path)
+    ));
+    let name = file.rsplit('/').next().unwrap_or_default();
+    patterns
+        .filters
+        .iter()
+        .any(|filter| matches_wildcard(name, filter))
+        && Matcher::new(&patterns.includes, &patterns.excludes).includes(&file)
+}
+
 pub fn step_files(
     engine: EngineLine,
     project: &Path,
     engine_root: Option<&Path>,
     step: &GatherStep,
 ) -> StepFiles {
-    let resolve = |path: &String| resolve(path, project, engine_root);
-    let searches: Vec<String> = step.search_directory_paths.iter().map(resolve).collect();
-    let excludes: Vec<String> = step.exclude_path_filters.iter().map(resolve).collect();
-    let filters = unique_filters(&step.file_name_filters);
+    let StepPatterns {
+        includes,
+        excludes,
+        filters,
+    } = step_patterns(engine, project, engine_root, step);
     let mut found: Vec<String> = Vec::new();
-    let includes: Vec<String> = if engine == EngineLine::Ue4_27 {
-        let includes: Vec<String> = searches
-            .iter()
-            .map(|search| format!("{}/*", search.trim_end_matches('/')))
-            .collect();
+    if engine == EngineLine::Ue4_27 {
         for include in &includes {
             let folder = include.trim_end_matches('*').trim_end_matches('/');
             for filter in &filters {
                 walk_427(Path::new(folder), filter, &mut found);
             }
         }
-        includes
     } else {
-        let includes: Vec<String> = searches
-            .iter()
-            .map(|search| {
-                if search.ends_with('*') || search.ends_with('?') {
-                    search.clone()
-                } else {
-                    format!("{}/*", search.trim_end_matches('/'))
-                }
-            })
-            .collect();
         let mut walked: Vec<String> = Vec::new();
         for include in &includes {
             let mut folder = include.clone();
@@ -316,8 +359,7 @@ pub fn step_files(
             walk_5(Path::new(&folder), &filters, &mut found);
             walked.push(folder);
         }
-        includes
-    };
+    }
     let matcher = Matcher::new(&includes, &excludes);
     let total = found.len();
     found.retain(|file| matcher.includes(file));

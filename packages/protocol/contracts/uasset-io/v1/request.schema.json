@@ -3425,6 +3425,148 @@
 																"required": ["path"],
 																"additionalProperties": false
 															}
+														},
+														"code": {
+															"type": "object",
+															"properties": {
+																"policyJson": {
+																	"type": "string"
+																},
+																"scan": {
+																	"type": "object",
+																	"properties": {
+																		"projectRoot": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"minLength": 1
+																				},
+																				{
+																					"maxLength": 32767
+																				}
+																			]
+																		},
+																		"engineRoot": {
+																			"anyOf": [
+																				{
+																					"type": "string",
+																					"allOf": [
+																						{
+																							"minLength": 1
+																						},
+																						{
+																							"maxLength": 32767
+																						}
+																					]
+																				},
+																				{
+																					"type": "null"
+																				}
+																			]
+																		},
+																		"engine": {
+																			"type": "string",
+																			"enum": [
+																				"4.27",
+																				"5.7",
+																				"5.8"
+																			]
+																		},
+																		"targets": {
+																			"type": "array",
+																			"items": {
+																				"type": "object",
+																				"properties": {
+																					"name": {
+																						"type": "string",
+																						"allOf": [
+																							{
+																								"minLength": 1
+																							},
+																							{
+																								"maxLength": 1024
+																							}
+																						]
+																					},
+																					"steps": {
+																						"type": "array",
+																						"items": {
+																							"type": "object",
+																							"properties": {
+																								"searchDirectoryPaths": {
+																									"type": "array",
+																									"items": {
+																										"type": "string"
+																									}
+																								},
+																								"excludePathFilters": {
+																									"type": "array",
+																									"items": {
+																										"type": "string"
+																									}
+																								},
+																								"fileNameFilters": {
+																									"type": "array",
+																									"items": {
+																										"type": "string"
+																									}
+																								},
+																								"gatherEditorOnly": {
+																									"type": "boolean"
+																								}
+																							},
+																							"required": [
+																								"searchDirectoryPaths",
+																								"excludePathFilters",
+																								"fileNameFilters",
+																								"gatherEditorOnly"
+																							],
+																							"additionalProperties": false
+																						}
+																					}
+																				},
+																				"required": [
+																					"name",
+																					"steps"
+																				],
+																				"additionalProperties": false
+																			}
+																		},
+																		"cacheRoot": {
+																			"anyOf": [
+																				{
+																					"type": "string",
+																					"allOf": [
+																						{
+																							"minLength": 1
+																						},
+																						{
+																							"maxLength": 32767
+																						}
+																					]
+																				},
+																				{
+																					"type": "null"
+																				}
+																			]
+																		},
+																		"refreshEngineWrappers": {
+																			"type": "boolean"
+																		}
+																	},
+																	"required": [
+																		"projectRoot",
+																		"engineRoot",
+																		"engine",
+																		"targets",
+																		"cacheRoot",
+																		"refreshEngineWrappers"
+																	],
+																	"additionalProperties": false
+																}
+															},
+															"required": ["policyJson", "scan"],
+															"additionalProperties": false
 														}
 													},
 													"required": [

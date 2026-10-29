@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { gameTextChangeLabel, gameTextChangePoints } from "./change-comparison.js";
-import { changeComparisonTarget } from "./change-points.js";
+import {
+	changeComparisonTarget,
+	changePointReads,
+	unreadableChangePaths
+} from "./change-points.js";
 import { localizationGateFailures } from "./localization-gate.js";
 
 const outcome = (point: string): GameTextContract.PointOutcome => ({
@@ -118,5 +122,32 @@ describe("a change's points", () => {
 		expect(gameTextChangeLabel({ kind: "local", files: ["A.uasset"] })).toBe(
 			"1 working-copy file"
 		);
+	});
+});
+
+describe("what a change's points could not read", () => {
+	it("lists each failed file once, from either side and every target", () => {
+		const read = (entries: GameTextContract.PointEntry[]) => ({ ...outcome("p"), entries });
+		const failed = { path: "Content/Broken.uasset", status: "failed" } as const;
+		expect(
+			unreadableChangePaths([
+				{ ...points, before: read([failed]), after: read([failed]) },
+				{
+					...points,
+					target: "Other",
+					after: read([
+						{ path: "Source/Labels.hxx", status: "failed" },
+						{ path: "Content/Fine.uasset", status: "partial" }
+					])
+				}
+			])
+		).toEqual(["Content/Broken.uasset", "Source/Labels.hxx"]);
+		expect(unreadableChangePaths([points])).toEqual([]);
+	});
+
+	it("reads every C++ extension a gather scans", () => {
+		for (const path of ["A.h", "A.hh", "A.hpp", "A.hxx", "A.inl", "A.cpp", "A.cxx", "A.ini"])
+			expect(changePointReads(`Source/${path}`), path).toBe(true);
+		expect(changePointReads("Content/Strings.csv")).toBe(false);
 	});
 });

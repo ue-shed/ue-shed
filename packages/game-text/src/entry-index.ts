@@ -117,6 +117,7 @@ export {
 	changeComparisonTarget,
 	changePointReads,
 	readGameTextChangePoints,
+	unreadableChangePaths,
 	type GameTextChangePage,
 	type GameTextChangePoints,
 	type GameTextChangeRead,

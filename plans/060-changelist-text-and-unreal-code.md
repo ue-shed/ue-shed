@@ -855,6 +855,44 @@ Electroswag, on `feat/changelist-text-review`:
       read code without the engine's wrapper macros is open.
 - **Phase 6 is complete** against its items.
 
+**Design review (2026-10-29)**: two critiques of the first screens, one from Opus and one from
+Muse, given the screenshots and the code, not the planner's view.
+
+- **The verdict was wrong, not just badly shown.** Both lists led with Blueprint graph labels
+  (`K2Node,Target`, `KismetSchema,SplitPinFriendlyNameFormat`). The project's own `Game.manifest`
+  has no `K2Node` text and one `KismetSchema` line, and its gather sets
+  `ShouldGatherFromEditorOnlyData=false`. `comparePoints` trusted only the gather table's editor-only
+  bit, and most graph text has no gather-table site. It now leaves out package editor text as the
+  index rates it out of scope (the gather table, else the audience policy), unless the base's
+  manifest names that key in that file. On the CLI:
+
+    | Change               | Before                                                          | After                                                           |
+    | -------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
+    | 220253               | 652 added; fails on a `KismetSchema` pin label; 70 not gathered | 34 added; fails on the Merfolk C++ text change; 23 not gathered |
+    | range 220340..220355 | 19 added, 80 rekeyed; fails on a key change in 9 cultures       | 1 added, 1 removed; passes, 1 not gathered                      |
+
+    The 80 "rekeys" were function categories (`KismetSchema,Default`) and pin labels.
+
+- **Electroswag's screens, reworked** on #124:
+    - the verdict leads, as a banner with the target named, and says "passes on what was read" when
+      code or a package was not read in full; what was not read is one line under it;
+    - findings to fix open, warnings fold to a line with their guidance said once, and each opens
+      grouped by file with Show diff and Show in Unreal; no scroll box inside the page;
+    - rows lead with the text; keys show only for key checks, shortened, with no leading comma;
+    - the counts open the changed lines of their kind; "Unchanged" is a muted figure;
+    - on the review page, the verdict alone shows until the change fails or the reviewer opens it,
+      the details take at most half the page, and Show diff folds them; a pending changelist gets
+      the section too, compared as its opened files are on disk;
+    - Compare is "Change" and "Against", names each changelist as it is typed, says in a sentence
+      exactly what a range compares (after `from`, up to and including `to`), keeps its result
+      across tabs, and drops the scan status it never needed.
+- **Not done**: word counts for vendor batches, the gate policy shown beside the verdict, and
+  per-culture rollups. Both critiques asked for them; they need data the comparison does not
+  return yet.
+- **Found**: opening the review page as the project opens can race the project index for the
+  catalog writer lock (`cannot acquire Catalog writer lock`); the index gives up instead of
+  waiting. A reload indexes. It predates this rework.
+
 ## STOP conditions
 
 - The scanner's identities differ from a Phase 0 reference manifest and the difference cannot be

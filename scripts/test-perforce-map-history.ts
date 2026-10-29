@@ -8,8 +8,10 @@ import {
 	mkdtemp,
 	mkdir,
 	readFile,
+	readdir,
 	rename,
 	rm,
+	stat,
 	writeFile
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -24,6 +26,8 @@ const fixtureDepot = "ue-shed-map-history";
 const fixtureUser = "ue-shed-map-history";
 const fixtureClient = "ue-shed-map-history-client";
 const configFileName = ".ue-shed-map-history-p4config";
+const localizationFixtureRoot = join(repositoryRoot, "fixtures", "unreal-427-localization");
+const localizationFolder = "Localization427";
 const p4TimeoutMs = 30_000;
 
 interface PinnedBinary {
@@ -67,6 +71,8 @@ interface SubmittedChange {
 }
 
 interface SeededFixture {
+	/** The 4.27 localization fixture under `localizationFolder`, and a change that edits its text. */
+	localization: { project: string; textChange: number };
 	conventional: {
 		baseline: SubmittedChange;
 		mapPath: string;
@@ -522,6 +528,51 @@ async function createDepot(p4: string, environment: NodeJS.ProcessEnv, cwd: stri
 	await run(p4, ["depot", "-i"], { cwd, env: environment, input: specification });
 }
 
+/**
+ * Submits the 4.27 localization fixture's tracked files, then a change that rewords one gathered
+ * text and adds another in the source its target gathers.
+ */
+async function seedLocalization({
+	p4,
+	environment,
+	workspace
+}: PerforceContext): Promise<SeededFixture["localization"]> {
+	const listed = await run("git", ["ls-files", "-z", "--", "."], {
+		cwd: localizationFixtureRoot
+	});
+	const files = listed.stdout.split("\0").filter(Boolean);
+	assert(files.length > 0, "Git lists no files in the 4.27 localization fixture.");
+	const project = join(workspace, localizationFolder);
+	for (const file of files) {
+		const target = join(project, validateFixturePath(file));
+		await mkdir(dirname(target), { recursive: true });
+		await copyFile(join(localizationFixtureRoot, file), target);
+	}
+	await run(p4, ["add", join(project, "...")], { cwd: workspace, env: environment });
+	await run(p4, ["submit", "-d", "Game Text fixture: 4.27 localization project"], {
+		cwd: workspace,
+		env: environment
+	});
+	const text = join(project, "FixtureSource", "Text.ini");
+	await run(p4, ["edit", text], { cwd: workspace, env: environment });
+	const before = await readFile(text, "utf8");
+	const after = before.replace('"Welcome to the fixture"', '"Welcome aboard the fixture"');
+	assert(
+		after !== before,
+		"The 4.27 localization fixture no longer has the greeting this lane edits."
+	);
+	await writeFile(
+		text,
+		`${after.trimEnd()}\nFarewell=NSLOCTEXT("Fixture427", "Farewell", "Safe travels")\n`
+	);
+	await run(p4, ["submit", "-d", "Game Text fixture: reword the greeting, add a farewell"], {
+		cwd: workspace,
+		env: environment
+	});
+	const textChange = await latestSubmittedChange(p4, environment, workspace);
+	return { project, textChange: textChange.change };
+}
+
 async function seedFixture({
 	p4,
 	environment,
@@ -609,8 +660,10 @@ async function seedFixture({
 		cwd: workspace,
 		env: environment
 	});
+	const localization = await seedLocalization({ p4, environment, workspace });
 
 	return {
+		localization,
 		conventional: {
 			baseline: conventionalBaseline,
 			mapPath: conventional.mapPath,
@@ -722,6 +775,132 @@ async function runCliJourney(fixture: PerforceMapHistoryFixture): Promise<void> 
 		"The Map History CLI did not preserve the conventional actor move."
 	);
 	report("RUN ", "CLI child-process journey passed against the disposable conventional fixture");
+}
+
+/** Every file under `directory`, with when it was last written, by path. */
+async function writtenFiles(directory: string): Promise<Map<string, number>> {
+	const paths = await readdir(directory, { recursive: true });
+	const written = new Map<string, number>();
+	for (const path of paths) {
+		const info = await stat(join(directory, path));
+		if (info.isFile()) written.set(path, info.mtimeMs);
+	}
+	return written;
+}
+
+/**
+ * Checks the seeded text change with `loc diff --change`, twice: the first run prints the change's
+ * revisions into the revision cache, keyed by server, and builds the translation lookup; the
+ * second finds the same changes from the same files, printing and building nothing.
+ */
+async function runChangeJourney(fixture: PerforceMapHistoryFixture): Promise<void> {
+	const tsx = join(repositoryRoot, "node_modules", "tsx", "dist", "cli.mjs");
+	const cli = join(repositoryRoot, "apps", "cli", "src", "index.ts");
+	const cacheRoot = join(fixture.operationRoot, "game-text-cache");
+	const uasset = ensureUassetExecutable();
+	const { project, textChange } = fixture.seeded.localization;
+	const diff = async () => {
+		const result = await run(
+			process.execPath,
+			[
+				tsx,
+				cli,
+				"loc",
+				"diff",
+				project,
+				"--change",
+				String(textChange),
+				"--target",
+				"Fixture427",
+				"--reader",
+				uasset
+			],
+			{
+				cwd: project,
+				env: {
+					...fixture.environment,
+					PATH: [dirname(fixture.p4.executable), process.env.PATH]
+						.filter(Boolean)
+						.join(delimiter),
+					UE_SHED_ENGINE_VERSION: "4.27",
+					UE_SHED_PROJECT_INDEX_CACHE_ROOT: cacheRoot,
+					UE_SHED_UASSET_EXECUTABLE: uasset
+				},
+				timeoutMs: 180_000
+			}
+		);
+		try {
+			// SAFETY: `loc diff` prints this document; the fields read are checked below.
+			return JSON.parse(result.stdout) as {
+				change?: { kind?: string; change?: number };
+				targets?: Array<{
+					target?: string;
+					complete?: boolean;
+					localized?: boolean;
+					counts?: Record<string, number>;
+					changes?: Array<{ kind?: string; after?: { key?: string; source?: string } }>;
+					impact?: { built?: boolean };
+				}>;
+			};
+		} catch (error) {
+			throw new Error(`loc diff did not print one JSON document: ${result.stdout}`, {
+				cause: error
+			});
+		}
+	};
+
+	const first = await diff();
+	const target = first.targets?.[0];
+	assert(first.targets?.length === 1, "loc diff did not report the one target it was given.");
+	assert(target?.target === "Fixture427", "loc diff reported another target.");
+	assert(target.complete === true, "loc diff could not read all of the change.");
+	assert(
+		target.localized === true,
+		"loc diff did not find the target's manifest before the change."
+	);
+	const changes = (target.changes ?? [])
+		.map((change) => `${change.kind} ${change.after?.key} ${change.after?.source}`)
+		.sort();
+	assert(
+		changes.join("|") ===
+			["added Farewell Safe travels", "edited Greeting Welcome aboard the fixture"].join("|"),
+		`loc diff found other changes: ${changes.join(", ")}`
+	);
+
+	const revisions = join(cacheRoot, "revisions");
+	const servers = await readdir(revisions);
+	assert(
+		servers.length === 1 && /^[0-9a-f]{16}$/u.test(servers[0] ?? ""),
+		`The revision cache is not keyed by one server: ${servers.join(", ")}`
+	);
+	const printed = await writtenFiles(revisions);
+	// Text.ini at both revisions; the manifest and archives come from the workspace.
+	assert(printed.size === 2, `The change printed ${printed.size} revisions, not 2.`);
+
+	const again = await diff();
+	// The translation lookup is built once, then found.
+	const lookup = (result: typeof first) =>
+		JSON.stringify(
+			result.targets?.map(({ impact, ...rest }) => ({
+				...rest,
+				impact: impact === undefined ? undefined : { ...impact, built: undefined }
+			}))
+		);
+	assert(
+		target.impact?.built === true && again.targets?.[0]?.impact?.built === false,
+		"loc diff did not reuse the translation lookup it built."
+	);
+	assert(
+		lookup(again) === lookup(first),
+		`loc diff found different changes the second time: ${lookup(first)} then ${lookup(again)}`
+	);
+	const reread = await writtenFiles(revisions);
+	assert(
+		reread.size === printed.size &&
+			[...printed].every(([path, written]) => reread.get(path) === written),
+		"loc diff printed revisions the revision cache already held."
+	);
+	report("RUN ", "loc diff --change passed against the disposable 4.27 localization fixture");
 }
 
 /**
@@ -911,6 +1090,7 @@ async function main(): Promise<void> {
 		process.stdout.write(result.stdout);
 		process.stderr.write(result.stderr);
 		await runCliJourney(fixture);
+		await runChangeJourney(fixture);
 	} finally {
 		await fixture.stop();
 	}

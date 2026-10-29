@@ -59,6 +59,10 @@ pnpm test:perforce-map-history
 
 It starts a fresh localhost `p4d`, seeds these same package bundles as named changelists, runs the
 Map History service, and removes the server, client workspace, tickets, and temporary configuration.
+It also submits the `unreal-427-localization` fixture and a change that rewords one gathered text
+and adds another, then runs `loc diff --change` on it twice: the first run must find exactly those
+two changes and print the change's revisions into a revision cache keyed by server; the second
+must find the same and print nothing.
 It never uses a `p4` selected from `PATH`, a contributor workspace, or a studio server.
 
 Unless both `UE_SHED_PERFORCE_MAP_HISTORY_P4_EXECUTABLE` and

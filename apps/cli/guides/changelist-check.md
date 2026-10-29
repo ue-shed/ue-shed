@@ -19,15 +19,19 @@ one Unreal has never gathered is skipped; a target you name must have a manifest
 ue-shed loc gate <project-root> --change <CL>
 ue-shed loc gate <project-root> --shelved <CL> --target <name>
 ue-shed loc gate <project-root> --change <CL> --format markdown
+ue-shed loc gate <project-root> --from <CL> --to <CL>
 ```
 
 - `--change` reads a submitted changelist, `--shelved` a shelved one, straight from Perforce: the
   files it touches before the change and at it, and each target's manifest and archives as the
   change found them. The workspace need not be synced to it.
+- `--from <CL> --to <CL>` reads the submitted changelists after `--from` up to `--to` together,
+  over the project as it was at `--from`. A range touching more than 2,000 packages and code
+  files is refused; check a shorter one.
 - `--files <list-file>` checks listed files as they are on disk instead, one path per line. It
   judges every line in those files, so a problem a file already had counts too; a changelist
   check counts only what the change introduces.
-- Only one of `--files`, `--change` and `--shelved` is taken.
+- Only one of `--files`, `--change`, `--shelved`, and `--from` with `--to` is taken.
 
 Read the outcome from the exit code, never from the text:
 

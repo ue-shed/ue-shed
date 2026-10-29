@@ -283,6 +283,19 @@ describe("GameTextWorkspaceContract", () => {
 						workspace.localizationChanges,
 						quality
 					);
+					// A host with no change reads says so, rather than failing the request.
+					expect(
+						yield* serve(
+							GameTextWorkspaceContract.compareChange,
+							workspace.compareChange,
+							{
+								change: { kind: "submitted", change: 1200 },
+								target: "Review",
+								changes: { offset: 0, limit: 50 },
+								findings: { offset: 0, limit: 50 }
+							}
+						)
+					).toMatchObject({ status: "failed", code: "capability_missing" });
 					const lines = yield* serve(GameTextWorkspaceContract.search, workspace.search, {
 						...search,
 						localization: { target, cultures: ["de"] }

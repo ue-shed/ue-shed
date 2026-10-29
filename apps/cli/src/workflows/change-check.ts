@@ -1,13 +1,20 @@
+import { join } from "node:path";
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { LocalizationEvidence } from "@ue-shed/localization";
 import type { LocalizationGateChange } from "@ue-shed/game-text/checks";
 import { GameTextLocalizationError } from "@ue-shed/game-text/schema";
-import { GameTextIndexError } from "@ue-shed/game-text/index";
+import {
+	GameTextIndexError,
+	readGameTextChangePoints,
+	type GameTextTargetPoints
+} from "@ue-shed/game-text/index";
+import type { GameTextChange } from "@ue-shed/game-text/schema";
+import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
+import { perforceChangeRevisions } from "@ue-shed/map-history";
 import { Effect, Schema } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { readChangedFiles } from "./changed-files.js";
-import { readChangelistPoints, readLocalPoints, type TargetPoints } from "./changelist-points.js";
 import { cliCacheRoot, cliGameTextIndexLayer, cliProjectCode } from "./game-text-index.js";
 
 type ChangeCommand = Extract<
@@ -15,10 +22,10 @@ type ChangeCommand = Extract<
 	{ readonly _tag: "LocalizationGate" | "LocalizationDiff" }
 >;
 
-/** The change a check reads: listed files on disk, or a submitted or shelved changelist. */
+/** The change a check reads: listed files on disk, or a changelist, a shelf or a range. */
 export type ChangeSelection =
 	| { readonly kind: "files"; readonly list: string }
-	| { readonly kind: "change"; readonly change: number; readonly shelved: boolean };
+	| { readonly kind: "change"; readonly change: Exclude<GameTextChange, { kind: "local" }> };
 
 /** The flags were wrong; the message says how. */
 export const usageError = (message: string) =>
@@ -30,28 +37,44 @@ export const usageError = (message: string) =>
 		message
 	});
 
-/** Exactly one of `--files`, `--change` and `--shelved`. */
+/** Exactly one of `--files`, `--change`, `--shelved`, and `--from` with `--to`. */
 export function changeSelection(command: ChangeCommand) {
+	const range = command.from !== undefined || command.to !== undefined;
 	const named = [
 		command.changedFiles === undefined ? [] : ["--files"],
 		command.change === undefined ? [] : ["--change"],
-		command.shelved === undefined ? [] : ["--shelved"]
+		command.shelved === undefined ? [] : ["--shelved"],
+		range ? ["--from and --to"] : []
 	].flat();
 	if (named.length !== 1)
 		return Effect.fail(
 			usageError(
 				named.length === 0
-					? "Name the change to check: --files <list>, --change <CL> or --shelved <CL>."
-					: `${named.join(" and ")} name different changes. Pass one of them.`
+					? "Name the change to check: --files <list>, --change <CL>, --shelved <CL>, or --from <CL> --to <CL>."
+					: `${named.slice(0, -1).join(", ")} and ${named.at(-1)} name different changes. Pass one of them.`
 			)
 		);
-	const number = command.change ?? command.shelved;
-	if (number !== undefined && (!Number.isSafeInteger(number) || number < 1))
-		return Effect.fail(usageError(`${number} is not a changelist number.`));
+	const numbers = [command.change, command.shelved, command.from, command.to].flatMap((value) =>
+		value === undefined ? [] : [value]
+	);
+	const bad = numbers.find((number) => !Number.isSafeInteger(number) || number < 1);
+	if (bad !== undefined) return Effect.fail(usageError(`${bad} is not a changelist number.`));
+	if (range && (command.from === undefined || command.to === undefined))
+		return Effect.fail(usageError("A range takes both --from <CL> and --to <CL>."));
+	if (command.from !== undefined && command.to !== undefined && command.to <= command.from)
+		return Effect.fail(
+			usageError(
+				`--to ${command.to} is not after --from ${command.from}. Name the later changelist as --to.`
+			)
+		);
 	const selection: ChangeSelection =
-		command.changedFiles !== undefined || number === undefined
-			? { kind: "files", list: command.changedFiles ?? "" }
-			: { kind: "change", change: number, shelved: command.shelved !== undefined };
+		command.from !== undefined && command.to !== undefined
+			? { kind: "change", change: { kind: "range", from: command.from, to: command.to } }
+			: command.change !== undefined
+				? { kind: "change", change: { kind: "submitted", change: command.change } }
+				: command.shelved !== undefined
+					? { kind: "change", change: { kind: "shelved", change: command.shelved } }
+					: { kind: "files", list: command.changedFiles ?? "" };
 	return Effect.succeed(selection);
 }
 
@@ -108,7 +131,7 @@ export class LocalizationGateError extends Schema.TaggedError<LocalizationGateEr
 ) {}
 
 /** Changed packages, or code and config files, a point could not read at all. */
-export function unreadableFiles(targets: readonly TargetPoints[]) {
+export function unreadableFiles(targets: readonly GameTextTargetPoints[]) {
 	const failed = new Set(
 		targets.flatMap((target) =>
 			[...target.before.entries, ...target.after.entries].flatMap((entry) =>
@@ -157,48 +180,24 @@ export const readChange = Effect.fn("Cli.localization.read_change")(function* (i
 	const code = yield* cliProjectCode(input.projectRoot).pipe(
 		Effect.catchTag("ConfigError", (cause) => Effect.fail(configurationFailure(cause)))
 	);
-	const common = {
+	const change: GameTextChange =
+		input.selection.kind === "change"
+			? input.selection.change
+			: {
+					kind: "local",
+					files: yield* readChangedFiles(input.selection.list, input.projectRoot)
+				};
+	const result = yield* readGameTextChangePoints({
 		projectRoot: input.projectRoot,
-		cacheRoot,
+		change,
+		revisions: perforceChangeRevisions({ directory: join(cacheRoot, "revisions") }),
 		targetNames: input.targetNames,
 		...(code === undefined ? undefined : { code }),
 		...(input.changes === undefined ? undefined : { changes: input.changes })
-	};
-	const read =
-		input.selection.kind === "change"
-			? Effect.map(
-					readChangelistPoints({
-						...common,
-						change: input.selection.change,
-						shelved: input.selection.shelved
-					}),
-					({ revisions, targets }) => ({
-						targets,
-						read: revisions.files.length,
-						files: revisions.files.length + revisions.skipped.length,
-						outside: revisions.outside
-					})
-				)
-			: Effect.flatMap(readChangedFiles(input.selection.list, input.projectRoot), (files) =>
-					Effect.map(readLocalPoints({ ...common, files }), ({ skipped, targets }) => ({
-						targets,
-						read: files.length - skipped.length,
-						files: files.length,
-						outside: 0
-					}))
-				);
-	const result = yield* read.pipe(
+	}).pipe(
 		Effect.provide(cliGameTextIndexLayer(input.reader)),
+		Effect.provide(LocalizationEvidenceNodeLive),
 		Effect.catchTag("ConfigError", (cause) => Effect.fail(configurationFailure(cause)))
 	);
-	const first = result.targets[0];
-	const change: LocalizationGateChange = {
-		point: first?.comparison.point ?? "",
-		base: first?.comparison.base ?? "",
-		files: result.files,
-		read: result.read,
-		outside: result.outside,
-		code: code !== undefined
-	};
-	return { targets: result.targets, change };
+	return { targets: result.targets, change: result.change };
 });

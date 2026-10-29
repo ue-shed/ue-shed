@@ -48,13 +48,15 @@ const SessionProject = { projectRoot: Schema.String, sessionId: Schema.String };
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 /**
  * Which change a localization check reads: files listed in a file (`--files`) as they are on
- * disk, a submitted changelist (`--change`) or a shelved one (`--shelved`). The workflow takes
- * exactly one.
+ * disk, a submitted changelist (`--change`), a shelved one (`--shelved`), or the submitted
+ * changelists after `--from` up to `--to`. The workflow takes exactly one.
  */
 const ChangeSelection = {
 	changedFiles: Schema.optionalKey(Schema.String),
 	change: Schema.optionalKey(PositiveInt),
-	shelved: Schema.optionalKey(PositiveInt)
+	shelved: Schema.optionalKey(PositiveInt),
+	from: Schema.optionalKey(PositiveInt),
+	to: Schema.optionalKey(PositiveInt)
 };
 /** JSON for scripts, text for a dialog or a log, Markdown for a build summary or a review. */
 export const ChangeOutputFormat = Schema.Literals(["json", "text", "markdown"]);

@@ -1245,6 +1245,8 @@ wires it into a submit script, a Swarm review or a required build. It reads one 
 
 - `--change <CL>`: a submitted changelist, straight from Perforce.
 - `--shelved <CL>`: a shelved changelist, over the revisions it is based on.
+- `--from <CL> --to <CL>`: the submitted changelists after `--from` up to `--to`, together, over
+  the project as it was at `--from`.
 - `--files <list-file>`: listed files as they are on disk.
 
 | Check                     | Default | When                                                                        |
@@ -1280,15 +1282,18 @@ wires it into a submit script, a Swarm review or a required build. It reads one 
 
 #### A changelist
 
-With `--change` or `--shelved`, the check reads the change from Perforce, not the workspace, so it
+With `--change`, `--shelved` or `--from` and `--to`, the check reads the change from Perforce, not
+the workspace, so it
 runs anywhere the project's workspace exists: on a build agent, for someone else's change, or for
 a shelf under review. It judges the change against the target's localization as the change found
 it, so only what the change introduces counts: a problem a touched file already had is not
 reported.
 
 - It reads the files the change touches inside the project at both revisions (before a submitted
-  change and at it; a shelf over the revisions it is based on), and each target's manifest and
-  archives at the base: the changelist before a submitted change, the depot's head for a shelf.
+  change and at it; a shelf over the revisions it is based on; a range at `--from` and at `--to`),
+  and each target's manifest and archives at the base: the changelist before a submitted change,
+  the depot's head for a shelf, `--from` for a range. A range whose packages and code files pass
+  2,000 is refused; check a shorter one.
   The workspace's own copies are read where they hold that revision; anything else is printed once
   into a revision cache and reused by every later check. A warm check of a large UE 4.27 project's
   changelist takes 1.3–1.6 s, against 9–12 s for a full scan of the files on disk.
@@ -1321,11 +1326,21 @@ the change is: on the submitter's machine, or in a build that has the change app
 
 #### Differences without a verdict
 
-`ue-shed loc diff <project-root> --change <CL>` (or `--shelved`, or `--files`) lists each line the
+`ue-shed loc diff <project-root> --change <CL>` (or `--shelved`, `--from` and `--to`, or `--files`)
+lists each line the
 change adds, removes, rekeys or edits, with its key, text and place (a package's object and
 property, or a code file's line), and what it does to each target's translations, without failing
 anything. `--limit <n>` (up to 1,000, default 200) bounds the lines listed; counts are always
 whole. `--format text` and `--format markdown` print it for people.
+
+#### In a host
+
+A host serves the same comparison from the Game Text workspace's `compareChange`: a submitted
+changelist, a shelf, a range or listed working-copy files, one target or every target, with a page
+of changes and of findings. Each finding carries its severity under the request's policy and the
+way forward; each judged target carries the verdict. The host passes `changeRevisions`, such as
+Map History's `perforceChangeRevisions({ directory, perforce })` with the project's workspace; a
+host without it answers `capability_missing`. One comparison runs at a time per workspace.
 
 #### Exit codes
 

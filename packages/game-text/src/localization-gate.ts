@@ -368,7 +368,8 @@ export function localizationGateTarget(input: {
 }
 
 /** A comparison finding's guidance: the gate's, naming the cultures and earlier key it has. */
-function comparisonGuidance(finding: GameTextContract.PointFinding): string {
+/** The way forward for a finding of a comparison, naming the cultures it affects. */
+export function comparisonGuidance(finding: GameTextContract.PointFinding): string {
 	const cultures = finding.cultures.join(", ");
 	switch (finding.check) {
 		case "key_changed": {

@@ -22,7 +22,8 @@ import {
 	readChange,
 	selectTargets,
 	unreadableFiles,
-	usageError
+	usageError,
+	type ChangeSelection
 } from "./change-check.js";
 import { readChangedFiles } from "./changed-files.js";
 import { refreshCliGameTextIndex } from "./game-text-index.js";
@@ -137,13 +138,13 @@ const loadFilesGate = Effect.fn("Cli.localization.gate")(function* (
 });
 
 /**
- * Checks a submitted or shelved changelist from Perforce: its files before the change and at it,
- * judged against the target's localization as the change found it, so only what the change
- * introduces counts. It needs no workspace synced to the change.
+ * Checks a submitted or shelved changelist, or a range of submitted ones, from Perforce: its files
+ * before the change and at it, judged against the target's localization as the change found it,
+ * so only what the change introduces counts. It needs no workspace synced to the change.
  */
 const loadChangeGate = Effect.fn("Cli.localization.gate_change")(function* (
 	command: LocalizationGateCommand,
-	selection: { readonly kind: "change"; readonly change: number; readonly shelved: boolean },
+	selection: Extract<ChangeSelection, { readonly kind: "change" }>,
 	failOn: readonly LocalizationGateCheck[]
 ) {
 	const targets = yield* selectTargets(command.projectRoot, command.targets);

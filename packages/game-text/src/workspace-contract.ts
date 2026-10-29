@@ -1,5 +1,6 @@
 import { Schema, type Effect, type Stream } from "effect";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
+import { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
 import { GameTextInvestigationPresetResult, GameTextInvestigationQuery } from "./investigation.js";
 import { LocalizationEditRequest, LocalizationEditResult } from "./localization-edits.js";
@@ -139,6 +140,8 @@ export const GameTextWorkspaceContract = {
 		success: LocalizationTargetResult
 	},
 	localizationFocus: { params: LocalizationFocusRequest, success: LocalizationFocusResult },
+	/** A change's text compared with what it changed from, judged by the gate's checks. */
+	compareChange: { params: ChangeComparisonRequest, success: ChangeComparisonResult },
 	related: { params: RelatedLinesRequest, success: RelatedLinesResult },
 	investigationExport: {
 		params: GameTextInvestigationExportRequest,

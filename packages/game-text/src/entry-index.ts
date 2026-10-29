@@ -112,3 +112,16 @@ export {
 
 export { nativeIndexQueryLayer, GameTextIndexQuery } from "./index-query-native.js";
 export type { NativeTextQuery } from "./native-query.js";
+
+export {
+	changeComparisonTarget,
+	changePointReads,
+	readGameTextChangePoints,
+	type GameTextChangePage,
+	type GameTextChangePoints,
+	type GameTextChangeRead,
+	type GameTextChangeRevisions,
+	type GameTextChangedFile,
+	type GameTextRevisionFile,
+	type GameTextTargetPoints
+} from "./change-points.js";

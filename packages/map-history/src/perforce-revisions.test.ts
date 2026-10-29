@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { changelistRevisionSpecs, workspaceHolds } from "./perforce-revisions.js";
+import {
+	changelistRevisionSpecs,
+	rangeRevisionSpecs,
+	workspaceHolds
+} from "./perforce-revisions.js";
 
 const file = (action: string, revision: number) => ({
 	depotPath: "//Project/Main/Content/UI/WBP_Menu.uasset",
@@ -35,6 +39,32 @@ describe("a changelist's revisions", () => {
 		expect(changelistRevisionSpecs(file("delete", 4), 230, true)).toEqual({
 			base: "//Project/Main/Content/UI/WBP_Menu.uasset#4"
 		});
+	});
+});
+
+describe("a range's revisions", () => {
+	it("compares a file's revision at the start with its last one in the range", () => {
+		expect(
+			rangeRevisionSpecs({ depotPath: "//p/A.uasset", revision: 7, deleted: false }, 4)
+		).toEqual({ action: "edit", base: "//p/A.uasset#4", head: "//p/A.uasset#7" });
+	});
+
+	it("has no base for a file the range adds, and no head for one it deletes", () => {
+		expect(
+			rangeRevisionSpecs(
+				{ depotPath: "//p/A.uasset", revision: 1, deleted: false },
+				undefined
+			)
+		).toEqual({ action: "add", head: "//p/A.uasset#1" });
+		expect(
+			rangeRevisionSpecs({ depotPath: "//p/A.uasset", revision: 5, deleted: true }, 4)
+		).toEqual({ action: "delete", base: "//p/A.uasset#4" });
+	});
+
+	it("leaves out a file the range adds and deletes", () => {
+		expect(
+			rangeRevisionSpecs({ depotPath: "//p/A.uasset", revision: 2, deleted: true }, undefined)
+		).toBeUndefined();
 	});
 });
 

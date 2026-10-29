@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
-import { P4 } from "p4client-ts";
+import { P4, type P4ClientOptions } from "p4client-ts";
 import { MapHistoryError } from "./errors.js";
 import { perforceProjectLayer, toMapHistoryError } from "./perforce.js";
 
@@ -88,6 +88,29 @@ export function changelistRevisionSpecs(
 		...(DELETES.has(file.action)
 			? undefined
 			: { head: shelved ? `${file.depotPath}@=${change}` : `${file.depotPath}#${rev}` })
+	};
+}
+
+/**
+ * The two revisions a file a range changes is read at: its revision at the range's start, and its
+ * last revision in the range. A file the range adds has no base, one it deletes no head, and one
+ * it adds and deletes neither, so it is left out (undefined).
+ */
+export function rangeRevisionSpecs(
+	file: {
+		readonly depotPath: string;
+		readonly revision: number | null;
+		readonly deleted: boolean;
+	},
+	/** The file's revision at the range's start; absent when it did not exist there. */
+	from: number | undefined
+) {
+	const to = file.deleted || file.revision === null ? undefined : file.revision;
+	if (from === undefined && to === undefined) return undefined;
+	return {
+		action: from === undefined ? "add" : to === undefined ? "delete" : "edit",
+		...(from === undefined ? undefined : { base: `${file.depotPath}#${from}` }),
+		...(to === undefined ? undefined : { head: `${file.depotPath}#${to}` })
 	};
 }
 
@@ -181,6 +204,80 @@ const printToFile = Effect.fnUntraced(function* (spec: string, file: string) {
 });
 
 /**
+ * Prints the revisions the cache lacks, side by side, and returns what that cost. A side names
+ * each depot file once, so it takes one `print`; a shelved add is printed alone, untyped.
+ */
+const printMissing = Effect.fnUntraced(function* (
+	sides: readonly (readonly Wanted[])[],
+	/** What the revisions belong to, such as `changelist 1200`, for the error. */
+	what: string
+) {
+	const p4 = yield* P4;
+	const step = (name: string) =>
+		Effect.mapError((cause: unknown) => classified(`Perforce could not ${name}`, cause));
+	let bytes = 0;
+	let printed = 0;
+	for (const side of sides) {
+		const present = yield* Effect.promise(() =>
+			Promise.all(
+				side.map((item) =>
+					stat(item.file).then(
+						() => true,
+						() => false
+					)
+				)
+			)
+		);
+		const all = side.filter((_, index) => !present[index]);
+		for (const item of all.filter((wanted) => wanted.unnumbered)) {
+			bytes += yield* printToFile(item.spec, item.file).pipe(
+				step(`print a shelved add in ${what}`)
+			);
+			printed++;
+		}
+		const needed = all.filter((wanted) => !wanted.unnumbered);
+		if (needed.length === 0) continue;
+		const byDepotFile = new Map(
+			needed.map((item) => [item.spec.replace(/[#@].*$/u, ""), item])
+		);
+		const batch = yield* p4
+			.printBatch({ fileSpec: needed.map((item) => item.spec) })
+			.pipe(step(`print the changed files of ${what}`));
+		if (batch.failures.length > 0 || batch.items.length !== needed.length)
+			return yield* Effect.fail(
+				failure(
+					`Perforce printed ${batch.items.length} of ${needed.length} revisions for ${what}.`,
+					batch.failures
+				)
+			);
+		for (const item of batch.items) {
+			const target = byDepotFile.get(item.file.depotFile);
+			if (target === undefined)
+				return yield* Effect.fail(
+					failure(`Perforce printed ${item.file.depotFile}, which was not asked for.`)
+				);
+			bytes += item.content.byteLength;
+			printed++;
+			yield* Effect.promise(async () => {
+				await mkdir(join(target.file, ".."), { recursive: true });
+				const temporary = `${target.file}.${process.pid}.tmp`;
+				await writeFile(temporary, item.content);
+				await rename(temporary, target.file);
+			});
+		}
+	}
+	return { bytes, printed };
+});
+
+/** The project's Perforce client: the workspace the host names, else the one holding the project. */
+const projectLayer = (projectRoot: string, perforce: P4ClientOptions | undefined) =>
+	perforceProjectLayer(projectRoot, perforce).pipe(
+		Effect.mapError((cause) =>
+			classified("Perforce could not find the project's workspace", cause)
+		)
+	);
+
+/**
  * Fetches a changelist's files inside a project at both revisions into a content cache, printing
  * only revisions the cache lacks. A submitted revision never changes, so its
  * cache file is named by its spec; a shelved one by its spec and the digest Perforce reports. It
@@ -200,12 +297,10 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 		 * archives: at the changelist before a submitted change, at the depot's head for a shelf.
 		 */
 		readonly before?: readonly string[];
+		/** The host's connection; a workspace it names is used as named. */
+		readonly perforce?: P4ClientOptions;
 	}) {
-		const layer = yield* perforceProjectLayer(options.projectRoot).pipe(
-			Effect.mapError((cause) =>
-				classified("Perforce could not find the project's workspace", cause)
-			)
-		);
+		const layer = yield* projectLayer(options.projectRoot, options.perforce);
 		return yield* Effect.gen(function* () {
 			const p4 = yield* P4;
 			const step = (name: string) =>
@@ -286,63 +381,10 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 					...(head === undefined ? undefined : { head })
 				});
 			}
-			const missing = (side: readonly Wanted[]) =>
-				Effect.promise(async () => {
-					const present = await Promise.all(
-						side.map((item) =>
-							stat(item.file).then(
-								() => true,
-								() => false
-							)
-						)
-					);
-					return side.filter((_, index) => !present[index]);
-				});
-			let bytes = 0;
-			let printed = 0;
-			// One print per side: in a side each depot file appears once, so it names its revision.
-			for (const side of [wanted.base, wanted.head]) {
-				const all = yield* missing(side);
-				// A shelved add is printed straight to its cache file, untyped, one at a time.
-				for (const item of all.filter((wanted) => wanted.unnumbered)) {
-					bytes += yield* printToFile(item.spec, item.file).pipe(
-						step(`print a shelved add in changelist ${options.change}`)
-					);
-					printed++;
-				}
-				const needed = all.filter((wanted) => !wanted.unnumbered);
-				if (needed.length === 0) continue;
-				const byDepotFile = new Map(
-					needed.map((item) => [item.spec.replace(/[#@].*$/u, ""), item])
-				);
-				const batch = yield* p4
-					.printBatch({ fileSpec: needed.map((item) => item.spec) })
-					.pipe(step(`print the files changelist ${options.change} changes`));
-				if (batch.failures.length > 0 || batch.items.length !== needed.length)
-					return yield* Effect.fail(
-						failure(
-							`Perforce printed ${batch.items.length} of ${needed.length} revisions for changelist ${options.change}.`,
-							batch.failures
-						)
-					);
-				for (const item of batch.items) {
-					const target = byDepotFile.get(item.file.depotFile);
-					if (target === undefined)
-						return yield* Effect.fail(
-							failure(
-								`Perforce printed ${item.file.depotFile}, which was not asked for.`
-							)
-						);
-					bytes += item.content.byteLength;
-					printed++;
-					yield* Effect.promise(async () => {
-						await mkdir(join(target.file, ".."), { recursive: true });
-						const temporary = `${target.file}.${process.pid}.tmp`;
-						await writeFile(temporary, item.content);
-						await rename(temporary, target.file);
-					});
-				}
-			}
+			const { bytes, printed } = yield* printMissing(
+				[wanted.base, wanted.head],
+				`changelist ${options.change}`
+			);
 			const before =
 				options.before === undefined || listed === undefined
 					? undefined
@@ -481,12 +523,10 @@ export const readRevisionFiles = Effect.fn("Perforce.revisionFiles")(function* (
 	readonly at: number | "head" | "have";
 	/** The revision cache folder. */
 	readonly directory: string;
+	/** The host's connection; a workspace it names is used as named. */
+	readonly perforce?: P4ClientOptions;
 }) {
-	const layer = yield* perforceProjectLayer(options.projectRoot).pipe(
-		Effect.mapError((cause) =>
-			classified("Perforce could not find the project's workspace", cause)
-		)
-	);
+	const layer = yield* projectLayer(options.projectRoot, options.perforce);
 	const where =
 		options.at === "head"
 			? "the depot's head"
@@ -507,3 +547,195 @@ export const readRevisionFiles = Effect.fn("Perforce.revisionFiles")(function* (
 		Effect.mapError((cause) => classified(`Perforce could not read files at ${where}`, cause))
 	);
 });
+
+/** A range's files at both ends, and what fetching them cost. */
+export interface RangeRevisions extends Omit<ChangelistRevisions, "change" | "shelved"> {
+	readonly from: number;
+	readonly to: number;
+}
+
+/** The most files a range review prints: past it, a shorter range reads in reasonable time. */
+export const RANGE_FILE_LIMIT = 2000;
+
+/**
+ * Fetches the project files submitted changelists `from` (exclusive) to `to` change, at both
+ * ends, into the content cache. `p4 files` lists each file's last revision in the range and its
+ * revision at `from`; a file the range adds has no base, one it deletes no head, and one it adds
+ * and deletes is left out. It only reads: `where`, `files` and `print`.
+ */
+export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function* (options: {
+	readonly projectRoot: string;
+	readonly from: number;
+	readonly to: number;
+	/** The revision cache folder. */
+	readonly directory: string;
+	/** Whether the caller reads a file, by its project-relative path; only those are printed. */
+	readonly reads: (path: string) => boolean;
+	/** Project files to read at `from`, such as a target's manifest and archives. */
+	readonly before?: readonly string[];
+	/** The host's connection; a workspace it names is used as named. */
+	readonly perforce?: P4ClientOptions;
+	/** The most read files; more fails. Defaults to `RANGE_FILE_LIMIT`. */
+	readonly limit?: number;
+}) {
+	const what = `changelists ${options.from} to ${options.to}`;
+	if (!Number.isSafeInteger(options.from) || options.from < 1 || options.to <= options.from)
+		return yield* Effect.fail(
+			new MapHistoryError({
+				kind: "invalid_target",
+				message: `${what} is not a range: it runs from an earlier submitted changelist to a later one.`,
+				recovery: "Name the earlier changelist as the start and the later one as the end.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			})
+		);
+	const layer = yield* projectLayer(options.projectRoot, options.perforce);
+	return yield* Effect.gen(function* () {
+		const p4 = yield* P4;
+		const step = (name: string) =>
+			Effect.mapError((cause: unknown) => classified(`Perforce could not ${name}`, cause));
+		const [prefix, listed] = yield* Effect.all(
+			[
+				projectPrefix(options.projectRoot).pipe(step("map the project folder")),
+				options.before === undefined
+					? Effect.succeed(undefined)
+					: listAt(options.projectRoot, options.before, options.from).pipe(
+							step(`list the files ${what} change from`)
+						)
+			],
+			{ concurrency: "unbounded" }
+		);
+		const changed = yield* p4
+			.listFiles({
+				fileSpec: `${prefix}...@${options.from + 1},@${options.to}`
+			})
+			.pipe(step(`list the files ${what} change`));
+		const skipped: string[] = [];
+		const read = changed.items.flatMap((item) => {
+			if (!item.depotFile.startsWith(prefix)) return [];
+			const path = item.depotFile.slice(prefix.length);
+			if (options.reads(path)) return [{ item, path }];
+			skipped.push(path);
+			return [];
+		});
+		const limit = options.limit ?? RANGE_FILE_LIMIT;
+		if (read.length > limit)
+			return yield* Effect.fail(
+				new MapHistoryError({
+					kind: "invalid_target",
+					message: `${what} change ${read.length} files a review reads; it reads at most ${limit}.`,
+					recovery: "Pick a shorter range.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				})
+			);
+		// A file the range adds matches nothing at `from`, which `files` reports apart.
+		const earlier =
+			read.length === 0
+				? undefined
+				: yield* p4
+						.listFiles({
+							fileSpec: read.map(({ item }) => `${item.depotFile}@${options.from}`)
+						})
+						.pipe(step(`list the files ${what} change at ${options.from}`));
+		const atFrom = new Map(
+			(earlier?.items ?? []).flatMap((item) =>
+				item.isDeletedAtHead || item.revision === null
+					? []
+					: [[item.depotFile, item.revision] as const]
+			)
+		);
+		const files: ChangelistRevisionFile[] = [];
+		const baseWanted: Wanted[] = [];
+		const headWanted: Wanted[] = [];
+		const wanted = { base: baseWanted, head: headWanted };
+		for (const { item, path } of read) {
+			const specs = rangeRevisionSpecs(
+				{
+					depotPath: item.depotFile,
+					revision: item.revision,
+					deleted: item.isDeletedAtHead
+				},
+				atFrom.get(item.depotFile)
+			);
+			if (specs === undefined) continue;
+			const base =
+				specs.base === undefined
+					? undefined
+					: cacheFile(options.directory, specs.base, null);
+			const head =
+				specs.head === undefined
+					? undefined
+					: cacheFile(options.directory, specs.head, null);
+			if (specs.base !== undefined && base !== undefined)
+				wanted.base.push({ spec: specs.base, file: base, unnumbered: false });
+			if (specs.head !== undefined && head !== undefined)
+				wanted.head.push({ spec: specs.head, file: head, unnumbered: false });
+			files.push({
+				path,
+				depotPath: item.depotFile,
+				action: specs.action,
+				...(base === undefined ? undefined : { base }),
+				...(head === undefined ? undefined : { head })
+			});
+		}
+		const { bytes, printed } = yield* printMissing([wanted.base, wanted.head], what);
+		const before =
+			options.before === undefined || listed === undefined
+				? undefined
+				: yield* fetchAt({
+						projectRoot: options.projectRoot,
+						prefix,
+						paths: options.before,
+						listed,
+						directory: options.directory
+					}).pipe(step(`print the files ${what} change from`));
+		const requested = wanted.base.length + wanted.head.length;
+		yield* Effect.annotateCurrentSpan({
+			"perforce.files": files.length,
+			"perforce.skipped": skipped.length,
+			"perforce.printed": printed,
+			"perforce.reused": requested - printed,
+			"perforce.bytes": bytes
+		});
+		return {
+			from: options.from,
+			to: options.to,
+			files,
+			skipped,
+			outside: 0,
+			printed,
+			reused: requested - printed,
+			bytes,
+			...(before === undefined ? undefined : { before })
+		} satisfies RangeRevisions;
+	}).pipe(
+		Effect.provide(layer),
+		Effect.mapError((cause) => classified(`Perforce could not read ${what}`, cause))
+	);
+});
+
+/**
+ * The three reads a change review needs, bound to a revision cache folder and the host's
+ * connection: a changelist's or a shelf's files, a range's, and files at the revisions the
+ * workspace has. Game Text takes them as its change revisions.
+ */
+export function perforceChangeRevisions(options: {
+	/** The revision cache folder. */
+	readonly directory: string;
+	readonly perforce?: P4ClientOptions;
+}) {
+	const common = {
+		directory: options.directory,
+		...(options.perforce === undefined ? undefined : { perforce: options.perforce })
+	};
+	return {
+		changelist: (
+			input: Omit<Parameters<typeof readChangelistRevisions>[0], keyof typeof common>
+		) => readChangelistRevisions({ ...input, ...common }),
+		range: (input: Omit<Parameters<typeof readRangeRevisions>[0], keyof typeof common>) =>
+			readRangeRevisions({ ...input, ...common }),
+		have: (input: { readonly projectRoot: string; readonly paths: readonly string[] }) =>
+			readRevisionFiles({ ...input, at: "have", ...common })
+	};
+}

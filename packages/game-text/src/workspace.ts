@@ -1,5 +1,7 @@
 import type { RelatedLinesRequest, RelatedLinesResult } from "./related-lines.js";
 import { indexPublicFailure } from "./index-public-error.js";
+import type { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
+import { makeWorkspaceChangeComparison } from "./workspace-change.js";
 import { type IndexFailure } from "./index-contract.js";
 import {
 	GameTextInvestigationPreset,
@@ -214,6 +216,10 @@ export interface GameTextWorkspaceApi {
 	) => Effect.Effect<LocalizationFocusResult>;
 	/** A selection's related units and lines, with their places and translations. */
 	readonly related: (request: RelatedLinesRequest) => Effect.Effect<RelatedLinesResult>;
+	/** A change's text compared with what it changed from; see `ChangeComparisonResult`. */
+	readonly compareChange: (
+		request: ChangeComparisonRequest
+	) => Effect.Effect<ChangeComparisonResult>;
 	readonly investigationExport: (
 		request: GameTextInvestigationExportRequest
 	) => Effect.Effect<InvestigationFileResult>;
@@ -314,6 +320,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			Effect.sync(signalProgress)
 		).pipe(Effect.forkIn(workspaceScope));
 	const steps = yield* GameTextIndexSteps;
+	const compareChange = yield* makeWorkspaceChangeComparison(host);
 	const codeSource = (projectRoot: string) =>
 		host.codeSource ? host.codeSource(projectRoot) : Effect.succeed(undefined);
 	const refreshIndex = yield* makeRetainedGameTextIndexWith(
@@ -1670,6 +1677,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				)
 		),
 		related: scoped(related),
+		compareChange,
 		investigationExport: scoped((request: GameTextInvestigationExportRequest) =>
 			investigationExport(request.query, request.format)
 		),

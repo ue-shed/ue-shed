@@ -604,6 +604,14 @@ const optionsForProject = Effect.fn("PerforceHistorySource.optionsForProject")(f
 	return yield* Effect.gen(function* () {
 		const probe = yield* P4;
 		const local = yield* resolveConnection({ sources: ["p4"] });
+		// A workspace the host names is the one it means, even when another user owns it.
+		const named = options.connection?.client;
+		if (named !== undefined && named !== null && named !== "")
+			return {
+				...projectOptions,
+				connection: { ...local.connection, ...options.connection, client: named },
+				env: { ...options.env, P4CONFIG: p4ConfigBypassPath }
+			};
 		const environment = yield* probe.getEnvironment({});
 		const user = options.connection?.user ?? local.connection.user ?? environment.user;
 		const workspaces = user == null ? [] : (yield* probe.listWorkspaces({ user })).items;

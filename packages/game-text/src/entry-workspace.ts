@@ -17,6 +17,11 @@ export type {
 	GameTextWorkspaceProjectProgress,
 	GameTextWorkspaceProjectState
 } from "./workspace-host.js";
+
+export type {
+	GameTextChangeFailure,
+	GameTextWorkspaceChangeRevisions
+} from "./workspace-change.js";
 export { makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
 export {
 	makeGameTextOperations,

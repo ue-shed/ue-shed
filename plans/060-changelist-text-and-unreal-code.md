@@ -21,9 +21,9 @@
   like asset text. Phase 3: done and reviewed (owner, 2026-10-29): a changelist's or a workspace's
   two points, with code and the base's localization, read in 1.3–1.6 s warm. Phase 4: done and
   reviewed (owner, 2026-10-29): the engine compares two points and judges the change by the gate's
-  checks against the base's localization. Phase 5: done, for owner review: `loc gate --change`
-  and `--shelved`, `loc diff`, `--format markdown`, exit codes and an error table from the error's
-  next step, and the agent guide.
+  checks against the base's localization. Phase 5: done and reviewed (owner, 2026-10-29):
+  `loc gate --change` and `--shelved`, `loc diff`, `--format markdown`, exit codes and an error
+  table from the error's next step, and the agent guide. Phase 6: in progress.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -775,6 +775,47 @@ In the Electroswag repository, on its own branch:
 2. **Compare** in Game Text: two point pickers (local, a submitted changelist, a shelved one) over
    the same diff.
 3. C++ places in Game Text's line detail, read-only, with reveal in IDE.
+
+**Design (2026-10-29, planner)**:
+
+UE Shed, on this branch and in the same release:
+
+- **The host names the workspace.** Map History's revision reads take the host's `P4ClientOptions`;
+  a `connection.client` it names is used as named, not re-chosen from the user's own workspaces.
+  Electroswag passes the selected project's workspace; the CLI keeps `P4CLIENT`.
+- **A range read**, `readRangeRevisions({ from, to })`: `p4 files <project>/...@>from,@to` lists
+  each file's last revision in the range, and one `p4 files` lists the same files at `@from`; both
+  sides are printed as a changelist's are, and the targets' localization is read at `from`. A
+  range whose read files pass 2,000 is refused (`invalid_target`, "pick a shorter range"): it
+  bounds what one review prints.
+- **Change points move into Game Text** (`readChangePoints` in `@ue-shed/game-text/index`): the
+  CLI's orchestration (each target's outputs, the read, the two points and the comparison) is
+  shared by every host. Game Text gets revisions through a `GameTextChangeRevisions` the host
+  supplies, which Map History's three reads fit as they are, so `p4client-ts` stays in Map
+  History.
+- **`compareChange` in the workspace contract**: a submitted change, a shelf, a range or listed
+  working-copy files, one target or every target, paged changes and findings. It answers what
+  `loc diff` does (the change block, and per target the counts, the page of changes and the
+  findings with their cultures) and reads code with the workspace's code source. The host hook
+  `changeRevisions` supplies Perforce; without it the method fails `capability_missing`.
+- **`--from <CL> --to <CL>`** joins the change flags of `loc gate` and `loc diff`: the range,
+  judged against the localization at `from`.
+
+Electroswag, on `feat/changelist-text-review`:
+
+- **The server** gives the Game Text workspace Map History's reads with the project's Perforce
+  options, and a code source from the project's engine association through `@ue-shed/engine`.
+- **The review page** gets a Text section for submitted and shelved changelists: the outcome,
+  a count per check, then the changed lines with their place, the text before and after, the
+  cultures affected and the way forward, paged. It reads the selected project; a change with no
+  files in it says so.
+- **Compare in Game Text**: a Compare view with two pickers. "To" is the working copy, a submitted
+  changelist or a shelf; "From" is what it changed from, or, when "To" is submitted, an earlier
+  submitted changelist (the range). Other pairs need the workspace's sync state at a changelist
+  and are not offered. It lists the same rows as the review page.
+- **C++ places in line detail**: the file, line and macro, read-only, and **Open in IDE** with the
+  source code accessor the project's Unreal settings name (Visual Studio, Rider or VS Code), else
+  the system's app for the file.
 
 **Evidence**: _pending_.
 

@@ -19,22 +19,31 @@ import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localiza
 import { lazyWorkflow } from "../lazy-workflows.js";
 import { ChangeOutputFormat } from "../command-model.js";
 
-/** `--files`, `--change` and `--shelved`: the change a check reads; the workflow takes one. */
+/**
+ * `--files`, `--change`, `--shelved`, and `--from` with `--to`: the change a check reads; the
+ * workflow takes one.
+ */
 const changeFlags = () => ({
 	files: Flag.String("files").pipe(Flag.optional),
 	change: Flag.Int("change").pipe(Flag.optional),
-	shelved: Flag.Int("shelved").pipe(Flag.optional)
+	shelved: Flag.Int("shelved").pipe(Flag.optional),
+	from: Flag.Int("from").pipe(Flag.optional),
+	to: Flag.Int("to").pipe(Flag.optional)
 });
 
 function changeSelection(flags: {
 	readonly files: Option.Option<string>;
 	readonly change: Option.Option<number>;
 	readonly shelved: Option.Option<number>;
+	readonly from: Option.Option<number>;
+	readonly to: Option.Option<number>;
 }) {
 	return {
 		...(Option.isSome(flags.files) ? { changedFiles: flags.files.value } : undefined),
 		...(Option.isSome(flags.change) ? { change: flags.change.value } : undefined),
-		...(Option.isSome(flags.shelved) ? { shelved: flags.shelved.value } : undefined)
+		...(Option.isSome(flags.shelved) ? { shelved: flags.shelved.value } : undefined),
+		...(Option.isSome(flags.from) ? { from: flags.from.value } : undefined),
+		...(Option.isSome(flags.to) ? { to: flags.to.value } : undefined)
 	};
 }
 
@@ -343,7 +352,7 @@ export const localizationCommand = Command.make("loc").pipe(
 				})
 		).pipe(
 			Command.withDescription(
-				"Check the text a change touches: listed files on disk, or a submitted or shelved changelist; exits 1 when it fails."
+				"Check the text a change touches: listed files on disk, a submitted or shelved changelist, or a range of submitted ones; exits 1 when it fails."
 			)
 		),
 		Command.make(

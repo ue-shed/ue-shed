@@ -19,13 +19,15 @@ export const CHECK_LABELS = {
 
 const count = (value: number) => value.toLocaleString("en-US");
 
-/** What was checked: a changelist, a shelf, or the listed files. */
+/** What was checked: a changelist, a shelf, a range, or the listed files. */
 function subject(result: LocalizationGateResult): string {
 	const change = result.change;
-	if (change === undefined) return "the listed files";
-	return change.point.startsWith("shelved:")
-		? `shelved changelist ${change.point.slice("shelved:".length)}`
-		: `changelist ${change.point.replace(/^depot@/u, "")}`;
+	if (change === undefined || change.point === "local") return "the listed files";
+	if (change.point.startsWith("shelved:"))
+		return `shelved changelist ${change.point.slice("shelved:".length)}`;
+	if (change.point.startsWith("range:"))
+		return `changelists ${change.point.slice("range:".length).replace("..", " to ")}`;
+	return `changelist ${change.point.replace(/^depot@/u, "")}`;
 }
 
 const itemKey = (item: LocalizationGateItem) =>

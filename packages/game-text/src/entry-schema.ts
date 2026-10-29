@@ -199,3 +199,17 @@ export {
 	GameTextWorkspaceNoParams,
 	GameTextWorkspaceRefreshRequest
 } from "./workspace-contract.js";
+
+export {
+	ChangeComparisonRequest,
+	ChangeComparisonResult,
+	ChangeComparisonTarget,
+	ChangeFinding,
+	ChangePlace,
+	ChangeRow,
+	ChangeText,
+	GameTextChange,
+	MAX_CHANGE_PAGE,
+	gameTextChangeLabel,
+	gameTextChangePoints
+} from "./change-comparison.js";

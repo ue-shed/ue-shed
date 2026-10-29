@@ -98,6 +98,7 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationReport: () => Effect.succeed({ status: "not_ready" }),
 			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationLinesFile: () => Effect.succeed({ status: "not_ready" }),
+			compareChange: () => Effect.succeed({ status: "not_ready" }),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),

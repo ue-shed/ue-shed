@@ -112,6 +112,10 @@ describe("a changelist's verdict", () => {
 		expect(localizationGateMarkdown(shelf).split("\n")[0]).toBe(
 			"### Text check failed: shelved changelist 220258"
 		);
+		const range = { ...result, change: { ...change, point: "range:220250..220253" } };
+		expect(localizationGateMarkdown(range).split("\n")[0]).toBe(
+			"### Text check failed: changelists 220250 to 220253"
+		);
 	});
 
 	it("says when code was not read", () => {
@@ -285,6 +289,15 @@ it.effect.each([
 	{
 		flags: ["--change", "1", "--shelved", "2"],
 		message: "--change and --shelved name different changes"
+	},
+	{
+		flags: ["--change", "1", "--from", "1", "--to", "2"],
+		message: "--change and --from and --to name different changes"
+	},
+	{ flags: ["--from", "1"], message: "A range takes both --from <CL> and --to <CL>." },
+	{
+		flags: ["--from", "5", "--to", "5"],
+		message: "--to 5 is not after --from 5. Name the later changelist as --to."
 	}
 ])("a gate takes exactly one change: $message", ({ flags, message }) =>
 	Effect.gen(function* () {

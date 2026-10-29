@@ -263,6 +263,7 @@ fn diff_package<'a>(
     changes: &mut Vec<Change<'a>>,
     counts: &mut PointChangeCounts,
 ) {
+    let start = changes.len();
     let key = |occurrence: &Occurrence| {
         let place = place(occurrence);
         (place.kind as u8, place.object, place.entry, place.property)
@@ -328,6 +329,49 @@ fn diff_package<'a>(
             });
         }
     }
+    keep_moved_texts(changes, start, counts);
+}
+
+/// A text that only moved to another object of its package keeps its key, text and property:
+/// a Blueprint's generated functions renumber on compile (`SequenceEvent__ENTRYPOINT..._195`
+/// becomes `..._1`). Unreal localizes by key, so it is unchanged, not removed and added. A
+/// DataTable row or String Table entry is the text's identity, so a renamed one stays apart.
+fn keep_moved_texts(changes: &mut Vec<Change>, start: usize, counts: &mut PointChangeCounts) {
+    let moved = |before: &Occurrence, after: &Occurrence| {
+        let (from, to) = (place(before), place(after));
+        before.identity <= 1
+            && same_text(before, after)
+            && from.kind == to.kind
+            && from.entry == to.entry
+            && from.property == to.property
+    };
+    let mut kept = vec![true; changes.len() - start];
+    for added in start..changes.len() {
+        let Some(after) = changes[added]
+            .after
+            .filter(|_| changes[added].kind == PointChangeKind::Added)
+        else {
+            continue;
+        };
+        let pair = (start..changes.len()).find(|&removed| {
+            kept[removed - start]
+                && changes[removed].kind == PointChangeKind::Removed
+                && changes[removed]
+                    .before
+                    .is_some_and(|before| moved(before, after))
+        });
+        if let Some(removed) = pair {
+            kept[removed - start] = false;
+            kept[added - start] = false;
+            counts.unchanged += 1;
+        }
+    }
+    let mut index = 0;
+    changes.retain(|_| {
+        let keep = index < start || kept[index - start];
+        index += 1;
+        keep
+    });
 }
 
 /// Code: identical texts pair at any line; then the same resolved key with other text is
@@ -1079,6 +1123,43 @@ mod tests {
         let (changes, counts) = diff(&[relative], &[branched]);
         assert!(changes.is_empty());
         assert_eq!(counts.unchanged, 1);
+    }
+
+    #[test]
+    fn a_text_moved_to_a_renumbered_function_is_unchanged() {
+        let event = |object: &str, source: &str, key: &str| {
+            let mut text = property("ScriptBytecode[0]", source, key);
+            text.object =
+                format!("SequenceDirector_C.SequenceEvent__ENTRYPOINTSequenceDirector_{object}");
+            text
+        };
+        let (changes, counts) = diff(
+            &[
+                event("195", "Happy birthday kiddo!", "6A001D"),
+                event("196", "Bye", "B1"),
+            ],
+            &[
+                event("1", "Happy birthday kiddo!", "6A001D"),
+                event("2", "Bye now", "B1"),
+            ],
+        );
+        assert_eq!(counts.unchanged, 1);
+        assert_eq!(
+            changes
+                .iter()
+                .map(|change| (change.kind, change.place.object.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    PointChangeKind::Added,
+                    "SequenceDirector_C.SequenceEvent__ENTRYPOINTSequenceDirector_2"
+                ),
+                (
+                    PointChangeKind::Removed,
+                    "SequenceDirector_C.SequenceEvent__ENTRYPOINTSequenceDirector_196"
+                )
+            ]
+        );
     }
 
     #[test]

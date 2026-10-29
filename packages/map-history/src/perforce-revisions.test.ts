@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	changelistRevisionSpecs,
 	rangeRevisionSpecs,
+	specBatches,
 	workspaceHolds
 } from "./perforce-revisions.js";
 
@@ -59,6 +60,21 @@ describe("a range's revisions", () => {
 		expect(
 			rangeRevisionSpecs({ depotPath: "//p/A.uasset", revision: 5, deleted: true }, 4)
 		).toEqual({ action: "delete", base: "//p/A.uasset#4" });
+	});
+
+	it("lists a long range's files in batches a command line holds", () => {
+		const specs = Array.from(
+			{ length: 600 },
+			(_, index) => `//Project/Main/Content/UI/Widgets/WBP_Widget_${index}.uasset@220670`
+		);
+		const batches = specBatches(specs);
+		expect(batches.length).toBeGreaterThan(1);
+		expect(batches.flat()).toEqual(specs);
+		for (const batch of batches)
+			expect(batch.reduce((size, spec) => size + spec.length + 3, 0)).toBeLessThanOrEqual(
+				24_000
+			);
+		expect(specBatches([])).toEqual([]);
 	});
 
 	it("leaves out a file the range adds and deletes", () => {

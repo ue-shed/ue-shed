@@ -424,19 +424,57 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 	}
 );
 
+/**
+ * Characters of file specs one `p4 files` takes. `files` reads its specs from its command line, and
+ * Windows starts a process with at most 32,767 characters of one; a long range's files go in
+ * batches that each stay well under it.
+ */
+const COMMAND_LINE_BUDGET = 24_000;
+
+/** File specs in batches of at most `budget` characters, each spec quoted and spaced. */
+export function specBatches(specs: readonly string[], budget = COMMAND_LINE_BUDGET): string[][] {
+	const batches: string[][] = [];
+	let current: string[] = [];
+	let size = 0;
+	for (const spec of specs) {
+		const cost = spec.length + 3;
+		if (current.length > 0 && size + cost > budget) {
+			batches.push(current);
+			current = [];
+			size = 0;
+		}
+		current.push(spec);
+		size += cost;
+	}
+	if (current.length > 0) batches.push(current);
+	return batches;
+}
+
+/** `p4 files` over any number of specs, a batch at a time, as one result. */
+const listFilesBatched = Effect.fnUntraced(function* (specs: readonly string[]) {
+	const p4 = yield* P4;
+	const results = yield* Effect.forEach(specBatches(specs), (fileSpec) =>
+		p4.listFiles({ fileSpec })
+	);
+	return {
+		items: results.flatMap((result) => result.items),
+		messages: results.flatMap((result) => result.messages),
+		failures: results.flatMap((result) => result.failures)
+	};
+});
+
 /** Lists project files at a revision and at the workspace's, together; local paths need no mapping. */
 const listAt = Effect.fnUntraced(function* (
 	projectRoot: string,
 	paths: readonly string[],
 	at: number | "head" | "have"
 ) {
-	const p4 = yield* P4;
 	const revision = at === "head" || at === "have" ? `#${at}` : `@${at}`;
 	const local = paths.map((path) => `${projectRoot}/${path}`);
 	const [found, have] = yield* Effect.all(
 		[
-			p4.listFiles({ fileSpec: local.map((path) => `${path}${revision}`) }),
-			p4.listFiles({ fileSpec: local.map((path) => `${path}#have`) })
+			listFilesBatched(local.map((path) => `${path}${revision}`)),
+			listFilesBatched(local.map((path) => `${path}#have`))
 		],
 		{ concurrency: 2 }
 	);
@@ -633,11 +671,9 @@ export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function*
 		const earlier =
 			read.length === 0
 				? undefined
-				: yield* p4
-						.listFiles({
-							fileSpec: read.map(({ item }) => `${item.depotFile}@${options.from}`)
-						})
-						.pipe(step(`list the files ${what} change at ${options.from}`));
+				: yield* listFilesBatched(
+						read.map(({ item }) => `${item.depotFile}@${options.from}`)
+					).pipe(step(`list the files ${what} change at ${options.from}`));
 		const atFrom = new Map(
 			(earlier?.items ?? []).flatMap((item) =>
 				item.isDeletedAtHead || item.revision === null

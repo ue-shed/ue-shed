@@ -54,7 +54,7 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	licensed("Apache-2.0", "fsst-rs"),
 	licensed(
 		"MIT",
-		"fancy-regex game-text-index generic-array process-metrics synstructure ts-rs ts-rs-macros zstd"
+		"fancy-regex game-text-index generic-array process-metrics synstructure ts-rs ts-rs-macros unreal-code zstd"
 	),
 	licensed(
 		"Unicode-3.0",

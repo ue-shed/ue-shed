@@ -79,11 +79,6 @@ export class GameTextIndexSource extends Context.Service<
 export type IndexedLocalizationQualityOptions = LocalizationCheckOptions;
 
 /**
- * A project and optional localization target to prepare. changedFiles absent means full
- * refresh, while an empty list permits reuse; review tolerance and key-change choices remain
- * explicit host policy.
- */
-/**
  * How to read a target's code: the engine's source gather behaviour (`sourceGatherEngine`) and its
  * installation root, which holds `Engine/`. Without it a target's code is not read, and the index
  * keeps no code text for it. Without the root, the engine's wrappers and tables are left out.
@@ -95,6 +90,11 @@ export const GameTextCodeSource = Schema.Struct({
 	refreshEngineWrappers: Schema.optionalKey(Schema.Boolean)
 });
 export type GameTextCodeSource = typeof GameTextCodeSource.Type;
+/**
+ * A project and optional localization target to prepare. changedFiles absent means full
+ * refresh, while an empty list permits reuse; review tolerance and key-change choices remain
+ * explicit host policy.
+ */
 export const GameTextIndexRefreshRequest = Schema.Struct({
 	projectRoot: Schema.NonEmptyString,
 	targetName: Schema.optionalKey(Schema.NonEmptyString),

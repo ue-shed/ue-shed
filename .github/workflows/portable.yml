@@ -1,5 +1,8 @@
 # Portable is the only hosted repository gate. Unreal evidence and releases remain explicit local
 # workflows until their hosted designs have been rewritten and exercised.
+#
+# Jobs run on boat.dev VMs. Boat only runs public-repository jobs for an allowlist of GitHub users,
+# so pull requests from forks use GitHub-hosted runners instead.
 
 name: Portable
 on:
@@ -19,7 +22,7 @@ concurrency:
 jobs:
     changes:
         name: Validate CI inputs and select checks
-        runs-on: boat
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
         # actions: read lets a release-notes-only push confirm that the previous head's run passed.
         permissions:
             actions: read
@@ -57,7 +60,7 @@ jobs:
     repository:
         name: Repository checks
         needs: changes
-        runs-on: boat
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
         timeout-minutes: 90
         steps:
             - name: Checkout without persisted credentials
@@ -122,7 +125,7 @@ jobs:
         name: UAsset libraries
         needs: changes
         if: needs.changes.outputs.uasset_libraries == 'true'
-        runs-on: boat
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
         timeout-minutes: 90
         env:
             SCCACHE_GHA_ENABLED: "true"
@@ -199,7 +202,7 @@ jobs:
         name: UAsset IO
         needs: changes
         if: needs.changes.outputs.uasset_io == 'true'
-        runs-on: boat
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
         timeout-minutes: 90
         env:
             SCCACHE_GHA_ENABLED: "true"
@@ -285,7 +288,7 @@ jobs:
         name: SQLite Catalog oracle
         needs: changes
         if: needs.changes.outputs.catalog_oracle == 'true'
-        runs-on: boat
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
         timeout-minutes: 20
         steps:
             - name: Checkout without persisted credentials
@@ -316,7 +319,7 @@ jobs:
         name: Website and illustrated guides
         needs: changes
         if: needs.changes.outputs.site == 'true'
-        runs-on: boat
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
         timeout-minutes: 30
         steps:
             - uses: actions/checkout@v6
@@ -359,7 +362,7 @@ jobs:
             - uasset_libraries
             - catalog_oracle
         if: always()
-        runs-on: boat
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
         steps:
             - name: Verify portable jobs
               shell: bash

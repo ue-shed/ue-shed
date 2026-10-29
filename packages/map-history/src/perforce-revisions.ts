@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Schema } from "effect";
 import { P4, type P4ClientOptions } from "p4client-ts";
 import { MapHistoryError } from "./errors.js";
 import { perforceProjectLayer, toMapHistoryError } from "./perforce.js";
@@ -183,11 +183,12 @@ const serverDirectory = Effect.fnUntraced(function* (directory: string) {
 	return join(directory, createHash("sha256").update(server).digest("hex").slice(0, 16));
 });
 
-/** One printed revision, as `printBatch` reports it. */
-interface PrintedRevision {
-	readonly file: { readonly depotFile: string };
-	readonly content: Uint8Array;
-}
+/**
+ * Revisions one `print` takes. `printBatch` and its watched form hold every printed file in
+ * memory (the watched form in an unbounded queue), so a side of large packages prints in batches
+ * this size: at most this many files are held, and each batch is one round trip.
+ */
+const PRINT_BATCH = 16;
 
 /** The depot folder the workspace maps the project folder to, ending in `/`. */
 const projectPrefix = Effect.fnUntraced(function* (projectRoot: string) {
@@ -257,49 +258,36 @@ const printMissing = Effect.fnUntraced(function* (
 		const byDepotFile = new Map(
 			needed.map((item) => [item.spec.replace(/[#@].*$/u, ""), item])
 		);
-		// Each file is written as it arrives and not kept, so a side of large packages never sits
-		// in memory at once.
-		const written = new Set<string>();
-		const write = Effect.fnUntraced(function* (item: PrintedRevision) {
-			const target = byDepotFile.get(item.file.depotFile);
-			if (target === undefined)
+		// A print holds its files in memory until it ends, so a side prints `PRINT_BATCH` at a time
+		// and each batch is written before the next: memory follows the batch, not the side.
+		for (let start = 0; start < needed.length; start += PRINT_BATCH) {
+			const chunk = needed.slice(start, start + PRINT_BATCH);
+			const batch = yield* p4
+				.printBatch({ fileSpec: chunk.map((item) => item.spec) })
+				.pipe(step(`print the changed files of ${what}`));
+			if (batch.failures.length > 0 || batch.items.length !== chunk.length)
 				return yield* Effect.fail(
-					failure(`Perforce printed ${item.file.depotFile}, which was not asked for.`)
+					failure(
+						`Perforce printed ${batch.items.length} of ${chunk.length} revisions for ${what}.`,
+						batch.failures
+					)
 				);
-			if (written.has(target.file)) return;
-			written.add(target.file);
-			bytes += item.content.byteLength;
-			printed++;
-			yield* Effect.promise(async () => {
-				await mkdir(join(target.file, ".."), { recursive: true });
-				const temporary = `${target.file}.${process.pid}.tmp`;
-				await writeFile(temporary, item.content);
-				await rename(temporary, target.file);
-			});
-		});
-		let result:
-			| { readonly items: readonly PrintedRevision[]; readonly failures: readonly unknown[] }
-			| undefined;
-		yield* p4.watch
-			.printBatch({ fileSpec: needed.map((item) => item.spec), keepContent: false })
-			.pipe(
-				Stream.runForEach((event) => {
-					if (event._tag === "item") return write(event.item);
-					if (event._tag === "done") result = event.result;
-					return Effect.void;
-				}),
-				step(`print the changed files of ${what}`)
-			);
-		// A client that keeps content reports it in the result instead.
-		for (const item of result?.items ?? []) yield* write(item);
-		const failures = result?.failures ?? [];
-		if (failures.length > 0 || written.size !== needed.length)
-			return yield* Effect.fail(
-				failure(
-					`Perforce printed ${written.size} of ${needed.length} revisions for ${what}.`,
-					failures
-				)
-			);
+			for (const item of batch.items) {
+				const target = byDepotFile.get(item.file.depotFile);
+				if (target === undefined)
+					return yield* Effect.fail(
+						failure(`Perforce printed ${item.file.depotFile}, which was not asked for.`)
+					);
+				bytes += item.content.byteLength;
+				printed++;
+				yield* Effect.promise(async () => {
+					await mkdir(join(target.file, ".."), { recursive: true });
+					const temporary = `${target.file}.${process.pid}.tmp`;
+					await writeFile(temporary, item.content);
+					await rename(temporary, target.file);
+				});
+			}
+		}
 	}
 	return { bytes, printed };
 });

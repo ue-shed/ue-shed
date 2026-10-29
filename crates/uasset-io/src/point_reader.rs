@@ -140,27 +140,53 @@ fn entry(
         Some(code) if !package => code.context.as_str(),
         _ => request.policy_json.as_str(),
     };
-    let key = points::record_key(&request.format, policy, &path, &content);
-    stages.hash += hashing.elapsed().as_secs_f64();
-    let record = points::record_file(configuration, &key);
-    let status_file = record.with_extension("status");
     // A code file importing a String Table CSV reads the CSV from the project as it is now, which
-    // its own bytes do not name, so its record is scanned again rather than reused.
-    let reusable = package || !imports_table(&bytes);
-    if let (true, true, Ok(status)) = (reusable, record.is_file(), fs::read_to_string(&status_file))
-    {
-        point.reused += 1;
-        return Ok(PointEntry {
-            path,
-            record: Some(key),
-            status: serde_json::from_str(&status)?,
-        });
+    // its own bytes do not name: it is scanned every time, and its record is named by what the scan
+    // found as well, so a point read before the CSV changed keeps its own record.
+    let importer = !package && imports_table(&bytes);
+    let mut key = points::record_key(&request.format, policy, &path, &content);
+    stages.hash += hashing.elapsed().as_secs_f64();
+    if !importer {
+        let record = points::record_file(configuration, &key);
+        if let (true, Ok(status)) = (
+            record.is_file(),
+            fs::read_to_string(record.with_extension("status")),
+        ) {
+            point.reused += 1;
+            return Ok(PointEntry {
+                path,
+                record: Some(key),
+                status: serde_json::from_str(&status)?,
+            });
+        }
     }
     let parsing = Instant::now();
     let (stored, status) = match code {
-        Some(code) if !package => scan_code(code, &path, source),
+        Some(code) if !package => {
+            let (stored, status, found) = scan_code(code, &path, source);
+            if importer {
+                key = points::record_key(
+                    &request.format,
+                    policy,
+                    &path,
+                    &format!("{content}\0{found}"),
+                );
+            }
+            (stored, status)
+        }
         _ => project(&path, &content, &bytes),
     };
+    let record = points::record_file(configuration, &key);
+    let status_file = record.with_extension("status");
+    if importer && record.is_file() && status_file.is_file() {
+        stages.parse += parsing.elapsed().as_secs_f64();
+        point.read += 1;
+        return Ok(PointEntry {
+            path,
+            record: Some(key),
+            status,
+        });
+    }
     let mut columns = Columns::new()?;
     columns.feed(stored, &request.rules)?;
     let columns = columns.finish()?;
@@ -176,10 +202,11 @@ fn entry(
     })
 }
 
-/// One code file's record: its places as the target's scan finds them in the file's bytes. It is
-/// partial when the scan dropped text it could not resolve alone: a String Table registered in
-/// another file (on 4.27), one whose CSV did not import, or a file it could not read.
-fn scan_code(code: &Code, path: &str, source: &str) -> (Stored, PointFileStatus) {
+/// One code file's record: its places as the target's scan finds them in the file's bytes, and a
+/// digest of those places. It is partial when the scan dropped text it could not resolve alone: a
+/// String Table registered in another file (on 4.27), one whose CSV did not import, or a file it
+/// could not read.
+fn scan_code(code: &Code, path: &str, source: &str) -> (Stored, PointFileStatus, String) {
     let file = unreal_code::CodeFile {
         path: path.to_owned(),
         location: source.into(),
@@ -190,6 +217,7 @@ fn scan_code(code: &Code, path: &str, source: &str) -> (Stored, PointFileStatus)
         &code.wrappers,
         &unreal_code::DiskStore,
     );
+    let found = digest(&serde_json::to_vec(&text.places).unwrap_or_default());
     let places = text.places.iter().collect::<Vec<_>>();
     let partial = text.diagnostics.iter().any(|diagnostic| {
         matches!(
@@ -207,14 +235,19 @@ fn scan_code(code: &Code, path: &str, source: &str) -> (Stored, PointFileStatus)
         } else {
             PointFileStatus::Complete
         },
+        found,
     )
 }
 
-/// Whether code bytes import a String Table from a CSV (`LOCTABLE_FROMFILE_GAME`, `_ENGINE`).
+/// Whether code bytes import a String Table from a CSV (`LOCTABLE_FROMFILE_GAME`, `_ENGINE`), in
+/// any encoding the scanner reads: UTF-8, or UTF-16 either way round.
 fn imports_table(bytes: &[u8]) -> bool {
-    bytes
-        .windows(b"LOCTABLE_FROMFILE".len())
-        .any(|window| window == b"LOCTABLE_FROMFILE")
+    const TOKEN: &[u8] = b"LOCTABLE_FROMFILE";
+    let little = TOKEN.iter().flat_map(|&b| [b, 0]).collect::<Vec<_>>();
+    let big = TOKEN.iter().flat_map(|&b| [0, b]).collect::<Vec<_>>();
+    [TOKEN, little.as_slice(), big.as_slice()]
+        .iter()
+        .any(|needle| bytes.windows(needle.len()).any(|window| window == *needle))
 }
 
 fn is_package(path: &str) -> bool {
@@ -488,14 +521,52 @@ mod tests {
             .point
             .ok_or("a point outcome")?;
         assert_eq!(first.entries[0].status, PointFileStatus::Partial);
-        // The CSV is read from the project as it is now, so that file is scanned again.
+        // The CSV is read from the project as it is now, so that file is scanned again; with the
+        // same text it names the same record.
         let again = read(&configuration, &point)?
             .point
             .ok_or("a point outcome")?;
         assert_eq!((again.read, again.reused), (1, 1));
+        assert_eq!(again.entries[1].record, first.entries[1].record);
+        // A changed CSV makes a new record and leaves the earlier point's as it was.
+        let earlier = first.entries[1].record.clone().ok_or("a record")?;
+        let earlier_bytes = fs::read(points::record_file(&configuration, &earlier))?;
+        fs::create_dir_all(folder.join("Content/Tables"))?;
+        fs::write(
+            folder.join("Content/Tables/Menu.csv"),
+            "Key,SourceString\nPlay,Launch\n",
+        )?;
+        let changed = read(&configuration, &point)?
+            .point
+            .ok_or("a point outcome")?;
+        assert_ne!(changed.entries[1].record.as_deref(), Some(earlier.as_str()));
+        assert_eq!(
+            fs::read(points::record_file(&configuration, &earlier))?,
+            earlier_bytes
+        );
         let _ = fs::remove_dir_all(&configuration.cache_root);
         let _ = fs::remove_dir_all(&folder);
         Ok(())
+    }
+
+    #[test]
+    fn a_csv_import_is_found_in_every_encoding_the_scanner_reads() {
+        let utf16 = |text: &str, little: bool| {
+            text.encode_utf16()
+                .flat_map(|unit| {
+                    if little {
+                        unit.to_le_bytes()
+                    } else {
+                        unit.to_be_bytes()
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let line = "LOCTABLE_FROMFILE_GAME(\"Menu\", \"Menu\", \"Tables/Menu.csv\");";
+        assert!(imports_table(line.as_bytes()));
+        assert!(imports_table(&utf16(line, true)));
+        assert!(imports_table(&utf16(line, false)));
+        assert!(!imports_table(&utf16("LOCTEXT(\"K\", \"Play\")", true)));
     }
 
     /// A code file before and after an edit, judged against a manifest and two archives.

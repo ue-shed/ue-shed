@@ -890,8 +890,25 @@ Muse, given the screenshots and the code, not the planner's view.
   per-culture rollups. Both critiques asked for them; they need data the comparison does not
   return yet.
 - **Found**: opening the review page as the project opens can race the project index for the
-  catalog writer lock (`cannot acquire Catalog writer lock`); the index gives up instead of
-  waiting. A reload indexes. It predates this rework.
+  catalog writer lock (`cannot acquire Catalog writer lock`); the index gave up instead of
+  waiting. It predates this rework; Electroswag's index keeper now waits up to 30 seconds for the
+  lock.
+
+**Owner review of the rework (2026-10-29)**: three faults the screenshots showed and the first
+rework kept.
+
+- **The details crushed the diffs.** Stacked above them, even capped at half the page, they left
+  the diffs a third of the screen. The review page now shows one verdict line per target above
+  full-height diffs, and **Text report** swaps the diffs for the report; Back to diffs and Show diff
+  swap back. The diff layout controls hide while the report shows.
+- **The file tree was light.** `@pierre/trees` sets `color-scheme: light dark` and so follows the
+  system; Electroswag is dark only, and the tree's styles now say so.
+- **The Change/Against picker was hard to use.** Compare is now a changelist list like P4V's:
+  Submitted, Shelved or Pending, newest first. A click compares one; a shift-click on the
+  submitted list compares every changelist between the two together, as one band.
+- **Found on the way**: a change that is all C++ and config, with the engine not installed, said
+  "Passes" on nothing read; it now says **Not checked**, and "files read" counts only what was.
+  Shelf 220630 (5 C++ files) shows it. The sticky diff file header was see-through.
 
 ## STOP conditions
 

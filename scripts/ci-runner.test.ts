@@ -19,16 +19,16 @@ const limits = (day: number, hour: number) => ({
 	}
 });
 
-test("boat runs the lanes only when the run's starts fit with headroom in both windows", () => {
-	const enough = 3 + startHeadroom;
-	assert.equal(selectRunner(3, { unlimited: false, day: enough, hour: enough }), boatRunner);
-	assert.equal(selectRunner(3, { unlimited: false, day: enough - 1, hour: 60 }), githubRunner);
-	assert.equal(selectRunner(3, { unlimited: false, day: 200, hour: enough - 1 }), githubRunner);
+test("boat runs the jobs only when the run's starts fit with headroom in both windows", () => {
+	const enough = 2 + startHeadroom;
+	assert.equal(selectRunner(2, { unlimited: false, day: enough, hour: enough }), boatRunner);
+	assert.equal(selectRunner(2, { unlimited: false, day: enough - 1, hour: 60 }), githubRunner);
+	assert.equal(selectRunner(2, { unlimited: false, day: 200, hour: enough - 1 }), githubRunner);
 	assert.equal(
 		selectRunner(1, { unlimited: false, day: 1 + startHeadroom, hour: 60 }),
 		boatRunner
 	);
-	assert.equal(selectRunner(3, { unlimited: true, day: 0, hour: 0 }), boatRunner);
+	assert.equal(selectRunner(2, { unlimited: true, day: 0, hour: 0 }), boatRunner);
 });
 
 test("no answer from boat falls back to GitHub-hosted runners", () => {

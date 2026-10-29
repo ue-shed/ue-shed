@@ -34,8 +34,8 @@ export function remainingStarts(body: JsonValue): BoatStarts | undefined {
 }
 
 /**
- * The runner for the lanes that run on boat. Every boat job is one start, and a start over the
- * plan's limit waits for the window to clear, so the lanes use boat only when boat confirms the
+ * The runner for the jobs that run on boat. Every boat job is one start, and a start over the
+ * plan's limit waits for the window to clear, so the jobs use boat only when boat confirms the
  * run's starts fit with headroom. Without that answer they use GitHub-hosted runners.
  */
 export function selectRunner(needed: number, starts: BoatStarts | undefined) {
@@ -65,10 +65,9 @@ async function fetchStarts(key: string, org: string) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	// The repository job, plus the UAsset job when either of its suites runs.
 	const needed =
-		1 +
-		Number(process.env.UASSET_LIBRARIES === "true") +
-		Number(process.env.UASSET_IO === "true");
+		process.env.UASSET_LIBRARIES === "true" || process.env.UASSET_IO === "true" ? 2 : 1;
 	const key = process.env.BOAT_API_KEY ?? "";
 	// Pull requests from forks get no secrets, so they always use GitHub-hosted runners.
 	if (key === "") console.log("No BOAT_API_KEY: using GitHub-hosted runners.");

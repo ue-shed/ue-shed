@@ -1,9 +1,9 @@
 # Portable is the only hosted repository gate. Unreal evidence and releases remain explicit local
 # workflows until their hosted designs have been rewritten and exercised.
 #
-# The repository and UAsset lanes run on boat.dev VMs; the short jobs stay on GitHub-hosted runners
+# The repository and UAsset jobs run on boat.dev VMs; the short jobs stay on GitHub-hosted runners
 # because each boat job counts against the plan's start limits. scripts/ci-runner.ts asks boat how
-# many starts are left and sends the lanes to GitHub-hosted runners when the run would not fit, or
+# many starts are left and sends both jobs to GitHub-hosted runners when the run would not fit, or
 # when there is no BOAT_API_KEY secret, as on pull requests from forks.
 
 name: Portable
@@ -16,7 +16,7 @@ on:
 permissions:
     contents: read
 env:
-    # Keep hosted builds reproducible; update deliberately after verifying both UAsset lanes.
+    # Keep hosted builds reproducible; update deliberately after verifying both UAsset suites.
     RUSTUP_TOOLCHAIN: "1.98.1"
 concurrency:
     group: portable-${{ github.ref }}
@@ -62,7 +62,7 @@ jobs:
                   BASE_SHA: ${{ github.event.pull_request.base.sha }}
                   HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
               run: node scripts/ci-scope.ts
-            - name: Choose runners for the repository and UAsset lanes
+            - name: Choose runners for the repository and UAsset jobs
               id: runner
               env:
                   BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
@@ -134,10 +134,14 @@ jobs:
                       coverage/**
                   if-no-files-found: ignore
                   retention-days: 14
-    uasset_libraries:
-        name: UAsset libraries
+    # One job runs both UAsset suites so they share one setup and one boat start. Each suite runs
+    # when its inputs changed; IO still runs after a library failure so one push reports both.
+    uasset:
+        name: UAsset
         needs: changes
-        if: needs.changes.outputs.uasset_libraries == 'true'
+        if: >-
+            needs.changes.outputs.uasset_libraries == 'true' ||
+            needs.changes.outputs.uasset_io == 'true'
         runs-on: ${{ needs.changes.outputs.heavy_runner }}
         timeout-minutes: 90
         env:
@@ -174,89 +178,29 @@ jobs:
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile
             - name: Install Chromium for browser tests
+              if: needs.changes.outputs.uasset_libraries == 'true'
               run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps --only-shell chromium
+            - name: Build TypeScript packages
+              id: build
+              shell: bash
+              run: |
+                  set -o pipefail
+                  mkdir -p evidence
+                  pnpm run build:typescript-packages 2>&1 | tee evidence/uasset-build.log
             - name: Run UAsset library gate
+              if: needs.changes.outputs.uasset_libraries == 'true'
               shell: bash
               run: |
                   set -o pipefail
-                  mkdir -p evidence
-                  pnpm run build:typescript-packages 2>&1 | tee evidence/uasset-libraries-check.log
-                  pnpm run uasset:check:libraries \
-                      2>&1 | tee -a evidence/uasset-libraries-check.log
-            - name: Collect compiler cache diagnostics
-              if: always()
-              shell: bash
-              run: |
-                  mkdir -p evidence
-                  sccache --show-stats --stats-format=json > evidence/sccache-stats.json
-                  if [[ -f "$SCCACHE_ERROR_LOG" ]]; then
-                      cp "$SCCACHE_ERROR_LOG" evidence/sccache.log
-                  fi
-            - name: Upload UAsset library evidence
-              if: always()
-              uses: actions/upload-artifact@v7
-              with:
-                  name: uasset-libraries-evidence-${{ github.run_id }}
-                  path: |
-                      evidence/uasset-libraries-check.log
-                      evidence/sccache-stats.json
-                      evidence/sccache.log
-                  if-no-files-found: error
-                  retention-days: 30
-            - name: Upload UAsset library failure diagnostics
-              if: failure()
-              uses: actions/upload-artifact@v7
-              with:
-                  name: uasset-libraries-failure-${{ github.run_id }}
-                  path: test-results/**
-                  if-no-files-found: ignore
-                  retention-days: 14
-    uasset_io:
-        name: UAsset IO
-        needs: changes
-        if: needs.changes.outputs.uasset_io == 'true'
-        runs-on: ${{ needs.changes.outputs.heavy_runner }}
-        timeout-minutes: 90
-        env:
-            SCCACHE_GHA_ENABLED: "true"
-            CARGO_INCREMENTAL: "0"
-            RUSTC_WRAPPER: sccache
-            SCCACHE_BASEDIRS: ${{ github.workspace }}
-            SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
-            SCCACHE_LOG: warn
-            SCCACHE_ERROR_LOG: ${{ github.workspace }}/sccache.log
-        steps:
-            - name: Checkout without persisted credentials
-              uses: actions/checkout@v6
-              with:
-                  persist-credentials: false
-            - name: Configure GitHub Actions compiler cache
-              uses: mozilla-actions/sccache-action@v0.0.11
-            - name: Install pnpm
-              uses: pnpm/action-setup@v6
-            - name: Install Node.js
-              uses: actions/setup-node@v6
-              with:
-                  node-version: "26"
-                  cache: pnpm
-            - name: Install Rust UAsset toolchains
-              run: |
-                  rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt,clippy --no-self-update
-                  rustup target add wasm32-unknown-unknown
-            - name: Install prebuilt wasm-pack
-              uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2
-              with:
-                  tool: wasm-pack@0.14.0
-                  fallback: none
-            - name: Install locked dependencies
-              run: pnpm install --frozen-lockfile
+                  pnpm run uasset:check:libraries 2>&1 | tee evidence/uasset-libraries-check.log
             - name: Run UAsset IO gate
+              if: >-
+                  !cancelled() && steps.build.outcome == 'success' &&
+                  needs.changes.outputs.uasset_io == 'true'
               shell: bash
               run: |
                   set -o pipefail
-                  mkdir -p evidence
-                  pnpm run build:typescript-packages 2>&1 | tee evidence/uasset-io-check.log
-                  pnpm run uasset:check:io 2>&1 | tee -a evidence/uasset-io-check.log
+                  pnpm run uasset:check:io 2>&1 | tee evidence/uasset-io-check.log
                   node scripts/test.ts \
                       apps/cli/src/index.e2e.test.ts \
                       apps/cli/src/localization-status.integration.test.ts \
@@ -278,22 +222,24 @@ jobs:
                   if [[ -f "$SCCACHE_ERROR_LOG" ]]; then
                       cp "$SCCACHE_ERROR_LOG" evidence/sccache.log
                   fi
-            - name: Upload UAsset IO evidence
+            - name: Upload UAsset evidence
               if: always()
               uses: actions/upload-artifact@v7
               with:
-                  name: uasset-io-evidence-${{ github.run_id }}
+                  name: uasset-evidence-${{ github.run_id }}
                   path: |
+                      evidence/uasset-build.log
+                      evidence/uasset-libraries-check.log
                       evidence/uasset-io-check.log
                       evidence/sccache-stats.json
                       evidence/sccache.log
                   if-no-files-found: error
                   retention-days: 30
-            - name: Upload UAsset IO failure diagnostics
+            - name: Upload UAsset failure diagnostics
               if: failure()
               uses: actions/upload-artifact@v7
               with:
-                  name: uasset-io-failure-${{ github.run_id }}
+                  name: uasset-failure-${{ github.run_id }}
                   path: test-results/**
                   if-no-files-found: ignore
                   retention-days: 14
@@ -371,8 +317,7 @@ jobs:
             - changes
             - repository
             - site
-            - uasset_io
-            - uasset_libraries
+            - uasset
             - catalog_oracle
         if: always()
         runs-on: ubuntu-24.04
@@ -383,15 +328,12 @@ jobs:
                   CHANGES_RESULT: ${{ needs.changes.result }}
                   REPOSITORY_RESULT: ${{ needs.repository.result }}
                   SITE_RESULT: ${{ needs.site.result }}
-                  UASSET_IO_RESULT: ${{ needs.uasset_io.result }}
-                  UASSET_LIBRARIES_RESULT: ${{ needs.uasset_libraries.result }}
+                  UASSET_RESULT: ${{ needs.uasset.result }}
                   CATALOG_ORACLE_RESULT: ${{ needs.catalog_oracle.result }}
               run: |
                   set -euo pipefail
                   [[ "$CHANGES_RESULT" == "success" ]]
                   [[ "$REPOSITORY_RESULT" == "success" ]]
                   [[ "$SITE_RESULT" == "success" || "$SITE_RESULT" == "skipped" ]]
-                  [[ "$UASSET_IO_RESULT" == "success" || "$UASSET_IO_RESULT" == "skipped" ]]
-                  [[ "$UASSET_LIBRARIES_RESULT" == "success" || \
-                      "$UASSET_LIBRARIES_RESULT" == "skipped" ]]
+                  [[ "$UASSET_RESULT" == "success" || "$UASSET_RESULT" == "skipped" ]]
                   [[ "$CATALOG_ORACLE_RESULT" == "success" || "$CATALOG_ORACLE_RESULT" == "skipped" ]]

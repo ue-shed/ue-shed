@@ -24,10 +24,12 @@ let indexed: ReturnType<typeof makeIndexRuntime>;
 let cacheRoot: string;
 function makeIndexRuntime(root: string) {
 	// The fixture's code is read with 5.7's source gather, whichever engines this machine has.
+	// Commands get this configuration in place of the environment's, so it names the reader too.
 	const config = ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			UE_SHED_PROJECT_INDEX_CACHE_ROOT: root,
-			UE_SHED_ENGINE_VERSION: "5.7"
+			UE_SHED_ENGINE_VERSION: "5.7",
+			...(executable === undefined ? undefined : { UE_SHED_UASSET_EXECUTABLE: executable })
 		})
 	);
 	return ManagedRuntime.make(

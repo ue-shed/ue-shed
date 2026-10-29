@@ -141,8 +141,9 @@ regression checks before compilation. Contract checks follow package builds beca
 built protocol packages. `check:precommit` now runs the Effect architecture check on repository
 sources in addition to testing the checker.
 
-All jobs in `.github/workflows/portable.yml` use ephemeral `boat` runners, except on pull requests
-from forks, which use `ubuntu-24.04`. Changes to the
+All jobs in `.github/workflows/portable.yml` use ephemeral boat runners, except on pull requests
+from forks, which use `ubuntu-24.04`. The repository and UAsset lanes use `boat-large` (8 vCPU,
+16 GB); the rest use `boat` (4 vCPU, 8 GB). Changes to the
 workflow itself enable both conditional UAsset lanes. The aggregate status requires the repository job to succeed and accepts only success or
 an intentional skip from the conditional jobs, including the website lane. A failed selection job
 blocks the aggregate gate. The Catalog job runs its SQLite-specific suite and differential oracle;

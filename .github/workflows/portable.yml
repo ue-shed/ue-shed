@@ -60,7 +60,7 @@ jobs:
     repository:
         name: Repository checks
         needs: changes
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat-large' }}
         timeout-minutes: 90
         steps:
             - name: Checkout without persisted credentials
@@ -125,7 +125,7 @@ jobs:
         name: UAsset libraries
         needs: changes
         if: needs.changes.outputs.uasset_libraries == 'true'
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat-large' }}
         timeout-minutes: 90
         env:
             SCCACHE_GHA_ENABLED: "true"
@@ -202,7 +202,7 @@ jobs:
         name: UAsset IO
         needs: changes
         if: needs.changes.outputs.uasset_io == 'true'
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
+        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat-large' }}
         timeout-minutes: 90
         env:
             SCCACHE_GHA_ENABLED: "true"

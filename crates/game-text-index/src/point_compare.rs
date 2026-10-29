@@ -13,6 +13,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::join_policy::file_key;
+use crate::package_evidence::editor_only;
 use crate::package_text_contract::{
     ComparePointsRequest, GateCheck, PageRequest, PointChange, PointChangeCounts, PointChangeKind,
     PointComparison, PointEntry, PointFileStatus, PointFinding, PointFindingCounts, PointFindings,
@@ -45,6 +46,8 @@ struct Occurrence {
     location: u32,
     /// 0 unknown, 1 runtime, 2 editor-only, 3 left out by the target.
     gather: u32,
+    /// The encoded audience: the gather table's bit, else the audience policy's row.
+    audience: u32,
 }
 
 /// One file's texts in a record, in saved order.
@@ -113,6 +116,7 @@ fn read_record(path: &Path) -> Result<Record> {
             identity: number("occurrence.identity", row)?,
             location: number("occurrence.location", row)?,
             gather: number("occurrence.gather", row)?,
+            audience: number("occurrence.audience", row)?,
         });
     }
     Ok(Record { occurrences })
@@ -446,6 +450,75 @@ fn entries(lookup: &mut Lookup, changes: &[Change]) -> Result<HashMap<(String, S
     Ok(found)
 }
 
+/// Whether the target's gather collects a text in `path`.
+///
+/// Code text the target leaves out is marked so by the scan, per gather step. Package editor text,
+/// by Unreal's gather table or else the audience policy, follows the target's package setting, as
+/// the index rates it out of scope; editor text the base's manifest names in the same file stays,
+/// since Unreal gathered it there. Unreal gathers no empty text.
+fn gathers(
+    path: &str,
+    occurrence: &Occurrence,
+    gather_editor_only: bool,
+    gathered: &HashSet<(String, String, String)>,
+) -> bool {
+    !occurrence.source.is_empty()
+        && occurrence.gather != 3
+        && (occurrence.location == 3
+            || gather_editor_only
+            || !editor_only(occurrence.audience)
+            || resolved(Some(occurrence)).is_some_and(|(namespace, key)| {
+                gathered.contains(&(file_key(path), namespace.to_owned(), key.to_owned()))
+            }))
+}
+
+/// The package editor text Unreal gathered anyway: `(file, namespace, key)` where the base's
+/// manifest names the key in that file. Each key is read from the lookup once.
+fn gathered_editor_text(
+    lookup: &mut Lookup,
+    records: &HashMap<&str, Record>,
+    before: &[PointEntry],
+    after: &[PointEntry],
+) -> Result<HashSet<(String, String, String)>> {
+    let mut files = HashMap::<(String, String), HashSet<String>>::new();
+    let mut gathered = HashSet::new();
+    for entry in before.iter().chain(after) {
+        let Some(record) = entry
+            .record
+            .as_ref()
+            .and_then(|key| records.get(key.as_str()))
+        else {
+            continue;
+        };
+        let file = file_key(&entry.path);
+        for occurrence in &record.occurrences {
+            if occurrence.location == 3 || !editor_only(occurrence.audience) {
+                continue;
+            }
+            let Some((namespace, key)) = resolved(Some(occurrence)) else {
+                continue;
+            };
+            let owned = (namespace.to_owned(), key.to_owned());
+            if !files.contains_key(&owned) {
+                let found = lookup
+                    .find(namespace, key)?
+                    .map_or_else(HashSet::new, |found| {
+                        found
+                            .contexts
+                            .iter()
+                            .map(|context| file_key(&context.path))
+                            .collect()
+                    });
+                files.insert(owned.clone(), found);
+            }
+            if files[&owned].contains(&file) {
+                gathered.insert((file.clone(), owned.0, owned.1));
+            }
+        }
+    }
+    Ok(gathered)
+}
+
 /// The gate's checks on the changes, against the base's localization. `before_texts` and
 /// `after_texts` are every text of the changed files at each side, so a key still used elsewhere
 /// in them is not lost.
@@ -733,21 +806,45 @@ pub fn compare(
         }
     }
     stage_seconds.insert("compare.read".into(), started.elapsed().as_secs_f64());
+    let mut lookup = match &request.localization {
+        None => None,
+        Some(localization) => {
+            let started = Instant::now();
+            let (lookup, built) = open_or_build(configuration, localization)?;
+            stage_seconds.insert(
+                if built {
+                    "compare.lookup_build"
+                } else {
+                    "compare.lookup_open"
+                }
+                .into(),
+                started.elapsed().as_secs_f64(),
+            );
+            Some((lookup, built))
+        }
+    };
     let started = Instant::now();
-    // Code text the target leaves out is marked so by the scan, per gather step; package text
-    // follows the target's package setting.
-    // Unreal gathers no empty text.
-    let kept = |occurrence: &&Occurrence| {
-        !occurrence.source.is_empty()
-            && occurrence.gather != 3
-            && (occurrence.location == 3 || request.gather_editor_only || occurrence.gather != 2)
+    let gathered = match (&mut lookup, request.gather_editor_only) {
+        (Some((lookup, _)), false) => {
+            gathered_editor_text(lookup, &records, &before_entries, &after_entries)?
+        }
+        _ => HashSet::new(),
+    };
+    let kept = |path: &str, occurrence: &Occurrence| {
+        gathers(path, occurrence, request.gather_editor_only, &gathered)
     };
     let texts = |entry: Option<&PointEntry>| -> Vec<&Occurrence> {
         entry
-            .and_then(|entry| entry.record.as_ref())
-            .and_then(|key| records.get(key.as_str()))
-            .map_or_else(Vec::new, |record| {
-                record.occurrences.iter().filter(kept).collect()
+            .and_then(|entry| {
+                let key = entry.record.as_ref()?;
+                Some((entry.path.as_str(), records.get(key.as_str())?))
+            })
+            .map_or_else(Vec::new, |(path, record)| {
+                record
+                    .occurrences
+                    .iter()
+                    .filter(|occurrence| kept(path, occurrence))
+                    .collect()
             })
     };
     let mut counts = PointChangeCounts::default();
@@ -794,20 +891,9 @@ pub fn compare(
         }
     }
     stage_seconds.insert("compare.diff".into(), started.elapsed().as_secs_f64());
-    let findings = match &request.localization {
+    let findings = match lookup {
         None => None,
-        Some(localization) => {
-            let started = Instant::now();
-            let (mut lookup, built) = open_or_build(configuration, localization)?;
-            stage_seconds.insert(
-                if built {
-                    "compare.lookup_build"
-                } else {
-                    "compare.lookup_open"
-                }
-                .into(),
-                started.elapsed().as_secs_f64(),
-            );
+        Some((mut lookup, built)) => {
             let started = Instant::now();
             let files = paths.keys().map(|path| file_key(path)).collect();
             let mut rows = judge(&mut lookup, &changes, &before_texts, &after_texts, &files)?;
@@ -932,6 +1018,38 @@ mod tests {
             ]
         );
         assert_eq!(counts.unchanged, 0);
+    }
+
+    #[test]
+    fn editor_text_follows_the_targets_package_setting_unless_unreal_gathered_it() {
+        const PATH: &str = "Content/UI/W_Menu.uasset";
+        // Encoded audiences (text-audience.ts): the gather table's editor-only bit, the `k2_node`
+        // policy row's reason, a developer folder's, and the table's runtime bit.
+        let table_editor = 1;
+        let policy_editor = 1 | (4 << 2);
+        let developer_folder = 1 | (2 << 2);
+        let runtime = 1 << 2;
+        let text = |key: &str, audience: u32| Occurrence {
+            audience,
+            ..property("PinFriendlyName", "Target", key)
+        };
+        let gathered = HashSet::from([(file_key(PATH), String::new(), "Kept".to_owned())]);
+        for (occurrence, judged) in [
+            (text("A1", table_editor), false),
+            (text("A2", policy_editor), false),
+            (text("Kept", policy_editor), true),
+            (text("A3", developer_folder), true),
+            (text("A4", runtime), true),
+        ] {
+            assert_eq!(gathers(PATH, &occurrence, false, &gathered), judged);
+            assert!(gathers(PATH, &occurrence, true, &gathered));
+        }
+        assert!(!gathers(
+            "Content/UI/W_Other.uasset",
+            &text("Kept", policy_editor),
+            false,
+            &gathered
+        ));
     }
 
     #[test]

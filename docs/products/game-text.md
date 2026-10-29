@@ -1302,6 +1302,12 @@ reported.
 - It only reads Perforce, with `describe`, `where`, `files` and `print`. It never opens, edits or
   submits anything.
 - String Table CSVs and wrapper macros come from the workspace on disk, as a full scan reads them.
+- Editor text in packages follows the target's `ShouldGatherFromEditorOnlyData`, as
+  [player and editor text](#player-and-editor-text) rates it out of scope: when the target does
+  not gather editor-only data, Blueprint graph labels, categories and tooltips are left out at both
+  revisions, unless the base's manifest names that key in that file because Unreal gathered it
+  there. On a large UE 4.27 project this took changelist 220253 from 652 added lines and a false
+  conflict on an engine pin label to 34 added lines.
 
 #### Listed files
 

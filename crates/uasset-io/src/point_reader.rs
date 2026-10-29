@@ -144,7 +144,11 @@ fn entry(
     stages.hash += hashing.elapsed().as_secs_f64();
     let record = points::record_file(configuration, &key);
     let status_file = record.with_extension("status");
-    if let (true, Ok(status)) = (record.is_file(), fs::read_to_string(&status_file)) {
+    // A code file importing a String Table CSV reads the CSV from the project as it is now, which
+    // its own bytes do not name, so its record is scanned again rather than reused.
+    let reusable = package || !imports_table(&bytes);
+    if let (true, true, Ok(status)) = (reusable, record.is_file(), fs::read_to_string(&status_file))
+    {
         point.reused += 1;
         return Ok(PointEntry {
             path,
@@ -154,7 +158,7 @@ fn entry(
     }
     let parsing = Instant::now();
     let (stored, status) = match code {
-        Some(code) if !package => (scan_code(code, &path, source), PointFileStatus::Complete),
+        Some(code) if !package => scan_code(code, &path, source),
         _ => project(&path, &content, &bytes),
     };
     let mut columns = Columns::new()?;
@@ -172,8 +176,10 @@ fn entry(
     })
 }
 
-/// One code file's record: its places as the target's scan finds them in the file's bytes.
-fn scan_code(code: &Code, path: &str, source: &str) -> Stored {
+/// One code file's record: its places as the target's scan finds them in the file's bytes. It is
+/// partial when the scan dropped text it could not resolve alone: a String Table registered in
+/// another file (on 4.27), one whose CSV did not import, or a file it could not read.
+fn scan_code(code: &Code, path: &str, source: &str) -> (Stored, PointFileStatus) {
     let file = unreal_code::CodeFile {
         path: path.to_owned(),
         location: source.into(),
@@ -185,7 +191,30 @@ fn scan_code(code: &Code, path: &str, source: &str) -> Stored {
         &unreal_code::DiskStore,
     );
     let places = text.places.iter().collect::<Vec<_>>();
-    crate::code_layer::code_record(path, &places)
+    let partial = text.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.code,
+            unreal_code::DiagnosticCode::TableNotRegistered
+                | unreal_code::DiagnosticCode::CrashesUnreal427
+                | unreal_code::DiagnosticCode::TableImportFailed
+                | unreal_code::DiagnosticCode::Unreadable
+        )
+    });
+    (
+        crate::code_layer::code_record(path, &places),
+        if partial {
+            PointFileStatus::Partial
+        } else {
+            PointFileStatus::Complete
+        },
+    )
+}
+
+/// Whether code bytes import a String Table from a CSV (`LOCTABLE_FROMFILE_GAME`, `_ENGINE`).
+fn imports_table(bytes: &[u8]) -> bool {
+    bytes
+        .windows(b"LOCTABLE_FROMFILE".len())
+        .any(|window| window == b"LOCTABLE_FROMFILE")
 }
 
 fn is_package(path: &str) -> bool {
@@ -399,6 +428,73 @@ mod tests {
         assert_eq!((other.read, other.reused), (1, 0));
         assert_ne!(other.entries[0].record.as_deref(), Some(record.as_str()));
         let _ = fs::remove_dir_all(&configuration.cache_root);
+        Ok(())
+    }
+
+    #[test]
+    fn code_whose_string_table_it_cannot_resolve_alone_is_partial_and_not_reused() -> Result<()> {
+        let folder = std::env::temp_dir().join(format!("ue-shed-point-tables-{}", token()));
+        fs::create_dir_all(folder.join("Source/Game"))?;
+        // On 4.27 a table's entries in one file and its registration in another are one table;
+        // read alone, the entries are dropped.
+        let entries = folder.join("Source/Game/Entries.cpp");
+        fs::write(
+            &entries,
+            "LOCTABLE_SETSTRING(\"Menu\", \"Play\", \"Play\");
+",
+        )?;
+        let imports = folder.join("Source/Game/Imports.cpp");
+        fs::write(
+            &imports,
+            "LOCTABLE_FROMFILE_GAME(\"Menu\", \"Menu\", \"Tables/Menu.csv\");
+",
+        )?;
+        let configuration = configuration();
+        let mut point = request(
+            "local",
+            [&entries, &imports]
+                .iter()
+                .map(|file| PointFile {
+                    path: format!(
+                        "Source/Game/{}",
+                        file.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or_default()
+                    ),
+                    file: Some(file.to_string_lossy().into_owned()),
+                })
+                .collect(),
+        );
+        point.code = Some(PointCode {
+            policy_json: "{}".into(),
+            scan: unreal_code::CodeTextRequest {
+                project_root: folder.to_string_lossy().into_owned(),
+                engine_root: None,
+                engine: unreal_code::EngineLine::Ue4_27,
+                targets: vec![unreal_code::CodeTarget {
+                    name: "Game".into(),
+                    steps: vec![unreal_code::GatherStep {
+                        search_directory_paths: vec!["Source".into()],
+                        exclude_path_filters: Vec::new(),
+                        file_name_filters: vec!["*.cpp".into()],
+                        gather_editor_only: false,
+                    }],
+                }],
+                cache_root: None,
+                refresh_engine_wrappers: false,
+            },
+        });
+        let first = read(&configuration, &point)?
+            .point
+            .ok_or("a point outcome")?;
+        assert_eq!(first.entries[0].status, PointFileStatus::Partial);
+        // The CSV is read from the project as it is now, so that file is scanned again.
+        let again = read(&configuration, &point)?
+            .point
+            .ok_or("a point outcome")?;
+        assert_eq!((again.read, again.reused), (1, 1));
+        let _ = fs::remove_dir_all(&configuration.cache_root);
+        let _ = fs::remove_dir_all(&folder);
         Ok(())
     }
 

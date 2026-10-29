@@ -246,20 +246,32 @@ pub fn find_wrappers(
     files: &[CodeFile],
     store: &dyn FileStore,
 ) -> Vec<WrapperMacro> {
+    wrappers_read(engine, files, store).0
+}
+
+/// [`find_wrappers`], and whether it read every file: a set from a prepass that could not read
+/// a file may lack that file's wrappers, so it is not kept for later scans.
+pub(crate) fn wrappers_read(
+    engine: EngineLine,
+    files: &[CodeFile],
+    store: &dyn FileStore,
+) -> (Vec<WrapperMacro>, bool) {
     if engine == EngineLine::Ue4_27 {
-        return Vec::new();
+        return (Vec::new(), true);
     }
     let Some(define) = searcher(&["#define ".to_owned()]) else {
-        return Vec::new();
+        return (Vec::new(), true);
     };
     let Some(nested) = searcher(&["LOCTEXT".to_owned(), "UI_COMMAND".to_owned()]) else {
-        return Vec::new();
+        return (Vec::new(), true);
     };
+    let unread = std::sync::atomic::AtomicBool::new(false);
     let descriptors = [Descriptor::wrapper_prepass()];
     let found: Vec<Vec<NestedWrapper>> = files
         .par_iter()
         .map(|file| {
             let Ok(bytes) = store.read(&file.location) else {
+                unread.store(true, std::sync::atomic::Ordering::Relaxed);
                 return Vec::new();
             };
             if !holds_any(&bytes, &define) || !holds_any(&bytes, &nested) {
@@ -282,11 +294,12 @@ pub fn find_wrappers(
             sink.wrappers
         })
         .collect();
-    found
+    let wrappers = found
         .into_iter()
         .flatten()
         .map(|wrapper| wrapper.public())
-        .collect()
+        .collect();
+    (wrappers, !unread.into_inner())
 }
 
 struct ContentReader<'a> {
@@ -300,6 +313,11 @@ impl CsvSource for ContentReader<'_> {
             ContentRoot::Game => &self.settings.game_content,
             ContentRoot::Engine => &self.settings.engine_content,
         };
+        // Without an engine root there is no engine content: a relative path would read from
+        // wherever the process runs.
+        if base.as_os_str().is_empty() {
+            return None;
+        }
         self.store
             .read(&base.join(path))
             .ok()

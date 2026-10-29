@@ -97,6 +97,10 @@ struct Table {
     registered: Option<Location>,
     entries: Vec<Entry>,
     metadata: Vec<(Wide, Vec<Meta>)>,
+    /// Each entry's and metadata key's position by folded key, so a CSV of many rows imports in
+    /// linear time; the vectors keep Unreal's first-wins order.
+    entry_at: HashMap<Wide, usize>,
+    metadata_at: HashMap<Wide, usize>,
 }
 
 /// Reads a String Table CSV given its path under a content root; `None` when it cannot be read.
@@ -231,6 +235,8 @@ impl Tables {
                     registered: None,
                     entries: Vec::new(),
                     metadata: Vec::new(),
+                    entry_at: HashMap::new(),
+                    metadata_at: HashMap::new(),
                 });
                 self.tables.len() - 1
             }
@@ -279,11 +285,9 @@ impl Tables {
         let at_file = new.location.file.clone();
         let at_line = new.location.line;
         let table_entry = self.table(table);
-        if let Some(existing) = table_entry
-            .entries
-            .iter_mut()
-            .find(|entry| equals_ignore_case(&entry.key, &new.key))
-        {
+        let folded = fold(&new.key);
+        if let Some(&at) = table_entry.entry_at.get(&folded) {
+            let existing = &mut table_entry.entries[at];
             if existing.source == new.source {
                 existing.editor_only &= new.editor_only;
             } else {
@@ -301,6 +305,9 @@ impl Tables {
             }
             return;
         }
+        table_entry
+            .entry_at
+            .insert(folded, table_entry.entries.len());
         table_entry.entries.push(new);
     }
 
@@ -315,13 +322,12 @@ impl Tables {
         let at_file = new.location.file.clone();
         let at_line = new.location.line;
         let table_entry = self.table(table);
-        let position = match table_entry
-            .metadata
-            .iter()
-            .position(|(existing, _)| equals_ignore_case(existing, key))
-        {
-            Some(position) => position,
+        let position = match table_entry.metadata_at.get(&fold(key)) {
+            Some(&position) => position,
             None => {
+                table_entry
+                    .metadata_at
+                    .insert(fold(key), table_entry.metadata.len());
                 table_entry.metadata.push((key.to_vec(), Vec::new()));
                 table_entry.metadata.len() - 1
             }
@@ -516,9 +522,9 @@ impl Tables {
             }
             for entry in table.entries {
                 let metadata = table
-                    .metadata
-                    .iter()
-                    .find(|(key, _)| equals_ignore_case(key, &entry.key))
+                    .metadata_at
+                    .get(&fold(&entry.key))
+                    .map(|&at| &table.metadata[at])
                     .map(|(_, values)| {
                         values
                             .iter()

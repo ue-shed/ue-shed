@@ -280,6 +280,20 @@ fn files_at_a_revision_are_scanned_as_the_target_scan_reads_them() {
                 "{engine:?}: {outside} is included"
             );
         }
+        // 5.x leaves Unreal Header Tool output out of a scan, so a revision of it is left out too.
+        if engine != EngineLine::Ue4_27 {
+            let folder = listed[0]
+                .path
+                .rsplit_once('/')
+                .map_or("", |(folder, _)| folder);
+            for generated in ["Menu.gen.cpp", "Menu.generated.h"] {
+                let path = format!("{folder}/{generated}");
+                assert!(
+                    !step_includes(engine, &project, None, &step, &path),
+                    "{engine:?}: {path} is included"
+                );
+            }
+        }
         let request = CodeTextRequest {
             project_root: project.to_string_lossy().into_owned(),
             engine_root: None,

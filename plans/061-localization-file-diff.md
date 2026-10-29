@@ -55,17 +55,26 @@ source. This plan gives it a second source: two revisions of one localization fi
 5. **Fields are typed.** Source, a plural source, translation (one per PO plural form), path,
    notes (extracted comments), comments (translator comments), references and flags. The host
    labels them. Metadata and key metadata are not compared in this plan.
-6. **Changes keep file order.** Changes come in the order of the newer file, with each removed
-   entry placed before the next entry that followed it in the older file. A translator reads a
-   `.po` in that order.
-7. **The last comparison is kept.** "Load more" asks for the next page; the engine keeps the last
-   comparison, keyed by format, options, paths, sizes and modification times, so a second page does
-   not parse the files again.
-8. **Spans and stage times.** `text_files.compare` with `read`, `parse` and `diff` stage times in
-   the reply, like `compare_points`.
-9. **The view moves into `@ue-shed/ui`.** `TextDiff` and its model (`text-diff.ts`) move from
-   Electroswag into `packages/ui` unchanged in behaviour, so Workbench, Electroswag and the
-   Game Text extension share one component.
+6. **Changes come by consequence** (design review, round 1). Each change has a group, listed in
+   this order: moved to a new key, source changed (a translation made for the old source is out of
+   date), removed, added, translation changed, and notes and references only. Within a group,
+   changes keep the newer file's order. File order alone put a real week's first page in key-hash
+   order: trivia first, the 435 new keys on pages 3 to 11.
+7. **The engine filters.** A page lists one or more groups and a text filter over every change, so
+   a chip's count and the list it opens always agree. Counts are always of every change.
+8. **Unreal's repeated notes are dropped.** A PO note `Key: X` equal to the entry's key, and
+   `SourceLocation: Y` equal to a reference, say nothing new; without them an asset move shows
+   once, as a reference, and lands in "notes and references only".
+9. **The latest comparisons are kept.** "Load more" and a new filter ask again; the engine keeps
+   its eight latest comparisons, keyed by format, options, names, paths, sizes and modification
+   times, so neither parses the files again.
+10. **Spans and stage times.** `text_files.compare` with `read`, `parse`, `diff` and `filter`
+    stage times in the reply, like `compare_points`.
+11. **The view moves into `@ue-shed/ui`.** `TextDiff` and its model move from Electroswag into
+    `packages/ui`, so Workbench, Electroswag and the Game Text extension share one component. It
+    gains sections by group, a host-run filter, labelled fields, a translation shown as context
+    under a changed source or new key, folded details on added and removed entries, and marks
+    that show a changed apostrophe or a dropped space.
 
 ## Phases
 
@@ -86,8 +95,11 @@ source. This plan gives it a second source: two revisions of one localization fi
 
 ### Phase 3: Workbench shows it
 
-- The Game Text extension's localization view compares two files: a file and an older copy,
-  picked or dropped. It is the showcase for the component.
+- Game Text's **Compare files** tab: Before and After slots, a swap, and Compare. It needs no
+  scan, project or target. Files are chosen through the host (`chooseLocalizationFile`), and a
+  comparison may name only chosen files.
+- Two rounds of UI review by subagents (owner, 2026-10-30): a design critique from screenshots
+  of the running app, and a code review.
 
 ### Later, not in this plan
 

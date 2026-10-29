@@ -71,6 +71,7 @@ describe.skipIf(!executable)("comparing two localization files in the engine", (
 					options: { format: "po" as const },
 					before: { file: before, path: "before.po" },
 					after: { file: after, path: "after.po" },
+					filter: { groups: [], query: "" },
 					changes: { offset: 0, limit: 1 }
 				};
 				const first = yield* index.compareTextFiles(request);
@@ -81,15 +82,23 @@ describe.skipIf(!executable)("comparing two localization files in the engine", (
 				return [first, second] as const;
 			}).pipe(Effect.provide(query()))
 		);
-		expect(first.counts).toEqual({ added: 1, removed: 0, rekeyed: 0, edited: 1, unchanged: 1 });
-		expect(first.changes.map((change) => change.after?.key)).toEqual(["Quit"]);
+		expect(first.counts).toEqual({
+			rekeyed: 0,
+			source: 0,
+			removed: 0,
+			added: 1,
+			translation: 1,
+			context: 0,
+			unchanged: 1
+		});
+		expect(first.changes.map((change) => change.after?.key)).toEqual(["Credits"]);
 		expect(second.kept).toBe(true);
-		expect(second.changes.map((change) => [change.kind, change.after?.key])).toEqual([
-			["added", "Credits"]
+		expect(second.changes.map((change) => [change.group, change.after?.key])).toEqual([
+			["translation", "Quit"]
 		]);
 	});
 
-	it("compares only files the person chose, and asks for them when none are named", async () => {
+	it("compares only files the person chose, filtered over every change", async () => {
 		const chosen = [before, after];
 		const results = await Effect.runPromise(
 			Effect.scoped(
@@ -97,39 +106,58 @@ describe.skipIf(!executable)("comparing two localization files in the engine", (
 					const index = yield* GameTextIndexQuery;
 					if (!index.compareTextFiles)
 						throw new Error("The native query compares files.");
-					const compare = workspaceFileComparison(
-						{
-							files: {
-								chooseFile: () =>
-									Effect.sync(() => {
-										const path = chosen.shift();
-										return path === undefined
-											? { status: "cancelled" as const }
-											: { status: "selected" as const, path };
-									}),
-								chooseSaveFile: () =>
-									Effect.succeed({ status: "cancelled" as const }),
-								readFile: () => Effect.die("This test reads no file."),
-								readFileWithin: () => Effect.die("This test reads no file."),
-								writeFile: () => Effect.die("This test writes no file.")
-							}
-						},
-						index.compareTextFiles
-					);
+					const { chooseLocalizationFile, compareLocalizationFiles } =
+						workspaceFileComparison(
+							{
+								files: {
+									chooseFile: () =>
+										Effect.sync(() => {
+											const path = chosen.shift();
+											return path === undefined
+												? { status: "cancelled" as const }
+												: { status: "selected" as const, path };
+										}),
+									chooseSaveFile: () =>
+										Effect.succeed({ status: "cancelled" as const }),
+									readFile: () => Effect.die("This test reads no file."),
+									readFileWithin: () => Effect.die("This test reads no file."),
+									writeFile: () => Effect.die("This test writes no file.")
+								}
+							},
+							index.compareTextFiles
+						);
 					const page = { offset: 0, limit: 10 };
-					const asked = yield* compare({ changes: page });
-					const later = yield* compare({ files: { before, after }, changes: page });
-					const other = yield* compare({
+					const files = { before, after };
+					const unchosen = yield* compareLocalizationFiles({ files, changes: page });
+					const chose = [
+						yield* chooseLocalizationFile({ side: "before" }),
+						yield* chooseLocalizationFile({ side: "after" })
+					];
+					const all = yield* compareLocalizationFiles({ files, changes: page });
+					const added = yield* compareLocalizationFiles({
+						files,
+						filter: { groups: ["added"], query: "" },
+						changes: page
+					});
+					const other = yield* compareLocalizationFiles({
 						files: { before, after: join(directory, "other.po") },
 						changes: page
 					});
-					const cancelled = yield* compare({ changes: page });
-					return { asked, later, other, cancelled };
+					const cancelled = yield* chooseLocalizationFile({ side: "before" });
+					return { unchosen, chose, all, added, other, cancelled };
 				})
 			).pipe(Effect.provide(query()))
 		);
-		expect(results.asked.status).toBe("ready");
-		expect(results.later.status === "ready" && results.later.total).toBe(2);
+		expect(results.unchosen).toMatchObject({ status: "failed", code: "file_not_chosen" });
+		expect(results.chose).toEqual([
+			{ status: "selected", path: before, format: "po" },
+			{ status: "selected", path: after, format: "po" }
+		]);
+		expect(results.all.status === "ready" && results.all.total).toBe(2);
+		expect(
+			results.added.status === "ready" &&
+				results.added.changes.map((change) => change.after?.key)
+		).toEqual(["Credits"]);
 		expect(results.other).toMatchObject({ status: "failed", code: "file_not_chosen" });
 		expect(results.cancelled).toEqual({ status: "cancelled" });
 	});

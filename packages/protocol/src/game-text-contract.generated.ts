@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "cfea4a645c585accd474bf54dd3489eb99fd70338684ba3e6bf06d2ac367026c"
+	contractHash: "e3fded5db8886ef2cc37da46265ba6228de535cd30f9cc3bf6147571e312e120"
 } as const;
 
 /**
@@ -671,7 +671,7 @@ built: boolean, };
 
 export type PointComparison = { point: string, base: string, counts: PointChangeCounts, complete: boolean, total: number, changes: ReadonlyArray<PointChange>, findings?: PointFindings, stageSeconds: { [key in string]: number }, };
 
-export type CompareTextFilesRequest = { options: LocalizationOptions, before?: TextFileSide, after?: TextFileSide, changes: PageRequest, };
+export type CompareTextFilesRequest = { options: LocalizationOptions, before?: TextFileSide, after?: TextFileSide, filter: TextFileFilter, changes: PageRequest, };
 
 export type TextFileSide = { 
 /**
@@ -683,6 +683,20 @@ file: string,
  */
 path: string, };
 
+export type TextFileFilter = { 
+/**
+ * Only these groups; every group when empty.
+ */
+groups: ReadonlyArray<TextFileGroup>, 
+/**
+ * Only changes whose key, namespace or any field holds this text, ignoring case.
+ */
+query: string, };
+
+export type TextFileGroup = "rekeyed" | "source" | "removed" | "added" | "translation" | "context";
+
+export type TextFileCounts = { rekeyed: number, source: number, removed: number, added: number, translation: number, context: number, unchanged: number, };
+
 export type TextFileFieldName = "source" | "source_plural" | "translation" | "path" | "notes" | "comments" | "references" | "flags";
 
 export type TextFileField = { name: TextFileFieldName, 
@@ -693,15 +707,15 @@ form?: number, before?: string, after?: string, };
 
 export type TextFileKey = { namespace: string, key: string, };
 
-export type TextFileChange = { kind: PointChangeKind, before?: TextFileKey, after?: TextFileKey, fields: ReadonlyArray<TextFileField>, };
+export type TextFileChange = { kind: PointChangeKind, group: TextFileGroup, before?: TextFileKey, after?: TextFileKey, fields: ReadonlyArray<TextFileField>, };
 
 export type TextFileComparison = { format: LocalizationFormat, 
 /**
  * The PO dialect read from the newer side, such as "Crowdin".
  */
-poFormat?: string, counts: PointChangeCounts, 
+poFormat?: string, counts: TextFileCounts, 
 /**
- * Changes in all pages.
+ * Changes the filter lists, in all pages.
  */
 total: number, changes: ReadonlyArray<TextFileChange>, 
 /**

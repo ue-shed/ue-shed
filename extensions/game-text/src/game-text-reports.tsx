@@ -12,9 +12,7 @@ import {
 } from "@ue-shed/game-text/schema";
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { For, Show, createEffect, createSignal } from "solid-js";
-import type { LocalizationFileChange } from "@ue-shed/game-text/schema";
 import type { GameTextClientApi } from "./game-text-client.js";
-import { GameTextFileComparison, type ReadyFileComparison } from "./game-text-file-comparison.js";
 import { unknownLabels } from "./game-text-localization-view.js";
 import { styles } from "./game-text-styles.js";
 
@@ -26,9 +24,6 @@ const percent = (value: number | null) =>
 	value === null
 		? "Unknown"
 		: value.toLocaleString(undefined, { maximumFractionDigits: 1 }) + "%";
-
-/** Changes a file comparison loads at a time. */
-const COMPARISON_PAGE = 200;
 
 export function GameTextReports(props: {
 	readonly client: GameTextClientApi;
@@ -43,43 +38,6 @@ export function GameTextReports(props: {
 	const [feedback, setFeedback] = createSignal<string>();
 	const [failed, setFailed] = createSignal(false);
 	const [fileBusy, setFileBusy] = createSignal(false);
-	const compare = createEffectAction();
-	const [comparison, setComparison] = createSignal<ReadyFileComparison>();
-	const [compared, setCompared] = createSignal<readonly LocalizationFileChange[]>([]);
-	const [comparing, setComparing] = createSignal(false);
-	/** Two files the person chooses, or the next page of the open comparison. */
-	const compareFiles = (more?: ReadyFileComparison) => {
-		const action = props.client.compareLocalizationFiles;
-		if (!action) return;
-		setComparing(true);
-		compare.run(
-			action({
-				...(more ? { files: more.files } : undefined),
-				changes: { offset: more ? compared().length : 0, limit: COMPARISON_PAGE }
-			}),
-			{
-				onFailure: () => {
-					setComparing(false);
-					setFailed(true);
-					setFeedback("Couldn’t compare the files. Try again.");
-				},
-				onSuccess: (result) => {
-					setComparing(false);
-					if (result.status === "ready") {
-						setCompared((previous) =>
-							more ? [...previous, ...result.changes] : result.changes
-						);
-						setComparison(result);
-						setFailed(false);
-						setFeedback(undefined);
-					} else if (result.status === "failed") {
-						setFailed(true);
-						setFeedback(result.message + " " + result.recovery);
-					}
-				}
-			}
-		);
-	};
 	let generation = 0;
 	const load = (offset?: number) => {
 		const request = props.client.localizationReport;
@@ -186,16 +144,6 @@ export function GameTextReports(props: {
 				>
 					Export CSV
 				</Button>
-				<Show when={props.client.compareLocalizationFiles}>
-					<Button
-						size="compact"
-						tone="quiet"
-						disabled={props.disabled || comparing()}
-						onClick={() => compareFiles()}
-					>
-						Compare two files…
-					</Button>
-				</Show>
 				<Show when={feedback()}>
 					<span
 						role={failed() ? "alert" : "status"}
@@ -205,27 +153,7 @@ export function GameTextReports(props: {
 					</span>
 				</Show>
 			</div>
-			<Show when={comparison()}>
-				{(open) => (
-					<GameTextFileComparison
-						comparison={open()}
-						changes={compared()}
-						loadingMore={comparing()}
-						onMore={() => compareFiles(open())}
-						onClose={() => {
-							compare.cancel();
-							setComparing(false);
-							setComparison(undefined);
-							setCompared([]);
-						}}
-					/>
-				)}
-			</Show>
-			<section
-				aria-label="Reports"
-				hidden={comparison() !== undefined}
-				{...stylex.attrs(styles.pane, styles.reportPane)}
-			>
+			<section aria-label="Reports" {...stylex.attrs(styles.pane, styles.reportPane)}>
 				<Show
 					when={!loading() || page()}
 					fallback={

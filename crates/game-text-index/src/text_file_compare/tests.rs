@@ -27,6 +27,7 @@ fn request(
         },
         before,
         after,
+        filter: TextFileFilter::default(),
         changes: PageRequest {
             offset: 0,
             limit: 100,
@@ -85,7 +86,7 @@ fn translation(change: &TextFileChange) -> (Option<&str>, Option<&str>) {
 }
 
 #[test]
-fn an_archive_lists_added_removed_and_edited_keys_in_file_order() -> Result<()> {
+fn an_archive_lists_removed_added_and_edited_keys_by_consequence() -> Result<()> {
     let before = file(
         "archive-order",
         "before.archive",
@@ -110,11 +111,12 @@ fn an_archive_lists_added_removed_and_edited_keys_in_file_order() -> Result<()> 
     assert_eq!(
         kinds(&comparison),
         [
-            (PointChangeKind::Added, "Credits".to_owned()),
             (PointChangeKind::Removed, "Options".to_owned()),
+            (PointChangeKind::Added, "Credits".to_owned()),
             (PointChangeKind::Edited, "Quit".to_owned()),
         ]
     );
+    assert_eq!(comparison.changes[2].group, TextFileGroup::Translation);
     assert_eq!(
         translation(&comparison.changes[2]),
         (Some("Quitter"), Some("Quitter le jeu"))
@@ -200,7 +202,7 @@ fn a_manifest_key_with_two_contexts_pairs_by_occurrence() -> Result<()> {
     let after = file("manifest", "after.manifest", manifest("/Game/C").as_bytes());
     let comparison = compare(&request(Format::Manifest, Some(before), Some(after)))?;
     assert_eq!(comparison.counts.unchanged, 1);
-    assert_eq!(comparison.counts.edited, 1);
+    assert_eq!(comparison.counts.context, 1);
     let path = comparison.changes[0]
         .fields
         .iter()
@@ -232,12 +234,12 @@ fn a_po_pairs_by_its_context_and_compares_notes_and_plural_forms() -> Result<()>
     assert_eq!(
         kinds(&comparison),
         [
-            (PointChangeKind::Edited, "Quit".to_owned()),
             (PointChangeKind::Added, "Apples".to_owned()),
+            (PointChangeKind::Edited, "Quit".to_owned()),
         ]
     );
-    assert_eq!(translation(&comparison.changes[0]), (None, Some("Quitter")));
-    let forms = comparison.changes[1]
+    assert_eq!(translation(&comparison.changes[1]), (None, Some("Quitter")));
+    let forms = comparison.changes[0]
         .fields
         .iter()
         .map(|field| (field.name, field.form))
@@ -249,7 +251,6 @@ fn a_po_pairs_by_its_context_and_compares_notes_and_plural_forms() -> Result<()>
             (TextFileFieldName::SourcePlural, None),
             (TextFileFieldName::Translation, Some(0)),
             (TextFileFieldName::Translation, Some(1)),
-            (TextFileFieldName::Notes, None),
         ]
     );
     Ok(())
@@ -284,4 +285,101 @@ fn a_comparison_needs_a_side_and_a_bounded_page() {
     request.after = Some(file("validate", "after.po", po(&[]).as_bytes()));
     request.changes.limit = MAX_PAGE + 1;
     assert!(validate(&request).is_err());
+}
+
+#[test]
+fn notes_that_repeat_the_key_or_a_reference_are_left_out() -> Result<()> {
+    let entry = |path: &str| {
+        format!(
+            "#. Key:\tQuit\n#. SourceLocation:\t{path}\n#. Shown on the pause menu\n#: {path}\nmsgctxt \"Menu,Quit\"\nmsgid \"Quit\"\nmsgstr \"Quitter\"\n"
+        )
+    };
+    let header = po(&[]);
+    let before = file(
+        "notes",
+        "before.po",
+        format!("{header}\n{}", entry("/Game/UI/Old.Old")).as_bytes(),
+    );
+    let after = file(
+        "notes",
+        "after.po",
+        format!("{header}\n{}", entry("/Game/UI/New.New")).as_bytes(),
+    );
+    let comparison = compare(&request(Format::Po, Some(before), Some(after)))?;
+    let change = &comparison.changes[0];
+    assert_eq!(change.group, TextFileGroup::Context);
+    let notes = change
+        .fields
+        .iter()
+        .find(|field| field.name == TextFileFieldName::Notes)
+        .expect("notes");
+    assert_eq!(notes.before.as_deref(), Some("Shown on the pause menu"));
+    assert_eq!(notes.before, notes.after, "only the reference changed");
+    Ok(())
+}
+
+#[test]
+fn changes_come_by_consequence_and_filters_page_over_all_of_them() -> Result<()> {
+    let before = file(
+        "groups",
+        "before.archive",
+        archive(&[
+            ("Line_01", "Where were you?", "Où étais-tu ?"),
+            ("Play", "Play", "Jouer"),
+            ("Quit", "Quit", "Quitter"),
+            ("Options", "Options", "Options"),
+        ])
+        .as_bytes(),
+    );
+    let after = file(
+        "groups",
+        "after.archive",
+        archive(&[
+            ("Credits", "Credits", "Générique"),
+            ("Play", "Play game", "Jouer"),
+            ("Quit", "Quit", "Quitter le jeu"),
+            ("6F1C", "Where were you?", "Où étais-tu ?"),
+        ])
+        .as_bytes(),
+    );
+    let mut request = request(Format::Archive, Some(before), Some(after));
+    let comparison = compare(&request)?;
+    assert_eq!(
+        comparison
+            .changes
+            .iter()
+            .map(|change| change.group)
+            .collect::<Vec<_>>(),
+        [
+            TextFileGroup::Rekeyed,
+            TextFileGroup::Source,
+            TextFileGroup::Removed,
+            TextFileGroup::Added,
+            TextFileGroup::Translation,
+        ]
+    );
+    request.filter = TextFileFilter {
+        groups: vec![TextFileGroup::Source, TextFileGroup::Translation],
+        query: String::new(),
+    };
+    request.changes.limit = 1;
+    let page = compare(&request)?;
+    assert_eq!(page.total, 2);
+    assert_eq!(kinds(&page), [(PointChangeKind::Edited, "Play".to_owned())]);
+    assert_eq!(page.counts.added, 1, "counts are of every change");
+    request.filter = TextFileFilter {
+        groups: Vec::new(),
+        query: "QUITTER LE".into(),
+    };
+    request.changes.limit = 10;
+    assert_eq!(
+        kinds(&compare(&request)?),
+        [(PointChangeKind::Edited, "Quit".to_owned())]
+    );
+    request.filter.query = "line_01".into();
+    assert_eq!(
+        kinds(&compare(&request)?),
+        [(PointChangeKind::Rekeyed, "6F1C".to_owned())]
+    );
+    Ok(())
 }

@@ -47,6 +47,8 @@ import type {
 	TextCorpusRowsResult,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult,
+	LocalizationFileChoiceRequest,
+	LocalizationFileChoiceResult,
 	LocalizationFileComparisonRequest,
 	LocalizationFileComparisonResult
 } from "@ue-shed/game-text/schema";
@@ -126,7 +128,11 @@ export interface GameTextClientApi {
 	readonly localizationLinesFile?: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<LocalizationLinesFileResult, GameTextClientError>;
-	/** Two localization files the person chooses, and a page of what changed between them. */
+	/** One localization file for one side of a comparison, chosen by the person. */
+	readonly chooseLocalizationFile?: (
+		request: LocalizationFileChoiceRequest
+	) => Effect.Effect<LocalizationFileChoiceResult, GameTextClientError>;
+	/** Two chosen localization files, and a page of what changed between them. */
 	readonly compareLocalizationFiles?: (
 		request: LocalizationFileComparisonRequest
 	) => Effect.Effect<LocalizationFileComparisonResult, GameTextClientError>;

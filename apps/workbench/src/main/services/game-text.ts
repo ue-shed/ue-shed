@@ -99,7 +99,14 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationLinesFile: () => Effect.succeed({ status: "not_ready" }),
 			compareChange: () => Effect.succeed({ status: "not_ready" }),
-			compareLocalizationFiles: () => Effect.succeed({ status: "cancelled" }),
+			chooseLocalizationFile: () => Effect.succeed({ status: "cancelled" }),
+			compareLocalizationFiles: () =>
+				Effect.succeed({
+					status: "failed",
+					code: "file_not_chosen",
+					message: "No files were chosen.",
+					recovery: "Choose two files."
+				}),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),

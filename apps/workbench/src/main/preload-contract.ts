@@ -85,6 +85,7 @@ export const workbenchInvokeChannels = {
 		localizationReport: "game-text:localization:report",
 		localizationReportFile: "game-text:localization:report-file",
 		localizationLinesFile: "game-text:localization:lines-file",
+		chooseLocalizationFile: "game-text:localization:choose-file",
 		compareLocalizationFiles: "game-text:localization:compare-files",
 		localizationTargets: "game-text:localization:targets",
 		localizationTarget: "game-text:localization:target",

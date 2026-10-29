@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type { JSX } from "@solidjs/web";
-import { For, Show, createMemo, createSignal } from "solid-js";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 import {
 	TEXT_DIFF_KINDS,
 	TEXT_DIFF_KIND_LABELS,
@@ -9,74 +9,81 @@ import {
 	fieldChanged,
 	filterEntries,
 	groupByFile,
+	textDiffFileName,
 	type DiffSegment,
 	type TextDiffEntry,
+	type TextDiffFilter,
+	type TextDiffGroup,
 	type TextDiffKind
 } from "./text-diff-model.js";
 
-/** A file's name without its extension, and its folder. */
-interface FileName {
-	readonly name: string;
-	readonly folder: string;
-}
-
-function fileName(path: string): FileName {
-	const slash = path.lastIndexOf("/");
-	const file = path.slice(slash + 1);
-	const dot = file.lastIndexOf(".");
-	return {
-		name: dot > 0 && !/\.(?:po|archive|manifest|csv)$/iu.test(file) ? file.slice(0, dot) : file,
-		folder: slash < 0 ? "" : path.slice(0, slash)
-	};
-}
-
 /**
- * Keyed text on two sides, as a diff: entries grouped by file, each with its key and where it is,
- * and each changed field as a removed line over an added one, the words that differ marked.
- * Knows nothing of where the text came from: a changelist's game text, two `.po` files or two
- * `.archive` files all pass `TextDiffEntry`s.
+ * Keyed text on two sides, as a diff: each entry its key and where it is, and each changed field
+ * as a removed line over an added one, the words that differ marked. Knows nothing of where the
+ * text came from: a changelist's game text, two `.po` files or two `.archive` files all pass
+ * `TextDiffEntry`s.
  *
- * `entries` may be a page of more: give `total` and `counts` for the whole, and `onMore` to ask
- * for the next page. Filtering by kind or text works on the entries given.
+ * Entries list by file, or with `groups` in sections, one per group in the groups' order. The
+ * toolbar filters by kind (or group) and text. With `onFilter` the host filters every entry, not
+ * only those given, and passes the page back; without it the diff filters what it has.
+ *
+ * `entries` may be a page of more: give `total` and the counts for the whole, and `onMore` to ask
+ * for the next page.
  */
 export function TextDiff(props: {
 	readonly entries: readonly TextDiffEntry[];
 	/** Accessible name of the whole diff. */
 	readonly label: string;
+	/** Sections to list entries in, and to filter by; kinds otherwise. */
+	readonly groups?: readonly TextDiffGroup[];
 	/** Whole counts per kind when `entries` is a page; counted from `entries` otherwise. */
 	readonly counts?: Readonly<Record<TextDiffKind, number>>;
 	/** Keys both sides have alike, shown as a muted figure. */
 	readonly unchanged?: number;
-	/** Entries in all, when `entries` is a page. */
+	/** Entries the filter lists in all, when `entries` is a page. */
 	readonly total?: number;
 	readonly loadingMore?: boolean;
 	readonly onMore?: () => void;
+	/** The host's filter, when the host filters; the diff then shows it and reports changes. */
+	readonly filter?: TextDiffFilter;
+	readonly onFilter?: (filter: TextDiffFilter) => void;
 	/** Actions on a file's header, such as showing its diff or opening it. */
 	readonly fileActions?: (file: string) => JSX.Element;
 }) {
-	const [kind, setKind] = createSignal<TextDiffKind>();
-	const [query, setQuery] = createSignal("");
-	const counts = createMemo(
-		() =>
-			props.counts ??
-			Object.fromEntries(
-				TEXT_DIFF_KINDS.map((each) => [
-					each,
-					props.entries.filter((entry) => entry.kind === each).length
-				])
-			)
+	const [ownFilter, setOwnFilter] = createSignal<TextDiffFilter>({ query: "" });
+	const filter = () => props.filter ?? ownFilter();
+	const setFilter = (next: TextDiffFilter) => {
+		if (props.onFilter) props.onFilter(next);
+		else setOwnFilter(next);
+	};
+	const chips = createMemo(
+		(): readonly TextDiffGroup[] =>
+			props.groups ??
+			TEXT_DIFF_KINDS.map((kind) => ({
+				id: kind,
+				label: TEXT_DIFF_KIND_LABELS[kind],
+				tone: kind,
+				count:
+					props.counts?.[kind] ??
+					props.entries.filter((entry) => entry.kind === kind).length
+			}))
 	);
-	const all = () => TEXT_DIFF_KINDS.reduce((sum, each) => sum + (counts()[each] ?? 0), 0);
+	const all = () => chips().reduce((sum, chip) => sum + chip.count, 0);
 	const shown = createMemo(() => {
-		const selected = kind();
+		if (props.onFilter) return props.entries;
+		const selected = filter().kind;
 		const ofKind =
 			selected === undefined
 				? props.entries
-				: props.entries.filter((entry) => entry.kind === selected);
-		return filterEntries(ofKind, query());
+				: props.entries.filter(
+						(entry) => (props.groups ? entry.group : entry.kind) === selected
+					);
+		return filterEntries(ofKind, filter().query);
 	});
-	const files = createMemo(() => groupByFile(shown()));
+	const filtering = () => filter().kind !== undefined || filter().query.trim() !== "";
 	const partial = () => (props.total ?? props.entries.length) > props.entries.length;
+	const empty = () =>
+		props.entries.length === 0 && !filtering() ? "No text changed." : "Nothing matches.";
 	return (
 		<section aria-label={props.label} {...stylex.attrs(styles.diff)}>
 			<div {...stylex.attrs(styles.toolbar)}>
@@ -84,17 +91,23 @@ export function TextDiff(props: {
 					<KindButton
 						label="All"
 						count={all()}
-						pressed={kind() === undefined}
-						onClick={() => setKind(undefined)}
+						pressed={filter().kind === undefined}
+						onClick={() => setFilter({ query: filter().query })}
 					/>
-					<For each={TEXT_DIFF_KINDS}>
-						{(each) => (
+					<For each={chips()}>
+						{(chip) => (
 							<KindButton
-								label={TEXT_DIFF_KIND_LABELS[each]}
-								count={counts()[each] ?? 0}
-								kind={each}
-								pressed={kind() === each}
-								onClick={() => setKind(kind() === each ? undefined : each)}
+								label={chip.label}
+								count={chip.count}
+								tone={chip.tone}
+								pressed={filter().kind === chip.id}
+								onClick={() =>
+									setFilter(
+										filter().kind === chip.id
+											? { query: filter().query }
+											: { kind: chip.id, query: filter().query }
+									)
+								}
 							/>
 						)}
 					</For>
@@ -106,61 +119,44 @@ export function TextDiff(props: {
 				</div>
 				<input
 					type="search"
-					value={query()}
-					onInput={(event) => setQuery(event.currentTarget.value)}
-					aria-label="Filter by text, key or file"
-					placeholder="Filter by text, key or file"
+					value={filter().query}
+					onInput={(event) =>
+						setFilter({ ...filter(), query: event.currentTarget.value })
+					}
+					aria-label="Filter by text or key"
+					placeholder="Filter by text or key"
 					{...stylex.attrs(styles.search)}
 				/>
 			</div>
-			<Show when={partial() && (kind() !== undefined || query().trim() !== "")}>
+			<Show when={!props.onFilter && partial() && filtering()}>
 				<p {...stylex.attrs(styles.note)}>
 					Filtering the first {props.entries.length.toLocaleString()} of{" "}
 					{(props.total ?? 0).toLocaleString()}.
 				</p>
 			</Show>
 			<Show
-				when={files().length > 0}
-				fallback={
-					<p {...stylex.attrs(styles.note)}>
-						{props.entries.length === 0 ? "No text changed." : "Nothing matches."}
-					</p>
-				}
+				when={shown().length > 0}
+				fallback={<p {...stylex.attrs(styles.note, styles.empty)}>{empty()}</p>}
 			>
-				<ul aria-label="Files" {...stylex.attrs(styles.plainList, styles.files)}>
-					<For each={files()}>
-						{(group) => (
-							<li {...stylex.attrs(styles.file)}>
-								<header {...stylex.attrs(styles.fileHeader)}>
-									<span {...stylex.attrs(styles.fileName)} title={group.file}>
-										{fileName(group.file).name}
-									</span>
-									<span {...stylex.attrs(styles.folder)} title={group.file}>
-										{fileName(group.file).folder}
-									</span>
-									<span {...stylex.attrs(styles.fileCount)}>
-										{group.entries.length.toLocaleString()}
-									</span>
-									<Show when={props.fileActions}>
-										{(actions) => (
-											<span {...stylex.attrs(styles.fileActions)}>
-												{actions()(group.file)}
-											</span>
-										)}
-									</Show>
-								</header>
-								<ul
-									aria-label={`Changes in ${fileName(group.file).name}`}
-									{...stylex.attrs(styles.plainList)}
-								>
-									<For each={group.entries}>
-										{(entry) => <Entry entry={entry} />}
-									</For>
-								</ul>
-							</li>
-						)}
-					</For>
-				</ul>
+				<Show
+					when={props.groups}
+					fallback={
+						<FileList
+							entries={shown()}
+							{...(props.fileActions
+								? { fileActions: props.fileActions }
+								: undefined)}
+						/>
+					}
+				>
+					{(groups) => (
+						<GroupList
+							entries={shown()}
+							groups={groups()}
+							open={filter().kind !== undefined}
+						/>
+					)}
+				</Show>
 			</Show>
 			<Show when={partial()}>
 				<div {...stylex.attrs(styles.more)}>
@@ -186,10 +182,128 @@ export function TextDiff(props: {
 	);
 }
 
+/** Entries by file, each file under a header with its actions. */
+function FileList(props: {
+	readonly entries: readonly TextDiffEntry[];
+	readonly fileActions?: (file: string) => JSX.Element;
+}) {
+	const files = createMemo(() => groupByFile(props.entries));
+	return (
+		<ul aria-label="Files" {...stylex.attrs(styles.plainList, styles.files)}>
+			<For each={files()}>
+				{(group) => (
+					<li {...stylex.attrs(styles.file)}>
+						<header {...stylex.attrs(styles.fileHeader)}>
+							<span {...stylex.attrs(styles.fileName)} title={group.file}>
+								{textDiffFileName(group.file).name}
+							</span>
+							<span {...stylex.attrs(styles.folder)} title={group.file}>
+								{textDiffFileName(group.file).folder}
+							</span>
+							<span {...stylex.attrs(styles.fileCount)}>
+								{group.entries.length.toLocaleString()}
+							</span>
+							<Show when={props.fileActions}>
+								{(actions) => (
+									<span {...stylex.attrs(styles.fileActions)}>
+										{actions()(group.file)}
+									</span>
+								)}
+							</Show>
+						</header>
+						<ul
+							aria-label={`Changes in ${textDiffFileName(group.file).name}`}
+							{...stylex.attrs(styles.plainList)}
+						>
+							<For each={group.entries}>{(entry) => <Entry entry={entry} />}</For>
+						</ul>
+					</li>
+				)}
+			</For>
+		</ul>
+	);
+}
+
+/** Entries in sections, one per group that has any, in the groups' order. */
+function GroupList(props: {
+	readonly entries: readonly TextDiffEntry[];
+	readonly groups: readonly TextDiffGroup[];
+	/** A filter picked one group: show it unfolded. */
+	readonly open: boolean;
+}) {
+	const sections = createMemo(() =>
+		props.groups
+			.map((group) => ({
+				group,
+				entries: props.entries.filter((entry) => entry.group === group.id)
+			}))
+			.filter((section) => section.entries.length > 0)
+	);
+	return (
+		<div {...stylex.attrs(styles.sections)}>
+			<For each={sections()} keyed={(section) => section.group.id}>
+				{(section) => (
+					<Section
+						group={section().group}
+						entries={section().entries}
+						open={props.open}
+					/>
+				)}
+			</For>
+		</div>
+	);
+}
+
+function Section(props: {
+	readonly group: TextDiffGroup;
+	readonly entries: readonly TextDiffEntry[];
+	readonly open: boolean;
+}) {
+	const [unfolded, setUnfolded] = createSignal(false);
+	const folded = () => props.group.folded === true && !props.open && !unfolded();
+	const heading = () => `section-${props.group.id}`;
+	return (
+		<section aria-labelledby={heading()} {...stylex.attrs(styles.section)}>
+			<header {...stylex.attrs(styles.sectionHeader)}>
+				<span
+					aria-hidden="true"
+					{...stylex.attrs(styles.swatch, SWATCH[props.group.tone])}
+				/>
+				<h4 id={heading()} {...stylex.attrs(styles.sectionTitle)}>
+					{props.group.label}
+				</h4>
+				<span {...stylex.attrs(styles.sectionCount)}>
+					{props.group.count.toLocaleString()}
+				</span>
+				<Show when={props.group.description}>
+					{(description) => (
+						<span {...stylex.attrs(styles.sectionDescription)}>{description()}</span>
+					)}
+				</Show>
+				<Show when={props.group.folded === true && !props.open}>
+					<button
+						type="button"
+						aria-expanded={folded() ? "false" : "true"}
+						onClick={() => setUnfolded(!unfolded())}
+						{...stylex.attrs(styles.moreButton, styles.sectionToggle)}
+					>
+						{folded() ? "Show" : "Hide"}
+					</button>
+				</Show>
+			</header>
+			<Show when={!folded()}>
+				<ul aria-label={props.group.label} {...stylex.attrs(styles.plainList, styles.file)}>
+					<For each={props.entries}>{(entry) => <Entry entry={entry} />}</For>
+				</ul>
+			</Show>
+		</section>
+	);
+}
+
 function KindButton(props: {
 	readonly label: string;
 	readonly count: number;
-	readonly kind?: TextDiffKind;
+	readonly tone?: TextDiffKind;
 	readonly pressed: boolean;
 	readonly onClick: () => void;
 }) {
@@ -197,125 +311,230 @@ function KindButton(props: {
 		<button
 			type="button"
 			aria-pressed={props.pressed ? "true" : "false"}
+			aria-label={`${props.label}, ${props.count.toLocaleString()}`}
 			disabled={props.count === 0 && !props.pressed}
 			onClick={() => props.onClick()}
 			{...stylex.attrs(styles.kind, props.pressed && styles.kindPressed)}
 		>
-			<Show when={props.kind}>
-				{(kind) => <span {...stylex.attrs(styles.swatch, SWATCH[kind()])} />}
+			<Show when={props.tone}>
+				{(tone) => <span {...stylex.attrs(styles.swatch, SWATCH[tone()])} />}
 			</Show>
-			<b {...stylex.attrs(styles.kindCount)}>{props.count.toLocaleString()}</b>
 			<span>{props.label}</span>
+			<b {...stylex.attrs(styles.kindCount)}>{props.count.toLocaleString()}</b>
 		</button>
 	);
 }
 
 /** One line of an entry: a field's side, signed and toned. */
 export interface TextDiffRow {
+	/** The field's label, on the first line of the field only. */
 	readonly field?: string;
+	/** What the field's state means, beside its label. */
+	readonly note?: string;
 	readonly code?: boolean;
 	readonly sign: string;
-	readonly tone: "removed" | "added" | "moved" | "same";
+	readonly tone: "removed" | "added" | "moved" | "same" | "context";
 	readonly segments: readonly DiffSegment[];
 }
 
 /**
- * An entry's lines. A field both sides have alike is one plain line (a new key's text); a changed
- * one is its old line over its new, words marked only when both sides have text. Fields after the
- * first show only when they changed, and say which field they are.
+ * An entry's lines. A field both sides have alike is one plain line: the first field always, and
+ * later fields only when they are context. A changed one is its old line over its new, words
+ * marked only when both sides have text. The first field is labelled once the entry has more than
+ * one line. An added or removed entry folds its secondary fields unless `details` is set.
  */
-export function entryRows(entry: TextDiffEntry): TextDiffRow[] {
-	return entry.fields.flatMap((field, index): TextDiffRow[] => {
+export function entryRows(entry: TextDiffEntry, details = false): TextDiffRow[] {
+	const fields = entry.fields.filter(
+		(field, index) =>
+			index === 0 ||
+			details ||
+			field.secondary !== true ||
+			(entry.kind !== "added" && entry.kind !== "removed")
+	);
+	const rows = fields.flatMap((field, index): TextDiffRow[] => {
 		const label = {
-			...(index === 0 ? undefined : { field: field.label }),
+			field: field.label,
+			...(field.note === undefined ? undefined : { note: field.note }),
 			...(field.code === true ? { code: true } : undefined)
 		};
-		if (!fieldChanged(field))
-			return index === 0
-				? [
-						{
-							...label,
-							sign: entry.kind === "rekeyed" ? "~" : " ",
-							tone: entry.kind === "rekeyed" ? "moved" : "same",
-							segments: plain(field.after ?? "")
-						}
-					]
+		if (!fieldChanged(field)) {
+			if (index === 0)
+				return [
+					{
+						...label,
+						sign: entry.kind === "rekeyed" ? "~" : " ",
+						tone: entry.kind === "rekeyed" ? "moved" : "same",
+						segments: plain(field.after ?? "")
+					}
+				];
+			return field.context === true
+				? [{ ...label, sign: " ", tone: "context", segments: plain(field.after ?? "") }]
 				: [];
+		}
 		const both = (field.before ?? "") !== "" && (field.after ?? "") !== "";
 		const diff = both ? diffField(field.before ?? "", field.after ?? "") : undefined;
-		const rows: TextDiffRow[] = [];
+		const lines: TextDiffRow[] = [];
 		if (field.before !== undefined)
-			rows.push({
+			lines.push({
 				...label,
 				sign: "−",
 				tone: "removed",
 				segments: diff?.before ?? plain(field.before)
 			});
 		if (field.after !== undefined)
-			rows.push({
-				...label,
+			lines.push({
+				...(lines.length === 0 ? label : field.code === true ? { code: true } : undefined),
 				sign: "+",
 				tone: "added",
 				segments: diff?.after ?? plain(field.after)
 			});
-		return rows;
+		return lines;
 	});
+	// One line needs no label: the key and place say what it is.
+	const [only] = rows;
+	if (rows.length === 1 && only !== undefined)
+		return [
+			{
+				sign: only.sign,
+				tone: only.tone,
+				segments: only.segments,
+				...(only.code === true ? { code: true } : undefined),
+				...(only.note === undefined ? undefined : { note: only.note })
+			}
+		];
+	return rows;
 }
 
 const plain = (text: string): DiffSegment[] => (text === "" ? [] : [{ text, op: "same" }]);
 
 /**
- * One entry as diff lines: the sign and the line's colour say what happened, so there is no tag.
- * The first line carries the key (old → new for a new key) and where the text is, in columns.
+ * One entry as diff lines: the sign and the line's colour say what happened, and a stripe in the
+ * kind's colour holds the entry together. The first line carries the key (old → new for a new
+ * key) and where the text is.
  */
 function Entry(props: { readonly entry: TextDiffEntry }) {
-	const rows = createMemo(() => entryRows(props.entry));
+	const [details, setDetails] = createSignal(false);
+	const rows = createMemo(() => entryRows(props.entry, details()));
+	const folded = () =>
+		(props.entry.kind === "added" || props.entry.kind === "removed") &&
+		props.entry.fields.some((field, index) => index > 0 && field.secondary === true);
 	return (
-		<li aria-label={TEXT_DIFF_KIND_LABELS[props.entry.kind]} {...stylex.attrs(styles.entry)}>
+		<li
+			aria-label={TEXT_DIFF_KIND_LABELS[props.entry.kind]}
+			{...stylex.attrs(styles.entry, STRIPE[props.entry.kind])}
+		>
 			<For each={rows()}>
 				{(row, index) => (
 					<div {...stylex.attrs(styles.row, TONE[row.tone])}>
 						<span aria-hidden="true" {...stylex.attrs(styles.sign, SIGN[row.tone])}>
 							{row.sign}
 						</span>
+						<span {...stylex.attrs(styles.fieldLabel)}>{row.field ?? ""}</span>
 						<span
 							{...stylex.attrs(
 								styles.text,
 								row.code === true && styles.code,
-								// Lines under the first have no key or place: the text takes their room.
-								index() > 0 && styles.textWide
+								row.tone === "context" && styles.contextText
 							)}
 						>
-							<Show when={row.field}>
-								{(field) => (
-									<span {...stylex.attrs(styles.fieldLabel)}>{field()}</span>
+							<Segments segments={row.segments} />
+							<Show when={row.note}>
+								{(note) => (
+									<span {...stylex.attrs(styles.fieldNote)}>{note()}</span>
 								)}
 							</Show>
-							<Segments segments={row.segments} />
 						</span>
 						<Show when={index() === 0}>
-							<Key entry={props.entry} />
-							<span
-								{...stylex.attrs(styles.place)}
-								title={props.entry.placeTitle ?? props.entry.place ?? ""}
-							>
-								{props.entry.place ?? ""}
-							</span>
+							<Meta entry={props.entry} />
 						</Show>
 					</div>
 				)}
 			</For>
+			<Show when={props.entry.note}>
+				{(note) => <p {...stylex.attrs(styles.entryNote)}>{note()}</p>}
+			</Show>
+			<Show when={folded()}>
+				<button
+					type="button"
+					aria-expanded={details() ? "true" : "false"}
+					onClick={() => setDetails(!details())}
+					{...stylex.attrs(styles.detailsButton)}
+				>
+					{details() ? "Fewer details" : "More details"}
+				</button>
+			</Show>
 		</li>
 	);
 }
 
-/** The entry's key; a new key's old one is on the entry's own Key lines. */
-function Key(props: { readonly entry: TextDiffEntry }) {
-	const key = () => props.entry.after ?? props.entry.before;
+/** Where the entry is, and its key: old → new for a new key. */
+function Meta(props: { readonly entry: TextDiffEntry }) {
+	const before = () => props.entry.before;
+	const after = () => props.entry.after;
+	const moved = () => {
+		const old = before();
+		const next = after();
+		return old !== undefined && next !== undefined && old.full !== next.full;
+	};
+	const title = () =>
+		[props.entry.placeTitle ?? props.entry.place, before()?.full, moved() ? after()?.full : ""]
+			.filter((part) => part !== undefined && part !== "")
+			.join("\n");
 	return (
-		<span {...stylex.attrs(styles.key)} title={key()?.full ?? ""}>
-			{key()?.label ?? ""}
+		<span {...stylex.attrs(styles.meta)} title={title()}>
+			<Show when={props.entry.place}>
+				{(place) => <span {...stylex.attrs(styles.place)}>{place()}</span>}
+			</Show>
+			<Show
+				when={moved()}
+				fallback={
+					<span {...stylex.attrs(styles.key)}>{(after() ?? before())?.label ?? ""}</span>
+				}
+			>
+				<span {...stylex.attrs(styles.key)}>{before()?.label ?? ""}</span>
+				<span aria-hidden="true" {...stylex.attrs(styles.arrow)}>
+					→
+				</span>
+				<span {...stylex.attrs(styles.key, styles.newKey)}>{after()?.label ?? ""}</span>
+			</Show>
 		</span>
+	);
+}
+
+const NO_BREAK_SPACE = String.fromCodePoint(0xa0);
+
+/** A space as it is drawn inside a mark. */
+function drawn(letter: string): string {
+	if (letter === " ") return "·";
+	if (letter === NO_BREAK_SPACE) return "⍽";
+	if (letter === "\t") return "→";
+	if (letter === "\n") return "↵\n";
+	return letter;
+}
+
+/** A marked run's text with its spaces drawn, and a code point for a lone symbol. */
+function Mark(props: { readonly segment: DiffSegment }) {
+	const shown = () => Array.from(props.segment.text, drawn).join("");
+	const title = () => {
+		const letters = Array.from(props.segment.text);
+		const [only] = letters;
+		return letters.length === 1 && only !== undefined && !/[\p{L}\p{N}]/u.test(only)
+			? `U+${(only.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`
+			: undefined;
+	};
+	return (
+		<mark
+			title={title()}
+			{...stylex.attrs(
+				styles.mark,
+				props.segment.op === "removed" ? styles.markRemoved : styles.markAdded
+			)}
+		>
+			<Show when={props.segment.text.trim() === ""} fallback={props.segment.text}>
+				<span aria-hidden="true">{shown()}</span>
+				<span {...stylex.attrs(styles.visuallyHidden)}>{props.segment.text}</span>
+			</Show>
+		</mark>
 	);
 }
 
@@ -328,14 +547,7 @@ function Segments(props: { readonly segments: readonly DiffSegment[] }) {
 			<For each={props.segments}>
 				{(segment) => (
 					<Show when={segment.op !== "same"} fallback={segment.text}>
-						<mark
-							{...stylex.attrs(
-								styles.mark,
-								segment.op === "removed" ? styles.markRemoved : styles.markAdded
-							)}
-						>
-							{segment.text}
-						</mark>
+						<Mark segment={segment} />
 					</Show>
 				)}
 			</For>
@@ -345,9 +557,12 @@ function Segments(props: { readonly segments: readonly DiffSegment[] }) {
 
 const REMOVED_LINE = "rgb(235 87 87 / 0.09)";
 const REMOVED_WORD = "rgb(235 87 87 / 0.32)";
+const REMOVED_EDGE = "rgb(235 87 87 / 0.9)";
+const REMOVED_STRIKE = "rgb(235 87 87 / 0.7)";
 const ADDED_LINE = "rgb(76 183 130 / 0.09)";
 const ADDED_WORD = "rgb(76 183 130 / 0.32)";
-const MOVED_LINE = "rgb(242 153 74 / 0.07)";
+const ADDED_EDGE = "rgb(76 183 130 / 0.9)";
+const MOVED_LINE = "rgb(242 153 74 / 0.06)";
 
 const styles = stylex.create({
 	diff: { display: "grid", gap: 10 },
@@ -376,8 +591,8 @@ const styles = stylex.create({
 		opacity: { default: 1, ":disabled": 0.45 }
 	},
 	kindPressed: { borderColor: tokens.colorAccent, backgroundColor: tokens.colorAccentWash },
-	kindCount: { fontSize: 13, fontVariantNumeric: "tabular-nums" },
-	swatch: { width: 8, height: 8, borderRadius: 2 },
+	kindCount: { fontSize: 12, fontVariantNumeric: "tabular-nums", color: tokens.colorTextStrong },
+	swatch: { width: 8, height: 8, borderRadius: 2, flexShrink: 0 },
 	swatchAdded: { backgroundColor: tokens.colorSuccess },
 	swatchRemoved: { backgroundColor: tokens.colorDanger },
 	swatchRekeyed: { backgroundColor: tokens.colorWarning },
@@ -386,6 +601,7 @@ const styles = stylex.create({
 	search: {
 		width: 260,
 		maxWidth: "100%",
+		boxSizing: "border-box",
 		paddingBlock: 5,
 		paddingInline: 10,
 		borderWidth: 1,
@@ -398,15 +614,18 @@ const styles = stylex.create({
 		outline: "none"
 	},
 	note: { margin: 0, fontSize: 12, color: tokens.colorTextMuted },
+	empty: { paddingBlock: 12, textAlign: "center" },
 	plainList: { display: "grid", margin: 0, padding: 0, listStyle: "none" },
 	files: { gap: 12 },
 	file: {
 		display: "grid",
+		gap: 2,
 		borderWidth: 1,
 		borderStyle: "solid",
 		borderColor: tokens.colorBorder,
 		borderRadius: tokens.radiusControl,
-		overflow: "hidden"
+		overflow: "hidden",
+		backgroundColor: tokens.colorSurface
 	},
 	fileHeader: {
 		display: "flex",
@@ -438,21 +657,46 @@ const styles = stylex.create({
 	},
 	fileCount: { fontSize: 11, color: tokens.colorTextMuted, fontVariantNumeric: "tabular-nums" },
 	fileActions: { display: "flex", alignItems: "center", gap: 8, marginInlineStart: "auto" },
-	// Entries touch, like lines of a diff; a hairline parts one entry from the next.
+	sections: { display: "grid", gap: 16 },
+	section: { display: "grid", gap: 6 },
+	sectionHeader: { display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 },
+	sectionTitle: { margin: 0, fontSize: 13, fontWeight: 600, color: tokens.colorTextStrong },
+	sectionCount: {
+		fontSize: 12,
+		color: tokens.colorTextMuted,
+		fontVariantNumeric: "tabular-nums"
+	},
+	sectionDescription: {
+		minWidth: 0,
+		fontSize: 12,
+		color: tokens.colorTextMuted,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	sectionToggle: { marginInlineStart: "auto", flexShrink: 0 },
+	// An entry's lines sit together under a stripe of its kind's colour.
 	entry: {
 		display: "grid",
+		paddingBlock: 2,
+		borderLeftWidth: 3,
+		borderLeftStyle: "solid",
 		borderTopWidth: { default: 1, ":first-child": 0 },
 		borderTopStyle: "solid",
 		borderTopColor: tokens.colorBorder
 	},
-	// Sign, text, key, place: the same columns on every line of every file.
+	stripeAdded: { borderLeftColor: tokens.colorSuccess },
+	stripeRemoved: { borderLeftColor: tokens.colorDanger },
+	stripeRekeyed: { borderLeftColor: tokens.colorWarning },
+	stripeEdited: { borderLeftColor: tokens.colorAccent },
+	// Sign, field label, text, then the key and place on the first line.
 	row: {
 		display: "grid",
-		gridTemplateColumns: "16px minmax(0, 1fr) minmax(0, 24%) minmax(0, 20%)",
-		columnGap: 12,
+		gridTemplateColumns: "16px 84px minmax(0, 1fr) auto",
+		columnGap: 10,
 		alignItems: "baseline",
 		paddingBlock: 3,
-		paddingInline: 12,
+		paddingInline: 10,
 		fontSize: 13,
 		lineHeight: 1.45,
 		color: tokens.colorTextStrong
@@ -461,6 +705,7 @@ const styles = stylex.create({
 	rowAdded: { backgroundColor: ADDED_LINE },
 	rowMoved: { backgroundColor: MOVED_LINE },
 	rowSame: {},
+	rowContext: {},
 	sign: {
 		fontFamily: tokens.fontMono,
 		color: tokens.colorTextMuted,
@@ -471,10 +716,38 @@ const styles = stylex.create({
 	signAdded: { color: tokens.colorSuccess },
 	signMoved: { color: tokens.colorWarning },
 	signSame: {},
+	signContext: {},
 	fieldLabel: {
-		marginInlineEnd: 8,
+		minWidth: 0,
 		fontSize: 11,
-		color: tokens.colorTextMuted
+		color: tokens.colorTextMuted,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	fieldNote: {
+		marginInlineStart: 10,
+		fontSize: 11,
+		fontStyle: "italic",
+		color: tokens.colorWarning,
+		whiteSpace: "normal"
+	},
+	meta: {
+		display: "flex",
+		alignItems: "baseline",
+		justifyContent: "flex-end",
+		gap: 6,
+		minWidth: 0,
+		maxWidth: "34vw",
+		overflow: "hidden",
+		whiteSpace: "nowrap"
+	},
+	place: {
+		minWidth: 0,
+		fontSize: 11,
+		color: tokens.colorTextMuted,
+		overflow: "hidden",
+		textOverflow: "ellipsis"
 	},
 	key: {
 		minWidth: 0,
@@ -482,30 +755,56 @@ const styles = stylex.create({
 		fontFamily: tokens.fontMono,
 		color: tokens.colorTextMuted,
 		overflow: "hidden",
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
+		textOverflow: "ellipsis"
 	},
-	place: {
-		minWidth: 0,
-		fontSize: 12,
-		color: tokens.colorTextMuted,
-		textAlign: "end",
-		overflow: "hidden",
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
+	newKey: { color: tokens.colorWarning },
+	arrow: { fontSize: 11, color: tokens.colorTextMuted },
 	code: { fontFamily: tokens.fontMono, fontSize: 11 },
-	textWide: { gridColumn: "2 / -1" },
 	// Text as it is: line breaks and runs of spaces kept, long words broken.
-	text: { minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
-	empty: { fontStyle: "italic", color: tokens.colorTextMuted },
-	mark: { borderRadius: 2, color: "inherit" },
+	text: { minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", tabSize: 2 },
+	contextText: { color: tokens.colorTextMuted },
+	entryNote: {
+		margin: 0,
+		paddingBlock: 2,
+		paddingInlineStart: 120,
+		paddingInlineEnd: 10,
+		fontSize: 12,
+		color: tokens.colorWarning
+	},
+	detailsButton: {
+		justifySelf: "start",
+		marginInlineStart: 120,
+		marginBlock: 2,
+		padding: 0,
+		borderWidth: 0,
+		backgroundColor: "transparent",
+		fontSize: 11,
+		color: { default: tokens.colorTextMuted, ":hover": tokens.colorText },
+		cursor: "pointer",
+		textDecorationLine: "underline"
+	},
+	mark: {
+		borderRadius: 2,
+		color: "inherit",
+		paddingInline: 1,
+		borderBottomWidth: 2,
+		borderBottomStyle: "solid"
+	},
 	markRemoved: {
 		backgroundColor: REMOVED_WORD,
+		borderBottomColor: REMOVED_EDGE,
 		textDecorationLine: "line-through",
-		textDecorationColor: "rgb(235 87 87 / 0.7)"
+		textDecorationColor: REMOVED_STRIKE
 	},
-	markAdded: { backgroundColor: ADDED_WORD },
+	markAdded: { backgroundColor: ADDED_WORD, borderBottomColor: ADDED_EDGE },
+	visuallyHidden: {
+		position: "absolute",
+		width: 1,
+		height: 1,
+		overflow: "hidden",
+		clipPath: "inset(50%)",
+		whiteSpace: "nowrap"
+	},
 	more: { display: "flex", alignItems: "center", gap: 8 },
 	moreButton: {
 		paddingBlock: 3,
@@ -528,16 +827,25 @@ const SWATCH = {
 	edited: styles.swatchEdited
 };
 
+const STRIPE = {
+	added: styles.stripeAdded,
+	removed: styles.stripeRemoved,
+	rekeyed: styles.stripeRekeyed,
+	edited: styles.stripeEdited
+};
+
 const TONE = {
 	removed: styles.rowRemoved,
 	added: styles.rowAdded,
 	moved: styles.rowMoved,
-	same: styles.rowSame
+	same: styles.rowSame,
+	context: styles.rowContext
 };
 
 const SIGN = {
 	removed: styles.signRemoved,
 	added: styles.signAdded,
 	moved: styles.signMoved,
-	same: styles.signSame
+	same: styles.signSame,
+	context: styles.signContext
 };

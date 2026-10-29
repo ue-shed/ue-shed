@@ -339,7 +339,13 @@ const validArgsByChannel = {
 	"game-text:localization:lines-file": [
 		{ query: "", capability: "all", pageSize: 50, localization: { target: "FixtureGame" } }
 	],
-	"game-text:localization:compare-files": [{ changes: { offset: 0, limit: 200 } }],
+	"game-text:localization:choose-file": [{ side: "before" }],
+	"game-text:localization:compare-files": [
+		{
+			files: { before: "C:/old/Game.po", after: "C:/new/Game.po" },
+			changes: { offset: 0, limit: 200 }
+		}
+	],
 	"game-text:localization:targets": [],
 	"game-text:localization:target": ["FixtureGame"],
 	"game-text:localization:focus": [
@@ -728,15 +734,29 @@ const validResultByChannel = {
 	"game-text:localization:report": { status: "not_ready" },
 	"game-text:localization:report-file": { status: "cancelled" },
 	"game-text:localization:lines-file": { status: "saved", path: "C:/out.csv", rowCount: 3 },
+	"game-text:localization:choose-file": {
+		status: "selected",
+		path: "C:/old/Game.po",
+		format: "po"
+	},
 	"game-text:localization:compare-files": {
 		status: "ready",
 		files: { before: "C:/old/Game.po", after: "C:/new/Game.po" },
 		format: "po",
-		counts: { added: 1, removed: 0, rekeyed: 0, edited: 0, unchanged: 4 },
+		counts: {
+			rekeyed: 0,
+			source: 0,
+			removed: 0,
+			added: 1,
+			translation: 0,
+			context: 0,
+			unchanged: 4
+		},
 		total: 1,
 		changes: [
 			{
 				kind: "added",
+				group: "added",
 				after: { namespace: "Menu", key: "Credits" },
 				fields: [{ name: "source", after: "Credits" }]
 			}
@@ -957,7 +977,8 @@ const malformedArgsByChannel = {
 	"game-text:localization:report": [{ target: "FixtureGame", offset: -1 }],
 	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "write_po" }],
 	"game-text:localization:lines-file": [{ query: "", capability: "everything", pageSize: 50 }],
-	"game-text:localization:compare-files": [{ changes: { offset: 0, limit: 5000 } }],
+	"game-text:localization:choose-file": [{ side: "middle" }],
+	"game-text:localization:compare-files": [{ changes: { offset: 0, limit: 200 } }],
 	"game-text:quality:create-starter-rules": ["C:/Untrusted/output.json"],
 	"game-text:quality:reload-rules": ["C:/Untrusted/rules.json"],
 	"game-text:localization:targets": ["C:/Untrusted"],

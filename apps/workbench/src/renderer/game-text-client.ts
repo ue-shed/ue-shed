@@ -45,6 +45,8 @@ import {
 	type TextCorpusRowsResult,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult,
+	type LocalizationFileChoiceRequest,
+	LocalizationFileChoiceResult,
 	type LocalizationFileComparisonRequest,
 	LocalizationFileComparisonResult
 } from "@ue-shed/game-text/schema";
@@ -239,6 +241,14 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				"gameText.localizationLinesFile",
 				() => window.ueShed.gameText.localizationLinesFile(request),
 				Schema.decodeUnknownEffect(LocalizationLinesFileResult)
+			)
+	),
+	chooseLocalizationFile: Effect.fn("GameTextClient.chooseLocalizationFile")(
+		(request: LocalizationFileChoiceRequest) =>
+			invokeRequest(
+				"gameText.chooseLocalizationFile",
+				() => window.ueShed.gameText.chooseLocalizationFile(request),
+				Schema.decodeUnknownEffect(LocalizationFileChoiceResult)
 			)
 	),
 	compareLocalizationFiles: Effect.fn("GameTextClient.compareLocalizationFiles")(

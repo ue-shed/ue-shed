@@ -1,9 +1,10 @@
 import { Effect } from "effect";
 import {
 	localizationFileFormat,
+	type LocalizationFileChoiceRequest,
+	type LocalizationFileChoiceResult,
 	type LocalizationFileComparisonRequest,
-	type LocalizationFileComparisonResult,
-	type LocalizationFilePair
+	type LocalizationFileComparisonResult
 } from "./file-comparison.js";
 import { GameTextIndexSteps } from "./index-steps.js";
 import type { GameTextWorkspaceHost } from "./workspace-host.js";
@@ -14,9 +15,9 @@ const failed = (code: string, message: string, recovery: string) =>
 const FILTERS = [{ name: "Unreal localization files", extensions: ["po", "archive", "manifest"] }];
 
 /**
- * `compareLocalizationFiles`: two localization files the person chose, compared in the engine a
- * page at a time. A later page may name only files chosen in this workspace, so a caller cannot
- * have the engine read any other file.
+ * `chooseLocalizationFile` and `compareLocalizationFiles`: localization files the person chose,
+ * compared in the engine a page at a time. A comparison may name only files chosen in this
+ * workspace, so a caller cannot have the engine read any other file.
  */
 export const makeWorkspaceFileComparison = Effect.fn("GameText.workspace.fileComparison")(
 	function* (host: Pick<GameTextWorkspaceHost, "files">) {
@@ -25,29 +26,42 @@ export const makeWorkspaceFileComparison = Effect.fn("GameText.workspace.fileCom
 	}
 );
 
-/** `compareLocalizationFiles` over a way to compare two files. */
+/** The file comparison methods over a way to compare two files. */
 export function workspaceFileComparison(
 	host: Pick<GameTextWorkspaceHost, "files">,
 	compareTextFiles: GameTextIndexSteps["Service"]["compareTextFiles"]
 ) {
 	const chosen = new Set<string>();
-	const choose = (title: string) =>
-		host.files.chooseFile({ title, filters: FILTERS }).pipe(
-			Effect.map((choice) => {
-				if (choice.status === "selected") chosen.add(choice.path);
-				return choice.status === "selected" ? choice.path : undefined;
-			})
-		);
-	return Effect.fn("GameText.workspace.compareLocalizationFiles")(
+	const chooseLocalizationFile = Effect.fn("GameText.workspace.chooseLocalizationFile")(
+		function* (request: LocalizationFileChoiceRequest) {
+			const choice = yield* host.files.chooseFile({
+				title:
+					request.side === "before"
+						? "Choose the older localization file"
+						: "Choose the newer localization file",
+				filters: FILTERS
+			});
+			if (choice.status === "cancelled") return choice;
+			const format = localizationFileFormat(choice.path);
+			if (format === undefined)
+				return failed(
+					"unsupported_file",
+					"This is not a .po, .archive or .manifest file.",
+					"Choose an Unreal localization file."
+				);
+			chosen.add(choice.path);
+			return { status: "selected", path: choice.path, format } as const;
+		},
+		// oxlint-disable-next-line anti-slop/no-effect-catch-all -- The contract answers every failure as `failed`, with its code and recovery.
+		Effect.catch((error) =>
+			Effect.succeed<LocalizationFileChoiceResult>(
+				failed(error.code ?? "choose_failed", error.message, error.recovery)
+			)
+		)
+	);
+	const compareLocalizationFiles = Effect.fn("GameText.workspace.compareLocalizationFiles")(
 		function* (request: LocalizationFileComparisonRequest) {
-			let files: LocalizationFilePair;
-			if (request.files === undefined) {
-				const before = yield* choose("Choose the older localization file");
-				if (before === undefined) return { status: "cancelled" } as const;
-				const after = yield* choose("Choose the newer localization file");
-				if (after === undefined) return { status: "cancelled" } as const;
-				files = { before, after };
-			} else files = request.files;
+			const { files } = request;
 			const named = [files.before, files.after].filter((path) => path !== undefined);
 			if (named.length === 0 || named.some((path) => !chosen.has(path)))
 				return failed(
@@ -71,6 +85,10 @@ export function workspaceFileComparison(
 				options: { format },
 				...(before === undefined ? undefined : { before }),
 				...(after === undefined ? undefined : { after }),
+				filter: {
+					groups: [...(request.filter?.groups ?? [])],
+					query: request.filter?.query ?? ""
+				},
 				changes: request.changes
 			});
 			return {
@@ -93,4 +111,5 @@ export function workspaceFileComparison(
 			)
 		)
 	);
+	return { chooseLocalizationFile, compareLocalizationFiles };
 }

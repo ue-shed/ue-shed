@@ -3,8 +3,13 @@
 //! Both files are read with the localization import's parsers. Entries pair by identity, then by
 //! occurrence of a repeated identity. An entry removed under one key and added under another with
 //! the same source text is a rekey when that text is the only one of its kind among both the
-//! removed and the added. Changes keep the newer file's order, each removed entry placed before
-//! the next entry that followed it in the older file.
+//! removed and the added.
+//!
+//! Changes come by consequence, in [`TextFileGroup`] order: text moved to a new key, changed
+//! source, removed, added, changed translation, then changes only to notes, references or paths.
+//! Within a group they keep the newer file's order, each removed entry placed before the next entry
+//! that followed it in the older file. Filters by group and text run over every change, so a page
+//! of a filter holds what the filter's count promises.
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
@@ -14,7 +19,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::localization::{Format, Limits, Options, parse_json, parse_po};
-use crate::package_text_contract::{PageRequest, PointChangeCounts, PointChangeKind};
+use crate::package_text_contract::{PageRequest, PointChangeKind};
 use crate::point_compare::MAX_PAGE;
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result, require};
@@ -43,7 +48,65 @@ pub struct CompareTextFilesRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub after: Option<TextFileSide>,
+    #[serde(default)]
+    pub filter: TextFileFilter,
     pub changes: PageRequest,
+}
+
+/// Which changes a page lists. Counts are always of every change.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextFileFilter {
+    /// Only these groups; every group when empty.
+    #[serde(default)]
+    pub groups: Vec<TextFileGroup>,
+    /// Only changes whose key, namespace or any field holds this text, ignoring case.
+    #[serde(default)]
+    pub query: String,
+}
+
+/// What a change means for the text and its translations, in the order changes are listed.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum TextFileGroup {
+    /// The text moved to a new key; translations made for the old key no longer apply.
+    Rekeyed,
+    /// The source or its plural changed; a translation made for the old source is out of date.
+    Source,
+    Removed,
+    Added,
+    /// A translation, a translator comment or a flag changed; the source did not.
+    Translation,
+    /// Only notes, references or a manifest path changed: where the text is, not what it says.
+    Context,
+}
+
+/// Changes per group, and the entries both revisions have alike.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextFileCounts {
+    pub rekeyed: u32,
+    pub source: u32,
+    pub removed: u32,
+    pub added: u32,
+    pub translation: u32,
+    pub context: u32,
+    pub unchanged: u32,
+}
+impl TextFileCounts {
+    fn add(&mut self, group: TextFileGroup) {
+        *match group {
+            TextFileGroup::Rekeyed => &mut self.rekeyed,
+            TextFileGroup::Source => &mut self.source,
+            TextFileGroup::Removed => &mut self.removed,
+            TextFileGroup::Added => &mut self.added,
+            TextFileGroup::Translation => &mut self.translation,
+            TextFileGroup::Context => &mut self.context,
+        } += 1;
+    }
 }
 
 /// What a compared field holds. Hosts label them.
@@ -99,6 +162,7 @@ pub struct TextFileKey {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextFileChange {
     pub kind: PointChangeKind,
+    pub group: TextFileGroup,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub before: Option<TextFileKey>,
@@ -118,8 +182,8 @@ pub struct TextFileComparison {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub po_format: Option<String>,
-    pub counts: PointChangeCounts,
-    /// Changes in all pages.
+    pub counts: TextFileCounts,
+    /// Changes the filter lists, in all pages.
     pub total: u32,
     pub changes: Vec<TextFileChange>,
     /// Whether the comparison was kept from the previous request for the same revisions.
@@ -142,7 +206,7 @@ impl Row {
 
 struct Compared {
     po_format: Option<String>,
-    counts: PointChangeCounts,
+    counts: TextFileCounts,
     changes: Vec<TextFileChange>,
     stage_seconds: BTreeMap<String, f64>,
 }
@@ -190,21 +254,49 @@ pub fn compare(request: &CompareTextFilesRequest) -> Result<TextFileComparison> 
             (compared, false)
         }
     };
+    let started = Instant::now();
+    let needle = request.filter.query.trim().to_lowercase();
+    let listed = compared
+        .changes
+        .iter()
+        .filter(|change| {
+            request.filter.groups.is_empty() || request.filter.groups.contains(&change.group)
+        })
+        .filter(|change| needle.is_empty() || holds(change, &needle))
+        .collect::<Vec<_>>();
+    let mut stage_seconds = compared.stage_seconds.clone();
+    stage_seconds.insert("text_files.filter".into(), started.elapsed().as_secs_f64());
     Ok(TextFileComparison {
         format: request.options.format,
         po_format: compared.po_format.clone(),
         counts: compared.counts.clone(),
-        total: compared.changes.len() as u32,
-        changes: compared
-            .changes
-            .iter()
+        total: listed.len() as u32,
+        changes: listed
+            .into_iter()
             .skip(request.changes.offset as usize)
             .take(request.changes.limit as usize)
             .cloned()
             .collect(),
         kept,
-        stage_seconds: compared.stage_seconds.clone(),
+        stage_seconds,
     })
+}
+
+/// Whether a change's keys or fields hold `needle`, which is lower case.
+fn holds(change: &TextFileChange, needle: &str) -> bool {
+    let has = |value: &str| value.to_lowercase().contains(needle);
+    [&change.before, &change.after]
+        .into_iter()
+        .flatten()
+        .any(|key| {
+            has(&key.namespace) || has(&key.key) || has(&format!("{},{}", key.namespace, key.key))
+        })
+        || change.fields.iter().any(|field| {
+            [&field.before, &field.after]
+                .into_iter()
+                .flatten()
+                .any(|value| has(value))
+        })
 }
 
 /// What names the revisions: the options, and each side's name, file, size and modification time.
@@ -397,8 +489,14 @@ fn rows(
                     shown(translation),
                 );
             }
+            // Unreal writes the key and the reference into the notes too; they say nothing new.
+            let notes = row
+                .extracted_comments
+                .into_iter()
+                .filter(|line| !repeats(line, &key, &row.reference_comments))
+                .collect::<Vec<_>>();
             for (name, lines) in [
-                (TextFileFieldName::Notes, row.extracted_comments),
+                (TextFileFieldName::Notes, notes),
                 (TextFileFieldName::Comments, row.translator_comments),
                 (TextFileFieldName::References, row.reference_comments),
             ] {
@@ -416,8 +514,18 @@ fn rows(
     Ok((rows, Some(document.format)))
 }
 
-/// Pairs the older and newer rows and lists what differs, in the newer file's order.
-fn diff(before: &[Row], after: &[Row]) -> (PointChangeCounts, Vec<TextFileChange>) {
+/// Whether a PO note only repeats the entry's key or one of its references, as Unreal's
+/// `Key:` and `SourceLocation:` notes do.
+fn repeats(line: &str, key: &TextFileKey, references: &[String]) -> bool {
+    let value = |label: &str| line.trim().strip_prefix(label).map(str::trim);
+    value("Key:").is_some_and(|value| value == key.key)
+        || value("SourceLocation:")
+            .is_some_and(|value| references.iter().any(|reference| reference.trim() == value))
+}
+
+/// Pairs the older and newer rows and lists what differs, by group, each group in the newer
+/// file's order.
+fn diff(before: &[Row], after: &[Row]) -> (TextFileCounts, Vec<TextFileChange>) {
     // Identity, then occurrence: the nth row of a repeated key pairs with the nth.
     let mut seen = HashMap::<&TextFileKey, u32>::new();
     let mut older = HashMap::<(&TextFileKey, u32), usize>::with_capacity(before.len());
@@ -473,38 +581,26 @@ fn diff(before: &[Row], after: &[Row]) -> (PointChangeCounts, Vec<TextFileChange
             rekeys[index] = true;
         }
     }
-    let mut counts = PointChangeCounts {
-        added: 0,
-        removed: 0,
-        rekeyed: 0,
-        edited: 0,
-        unchanged: 0,
-    };
+    let mut counts = TextFileCounts::default();
     let mut changes = Vec::new();
     let mut gone = (0..before.len()).filter(|index| !paired[*index]).peekable();
-    let mut remove_before = |until: usize, counts: &mut PointChangeCounts, changes: &mut Vec<_>| {
+    let mut remove_before = |until: usize, changes: &mut Vec<_>| {
         while let Some(index) = gone.next_if(|index| *index < until) {
-            counts.removed += 1;
             changes.push(change(PointChangeKind::Removed, Some(&before[index]), None));
         }
     };
     for (index, row) in after.iter().enumerate() {
         match pairs[index] {
-            None => {
-                counts.added += 1;
-                changes.push(change(PointChangeKind::Added, None, Some(row)));
-            }
+            None => changes.push(change(PointChangeKind::Added, None, Some(row))),
             Some(old) => {
-                remove_before(old, &mut counts, &mut changes);
+                remove_before(old, &mut changes);
                 if rekeys[index] {
-                    counts.rekeyed += 1;
                     changes.push(change(
                         PointChangeKind::Rekeyed,
                         Some(&before[old]),
                         Some(row),
                     ));
                 } else if before[old].fields != row.fields {
-                    counts.edited += 1;
                     changes.push(change(
                         PointChangeKind::Edited,
                         Some(&before[old]),
@@ -516,7 +612,12 @@ fn diff(before: &[Row], after: &[Row]) -> (PointChangeCounts, Vec<TextFileChange
             }
         }
     }
-    remove_before(usize::MAX, &mut counts, &mut changes);
+    remove_before(usize::MAX, &mut changes);
+    for change in &changes {
+        counts.add(change.group);
+    }
+    // A stable sort keeps file order within each group.
+    changes.sort_by_key(|change| change.group);
     (counts, changes)
 }
 
@@ -539,11 +640,38 @@ fn change(kind: PointChangeKind, before: Option<&Row>, after: Option<&Row>) -> T
             }
         }
     }
+    let fields = fields.into_values().collect::<Vec<_>>();
+    let changed = |names: &[TextFileFieldName]| {
+        fields
+            .iter()
+            .any(|field| names.contains(&field.name) && field.before != field.after)
+    };
+    let group = match kind {
+        PointChangeKind::Added => TextFileGroup::Added,
+        PointChangeKind::Removed => TextFileGroup::Removed,
+        PointChangeKind::Rekeyed => TextFileGroup::Rekeyed,
+        PointChangeKind::Edited
+            if changed(&[TextFileFieldName::Source, TextFileFieldName::SourcePlural]) =>
+        {
+            TextFileGroup::Source
+        }
+        PointChangeKind::Edited
+            if changed(&[
+                TextFileFieldName::Translation,
+                TextFileFieldName::Comments,
+                TextFileFieldName::Flags,
+            ]) =>
+        {
+            TextFileGroup::Translation
+        }
+        PointChangeKind::Edited => TextFileGroup::Context,
+    };
     TextFileChange {
         kind,
+        group,
         before: before.map(|row| row.key.clone()),
         after: after.map(|row| row.key.clone()),
-        fields: fields.into_values().collect(),
+        fields,
     }
 }
 

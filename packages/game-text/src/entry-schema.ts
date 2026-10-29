@@ -216,10 +216,14 @@ export {
 
 export {
 	LocalizationFileChange,
+	LocalizationFileChoiceRequest,
+	LocalizationFileChoiceResult,
 	LocalizationFileComparisonRequest,
 	LocalizationFileComparisonResult,
+	LocalizationFileCounts,
 	LocalizationFileField,
 	LocalizationFileFormat,
+	LocalizationFileGroup,
 	LocalizationFilePair,
 	localizationFileFormat
 } from "./file-comparison.js";

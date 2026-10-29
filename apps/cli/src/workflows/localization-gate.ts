@@ -6,6 +6,7 @@ import {
 	localizationGateResult,
 	indexedLocalizationGateTarget,
 	localizationGateUnreadEvidence,
+	localizationGatePartialPackages,
 	localizationGateUnreadPackages,
 	type LocalizationGateCheck,
 	type LocalizationGateResult
@@ -27,7 +28,8 @@ const CHECK_LABELS = {
 	not_gathered: "Not gathered",
 	unresolved_key: "No reliable key",
 	removed: "Removed",
-	gathered_source: "Gathered from source"
+	gathered_source: "Gathered from source",
+	partial_read: "Partly read"
 } satisfies Record<LocalizationGateCheck, string>;
 
 /** The verdict as a few lines for a person reading a pre-submit dialog. */
@@ -45,8 +47,13 @@ export function localizationGateSummary(result: LocalizationGateResult): string 
 		);
 		for (const item of target.items) {
 			const key = item.key === null ? "(no key)" : `${item.namespace ?? ""},${item.key}`;
+			// A partly read package is about the file, not a line of text.
+			const what =
+				item.check === "partial_read"
+					? item.file
+					: `${key} "${item.source}" in ${item.file}`;
 			lines.push(
-				`  ${item.severity === "fail" ? "FAIL" : "warn"}  ${CHECK_LABELS[item.check]}: ${key} "${item.source}" in ${item.file}`,
+				`  ${item.severity === "fail" ? "FAIL" : "warn"}  ${CHECK_LABELS[item.check]}: ${what}`,
 				`        ${item.guidance}`
 			);
 		}
@@ -180,12 +187,13 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 				retrySafe: false,
 				nextStep: "fix_input",
 				code: "unreadable_package",
-				message: `Changed packages could not be read completely: ${unscanned.slice(0, 200).join(", ")}.${unscanned.length > 200 ? ` ${unscanned.length - 200} more packages omitted.` : ""}`,
+				message: `Changed packages could not be read: ${unscanned.slice(0, 200).join(", ")}.${unscanned.length > 200 ? ` ${unscanned.length - 200} more packages omitted.` : ""}`,
 				recovery:
 					"Check that the packages are saved and not damaged, and that the reader supports their engine version, then check again."
 			})
 		);
 	const failOn = localizationGateFailures(command.failOn, command.warnOn);
+	const partial = localizationGatePartialPackages(header, files);
 	const results = yield* Effect.forEach(checked, (item) =>
 		Effect.gen(function* () {
 			const result = indexed.find((result) => result.evidence === item)!;
@@ -193,7 +201,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 			return yield* indexedLocalizationGateTarget(result.query, {
 				join: result.localization,
 				files,
-				failOn
+				failOn,
+				partial
 			});
 		})
 	);
@@ -234,7 +243,12 @@ export const runLocalizationGate = Effect.fn("Cli.workflow.localization_gate")(
 										...item,
 										guidance: `${item.guidance} Use loc run prepare --carry and loc apply --sync.`
 									}
-								: item
+								: item.check === "partial_read" && item.severity === "warn"
+									? {
+											...item,
+											guidance: `${item.guidance} To stop such a change instead, pass --fail-on partial_read.`
+										}
+									: item
 						)
 					}))
 				};

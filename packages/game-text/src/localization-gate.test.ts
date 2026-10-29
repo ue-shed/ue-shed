@@ -9,15 +9,21 @@ import {
 	localizationGateTarget,
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,
+	localizationGatePartialPackages,
 	LOCALIZATION_GATE_FIELDS,
 	type LocalizationGateCheck
 } from "./localization-gate.js";
 import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
-import { LocalizationError, type LocalizationTargetEvidence } from "@ue-shed/localization/browser";
+import {
+	LocalizationError,
+	LocalizationTargetName,
+	type LocalizationTargetEvidence
+} from "@ue-shed/localization/browser";
 import { localizationKeyChanges } from "./localization-key-changes.js";
 import {
 	archiveEntry,
 	corpus,
+	cultureCode,
 	evidence,
 	ftextUnit,
 	manifestEntry,
@@ -339,13 +345,83 @@ describe("checking a change's text", () => {
 				{ packageFile: "Content/Art/M_Glow.uasset", status: "not_gatherable" }
 			]
 		};
-		expect(
-			localizationGateUnreadPackages(partial, [
-				MENU,
-				"Content/Text/Table.uasset",
-				"Content/Art/M_Glow.uasset"
-			])
-		).toEqual(["Content/Text/DT_Menu (failed)", "Content/Text/Table (partial)"]);
+		const listed = [MENU, "Content/Text/Table.uasset", "Content/Art/M_Glow.uasset"];
+		// Only a package the scan could not read at all stops the check.
+		expect(localizationGateUnreadPackages(partial, listed)).toEqual([
+			"Content/Text/DT_Menu (failed)"
+		]);
+		// One read in part is listed with what was not read, from its diagnostic.
+		const diagnosed: TextCorpus = {
+			...partial,
+			diagnostics: [
+				{
+					code: "package_partially_decoded",
+					message:
+						"67 properties were not decoded: 67 unavailable for this engine version.",
+					packageFile: "Content\\Text\\Table.uasset",
+					propertyPath: "Pins",
+					coverageGapCounts: {
+						unsupported_text_history: 2,
+						legacy_container_element_without_type_information: 0,
+						feature_unavailable_for_engine_version: 65,
+						property_decoder_rejected: 0
+					}
+				}
+			]
+		};
+		expect(localizationGatePartialPackages(diagnosed, listed)).toEqual([
+			{
+				file: "Content/Text/Table",
+				guidance:
+					"67 properties were not read, such as `Pins`: a kind of text the reader does not support (2), not decoded for this engine version (65). Text there is not checked; the package's other text is. Review those parts in Unreal."
+			}
+		]);
+		const single: TextCorpus = {
+			...partial,
+			diagnostics: [
+				{
+					code: "package_partially_decoded",
+					message: "1 property was not decoded.",
+					packageFile: "Content/Text/Table.uasset",
+					propertyPath: "Pins",
+					coverageGapCounts: {
+						unsupported_text_history: 0,
+						legacy_container_element_without_type_information: 0,
+						feature_unavailable_for_engine_version: 0,
+						property_decoder_rejected: 1
+					}
+				}
+			]
+		};
+		expect(localizationGatePartialPackages(single, listed)[0]?.guidance).toBe(
+			"1 property was not read (`Pins`): rejected by the reader's decoder. Text there is not checked; the package's other text is. Review those parts in Unreal."
+		);
+		expect(localizationGatePartialPackages(partial, listed)[0]?.guidance).toBe(
+			"Part of this package could not be read. Text there is not checked; the package's other text is. Review those parts in Unreal."
+		);
+		// It warns unless the project makes it fail.
+		const policies: readonly (readonly LocalizationGateCheck[])[] = [
+			DEFAULT_GATE_FAILURES,
+			[...DEFAULT_GATE_FAILURES, "partial_read"]
+		];
+		for (const failOn of policies) {
+			const target = localizationGateTarget({
+				lines: [],
+				join: {
+					target: Schema.decodeUnknownSync(LocalizationTargetName)("Test"),
+					nativeCulture: cultureCode("en")
+				},
+				files: listed,
+				failOn,
+				partial: localizationGatePartialPackages(diagnosed, listed)
+			});
+			const failing = failOn.includes("partial_read");
+			expect(target).toMatchObject({
+				status: failing ? "failed" : "passed",
+				checks: { partial_read: 1 },
+				items: [{ check: "partial_read", severity: failing ? "fail" : "warn", key: null }]
+			});
+		}
 		expect(localizationGateUnreadPackages(scanned([]), [MENU])).toEqual([]);
 	});
 

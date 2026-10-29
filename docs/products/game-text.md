@@ -1254,16 +1254,20 @@ disk now, so a problem already in a touched file counts too.
 | `unresolved_key`          | warns   | Text without a reliable key, which cannot be translated                     |
 | `removed`                 | warns   | Gathered text its file no longer has, or a file that could not be read      |
 | `gathered_source`         | warns   | Gathered text in a changed code file the index did not read                 |
+| `partial_read`            | warns   | A listed package read only in part: what was not read, and why              |
 
 - `--fail-on <check>` and `--warn-on <check>` (repeatable) change the defaults for a project.
 - `--target <name>` (repeatable) picks targets. Without it every target is checked, and a target
   with no manifest (Unreal has never gathered it) is listed as skipped; a named target must have
   one.
-- It never judges what it cannot see. A manifest, archive or PO file that exists but cannot be
-  read, or a listed package the scan could not read completely, stops the check with exit `2`
-  rather than passing it. A missing archive or PO file means nothing is translated. A listed
-  package Unreal's gather does not select (`not_gatherable`, such as a material) has no text to
-  judge and does not stop it.
+- It never passes what it cannot see. A manifest, archive or PO file that exists but cannot be
+  read, or a listed package the scan could not read at all, stops the check with exit `2`. A
+  missing archive or PO file means nothing is translated. A listed package read only in part, such
+  as a UE 4.27 Blueprint whose graph pins the reader does not decode, is checked for the text it
+  did read and listed as `partial_read`: how many properties were not read, why, and one of them,
+  so a reviewer knows what to look at in Unreal. `--fail-on partial_read` stops such a change
+  instead. A listed package Unreal's gather does not select (`not_gatherable`, such as a material)
+  has no text to judge.
 - The output is JSON: `status` (`passed` or `failed`), and per target the lines checked, a count
   per check, up to 200 lines with their check, key, text, file and a way forward, and the
   changed-file summary. A run that could not check prints `status: "not_checked"` with the error.

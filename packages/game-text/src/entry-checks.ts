@@ -28,6 +28,8 @@ export {
 	localizationGateTarget,
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,
+	localizationGatePartialPackages,
+	type LocalizationGatePartialRead,
 	indexedLocalizationGateTarget,
 	LOCALIZATION_GATE_FIELDS,
 	type LocalizationGateLine

@@ -210,13 +210,13 @@ the code scan. The owner left the choice of changelists to the planner.
   target (10 cultures, 132,734 manifest entries); numbers only. Each is at or below the change its
   workspace is synced to, so the files `loc gate` reads are on disk, except the shelf's.
 
-    | Kind                         | Changelist | Files | Lines judged    | Verdict                  |
-    | ---------------------------- | ---------: | ----: | --------------- | ------------------------ |
-    | Code only                    |     220336 |    19 | 5, in 2 files   | passed                   |
-    | Asset only                   |     220368 |     9 | 296, in 9 files | passed                   |
-    | Mixed                        |     220253 |    36 | none            | could not check (exit 2) |
-    | Key rename with translations |     219062 |    33 | none            | passed                   |
-    | Shelved                      |     220258 |    26 | 84, in 6 files  | failed, 1 line           |
+    | Kind                         | Changelist | Files | Lines judged     | Verdict                        |
+    | ---------------------------- | ---------: | ----: | ---------------- | ------------------------------ |
+    | Code only                    |     220336 |    19 | 5, in 2 files    | passed                         |
+    | Asset only                   |     220368 |     9 | 296, in 9 files  | passed                         |
+    | Mixed                        |     220253 |    36 | 138, in 13 files | failed, 2 lines; 2 partly read |
+    | Key rename with translations |     219062 |    33 | none             | passed                         |
+    | Shelved                      |     220258 |    26 | 84, in 6 files   | failed, 1 line                 |
 
     219062 is a gather commit: its manifest moves 49 entries' unchanged source to new keys, with
     their translations. The gate judges places in the listed files, and a gather commit lists only
@@ -237,11 +237,14 @@ the code scan. The owner left the choice of changelists to the planner.
     - The gate refused any changelist touching a package Unreal's gather does not select
       (`not_gatherable`, such as a material) as unreadable, exit 2. Fixed: such a package holds no
       text the target gathers, so there is nothing to judge, as in Unreal.
-    - The mixed sample still cannot be checked: 2 of its widget Blueprints read partially. On this
-      project 2,061 of 15,632 gatherable packages are partial, all for Blueprint graph pins the
-      reader does not decode on 4.27 (`feature_unavailable_for_engine_version`). A gate on such a
-      changelist exits 2, as its rule says. Widening 4.27 pin decoding is reader work outside this
-      plan.
+    - Then 2 of the mixed sample's widget Blueprints, read only in part, stopped it with exit 2. On
+      this project 2,061 of 15,632 gatherable packages are partial. Of a 171-package sample, 119
+      have properties not decoded for 4.27 (Blueprint graph pins most often), 57 container elements
+      saved without their type, 40 properties the decoder rejected and 9 unsupported text. The owner
+      chose better handling over widening the reader for now: the gate checks the text such a
+      package did yield and lists it as `partial_read` (warns; `--fail-on partial_read` stops it)
+      with how many properties were not read, why and one of them. The mixed sample now fails on 2
+      lines with one key and two texts, and names its 2 partly read Blueprints.
 
 ## Phase 1: `unreal-code`, the scanner
 

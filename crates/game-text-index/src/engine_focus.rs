@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
-const AUDIENCE_REASONS: [&str; 8] = [
+/// `TextAudienceReason`, in its order: the order is the stored code.
+const AUDIENCE_REASONS: [&str; 9] = [
     "gather_table_editor_only",
     "gather_table_runtime",
     "developer_folder",
@@ -16,6 +17,7 @@ const AUDIENCE_REASONS: [&str; 8] = [
     "editor_property",
     "player_asset",
     "no_evidence",
+    "code_editor_only",
 ];
 const GAP_REASONS: [&str; 4] = [
     "unsupported_text_history",
@@ -49,8 +51,16 @@ impl EngineQuery {
         let location = self.occurrence_location(occurrence)?;
         let object = location["objectPath"]
             .as_str()
+            .or_else(|| location["file"].as_str())
             .ok_or("Missing occurrence object.")?;
         let suffix = match location["kind"].as_str() {
+            Some("code_place") => format!(
+                "line:{}:macro:{}",
+                location["line"]
+                    .as_u64()
+                    .map_or_else(String::new, |line| line.to_string()),
+                location["macro"].as_str().ok_or("Missing code macro.")?
+            ),
             Some("string_table_entry") => format!(
                 "entry:{}",
                 location["entryKey"].as_str().ok_or("Missing entry key.")?

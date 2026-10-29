@@ -176,8 +176,15 @@ pub(crate) const O_ROW: usize = 7;
 pub(crate) const O_IDENTITY: usize = 8;
 pub(crate) const O_LOCATION: usize = 9;
 pub(crate) const O_EDITABLE: usize = 10;
+pub(crate) const O_GATHER: usize = 11;
 pub(crate) const O_AUDIENCE: usize = 12;
 pub(crate) const O_COPIES: usize = 13;
+/// `occurrence.location` of a code place, beside asset property (0), Data Table cell (1) and
+/// String Table entry (2).
+pub(crate) const CODE_PLACE: u32 = 3;
+/// `occurrence.gather` of code text the target's gather leaves out.
+pub(crate) const CODE_LEFT_OUT: u32 = 3;
+pub(crate) use crate::package_text_contract::code_layer;
 pub(crate) struct PackageColumns {
     pub names: Vec<String>,
     pub starts: Vec<u32>,
@@ -191,11 +198,12 @@ pub(crate) struct PackageColumns {
 }
 impl PackageColumns {
     pub fn load(store: &Store, strings: &[String], project: &str, target: &Value) -> Result<Self> {
+        let code = target["name"].as_str().map(code_layer);
         let mut names: Vec<_> = store.root["active"]
             .as_object()
             .ok_or("active layers absent")?
             .keys()
-            .filter(|s| s.starts_with("package-text."))
+            .filter(|s| s.starts_with("package-text.") || code.as_ref() == Some(*s))
             .cloned()
             .collect();
         names.sort();
@@ -269,7 +277,10 @@ impl PackageColumns {
             let package = result.package_row[row];
             let class = result.occurrence[O_CLASS][row];
             let kind = result.occurrence[O_LOCATION][row];
-            let rating = if let Some(value) = ratings.get(&(package, class, kind)) {
+            // The scan read the code with the target's own steps; it marks what they leave out.
+            let rating = if kind == CODE_PLACE {
+                u32::from(result.occurrence[O_GATHER][row] != CODE_LEFT_OUT)
+            } else if let Some(value) = ratings.get(&(package, class, kind)) {
                 *value
             } else {
                 let value = policy.coverage(
@@ -304,6 +315,25 @@ impl PackageColumns {
             _ => false,
         }
     }
+    /// The String Table entry a place defines, as `(table, key)`: an asset String Table's object
+    /// and entry, or for a `LOCTABLE_*` code place, the table ID it carries in its wrapper's
+    /// column, and its key. References name the same pair.
+    pub fn table_entry(&self, row: usize, strings: &[String], empty: u32) -> Option<(u32, u32)> {
+        let c = &self.occurrence;
+        if c[O_IDENTITY][row] != 0 || c[O_KEY][row] == empty {
+            return None;
+        }
+        match c[O_LOCATION][row] {
+            2 => Some((c[O_OBJECT][row], c[O_ROW][row])),
+            CODE_PLACE
+                if c[O_CLASS][row] != empty
+                    && code_table_macro(&strings[c[O_PROPERTY][row] as usize]) =>
+            {
+                Some((c[O_CLASS][row], c[O_KEY][row]))
+            }
+            _ => None,
+        }
+    }
     pub fn unit_id(&self, row: usize, strings: &[String], empty: u32) -> Result<String> {
         let c = &self.occurrence;
         let text = |field: usize| -> Result<&str> {
@@ -323,17 +353,20 @@ impl PackageColumns {
                 } else {
                     "string-table"
                 },
-                uri_component(if c[O_IDENTITY][row] == 0 && c[O_LOCATION][row] != 2 {
-                    crate::join_policy::strip_namespace(namespace)
-                } else {
-                    namespace
-                }),
+                uri_component(
+                    if c[O_IDENTITY][row] == 0 && !keeps_namespace(c[O_LOCATION][row]) {
+                        crate::join_policy::strip_namespace(namespace)
+                    } else {
+                        namespace
+                    }
+                ),
                 uri_component(text(O_KEY)?)
             ));
         }
         let suffix = match c[O_LOCATION][row] {
             2 => format!("entry:{}", text(O_ROW)?),
             1 => format!("row:{}:property:{}", text(O_ROW)?, text(O_PROPERTY)?),
+            CODE_PLACE => format!("line:{}:macro:{}", text(O_ROW)?, text(O_PROPERTY)?),
             _ => format!("property:{}", text(O_PROPERTY)?),
         };
         Ok(format!(
@@ -341,5 +374,28 @@ impl PackageColumns {
             text(O_OBJECT)?,
             self.relative_paths[self.package_row[row] as usize]
         ))
+    }
+}
+
+/// Whether a code place's macro defines a String Table entry. Such a place has no wrapper; its
+/// class column holds the table ID instead.
+pub(crate) fn code_table_macro(name: &str) -> bool {
+    name.starts_with("LOCTABLE_")
+}
+
+/// Whether a place's namespace is kept as saved. Unreal strips the package marker from `FText`
+/// in packages; String Table entries keep theirs, and code text never had one.
+pub(crate) fn keeps_namespace(location: u32) -> bool {
+    location == 2 || location == CODE_PLACE
+}
+
+/// A place's origin bit in `ORIGINS`: String Table, Data Table, asset, or for code text, `cpp` or
+/// `other_source` by its file, as a manifest path is judged.
+pub(crate) fn place_origin<'a>(location: u32, file: impl FnOnce() -> &'a str) -> u32 {
+    match location {
+        2 => 0,
+        1 => 1,
+        CODE_PLACE => crate::join_policy::origin(file()),
+        _ => 2,
     }
 }

@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { Effect, Schema } from "effect";
 import { materializeQualityRead, type QualityRead } from "./quality-hydration.js";
 import {
@@ -612,7 +613,9 @@ function qualitySummary(
 		: textQualityFindingId(finding);
 	const location = finding.affectedOccurrences[0]?.location;
 	const context =
-		(location ? textAssetName(location.objectPath) : (line?.manifestPath ?? "Source file")) +
+		(location
+			? textAssetName(textLocationPath(location))
+			: (line?.manifestPath ?? "Source file")) +
 		" · " +
 		(localized
 			? (finding.identity?.key ?? "No key")

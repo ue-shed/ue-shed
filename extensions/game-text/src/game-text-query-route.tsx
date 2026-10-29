@@ -100,7 +100,14 @@ import {
 	SyncWithUnreal,
 	UnrealSteps
 } from "./game-text-operations.js";
-import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
+import {
+	copyPathLabel,
+	identityLabel,
+	locationDetail,
+	placePath,
+	savedObjectPath,
+	sourceText
+} from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
 import { WhereFilter, textWhere } from "./game-text-where.js";
 
@@ -2128,7 +2135,7 @@ export function OccurrenceCard(props: {
 						: "Read only"}
 				</span>
 			</div>
-			<code {...stylex.attrs(styles.mono)}>{props.occurrence.location.objectPath}</code>
+			<code {...stylex.attrs(styles.mono)}>{placePath(props.occurrence.location)}</code>
 			<span {...stylex.attrs(styles.muted)}>{locationDetail(props.occurrence.location)}</span>
 			<Show when={props.conflicting}>
 				<p {...stylex.attrs(styles.notes)}>{props.occurrence.source}</p>
@@ -2163,11 +2170,15 @@ export function OccurrenceCard(props: {
 				</For>
 			</details>
 			<div {...stylex.attrs(styles.bar)}>
-				<CopyButton label="Copy asset path" value={props.occurrence.location.objectPath} />
-				<ShowInUnrealButton
-					client={props.client}
-					objectPath={props.occurrence.location.objectPath}
+				<CopyButton
+					label={copyPathLabel(props.occurrence.location)}
+					value={placePath(props.occurrence.location)}
 				/>
+				<Show when={savedObjectPath(props.occurrence.location)}>
+					{(objectPath) => (
+						<ShowInUnrealButton client={props.client} objectPath={objectPath()} />
+					)}
+				</Show>
 				<Show
 					when={
 						props.occurrence.location.kind === "data_table_cell" &&
@@ -2178,7 +2189,7 @@ export function OccurrenceCard(props: {
 						size="compact"
 						tone="quiet"
 						onClick={() =>
-							props.onOpenDataAuthoring?.(props.occurrence.location.objectPath)
+							props.onOpenDataAuthoring?.(placePath(props.occurrence.location))
 						}
 					>
 						Open in Data Authoring

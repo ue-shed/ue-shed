@@ -136,11 +136,97 @@ export const GameTextIndexPackagePlan = Schema.Struct({
 		planFile: Text
 	})
 });
+const PackageTextAudienceMatch = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literals(["namespace", "folder", "location", "macro"]),
+		value: Schema.String
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("object"),
+		value: Schema.String,
+		position: Schema.Literals(["prefix", "suffix", "equals"])
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("module"),
+		value: Schema.String,
+		suffix: Schema.optionalKey(Schema.Boolean)
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("property"),
+		value: Schema.String,
+		anywhere: Schema.optionalKey(Schema.Boolean)
+	})
+]);
+/** One audience policy row as the reader classifies with it: its stored code and conditions. */
+export const PackageTextAudienceRule = Schema.Struct({
+	code: Natural,
+	when: Schema.Array(PackageTextAudienceMatch)
+});
+/** One project's code scan, as `unreal-code` runs it (`CodeTextRequest`). */
+export const CodeTextRequest = Schema.Struct({
+	projectRoot: Text,
+	engineRoot: Schema.NullOr(Text),
+	engine: Schema.Literals(["4.27", "5.7", "5.8"]),
+	targets: Schema.Array(
+		Schema.Struct({
+			name: Name,
+			steps: Schema.Array(
+				Schema.Struct({
+					searchDirectoryPaths: Schema.Array(Schema.String),
+					excludePathFilters: Schema.Array(Schema.String),
+					fileNameFilters: Schema.Array(Schema.String),
+					gatherEditorOnly: Schema.Boolean
+				})
+			)
+		})
+	),
+	cacheRoot: Schema.NullOr(Text),
+	refreshEngineWrappers: Schema.Boolean
+});
+/**
+ * The reader scans one target's code and publishes its code layer, `code-text:<target>`, when the
+ * layer's content changed; without `scan` it removes the layer.
+ */
+export const GameTextIndexCodeLayer = Schema.Struct({
+	action: Schema.Literal("publish_code"),
+	...Configuration,
+	request: Schema.Struct({
+		target: Name,
+		format: Text,
+		policyJson: Schema.String,
+		rules: Schema.Array(PackageTextAudienceRule),
+		stagingFile: Text,
+		scan: Schema.optionalKey(CodeTextRequest)
+	})
+});
+/** A point's id: `local`, `depot@<CL>`, `shelved:<CL>` or another short name. */
+const PointId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9@:._-]{1,128}$/u));
+/**
+ * The reader reads a set of files at one revision into per-file records keyed by content, reusing
+ * any the cache holds, and writes the point's manifest.
+ */
+export const GameTextIndexReadPoint = Schema.Struct({
+	action: Schema.Literal("read_point"),
+	...Configuration,
+	request: Schema.Struct({
+		point: PointId,
+		base: Schema.optionalKey(PointId),
+		format: Text,
+		policyJson: Schema.String,
+		rules: Schema.Array(PackageTextAudienceRule),
+		files: Schema.Array(Schema.Struct({ path: Text, file: Schema.optionalKey(Text) })),
+		code: Schema.optionalKey(
+			Schema.Struct({ policyJson: Schema.String, scan: CodeTextRequest })
+		)
+	})
+});
 /** Validated builder commands; package replacements require protocol minor 16 or later. */
 export const GameTextIndexBuildRequest = Schema.Union([
 	...GameTextIndexPreviousBuildRequest.members,
 	GameTextIndexPackageReplacement,
-	GameTextIndexPackagePlan
+	GameTextIndexPackagePlan,
+	GameTextIndexCodeLayer,
+	GameTextIndexReadPoint
 ]).annotate({ identifier: "GameTextIndexBuildRequest" });
 export type GameTextIndexBuildRequest = typeof GameTextIndexBuildRequest.Type;
 
@@ -155,6 +241,92 @@ export const GameTextIndexJoinOutcome = Schema.Struct({
 	affectedLines: Schema.NullOr(Natural)
 });
 
+const CodeDiagnostic = Schema.Struct({
+	file: Schema.String,
+	line: Schema.NullOr(Natural),
+	code: Schema.Literals([
+		"argument-count",
+		"argument-parse",
+		"unexpected-bracket",
+		"end-of-file",
+		"missing-bracket",
+		"missing-quotes",
+		"empty-identifier",
+		"empty-source",
+		"whitespace-only",
+		"no-namespace",
+		"namespace-redefined",
+		"namespace-not-defined",
+		"namespace-not-closed",
+		"region-redefined",
+		"region-not-defined",
+		"unterminated-string",
+		"unterminated-raw-string",
+		"table-redefined",
+		"table-entry-redefined",
+		"table-metadata-redefined",
+		"table-not-registered",
+		"table-import-failed",
+		"wrapper-unsupported",
+		"wrapper-duplicate",
+		"crashes-unreal427",
+		"unreadable"
+	]),
+	message: Schema.String
+});
+/** What a `read_point` request did: each file's record, and how many were read or reused. */
+export const PointOutcome = Schema.Struct({
+	point: Schema.String,
+	read: Natural,
+	reused: Natural,
+	bytes: Natural,
+	entries: Schema.Array(
+		Schema.Struct({
+			path: Schema.String,
+			record: Schema.optionalKey(Schema.String),
+			status: Schema.Literals([
+				"complete",
+				"partial",
+				"not_gatherable",
+				"failed",
+				"removed",
+				"unread"
+			])
+		})
+	)
+});
+/** What a `publish_code` request did: the layer's key, whether it changed, and the scan's counts. */
+export const CodeLayerOutcome = Schema.Struct({
+	name: Name,
+	key: Schema.optionalKey(Name),
+	published: Schema.Boolean,
+	places: Natural,
+	leftOut: Natural,
+	files: Natural,
+	counts: Schema.optionalKey(
+		Schema.Struct({
+			listed: Natural,
+			excluded: Natural,
+			scanned: Natural,
+			skipped: Natural,
+			bytesRead: Natural
+		})
+	),
+	diagnosticCount: Natural,
+	diagnostics: Schema.Array(CodeDiagnostic),
+	engineWrappers: Schema.optionalKey(
+		Schema.Literals(["not-used", "no-engine-root", "read", "cached"])
+	),
+	profile: Schema.optionalKey(
+		Schema.Struct({
+			engineWrappersMicros: Natural,
+			projectWrappersMicros: Natural,
+			listMicros: Natural,
+			scanMicros: Natural
+		})
+	)
+});
+
 /** Snapshot contents stay private to the paired builder/reader; their domain decoder verifies them. */
 export const GameTextIndexBuildOutcome = Schema.Struct({
 	action: Schema.Literals([
@@ -166,6 +338,8 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"publish",
 		"publish_packages",
 		"plan_packages",
+		"publish_code",
+		"read_point",
 		"publish_ids",
 		"intern",
 		"strings",
@@ -194,6 +368,8 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		Schema.String,
 		Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
 	),
+	code: Schema.optionalKey(CodeLayerOutcome),
+	point: Schema.optionalKey(PointOutcome),
 	plan: Schema.optionalKey(
 		Schema.Struct({
 			changed: Schema.Array(

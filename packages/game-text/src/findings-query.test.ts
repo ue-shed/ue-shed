@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { effectiveRuleDocument, enabledRuleDocument } from "./rules/effective.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -464,11 +465,13 @@ function reportedFinding(finding: ReportedFinding): ReportedFinding {
 								row: location.row,
 								propertyPath: location.propertyPath
 							}
-						: {
-								kind: location.kind,
-								objectPath: location.objectPath,
-								entryKey: location.entryKey
-							},
+						: location.kind === "string_table_entry"
+							? {
+									kind: location.kind,
+									objectPath: location.objectPath,
+									entryKey: location.entryKey
+								}
+							: location,
 			packageFile
 		})
 	);
@@ -659,8 +662,8 @@ it.live("checks report each place once, its compiled Blueprint copies folded in"
 			for (const kind of ["culture_invariant_text", "rich_text_tags_added"]) {
 				expect(found(kind), kind).toHaveLength(1);
 				expect(
-					found(kind)[0]!.affectedOccurrences.map(
-						(occurrence) => occurrence.location.objectPath
+					found(kind)[0]!.affectedOccurrences.map((occurrence) =>
+						textLocationPath(occurrence.location)
 					),
 					kind
 				).toEqual([

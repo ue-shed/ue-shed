@@ -1108,15 +1108,19 @@ fn role_matches(
     let kind = match occurrences.value(row, "location") {
         0 => "asset_property",
         1 => "data_table_cell",
-        _ => "string_table_entry",
+        2 => "string_table_entry",
+        _ => "code_place",
     };
+    let saved = kind != "code_place";
     role.scopes.iter().any(|scope| {
         scope.matchers.iter().all(|matcher| {
             let actual = match matcher.kind {
                 MatcherKind::LocationKind => Some(kind),
-                MatcherKind::ObjectPath => Some(text("object")),
+                MatcherKind::ObjectPath if saved => Some(text("object")),
                 MatcherKind::Row if kind == "data_table_cell" => Some(text("row")),
-                MatcherKind::PropertyPath if kind != "string_table_entry" => Some(text("property")),
+                MatcherKind::PropertyPath if saved && kind != "string_table_entry" => {
+                    Some(text("property"))
+                }
                 MatcherKind::StringTableEntry if kind == "string_table_entry" => Some(text("row")),
                 MatcherKind::ClassPath if kind == "asset_property" => Some(text("class")),
                 _ => None,

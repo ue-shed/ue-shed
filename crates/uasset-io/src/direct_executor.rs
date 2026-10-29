@@ -34,12 +34,14 @@ use crate::protocol_result::{
 
 pub(crate) use blueprint::blueprint_with_cancellation;
 pub(crate) use project_index::RefreshProgress;
+pub(crate) use project_index_io::gathered;
 pub(crate) use project_index_io::{
     ProjectIndexQuerySession, ProjectIndexRefreshOutput, catalog_was_quarantined, open_catalog,
     open_catalog_for_project_id, progress_phase, query as project_index_query_protocol,
     query_project_id, refresh as project_index_refresh_protocol,
     status as project_index_status_protocol,
 };
+pub(crate) use project_io::package_text_events;
 pub(crate) use project_io::{ProjectionStreamEvent, SavedWorldReadOptions, SkippedPropertyDetail};
 pub(crate) use project_io::{
     extract_text, extract_text_streaming, extract_texture, extract_texture_with_cancellation,

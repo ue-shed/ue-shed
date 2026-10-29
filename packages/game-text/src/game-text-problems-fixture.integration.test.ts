@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -238,7 +239,10 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 						for (const expected of cases.signals.compiledCopyDiffers) {
 							const place = corpus.units
 								.flatMap((unit) => unit.occurrences)
-								.find((item) => item.location.objectPath === expected.objectPath);
+								.find(
+									(item) =>
+										textLocationPath(item.location) === expected.objectPath
+								);
 							expect([
 								place?.source,
 								place && staleRuntimeCopy(place)?.source
@@ -306,7 +310,8 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 							const unit = corpus.units.find((item) =>
 								item.occurrences.some(
 									(occurrence) =>
-										occurrence.location.objectPath === expected.objectPath
+										textLocationPath(occurrence.location) ===
+										expected.objectPath
 								)
 							)!;
 							expect(

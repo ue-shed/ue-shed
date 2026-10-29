@@ -148,6 +148,7 @@ for (const unit of input.corpus.units)
 		const path = join(projectRoot, occurrence.packageFile);
 		const record = records.get(path) ?? emptyPackageTextRecord(path);
 		const location = occurrence.location;
+		if (location.kind === "code_place") throw new Error("A code place has no saved package.");
 		const saved: SavedAssetPackageTextRecord["occurrences"][number] = {
 			source: occurrence.source,
 			dev_notes: occurrence.devNotes,

@@ -28,7 +28,7 @@ import { qualityFindingFacts } from "./game-text-quality-workspace.js";
 import { GameTextRuleEditor } from "./game-text-rule-editor.js";
 import type { GameTextRuleState } from "./game-text-rule-state.js";
 import { styles } from "./game-text-styles.js";
-import { locationDetail } from "./game-text-view.js";
+import { copyPathLabel, locationDetail, placePath, savedObjectPath } from "./game-text-view.js";
 
 /** A built-in check's catalogue label, or a rule's own label from the rules file. */
 function ruleLabel(ruleId: string, labels: ReadonlyMap<string, string>): string {
@@ -933,7 +933,7 @@ export function GameTextLocalizationQuality(props: {
 														{textLocationLabel(occurrence.location)}
 													</strong>
 													<code {...stylex.attrs(styles.mono)}>
-														{occurrence.location.objectPath}
+														{placePath(occurrence.location)}
 													</code>
 													<span {...stylex.attrs(styles.muted)}>
 														{locationDetail(occurrence.location)}
@@ -948,15 +948,23 @@ export function GameTextLocalizationQuality(props: {
 													</details>
 													<div {...stylex.attrs(styles.bar)}>
 														<CopyButton
-															label="Copy asset path"
-															value={occurrence.location.objectPath}
+															label={copyPathLabel(
+																occurrence.location
+															)}
+															value={placePath(occurrence.location)}
 														/>
-														<ShowInUnrealButton
-															client={props.client}
-															objectPath={
-																occurrence.location.objectPath
-															}
-														/>
+														<Show
+															when={savedObjectPath(
+																occurrence.location
+															)}
+														>
+															{(objectPath) => (
+																<ShowInUnrealButton
+																	client={props.client}
+																	objectPath={objectPath()}
+																/>
+															)}
+														</Show>
 													</div>
 												</article>
 											)}

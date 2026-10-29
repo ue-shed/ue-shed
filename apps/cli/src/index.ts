@@ -2,6 +2,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
 import { Cause, Effect, Exit, Layer } from "effect";
+import {
+	cliExit,
+	cliFailureCode,
+	cliFailureExit,
+	cliFailureRecovery,
+	readCliFailure
+} from "./cli-exit.js";
 import { CliCommandError, CliRuntime, CliRuntimeLive, inputIssueDetail } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 import { withCliSignalHandling } from "./signal.js";
@@ -37,12 +44,19 @@ Effect.runPromiseExit(main(process.argv.slice(2)).pipe(Effect.provide(CliLive)))
 	if (Exit.isSuccess(exit)) return;
 	const failure = Cause.findErrorOption(exit.cause);
 	if (failure._tag === "Some") {
-		process.stderr.write(`ue-shed: ${failure.value.message}\n`);
+		const report = readCliFailure(failure.value);
+		const code = cliFailureCode(report);
+		process.stderr.write(
+			`ue-shed: ${failure.value.message}${code === undefined ? "" : ` (${code})`}\n`
+		);
 		const detail = inputIssueDetail(failure.value);
 		if (detail !== undefined) process.stderr.write(`${detail}\n`);
-		process.exitCode = 2;
+		const recovery = cliFailureRecovery(report);
+		if (recovery !== undefined) process.stderr.write(`${recovery}\n`);
+		process.exitCode = cliFailureExit(report);
 		return;
 	}
 	process.stderr.write(`${Cause.pretty(exit.cause)}\n`);
-	process.exitCode = 1;
+	// A crash is never a check's verdict, so it never exits 1.
+	process.exitCode = cliExit("crashed");
 });

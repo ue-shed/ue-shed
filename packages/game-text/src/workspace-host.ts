@@ -1,6 +1,8 @@
 import type { LocalizationFileAccess } from "@ue-shed/localization";
 import type { Effect, Layer, Stream } from "effect";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
+import type { GameTextCodeSource } from "./index-contract.js";
+import type { GameTextWorkspaceChangeRevisions } from "./workspace-change.js";
 
 /**
  * The project a host has selected. The workspace never chooses or changes the project; it reads
@@ -139,6 +141,18 @@ export interface GameTextWorkspaceHost {
 	readonly prepareWrites?: (
 		paths: readonly string[]
 	) => Effect.Effect<void, GameTextWorkspaceHostFailure>;
+	/**
+	 * Code reading: the engine a target's code is read with for the selected project (its source
+	 * gather behaviour and installation root). Absent, or answering undefined, leaves code unread:
+	 * C++ and config text then shows from the gather manifest only.
+	 */
+	readonly codeSource?: (projectRoot: string) => Effect.Effect<GameTextCodeSource | undefined>;
+	/**
+	 * Change reads: a changelist's, a shelf's or a range's files at both sides, and working-copy
+	 * files at the revisions the workspace has, such as Map History's Perforce reads. Absent,
+	 * `compareChange` answers `capability_missing`.
+	 */
+	readonly changeRevisions?: GameTextWorkspaceChangeRevisions;
 	/**
 	 * Recovery copy: called with a file's previous bytes before the workspace overwrites it (a
 	 * saved rules file), so a host can keep a copy to restore. A read failure or recovery-copy

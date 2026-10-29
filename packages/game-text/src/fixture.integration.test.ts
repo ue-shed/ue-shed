@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { AssetReader, assetReaderLayer } from "@ue-shed/unreal-assets";
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -101,7 +102,7 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 				unit.source.status === "consistent" &&
 				unit.source.value === "Confirm" &&
 				unit.occurrences.every((occurrence) =>
-					occurrence.location.objectPath.startsWith("/Game/Fixture/Text/")
+					textLocationPath(occurrence.location).startsWith("/Game/Fixture/Text/")
 				)
 		);
 		expect(equalSource).toHaveLength(2);
@@ -175,7 +176,7 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 		expect(occurrences.filter((item) => item.copies !== undefined)).toEqual([]);
 		expect(
 			occurrences.filter((item) =>
-				item.location.objectPath.startsWith(`${path}.BP_ReviewFixture_C.`)
+				textLocationPath(item.location).startsWith(`${path}.BP_ReviewFixture_C.`)
 			)
 		).toHaveLength(4);
 		// fixture-contract.json: one key, two legitimate properties of one asset, two places.

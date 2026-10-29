@@ -261,7 +261,10 @@ const compareFolder = Effect.fnUntraced(function* (
 						: [];
 				const matches = new Map<string, (typeof placements)[number] & { source: string }>();
 				for (const occurrence of occurrences) {
-					const path = occurrence.location.objectPath.split(".")[0]!;
+					// The plan places text in assets; code text is checked by unreal-code's conformance.
+					const location = occurrence.location;
+					if (location.kind === "code_place") continue;
+					const path = location.objectPath.split(".")[0]!;
 					const local = placementsByPackage.get(path) ?? [];
 					const candidates = local.filter(
 						({ owner, text }) =>
@@ -283,9 +286,7 @@ const compareFolder = Effect.fnUntraced(function* (
 							occurrence.location.kind === "data_table_cell"
 								? text.field.split(".")[0] === occurrence.location.row
 								: occurrence.location.kind === "string_table_entry" ||
-									occurrence.location.objectPath.includes(
-										text.field.split(".")[0]!
-									) ||
+									location.objectPath.includes(text.field.split(".")[0]!) ||
 									(occurrence.location.kind === "asset_property" &&
 										occurrence.location.propertyPath.includes(
 											text.field.split(".")[0]!
@@ -330,7 +331,7 @@ const compareFolder = Effect.fnUntraced(function* (
 										: "",
 								key: "unplanned",
 								kind: "manifest",
-								field: occurrence.location.objectPath,
+								field: location.objectPath,
 								source: occurrence.source,
 								gatheredSource: line.manifest[0]?.source.Text ?? null,
 								culture: culture.culture,

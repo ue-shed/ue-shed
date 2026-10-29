@@ -29,7 +29,7 @@ import type { GameTextClientApi } from "./game-text-client.js";
 import { failureText } from "./game-text-failure.js";
 import { ShowInUnrealButton } from "./game-text-locate-button.js";
 import { seenTranslation, type GameTextEdits } from "./game-text-translation-edits.js";
-import { identityLabel } from "./game-text-view.js";
+import { identityLabel, locationDetail, savedObjectPath } from "./game-text-view.js";
 
 interface TranslationMove {
 	readonly culture: string;
@@ -434,14 +434,16 @@ export function GameTextIdRepairs(props: {
 										<div {...stylex.attrs(local.place)}>
 											<code>
 												{place.packageFile} ·{" "}
-												{place.location.kind === "string_table_entry"
-													? place.location.entryKey
-													: place.location.propertyPath}
+												{locationDetail(place.location)}
 											</code>
-											<ShowInUnrealButton
-												client={props.client}
-												objectPath={place.location.objectPath}
-											/>
+											<Show when={savedObjectPath(place.location)}>
+												{(objectPath) => (
+													<ShowInUnrealButton
+														client={props.client}
+														objectPath={objectPath()}
+													/>
+												)}
+											</Show>
 											<Show when={textIdRepairSupport(place)}>
 												{(reason) => <span>{reason()}</span>}
 											</Show>
@@ -511,10 +513,14 @@ export function GameTextIdRepairs(props: {
 									{(place) => (
 										<div {...stylex.attrs(local.place)}>
 											<code>{place.packageFile}</code>
-											<ShowInUnrealButton
-												client={props.client}
-												objectPath={place.location.objectPath}
-											/>
+											<Show when={savedObjectPath(place.location)}>
+												{(objectPath) => (
+													<ShowInUnrealButton
+														client={props.client}
+														objectPath={objectPath()}
+													/>
+												)}
+											</Show>
 										</div>
 									)}
 								</For>

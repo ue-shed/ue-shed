@@ -243,6 +243,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "ts-rs",
+ "unreal-code",
  "zstd",
 ]
 
@@ -874,6 +875,7 @@ dependencies = [
  "serde_json",
  "uasset-inspection",
  "uasset-parser",
+ "unreal-code",
  "zstd",
 ]
 
@@ -900,6 +902,18 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unreal-code"
+version = "0.23.0"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "rayon",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
 
 [[package]]
 name = "utf16_iter"

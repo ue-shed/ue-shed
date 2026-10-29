@@ -110,6 +110,19 @@ pub fn native_stored(
                         remount(object_path, mounted.as_deref(), serialized);
                         view(entry_key);
                     }
+                    TextExtractionLocation::CodePlace {
+                        file,
+                        macro_name,
+                        wrapper,
+                        table,
+                        ..
+                    } => {
+                        view(file);
+                        view(macro_name);
+                        for name in [wrapper, table].into_iter().flatten() {
+                            view(name);
+                        }
+                    }
                 }
                 view(&mut occurrence.source);
                 view(&mut occurrence.dev_notes);

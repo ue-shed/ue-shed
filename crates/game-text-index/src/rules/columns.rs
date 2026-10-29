@@ -706,7 +706,7 @@ pub struct Occurrences {
     pub(super) data: Option<Arc<super::occurrences::OccurrenceData>>,
     pub(super) ids: Vec<Option<StrId>>,
     pub(super) files: Vec<StrId>,
-    pub(super) location_kinds: [Atom; 3],
+    pub(super) location_kinds: [Atom; 4],
     pub fields: HashMap<String, Arc<Column>>,
     pub len: usize,
     pub raw_rows: Vec<u32>,

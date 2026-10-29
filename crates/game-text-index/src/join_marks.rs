@@ -32,12 +32,19 @@ fn place(value: &str) -> String {
 }
 pub(crate) fn manifest_place(value: &str) -> Option<String> {
     let value = place(value);
-    let regex = if value.starts_with('/') {
-        &*ASSET_PLACE
-    } else {
-        &*SOURCE_PLACE
-    };
-    regex.is_match(&value).then_some(value)
+    if value.starts_with('/') {
+        return ASSET_PLACE.is_match(&value).then_some(value);
+    }
+    if !SOURCE_PLACE.is_match(&value) {
+        return None;
+    }
+    // 4.27 writes a source line as `file:12`, 5.x as `file(12)`; both are `file[12]`.
+    Some(match value.rsplit_once(':') {
+        Some((file, line)) if !line.is_empty() && line.bytes().all(|b| b.is_ascii_digit()) => {
+            format!("{file}[{line}]")
+        }
+        _ => value,
+    })
 }
 fn keys(
     j: &Joined,
@@ -72,8 +79,16 @@ fn keys(
             let value = if tier == 0 {
                 if c[O_LOCATION][i] == 2
                     || c[O_LOCATION][i] == 0 && j.string(c[O_PROPERTY][i]).is_empty()
+                    || c[O_LOCATION][i] == CODE_PLACE && j.string(c[O_ROW][i]).is_empty()
                 {
                     None
+                } else if c[O_LOCATION][i] == CODE_PLACE {
+                    // The manifest's `file(line)`, as `manifest_place` reads it.
+                    Some(place(&format!(
+                        "{}({})",
+                        j.string(c[O_OBJECT][i]),
+                        j.string(c[O_ROW][i])
+                    )))
                 } else {
                     Some(place(&if c[O_LOCATION][i] == 1 {
                         format!(

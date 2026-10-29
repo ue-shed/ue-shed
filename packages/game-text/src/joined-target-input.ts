@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { decodeWtf8 } from "./wtf8.js";
 import { keyedUnitId } from "./gathered-text.js";
 import { projectRelativePath } from "./project-relative-path.js";
@@ -246,8 +247,10 @@ export function unitId(packages: JoinPackages, row: number, namespace: string, k
 			? `entry:${location.entryKey}`
 			: location.kind === "data_table_cell"
 				? `row:${location.row}:property:${location.propertyPath}`
-				: `property:${location.propertyPath}`;
-	return `occurrence:${location.objectPath}:${suffix}:${packagePath(packages, packages.packageRow[row]!)}`;
+				: location.kind === "code_place"
+					? `line:${location.line ?? ""}:macro:${location.macro}`
+					: `property:${location.propertyPath}`;
+	return `occurrence:${textLocationPath(location)}:${suffix}:${packagePath(packages, packages.packageRow[row]!)}`;
 }
 export const loadJoinPackages = Effect.fn("JoinedTarget.packages")(function* (
 	reader: SharedIndexReader,

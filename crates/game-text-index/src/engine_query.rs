@@ -486,7 +486,38 @@ impl EngineQuery {
                 result["kind"] = json!("string_table_entry");
                 result["entryKey"] = json!(self.reader.string(row)?);
             }
+            3 => return self.code_location(occurrence, object),
             _ => return Err("Invalid stored occurrence location.".into()),
+        }
+        Ok(result)
+    }
+
+    /// A code place: its file, line, macro, and wrapper or String Table (`TextLocation`'s
+    /// `code_place`).
+    fn code_location(&self, occurrence: usize, file: String) -> Result<Value> {
+        let line = self
+            .reader
+            .string(self.occurrence_value(occurrence, "row")?)?;
+        let macro_name = self
+            .reader
+            .string(self.occurrence_value(occurrence, "property")?)?;
+        let wrapper = self
+            .reader
+            .string(self.occurrence_value(occurrence, "class")?)?;
+        let mut result = json!({"kind":"code_place","file":file,"macro":macro_name});
+        if !line.is_empty() {
+            result["line"] = json!(
+                line.parse::<u32>()
+                    .map_err(|_| "Invalid code place line.")?
+            );
+        }
+        if !wrapper.is_empty() {
+            let member = if crate::join_columns::code_table_macro(&macro_name) {
+                "table"
+            } else {
+                "wrapper"
+            };
+            result[member] = json!(wrapper);
         }
         Ok(result)
     }
@@ -522,6 +553,7 @@ impl EngineQuery {
             (4, "asset_property"),
             (2, "data_table_cell"),
             (1, "string_table_entry"),
+            (8 | 16, "code_place"),
         ]
         .iter()
         .filter_map(|(bit, kind)| (origins & bit != 0).then_some(kind))

@@ -81,6 +81,12 @@ pub enum EngineRequest {
     CorpusHeader {
         reader: String,
     },
+    /// The package coverage and diagnostics of the listed files only, matched as `where.files`
+    /// matches them.
+    FileCoverage {
+        reader: String,
+        files: Vec<String>,
+    },
     /// The corpus content fingerprint.
     CorpusFingerprint {
         reader: String,
@@ -140,13 +146,31 @@ pub enum EngineRequest {
         #[cfg_attr(test, ts(type = "RuleDocumentV4"))]
         rules: Value,
     },
+    /// The text in a project's source, found the way Unreal's `GatherTextFromSource` finds it;
+    /// needs no reader (Plan 060).
+    CodeText {
+        request: unreal_code::CodeTextRequest,
+    },
+    /// A point against its base, and with the base's localization, the gate's findings; needs no
+    /// reader and never waits on a refresh (Plan 060).
+    ComparePoints {
+        configuration: Configuration,
+        request: Box<crate::package_text_contract::ComparePointsRequest>,
+    },
 }
 impl EngineRequest {
     pub fn validate(&self) -> Result<()> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("requestValidate");
         match self {
-            Self::Capabilities | Self::RulesCheck { .. } => {}
+            Self::Capabilities | Self::RulesCheck { .. } | Self::CodeText { .. } => {}
+            Self::ComparePoints {
+                configuration,
+                request,
+            } => {
+                configuration.identity()?;
+                crate::point_compare::validate(request)?;
+            }
             Self::Open {
                 configuration,
                 expected_generation,
@@ -167,6 +191,7 @@ impl EngineRequest {
             | Self::Query { reader, .. }
             | Self::Corpus { reader }
             | Self::CorpusHeader { reader }
+            | Self::FileCoverage { reader, .. }
             | Self::CorpusFingerprint { reader }
             | Self::CorpusReportHeader { reader }
             | Self::Aggregate { reader, .. }
@@ -354,6 +379,20 @@ impl EngineSession {
                 "rules_check",
                 Some(serde_json::to_string(&crate::rules::check(&text(rules)?))?),
             ),
+            EngineRequest::CodeText { request } => (
+                "code_text",
+                Some(serde_json::to_string(&unreal_code::run(request))?),
+            ),
+            EngineRequest::ComparePoints {
+                configuration,
+                request,
+            } => (
+                "compare_points",
+                Some(serde_json::to_string(&crate::point_compare::compare(
+                    configuration,
+                    request,
+                )?)?),
+            ),
             EngineRequest::Open {
                 configuration,
                 expected_generation,
@@ -454,6 +493,7 @@ impl EngineSession {
             | EngineRequest::Query { reader, .. }
             | EngineRequest::Corpus { reader }
             | EngineRequest::CorpusHeader { reader }
+            | EngineRequest::FileCoverage { reader, .. }
             | EngineRequest::CorpusFingerprint { reader }
             | EngineRequest::CorpusReportHeader { reader }
             | EngineRequest::Aggregate { reader, .. }
@@ -506,6 +546,12 @@ impl EngineSession {
                         query.send_corpus_header(cancelled, reply)?;
                         ("corpus_header", None)
                     }
+                    EngineRequest::FileCoverage { files, .. } => (
+                        "file_coverage",
+                        Some(crate::wtf8::view_json(
+                            &query.file_coverage(files, cancelled)?,
+                        )?),
+                    ),
                     EngineRequest::CorpusReportHeader { .. } => (
                         "corpus_report_header",
                         Some(crate::wtf8::view_json(

@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 16] = [
+const SOURCES: [&str; 19] = [
     include_str!("package_text_contract.rs"),
     include_str!("localization/import.rs"),
     include_str!("localization/mod.rs"),
@@ -29,6 +29,9 @@ const SOURCES: [&str; 16] = [
     include_str!("engine_types.rs"),
     include_str!("engine_where.rs"),
     include_str!("sink.rs"),
+    include_str!("../../unreal-code/src/lib.rs"),
+    include_str!("../../unreal-code/src/discovery.rs"),
+    include_str!("../../unreal-code/src/request.rs"),
 ];
 
 /// The engine's build and contract identity, reported by `capabilities`.
@@ -72,9 +75,14 @@ mod tests {
     };
     use crate::engine_where::Facet;
     use crate::package_text_contract::{
-        PackageTextAudienceMatch, PackageTextAudienceRule, PackageTextExpected,
-        PackageTextObjectPosition, PackageTextPlan, PackageTextPlanRequest, PackageTextPlanShard,
-        PackageTextShard, PackageTextSnapshotRequest,
+        BaseLocalization, CodeLayerOutcome, CodeLayerRequest, ComparePointsRequest, CultureArchive,
+        GateCheck, LocalizationRevision, PackageTextAudienceMatch, PackageTextAudienceRule,
+        PackageTextExpected, PackageTextObjectPosition, PackageTextPlan, PackageTextPlanRequest,
+        PackageTextPlanShard, PackageTextShard, PackageTextSnapshotRequest, PageRequest,
+        PointChange, PointChangeCounts, PointChangeKind, PointCode, PointComparison, PointEntry,
+        PointFile, PointFileStatus, PointFinding, PointFindingCounts, PointFindings,
+        PointIdentityStatus, PointKey, PointOutcome, PointPlace, PointPlaceKind, PointRequest,
+        PointText,
     };
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
@@ -134,6 +142,19 @@ mod tests {
             crate::localization::import::FileResult::decl(&config),
             crate::localization::import::Outcome::decl(&config),
             EngineRequest::decl(&config),
+            unreal_code::CodeTextRequest::decl(&config),
+            unreal_code::CodeTarget::decl(&config),
+            unreal_code::GatherStep::decl(&config),
+            unreal_code::EngineLine::decl(&config),
+            unreal_code::CodeTextResult::decl(&config),
+            unreal_code::TargetText::decl(&config),
+            unreal_code::FileCounts::decl(&config),
+            unreal_code::EngineWrappers::decl(&config),
+            unreal_code::CodeTextProfile::decl(&config),
+            unreal_code::CodePlace::decl(&config),
+            unreal_code::MetadataField::decl(&config),
+            unreal_code::CodeDiagnostic::decl(&config),
+            unreal_code::DiagnosticCode::decl(&config),
             super::ContractIdentity::decl(&config),
             Configuration::decl(&config),
             EnginePolicy::decl(&config),
@@ -198,6 +219,32 @@ mod tests {
             PackageTextSnapshotRequest::decl(&config),
             PackageTextPlanRequest::decl(&config),
             PackageTextPlan::decl(&config),
+            CodeLayerRequest::decl(&config),
+            CodeLayerOutcome::decl(&config),
+            PointFile::decl(&config),
+            PointCode::decl(&config),
+            PointRequest::decl(&config),
+            PointEntry::decl(&config),
+            PointFileStatus::decl(&config),
+            PointOutcome::decl(&config),
+            ComparePointsRequest::decl(&config),
+            PageRequest::decl(&config),
+            BaseLocalization::decl(&config),
+            LocalizationRevision::decl(&config),
+            CultureArchive::decl(&config),
+            PointChangeKind::decl(&config),
+            PointPlaceKind::decl(&config),
+            PointPlace::decl(&config),
+            PointIdentityStatus::decl(&config),
+            PointText::decl(&config),
+            PointChange::decl(&config),
+            PointChangeCounts::decl(&config),
+            GateCheck::decl(&config),
+            PointFinding::decl(&config),
+            PointKey::decl(&config),
+            PointFindingCounts::decl(&config),
+            PointFindings::decl(&config),
+            PointComparison::decl(&config),
             PackageTextPlanShard::decl(&config),
             PackageTextShard::decl(&config),
             PackageTextExpected::decl(&config),

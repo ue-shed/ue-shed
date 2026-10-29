@@ -40,6 +40,8 @@ export type TextAudienceClassification = {
  *   or the path ends with `value` when it holds a `.`. With `anywhere`, any element of the path
  *   equals `value`: the text sits somewhere inside that property.
  * - `location`: the occurrence's location kind.
+ * - `macro`: a code place's macro equals `value`. Code places name a file, not an object, so
+ *   only `namespace`, `location` and `macro` can hold for them.
  */
 export type TextAudienceMatch =
 	| { readonly kind: "namespace"; readonly value: string }
@@ -54,7 +56,8 @@ export type TextAudienceMatch =
 	| {
 			readonly kind: "location";
 			readonly value: "data_table_cell" | "string_table_entry";
-	  };
+	  }
+	| { readonly kind: "macro"; readonly value: string };
 
 /**
  * One configurable audience policy row. All match conditions must hold; the rule records a
@@ -65,7 +68,7 @@ export type TextAudienceRule = {
 	readonly audience: Exclude<TextAudience, "unknown">;
 	readonly reason: Exclude<
 		TextAudienceReason,
-		"gather_table_editor_only" | "gather_table_runtime" | "no_evidence"
+		"gather_table_editor_only" | "gather_table_runtime" | "no_evidence" | "code_editor_only"
 	>;
 	/** Every match must hold. */
 	readonly when: readonly TextAudienceMatch[];
@@ -76,6 +79,7 @@ export type TextAudienceRule = {
  * The version of how subjects are read and matched (property path normalization, name matching).
  * Bump it with any matcher change: indexes key their stored audience on it and the policy table.
  * 2: map entries (`Map{N}.value`) match as their map property.
+ * Code places and the `macro` match changed no saved text's match, so they kept version 2.
  */
 export const TEXT_AUDIENCE_MATCHER_VERSION = 2;
 
@@ -345,8 +349,31 @@ export const TEXT_AUDIENCE_POLICY = [
 		reason: "player_asset",
 		when: [{ kind: "property", value: "ScriptBytecode" }],
 		why: "Text literals compiled into a Blueprint function's bytecode, which the game runs."
+	},
+	// Code rows come last, so the rows saved text can match keep their positions (stored codes).
+	{
+		id: "ui_command",
+		audience: "editor",
+		reason: "editor_namespace",
+		when: [{ kind: "macro", value: "UI_COMMAND" }],
+		why: "Slate command labels and tooltips, gathered under `UICommands.` namespaces."
 	}
 ] as const satisfies readonly TextAudienceRule[];
+
+/**
+ * The policy a code layer is keyed on, and the part package shards are keyed on: a `macro` row
+ * can never hold for saved text, so adding one re-reads no package.
+ */
+export const TEXT_AUDIENCE_POLICY_KEY = JSON.stringify([
+	TEXT_AUDIENCE_MATCHER_VERSION,
+	TEXT_AUDIENCE_POLICY
+]);
+export const SAVED_TEXT_AUDIENCE_POLICY_KEY = JSON.stringify([
+	TEXT_AUDIENCE_MATCHER_VERSION,
+	TEXT_AUDIENCE_POLICY.filter(
+		(row) => !row.when.some((match: TextAudienceMatch) => match.kind === "macro")
+	)
+]);
 
 /**
  * Identifier of a matched audience policy row. It explains a policy-derived classification;
@@ -363,6 +390,8 @@ export type TextAudienceSubject = {
 	readonly module: string | undefined;
 	readonly propertyPath: string;
 	readonly locationKind: TextOccurrence["location"]["kind"];
+	/** A code place's macro. */
+	readonly macro?: string | undefined;
 };
 
 /** Container indexes the reader appends to a property name: `[N]` for array and set elements,
@@ -408,6 +437,7 @@ function subject(input: {
 	readonly classPath: string | undefined;
 	readonly propertyPath: string;
 	readonly locationKind: TextOccurrence["location"]["kind"];
+	readonly macro?: string | undefined;
 }): TextAudienceSubject {
 	const { packagePath, objects } = objectParts(input.objectPath);
 	const classPath = input.classPath;
@@ -423,7 +453,8 @@ function subject(input: {
 		className: classPath === undefined ? undefined : classPath.slice(classDot + 1),
 		module,
 		propertyPath: input.propertyPath,
-		locationKind: input.locationKind
+		locationKind: input.locationKind,
+		macro: input.macro
 	};
 }
 
@@ -433,9 +464,19 @@ function subject(input: {
  */
 export function textAudienceSubject(occurrence: TextOccurrence): TextAudienceSubject {
 	const location = occurrence.location;
+	const namespace =
+		occurrence.identity.status === "resolved" ? occurrence.identity.namespace : undefined;
+	if (location.kind === "code_place")
+		return subject({
+			namespace,
+			objectPath: "",
+			classPath: undefined,
+			propertyPath: "",
+			locationKind: location.kind,
+			macro: location.macro
+		});
 	return subject({
-		namespace:
-			occurrence.identity.status === "resolved" ? occurrence.identity.namespace : undefined,
+		namespace,
 		objectPath: location.objectPath,
 		classPath: location.kind === "asset_property" ? location.classPath : undefined,
 		propertyPath: location.kind === "string_table_entry" ? "" : location.propertyPath,
@@ -498,6 +539,7 @@ type PreparedSubject = {
 	readonly module: string | undefined;
 	readonly elements: readonly string[];
 	readonly locationKind: TextAudienceSubject["locationKind"];
+	readonly macro: string | undefined;
 };
 
 const lower = (value: string) => value.toLowerCase();
@@ -510,7 +552,8 @@ function prepare(subject: TextAudienceSubject): PreparedSubject {
 		objects: subject.objects.map(lower),
 		module: subject.module?.toLowerCase(),
 		elements: propertyElements(subject.propertyPath).map(lower),
-		locationKind: subject.locationKind
+		locationKind: subject.locationKind,
+		macro: subject.macro?.toLowerCase()
 	};
 }
 
@@ -533,6 +576,8 @@ function matches(subject: PreparedSubject, match: TextAudienceMatch): boolean {
 	switch (match.kind) {
 		case "namespace":
 			return subject.namespace === value;
+		case "macro":
+			return subject.macro === value;
 		case "folder":
 			return subject.folder.startsWith(value);
 		case "object": {

@@ -1,4 +1,5 @@
 import { gatheredNamespace } from "./gathered-text.js";
+import { textLocationPath } from "./text-origin.js";
 import type { GameTextActionEdit } from "@ue-shed/protocol";
 import type { TextIdRepairChange } from "./id-repair-schema.js";
 import type { TextCorpusFocus, TextOccurrence } from "./schema.js";
@@ -10,6 +11,7 @@ export function textIdRepairSupport(
 	edit?: GameTextActionEdit
 ): string | undefined {
 	if (occurrence.identity.status !== "resolved") return "Change this text in Unreal";
+	if (occurrence.location.kind === "code_place") return "Change this text in its source file";
 	// Saved properties remain read-only in the corpus. The optional editor plugin owns live
 	// writability and rejects unsupported, cooked or generated places during its dry run.
 	if (occurrence.location.kind === "asset_property") return undefined;
@@ -30,9 +32,8 @@ export function textIdRepairPlace(occurrence: TextOccurrence) {
 			? /^Pins\[(\d+)\]\.DefaultTextValue$/u.exec(location.propertyPath)
 			: undefined;
 	return {
-		objectPath: location.objectPath,
-		propertyPath:
-			location.kind === "string_table_entry" ? location.entryKey : location.propertyPath,
+		objectPath: textLocationPath(location),
+		propertyPath: textLocationField(location),
 		...(location.kind === "data_table_cell"
 			? { selector: { kind: "data_table_cell" as const, row: location.row } }
 			: location.kind === "string_table_entry"
@@ -91,7 +92,8 @@ export function textIdNamespace(occurrence: TextOccurrence): string {
 	return occurrence.identity.status === "resolved"
 		? gatheredNamespace(
 				occurrence.identity.namespace,
-				occurrence.location.kind === "string_table_entry"
+				occurrence.location.kind === "string_table_entry" ||
+					occurrence.location.kind === "code_place"
 			)
 		: "";
 }
@@ -101,10 +103,17 @@ export function textIdRepairInstructions(changes: readonly TextIdRepairChange[])
 	return changes
 		.map(({ occurrence, edit }) => {
 			const location = occurrence.location;
-			const field =
-				location.kind === "string_table_entry" ? location.entryKey : location.propertyPath;
+			const field = textLocationField(location);
 			const target = textIdRepairEditLabel(edit);
-			return `${occurrence.packageFile}\n${location.objectPath}\n${field}\nBefore: ${occurrence.source}\n${target}`;
+			return `${occurrence.packageFile}\n${textLocationPath(location)}\n${field}\nBefore: ${occurrence.source}\n${target}`;
 		})
 		.join("\n\n");
+}
+
+/** The field a place's text is in: its property, String Table entry, or a code place's line. */
+function textLocationField(location: TextOccurrence["location"]): string {
+	if (location.kind === "string_table_entry") return location.entryKey;
+	if (location.kind === "code_place")
+		return location.line === undefined ? location.macro : `line ${location.line}`;
+	return location.propertyPath;
 }

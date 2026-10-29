@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { corpusCsvForTest } from "./export-reference.test-support.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -275,7 +276,7 @@ const places = (corpus: TextCorpus) =>
 	corpus.units.flatMap((unit) =>
 		unit.occurrences.map((occurrence) =>
 			JSON.stringify([
-				occurrence.location.objectPath,
+				textLocationPath(occurrence.location),
 				occurrence.location.kind === "asset_property"
 					? occurrence.location.propertyPath
 					: "",

@@ -317,6 +317,29 @@ impl EngineQuery {
             .get_or_try(|| Ok(Arc::new(self.read_package_lists(cancelled)?)))
     }
     fn read_package_lists(&self, cancelled: &AtomicBool) -> Result<(Vec<Value>, Vec<Value>)> {
+        self.package_rows(None, cancelled)
+    }
+
+    /// The listed files' package coverage and diagnostics, as the corpus header lists them: a
+    /// check of a few files receives their rows, not every package's.
+    pub fn file_coverage(&self, files: &[String], cancelled: &AtomicBool) -> Result<Value> {
+        require(files.len() <= 1_000_000, "Too many files.")?;
+        let wanted = files
+            .iter()
+            .map(|file| crate::join_policy::file_key(file))
+            .filter(|key| !key.is_empty())
+            .collect::<std::collections::HashSet<_>>();
+        let (packages, diagnostics) = self.package_rows(Some(&wanted), cancelled)?;
+        Ok(json!({"packages": packages, "diagnostics": diagnostics}))
+    }
+
+    /// Package coverage, excluded packages last, and diagnostics, failures first, for every
+    /// package or only those whose file key is wanted.
+    fn package_rows(
+        &self,
+        wanted: Option<&std::collections::HashSet<String>>,
+        cancelled: &AtomicBool,
+    ) -> Result<(Vec<Value>, Vec<Value>)> {
         let order = self.reader.column("query.package.order")?;
         let starts = self.package_coordinates()?;
         let locate = |global: u32| -> Result<(usize, usize)> {
@@ -348,11 +371,20 @@ impl EngineQuery {
             .iter()
             .map(|path| crate::join_policy::relative_package(&project, path))
             .collect::<Vec<_>>();
+        let selected = files
+            .iter()
+            .map(|file| {
+                wanted.is_none_or(|keys| keys.contains(&crate::join_policy::file_key(file)))
+            })
+            .collect::<Vec<_>>();
         let mut coverage = Vec::new();
         for excluded in [false, true] {
             for (index, global) in order.iter().enumerate() {
                 if index & 255 == 0 {
                     checkpoint(cancelled)?;
+                }
+                if !selected[index] {
+                    continue;
                 }
                 let (shard, row) = locate(*global)?;
                 let status = self.package_value(shard, "package.status", row)?;
@@ -366,17 +398,20 @@ impl EngineQuery {
             }
         }
         let mut diagnostics = Vec::new();
-        for wanted in [3, 1, 2] {
+        for status in [3, 1, 2] {
             for (index, global) in order.iter().enumerate() {
                 if index & 255 == 0 {
                     checkpoint(cancelled)?;
                 }
+                if !selected[index] {
+                    continue;
+                }
                 let (shard, row) = locate(*global)?;
-                if self.package_value(shard, "package.status", row)? != wanted {
+                if self.package_value(shard, "package.status", row)? != status {
                     continue;
                 }
                 let path = files[index].clone();
-                match wanted {
+                match status {
                     1 => diagnostics.extend(self.package_diagnostics(
                         shard,
                         row,

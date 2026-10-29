@@ -5,6 +5,7 @@ import { TextFileScopeSummary, type TextCorpus, type TextWhere } from "./schema.
 import type { LocalizationLineView } from "./index-reads.js";
 import type { NativeTextQuery } from "./native-query-contract.js";
 import type { LocalizationTargetEvidence } from "@ue-shed/localization/browser";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { textFileKey, textFileLabel, textFileScope } from "./text-origin.js";
 
 /**
@@ -19,7 +20,9 @@ import { textFileKey, textFileLabel, textFileScope } from "./text-origin.js";
  * - `unresolved_key`: text without a reliable key, which cannot be translated;
  * - `removed`: gathered text its file no longer has, or a file that could not be read;
  * - `gathered_source`: text gathered from source code or config, whose keys are checked only
- *   across a gather.
+ *   across a gather;
+ * - `partial_read`: a listed package the reader read only in part, so text in the parts it could
+ *   not read is not checked. The text it did read is checked like any other.
  */
 export const LocalizationGateCheck = Schema.Literals([
 	"key_changed",
@@ -29,8 +32,22 @@ export const LocalizationGateCheck = Schema.Literals([
 	"not_gathered",
 	"unresolved_key",
 	"removed",
-	"gathered_source"
+	"gathered_source",
+	"partial_read"
 ]);
+
+/** Each check as a reviewer reads it. */
+export const LOCALIZATION_GATE_CHECK_LABELS = {
+	key_changed: "Key changed",
+	conflicting_source: "Same key, different text",
+	translated_text_changed: "Translated text changed",
+	text_changed: "Text changed",
+	not_gathered: "Not gathered",
+	unresolved_key: "No reliable key",
+	removed: "Removed",
+	gathered_source: "Gathered from source",
+	partial_read: "Partly read"
+} satisfies Record<LocalizationGateCheck, string>;
 export type LocalizationGateCheck = typeof LocalizationGateCheck.Type;
 
 /** The checks that fail a change unless a project says otherwise. */
@@ -78,7 +95,8 @@ export const LocalizationGateTarget = Schema.Struct({
 		not_gathered: Count,
 		unresolved_key: Count,
 		removed: Count,
-		gathered_source: Count
+		gathered_source: Count,
+		partial_read: Count
 	} satisfies Record<LocalizationGateCheck, typeof Count>),
 	items: Schema.Array(LocalizationGateItem).check(Schema.isMaxLength(MAX_GATE_ITEMS)),
 	omitted: Count,
@@ -87,9 +105,28 @@ export const LocalizationGateTarget = Schema.Struct({
 export type LocalizationGateTarget = typeof LocalizationGateTarget.Type;
 
 /**
+ * What a check of a changelist read: its two points, the files it changes inside the project,
+ * and how many of those hold text a point reads. `code` says whether code files were read with
+ * an engine; without one their text is `gathered_source`.
+ */
+export const LocalizationGateChange = Schema.Struct({
+	/** `depot@<CL>` or `shelved:<CL>`. */
+	point: Schema.String,
+	base: Schema.String,
+	/** Changed files inside the project. */
+	files: Count,
+	/** Of those, the packages and code or config files the points read. */
+	read: Count,
+	/** Changed files outside the project folder, left out. */
+	outside: Count,
+	code: Schema.Boolean
+});
+export type LocalizationGateChange = typeof LocalizationGateChange.Type;
+
+/**
  * Aggregate gate outcome plus per-target results and skipped targets. failOn records the active
  * host policy, and skipped targets retain reasons instead of being counted as checked
- * successes.
+ * successes. `change` is present when a changelist was checked rather than files on disk.
  */
 export const LocalizationGateResult = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
@@ -97,7 +134,8 @@ export const LocalizationGateResult = Schema.Struct({
 	failOn: Schema.Array(LocalizationGateCheck),
 	targets: Schema.Array(LocalizationGateTarget),
 	/** Targets left out, such as one Unreal has never gathered, with why. */
-	skipped: Schema.Array(Schema.Struct({ target: Schema.String, reason: Schema.String }))
+	skipped: Schema.Array(Schema.Struct({ target: Schema.String, reason: Schema.String })),
+	change: Schema.optionalKey(LocalizationGateChange)
 });
 export type LocalizationGateResult = typeof LocalizationGateResult.Type;
 
@@ -142,7 +180,74 @@ function guidance(
 			return "Unreal lists this text in a changed file that no longer has it, or could not be read. The next gather drops it and its translations.";
 		case "gathered_source":
 			return "Gathered from source code or config, which UE Shed reads only after a gather. Key changes here show once UE Shed runs the gather.";
+		case "partial_read":
+			return "Part of this package could not be read, so text there is not checked.";
 	}
+}
+
+/** A listed package the reader read only in part, and what it could not read. */
+export interface LocalizationGatePartialRead {
+	readonly file: string;
+	readonly guidance: string;
+}
+
+/** Why the reader left a property unread, as a reviewer reads it. */
+const GAP_REASONS = {
+	feature_unavailable_for_engine_version: "not decoded for this engine version",
+	unsupported_text_history: "a kind of text the reader does not support",
+	legacy_container_element_without_type_information:
+		"container elements saved without their type",
+	property_decoder_rejected: "rejected by the reader's decoder"
+} as const;
+
+/**
+ * Listed packages the scan read only in part, each with what it could not read, from the
+ * package's `package_partially_decoded` diagnostic. The gate checks the text they did yield and
+ * lists them as `partial_read`, so a reviewer knows which parts to look at in Unreal.
+ */
+export function localizationGatePartialPackages(
+	corpus: Pick<TextCorpus, "packageCoverage" | "diagnostics">,
+	files: readonly string[]
+): readonly LocalizationGatePartialRead[] {
+	const scope = textFileScope(files);
+	if (scope === undefined) return [];
+	const diagnostics = new Map(
+		corpus.diagnostics
+			.filter((diagnostic) => diagnostic.code === "package_partially_decoded")
+			.map((diagnostic) => [textFileKey(diagnostic.packageFile), diagnostic])
+	);
+	return (corpus.packageCoverage ?? []).flatMap((coverage) => {
+		const key = textFileKey(coverage.packageFile);
+		if (coverage.status !== "partial" || !scope.keys.has(key)) return [];
+		const diagnostic = diagnostics.get(key);
+		const counts = Object.entries(diagnostic?.coverageGapCounts ?? {}).filter(
+			(entry): entry is [keyof typeof GAP_REASONS, number] =>
+				entry[0] in GAP_REASONS && entry[1] > 0
+		);
+		const total = counts.reduce((sum, [, count]) => sum + count, 0);
+		const example =
+			diagnostic?.propertyPath === undefined
+				? ""
+				: total === 1
+					? ` (\`${diagnostic.propertyPath}\`)`
+					: `, such as \`${diagnostic.propertyPath}\``;
+		// With one reason its count is the total; with several, each has its own.
+		const why = counts
+			.map(([reason, count]) =>
+				counts.length === 1 ? GAP_REASONS[reason] : `${GAP_REASONS[reason]} (${count})`
+			)
+			.join(", ");
+		const what =
+			total === 0
+				? "Part of this package could not be read"
+				: `${total} ${total === 1 ? "property was" : "properties were"} not read${example}: ${why}`;
+		return [
+			{
+				file: textFileLabel(coverage.packageFile),
+				guidance: `${what}. Text there is not checked; the package's other text is. Review those parts in Unreal.`
+			}
+		];
+	});
 }
 
 /** The line fields a gate reads: one `selectLocalizationLines` call answers every check. */
@@ -172,6 +277,8 @@ export function localizationGateTarget(input: {
 	readonly join: Pick<LocalizationJoin, "target" | "nativeCulture">;
 	readonly files: NonNullable<TextWhere["files"]>;
 	readonly failOn: readonly LocalizationGateCheck[];
+	/** Listed packages read only in part, from `localizationGatePartialPackages`. */
+	readonly partial?: readonly LocalizationGatePartialRead[];
 }): LocalizationGateTarget {
 	const { join, lines, fileScope } = input;
 	const identityKey = (identity: LocalizationLine["identity"]) =>
@@ -226,7 +333,8 @@ export function localizationGateTarget(input: {
 		not_gathered: 0,
 		unresolved_key: 0,
 		removed: 0,
-		gathered_source: 0
+		gathered_source: 0,
+		partial_read: 0
 	} satisfies Record<LocalizationGateCheck, number>;
 	const items: LocalizationGateItem[] = [];
 	for (const line of lines)
@@ -245,6 +353,18 @@ export function localizationGateTarget(input: {
 				guidance: guidance(check, line)
 			});
 		}
+	for (const read of input.partial ?? []) {
+		checks.partial_read++;
+		items.push({
+			check: "partial_read",
+			severity: failing.has("partial_read") ? "fail" : "warn",
+			namespace: null,
+			key: null,
+			source: "",
+			file: read.file,
+			guidance: read.guidance
+		});
+	}
 	const order = (item: LocalizationGateItem) =>
 		(item.severity === "fail" ? 0 : LocalizationGateCheck.literals.length) +
 		LocalizationGateCheck.literals.indexOf(item.check);
@@ -257,6 +377,90 @@ export function localizationGateTarget(input: {
 		items: items.slice(0, MAX_GATE_ITEMS),
 		omitted: Math.max(0, items.length - MAX_GATE_ITEMS),
 		...(fileScope === undefined ? undefined : { fileScope })
+	};
+}
+
+/** A comparison finding's guidance: the gate's, naming the cultures and earlier key it has. */
+/** The way forward for a finding of a comparison, naming the cultures it affects. */
+export function comparisonGuidance(finding: GameTextContract.PointFinding): string {
+	const cultures = finding.cultures.join(", ");
+	switch (finding.check) {
+		case "key_changed": {
+			const earlier =
+				finding.earlier === undefined
+					? "Its earlier key"
+					: `Its earlier key ${finding.earlier.namespace},${finding.earlier.key}`;
+			return (
+				`${earlier} is translated in ${cultures}, and this key is not. ` +
+				"Carry the translations to the new key and synchronize them with the project, or keep the earlier key in Unreal."
+			);
+		}
+		case "translated_text_changed":
+			return `Its translations in ${cultures} were written for the earlier text. After the next gather those languages show this text untranslated until it is translated again.`;
+		case "removed":
+			return cultures === ""
+				? "The change removes this text's last place. The next gather drops it."
+				: `The change removes this text's last place. The next gather drops it and its translations in ${cultures}.`;
+		case "gathered_source":
+			return "Code or config this change touches that the check did not read, so its text is not checked. Name the target's engine to read it.";
+		default:
+			return guidance(finding.check, { identity: null });
+	}
+}
+
+/**
+ * Judges a change for one target from the comparison of its two points (`comparePoints` with the
+ * target's localization at the base). Unlike `localizationGateTarget`, only what the change
+ * introduces counts: a problem a changed file already had at the base is not reported.
+ */
+export function localizationGateComparison(input: {
+	readonly target: string;
+	readonly comparison: GameTextContract.PointComparison;
+	readonly failOn: readonly LocalizationGateCheck[];
+}): LocalizationGateTarget {
+	const failing = new Set(input.failOn);
+	const findings = input.comparison.findings;
+	const counts = findings?.counts;
+	const checks = {
+		key_changed: counts?.keyChanged ?? 0,
+		conflicting_source: counts?.conflictingSource ?? 0,
+		translated_text_changed: counts?.translatedTextChanged ?? 0,
+		text_changed: counts?.textChanged ?? 0,
+		not_gathered: counts?.notGathered ?? 0,
+		unresolved_key: counts?.unresolvedKey ?? 0,
+		removed: counts?.removed ?? 0,
+		gathered_source: counts?.gatheredSource ?? 0,
+		partial_read: counts?.partialRead ?? 0
+	} satisfies Record<LocalizationGateCheck, number>;
+	const items = (findings?.rows ?? []).map(
+		(finding): LocalizationGateItem => ({
+			check: finding.check,
+			severity: failing.has(finding.check) ? "fail" : "warn",
+			namespace: finding.namespace ?? null,
+			key: finding.key ?? null,
+			source:
+				finding.source.length > MAX_SOURCE
+					? finding.source.slice(0, MAX_SOURCE - 1) + "…"
+					: finding.source,
+			file: finding.path,
+			guidance: comparisonGuidance(finding)
+		})
+	);
+	const order = (item: LocalizationGateItem) =>
+		(item.severity === "fail" ? 0 : LocalizationGateCheck.literals.length) +
+		LocalizationGateCheck.literals.indexOf(item.check);
+	items.sort((left, right) => order(left) - order(right));
+	const total = findings?.total ?? 0;
+	const failed = LocalizationGateCheck.literals.some(
+		(check) => failing.has(check) && checks[check] > 0
+	);
+	return {
+		target: input.target,
+		status: failed ? "failed" : "passed",
+		lines: input.comparison.total,
+		checks,
+		items: items.slice(0, MAX_GATE_ITEMS),
+		omitted: Math.max(0, total - Math.min(items.length, MAX_GATE_ITEMS))
 	};
 }
 
@@ -280,8 +484,10 @@ export function localizationGateUnreadEvidence(
 }
 
 /**
- * Listed saved packages the scan could not read completely. Their text cannot be judged, so a
- * verdict that ignored them could pass new or conflicting text.
+ * Listed saved packages the scan could not read at all. Their text cannot be judged, so a verdict
+ * that ignored them could pass new or conflicting text. A package read in part is checked and
+ * listed by `localizationGatePartialPackages` instead; one Unreal's gather does not select
+ * (`not_gatherable`) holds no text the target gathers, so there is nothing to judge, as in Unreal.
  */
 export function localizationGateUnreadPackages(
 	corpus: Pick<TextCorpus, "packageCoverage">,
@@ -290,7 +496,7 @@ export function localizationGateUnreadPackages(
 	const scope = textFileScope(files);
 	if (scope === undefined) return [];
 	return (corpus.packageCoverage ?? []).flatMap((coverage) =>
-		coverage.status !== "complete" && scope.keys.has(textFileKey(coverage.packageFile))
+		coverage.status === "failed" && scope.keys.has(textFileKey(coverage.packageFile))
 			? [`${textFileLabel(coverage.packageFile)} (${coverage.status})`]
 			: []
 	);
@@ -306,6 +512,7 @@ export const indexedLocalizationGateTarget = Effect.fn("GameText.localizationGat
 		readonly join: Pick<LocalizationJoin, "target" | "nativeCulture">;
 		readonly files: NonNullable<TextWhere["files"]>;
 		readonly failOn: readonly LocalizationGateCheck[];
+		readonly partial?: readonly LocalizationGatePartialRead[];
 	}
 ) {
 	const base = {

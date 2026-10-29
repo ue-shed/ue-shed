@@ -39,7 +39,8 @@ it("formats failing and warning gate findings, omitted lines and skipped targets
 			not_gathered: 0,
 			unresolved_key: 1,
 			removed: 0,
-			gathered_source: 0
+			gathered_source: 0,
+			partial_read: 0
 		},
 		items: [
 			{

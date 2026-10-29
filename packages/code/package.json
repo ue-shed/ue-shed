@@ -1,0 +1,25 @@
+{
+	"name": "@ue-shed/code",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Find the text in an Unreal project's C++, config and String Table CSVs the way Unreal's GatherTextFromSource does.",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@ue-shed/localization": "workspace:*",
+		"@ue-shed/protocol": "workspace:*",
+		"@ue-shed/unreal-assets": "workspace:*",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/vitest": "catalog:"
+	}
+}

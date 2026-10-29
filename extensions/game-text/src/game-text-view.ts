@@ -32,8 +32,35 @@ export interface TextContextPresentation {
 	readonly title: string;
 }
 
+/** The object Unreal opens for a saved place; a code place has none. */
+export function savedObjectPath(location: TextLocation): string | undefined {
+	return location.kind === "code_place" ? undefined : location.objectPath;
+}
+
+/** The copy button's label for a place's path. */
+export function copyPathLabel(location: TextLocation): string {
+	return location.kind === "code_place" ? "Copy file path" : "Copy asset path";
+}
+
+/** Where a place is, to read or copy: a code place's `file:line`, else the object path. */
+export function placePath(location: TextLocation): string {
+	if (location.kind !== "code_place") return location.objectPath;
+	return location.line === undefined ? location.file : `${location.file}:${location.line}`;
+}
+
 /** Writer-facing authored context derived only from evidence present in the saved package. */
 export function textContext(location: TextLocation): TextContextPresentation {
+	if (location.kind === "code_place") {
+		const file = location.file.split("/").at(-1) ?? location.file;
+		return {
+			detail:
+				location.table === undefined
+					? `${location.wrapper ?? location.macro} in code`
+					: `String Table ${location.table}, in code`,
+			kind: "Code",
+			title: location.line === undefined ? file : `${file}:${location.line}`
+		};
+	}
 	const asset = textAssetName(location.objectPath);
 	if (location.kind === "string_table_entry") {
 		return {
@@ -77,5 +104,9 @@ export function locationDetail(location: TextLocation): string {
 	if (location.kind === "data_table_cell")
 		return `Row ${location.row} · ${location.propertyPath}`;
 	if (location.kind === "string_table_entry") return `Entry ${location.entryKey}`;
+	if (location.kind === "code_place")
+		return location.line === undefined
+			? location.macro
+			: `Line ${location.line} · ${location.macro}`;
 	return location.propertyPath;
 }

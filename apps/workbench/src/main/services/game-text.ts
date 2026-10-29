@@ -1,9 +1,11 @@
 import { userInfo } from "node:os";
 import { makeGameTextWorkspace, type GameTextWorkspaceApi } from "@ue-shed/game-text/workspace";
-import { LocalizationFileAccessLive } from "@ue-shed/localization";
-import { Context, Effect, Layer, Stream } from "effect";
+import { EngineInstallationDiscoveryLive } from "@ue-shed/engine";
+import { LocalizationFileAccessLive, projectSourceGatherEngine } from "@ue-shed/localization";
+import { Context, Effect, Layer, Option, Stream } from "effect";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { LocalFiles } from "../adapters/local-files.js";
+import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 /**
@@ -31,6 +33,15 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const project = yield* WorkbenchProject;
 		const dialog = yield* ElectronDialog;
 		const files = yield* LocalFiles;
+		// Optional: hosts without Workbench's settings read code with the project's association.
+		const configuration = yield* Effect.serviceOption(WorkbenchConfiguration);
+		const engineRoot = Option.match(configuration, {
+			onNone: () => undefined,
+			onSome: (value) =>
+				value.unrealEngineRoot?.status === "configured"
+					? value.unrealEngineRoot.path
+					: undefined
+		});
 		const workspace = yield* makeGameTextWorkspace({
 			project: {
 				current: project.current,
@@ -48,7 +59,18 @@ export const WorkbenchGameTextLive = Layer.effect(
 			},
 			reviewer,
 			changeAuthor: "workbench",
-			localizationFiles: LocalizationFileAccessLive
+			localizationFiles: LocalizationFileAccessLive,
+			// Code is read with Workbench's engine setting, else the project's association.
+			codeSource: (projectRoot) =>
+				projectSourceGatherEngine(projectRoot, engineRoot).pipe(
+					Effect.provide(EngineInstallationDiscoveryLive),
+					// Unreadable engine discovery settings leave the code unread, as no engine does.
+					Effect.catchTag("ConfigError", (error) =>
+						Effect.annotateCurrentSpan({ "code.unavailable": error.message }).pipe(
+							Effect.as(undefined)
+						)
+					)
+				)
 		});
 		return WorkbenchGameText.of(workspace);
 	})
@@ -76,6 +98,7 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationReport: () => Effect.succeed({ status: "not_ready" }),
 			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationLinesFile: () => Effect.succeed({ status: "not_ready" }),
+			compareChange: () => Effect.succeed({ status: "not_ready" }),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),

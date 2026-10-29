@@ -25,7 +25,7 @@ const LOCATION_ORIGINS = {
 	asset_property: "asset",
 	data_table_cell: "data_table",
 	string_table_entry: "string_table"
-} as const satisfies Record<TextLocation["kind"], TextOriginKind>;
+} as const satisfies Record<Exclude<TextLocation["kind"], "code_place">, TextOriginKind>;
 
 // Unreal gathers C++ text through GatherTextFromSource; the manifest path names the source file.
 const CPP_SOURCE = /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx|inl)(?:[:(]|$)/u;
@@ -35,9 +35,19 @@ export function normalizeTextPath(path: string): string {
 	return path.trim().replaceAll("\\", "/").replace(/^\.\//u, "").toLowerCase();
 }
 
-/** Where a saved occurrence lives. A String Table reference inside an asset counts as the asset. */
+/**
+ * Where an occurrence lives. A String Table reference inside an asset counts as the asset; code
+ * text is C++ or another source by its file, as a manifest path is judged.
+ */
 export function textLocationOrigin(location: TextLocation): TextOriginKind {
-	return LOCATION_ORIGINS[location.kind];
+	return location.kind === "code_place"
+		? manifestPathOrigin(location.file)
+		: LOCATION_ORIGINS[location.kind];
+}
+
+/** What a place names: a saved place's object path, or a code place's file. */
+export function textLocationPath(location: TextLocation): string {
+	return location.kind === "code_place" ? location.file : location.objectPath;
 }
 
 /** Where a gathered manifest path says text lives: C++ source, an asset, or another source. */
@@ -60,7 +70,7 @@ export function unitOrigins(unit: TextUnit): readonly TextOriginKind[] {
 /** Object paths and project-relative package files, normalized for prefix matching. */
 export function unitPaths(unit: TextUnit): readonly string[] {
 	return unit.occurrences.flatMap((occurrence) => [
-		normalizeTextPath(occurrence.location.objectPath),
+		normalizeTextPath(textLocationPath(occurrence.location)),
 		normalizeTextPath(occurrence.packageFile)
 	]);
 }

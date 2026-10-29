@@ -707,14 +707,24 @@ impl EngineQuery {
                         file
                     }
                 };
-                let object = self.occurrence_value(occurrence, "object")?;
-                let origin = match self.occurrence_value(occurrence, "location")? {
-                    0 => "asset",
-                    1 => "data_table",
-                    2 => "string_table",
-                    _ => return Err("Invalid stored occurrence location.".into()),
-                };
-                places.push(json!({"packageFile":file,"objectPath":self.reader.string(object)?,"origin":origin}));
+                let object = self
+                    .reader
+                    .string(self.occurrence_value(occurrence, "object")?)?;
+                let location = self.occurrence_value(occurrence, "location")?;
+                require(location <= 3, "Invalid stored occurrence location.")?;
+                let origin = crate::engine_types::ORIGINS
+                    [crate::join_columns::place_origin(location, || &object) as usize];
+                let mut place = json!({"packageFile":file,"objectPath":object,"origin":origin});
+                // A code place's object is its file; its line says where in it.
+                if location == 3 {
+                    let line = self
+                        .reader
+                        .string(self.occurrence_value(occurrence, "row")?)?;
+                    if let Ok(line) = line.parse::<u32>() {
+                        place["line"] = json!(line);
+                    }
+                }
+                places.push(place);
             }
         }
         Ok(places)

@@ -28,7 +28,8 @@ import {
 	localizationError,
 	type LocalizationError,
 	LocalizationEvidence,
-	LocalizationTarget
+	LocalizationTarget,
+	sourceGatherSteps
 } from "@ue-shed/localization";
 import {
 	SharedIndex,
@@ -49,9 +50,14 @@ import {
 	isGameTextIndexError,
 	GameTextIndexSource,
 	GameTextIndexRefreshRequest,
+	type GameTextCodeSource,
 	type GameTextIndexRefreshResult,
 	type IndexFailure
 } from "./index-contract.js";
+import { localizationGathersEditorOnlyData } from "./localization.js";
+import { codeLayerName, PACKAGE_TEXT_FORMAT } from "./package-text-layer.js";
+import { packageTextAudienceRules } from "./package-text-native.js";
+import { SAVED_TEXT_AUDIENCE_POLICY_KEY, TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
 import { isSnapshotStoreError } from "./snapshot-store.js";
 import { isSnapshotFormatError } from "./snapshot-format.js";
 import {
@@ -112,7 +118,8 @@ export const GameTextTargetImportRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, [
 		"targetName",
 		"requireManifest",
-		"changedFiles"
+		"changedFiles",
+		"code"
 	])
 );
 export type GameTextTargetImportRequest = typeof GameTextTargetImportRequest.Type;
@@ -171,6 +178,8 @@ export interface GameTextTargetImport {
 	readonly fileErrors: NonNullable<JoinedTargetInput["fileErrors"]>;
 	readonly fileProvenances: NonNullable<JoinedTargetInput["fileProvenances"]>;
 	readonly fileDiagnostics: NonNullable<JoinedTargetInput["fileDiagnostics"]>;
+	/** What the import did with the target's code layer; absent when it had none to touch. */
+	readonly code?: GameTextContract.CodeLayerOutcome | undefined;
 }
 /**
  * Built target and its exact project/input identities, before opening readers. A queryRevision
@@ -648,7 +657,12 @@ export const makeGameTextIndexSteps = (
 						fileProvenances,
 						fileDiagnostics
 					});
+					const code =
+						request.targetName === undefined
+							? undefined
+							: yield* publishTargetCode(project, imported.target, request.code);
 					return {
+						...(code === undefined ? undefined : { code }),
 						project,
 						view:
 							request.targetName === undefined
@@ -663,6 +677,191 @@ export const makeGameTextIndexSteps = (
 				}),
 				request.changedFiles
 			);
+		});
+
+		/**
+		 * Reads a set of files at one revision into per-file records keyed by content and writes
+		 * the point's manifest. The host puts each revision's bytes on disk; the
+		 * reader parses only the files the record cache lacks.
+		 */
+		const readPoint = Effect.fn("GameTextIndex.readPoint")(function* (request: {
+			readonly projectRoot: string;
+			readonly point: string;
+			readonly base?: string;
+			readonly files: GameTextContract.PointRequest["files"];
+			/** The target whose code the point reads, scanned with `code`; without both, code files are `unread`. */
+			readonly targetName?: string;
+			readonly code?: GameTextCodeSource;
+		}) {
+			const { projectRoot } = yield* openProject(request);
+			const target =
+				request.targetName === undefined || request.code === undefined
+					? undefined
+					: (yield* evidence
+							.discover({ projectRoot })
+							.pipe(Effect.mapError(manifestIndexFailure))).targets.find(
+							(item) => item.name === request.targetName
+						);
+			const steps = target === undefined ? [] : sourceGatherSteps(target);
+			const code =
+				target === undefined || request.code === undefined || steps.length === 0
+					? undefined
+					: {
+							policyJson: TEXT_AUDIENCE_POLICY_KEY,
+							scan: {
+								projectRoot,
+								engineRoot: request.code.engineRoot ?? null,
+								engine: request.code.engine,
+								targets: [{ name: target.name, steps }],
+								cacheRoot,
+								refreshEngineWrappers: request.code.refreshEngineWrappers === true
+							}
+						};
+			return yield* withSession(
+				configurationFor(cacheRoot, projectRoot),
+				Effect.gen(function* () {
+					const writer = yield* (yield* SharedIndex).writer();
+					if (!writer.readPoint)
+						return yield* Effect.fail(
+							failure(
+								"point",
+								"This index cannot read points.",
+								"Use the native reader."
+							)
+						);
+					const outcome = yield* writer.readPoint({
+						point: request.point,
+						...(request.base === undefined ? undefined : { base: request.base }),
+						format: PACKAGE_TEXT_FORMAT,
+						policyJson: SAVED_TEXT_AUDIENCE_POLICY_KEY,
+						rules: packageTextAudienceRules(),
+						files: request.files,
+						...(code === undefined ? undefined : { code })
+					});
+					yield* Effect.annotateCurrentSpan({
+						"point.files": request.files.length,
+						"point.read": outcome.read,
+						"point.reused": outcome.reused,
+						"point.bytes": outcome.bytes,
+						...Object.fromEntries(
+							Object.entries(outcome.stageSeconds).map(([stage, seconds]) => [
+								`${stage}Seconds`,
+								seconds
+							])
+						)
+					});
+					return outcome;
+				}),
+				undefined,
+				true
+			);
+		});
+
+		/**
+		 * Compares a point with its base, both read with `readPoint`. With the target's localization
+		 * at the base, it judges the change by the gate's checks; whether the target gathers
+		 * editor-only text comes from the target.
+		 */
+		const comparePoints = Effect.fn("GameTextIndex.comparePoints")(function* (request: {
+			readonly projectRoot: string;
+			readonly point: string;
+			readonly base: string;
+			readonly targetName?: string;
+			readonly localization?: GameTextContract.BaseLocalization;
+			readonly changes?: GameTextContract.PageRequest;
+			readonly findings?: GameTextContract.PageRequest;
+		}) {
+			const { projectRoot } = yield* openProject(request);
+			if (!queries.comparePoints)
+				return yield* Effect.fail(
+					failure("point", "This index cannot compare points.", "Use the native reader.")
+				);
+			const target =
+				request.targetName === undefined
+					? undefined
+					: (yield* evidence
+							.discover({ projectRoot })
+							.pipe(Effect.mapError(manifestIndexFailure))).targets.find(
+							(item) => item.name === request.targetName
+						);
+			const page = { offset: 0, limit: 200 };
+			const comparison = yield* queries.comparePoints({
+				configuration: configurationFor(cacheRoot, projectRoot),
+				request: {
+					point: request.point,
+					base: request.base,
+					gatherEditorOnly:
+						target !== undefined && localizationGathersEditorOnlyData(target) === true,
+					...(request.localization === undefined
+						? undefined
+						: { localization: request.localization }),
+					changes: request.changes ?? page,
+					findings: request.findings ?? page
+				}
+			});
+			yield* Effect.annotateCurrentSpan({
+				"point.changes": comparison.total,
+				"point.findings": comparison.findings?.total ?? 0,
+				"point.complete": comparison.complete,
+				...Object.fromEntries(
+					Object.entries(comparison.stageSeconds).map(([stage, seconds]) => [
+						`${stage}Seconds`,
+						seconds
+					])
+				)
+			});
+			return comparison;
+		});
+
+		/**
+		 * Scans the target's code in the reader and publishes its code layer when it changed, or
+		 * removes the layer when the host names no engine or the target reads no code.
+		 */
+		const publishTargetCode = Effect.fn("GameTextIndex.publishTargetCode")(function* (
+			project: GameTextProject,
+			target: LocalizationTarget,
+			source: GameTextCodeSource | undefined
+		) {
+			const index = yield* SharedIndex;
+			const writer = yield* index.writer();
+			if (!writer.publishCode) return undefined;
+			const steps = sourceGatherSteps(target);
+			const scan =
+				source === undefined || steps.length === 0
+					? undefined
+					: {
+							projectRoot: project.projectRoot,
+							engineRoot: source.engineRoot ?? null,
+							engine: source.engine,
+							targets: [{ name: target.name, steps }],
+							cacheRoot,
+							refreshEngineWrappers: source.refreshEngineWrappers === true
+						};
+			if (scan === undefined && !(yield* index.inspect()).active[codeLayerName(target.name)])
+				return undefined;
+			const outcome = yield* writer.publishCode({
+				target: target.name,
+				format: PACKAGE_TEXT_FORMAT,
+				policyJson: TEXT_AUDIENCE_POLICY_KEY,
+				rules: packageTextAudienceRules(),
+				...(scan === undefined ? undefined : { scan })
+			});
+			yield* Effect.annotateCurrentSpan({
+				"code.places": outcome.places,
+				"code.leftOut": outcome.leftOut,
+				"code.files": outcome.files,
+				"code.published": outcome.published,
+				"code.diagnostics": outcome.diagnosticCount,
+				...(outcome.profile === undefined
+					? undefined
+					: {
+							"code.engineWrappersMicros": outcome.profile.engineWrappersMicros,
+							"code.projectWrappersMicros": outcome.profile.projectWrappersMicros,
+							"code.listMicros": outcome.profile.listMicros,
+							"code.scanMicros": outcome.profile.scanMicros
+						})
+			});
+			return outcome;
 		});
 
 		const buildTarget = Effect.fn("GameTextIndex.buildTarget")(function* (
@@ -1254,6 +1453,8 @@ export const makeGameTextIndexSteps = (
 			prepareTarget: sliced(prepareTarget),
 			openTarget: sliced(openTarget),
 			openCommitted: sliced(openCommitted),
+			readPoint: sliced(readPoint),
+			comparePoints: sliced(comparePoints),
 			invalidate: sliced(invalidate)
 		};
 	});

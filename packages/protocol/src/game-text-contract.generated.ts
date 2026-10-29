@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "62390ea01fdbdb7c716c7c506bd36590f7801945061da523cba2f40081d7651c"
+	contractHash: "49dea7dd5f14534841dc6b1803e3db50cbe4e3e7bde1b5665529cd24b827211a"
 } as const;
 
 /**
@@ -48,7 +48,7 @@ export type LocalizationFileResult = { file: LocalizationPreparedFile | null, er
 
 export type LocalizationImportOutcome = { lookupStrings: number, reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
 /**
  * The v4 rule document.
  */
@@ -56,7 +56,91 @@ rules: RuleDocumentV4, collationLocale: string, } | { "action": "findings_accept
 /**
  * The v4 rule document.
  */
-rules: RuleDocumentV4, };
+rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, } | { "action": "compare_points", configuration: IndexConfiguration, request: ComparePointsRequest, };
+
+export type CodeTextRequest = { projectRoot: string, 
+/**
+ * The engine installation root, holding `Engine/`. Without it, the engine's wrappers and
+ * `LOCTABLE_FROMFILE_ENGINE` tables are left out, and the result says so.
+ */
+engineRoot: string | null, engine: EngineLine, targets: ReadonlyArray<CodeTarget>, 
+/**
+ * Where the engine's wrappers are kept between scans.
+ */
+cacheRoot: string | null, refreshEngineWrappers: boolean, };
+
+export type CodeTarget = { name: string, steps: ReadonlyArray<GatherStep>, };
+
+export type GatherStep = { searchDirectoryPaths: ReadonlyArray<string>, excludePathFilters: ReadonlyArray<string>, fileNameFilters: ReadonlyArray<string>, gatherEditorOnly: boolean, };
+
+export type EngineLine = "4.27" | "5.7" | "5.8";
+
+export type CodeTextResult = { engine: EngineLine, targets: ReadonlyArray<TargetText>, engineWrappers: EngineWrappers, wrapperCount: number, profile: CodeTextProfile, };
+
+export type TargetText = { name: string, places: ReadonlyArray<CodePlace>, diagnostics: ReadonlyArray<CodeDiagnostic>, files: FileCounts, };
+
+export type FileCounts = { 
+/**
+ * Files the steps' search folders and name filters found.
+ */
+listed: number, 
+/**
+ * Of those, files the exclude filters left out.
+ */
+excluded: number, 
+/**
+ * Files that held a descriptor token and went through the line scanner.
+ */
+scanned: number, 
+/**
+ * Files with no token, skipped after a substring search.
+ */
+skipped: number, bytesRead: number, };
+
+export type EngineWrappers = "not-used" | "no-engine-root" | "read" | "cached";
+
+export type CodeTextProfile = { engineWrappersMicros: number, projectWrappersMicros: number, listMicros: number, scanMicros: number, };
+
+export type CodePlace = { 
+/**
+ * The file as Unreal names it, relative to the gather's base. For a String Table CSV entry,
+ * the CSV path as the `LOCTABLE_FROMFILE_*` call wrote it.
+ */
+file: string, 
+/**
+ * 1-based; none for an entry imported from a CSV.
+ */
+line: number | null, 
+/**
+ * The macro that produced it, such as `LOCTEXT` or `LOCTABLE_SETSTRING`.
+ */
+macroName: string, 
+/**
+ * The `#define` wrapper the macro was expanded from, if any.
+ */
+wrapper: string | null, namespace: string, key: string, source: string, devNotes: string | null, metadata: ReadonlyArray<MetadataField>, 
+/**
+ * Inside `#if WITH_EDITOR` or `#if WITH_EDITORONLY_DATA` (exactly those spellings).
+ */
+editorOnly: boolean, 
+/**
+ * Whether the target gathers it: false for editor-only text in a target that leaves it out.
+ */
+gathered: boolean, 
+/**
+ * The split platform whose path holds the file, when the target splits platforms.
+ */
+platform: string | null, 
+/**
+ * The String Table ID, for String Table entries.
+ */
+table: string | null, };
+
+export type MetadataField = { name: string, value: string, };
+
+export type CodeDiagnostic = { file: string, line: number | null, code: DiagnosticCode, message: string, };
+
+export type DiagnosticCode = "argument-count" | "argument-parse" | "unexpected-bracket" | "end-of-file" | "missing-bracket" | "missing-quotes" | "empty-identifier" | "empty-source" | "whitespace-only" | "no-namespace" | "namespace-redefined" | "namespace-not-defined" | "namespace-not-closed" | "region-redefined" | "region-not-defined" | "unterminated-string" | "unterminated-raw-string" | "table-redefined" | "table-entry-redefined" | "table-metadata-redefined" | "table-not-registered" | "table-import-failed" | "wrapper-unsupported" | "wrapper-duplicate" | "crashes-unreal427" | "unreadable";
 
 export type ContractIdentity = { 
 /**
@@ -426,6 +510,167 @@ removed: ReadonlyArray<string>, packages: number,
  */
 firstKey: string, };
 
+export type CodeLayerRequest = { target: string, 
+/**
+ * The layer key prefix: the package-text format, then the audience policy's JSON.
+ */
+format: string, policyJson: string, rules: ReadonlyArray<PackageTextAudienceRule>, 
+/**
+ * A new file the reader stages the layer in.
+ */
+stagingFile: string, 
+/**
+ * One target, named `target`.
+ */
+scan?: CodeTextRequest, };
+
+export type CodeLayerOutcome = { name: string, 
+/**
+ * The active key after the request; none when the layer was removed or never existed.
+ */
+key?: string, 
+/**
+ * Whether the request changed the active layer.
+ */
+published: boolean, 
+/**
+ * Code places in the layer, and of those, the ones the target's gather leaves out.
+ */
+places: number, leftOut: number, 
+/**
+ * Files with at least one place.
+ */
+files: number, counts?: FileCounts, diagnosticCount: number, 
+/**
+ * The first [`CODE_DIAGNOSTIC_SAMPLES`] diagnostics, in scan order.
+ */
+diagnostics: ReadonlyArray<CodeDiagnostic>, engineWrappers?: EngineWrappers, profile?: CodeTextProfile, };
+
+export type PointFile = { 
+/**
+ * Relative to the project folder, as the project spells it.
+ */
+path: string, 
+/**
+ * The file holding its bytes at this point; none when the point removes it.
+ */
+file?: string, };
+
+export type PointCode = { policyJson: string, 
+/**
+ * One target, as `publish_code` scans it.
+ */
+scan: CodeTextRequest, };
+
+export type PointRequest = { 
+/**
+ * The point's id, such as `depot@220368` or `shelved:220258`.
+ */
+point: string, 
+/**
+ * The point this one changes, by id; none when it changes the project's index as it is.
+ */
+base?: string, 
+/**
+ * The record key prefix: the package-text format, then the saved-text policy's JSON.
+ */
+format: string, policyJson: string, rules: ReadonlyArray<PackageTextAudienceRule>, files: ReadonlyArray<PointFile>, 
+/**
+ * How the target reads code; without it, code files are `unread`.
+ */
+code?: PointCode, };
+
+export type PointEntry = { path: string, 
+/**
+ * The record's key; none for a removed file or one no record describes.
+ */
+record?: string, status: PointFileStatus, };
+
+export type PointFileStatus = "complete" | "partial" | "not_gatherable" | "failed" | "removed" | "unread";
+
+export type PointOutcome = { point: string, 
+/**
+ * Records read from their files now.
+ */
+read: number, 
+/**
+ * Records already in the cache.
+ */
+reused: number, 
+/**
+ * Bytes of the files read: every file is hashed; only misses are parsed.
+ */
+bytes: number, entries: ReadonlyArray<PointEntry>, };
+
+export type ComparePointsRequest = { point: string, base: string, 
+/**
+ * Whether the target gathers editor-only text from packages; when not, such package text is
+ * left out of both points. Code text follows each gather step, as the scan marked it.
+ */
+gatherEditorOnly: boolean, 
+/**
+ * The target's manifest and archives at the base; without them there are no findings.
+ */
+localization?: BaseLocalization, changes: PageRequest, findings: PageRequest, };
+
+export type PageRequest = { offset: number, limit: number, };
+
+export type BaseLocalization = { nativeCulture: string, manifest: LocalizationRevision, archives: ReadonlyArray<CultureArchive>, };
+
+export type LocalizationRevision = { path: string, file: string, revision: string, };
+
+export type CultureArchive = { culture: string, archive: LocalizationRevision, };
+
+export type PointChangeKind = "added" | "removed" | "rekeyed" | "edited";
+
+export type PointPlaceKind = "asset_property" | "data_table_cell" | "string_table_entry" | "code";
+
+export type PointPlace = { kind: PointPlaceKind, object: string, 
+/**
+ * DataTable row or String Table entry key; empty otherwise.
+ */
+entry: string, 
+/**
+ * Property chain, or the macro in code.
+ */
+property: string, line?: number, };
+
+export type PointIdentityStatus = "resolved" | "string_table" | "culture_invariant" | "missing_key";
+
+export type PointText = { status: PointIdentityStatus, namespace: string, key: string, source: string, notes: string, };
+
+export type PointChange = { kind: PointChangeKind, path: string, place: PointPlace, before?: PointText, after?: PointText, sourceChanged: boolean, notesChanged: boolean, };
+
+export type PointChangeCounts = { added: number, removed: number, rekeyed: number, edited: number, unchanged: number, };
+
+export type GateCheck = "key_changed" | "conflicting_source" | "translated_text_changed" | "text_changed" | "not_gathered" | "unresolved_key" | "removed" | "gathered_source" | "partial_read";
+
+export type PointFinding = { check: GateCheck, path: string, 
+/**
+ * The key the finding is about; none for a file's finding or text with no key.
+ */
+namespace?: string, key?: string, source: string, 
+/**
+ * The cultures whose translations the change makes stale or leaves behind.
+ */
+cultures: ReadonlyArray<string>, 
+/**
+ * For a key change, the earlier key.
+ */
+earlier?: PointKey, };
+
+export type PointKey = { namespace: string, key: string, };
+
+export type PointFindingCounts = { keyChanged: number, conflictingSource: number, translatedTextChanged: number, textChanged: number, notGathered: number, unresolvedKey: number, removed: number, gatheredSource: number, partialRead: number, };
+
+export type PointFindings = { counts: PointFindingCounts, total: number, rows: ReadonlyArray<PointFinding>, 
+/**
+ * Whether the lookup was built from the files now, rather than found.
+ */
+built: boolean, };
+
+export type PointComparison = { point: string, base: string, counts: PointChangeCounts, complete: boolean, total: number, changes: ReadonlyArray<PointChange>, findings?: PointFindings, stageSeconds: { [key in string]: number }, };
+
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 
 export type PackageTextShard = { group: number, expected: ReadonlyArray<PackageTextExpected>, };
@@ -434,7 +679,7 @@ export type PackageTextExpected = { path: string, signature: string, selected: b
 
 export type PackageTextAudienceRule = { code: number, when: ReadonlyArray<PackageTextAudienceMatch>, };
 
-export type PackageTextAudienceMatch = { "kind": "namespace", value: string, } | { "kind": "folder", value: string, } | { "kind": "object", value: string, position: PackageTextObjectPosition, } | { "kind": "module", value: string, suffix?: boolean, } | { "kind": "property", value: string, anywhere?: boolean, } | { "kind": "location", value: string, };
+export type PackageTextAudienceMatch = { "kind": "namespace", value: string, } | { "kind": "folder", value: string, } | { "kind": "object", value: string, position: PackageTextObjectPosition, } | { "kind": "module", value: string, suffix?: boolean, } | { "kind": "property", value: string, anywhere?: boolean, } | { "kind": "location", value: string, } | { "kind": "macro", value: string, };
 
 export type PackageTextObjectPosition = "prefix" | "suffix" | "equals";
 

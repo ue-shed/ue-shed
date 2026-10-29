@@ -14,7 +14,7 @@ import { CultureStrip } from "./game-text-culture-strip.js";
 import { cultureCell, cultureSummary, lineState } from "./game-text-culture-state.js";
 import { localizationLabels } from "./game-text-localization-view.js";
 import { browseStateLabel, browseStyles, stateTone } from "./game-text-browse-chrome.js";
-import { identityLabel, sourceText, textContext } from "./game-text-view.js";
+import { identityLabel, placePath, sourceText, textContext } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
 
 type ResultRow = {
@@ -183,7 +183,10 @@ export function GameTextResultRows(props: {
 							>
 								{(unit) => (
 									<span
-										title={unit().contexts[0]?.location.objectPath}
+										title={
+											unit().contexts[0] &&
+											placePath(unit().contexts[0]!.location)
+										}
 										{...stylex.attrs(styles.context)}
 									>
 										{unit()

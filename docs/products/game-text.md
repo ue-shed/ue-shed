@@ -58,7 +58,9 @@ switches through its host's current-selection hook and retires the old model on 
 read or refresh, or when its scope closes.
 
 The CLI cache is under `UE_SHED_PROJECT_INDEX_CACHE_ROOT`, defaulting to `.cache/ue-shed` in the
-user's home directory. Workbench uses `project-catalogs-v1` under its existing Electron user-data
+user's home directory. The CLI reads a target's code ([Code text](#code-text)) with the engine the
+project's association names; `UE_SHED_ENGINE_VERSION` (4.27, 5.7 or 5.8) and `UE_SHED_ENGINE_ROOT`
+name it instead, as `code text`'s `--engine-version` and `--engine-root` do. Workbench uses `project-catalogs-v1` under its existing Electron user-data
 root. The `game-text-v2` descendants are disposable; close the affected hosts before deleting those
 cache directories, then refresh to rebuild. This removes derived data without changing saved
 packages, localization evidence, review state or authored rules. Format version 4 preserves UTF-16
@@ -161,9 +163,10 @@ Unknown types remain text-capable. The table is written on every editor save, so
 is needed.
 
 Saved-scan completeness is limited to the selected package inventory and supported decoders; it
-does not certify parity with a fresh Unreal gather. New C++/INI and code/CSV String Table text,
-reflected metadata, custom gather callbacks and content outside the
-default project inventory can be missing even without a reported decoder gap. A readable manifest
+does not certify parity with a fresh Unreal gather. Reflected metadata, custom gather callbacks
+and content outside the default project inventory can be missing even without a reported decoder
+gap, and so can C++, config and String Table CSV text when the host names no engine to read a
+target's code with (see [Code text](#code-text)). A readable manifest
 can supply previously gathered evidence from those sources. See
 [coverage compared with Unreal gather](../engineering/game-text-gather-coverage.md) for the precise
 boundary and the explicitly requested Unreal workflow.
@@ -192,10 +195,14 @@ for policy matches, the policy row (`audienceRule`). The evidence, strongest fir
    Blueprints with bytecode have no trusted table, so their text falls through to the policy.
 2. **The policy table** below (`TEXT_AUDIENCE_POLICY`): first matching row wins, and editor rows
    come before player rows, so a K2 node inside a Widget Blueprint graph stays editor text.
-3. Otherwise `unknown` (`no_evidence`).
+3. **The code scan.** Code text inside `#if WITH_EDITOR` or `#if WITH_EDITORONLY_DATA` (exactly
+   those spellings, as Unreal tracks them) is editor text, `code_editor_only`. Other code text goes
+   through the policy, whose `ui_command` row marks `UI_COMMAND` labels editor text.
+4. Otherwise `unknown` (`no_evidence`).
 
-A line or unit is player text if any of its saved places with visible text is, else unknown if any
-is, else editor. Lines without a saved place (C++, config) are unknown. The audience is a filter
+A line or unit is player text if any of its places with visible text is, else unknown if any is,
+else editor. Lines only the manifest knows, such as C++ text of a target whose code was not read,
+are unknown. The audience is a filter
 field and a facet (`facets.audiences`, which leaves out its own clause like the others), a
 grouping (`group: "audience"`), a column in both spreadsheet exports, and part of the exported JSON
 occurrences and lines.
@@ -205,14 +212,19 @@ data: `ShouldGatherFromEditorOnlyData` on its `GatherTextFromAssets` steps (or t
 `GatherFromPackages`) is false, Unreal's default. A line that would otherwise be "Not gathered
 yet", whose every place inside the gather paths is such editor text, is "Outside this target"
 instead, with `outOfScope: "editor_only_data_not_gathered"`; lines outside the include and exclude
-paths carry `outside_gather_paths`. Lines Unreal did gather keep their state, and developer-folder
+paths carry `outside_gather_paths`. Code text follows the target's `GatherTextFromSource` steps
+instead: editor-only code text in a target whose source steps do not gather editor-only data is
+"Outside this target" with `editor_only_data_not_gathered`, whether or not Unreal gathered it.
+Lines Unreal did gather keep their state, and developer-folder
 text is editor text by convention, not editor-only data, so it stays in scope. Localization checks
 skip out-of-scope lines, as before.
 
 Names compare case-insensitively. `object` matches the class name or any object name in the
 occurrence's outer chain (graph objects are named after their class). `property` matches the last
 element(s) of the property path, ignoring container indexes; "in" matches any element. Map entries
-(`DisplayNameMap{0}.value`, `{0}.key`) match as the map property (`DisplayNameMap`).
+(`DisplayNameMap{0}.value`, `{0}.key`) match as the map property (`DisplayNameMap`). `macro`
+matches a code place's macro; a code place names a file, not an object, so only namespace,
+location and macro rows can hold for it.
 
 | Rule                              | Audience | Reason             | Match                                             | Why                                 |
 | --------------------------------- | -------- | ------------------ | ------------------------------------------------- | ----------------------------------- |
@@ -251,11 +263,13 @@ element(s) of the property path, ignoring container indexes; "in" matches any el
 | `user_defined_enum_display_name`  | player   | `player_asset`     | class `UserDefinedEnum` and leaf `DisplayNameMap` | Blueprint enum display names        |
 | `widget_tree`                     | player   | `player_asset`     | object `WidgetTree` in the outer chain            | Widget designer tree                |
 | `script_bytecode`                 | player   | `player_asset`     | property `ScriptBytecode`                         | Compiled Blueprint text literals    |
+| `ui_command`                      | editor   | `editor_namespace` | macro `UI_COMMAND`                                | Slate command labels and tooltips   |
 
 The table is studio-agnostic. Project conventions, such as debug or demo folders, belong in the
-project's rules, not here. The compact index stores each occurrence's audience; the policy table
-is part of every package shard's key, so changing it re-encodes the stored shards from their saved
-evidence without reading packages again.
+project's rules, not here. The compact index stores each occurrence's audience; the rows saved
+text can match are part of every package shard's key, so changing them re-encodes the stored
+shards from their saved evidence without reading packages again. Code rows come last and key only
+the code layers, so adding one leaves the package shards as they are.
 
 ### Compiled Blueprint copies
 
@@ -314,6 +328,29 @@ The compact corpus path is governed by Plan 033:
 - `@ue-shed/game-text` owns normalized text meaning and queries;
 - Workbench main owns the active query instance and returns bounded pages over validated IPC;
 - renderer state never receives a complete project corpus.
+
+### Code text
+
+With a target selected and the project's engine known, the index reads the target's code the way
+its `GatherTextFromSource` steps do, with [`unreal-code`](../../crates/unreal-code/README.md): C++
+macros, config entries and String Table CSV rows in the steps' folders, filters and excludes. Each
+place is a read-only `code_place` location, `{ file, line?, macro, wrapper? }`, with the file as the
+manifest names it. Its origin is C++ for C and C++ files, Other source for config and CSV files.
+
+Code places join the manifest by namespace and key like saved places, so an edited `LOCTEXT` is
+"Changed since gather" and a new one "Not gathered yet" before anyone gathers, and a rekeyed one
+pairs with its old key by file and line.
+
+- Each target keeps its own code layer beside its localization files, because each target's steps
+  pick their own files and editor-only setting. A rescan reads the target's code again (tens of
+  milliseconds on large projects) and publishes the layer only when its places changed.
+- Hosts name the engine on the refresh request: `code: { engine, engineRoot? }`, the source gather
+  behaviour (`sourceGatherEngine`) and the installation root. The CLI resolves it from the project's
+  engine association. Without it the target's code is not read, and gathered C++ text shows from
+  the manifest only. Without the root, the engine's `#define` wrappers and
+  `LOCTABLE_FROMFILE_ENGINE` tables are left out.
+- The engine's wrappers are read once per engine build and kept in the index's cache folder.
+- Reflected metadata (display names, tooltips) is not read from code; it stays a gap.
 
 ## Reviewing text in Workbench
 
@@ -1199,13 +1236,18 @@ takes the `loc status` filters and never overwrites a file. The CSV is for readi
 with the usual spreadsheet protections (UTF-8 BOM, CRLF, a leading apostrophe before formula
 characters). Edits still go through PO change sets.
 
-### Checking a change before submit
+### Checking a change
 
-`ue-shed loc gate <project-root> --files <list-file>` checks the text in a change's files and exits
-`0` when it passes, `1` when it fails and `2` when it could not check. It only reads, and a failure
-is only an exit code and a list: it stops a submit only where a team wires it into a submit script
-or a required build. It judges every line whose text lives in a listed file, as the files are on
-disk now, so a problem already in a touched file counts too.
+`ue-shed loc gate <project-root>` checks the text a change touches and exits `0` when it passes
+and `1` when it fails; `2` and above mean it could not check (see [Exit codes](#exit-codes)). It
+only reads, and a failure is only an exit code and a list: it stops a submit only where a team
+wires it into a submit script, a Swarm review or a required build. It reads one of:
+
+- `--change <CL>`: a submitted changelist, straight from Perforce.
+- `--shelved <CL>`: a shelved changelist, over the revisions it is based on.
+- `--from <CL> --to <CL>`: the submitted changelists after `--from` up to `--to`, together, over
+  the project as it was at `--from`.
+- `--files <list-file>`: listed files as they are on disk.
 
 | Check                     | Default | When                                                                        |
 | ------------------------- | ------- | --------------------------------------------------------------------------- |
@@ -1215,30 +1257,142 @@ disk now, so a problem already in a touched file counts too.
 | `text_changed`            | warns   | Text changed since the last gather, with nothing translated yet             |
 | `not_gathered`            | warns   | New text Unreal has not gathered, including a key change that loses nothing |
 | `unresolved_key`          | warns   | Text without a reliable key, which cannot be translated                     |
-| `removed`                 | warns   | Gathered text its file no longer has, or a file that could not be read      |
-| `gathered_source`         | warns   | Text in a changed C++ or config file, whose keys show only after a gather   |
+| `removed`                 | warns   | Gathered text the change removes, or a file that could not be read          |
+| `gathered_source`         | warns   | Gathered text in a changed code file that was not read                      |
+| `partial_read`            | warns   | A changed package read only in part: what was not read, and why             |
 
 - `--fail-on <check>` and `--warn-on <check>` (repeatable) change the defaults for a project.
 - `--target <name>` (repeatable) picks targets. Without it every target is checked, and a target
   with no manifest (Unreal has never gathered it) is listed as skipped; a named target must have
   one.
-- It never judges what it cannot see. A manifest, archive or PO file that exists but cannot be
-  read, or a listed package the scan could not read completely, stops the check with exit `2`
-  rather than passing it. A missing archive or PO file means nothing is translated.
-- The output is JSON: `status` (`passed` or `failed`), and per target the lines checked, a count
-  per check, up to 200 lines with their check, key, text, file and a way forward, and the
-  changed-file summary. A run that could not check prints `status: "not_checked"` with the error.
-  `--summary` prints the same verdict as a few lines for a pre-submit dialog.
-- The list file is the one `--files` takes elsewhere: one path per line from any version control
-  tool, relative to the project folder or absolute. With Git, run
-  `git diff --cached --name-only --relative > changed.txt` in the project folder to list a staged
-  change; with Perforce, list the changelist's opened files and map them to local paths.
-- Run it where the change is: on the submitter's machine, or in a build that has the change
-  applied. A Perforce server trigger has no workspace to read.
-- C++ and config key changes show only across a gather UE Shed runs, so changed source files that
-  hold gathered text only warn.
+- It never passes what it cannot see. A manifest, archive or PO file that exists but cannot be
+  read, or a changed package that could not be read at all, stops the check with exit `2`. A
+  missing archive or PO file means nothing is translated. A package read only in part, such as a
+  UE 4.27 Blueprint whose graph pins the reader does not decode, is checked for the text it did
+  read and listed as `partial_read`: how many properties were not read, why, and one of them, so a
+  reviewer knows what to look at in Unreal. `--fail-on partial_read` stops such a change instead.
+  A package Unreal's gather does not select (`not_gatherable`, such as a material) has no text to
+  judge.
+- Text in a changed C++ or config file is judged like asset text when the project's engine is
+  found (installed, or named by `UE_SHED_ENGINE_VERSION` or `UE_SHED_ENGINE_ROOT`): a new
+  `LOCTEXT` is `not_gathered`, an edited one `text_changed` or `translated_text_changed`. Without
+  an engine, gathered text in those files only warns `gathered_source`.
 - Fixes are made in Unreal (ADR 0009 addendum); the way forward names the step, such as carrying
   translations with `loc run prepare --carry`.
+
+#### A changelist
+
+With `--change`, `--shelved` or `--from` and `--to`, the check reads the change from Perforce, not
+the workspace, so it
+runs anywhere the project's workspace exists: on a build agent, for someone else's change, or for
+a shelf under review. It judges the change against the target's localization as the change found
+it, so only what the change introduces counts: a problem a touched file already had is not
+reported.
+
+- It reads the files the change touches inside the project at both revisions (before a submitted
+  change and at it; a shelf over the revisions it is based on; a range at `--from` and at `--to`),
+  and each target's manifest and archives at the base: the changelist before a submitted change,
+  the depot's head for a shelf, `--from` for a range. A range whose packages and code files pass
+  2,000 is refused; check a shorter one.
+  The workspace's own copies are read where they hold that revision; anything else is printed once
+  into a revision cache and reused by every later check. A warm check of a large UE 4.27 project's
+  changelist takes 1.3–1.6 s, against 9–12 s for a full scan of the files on disk.
+- The target's localization is parsed once per gather into a lookup that every later check opens
+  in under a millisecond.
+- It only reads Perforce, with `describe`, `where`, `files` and `print`. It never opens, edits or
+  submits anything.
+- String Table CSVs and wrapper macros come from the workspace on disk, as a full scan reads them.
+- Editor text in packages follows the target's `ShouldGatherFromEditorOnlyData`, as
+  [player and editor text](#player-and-editor-text) rates it out of scope: when the target does
+  not gather editor-only data, Blueprint graph labels, categories and tooltips are left out at both
+  revisions, unless the base's manifest names that key in that file because Unreal gathered it
+  there. On a large UE 4.27 project this took changelist 220253 from 652 added lines and a false
+  conflict on an engine pin label to 34 added lines.
+
+#### Listed files
+
+With `--files`, the check judges every line whose text lives in a listed file, as the files are on
+disk now, so a problem already in a touched file counts too. The list file holds one path per line
+from any version control tool, relative to the project folder or absolute. With Git, run
+`git diff --cached --name-only --relative > changed.txt` in the project folder to list a staged
+change; with Perforce, list the changelist's opened files and map them to local paths. Run it where
+the change is: on the submitter's machine, or in a build that has the change applied.
+
+#### Output
+
+- The default, `--format json`, is for scripts: `status` (`passed` or `failed`), and per target
+  the lines checked, a count per check, and up to 200 lines with their check, severity, key, text,
+  file and a way forward. A changelist check adds `change`: its two points and the files it read.
+  A run that could not check prints `status: "not_checked"` with the error and its `code`.
+- `--format text` (or `--summary`) prints the verdict as a few lines for a pre-submit dialog or a
+  build log.
+- `--format markdown` prints a summary for a build's page or a review comment: the outcome, a count
+  per check that found something, the failing lines with a way forward, the first 20 warnings, and
+  a coverage statement saying what was read and what a check cannot see.
+
+#### Differences without a verdict
+
+`ue-shed loc diff <project-root> --change <CL>` (or `--shelved`, `--from` and `--to`, or `--files`)
+lists each line the
+change adds, removes, rekeys or edits, with its key, text and place (a package's object and
+property, or a code file's line), and what it does to each target's translations, without failing
+anything. `--limit <n>` (up to 1,000, default 200) bounds the lines listed; counts are always
+whole. `--format text` and `--format markdown` print it for people.
+
+#### In a host
+
+A host serves the same comparison from the Game Text workspace's `compareChange`: a submitted
+changelist, a shelf, a range or listed working-copy files, one target or every target, with a page
+of changes and of findings. Each finding carries its severity under the request's policy and the
+way forward; each judged target carries the verdict. The host passes `changeRevisions`, such as
+Map History's `perforceChangeRevisions({ directory, perforce })` with the project's workspace; a
+host without it answers `capability_missing`. One comparison runs at a time per workspace.
+
+#### Exit codes
+
+Every `ue-shed` command exits with one of these. A failure prints its message, its code and what to
+do on standard error, or, for `loc gate` in JSON, as `error`.
+
+<!-- exit table: generated from CLI_EXIT_CODES in apps/cli/src/cli-exit.ts; do not edit -->
+
+| Exit | Name          | Meaning                                                                                                                        |
+| ---- | ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | `done`        | The command finished; a check passed.                                                                                          |
+| 1    | `failed`      | A check ran, and the change failed it.                                                                                         |
+| 2    | `not_run`     | It could not do its work. The error's code and recovery say why: usually the command, the project or the setup needs changing. |
+| 3    | `retry`       | Something it reads, such as Perforce, was unavailable; the same command may succeed later.                                     |
+| 4    | `crashed`     | An internal error with no typed cause; report it with the output.                                                              |
+| 130  | `interrupted` | Stopped by Ctrl+C or a termination signal.                                                                                     |
+
+<!-- end of generated table -->
+
+The failures `loc gate` and `loc diff` can end with:
+
+<!-- error table: generated from CHANGE_CHECK_ERRORS in apps/cli/src/cli-exit.ts; do not edit -->
+
+| Code                      | Cause                                                                                                                      | Fix                                                                                               | Exit   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------ |
+| `cli_command_failed`      | The flags contradict each other, such as `--change` with `--files`, or a check passed to both `--fail-on` and `--warn-on`. | Pass one of `--files`, `--change` and `--shelved`, and each check to one policy flag.             | 2      |
+| `target_not_found`        | A `--target` the project does not have, or a project with no localization target.                                          | Run `loc targets` and name a listed target.                                                       | 2      |
+| `missing_manifest`        | A named target has no manifest: Unreal has not gathered it, or had not when the change was made.                           | Run the target's gather in Unreal, or leave the target out.                                       | 2      |
+| `unreadable_manifest`     | The target's manifest exists but cannot be read or parsed.                                                                 | Get the manifest again from version control, or gather again.                                     | 2      |
+| `unreadable_evidence`     | An archive or PO file exists but cannot be read, so translations are unknown.                                              | Get the file again from version control, then check again.                                        | 2      |
+| `unreadable_package`      | A changed package could not be read at all, so its text cannot be judged.                                                  | Check that the package is saved and not damaged, and that the reader supports its engine version. | 2      |
+| `invalid_target`          | Perforce does not know the changelist, or `--change` names a pending change or `--shelved` a submitted one.                | Check the number; pass `--change` for a submitted change and `--shelved` for a shelf.             | 2      |
+| `ambiguous_depot_mapping` | No Perforce workspace maps the project folder.                                                                             | Run it from a workspace that maps the project, or set `P4CLIENT` to one.                          | 2      |
+| `perforce_authentication` | Perforce refused the session or the depot path.                                                                            | Log in with `p4 login`, or ask for access to the project's depot path.                            | 2      |
+| `perforce_configuration`  | Perforce has no usable server or client settings.                                                                          | Check `P4PORT`, `P4USER` and `P4CLIENT`, or the project's P4CONFIG file.                          | 2      |
+| `perforce_command`        | A Perforce read failed: the connection dropped or timed out, or the server reported an error.                              | Run it again; if it keeps failing, report it with the Perforce message.                           | 3 or 2 |
+| `index_failed`            | The Game Text engine could not read the change's files or compare them, or its cache settings are wrong.                   | Follow the error's recovery; a busy or interrupted engine can be run again.                       | 2 or 3 |
+| `cli_signal_failed`       | Ctrl+C or a termination signal stopped the run.                                                                            | Run it again.                                                                                     | 130    |
+
+<!-- end of generated table -->
+
+#### For agents
+
+`ue-shed guide changelist-check` prints a guide for a coding agent asked to check a changelist:
+the commands, how to read the outcome, what each failing check means, and what not to do. A test
+keeps every command and flag it names in step with the CLI.
 
 ### Fixing keys in assets
 

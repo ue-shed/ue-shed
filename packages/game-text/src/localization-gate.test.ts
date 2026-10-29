@@ -4,20 +4,27 @@ import { describe, expect } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
 import {
 	DEFAULT_GATE_FAILURES,
+	localizationGateComparison,
 	localizationGateFailures,
 	localizationGateResult,
 	localizationGateTarget,
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,
+	localizationGatePartialPackages,
 	LOCALIZATION_GATE_FIELDS,
 	type LocalizationGateCheck
 } from "./localization-gate.js";
 import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
-import { LocalizationError, type LocalizationTargetEvidence } from "@ue-shed/localization/browser";
+import {
+	LocalizationError,
+	LocalizationTargetName,
+	type LocalizationTargetEvidence
+} from "@ue-shed/localization/browser";
 import { localizationKeyChanges } from "./localization-key-changes.js";
 import {
 	archiveEntry,
 	corpus,
+	cultureCode,
 	evidence,
 	ftextUnit,
 	manifestEntry,
@@ -334,12 +341,88 @@ describe("checking a change's text", () => {
 			packageCoverage: [
 				{ packageFile: MENU, status: "failed" },
 				{ packageFile: "Content/Text/Table.uasset", status: "partial" },
-				{ packageFile: "Content/Text/Untouched.uasset", status: "failed" }
+				{ packageFile: "Content/Text/Untouched.uasset", status: "failed" },
+				// Unreal's gather does not select it, so it holds no gathered text to check.
+				{ packageFile: "Content/Art/M_Glow.uasset", status: "not_gatherable" }
 			]
 		};
-		expect(
-			localizationGateUnreadPackages(partial, [MENU, "Content/Text/Table.uasset"])
-		).toEqual(["Content/Text/DT_Menu (failed)", "Content/Text/Table (partial)"]);
+		const listed = [MENU, "Content/Text/Table.uasset", "Content/Art/M_Glow.uasset"];
+		// Only a package the scan could not read at all stops the check.
+		expect(localizationGateUnreadPackages(partial, listed)).toEqual([
+			"Content/Text/DT_Menu (failed)"
+		]);
+		// One read in part is listed with what was not read, from its diagnostic.
+		const diagnosed: TextCorpus = {
+			...partial,
+			diagnostics: [
+				{
+					code: "package_partially_decoded",
+					message:
+						"67 properties were not decoded: 67 unavailable for this engine version.",
+					packageFile: "Content\\Text\\Table.uasset",
+					propertyPath: "Pins",
+					coverageGapCounts: {
+						unsupported_text_history: 2,
+						legacy_container_element_without_type_information: 0,
+						feature_unavailable_for_engine_version: 65,
+						property_decoder_rejected: 0
+					}
+				}
+			]
+		};
+		expect(localizationGatePartialPackages(diagnosed, listed)).toEqual([
+			{
+				file: "Content/Text/Table",
+				guidance:
+					"67 properties were not read, such as `Pins`: a kind of text the reader does not support (2), not decoded for this engine version (65). Text there is not checked; the package's other text is. Review those parts in Unreal."
+			}
+		]);
+		const single: TextCorpus = {
+			...partial,
+			diagnostics: [
+				{
+					code: "package_partially_decoded",
+					message: "1 property was not decoded.",
+					packageFile: "Content/Text/Table.uasset",
+					propertyPath: "Pins",
+					coverageGapCounts: {
+						unsupported_text_history: 0,
+						legacy_container_element_without_type_information: 0,
+						feature_unavailable_for_engine_version: 0,
+						property_decoder_rejected: 1
+					}
+				}
+			]
+		};
+		expect(localizationGatePartialPackages(single, listed)[0]?.guidance).toBe(
+			"1 property was not read (`Pins`): rejected by the reader's decoder. Text there is not checked; the package's other text is. Review those parts in Unreal."
+		);
+		expect(localizationGatePartialPackages(partial, listed)[0]?.guidance).toBe(
+			"Part of this package could not be read. Text there is not checked; the package's other text is. Review those parts in Unreal."
+		);
+		// It warns unless the project makes it fail.
+		const policies: readonly (readonly LocalizationGateCheck[])[] = [
+			DEFAULT_GATE_FAILURES,
+			[...DEFAULT_GATE_FAILURES, "partial_read"]
+		];
+		for (const failOn of policies) {
+			const target = localizationGateTarget({
+				lines: [],
+				join: {
+					target: Schema.decodeUnknownSync(LocalizationTargetName)("Test"),
+					nativeCulture: cultureCode("en")
+				},
+				files: listed,
+				failOn,
+				partial: localizationGatePartialPackages(diagnosed, listed)
+			});
+			const failing = failOn.includes("partial_read");
+			expect(target).toMatchObject({
+				status: failing ? "failed" : "passed",
+				checks: { partial_read: 1 },
+				items: [{ check: "partial_read", severity: failing ? "fail" : "warn", key: null }]
+			});
+		}
 		expect(localizationGateUnreadPackages(scanned([]), [MENU])).toEqual([]);
 	});
 
@@ -354,4 +437,82 @@ describe("checking a change's text", () => {
 			expect(result.omitted).toBe(30);
 		})
 	);
+});
+
+describe("checking a change from its two points", () => {
+	const finding = (
+		check: LocalizationGateCheck,
+		key: string,
+		cultures: readonly string[] = []
+	) => ({
+		check,
+		path: "Source/Shop.cpp",
+		namespace: "Shop",
+		key,
+		source: key,
+		cultures: [...cultures]
+	});
+	const comparison = {
+		point: "local",
+		base: "before.local",
+		counts: { added: 2, removed: 0, rekeyed: 1, edited: 1, unchanged: 3 },
+		complete: true,
+		total: 4,
+		changes: [],
+		stageSeconds: {},
+		findings: {
+			counts: {
+				keyChanged: 1,
+				conflictingSource: 0,
+				translatedTextChanged: 1,
+				textChanged: 0,
+				notGathered: 1,
+				unresolvedKey: 0,
+				removed: 0,
+				gatheredSource: 0,
+				partialRead: 0
+			},
+			total: 3,
+			built: false,
+			rows: [
+				{
+					...finding("key_changed", "SellItem", ["de"]),
+					earlier: { namespace: "Shop", key: "Sell" }
+				},
+				finding("translated_text_changed", "Buy", ["de", "fr"]),
+				finding("not_gathered", "New")
+			]
+		}
+	};
+
+	it("fails on the checks the policy fails, naming the cultures each finding affects", () => {
+		const result = localizationGateComparison({
+			target: "Game",
+			comparison,
+			failOn: localizationGateFailures()
+		});
+		expect(result.status).toBe("failed");
+		expect(result.lines).toBe(4);
+		expect(result.checks).toMatchObject({
+			key_changed: 1,
+			translated_text_changed: 1,
+			not_gathered: 1
+		});
+		expect(result.items.map((item) => [item.check, item.severity])).toEqual([
+			["key_changed", "fail"],
+			["translated_text_changed", "fail"],
+			["not_gathered", "warn"]
+		]);
+		expect(result.items[0]?.guidance).toContain("Shop,Sell is translated in de");
+		expect(result.items[1]?.guidance).toContain("in de, fr");
+	});
+
+	it("passes when only warnings remain", () => {
+		const result = localizationGateComparison({
+			target: "Game",
+			comparison,
+			failOn: localizationGateFailures([], ["key_changed", "translated_text_changed"])
+		});
+		expect(result.status).toBe("passed");
+	});
 });

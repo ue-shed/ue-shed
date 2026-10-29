@@ -15,7 +15,10 @@ export function matchesTextRoleMatcher(location: TextLocation, matcher: TextRole
 		case "location_kind":
 			return location.kind === matcher.value;
 		case "object_path":
-			return matchesValue(location.objectPath, matcher.value, matcher.operator);
+			return (
+				location.kind !== "code_place" &&
+				matchesValue(location.objectPath, matcher.value, matcher.operator)
+			);
 		case "row":
 			return (
 				location.kind === "data_table_cell" &&
@@ -23,7 +26,7 @@ export function matchesTextRoleMatcher(location: TextLocation, matcher: TextRole
 			);
 		case "property_path":
 			return (
-				location.kind !== "string_table_entry" &&
+				(location.kind === "asset_property" || location.kind === "data_table_cell") &&
 				matchesValue(location.propertyPath, matcher.value, matcher.operator)
 			);
 		case "string_table_entry":

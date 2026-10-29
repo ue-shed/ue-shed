@@ -82,6 +82,24 @@ export const TextLocation = Schema.Union([
 		objectPath: Schema.String,
 		classPath: Schema.String,
 		propertyPath: Schema.String
+	}),
+	/**
+	 * Text Unreal's source gather reads from the project's code: a C++ macro, an INI entry or a
+	 * String Table CSV row. `file` is the path the gather manifest names; a CSV row has no line.
+	 * Always read-only: UE Shed never edits code.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("code_place"),
+		file: Schema.String,
+		line: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+		macro: Schema.String,
+		/** The `#define` wrapper the macro was expanded from. */
+		wrapper: Schema.optionalKey(Schema.String),
+		/**
+		 * The String Table ID a `LOCTABLE_*` entry belongs to, which an asset's text names to use
+		 * it. Such an entry has no wrapper.
+		 */
+		table: Schema.optionalKey(Schema.String)
 	})
 ]);
 export type TextLocation = Schema.Schema.Type<typeof TextLocation>;
@@ -638,7 +656,7 @@ export const TextUnitSearchResult = Schema.Struct({
 	source: TextUnit.fields.source,
 	identity: TextIdentity,
 	locationKinds: Schema.Array(
-		Schema.Literals(["data_table_cell", "string_table_entry", "asset_property"])
+		Schema.Literals(["data_table_cell", "string_table_entry", "asset_property", "code_place"])
 	),
 	/** UTF-16 length of the longest source, also used for `long`; lexical order breaks ties. */
 	characterCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

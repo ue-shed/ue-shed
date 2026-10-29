@@ -58,6 +58,8 @@
 						"publish",
 						"publish_packages",
 						"plan_packages",
+						"publish_code",
+						"read_point",
 						"publish_ids",
 						"intern",
 						"strings",
@@ -342,6 +344,296 @@
 							}
 						]
 					}
+				},
+				"code": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						"key": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						"published": {
+							"type": "boolean"
+						},
+						"places": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"leftOut": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"files": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"counts": {
+							"type": "object",
+							"properties": {
+								"listed": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								},
+								"excluded": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								},
+								"scanned": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								},
+								"skipped": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								},
+								"bytesRead": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								}
+							},
+							"required": ["listed", "excluded", "scanned", "skipped", "bytesRead"],
+							"additionalProperties": false
+						},
+						"diagnosticCount": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"diagnostics": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"file": {
+										"type": "string"
+									},
+									"line": {
+										"anyOf": [
+											{
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": 0
+													}
+												]
+											},
+											{
+												"type": "null"
+											}
+										]
+									},
+									"code": {
+										"type": "string",
+										"enum": [
+											"argument-count",
+											"argument-parse",
+											"unexpected-bracket",
+											"end-of-file",
+											"missing-bracket",
+											"missing-quotes",
+											"empty-identifier",
+											"empty-source",
+											"whitespace-only",
+											"no-namespace",
+											"namespace-redefined",
+											"namespace-not-defined",
+											"namespace-not-closed",
+											"region-redefined",
+											"region-not-defined",
+											"unterminated-string",
+											"unterminated-raw-string",
+											"table-redefined",
+											"table-entry-redefined",
+											"table-metadata-redefined",
+											"table-not-registered",
+											"table-import-failed",
+											"wrapper-unsupported",
+											"wrapper-duplicate",
+											"crashes-unreal427",
+											"unreadable"
+										]
+									},
+									"message": {
+										"type": "string"
+									}
+								},
+								"required": ["file", "line", "code", "message"],
+								"additionalProperties": false
+							}
+						},
+						"engineWrappers": {
+							"type": "string",
+							"enum": ["not-used", "no-engine-root", "read", "cached"]
+						},
+						"profile": {
+							"type": "object",
+							"properties": {
+								"engineWrappersMicros": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								},
+								"projectWrappersMicros": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								},
+								"listMicros": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								},
+								"scanMicros": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										}
+									]
+								}
+							},
+							"required": [
+								"engineWrappersMicros",
+								"projectWrappersMicros",
+								"listMicros",
+								"scanMicros"
+							],
+							"additionalProperties": false
+						}
+					},
+					"required": [
+						"name",
+						"published",
+						"places",
+						"leftOut",
+						"files",
+						"diagnosticCount",
+						"diagnostics"
+					],
+					"additionalProperties": false
+				},
+				"point": {
+					"type": "object",
+					"properties": {
+						"point": {
+							"type": "string"
+						},
+						"read": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"reused": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"bytes": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"entries": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"path": {
+										"type": "string"
+									},
+									"record": {
+										"type": "string"
+									},
+									"status": {
+										"type": "string",
+										"enum": [
+											"complete",
+											"partial",
+											"not_gatherable",
+											"failed",
+											"removed",
+											"unread"
+										]
+									}
+								},
+								"required": ["path", "status"],
+								"additionalProperties": false
+							}
+						}
+					},
+					"required": ["point", "read", "reused", "bytes", "entries"],
+					"additionalProperties": false
 				},
 				"plan": {
 					"type": "object",

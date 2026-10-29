@@ -910,9 +910,14 @@ impl<'a, 'q> Projector<'a, 'q> {
                     for field in ["object", "property", "class", "row"] {
                         self.strings(&data.columns[field])?;
                     }
-                    for (index, kind) in ["asset_property", "data_table_cell", "string_table_entry"]
-                        .iter()
-                        .enumerate()
+                    for (index, kind) in [
+                        "asset_property",
+                        "data_table_cell",
+                        "string_table_entry",
+                        "code_place",
+                    ]
+                    .iter()
+                    .enumerate()
                     {
                         self.arena.occurrences.location_kinds[index] = self.string(kind)?;
                     }

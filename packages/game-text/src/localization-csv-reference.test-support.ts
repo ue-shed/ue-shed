@@ -1,3 +1,4 @@
+import { textLocationPath } from "./text-origin.js";
 import { spreadsheetCsv } from "./csv.js";
 import { localizationLineUnits } from "./gathered-text.js";
 import type { LocalizationJoin, LocalizationLine } from "./localization-schema.js";
@@ -38,7 +39,7 @@ export function referenceLocalizationLinesCsv(input: {
 			? line.manifest.map((entry) => entry.path)
 			: wholeLine(line)
 				? localizationLineUnits(line, units).flatMap((unit) =>
-						unit.occurrences.map((occurrence) => occurrence.location.objectPath)
+						unit.occurrences.map((occurrence) => textLocationPath(occurrence.location))
 					)
 				: line.places.map((place) => place.objectPath);
 	const kindsOf = (line: Line) =>

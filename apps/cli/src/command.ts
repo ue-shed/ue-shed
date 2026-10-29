@@ -23,11 +23,13 @@ import { mapCaptureCommand } from "./commands/map-capture.js";
 import { niagaraCommand } from "./commands/niagara.js";
 import { pluginsCommand } from "./commands/plugins.js";
 import { projectIndexCommand } from "./commands/project-index.js";
+import { codeCommand } from "./commands/code.js";
 import { reviewCommand } from "./commands/review.js";
 import { cameraCommand } from "./commands/camera-render.js";
 import { worldCommand } from "./commands/world.js";
 import { scenarioCommand } from "./commands/scenario.js";
 import { localizationCommand } from "./commands/localization.js";
+import { guideCommand } from "./commands/guide.js";
 
 export const CliCommand = CliCommandSchema;
 export type CliCommand = CliCommandType;
@@ -39,6 +41,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 	Command.withSubcommands([
 		versionCommand,
 		doctorCommand,
+		guideCommand,
 		custodianCommand,
 		configCommand,
 		editorCommand,
@@ -54,6 +57,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		mapCaptureCommand,
 		niagaraCommand,
 		projectIndexCommand,
+		codeCommand,
 		reviewCommand,
 		cameraCommand,
 		worldCommand,

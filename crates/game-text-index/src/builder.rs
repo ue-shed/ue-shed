@@ -71,6 +71,16 @@ pub enum BuildRequest {
         configuration: Configuration,
         request: crate::package_text_contract::PackageTextPlanRequest,
     },
+    /// Scanned and staged by the reader, which runs `unreal-code`: `BuildSession::publish_code`.
+    PublishCode {
+        configuration: Configuration,
+        request: crate::package_text_contract::CodeLayerRequest,
+    },
+    /// Read by the reader, which parses the packages: per-file records and the point's manifest.
+    ReadPoint {
+        configuration: Configuration,
+        request: crate::package_text_contract::PointRequest,
+    },
     PublishPackages {
         configuration: Configuration,
         inputs: Vec<PackageInput>,
@@ -115,10 +125,14 @@ pub struct BuildOutcome {
     pub localization: Option<crate::localization::import::Outcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<crate::package_text_contract::PackageTextPlan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<Box<crate::package_text_contract::CodeLayerOutcome>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point: Option<Box<crate::package_text_contract::PointOutcome>>,
 }
 
 impl BuildOutcome {
-    fn new(action: &str) -> Self {
+    pub fn new(action: &str) -> Self {
         Self {
             action: action.into(),
             capabilities: vec!["game_text_index_v1".into()],
@@ -132,6 +146,8 @@ impl BuildOutcome {
             stage_seconds: BTreeMap::new(),
             localization: None,
             plan: None,
+            code: None,
+            point: None,
         }
     }
 }
@@ -148,6 +164,8 @@ impl BuildRequest {
             | Self::PublishIds { configuration, .. }
             | Self::PublishPackages { configuration, .. }
             | Self::PlanPackages { configuration, .. }
+            | Self::PublishCode { configuration, .. }
+            | Self::ReadPoint { configuration, .. }
             | Self::Intern { configuration, .. }
             | Self::Strings { configuration, .. }
             | Self::Join { configuration, .. }
@@ -237,6 +255,28 @@ impl BuildRequest {
                     ),
                 )?;
             }
+            Self::PublishCode { request, .. } => require(
+                !request.target.is_empty()
+                    && request.target.len() <= 1024
+                    && !request.staging_file.is_empty()
+                    && request.scan.as_ref().is_none_or(|scan| {
+                        scan.targets.len() == 1 && scan.targets[0].name == request.target
+                    }),
+                crate::Error::new(
+                    crate::ErrorCode::InvalidInput,
+                    "a code layer scans its one target",
+                ),
+            )?,
+            Self::ReadPoint { request, .. } => require(
+                crate::points::valid_id(&request.point)
+                    && request.base.as_deref().is_none_or(crate::points::valid_id)
+                    && request.files.len() <= 1_000_000
+                    && request
+                        .files
+                        .iter()
+                        .all(|file| !file.path.is_empty() && file.path.len() <= 4096),
+                crate::Error::new(crate::ErrorCode::InvalidInput, "an invalid point"),
+            )?,
             Self::Strings { ids, .. } => require(
                 ids.len() <= 8192,
                 crate::Error::new(crate::ErrorCode::InvalidInput, "string request limit"),
@@ -321,6 +361,26 @@ impl BuildSession {
 }
 
 impl BuildSession {
+    /// The key the leased store holds active under `name`.
+    pub fn active_layer(
+        &self,
+        configuration: &Configuration,
+        name: &str,
+    ) -> Result<Option<String>> {
+        let (active, store) = self.leased.as_ref().ok_or(crate::Error::new(
+            crate::ErrorCode::InvalidInput,
+            "call begin in a protocol session first",
+        ))?;
+        require(
+            active == configuration,
+            crate::Error::new(
+                crate::ErrorCode::InvalidInput,
+                "request belongs to another build lease",
+            ),
+        )?;
+        Ok(store.root["active"][name].as_str().map(str::to_owned))
+    }
+
     /// Plans a package-text refresh of the reader's Catalog `inventory` against the leased store.
     pub fn plan_packages(
         &mut self,
@@ -405,6 +465,12 @@ fn execute(
         BuildRequest::Status { .. } => {}
         BuildRequest::PlanPackages { .. } => {
             return Err("The reader plans package text from its Catalog.".into());
+        }
+        BuildRequest::PublishCode { .. } => {
+            return Err("The reader scans code text and stages its layer.".into());
+        }
+        BuildRequest::ReadPoint { .. } => {
+            return Err("The reader parses a point's packages.".into());
         }
         BuildRequest::Publish {
             inputs,

@@ -30,7 +30,12 @@ export type TextQualityRuleId = Schema.Schema.Type<typeof TextQualityRuleId>;
 export const TextRoleMatcher = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("location_kind"),
-		value: Schema.Literals(["data_table_cell", "string_table_entry", "asset_property"])
+		value: Schema.Literals([
+			"data_table_cell",
+			"string_table_entry",
+			"asset_property",
+			"code_place"
+		])
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("object_path"),

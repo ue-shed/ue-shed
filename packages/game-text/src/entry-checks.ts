@@ -18,6 +18,8 @@ export {
 
 export {
 	DEFAULT_GATE_FAILURES,
+	LocalizationGateChange,
+	LOCALIZATION_GATE_CHECK_LABELS,
 	LocalizationGateCheck,
 	LocalizationGateItem,
 	LocalizationGateResult,
@@ -25,9 +27,12 @@ export {
 	MAX_GATE_ITEMS,
 	localizationGateFailures,
 	localizationGateResult,
+	localizationGateComparison,
 	localizationGateTarget,
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,
+	localizationGatePartialPackages,
+	type LocalizationGatePartialRead,
 	indexedLocalizationGateTarget,
 	LOCALIZATION_GATE_FIELDS,
 	type LocalizationGateLine

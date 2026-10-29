@@ -46,6 +46,20 @@ const InputCoActivationFields = {
 };
 const SessionProject = { projectRoot: Schema.String, sessionId: Schema.String };
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
+/**
+ * Which change a localization check reads: files listed in a file (`--files`) as they are on
+ * disk, a submitted changelist (`--change`), a shelved one (`--shelved`), or the submitted
+ * changelists after `--from` up to `--to`. The workflow takes exactly one.
+ */
+const ChangeSelection = {
+	changedFiles: Schema.optionalKey(Schema.String),
+	change: Schema.optionalKey(PositiveInt),
+	shelved: Schema.optionalKey(PositiveInt),
+	from: Schema.optionalKey(PositiveInt),
+	to: Schema.optionalKey(PositiveInt)
+};
+/** JSON for scripts, text for a dialog or a log, Markdown for a build summary or a review. */
+export const ChangeOutputFormat = Schema.Literals(["json", "text", "markdown"]);
 const EditorPlayAction = Schema.Literals([
 	"status",
 	"start",
@@ -126,11 +140,19 @@ export const CliCommand = Schema.TaggedUnion({
 	LocalizationGate: {
 		...Project,
 		...Reader,
+		...ChangeSelection,
 		targets: Schema.Array(Schema.String),
-		changedFiles: Schema.String,
 		failOn: Schema.Array(LocalizationGateCheck),
 		warnOn: Schema.Array(LocalizationGateCheck),
-		summary: Schema.Boolean
+		format: ChangeOutputFormat
+	},
+	LocalizationDiff: {
+		...Project,
+		...Reader,
+		...ChangeSelection,
+		targets: Schema.Array(Schema.String),
+		format: ChangeOutputFormat,
+		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(1000))
 	},
 	LocalizationStatus: {
 		...Project,
@@ -313,6 +335,15 @@ export const CliCommand = Schema.TaggedUnion({
 		...InputCoActivationFields,
 		format: Schema.Literals(["csv", "markdown", "json"]),
 		output: Schema.optionalKey(Schema.String)
+	},
+	CodeText: {
+		...Project,
+		...Reader,
+		targets: Schema.Array(Schema.NonEmptyString),
+		engineRoot: Schema.optionalKey(Schema.String),
+		engineVersion: Schema.optionalKey(Schema.String),
+		cacheRoot: Schema.optionalKey(Schema.String),
+		refreshEngineWrappers: Schema.Boolean
 	},
 	ProjectIndexStatus: ProjectIndexTarget,
 	ProjectIndexRefresh: ProjectIndexTarget,

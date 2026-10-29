@@ -29,6 +29,7 @@ import {
 	type TextUnit
 } from "./schema.js";
 import { keyedUnitId } from "./gathered-text.js";
+import { textLocationPath } from "./text-origin.js";
 import { mountPackageTextEvent } from "./package-object-path.js";
 import {
 	classifyFoldedTextAudience,
@@ -179,8 +180,10 @@ function occurrenceId(packageFile: string, location: TextLocation): string {
 			? `entry:${location.entryKey}`
 			: location.kind === "data_table_cell"
 				? `row:${location.row}:property:${location.propertyPath}`
-				: `property:${location.propertyPath}`;
-	return `occurrence:${location.objectPath}:${suffix}:${packageFile}`;
+				: location.kind === "code_place"
+					? `line:${location.line ?? ""}:macro:${location.macro}`
+					: `property:${location.propertyPath}`;
+	return `occurrence:${textLocationPath(location)}:${suffix}:${packageFile}`;
 }
 
 /** The ID of the occurrence at a location in a project-relative package file. */

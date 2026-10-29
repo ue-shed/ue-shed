@@ -1599,6 +1599,31 @@ fn project_one_path(
     result
 }
 
+/// One parsed package's text events, projected as the shard staging projects them, and whether
+/// the read was partial. Points read revisions this way.
+pub(crate) fn package_text_events(
+    path: &str,
+    bytes: &[u8],
+    package: &Package,
+) -> Result<(Vec<SavedAssetPackageTextEvent>, bool), Failure> {
+    let result = project_parsed_package(
+        ProjectionKind::TextPackages,
+        path.to_owned(),
+        bytes,
+        package,
+        &CancellationToken::new(),
+    )?;
+    let events = result
+        .results
+        .into_iter()
+        .filter_map(|frame| match frame {
+            ResultFrame::ExtractTextPackages { event } => Some(event),
+            _ => None,
+        })
+        .collect();
+    Ok((events, result.partial))
+}
+
 fn project_parsed_package(
     kind: ProjectionKind,
     path_string: String,

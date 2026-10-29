@@ -2,8 +2,9 @@
 # workflows until their hosted designs have been rewritten and exercised.
 #
 # The repository and UAsset lanes run on boat.dev VMs; the short jobs stay on GitHub-hosted runners
-# because each boat job counts against the plan's daily start limit. Boat only runs public-repository
-# jobs for an allowlist of GitHub users, so pull requests from forks use GitHub-hosted runners too.
+# because each boat job counts against the plan's start limits. scripts/ci-runner.ts asks boat how
+# many starts are left and sends the lanes to GitHub-hosted runners when the run would not fit, or
+# when there is no BOAT_API_KEY secret, as on pull requests from forks.
 
 name: Portable
 on:
@@ -30,6 +31,7 @@ jobs:
             contents: read
         outputs:
             catalog_oracle: ${{ steps.scope.outputs.catalog_oracle }}
+            heavy_runner: ${{ steps.runner.outputs.heavy_runner }}
             reuse_previous_run: ${{ steps.scope.outputs.reuse_previous_run }}
             site: ${{ steps.scope.outputs.site }}
             uasset_io: ${{ steps.scope.outputs.uasset_io }}
@@ -47,7 +49,9 @@ jobs:
             - name: Validate dependency paths before installation
               run: node scripts/check-dependency-paths.ts
             - name: Check CI selection and dependency regressions
-              run: node --test scripts/ci-scope.test.ts scripts/check-dependency-paths.test.ts
+              run: >-
+                  node --test scripts/ci-scope.test.ts scripts/ci-runner.test.ts
+                  scripts/check-dependency-paths.test.ts
             - name: Select affected checks
               id: scope
               env:
@@ -58,10 +62,18 @@ jobs:
                   BASE_SHA: ${{ github.event.pull_request.base.sha }}
                   HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
               run: node scripts/ci-scope.ts
+            - name: Choose runners for the repository and UAsset lanes
+              id: runner
+              env:
+                  BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
+                  BOAT_ORG: ${{ vars.BOAT_ORG }}
+                  UASSET_IO: ${{ steps.scope.outputs.uasset_io }}
+                  UASSET_LIBRARIES: ${{ steps.scope.outputs.uasset_libraries }}
+              run: node scripts/ci-runner.ts
     repository:
         name: Repository checks
         needs: changes
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat-large' }}
+        runs-on: ${{ needs.changes.outputs.heavy_runner }}
         timeout-minutes: 90
         steps:
             - name: Checkout without persisted credentials
@@ -126,7 +138,7 @@ jobs:
         name: UAsset libraries
         needs: changes
         if: needs.changes.outputs.uasset_libraries == 'true'
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat-large' }}
+        runs-on: ${{ needs.changes.outputs.heavy_runner }}
         timeout-minutes: 90
         env:
             SCCACHE_GHA_ENABLED: "true"
@@ -203,7 +215,7 @@ jobs:
         name: UAsset IO
         needs: changes
         if: needs.changes.outputs.uasset_io == 'true'
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat-large' }}
+        runs-on: ${{ needs.changes.outputs.heavy_runner }}
         timeout-minutes: 90
         env:
             SCCACHE_GHA_ENABLED: "true"

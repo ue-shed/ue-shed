@@ -52,9 +52,10 @@ parsers respectively.
 GitHub Actions runs the portable repository checks on every pull request, including PRs targeting
 another feature branch. The repository and UAsset lanes run on boat.dev VMs (`runs-on: boat-large`):
 each job gets a fresh sandbox that is deleted when the job ends. Every boat job counts against the
-plan's start limits, so the short jobs stay on GitHub-hosted Ubuntu 24.04 runners. Boat runs this
-public repository's jobs only for runs that allowlisted GitHub users started (`boat ci public`), so
-pull requests from forks, and Pullfrog, use GitHub-hosted runners for every job.
+plan's start limits, so the short jobs stay on GitHub-hosted Ubuntu 24.04 runners, and the heavy
+lanes move there too when boat has too few starts left. Boat runs this public repository's jobs only
+for runs that allowlisted GitHub users started (`boat ci public`), so pull requests from forks, and
+Pullfrog, use GitHub-hosted runners for every job.
 On pull requests, separate UAsset library and IO lanes run when their Rust, WASM, package, contract,
 script, or fixture inputs change. Parser and inspection changes also trigger downstream IO
 conformance; WASM-package-only changes do not. The website browser lane follows the site's transitive workspace dependencies,
@@ -143,8 +144,14 @@ built protocol packages. `check:precommit` now runs the Effect architecture chec
 sources in addition to testing the checker.
 
 In `.github/workflows/portable.yml`, the repository and UAsset lanes use ephemeral `boat-large`
-runners (8 vCPU, 16 GB), except on pull requests from forks. Input selection, the website and
-Catalog lanes, and the aggregate status use `ubuntu-24.04` GitHub-hosted runners. Changes to the
+runners (8 vCPU, 16 GB) when boat has starts to spare. After lane selection, `scripts/ci-runner.ts`
+reads the remaining starts from boat's `GET /limits` with the `BOAT_API_KEY` secret (an
+`account.read` key) and the `BOAT_ORG` variable. It picks `boat-large` only when today's and this
+hour's remaining starts cover the run's boat jobs plus a headroom of 6 for runs starting at the same
+time; otherwise, and whenever boat gives no answer or the secret is missing (as on pull requests
+from forks), those lanes use `ubuntu-24.04`. A job over boat's limit would otherwise wait until the
+window clears. Input selection, the website and Catalog lanes, and the aggregate status always use
+`ubuntu-24.04` GitHub-hosted runners. Changes to the
 workflow itself enable both conditional UAsset lanes. The aggregate status requires the repository job to succeed and accepts only success or
 an intentional skip from the conditional jobs, including the website lane. A failed selection job
 blocks the aggregate gate. The Catalog job runs its SQLite-specific suite and differential oracle;

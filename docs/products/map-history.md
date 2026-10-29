@@ -170,6 +170,8 @@ The parser reconstructs every bundle incrementally in an owned temporary project
 ordinary portable test lane. The separately gated `pnpm test:perforce-map-history` harness seeds
 those same bundles as changelists in a disposable localhost `p4d` server. This keeps saved-package
 truth independently testable while reserving real Perforce behavior for its own conformance lane.
+The same lane checks the change reads Game Text borrows: `loc diff --change` on a seeded text
+change, run twice, must find the change and then reuse every revision it printed.
 
 The real lane never uses the contributor's active `p4` configuration: it uses explicit isolated
 settings and either an explicitly supplied `p4`/`p4d` pair or a pinned, SHA-256-verified official

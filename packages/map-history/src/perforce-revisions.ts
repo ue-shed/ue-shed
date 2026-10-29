@@ -307,153 +307,158 @@ const projectLayer = (projectRoot: string, perforce: P4ClientOptions | undefined
 		)
 	);
 
+/** What a changelist read takes. */
+interface ChangelistRead {
+	readonly projectRoot: string;
+	readonly change: number;
+	readonly shelved: boolean;
+	/** The revision cache folder. */
+	readonly directory: string;
+	/** Whether the caller reads a file, by its project-relative path; only those are printed. */
+	readonly reads: (path: string) => boolean;
+	/**
+	 * Project files to read as the change found them, such as a target's manifest and
+	 * archives: at the changelist before a submitted change, at the depot's head for a shelf.
+	 */
+	readonly before?: readonly string[];
+}
+
 /**
  * Fetches a changelist's files inside a project at both revisions into a content cache, printing
  * only revisions the cache lacks. A submitted revision never changes, so its
  * cache file is named by its spec; a shelved one by its spec and the digest Perforce reports. It
  * only reads: `describe`, `where`, `files` and `print`.
  */
-export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")(
-	function* (options: {
-		readonly projectRoot: string;
-		readonly change: number;
-		readonly shelved: boolean;
-		/** The revision cache folder. */
-		readonly directory: string;
-		/** Whether the caller reads a file, by its project-relative path; only those are printed. */
-		readonly reads: (path: string) => boolean;
-		/**
-		 * Project files to read as the change found them, such as a target's manifest and
-		 * archives: at the changelist before a submitted change, at the depot's head for a shelf.
-		 */
-		readonly before?: readonly string[];
+export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")(function* (
+	options: ChangelistRead & {
 		/** The host's connection; a workspace it names is used as named. */
 		readonly perforce?: P4ClientOptions;
-	}) {
-		const layer = yield* projectLayer(options.projectRoot, options.perforce);
-		return yield* Effect.gen(function* () {
-			const p4 = yield* P4;
-			const step = (name: string) =>
-				Effect.mapError((cause: unknown) =>
-					classified(`Perforce could not ${name}`, cause)
-				);
-			const at = options.shelved ? "head" : options.change - 1;
-			// Each command is a round trip to the server, so the independent ones run together.
-			const [cache, description, prefix, listed] = yield* Effect.all(
-				[
-					serverDirectory(options.directory).pipe(step("identify the server")),
-					p4
-						.describeChangelist({ change: options.change, shelved: options.shelved })
-						.pipe(step(`describe changelist ${options.change}`)),
-					projectPrefix(options.projectRoot).pipe(step("map the project folder")),
-					options.before === undefined
-						? Effect.succeed(undefined)
-						: listAt(options.projectRoot, options.before, at).pipe(
-								step(`list the files changelist ${options.change} changes from`)
-							)
-				],
-				{ concurrency: "unbounded" }
-			);
-			// A shelf read of a submitted change, or a submitted read of a pending one, would pair
-			// the wrong revisions.
-			const expected = options.shelved ? "shelved" : "submitted";
-			if (description.status !== expected)
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "invalid_target",
-						message: `Changelist ${options.change} is ${description.status}, not ${expected}.`,
-						recovery:
-							"Read a submitted changelist as submitted, and a pending changelist's shelved files as shelved.",
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-				);
-			const cached = (spec: string, digest: string | null) =>
-				cacheFile(cache.directory, spec, digest);
-			const files: ChangelistRevisionFile[] = [];
-			const skipped: string[] = [];
-			const baseWanted: Wanted[] = [];
-			const headWanted: Wanted[] = [];
-			const wanted = { base: baseWanted, head: headWanted };
-			let outside = 0;
-			for (const file of description.files) {
-				if (!file.depotFile.startsWith(prefix)) {
-					outside++;
-					continue;
-				}
-				const path = file.depotFile.slice(prefix.length);
-				if (!options.reads(path)) {
-					skipped.push(path);
-					continue;
-				}
-				const specs = changelistRevisionSpecs(
-					{ depotPath: file.depotFile, action: file.action, revision: file.revision },
-					options.change,
-					options.shelved
-				);
-				const base = specs.base === undefined ? undefined : cached(specs.base, null);
-				const head =
-					specs.head === undefined
-						? undefined
-						: cached(specs.head, options.shelved ? file.digest : null);
-				if (specs.base !== undefined && base !== undefined)
-					wanted.base.push({ spec: specs.base, file: base, unnumbered: false });
-				if (specs.head !== undefined && head !== undefined)
-					wanted.head.push({
-						spec: specs.head,
-						file: head,
-						unnumbered: options.shelved && ADDS.has(file.action)
-					});
-				files.push({
-					path,
-					depotPath: file.depotFile,
-					action: file.action,
-					...(base === undefined ? undefined : { base }),
-					...(head === undefined ? undefined : { head })
-				});
-			}
-			const { bytes, printed } = yield* printMissing(
-				[wanted.base, wanted.head],
-				`changelist ${options.change}`
-			);
-			const before =
-				options.before === undefined || listed === undefined
-					? undefined
-					: yield* fetchAt({
-							projectRoot: options.projectRoot,
-							prefix,
-							paths: options.before,
-							listed,
-							...cache
-						}).pipe(step(`print the files changelist ${options.change} changes from`));
-			const requested = wanted.base.length + wanted.head.length;
-			yield* Effect.annotateCurrentSpan({
-				"perforce.files": files.length,
-				"perforce.outside": outside,
-				"perforce.skipped": skipped.length,
-				"perforce.printed": printed,
-				"perforce.reused": requested - printed,
-				"perforce.bytes": bytes
-			});
-			return {
-				change: options.change,
-				shelved: options.shelved,
-				files,
-				skipped,
-				outside,
-				printed,
-				reused: requested - printed,
-				bytes,
-				...(before === undefined ? undefined : { before })
-			} satisfies ChangelistRevisions;
-		}).pipe(
-			Effect.provide(layer),
-			Effect.mapError((cause) =>
-				classified(`Perforce could not read changelist ${options.change}`, cause)
-			)
-		);
 	}
-);
+) {
+	const layer = yield* projectLayer(options.projectRoot, options.perforce);
+	return yield* changelistRevisions(options).pipe(
+		Effect.provide(layer),
+		Effect.mapError((cause) =>
+			classified(`Perforce could not read changelist ${options.change}`, cause)
+		)
+	);
+});
+
+/** {@link readChangelistRevisions} with the Perforce client the caller provides. */
+export const changelistRevisions = Effect.fnUntraced(function* (options: ChangelistRead) {
+	const p4 = yield* P4;
+	const step = (name: string) =>
+		Effect.mapError((cause: unknown) => classified(`Perforce could not ${name}`, cause));
+	const at = options.shelved ? "head" : options.change - 1;
+	// Each command is a round trip to the server, so the independent ones run together.
+	const [cache, description, prefix, listed] = yield* Effect.all(
+		[
+			serverDirectory(options.directory).pipe(step("identify the server")),
+			p4
+				.describeChangelist({ change: options.change, shelved: options.shelved })
+				.pipe(step(`describe changelist ${options.change}`)),
+			projectPrefix(options.projectRoot).pipe(step("map the project folder")),
+			options.before === undefined
+				? Effect.succeed(undefined)
+				: listAt(options.projectRoot, options.before, at).pipe(
+						step(`list the files changelist ${options.change} changes from`)
+					)
+		],
+		{ concurrency: "unbounded" }
+	);
+	// A shelf read of a submitted change, or a submitted read of a pending one, would pair
+	// the wrong revisions.
+	const expected = options.shelved ? "shelved" : "submitted";
+	if (description.status !== expected)
+		return yield* Effect.fail(
+			new MapHistoryError({
+				kind: "invalid_target",
+				message: `Changelist ${options.change} is ${description.status}, not ${expected}.`,
+				recovery:
+					"Read a submitted changelist as submitted, and a pending changelist's shelved files as shelved.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			})
+		);
+	const cached = (spec: string, digest: string | null) =>
+		cacheFile(cache.directory, spec, digest);
+	const files: ChangelistRevisionFile[] = [];
+	const skipped: string[] = [];
+	const baseWanted: Wanted[] = [];
+	const headWanted: Wanted[] = [];
+	const wanted = { base: baseWanted, head: headWanted };
+	let outside = 0;
+	for (const file of description.files) {
+		if (!file.depotFile.startsWith(prefix)) {
+			outside++;
+			continue;
+		}
+		const path = file.depotFile.slice(prefix.length);
+		if (!options.reads(path)) {
+			skipped.push(path);
+			continue;
+		}
+		const specs = changelistRevisionSpecs(
+			{ depotPath: file.depotFile, action: file.action, revision: file.revision },
+			options.change,
+			options.shelved
+		);
+		const base = specs.base === undefined ? undefined : cached(specs.base, null);
+		const head =
+			specs.head === undefined
+				? undefined
+				: cached(specs.head, options.shelved ? file.digest : null);
+		if (specs.base !== undefined && base !== undefined)
+			wanted.base.push({ spec: specs.base, file: base, unnumbered: false });
+		if (specs.head !== undefined && head !== undefined)
+			wanted.head.push({
+				spec: specs.head,
+				file: head,
+				unnumbered: options.shelved && ADDS.has(file.action)
+			});
+		files.push({
+			path,
+			depotPath: file.depotFile,
+			action: file.action,
+			...(base === undefined ? undefined : { base }),
+			...(head === undefined ? undefined : { head })
+		});
+	}
+	const { bytes, printed } = yield* printMissing(
+		[wanted.base, wanted.head],
+		`changelist ${options.change}`
+	);
+	const before =
+		options.before === undefined || listed === undefined
+			? undefined
+			: yield* fetchAt({
+					projectRoot: options.projectRoot,
+					prefix,
+					paths: options.before,
+					listed,
+					...cache
+				}).pipe(step(`print the files changelist ${options.change} changes from`));
+	const requested = wanted.base.length + wanted.head.length;
+	yield* Effect.annotateCurrentSpan({
+		"perforce.files": files.length,
+		"perforce.outside": outside,
+		"perforce.skipped": skipped.length,
+		"perforce.printed": printed,
+		"perforce.reused": requested - printed,
+		"perforce.bytes": bytes
+	});
+	return {
+		change: options.change,
+		shelved: options.shelved,
+		files,
+		skipped,
+		outside,
+		printed,
+		reused: requested - printed,
+		bytes,
+		...(before === undefined ? undefined : { before })
+	} satisfies ChangelistRevisions;
+});
 
 /**
  * Characters of file specs one `p4 files` takes. `files` reads its specs from its command line, and

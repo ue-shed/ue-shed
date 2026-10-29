@@ -896,7 +896,8 @@ describe("index reads", () => {
 									not_gathered: 3,
 									unresolved_key: 0,
 									removed: 1,
-									gathered_source: 0
+									gathered_source: 0,
+									partial_read: 0
 								},
 								omitted: 0
 							});

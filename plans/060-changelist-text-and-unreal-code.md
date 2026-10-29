@@ -14,9 +14,10 @@
 
 ## Status
 
-- **State**: In progress. Phase 0: oracle done on 5.7, 5.8 and 4.27; baseline pending. Phase 1:
-  done and reviewed (owner, 2026-10-29). The scanner matches all three engines' gathers, and
-  `ue-shed code text` runs it through the Game Text engine. Phase 2: done, awaiting owner review.
+- **State**: In progress. Phase 0: done (oracle on 5.7, 5.8 and 4.27; baseline and sample
+  changelists, 2026-10-29). Phase 1: done and reviewed (owner, 2026-10-29). The scanner matches all
+  three engines' gathers, and `ue-shed code text` runs it through the Game Text engine. Phase 2:
+  done and reviewed (owner, 2026-10-29).
   Game Text reads each target's code and judges C++ text like asset text.
 - **Priority**: P1
 - **Effort**: XL
@@ -201,7 +202,46 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
   that file, and two header wrappers with the same name are both excluded. A changelist that
   edits a header wrapper can change text in files it never touched, so a point keeps its wrapper
   set, and the engine's part can be kept per engine build.
-- The baseline and the sample changelists: pending.
+
+**Evidence (2026-10-29, baseline)**: on this plan's branch after Phase 2, so the full scan includes
+the code scan. The owner left the choice of changelists to the planner.
+
+- **Sample changelists**, from the large UE 4.27 project, the one local project with a gathered
+  target (10 cultures, 132,734 manifest entries); numbers only. Each is at or below the change its
+  workspace is synced to, so the files `loc gate` reads are on disk, except the shelf's.
+
+    | Kind                         | Changelist | Files | Lines judged    | Verdict                  |
+    | ---------------------------- | ---------: | ----: | --------------- | ------------------------ |
+    | Code only                    |     220336 |    19 | 5, in 2 files   | passed                   |
+    | Asset only                   |     220368 |     9 | 296, in 9 files | passed                   |
+    | Mixed                        |     220253 |    36 | none            | could not check (exit 2) |
+    | Key rename with translations |     219062 |    33 | none            | passed                   |
+    | Shelved                      |     220258 |    26 | 84, in 6 files  | failed, 1 line           |
+
+    219062 is a gather commit: its manifest moves 49 entries' unchanged source to new keys, with
+    their translations. The gate judges places in the listed files, and a gather commit lists only
+    localization files, so it sees nothing; a point pair across the commit is what finds them.
+
+- **Times**, `loc gate --files <list> --target <target>` through the CLI, one process per run:
+
+    | Project                            | Cold (empty cache) | Each changelist, warm |
+    | ---------------------------------- | -----------------: | --------------------: |
+    | Fixture (`FixtureGame`)            |              5.9 s |                 1.9 s |
+    | UE 4.27 project (167,507 packages) |             55.7 s |            9.0–11.9 s |
+
+    The warm cost does not follow the list: 9 files and 36 cost the same. Where it goes (inventory,
+    refresh or the read itself) is the first thing Phase 3 profiles. The index takes 210 MB. This is the bar: a changelist review must be clearly faster than about 9.5 s warm
+    and 56 s cold on this project.
+
+- **Found on the way**:
+    - The gate refused any changelist touching a package Unreal's gather does not select
+      (`not_gatherable`, such as a material) as unreadable, exit 2. Fixed: such a package holds no
+      text the target gathers, so there is nothing to judge, as in Unreal.
+    - The mixed sample still cannot be checked: 2 of its widget Blueprints read partially. On this
+      project 2,061 of 15,632 gatherable packages are partial, all for Blueprint graph pins the
+      reader does not decode on 4.27 (`feature_unavailable_for_engine_version`). A gate on such a
+      changelist exits 2, as its rule says. Widening 4.27 pin decoding is reader work outside this
+      plan.
 
 ## Phase 1: `unreal-code`, the scanner
 
@@ -388,8 +428,11 @@ platform?, tableId?)`. It joins localization by `(namespace, key)` like any othe
 - **Found on the way**: the gate integration test expected no skipped targets, but Phase 1's
   oracle targets (`UnrealSource`, `UnrealSourceEditor`) have no manifest in the project; and
   Phase 1's rename left `apps/cli/package.json` unformatted, which stopped PR CI before its tests.
-- **Gaps**: asset references to a code-defined String Table are not yet resolved against it;
-  Electroswag passes no `codeSource` until Phase 6.
+- **String Tables in code** (after the review): an asset's text that names a String Table C++
+  defines (`LOCTABLE_NEW`) by its table ID joins that entry's line, with its translations. A code
+  place carries `table` in the class column, since a String Table entry never has a wrapper; a
+  join fact test covers a resolved and a missing entry.
+- **Gaps**: Electroswag passes no `codeSource` until Phase 6.
 
 ## Phase 3: Points
 

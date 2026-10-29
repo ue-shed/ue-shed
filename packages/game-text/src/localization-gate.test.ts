@@ -334,11 +334,17 @@ describe("checking a change's text", () => {
 			packageCoverage: [
 				{ packageFile: MENU, status: "failed" },
 				{ packageFile: "Content/Text/Table.uasset", status: "partial" },
-				{ packageFile: "Content/Text/Untouched.uasset", status: "failed" }
+				{ packageFile: "Content/Text/Untouched.uasset", status: "failed" },
+				// Unreal's gather does not select it, so it holds no gathered text to check.
+				{ packageFile: "Content/Art/M_Glow.uasset", status: "not_gatherable" }
 			]
 		};
 		expect(
-			localizationGateUnreadPackages(partial, [MENU, "Content/Text/Table.uasset"])
+			localizationGateUnreadPackages(partial, [
+				MENU,
+				"Content/Text/Table.uasset",
+				"Content/Art/M_Glow.uasset"
+			])
 		).toEqual(["Content/Text/DT_Menu (failed)", "Content/Text/Table (partial)"]);
 		expect(localizationGateUnreadPackages(scanned([]), [MENU])).toEqual([]);
 	});

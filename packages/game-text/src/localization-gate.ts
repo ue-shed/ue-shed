@@ -281,7 +281,9 @@ export function localizationGateUnreadEvidence(
 
 /**
  * Listed saved packages the scan could not read completely. Their text cannot be judged, so a
- * verdict that ignored them could pass new or conflicting text.
+ * verdict that ignored them could pass new or conflicting text. A package Unreal's gather does
+ * not select (`not_gatherable`) holds no text the target gathers, so the gate has nothing to judge
+ * in it, as Unreal would not.
  */
 export function localizationGateUnreadPackages(
 	corpus: Pick<TextCorpus, "packageCoverage">,
@@ -290,7 +292,9 @@ export function localizationGateUnreadPackages(
 	const scope = textFileScope(files);
 	if (scope === undefined) return [];
 	return (corpus.packageCoverage ?? []).flatMap((coverage) =>
-		coverage.status !== "complete" && scope.keys.has(textFileKey(coverage.packageFile))
+		coverage.status !== "complete" &&
+		coverage.status !== "not_gatherable" &&
+		scope.keys.has(textFileKey(coverage.packageFile))
 			? [`${textFileLabel(coverage.packageFile)} (${coverage.status})`]
 			: []
 	);

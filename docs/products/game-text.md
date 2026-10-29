@@ -1261,7 +1261,9 @@ disk now, so a problem already in a touched file counts too.
   one.
 - It never judges what it cannot see. A manifest, archive or PO file that exists but cannot be
   read, or a listed package the scan could not read completely, stops the check with exit `2`
-  rather than passing it. A missing archive or PO file means nothing is translated.
+  rather than passing it. A missing archive or PO file means nothing is translated. A listed
+  package Unreal's gather does not select (`not_gatherable`, such as a material) has no text to
+  judge and does not stop it.
 - The output is JSON: `status` (`passed` or `failed`), and per target the lines checked, a count
   per check, up to 200 lines with their check, key, text, file and a way forward, and the
   changed-file summary. A run that could not check prints `status: "not_checked"` with the error.

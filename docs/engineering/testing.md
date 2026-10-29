@@ -56,8 +56,9 @@ plan's start limits, so the short jobs stay on GitHub-hosted Ubuntu 24.04 runner
 lanes move there too when boat has too few starts left. Boat runs this public repository's jobs only
 for runs that allowlisted GitHub users started (`boat ci public`), so pull requests from forks, and
 Pullfrog, use GitHub-hosted runners for every job.
-On pull requests, separate UAsset library and IO lanes run when their Rust, WASM, package, contract,
-script, or fixture inputs change. Parser and inspection changes also trigger downstream IO
+On pull requests, the UAsset library and IO suites run when their Rust, WASM, package, contract,
+script, or fixture inputs change. Both share one `UAsset` job, so a run uses one setup and one boat
+start for them; the IO suite still runs when the library suite fails. Parser and inspection changes also trigger downstream IO
 conformance; WASM-package-only changes do not. The website browser lane follows the site's transitive workspace dependencies,
 saved fixtures, media, scripts and configuration. The SQLite Catalog oracle follows `crates/uasset-io`
 and shared build inputs instead of every IO consumer change. Pushes to `main` and manual workflow
@@ -143,19 +144,19 @@ regression checks before compilation. Contract checks follow package builds beca
 built protocol packages. `check:precommit` now runs the Effect architecture check on repository
 sources in addition to testing the checker.
 
-In `.github/workflows/portable.yml`, the repository and UAsset lanes use ephemeral `boat-large`
+In `.github/workflows/portable.yml`, the repository and UAsset jobs use ephemeral `boat-large`
 runners (8 vCPU, 16 GB) when boat has starts to spare. After lane selection, `scripts/ci-runner.ts`
 reads the remaining starts from boat's `GET /limits` with the `BOAT_API_KEY` secret (an
 `account.read` key) and the `BOAT_ORG` variable. It picks `boat-large` only when today's and this
 hour's remaining starts cover the run's boat jobs plus a headroom of 6 for runs starting at the same
 time; otherwise, and whenever boat gives no answer or the secret is missing (as on pull requests
-from forks), those lanes use `ubuntu-24.04`. A job over boat's limit would otherwise wait until the
+from forks), those jobs use `ubuntu-24.04`. A job over boat's limit would otherwise wait until the
 window clears. Input selection, the website and Catalog lanes, and the aggregate status always use
 `ubuntu-24.04` GitHub-hosted runners. Changes to the
-workflow itself enable both conditional UAsset lanes. The aggregate status requires the repository job to succeed and accepts only success or
+workflow itself enable both conditional UAsset suites. The aggregate status requires the repository job to succeed and accepts only success or
 an intentional skip from the conditional jobs, including the website lane. A failed selection job
 blocks the aggregate gate. The Catalog job runs its SQLite-specific suite and differential oracle;
-ordinary IO library tests remain in the IO job instead of running twice. Rust compilation uses sccache
+ordinary IO library tests remain in the IO suite instead of running twice. Rust compilation uses sccache
 with the GitHub Actions cache backend; pnpm uses the setup-node dependency cache. Evidence and failure diagnostics
 remain GitHub Actions artifacts.
 

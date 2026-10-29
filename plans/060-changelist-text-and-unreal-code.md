@@ -23,7 +23,9 @@
   reviewed (owner, 2026-10-29): the engine compares two points and judges the change by the gate's
   checks against the base's localization. Phase 5: done and reviewed (owner, 2026-10-29):
   `loc gate --change` and `--shelved`, `loc diff`, `--format markdown`, exit codes and an error
-  table from the error's next step, and the agent guide. Phase 6: in progress.
+  table from the error's next step, and the agent guide. Phase 6: done, for owner review: ranges,
+  `compareChange` for hosts, and Electroswag's review page, Compare and code places (draft
+  Stairway-Games/electroswag#124 until 0.24.0 is published).
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -817,7 +819,41 @@ Electroswag, on `feat/changelist-text-review`:
   source code accessor the project's Unreal settings name (Visual Studio, Rider or VS Code), else
   the system's app for the file.
 
-**Evidence**: _pending_.
+**Evidence (2026-10-29)**:
+
+- **UE Shed**: `readRangeRevisions` and `rangeRevisionSpecs` (unit-tested: a file the range edits,
+  adds, deletes, or adds and deletes); `perforceChangeRevisions`; a host-named workspace used as
+  named; `readGameTextChangePoints` shared by the CLI and the workspace; `compareChange` in the
+  contract, served from a real workspace in the contract test (`capability_missing` without the
+  hook); each finding's severity and way forward, and the verdict, from `changeComparisonTarget`
+  (unit-tested against the policy); `LOCALIZATION_GATE_CHECK_LABELS` shared by the CLI and hosts.
+- **The range read on the UE 4.27 project, through the CLI**:
+
+    | Run                                        | Outcome                                       |  Time |
+    | ------------------------------------------ | --------------------------------------------- | ----: |
+    | `loc diff --from 220252 --to 220253`       | the same changes as `--change 220253`         | 3.8 s |
+    | `loc diff --from 220340 --to 220355`, cold | 19 added, 10 removed, 80 rekeyed (29 files)   | 8.2 s |
+    | the same, warm                             | the same                                      | 3.9 s |
+    | `loc gate --from 220340 --to 220355`       | fails: a key change leaves 9 cultures behind  | 3.8 s |
+    | `--from 220355 --to 220340`                | exit `2`: "Name the later changelist as --to" | 1.5 s |
+
+    In one process, warm, the range reads in 2.1 s and the shelf in 1.3 s.
+
+- **Electroswag** (Stairway-Games/electroswag#124, a draft until 0.24.0 is published; its UE Shed
+  packages are packed from this branch): the review page's Text section, Compare in Game Text, and
+  code places with Open in IDE. `pnpm run check` and the full Vitest suite pass. In serve mode
+  against the UE 4.27 project, changelist 220253's review page fails on the `KismetSchema`
+  conflict the CLI reports, and Compare over changelists 220340 to 220355 gives the CLI's counts
+  and the key change's 9 cultures.
+- **Found on the way**:
+    - Electroswag's Game Text UI assumed every place is a saved asset; Phase 2's `code_place`
+      reached 25 sites. Each now names a code place by its file and line and never offers Show in
+      Unreal for it.
+    - On a machine without the project's engine installed, `projectSourceGatherEngine` answers
+      undefined, so Electroswag reads no code and says so (the Merfolk finding in a C++ header is
+      then not seen); the CLI reads code with `UE_SHED_ENGINE_VERSION` alone. Whether a host should
+      read code without the engine's wrapper macros is open.
+- **Phase 6 is complete** against its items.
 
 ## STOP conditions
 

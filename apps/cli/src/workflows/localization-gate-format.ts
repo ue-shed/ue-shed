@@ -1,21 +1,12 @@
 import {
+	LOCALIZATION_GATE_CHECK_LABELS,
 	LocalizationGateCheck,
 	type LocalizationGateItem,
 	type LocalizationGateResult
 } from "@ue-shed/game-text/checks";
 
 /** Each check as a reviewer reads it. */
-export const CHECK_LABELS = {
-	key_changed: "Key changed",
-	conflicting_source: "Same key, different text",
-	translated_text_changed: "Translated text changed",
-	text_changed: "Text changed",
-	not_gathered: "Not gathered",
-	unresolved_key: "No reliable key",
-	removed: "Removed",
-	gathered_source: "Gathered from source",
-	partial_read: "Partly read"
-} satisfies Record<LocalizationGateCheck, string>;
+export const CHECK_LABELS = LOCALIZATION_GATE_CHECK_LABELS;
 
 const count = (value: number) => value.toLocaleString("en-US");
 

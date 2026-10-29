@@ -39,7 +39,7 @@ shell.
 
 ## Commands
 
-GitHub Actions runs the portable gate on GitHub-hosted Ubuntu 24.04 runners. Repository checks run
+GitHub Actions runs the portable gate on ephemeral boat.dev runners. Repository checks run
 on every pull request. On PRs, the UAsset lanes follow their Rust, WASM, package, contract, script and fixture
 inputs; parser and inspection changes also trigger downstream IO conformance. Website and Catalog
 oracle checks have separate input scopes. Pushes to `main` and manual dispatches run all lanes. Use `pnpm check`

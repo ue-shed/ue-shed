@@ -50,8 +50,8 @@ parsers respectively.
 ## Local verification
 
 GitHub Actions runs the portable repository checks on every pull request, including PRs targeting
-another feature branch. All hosted jobs, including Pullfrog, use standard GitHub-hosted Ubuntu 24.04
-runners.
+another feature branch. Portable jobs run on boat.dev VMs (`runs-on: boat`): each job gets a fresh
+sandbox that is deleted when the job ends. Pullfrog stays on GitHub-hosted Ubuntu 24.04 runners.
 On pull requests, separate UAsset library and IO lanes run when their Rust, WASM, package, contract,
 script, or fixture inputs change. Parser and inspection changes also trigger downstream IO
 conformance; WASM-package-only changes do not. The website browser lane follows the site's transitive workspace dependencies,
@@ -139,7 +139,7 @@ regression checks before compilation. Contract checks follow package builds beca
 built protocol packages. `check:precommit` now runs the Effect architecture check on repository
 sources in addition to testing the checker.
 
-All jobs in `.github/workflows/portable.yml` use `ubuntu-24.04` GitHub-hosted runners. Changes to the
+All jobs in `.github/workflows/portable.yml` use ephemeral `boat` runners. Changes to the
 workflow itself enable both conditional UAsset lanes. The aggregate status requires the repository job to succeed and accepts only success or
 an intentional skip from the conditional jobs, including the website lane. A failed selection job
 blocks the aggregate gate. The Catalog job runs its SQLite-specific suite and differential oracle;

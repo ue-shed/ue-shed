@@ -6,8 +6,8 @@
 
 ## Status
 
-Runner update (2026-10-29): Portable jobs now run on boat.dev runners (`runs-on: boat`); Pullfrog
-stays on GitHub-hosted Ubuntu 24.04. (2026-10-17: all hosted jobs had moved to GitHub-hosted Ubuntu.)
+Runner update (2026-10-29): the Portable repository and UAsset lanes now run on boat.dev runners
+(`runs-on: boat-large`); other jobs and Pullfrog stay on GitHub-hosted Ubuntu 24.04. (2026-10-17: all hosted jobs had moved to GitHub-hosted Ubuntu.)
 Blacksmith references below describe the original implementation; current CI behavior is documented
 in [the testing guide](../docs/engineering/testing.md).
 

@@ -1,8 +1,9 @@
 # Portable is the only hosted repository gate. Unreal evidence and releases remain explicit local
 # workflows until their hosted designs have been rewritten and exercised.
 #
-# Jobs run on boat.dev VMs. Boat only runs public-repository jobs for an allowlist of GitHub users,
-# so pull requests from forks use GitHub-hosted runners instead.
+# The repository and UAsset lanes run on boat.dev VMs; the short jobs stay on GitHub-hosted runners
+# because each boat job counts against the plan's daily start limit. Boat only runs public-repository
+# jobs for an allowlist of GitHub users, so pull requests from forks use GitHub-hosted runners too.
 
 name: Portable
 on:
@@ -22,7 +23,7 @@ concurrency:
 jobs:
     changes:
         name: Validate CI inputs and select checks
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
+        runs-on: ubuntu-24.04
         # actions: read lets a release-notes-only push confirm that the previous head's run passed.
         permissions:
             actions: read
@@ -288,7 +289,7 @@ jobs:
         name: SQLite Catalog oracle
         needs: changes
         if: needs.changes.outputs.catalog_oracle == 'true'
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
+        runs-on: ubuntu-24.04
         timeout-minutes: 20
         steps:
             - name: Checkout without persisted credentials
@@ -319,7 +320,7 @@ jobs:
         name: Website and illustrated guides
         needs: changes
         if: needs.changes.outputs.site == 'true'
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
+        runs-on: ubuntu-24.04
         timeout-minutes: 30
         steps:
             - uses: actions/checkout@v6
@@ -362,7 +363,7 @@ jobs:
             - uasset_libraries
             - catalog_oracle
         if: always()
-        runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'boat' }}
+        runs-on: ubuntu-24.04
         steps:
             - name: Verify portable jobs
               shell: bash
